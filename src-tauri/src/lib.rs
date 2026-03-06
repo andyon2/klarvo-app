@@ -840,7 +840,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             let handle_clone = handle.clone();
-            handle
+            match handle
                 .global_shortcut()
                 .on_shortcut(shortcut, move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
@@ -849,13 +849,10 @@ pub fn run() {
                             run_dictation_pipeline(h).await;
                         });
                     }
-                })
-                .map_err(|e| {
-                    log::error!("[hotkey] Failed to register shortcut: {e}");
-                    e
-                })?;
-
-            log::info!("[hotkey] Registered shortcut: {hotkey_str}");
+                }) {
+                Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str}"),
+                Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

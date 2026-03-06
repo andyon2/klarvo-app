@@ -333,12 +333,12 @@ function SettingsPanel({
   }, [handleAddTerm]);
 
   // Derive whether keys are configured from the masked value.
-  const groqConfigured = !!loadedSettings?.groqApiKey;
-  const deepseekConfigured = !!loadedSettings?.deepseekApiKey;
+  const groqConfigured = !!loadedSettings?.groqApiKeyMasked;
+  const deepseekConfigured = !!loadedSettings?.deepseekApiKeyMasked;
 
   // Masked key as placeholder: show "****abcd" when configured, otherwise the usual hint.
-  const groqPlaceholder = groqConfigured ? loadedSettings!.groqApiKey : "gsk_...";
-  const deepseekPlaceholder = deepseekConfigured ? loadedSettings!.deepseekApiKey : "sk-...";
+  const groqPlaceholder = groqConfigured ? loadedSettings!.groqApiKeyMasked : "gsk_...";
+  const deepseekPlaceholder = deepseekConfigured ? loadedSettings!.deepseekApiKeyMasked : "sk-...";
 
   return (
     <div

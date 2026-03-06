@@ -40,7 +40,7 @@ export async function cleanupText(
   rawText: string,
   style: CleanupStyle
 ): Promise<string> {
-  return await invoke<string>("cleanup_text", { raw_text: rawText, style });
+  return await invoke<string>("cleanup_text", { rawText, style });
 }
 
 /**
@@ -62,13 +62,15 @@ export async function saveSettings(
   groqApiKey: string,
   deepseekApiKey: string,
   language: string,
-  cleanupStyle: CleanupStyle
+  cleanupStyle: CleanupStyle,
+  hotkey?: string
 ): Promise<void> {
   await invoke("save_settings", {
-    groq_api_key: groqApiKey,
-    deepseek_api_key: deepseekApiKey,
+    groqApiKey,
+    deepseekApiKey,
     language,
-    cleanup_style: cleanupStyle,
+    cleanupStyle,
+    hotkey: hotkey ?? "",
   });
 }
 
