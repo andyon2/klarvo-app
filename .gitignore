@@ -1,0 +1,34 @@
+# Environment
+.env
+
+# Rust
+target/
+src-tauri/target/
+
+# Node
+node_modules/
+dist/
+
+# Tauri
+src-tauri/gen/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aab
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Whisper models (large files)
+models/
+*.bin
