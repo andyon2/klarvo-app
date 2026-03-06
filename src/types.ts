@@ -1,6 +1,11 @@
 // Cleanup style determines how the LLM processes raw transcription output.
 export type CleanupStyle = "polished" | "verbatim" | "chat";
 
+// Hotkey activation mode.
+// hold   = push-to-talk: record while key is held, release to process.
+// toggle = press to start, press again to stop and process.
+export type HotkeyMode = "toggle" | "hold";
+
 // Payload emitted by the backend on every state transition of the hotkey pipeline.
 export interface StateChangedPayload {
   state: "recording" | "transcribing" | "cleaning" | "done" | "idle" | "error";
@@ -23,6 +28,7 @@ export interface AppSettings {
   language: string;
   cleanupStyle: CleanupStyle;
   hotkey: string;
+  hotkeyMode: HotkeyMode;
 }
 
 // API key configuration status from the backend.

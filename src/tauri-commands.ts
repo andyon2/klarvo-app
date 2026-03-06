@@ -6,7 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CleanupStyle, StopRecordingResult, AppSettings, StateChangedPayload } from "./types";
+import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload } from "./types";
 
 /**
  * Starts audio capture. Backend begins buffering microphone input.
@@ -57,13 +57,16 @@ export async function getSettings(): Promise<AppSettings> {
  * @param deepseekApiKey - DeepSeek API key, or "" to keep existing
  * @param language       - BCP-47 language code, e.g. "de" or "en"
  * @param cleanupStyle   - Cleanup mode: polished | verbatim | chat
+ * @param hotkey         - Tauri shortcut string, e.g. "ctrl+shift+d"
+ * @param hotkeyMode     - Activation mode: hold | toggle
  */
 export async function saveSettings(
   groqApiKey: string,
   deepseekApiKey: string,
   language: string,
   cleanupStyle: CleanupStyle,
-  hotkey?: string
+  hotkey?: string,
+  hotkeyMode?: HotkeyMode
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -71,7 +74,18 @@ export async function saveSettings(
     language,
     cleanupStyle,
     hotkey: hotkey ?? "",
+    hotkeyMode: hotkeyMode ?? "hold",
   });
+}
+
+/**
+ * Re-registers the global hotkey at the OS level with a new shortcut and/or mode.
+ * Call after save_settings to apply the new binding immediately without restart.
+ * @param shortcut - Tauri shortcut string, e.g. "ctrl+shift+d"
+ * @param mode     - Activation mode: hold | toggle
+ */
+export async function setHotkey(shortcut: string, mode: HotkeyMode): Promise<void> {
+  await invoke("set_hotkey", { shortcut, mode });
 }
 
 /**

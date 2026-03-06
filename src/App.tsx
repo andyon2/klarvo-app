@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import "./styles.css";
-import type { RecordingState, CleanupStyle, AppSettings } from "./types";
+import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
 import {
   startRecording,
@@ -165,18 +165,26 @@ function StylePicker({ value, onChange, disabled }: StylePickerProps) {
   );
 }
 
-// Hardcoded hotkey label -- no config UI yet, matches what the backend registers.
-const HOTKEY_LABEL = "Ctrl+Shift+D";
+// Formats a Tauri shortcut string for display: "ctrl+shift+d" -> "Ctrl+Shift+D".
+function formatHotkeyDisplay(hotkey: string): string {
+  return hotkey
+    .split("+")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("+");
+}
 
 interface StatusBarProps {
   recordingState: RecordingState;
   errorMessage: string | null;
+  hotkey: string;
+  hotkeyMode: HotkeyMode;
 }
 
-function StatusBar({ recordingState, errorMessage }: StatusBarProps) {
+function StatusBar({ recordingState, errorMessage, hotkey, hotkeyMode }: StatusBarProps) {
   const isError = recordingState === "error";
   const label =
     errorMessage && isError ? errorMessage : STATUS_LABELS[recordingState];
+  const hotkeyDisplay = formatHotkeyDisplay(hotkey);
 
   return (
     <div className="flex items-center gap-2">
@@ -192,10 +200,11 @@ function StatusBar({ recordingState, errorMessage }: StatusBarProps) {
       </div>
       {/* Hotkey hint -- always visible, low contrast so it doesn't distract */}
       <span
-        aria-label={`Global hotkey: ${HOTKEY_LABEL}`}
+        aria-label={`Global hotkey: ${hotkeyDisplay} (${hotkeyMode})`}
+        title={hotkeyMode === "hold" ? "Hold to record" : "Press to toggle recording"}
         className="text-xs font-mono text-zinc-700 select-none"
       >
-        · {HOTKEY_LABEL}
+        · {hotkeyDisplay} ({hotkeyMode})
       </span>
     </div>
   );
@@ -239,13 +248,85 @@ function DictionaryTag({ term, onRemove }: DictionaryTagProps) {
   );
 }
 
+// Captures a key combination on click and converts it to Tauri shortcut format.
+// Requires at least one modifier key (ctrl/shift/alt/super) for a valid global shortcut.
+interface ShortcutRecorderProps {
+  value: string;
+  onChange: (shortcut: string) => void;
+}
+
+function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
+  const [listening, setListening] = useState(false);
+
+  const handleClick = useCallback(() => setListening(true), []);
+
+  useEffect(() => {
+    if (!listening) return;
+
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Wait for a non-modifier key to finalize the combo.
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("ctrl");
+      if (e.shiftKey) parts.push("shift");
+      if (e.altKey) parts.push("alt");
+      if (e.metaKey) parts.push("super");
+
+      // Require at least one modifier -- bare keys can't be global shortcuts.
+      if (parts.length === 0) return;
+
+      // Map JS KeyboardEvent.code to Tauri shortcut key name.
+      // Tauri uses lowercase for letters, but specific names for special keys.
+      const KEY_MAP: Record<string, string> = {
+        " ": "space", "Enter": "enter", "Escape": "escape", "Tab": "tab",
+        "Backspace": "backspace", "Delete": "delete", "Insert": "insert",
+        "Home": "home", "End": "end", "PageUp": "pageup", "PageDown": "pagedown",
+        "ArrowUp": "up", "ArrowDown": "down", "ArrowLeft": "left", "ArrowRight": "right",
+      };
+      let key = KEY_MAP[e.key] ?? e.key.toLowerCase();
+      // F-keys: JS gives "F1" etc, Tauri wants lowercase "f1"
+      if (/^F\d+$/.test(e.key)) key = e.key.toLowerCase();
+      parts.push(key);
+
+      onChange(parts.join("+"));
+      setListening(false);
+    };
+
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
+  }, [listening, onChange]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={listening ? "Press a key combination" : `Current shortcut: ${value || "none"}`}
+      className={[
+        "w-full bg-zinc-800 border rounded-lg px-3 py-1.5 text-xs text-left",
+        listening
+          ? "border-blue-500 text-blue-400 animate-pulse"
+          : "border-zinc-700 text-zinc-100 hover:border-zinc-500",
+        "focus:outline-none transition-colors duration-100",
+      ].join(" ")}
+    >
+      {listening ? "Press shortcut..." : value || "Click to set shortcut"}
+    </button>
+  );
+}
+
 interface SettingsPanelProps {
   onClose: () => void;
   language: string;
   cleanupStyle: CleanupStyle;
+  hotkey: string;
+  hotkeyMode: HotkeyMode;
   loadedSettings: AppSettings | null;
   dictionary: string[];
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onAddTerm: (term: string) => Promise<void>;
@@ -256,6 +337,8 @@ function SettingsPanel({
   onClose,
   language,
   cleanupStyle,
+  hotkey,
+  hotkeyMode,
   loadedSettings,
   dictionary,
   onSave,
@@ -268,6 +351,8 @@ function SettingsPanel({
   const [deepseekKey, setDeepseekKey] = useState("");
   const [localLang, setLocalLang] = useState(language);
   const [localStyle, setLocalStyle] = useState<CleanupStyle>(cleanupStyle);
+  const [localHotkey, setLocalHotkey] = useState(hotkey);
+  const [localHotkeyMode, setLocalHotkeyMode] = useState<HotkeyMode>(hotkeyMode);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveDone, setSaveDone] = useState(false);
@@ -278,6 +363,8 @@ function SettingsPanel({
   // Sync local copies when parent state changes (e.g. initial load finishes).
   useEffect(() => { setLocalLang(language); }, [language]);
   useEffect(() => { setLocalStyle(cleanupStyle); }, [cleanupStyle]);
+  useEffect(() => { setLocalHotkey(hotkey); }, [hotkey]);
+  useEffect(() => { setLocalHotkeyMode(hotkeyMode); }, [hotkeyMode]);
 
   // Close on Escape.
   useEffect(() => {
@@ -303,7 +390,7 @@ function SettingsPanel({
     setSaveError(null);
     setSaveDone(false);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode);
       // Clear key inputs after successful save -- masked placeholder will re-appear.
       setGroqKey("");
       setDeepseekKey("");
@@ -314,7 +401,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -487,6 +574,59 @@ function SettingsPanel({
           </div>
         </div>
 
+        {/* Hotkey */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+            Hotkey
+          </span>
+
+          {/* Shortcut recorder */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-zinc-400">Shortcut</label>
+            <ShortcutRecorder value={localHotkey} onChange={setLocalHotkey} />
+          </div>
+
+          {/* Mode toggle */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-zinc-400">Mode</label>
+            <div
+              role="radiogroup"
+              aria-label="Hotkey activation mode"
+              className="flex gap-1 bg-zinc-800 rounded-lg p-0.5"
+            >
+              {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={localHotkeyMode === mode}
+                  onClick={() => setLocalHotkeyMode(mode)}
+                  title={
+                    mode === "hold"
+                      ? "Hold to record, release to process"
+                      : "Press to start, press again to stop"
+                  }
+                  className={[
+                    "flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize",
+                    "transition-colors duration-100",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                    localHotkeyMode === mode
+                      ? "bg-zinc-600 text-white"
+                      : "text-zinc-400 hover:text-zinc-200",
+                  ].join(" ")}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-600 italic">
+              {localHotkeyMode === "hold"
+                ? "Hold to record, release to process"
+                : "Press to start, press again to stop"}
+            </p>
+          </div>
+        </div>
+
         {/* Save button + feedback */}
         {saveError && (
           <p className="text-xs text-red-400 break-all">{saveError}</p>
@@ -635,15 +775,18 @@ export default function App() {
     );
   }, []);
 
-  // Persist all settings and update local state.
+  // Persist all settings, re-register the hotkey at OS level, and refresh local state.
   const handleSaveSettings = useCallback(async (
     groqKey: string,
     deepseekKey: string,
     lang: string,
-    style: CleanupStyle
+    style: CleanupStyle,
+    hotkey: string,
+    hotkeyMode: HotkeyMode
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style);
-    // Refresh loaded settings so masked key placeholders update.
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode);
+    // save_settings already re-registers the hotkey in the backend, no need to call setHotkey.
+    // Refresh loaded settings so masked key placeholders and hotkey display update.
     const updated = await getSettings();
     setLoadedSettings(updated);
   }, []);
@@ -752,6 +895,8 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             language={language}
             cleanupStyle={currentStyle}
+            hotkey={loadedSettings?.hotkey ?? "ctrl+shift+d"}
+            hotkeyMode={loadedSettings?.hotkeyMode ?? "hold"}
             loadedSettings={loadedSettings}
             dictionary={dictionary}
             onSave={handleSaveSettings}
@@ -804,7 +949,12 @@ export default function App() {
       </div>
 
       {/* Footer -- status */}
-      <StatusBar recordingState={recordingState} errorMessage={errorMessage} />
+      <StatusBar
+        recordingState={recordingState}
+        errorMessage={errorMessage}
+        hotkey={loadedSettings?.hotkey ?? "ctrl+shift+d"}
+        hotkeyMode={loadedSettings?.hotkeyMode ?? "hold"}
+      />
     </main>
   );
 }

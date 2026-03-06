@@ -56,6 +56,11 @@ pub const TARGET_BIT_DEPTH: u16 = 16;
 // Internal session state -- lives entirely on the cpal thread
 // ---------------------------------------------------------------------------
 
+/// Callback type for real-time audio level updates during recording.
+/// The f32 value is the RMS amplitude (0.0..1.0) of the most recent chunk.
+/// Must be `Send + Sync` because cpal's stream callback requires `Send`.
+pub type AudioLevelCallback = Box<dyn Fn(f32) + Send + Sync + 'static>;
+
 /// Everything the recording thread needs to know so it can stop cleanly.
 struct RecordingSession {
     /// Sender: the main thread sends `()` to signal "stop recording".
@@ -80,6 +85,7 @@ struct RecordingResult {
 /// background thread; only `Send` types cross the boundary.
 pub struct AudioRecorder {
     session: Mutex<Option<RecordingSession>>,
+    level_callback: Mutex<Option<AudioLevelCallback>>,
 }
 
 impl AudioRecorder {
@@ -87,7 +93,14 @@ impl AudioRecorder {
     pub fn new() -> Self {
         AudioRecorder {
             session: Mutex::new(None),
+            level_callback: Mutex::new(None),
         }
+    }
+
+    /// Sets a callback that receives RMS audio levels during recording.
+    /// Called approximately 15 times per second from the audio thread.
+    pub fn set_level_callback(&self, cb: AudioLevelCallback) {
+        *self.level_callback.lock().unwrap() = Some(cb);
     }
 
     /// Opens the default input device and begins capturing audio on a
@@ -104,9 +117,12 @@ impl AudioRecorder {
         let (stop_tx, stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
         let (result_tx, result_rx) = std::sync::mpsc::channel::<RecordingResult>();
 
+        // Take the level callback (if any) to pass into the recording thread.
+        let level_cb = self.level_callback.lock().unwrap().take();
+
         // Spawn a dedicated thread that owns the cpal stream.
         std::thread::spawn(move || {
-            if let Err(e) = recording_thread(stop_rx, result_tx) {
+            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb) {
                 eprintln!("[audio] recording thread error: {e}");
             }
         });
@@ -167,6 +183,7 @@ unsafe impl Sync for AudioRecorder {}
 fn recording_thread(
     stop_rx: std::sync::mpsc::Receiver<()>,
     result_tx: std::sync::mpsc::Sender<RecordingResult>,
+    level_cb: Option<AudioLevelCallback>,
 ) -> Result<(), AudioError> {
     let host = cpal::default_host();
     let device = host
@@ -182,12 +199,19 @@ fn recording_thread(
     let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
     let samples_writer = Arc::clone(&samples);
 
-    let stream = match sample_format {
-        SampleFormat::F32 => build_stream_f32(&device, &stream_config, samples_writer)?,
-        SampleFormat::I16 => build_stream_i16(&device, &stream_config, samples_writer)?,
-        SampleFormat::U16 => build_stream_u16(&device, &stream_config, samples_writer)?,
-        _ => build_stream_f32(&device, &stream_config, samples_writer)?,
-    };
+    // Shared level callback wrapped in Arc for use in the stream callback.
+    let level_cb = level_cb.map(|cb| Arc::new(cb));
+    let level_cb_clone = level_cb.clone();
+
+    // Track samples for periodic RMS calculation (~15 Hz).
+    let level_chunk: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+    let level_chunk_writer = Arc::clone(&level_chunk);
+    let samples_per_tick = (native_sample_rate / 15) as usize; // ~66ms chunks
+
+    let stream = build_stream_with_level(
+        &device, &stream_config, sample_format, samples_writer,
+        level_cb_clone, level_chunk_writer, samples_per_tick,
+    )?;
 
     stream.play()?;
 
@@ -214,60 +238,95 @@ fn recording_thread(
 
 type SampleBuffer = Arc<Mutex<Vec<f32>>>;
 
-fn build_stream_f32(
-    device: &cpal::Device,
-    config: &StreamConfig,
-    buffer: SampleBuffer,
-) -> Result<cpal::Stream, AudioError> {
-    let stream = device.build_input_stream(
-        config,
-        move |data: &[f32], _| {
-            buffer.lock().unwrap().extend_from_slice(data);
-        },
-        |err| eprintln!("[audio] stream error: {err}"),
-        None,
-    )?;
-    Ok(stream)
+/// Computes the RMS (root mean square) amplitude of a sample buffer.
+pub fn compute_rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
+    (sum_sq / samples.len() as f32).sqrt()
 }
 
-fn build_stream_i16(
-    device: &cpal::Device,
-    config: &StreamConfig,
-    buffer: SampleBuffer,
-) -> Result<cpal::Stream, AudioError> {
-    let stream = device.build_input_stream(
-        config,
-        move |data: &[i16], _| {
-            let converted: Vec<f32> = data
-                .iter()
-                .map(|&s| s as f32 / i16::MAX as f32)
-                .collect();
-            buffer.lock().unwrap().extend(converted);
-        },
-        |err| eprintln!("[audio] stream error: {err}"),
-        None,
-    )?;
-    Ok(stream)
+/// Helper: appends f32 data to the sample buffer and periodically fires the level callback.
+fn process_f32_data(
+    data: &[f32],
+    buffer: &SampleBuffer,
+    level_cb: &Option<Arc<AudioLevelCallback>>,
+    level_chunk: &Arc<Mutex<Vec<f32>>>,
+    samples_per_tick: usize,
+) {
+    buffer.lock().unwrap().extend_from_slice(data);
+
+    if let Some(ref cb) = level_cb {
+        let mut chunk = level_chunk.lock().unwrap();
+        chunk.extend_from_slice(data);
+        if chunk.len() >= samples_per_tick {
+            let rms = compute_rms(&chunk);
+            chunk.clear();
+            cb(rms);
+        }
+    }
 }
 
-fn build_stream_u16(
+/// Builds a cpal input stream for the given sample format, with audio-level callback support.
+fn build_stream_with_level(
     device: &cpal::Device,
     config: &StreamConfig,
+    sample_format: SampleFormat,
     buffer: SampleBuffer,
+    level_cb: Option<Arc<AudioLevelCallback>>,
+    level_chunk: Arc<Mutex<Vec<f32>>>,
+    samples_per_tick: usize,
 ) -> Result<cpal::Stream, AudioError> {
-    let stream = device.build_input_stream(
-        config,
-        move |data: &[u16], _| {
-            let converted: Vec<f32> = data
-                .iter()
-                .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0)
-                .collect();
-            buffer.lock().unwrap().extend(converted);
-        },
-        |err| eprintln!("[audio] stream error: {err}"),
-        None,
-    )?;
-    Ok(stream)
+    match sample_format {
+        SampleFormat::F32 => {
+            let stream = device.build_input_stream(
+                config,
+                move |data: &[f32], _| {
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                },
+                |err| eprintln!("[audio] stream error: {err}"),
+                None,
+            )?;
+            Ok(stream)
+        }
+        SampleFormat::I16 => {
+            let stream = device.build_input_stream(
+                config,
+                move |data: &[i16], _| {
+                    let converted: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                },
+                |err| eprintln!("[audio] stream error: {err}"),
+                None,
+            )?;
+            Ok(stream)
+        }
+        SampleFormat::U16 => {
+            let stream = device.build_input_stream(
+                config,
+                move |data: &[u16], _| {
+                    let converted: Vec<f32> = data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0).collect();
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                },
+                |err| eprintln!("[audio] stream error: {err}"),
+                None,
+            )?;
+            Ok(stream)
+        }
+        _ => {
+            // Fallback: try f32
+            let stream = device.build_input_stream(
+                config,
+                move |data: &[f32], _| {
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                },
+                |err| eprintln!("[audio] stream error: {err}"),
+                None,
+            )?;
+            Ok(stream)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

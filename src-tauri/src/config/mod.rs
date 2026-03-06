@@ -21,6 +21,29 @@ use serde::{Deserialize, Serialize};
 use crate::llm::CleanupStyle;
 
 // ---------------------------------------------------------------------------
+// HotkeyMode
+// ---------------------------------------------------------------------------
+
+/// Controls how the global hotkey triggers recording.
+///
+/// - `Toggle`: one press starts recording, the next press stops and processes.
+/// - `Hold`: hold the key to record; releasing triggers stop + pipeline.
+///
+/// Default is `Hold` -- this matches the Wispr Flow UX that users expect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HotkeyMode {
+    Toggle,
+    Hold,
+}
+
+impl Default for HotkeyMode {
+    fn default() -> Self {
+        HotkeyMode::Hold
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Configuration struct
 // ---------------------------------------------------------------------------
 
@@ -51,6 +74,10 @@ pub struct AppConfig {
     /// Global hotkey string in Tauri shortcut format (e.g. `"ctrl+shift+d"`).
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+
+    /// How the hotkey triggers recording: toggle (press/press) or hold (hold/release).
+    #[serde(default = "default_hotkey_mode")]
+    pub hotkey_mode: HotkeyMode,
 }
 
 fn default_language() -> String {
@@ -65,6 +92,10 @@ fn default_hotkey() -> String {
     "ctrl+shift+d".to_string()
 }
 
+pub fn default_hotkey_mode() -> HotkeyMode {
+    HotkeyMode::Hold
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -73,6 +104,7 @@ impl Default for AppConfig {
             language: default_language(),
             cleanup_style: default_cleanup_style(),
             hotkey: default_hotkey(),
+            hotkey_mode: default_hotkey_mode(),
         }
     }
 }
@@ -182,6 +214,32 @@ mod tests {
         assert_eq!(cfg.language, "de");
         assert_eq!(cfg.cleanup_style, CleanupStyle::Polished);
         assert_eq!(cfg.hotkey, "ctrl+shift+d");
+        assert_eq!(cfg.hotkey_mode, HotkeyMode::Hold);
+    }
+
+    /// `HotkeyMode` serializes with lowercase variant names.
+    #[test]
+    fn test_hotkey_mode_serializes_lowercase() {
+        let toggle = serde_json::to_string(&HotkeyMode::Toggle).unwrap();
+        let hold = serde_json::to_string(&HotkeyMode::Hold).unwrap();
+        assert_eq!(toggle, r#""toggle""#);
+        assert_eq!(hold, r#""hold""#);
+    }
+
+    /// `HotkeyMode` deserializes from lowercase strings.
+    #[test]
+    fn test_hotkey_mode_deserializes_lowercase() {
+        let toggle: HotkeyMode = serde_json::from_str(r#""toggle""#).unwrap();
+        let hold: HotkeyMode = serde_json::from_str(r#""hold""#).unwrap();
+        assert_eq!(toggle, HotkeyMode::Toggle);
+        assert_eq!(hold, HotkeyMode::Hold);
+    }
+
+    /// Default `HotkeyMode` is `Hold`.
+    #[test]
+    fn test_hotkey_mode_default_is_hold() {
+        assert_eq!(HotkeyMode::default(), HotkeyMode::Hold);
+        assert_eq!(default_hotkey_mode(), HotkeyMode::Hold);
     }
 
     /// Loading from a non-existent directory returns defaults without panicking.
@@ -203,12 +261,28 @@ mod tests {
             language: "en".to_string(),
             cleanup_style: CleanupStyle::Chat,
             hotkey: "ctrl+alt+r".to_string(),
+            hotkey_mode: HotkeyMode::Toggle,
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
 
         let loaded = load_config(dir.path());
         assert_eq!(loaded, original);
+    }
+
+    /// Both `HotkeyMode` variants survive a save/load round-trip.
+    #[test]
+    fn test_hotkey_mode_roundtrip() {
+        for mode in [HotkeyMode::Toggle, HotkeyMode::Hold] {
+            let dir = temp_dir();
+            let cfg = AppConfig {
+                hotkey_mode: mode,
+                ..AppConfig::default()
+            };
+            save_config(dir.path(), &cfg).unwrap();
+            let loaded = load_config(dir.path());
+            assert_eq!(loaded.hotkey_mode, mode);
+        }
     }
 
     /// Save creates the directory if it doesn't exist yet.
@@ -256,6 +330,7 @@ mod tests {
         assert!(json.contains("groqApiKey"), "expected camelCase 'groqApiKey'");
         assert!(json.contains("deepseekApiKey"), "expected camelCase 'deepseekApiKey'");
         assert!(json.contains("cleanupStyle"), "expected camelCase 'cleanupStyle'");
+        assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
     }
 
     /// All three CleanupStyle variants round-trip through config serialization.

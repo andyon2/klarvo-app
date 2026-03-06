@@ -44,14 +44,16 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
-use config::{load_config, save_config, AppConfig};
+use config::{load_config, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use llm::{CleanupProvider, CleanupStyle, DeepSeekCleanup};
 use paste::create_paste_handler;
 use serde::{Deserialize, Serialize};
 use stt::{GroqWhisper, SttProvider};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconEvent;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 // ---------------------------------------------------------------------------
@@ -93,6 +95,8 @@ pub struct SettingsView {
     pub cleanup_style: CleanupStyle,
     /// Registered global hotkey string, e.g. `"ctrl+shift+d"`.
     pub hotkey: String,
+    /// How the hotkey triggers recording: `Hold` or `Toggle`.
+    pub hotkey_mode: HotkeyMode,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -216,45 +220,56 @@ fn mask_api_key(key: &str) -> String {
 // Hotkey dictation pipeline
 // ---------------------------------------------------------------------------
 
-/// Runs the full dictation pipeline when the hotkey fires.
+/// Starts recording audio and emits `state=recording`.
 ///
-/// - If not recording: starts recording and emits `state=recording`.
-/// - If recording: stops, transcribes, cleans up, pastes, emits events at
-///   each stage.
-///
-/// Dictionary terms are injected at both the STT step (as a Groq `prompt`
-/// hint) and the LLM step (as `dictionary_terms` in the system prompt).
-///
-/// This function is meant to be called from the global-shortcut handler.
-/// It clones what it needs from `AppState` before any await points to avoid
-/// holding locks across awaits.
-async fn run_dictation_pipeline(handle: AppHandle) {
+/// Does nothing (returns silently) if recording is already in progress.
+/// Used by the hold-mode hotkey handler on key-press.
+async fn start_recording_only(handle: AppHandle) {
     let state = handle.state::<AppState>();
 
-    let is_recording = state.recorder.is_recording();
+    if state.recorder.is_recording() {
+        return;
+    }
 
-    if !is_recording {
-        // --- Start recording ---
-        if let Err(e) = state.recorder.start_recording() {
+    // Re-install the audio level callback before each recording.
+    setup_audio_level_emitter(&handle);
+
+    if let Err(e) = state.recorder.start_recording() {
+        let _ = handle.emit(
+            EVENT_STATE_CHANGED,
+            PipelineEvent::error(format!("Failed to start recording: {e}")),
+        );
+        return;
+    }
+
+    *match state.recording_start.lock() {
+        Ok(g) => g,
+        Err(_) => {
             let _ = handle.emit(
                 EVENT_STATE_CHANGED,
-                PipelineEvent::error(format!("Failed to start recording: {e}")),
+                PipelineEvent::error("State lock poisoned"),
             );
             return;
         }
+    } = Some(std::time::Instant::now());
 
-        *match state.recording_start.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
-                );
-                return;
-            }
-        } = Some(std::time::Instant::now());
+    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+}
 
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+/// Stops the active recording and runs the full STT → LLM → paste pipeline.
+///
+/// Does nothing (returns silently) if no recording is active.
+/// Used by the hold-mode hotkey handler on key-release, and called internally
+/// by `run_dictation_pipeline` for the toggle case.
+///
+/// Dictionary terms are injected at both the STT step (as a Groq `prompt`
+/// hint) and the LLM step (as `dictionary_terms` in the system prompt).
+async fn stop_and_process_pipeline(handle: AppHandle) {
+    let state = handle.state::<AppState>();
+
+    if !state.recorder.is_recording() {
+        // Not recording -- key released without a corresponding press (race condition or
+        // hold mode released before recording started). Safe to ignore.
         return;
     }
 
@@ -402,6 +417,62 @@ async fn run_dictation_pipeline(handle: AppHandle) {
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text));
 }
 
+/// Toggle-mode hotkey handler: press once to start, press again to stop + process.
+///
+/// This is the legacy behaviour, kept for users who prefer toggle mode.
+async fn run_dictation_pipeline(handle: AppHandle) {
+    let state = handle.state::<AppState>();
+
+    if !state.recorder.is_recording() {
+        start_recording_only(handle).await;
+    } else {
+        stop_and_process_pipeline(handle).await;
+    }
+}
+
+/// Registers the global shortcut with mode-aware handlers.
+///
+/// Unregisters all existing shortcuts first so this can be called to
+/// re-register after a settings change.
+///
+/// - `Toggle`: Pressed fires `run_dictation_pipeline` (start or stop+process).
+/// - `Hold`: Pressed fires `start_recording_only`; Released fires `stop_and_process_pipeline`.
+fn register_hotkey(handle: &AppHandle, shortcut: Shortcut, mode: HotkeyMode) -> Result<(), String> {
+    handle
+        .global_shortcut()
+        .unregister_all()
+        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
+
+    let handle_clone = handle.clone();
+    handle
+        .global_shortcut()
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            let h = handle_clone.clone();
+            match (mode, event.state) {
+                (HotkeyMode::Toggle, ShortcutState::Pressed) => {
+                    tauri::async_runtime::spawn(async move {
+                        run_dictation_pipeline(h).await;
+                    });
+                }
+                (HotkeyMode::Hold, ShortcutState::Pressed) => {
+                    tauri::async_runtime::spawn(async move {
+                        start_recording_only(h).await;
+                    });
+                }
+                (HotkeyMode::Hold, ShortcutState::Released) => {
+                    tauri::async_runtime::spawn(async move {
+                        stop_and_process_pipeline(h).await;
+                    });
+                }
+                // Toggle + Released: ignore (we only act on press).
+                _ => {}
+            }
+        })
+        .map_err(|e| format!("Failed to register shortcut: {e}"))?;
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands -- Recording
 // ---------------------------------------------------------------------------
@@ -411,8 +482,11 @@ async fn run_dictation_pipeline(handle: AppHandle) {
 /// Returns an error string if recording is already in progress or no
 /// microphone is available.
 #[tauri::command]
-async fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
+async fn start_recording(handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let inner = state.inner();
+
+    // Re-install the audio level callback before recording.
+    setup_audio_level_emitter(&handle);
 
     inner
         .recorder
@@ -549,30 +623,44 @@ fn is_recording(state: State<'_, AppState>) -> bool {
 
 /// Persists new settings and hot-reloads the affected providers.
 ///
-/// After saving to disk, the STT and LLM providers are replaced with new
-/// instances using the updated API keys so changes take effect immediately.
+/// After saving to disk:
+/// - STT and LLM providers are replaced with new instances (API key changes
+///   take effect immediately without a restart).
+/// - The global shortcut is re-registered with the new hotkey string and mode.
 ///
 /// Passing an empty string for an API key disables that provider (requests
 /// will fail with an auth error from the API until a valid key is supplied).
 #[tauri::command]
 async fn save_settings(
+    handle: AppHandle,
     state: State<'_, AppState>,
     groq_api_key: String,
     deepseek_api_key: String,
     language: String,
     cleanup_style: CleanupStyle,
     hotkey: String,
+    hotkey_mode: HotkeyMode,
 ) -> Result<(), String> {
     let inner = state.inner();
 
-    // Build updated config.
+    // Validate the hotkey string before writing anything to disk.
+    let parsed_shortcut = hotkey
+        .parse::<Shortcut>()
+        .map_err(|e| format!("Invalid shortcut string: {e}"))?;
+
+    // Build updated config. Empty API key strings preserve the existing key
+    // so the user can change other settings without re-entering keys.
+    let existing = lock!(inner.config)?.clone();
     let new_cfg = AppConfig {
-        groq_api_key: groq_api_key.clone(),
-        deepseek_api_key: deepseek_api_key.clone(),
+        groq_api_key: if groq_api_key.is_empty() { existing.groq_api_key } else { groq_api_key.clone() },
+        deepseek_api_key: if deepseek_api_key.is_empty() { existing.deepseek_api_key } else { deepseek_api_key.clone() },
         language,
         cleanup_style,
         hotkey,
+        hotkey_mode,
     };
+    let effective_groq = new_cfg.groq_api_key.clone();
+    let effective_deepseek = new_cfg.deepseek_api_key.clone();
 
     // Persist to disk.
     save_config(&inner.app_data_dir, &new_cfg)
@@ -581,9 +669,12 @@ async fn save_settings(
     // Update in-memory config.
     *lock!(inner.config)? = new_cfg;
 
-    // Hot-reload providers with new API keys.
-    *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(groq_api_key));
-    *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(deepseek_api_key));
+    // Hot-reload providers with the effective API keys.
+    *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(effective_groq));
+    *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(effective_deepseek));
+
+    // Re-register the global shortcut with the (possibly new) hotkey + mode.
+    register_hotkey(&handle, parsed_shortcut, hotkey_mode)?;
 
     Ok(())
 }
@@ -602,6 +693,7 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         language: cfg.language,
         cleanup_style: cfg.cleanup_style,
         hotkey: cfg.hotkey,
+        hotkey_mode: cfg.hotkey_mode,
     })
 }
 
@@ -689,44 +781,33 @@ fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<
         .map_err(|e| format!("Failed to persist cleanup style: {e}"))
 }
 
-/// Changes the registered global hotkey at runtime.
+/// Changes the registered global hotkey and/or mode at runtime.
 ///
 /// `shortcut`: a Tauri shortcut string, e.g. `"ctrl+shift+d"`.
+/// `mode`: `HotkeyMode::Hold` or `HotkeyMode::Toggle`.
+///
 /// Returns an error if the shortcut string is invalid or registration fails.
+/// Persists both the new shortcut and mode to config.
 #[tauri::command]
 async fn set_hotkey(
     handle: AppHandle,
     state: State<'_, AppState>,
     shortcut: String,
+    mode: HotkeyMode,
 ) -> Result<(), String> {
     // Validate the shortcut string before touching system APIs.
     let parsed = shortcut
         .parse::<Shortcut>()
         .map_err(|e| format!("Invalid shortcut string: {e}"))?;
 
-    // Unregister all previous shortcuts, then register the new one.
-    handle
-        .global_shortcut()
-        .unregister_all()
-        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
+    // Re-register with the new shortcut + mode.
+    register_hotkey(&handle, parsed, mode)?;
 
-    let handle_clone = handle.clone();
-    handle
-        .global_shortcut()
-        .on_shortcut(parsed, move |_app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                let handle = handle_clone.clone();
-                tauri::async_runtime::spawn(async move {
-                    run_dictation_pipeline(handle).await;
-                });
-            }
-        })
-        .map_err(|e| format!("Failed to register shortcut: {e}"))?;
-
-    // Persist the new hotkey to config.
+    // Persist both fields to config.
     let inner = state.inner();
     let mut cfg = lock!(inner.config)?;
     cfg.hotkey = shortcut;
+    cfg.hotkey_mode = mode;
     let cfg_clone = cfg.clone();
     drop(cfg);
     save_config(&inner.app_data_dir, &cfg_clone)
@@ -782,6 +863,54 @@ const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 // Tauri entry point
 // ---------------------------------------------------------------------------
 
+/// Event name for real-time audio level updates sent to the floating bar.
+const EVENT_AUDIO_LEVEL: &str = "dikta://audio-level";
+
+/// Creates the floating bar window positioned above the taskbar.
+fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Get primary monitor dimensions to position the bar at bottom-center.
+    let bar_width = 280.0_f64;
+    let bar_height = 40.0_f64;
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        app,
+        "bar",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("")
+    .inner_size(bar_width, bar_height)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .focused(false);
+
+    let bar = builder.build()?;
+
+    // Position at bottom-center of the screen, above the taskbar (~60px margin).
+    if let Some(monitor) = bar.current_monitor()? {
+        let screen_size = monitor.size();
+        let scale = monitor.scale_factor();
+        let screen_w = screen_size.width as f64 / scale;
+        let screen_h = screen_size.height as f64 / scale;
+        let x = (screen_w - bar_width) / 2.0;
+        let y = screen_h - bar_height - 60.0;
+        let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
+    }
+
+    Ok(())
+}
+
+/// Sets up the audio-level callback that emits events to the frontend.
+fn setup_audio_level_emitter(handle: &AppHandle) {
+    let state = handle.state::<AppState>();
+    let handle_clone = handle.clone();
+    state.recorder.set_level_callback(Box::new(move |level| {
+        let _ = handle_clone.emit(EVENT_AUDIO_LEVEL, serde_json::json!({ "level": level }));
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -807,14 +936,17 @@ pub fn run() {
                 cfg.hotkey.clone()
             };
 
+            let hotkey_mode = cfg.hotkey_mode;
+
             // Load persisted dictionary.
             let dictionary = load_dictionary(&app_data_dir);
 
             log::info!(
-                "[setup] Loaded config: language={}, style={:?}, hotkey={}",
+                "[setup] Loaded config: language={}, style={:?}, hotkey={}, mode={:?}",
                 cfg.language,
                 cfg.cleanup_style,
-                hotkey_str
+                hotkey_str,
+                hotkey_mode,
             );
             log::info!(
                 "[setup] Loaded dictionary: {} terms",
@@ -824,6 +956,49 @@ pub fn run() {
             // Build and register the application state.
             let app_state = AppState::new(cfg, dictionary, app_data_dir);
             app.manage(app_state);
+
+            // --- System tray ---
+            let show_settings = MenuItem::with_id(app, "show_settings", "Settings", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_settings, &quit])?;
+
+            let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("Dikta")
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show_settings" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // Left-click on tray icon -> show settings window.
+                    if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                        if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // --- Floating bar window ---
+            if let Err(e) = create_bar_window(app) {
+                log::warn!("[setup] Could not create floating bar: {e}");
+            }
+
+            // --- Audio level emitter ---
+            let handle = app.handle().clone();
+            setup_audio_level_emitter(&handle);
 
             // Register the global hotkey from config.
             let shortcut = hotkey_str
@@ -838,22 +1013,28 @@ pub fn run() {
                         .expect("DEFAULT_HOTKEY must be a valid shortcut string")
                 });
 
-            let handle = app.handle().clone();
-            let handle_clone = handle.clone();
-            match handle
-                .global_shortcut()
-                .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        let h = handle_clone.clone();
-                        tauri::async_runtime::spawn(async move {
-                            run_dictation_pipeline(h).await;
-                        });
-                    }
-                }) {
-                Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str}"),
+            match register_hotkey(&handle, shortcut, hotkey_mode) {
+                Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"),
                 Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
             }
             Ok(())
+        })
+        // Intercept window close: hide main window instead of quitting.
+        // The app stays alive in the system tray.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let label = window.label();
+                if label == "main" {
+                    // Hide the settings window, don't quit.
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                // Bar window: also prevent close (it should always exist).
+                if label == "bar" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Recording
@@ -915,6 +1096,7 @@ mod tests {
         assert_eq!(cfg.language, "de");
         assert_eq!(cfg.cleanup_style, CleanupStyle::Polished);
         assert_eq!(cfg.hotkey, "ctrl+shift+d");
+        assert_eq!(cfg.hotkey_mode, HotkeyMode::Hold);
     }
 
     #[test]
@@ -959,11 +1141,43 @@ mod tests {
             language: "de".to_string(),
             cleanup_style: CleanupStyle::Polished,
             hotkey: "ctrl+shift+d".to_string(),
+            hotkey_mode: HotkeyMode::Hold,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("deepseekApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("cleanupStyle"), "expected camelCase key");
+        assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
+    }
+
+    // --- HotkeyMode via SettingsView ---
+
+    #[test]
+    fn test_settings_view_hotkey_mode_hold_serializes_lowercase() {
+        let view = SettingsView {
+            groq_api_key_masked: String::new(),
+            deepseek_api_key_masked: String::new(),
+            language: "de".to_string(),
+            cleanup_style: CleanupStyle::Polished,
+            hotkey: "ctrl+shift+d".to_string(),
+            hotkey_mode: HotkeyMode::Hold,
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
+    }
+
+    #[test]
+    fn test_settings_view_hotkey_mode_toggle_serializes_lowercase() {
+        let view = SettingsView {
+            groq_api_key_masked: String::new(),
+            deepseek_api_key_masked: String::new(),
+            language: "de".to_string(),
+            cleanup_style: CleanupStyle::Polished,
+            hotkey: "ctrl+shift+d".to_string(),
+            hotkey_mode: HotkeyMode::Toggle,
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");
     }
 
     // --- ApiKeyStatus ---
