@@ -9,6 +9,9 @@ import {
   cleanupText,
   getApiKeyStatus,
   updateApiKeys,
+  onStateChanged,
+  setLanguage as syncLanguage,
+  setCleanupStyle as syncCleanupStyle,
 } from "./tauri-commands";
 
 // --- Icons -------------------------------------------------------------------
@@ -159,6 +162,9 @@ function StylePicker({ value, onChange, disabled }: StylePickerProps) {
   );
 }
 
+// Hardcoded hotkey label -- no config UI yet, matches what the backend registers.
+const HOTKEY_LABEL = "Ctrl+Shift+D";
+
 interface StatusBarProps {
   recordingState: RecordingState;
   errorMessage: string | null;
@@ -170,15 +176,24 @@ function StatusBar({ recordingState, errorMessage }: StatusBarProps) {
     errorMessage && isError ? errorMessage : STATUS_LABELS[recordingState];
 
   return (
-    <div
-      aria-live="polite"
-      aria-atomic="true"
-      className={[
-        "text-xs font-mono",
-        isError ? "text-red-400" : "text-zinc-500",
-      ].join(" ")}
-    >
-      {label}
+    <div className="flex items-center gap-2">
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className={[
+          "text-xs font-mono",
+          isError ? "text-red-400" : "text-zinc-500",
+        ].join(" ")}
+      >
+        {label}
+      </div>
+      {/* Hotkey hint -- always visible, low contrast so it doesn't distract */}
+      <span
+        aria-label={`Global hotkey: ${HOTKEY_LABEL}`}
+        className="text-xs font-mono text-zinc-700 select-none"
+      >
+        · {HOTKEY_LABEL}
+      </span>
     </div>
   );
 }
@@ -400,6 +415,38 @@ export default function App() {
     recordingState === "transcribing" || recordingState === "cleaning";
   const isRecording = recordingState === "recording";
 
+  // Subscribe to backend pipeline events (hotkey-triggered flow).
+  // The backend owns the entire pipeline when the hotkey fires; we just mirror
+  // whatever state it reports. This runs once on mount.
+  useEffect(() => {
+    const unlistenPromise = onStateChanged((payload) => {
+      setRecordingState(payload.state as RecordingState);
+      if (payload.text !== undefined) setResultText(payload.text);
+      if (payload.error !== undefined) setErrorMessage(payload.error);
+    });
+
+    return () => {
+      unlistenPromise.then((fn) => fn());
+    };
+  }, []);
+
+  // Keep the backend in sync whenever the user changes the cleanup style.
+  // The hotkey pipeline reads these values from backend state directly.
+  const handleStyleChange = useCallback((style: CleanupStyle) => {
+    setCurrentStyle(style);
+    syncCleanupStyle(style).catch((err) =>
+      console.error("[dikta] set_cleanup_style error:", err)
+    );
+  }, []);
+
+  // Keep the backend in sync whenever the user changes the language.
+  const handleLanguageChange = useCallback((lang: string) => {
+    setLanguage(lang);
+    syncLanguage(lang).catch((err) =>
+      console.error("[dikta] set_language error:", err)
+    );
+  }, []);
+
   const handleRecordToggle = useCallback(async () => {
     if (isRecording) {
       // --- Stop -> transcribe -> cleanup flow ---
@@ -475,7 +522,7 @@ export default function App() {
         </div>
         <StylePicker
           value={currentStyle}
-          onChange={setCurrentStyle}
+          onChange={handleStyleChange}
           disabled={isBusy || isRecording}
         />
       </div>
@@ -492,7 +539,7 @@ export default function App() {
           <SettingsPanel
             onClose={() => setShowSettings(false)}
             language={language}
-            onLanguageChange={setLanguage}
+            onLanguageChange={handleLanguageChange}
           />
         )}
       </div>

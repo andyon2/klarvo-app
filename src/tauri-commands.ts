@@ -5,7 +5,8 @@
  * Parameter keys use snake_case to match Rust struct field names.
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { CleanupStyle, StopRecordingResult, ApiKeyStatus } from "./types";
+import { listen } from "@tauri-apps/api/event";
+import type { CleanupStyle, StopRecordingResult, ApiKeyStatus, StateChangedPayload } from "./types";
 
 /**
  * Starts audio capture. Backend begins buffering microphone input.
@@ -63,4 +64,37 @@ export async function updateApiKeys(
     groq_api_key: groqApiKey ?? null,
     deepseek_api_key: deepseekApiKey ?? null,
   });
+}
+
+/**
+ * Subscribes to backend pipeline state changes triggered by the global hotkey.
+ * Returns a promise that resolves to an unlisten function -- call it on cleanup.
+ *
+ * The backend emits "dikta://state-changed" at every pipeline step:
+ * recording -> transcribing -> cleaning -> done | error
+ */
+export function onStateChanged(
+  callback: (payload: StateChangedPayload) => void
+): Promise<() => void> {
+  return listen<StateChangedPayload>("dikta://state-changed", (event) => {
+    callback(event.payload);
+  });
+}
+
+/**
+ * Tells the backend which language to use for the hotkey-triggered pipeline.
+ * Must be called whenever the user changes the language setting.
+ * @param language - BCP-47 language code, e.g. "de" or "en"
+ */
+export async function setLanguage(language: string): Promise<void> {
+  await invoke("set_language", { language });
+}
+
+/**
+ * Tells the backend which cleanup style to use for the hotkey-triggered pipeline.
+ * Must be called whenever the user changes the style setting.
+ * @param style - Cleanup mode: polished | verbatim | chat
+ */
+export async function setCleanupStyle(style: CleanupStyle): Promise<void> {
+  await invoke("set_cleanup_style", { style });
 }
