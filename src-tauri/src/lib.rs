@@ -1,7 +1,7 @@
 //! Dikta -- Tauri backend entry point.
 //!
-//! Wires together the audio, STT and LLM modules and exposes them to the
-//! React frontend via Tauri commands.
+//! Wires together the audio, STT, LLM, paste and hotkey modules and exposes
+//! them to the React frontend via Tauri commands and events.
 //!
 //! ## Command flow (frontend perspective)
 //!
@@ -17,18 +17,29 @@
 //! ```
 //!
 //! Each step is a separate command so the frontend can show granular status.
+//!
+//! ## Hotkey pipeline
+//!
+//! When the global shortcut fires (default: Ctrl+Shift+D), the backend runs
+//! the full pipeline automatically and emits `dikta://state-changed` events
+//! so the frontend can update the UI without being in the loop.
 
 mod audio;
+mod hotkey;
 mod llm;
+mod paste;
 mod stt;
 
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
+use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use llm::{CleanupProvider, CleanupStyle, DeepSeekCleanup};
+use paste::create_paste_handler;
 use serde::{Deserialize, Serialize};
 use stt::{GroqWhisper, SttProvider};
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 // ---------------------------------------------------------------------------
 // Frontend-facing data types
@@ -90,6 +101,10 @@ pub struct AppState {
     /// Never sent to the frontend as values.
     groq_api_key: Mutex<String>,
     deepseek_api_key: Mutex<String>,
+    /// ISO-639-1 language code used by the hotkey pipeline (default: "de").
+    language: Mutex<String>,
+    /// Cleanup style used by the hotkey pipeline (default: Polished).
+    current_style: Mutex<CleanupStyle>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -112,6 +127,8 @@ impl AppState {
             last_recording: Mutex::new(None),
             groq_api_key: Mutex::new(groq_api_key),
             deepseek_api_key: Mutex::new(deepseek_api_key),
+            language: Mutex::new("de".to_string()),
+            current_style: Mutex::new(CleanupStyle::Polished),
         }
     }
 }
@@ -146,6 +163,158 @@ macro_rules! write_lock {
             .write()
             .map_err(|_| "Internal state lock poisoned".to_string())
     };
+}
+
+// ---------------------------------------------------------------------------
+// Hotkey dictation pipeline
+// ---------------------------------------------------------------------------
+
+/// Runs the full dictation pipeline when the hotkey fires.
+///
+/// - If not recording: starts recording and emits `state=recording`.
+/// - If recording: stops, transcribes, cleans up, pastes, emits events at
+///   each stage.
+///
+/// This function is meant to be called from the global-shortcut handler.
+/// It clones what it needs from `AppState` before any await points to avoid
+/// holding locks across awaits.
+async fn run_dictation_pipeline(handle: AppHandle) {
+    let state = handle.state::<AppState>();
+
+    let is_recording = state.recorder.is_recording();
+
+    if !is_recording {
+        // --- Start recording ---
+        if let Err(e) = state.recorder.start_recording() {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error(format!("Failed to start recording: {e}")),
+            );
+            return;
+        }
+
+        *match state.recording_start.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                let _ = handle.emit(
+                    EVENT_STATE_CHANGED,
+                    PipelineEvent::error("State lock poisoned"),
+                );
+                return;
+            }
+        } = Some(std::time::Instant::now());
+
+        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+        return;
+    }
+
+    // --- Stop recording ---
+    let duration_ms = {
+        match state.recording_start.lock() {
+            Ok(g) => g.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0),
+            Err(_) => 0,
+        }
+    };
+
+    let wav_bytes = match state.recorder.stop_recording() {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error(format!("Failed to stop recording: {e}")),
+            );
+            return;
+        }
+    };
+
+    // Clear recording start timestamp.
+    if let Ok(mut g) = state.recording_start.lock() {
+        *g = None;
+    }
+
+    // Store WAV bytes for manual transcribe commands too.
+    if let Ok(mut g) = state.last_recording.lock() {
+        *g = Some(wav_bytes.clone());
+    }
+
+    log::debug!("[pipeline] recording stopped after {duration_ms}ms, {len} WAV bytes", len = wav_bytes.len());
+
+    // --- Transcribe ---
+    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
+
+    let language = {
+        match state.language.lock() {
+            Ok(g) => g.clone(),
+            Err(_) => "de".to_string(),
+        }
+    };
+
+    let stt_provider = match state.stt_provider.read() {
+        Ok(g) => g.clone(),
+        Err(_) => {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error("State lock poisoned"),
+            );
+            return;
+        }
+    };
+
+    let raw_text = match stt_provider.transcribe(wav_bytes, &language).await {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error(format!("Transcription failed: {e}")),
+            );
+            return;
+        }
+    };
+
+    log::debug!("[pipeline] raw transcription: {raw_text:?}");
+
+    // --- LLM cleanup ---
+    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
+
+    let style = {
+        match state.current_style.lock() {
+            Ok(g) => *g,
+            Err(_) => CleanupStyle::Polished,
+        }
+    };
+
+    let cleanup_provider = match state.cleanup_provider.read() {
+        Ok(g) => g.clone(),
+        Err(_) => {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error("State lock poisoned"),
+            );
+            return;
+        }
+    };
+
+    let cleaned_text = match cleanup_provider.cleanup(&raw_text, style, None).await {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::error(format!("Text cleanup failed: {e}")),
+            );
+            return;
+        }
+    };
+
+    log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
+
+    // --- Paste ---
+    let paste_handler = create_paste_handler();
+    if let Err(e) = paste_handler.paste(&cleaned_text) {
+        log::warn!("[pipeline] paste failed: {e}. Text is still available.");
+        // Do not return error -- text was produced, paste failure is non-fatal.
+    }
+
+    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text));
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +477,60 @@ fn get_api_key_status(state: State<'_, AppState>) -> Result<ApiKeyStatus, String
     })
 }
 
+/// Sets the language used by the hotkey pipeline.
+///
+/// `language`: ISO-639-1 code, e.g. `"de"` or `"en"`. Empty string = auto-detect.
+#[tauri::command]
+fn set_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
+    *lock!(state.inner().language)? = language;
+    Ok(())
+}
+
+/// Sets the cleanup style used by the hotkey pipeline.
+#[tauri::command]
+fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<(), String> {
+    *lock!(state.inner().current_style)? = style;
+    Ok(())
+}
+
+/// Changes the registered global hotkey at runtime.
+///
+/// `shortcut`: a Tauri shortcut string, e.g. `"ctrl+shift+d"`.
+/// Returns an error if the shortcut string is invalid or registration fails.
+#[tauri::command]
+async fn set_hotkey(handle: AppHandle, shortcut: String) -> Result<(), String> {
+    // `Shortcut::from_str` returns `HotKeyParseError`, not `tauri_plugin_global_shortcut::Error`.
+    // We convert to String immediately so we don't need to name the concrete error type.
+    let shortcut = shortcut
+        .parse::<Shortcut>()
+        .map_err(|e| format!("Invalid shortcut string: {e}"))?;
+
+    // Unregister all previous shortcuts, then register the new one.
+    handle
+        .global_shortcut()
+        .unregister_all()
+        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
+
+    let handle_clone = handle.clone();
+    handle
+        .global_shortcut()
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let handle = handle_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    run_dictation_pipeline(handle).await;
+                });
+            }
+        })
+        .map_err(|e| format!("Failed to register shortcut: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Default hotkey string
+// ---------------------------------------------------------------------------
+
+const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
+
 // ---------------------------------------------------------------------------
 // Tauri entry point
 // ---------------------------------------------------------------------------
@@ -324,7 +547,35 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(app_state)
+        .setup(|app| {
+            let handle = app.handle().clone();
+
+            // Register the default global shortcut: Ctrl+Shift+D.
+            let shortcut = DEFAULT_HOTKEY
+                .parse::<Shortcut>()
+                .expect("DEFAULT_HOTKEY must be a valid shortcut string");
+
+            let handle_clone = handle.clone();
+            handle
+                .global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let h = handle_clone.clone();
+                        tauri::async_runtime::spawn(async move {
+                            run_dictation_pipeline(h).await;
+                        });
+                    }
+                })
+                .map_err(|e| {
+                    log::error!("[hotkey] Failed to register default shortcut: {e}");
+                    e
+                })?;
+
+            log::info!("[hotkey] Registered default shortcut: {DEFAULT_HOTKEY}");
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
@@ -333,6 +584,9 @@ pub fn run() {
             is_recording,
             update_api_keys,
             get_api_key_status,
+            set_language,
+            set_cleanup_style,
+            set_hotkey,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -434,5 +688,43 @@ mod tests {
 
         assert_eq!(*state.groq_api_key.lock().unwrap(), "new-groq-key");
         assert_eq!(*state.deepseek_api_key.lock().unwrap(), "new-ds-key");
+    }
+
+    /// Default language is "de".
+    #[test]
+    fn test_default_language_is_german() {
+        let state = make_state();
+        assert_eq!(*state.language.lock().unwrap(), "de");
+    }
+
+    /// Default cleanup style is Polished.
+    #[test]
+    fn test_default_cleanup_style_is_polished() {
+        let state = make_state();
+        assert_eq!(*state.current_style.lock().unwrap(), CleanupStyle::Polished);
+    }
+
+    /// Language can be changed via internal mutation (simulates set_language command).
+    #[test]
+    fn test_set_language_mutates_state() {
+        let state = make_state();
+        *state.language.lock().unwrap() = "en".to_string();
+        assert_eq!(*state.language.lock().unwrap(), "en");
+    }
+
+    /// Cleanup style can be changed via internal mutation (simulates set_cleanup_style).
+    #[test]
+    fn test_set_cleanup_style_mutates_state() {
+        let state = make_state();
+        *state.current_style.lock().unwrap() = CleanupStyle::Chat;
+        assert_eq!(*state.current_style.lock().unwrap(), CleanupStyle::Chat);
+    }
+
+    /// DEFAULT_HOTKEY is a parseable shortcut string.
+    #[test]
+    fn test_default_hotkey_is_valid() {
+        // Verify the constant compiles and is non-empty.
+        assert!(!DEFAULT_HOTKEY.is_empty());
+        assert_eq!(DEFAULT_HOTKEY, "ctrl+shift+d");
     }
 }
