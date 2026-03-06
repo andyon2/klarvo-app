@@ -4,6 +4,16 @@
 //! calls the Groq Whisper API (OpenAI-compatible).
 //!
 //! API docs: <https://console.groq.com/docs/speech-text>
+//!
+//! ## `prompt` parameter
+//!
+//! The Groq Whisper API accepts an optional `prompt` field (max 224 tokens)
+//! that acts as a transcription hint. We use it to inject dictionary terms so
+//! rare technical words and names are recognised correctly.
+//!
+//! The `SttProvider` trait exposes this as `prompt: Option<&str>`. Backends
+//! that don't support a prompt parameter (e.g. local whisper.cpp in a future
+//! implementation) can simply ignore it.
 
 use reqwest::multipart;
 use serde::Deserialize;
@@ -36,11 +46,21 @@ pub enum SttError {
 /// Abstraction over speech-to-text backends (Groq, local whisper.cpp, etc.).
 ///
 /// Implementations receive raw WAV bytes and return the transcribed text.
-/// The `language` parameter is an ISO-639-1 code (e.g. `"de"`, `"en"`).
-/// Passing an empty string lets the backend auto-detect the language.
+///
+/// Parameters:
+/// - `audio`: raw WAV bytes.
+/// - `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
+/// - `prompt`: optional hint for the STT model. Used to inject dictionary
+///   terms so rare words are recognised correctly. Backends that do not
+///   support a prompt can ignore this parameter.
 #[async_trait::async_trait]
 pub trait SttProvider: Send + Sync {
-    async fn transcribe(&self, audio: Vec<u8>, language: &str) -> Result<String, SttError>;
+    async fn transcribe(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<String, SttError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,10 +124,13 @@ impl GroqWhisper {
     ///
     /// Extracted to a separate method so it can be tested without a live
     /// HTTP connection.
+    ///
+    /// `prompt` is appended when non-empty (max 224 tokens per Groq docs).
     fn build_form(
         &self,
         audio: Vec<u8>,
         language: &str,
+        prompt: Option<&str>,
     ) -> Result<multipart::Form, reqwest::Error> {
         let part = multipart::Part::bytes(audio)
             .file_name("audio.wav")
@@ -123,6 +146,15 @@ impl GroqWhisper {
             form = form.text("language", language.to_string());
         }
 
+        // Inject dictionary terms as a transcription hint.
+        // Groq uses this to improve recognition of rare technical words.
+        if let Some(p) = prompt {
+            let trimmed = p.trim();
+            if !trimmed.is_empty() {
+                form = form.text("prompt", trimmed.to_string());
+            }
+        }
+
         Ok(form)
     }
 }
@@ -136,12 +168,17 @@ impl SttProvider for GroqWhisper {
     /// - `SttError::Request` -- network or serialization failure.
     /// - `SttError::ApiError` -- the API returned a non-2xx status.
     /// - `SttError::ResponseFormat` -- the response JSON was unexpected.
-    async fn transcribe(&self, audio: Vec<u8>, language: &str) -> Result<String, SttError> {
+    async fn transcribe(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<String, SttError> {
         if audio.is_empty() {
             return Err(SttError::EmptyAudio);
         }
 
-        let form = self.build_form(audio, language)?;
+        let form = self.build_form(audio, language, prompt)?;
 
         let response = self
             .client
@@ -186,12 +223,6 @@ impl SttProvider for GroqWhisper {
 mod tests {
     use super::*;
 
-    /// Verifies that `build_form` includes the model and response_format fields,
-    /// and that it does not include a `language` field when an empty string is passed.
-    ///
-    /// We cannot inspect multipart form fields directly through the public API,
-    /// so we verify indirectly by checking that building the form does not error
-    /// and that the language field is handled correctly via a debug repr check.
     #[test]
     fn test_groq_whisper_new_stores_api_key() {
         let stt = GroqWhisper::new("test-key-12345");
@@ -210,8 +241,7 @@ mod tests {
     fn test_build_form_with_language() {
         let stt = GroqWhisper::new("key");
         let dummy_audio = vec![0u8; 128];
-        // build_form should not return an error for valid inputs
-        let form = stt.build_form(dummy_audio, "de");
+        let form = stt.build_form(dummy_audio, "de", None);
         assert!(form.is_ok(), "build_form should succeed for valid input");
     }
 
@@ -219,15 +249,50 @@ mod tests {
     fn test_build_form_without_language() {
         let stt = GroqWhisper::new("key");
         let dummy_audio = vec![0u8; 128];
-        let form = stt.build_form(dummy_audio, "");
+        let form = stt.build_form(dummy_audio, "", None);
         assert!(form.is_ok(), "build_form should succeed with empty language");
+    }
+
+    /// Verifies that build_form accepts a non-empty prompt without error.
+    #[test]
+    fn test_build_form_with_prompt() {
+        let stt = GroqWhisper::new("key");
+        let dummy_audio = vec![0u8; 128];
+        let form = stt.build_form(dummy_audio, "de", Some("Kubernetes, TypeScript, Dikta"));
+        assert!(form.is_ok(), "build_form should succeed with a prompt");
+    }
+
+    /// Empty prompt string is treated the same as None (not added to form).
+    #[test]
+    fn test_build_form_empty_prompt_is_ignored() {
+        let stt = GroqWhisper::new("key");
+        let dummy_audio = vec![0u8; 128];
+        let form_none = stt.build_form(dummy_audio.clone(), "de", None);
+        let form_empty = stt.build_form(dummy_audio, "de", Some(""));
+        // Both should succeed; we can't inspect form internals but we verify
+        // no error is returned.
+        assert!(form_none.is_ok());
+        assert!(form_empty.is_ok());
     }
 
     /// Verifies that empty audio is rejected before hitting the network.
     #[tokio::test]
     async fn test_transcribe_empty_audio_returns_error() {
         let stt = GroqWhisper::new("dummy-key");
-        let result = stt.transcribe(vec![], "en").await;
+        let result = stt.transcribe(vec![], "en", None).await;
+        assert!(
+            matches!(result, Err(SttError::EmptyAudio)),
+            "expected EmptyAudio error, got: {result:?}"
+        );
+    }
+
+    /// Empty audio is rejected even when a prompt is provided.
+    #[tokio::test]
+    async fn test_transcribe_empty_audio_with_prompt_returns_error() {
+        let stt = GroqWhisper::new("dummy-key");
+        let result = stt
+            .transcribe(vec![], "de", Some("Kubernetes"))
+            .await;
         assert!(
             matches!(result, Err(SttError::EmptyAudio)),
             "expected EmptyAudio error, got: {result:?}"

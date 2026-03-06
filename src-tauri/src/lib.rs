@@ -1,7 +1,7 @@
 //! Dikta -- Tauri backend entry point.
 //!
-//! Wires together the audio, STT, LLM, paste and hotkey modules and exposes
-//! them to the React frontend via Tauri commands and events.
+//! Wires together the audio, STT, LLM, paste, hotkey, config and dictionary
+//! modules and exposes them to the React frontend via Tauri commands and events.
 //!
 //! ## Command flow (frontend perspective)
 //!
@@ -23,16 +23,29 @@
 //! When the global shortcut fires (default: Ctrl+Shift+D), the backend runs
 //! the full pipeline automatically and emits `dikta://state-changed` events
 //! so the frontend can update the UI without being in the loop.
+//!
+//! ## Settings & Dictionary persistence
+//!
+//! On startup the app loads `config.json` and `dictionary.json` from the Tauri
+//! app-data directory. Settings can be updated at runtime via `save_settings`;
+//! dictionary terms via `add_dictionary_term` / `remove_dictionary_term`.
+//! Both writes are synchronous and happen in the command handler -- no
+//! background flush needed for these small files.
 
 mod audio;
+mod config;
+mod dictionary;
 mod hotkey;
 mod llm;
 mod paste;
 mod stt;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
+use config::{load_config, save_config, AppConfig};
+use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use llm::{CleanupProvider, CleanupStyle, DeepSeekCleanup};
 use paste::create_paste_handler;
@@ -64,6 +77,24 @@ pub struct ApiKeyStatus {
     pub deepseek_configured: bool,
 }
 
+/// Returned by `get_settings`. API keys are masked -- only the last 4
+/// characters are visible so the frontend can show a "configured" indicator
+/// without exposing the full secret.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    /// Masked Groq API key, e.g. `"****abcd"`. Empty string if not set.
+    pub groq_api_key_masked: String,
+    /// Masked DeepSeek API key, e.g. `"****wxyz"`. Empty string if not set.
+    pub deepseek_api_key_masked: String,
+    /// ISO-639-1 language code, e.g. `"de"`.
+    pub language: String,
+    /// Current cleanup style.
+    pub cleanup_style: CleanupStyle,
+    /// Registered global hotkey string, e.g. `"ctrl+shift+d"`.
+    pub hotkey: String,
+}
+
 /// Kept for backward compatibility -- the old monolithic result type.
 ///
 /// No longer returned by any command; retained so external callers that may
@@ -83,13 +114,13 @@ pub struct TranscriptionResult {
 
 /// Shared application state managed by Tauri.
 ///
-/// `RwLock` around the provider `Arc`s allows `update_api_keys` to swap out
-/// a provider at runtime without restarting the application.
+/// `RwLock` around provider `Arc`s allows `save_settings` to swap out a
+/// provider at runtime without restarting the application.
 ///
 /// Tauri requires `State<T>: Send + Sync + 'static`.
 pub struct AppState {
     recorder: Arc<AudioRecorder>,
-    /// Wrapping in `RwLock` lets `update_api_keys` replace the provider.
+    /// Wrapping in `RwLock` lets `save_settings` replace the provider.
     stt_provider: RwLock<Arc<dyn SttProvider>>,
     cleanup_provider: RwLock<Arc<dyn CleanupProvider>>,
     /// Timestamp set by `start_recording`, cleared by `stop_recording`.
@@ -97,14 +128,12 @@ pub struct AppState {
     /// WAV bytes from the most recent recording. Set by `stop_recording`,
     /// consumed (read, not cleared) by `transcribe_audio`.
     last_recording: Mutex<Option<Vec<u8>>>,
-    /// The raw API keys, kept only so `get_api_key_status` can check presence.
-    /// Never sent to the frontend as values.
-    groq_api_key: Mutex<String>,
-    deepseek_api_key: Mutex<String>,
-    /// ISO-639-1 language code used by the hotkey pipeline (default: "de").
-    language: Mutex<String>,
-    /// Cleanup style used by the hotkey pipeline (default: Polished).
-    current_style: Mutex<CleanupStyle>,
+    /// Full persisted configuration (includes API keys).
+    config: Mutex<AppConfig>,
+    /// User's custom word list -- injected into STT prompt and LLM system prompt.
+    dictionary: Mutex<Dictionary>,
+    /// Path to the app-data directory for persisting config and dictionary.
+    app_data_dir: PathBuf,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -116,25 +145,24 @@ unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
 
 impl AppState {
-    fn new(groq_api_key: String, deepseek_api_key: String) -> Self {
+    fn new(cfg: AppConfig, dictionary: Dictionary, app_data_dir: PathBuf) -> Self {
         AppState {
             recorder: Arc::new(AudioRecorder::new()),
-            stt_provider: RwLock::new(Arc::new(GroqWhisper::new(groq_api_key.clone()))),
+            stt_provider: RwLock::new(Arc::new(GroqWhisper::new(cfg.groq_api_key.clone()))),
             cleanup_provider: RwLock::new(Arc::new(DeepSeekCleanup::new(
-                deepseek_api_key.clone(),
+                cfg.deepseek_api_key.clone(),
             ))),
             recording_start: Mutex::new(None),
             last_recording: Mutex::new(None),
-            groq_api_key: Mutex::new(groq_api_key),
-            deepseek_api_key: Mutex::new(deepseek_api_key),
-            language: Mutex::new("de".to_string()),
-            current_style: Mutex::new(CleanupStyle::Polished),
+            config: Mutex::new(cfg),
+            dictionary: Mutex::new(dictionary),
+            app_data_dir,
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Helper -- lock unwrap with descriptive error string
+// Helper -- lock/rwlock macros with descriptive error strings
 // ---------------------------------------------------------------------------
 
 /// Acquires a `Mutex` lock and converts a poisoned-lock panic into a
@@ -166,6 +194,25 @@ macro_rules! write_lock {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Masks an API key for safe display in the frontend.
+///
+/// Returns an empty string if the key is empty.
+/// Returns `"****{last4}"` for keys longer than 4 characters.
+/// Returns `"****"` for keys with 4 or fewer characters (avoids leaking short keys).
+fn mask_api_key(key: &str) -> String {
+    if key.is_empty() {
+        return String::new();
+    }
+    if key.len() <= 4 {
+        return "****".to_string();
+    }
+    format!("****{}", &key[key.len() - 4..])
+}
+
+// ---------------------------------------------------------------------------
 // Hotkey dictation pipeline
 // ---------------------------------------------------------------------------
 
@@ -174,6 +221,9 @@ macro_rules! write_lock {
 /// - If not recording: starts recording and emits `state=recording`.
 /// - If recording: stops, transcribes, cleans up, pastes, emits events at
 ///   each stage.
+///
+/// Dictionary terms are injected at both the STT step (as a Groq `prompt`
+/// hint) and the LLM step (as `dictionary_terms` in the system prompt).
 ///
 /// This function is meant to be called from the global-shortcut handler.
 /// It clones what it needs from `AppState` before any await points to avoid
@@ -237,30 +287,64 @@ async fn run_dictation_pipeline(handle: AppHandle) {
         *g = Some(wav_bytes.clone());
     }
 
-    log::debug!("[pipeline] recording stopped after {duration_ms}ms, {len} WAV bytes", len = wav_bytes.len());
+    log::debug!(
+        "[pipeline] recording stopped after {duration_ms}ms, {len} WAV bytes",
+        len = wav_bytes.len()
+    );
+
+    // --- Collect config + dictionary (release locks before await points) ---
+    let (language, stt_provider, cleanup_provider, dict_prompt) = {
+        let cfg = match state.config.lock() {
+            Ok(g) => g.clone(),
+            Err(_) => {
+                let _ = handle.emit(
+                    EVENT_STATE_CHANGED,
+                    PipelineEvent::error("State lock poisoned"),
+                );
+                return;
+            }
+        };
+
+        let stt_prov = match state.stt_provider.read() {
+            Ok(g) => g.clone(),
+            Err(_) => {
+                let _ = handle.emit(
+                    EVENT_STATE_CHANGED,
+                    PipelineEvent::error("State lock poisoned"),
+                );
+                return;
+            }
+        };
+
+        let cleanup_prov = match state.cleanup_provider.read() {
+            Ok(g) => g.clone(),
+            Err(_) => {
+                let _ = handle.emit(
+                    EVENT_STATE_CHANGED,
+                    PipelineEvent::error("State lock poisoned"),
+                );
+                return;
+            }
+        };
+
+        let prompt = match state.dictionary.lock() {
+            Ok(g) => {
+                let p = g.terms_as_prompt();
+                if p.is_empty() { None } else { Some(p) }
+            }
+            Err(_) => None,
+        };
+
+        (cfg.language.clone(), stt_prov, cleanup_prov, prompt)
+    };
 
     // --- Transcribe ---
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
 
-    let language = {
-        match state.language.lock() {
-            Ok(g) => g.clone(),
-            Err(_) => "de".to_string(),
-        }
-    };
-
-    let stt_provider = match state.stt_provider.read() {
-        Ok(g) => g.clone(),
-        Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
-            return;
-        }
-    };
-
-    let raw_text = match stt_provider.transcribe(wav_bytes, &language).await {
+    let raw_text = match stt_provider
+        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .await
+    {
         Ok(t) => t,
         Err(e) => {
             let _ = handle.emit(
@@ -277,24 +361,25 @@ async fn run_dictation_pipeline(handle: AppHandle) {
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
 
     let style = {
-        match state.current_style.lock() {
-            Ok(g) => *g,
+        match state.config.lock() {
+            Ok(g) => g.cleanup_style,
             Err(_) => CleanupStyle::Polished,
         }
     };
 
-    let cleanup_provider = match state.cleanup_provider.read() {
-        Ok(g) => g.clone(),
-        Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
-            return;
+    // Re-read dictionary for the LLM prompt (separate concern from STT prompt).
+    let dict_list = match state.dictionary.lock() {
+        Ok(g) => {
+            let l = g.terms_as_list();
+            if l.is_empty() { None } else { Some(l) }
         }
+        Err(_) => None,
     };
 
-    let cleaned_text = match cleanup_provider.cleanup(&raw_text, style, None).await {
+    let cleaned_text = match cleanup_provider
+        .cleanup(&raw_text, style, dict_list.as_deref())
+        .await
+    {
         Ok(t) => t,
         Err(e) => {
             let _ = handle.emit(
@@ -318,7 +403,7 @@ async fn run_dictation_pipeline(handle: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Tauri commands
+// Tauri commands -- Recording
 // ---------------------------------------------------------------------------
 
 /// Opens the default microphone and starts capturing audio.
@@ -375,6 +460,8 @@ async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingInfo, Str
 /// Transcribes the most recently recorded audio using the configured STT provider.
 ///
 /// Reads WAV bytes stored by the last `stop_recording` call.
+/// Dictionary terms are injected as a Groq `prompt` hint to improve accuracy
+/// for technical vocabulary.
 ///
 /// `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
 ///
@@ -391,11 +478,18 @@ async fn transcribe_audio(state: State<'_, AppState>, language: String) -> Resul
             .ok_or_else(|| "No recording available. Call stop_recording first.".to_string())?
     };
 
+    // Read dictionary terms for the STT prompt hint.
+    let dict_prompt = {
+        let guard = lock!(inner.dictionary)?;
+        let p = guard.terms_as_prompt();
+        if p.is_empty() { None } else { Some(p) }
+    };
+
     // Read the current provider (shared read lock -- no contention with other readers).
     let provider = read_lock!(inner.stt_provider)?.clone();
 
     provider
-        .transcribe(wav_bytes, &language)
+        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
         .await
         .map_err(|e: stt::SttError| e.to_string())
 }
@@ -407,7 +501,8 @@ async fn transcribe_audio(state: State<'_, AppState>, language: String) -> Resul
 ///
 /// `raw_text`: text to clean up.
 /// `style`: cleanup aggressiveness.
-/// `dictionary_terms`: optional comma-separated list of terms to preserve verbatim.
+/// `dictionary_terms`: optional comma-separated list of terms to preserve
+///   verbatim. If `None`, the current app dictionary is used automatically.
 #[tauri::command]
 async fn cleanup_text(
     state: State<'_, AppState>,
@@ -415,10 +510,27 @@ async fn cleanup_text(
     style: CleanupStyle,
     dictionary_terms: Option<String>,
 ) -> Result<String, String> {
-    let provider = read_lock!(state.inner().cleanup_provider)?.clone();
+    let inner = state.inner();
+    let provider = read_lock!(inner.cleanup_provider)?.clone();
+
+    // Use caller-supplied terms if provided; otherwise fall back to app dictionary.
+    let terms = match dictionary_terms {
+        Some(t) => {
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        }
+        None => {
+            let guard = lock!(inner.dictionary)?;
+            let l = guard.terms_as_list();
+            if l.is_empty() { None } else { Some(l) }
+        }
+    };
 
     provider
-        .cleanup(&raw_text, style, dictionary_terms.as_deref())
+        .cleanup(&raw_text, style, terms.as_deref())
         .await
         .map_err(|e: llm::LlmError| e.to_string())
 }
@@ -431,33 +543,66 @@ fn is_recording(state: State<'_, AppState>) -> bool {
     state.inner().recorder.is_recording()
 }
 
-/// Replaces the STT and/or LLM provider with a new instance using the supplied
-/// API keys.
+// ---------------------------------------------------------------------------
+// Tauri commands -- Settings
+// ---------------------------------------------------------------------------
+
+/// Persists new settings and hot-reloads the affected providers.
 ///
-/// Passing `None` for a key leaves that provider unchanged.
-/// Passing `Some("")` effectively disables the provider (requests will fail
-/// with an auth error from the API).
+/// After saving to disk, the STT and LLM providers are replaced with new
+/// instances using the updated API keys so changes take effect immediately.
 ///
-/// This allows the Settings UI to apply new keys at runtime without restarting.
+/// Passing an empty string for an API key disables that provider (requests
+/// will fail with an auth error from the API until a valid key is supplied).
 #[tauri::command]
-async fn update_api_keys(
+async fn save_settings(
     state: State<'_, AppState>,
-    groq_api_key: Option<String>,
-    deepseek_api_key: Option<String>,
+    groq_api_key: String,
+    deepseek_api_key: String,
+    language: String,
+    cleanup_style: CleanupStyle,
+    hotkey: String,
 ) -> Result<(), String> {
     let inner = state.inner();
 
-    if let Some(key) = groq_api_key {
-        *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(key.clone()));
-        *lock!(inner.groq_api_key)? = key;
-    }
+    // Build updated config.
+    let new_cfg = AppConfig {
+        groq_api_key: groq_api_key.clone(),
+        deepseek_api_key: deepseek_api_key.clone(),
+        language,
+        cleanup_style,
+        hotkey,
+    };
 
-    if let Some(key) = deepseek_api_key {
-        *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(key.clone()));
-        *lock!(inner.deepseek_api_key)? = key;
-    }
+    // Persist to disk.
+    save_config(&inner.app_data_dir, &new_cfg)
+        .map_err(|e| format!("Failed to save settings: {e}"))?;
+
+    // Update in-memory config.
+    *lock!(inner.config)? = new_cfg;
+
+    // Hot-reload providers with new API keys.
+    *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(groq_api_key));
+    *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(deepseek_api_key));
 
     Ok(())
+}
+
+/// Returns the current settings for display in the frontend.
+///
+/// API keys are masked (only last 4 characters visible) so this can be sent
+/// to the frontend without exposing the full secrets.
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
+    let cfg = lock!(state.inner().config)?.clone();
+
+    Ok(SettingsView {
+        groq_api_key_masked: mask_api_key(&cfg.groq_api_key),
+        deepseek_api_key_masked: mask_api_key(&cfg.deepseek_api_key),
+        language: cfg.language,
+        cleanup_style: cfg.cleanup_style,
+        hotkey: cfg.hotkey,
+    })
 }
 
 /// Returns which API keys are currently configured (non-empty).
@@ -466,31 +611,82 @@ async fn update_api_keys(
 /// presence. The frontend uses this to show configuration status.
 #[tauri::command]
 fn get_api_key_status(state: State<'_, AppState>) -> Result<ApiKeyStatus, String> {
-    let inner = state.inner();
-
-    let groq_configured = !lock!(inner.groq_api_key)?.is_empty();
-    let deepseek_configured = !lock!(inner.deepseek_api_key)?.is_empty();
+    let cfg = lock!(state.inner().config)?.clone();
 
     Ok(ApiKeyStatus {
-        groq_configured,
-        deepseek_configured,
+        groq_configured: !cfg.groq_api_key.is_empty(),
+        deepseek_configured: !cfg.deepseek_api_key.is_empty(),
     })
 }
 
-/// Sets the language used by the hotkey pipeline.
+/// Replaces the STT and/or LLM provider with a new instance using the supplied
+/// API keys. Settings are also persisted to disk.
+///
+/// Passing `None` for a key leaves that provider unchanged.
+/// Passing `Some("")` effectively disables the provider.
+///
+/// Kept for backward compatibility with existing frontend code.
+/// New code should prefer `save_settings`.
+#[tauri::command]
+async fn update_api_keys(
+    state: State<'_, AppState>,
+    groq_api_key: Option<String>,
+    deepseek_api_key: Option<String>,
+) -> Result<(), String> {
+    let inner = state.inner();
+
+    {
+        let mut cfg = lock!(inner.config)?;
+
+        if let Some(ref key) = groq_api_key {
+            cfg.groq_api_key = key.clone();
+        }
+        if let Some(ref key) = deepseek_api_key {
+            cfg.deepseek_api_key = key.clone();
+        }
+
+        // Persist updated config.
+        let cfg_clone = cfg.clone();
+        drop(cfg); // release lock before I/O
+        save_config(&inner.app_data_dir, &cfg_clone)
+            .map_err(|e| format!("Failed to persist API keys: {e}"))?;
+    }
+
+    if let Some(key) = groq_api_key {
+        *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(key));
+    }
+
+    if let Some(key) = deepseek_api_key {
+        *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(key));
+    }
+
+    Ok(())
+}
+
+/// Sets the language used by the hotkey pipeline and persists the change.
 ///
 /// `language`: ISO-639-1 code, e.g. `"de"` or `"en"`. Empty string = auto-detect.
 #[tauri::command]
 fn set_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
-    *lock!(state.inner().language)? = language;
-    Ok(())
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.language = language;
+    let cfg_clone = cfg.clone();
+    drop(cfg);
+    save_config(&inner.app_data_dir, &cfg_clone)
+        .map_err(|e| format!("Failed to persist language setting: {e}"))
 }
 
-/// Sets the cleanup style used by the hotkey pipeline.
+/// Sets the cleanup style used by the hotkey pipeline and persists the change.
 #[tauri::command]
 fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<(), String> {
-    *lock!(state.inner().current_style)? = style;
-    Ok(())
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.cleanup_style = style;
+    let cfg_clone = cfg.clone();
+    drop(cfg);
+    save_config(&inner.app_data_dir, &cfg_clone)
+        .map_err(|e| format!("Failed to persist cleanup style: {e}"))
 }
 
 /// Changes the registered global hotkey at runtime.
@@ -498,10 +694,13 @@ fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<
 /// `shortcut`: a Tauri shortcut string, e.g. `"ctrl+shift+d"`.
 /// Returns an error if the shortcut string is invalid or registration fails.
 #[tauri::command]
-async fn set_hotkey(handle: AppHandle, shortcut: String) -> Result<(), String> {
-    // `Shortcut::from_str` returns `HotKeyParseError`, not `tauri_plugin_global_shortcut::Error`.
-    // We convert to String immediately so we don't need to name the concrete error type.
-    let shortcut = shortcut
+async fn set_hotkey(
+    handle: AppHandle,
+    state: State<'_, AppState>,
+    shortcut: String,
+) -> Result<(), String> {
+    // Validate the shortcut string before touching system APIs.
+    let parsed = shortcut
         .parse::<Shortcut>()
         .map_err(|e| format!("Invalid shortcut string: {e}"))?;
 
@@ -514,7 +713,7 @@ async fn set_hotkey(handle: AppHandle, shortcut: String) -> Result<(), String> {
     let handle_clone = handle.clone();
     handle
         .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+        .on_shortcut(parsed, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 let handle = handle_clone.clone();
                 tauri::async_runtime::spawn(async move {
@@ -522,7 +721,55 @@ async fn set_hotkey(handle: AppHandle, shortcut: String) -> Result<(), String> {
                 });
             }
         })
-        .map_err(|e| format!("Failed to register shortcut: {e}"))
+        .map_err(|e| format!("Failed to register shortcut: {e}"))?;
+
+    // Persist the new hotkey to config.
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.hotkey = shortcut;
+    let cfg_clone = cfg.clone();
+    drop(cfg);
+    save_config(&inner.app_data_dir, &cfg_clone)
+        .map_err(|e| format!("Failed to persist hotkey setting: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands -- Dictionary
+// ---------------------------------------------------------------------------
+
+/// Returns all terms in the custom dictionary.
+#[tauri::command]
+fn get_dictionary_terms(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let guard = lock!(state.inner().dictionary)?;
+    Ok(guard.terms().to_vec())
+}
+
+/// Adds a term to the custom dictionary and persists the change.
+///
+/// Duplicate terms (case-insensitive) and empty strings are silently ignored.
+#[tauri::command]
+fn add_dictionary_term(state: State<'_, AppState>, term: String) -> Result<(), String> {
+    let inner = state.inner();
+    let mut dict = lock!(inner.dictionary)?;
+    dict.add_term(term);
+    let dict_clone = dict.clone();
+    drop(dict);
+    save_dictionary(&inner.app_data_dir, &dict_clone)
+        .map_err(|e| format!("Failed to save dictionary: {e}"))
+}
+
+/// Removes a term from the custom dictionary and persists the change.
+///
+/// Does nothing if the term is not present.
+#[tauri::command]
+fn remove_dictionary_term(state: State<'_, AppState>, term: String) -> Result<(), String> {
+    let inner = state.inner();
+    let mut dict = lock!(inner.dictionary)?;
+    dict.remove_term(&term);
+    let dict_clone = dict.clone();
+    drop(dict);
+    save_dictionary(&inner.app_data_dir, &dict_clone)
+        .map_err(|e| format!("Failed to save dictionary: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -537,26 +784,61 @@ const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // API keys come from environment variables.
-    // In production the settings UI will store them in the system keystore
-    // and call `update_api_keys`; for now we fall back to .env / process env.
-    let groq_api_key = std::env::var("GROQ_API_KEY").unwrap_or_default();
-    let deepseek_api_key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
-
-    let app_state = AppState::new(groq_api_key, deepseek_api_key);
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(app_state)
         .setup(|app| {
-            let handle = app.handle().clone();
+            // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Tauri must provide an app-data directory");
 
-            // Register the default global shortcut: Ctrl+Shift+D.
-            let shortcut = DEFAULT_HOTKEY
+            // Create the directory if it doesn't exist yet.
+            std::fs::create_dir_all(&app_data_dir)?;
+
+            // Load persisted config (falls back to defaults + env vars on first run).
+            let cfg = load_config(&app_data_dir);
+
+            // Restore the hotkey from config (or fall back to the compile-time default).
+            let hotkey_str = if cfg.hotkey.is_empty() {
+                DEFAULT_HOTKEY.to_string()
+            } else {
+                cfg.hotkey.clone()
+            };
+
+            // Load persisted dictionary.
+            let dictionary = load_dictionary(&app_data_dir);
+
+            log::info!(
+                "[setup] Loaded config: language={}, style={:?}, hotkey={}",
+                cfg.language,
+                cfg.cleanup_style,
+                hotkey_str
+            );
+            log::info!(
+                "[setup] Loaded dictionary: {} terms",
+                dictionary.len()
+            );
+
+            // Build and register the application state.
+            let app_state = AppState::new(cfg, dictionary, app_data_dir);
+            app.manage(app_state);
+
+            // Register the global hotkey from config.
+            let shortcut = hotkey_str
                 .parse::<Shortcut>()
-                .expect("DEFAULT_HOTKEY must be a valid shortcut string");
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
+                        hotkey_str
+                    );
+                    DEFAULT_HOTKEY
+                        .parse::<Shortcut>()
+                        .expect("DEFAULT_HOTKEY must be a valid shortcut string")
+                });
 
+            let handle = app.handle().clone();
             let handle_clone = handle.clone();
             handle
                 .global_shortcut()
@@ -569,24 +851,32 @@ pub fn run() {
                     }
                 })
                 .map_err(|e| {
-                    log::error!("[hotkey] Failed to register default shortcut: {e}");
+                    log::error!("[hotkey] Failed to register shortcut: {e}");
                     e
                 })?;
 
-            log::info!("[hotkey] Registered default shortcut: {DEFAULT_HOTKEY}");
+            log::info!("[hotkey] Registered shortcut: {hotkey_str}");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Recording
             start_recording,
             stop_recording,
             transcribe_audio,
             cleanup_text,
             is_recording,
-            update_api_keys,
+            // Settings
+            save_settings,
+            get_settings,
             get_api_key_status,
+            update_api_keys,
             set_language,
             set_cleanup_style,
             set_hotkey,
+            // Dictionary
+            get_dictionary_terms,
+            add_dictionary_term,
+            remove_dictionary_term,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -599,64 +889,134 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
-    fn make_state() -> AppState {
-        AppState::new(String::new(), String::new())
+    fn temp_dir() -> TempDir {
+        tempfile::tempdir().expect("failed to create temp dir")
     }
 
-    /// AppState starts with no recording and no cached WAV.
+    fn make_state(dir: &TempDir) -> AppState {
+        AppState::new(AppConfig::default(), Dictionary::new(), dir.path().to_path_buf())
+    }
+
+    // --- AppState initial conditions ---
+
     #[test]
     fn test_initial_state_has_no_recording() {
-        let state = make_state();
+        let dir = temp_dir();
+        let state = make_state(&dir);
         assert!(!state.recorder.is_recording());
         assert!(state.last_recording.lock().unwrap().is_none());
         assert!(state.recording_start.lock().unwrap().is_none());
     }
 
-    /// `get_api_key_status` returns false for empty keys (default in tests).
+    #[test]
+    fn test_initial_config_defaults() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        let cfg = state.config.lock().unwrap();
+        assert_eq!(cfg.language, "de");
+        assert_eq!(cfg.cleanup_style, CleanupStyle::Polished);
+        assert_eq!(cfg.hotkey, "ctrl+shift+d");
+    }
+
+    #[test]
+    fn test_initial_dictionary_is_empty() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        assert!(state.dictionary.lock().unwrap().is_empty());
+    }
+
+    // --- mask_api_key ---
+
+    #[test]
+    fn test_mask_api_key_empty() {
+        assert_eq!(mask_api_key(""), "");
+    }
+
+    #[test]
+    fn test_mask_api_key_short_key() {
+        assert_eq!(mask_api_key("abc"), "****");
+        assert_eq!(mask_api_key("abcd"), "****");
+    }
+
+    #[test]
+    fn test_mask_api_key_long_key() {
+        assert_eq!(mask_api_key("gsk_somereallylongapikey"), "****ikey");
+        assert_eq!(mask_api_key("abcde"), "****bcde");
+    }
+
+    #[test]
+    fn test_mask_api_key_exactly_five_chars() {
+        // 5 chars: last 4 are "bcde", prefix is "a"
+        assert_eq!(mask_api_key("abcde"), "****bcde");
+    }
+
+    // --- SettingsView serialization ---
+
+    #[test]
+    fn test_settings_view_camel_case_serialization() {
+        let view = SettingsView {
+            groq_api_key_masked: "****1234".to_string(),
+            deepseek_api_key_masked: "****5678".to_string(),
+            language: "de".to_string(),
+            cleanup_style: CleanupStyle::Polished,
+            hotkey: "ctrl+shift+d".to_string(),
+        };
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
+        assert!(json.contains("deepseekApiKeyMasked"), "expected camelCase key");
+        assert!(json.contains("cleanupStyle"), "expected camelCase key");
+    }
+
+    // --- ApiKeyStatus ---
+
     #[test]
     fn test_api_key_status_empty_keys() {
-        let state = make_state();
-        let groq_configured = !state.groq_api_key.lock().unwrap().is_empty();
-        let deepseek_configured = !state.deepseek_api_key.lock().unwrap().is_empty();
-        assert!(!groq_configured);
-        assert!(!deepseek_configured);
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        let cfg = state.config.lock().unwrap();
+        assert!(!cfg.groq_api_key.is_empty() || cfg.groq_api_key.is_empty()); // tautology check
+        assert!(cfg.groq_api_key.is_empty());
+        assert!(cfg.deepseek_api_key.is_empty());
     }
 
-    /// `get_api_key_status` returns true after keys are set.
     #[test]
     fn test_api_key_status_with_keys() {
-        let state = AppState::new("groq-key-123".to_string(), "ds-key-456".to_string());
-        assert!(!state.groq_api_key.lock().unwrap().is_empty());
-        assert!(!state.deepseek_api_key.lock().unwrap().is_empty());
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            groq_api_key: "groq-key-123".to_string(),
+            deepseek_api_key: "ds-key-456".to_string(),
+            ..AppConfig::default()
+        };
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf());
+        let locked = state.config.lock().unwrap();
+        assert!(!locked.groq_api_key.is_empty());
+        assert!(!locked.deepseek_api_key.is_empty());
     }
 
-    /// Storing and retrieving WAV bytes round-trips correctly.
+    // --- WAV roundtrip ---
+
     #[test]
     fn test_last_recording_roundtrip() {
-        let state = make_state();
+        let dir = temp_dir();
+        let state = make_state(&dir);
         let dummy_wav = vec![0u8, 1, 2, 3, 255];
         *state.last_recording.lock().unwrap() = Some(dummy_wav.clone());
         let retrieved = state.last_recording.lock().unwrap().clone().unwrap();
         assert_eq!(retrieved, dummy_wav);
     }
 
-    /// `RecordingInfo` serializes with camelCase keys.
+    // --- Serialization invariants ---
+
     #[test]
     fn test_recording_info_camel_case_serialization() {
         let info = RecordingInfo { duration_ms: 4200 };
         let json = serde_json::to_string(&info).unwrap();
-        assert!(
-            json.contains("durationMs"),
-            "expected camelCase key 'durationMs', got: {json}"
-        );
-        assert!(
-            !json.contains("duration_ms"),
-            "snake_case key must not appear in JSON: {json}"
-        );
+        assert!(json.contains("durationMs"), "expected camelCase 'durationMs'");
+        assert!(!json.contains("duration_ms"), "snake_case must not appear");
     }
 
-    /// `ApiKeyStatus` serializes with camelCase keys.
     #[test]
     fn test_api_key_status_camel_case_serialization() {
         let status = ApiKeyStatus {
@@ -664,66 +1024,59 @@ mod tests {
             deepseek_configured: false,
         };
         let json = serde_json::to_string(&status).unwrap();
-        assert!(
-            json.contains("groqConfigured"),
-            "expected 'groqConfigured', got: {json}"
-        );
-        assert!(
-            json.contains("deepseekConfigured"),
-            "expected 'deepseekConfigured', got: {json}"
-        );
+        assert!(json.contains("groqConfigured"));
+        assert!(json.contains("deepseekConfigured"));
     }
 
-    /// `update_api_keys` correctly updates the stored key strings.
-    ///
-    /// We test the internal state mutation rather than calling the async Tauri
-    /// command (which requires a running Tauri app context).
+    // --- Dictionary mutation (internal, without Tauri context) ---
+
     #[test]
-    fn test_update_api_keys_mutates_stored_keys() {
-        let state = make_state();
-
-        // Simulate what update_api_keys does internally.
-        *state.groq_api_key.lock().unwrap() = "new-groq-key".to_string();
-        *state.deepseek_api_key.lock().unwrap() = "new-ds-key".to_string();
-
-        assert_eq!(*state.groq_api_key.lock().unwrap(), "new-groq-key");
-        assert_eq!(*state.deepseek_api_key.lock().unwrap(), "new-ds-key");
+    fn test_dictionary_add_and_remove_via_state() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut dict = state.dictionary.lock().unwrap();
+            dict.add_term("Kubernetes".to_string());
+            dict.add_term("TypeScript".to_string());
+        }
+        {
+            let dict = state.dictionary.lock().unwrap();
+            assert_eq!(dict.len(), 2);
+            assert_eq!(dict.terms_as_prompt(), "Kubernetes, TypeScript");
+        }
+        {
+            let mut dict = state.dictionary.lock().unwrap();
+            dict.remove_term("Kubernetes");
+        }
+        {
+            let dict = state.dictionary.lock().unwrap();
+            assert_eq!(dict.len(), 1);
+            assert_eq!(dict.terms()[0], "TypeScript");
+        }
     }
 
-    /// Default language is "de".
+    // --- Config mutation via state ---
+
     #[test]
-    fn test_default_language_is_german() {
-        let state = make_state();
-        assert_eq!(*state.language.lock().unwrap(), "de");
+    fn test_set_language_mutates_config() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        state.config.lock().unwrap().language = "en".to_string();
+        assert_eq!(state.config.lock().unwrap().language, "en");
     }
 
-    /// Default cleanup style is Polished.
     #[test]
-    fn test_default_cleanup_style_is_polished() {
-        let state = make_state();
-        assert_eq!(*state.current_style.lock().unwrap(), CleanupStyle::Polished);
+    fn test_set_cleanup_style_mutates_config() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        state.config.lock().unwrap().cleanup_style = CleanupStyle::Chat;
+        assert_eq!(state.config.lock().unwrap().cleanup_style, CleanupStyle::Chat);
     }
 
-    /// Language can be changed via internal mutation (simulates set_language command).
-    #[test]
-    fn test_set_language_mutates_state() {
-        let state = make_state();
-        *state.language.lock().unwrap() = "en".to_string();
-        assert_eq!(*state.language.lock().unwrap(), "en");
-    }
+    // --- DEFAULT_HOTKEY constant ---
 
-    /// Cleanup style can be changed via internal mutation (simulates set_cleanup_style).
     #[test]
-    fn test_set_cleanup_style_mutates_state() {
-        let state = make_state();
-        *state.current_style.lock().unwrap() = CleanupStyle::Chat;
-        assert_eq!(*state.current_style.lock().unwrap(), CleanupStyle::Chat);
-    }
-
-    /// DEFAULT_HOTKEY is a parseable shortcut string.
-    #[test]
-    fn test_default_hotkey_is_valid() {
-        // Verify the constant compiles and is non-empty.
+    fn test_default_hotkey_is_valid_string() {
         assert!(!DEFAULT_HOTKEY.is_empty());
         assert_eq!(DEFAULT_HOTKEY, "ctrl+shift+d");
     }

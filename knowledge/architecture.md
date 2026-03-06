@@ -25,11 +25,37 @@ src-tauri/src/
   llm/        -- Text-Cleanup (Trait: DeepSeek + erweiterbar)
   paste/      -- Text-Insertion (plattformspezifisch hinter Trait)
   hotkey/     -- Globaler Hotkey (plattformspezifisch hinter Trait)
-  dictionary/ -- Custom-Woerterbuch (SQLite)
-  config/     -- Settings-Persistenz (SQLite oder JSON)
+  dictionary/ -- Custom-Woerterbuch (JSON-Datei, kein SQLite)
+  config/     -- Settings-Persistenz (JSON-Datei)
 ```
 
 Jedes Modul exponiert seine Funktionalitaet via Tauri-Commands an das Frontend.
+
+### Config-Persistenz (`config/`)
+- **Format:** JSON (`{app_data_dir}/config.json`), nicht SQLite
+- **Warum JSON statt SQLite (MVP):** Eine flache Settings-Struktur braucht kein relationales Schema. JSON ist human-editable und hat null Setup-Overhead.
+- **Env-Var-Fallback:** Falls API-Keys in config.json fehlen, werden `GROQ_API_KEY` / `DEEPSEEK_API_KEY` aus der Prozessumgebung gelesen. Ermoeglicht `.env`-basierte Entwicklung ohne GUI.
+- **API-Keys auf Disk:** Plaintext im user-owned app-data-dir. Zukunft: Windows Credential Manager.
+
+### Dictionary-Persistenz (`dictionary/`)
+- **Format:** JSON (`{app_data_dir}/dictionary.json`)
+- **Warum JSON statt SQLite (MVP):** Eine einfache String-Liste braucht keine Datenbank.
+- **Duplikat-Pruefung:** Case-insensitiv beim Hinzufuegen, case-sensitiv beim Entfernen.
+- **Pipeline-Integration:**
+  1. STT: `terms_as_prompt()` -> Groq `prompt`-Parameter (verbessert Whisper-Erkennung von Fachwoertern, max 224 Token)
+  2. LLM: `terms_as_list()` -> DeepSeek System-Prompt (LLM bewahrt die exakte Schreibweise)
+
+### AppState-Struktur
+- `config: Mutex<AppConfig>` -- alle persistierten Settings inkl. API-Keys
+- `dictionary: Mutex<Dictionary>` -- User-Wortliste
+- `app_data_dir: PathBuf` -- Pfad fuer Datei-I/O
+- `stt_provider: RwLock<Arc<dyn SttProvider>>` -- hot-swappbar bei Key-Aenderung
+- `cleanup_provider: RwLock<Arc<dyn CleanupProvider>>` -- hot-swappbar
+
+### API-Key-Sicherheit im Frontend
+- `get_settings()` gibt nur maskierte Keys zurueck: `"****{last4}"` (z.B. `"****1234"`)
+- Volle Keys verlassen das Backend nie Richtung Frontend
+- `get_api_key_status()` gibt nur `bool` zurueck (fuer einfache "konfiguriert"-Anzeige)
 
 ## API-Strategie
 
