@@ -16,7 +16,17 @@ export interface StopRecordingResult {
   durationMs: number;
 }
 
+// Full settings object returned by the backend (API keys are masked: "****abcd").
+export interface AppSettings {
+  groqApiKey: string;
+  deepseekApiKey: string;
+  language: string;
+  cleanupStyle: CleanupStyle;
+  hotkey: string;
+}
+
 // API key configuration status from the backend.
+// Kept for backward compatibility -- prefer AppSettings where possible.
 export interface ApiKeyStatus {
   groqConfigured: boolean;
   deepseekConfigured: boolean;

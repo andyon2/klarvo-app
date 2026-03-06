@@ -6,7 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CleanupStyle, StopRecordingResult, ApiKeyStatus, StateChangedPayload } from "./types";
+import type { CleanupStyle, StopRecordingResult, AppSettings, StateChangedPayload } from "./types";
 
 /**
  * Starts audio capture. Backend begins buffering microphone input.
@@ -44,26 +44,55 @@ export async function cleanupText(
 }
 
 /**
- * Returns whether each API key is currently configured in the backend.
+ * Returns current settings. API keys are masked (e.g. "****abcd").
  */
-export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
-  return await invoke<ApiKeyStatus>("get_api_key_status");
+export async function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
 }
 
 /**
- * Persists API keys in the backend (stored in system keystore, never on disk).
- * Pass undefined to leave an existing key unchanged.
- * @param groqApiKey     - Groq API key (optional)
- * @param deepseekApiKey - DeepSeek API key (optional)
+ * Persists settings to config.json on disk. Empty API key strings are ignored
+ * by the backend (existing key is kept unchanged).
+ * @param groqApiKey     - Groq API key, or "" to keep existing
+ * @param deepseekApiKey - DeepSeek API key, or "" to keep existing
+ * @param language       - BCP-47 language code, e.g. "de" or "en"
+ * @param cleanupStyle   - Cleanup mode: polished | verbatim | chat
  */
-export async function updateApiKeys(
-  groqApiKey?: string,
-  deepseekApiKey?: string
+export async function saveSettings(
+  groqApiKey: string,
+  deepseekApiKey: string,
+  language: string,
+  cleanupStyle: CleanupStyle
 ): Promise<void> {
-  await invoke("update_api_keys", {
-    groq_api_key: groqApiKey ?? null,
-    deepseek_api_key: deepseekApiKey ?? null,
+  await invoke("save_settings", {
+    groq_api_key: groqApiKey,
+    deepseek_api_key: deepseekApiKey,
+    language,
+    cleanup_style: cleanupStyle,
   });
+}
+
+/**
+ * Returns all custom dictionary terms.
+ */
+export async function getDictionaryTerms(): Promise<string[]> {
+  return invoke<string[]>("get_dictionary_terms");
+}
+
+/**
+ * Adds a term to the custom dictionary.
+ * @param term - The word or phrase to add
+ */
+export async function addDictionaryTerm(term: string): Promise<void> {
+  await invoke("add_dictionary_term", { term });
+}
+
+/**
+ * Removes a term from the custom dictionary.
+ * @param term - The exact word or phrase to remove
+ */
+export async function removeDictionaryTerm(term: string): Promise<void> {
+  await invoke("remove_dictionary_term", { term });
 }
 
 /**
