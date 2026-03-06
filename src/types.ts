@@ -4,14 +4,15 @@ export type CleanupStyle = "polished" | "verbatim" | "chat";
 // Recording state machine states.
 export type RecordingState = "idle" | "recording" | "transcribing" | "cleaning" | "done" | "error";
 
-// Result returned from stop_recording / transcribe_audio Tauri commands.
-export interface TranscriptionResult {
-  rawText: string;
+// Result returned from stop_recording Tauri command.
+export interface StopRecordingResult {
+  durationMs: number;
 }
 
-// Result returned from cleanup_text Tauri command.
-export interface CleanupResult {
-  cleanedText: string;
+// API key configuration status from the backend.
+export interface ApiKeyStatus {
+  groqConfigured: boolean;
+  deepseekConfigured: boolean;
 }
 
 // App-level state shape.
