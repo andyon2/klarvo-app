@@ -1,0 +1,26 @@
+[package]
+name = "dikta"
+version = "0.1.0"
+description = "Free voice dictation with AI text cleanup"
+authors = ["Andy"]
+edition = "2021"
+
+[lib]
+name = "dikta_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+cpal = "0.15"
+hound = "3.5"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+anyhow = "1"
+thiserror = "2"
+async-trait = "0.1"

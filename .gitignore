@@ -8,6 +8,12 @@ src-tauri/target/
 # Node
 node_modules/
 dist/
+dist-ssr/
+*.local
+
+# Logs
+*.log
+npm-debug.log*
 
 # Tauri
 src-tauri/gen/
@@ -20,10 +26,15 @@ android/app/build/
 *.aab
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # OS
 .DS_Store
