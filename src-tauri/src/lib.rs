@@ -97,6 +97,8 @@ pub struct SettingsView {
     pub hotkey: String,
     /// How the hotkey triggers recording: `Hold` or `Toggle`.
     pub hotkey_mode: HotkeyMode,
+    /// Name of the selected audio input device. `None` = system default.
+    pub audio_device: Option<String>,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -234,7 +236,8 @@ async fn start_recording_only(handle: AppHandle) {
     // Re-install the audio level callback before each recording.
     setup_audio_level_emitter(&handle);
 
-    if let Err(e) = state.recorder.start_recording() {
+    let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
+    if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
         let _ = handle.emit(
             EVENT_STATE_CHANGED,
             PipelineEvent::error(format!("Failed to start recording: {e}")),
@@ -438,6 +441,8 @@ async fn run_dictation_pipeline(handle: AppHandle) {
 /// - `Toggle`: Pressed fires `run_dictation_pipeline` (start or stop+process).
 /// - `Hold`: Pressed fires `start_recording_only`; Released fires `stop_and_process_pipeline`.
 fn register_hotkey(handle: &AppHandle, shortcut: Shortcut, mode: HotkeyMode) -> Result<(), String> {
+    println!("[hotkey] Registering shortcut: {shortcut:?} mode={mode:?}");
+
     handle
         .global_shortcut()
         .unregister_all()
@@ -447,7 +452,10 @@ fn register_hotkey(handle: &AppHandle, shortcut: Shortcut, mode: HotkeyMode) -> 
     handle
         .global_shortcut()
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            println!("[hotkey] Event: {event:?}");
+
             let h = handle_clone.clone();
+            println!("[hotkey] mode={mode:?} state={:?}", event.state);
             match (mode, event.state) {
                 (HotkeyMode::Toggle, ShortcutState::Pressed) => {
                     tauri::async_runtime::spawn(async move {
@@ -488,9 +496,10 @@ async fn start_recording(handle: AppHandle, state: State<'_, AppState>) -> Resul
     // Re-install the audio level callback before recording.
     setup_audio_level_emitter(&handle);
 
+    let device_name = lock!(inner.config)?.audio_device.clone();
     inner
         .recorder
-        .start_recording()
+        .start_recording(device_name.as_deref())
         .map_err(|e: audio::AudioError| e.to_string())?;
 
     *lock!(inner.recording_start)? = Some(std::time::Instant::now());
@@ -640,13 +649,18 @@ async fn save_settings(
     cleanup_style: CleanupStyle,
     hotkey: String,
     hotkey_mode: HotkeyMode,
+    audio_device: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
     // Validate the hotkey string before writing anything to disk.
+    println!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
     let parsed_shortcut = hotkey
         .parse::<Shortcut>()
-        .map_err(|e| format!("Invalid shortcut string: {e}"))?;
+        .map_err(|e| {
+            println!("[save_settings] Invalid shortcut: {e}");
+            format!("Invalid shortcut string: {e}")
+        })?;
 
     // Build updated config. Empty API key strings preserve the existing key
     // so the user can change other settings without re-entering keys.
@@ -658,6 +672,7 @@ async fn save_settings(
         cleanup_style,
         hotkey,
         hotkey_mode,
+        audio_device,
     };
     let effective_groq = new_cfg.groq_api_key.clone();
     let effective_deepseek = new_cfg.deepseek_api_key.clone();
@@ -694,6 +709,7 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         cleanup_style: cfg.cleanup_style,
         hotkey: cfg.hotkey,
         hotkey_mode: cfg.hotkey_mode,
+        audio_device: cfg.audio_device,
     })
 }
 
@@ -815,6 +831,16 @@ async fn set_hotkey(
 }
 
 // ---------------------------------------------------------------------------
+// Tauri commands -- Audio devices
+// ---------------------------------------------------------------------------
+
+/// Returns the names of all available audio input devices.
+#[tauri::command]
+fn list_audio_devices() -> Vec<String> {
+    audio::list_input_devices()
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands -- Dictionary
 // ---------------------------------------------------------------------------
 
@@ -880,7 +906,6 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     .title("")
     .inner_size(bar_width, bar_height)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
@@ -889,14 +914,22 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let bar = builder.build()?;
 
     // Position at bottom-center of the screen, above the taskbar (~60px margin).
-    if let Some(monitor) = bar.current_monitor()? {
-        let screen_size = monitor.size();
-        let scale = monitor.scale_factor();
-        let screen_w = screen_size.width as f64 / scale;
-        let screen_h = screen_size.height as f64 / scale;
-        let x = (screen_w - bar_width) / 2.0;
-        let y = screen_h - bar_height - 60.0;
-        let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
+    match bar.current_monitor() {
+        Ok(Some(monitor)) => {
+            let screen_size = monitor.size();
+            let scale = monitor.scale_factor();
+            let screen_w = screen_size.width as f64 / scale;
+            let screen_h = screen_size.height as f64 / scale;
+            let x = (screen_w - bar_width) / 2.0;
+            let y = screen_h - bar_height - 60.0;
+            log::info!("[bar] screen={screen_w}x{screen_h} scale={scale}, placing at ({x}, {y})");
+            let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
+        }
+        _ => {
+            // Fallback: top-center (WSL2 may not report monitors correctly).
+            log::warn!("[bar] No monitor detected, using fallback position");
+            let _ = bar.set_position(tauri::LogicalPosition::new(400.0, 10.0));
+        }
     }
 
     Ok(())
@@ -957,41 +990,46 @@ pub fn run() {
             let app_state = AppState::new(cfg, dictionary, app_data_dir);
             app.manage(app_state);
 
-            // --- System tray ---
-            let show_settings = MenuItem::with_id(app, "show_settings", "Settings", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_settings, &quit])?;
+            // --- System tray (Windows only -- WSL2/Linux lacks proper tray support) ---
+            #[cfg(target_os = "windows")]
+            {
+                let show_settings = MenuItem::with_id(app, "show_settings", "Settings", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
-            let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Dikta")
-                .menu(&menu)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "show_settings" => {
-                            if let Some(w) = app.get_webview_window("main") {
+                let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("Dikta")
+                    .menu(&menu)
+                    .on_menu_event(|app, event| {
+                        match event.id.as_ref() {
+                            "show_settings" => {
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                    let _ = w.set_focus();
+                                }
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                            if let Some(w) = tray.app_handle().get_webview_window("main") {
                                 let _ = w.show();
                                 let _ = w.set_focus();
                             }
                         }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    // Left-click on tray icon -> show settings window.
-                    if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                        if let Some(w) = tray.app_handle().get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            }
 
             // --- Floating bar window ---
+            // Only create on Windows; WSL2/Linux lacks decorations(false),
+            // transparency, and proper always-on-top support.
+            #[cfg(target_os = "windows")]
             if let Err(e) = create_bar_window(app) {
                 log::warn!("[setup] Could not create floating bar: {e}");
             }
@@ -1001,6 +1039,7 @@ pub fn run() {
             setup_audio_level_emitter(&handle);
 
             // Register the global hotkey from config.
+            println!("[setup] Parsing hotkey: {hotkey_str:?}");
             let shortcut = hotkey_str
                 .parse::<Shortcut>()
                 .unwrap_or_else(|e| {
@@ -1019,18 +1058,20 @@ pub fn run() {
             }
             Ok(())
         })
-        // Intercept window close: hide main window instead of quitting.
-        // The app stays alive in the system tray.
+        // On Windows with a working system tray, we hide windows on close
+        // instead of quitting. On Linux/WSL2 (no tray), closing main = quit.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let label = window.label();
-                if label == "main" {
-                    // Hide the settings window, don't quit.
+                // Bar window: always prevent close (it should always exist).
+                if label == "bar" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
-                // Bar window: also prevent close (it should always exist).
-                if label == "bar" {
+                // Main window: hide only if tray is available (Windows).
+                // On Linux/WSL2, let it close normally (= quit the app).
+                #[cfg(target_os = "windows")]
+                if label == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
@@ -1051,6 +1092,8 @@ pub fn run() {
             set_language,
             set_cleanup_style,
             set_hotkey,
+            // Audio devices
+            list_audio_devices,
             // Dictionary
             get_dictionary_terms,
             add_dictionary_term,
@@ -1142,6 +1185,7 @@ mod tests {
             cleanup_style: CleanupStyle::Polished,
             hotkey: "ctrl+shift+d".to_string(),
             hotkey_mode: HotkeyMode::Hold,
+            audio_device: None,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1161,6 +1205,7 @@ mod tests {
             cleanup_style: CleanupStyle::Polished,
             hotkey: "ctrl+shift+d".to_string(),
             hotkey_mode: HotkeyMode::Hold,
+            audio_device: None,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
@@ -1175,6 +1220,7 @@ mod tests {
             cleanup_style: CleanupStyle::Polished,
             hotkey: "ctrl+shift+d".to_string(),
             hotkey_mode: HotkeyMode::Toggle,
+            audio_device: None,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");

@@ -62,7 +62,7 @@ export default function FloatingBar() {
       data-tauri-drag-region
       className={[
         "h-full flex items-center gap-2 px-3 rounded-2xl transition-all duration-200 select-none",
-        "bg-zinc-900/90 backdrop-blur-md border border-zinc-700/50",
+        "bg-zinc-900 border border-zinc-700/50",
         isActive ? "shadow-[0_0_20px_rgba(59,130,246,0.3)]" : "",
       ].join(" ")}
       style={{ fontFamily: "Inter, system-ui, sans-serif" }}
