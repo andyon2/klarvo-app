@@ -39,6 +39,7 @@ export interface AppSettings {
   anthropicApiKeyMasked: string;
   sttPriority: string[];
   llmPriority: string[];
+  outputLanguage: string;
 }
 
 // A per-application recording profile.

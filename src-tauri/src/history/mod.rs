@@ -287,6 +287,88 @@ pub fn get_usage_summary(conn: &Connection) -> Result<UsageSummary, HistoryError
 }
 
 // ---------------------------------------------------------------------------
+// Filler word statistics
+// ---------------------------------------------------------------------------
+
+/// A single filler word with its occurrence count.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillerStat {
+    pub word: String,
+    pub count: i64,
+}
+
+/// Known filler words to track (German + English).
+const FILLER_WORDS: &[&str] = &[
+    // German
+    "äh", "ähm", "also", "sozusagen", "quasi", "halt", "irgendwie",
+    "eigentlich", "praktisch", "gewissermaßen", "na ja", "genau", "tja",
+    // English
+    "uh", "um", "like", "you know", "basically", "actually", "literally",
+    "I mean", "kind of", "sort of",
+];
+
+/// Analyzes all raw transcripts in the history for filler word occurrences.
+///
+/// Returns a list sorted by count (most frequent first). Only fillers with
+/// count > 0 are included.
+pub fn get_filler_stats(conn: &Connection) -> Result<Vec<FillerStat>, HistoryError> {
+    let mut stmt = conn.prepare(
+        "SELECT raw_text FROM history WHERE raw_text IS NOT NULL AND raw_text != ''"
+    )?;
+
+    let raw_texts: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut counts: Vec<(String, i64)> = FILLER_WORDS
+        .iter()
+        .map(|&word| {
+            let lower_word = word.to_lowercase();
+            let word_bytes = lower_word.len();
+            let count: i64 = raw_texts.iter().map(|text| {
+                let lower_text = text.to_lowercase();
+                let text_bytes = lower_text.as_bytes();
+                let word_b = lower_word.as_bytes();
+                let mut n = 0i64;
+                let mut start = 0usize;
+                while start + word_bytes <= text_bytes.len() {
+                    if let Some(pos) = lower_text[start..].find(&lower_word) {
+                        let abs_pos = start + pos;
+                        let end_pos = abs_pos + word_bytes;
+                        // Check word boundaries using chars
+                        let before_ok = abs_pos == 0 || {
+                            let before = &lower_text[..abs_pos];
+                            !before.chars().next_back().unwrap_or(' ').is_alphanumeric()
+                        };
+                        let after_ok = end_pos >= lower_text.len() || {
+                            let after = &lower_text[end_pos..];
+                            !after.chars().next().unwrap_or(' ').is_alphanumeric()
+                        };
+                        if before_ok && after_ok {
+                            n += 1;
+                        }
+                        // Advance past this match (at least 1 byte, staying on char boundary)
+                        start = end_pos;
+                    } else {
+                        break;
+                    }
+                }
+                let _ = word_b; // suppress unused
+                n
+            }).sum();
+            (word.to_string(), count)
+        })
+        .filter(|(_, count)| *count > 0)
+        .collect();
+
+    counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+    Ok(counts.into_iter().map(|(word, count)| FillerStat { word, count }).collect())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -513,5 +595,48 @@ mod tests {
         assert!(json.contains("totalLlmCostUsd"));
         assert!(json.contains("dictationsToday"));
         assert!(json.contains("costTodayUsd"));
+    }
+
+    // --- Filler stats ---
+
+    #[test]
+    fn test_filler_stats_empty_db() {
+        let conn = mem_db();
+        let stats = get_filler_stats(&conn).unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn test_filler_stats_counts_fillers() {
+        let conn = mem_db();
+        add_entry(&conn, "cleaned", Some("also äh ich meine also halt"), "polished", "de").unwrap();
+        add_entry(&conn, "cleaned", Some("basically like you know"), "polished", "en").unwrap();
+
+        let stats = get_filler_stats(&conn).unwrap();
+        assert!(!stats.is_empty());
+
+        let also_count = stats.iter().find(|s| s.word == "also").map(|s| s.count).unwrap_or(0);
+        assert_eq!(also_count, 2);
+
+        let basically_count = stats.iter().find(|s| s.word == "basically").map(|s| s.count).unwrap_or(0);
+        assert_eq!(basically_count, 1);
+    }
+
+    #[test]
+    fn test_filler_stats_sorted_by_count() {
+        let conn = mem_db();
+        add_entry(&conn, "cleaned", Some("äh äh äh also halt"), "polished", "de").unwrap();
+
+        let stats = get_filler_stats(&conn).unwrap();
+        assert!(stats.len() >= 2);
+        assert!(stats[0].count >= stats[1].count, "Should be sorted by count descending");
+    }
+
+    #[test]
+    fn test_filler_stat_serializes_camel_case() {
+        let stat = FillerStat { word: "äh".to_string(), count: 5 };
+        let json = serde_json::to_string(&stat).unwrap();
+        assert!(json.contains("\"word\""));
+        assert!(json.contains("\"count\""));
     }
 }

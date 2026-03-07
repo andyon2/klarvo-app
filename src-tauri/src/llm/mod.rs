@@ -63,6 +63,29 @@ pub enum CleanupStyle {
     Chat,
 }
 
+/// Maps an ISO-639-1 language code to a human-readable English language name.
+///
+/// Used to build translation instructions in the LLM system prompt.
+/// Returns the code itself if it is not in the known list, so unknown codes
+/// degrade gracefully rather than silently failing.
+pub fn language_name(code: &str) -> &str {
+    match code {
+        "en" => "English",
+        "de" => "German",
+        "fr" => "French",
+        "es" => "Spanish",
+        "it" => "Italian",
+        "pt" => "Portuguese",
+        "nl" => "Dutch",
+        "pl" => "Polish",
+        "ru" => "Russian",
+        "ja" => "Japanese",
+        "zh" => "Chinese",
+        "ko" => "Korean",
+        other => other,
+    }
+}
+
 impl CleanupStyle {
     /// Returns the system prompt for this cleanup style.
     ///
@@ -71,7 +94,25 @@ impl CleanupStyle {
     ///
     /// `custom_prompt` is an optional string of additional user instructions
     /// appended at the end of the system prompt.
+    ///
+    /// `output_language` is an optional ISO-639-1 code. When set and non-empty,
+    /// a translation instruction is appended after the cleanup rules.
     pub fn system_prompt(&self, dictionary_terms: Option<&str>, custom_prompt: Option<&str>) -> String {
+        self.system_prompt_with_translation(dictionary_terms, custom_prompt, None)
+    }
+
+    /// Like `system_prompt` but also accepts an optional `output_language` code.
+    ///
+    /// When `output_language` is `Some(code)` and non-empty, the resulting
+    /// system prompt includes: "Translate the cleaned output to {language_name}.
+    /// Output ONLY the translated text." appended after all other instructions.
+    /// The cleanup and translation happen in a single LLM call.
+    pub fn system_prompt_with_translation(
+        &self,
+        dictionary_terms: Option<&str>,
+        custom_prompt: Option<&str>,
+        output_language: Option<&str>,
+    ) -> String {
         let dict_section = match dictionary_terms {
             Some(terms) if !terms.is_empty() => {
                 format!("\n\nThe user's custom dictionary terms (preserve these exactly): {terms}")
@@ -82,6 +123,16 @@ impl CleanupStyle {
         let custom_section = match custom_prompt {
             Some(p) if !p.trim().is_empty() => {
                 format!("\n\nAdditional user instructions: {}", p.trim())
+            }
+            _ => String::new(),
+        };
+
+        let translation_section = match output_language {
+            Some(lang) if !lang.trim().is_empty() => {
+                let name = language_name(lang.trim());
+                format!(
+                    "\n\nTranslate the cleaned output to {name}. Output ONLY the translated text."
+                )
             }
             _ => String::new(),
         };
@@ -104,7 +155,7 @@ impl CleanupStyle {
                 - Language: respond in the same language as the input. If the input mixes \
                   German and English, keep each part in its original language\n\
                 - Return ONLY the cleaned text, no explanations or commentary\
-                {dict_section}{custom_section}"
+                {dict_section}{custom_section}{translation_section}"
             ),
             CleanupStyle::Verbatim => format!(
                 "You are a text cleanup assistant. The user will give you raw speech-to-text \
@@ -122,7 +173,7 @@ impl CleanupStyle {
                 - Language: respond in the same language as the input. If the input mixes \
                   German and English, keep each part in its original language\n\
                 - Return ONLY the cleaned text, no explanations or commentary\
-                {dict_section}{custom_section}"
+                {dict_section}{custom_section}{translation_section}"
             ),
             CleanupStyle::Chat => {
                 // Chat style has no dictionary context -- keeps it short
@@ -139,7 +190,7 @@ impl CleanupStyle {
                     - Language: respond in the same language as the input. If the input mixes \
                       German and English, keep each part in its original language\n\
                     - Return ONLY the cleaned text, no explanations or commentary\
-                    {custom_section}"
+                    {custom_section}{translation_section}"
                 )
             }
         }
@@ -187,6 +238,10 @@ pub struct CleanupResult {
 /// It has a default implementation that returns `EmptyInput` -- providers
 /// that support rewrite should override it. The concrete implementations
 /// in this module all delegate through their own `rewrite()` logic.
+///
+/// The `reformat()` method reformats text into a specific output format
+/// (email, bullets, summary). It has a default implementation that delegates
+/// to the provider's own HTTP client if available, or returns an error.
 #[async_trait::async_trait]
 pub trait CleanupProvider: Send + Sync {
     async fn cleanup(
@@ -196,6 +251,24 @@ pub trait CleanupProvider: Send + Sync {
         dictionary_terms: Option<&str>,
         custom_prompt: Option<&str>,
     ) -> Result<CleanupResult, LlmError>;
+
+    /// Like `cleanup` but also translates to `output_language` in the same call.
+    ///
+    /// Default implementation delegates to `cleanup` (no translation). Providers
+    /// override this to pass `output_language` through to the system prompt.
+    async fn cleanup_with_translation(
+        &self,
+        raw_text: &str,
+        style: CleanupStyle,
+        dictionary_terms: Option<&str>,
+        custom_prompt: Option<&str>,
+        output_language: Option<&str>,
+    ) -> Result<CleanupResult, LlmError> {
+        // Default: ignore output_language, fall back to plain cleanup.
+        // Concrete providers override this.
+        let _ = output_language;
+        self.cleanup(raw_text, style, dictionary_terms, custom_prompt).await
+    }
 
     /// Rewrites `selected_text` according to a `voice_command`.
     ///
@@ -210,6 +283,17 @@ pub trait CleanupProvider: Send + Sync {
         let _ = (selected_text, voice_command);
         Err(LlmError::ResponseFormat(
             "rewrite() not implemented for this provider".to_string(),
+        ))
+    }
+
+    /// Reformats text into a specific output format.
+    ///
+    /// Supported formats: `"email"`, `"bullets"`, `"summary"`.
+    /// The default implementation returns an error. Concrete providers override it.
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        let _ = (text, format);
+        Err(LlmError::ResponseFormat(
+            "reformat() not implemented for this provider".to_string(),
         ))
     }
 }
@@ -271,6 +355,31 @@ struct ApiErrorDetail {
 }
 
 // ---------------------------------------------------------------------------
+// Reformat system prompts
+// ---------------------------------------------------------------------------
+
+/// Returns a system prompt for reformatting text into a specific output format.
+fn reformat_system_prompt(format: &str) -> &'static str {
+    match format {
+        "email" => "\
+You are a text reformatter. Reformat the following text as a professional email.\n\
+Keep the same language as the input. Include an appropriate greeting and closing.\n\
+Output ONLY the email text, nothing else.",
+        "bullets" => "\
+You are a text reformatter. Reformat the following text as a concise bullet point list.\n\
+Keep the same language as the input. Each bullet should be a short, clear point.\n\
+Output ONLY the bullet points, nothing else.",
+        "summary" => "\
+You are a text reformatter. Summarize the following text in 2-3 sentences.\n\
+Keep the same language as the input. Be concise and capture the key points.\n\
+Output ONLY the summary, nothing else.",
+        _ => "\
+You are a text reformatter. Clean up and reformat the following text.\n\
+Keep the same language as the input. Output ONLY the reformatted text.",
+    }
+}
+
+// ---------------------------------------------------------------------------
 // OpenAiCompatibleCleanup -- generic OpenAI Chat API client
 // ---------------------------------------------------------------------------
 
@@ -319,7 +428,20 @@ impl OpenAiCompatibleCleanup {
         dictionary_terms: Option<&str>,
         custom_prompt: Option<&str>,
     ) -> ChatRequest<'a> {
-        let system_prompt = style.system_prompt(dictionary_terms, custom_prompt);
+        self.build_request_with_translation(raw_text, style, dictionary_terms, custom_prompt, None)
+    }
+
+    /// Builds the cleanup request body, optionally appending a translation step.
+    pub fn build_request_with_translation<'a>(
+        &'a self,
+        raw_text: &str,
+        style: CleanupStyle,
+        dictionary_terms: Option<&str>,
+        custom_prompt: Option<&str>,
+        output_language: Option<&str>,
+    ) -> ChatRequest<'a> {
+        let system_prompt =
+            style.system_prompt_with_translation(dictionary_terms, custom_prompt, output_language);
 
         ChatRequest {
             model: &self.model,
@@ -331,6 +453,28 @@ impl OpenAiCompatibleCleanup {
                 ChatMessage {
                     role: "user",
                     content: raw_text.to_string(),
+                },
+            ],
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+        }
+    }
+
+    /// Builds the reformat request body for a specific output format.
+    ///
+    /// Supported formats: `"email"`, `"bullets"`, `"summary"`.
+    pub fn build_reformat_request<'a>(&'a self, text: &str, format: &str) -> ChatRequest<'a> {
+        let system_prompt = reformat_system_prompt(format);
+        ChatRequest {
+            model: &self.model,
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: system_prompt.to_string(),
+                },
+                ChatMessage {
+                    role: "user",
+                    content: text.to_string(),
                 },
             ],
             temperature: self.temperature,
@@ -975,15 +1119,16 @@ pub async fn chunked_cleanup(
     style: CleanupStyle,
     dictionary_terms: Option<&str>,
     custom_prompt: Option<&str>,
+    output_language: Option<&str>,
 ) -> Result<CleanupResult, LlmError> {
     // Short text: single call
     if raw_text.len() < CHUNK_THRESHOLD {
-        return provider.cleanup(raw_text, style, dictionary_terms, custom_prompt).await;
+        return provider.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await;
     }
 
     let chunks = split_into_chunks(raw_text);
     if chunks.len() <= 1 {
-        return provider.cleanup(raw_text, style, dictionary_terms, custom_prompt).await;
+        return provider.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await;
     }
 
     log::info!("[chunked_cleanup] splitting {} chars into {} chunks", raw_text.len(), chunks.len());
@@ -991,7 +1136,7 @@ pub async fn chunked_cleanup(
     // Fire all chunks in parallel
     let futures: Vec<_> = chunks
         .iter()
-        .map(|chunk| provider.cleanup(chunk, style, dictionary_terms, custom_prompt))
+        .map(|chunk| provider.cleanup_with_translation(chunk, style, dictionary_terms, custom_prompt, output_language))
         .collect();
 
     let results = futures::future::join_all(futures).await;
@@ -1519,7 +1664,7 @@ mod tests {
     #[tokio::test]
     async fn test_chunked_cleanup_short_text_single_call() {
         let provider = MockCleanupProvider;
-        let result = chunked_cleanup(&provider, "hello world", CleanupStyle::Polished, None, None)
+        let result = chunked_cleanup(&provider, "hello world", CleanupStyle::Polished, None, None, None)
             .await
             .unwrap();
         assert_eq!(result.text, "HELLO WORLD");
@@ -1531,7 +1676,7 @@ mod tests {
         let provider = MockCleanupProvider;
         let sentence = "This is a test sentence with enough words. ";
         let text = sentence.repeat(30); // ~1300 chars, above threshold
-        let result = chunked_cleanup(&provider, &text, CleanupStyle::Polished, None, None)
+        let result = chunked_cleanup(&provider, &text, CleanupStyle::Polished, None, None, None)
             .await
             .unwrap();
         // All text should be uppercased

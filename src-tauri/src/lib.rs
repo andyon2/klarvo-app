@@ -120,6 +120,8 @@ pub struct SettingsView {
     pub stt_priority: Vec<String>,
     /// Ordered list of LLM provider IDs (first with a key wins).
     pub llm_priority: Vec<String>,
+    /// Output language for translation (empty = no translation).
+    pub output_language: String,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -701,9 +703,15 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
             Err(_) => None,
         };
 
+        let output_lang = state.config.lock().ok()
+            .map(|c| c.output_language.clone())
+            .unwrap_or_default();
+        let output_lang_opt = if output_lang.is_empty() { None } else { Some(output_lang.as_str()) };
+
         match chunked_cleanup(
             cleanup_provider.as_ref(), &raw_text, style,
             dict_list.as_deref(), custom_prompt.as_deref(),
+            output_lang_opt,
         ).await {
             Ok(r) => r,
             Err(e) => {
@@ -999,7 +1007,15 @@ async fn cleanup_text(
         Err(_) => None,
     };
 
-    chunked_cleanup(provider.as_ref(), &raw_text, style, terms.as_deref(), custom_prompt.as_deref())
+    let output_lang = match state.inner().config.lock() {
+        Ok(c) => {
+            let l = c.output_language.clone();
+            if l.is_empty() { None } else { Some(l) }
+        }
+        Err(_) => None,
+    };
+
+    chunked_cleanup(provider.as_ref(), &raw_text, style, terms.as_deref(), custom_prompt.as_deref(), output_lang.as_deref())
         .await
         .map(|r| r.text)
         .map_err(|e: llm::LlmError| e.to_string())
@@ -1045,6 +1061,7 @@ async fn save_settings(
     anthropic_api_key: Option<String>,
     stt_priority: Option<Vec<String>>,
     llm_priority: Option<Vec<String>>,
+    output_language: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -1084,6 +1101,7 @@ async fn save_settings(
         },
         stt_priority: stt_priority.unwrap_or(existing.stt_priority),
         llm_priority: llm_priority.unwrap_or(existing.llm_priority),
+        output_language: output_language.unwrap_or(existing.output_language),
     };
 
     // Resolve providers from the new config before persisting.
@@ -1135,6 +1153,7 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         anthropic_api_key_masked: mask_api_key(&cfg.anthropic_api_key),
         stt_priority: cfg.stt_priority,
         llm_priority: cfg.llm_priority,
+        output_language: cfg.output_language,
     })
 }
 
@@ -1221,6 +1240,43 @@ fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<
     drop(cfg);
     save_config(&inner.app_data_dir, &cfg_clone)
         .map_err(|e| format!("Failed to persist cleanup style: {e}"))
+}
+
+/// Sets the output language for translation and persists the change.
+///
+/// `language`: ISO-639-1 code, e.g. `"en"` to translate to English.
+/// Empty string = no translation (dictation stays in original language).
+#[tauri::command]
+fn set_output_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.output_language = language;
+    let cfg_clone = cfg.clone();
+    drop(cfg);
+    save_config(&inner.app_data_dir, &cfg_clone)
+        .map_err(|e| format!("Failed to persist output language setting: {e}"))
+}
+
+/// Reformats text into a specific output format (email, bullets, summary).
+///
+/// Uses the currently configured LLM provider to transform the text.
+#[tauri::command]
+async fn reformat_text(state: State<'_, AppState>, text: String, format: String) -> Result<String, String> {
+    let inner = state.inner();
+    let provider = read_lock!(inner.cleanup_provider)?.clone();
+    provider
+        .reformat(&text, &format)
+        .await
+        .map(|r| r.text)
+        .map_err(|e| format!("Reformat failed: {e}"))
+}
+
+/// Returns filler word statistics from raw transcripts in history.
+#[tauri::command]
+fn get_filler_stats(state: State<'_, AppState>) -> Result<Vec<history::FillerStat>, String> {
+    let db = lock!(state.inner().history_db)?;
+    history::get_filler_stats(&db)
+        .map_err(|e| format!("Failed to get filler stats: {e}"))
 }
 
 /// Changes the registered global hotkey and/or mode at runtime.
@@ -1896,7 +1952,10 @@ pub fn run() {
             update_api_keys,
             set_language,
             set_cleanup_style,
+            set_output_language,
             set_hotkey,
+            // Reformat
+            reformat_text,
             // Audio devices
             list_audio_devices,
             // Dictionary
@@ -1911,6 +1970,7 @@ pub fn run() {
             add_history_entry,
             // Stats
             get_usage_stats,
+            get_filler_stats,
             // Profiles
             get_profiles,
             save_profiles,
@@ -2017,6 +2077,7 @@ mod tests {
             anthropic_api_key_masked: String::new(),
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            output_language: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -2045,6 +2106,7 @@ mod tests {
             anthropic_api_key_masked: String::new(),
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            output_language: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
@@ -2068,6 +2130,7 @@ mod tests {
             anthropic_api_key_masked: String::new(),
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            output_language: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");

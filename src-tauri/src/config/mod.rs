@@ -159,6 +159,12 @@ pub struct AppConfig {
     /// Default: ctrl+shift+e
     #[serde(default = "default_command_hotkey")]
     pub command_hotkey: String,
+
+    /// ISO-639-1 target language for translation.
+    /// Empty string = no translation (output in the same language as input).
+    /// E.g. `"en"` = translate to English, `"de"` = translate to German.
+    #[serde(default = "default_output_language")]
+    pub output_language: String,
 }
 
 fn default_stt_priority() -> Vec<String> {
@@ -198,6 +204,10 @@ fn default_command_hotkey() -> String {
     "ctrl+shift+e".to_string()
 }
 
+pub fn default_output_language() -> String {
+    String::new() // empty = no translation
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -218,6 +228,7 @@ impl Default for AppConfig {
             autostart: false,
             whisper_mode: false,
             command_hotkey: default_command_hotkey(),
+            output_language: default_output_language(),
         }
     }
 }
@@ -414,6 +425,7 @@ mod tests {
             autostart: true,
             whisper_mode: false,
             command_hotkey: "ctrl+shift+e".to_string(),
+            output_language: "en".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
@@ -601,6 +613,53 @@ mod tests {
         save_config(dir.path(), &cfg).unwrap();
         let loaded = load_config(dir.path());
         assert_eq!(loaded.profiles, cfg.profiles);
+    }
+
+    /// Default output_language is empty (no translation).
+    #[test]
+    fn test_default_output_language_is_empty() {
+        let cfg = AppConfig::default();
+        assert!(cfg.output_language.is_empty(), "default output_language should be empty (no translation)");
+    }
+
+    /// default_output_language() returns an empty string.
+    #[test]
+    fn test_default_output_language_fn_returns_empty() {
+        assert!(default_output_language().is_empty());
+    }
+
+    /// output_language round-trips through save/load.
+    #[test]
+    fn test_output_language_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            output_language: "en".to_string(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.output_language, "en");
+    }
+
+    /// Config serializes output_language with camelCase.
+    #[test]
+    fn test_output_language_serializes_camel_case() {
+        let cfg = AppConfig {
+            output_language: "fr".to_string(),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("outputLanguage"), "expected camelCase 'outputLanguage'");
+    }
+
+    /// Partial JSON without output_language uses empty string default.
+    #[test]
+    fn test_partial_json_output_language_defaults_to_empty() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert!(cfg.output_language.is_empty());
     }
 
     /// All three CleanupStyle variants round-trip through config serialization.

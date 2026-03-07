@@ -76,6 +76,7 @@ export async function saveSettings(
   anthropicApiKey?: string | null,
   sttPriority?: string[] | null,
   llmPriority?: string[] | null,
+  outputLanguage?: string | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -93,6 +94,7 @@ export async function saveSettings(
     anthropicApiKey: anthropicApiKey ?? null,
     sttPriority: sttPriority ?? null,
     llmPriority: llmPriority ?? null,
+    outputLanguage: outputLanguage ?? null,
   });
 }
 
@@ -210,6 +212,34 @@ export async function getProfiles(): Promise<AppProfile[]> {
 
 export async function saveProfiles(profiles: AppProfile[]): Promise<void> {
   await invoke("save_profiles", { profiles });
+}
+
+// --- Output language ---
+
+/**
+ * Tells the backend which output language to translate dictations into.
+ * Empty string means no translation.
+ * @param language - BCP-47 language code, e.g. "en" or "de", or "" to disable
+ */
+export async function setOutputLanguage(language: string): Promise<void> {
+  await invoke("set_output_language", { language });
+}
+
+/**
+ * Reformats an existing text into a different format via the configured LLM.
+ * @param text   - The text to reformat
+ * @param format - Target format: "email" | "bullets" | "summary"
+ */
+export async function reformatText(text: string, format: string): Promise<string> {
+  return invoke<string>("reformat_text", { text, format });
+}
+
+/**
+ * Returns the top filler words detected across all dictations.
+ * Each entry contains the word and its occurrence count.
+ */
+export async function getFillerStats(): Promise<{ word: string; count: number }[]> {
+  return invoke<{ word: string; count: number }[]>("get_filler_stats");
 }
 
 // --- Bar shape ---

@@ -28,6 +28,9 @@ import {
   getUsageStats,
   getProfiles,
   saveProfiles,
+  setOutputLanguage as syncOutputLanguage,
+  reformatText,
+  getFillerStats,
 } from "./tauri-commands";
 import Onboarding from "./Onboarding";
 
@@ -70,6 +73,49 @@ function CloseIcon() {
   return (
     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
       <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function GlobeIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+function MailIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+  );
+}
+
+function ListIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
+function SummaryIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14,2 14,8 20,8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
     </svg>
   );
 }
@@ -202,6 +248,152 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
   );
 }
 
+// --- Output Language Picker --------------------------------------------------
+
+const OUTPUT_LANGUAGES = [
+  { code: "", label: "No translation" },
+  { code: "en", label: "English" },
+  { code: "de", label: "Deutsch" },
+  { code: "fr", label: "Français" },
+  { code: "es", label: "Español" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
+  { code: "nl", label: "Nederlands" },
+  { code: "pl", label: "Polski" },
+  { code: "ru", label: "Русский" },
+  { code: "ja", label: "日本語" },
+  { code: "zh", label: "中文" },
+  { code: "ko", label: "한국어" },
+];
+
+function OutputLanguagePicker({ value, onChange, disabled }: { value: string; onChange: (lang: string) => void; disabled: boolean }) {
+  const isActive = value !== "";
+  const activeLabel = OUTPUT_LANGUAGES.find((l) => l.code === value)?.label ?? "";
+  // Short badge label: take first token or 2-char code
+  const badgeLabel = value.toUpperCase();
+
+  return (
+    <div className="relative flex items-center gap-1">
+      {isActive && (
+        <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5 leading-none pointer-events-none select-none">
+          {`→ ${badgeLabel}`}
+        </span>
+      )}
+      <div className="relative flex items-center">
+        <GlobeIcon className={`w-3.5 h-3.5 absolute left-2 pointer-events-none ${isActive ? "text-emerald-400" : "text-zinc-500"}`} />
+        <select
+          disabled={disabled}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          title={isActive ? `Translate to ${activeLabel}` : "No translation"}
+          aria-label="Output language"
+          className={[
+            "bg-[#111113] border rounded-lg pl-7 pr-2 py-1 text-[11px] appearance-none cursor-pointer",
+            "focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+            isActive
+              ? "border-emerald-500/30 text-emerald-400"
+              : "border-zinc-800/60 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700/60",
+          ].join(" ")}
+        >
+          {OUTPUT_LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+// --- Reformat Buttons --------------------------------------------------------
+
+interface ReformatButtonsProps {
+  text: string;
+  onResult: (text: string) => void;
+}
+
+function ReformatButtons({ text, onResult }: ReformatButtonsProps) {
+  const [loading, setLoading] = useState<string | null>(null);
+
+  const FORMATS = [
+    { id: "email", label: "Email", Icon: MailIcon },
+    { id: "bullets", label: "Bullets", Icon: ListIcon },
+    { id: "summary", label: "Summary", Icon: SummaryIcon },
+  ] as const;
+
+  const handleReformat = async (format: string) => {
+    if (loading) return;
+    setLoading(format);
+    try {
+      const result = await reformatText(text, format);
+      onResult(result);
+      navigator.clipboard.writeText(result).catch(console.error);
+    } catch (err) {
+      console.error("reformat_text failed:", err);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {FORMATS.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          onClick={() => handleReformat(id)}
+          disabled={loading !== null}
+          title={`Reformat as ${label}`}
+          className={[
+            "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium border",
+            "transition-all duration-100 disabled:opacity-50 disabled:cursor-not-allowed",
+            loading === id
+              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+              : "bg-[#111113] border-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700/60",
+          ].join(" ")}
+        >
+          {loading === id ? (
+            <SpinnerIcon className="w-3 h-3" />
+          ) : (
+            <Icon className="w-3 h-3" />
+          )}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- Filler Stats Chart ------------------------------------------------------
+
+interface FillerEntry {
+  word: string;
+  count: number;
+}
+
+function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
+  if (entries.length === 0) {
+    return <p className="text-xs text-zinc-500 italic">No filler words tracked yet.</p>;
+  }
+
+  const max = entries[0].count;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {entries.slice(0, 10).map(({ word, count }) => (
+        <div key={word} className="flex items-center gap-2">
+          <span className="text-[11px] text-zinc-400 w-16 shrink-0 font-mono truncate">{word}</span>
+          <div className="flex-1 bg-zinc-800/60 rounded-full h-1.5 overflow-hidden">
+            <div
+              className="h-full bg-emerald-500/50 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((count / max) * 100)}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-zinc-500 w-6 text-right shrink-0">{count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StatusDot({ active }: { active: boolean }) {
   return (
     <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-emerald-500" : "bg-zinc-600"}`} />
@@ -305,7 +497,8 @@ interface SettingsPanelProps {
   audioDevice: string | null;
   audioDevices: string[];
   dictionary: string[];
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[]) => Promise<void>;
+  outputLanguage: string;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[], outputLanguage: string) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onHotkeyChange: (h: string) => void;
@@ -313,13 +506,14 @@ interface SettingsPanelProps {
   onAudioDeviceChange: (d: string | null) => void;
   onAddTerm: (term: string) => Promise<void>;
   onRemoveTerm: (term: string) => Promise<void>;
+  onOutputLanguageChange: (lang: string) => void;
 }
 
 function SettingsPanel({
   onClose, loadedSettings, language, cleanupStyle, hotkey, hotkeyMode,
-  audioDevice, audioDevices, dictionary,
+  audioDevice, audioDevices, dictionary, outputLanguage,
   onSave, onLanguageChange, onStyleChange, onHotkeyChange, onHotkeyModeChange,
-  onAudioDeviceChange, onAddTerm, onRemoveTerm,
+  onAudioDeviceChange, onAddTerm, onRemoveTerm, onOutputLanguageChange,
 }: SettingsPanelProps) {
   const [groqKey, setGroqKey] = useState("");
   const [deepseekKey, setDeepseekKey] = useState("");
@@ -336,6 +530,7 @@ function SettingsPanel({
   const [anthropicKey, setAnthropicKey] = useState("");
   const [localSttPriority, setLocalSttPriority] = useState<string[]>(loadedSettings?.sttPriority ?? ["groq", "openai"]);
   const [localLlmPriority, setLocalLlmPriority] = useState<string[]>(loadedSettings?.llmPriority ?? ["deepseek", "openai", "anthropic", "groq"]);
+  const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -357,6 +552,7 @@ function SettingsPanel({
       setLocalWhisperMode(loadedSettings.whisperMode);
       setLocalSttPriority(loadedSettings.sttPriority);
       setLocalLlmPriority(loadedSettings.llmPriority);
+      setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
     }
   }, [loadedSettings]);
 
@@ -371,6 +567,11 @@ function SettingsPanel({
     setLocalLang(lang);
     onLanguageChange(lang);
   }, [onLanguageChange]);
+
+  const handleOutputLanguageChange = useCallback((lang: string) => {
+    setLocalOutputLanguage(lang);
+    onOutputLanguageChange(lang);
+  }, [onOutputLanguageChange]);
 
   const handleStyleChange = useCallback((style: CleanupStyle) => {
     setLocalStyle(style);
@@ -396,7 +597,7 @@ function SettingsPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority, localOutputLanguage);
       setGroqKey("");
       setDeepseekKey("");
       setOpenaiKey("");
@@ -408,7 +609,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, localOutputLanguage, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -476,6 +677,20 @@ function SettingsPanel({
               <option value="">Auto (DE + EN)</option>
               <option value="de">Deutsch</option>
               <option value="en">English</option>
+            </select>
+          </div>
+
+          {/* Output language (translation) */}
+          <div className="flex items-center justify-between gap-3">
+            <span className={labelCls}>Translate to</span>
+            <select
+              value={localOutputLanguage}
+              onChange={(e) => handleOutputLanguageChange(e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+            >
+              {OUTPUT_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
             </select>
           </div>
 
@@ -920,6 +1135,8 @@ export default function App() {
   const [localHotkey, setLocalHotkey] = useState("ctrl+shift+d");
   const [localHotkeyMode, setLocalHotkeyMode] = useState<HotkeyMode>("hold");
   const [localAudioDevice, setLocalAudioDevice] = useState<string | null>(null);
+  const [outputLanguage, setOutputLanguage] = useState("");
+  const [fillerStats, setFillerStats] = useState<{word: string; count: number}[]>([]);
 
   const isBusy = recordingState === "transcribing" || recordingState === "cleaning";
   const isRecording = recordingState === "recording";
@@ -933,6 +1150,7 @@ export default function App() {
       setLocalHotkey(s.hotkey);
       setLocalHotkeyMode(s.hotkeyMode);
       setLocalAudioDevice(s.audioDevice);
+      setOutputLanguage(s.outputLanguage || "");
       syncLanguage(s.language).catch(console.error);
       syncCleanupStyle(s.cleanupStyle).catch(console.error);
     }).catch(console.error);
@@ -970,13 +1188,19 @@ export default function App() {
     syncLanguage(lang).catch(console.error);
   }, []);
 
+  const handleOutputLanguageChange = useCallback((lang: string) => {
+    setOutputLanguage(lang);
+    syncOutputLanguage(lang).catch(console.error);
+  }, []);
+
   const handleSaveSettings = useCallback(async (
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
+    outputLang: string,
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority, outputLang);
     const updated = await getSettings();
     setLoadedSettings(updated);
     setLanguage(updated.language);
@@ -984,6 +1208,7 @@ export default function App() {
     setLocalHotkey(updated.hotkey);
     setLocalHotkeyMode(updated.hotkeyMode);
     setLocalAudioDevice(updated.audioDevice);
+    setOutputLanguage(updated.outputLanguage || "");
   }, []);
 
   const handleAddTerm = useCallback(async (term: string) => {
@@ -1054,6 +1279,7 @@ export default function App() {
     setShowStats((prev) => {
       if (!prev) {
         getUsageStats().then(setUsageStats).catch(console.error);
+        getFillerStats().then(setFillerStats).catch(console.error);
       }
       return !prev;
     });
@@ -1168,12 +1394,19 @@ export default function App() {
           </button>
         </div>
 
-        {/* Style picker in header */}
-        <StylePicker
-          value={currentStyle}
-          onChange={handleStyleChange}
-          disabled={isBusy || isRecording}
-        />
+        {/* Style picker + output language in header */}
+        <div className="flex items-center gap-1.5">
+          <StylePicker
+            value={currentStyle}
+            onChange={handleStyleChange}
+            disabled={isBusy || isRecording}
+          />
+          <OutputLanguagePicker
+            value={outputLanguage}
+            onChange={handleOutputLanguageChange}
+            disabled={isBusy || isRecording}
+          />
+        </div>
       </div>
 
       {/* ── Settings Panel (toggleable) ── */}
@@ -1202,6 +1435,8 @@ export default function App() {
             onAudioDeviceChange={setLocalAudioDevice}
             onAddTerm={handleAddTerm}
             onRemoveTerm={handleRemoveTerm}
+            outputLanguage={outputLanguage}
+            onOutputLanguageChange={handleOutputLanguageChange}
           />
         )}
       </div>
@@ -1344,6 +1579,14 @@ export default function App() {
               <StatCard label="STT (Groq)" value={formatCost(usageStats.totalSttCostUsd)} sub="USD" />
               <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
             </div>
+
+            {/* Filler words */}
+            {fillerStats.length > 0 && (
+              <div className="px-4 pb-4">
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Top Filler Words</p>
+                <FillerStatsChart entries={fillerStats} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1380,6 +1623,10 @@ export default function App() {
               rows={3}
               className="w-full bg-[#111113] border border-zinc-800/60 rounded-xl px-3.5 py-2.5 text-sm text-zinc-200 resize-none focus:outline-none focus:border-emerald-500/30 transition-colors"
             />
+            {/* Reformat buttons */}
+            {recordingState === "done" && (
+              <ReformatButtons text={resultText} onResult={(t) => setResultText(t)} />
+            )}
             {rawText && rawText !== resultText && (
               <div>
                 <button
