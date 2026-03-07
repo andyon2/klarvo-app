@@ -78,6 +78,10 @@ pub struct AppConfig {
     /// How the hotkey triggers recording: toggle (press/press) or hold (hold/release).
     #[serde(default = "default_hotkey_mode")]
     pub hotkey_mode: HotkeyMode,
+
+    /// Name of the selected audio input device. `None` = system default.
+    #[serde(default)]
+    pub audio_device: Option<String>,
 }
 
 fn default_language() -> String {
@@ -105,6 +109,7 @@ impl Default for AppConfig {
             cleanup_style: default_cleanup_style(),
             hotkey: default_hotkey(),
             hotkey_mode: default_hotkey_mode(),
+            audio_device: None,
         }
     }
 }
@@ -262,6 +267,7 @@ mod tests {
             cleanup_style: CleanupStyle::Chat,
             hotkey: "ctrl+alt+r".to_string(),
             hotkey_mode: HotkeyMode::Toggle,
+            audio_device: Some("Test Mic".to_string()),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

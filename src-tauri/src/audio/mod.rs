@@ -16,7 +16,7 @@ use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
+use cpal::{Device, SampleFormat, StreamConfig};
 use thiserror::Error;
 
 /// Errors that can occur during audio capture or encoding.
@@ -103,11 +103,13 @@ impl AudioRecorder {
         *self.level_callback.lock().unwrap() = Some(cb);
     }
 
-    /// Opens the default input device and begins capturing audio on a
-    /// background thread.
+    /// Opens an input device and begins capturing audio on a background thread.
+    ///
+    /// If `device_name` is `None`, the system default input device is used.
+    /// If a name is given but not found, falls back to the default device.
     ///
     /// Returns `AudioError::AlreadyRecording` if a session is already active.
-    pub fn start_recording(&self) -> Result<(), AudioError> {
+    pub fn start_recording(&self, device_name: Option<&str>) -> Result<(), AudioError> {
         let mut guard = self.session.lock().unwrap();
         if guard.is_some() {
             return Err(AudioError::AlreadyRecording);
@@ -120,9 +122,11 @@ impl AudioRecorder {
         // Take the level callback (if any) to pass into the recording thread.
         let level_cb = self.level_callback.lock().unwrap().take();
 
+        let device_name_owned = device_name.map(|s| s.to_string());
+
         // Spawn a dedicated thread that owns the cpal stream.
         std::thread::spawn(move || {
-            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb) {
+            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, device_name_owned.as_deref()) {
                 eprintln!("[audio] recording thread error: {e}");
             }
         });
@@ -173,22 +177,55 @@ unsafe impl Send for AudioRecorder {}
 unsafe impl Sync for AudioRecorder {}
 
 // ---------------------------------------------------------------------------
+// Device enumeration
+// ---------------------------------------------------------------------------
+
+/// Returns the names of all available audio input devices.
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    host.input_devices()
+        .map(|devices| {
+            devices
+                .filter_map(|d| d.name().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Finds an input device by name, falling back to the default if not found.
+fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
+    let host = cpal::default_host();
+
+    if let Some(name) = name {
+        if let Ok(devices) = host.input_devices() {
+            for device in devices {
+                if device.name().ok().as_deref() == Some(name) {
+                    return Ok(device);
+                }
+            }
+        }
+        eprintln!("[audio] Device {name:?} not found, falling back to default");
+    }
+
+    host.default_input_device().ok_or(AudioError::NoInputDevice)
+}
+
+// ---------------------------------------------------------------------------
 // Recording thread -- owns the cpal stream
 // ---------------------------------------------------------------------------
 
 /// Entry point for the background recording thread.
 ///
-/// Opens the default input device, starts the stream, accumulates samples
-/// until the stop signal arrives, then sends samples back and exits.
+/// Opens the specified (or default) input device, starts the stream,
+/// accumulates samples until the stop signal arrives, then sends samples
+/// back and exits.
 fn recording_thread(
     stop_rx: std::sync::mpsc::Receiver<()>,
     result_tx: std::sync::mpsc::Sender<RecordingResult>,
     level_cb: Option<AudioLevelCallback>,
+    device_name: Option<&str>,
 ) -> Result<(), AudioError> {
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or(AudioError::NoInputDevice)?;
+    let device = find_input_device(device_name)?;
 
     let config = device.default_input_config()?;
     let native_sample_rate = config.sample_rate().0;

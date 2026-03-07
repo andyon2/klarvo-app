@@ -15,6 +15,7 @@ import {
   onStateChanged,
   setLanguage as syncLanguage,
   setCleanupStyle as syncCleanupStyle,
+  listAudioDevices,
 } from "./tauri-commands";
 
 // --- Icons -------------------------------------------------------------------
@@ -326,7 +327,7 @@ interface SettingsPanelProps {
   hotkeyMode: HotkeyMode;
   loadedSettings: AppSettings | null;
   dictionary: string[];
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onAddTerm: (term: string) => Promise<void>;
@@ -353,6 +354,8 @@ function SettingsPanel({
   const [localStyle, setLocalStyle] = useState<CleanupStyle>(cleanupStyle);
   const [localHotkey, setLocalHotkey] = useState(hotkey);
   const [localHotkeyMode, setLocalHotkeyMode] = useState<HotkeyMode>(hotkeyMode);
+  const [localAudioDevice, setLocalAudioDevice] = useState<string | null>(loadedSettings?.audioDevice ?? null);
+  const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveDone, setSaveDone] = useState(false);
@@ -365,6 +368,12 @@ function SettingsPanel({
   useEffect(() => { setLocalStyle(cleanupStyle); }, [cleanupStyle]);
   useEffect(() => { setLocalHotkey(hotkey); }, [hotkey]);
   useEffect(() => { setLocalHotkeyMode(hotkeyMode); }, [hotkeyMode]);
+  useEffect(() => { setLocalAudioDevice(loadedSettings?.audioDevice ?? null); }, [loadedSettings?.audioDevice]);
+
+  // Fetch available audio devices on mount.
+  useEffect(() => {
+    listAudioDevices().then(setAudioDevices).catch(console.error);
+  }, []);
 
   // Close on Escape.
   useEffect(() => {
@@ -390,7 +399,7 @@ function SettingsPanel({
     setSaveError(null);
     setSaveDone(false);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice);
       // Clear key inputs after successful save -- masked placeholder will re-appear.
       setGroqKey("");
       setDeepseekKey("");
@@ -540,6 +549,29 @@ function SettingsPanel({
           >
             <option value="de">Deutsch</option>
             <option value="en">English</option>
+          </select>
+        </div>
+
+        {/* Audio Device */}
+        <div className="flex items-center gap-3">
+          <label htmlFor="audio-device-select" className="text-xs text-zinc-400 flex-1">
+            Microphone
+          </label>
+          <select
+            id="audio-device-select"
+            value={localAudioDevice ?? ""}
+            onChange={(e) => setLocalAudioDevice(e.target.value || null)}
+            className={[
+              "bg-zinc-800 border border-zinc-700 rounded-lg",
+              "px-2 py-1.5 text-xs text-zinc-100 max-w-[200px] truncate",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50",
+              "transition-shadow duration-100 cursor-pointer",
+            ].join(" ")}
+          >
+            <option value="">System Default</option>
+            {audioDevices.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
           </select>
         </div>
 
@@ -782,9 +814,10 @@ export default function App() {
     lang: string,
     style: CleanupStyle,
     hotkey: string,
-    hotkeyMode: HotkeyMode
+    hotkeyMode: HotkeyMode,
+    audioDevice: string | null
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice);
     // save_settings already re-registers the hotkey in the backend, no need to call setHotkey.
     // Refresh loaded settings so masked key placeholders and hotkey display update.
     const updated = await getSettings();

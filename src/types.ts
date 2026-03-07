@@ -29,6 +29,7 @@ export interface AppSettings {
   cleanupStyle: CleanupStyle;
   hotkey: string;
   hotkeyMode: HotkeyMode;
+  audioDevice: string | null;
 }
 
 // API key configuration status from the backend.

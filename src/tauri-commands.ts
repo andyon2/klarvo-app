@@ -66,7 +66,8 @@ export async function saveSettings(
   language: string,
   cleanupStyle: CleanupStyle,
   hotkey?: string,
-  hotkeyMode?: HotkeyMode
+  hotkeyMode?: HotkeyMode,
+  audioDevice?: string | null
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -75,6 +76,7 @@ export async function saveSettings(
     cleanupStyle,
     hotkey: hotkey ?? "",
     hotkeyMode: hotkeyMode ?? "hold",
+    audioDevice: audioDevice ?? null,
   });
 }
 
@@ -142,4 +144,11 @@ export async function setLanguage(language: string): Promise<void> {
  */
 export async function setCleanupStyle(style: CleanupStyle): Promise<void> {
   await invoke("set_cleanup_style", { style });
+}
+
+/**
+ * Returns the names of all available audio input devices.
+ */
+export async function listAudioDevices(): Promise<string[]> {
+  return invoke<string[]>("list_audio_devices");
 }
