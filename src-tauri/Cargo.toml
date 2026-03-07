@@ -1,6 +1,6 @@
 [package]
 name = "dikta"
-version = "0.2.0"
+version = "0.3.0"
 description = "Free voice dictation with AI text cleanup"
 authors = ["Andy"]
 edition = "2021"
