@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -28,6 +29,7 @@ import {
   getProfiles,
   saveProfiles,
 } from "./tauri-commands";
+import Onboarding from "./Onboarding";
 
 // --- Icons -------------------------------------------------------------------
 
@@ -912,6 +914,7 @@ export default function App() {
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
   const [language, setLanguage] = useState("");
   const [loadedSettings, setLoadedSettings] = useState<AppSettings | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [dictionary, setDictionary] = useState<string[]>([]);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [localHotkey, setLocalHotkey] = useState("ctrl+shift+d");
@@ -932,6 +935,12 @@ export default function App() {
       setLocalAudioDevice(s.audioDevice);
       syncLanguage(s.language).catch(console.error);
       syncCleanupStyle(s.cleanupStyle).catch(console.error);
+    }).catch(console.error);
+
+    // Show onboarding wizard if no API keys are configured yet.
+    // isFirstRun() is implemented on the backend side (see src-tauri/src/lib.rs).
+    invoke<boolean>("is_first_run").then((firstRun) => {
+      if (firstRun) setShowOnboarding(true);
     }).catch(console.error);
 
     getDictionaryTerms().then(setDictionary).catch(console.error);
@@ -1078,6 +1087,22 @@ export default function App() {
   }, []);
 
   const hotkeyDisplay = formatHotkeyDisplay(loadedSettings?.hotkey ?? "ctrl+shift+d");
+
+  const handleOnboardingComplete = useCallback(async (updated: AppSettings) => {
+    setLoadedSettings(updated);
+    setLanguage(updated.language);
+    setCurrentStyle(updated.cleanupStyle);
+    setLocalHotkey(updated.hotkey);
+    setLocalHotkeyMode(updated.hotkeyMode);
+    setLocalAudioDevice(updated.audioDevice);
+    syncLanguage(updated.language).catch(console.error);
+    syncCleanupStyle(updated.cleanupStyle).catch(console.error);
+    setShowOnboarding(false);
+  }, []);
+
+  if (showOnboarding) {
+    return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
 
   return (
     <main

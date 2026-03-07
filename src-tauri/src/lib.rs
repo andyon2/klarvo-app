@@ -257,6 +257,26 @@ fn mask_api_key(key: &str) -> String {
     format!("****{}", &key[key.len() - 4..])
 }
 
+/// Wraps an error message with a human-readable hint based on common HTTP/network
+/// error patterns. The hint is appended after the raw error string.
+///
+/// Keeps error messages actionable for non-technical users without losing the
+/// original diagnostic information.
+fn friendly_error(context: &str, err: &str) -> String {
+    let hint = if err.contains("401") || err.contains("Unauthorized") || err.contains("invalid_api_key") {
+        " Check your API key in Settings."
+    } else if err.contains("429") || err.contains("rate_limit") {
+        " Rate limit reached \u{2014} wait a moment and try again."
+    } else if err.contains("timeout") || err.contains("timed out") {
+        " Request timed out \u{2014} check your internet connection."
+    } else if err.contains("connection") || err.contains("ConnectError") {
+        " No internet connection."
+    } else {
+        ""
+    };
+    format!("{context}: {err}{hint}")
+}
+
 // ---------------------------------------------------------------------------
 // Hotkey dictation pipeline
 // ---------------------------------------------------------------------------
@@ -606,7 +626,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         Err(e) => {
             let _ = handle.emit(
                 EVENT_STATE_CHANGED,
-                PipelineEvent::error(format!("Transcription failed: {e}")),
+                PipelineEvent::error(friendly_error("Transcription failed", &e.to_string())),
             );
             return;
         }
@@ -689,7 +709,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
             Err(e) => {
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
-                    PipelineEvent::error(format!("Text cleanup failed: {e}")),
+                    PipelineEvent::error(friendly_error("Text cleanup failed", &e.to_string())),
                 );
                 return;
             }
@@ -1084,6 +1104,10 @@ async fn save_settings(
     // Re-register the global shortcut with the (possibly new) hotkey + mode.
     register_hotkey(&handle, parsed_shortcut, hotkey_mode)?;
 
+    // Apply autostart: write or remove the OS startup entry.
+    let autostart_enabled = lock!(inner.config)?.autostart;
+    apply_autostart(autostart_enabled);
+
     Ok(())
 }
 
@@ -1435,6 +1459,113 @@ fn save_profiles(
 }
 
 // ---------------------------------------------------------------------------
+// Tauri commands -- Misc / Onboarding
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if no API keys have been configured yet.
+///
+/// Used by the frontend to decide whether to show the onboarding wizard on
+/// startup. Treated as "first run" when all provider keys are empty.
+#[tauri::command]
+fn is_first_run(state: State<'_, AppState>) -> bool {
+    let inner = state.inner();
+    match inner.config.lock() {
+        Ok(g) => {
+            g.groq_api_key.is_empty()
+                && g.deepseek_api_key.is_empty()
+                && g.openai_api_key.is_empty()
+                && g.anthropic_api_key.is_empty()
+        }
+        Err(_) => true,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Autostart helper (Windows only)
+// ---------------------------------------------------------------------------
+
+/// Writes or removes the autostart registry entry under
+/// `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+///
+/// On non-Windows platforms this is a no-op (the config field is still
+/// persisted, but OS-level startup is not wired up).
+#[cfg(target_os = "windows")]
+fn apply_autostart(enabled: bool) {
+    use windows::Win32::System::Registry::{
+        RegCreateKeyExW, RegDeleteValueW, RegSetValueExW, RegCloseKey,
+        HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, REG_OPTION_NON_VOLATILE,
+    };
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::core::PCWSTR;
+
+    // Encode the registry key path as a null-terminated wide string.
+    let key_path: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0"
+        .encode_utf16()
+        .collect();
+    let value_name: Vec<u16> = "Dikta\0".encode_utf16().collect();
+
+    unsafe {
+        let mut hkey = windows::Win32::System::Registry::HKEY::default();
+        let result = RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(key_path.as_ptr()),
+            0,
+            PCWSTR::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut hkey,
+            None,
+        );
+
+        if result != ERROR_SUCCESS {
+            log::warn!("[autostart] Failed to open registry key: {:?}", result);
+            return;
+        }
+
+        if enabled {
+            // Determine path to the current executable.
+            match std::env::current_exe() {
+                Ok(exe_path) => {
+                    let exe_str = exe_path.to_string_lossy();
+                    // Quote the path in case it contains spaces.
+                    let quoted = format!("\"{exe_str}\"\0");
+                    let wide: Vec<u16> = quoted.encode_utf16().collect();
+                    let byte_len = (wide.len() * 2) as u32;
+                    let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, byte_len as usize);
+
+                    let set_result = RegSetValueExW(
+                        hkey,
+                        PCWSTR(value_name.as_ptr()),
+                        0,
+                        REG_SZ,
+                        Some(bytes),
+                    );
+                    if set_result != ERROR_SUCCESS {
+                        log::warn!("[autostart] Failed to write registry value: {:?}", set_result);
+                    } else {
+                        log::info!("[autostart] Autostart enabled: {exe_str}");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[autostart] Could not determine exe path: {e}");
+                }
+            }
+        } else {
+            // Delete the value (ignore error if it doesn't exist).
+            let _ = RegDeleteValueW(hkey, PCWSTR(value_name.as_ptr()));
+            log::info!("[autostart] Autostart disabled (registry entry removed)");
+        }
+
+        let _ = RegCloseKey(hkey);
+    }
+}
+
+/// No-op stub for non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+fn apply_autostart(_enabled: bool) {}
+
+// ---------------------------------------------------------------------------
 // Silence detection helper
 // ---------------------------------------------------------------------------
 
@@ -1637,6 +1768,17 @@ pub fn run() {
             let history_db = history::open_db(&app_data_dir)
                 .expect("Failed to open history database");
 
+            // Detect first run: no API keys configured means the user hasn't gone
+            // through setup yet. We'll show the main window in this case even though
+            // tauri.conf.json has visible:false (tray-first for returning users).
+            let is_first_run = cfg.groq_api_key.is_empty()
+                && cfg.deepseek_api_key.is_empty()
+                && cfg.openai_api_key.is_empty()
+                && cfg.anthropic_api_key.is_empty();
+
+            // Apply autostart on launch: ensure registry entry matches config.
+            apply_autostart(cfg.autostart);
+
             // Build and register the application state.
             let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
             app.manage(app_state);
@@ -1648,9 +1790,10 @@ pub fn run() {
                 let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
+                let tray_tooltip = format!("Dikta \u{2014} {hotkey_str}");
                 let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
                     .icon(app.default_window_icon().unwrap().clone())
-                    .tooltip("Dikta")
+                    .tooltip(&tray_tooltip)
                     .menu(&menu)
                     .on_menu_event(|app, event| {
                         match event.id.as_ref() {
@@ -1707,6 +1850,17 @@ pub fn run() {
                 Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"),
                 Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
             }
+
+            // Show main window on first run so the onboarding wizard is visible.
+            // On subsequent launches the window stays hidden (tray-first).
+            if is_first_run {
+                log::info!("[setup] First run detected -- showing main window for onboarding");
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+
             Ok(())
         })
         // On Windows with a working system tray, we hide windows on close
@@ -1764,6 +1918,8 @@ pub fn run() {
             set_bar_shape,
             // Live preview
             transcribe_live_preview,
+            // Onboarding
+            is_first_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
