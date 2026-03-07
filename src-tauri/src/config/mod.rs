@@ -78,13 +78,33 @@ impl Default for HotkeyMode {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    /// Groq API key for the Whisper STT provider.
+    /// Groq API key (used for both STT and LLM providers).
     #[serde(default)]
     pub groq_api_key: String,
 
     /// DeepSeek API key for the LLM cleanup provider.
     #[serde(default)]
     pub deepseek_api_key: String,
+
+    /// OpenAI API key (used for both STT and LLM providers).
+    #[serde(default)]
+    pub openai_api_key: String,
+
+    /// Anthropic API key (used for LLM provider only).
+    #[serde(default)]
+    pub anthropic_api_key: String,
+
+    /// Ordered list of STT provider IDs. The first provider with a configured
+    /// API key is used. Falls back to the next in the list on missing key.
+    /// Valid values: `"groq"`, `"openai"`.
+    #[serde(default = "default_stt_priority")]
+    pub stt_priority: Vec<String>,
+
+    /// Ordered list of LLM provider IDs. The first provider with a configured
+    /// API key is used. Falls back to the next in the list on missing key.
+    /// Valid values: `"deepseek"`, `"openai"`, `"anthropic"`, `"groq"`.
+    #[serde(default = "default_llm_priority")]
+    pub llm_priority: Vec<String>,
 
     /// ISO-639-1 language code used for transcription (e.g. `"de"`, `"en"`).
     /// Empty string = auto-detect.
@@ -141,6 +161,19 @@ pub struct AppConfig {
     pub command_hotkey: String,
 }
 
+fn default_stt_priority() -> Vec<String> {
+    vec!["groq".to_string(), "openai".to_string()]
+}
+
+fn default_llm_priority() -> Vec<String> {
+    vec![
+        "deepseek".to_string(),
+        "openai".to_string(),
+        "anthropic".to_string(),
+        "groq".to_string(),
+    ]
+}
+
 fn default_language() -> String {
     String::new() // empty = auto-detect (Groq Whisper handles DE+EN mix)
 }
@@ -170,6 +203,10 @@ impl Default for AppConfig {
         AppConfig {
             groq_api_key: String::new(),
             deepseek_api_key: String::new(),
+            openai_api_key: String::new(),
+            anthropic_api_key: String::new(),
+            stt_priority: default_stt_priority(),
+            llm_priority: default_llm_priority(),
             language: default_language(),
             cleanup_style: default_cleanup_style(),
             hotkey: default_hotkey(),
@@ -245,6 +282,24 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
         }
     }
 
+    if config.openai_api_key.is_empty() {
+        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+            if !key.is_empty() {
+                log::info!("[config] openai_api_key loaded from OPENAI_API_KEY env var");
+                config.openai_api_key = key;
+            }
+        }
+    }
+
+    if config.anthropic_api_key.is_empty() {
+        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            if !key.is_empty() {
+                log::info!("[config] anthropic_api_key loaded from ANTHROPIC_API_KEY env var");
+                config.anthropic_api_key = key;
+            }
+        }
+    }
+
     config
 }
 
@@ -287,10 +342,14 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.groq_api_key.is_empty());
         assert!(cfg.deepseek_api_key.is_empty());
+        assert!(cfg.openai_api_key.is_empty());
+        assert!(cfg.anthropic_api_key.is_empty());
         assert!(cfg.language.is_empty(), "default language should be empty (auto-detect)");
         assert_eq!(cfg.cleanup_style, CleanupStyle::Polished);
         assert_eq!(cfg.hotkey, "ctrl+shift+d");
         assert_eq!(cfg.hotkey_mode, HotkeyMode::Hold);
+        assert_eq!(cfg.stt_priority, vec!["groq", "openai"]);
+        assert_eq!(cfg.llm_priority, vec!["deepseek", "openai", "anthropic", "groq"]);
     }
 
     /// `HotkeyMode` serializes with lowercase variant names.
@@ -334,6 +393,10 @@ mod tests {
         let original = AppConfig {
             groq_api_key: "groq-test-key-abc".to_string(),
             deepseek_api_key: "ds-test-key-xyz".to_string(),
+            openai_api_key: "sk-openai-test".to_string(),
+            anthropic_api_key: "sk-ant-test".to_string(),
+            stt_priority: vec!["openai".to_string(), "groq".to_string()],
+            llm_priority: vec!["anthropic".to_string(), "openai".to_string()],
             language: "en".to_string(),
             cleanup_style: CleanupStyle::Chat,
             hotkey: "ctrl+alt+r".to_string(),
@@ -418,10 +481,54 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("groqApiKey"), "expected camelCase 'groqApiKey'");
         assert!(json.contains("deepseekApiKey"), "expected camelCase 'deepseekApiKey'");
+        assert!(json.contains("openaiApiKey"), "expected camelCase 'openaiApiKey'");
+        assert!(json.contains("anthropicApiKey"), "expected camelCase 'anthropicApiKey'");
+        assert!(json.contains("sttPriority"), "expected camelCase 'sttPriority'");
+        assert!(json.contains("llmPriority"), "expected camelCase 'llmPriority'");
         assert!(json.contains("cleanupStyle"), "expected camelCase 'cleanupStyle'");
         assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
         assert!(json.contains("sttModel"), "expected camelCase 'sttModel'");
         assert!(json.contains("customPrompt"), "expected camelCase 'customPrompt'");
+    }
+
+    /// Default STT priority is groq > openai.
+    #[test]
+    fn test_default_stt_priority() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.stt_priority, vec!["groq", "openai"]);
+    }
+
+    /// Default LLM priority is deepseek > openai > anthropic > groq.
+    #[test]
+    fn test_default_llm_priority() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.llm_priority, vec!["deepseek", "openai", "anthropic", "groq"]);
+    }
+
+    /// Priority lists round-trip through save/load.
+    #[test]
+    fn test_priority_lists_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            stt_priority: vec!["openai".to_string()],
+            llm_priority: vec!["anthropic".to_string(), "deepseek".to_string()],
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.stt_priority, cfg.stt_priority);
+        assert_eq!(loaded.llm_priority, cfg.llm_priority);
+    }
+
+    /// Partial JSON with no priority fields fills in defaults.
+    #[test]
+    fn test_partial_json_fills_priority_defaults() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.stt_priority, vec!["groq", "openai"]);
+        assert_eq!(cfg.llm_priority, vec!["deepseek", "openai", "anthropic", "groq"]);
     }
 
     /// Default STT model is whisper-large-v3-turbo.

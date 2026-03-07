@@ -72,6 +72,10 @@ export async function saveSettings(
   customPrompt?: string | null,
   autostart?: boolean | null,
   whisperMode?: boolean | null,
+  openaiApiKey?: string | null,
+  anthropicApiKey?: string | null,
+  sttPriority?: string[] | null,
+  llmPriority?: string[] | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -85,6 +89,10 @@ export async function saveSettings(
     customPrompt: customPrompt ?? null,
     autostart: autostart ?? null,
     whisperMode: whisperMode ?? null,
+    openaiApiKey: openaiApiKey ?? null,
+    anthropicApiKey: anthropicApiKey ?? null,
+    sttPriority: sttPriority ?? null,
+    llmPriority: llmPriority ?? null,
   });
 }
 

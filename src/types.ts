@@ -34,6 +34,10 @@ export interface AppSettings {
   customPrompt: string;
   autostart: boolean;
   whisperMode: boolean;
+  openaiApiKeyMasked: string;
+  anthropicApiKeyMasked: string;
+  sttPriority: string[];
+  llmPriority: string[];
 }
 
 // A per-application recording profile.

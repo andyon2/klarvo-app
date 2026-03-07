@@ -1,4 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import "./styles.css";
 import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings, AppProfile, HistoryEntry, UsageSummary } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
@@ -219,6 +222,75 @@ function DictionaryTag({ term, onRemove }: { term: string; onRemove: (t: string)
   );
 }
 
+// --- Provider Priority List (Drag & Drop) ------------------------------------
+
+function SortableProviderItem({ id, label, active }: { id: string; label: string; active: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={[
+        "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-grab active:cursor-grabbing select-none",
+        "bg-[#111113] border",
+        active ? "border-emerald-500/30 text-zinc-200" : "border-zinc-800/40 text-zinc-500",
+      ].join(" ")}
+    >
+      <svg viewBox="0 0 16 16" className="w-3 h-3 text-zinc-600 flex-shrink-0" fill="currentColor">
+        <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
+        <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
+        <circle cx="5" cy="12" r="1.2" /><circle cx="11" cy="12" r="1.2" />
+      </svg>
+      <span className="flex-1">{label}</span>
+      <span className={["w-1.5 h-1.5 rounded-full flex-shrink-0", active ? "bg-emerald-400" : "bg-zinc-700"].join(" ")} />
+    </div>
+  );
+}
+
+function ProviderPriorityList({
+  items, onChange, keyStatus, labels,
+}: {
+  items: string[];
+  onChange: (items: string[]) => void;
+  keyStatus: Record<string, boolean>;
+  labels: Record<string, string>;
+}) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIdx = items.indexOf(active.id as string);
+      const newIdx = items.indexOf(over.id as string);
+      onChange(arrayMove(items, oldIdx, newIdx));
+    }
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={items} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-1">
+          {items.map((id) => (
+            <SortableProviderItem
+              key={id}
+              id={id}
+              label={labels[id] ?? id}
+              active={!!keyStatus[id]}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
 // --- Settings Panel ----------------------------------------------------------
 
 interface SettingsPanelProps {
@@ -231,7 +303,7 @@ interface SettingsPanelProps {
   audioDevice: string | null;
   audioDevices: string[];
   dictionary: string[];
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[]) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onHotkeyChange: (h: string) => void;
@@ -258,6 +330,10 @@ function SettingsPanel({
   const [localCustomPrompt, setLocalCustomPrompt] = useState(loadedSettings?.customPrompt ?? "");
   const [localAutostart, setLocalAutostart] = useState(loadedSettings?.autostart ?? false);
   const [localWhisperMode, setLocalWhisperMode] = useState(loadedSettings?.whisperMode ?? false);
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [localSttPriority, setLocalSttPriority] = useState<string[]>(loadedSettings?.sttPriority ?? ["groq", "openai"]);
+  const [localLlmPriority, setLocalLlmPriority] = useState<string[]>(loadedSettings?.llmPriority ?? ["deepseek", "openai", "anthropic", "groq"]);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -277,6 +353,8 @@ function SettingsPanel({
       setLocalCustomPrompt(loadedSettings.customPrompt);
       setLocalAutostart(loadedSettings.autostart);
       setLocalWhisperMode(loadedSettings.whisperMode);
+      setLocalSttPriority(loadedSettings.sttPriority);
+      setLocalLlmPriority(loadedSettings.llmPriority);
     }
   }, [loadedSettings]);
 
@@ -316,9 +394,11 @@ function SettingsPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority);
       setGroqKey("");
       setDeepseekKey("");
+      setOpenaiKey("");
+      setAnthropicKey("");
       setSaveMsg("Saved");
       setTimeout(() => setSaveMsg(null), 2000);
     } catch (err) {
@@ -326,7 +406,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -341,6 +421,8 @@ function SettingsPanel({
 
   const groqOk = !!loadedSettings?.groqApiKeyMasked;
   const deepseekOk = !!loadedSettings?.deepseekApiKeyMasked;
+  const openaiOk = !!loadedSettings?.openaiApiKeyMasked;
+  const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
 
   // Shared input classes
   const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors";
@@ -566,6 +648,65 @@ function SettingsPanel({
               value={deepseekKey}
               onChange={(e) => setDeepseekKey(e.target.value)}
               className={inputCls}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className={labelCls}>OpenAI</span>
+              <StatusDot active={openaiOk} />
+            </div>
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className={labelCls}>Anthropic</span>
+              <StatusDot active={anthropicOk} />
+              <span className="text-[10px] text-zinc-600">(LLM only)</span>
+            </div>
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
+              value={anthropicKey}
+              onChange={(e) => setAnthropicKey(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* --- Provider Priority --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>Provider Priority</span>
+          <p className="text-[10px] text-zinc-600">Drag to reorder. First provider with a configured key is used. If it fails, the next one is tried.</p>
+
+          <div className="flex flex-col gap-2">
+            <span className={labelCls}>Speech-to-Text</span>
+            <ProviderPriorityList
+              items={localSttPriority}
+              onChange={setLocalSttPriority}
+              keyStatus={{ groq: groqOk, openai: openaiOk }}
+              labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className={labelCls}>Text Cleanup (LLM)</span>
+            <ProviderPriorityList
+              items={localLlmPriority}
+              onChange={setLocalLlmPriority}
+              keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
+              labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
             />
           </div>
         </div>
@@ -817,8 +958,9 @@ export default function App() {
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
+    openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority);
     const updated = await getSettings();
     setLoadedSettings(updated);
     setLanguage(updated.language);

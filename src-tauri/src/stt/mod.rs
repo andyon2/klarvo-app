@@ -1,13 +1,19 @@
 //! Speech-to-text module.
 //!
-//! Defines the `SttProvider` trait and the `GroqWhisper` implementation that
-//! calls the Groq Whisper API (OpenAI-compatible).
+//! Defines the `SttProvider` trait and concrete implementations:
+//! - `GroqWhisper`: Groq Whisper API (OpenAI-compatible, fast/cheap)
+//! - `OpenAiWhisper`: OpenAI Whisper API (OpenAI-compatible, `whisper-1`)
 //!
-//! API docs: <https://console.groq.com/docs/speech-text>
+//! Both cloud providers use the same multipart/form-data format, so they share
+//! the generic `WhisperStt` struct parameterized by base URL and model name.
+//!
+//! API docs:
+//! - Groq: <https://console.groq.com/docs/speech-text>
+//! - OpenAI: <https://platform.openai.com/docs/api-reference/audio/createTranscription>
 //!
 //! ## `prompt` parameter
 //!
-//! The Groq Whisper API accepts an optional `prompt` field (max 224 tokens)
+//! The Whisper API accepts an optional `prompt` field (max 224 tokens)
 //! that acts as a transcription hint. We use it to inject dictionary terms so
 //! rare technical words and names are recognised correctly.
 //!
@@ -43,7 +49,7 @@ pub enum SttError {
 // Trait
 // ---------------------------------------------------------------------------
 
-/// Abstraction over speech-to-text backends (Groq, local whisper.cpp, etc.).
+/// Abstraction over speech-to-text backends (Groq, OpenAI, local whisper.cpp, etc.).
 ///
 /// Implementations receive raw WAV bytes and return the transcribed text.
 ///
@@ -64,16 +70,16 @@ pub trait SttProvider: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// Groq Whisper response types
+// Shared response types (both Groq and OpenAI return identical JSON)
 // ---------------------------------------------------------------------------
 
-/// Successful transcription response from Groq.
+/// Successful transcription response (OpenAI-compatible format).
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
     text: String,
 }
 
-/// Error response returned by the Groq API.
+/// Error response returned by OpenAI-compatible APIs.
 #[derive(Debug, Deserialize)]
 struct ApiErrorResponse {
     error: ApiErrorDetail,
@@ -85,36 +91,42 @@ struct ApiErrorDetail {
 }
 
 // ---------------------------------------------------------------------------
-// GroqWhisper
+// WhisperStt -- generic OpenAI-compatible Whisper client
 // ---------------------------------------------------------------------------
 
-/// Groq Whisper API client.
+/// Generic Whisper STT client for any OpenAI-compatible `/audio/transcriptions`
+/// endpoint.
 ///
-/// Uses `whisper-large-v3-turbo` by default -- 3x cheaper than v3 with
-/// negligible quality difference for dictation.
-pub struct GroqWhisper {
+/// Both `GroqWhisper` and `OpenAiWhisper` are thin wrappers around this struct
+/// with different base URLs and default models.
+pub struct WhisperStt {
     api_key: String,
     client: reqwest::Client,
+    base_url: String,
     model: String,
 }
 
-impl GroqWhisper {
-    const BASE_URL: &'static str = "https://api.groq.com/openai/v1/audio/transcriptions";
-    const DEFAULT_MODEL: &'static str = "whisper-large-v3-turbo";
-
-    /// Creates a new `GroqWhisper` client with the given API key.
+impl WhisperStt {
+    /// Creates a new `WhisperStt` client.
     ///
-    /// The API key should come from the caller (environment variable or
-    /// system keystore) -- never hard-coded.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        GroqWhisper {
+    /// - `api_key`: Bearer token for the API.
+    /// - `base_url`: Full URL of the transcriptions endpoint
+    ///   (e.g. `"https://api.groq.com/openai/v1/audio/transcriptions"`).
+    /// - `model`: Model identifier (e.g. `"whisper-large-v3-turbo"`, `"whisper-1"`).
+    pub fn new(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
+        WhisperStt {
             api_key: api_key.into(),
             client: reqwest::Client::new(),
-            model: Self::DEFAULT_MODEL.to_string(),
+            base_url: base_url.into(),
+            model: model.into(),
         }
     }
 
-    /// Override the Whisper model variant (e.g. `"whisper-large-v3"`).
+    /// Override the model variant.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
@@ -125,8 +137,8 @@ impl GroqWhisper {
     /// Extracted to a separate method so it can be tested without a live
     /// HTTP connection.
     ///
-    /// `prompt` is appended when non-empty (max 224 tokens per Groq docs).
-    fn build_form(
+    /// `prompt` is appended when non-empty (max 224 tokens per Whisper docs).
+    pub fn build_form(
         &self,
         audio: Vec<u8>,
         language: &str,
@@ -148,7 +160,6 @@ impl GroqWhisper {
         }
 
         // Inject dictionary terms as a transcription hint.
-        // Groq uses this to improve recognition of rare technical words.
         if let Some(p) = prompt {
             let trimmed = p.trim();
             if !trimmed.is_empty() {
@@ -161,8 +172,8 @@ impl GroqWhisper {
 }
 
 #[async_trait::async_trait]
-impl SttProvider for GroqWhisper {
-    /// Sends audio to the Groq Whisper API and returns the transcribed text.
+impl SttProvider for WhisperStt {
+    /// Sends audio to the Whisper API endpoint and returns the transcribed text.
     ///
     /// # Errors
     /// - `SttError::EmptyAudio` -- `audio` is empty.
@@ -183,7 +194,7 @@ impl SttProvider for GroqWhisper {
 
         let response = self
             .client
-            .post(Self::BASE_URL)
+            .post(&self.base_url)
             .bearer_auth(&self.api_key)
             .multipart(form)
             .send()
@@ -217,6 +228,142 @@ impl SttProvider for GroqWhisper {
 }
 
 // ---------------------------------------------------------------------------
+// GroqWhisper -- thin wrapper around WhisperStt
+// ---------------------------------------------------------------------------
+
+/// Groq Whisper API client.
+///
+/// Uses `whisper-large-v3-turbo` by default -- 3x cheaper than v3 with
+/// negligible quality difference for dictation.
+pub struct GroqWhisper {
+    inner: WhisperStt,
+}
+
+impl GroqWhisper {
+    const BASE_URL: &'static str = "https://api.groq.com/openai/v1/audio/transcriptions";
+    const DEFAULT_MODEL: &'static str = "whisper-large-v3-turbo";
+
+    /// Creates a new `GroqWhisper` client with the given API key.
+    ///
+    /// The API key should come from the caller (environment variable or
+    /// system keystore) -- never hard-coded.
+    pub fn new(api_key: impl Into<String>) -> Self {
+        GroqWhisper {
+            inner: WhisperStt::new(api_key, Self::BASE_URL, Self::DEFAULT_MODEL),
+        }
+    }
+
+    /// Override the Whisper model variant (e.g. `"whisper-large-v3"`).
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.inner = self.inner.with_model(model);
+        self
+    }
+
+    /// Returns the configured API key (for testing).
+    #[cfg(test)]
+    pub fn api_key(&self) -> &str {
+        &self.inner.api_key
+    }
+
+    /// Returns the configured model (for testing).
+    #[cfg(test)]
+    pub fn model(&self) -> &str {
+        &self.inner.model
+    }
+
+    /// Builds the multipart form (exposed for tests).
+    #[cfg(test)]
+    pub fn build_form(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<multipart::Form, reqwest::Error> {
+        self.inner.build_form(audio, language, prompt)
+    }
+}
+
+#[async_trait::async_trait]
+impl SttProvider for GroqWhisper {
+    async fn transcribe(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<String, SttError> {
+        self.inner.transcribe(audio, language, prompt).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OpenAiWhisper -- OpenAI Whisper API client
+// ---------------------------------------------------------------------------
+
+/// OpenAI Whisper API client (`whisper-1`).
+///
+/// Uses the same multipart/form-data format as Groq but against the OpenAI
+/// endpoint. Good fallback when Groq rate limits are hit.
+pub struct OpenAiWhisper {
+    inner: WhisperStt,
+}
+
+impl OpenAiWhisper {
+    const BASE_URL: &'static str = "https://api.openai.com/v1/audio/transcriptions";
+    const DEFAULT_MODEL: &'static str = "whisper-1";
+
+    /// Creates a new `OpenAiWhisper` client with the given API key.
+    ///
+    /// The API key should come from the caller (environment variable or
+    /// system keystore) -- never hard-coded.
+    pub fn new(api_key: impl Into<String>) -> Self {
+        OpenAiWhisper {
+            inner: WhisperStt::new(api_key, Self::BASE_URL, Self::DEFAULT_MODEL),
+        }
+    }
+
+    /// Override the model variant.
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.inner = self.inner.with_model(model);
+        self
+    }
+
+    /// Returns the configured API key (for testing).
+    #[cfg(test)]
+    pub fn api_key(&self) -> &str {
+        &self.inner.api_key
+    }
+
+    /// Returns the configured model (for testing).
+    #[cfg(test)]
+    pub fn model(&self) -> &str {
+        &self.inner.model
+    }
+
+    /// Builds the multipart form (exposed for tests).
+    #[cfg(test)]
+    pub fn build_form(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<multipart::Form, reqwest::Error> {
+        self.inner.build_form(audio, language, prompt)
+    }
+}
+
+#[async_trait::async_trait]
+impl SttProvider for OpenAiWhisper {
+    async fn transcribe(
+        &self,
+        audio: Vec<u8>,
+        language: &str,
+        prompt: Option<&str>,
+    ) -> Result<String, SttError> {
+        self.inner.transcribe(audio, language, prompt).await
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -224,17 +371,19 @@ impl SttProvider for GroqWhisper {
 mod tests {
     use super::*;
 
+    // --- GroqWhisper tests ---
+
     #[test]
     fn test_groq_whisper_new_stores_api_key() {
         let stt = GroqWhisper::new("test-key-12345");
-        assert_eq!(stt.api_key, "test-key-12345");
-        assert_eq!(stt.model, GroqWhisper::DEFAULT_MODEL);
+        assert_eq!(stt.api_key(), "test-key-12345");
+        assert_eq!(stt.model(), GroqWhisper::DEFAULT_MODEL);
     }
 
     #[test]
     fn test_groq_whisper_with_model_overrides_default() {
         let stt = GroqWhisper::new("key").with_model("whisper-large-v3");
-        assert_eq!(stt.model, "whisper-large-v3");
+        assert_eq!(stt.model(), "whisper-large-v3");
     }
 
     /// Verifies that the form can be built without panicking for non-empty audio.
@@ -298,5 +447,66 @@ mod tests {
             matches!(result, Err(SttError::EmptyAudio)),
             "expected EmptyAudio error, got: {result:?}"
         );
+    }
+
+    // --- OpenAiWhisper tests ---
+
+    #[test]
+    fn test_openai_whisper_new_stores_api_key() {
+        let stt = OpenAiWhisper::new("sk-openai-test-key");
+        assert_eq!(stt.api_key(), "sk-openai-test-key");
+        assert_eq!(stt.model(), OpenAiWhisper::DEFAULT_MODEL);
+    }
+
+    #[test]
+    fn test_openai_whisper_default_model_is_whisper_1() {
+        let stt = OpenAiWhisper::new("key");
+        assert_eq!(stt.model(), "whisper-1");
+    }
+
+    #[test]
+    fn test_openai_whisper_with_model_overrides_default() {
+        let stt = OpenAiWhisper::new("key").with_model("whisper-2");
+        assert_eq!(stt.model(), "whisper-2");
+    }
+
+    #[test]
+    fn test_openai_whisper_build_form_succeeds() {
+        let stt = OpenAiWhisper::new("key");
+        let form = stt.build_form(vec![0u8; 128], "en", None);
+        assert!(form.is_ok(), "build_form should succeed for OpenAiWhisper");
+    }
+
+    #[test]
+    fn test_openai_whisper_build_form_with_prompt() {
+        let stt = OpenAiWhisper::new("key");
+        let form = stt.build_form(vec![0u8; 128], "de", Some("TypeScript, Kubernetes"));
+        assert!(form.is_ok(), "build_form should accept a prompt");
+    }
+
+    #[tokio::test]
+    async fn test_openai_whisper_empty_audio_returns_error() {
+        let stt = OpenAiWhisper::new("dummy-key");
+        let result = stt.transcribe(vec![], "en", None).await;
+        assert!(
+            matches!(result, Err(SttError::EmptyAudio)),
+            "expected EmptyAudio error, got: {result:?}"
+        );
+    }
+
+    // --- WhisperStt generic tests ---
+
+    #[test]
+    fn test_whisper_stt_with_custom_base_url() {
+        let stt = WhisperStt::new("key", "https://custom.example.com/v1/audio/transcriptions", "my-model");
+        assert_eq!(stt.base_url, "https://custom.example.com/v1/audio/transcriptions");
+        assert_eq!(stt.model, "my-model");
+    }
+
+    #[tokio::test]
+    async fn test_whisper_stt_empty_audio_returns_error() {
+        let stt = WhisperStt::new("key", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo");
+        let result = stt.transcribe(vec![], "en", None).await;
+        assert!(matches!(result, Err(SttError::EmptyAudio)));
     }
 }

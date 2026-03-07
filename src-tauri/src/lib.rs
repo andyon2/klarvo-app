@@ -49,10 +49,13 @@ use config::{load_config, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use history::UsageSummary;
-use llm::{CleanupProvider, CleanupStyle, DeepSeekCleanup};
+use llm::{
+    AnthropicCleanup, CleanupProvider, CleanupStyle, DeepSeekCleanup, GroqCleanup,
+    OpenAiCleanup,
+};
 use paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
 use serde::{Deserialize, Serialize};
-use stt::{GroqWhisper, SttProvider};
+use stt::{GroqWhisper, OpenAiWhisper, SttProvider};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconEvent;
@@ -109,6 +112,14 @@ pub struct SettingsView {
     pub autostart: bool,
     /// Whisper mode (amplified mic for quiet speech).
     pub whisper_mode: bool,
+    /// Masked OpenAI API key.
+    pub openai_api_key_masked: String,
+    /// Masked Anthropic API key.
+    pub anthropic_api_key_masked: String,
+    /// Ordered list of STT provider IDs (first with a key wins).
+    pub stt_priority: Vec<String>,
+    /// Ordered list of LLM provider IDs (first with a key wins).
+    pub llm_priority: Vec<String>,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -175,14 +186,12 @@ unsafe impl Sync for AppState {}
 
 impl AppState {
     fn new(cfg: AppConfig, dictionary: Dictionary, app_data_dir: PathBuf, history_db: rusqlite::Connection) -> Self {
+        let stt = resolve_stt_provider(&cfg);
+        let cleanup = resolve_cleanup_provider(&cfg);
         AppState {
             recorder: Arc::new(AudioRecorder::new()),
-            stt_provider: RwLock::new(Arc::new(
-                GroqWhisper::new(cfg.groq_api_key.clone()).with_model(cfg.stt_model.clone())
-            )),
-            cleanup_provider: RwLock::new(Arc::new(DeepSeekCleanup::new(
-                cfg.deepseek_api_key.clone(),
-            ))),
+            stt_provider: RwLock::new(stt),
+            cleanup_provider: RwLock::new(cleanup),
             recording_start: Mutex::new(None),
             last_recording: Mutex::new(None),
             config: Mutex::new(cfg),
@@ -251,6 +260,46 @@ fn mask_api_key(key: &str) -> String {
 // ---------------------------------------------------------------------------
 // Hotkey dictation pipeline
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Provider resolution from priority lists
+// ---------------------------------------------------------------------------
+
+fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
+    for id in &cfg.stt_priority {
+        match id.as_str() {
+            "groq" if !cfg.groq_api_key.is_empty() => {
+                return Arc::new(GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()));
+            }
+            "openai" if !cfg.openai_api_key.is_empty() => {
+                return Arc::new(OpenAiWhisper::new(&cfg.openai_api_key));
+            }
+            _ => continue,
+        }
+    }
+    Arc::new(GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
+}
+
+fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
+    for id in &cfg.llm_priority {
+        match id.as_str() {
+            "deepseek" if !cfg.deepseek_api_key.is_empty() => {
+                return Arc::new(DeepSeekCleanup::new(&cfg.deepseek_api_key));
+            }
+            "openai" if !cfg.openai_api_key.is_empty() => {
+                return Arc::new(OpenAiCleanup::new(&cfg.openai_api_key));
+            }
+            "anthropic" if !cfg.anthropic_api_key.is_empty() => {
+                return Arc::new(AnthropicCleanup::new(&cfg.anthropic_api_key));
+            }
+            "groq" if !cfg.groq_api_key.is_empty() => {
+                return Arc::new(GroqCleanup::new(&cfg.groq_api_key));
+            }
+            _ => continue,
+        }
+    }
+    Arc::new(DeepSeekCleanup::new(&cfg.deepseek_api_key))
+}
 
 /// Starts recording audio and emits `state=recording`.
 ///
@@ -580,15 +629,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         // Command Mode: rewrite selected text using the voice command
         log::info!("[pipeline] command mode: rewriting with voice command");
 
-        // We need to downcast to DeepSeekCleanup to use rewrite()
-        // Since cleanup_provider is an Arc<dyn CleanupProvider>, we use a separate approach:
-        // Build a temporary DeepSeekCleanup from the current config.
-        let deepseek_key = state.config.lock().ok()
-            .map(|c| c.deepseek_api_key.clone())
-            .unwrap_or_default();
-        let ds = llm::DeepSeekCleanup::new(deepseek_key);
-
-        match ds.rewrite(sel_text, &raw_text).await {
+        match cleanup_provider.rewrite(sel_text, &raw_text).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = handle.emit(
@@ -978,6 +1019,10 @@ async fn save_settings(
     custom_prompt: Option<String>,
     autostart: Option<bool>,
     whisper_mode: Option<bool>,
+    openai_api_key: Option<String>,
+    anthropic_api_key: Option<String>,
+    stt_priority: Option<Vec<String>>,
+    llm_priority: Option<Vec<String>>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -1007,10 +1052,21 @@ async fn save_settings(
         autostart: autostart.unwrap_or(existing.autostart),
         whisper_mode: whisper_mode.unwrap_or(existing.whisper_mode),
         command_hotkey: existing.command_hotkey,
+        openai_api_key: match openai_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.openai_api_key,
+        },
+        anthropic_api_key: match anthropic_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.anthropic_api_key,
+        },
+        stt_priority: stt_priority.unwrap_or(existing.stt_priority),
+        llm_priority: llm_priority.unwrap_or(existing.llm_priority),
     };
-    let effective_groq = new_cfg.groq_api_key.clone();
-    let effective_deepseek = new_cfg.deepseek_api_key.clone();
-    let effective_stt_model = new_cfg.stt_model.clone();
+
+    // Resolve providers from the new config before persisting.
+    let new_stt = resolve_stt_provider(&new_cfg);
+    let new_cleanup = resolve_cleanup_provider(&new_cfg);
 
     // Persist to disk.
     save_config(&inner.app_data_dir, &new_cfg)
@@ -1019,11 +1075,9 @@ async fn save_settings(
     // Update in-memory config.
     *lock!(inner.config)? = new_cfg;
 
-    // Hot-reload providers with the effective API keys + model.
-    *write_lock!(inner.stt_provider)? = Arc::new(
-        GroqWhisper::new(effective_groq).with_model(effective_stt_model)
-    );
-    *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(effective_deepseek));
+    // Hot-reload providers based on priority lists.
+    *write_lock!(inner.stt_provider)? = new_stt;
+    *write_lock!(inner.cleanup_provider)? = new_cleanup;
 
     // Re-register the global shortcut with the (possibly new) hotkey + mode.
     register_hotkey(&handle, parsed_shortcut, hotkey_mode)?;
@@ -1051,6 +1105,10 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         custom_prompt: cfg.custom_prompt,
         autostart: cfg.autostart,
         whisper_mode: cfg.whisper_mode,
+        openai_api_key_masked: mask_api_key(&cfg.openai_api_key),
+        anthropic_api_key_masked: mask_api_key(&cfg.anthropic_api_key),
+        stt_priority: cfg.stt_priority,
+        llm_priority: cfg.llm_priority,
     })
 }
 
@@ -1796,6 +1854,10 @@ mod tests {
             custom_prompt: String::new(),
             autostart: false,
             whisper_mode: false,
+            openai_api_key_masked: String::new(),
+            anthropic_api_key_masked: String::new(),
+            stt_priority: vec!["groq".to_string(), "openai".to_string()],
+            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1820,6 +1882,10 @@ mod tests {
             custom_prompt: String::new(),
             autostart: false,
             whisper_mode: false,
+            openai_api_key_masked: String::new(),
+            anthropic_api_key_masked: String::new(),
+            stt_priority: vec!["groq".to_string(), "openai".to_string()],
+            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
@@ -1839,6 +1905,10 @@ mod tests {
             custom_prompt: String::new(),
             autostart: false,
             whisper_mode: false,
+            openai_api_key_masked: String::new(),
+            anthropic_api_key_masked: String::new(),
+            stt_priority: vec!["groq".to_string(), "openai".to_string()],
+            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");
