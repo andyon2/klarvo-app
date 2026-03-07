@@ -250,7 +250,7 @@ impl SttProvider for WhisperStt {
             ));
         }
 
-        Ok(result.text)
+        Ok(result.text.trim().to_string())
     }
 }
 
