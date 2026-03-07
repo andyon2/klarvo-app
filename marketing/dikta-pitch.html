@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dikta – Free Voice Dictation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  :root {
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --bg-dark: #0f0f13;
+    --bg-card: #1a1a22;
+    --text: #e4e4e7;
+    --text-muted: #a1a1aa;
+    --border: #2a2a36;
+    --green: #22c55e;
+    --orange: #f59e0b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page { size: A4; margin: 0; }
+
+  .container {
+    padding: 28px 36px;
+  }
+
+  /* ===== HERO ===== */
+  .hero {
+    text-align: center;
+    padding: 28px 0 20px;
+    position: relative;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%;
+    transform: translateX(-50%);
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .logo-mark {
+    display: inline-flex;
+    width: 72px; height: 72px;
+    margin-bottom: 16px;
+  }
+  .logo-mark img {
+    width: 72px; height: 72px;
+    border-radius: 18px;
+  }
+  h1 {
+    font-size: 44px;
+    font-weight: 900;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #fff 30%, var(--accent-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+  }
+  .tagline {
+    font-size: 17px;
+    font-weight: 300;
+    color: var(--text-muted);
+  }
+  .tagline strong {
+    color: var(--accent-light);
+    font-weight: 600;
+  }
+
+  /* ===== BADGES ===== */
+  .badges {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .badge.free { border-color: #22c55e44; color: var(--green); }
+  .badge.private { border-color: #6366f144; color: var(--accent-light); }
+  .badge.open { border-color: #f59e0b44; color: var(--orange); }
+  .badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .badge.free .badge-dot { background: var(--green); }
+  .badge.private .badge-dot { background: var(--accent-light); }
+  .badge.open .badge-dot { background: var(--orange); }
+
+  /* ===== FLOW ===== */
+  .flow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 18px 0 20px;
+  }
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .flow-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+  .flow-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .flow-arrow {
+    font-size: 18px;
+    color: var(--accent);
+    margin: 0 14px;
+    margin-bottom: 18px;
+  }
+
+  /* ===== SECTION TITLES ===== */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent-light);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ===== FEATURES ===== */
+  .features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+    break-inside: avoid;
+  }
+  .feature {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    break-inside: avoid;
+  }
+  .feature-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .feature-icon { font-size: 17px; width: 26px; text-align: center; }
+  .feature-name { font-size: 12.5px; font-weight: 700; }
+  .feature-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+
+  /* ===== COMPARISON ===== */
+  .comparison-wrap {
+    break-inside: avoid;
+    margin-bottom: 18px;
+  }
+  .comparison {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+  }
+  .comparison th {
+    text-align: left;
+    padding: 7px 12px;
+    font-weight: 700;
+    font-size: 11.5px;
+    border-bottom: 2px solid var(--border);
+  }
+  .comparison th:first-child { color: var(--text-muted); }
+  .comparison th:nth-child(2) { color: var(--accent-light); text-align: center; }
+  .comparison th:nth-child(3) { color: var(--text-muted); text-align: center; }
+  .comparison td {
+    padding: 5px 12px;
+    border-bottom: 1px solid #1e1e28;
+  }
+  .comparison td:nth-child(2),
+  .comparison td:nth-child(3) {
+    text-align: center;
+    font-weight: 600;
+  }
+  .comparison tr:nth-child(even) { background: rgba(26,26,34,0.5); }
+  .check { color: var(--green); }
+  .cross { color: #52525b; }
+  .highlight-row td { background: rgba(99,102,241,0.06); }
+
+  /* ===== COST ===== */
+  .cost-box {
+    background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(99,102,241,0.08));
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 12px;
+    padding: 18px 24px;
+    text-align: center;
+    margin-bottom: 18px;
+    break-inside: avoid;
+  }
+  .cost-box .price {
+    font-size: 36px;
+    font-weight: 900;
+    color: var(--green);
+    line-height: 1;
+  }
+  .cost-box .price-sub {
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .cost-box .cost-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+  .cost-box .cost-detail strong { color: var(--text); }
+
+  /* ===== PROVIDERS ===== */
+  .providers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 18px;
+    break-inside: avoid;
+  }
+  .provider-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .provider-card h4 {
+    font-size: 11.5px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--accent-light);
+  }
+  .provider-list { list-style: none; font-size: 11px; }
+  .provider-list li {
+    padding: 2px 0;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .provider-list li::before {
+    content: '';
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ===== TECH ===== */
+  .tech-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    break-inside: avoid;
+  }
+  .tech-tag {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .tech-tag.primary {
+    border-color: var(--accent);
+    color: var(--accent-light);
+    background: rgba(99,102,241,0.08);
+  }
+
+  /* ===== CTA + FOOTER ===== */
+  .cta {
+    text-align: center;
+    padding: 16px 0 10px;
+    break-inside: avoid;
+  }
+  .cta-text { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .cta-sub { font-size: 12px; color: var(--text-muted); }
+  .footer {
+    text-align: center;
+    font-size: 10px;
+    color: #52525b;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="hero">
+    <div class="logo-mark">
+      <img src="data:image/png;base64,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" alt="Dikta Logo" />
+    </div>
+    <h1>Dikta</h1>
+    <p class="tagline">Freie Sprachdiktat-App mit <strong>KI-Text-Cleanup</strong></p>
+    <div class="badges">
+      <span class="badge free"><span class="badge-dot"></span>Kostenlos</span>
+      <span class="badge private"><span class="badge-dot"></span>Deine Daten, deine Keys</span>
+      <span class="badge open"><span class="badge-dot"></span>Open Source</span>
+    </div>
+  </div>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-icon">&#127908;</div>
+      <span class="flow-label">Sprechen</span>
+    </div>
+    <span class="flow-arrow">&#10132;</span>
+    <div class="flow-step">
+      <div class="flow-icon">&#9997;&#65039;</div>
+      <span class="flow-label">Transkript</span>
+    </div>
+    <span class="flow-arrow">&#10132;</span>
+    <div class="flow-step">
+      <div class="flow-icon">&#10024;</div>
+      <span class="flow-label">KI-Cleanup</span>
+    </div>
+    <span class="flow-arrow">&#10132;</span>
+    <div class="flow-step">
+      <div class="flow-icon">&#128203;</div>
+      <span class="flow-label">Eingefuegt</span>
+    </div>
+  </div>
+
+  <div class="section-title">Features</div>
+  <div class="features">
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#127760;</span>
+        <span class="feature-name">Systemweit diktieren</span>
+      </div>
+      <p class="feature-desc">Globaler Hotkey &ndash; in jedem Textfeld, jeder App. Hold-to-talk oder Toggle. Resultat wird automatisch eingefuegt.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#129302;</span>
+        <span class="feature-name">KI-Text-Cleanup</span>
+      </div>
+      <p class="feature-desc">Fuellwoerter raus, Grammatik fix, 3 Stile: Verbatim, Clean, Formal. Oder als E-Mail, Bullets, Summary.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#128269;</span>
+        <span class="feature-name">Command Mode</span>
+      </div>
+      <p class="feature-desc">Text markieren, Sprachbefehl geben: &bdquo;Uebersetze auf Englisch&ldquo;, &bdquo;Mach Stichpunkte&ldquo; &ndash; KI fuehrt aus.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#127463;&#127462;</span>
+        <span class="feature-name">13 Sprachen + Translation</span>
+      </div>
+      <p class="feature-desc">Deutsch sprechen, Englisch rausbekommen. 13 Output-Sprachen. Code-Switching DE/EN nativ.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#128200;</span>
+        <span class="feature-name">History &amp; Stats</span>
+      </div>
+      <p class="feature-desc">Alle Diktate durchsuchbar. Kosten-Tracking, Fuellwort-Analyse, App-Kontext pro Eintrag.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#127911;</span>
+        <span class="feature-name">Voice Notes</span>
+      </div>
+      <p class="feature-desc">Gedanken per Sprache festhalten, ohne einzufuegen. Eigenes Panel zum Verwalten.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#128221;</span>
+        <span class="feature-name">Text Snippets</span>
+      </div>
+      <p class="feature-desc">Textbausteine speichern, per Klick einfuegen. Signaturen, Templates, Standardantworten.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-header">
+        <span class="feature-icon">&#128736;</span>
+        <span class="feature-name">App Profiles</span>
+      </div>
+      <p class="feature-desc">Style + Sprache pro App. Slack = Clean, Outlook = Formal &ndash; automatisch.</p>
+    </div>
+  </div>
+
+  <div class="comparison-wrap">
+    <div class="section-title">Dikta vs. Wispr Flow</div>
+    <table class="comparison">
+      <thead>
+        <tr><th></th><th>Dikta</th><th>Wispr Flow</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Preis</td><td class="check">Kostenlos</td><td>$8&ndash;24/Monat</td></tr>
+        <tr class="highlight-row"><td>Deine API-Keys</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Open Source</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr class="highlight-row"><td>Multi-Provider (STT + LLM)</td><td class="check">&#10003; 4 LLMs, 2 STTs</td><td class="cross">Locked-in</td></tr>
+        <tr><td>Provider-Prio konfigurierbar</td><td class="check">&#10003; Drag &amp; Drop</td><td class="cross">&#10007;</td></tr>
+        <tr class="highlight-row"><td>Command Mode</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+        <tr><td>Live Translation (13 Sprachen)</td><td class="check">&#10003;</td><td>begrenzt</td></tr>
+        <tr class="highlight-row"><td>Multi-Format Output</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Voice Notes</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr class="highlight-row"><td>Text Snippets</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>App Profiles (auto Style)</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr class="highlight-row"><td>Custom Dictionary</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+        <tr><td>History + Volltextsuche</td><td class="check">&#10003;</td><td class="check">&#10003;</td></tr>
+        <tr class="highlight-row"><td>Usage Stats + Kosten-Tracking</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Webhook/API Export</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+        <tr class="highlight-row"><td>Whisper Mode (leises Diktieren)</td><td class="check">&#10003;</td><td class="cross">&#10007;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cost-box">
+    <div class="price">$0 <span class="price-sub">/ Monat</span></div>
+    <div class="cost-detail">
+      Du zahlst nur API-Kosten &ndash; direkt an den Provider.
+      <strong>~$0.003 pro Diktat</strong> (Groq Whisper + DeepSeek) = <strong>ca. 3.000 Diktate fuer $1</strong>.<br>
+      Wispr Flow: <strong>$8&ndash;24/Monat</strong> &ndash; egal wie viel du nutzt.
+    </div>
+  </div>
+
+  <div class="providers">
+    <div class="provider-card">
+      <h4>Speech-to-Text</h4>
+      <ul class="provider-list">
+        <li>Groq Whisper (schnell + guenstig)</li>
+        <li>OpenAI Whisper (hoechste Qualitaet)</li>
+        <li>whisper.cpp lokal (geplant, offline)</li>
+      </ul>
+    </div>
+    <div class="provider-card">
+      <h4>KI-Cleanup (LLM)</h4>
+      <ul class="provider-list">
+        <li>DeepSeek (extrem guenstig)</li>
+        <li>OpenAI GPT-4o</li>
+        <li>Anthropic Claude</li>
+        <li>Groq Llama (schnell)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section-title">Unter der Haube</div>
+  <div class="tech-bar">
+    <span class="tech-tag primary">Rust</span>
+    <span class="tech-tag primary">Tauri v2</span>
+    <span class="tech-tag">React 19</span>
+    <span class="tech-tag">TypeScript</span>
+    <span class="tech-tag">SQLite</span>
+    <span class="tech-tag">178 Tests</span>
+    <span class="tech-tag">~8 MB Installer</span>
+    <span class="tech-tag">Windows</span>
+  </div>
+
+  <div class="cta">
+    <p class="cta-text">Bereit zum Testen?</p>
+    <p class="cta-sub">Installer holen, API-Key eintragen, loslegen. Kein Account. Kein Abo. Kein Bullshit.</p>
+  </div>
+
+  <div class="footer">
+    Dikta v0.4.0 &middot; Built with Rust &amp; Tauri &middot; Made by Andy
+  </div>
+
+</div>
+</body>
+</html>
