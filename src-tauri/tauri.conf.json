@@ -13,9 +13,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "Dikta Settings",
+        "title": "Dikta",
         "width": 400,
         "height": 500,
+        "minWidth": 360,
+        "minHeight": 400,
         "visible": true
       }
     ],

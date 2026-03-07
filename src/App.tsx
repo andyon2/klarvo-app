@@ -425,9 +425,9 @@ function SettingsPanel({
   const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
 
   // Shared input classes
-  const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors";
-  const labelCls = "text-xs text-zinc-400";
-  const sectionTitleCls = "text-[10px] font-semibold text-zinc-500 uppercase tracking-widest";
+  const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
+  const labelCls = "text-xs text-zinc-300";
+  const sectionTitleCls = "text-[10px] font-semibold text-zinc-400 uppercase tracking-widest";
 
   return (
     <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
@@ -519,7 +519,7 @@ function SettingsPanel({
           <span className={sectionTitleCls}>Hotkey</span>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-zinc-500">Shortcut</span>
+            <span className="text-xs text-zinc-300">Shortcut</span>
             <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
           </div>
 
@@ -543,7 +543,7 @@ function SettingsPanel({
               ))}
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600">
+          <p className="text-[11px] text-zinc-500">
             {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
           </p>
         </div>
@@ -558,7 +558,7 @@ function SettingsPanel({
             rows={3}
             className={`${inputCls} resize-none`}
           />
-          <p className="text-[11px] text-zinc-600">Appended to the system prompt during cleanup.</p>
+          <p className="text-[11px] text-zinc-500">Appended to the system prompt during cleanup.</p>
         </div>
 
         {/* --- General --- */}
@@ -588,7 +588,7 @@ function SettingsPanel({
           <label className="flex items-center justify-between gap-3 cursor-pointer">
             <div className="flex flex-col gap-0.5">
               <span className={labelCls}>Whisper mode</span>
-              <span className="text-[10px] text-zinc-600">Amplifies mic input for quiet dictation</span>
+              <span className="text-[10px] text-zinc-500">Amplifies mic input for quiet dictation</span>
             </div>
             <button
               type="button"
@@ -611,7 +611,7 @@ function SettingsPanel({
 
           <div className="flex flex-col gap-0.5">
             <span className={labelCls}>Command mode</span>
-            <span className="text-[10px] text-zinc-600">Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+            <span className="text-[10px] text-zinc-500">Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
           </div>
         </div>
 
@@ -671,7 +671,7 @@ function SettingsPanel({
             <div className="flex items-center gap-2">
               <span className={labelCls}>Anthropic</span>
               <StatusDot active={anthropicOk} />
-              <span className="text-[10px] text-zinc-600">(LLM only)</span>
+              <span className="text-[10px] text-zinc-500">(LLM only)</span>
             </div>
             <input
               type="password"
@@ -688,7 +688,7 @@ function SettingsPanel({
         {/* --- Provider Priority --- */}
         <div className="flex flex-col gap-3">
           <span className={sectionTitleCls}>Provider Priority</span>
-          <p className="text-[10px] text-zinc-600">Drag to reorder. First provider with a configured key is used. If it fails, the next one is tried.</p>
+          <p className="text-[10px] text-zinc-500">Drag to reorder. First provider with a configured key is used. If it fails, the next one is tried.</p>
 
           <div className="flex flex-col gap-2">
             <span className={labelCls}>Speech-to-Text</span>
@@ -738,14 +738,14 @@ function SettingsPanel({
               {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
             </div>
           ) : (
-            <p className="text-xs text-zinc-600 italic">No terms yet.</p>
+            <p className="text-xs text-zinc-500 italic">No terms yet.</p>
           )}
         </div>
 
         {/* --- App Profiles --- */}
         <div className="flex flex-col gap-3">
           <span className={sectionTitleCls}>App Profiles</span>
-          <p className="text-[11px] text-zinc-600">Override style/language per app. Matches window title substring.</p>
+          <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
 
           {profiles.map((p, i) => (
             <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
@@ -1075,7 +1075,7 @@ export default function App() {
       style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
     >
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 pt-3.5 pb-2 flex-shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-2 flex-shrink-0">
         <div className="flex items-center gap-2.5">
           {/* Logo */}
           <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
@@ -1145,7 +1145,7 @@ export default function App() {
       <div
         className={[
           "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          showSettings ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+          showSettings ? "max-h-[70vh] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
         {showSettings && (
@@ -1186,7 +1186,7 @@ export default function App() {
                 {historyEntries.length > 0 && (
                   <button
                     onClick={handleClearHistory}
-                    className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors"
+                    className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
                   >
                     Clear All
                   </button>
@@ -1206,13 +1206,13 @@ export default function App() {
                 placeholder="Search..."
                 value={historySearch}
                 onChange={(e) => handleHistorySearch(e.target.value)}
-                className="w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                className="w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
               />
             </div>
 
             <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2">
               {historyEntries.length === 0 ? (
-                <p className="text-xs text-zinc-600 italic text-center py-4">No dictations yet.</p>
+                <p className="text-xs text-zinc-500 italic text-center py-4">No dictations yet.</p>
               ) : (
                 historyEntries.map((entry) => (
                   <div
@@ -1221,7 +1221,7 @@ export default function App() {
                   >
                     <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{entry.text}</p>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-[10px] text-zinc-600">
+                      <span className="text-[10px] text-zinc-500">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
                         {entry.style !== "polished" && ` · ${entry.style}`}
                       </span>
@@ -1301,7 +1301,7 @@ export default function App() {
               : recordingState === "recording" ? "text-red-400"
               : recordingState === "done" ? "text-emerald-400"
               : isBusy ? "text-amber-400"
-              : "text-zinc-600",
+              : "text-zinc-500",
           ].join(" ")}>
             {errorMessage && recordingState === "error"
               ? errorMessage
@@ -1324,7 +1324,7 @@ export default function App() {
 
       {/* ── Footer ── */}
       <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
-        <span className="text-[11px] font-mono text-zinc-600">{hotkeyDisplay}</span>
+        <span className="text-[11px] font-mono text-zinc-500">{hotkeyDisplay}</span>
       </div>
     </main>
   );
