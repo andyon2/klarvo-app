@@ -1,0 +1,76 @@
+===============================================================================
+  DIKTA v0.4.0 -- Release Notes
+===============================================================================
+
+NEU IN DIESER VERSION
+---------------------
+
+  Advanced Settings (26 Power-User-Optionen)
+    - Eigene STT-Prompts pro Sprache (DE/EN/Auto)
+    - STT-Temperatur konfigurierbar
+    - LLM-System-Prompts fuer alle Modi ueberschreibbar
+    - LLM-Temperatur und Max Tokens
+    - LLM-Modell pro Provider waehlbar
+    - Audio-Schwellwerte (Silence, Whisper Mode, Min. Aufnahmedauer)
+    - Paste-Verhalten (Auto-Paste, Verzoegerung, Auto-Grossschreibung)
+    - Webhook-Konfiguration (Custom Headers, Timeout)
+    - Log-Level
+
+  Live-Uebersetzung
+    - Output-Sprache konfigurierbar (13 Sprachen)
+    - Diktat in einer Sprache, Output in einer anderen
+
+  Multi-Format-Output
+    - Email, Aufzaehlung (Bullets), Zusammenfassung
+    - Per Klick zwischen Formaten wechseln
+
+  Voice Notes
+    - Sprachnotizen aufnehmen und speichern (statt einfuegen)
+    - Eigenes Panel mit Uebersicht und Suche
+
+  Text Snippets
+    - Textbausteine anlegen und per Klick ins aktive Fenster einfuegen
+    - Schnellzugriff-Panel
+
+  App-Context-Erkennung
+    - App-Name wird pro Diktat gespeichert
+    - In der History nach App-Name durchsuchbar
+
+  Webhook/API-Export
+    - HTTP POST nach jedem Diktat an konfigurierbare URL
+    - Custom Headers und Timeout einstellbar
+
+  System-Tray-Integration
+    - Minimize to Tray
+    - Tray-Menue mit Settings und Beenden
+
+  Auto-Update-Infrastruktur
+    - Tauri Updater vorbereitet (Signing Keys noch nicht aktiv)
+
+  History-Verbesserungen
+    - Getrennte Suche nach Text und App-Name
+    - Fuellwort-Statistiken
+    - Kostentracking pro Provider
+
+VORHERIGE FEATURES (seit v0.1.0)
+---------------------------------
+  - Multi-Provider STT: Groq Whisper, OpenAI Whisper
+  - Multi-Provider LLM: DeepSeek, OpenAI, Anthropic, Groq (Llama)
+  - Provider-Prioritaet per Drag & Drop
+  - 3 Cleanup-Stile: Polished / Clean / Raw
+  - Globaler Hotkey (Hold + Toggle Modus, konfigurierbar)
+  - Command Mode (Ctrl+Shift+E)
+  - Whisper Mode (Verstaerkung fuer leises Diktieren)
+  - Live Preview (Echtzeit-Transkript)
+  - Custom Dictionary
+  - App Profiles (Style/Sprache/Prompt pro App)
+  - Chunked Parallel Cleanup (lange Texte)
+  - Onboarding-Wizard beim ersten Start
+
+BEKANNTE EINSCHRAENKUNGEN
+--------------------------
+  - Nur Windows (Android in Planung)
+  - Kein Offline-Modus (erfordert Internet fuer API-Zugriff)
+  - Auto-Update noch nicht aktiv (Signing Keys fehlen)
+
+===============================================================================

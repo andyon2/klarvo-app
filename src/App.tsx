@@ -2732,8 +2732,8 @@ export default function App() {
       {/* ── Advanced Settings Panel (toggleable) ── */}
       <div
         className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          showAdvanced ? "max-h-[calc(100vh-100px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+          "px-4 transition-all duration-250 ease-in-out flex-shrink-0",
+          showAdvanced ? "max-h-[calc(100vh-100px)] opacity-100 py-2 overflow-visible" : "max-h-0 opacity-0 py-0 overflow-hidden",
         ].join(" ")}
       >
         {showAdvanced && (

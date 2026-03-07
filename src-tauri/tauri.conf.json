@@ -36,6 +36,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "resources/README.txt",
+      "resources/RELEASE-NOTES.txt"
+    ],
     "windows": {
       "nsis": {
         "installMode": "both",
