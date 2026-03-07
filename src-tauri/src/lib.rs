@@ -50,8 +50,8 @@ use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use history::UsageSummary;
 use llm::{
-    AnthropicCleanup, CleanupProvider, CleanupStyle, DeepSeekCleanup, GroqCleanup,
-    OpenAiCleanup,
+    chunked_cleanup, AnthropicCleanup, CleanupProvider, CleanupStyle, DeepSeekCleanup,
+    GroqCleanup, OpenAiCleanup,
 };
 use paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
 use serde::{Deserialize, Serialize};
@@ -681,10 +681,10 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
             Err(_) => None,
         };
 
-        match cleanup_provider
-            .cleanup(&raw_text, style, dict_list.as_deref(), custom_prompt.as_deref())
-            .await
-        {
+        match chunked_cleanup(
+            cleanup_provider.as_ref(), &raw_text, style,
+            dict_list.as_deref(), custom_prompt.as_deref(),
+        ).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = handle.emit(
@@ -979,8 +979,7 @@ async fn cleanup_text(
         Err(_) => None,
     };
 
-    provider
-        .cleanup(&raw_text, style, terms.as_deref(), custom_prompt.as_deref())
+    chunked_cleanup(provider.as_ref(), &raw_text, style, terms.as_deref(), custom_prompt.as_deref())
         .await
         .map(|r| r.text)
         .map_err(|e: llm::LlmError| e.to_string())
@@ -1537,7 +1536,7 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
             let offset_x = monitor_pos.x as f64 / scale;
             let offset_y = monitor_pos.y as f64 / scale;
             let x = offset_x + (screen_w - bar_width) / 2.0;
-            let y = offset_y + screen_h - bar_height - 40.0;
+            let y = offset_y + screen_h - bar_height - 52.0;
             log::info!(
                 "[bar] screen={screen_w}x{screen_h} scale={scale} offset=({offset_x},{offset_y}), placing at ({x}, {y})"
             );

@@ -903,6 +903,129 @@ impl CleanupProvider for AnthropicCleanup {
 }
 
 // ---------------------------------------------------------------------------
+// Chunked parallel cleanup
+// ---------------------------------------------------------------------------
+
+/// Minimum character count before chunked cleanup kicks in.
+/// Below this threshold, a single API call is used (faster for short texts).
+const CHUNK_THRESHOLD: usize = 800;
+
+/// Target size per chunk in characters. Actual chunks may be slightly larger
+/// because we split on sentence boundaries to preserve context.
+const CHUNK_TARGET_SIZE: usize = 600;
+
+/// Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).
+/// Each chunk targets ~`CHUNK_TARGET_SIZE` characters but won't break mid-sentence.
+fn split_into_chunks(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let bytes = text.as_bytes();
+
+    while start < text.len() {
+        if text.len() - start <= CHUNK_TARGET_SIZE {
+            chunks.push(text[start..].trim());
+            break;
+        }
+
+        // Search for a sentence boundary near the target size
+        let search_end = (start + CHUNK_TARGET_SIZE + 200).min(text.len());
+        let mut best_split = None;
+
+        for i in (start + CHUNK_TARGET_SIZE / 2)..search_end {
+            if i + 1 < bytes.len()
+                && (bytes[i] == b'.' || bytes[i] == b'!' || bytes[i] == b'?')
+                && bytes[i + 1] == b' '
+            {
+                best_split = Some(i + 1); // include the punctuation
+                if i >= start + CHUNK_TARGET_SIZE {
+                    break; // close enough to target
+                }
+            }
+            if bytes[i] == b'\n' {
+                best_split = Some(i);
+                if i >= start + CHUNK_TARGET_SIZE {
+                    break;
+                }
+            }
+        }
+
+        let split_at = best_split.unwrap_or((start + CHUNK_TARGET_SIZE).min(text.len()));
+        let chunk = text[start..split_at].trim();
+        if !chunk.is_empty() {
+            chunks.push(chunk);
+        }
+        start = split_at;
+        // Skip whitespace/newlines between chunks
+        while start < text.len() && text.as_bytes()[start].is_ascii_whitespace() {
+            start += 1;
+        }
+    }
+
+    chunks
+}
+
+/// Cleans up text using the given provider. For long texts (>{CHUNK_THRESHOLD}
+/// chars), the text is split into chunks that are processed in parallel,
+/// significantly reducing wall-clock time.
+///
+/// Token usage from all chunks is summed in the returned `CleanupResult`.
+pub async fn chunked_cleanup(
+    provider: &dyn CleanupProvider,
+    raw_text: &str,
+    style: CleanupStyle,
+    dictionary_terms: Option<&str>,
+    custom_prompt: Option<&str>,
+) -> Result<CleanupResult, LlmError> {
+    // Short text: single call
+    if raw_text.len() < CHUNK_THRESHOLD {
+        return provider.cleanup(raw_text, style, dictionary_terms, custom_prompt).await;
+    }
+
+    let chunks = split_into_chunks(raw_text);
+    if chunks.len() <= 1 {
+        return provider.cleanup(raw_text, style, dictionary_terms, custom_prompt).await;
+    }
+
+    log::info!("[chunked_cleanup] splitting {} chars into {} chunks", raw_text.len(), chunks.len());
+
+    // Fire all chunks in parallel
+    let futures: Vec<_> = chunks
+        .iter()
+        .map(|chunk| provider.cleanup(chunk, style, dictionary_terms, custom_prompt))
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+
+    // Collect results, fail on first error
+    let mut combined_text = String::new();
+    let mut total_prompt = 0u32;
+    let mut total_completion = 0u32;
+    let mut has_usage = false;
+
+    for (i, result) in results.into_iter().enumerate() {
+        let r = result?;
+        if i > 0 && !combined_text.is_empty() {
+            combined_text.push('\n');
+        }
+        combined_text.push_str(&r.text);
+        if let Some(p) = r.prompt_tokens {
+            total_prompt += p;
+            has_usage = true;
+        }
+        if let Some(c) = r.completion_tokens {
+            total_completion += c;
+            has_usage = true;
+        }
+    }
+
+    Ok(CleanupResult {
+        text: combined_text,
+        prompt_tokens: if has_usage { Some(total_prompt) } else { None },
+        completion_tokens: if has_usage { Some(total_completion) } else { None },
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1317,5 +1440,103 @@ mod tests {
         let prompt = CleanupStyle::command_mode_system_prompt();
         assert!(prompt.contains("text editing assistant"));
         assert!(prompt.contains("voice command"));
+    }
+
+    // --- split_into_chunks tests ---
+
+    #[test]
+    fn test_split_short_text_single_chunk() {
+        let text = "Hello world. This is short.";
+        let chunks = split_into_chunks(text);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn test_split_at_sentence_boundaries() {
+        // Build a text with clear sentence boundaries that exceeds CHUNK_TARGET_SIZE
+        let sentence = "This is a test sentence with some words. ";
+        let text = sentence.repeat(25); // ~1000 chars
+        let chunks = split_into_chunks(&text);
+        assert!(chunks.len() >= 2, "should split into multiple chunks, got {}", chunks.len());
+        // Each chunk should end at a sentence boundary (with period)
+        for chunk in &chunks[..chunks.len() - 1] {
+            assert!(
+                chunk.ends_with('.') || chunk.ends_with('!') || chunk.ends_with('?'),
+                "chunk should end at sentence boundary: {:?}",
+                &chunk[chunk.len().saturating_sub(20)..]
+            );
+        }
+    }
+
+    #[test]
+    fn test_split_preserves_all_content() {
+        let sentence = "Sentence number one. Sentence number two. Sentence number three. ";
+        let text = sentence.repeat(20);
+        let chunks = split_into_chunks(&text);
+        let reassembled: String = chunks.join(" ");
+        // All words from the original should be present
+        assert!(reassembled.contains("Sentence number one"));
+        assert!(reassembled.contains("Sentence number three"));
+    }
+
+    #[test]
+    fn test_split_empty_text() {
+        let chunks = split_into_chunks("");
+        assert!(chunks.is_empty() || chunks.iter().all(|c| c.is_empty()));
+    }
+
+    #[test]
+    fn test_split_newline_boundaries() {
+        let line = "A".repeat(400);
+        let text = format!("{line}\n{line}\n{line}");
+        let chunks = split_into_chunks(&text);
+        assert!(chunks.len() >= 2, "should split at newlines, got {}", chunks.len());
+    }
+
+    // --- chunked_cleanup integration test (with mock) ---
+
+    /// A mock provider that returns the input text uppercased.
+    struct MockCleanupProvider;
+
+    #[async_trait::async_trait]
+    impl CleanupProvider for MockCleanupProvider {
+        async fn cleanup(
+            &self,
+            raw_text: &str,
+            _style: CleanupStyle,
+            _dictionary_terms: Option<&str>,
+            _custom_prompt: Option<&str>,
+        ) -> Result<CleanupResult, LlmError> {
+            Ok(CleanupResult {
+                text: raw_text.to_uppercase(),
+                prompt_tokens: Some(10),
+                completion_tokens: Some(5),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chunked_cleanup_short_text_single_call() {
+        let provider = MockCleanupProvider;
+        let result = chunked_cleanup(&provider, "hello world", CleanupStyle::Polished, None, None)
+            .await
+            .unwrap();
+        assert_eq!(result.text, "HELLO WORLD");
+        assert_eq!(result.prompt_tokens, Some(10));
+    }
+
+    #[tokio::test]
+    async fn test_chunked_cleanup_long_text_parallel() {
+        let provider = MockCleanupProvider;
+        let sentence = "This is a test sentence with enough words. ";
+        let text = sentence.repeat(30); // ~1300 chars, above threshold
+        let result = chunked_cleanup(&provider, &text, CleanupStyle::Polished, None, None)
+            .await
+            .unwrap();
+        // All text should be uppercased
+        assert!(result.text.contains("THIS IS A TEST"));
+        // Token usage should be summed across chunks
+        assert!(result.prompt_tokens.unwrap() > 10, "tokens should be summed");
     }
 }
