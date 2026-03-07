@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Phase 2 (Integration) abgeschlossen. Dikta ist ein funktionsfaehiges MVP: Hotkey druecken -> Sprache aufnehmen -> transkribieren -> bereinigen -> ins aktive Fenster einfuegen. 78 Rust-Tests, Frontend und Backend kompilieren sauber. Settings und Dictionary werden persistent gespeichert.
+Phase 5 in Arbeit. Dikta ist ein voll funktionsfaehiges Voice-Dictation-Tool mit Multi-Provider-Support, History, Stats, Voice Notes, Text Snippets, App-Context-Erkennung, Multi-Format-Output, Webhook-Export, System-Tray und Auto-Update-Infra. 178 Rust-Tests, Windows Release-Build laeuft.
 
 ## Abgeschlossene Aufgaben
 
@@ -14,45 +14,76 @@ Phase 2 (Integration) abgeschlossen. Dikta ist ein funktionsfaehiges MVP: Hotkey
 - [x] API-Provider-Docs recherchiert (Groq Whisper + DeepSeek Chat)
 
 ### Phase 2 -- Integration
-- [x] End-to-End-Flow: Record -> Transcribe -> Cleanup -> Anzeige (3-Schritt-Pipeline mit Status-Updates)
+- [x] End-to-End-Flow: Record -> Transcribe -> Cleanup -> Paste
 - [x] API-Key-Management (Settings-Panel mit maskierten Keys)
-- [x] Fehlerbehandlung im UI (API-Fehler, kein Mikrofon, etc.)
-- [x] Globaler Hotkey (Ctrl+Shift+D, tauri-plugin-global-shortcut)
-- [x] Text-Paste (arboard Clipboard + xdotool Ctrl+V Simulation)
-- [x] Event-basierte Pipeline (dikta://state-changed fuer Frontend-Sync)
-- [x] Settings-Persistenz (JSON config.json im App-Data-Dir)
-- [x] Custom Dictionary (JSON dictionary.json, Terms in Groq-Prompt + DeepSeek-System-Prompt)
+- [x] Globaler Hotkey (konfigurierbar, Hold/Toggle Mode)
+- [x] Text-Paste (Win32 SendInput + Clipboard)
+- [x] Event-basierte Pipeline (dikta://state-changed)
+- [x] Settings-Persistenz (JSON config.json)
+- [x] Custom Dictionary (Groq-Prompt + LLM-System-Prompt)
+- [x] Onboarding-Wizard
+
+### Phase 3 -- Multi-Provider & Advanced Features
+- [x] Multi-Provider STT: Groq Whisper, OpenAI Whisper (konfigurierbare Prioritaet)
+- [x] Multi-Provider LLM: DeepSeek, OpenAI, Anthropic, Groq/Llama (konfigurierbare Prioritaet)
+- [x] Provider Priority Drag & Drop UI
+- [x] Command Mode (Ctrl+Shift+E: Text selektieren, Sprachbefehl geben)
+- [x] Whisper Mode (Verstaerkung fuer leises Diktieren)
+- [x] Live Preview (Echtzeit-Transkript waehrend Aufnahme)
+- [x] History + Search (SQLite, Volltextsuche mit Highlighting)
+- [x] Usage Statistics (Kosten-Tracking STT/LLM, Filler-Word-Analyse)
+- [x] Chunked Parallel Cleanup (lange Texte parallel verarbeiten)
+- [x] Raw-Text-Anzeige (Original vs. bereinigt)
+- [x] Code-Switching DE/EN (verbesserte STT-Prompts)
+- [x] App Profiles (Style/Language/Prompt pro App)
+
+### Phase 4 -- Productivity Features
+- [x] Live Translation (Output-Sprache konfigurierbar, 13 Sprachen)
+- [x] Multi-Format Output (Email, Bullets, Summary + Reset-Button)
+- [x] Filler Word Statistics (aufklappbar in Stats)
+- [x] History Search mit Kontext-Highlighting
+- [x] App-Context pro Diktat (App-Name in History gespeichert, durchsuchbar)
+- [x] Voice Notes Mode (eigenes Panel, Aufnahme speichern statt pasten)
+- [x] Text Snippets (Quick-Access Panel, Textbausteine ins aktive Fenster pasten)
+- [x] Verbesserter STT-Prompt (Conditioning Text fuer alle Sprachen)
+
+### Phase 5 -- Platform & Infra
+- [x] Getrennte History-Suche (Text + App-Name als separate Felder)
+- [x] Webhook/API Export (HTTP POST nach jedem Diktat, konfigurierbare URL)
+- [x] System-Tray Integration (Minimize to Tray, Tray-Menue mit Settings/Quit)
+- [x] Auto-Update Infra (tauri-plugin-updater, GitHub Releases Endpoint, Signing)
+- [x] Floating Bar Window (Basis-Fenster am unteren Bildschirmrand)
 
 ## Module (Rust)
 ```
 src-tauri/src/
-  audio/      -- Audio-Capture (cpal), WAV-Encoding, dedizierter Thread
-  stt/        -- SttProvider Trait, GroqWhisper (multipart upload)
-  llm/        -- CleanupProvider Trait, DeepSeekCleanup (3 Styles)
-  paste/      -- PasteHandler Trait, Linux-Impl (arboard + xdotool)
-  hotkey/     -- Pipeline-Orchestrierung, Event-Emitter
-  config/     -- JSON-basierte Settings-Persistenz
+  audio/      -- Audio-Capture (cpal), WAV-Encoding, Silence Detection
+  stt/        -- SttProvider Trait, GroqWhisper, OpenAiWhisper
+  llm/        -- CleanupProvider Trait, DeepSeek/OpenAI/Anthropic/Groq, Chunked Cleanup
+  paste/      -- Win32 SendInput + Clipboard, Foreground Window Capture
+  hotkey/     -- Pipeline-Orchestrierung, Event-Emitter, Command Mode
+  config/     -- JSON Settings + App Profiles + Text Snippets + Webhook
   dictionary/ -- Custom-Woerterbuch (JSON)
+  history/    -- SQLite History + Voice Notes + Usage Stats + Filler Analysis
 ```
 
-## Offene Aufgaben (Phase 3+)
+## Offene Aufgaben (naechste Phasen)
 - [ ] Lokaler whisper.cpp Fallback (offline STT)
-- [ ] Windows-spezifische Paste-Implementierung (SendInput statt xdotool)
-- [ ] Hotkey konfigurierbar machen (UI)
-- [ ] History (vergangene Diktate durchsuchen)
-- [ ] System-Tray Integration
-- [ ] Auto-Update
-- [ ] Android IME (Phase 5)
+- [ ] Android IME (Tauri v2 Mobile + Kotlin InputMethodService)
+- [ ] VAD -- Voice Activity Detection (Auto-Start/Stopp)
+- [ ] Signing Keys generieren (Tauri Updater braucht Keypair)
+- [ ] GitHub Releases CI/CD Pipeline fuer Auto-Update
 
 ## Entscheidungen
 - [2026-03-06]: Tech-Stack: Tauri v2 + React/TS + Rust.
-- [2026-03-06]: API-Strategie: Groq Whisper (STT) + DeepSeek (Cleanup) primaer, whisper.cpp als Fallback.
-- [2026-03-06]: Entwicklung in WSL2 (Linux-Builds), Windows-Build spaeter ueber PowerShell.
+- [2026-03-06]: API-Strategie: Groq Whisper (STT) + DeepSeek (Cleanup) primaer, Fallback-Kette konfigurierbar.
 - [2026-03-06]: Audio-Thread: cpal::Stream nicht Send auf Linux -- dedizierter OS-Thread mit Channel.
 - [2026-03-06]: whisper-large-v3-turbo statt v3 (3x guenstiger, reicht fuer Diktat).
-- [2026-03-06]: JSON statt SQLite fuer Config/Dictionary (MVP-Simplizitaet, <1000 Eintraege).
+- [2026-03-06]: JSON fuer Config/Dictionary, SQLite fuer History/Stats.
 - [2026-03-06]: API-Keys verlassen Backend nie im Klartext (nur letzte 4 Zeichen maskiert).
 - [2026-03-06]: Event-basierte Pipeline (dikta://state-changed) statt polling.
-
-## Naechste Session
-Phase 3: Lokaler whisper.cpp Fallback, Windows-Paste, oder direkt testen mit echten API-Keys. Zum Testen: `GROQ_API_KEY=... DEEPSEEK_API_KEY=... cargo tauri dev`
+- [2026-03-07]: Win32 SendInput fuer Paste statt xdotool. GetForegroundWindow fuer App-Context.
+- [2026-03-07]: STT Conditioning Prompts pro Sprache fuer bessere Kurztext-Erkennung.
+- [2026-03-07]: Webhook: fire-and-forget POST, blockiert nie die Pipeline.
+- [2026-03-07]: Auto-Update: tauri-plugin-updater mit GitHub Releases Endpoint. Keys noch nicht generiert.
+- [2026-03-07]: History-Suche getrennt nach Text und App-Name (AND-Verknuepfung).

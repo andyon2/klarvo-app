@@ -1,6 +1,6 @@
 [package]
 name = "dikta"
-version = "0.3.0"
+version = "0.4.0"
 description = "Free voice dictation with AI text cleanup"
 authors = ["Andy"]
 edition = "2021"
@@ -30,6 +30,7 @@ log = "0.4"
 futures = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

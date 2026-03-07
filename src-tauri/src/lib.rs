@@ -45,7 +45,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
-use config::{load_config, save_config, AppConfig, HotkeyMode};
+use config::{load_config, save_config, AppConfig, HotkeyMode, TextSnippet};
 use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use history::UsageSummary;
@@ -122,6 +122,8 @@ pub struct SettingsView {
     pub llm_priority: Vec<String>,
     /// Output language for translation (empty = no translation).
     pub output_language: String,
+    /// Webhook URL for HTTP POST after each dictation. Empty = disabled.
+    pub webhook_url: String,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -519,8 +521,10 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         }
     };
 
-    let whisper_mode = state.config.lock().ok().map(|c| c.whisper_mode).unwrap_or(false);
-    let gain = if whisper_mode { 3.0 } else { 1.0 };
+    let (whisper_mode, adv) = state.config.lock().ok()
+        .map(|c| (c.whisper_mode, c.advanced.clone()))
+        .unwrap_or((false, config::AdvancedSettings::default()));
+    let gain = if whisper_mode { adv.whisper_mode_gain } else { 1.0 };
 
     let wav_bytes = match state.recorder.stop_recording_with_gain(gain) {
         Ok(bytes) => bytes,
@@ -551,7 +555,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Silence detection ---
     // If the recording is very short (<500ms) or essentially silent, skip the
     // STT/LLM pipeline. This matches Wispr Flow's "nothing said" behaviour.
-    if duration_ms < 500 {
+    if duration_ms < adv.min_recording_ms as u64 {
         log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
         let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
         return;
@@ -559,7 +563,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
 
     // Check RMS of the raw WAV samples. If the audio is near-silent, abort.
     // Whisper mode uses a lower threshold since the audio has been amplified.
-    let silence_threshold = if whisper_mode { 0.001 } else { 0.005 };
+    let silence_threshold = if whisper_mode { adv.whisper_mode_threshold } else { adv.silence_threshold };
     if let Some(rms) = compute_wav_rms(&wav_bytes) {
         log::debug!("[pipeline] audio RMS = {rms:.5} (threshold={silence_threshold})");
         if rms < silence_threshold {
@@ -612,7 +616,18 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
             Err(_) => None,
         };
 
-        let prompt = build_stt_prompt(dict_terms.as_deref(), &cfg.language);
+        // Use custom STT hint from advanced settings if set.
+        let stt_hint = match cfg.language.as_str() {
+            "de" if !cfg.advanced.stt_prompt_de.is_empty() => Some(cfg.advanced.stt_prompt_de.clone()),
+            "en" if !cfg.advanced.stt_prompt_en.is_empty() => Some(cfg.advanced.stt_prompt_en.clone()),
+            _ if !cfg.advanced.stt_prompt_auto.is_empty() => Some(cfg.advanced.stt_prompt_auto.clone()),
+            _ => None,
+        };
+        let prompt = stt::build_stt_prompt_with_hint(
+            dict_terms.as_deref(),
+            &cfg.language,
+            stt_hint.as_deref(),
+        );
 
         (cfg.language.clone(), stt_prov, cleanup_prov, prompt)
     };
@@ -766,10 +781,40 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
                 .map(|c| serde_json::to_string(&c.cleanup_style).unwrap_or_default().replace('"', ""))
                 .unwrap_or_else(|| "polished".to_string())
         };
+        let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
         if let Ok(db) = state.history_db.lock() {
-            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language) {
+            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref()) {
                 log::warn!("[pipeline] Failed to save to history: {e}");
             }
+        }
+
+        // --- Webhook ---
+        let webhook_url = state.config.lock().ok()
+            .map(|c| c.webhook_url.clone())
+            .unwrap_or_default();
+        if !webhook_url.is_empty() {
+            let payload = serde_json::json!({
+                "text": &cleaned_text,
+                "rawText": &raw_text,
+                "style": &style_str,
+                "language": &language,
+                "appName": app_name.as_deref(),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "durationMs": duration_ms,
+            });
+            let url = webhook_url.clone();
+            // Fire-and-forget: don't block the pipeline on webhook delivery.
+            tauri::async_runtime::spawn(async move {
+                let client = reqwest::Client::new();
+                if let Err(e) = client.post(&url)
+                    .json(&payload)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send()
+                    .await
+                {
+                    log::warn!("[webhook] POST to {url} failed: {e}");
+                }
+            });
         }
     }
 
@@ -1062,6 +1107,7 @@ async fn save_settings(
     stt_priority: Option<Vec<String>>,
     llm_priority: Option<Vec<String>>,
     output_language: Option<String>,
+    webhook_url: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -1102,6 +1148,10 @@ async fn save_settings(
         stt_priority: stt_priority.unwrap_or(existing.stt_priority),
         llm_priority: llm_priority.unwrap_or(existing.llm_priority),
         output_language: output_language.unwrap_or(existing.output_language),
+        snippets: existing.snippets,
+        voice_notes_hotkey: existing.voice_notes_hotkey,
+        webhook_url: webhook_url.unwrap_or(existing.webhook_url),
+        advanced: existing.advanced,
     };
 
     // Resolve providers from the new config before persisting.
@@ -1154,7 +1204,29 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         stt_priority: cfg.stt_priority,
         llm_priority: cfg.llm_priority,
         output_language: cfg.output_language,
+        webhook_url: cfg.webhook_url,
     })
+}
+
+/// Returns the current advanced settings.
+#[tauri::command]
+fn get_advanced_settings(state: State<'_, AppState>) -> Result<config::AdvancedSettings, String> {
+    let cfg = lock!(state.inner().config)?;
+    Ok(cfg.advanced.clone())
+}
+
+/// Saves updated advanced settings. Replaces the entire advanced block.
+#[tauri::command]
+fn save_advanced_settings(
+    state: State<'_, AppState>,
+    settings: config::AdvancedSettings,
+) -> Result<(), String> {
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.advanced = settings;
+    save_config(&inner.app_data_dir, &cfg)
+        .map_err(|e| format!("Failed to save advanced settings: {e}"))?;
+    Ok(())
 }
 
 /// Returns which API keys are currently configured (non-empty).
@@ -1373,12 +1445,22 @@ fn get_history(state: State<'_, AppState>, limit: Option<u32>) -> Result<Vec<his
         .map_err(|e| format!("Failed to load history: {e}"))
 }
 
-/// Searches history entries by text content.
+/// Searches history entries by text content and/or app name.
 #[tauri::command]
-fn search_history(state: State<'_, AppState>, query: String, limit: Option<u32>) -> Result<Vec<history::HistoryEntry>, String> {
+fn search_history(
+    state: State<'_, AppState>,
+    text_query: Option<String>,
+    app_query: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<history::HistoryEntry>, String> {
     let db = lock!(state.inner().history_db)?;
-    history::search_entries(&db, &query, limit.unwrap_or(50))
-        .map_err(|e| format!("Failed to search history: {e}"))
+    history::search_entries(
+        &db,
+        text_query.as_deref(),
+        app_query.as_deref(),
+        limit.unwrap_or(50),
+    )
+    .map_err(|e| format!("Failed to search history: {e}"))
 }
 
 /// Deletes a single history entry.
@@ -1408,8 +1490,30 @@ fn add_history_entry(
     language: String,
 ) -> Result<i64, String> {
     let db = lock!(state.inner().history_db)?;
-    history::add_entry(&db, &text, raw_text.as_deref(), &style, &language)
+    let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+    history::add_entry(&db, &text, raw_text.as_deref(), &style, &language, false, app_name.as_deref())
         .map_err(|e| format!("Failed to save history entry: {e}"))
+}
+
+/// Returns the most recent voice notes.
+#[tauri::command]
+fn get_notes(state: State<'_, AppState>, limit: u32) -> Result<Vec<history::HistoryEntry>, String> {
+    let db = lock!(state.inner().history_db)?;
+    history::get_notes(&db, limit).map_err(|e| format!("Failed to get notes: {e}"))
+}
+
+/// Saves a dictation result as a voice note (not pasted).
+#[tauri::command]
+fn save_note(
+    state: State<'_, AppState>,
+    text: String,
+    raw_text: String,
+    style: String,
+) -> Result<i64, String> {
+    let db = lock!(state.inner().history_db)?;
+    let language = lock!(state.inner().config)?.language.clone();
+    history::add_entry(&db, &text, Some(&raw_text), &style, &language, true, None)
+        .map_err(|e| format!("Failed to save note: {e}"))
 }
 
 /// Updates the floating bar window shape (circle when idle, pill when expanded).
@@ -1515,6 +1619,64 @@ fn save_profiles(
 }
 
 // ---------------------------------------------------------------------------
+// Tauri commands -- Snippets
+// ---------------------------------------------------------------------------
+
+/// Returns all user-defined text snippets from config.
+#[tauri::command]
+fn get_snippets(state: State<'_, AppState>) -> Result<Vec<TextSnippet>, String> {
+    let cfg = lock!(state.inner().config)?;
+    Ok(cfg.snippets.clone())
+}
+
+/// Replaces the full snippet list and persists to disk.
+///
+/// The caller supplies the complete list; individual add/remove operations
+/// are handled on the frontend and the resulting list is sent here.
+#[tauri::command]
+fn save_snippets(
+    state: State<'_, AppState>,
+    snippets: Vec<TextSnippet>,
+) -> Result<(), String> {
+    let inner = state.inner();
+    let mut cfg = lock!(inner.config)?;
+    cfg.snippets = snippets;
+    let cfg_clone = cfg.clone();
+    drop(cfg);
+    save_config(&inner.app_data_dir, &cfg_clone)
+        .map_err(|e| format!("Failed to persist snippets: {e}"))
+}
+
+/// Pastes snippet content into the previously focused window.
+///
+/// Reuses the same foreground-window capture and paste infrastructure as the
+/// dictation pipeline. The caller is responsible for supplying the content
+/// string -- no look-up by name happens here.
+///
+/// If `prev_foreground_hwnd` is `None` (e.g. no dictation has run yet),
+/// the paste handler falls back to clipboard-based pasting into whatever
+/// window currently has focus.
+#[tauri::command]
+async fn paste_snippet(
+    state: State<'_, AppState>,
+    content: String,
+) -> Result<(), String> {
+    let prev_hwnd = state.inner()
+        .prev_foreground_hwnd
+        .lock()
+        .map_err(|_| "Internal state lock poisoned".to_string())?
+        .clone();
+
+    // Capture current foreground window if we have no stored one from recording.
+    let hwnd = prev_hwnd.or_else(capture_foreground_window);
+
+    let paste_handler = create_paste_handler(hwnd);
+    paste_handler
+        .paste(&content)
+        .map_err(|e| format!("Failed to paste snippet: {e}"))
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands -- Misc / Onboarding
 // ---------------------------------------------------------------------------
 
@@ -1534,6 +1696,13 @@ fn is_first_run(state: State<'_, AppState>) -> bool {
         }
         Err(_) => true,
     }
+}
+
+/// Returns the title of the last window that was active before Dikta received
+/// focus (captured at hotkey press time), or `None` when no title was captured.
+#[tauri::command]
+fn get_active_app(state: State<'_, AppState>) -> Option<String> {
+    state.prev_window_title.lock().ok().and_then(|t| t.clone())
 }
 
 // ---------------------------------------------------------------------------
@@ -1783,6 +1952,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
             let app_data_dir = app
@@ -1907,14 +2077,10 @@ pub fn run() {
                 Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
             }
 
-            // Show main window on first run so the onboarding wizard is visible.
-            // On subsequent launches the window stays hidden (tray-first).
-            if is_first_run {
-                log::info!("[setup] First run detected -- showing main window for onboarding");
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+            // Always show the main window on launch.
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
             }
 
             Ok(())
@@ -1971,15 +2137,27 @@ pub fn run() {
             // Stats
             get_usage_stats,
             get_filler_stats,
+            // Voice Notes
+            get_notes,
+            save_note,
             // Profiles
             get_profiles,
             save_profiles,
+            // Snippets
+            get_snippets,
+            save_snippets,
+            paste_snippet,
             // Bar shape
             set_bar_shape,
             // Live preview
             transcribe_live_preview,
             // Onboarding
             is_first_run,
+            // Window context
+            get_active_app,
+            // Advanced settings
+            get_advanced_settings,
+            save_advanced_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2078,12 +2256,14 @@ mod tests {
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
+            webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("deepseekApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("cleanupStyle"), "expected camelCase key");
         assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
+        assert!(json.contains("webhookUrl"), "expected camelCase 'webhookUrl'");
     }
 
     // --- HotkeyMode via SettingsView ---
@@ -2107,6 +2287,7 @@ mod tests {
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
+            webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
@@ -2131,6 +2312,7 @@ mod tests {
             stt_priority: vec!["groq".to_string(), "openai".to_string()],
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
+            webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");

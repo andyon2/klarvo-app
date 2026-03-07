@@ -21,6 +21,264 @@ use serde::{Deserialize, Serialize};
 use crate::llm::CleanupStyle;
 
 // ---------------------------------------------------------------------------
+// AdvancedSettings
+// ---------------------------------------------------------------------------
+
+/// Fine-grained controls for power users. Exposed via the "Advanced Settings"
+/// tab in the UI. All fields have sensible defaults so existing config files
+/// (without an `advanced` key) load without errors.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvancedSettings {
+    // --- STT ---
+
+    /// Whisper conditioning prompt for German input. When non-empty, overrides
+    /// the built-in German hint that prepends dictionary terms.
+    #[serde(default = "default_stt_prompt_de")]
+    pub stt_prompt_de: String,
+
+    /// Whisper conditioning prompt for English input.
+    #[serde(default = "default_stt_prompt_en")]
+    pub stt_prompt_en: String,
+
+    /// Whisper conditioning prompt when language is set to auto-detect.
+    #[serde(default = "default_stt_prompt_auto")]
+    pub stt_prompt_auto: String,
+
+    /// Whisper sampling temperature. 0.0 = deterministic (recommended for
+    /// dictation). Higher values increase randomness.
+    #[serde(default = "default_stt_temperature")]
+    pub stt_temperature: f32,
+
+    // --- LLM system prompts ---
+
+    /// Custom system prompt for the Polished cleanup style.
+    /// Empty string = use the built-in prompt.
+    #[serde(default)]
+    pub llm_system_prompt_polished: String,
+
+    /// Custom system prompt for the Verbatim cleanup style.
+    /// Empty string = use the built-in prompt.
+    #[serde(default)]
+    pub llm_system_prompt_verbatim: String,
+
+    /// Custom system prompt for the Chat cleanup style.
+    /// Empty string = use the built-in prompt.
+    #[serde(default)]
+    pub llm_system_prompt_chat: String,
+
+    /// Custom system prompt for Command Mode.
+    /// Empty string = use the built-in prompt.
+    #[serde(default)]
+    pub llm_command_mode_prompt: String,
+
+    /// LLM sampling temperature. 0.0 = deterministic.
+    #[serde(default = "default_llm_temperature")]
+    pub llm_temperature: f32,
+
+    /// Maximum output tokens for LLM calls.
+    #[serde(default = "default_llm_max_tokens")]
+    pub llm_max_tokens: u32,
+
+    /// Model override for DeepSeek. Empty = use built-in default.
+    #[serde(default)]
+    pub llm_model_deepseek: String,
+
+    /// Model override for OpenAI LLM. Empty = use built-in default.
+    #[serde(default)]
+    pub llm_model_openai: String,
+
+    /// Model override for Anthropic. Empty = use built-in default.
+    #[serde(default)]
+    pub llm_model_anthropic: String,
+
+    /// Model override for Groq LLM. Empty = use built-in default.
+    #[serde(default)]
+    pub llm_model_groq: String,
+
+    /// Character count above which text is split into parallel chunks.
+    #[serde(default = "default_chunk_threshold")]
+    pub chunk_threshold: u32,
+
+    /// Target character count per chunk.
+    #[serde(default = "default_chunk_target_size")]
+    pub chunk_target_size: u32,
+
+    // --- Audio ---
+
+    /// RMS silence detection threshold. Audio below this level is treated as
+    /// silence and the pipeline is skipped. Default matches the hardcoded value.
+    #[serde(default = "default_silence_threshold")]
+    pub silence_threshold: f32,
+
+    /// RMS threshold used in whisper mode (amplified audio). Should be lower
+    /// than `silence_threshold` because the gain has already been applied.
+    #[serde(default = "default_whisper_mode_threshold")]
+    pub whisper_mode_threshold: f32,
+
+    /// Minimum recording duration in milliseconds. Recordings shorter than this
+    /// are discarded without calling STT.
+    #[serde(default = "default_min_recording_ms")]
+    pub min_recording_ms: u32,
+
+    /// Audio gain multiplier applied when whisper mode is active.
+    #[serde(default = "default_whisper_mode_gain")]
+    pub whisper_mode_gain: f32,
+
+    // --- Paste & behaviour ---
+
+    /// When `false`, the pipeline transcribes and cleans up text but does NOT
+    /// paste it into the target window. Useful for review-before-paste workflows.
+    #[serde(default = "default_auto_paste")]
+    pub auto_paste: bool,
+
+    /// Milliseconds to wait after focusing the target window before pasting.
+    #[serde(default = "default_paste_delay_ms")]
+    pub paste_delay_ms: u32,
+
+    /// Automatically capitalize the first letter of the cleaned text.
+    #[serde(default = "default_auto_capitalize")]
+    pub auto_capitalize: bool,
+
+    // --- Webhook ---
+
+    /// Custom HTTP headers to send with webhook POST requests, encoded as a
+    /// JSON object string (e.g. `{"X-My-Header": "value"}`).
+    /// Empty string = no extra headers.
+    #[serde(default)]
+    pub webhook_headers: String,
+
+    /// Timeout in seconds for webhook HTTP requests.
+    #[serde(default = "default_webhook_timeout_secs")]
+    pub webhook_timeout_secs: u32,
+
+    // --- System ---
+
+    /// Log verbosity level. One of `"debug"`, `"info"`, `"warn"`, `"error"`.
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_stt_prompt_de() -> String {
+    "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. ".to_string()
+}
+
+fn default_stt_prompt_en() -> String {
+    "Voice dictation in English. Proper punctuation, capitalization, and spelling. ".to_string()
+}
+
+fn default_stt_prompt_auto() -> String {
+    "Multilingual voice dictation. German and English with proper punctuation. ".to_string()
+}
+
+fn default_stt_temperature() -> f32 {
+    0.0
+}
+
+fn default_llm_temperature() -> f32 {
+    0.0
+}
+
+fn default_llm_max_tokens() -> u32 {
+    4096
+}
+
+fn default_chunk_threshold() -> u32 {
+    800
+}
+
+fn default_chunk_target_size() -> u32 {
+    600
+}
+
+fn default_silence_threshold() -> f32 {
+    0.005
+}
+
+fn default_whisper_mode_threshold() -> f32 {
+    0.001
+}
+
+fn default_min_recording_ms() -> u32 {
+    500
+}
+
+fn default_whisper_mode_gain() -> f32 {
+    3.0
+}
+
+fn default_auto_paste() -> bool {
+    true
+}
+
+fn default_paste_delay_ms() -> u32 {
+    50
+}
+
+fn default_auto_capitalize() -> bool {
+    true
+}
+
+fn default_webhook_timeout_secs() -> u32 {
+    10
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+impl Default for AdvancedSettings {
+    fn default() -> Self {
+        AdvancedSettings {
+            stt_prompt_de: default_stt_prompt_de(),
+            stt_prompt_en: default_stt_prompt_en(),
+            stt_prompt_auto: default_stt_prompt_auto(),
+            stt_temperature: default_stt_temperature(),
+            llm_system_prompt_polished: String::new(),
+            llm_system_prompt_verbatim: String::new(),
+            llm_system_prompt_chat: String::new(),
+            llm_command_mode_prompt: String::new(),
+            llm_temperature: default_llm_temperature(),
+            llm_max_tokens: default_llm_max_tokens(),
+            llm_model_deepseek: String::new(),
+            llm_model_openai: String::new(),
+            llm_model_anthropic: String::new(),
+            llm_model_groq: String::new(),
+            chunk_threshold: default_chunk_threshold(),
+            chunk_target_size: default_chunk_target_size(),
+            silence_threshold: default_silence_threshold(),
+            whisper_mode_threshold: default_whisper_mode_threshold(),
+            min_recording_ms: default_min_recording_ms(),
+            whisper_mode_gain: default_whisper_mode_gain(),
+            auto_paste: default_auto_paste(),
+            paste_delay_ms: default_paste_delay_ms(),
+            auto_capitalize: default_auto_capitalize(),
+            webhook_headers: String::new(),
+            webhook_timeout_secs: default_webhook_timeout_secs(),
+            log_level: default_log_level(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TextSnippet
+// ---------------------------------------------------------------------------
+
+/// A reusable text block the user can quickly paste anywhere.
+///
+/// Snippets are stored as a flat list in `AppConfig` and identified by their
+/// short trigger `name` (e.g. `"sig"`, `"addr"`). The frontend can display
+/// them in a panel or offer keyboard-driven selection.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TextSnippet {
+    /// Short trigger name shown in the UI (e.g. `"sig"`, `"addr"`, `"greeting"`).
+    pub name: String,
+    /// The full text to insert when the snippet is activated.
+    pub content: String,
+}
+
+// ---------------------------------------------------------------------------
 // AppProfile
 // ---------------------------------------------------------------------------
 
@@ -165,6 +423,30 @@ pub struct AppConfig {
     /// E.g. `"en"` = translate to English, `"de"` = translate to German.
     #[serde(default = "default_output_language")]
     pub output_language: String,
+
+    /// User-defined reusable text snippets.
+    /// Stored as an ordered list -- order determines display in the UI.
+    #[serde(default)]
+    pub snippets: Vec<TextSnippet>,
+
+    /// Hotkey string that triggers Voice Notes Mode instead of regular dictation.
+    /// When pressed, the dictation result is saved as a note (not pasted into the
+    /// active window). Empty string = Voice Notes Mode disabled.
+    /// Example: `"ctrl+shift+n"`.
+    #[serde(default = "default_voice_notes_hotkey")]
+    pub voice_notes_hotkey: String,
+
+    /// Webhook URL for HTTP POST notifications after each dictation.
+    /// Empty string = webhook disabled.
+    /// The backend sends a JSON POST to this URL after every successful pipeline run.
+    #[serde(default)]
+    pub webhook_url: String,
+
+    /// Fine-grained advanced settings for power users.
+    /// Defaults to `AdvancedSettings::default()` so existing config files
+    /// without this field load correctly.
+    #[serde(default)]
+    pub advanced: AdvancedSettings,
 }
 
 fn default_stt_priority() -> Vec<String> {
@@ -208,6 +490,10 @@ pub fn default_output_language() -> String {
     String::new() // empty = no translation
 }
 
+pub fn default_voice_notes_hotkey() -> String {
+    String::new() // empty = Voice Notes Mode disabled
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -229,6 +515,10 @@ impl Default for AppConfig {
             whisper_mode: false,
             command_hotkey: default_command_hotkey(),
             output_language: default_output_language(),
+            snippets: Vec::new(),
+            voice_notes_hotkey: default_voice_notes_hotkey(),
+            webhook_url: String::new(),
+            advanced: AdvancedSettings::default(),
         }
     }
 }
@@ -426,6 +716,20 @@ mod tests {
             whisper_mode: false,
             command_hotkey: "ctrl+shift+e".to_string(),
             output_language: "en".to_string(),
+            snippets: vec![TextSnippet {
+                name: "sig".to_string(),
+                content: "Best regards,\nAndy".to_string(),
+            }],
+            voice_notes_hotkey: "ctrl+shift+n".to_string(),
+            webhook_url: "https://example.com/webhook".to_string(),
+            advanced: AdvancedSettings {
+                stt_prompt_de: "Custom German prompt.".to_string(),
+                stt_temperature: 0.2,
+                llm_max_tokens: 2048,
+                silence_threshold: 0.01,
+                auto_paste: false,
+                ..AdvancedSettings::default()
+            },
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
@@ -662,6 +966,57 @@ mod tests {
         assert!(cfg.output_language.is_empty());
     }
 
+    /// Default snippets list is empty.
+    #[test]
+    fn test_default_snippets_is_empty() {
+        let cfg = AppConfig::default();
+        assert!(cfg.snippets.is_empty(), "default snippets should be an empty Vec");
+    }
+
+    /// Snippets round-trip through save/load without data loss.
+    #[test]
+    fn test_snippets_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            snippets: vec![
+                TextSnippet {
+                    name: "sig".to_string(),
+                    content: "Best regards,\nAndy".to_string(),
+                },
+                TextSnippet {
+                    name: "addr".to_string(),
+                    content: "Musterstraße 1, 12345 Berlin".to_string(),
+                },
+            ],
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).expect("save should succeed");
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.snippets, cfg.snippets);
+    }
+
+    /// Partial JSON without snippets field deserializes to an empty Vec.
+    #[test]
+    fn test_partial_json_snippets_defaults_to_empty() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert!(cfg.snippets.is_empty(), "missing snippets field should default to empty Vec");
+    }
+
+    /// TextSnippet serializes with camelCase keys.
+    #[test]
+    fn test_text_snippet_serializes_camel_case() {
+        let snippet = TextSnippet {
+            name: "greeting".to_string(),
+            content: "Hello!".to_string(),
+        };
+        let json = serde_json::to_string(&snippet).unwrap();
+        assert!(json.contains("\"name\""), "expected 'name' key");
+        assert!(json.contains("\"content\""), "expected 'content' key");
+    }
+
     /// All three CleanupStyle variants round-trip through config serialization.
     #[test]
     fn test_cleanup_style_roundtrip() {
@@ -675,5 +1030,170 @@ mod tests {
             let loaded = load_config(dir.path());
             assert_eq!(loaded.cleanup_style, style);
         }
+    }
+
+    /// Default webhook_url is empty (disabled).
+    #[test]
+    fn test_default_webhook_url_is_empty() {
+        let cfg = AppConfig::default();
+        assert!(cfg.webhook_url.is_empty(), "default webhook_url should be empty (disabled)");
+    }
+
+    /// webhook_url round-trips through save/load.
+    #[test]
+    fn test_webhook_url_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            webhook_url: "https://hooks.example.com/dikta".to_string(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.webhook_url, "https://hooks.example.com/dikta");
+    }
+
+    /// Partial JSON without webhook_url defaults to empty string.
+    #[test]
+    fn test_partial_json_webhook_url_defaults_to_empty() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert!(cfg.webhook_url.is_empty(), "missing webhookUrl should default to empty");
+    }
+
+    /// Config serializes webhook_url with camelCase key.
+    #[test]
+    fn test_webhook_url_serializes_camel_case() {
+        let cfg = AppConfig {
+            webhook_url: "https://example.com/wh".to_string(),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("webhookUrl"), "expected camelCase 'webhookUrl'");
+    }
+
+    // --- AdvancedSettings tests ---
+
+    /// Default AdvancedSettings has the expected values for key fields.
+    #[test]
+    fn test_advanced_settings_defaults() {
+        let adv = AdvancedSettings::default();
+        // STT defaults match the hardcoded hints in stt/mod.rs
+        assert!(adv.stt_prompt_de.contains("Deutsch"));
+        assert!(adv.stt_prompt_en.contains("English"));
+        assert!(adv.stt_prompt_auto.contains("Multilingual"));
+        assert_eq!(adv.stt_temperature, 0.0);
+        // LLM defaults
+        assert_eq!(adv.llm_temperature, 0.0);
+        assert_eq!(adv.llm_max_tokens, 4096);
+        assert!(adv.llm_system_prompt_polished.is_empty());
+        assert!(adv.llm_system_prompt_verbatim.is_empty());
+        assert!(adv.llm_system_prompt_chat.is_empty());
+        assert!(adv.llm_command_mode_prompt.is_empty());
+        assert!(adv.llm_model_deepseek.is_empty());
+        assert!(adv.llm_model_openai.is_empty());
+        assert!(adv.llm_model_anthropic.is_empty());
+        assert!(adv.llm_model_groq.is_empty());
+        // Chunking
+        assert_eq!(adv.chunk_threshold, 800);
+        assert_eq!(adv.chunk_target_size, 600);
+        // Audio
+        assert_eq!(adv.silence_threshold, 0.005);
+        assert_eq!(adv.whisper_mode_threshold, 0.001);
+        assert_eq!(adv.min_recording_ms, 500);
+        assert_eq!(adv.whisper_mode_gain, 3.0);
+        // Paste
+        assert!(adv.auto_paste);
+        assert_eq!(adv.paste_delay_ms, 50);
+        assert!(adv.auto_capitalize);
+        // Webhook
+        assert!(adv.webhook_headers.is_empty());
+        assert_eq!(adv.webhook_timeout_secs, 10);
+        // System
+        assert_eq!(adv.log_level, "info");
+    }
+
+    /// AdvancedSettings serializes with camelCase keys.
+    #[test]
+    fn test_advanced_settings_camel_case() {
+        let adv = AdvancedSettings::default();
+        let json = serde_json::to_string(&adv).unwrap();
+        assert!(json.contains("sttPromptDe"), "expected camelCase 'sttPromptDe'");
+        assert!(json.contains("sttPromptEn"), "expected camelCase 'sttPromptEn'");
+        assert!(json.contains("sttPromptAuto"), "expected camelCase 'sttPromptAuto'");
+        assert!(json.contains("sttTemperature"), "expected camelCase 'sttTemperature'");
+        assert!(json.contains("llmSystemPromptPolished"), "expected camelCase 'llmSystemPromptPolished'");
+        assert!(json.contains("llmSystemPromptVerbatim"), "expected camelCase 'llmSystemPromptVerbatim'");
+        assert!(json.contains("llmSystemPromptChat"), "expected camelCase 'llmSystemPromptChat'");
+        assert!(json.contains("llmCommandModePrompt"), "expected camelCase 'llmCommandModePrompt'");
+        assert!(json.contains("llmTemperature"), "expected camelCase 'llmTemperature'");
+        assert!(json.contains("llmMaxTokens"), "expected camelCase 'llmMaxTokens'");
+        assert!(json.contains("llmModelDeepseek"), "expected camelCase 'llmModelDeepseek'");
+        assert!(json.contains("chunkThreshold"), "expected camelCase 'chunkThreshold'");
+        assert!(json.contains("chunkTargetSize"), "expected camelCase 'chunkTargetSize'");
+        assert!(json.contains("silenceThreshold"), "expected camelCase 'silenceThreshold'");
+        assert!(json.contains("whisperModeThreshold"), "expected camelCase 'whisperModeThreshold'");
+        assert!(json.contains("minRecordingMs"), "expected camelCase 'minRecordingMs'");
+        assert!(json.contains("whisperModeGain"), "expected camelCase 'whisperModeGain'");
+        assert!(json.contains("autoPaste"), "expected camelCase 'autoPaste'");
+        assert!(json.contains("pasteDelayMs"), "expected camelCase 'pasteDelayMs'");
+        assert!(json.contains("autoCapitalize"), "expected camelCase 'autoCapitalize'");
+        assert!(json.contains("webhookHeaders"), "expected camelCase 'webhookHeaders'");
+        assert!(json.contains("webhookTimeoutSecs"), "expected camelCase 'webhookTimeoutSecs'");
+        assert!(json.contains("logLevel"), "expected camelCase 'logLevel'");
+    }
+
+    /// AdvancedSettings round-trips through save/load.
+    #[test]
+    fn test_advanced_settings_roundtrip() {
+        let dir = temp_dir();
+        let adv = AdvancedSettings {
+            stt_prompt_de: "Benutzerdefinierter Prompt.".to_string(),
+            stt_temperature: 0.3,
+            llm_temperature: 0.5,
+            llm_max_tokens: 2048,
+            llm_system_prompt_polished: "Custom polished prompt.".to_string(),
+            llm_model_deepseek: "deepseek-reasoner".to_string(),
+            chunk_threshold: 1000,
+            chunk_target_size: 800,
+            silence_threshold: 0.01,
+            whisper_mode_threshold: 0.002,
+            min_recording_ms: 300,
+            whisper_mode_gain: 5.0,
+            auto_paste: false,
+            paste_delay_ms: 100,
+            auto_capitalize: false,
+            webhook_headers: r#"{"X-API-Key": "secret"}"#.to_string(),
+            webhook_timeout_secs: 30,
+            log_level: "debug".to_string(),
+            ..AdvancedSettings::default()
+        };
+        let cfg = AppConfig {
+            advanced: adv.clone(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).expect("save should succeed");
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.advanced, adv);
+    }
+
+    /// Partial JSON without an `advanced` field deserializes to AdvancedSettings::default().
+    #[test]
+    fn test_partial_json_without_advanced_uses_defaults() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.advanced, AdvancedSettings::default(),
+            "missing 'advanced' field should deserialize to AdvancedSettings::default()");
+    }
+
+    /// AppConfig serializes the `advanced` field with camelCase key.
+    #[test]
+    fn test_app_config_includes_advanced_field() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"advanced\""), "AppConfig should serialize an 'advanced' key");
     }
 }

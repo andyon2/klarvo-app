@@ -580,6 +580,24 @@ impl CleanupProvider for OpenAiCompatibleCleanup {
         self.send_request(&body).await
     }
 
+    async fn cleanup_with_translation(
+        &self,
+        raw_text: &str,
+        style: CleanupStyle,
+        dictionary_terms: Option<&str>,
+        custom_prompt: Option<&str>,
+        output_language: Option<&str>,
+    ) -> Result<CleanupResult, LlmError> {
+        if raw_text.trim().is_empty() {
+            return Err(LlmError::EmptyInput);
+        }
+
+        let body = self.build_request_with_translation(
+            raw_text, style, dictionary_terms, custom_prompt, output_language,
+        );
+        self.send_request(&body).await
+    }
+
     async fn rewrite(
         &self,
         selected_text: &str,
@@ -591,9 +609,17 @@ impl CleanupProvider for OpenAiCompatibleCleanup {
 
         let body = self.build_command_request(selected_text, voice_command);
         let mut result = self.send_request(&body).await?;
-        // Trim whitespace from Command Mode output
         result.text = result.text.trim().to_string();
         Ok(result)
+    }
+
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        if text.trim().is_empty() {
+            return Err(LlmError::EmptyInput);
+        }
+
+        let body = self.build_reformat_request(text, format);
+        self.send_request(&body).await
     }
 }
 
@@ -663,12 +689,16 @@ impl CleanupProvider for DeepSeekCleanup {
         self.inner.cleanup(raw_text, style, dictionary_terms, custom_prompt).await
     }
 
-    async fn rewrite(
-        &self,
-        selected_text: &str,
-        voice_command: &str,
-    ) -> Result<CleanupResult, LlmError> {
+    async fn cleanup_with_translation(&self, raw_text: &str, style: CleanupStyle, dictionary_terms: Option<&str>, custom_prompt: Option<&str>, output_language: Option<&str>) -> Result<CleanupResult, LlmError> {
+        self.inner.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await
+    }
+
+    async fn rewrite(&self, selected_text: &str, voice_command: &str) -> Result<CleanupResult, LlmError> {
         self.inner.rewrite(selected_text, voice_command).await
+    }
+
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        self.inner.reformat(text, format).await
     }
 }
 
@@ -731,12 +761,16 @@ impl CleanupProvider for OpenAiCleanup {
         self.inner.cleanup(raw_text, style, dictionary_terms, custom_prompt).await
     }
 
-    async fn rewrite(
-        &self,
-        selected_text: &str,
-        voice_command: &str,
-    ) -> Result<CleanupResult, LlmError> {
+    async fn cleanup_with_translation(&self, raw_text: &str, style: CleanupStyle, dictionary_terms: Option<&str>, custom_prompt: Option<&str>, output_language: Option<&str>) -> Result<CleanupResult, LlmError> {
+        self.inner.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await
+    }
+
+    async fn rewrite(&self, selected_text: &str, voice_command: &str) -> Result<CleanupResult, LlmError> {
         self.inner.rewrite(selected_text, voice_command).await
+    }
+
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        self.inner.reformat(text, format).await
     }
 }
 
@@ -800,12 +834,16 @@ impl CleanupProvider for GroqCleanup {
         self.inner.cleanup(raw_text, style, dictionary_terms, custom_prompt).await
     }
 
-    async fn rewrite(
-        &self,
-        selected_text: &str,
-        voice_command: &str,
-    ) -> Result<CleanupResult, LlmError> {
+    async fn cleanup_with_translation(&self, raw_text: &str, style: CleanupStyle, dictionary_terms: Option<&str>, custom_prompt: Option<&str>, output_language: Option<&str>) -> Result<CleanupResult, LlmError> {
+        self.inner.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await
+    }
+
+    async fn rewrite(&self, selected_text: &str, voice_command: &str) -> Result<CleanupResult, LlmError> {
         self.inner.rewrite(selected_text, voice_command).await
+    }
+
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        self.inner.reformat(text, format).await
     }
 }
 
@@ -933,6 +971,45 @@ impl AnthropicCleanup {
         }
     }
 
+    /// Builds the cleanup request body with optional translation.
+    pub fn build_request_with_translation<'a>(
+        &'a self,
+        raw_text: &str,
+        style: CleanupStyle,
+        dictionary_terms: Option<&str>,
+        custom_prompt: Option<&str>,
+        output_language: Option<&str>,
+    ) -> AnthropicRequest<'a> {
+        AnthropicRequest {
+            model: &self.model,
+            system: style.system_prompt_with_translation(dictionary_terms, custom_prompt, output_language),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: raw_text.to_string(),
+            }],
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+        }
+    }
+
+    /// Builds the reformat request body.
+    pub fn build_reformat_request<'a>(
+        &'a self,
+        text: &str,
+        format: &str,
+    ) -> AnthropicRequest<'a> {
+        AnthropicRequest {
+            model: &self.model,
+            system: reformat_system_prompt(format).to_string(),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: text.to_string(),
+            }],
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+        }
+    }
+
     /// Builds the Command Mode rewrite request body.
     pub fn build_command_request<'a>(
         &'a self,
@@ -1030,6 +1107,15 @@ impl CleanupProvider for AnthropicCleanup {
         self.send_request(&body).await
     }
 
+    async fn cleanup_with_translation(&self, raw_text: &str, style: CleanupStyle, dictionary_terms: Option<&str>, custom_prompt: Option<&str>, output_language: Option<&str>) -> Result<CleanupResult, LlmError> {
+        if raw_text.trim().is_empty() {
+            return Err(LlmError::EmptyInput);
+        }
+
+        let body = self.build_request_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language);
+        self.send_request(&body).await
+    }
+
     async fn rewrite(
         &self,
         selected_text: &str,
@@ -1043,6 +1129,15 @@ impl CleanupProvider for AnthropicCleanup {
         let mut result = self.send_request(&body).await?;
         result.text = result.text.trim().to_string();
         Ok(result)
+    }
+
+    async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
+        if text.trim().is_empty() {
+            return Err(LlmError::EmptyInput);
+        }
+
+        let body = self.build_reformat_request(text, format);
+        self.send_request(&body).await
     }
 }
 

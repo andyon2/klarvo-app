@@ -6,7 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload, HistoryEntry, UsageSummary, AppProfile } from "./types";
+import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload, HistoryEntry, UsageSummary, AppProfile, AdvancedSettings } from "./types";
 
 /**
  * Starts audio capture. Backend begins buffering microphone input.
@@ -77,6 +77,7 @@ export async function saveSettings(
   sttPriority?: string[] | null,
   llmPriority?: string[] | null,
   outputLanguage?: string | null,
+  webhookUrl?: string | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -95,6 +96,7 @@ export async function saveSettings(
     sttPriority: sttPriority ?? null,
     llmPriority: llmPriority ?? null,
     outputLanguage: outputLanguage ?? null,
+    webhookUrl: webhookUrl ?? null,
   });
 }
 
@@ -177,8 +179,12 @@ export async function getHistory(limit?: number): Promise<HistoryEntry[]> {
   return invoke<HistoryEntry[]>("get_history", { limit: limit ?? null });
 }
 
-export async function searchHistory(query: string, limit?: number): Promise<HistoryEntry[]> {
-  return invoke<HistoryEntry[]>("search_history", { query, limit: limit ?? null });
+export async function searchHistory(textQuery?: string, appQuery?: string, limit?: number): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("search_history", {
+    textQuery: textQuery || null,
+    appQuery: appQuery || null,
+    limit: limit ?? null,
+  });
 }
 
 export async function deleteHistoryEntry(id: number): Promise<void> {
@@ -252,4 +258,60 @@ export async function setBarShape(shape: "circle" | "pill"): Promise<void> {
 
 export async function transcribeLivePreview(): Promise<string> {
   return invoke<string>("transcribe_live_preview");
+}
+
+// --- Window context ---
+
+/**
+ * Returns the title of the currently focused window, or null when no window
+ * has focus or on non-Windows platforms.
+ */
+export async function getActiveApp(): Promise<string | null> {
+  return invoke<string | null>("get_active_app");
+}
+
+// --- Voice Notes ---
+
+export async function getNotes(limit: number): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("get_notes", { limit });
+}
+
+export async function saveNote(text: string, rawText: string, style: string): Promise<number> {
+  return invoke<number>("save_note", { text, rawText, style });
+}
+
+// --- Snippets ---
+
+export interface TextSnippet {
+  name: string;
+  content: string;
+}
+
+export async function getSnippets(): Promise<TextSnippet[]> {
+  return invoke<TextSnippet[]>("get_snippets");
+}
+
+export async function saveSnippets(snippets: TextSnippet[]): Promise<void> {
+  return invoke<void>("save_snippets", { snippets });
+}
+
+export async function pasteSnippet(content: string): Promise<void> {
+  return invoke<void>("paste_snippet", { content });
+}
+
+// --- Advanced Settings ---
+
+/**
+ * Returns the current advanced (power-user) settings.
+ */
+export async function getAdvancedSettings(): Promise<AdvancedSettings> {
+  return invoke<AdvancedSettings>("get_advanced_settings");
+}
+
+/**
+ * Persists advanced settings to disk.
+ * @param settings - Full AdvancedSettings object
+ */
+export async function saveAdvancedSettings(settings: AdvancedSettings): Promise<void> {
+  await invoke("save_advanced_settings", { settings });
 }

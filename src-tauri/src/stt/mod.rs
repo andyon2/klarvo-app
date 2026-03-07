@@ -78,11 +78,33 @@ pub trait SttProvider: Send + Sync {
 /// When `language` is `"de"`, a code-switching hint is prepended so Whisper
 /// preserves embedded English words instead of germanising them.
 ///
+/// If `custom_hint` is `Some(s)` and non-empty, it is used instead of the
+/// built-in language hint. Dictionary terms are still appended after it.
+///
 /// Returns `None` when the resulting prompt would be empty.
 pub fn build_stt_prompt(dict_terms: Option<&str>, language: &str) -> Option<String> {
-    let hint = match language {
-        "de" => "German with occasional English terms and expressions. ",
-        _ => "",
+    build_stt_prompt_with_hint(dict_terms, language, None)
+}
+
+/// Like `build_stt_prompt` but accepts an optional custom hint that overrides
+/// the built-in language-specific conditioning text.
+///
+/// When `custom_hint` is `Some(s)` and non-empty, it replaces the default
+/// language hint. Dictionary terms are still appended after the hint.
+pub fn build_stt_prompt_with_hint(
+    dict_terms: Option<&str>,
+    language: &str,
+    custom_hint: Option<&str>,
+) -> Option<String> {
+    // If the caller supplied a non-empty custom hint, use that instead of the
+    // built-in language-specific conditioning text.
+    let hint: &str = match custom_hint {
+        Some(h) if !h.trim().is_empty() => h,
+        _ => match language {
+            "de" => "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. ",
+            "en" => "Voice dictation in English. Proper punctuation, capitalization, and spelling. ",
+            _ => "Multilingual voice dictation. German and English with proper punctuation. ",
+        },
     };
 
     let terms = dict_terms.unwrap_or("");
@@ -131,6 +153,8 @@ pub struct WhisperStt {
     client: reqwest::Client,
     base_url: String,
     model: String,
+    /// Whisper sampling temperature. 0.0 = deterministic (default).
+    temperature: f32,
 }
 
 impl WhisperStt {
@@ -150,12 +174,22 @@ impl WhisperStt {
             client: reqwest::Client::new(),
             base_url: base_url.into(),
             model: model.into(),
+            temperature: 0.0,
         }
     }
 
     /// Override the model variant.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
+        self
+    }
+
+    /// Override the Whisper sampling temperature.
+    ///
+    /// 0.0 (the default) produces deterministic output; higher values increase
+    /// randomness. Values outside `[0.0, 1.0]` are clamped by the Whisper API.
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
         self
     }
 
@@ -180,7 +214,7 @@ impl WhisperStt {
             .part("file", part)
             .text("model", self.model.clone())
             .text("response_format", "json")
-            .text("temperature", "0");
+            .text("temperature", self.temperature.to_string());
 
         if !language.is_empty() {
             form = form.text("language", language.to_string());
@@ -286,6 +320,12 @@ impl GroqWhisper {
         self
     }
 
+    /// Override the Whisper sampling temperature.
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.inner = self.inner.with_temperature(temperature);
+        self
+    }
+
     /// Returns the configured API key (for testing).
     #[cfg(test)]
     pub fn api_key(&self) -> &str {
@@ -351,6 +391,12 @@ impl OpenAiWhisper {
     /// Override the model variant.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner = self.inner.with_model(model);
+        self
+    }
+
+    /// Override the Whisper sampling temperature.
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.inner = self.inner.with_temperature(temperature);
         self
     }
 
@@ -543,7 +589,7 @@ mod tests {
     fn test_build_stt_prompt_german_with_terms() {
         let result = build_stt_prompt(Some("Kubernetes, TypeScript"), "de");
         let prompt = result.expect("should produce a prompt");
-        assert!(prompt.starts_with("German with occasional English"), "should have code-switching hint");
+        assert!(prompt.contains("Deutsch"), "should have German hint");
         assert!(prompt.contains("Kubernetes, TypeScript"), "should contain dictionary terms");
     }
 
@@ -551,32 +597,90 @@ mod tests {
     fn test_build_stt_prompt_german_without_terms() {
         let result = build_stt_prompt(None, "de");
         let prompt = result.expect("should produce a prompt for German even without terms");
-        assert!(prompt.contains("German with occasional English"));
+        assert!(prompt.contains("Deutsch"));
     }
 
     #[test]
     fn test_build_stt_prompt_english_with_terms() {
         let result = build_stt_prompt(Some("Kubernetes"), "en");
         let prompt = result.expect("should produce a prompt");
-        assert_eq!(prompt, "Kubernetes", "English should not have code-switching hint");
+        assert!(prompt.contains("Kubernetes"), "should contain dictionary terms");
+        assert!(prompt.contains("English"), "should have English hint");
     }
 
     #[test]
     fn test_build_stt_prompt_english_without_terms() {
         let result = build_stt_prompt(None, "en");
-        assert!(result.is_none(), "no terms + no hint = None");
+        let prompt = result.expect("should produce a prompt for English");
+        assert!(prompt.contains("English"));
     }
 
     #[test]
     fn test_build_stt_prompt_auto_detect_with_terms() {
         let result = build_stt_prompt(Some("Dikta"), "");
         let prompt = result.expect("should produce a prompt");
-        assert_eq!(prompt, "Dikta", "auto-detect should not have code-switching hint");
+        assert!(prompt.contains("Dikta"), "should contain dictionary terms");
+        assert!(prompt.contains("Multilingual"), "should have multilingual hint");
     }
 
     #[test]
     fn test_build_stt_prompt_auto_detect_without_terms() {
         let result = build_stt_prompt(None, "");
-        assert!(result.is_none(), "no terms + no hint = None");
+        let prompt = result.expect("should produce a prompt even without terms");
+        assert!(prompt.contains("Multilingual"));
+    }
+
+    // --- build_stt_prompt_with_hint tests ---
+
+    #[test]
+    fn test_build_stt_prompt_with_custom_hint_overrides_default() {
+        let result = build_stt_prompt_with_hint(None, "de", Some("Mein benutzerdefinierter Hint. "));
+        let prompt = result.expect("should produce a prompt");
+        assert!(prompt.contains("benutzerdefinierter"), "custom hint should be used");
+        // Built-in German hint should NOT be present
+        assert!(!prompt.contains("Diktat auf Deutsch"), "built-in hint should be replaced");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_with_custom_hint_and_terms() {
+        let result = build_stt_prompt_with_hint(Some("Kubernetes, TypeScript"), "de", Some("Custom hint. "));
+        let prompt = result.expect("should produce a prompt");
+        assert!(prompt.contains("Custom hint"), "custom hint should appear");
+        assert!(prompt.contains("Kubernetes"), "dictionary terms should still appear");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_empty_custom_hint_falls_back_to_default() {
+        let result_none = build_stt_prompt_with_hint(None, "de", None);
+        let result_empty = build_stt_prompt_with_hint(None, "de", Some(""));
+        let result_whitespace = build_stt_prompt_with_hint(None, "de", Some("   "));
+        // All three should fall back to the built-in German hint
+        for result in [result_none, result_empty, result_whitespace] {
+            let prompt = result.expect("should produce a prompt");
+            assert!(prompt.contains("Deutsch"), "should fall back to German built-in hint");
+        }
+    }
+
+    // --- with_temperature tests ---
+
+    #[test]
+    fn test_whisper_stt_default_temperature_is_zero() {
+        let stt = WhisperStt::new("key", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo");
+        assert_eq!(stt.temperature, 0.0);
+    }
+
+    #[test]
+    fn test_groq_whisper_with_temperature() {
+        let stt = GroqWhisper::new("key").with_temperature(0.5);
+        // Build a form and verify it doesn't error out
+        let form = stt.build_form(vec![0u8; 128], "de", None);
+        assert!(form.is_ok(), "build_form should succeed with non-zero temperature");
+    }
+
+    #[test]
+    fn test_openai_whisper_with_temperature() {
+        let stt = OpenAiWhisper::new("key").with_temperature(0.3);
+        let form = stt.build_form(vec![0u8; 128], "en", None);
+        assert!(form.is_ok(), "build_form should succeed with non-zero temperature");
     }
 }

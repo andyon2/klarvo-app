@@ -40,6 +40,7 @@ export interface AppSettings {
   sttPriority: string[];
   llmPriority: string[];
   outputLanguage: string;
+  webhookUrl: string;
 }
 
 // A per-application recording profile.
@@ -65,6 +66,8 @@ export interface HistoryEntry {
   rawText: string | null;
   style: string;
   language: string;
+  isNote?: boolean;
+  appName: string | null;
   createdAt: string;
 }
 
@@ -97,6 +100,36 @@ export const STATUS_LABELS: Record<RecordingState, string> = {
   done: "Done",
   error: "Error",
 };
+
+// Fine-grained advanced settings for power users.
+export interface AdvancedSettings {
+  sttPromptDe: string;
+  sttPromptEn: string;
+  sttPromptAuto: string;
+  sttTemperature: number;
+  llmSystemPromptPolished: string;
+  llmSystemPromptVerbatim: string;
+  llmSystemPromptChat: string;
+  llmCommandModePrompt: string;
+  llmTemperature: number;
+  llmMaxTokens: number;
+  llmModelDeepseek: string;
+  llmModelOpenai: string;
+  llmModelAnthropic: string;
+  llmModelGroq: string;
+  chunkThreshold: number;
+  chunkTargetSize: number;
+  silenceThreshold: number;
+  whisperModeThreshold: number;
+  minRecordingMs: number;
+  whisperModeGain: number;
+  autoPaste: boolean;
+  pasteDelayMs: number;
+  autoCapitalize: boolean;
+  webhookHeaders: string;
+  webhookTimeoutSecs: number;
+  logLevel: string;
+}
 
 // Style display metadata.
 export interface StyleMeta {

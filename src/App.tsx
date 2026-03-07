@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { check } from "@tauri-apps/plugin-updater";
 import "./styles.css";
-import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings, AppProfile, HistoryEntry, UsageSummary } from "./types";
+import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings, AppProfile, HistoryEntry, UsageSummary, AdvancedSettings } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
 import {
   startRecording,
@@ -31,6 +32,14 @@ import {
   setOutputLanguage as syncOutputLanguage,
   reformatText,
   getFillerStats,
+  getNotes,
+  saveNote,
+  getSnippets,
+  saveSnippets,
+  pasteSnippet,
+  getAdvancedSettings,
+  saveAdvancedSettings,
+  type TextSnippet,
 } from "./tauri-commands";
 import Onboarding from "./Onboarding";
 
@@ -116,6 +125,23 @@ function SummaryIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
       <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
+
+function NoteIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3 18h12v-2H3v2zM3 6v2h18V6H3zm0 7h18v-2H3v2z" />
+    </svg>
+  );
+}
+
+function SnippetIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
     </svg>
   );
 }
@@ -308,11 +334,13 @@ function OutputLanguagePicker({ value, onChange, disabled }: { value: string; on
 
 interface ReformatButtonsProps {
   text: string;
+  originalText: string;
   onResult: (text: string) => void;
 }
 
-function ReformatButtons({ text, onResult }: ReformatButtonsProps) {
+function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps) {
   const [loading, setLoading] = useState<string | null>(null);
+  const isReformatted = text !== originalText;
 
   const FORMATS = [
     { id: "email", label: "Email", Icon: MailIcon },
@@ -324,7 +352,7 @@ function ReformatButtons({ text, onResult }: ReformatButtonsProps) {
     if (loading) return;
     setLoading(format);
     try {
-      const result = await reformatText(text, format);
+      const result = await reformatText(originalText, format);
       onResult(result);
       navigator.clipboard.writeText(result).catch(console.error);
     } catch (err) {
@@ -334,8 +362,26 @@ function ReformatButtons({ text, onResult }: ReformatButtonsProps) {
     }
   };
 
+  const handleReset = () => {
+    onResult(originalText);
+    navigator.clipboard.writeText(originalText).catch(console.error);
+  };
+
   return (
     <div className="flex items-center gap-1.5">
+      {isReformatted && (
+        <button
+          onClick={handleReset}
+          title="Reset to original"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium border bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:text-zinc-100 transition-all duration-100"
+        >
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          Reset
+        </button>
+      )}
       {FORMATS.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -391,6 +437,57 @@ function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Renders text with search query highlighted and context around first match. */
+function HighlightedText({ text, query, className }: { text: string; query: string; className?: string }) {
+  if (!query.trim()) {
+    return <p className={`${className} line-clamp-3`}>{text}</p>;
+  }
+
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const firstIdx = lowerText.indexOf(lowerQuery);
+
+  let displayText = text;
+  let prefix = "";
+  let suffix = "";
+  if (firstIdx > 60) {
+    const start = text.lastIndexOf(" ", firstIdx - 20);
+    displayText = text.slice(start > 0 ? start : firstIdx - 40);
+    prefix = "…";
+  }
+  if (displayText.length > 200) {
+    const end = displayText.indexOf(" ", 180);
+    displayText = displayText.slice(0, end > 0 ? end : 200);
+    suffix = "…";
+  }
+
+  const parts: { text: string; highlight: boolean }[] = [];
+  const lowerDisplay = displayText.toLowerCase();
+  let cursor = 0;
+  let matchIdx = lowerDisplay.indexOf(lowerQuery, cursor);
+  while (matchIdx !== -1) {
+    if (matchIdx > cursor) {
+      parts.push({ text: displayText.slice(cursor, matchIdx), highlight: false });
+    }
+    parts.push({ text: displayText.slice(matchIdx, matchIdx + query.length), highlight: true });
+    cursor = matchIdx + query.length;
+    matchIdx = lowerDisplay.indexOf(lowerQuery, cursor);
+  }
+  if (cursor < displayText.length) {
+    parts.push({ text: displayText.slice(cursor), highlight: false });
+  }
+
+  return (
+    <p className={className}>
+      {prefix}{parts.map((p, i) =>
+        p.highlight
+          ? <mark key={i} className="bg-emerald-500/30 text-emerald-300 rounded-sm px-0.5">{p.text}</mark>
+          : <span key={i}>{p.text}</span>
+      )}{suffix}
+    </p>
   );
 }
 
@@ -485,6 +582,71 @@ function ProviderPriorityList({
   );
 }
 
+// --- Update Checker ----------------------------------------------------------
+
+function UpdateChecker() {
+  const [status, setStatus] = useState<"idle" | "checking" | "available" | "downloading" | "upToDate" | "error">("idle");
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleCheck = useCallback(async () => {
+    setStatus("checking");
+    setErrorMsg(null);
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateVersion(update.version);
+        setStatus("available");
+      } else {
+        setStatus("upToDate");
+        setTimeout(() => setStatus("idle"), 3000);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setStatus("error");
+    }
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    setStatus("downloading");
+    try {
+      const update = await check();
+      if (update) {
+        await update.downloadAndInstall();
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setStatus("error");
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Updates</span>
+      <div className="flex items-center gap-2">
+        {status === "available" ? (
+          <button
+            onClick={handleInstall}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+          >
+            Install v{updateVersion}
+          </button>
+        ) : (
+          <button
+            onClick={handleCheck}
+            disabled={status === "checking" || status === "downloading"}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {status === "checking" ? "Checking..." : status === "downloading" ? "Downloading..." : status === "upToDate" ? "Up to date" : "Check for updates"}
+          </button>
+        )}
+        <span className="text-[10px] text-zinc-500">v0.4.0</span>
+      </div>
+      {errorMsg && <p className="text-[10px] text-red-400">{errorMsg}</p>}
+    </div>
+  );
+}
+
 // --- Settings Panel ----------------------------------------------------------
 
 interface SettingsPanelProps {
@@ -498,7 +660,7 @@ interface SettingsPanelProps {
   audioDevices: string[];
   dictionary: string[];
   outputLanguage: string;
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[], outputLanguage: string) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[], outputLanguage: string, webhookUrl: string) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onHotkeyChange: (h: string) => void;
@@ -531,6 +693,8 @@ function SettingsPanel({
   const [localSttPriority, setLocalSttPriority] = useState<string[]>(loadedSettings?.sttPriority ?? ["groq", "openai"]);
   const [localLlmPriority, setLocalLlmPriority] = useState<string[]>(loadedSettings?.llmPriority ?? ["deepseek", "openai", "anthropic", "groq"]);
   const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
+  useEffect(() => { setLocalOutputLanguage(outputLanguage); }, [outputLanguage]);
+  const [localWebhookUrl, setLocalWebhookUrl] = useState(loadedSettings?.webhookUrl ?? "");
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -553,6 +717,7 @@ function SettingsPanel({
       setLocalSttPriority(loadedSettings.sttPriority);
       setLocalLlmPriority(loadedSettings.llmPriority);
       setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
+      setLocalWebhookUrl(loadedSettings.webhookUrl ?? "");
     }
   }, [loadedSettings]);
 
@@ -597,7 +762,7 @@ function SettingsPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority, localOutputLanguage);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl.trim());
       setGroqKey("");
       setDeepseekKey("");
       setOpenaiKey("");
@@ -609,7 +774,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, localOutputLanguage, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -832,6 +997,19 @@ function SettingsPanel({
           </div>
         </div>
 
+        {/* --- Webhook --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>Webhook</span>
+          <input
+            type="url"
+            placeholder="https://example.com/webhook"
+            value={localWebhookUrl}
+            onChange={(e) => setLocalWebhookUrl(e.target.value)}
+            className={inputCls}
+          />
+          <p className="text-[11px] text-zinc-500">HTTP POST after each dictation. Leave empty to disable.</p>
+        </div>
+
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-3">
           <span className={sectionTitleCls}>API Keys</span>
@@ -958,6 +1136,9 @@ function SettingsPanel({
             <p className="text-xs text-zinc-500 italic">No terms yet.</p>
           )}
         </div>
+
+        {/* --- Updates --- */}
+        <UpdateChecker />
 
         {/* --- App Profiles --- */}
         <div className="flex flex-col gap-3">
@@ -1111,12 +1292,816 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
+// --- Snippets Quick-Access Panel ----------------------------------------------
+
+function SnippetsPanel({
+  snippets, onUpdate, onClose,
+}: {
+  snippets: TextSnippet[];
+  onUpdate: (s: TextSnippet[]) => void;
+  onClose: () => void;
+}) {
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
+
+  const handlePaste = async (content: string) => {
+    try {
+      await pasteSnippet(content);
+    } catch (err) {
+      console.error("paste_snippet failed:", err);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const clean = snippets.filter((s) => s.name.trim() || s.content.trim());
+      await saveSnippets(clean);
+      onUpdate(clean);
+      setSaveMsg("Saved");
+      setTimeout(() => setSaveMsg(null), 2000);
+    } catch (err) {
+      setSaveMsg(String(err));
+    }
+  };
+
+  return (
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Text Snippets</span>
+        <button
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      <div className="overflow-y-auto max-h-[400px] p-4 flex flex-col gap-2">
+        <p className="text-[10px] text-zinc-500">Click "Paste" to insert a snippet into the active window.</p>
+
+        {snippets.length === 0 ? (
+          <p className="text-xs text-zinc-500 italic text-center py-4">No snippets yet. Add your first one below.</p>
+        ) : (
+          snippets.map((s, i) => (
+            <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={s.name}
+                  onChange={(e) => {
+                    const next = [...snippets];
+                    next[i] = { ...next[i], name: e.target.value };
+                    onUpdate(next);
+                  }}
+                  className={`flex-1 ${inputCls}`}
+                />
+                <button
+                  onClick={() => onUpdate(snippets.filter((_, j) => j !== i))}
+                  className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+              <textarea
+                placeholder="Content to paste..."
+                value={s.content}
+                onChange={(e) => {
+                  const next = [...snippets];
+                  next[i] = { ...next[i], content: e.target.value };
+                  onUpdate(next);
+                }}
+                rows={2}
+                className={`${inputCls} resize-none`}
+              />
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() => handlePaste(s.content)}
+                  disabled={!s.content.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Paste
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={() => onUpdate([...snippets, { name: "", content: "" }])}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+          >
+            + Add Snippet
+          </button>
+          {snippets.length > 0 && (
+            <button
+              onClick={handleSave}
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+            >
+              {saveMsg ?? "Save"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Voice Notes Panel -------------------------------------------------------
+
+function VoiceNotesPanel({
+  notes, onRefresh, onClose,
+}: {
+  notes: HistoryEntry[];
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const [noteState, setNoteState] = useState<"idle" | "recording" | "processing">("idle");
+  const [noteError, setNoteError] = useState<string | null>(null);
+
+  const handleRecordNote = useCallback(async () => {
+    if (noteState === "recording") {
+      // Stop and save as note
+      setNoteState("processing");
+      try {
+        await stopRecording();
+        const transcript = await transcribeAudio("");
+        const cleaned = await cleanupText(transcript, "polished");
+        await saveNote(cleaned, transcript, "polished");
+        onRefresh();
+        setNoteState("idle");
+      } catch (err) {
+        setNoteError(err instanceof Error ? err.message : String(err));
+        setNoteState("idle");
+      }
+    } else {
+      setNoteError(null);
+      try {
+        await startRecording();
+        setNoteState("recording");
+      } catch (err) {
+        setNoteError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }, [noteState, onRefresh]);
+
+  return (
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Voice Notes</span>
+        <button
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* Record note button */}
+      <div className="px-4 pt-3 flex items-center gap-3">
+        <button
+          onClick={handleRecordNote}
+          disabled={noteState === "processing"}
+          className={[
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all duration-150",
+            noteState === "recording"
+              ? "bg-red-500/15 border-red-500/30 text-red-400"
+              : noteState === "processing"
+              ? "bg-amber-500/10 border-amber-500/20 text-amber-400 opacity-60 cursor-not-allowed"
+              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15",
+          ].join(" ")}
+        >
+          {noteState === "recording" ? (
+            <><StopIcon className="w-3.5 h-3.5" /> Stop & Save</>
+          ) : noteState === "processing" ? (
+            <><SpinnerIcon className="w-3.5 h-3.5" /> Processing...</>
+          ) : (
+            <><MicIcon className="w-3.5 h-3.5" /> Record Note</>
+          )}
+        </button>
+        {noteError && <span className="text-[10px] text-red-400">{noteError}</span>}
+        <p className="text-[10px] text-zinc-500 ml-auto">Notes are saved, not pasted.</p>
+      </div>
+
+      {/* Notes list */}
+      <div className="overflow-y-auto max-h-[300px] p-4 flex flex-col gap-2">
+        {notes.length === 0 ? (
+          <p className="text-xs text-zinc-500 italic text-center py-4">No voice notes yet. Record your first one!</p>
+        ) : (
+          notes.map((note) => (
+            <div
+              key={note.id}
+              className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors"
+            >
+              <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{note.text}</p>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-[10px] text-zinc-500">
+                  {new Date(note.createdAt + "Z").toLocaleString()}
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(note.text).catch(console.error)}
+                  className="text-[10px] text-zinc-500 hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Advanced Settings Panel -------------------------------------------------
+
+const ADVANCED_DEFAULTS: AdvancedSettings = {
+  sttPromptDe: "",
+  sttPromptEn: "",
+  sttPromptAuto: "",
+  sttTemperature: 0,
+  llmSystemPromptPolished: "",
+  llmSystemPromptVerbatim: "",
+  llmSystemPromptChat: "",
+  llmCommandModePrompt: "",
+  llmTemperature: 0.3,
+  llmMaxTokens: 1024,
+  llmModelDeepseek: "deepseek-chat",
+  llmModelOpenai: "gpt-4o-mini",
+  llmModelAnthropic: "claude-haiku-4-5-20251001",
+  llmModelGroq: "llama-3.3-70b-versatile",
+  chunkThreshold: 400,
+  chunkTargetSize: 300,
+  silenceThreshold: 0.005,
+  whisperModeThreshold: 0.001,
+  minRecordingMs: 500,
+  whisperModeGain: 3.0,
+  autoPaste: true,
+  pasteDelayMs: 80,
+  autoCapitalize: false,
+  webhookHeaders: "",
+  webhookTimeoutSecs: 10,
+  logLevel: "info",
+};
+
+function AccordionSection({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-zinc-800/60 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-[#111113] hover:bg-zinc-800/40 transition-colors text-left"
+      >
+        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">{title}</span>
+        <span
+          className={[
+            "text-zinc-500 text-xs transition-transform duration-150 select-none",
+            open ? "rotate-90" : "",
+          ].join(" ")}
+        >
+          ▸
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 py-3 flex flex-col gap-3 bg-[#0e0e11]">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdvancedSettingsPanel({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
+  const labelCls = "text-xs text-zinc-300";
+  const hintCls = "text-[10px] text-zinc-500 leading-relaxed";
+  const numberInputCls = `${inputCls} w-28`;
+
+  useEffect(() => {
+    getAdvancedSettings()
+      .then((s) => { setSettings(s); setLoaded(true); })
+      .catch((err) => {
+        // Backend may not have the command yet in dev; fall back to defaults.
+        console.warn("get_advanced_settings failed, using defaults:", err);
+        setLoaded(true);
+      });
+  }, []);
+
+  // Close on Escape.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const set = useCallback(<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await saveAdvancedSettings(settings);
+      setSaveMsg("Saved");
+      setTimeout(() => setSaveMsg(null), 2000);
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [settings]);
+
+  const handleReset = useCallback(() => {
+    setSettings(ADVANCED_DEFAULTS);
+    setSaveMsg(null);
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl p-6 text-center">
+        <SpinnerIcon className="w-5 h-5 text-zinc-500 mx-auto" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col max-h-[calc(100vh-120px)]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40 flex-shrink-0">
+        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
+        <button
+          aria-label="Close advanced settings"
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* Scrollable body */}
+      <div className="overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-3">
+
+        {/* --- Speech-to-Text --- */}
+        <AccordionSection title="Speech-to-Text (STT)" defaultOpen={true}>
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>STT Prompt (German)</span>
+            <textarea
+              value={settings.sttPromptDe}
+              onChange={(e) => set("sttPromptDe", e.target.value)}
+              placeholder="Context prompt sent with German transcriptions, e.g. 'Fachbegriffe: XYZ'"
+              rows={2}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Injected as context when language is set to German.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>STT Prompt (English)</span>
+            <textarea
+              value={settings.sttPromptEn}
+              onChange={(e) => set("sttPromptEn", e.target.value)}
+              placeholder="Context prompt for English transcriptions"
+              rows={2}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Injected as context when language is set to English.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>STT Prompt (Auto-detect)</span>
+            <textarea
+              value={settings.sttPromptAuto}
+              onChange={(e) => set("sttPromptAuto", e.target.value)}
+              placeholder="Context prompt for auto-detect mode"
+              rows={2}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>STT Temperature</span>
+              <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={settings.sttTemperature}
+              onChange={(e) => set("sttTemperature", parseFloat(e.target.value) || 0)}
+              className={numberInputCls}
+            />
+          </div>
+        </AccordionSection>
+
+        {/* --- LLM Cleanup --- */}
+        <AccordionSection title="LLM Cleanup">
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>System Prompt: Polished</span>
+            <textarea
+              value={settings.llmSystemPromptPolished}
+              onChange={(e) => set("llmSystemPromptPolished", e.target.value)}
+              placeholder="Leave empty for built-in default"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>System Prompt: Verbatim</span>
+            <textarea
+              value={settings.llmSystemPromptVerbatim}
+              onChange={(e) => set("llmSystemPromptVerbatim", e.target.value)}
+              placeholder="Leave empty for built-in default"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>System Prompt: Chat</span>
+            <textarea
+              value={settings.llmSystemPromptChat}
+              onChange={(e) => set("llmSystemPromptChat", e.target.value)}
+              placeholder="Leave empty for built-in default"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>Command Mode Prompt</span>
+            <textarea
+              value={settings.llmCommandModePrompt}
+              onChange={(e) => set("llmCommandModePrompt", e.target.value)}
+              placeholder="Leave empty for built-in default"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+            <span className={hintCls}>System prompt used when rewriting selected text via Command Mode (Ctrl+Shift+E).</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>LLM Temperature</span>
+              <span className={hintCls}>0.0 – 2.0. Lower = more focused, higher = more varied.</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              value={settings.llmTemperature}
+              onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Max Tokens</span>
+              <span className={hintCls}>Maximum output tokens per LLM request.</span>
+            </div>
+            <input
+              type="number"
+              min={64}
+              max={8192}
+              step={1}
+              value={settings.llmMaxTokens}
+              onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Model: DeepSeek</span>
+              <span className={hintCls}>Model ID sent to the DeepSeek API.</span>
+            </div>
+            <input
+              type="text"
+              placeholder="deepseek-chat"
+              value={settings.llmModelDeepseek}
+              onChange={(e) => set("llmModelDeepseek", e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Model: OpenAI</span>
+              <span className={hintCls}>Model ID sent to the OpenAI API.</span>
+            </div>
+            <input
+              type="text"
+              placeholder="gpt-4o-mini"
+              value={settings.llmModelOpenai}
+              onChange={(e) => set("llmModelOpenai", e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Model: Anthropic</span>
+              <span className={hintCls}>Model ID sent to the Anthropic API.</span>
+            </div>
+            <input
+              type="text"
+              placeholder="claude-haiku-4-5-20251001"
+              value={settings.llmModelAnthropic}
+              onChange={(e) => set("llmModelAnthropic", e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Model: Groq</span>
+              <span className={hintCls}>Model ID sent to the Groq LLM API.</span>
+            </div>
+            <input
+              type="text"
+              placeholder="llama-3.3-70b-versatile"
+              value={settings.llmModelGroq}
+              onChange={(e) => set("llmModelGroq", e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Chunk Threshold</span>
+              <span className={hintCls}>Word count above which text is split into parallel chunks.</span>
+            </div>
+            <input
+              type="number"
+              min={50}
+              step={1}
+              value={settings.chunkThreshold}
+              onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Chunk Target Size</span>
+              <span className={hintCls}>Target word count per chunk when splitting long texts.</span>
+            </div>
+            <input
+              type="number"
+              min={50}
+              step={1}
+              value={settings.chunkTargetSize}
+              onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)}
+              className={numberInputCls}
+            />
+          </div>
+        </AccordionSection>
+
+        {/* --- Audio --- */}
+        <AccordionSection title="Audio">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Silence Threshold</span>
+              <span className={hintCls}>RMS level below which audio is considered silence. Lower = more sensitive (0.0 – 0.1).</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={0.1}
+              step={0.001}
+              value={settings.silenceThreshold}
+              onChange={(e) => set("silenceThreshold", parseFloat(e.target.value) || 0)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Whisper Mode Threshold</span>
+              <span className={hintCls}>Silence threshold used specifically in Whisper Mode (should be lower than the normal threshold).</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={0.1}
+              step={0.001}
+              value={settings.whisperModeThreshold}
+              onChange={(e) => set("whisperModeThreshold", parseFloat(e.target.value) || 0)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Min Recording Duration (ms)</span>
+              <span className={hintCls}>Recordings shorter than this are discarded (avoids accidental triggers).</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={settings.minRecordingMs}
+              onChange={(e) => set("minRecordingMs", parseInt(e.target.value, 10) || 500)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Whisper Mode Gain</span>
+              <span className={hintCls}>Amplification multiplier applied in Whisper Mode. Higher = louder mic input.</span>
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              step={0.5}
+              value={settings.whisperModeGain}
+              onChange={(e) => set("whisperModeGain", parseFloat(e.target.value) || 1)}
+              className={numberInputCls}
+            />
+          </div>
+        </AccordionSection>
+
+        {/* --- Paste & Behavior --- */}
+        <AccordionSection title="Paste & Behavior">
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Auto-Paste</span>
+              <span className={hintCls}>Automatically paste the result into the active window after cleanup.</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.autoPaste}
+              onClick={() => set("autoPaste", !settings.autoPaste)}
+              className={[
+                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                settings.autoPaste ? "bg-emerald-500/40" : "bg-zinc-700",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                  settings.autoPaste ? "translate-x-4" : "",
+                ].join(" ")}
+              />
+            </button>
+          </label>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Paste Delay (ms)</span>
+              <span className={hintCls}>Milliseconds to wait between focusing the target window and sending the paste keystroke.</span>
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={2000}
+              step={10}
+              value={settings.pasteDelayMs}
+              onChange={(e) => set("pasteDelayMs", parseInt(e.target.value, 10) || 0)}
+              className={numberInputCls}
+            />
+          </div>
+
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Auto-Capitalize</span>
+              <span className={hintCls}>Automatically capitalize the first letter of every dictation result.</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.autoCapitalize}
+              onClick={() => set("autoCapitalize", !settings.autoCapitalize)}
+              className={[
+                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                settings.autoCapitalize ? "bg-emerald-500/40" : "bg-zinc-700",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                  settings.autoCapitalize ? "translate-x-4" : "",
+                ].join(" ")}
+              />
+            </button>
+          </label>
+        </AccordionSection>
+
+        {/* --- Webhook --- */}
+        <AccordionSection title="Webhook">
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>Custom Headers (JSON)</span>
+            <textarea
+              value={settings.webhookHeaders}
+              onChange={(e) => set("webhookHeaders", e.target.value)}
+              placeholder={'{"Authorization": "Bearer ..."}'}
+              rows={3}
+              className={`${inputCls} resize-none font-mono`}
+            />
+            <span className={hintCls}>Additional HTTP headers sent with each webhook request. Must be valid JSON.</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Timeout (seconds)</span>
+              <span className={hintCls}>Maximum time to wait for a webhook response before giving up.</span>
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={120}
+              step={1}
+              value={settings.webhookTimeoutSecs}
+              onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)}
+              className={numberInputCls}
+            />
+          </div>
+        </AccordionSection>
+
+        {/* --- System --- */}
+        <AccordionSection title="System">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Log Level</span>
+              <span className={hintCls}>Verbosity of backend logs. Use "debug" when troubleshooting.</span>
+            </div>
+            <select
+              value={settings.logLevel}
+              onChange={(e) => set("logLevel", e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+            >
+              <option value="debug">debug</option>
+              <option value="info">info</option>
+              <option value="warn">warn</option>
+              <option value="error">error</option>
+            </select>
+          </div>
+        </AccordionSection>
+
+      </div>
+
+      {/* Sticky footer: Save + Reset */}
+      <div className="px-4 py-3 border-t border-zinc-800/40 flex gap-2">
+        <button
+          onClick={handleReset}
+          className="px-4 py-2.5 rounded-xl text-sm font-medium border bg-[#111113] border-zinc-700/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all duration-150 flex-shrink-0"
+        >
+          Reset to Defaults
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={[
+            "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
+            saveMsg === "Saved"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+              : saveMsg && saveMsg !== "Saved"
+              ? "bg-red-500/10 border-red-500/20 text-red-400"
+              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/30",
+            "disabled:opacity-50 disabled:cursor-not-allowed",
+          ].join(" ")}
+        >
+          {saving ? "Saving..." : saveMsg ?? "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // --- Main App ----------------------------------------------------------------
 
 export default function App() {
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [currentStyle, setCurrentStyle] = useState<CleanupStyle>("polished");
   const [resultText, setResultText] = useState<string | null>(null);
+  const [originalResultText, setOriginalResultText] = useState<string | null>(null);
   const [rawText, setRawText] = useState<string | null>(null);
   const [showRawText, setShowRawText] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1126,6 +2111,7 @@ export default function App() {
   const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
+  const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
   const [language, setLanguage] = useState("");
   const [loadedSettings, setLoadedSettings] = useState<AppSettings | null>(null);
@@ -1137,6 +2123,20 @@ export default function App() {
   const [localAudioDevice, setLocalAudioDevice] = useState<string | null>(null);
   const [outputLanguage, setOutputLanguage] = useState("");
   const [fillerStats, setFillerStats] = useState<{word: string; count: number}[]>([]);
+  const [showFillerStats, setShowFillerStats] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notes, setNotes] = useState<HistoryEntry[]>([]);
+  const [showSnippets, setShowSnippets] = useState(false);
+  const [snippetsList, setSnippetsList] = useState<TextSnippet[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const toggleAdvanced = useCallback(() => {
+    setShowAdvanced((prev) => !prev);
+    setShowSettings(false);
+    setShowHistory(false);
+    setShowStats(false);
+    setShowNotes(false);
+    setShowSnippets(false);
+  }, []);
 
   const isBusy = recordingState === "transcribing" || recordingState === "cleaning";
   const isRecording = recordingState === "recording";
@@ -1169,7 +2169,7 @@ export default function App() {
   useEffect(() => {
     const unlisten = onStateChanged((p) => {
       setRecordingState(p.state as RecordingState);
-      if (p.text !== undefined) setResultText(p.text);
+      if (p.text !== undefined) { setResultText(p.text); setOriginalResultText(p.text); }
       if (p.rawText !== undefined) setRawText(p.rawText);
       if (p.error !== undefined) setErrorMessage(p.error);
     });
@@ -1198,9 +2198,9 @@ export default function App() {
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
-    outputLang: string,
+    outputLang: string, webhookUrl: string,
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority, outputLang);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority, outputLang, webhookUrl);
     const updated = await getSettings();
     setLoadedSettings(updated);
     setLanguage(updated.language);
@@ -1236,6 +2236,7 @@ export default function App() {
         setRecordingState("cleaning");
         const cleanedText = await cleanupText(transcript, currentStyle);
         setResultText(cleanedText);
+        setOriginalResultText(cleanedText);
         setRecordingState("done");
         // Save to history (fire-and-forget)
         addHistoryEntry(cleanedText, transcript, currentStyle, language).catch(console.error);
@@ -1245,6 +2246,7 @@ export default function App() {
       }
     } else {
       setResultText(null);
+      setOriginalResultText(null);
       setRawText(null);
       setShowRawText(false);
       setErrorMessage(null);
@@ -1262,6 +2264,9 @@ export default function App() {
     setShowSettings((prev) => !prev);
     setShowHistory(false);
     setShowStats(false);
+    setShowNotes(false);
+    setShowSnippets(false);
+    setShowAdvanced(false);
   }, []);
 
   const toggleHistory = useCallback(() => {
@@ -1273,6 +2278,9 @@ export default function App() {
     });
     setShowSettings(false);
     setShowStats(false);
+    setShowNotes(false);
+    setShowSnippets(false);
+    setShowAdvanced(false);
   }, []);
 
   const toggleStats = useCallback(() => {
@@ -1285,12 +2293,44 @@ export default function App() {
     });
     setShowSettings(false);
     setShowHistory(false);
+    setShowNotes(false);
+    setShowSnippets(false);
+    setShowAdvanced(false);
   }, []);
 
-  const handleHistorySearch = useCallback(async (query: string) => {
-    setHistorySearch(query);
-    if (query.trim()) {
-      const results = await searchHistory(query);
+  const toggleNotes = useCallback(() => {
+    setShowNotes((prev) => {
+      if (!prev) {
+        getNotes(50).then(setNotes).catch(console.error);
+      }
+      return !prev;
+    });
+    setShowSettings(false);
+    setShowHistory(false);
+    setShowStats(false);
+    setShowSnippets(false);
+    setShowAdvanced(false);
+  }, []);
+
+  const toggleSnippets = useCallback(() => {
+    setShowSnippets((prev) => {
+      if (!prev) {
+        getSnippets().then(setSnippetsList).catch(console.error);
+      }
+      return !prev;
+    });
+    setShowSettings(false);
+    setShowHistory(false);
+    setShowStats(false);
+    setShowNotes(false);
+    setShowAdvanced(false);
+  }, []);
+
+  const handleHistorySearch = useCallback(async (textQ: string, appQ: string) => {
+    setHistorySearch(textQ);
+    setHistoryAppSearch(appQ);
+    if (textQ.trim() || appQ.trim()) {
+      const results = await searchHistory(textQ.trim() || undefined, appQ.trim() || undefined);
       setHistoryEntries(results);
     } else {
       const entries = await getHistory(50);
@@ -1392,6 +2432,52 @@ export default function App() {
               <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
             </svg>
           </button>
+
+          {/* Notes toggle */}
+          <button
+            aria-label="Toggle voice notes"
+            aria-expanded={showNotes}
+            onClick={toggleNotes}
+            className={[
+              "p-1.5 rounded-lg transition-all duration-150",
+              showNotes
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            <NoteIcon className="w-4 h-4" />
+          </button>
+
+          {/* Snippets toggle */}
+          <button
+            aria-label="Toggle snippets"
+            aria-expanded={showSnippets}
+            onClick={toggleSnippets}
+            className={[
+              "p-1.5 rounded-lg transition-all duration-150",
+              showSnippets
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            <SnippetIcon className="w-4 h-4" />
+          </button>
+          <button
+            title="Advanced settings"
+            aria-label="Toggle advanced settings"
+            aria-expanded={showAdvanced}
+            onClick={toggleAdvanced}
+            className={[
+              "p-1.5 rounded-lg transition-all duration-150",
+              showAdvanced
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+          </button>
         </div>
 
         {/* Style picker + output language in header */}
@@ -1470,13 +2556,20 @@ export default function App() {
               </div>
             </div>
 
-            <div className="px-4 pt-3">
+            <div className="px-4 pt-3 flex gap-2">
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search text..."
                 value={historySearch}
-                onChange={(e) => handleHistorySearch(e.target.value)}
-                className="w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                onChange={(e) => handleHistorySearch(e.target.value, historyAppSearch)}
+                className="flex-1 bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
+              />
+              <input
+                type="text"
+                placeholder="App..."
+                value={historyAppSearch}
+                onChange={(e) => handleHistorySearch(historySearch, e.target.value)}
+                className="w-24 bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
               />
             </div>
 
@@ -1489,7 +2582,7 @@ export default function App() {
                     key={entry.id}
                     className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors"
                   >
-                    <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{entry.text}</p>
+                    <HighlightedText text={entry.text} query={historySearch} className="text-xs text-zinc-300 whitespace-pre-wrap" />
                     {entry.rawText && entry.rawText !== entry.text && (
                       <div className="mt-1.5">
                         <button
@@ -1521,6 +2614,9 @@ export default function App() {
                       <span className="text-[10px] text-zinc-500">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
                         {entry.style !== "polished" && ` · ${entry.style}`}
+                        {entry.appName && (
+                          <span className="ml-1 px-1.5 py-0.5 bg-zinc-800/60 rounded text-[9px] text-zinc-400">{entry.appName}</span>
+                        )}
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -1580,14 +2676,68 @@ export default function App() {
               <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
             </div>
 
-            {/* Filler words */}
+            {/* Filler words (collapsible) */}
             {fillerStats.length > 0 && (
               <div className="px-4 pb-4">
-                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Top Filler Words</p>
-                <FillerStatsChart entries={fillerStats} />
+                <button
+                  onClick={() => setShowFillerStats((v) => !v)}
+                  className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
+                >
+                  <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
+                  Top Filler Words
+                </button>
+                {showFillerStats && (
+                  <div className="mt-2">
+                    <FillerStatsChart entries={fillerStats} />
+                  </div>
+                )}
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* ── Voice Notes Panel (toggleable) ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showNotes ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {showNotes && (
+          <VoiceNotesPanel
+            notes={notes}
+            onRefresh={() => getNotes(50).then(setNotes).catch(console.error)}
+            onClose={() => setShowNotes(false)}
+          />
+        )}
+      </div>
+
+      {/* ── Snippets Panel (toggleable) ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showSnippets ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {showSnippets && (
+          <SnippetsPanel
+            snippets={snippetsList}
+            onUpdate={setSnippetsList}
+            onClose={() => setShowSnippets(false)}
+          />
+        )}
+      </div>
+
+      {/* ── Advanced Settings Panel (toggleable) ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showAdvanced ? "max-h-[calc(100vh-100px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {showAdvanced && (
+          <AdvancedSettingsPanel onClose={() => setShowAdvanced(false)} />
         )}
       </div>
 
@@ -1625,7 +2775,7 @@ export default function App() {
             />
             {/* Reformat buttons */}
             {recordingState === "done" && (
-              <ReformatButtons text={resultText} onResult={(t) => setResultText(t)} />
+              <ReformatButtons text={resultText} originalText={originalResultText ?? resultText} onResult={(t) => setResultText(t)} />
             )}
             {rawText && rawText !== resultText && (
               <div>
