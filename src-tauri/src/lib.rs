@@ -1537,7 +1537,7 @@ fn apply_autostart(enabled: bool) {
                     let set_result = RegSetValueExW(
                         hkey,
                         PCWSTR(value_name.as_ptr()),
-                        0,
+                        Some(0),
                         REG_SZ,
                         Some(bytes),
                     );
