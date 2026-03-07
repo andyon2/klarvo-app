@@ -897,6 +897,8 @@ export default function App() {
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [currentStyle, setCurrentStyle] = useState<CleanupStyle>("polished");
   const [resultText, setResultText] = useState<string | null>(null);
+  const [rawText, setRawText] = useState<string | null>(null);
+  const [showRawText, setShowRawText] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -904,6 +906,7 @@ export default function App() {
   const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
+  const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
   const [language, setLanguage] = useState("");
   const [loadedSettings, setLoadedSettings] = useState<AppSettings | null>(null);
   const [dictionary, setDictionary] = useState<string[]>([]);
@@ -937,6 +940,7 @@ export default function App() {
     const unlisten = onStateChanged((p) => {
       setRecordingState(p.state as RecordingState);
       if (p.text !== undefined) setResultText(p.text);
+      if (p.rawText !== undefined) setRawText(p.rawText);
       if (p.error !== undefined) setErrorMessage(p.error);
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -990,19 +994,22 @@ export default function App() {
       try {
         setRecordingState("transcribing");
         await stopRecording();
-        const rawText = await transcribeAudio(language);
+        const transcript = await transcribeAudio(language);
+        setRawText(transcript);
         setRecordingState("cleaning");
-        const cleanedText = await cleanupText(rawText, currentStyle);
+        const cleanedText = await cleanupText(transcript, currentStyle);
         setResultText(cleanedText);
         setRecordingState("done");
         // Save to history (fire-and-forget)
-        addHistoryEntry(cleanedText, rawText, currentStyle, language).catch(console.error);
+        addHistoryEntry(cleanedText, transcript, currentStyle, language).catch(console.error);
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setRecordingState("error");
       }
     } else {
       setResultText(null);
+      setRawText(null);
+      setShowRawText(false);
       setErrorMessage(null);
       try {
         await startRecording();
@@ -1220,6 +1227,33 @@ export default function App() {
                     className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors"
                   >
                     <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{entry.text}</p>
+                    {entry.rawText && entry.rawText !== entry.text && (
+                      <div className="mt-1.5">
+                        <button
+                          onClick={() => setExpandedHistoryRaw((prev) => {
+                            const next = new Set(prev);
+                            next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id);
+                            return next;
+                          })}
+                          className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          {expandedHistoryRaw.has(entry.id) ? "Hide original" : "Show original"}
+                        </button>
+                        {expandedHistoryRaw.has(entry.id) && (
+                          <div className="mt-1 relative group/raw">
+                            <p className="text-[11px] text-zinc-500 whitespace-pre-wrap bg-[#0c0c0e] rounded-lg px-2.5 py-1.5 border border-zinc-800/40">
+                              {entry.rawText}
+                            </p>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(entry.rawText!)}
+                              className="absolute top-1 right-1 text-[10px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/raw:opacity-100 transition-opacity"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[10px] text-zinc-500">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
@@ -1311,13 +1345,39 @@ export default function App() {
 
         {/* Result */}
         {resultText !== null && (
-          <div className="w-full max-w-xs">
+          <div className="w-full max-w-xs flex flex-col gap-1.5">
             <textarea
               readOnly
               value={resultText}
               rows={3}
               className="w-full bg-[#111113] border border-zinc-800/60 rounded-xl px-3.5 py-2.5 text-sm text-zinc-200 resize-none focus:outline-none focus:border-emerald-500/30 transition-colors"
             />
+            {rawText && rawText !== resultText && (
+              <div>
+                <button
+                  onClick={() => setShowRawText((v) => !v)}
+                  className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  {showRawText ? "Hide original" : "Show original"}
+                </button>
+                {showRawText && (
+                  <div className="mt-1 relative group">
+                    <textarea
+                      readOnly
+                      value={rawText}
+                      rows={2}
+                      className="w-full bg-[#0c0c0e] border border-zinc-800/40 rounded-lg px-3 py-2 text-xs text-zinc-400 resize-none focus:outline-none"
+                    />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(rawText)}
+                      className="absolute top-1.5 right-1.5 text-[10px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

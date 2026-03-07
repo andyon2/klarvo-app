@@ -46,6 +46,10 @@ pub struct PipelineEvent {
     /// Final cleaned text (only present when `state == Done`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Raw transcript before LLM cleanup (only present when `state == Done`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "rawText")]
+    pub raw_text: Option<String>,
     /// Human-readable error message (only present when `state == Error`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -56,6 +60,7 @@ impl PipelineEvent {
         PipelineEvent {
             state: PipelineState::Idle,
             text: None,
+            raw_text: None,
             error: None,
         }
     }
@@ -64,6 +69,7 @@ impl PipelineEvent {
         PipelineEvent {
             state: PipelineState::Recording,
             text: None,
+            raw_text: None,
             error: None,
         }
     }
@@ -72,6 +78,7 @@ impl PipelineEvent {
         PipelineEvent {
             state: PipelineState::Transcribing,
             text: None,
+            raw_text: None,
             error: None,
         }
     }
@@ -80,14 +87,16 @@ impl PipelineEvent {
         PipelineEvent {
             state: PipelineState::Cleaning,
             text: None,
+            raw_text: None,
             error: None,
         }
     }
 
-    pub fn done(text: String) -> Self {
+    pub fn done(text: String, raw_text: String) -> Self {
         PipelineEvent {
             state: PipelineState::Done,
             text: Some(text),
+            raw_text: Some(raw_text),
             error: None,
         }
     }
@@ -96,6 +105,7 @@ impl PipelineEvent {
         PipelineEvent {
             state: PipelineState::Error,
             text: None,
+            raw_text: None,
             error: Some(msg.into()),
         }
     }
@@ -122,13 +132,14 @@ mod tests {
         assert!(!json.contains("\"error\""));
     }
 
-    /// PipelineEvent::done includes text field.
+    /// PipelineEvent::done includes text and rawText fields.
     #[test]
     fn test_pipeline_event_done_includes_text() {
-        let event = PipelineEvent::done("Hello world".to_string());
+        let event = PipelineEvent::done("Hello world".to_string(), "uh hello world".to_string());
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"state\":\"done\""));
         assert!(json.contains("\"text\":\"Hello world\""));
+        assert!(json.contains("\"rawText\":\"uh hello world\""));
         assert!(!json.contains("\"error\""));
     }
 

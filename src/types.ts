@@ -9,8 +9,9 @@ export type HotkeyMode = "toggle" | "hold";
 // Payload emitted by the backend on every state transition of the hotkey pipeline.
 export interface StateChangedPayload {
   state: "recording" | "transcribing" | "cleaning" | "done" | "idle" | "error";
-  text?: string;   // present when state === "done": cleaned result text
-  error?: string;  // present when state === "error": human-readable message
+  text?: string;    // present when state === "done": cleaned result text
+  rawText?: string; // present when state === "done": raw transcript before cleanup
+  error?: string;   // present when state === "error": human-readable message
 }
 
 // Recording state machine states.

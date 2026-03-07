@@ -745,7 +745,7 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         }
     }
 
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text));
+    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text, raw_text));
 }
 
 /// Toggle-mode hotkey handler: press once to start, press again to stop + process.
