@@ -6,7 +6,17 @@
   --color-dikta-border: #27272a;
   --color-dikta-muted: #71717a;
   --color-dikta-text: #fafafa;
-  --color-dikta-primary: #3b82f6;
+  --color-dikta-primary: #10b981;
   --color-dikta-danger: #ef4444;
   --color-dikta-warning: #f59e0b;
+  --color-dikta-accent: #34d399;
 }
+
+/* Smooth scrollbar for settings */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* Native select dropdown: dark text on light OS dropdown */
+select option { color: #000; background: #fff; }
