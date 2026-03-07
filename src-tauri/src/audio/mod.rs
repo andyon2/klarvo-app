@@ -86,6 +86,16 @@ struct RecordingResult {
 pub struct AudioRecorder {
     session: Mutex<Option<RecordingSession>>,
     level_callback: Mutex<Option<AudioLevelCallback>>,
+    /// Shared live buffer for streaming preview. Updated in real-time by the
+    /// recording thread. Readers can snapshot this at any time.
+    live_buffer: Arc<Mutex<LiveBuffer>>,
+}
+
+/// Shared buffer for live audio preview during recording.
+struct LiveBuffer {
+    samples: Vec<f32>,
+    native_sample_rate: u32,
+    native_channels: u16,
 }
 
 impl AudioRecorder {
@@ -94,6 +104,11 @@ impl AudioRecorder {
         AudioRecorder {
             session: Mutex::new(None),
             level_callback: Mutex::new(None),
+            live_buffer: Arc::new(Mutex::new(LiveBuffer {
+                samples: Vec::new(),
+                native_sample_rate: 16000,
+                native_channels: 1,
+            })),
         }
     }
 
@@ -122,11 +137,17 @@ impl AudioRecorder {
         // Take the level callback (if any) to pass into the recording thread.
         let level_cb = self.level_callback.lock().unwrap().take();
 
+        // Clear the live buffer for the new recording.
+        if let Ok(mut lb) = self.live_buffer.lock() {
+            lb.samples.clear();
+        }
+        let live_buf = Arc::clone(&self.live_buffer);
+
         let device_name_owned = device_name.map(|s| s.to_string());
 
         // Spawn a dedicated thread that owns the cpal stream.
         std::thread::spawn(move || {
-            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, device_name_owned.as_deref()) {
+            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, device_name_owned.as_deref(), live_buf) {
                 eprintln!("[audio] recording thread error: {e}");
             }
         });
@@ -146,17 +167,30 @@ impl AudioRecorder {
     ///
     /// Returns `AudioError::NotRecording` if no session is active.
     pub fn stop_recording(&self) -> Result<Vec<u8>, AudioError> {
+        self.stop_recording_with_gain(1.0)
+    }
+
+    /// Stops recording and applies a gain multiplier to the audio.
+    /// `gain` of 1.0 = normal, 3.0 = 3x louder (whisper mode).
+    pub fn stop_recording_with_gain(&self, gain: f32) -> Result<Vec<u8>, AudioError> {
         let mut guard = self.session.lock().unwrap();
         let session = guard.take().ok_or(AudioError::NotRecording)?;
 
-        // Signal the recording thread to stop.
-        // Ignore send errors -- the thread may have already exited.
         let _ = session.stop_tx.send(());
 
-        // Wait for the samples (blocks until the thread flushes).
         let result = session.result_rx.recv().map_err(|_| AudioError::ThreadError)?;
 
-        encode_to_wav(&result.samples, result.native_sample_rate, result.native_channels)
+        encode_to_wav_with_gain(&result.samples, result.native_sample_rate, result.native_channels, gain)
+    }
+
+    /// Returns a WAV snapshot of the audio captured so far, without stopping.
+    /// Used for streaming preview during recording.
+    pub fn snapshot_wav(&self) -> Option<Vec<u8>> {
+        let lb = self.live_buffer.lock().ok()?;
+        if lb.samples.is_empty() {
+            return None;
+        }
+        encode_to_wav(&lb.samples, lb.native_sample_rate, lb.native_channels).ok()
     }
 
     /// Returns `true` if a recording is currently active.
@@ -224,6 +258,7 @@ fn recording_thread(
     result_tx: std::sync::mpsc::Sender<RecordingResult>,
     level_cb: Option<AudioLevelCallback>,
     device_name: Option<&str>,
+    live_buffer: Arc<Mutex<LiveBuffer>>,
 ) -> Result<(), AudioError> {
     let device = find_input_device(device_name)?;
 
@@ -232,6 +267,12 @@ fn recording_thread(
     let native_channels = config.channels();
     let sample_format = config.sample_format();
     let stream_config: StreamConfig = config.into();
+
+    // Initialize the live buffer with the correct format info.
+    if let Ok(mut lb) = live_buffer.lock() {
+        lb.native_sample_rate = native_sample_rate;
+        lb.native_channels = native_channels;
+    }
 
     let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
     let samples_writer = Arc::clone(&samples);
@@ -247,7 +288,7 @@ fn recording_thread(
 
     let stream = build_stream_with_level(
         &device, &stream_config, sample_format, samples_writer,
-        level_cb_clone, level_chunk_writer, samples_per_tick,
+        level_cb_clone, level_chunk_writer, samples_per_tick, live_buffer,
     )?;
 
     stream.play()?;
@@ -291,8 +332,12 @@ fn process_f32_data(
     level_cb: &Option<Arc<AudioLevelCallback>>,
     level_chunk: &Arc<Mutex<Vec<f32>>>,
     samples_per_tick: usize,
+    live_buf: &Arc<Mutex<LiveBuffer>>,
 ) {
     buffer.lock().unwrap().extend_from_slice(data);
+    if let Ok(mut lb) = live_buf.lock() {
+        lb.samples.extend_from_slice(data);
+    }
 
     if let Some(ref cb) = level_cb {
         let mut chunk = level_chunk.lock().unwrap();
@@ -314,13 +359,14 @@ fn build_stream_with_level(
     level_cb: Option<Arc<AudioLevelCallback>>,
     level_chunk: Arc<Mutex<Vec<f32>>>,
     samples_per_tick: usize,
+    live_buf: Arc<Mutex<LiveBuffer>>,
 ) -> Result<cpal::Stream, AudioError> {
     match sample_format {
         SampleFormat::F32 => {
             let stream = device.build_input_stream(
                 config,
                 move |data: &[f32], _| {
-                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -332,7 +378,7 @@ fn build_stream_with_level(
                 config,
                 move |data: &[i16], _| {
                     let converted: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
-                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -344,7 +390,7 @@ fn build_stream_with_level(
                 config,
                 move |data: &[u16], _| {
                     let converted: Vec<f32> = data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0).collect();
-                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -352,11 +398,10 @@ fn build_stream_with_level(
             Ok(stream)
         }
         _ => {
-            // Fallback: try f32
             let stream = device.build_input_stream(
                 config,
                 move |data: &[f32], _| {
-                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick);
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -384,6 +429,17 @@ pub fn encode_to_wav(
     native_sample_rate: u32,
     native_channels: u16,
 ) -> Result<Vec<u8>, AudioError> {
+    encode_to_wav_with_gain(samples, native_sample_rate, native_channels, 1.0)
+}
+
+/// Like `encode_to_wav` but applies a gain multiplier to the audio.
+/// `gain` of 1.0 = no change, 3.0 = 3x louder (for whisper mode).
+pub fn encode_to_wav_with_gain(
+    samples: &[f32],
+    native_sample_rate: u32,
+    native_channels: u16,
+    gain: f32,
+) -> Result<Vec<u8>, AudioError> {
     let mono = downmix_to_mono(samples, native_channels);
 
     let resampled = if native_sample_rate == TARGET_SAMPLE_RATE {
@@ -403,10 +459,8 @@ pub fn encode_to_wav(
     {
         let mut writer = hound::WavWriter::new(&mut cursor, spec)?;
         for sample in resampled {
-            let clamped = sample.clamp(-1.0, 1.0);
-            // -1.0 * i16::MAX gives -32767; i16::MIN is -32768.
-            // This avoids overflow on the most negative representable value.
-            let int_sample = (clamped * i16::MAX as f32) as i16;
+            let amplified = (sample * gain).clamp(-1.0, 1.0);
+            let int_sample = (amplified * i16::MAX as f32) as i16;
             writer.write_sample(int_sample)?;
         }
         writer.finalize()?;

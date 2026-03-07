@@ -135,11 +135,11 @@ mod linux {
 mod windows {
     use super::*;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        VIRTUAL_KEY, VK_CONTROL, VK_V,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_V,
     };
     use ::windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, SetForegroundWindow,
+        GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
     };
 
     /// Windows paste handler using Win32 SendInput API.
@@ -196,14 +196,14 @@ mod windows {
     }
 
     /// Builds a keyboard INPUT event for SendInput.
-    fn kbd_input(vk: VIRTUAL_KEY, flags: u32) -> INPUT {
+    fn kbd_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
         INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
                     wVk: vk,
                     wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP * flags,
+                    dwFlags: if key_up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
                     time: 0,
                     dwExtraInfo: 0,
                 },
@@ -214,10 +214,10 @@ mod windows {
     /// Simulates Ctrl+V using the Win32 SendInput API.
     fn simulate_ctrl_v() {
         let inputs = [
-            kbd_input(VK_CONTROL, 0), // Ctrl down
-            kbd_input(VK_V, 0),       // V down
-            kbd_input(VK_V, 1),       // V up
-            kbd_input(VK_CONTROL, 1), // Ctrl up
+            kbd_input(VK_CONTROL, false), // Ctrl down
+            kbd_input(VK_V, false),       // V down
+            kbd_input(VK_V, true),        // V up
+            kbd_input(VK_CONTROL, true),  // Ctrl up
         ];
 
         unsafe {
@@ -232,6 +232,18 @@ mod windows {
     /// Call this when the hotkey fires, before Dikta does any processing.
     pub fn get_foreground_window_handle() -> isize {
         unsafe { GetForegroundWindow().0 as isize }
+    }
+
+    /// Returns the title (caption) of the currently focused window.
+    pub fn get_foreground_window_title() -> Option<String> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.0.is_null() { return None; }
+            let mut buf = [0u16; 512];
+            let len = GetWindowTextW(hwnd, &mut buf);
+            if len == 0 { return None; }
+            Some(String::from_utf16_lossy(&buf[..len as usize]))
+        }
     }
 }
 
@@ -270,6 +282,19 @@ pub fn capture_foreground_window() -> Option<isize> {
     #[cfg(target_os = "windows")]
     {
         Some(windows::get_foreground_window_handle())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
+/// Returns the title of the currently focused window.
+pub fn capture_foreground_window_title() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::get_foreground_window_title()
     }
 
     #[cfg(not(target_os = "windows"))]
