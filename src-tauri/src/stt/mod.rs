@@ -140,7 +140,8 @@ impl GroqWhisper {
         let mut form = multipart::Form::new()
             .part("file", part)
             .text("model", self.model.clone())
-            .text("response_format", "json");
+            .text("response_format", "json")
+            .text("temperature", "0");
 
         if !language.is_empty() {
             form = form.text("language", language.to_string());

@@ -21,6 +21,30 @@ use serde::{Deserialize, Serialize};
 use crate::llm::CleanupStyle;
 
 // ---------------------------------------------------------------------------
+// AppProfile
+// ---------------------------------------------------------------------------
+
+/// A per-application recording profile.
+///
+/// When recording starts, the foreground window title is matched against
+/// `app_pattern` (case-insensitive substring). The first matching profile
+/// overrides the global `cleanup_style`, `language`, and `custom_prompt`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppProfile {
+    /// Human-readable name shown in the UI.
+    pub name: String,
+    /// Case-insensitive substring matched against the foreground window title.
+    pub app_pattern: String,
+    /// Cleanup style to use when this profile matches.
+    pub cleanup_style: CleanupStyle,
+    /// ISO-639-1 language code (e.g. `"de"`, `"en"`). Empty = auto-detect.
+    pub language: String,
+    /// Additional instructions appended to the LLM system prompt.
+    pub custom_prompt: String,
+}
+
+// ---------------------------------------------------------------------------
 // HotkeyMode
 // ---------------------------------------------------------------------------
 
@@ -82,10 +106,47 @@ pub struct AppConfig {
     /// Name of the selected audio input device. `None` = system default.
     #[serde(default)]
     pub audio_device: Option<String>,
+
+    /// Groq Whisper model variant to use for transcription.
+    /// Defaults to `whisper-large-v3-turbo` (fast, cheap, good quality).
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+
+    /// Additional instructions appended to the LLM system prompt.
+    /// Allows the user to inject domain-specific rules (e.g. "always use
+    /// formal German", "don't add line breaks").
+    #[serde(default)]
+    pub custom_prompt: String,
+
+    /// Per-application recording profiles.
+    /// The first profile whose `app_pattern` matches the foreground window
+    /// title overrides the global settings for that recording session.
+    #[serde(default)]
+    pub profiles: Vec<AppProfile>,
+
+    /// Launch Dikta automatically when the user logs in.
+    /// On Windows this writes/removes a `HKCU\...\Run` registry entry.
+    #[serde(default)]
+    pub autostart: bool,
+
+    /// Whisper mode: amplifies audio for quiet/whispered speech.
+    /// When enabled, a 3x gain is applied before sending to STT,
+    /// and the silence detection threshold is lowered.
+    #[serde(default)]
+    pub whisper_mode: bool,
+
+    /// Hotkey for Command Mode (voice-edit selected text).
+    /// Default: ctrl+shift+e
+    #[serde(default = "default_command_hotkey")]
+    pub command_hotkey: String,
 }
 
 fn default_language() -> String {
-    "de".to_string()
+    String::new() // empty = auto-detect (Groq Whisper handles DE+EN mix)
+}
+
+fn default_stt_model() -> String {
+    "whisper-large-v3-turbo".to_string()
 }
 
 fn default_cleanup_style() -> CleanupStyle {
@@ -100,6 +161,10 @@ pub fn default_hotkey_mode() -> HotkeyMode {
     HotkeyMode::Hold
 }
 
+fn default_command_hotkey() -> String {
+    "ctrl+shift+e".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -110,6 +175,12 @@ impl Default for AppConfig {
             hotkey: default_hotkey(),
             hotkey_mode: default_hotkey_mode(),
             audio_device: None,
+            stt_model: default_stt_model(),
+            custom_prompt: String::new(),
+            profiles: Vec::new(),
+            autostart: false,
+            whisper_mode: false,
+            command_hotkey: default_command_hotkey(),
         }
     }
 }
@@ -216,7 +287,7 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.groq_api_key.is_empty());
         assert!(cfg.deepseek_api_key.is_empty());
-        assert_eq!(cfg.language, "de");
+        assert!(cfg.language.is_empty(), "default language should be empty (auto-detect)");
         assert_eq!(cfg.cleanup_style, CleanupStyle::Polished);
         assert_eq!(cfg.hotkey, "ctrl+shift+d");
         assert_eq!(cfg.hotkey_mode, HotkeyMode::Hold);
@@ -268,6 +339,18 @@ mod tests {
             hotkey: "ctrl+alt+r".to_string(),
             hotkey_mode: HotkeyMode::Toggle,
             audio_device: Some("Test Mic".to_string()),
+            stt_model: "whisper-large-v3".to_string(),
+            custom_prompt: "Always use formal language.".to_string(),
+            profiles: vec![AppProfile {
+                name: "Terminal".to_string(),
+                app_pattern: "powershell".to_string(),
+                cleanup_style: CleanupStyle::Verbatim,
+                language: "en".to_string(),
+                custom_prompt: "No extra punctuation.".to_string(),
+            }],
+            autostart: true,
+            whisper_mode: false,
+            command_hotkey: "ctrl+shift+e".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
@@ -310,7 +393,7 @@ mod tests {
 
         let cfg = load_config(dir.path());
         // Should not panic; returns defaults.
-        assert_eq!(cfg.language, "de");
+        assert!(cfg.language.is_empty(), "default language should be empty (auto-detect)");
     }
 
     /// Partial JSON (missing some fields) uses `serde` defaults for those fields.
@@ -337,6 +420,80 @@ mod tests {
         assert!(json.contains("deepseekApiKey"), "expected camelCase 'deepseekApiKey'");
         assert!(json.contains("cleanupStyle"), "expected camelCase 'cleanupStyle'");
         assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
+        assert!(json.contains("sttModel"), "expected camelCase 'sttModel'");
+        assert!(json.contains("customPrompt"), "expected camelCase 'customPrompt'");
+    }
+
+    /// Default STT model is whisper-large-v3-turbo.
+    #[test]
+    fn test_default_stt_model() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.stt_model, "whisper-large-v3-turbo");
+    }
+
+    /// Default custom_prompt is empty.
+    #[test]
+    fn test_default_custom_prompt_is_empty() {
+        let cfg = AppConfig::default();
+        assert!(cfg.custom_prompt.is_empty());
+    }
+
+    /// Default profiles list is empty.
+    #[test]
+    fn test_default_profiles_is_empty() {
+        let cfg = AppConfig::default();
+        assert!(cfg.profiles.is_empty());
+    }
+
+    /// Default autostart is false.
+    #[test]
+    fn test_default_autostart_is_false() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.autostart);
+    }
+
+    /// AppProfile serializes with camelCase keys.
+    #[test]
+    fn test_app_profile_serializes_with_camel_case() {
+        let profile = AppProfile {
+            name: "Test".to_string(),
+            app_pattern: "chrome".to_string(),
+            cleanup_style: CleanupStyle::Chat,
+            language: "en".to_string(),
+            custom_prompt: "Be brief.".to_string(),
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(json.contains("appPattern"), "expected camelCase 'appPattern'");
+        assert!(json.contains("cleanupStyle"), "expected camelCase 'cleanupStyle'");
+        assert!(json.contains("customPrompt"), "expected camelCase 'customPrompt'");
+    }
+
+    /// AppProfile round-trips through save/load.
+    #[test]
+    fn test_profiles_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            profiles: vec![
+                AppProfile {
+                    name: "Browser".to_string(),
+                    app_pattern: "chrome".to_string(),
+                    cleanup_style: CleanupStyle::Chat,
+                    language: "en".to_string(),
+                    custom_prompt: String::new(),
+                },
+                AppProfile {
+                    name: "Terminal".to_string(),
+                    app_pattern: "powershell".to_string(),
+                    cleanup_style: CleanupStyle::Verbatim,
+                    language: "de".to_string(),
+                    custom_prompt: "No punctuation.".to_string(),
+                },
+            ],
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.profiles, cfg.profiles);
     }
 
     /// All three CleanupStyle variants round-trip through config serialization.
