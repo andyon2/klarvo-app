@@ -1509,7 +1509,7 @@ fn apply_autostart(enabled: bool) {
         let result = RegCreateKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(key_path.as_ptr()),
-            0,
+            Some(0),
             PCWSTR::null(),
             REG_OPTION_NON_VOLATILE,
             KEY_SET_VALUE,
