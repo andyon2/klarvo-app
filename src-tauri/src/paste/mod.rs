@@ -134,13 +134,29 @@ mod linux {
 #[cfg(target_os = "windows")]
 mod windows {
     use super::*;
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY, VK_CONTROL, VK_V,
+    };
+    use ::windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, SetForegroundWindow,
+    };
 
-    /// Windows paste handler.
+    /// Windows paste handler using Win32 SendInput API.
     ///
-    /// Currently uses `arboard` for clipboard access.
-    /// TODO: Implement `SendInput` Win32 API for key simulation instead of
-    ///       relying on external tools.
-    pub struct WindowsPasteHandler;
+    /// Uses `arboard` for clipboard access and `SendInput` for Ctrl+V simulation.
+    /// Optionally restores focus to a previously active window before pasting.
+    pub struct WindowsPasteHandler {
+        /// The window that was focused before Dikta started recording.
+        /// If set, focus is restored to this window before simulating Ctrl+V.
+        prev_hwnd: Option<isize>,
+    }
+
+    impl WindowsPasteHandler {
+        pub fn new(prev_hwnd: Option<isize>) -> Self {
+            Self { prev_hwnd }
+        }
+    }
 
     impl PasteHandler for WindowsPasteHandler {
         fn paste(&self, text: &str) -> Result<(), PasteError> {
@@ -155,15 +171,67 @@ mod windows {
                 .set_text(text)
                 .map_err(|e| PasteError::Clipboard(e.to_string()))?;
 
-            // TODO: Simulate Ctrl+V via SendInput Win32 API.
-            // For now we only set the clipboard; the user must paste manually.
-            log::warn!(
-                "[paste] Windows key simulation not yet implemented. \
-                 Text is in clipboard -- paste manually with Ctrl+V."
-            );
+            // Restore focus to the previously active window.
+            if let Some(hwnd_raw) = self.prev_hwnd {
+                unsafe {
+                    use ::windows::Win32::Foundation::HWND;
+                    let hwnd = HWND(hwnd_raw as *mut _);
+                    let current = GetForegroundWindow();
+                    if current != hwnd {
+                        let _ = SetForegroundWindow(hwnd);
+                        // Give the OS time to switch focus.
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+
+            // Small delay to ensure clipboard is ready.
+            std::thread::sleep(Duration::from_millis(50));
+
+            // Simulate Ctrl+V via SendInput.
+            simulate_ctrl_v();
 
             Ok(())
         }
+    }
+
+    /// Builds a keyboard INPUT event for SendInput.
+    fn kbd_input(vk: VIRTUAL_KEY, flags: u32) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP * flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    /// Simulates Ctrl+V using the Win32 SendInput API.
+    fn simulate_ctrl_v() {
+        let inputs = [
+            kbd_input(VK_CONTROL, 0), // Ctrl down
+            kbd_input(VK_V, 0),       // V down
+            kbd_input(VK_V, 1),       // V up
+            kbd_input(VK_CONTROL, 1), // Ctrl up
+        ];
+
+        unsafe {
+            let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            if sent != inputs.len() as u32 {
+                log::warn!("[paste] SendInput returned {sent}, expected {}", inputs.len());
+            }
+        }
+    }
+
+    /// Captures the currently focused window handle (HWND) as a raw isize.
+    /// Call this when the hotkey fires, before Dikta does any processing.
+    pub fn get_foreground_window_handle() -> isize {
+        unsafe { GetForegroundWindow().0 as isize }
     }
 }
 
@@ -173,22 +241,40 @@ mod windows {
 
 /// Creates the platform-appropriate `PasteHandler`.
 ///
-/// Returns a `Box<dyn PasteHandler>` so callers don't need to know the
-/// concrete type.
-pub fn create_paste_handler() -> Box<dyn PasteHandler> {
+/// `prev_hwnd` is the handle of the window that was focused before Dikta
+/// started recording. On Windows this is used to restore focus before pasting.
+/// On other platforms it is ignored.
+pub fn create_paste_handler(prev_hwnd: Option<isize>) -> Box<dyn PasteHandler> {
     #[cfg(target_os = "linux")]
     {
+        let _ = prev_hwnd;
         Box::new(linux::LinuxPasteHandler)
     }
 
     #[cfg(target_os = "windows")]
     {
-        Box::new(windows::WindowsPasteHandler)
+        Box::new(windows::WindowsPasteHandler::new(prev_hwnd))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
+        let _ = prev_hwnd;
         Box::new(FallbackPasteHandler)
+    }
+}
+
+/// Captures the currently focused window handle. Call when the hotkey fires.
+///
+/// Returns `Some(hwnd)` on Windows, `None` on other platforms.
+pub fn capture_foreground_window() -> Option<isize> {
+    #[cfg(target_os = "windows")]
+    {
+        Some(windows::get_foreground_window_handle())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
     }
 }
 
@@ -229,7 +315,7 @@ mod tests {
     /// Empty text must be rejected before any clipboard or OS call.
     #[test]
     fn test_paste_empty_text_returns_error() {
-        let handler = create_paste_handler();
+        let handler = create_paste_handler(None);
         let result = handler.paste("");
         assert!(
             matches!(result, Err(PasteError::EmptyText)),
@@ -266,7 +352,7 @@ mod tests {
     /// something that correctly rejects empty input.
     #[test]
     fn test_create_paste_handler_rejects_empty() {
-        let handler = create_paste_handler();
+        let handler = create_paste_handler(None);
         assert!(handler.paste("").is_err());
     }
 }

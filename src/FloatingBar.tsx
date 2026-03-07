@@ -1,28 +1,59 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import type { RecordingState } from "./types";
-import { stopRecording, onStateChanged } from "./tauri-commands";
+import { onStateChanged } from "./tauri-commands";
 
-// Audio level payload emitted by the backend during recording.
 interface AudioLevelPayload {
-  level: number; // RMS amplitude 0.0..1.0
+  level: number;
 }
 
-const BAR_SEGMENTS = 24;
+const BAR_SEGMENTS = 32;
 
 export default function FloatingBar() {
   const [state, setState] = useState<RecordingState>("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [levels, setLevels] = useState<number[]>(new Array(BAR_SEGMENTS).fill(0));
-  const levelsRef = useRef(levels);
+  const [showDone, setShowDone] = useState(false);
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isRecording = state === "recording";
+  const isProcessing = state === "transcribing" || state === "cleaning";
+  const isActive = isRecording || isProcessing;
+  const isIdle = state === "idle" && !showDone;
+
+  // Resize the window based on state.
+  useEffect(() => {
+    const win = getCurrentWebviewWindow();
+    if (isActive || showDone) {
+      win.setSize(new LogicalSize(260, 40));
+    } else {
+      win.setSize(new LogicalSize(44, 32));
+    }
+  }, [isActive, showDone]);
 
   // Subscribe to backend pipeline events.
   useEffect(() => {
     const unlisten = onStateChanged((payload) => {
-      setState(payload.state as RecordingState);
-      if (payload.error) setErrorMsg(payload.error);
-      if (payload.state === "done" || payload.state === "idle") {
+      const newState = payload.state as RecordingState;
+      setState(newState);
+
+      if (newState === "done") {
+        // Show "Done" briefly, then collapse
+        setShowDone(true);
+        if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+        doneTimerRef.current = setTimeout(() => {
+          setShowDone(false);
+          setState("idle");
+        }, 1500);
+      } else if (newState === "idle" || newState === "error") {
         setLevels(new Array(BAR_SEGMENTS).fill(0));
+        if (newState === "error") {
+          // Show error briefly
+          setShowDone(false);
+          if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+          doneTimerRef.current = setTimeout(() => setState("idle"), 2000);
+        }
       }
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -31,66 +62,66 @@ export default function FloatingBar() {
   // Subscribe to real-time audio level events.
   useEffect(() => {
     const unlisten = listen<AudioLevelPayload>("dikta://audio-level", (event) => {
-      const newLevel = Math.min(1, event.payload.level * 3); // amplify for visibility
-      setLevels((prev) => {
-        const next = [...prev.slice(1), newLevel];
-        levelsRef.current = next;
-        return next;
-      });
+      const newLevel = Math.min(1, event.payload.level * 3);
+      setLevels((prev) => [...prev.slice(1), newLevel]);
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // Cancel recording on button click.
-  const handleCancel = useCallback(async () => {
-    try {
-      await stopRecording();
-    } catch {
-      // ignore -- might not be recording
-    }
-    setState("idle");
-    setLevels(new Array(BAR_SEGMENTS).fill(0));
-  }, []);
-
-  const isRecording = state === "recording";
-  const isProcessing = state === "transcribing" || state === "cleaning";
-  const isActive = isRecording || isProcessing;
-  const isError = state === "error";
+  // Collapsed idle state: tiny emerald dot
+  if (isIdle) {
+    return (
+      <div
+        data-tauri-drag-region
+        className="h-full w-full flex items-center justify-center rounded-full bg-[#0e0e11]/90 border border-zinc-800/50 cursor-move"
+      >
+        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+      </div>
+    );
+  }
 
   return (
     <div
       data-tauri-drag-region
       className={[
-        "h-full flex items-center gap-2 px-3 rounded-2xl transition-all duration-200 select-none",
-        "bg-zinc-900 border border-zinc-700/50",
-        isActive ? "shadow-[0_0_20px_rgba(59,130,246,0.3)]" : "",
+        "h-full flex items-center gap-2 px-3 rounded-full transition-all duration-200 select-none cursor-move",
+        "bg-[#0e0e11]/95 border",
+        isRecording
+          ? "border-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+          : isProcessing
+          ? "border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+          : showDone
+          ? "border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+          : "border-zinc-800/50",
       ].join(" ")}
-      style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
     >
-      {/* Status indicator dot */}
+      {/* Status dot */}
       <div
         className={[
-          "w-2.5 h-2.5 rounded-full flex-shrink-0 transition-colors duration-200",
+          "w-2 h-2 rounded-full flex-shrink-0",
           isRecording
             ? "bg-red-500 animate-pulse"
             : isProcessing
-            ? "bg-amber-500 animate-pulse"
-            : isError
+            ? "bg-amber-400 animate-pulse"
+            : showDone
+            ? "bg-emerald-400"
+            : state === "error"
             ? "bg-red-500"
-            : "bg-zinc-600",
+            : "bg-emerald-500/60",
         ].join(" ")}
       />
 
-      {/* Waveform visualization */}
+      {/* Waveform while recording */}
       {isRecording && (
-        <div className="flex items-center gap-[2px] h-6 flex-1 min-w-0">
+        <div className="flex items-center gap-[1.5px] h-6 flex-1 min-w-0">
           {levels.map((level, i) => (
             <div
               key={i}
-              className="w-[3px] rounded-full bg-blue-400 transition-all duration-75"
+              className="w-[2.5px] rounded-full bg-emerald-400 transition-all duration-75"
               style={{
-                height: `${Math.max(3, level * 24)}px`,
-                opacity: 0.4 + level * 0.6,
+                height: `${Math.max(2, level * 22)}px`,
+                opacity: 0.3 + level * 0.7,
               }}
             />
           ))}
@@ -101,48 +132,29 @@ export default function FloatingBar() {
       {isProcessing && (
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <svg
-            className="w-4 h-4 text-amber-400 animate-spin flex-shrink-0"
+            className="w-3.5 h-3.5 text-amber-400 animate-spin flex-shrink-0"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth="2"
+            strokeWidth="2.5"
           >
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+            <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
-          <span className="text-xs text-zinc-400 truncate">
-            {state === "transcribing" ? "Transcribing..." : "Cleaning up..."}
+          <span className="text-[11px] text-zinc-400 truncate">
+            {state === "transcribing" ? "Transcribing..." : "Cleaning..."}
           </span>
         </div>
       )}
 
-      {/* Idle / Done / Error text */}
-      {!isActive && (
-        <span
-          className={[
-            "text-xs flex-1 min-w-0 truncate",
-            isError ? "text-red-400" : "text-zinc-500",
-          ].join(" ")}
-        >
-          {isError ? (errorMsg || "Error") : state === "done" ? "Done" : "Dikta"}
-        </span>
+      {/* Done text (shown briefly after completion) */}
+      {showDone && !isProcessing && !isRecording && (
+        <span className="text-[11px] text-emerald-400 flex-1 min-w-0 truncate">Done</span>
       )}
 
-      {/* Cancel button -- only while recording */}
-      {isRecording && (
-        <button
-          onClick={handleCancel}
-          aria-label="Cancel recording"
-          className={[
-            "flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full",
-            "bg-zinc-700 hover:bg-red-600 text-zinc-400 hover:text-white",
-            "transition-colors duration-100",
-          ].join(" ")}
-        >
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
-        </button>
+      {/* Error text */}
+      {state === "error" && !showDone && (
+        <span className="text-[11px] text-red-400 flex-1 min-w-0 truncate">Error</span>
       )}
     </div>
   );

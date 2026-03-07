@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import "./styles.css";
 import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";

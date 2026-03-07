@@ -24,6 +24,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PipelineState {
+    /// No recording active, ready for next dictation.
+    Idle,
     /// Microphone is open and capturing audio.
     Recording,
     /// Audio captured; sending to STT provider.
@@ -50,6 +52,14 @@ pub struct PipelineEvent {
 }
 
 impl PipelineEvent {
+    pub fn idle() -> Self {
+        PipelineEvent {
+            state: PipelineState::Idle,
+            text: None,
+            error: None,
+        }
+    }
+
     pub fn recording() -> Self {
         PipelineEvent {
             state: PipelineState::Recording,

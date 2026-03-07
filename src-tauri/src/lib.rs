@@ -48,7 +48,7 @@ use config::{load_config, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, save_dictionary, Dictionary};
 use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use llm::{CleanupProvider, CleanupStyle, DeepSeekCleanup};
-use paste::create_paste_handler;
+use paste::{capture_foreground_window, create_paste_handler};
 use serde::{Deserialize, Serialize};
 use stt::{GroqWhisper, SttProvider};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
@@ -140,6 +140,9 @@ pub struct AppState {
     dictionary: Mutex<Dictionary>,
     /// Path to the app-data directory for persisting config and dictionary.
     app_data_dir: PathBuf,
+    /// Window handle (HWND) of the app that was focused when recording started.
+    /// Used on Windows to restore focus before pasting.
+    prev_foreground_hwnd: Mutex<Option<isize>>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -163,6 +166,7 @@ impl AppState {
             config: Mutex::new(cfg),
             dictionary: Mutex::new(dictionary),
             app_data_dir,
+            prev_foreground_hwnd: Mutex::new(None),
         }
     }
 }
@@ -231,6 +235,13 @@ async fn start_recording_only(handle: AppHandle) {
 
     if state.recorder.is_recording() {
         return;
+    }
+
+    // Capture the foreground window BEFORE we start recording.
+    // This is the window the user was typing in -- we'll restore focus to it
+    // before pasting the result.
+    if let Ok(mut guard) = state.prev_foreground_hwnd.lock() {
+        *guard = capture_foreground_window();
     }
 
     // Re-install the audio level callback before each recording.
@@ -309,6 +320,25 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         "[pipeline] recording stopped after {duration_ms}ms, {len} WAV bytes",
         len = wav_bytes.len()
     );
+
+    // --- Silence detection ---
+    // If the recording is very short (<500ms) or essentially silent, skip the
+    // STT/LLM pipeline. This matches Wispr Flow's "nothing said" behaviour.
+    if duration_ms < 500 {
+        log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
+        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+        return;
+    }
+
+    // Check RMS of the raw WAV samples. If the audio is near-silent, abort.
+    if let Some(rms) = compute_wav_rms(&wav_bytes) {
+        log::debug!("[pipeline] audio RMS = {rms:.5}");
+        if rms < 0.005 {
+            log::info!("[pipeline] audio is silent (rms={rms:.5}), skipping");
+            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            return;
+        }
+    }
 
     // --- Collect config + dictionary (release locks before await points) ---
     let (language, stt_provider, cleanup_provider, dict_prompt) = {
@@ -411,7 +441,8 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
     log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
 
     // --- Paste ---
-    let paste_handler = create_paste_handler();
+    let prev_hwnd = state.prev_foreground_hwnd.lock().ok().and_then(|g| *g);
+    let paste_handler = create_paste_handler(prev_hwnd);
     if let Err(e) = paste_handler.paste(&cleaned_text) {
         log::warn!("[pipeline] paste failed: {e}. Text is still available.");
         // Do not return error -- text was produced, paste failure is non-fatal.
@@ -880,6 +911,44 @@ fn remove_dictionary_term(state: State<'_, AppState>, term: String) -> Result<()
 }
 
 // ---------------------------------------------------------------------------
+// Silence detection helper
+// ---------------------------------------------------------------------------
+
+/// Parses a WAV byte buffer and computes the overall RMS of the audio samples.
+///
+/// Returns `None` if the WAV cannot be parsed (should not happen since we
+/// encoded it ourselves, but we handle it gracefully).
+fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
+    let cursor = std::io::Cursor::new(wav_bytes);
+    let mut reader = match hound::WavReader::new(cursor) {
+        Ok(r) => r,
+        Err(_) => return None,
+    };
+
+    let spec = reader.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .filter_map(|s| s.ok())
+            .collect(),
+        hound::SampleFormat::Int => {
+            let max_val = (1_i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / max_val)
+                .collect()
+        }
+    };
+
+    if samples.is_empty() {
+        return Some(0.0);
+    }
+
+    Some(audio::compute_rms(&samples))
+}
+
+// ---------------------------------------------------------------------------
 // Default hotkey string
 // ---------------------------------------------------------------------------
 
@@ -894,9 +963,9 @@ const EVENT_AUDIO_LEVEL: &str = "dikta://audio-level";
 
 /// Creates the floating bar window positioned above the taskbar.
 fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Get primary monitor dimensions to position the bar at bottom-center.
-    let bar_width = 280.0_f64;
-    let bar_height = 40.0_f64;
+    // Start as a tiny dot -- the frontend resizes dynamically based on state.
+    let bar_width = 44.0_f64;
+    let bar_height = 32.0_f64;
 
     let builder = tauri::WebviewWindowBuilder::new(
         app,
@@ -906,6 +975,7 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     .title("")
     .inner_size(bar_width, bar_height)
     .decorations(false)
+    .transparent(true)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
