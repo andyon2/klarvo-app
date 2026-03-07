@@ -430,9 +430,9 @@ function SettingsPanel({
   const sectionTitleCls = "text-[10px] font-semibold text-zinc-400 uppercase tracking-widest";
 
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col max-h-[calc(100vh-120px)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40 flex-shrink-0">
         <span className={sectionTitleCls}>Settings</span>
         <button
           aria-label="Close settings"
@@ -444,7 +444,7 @@ function SettingsPanel({
       </div>
 
       {/* Scrollable body */}
-      <div className="overflow-y-auto max-h-[calc(100vh-200px)] p-4 flex flex-col gap-5">
+      <div className="overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-5">
 
         {/* --- Voice & Recording --- */}
         <div className="flex flex-col gap-3">
@@ -841,7 +841,10 @@ function SettingsPanel({
           </div>
         </div>
 
-        {/* --- Save --- */}
+      </div>
+
+      {/* Save button -- sticky footer, always visible */}
+      <div className="px-4 py-3 border-t border-zinc-800/40">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -1152,7 +1155,7 @@ export default function App() {
       <div
         className={[
           "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          showSettings ? "max-h-[70vh] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+          showSettings ? "max-h-[calc(100vh-100px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
         {showSettings && (
