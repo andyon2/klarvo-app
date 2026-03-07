@@ -157,6 +157,13 @@ pub struct AdvancedSettings {
     /// Log verbosity level. One of `"debug"`, `"info"`, `"warn"`, `"error"`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
+
+    // --- UI ---
+
+    /// UI zoom level. One of `"small"`, `"medium"`, `"large"`.
+    /// Default: `"medium"` (100%).
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: String,
 }
 
 fn default_stt_prompt_de() -> String {
@@ -227,6 +234,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_ui_scale() -> String {
+    "medium".to_string()
+}
+
 impl Default for AdvancedSettings {
     fn default() -> Self {
         AdvancedSettings {
@@ -256,6 +267,7 @@ impl Default for AdvancedSettings {
             webhook_headers: String::new(),
             webhook_timeout_secs: default_webhook_timeout_secs(),
             log_level: default_log_level(),
+            ui_scale: default_ui_scale(),
         }
     }
 }

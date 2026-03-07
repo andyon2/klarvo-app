@@ -1543,66 +1543,37 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
   webhookHeaders: "",
   webhookTimeoutSecs: 10,
   logLevel: "info",
+  uiScale: "medium",
 };
 
-function AccordionSection({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border border-zinc-800/60 rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-[#111113] hover:bg-zinc-800/40 transition-colors text-left"
-      >
-        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">{title}</span>
-        <span
-          className={[
-            "text-zinc-500 text-xs transition-transform duration-150 select-none",
-            open ? "rotate-90" : "",
-          ].join(" ")}
-        >
-          ▸
-        </span>
-      </button>
-      {open && (
-        <div className="px-3 py-3 flex flex-col gap-3 bg-[#0e0e11]">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
 
-function AdvancedSettingsPanel({ onClose }: { onClose: () => void }) {
+function AdvancedSettingsPanel({ onClose, onScaleChange }: { onClose: () => void; onScaleChange: (scale: string) => void }) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ stt: true });
 
   const inputCls = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
   const labelCls = "text-xs text-zinc-300";
   const hintCls = "text-[10px] text-zinc-500 leading-relaxed";
   const numberInputCls = `${inputCls} w-28`;
+  const modelInputCls = "bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44";
+  const sectionBtnCls = "flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left";
+
+  const toggleSection = useCallback((key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   useEffect(() => {
     getAdvancedSettings()
       .then((s) => { setSettings(s); setLoaded(true); })
       .catch((err) => {
-        // Backend may not have the command yet in dev; fall back to defaults.
         console.warn("get_advanced_settings failed, using defaults:", err);
         setLoaded(true);
       });
   }, []);
 
-  // Close on Escape.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);
@@ -1618,6 +1589,7 @@ function AdvancedSettingsPanel({ onClose }: { onClose: () => void }) {
     setSaveMsg(null);
     try {
       await saveAdvancedSettings(settings);
+      onScaleChange(settings.uiScale);
       setSaveMsg("Saved");
       setTimeout(() => setSaveMsg(null), 2000);
     } catch (err) {
@@ -1640,10 +1612,23 @@ function AdvancedSettingsPanel({ onClose }: { onClose: () => void }) {
     );
   }
 
+  // Toggle switch helper
+  const Toggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={["relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0", checked ? "bg-emerald-500/40" : "bg-zinc-700"].join(" ")}
+    >
+      <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", checked ? "translate-x-4" : ""].join(" ")} />
+    </button>
+  );
+
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col max-h-[calc(100vh-120px)]">
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl shadow-xl shadow-black/30">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
         <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
         <button
           aria-label="Close advanced settings"
@@ -1654,420 +1639,211 @@ function AdvancedSettingsPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {/* Scrollable body */}
-      <div className="overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-3">
+      {/* Content -- scrollable like History panel */}
+      <div className="overflow-y-auto max-h-[calc(100vh-150px)] p-4 flex flex-col gap-1">
 
-        {/* --- Speech-to-Text --- */}
-        <AccordionSection title="Speech-to-Text (STT)" defaultOpen={true}>
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>STT Prompt (German)</span>
-            <textarea
-              value={settings.sttPromptDe}
-              onChange={(e) => set("sttPromptDe", e.target.value)}
-              placeholder="Context prompt sent with German transcriptions, e.g. 'Fachbegriffe: XYZ'"
-              rows={2}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Injected as context when language is set to German.</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>STT Prompt (English)</span>
-            <textarea
-              value={settings.sttPromptEn}
-              onChange={(e) => set("sttPromptEn", e.target.value)}
-              placeholder="Context prompt for English transcriptions"
-              rows={2}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Injected as context when language is set to English.</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>STT Prompt (Auto-detect)</span>
-            <textarea
-              value={settings.sttPromptAuto}
-              onChange={(e) => set("sttPromptAuto", e.target.value)}
-              placeholder="Context prompt for auto-detect mode"
-              rows={2}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>STT Temperature</span>
-              <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+        {/* ── STT ── */}
+        <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`}>&#9656;</span>
+          Speech-to-Text (STT)
+        </button>
+        {openSections.stt && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>STT Prompt (German)</span>
+              <textarea value={settings.sttPromptDe} onChange={(e) => set("sttPromptDe", e.target.value)} placeholder="Context prompt sent with German transcriptions" rows={2} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Injected as context when language is set to German.</span>
             </div>
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step={0.1}
-              value={settings.sttTemperature}
-              onChange={(e) => set("sttTemperature", parseFloat(e.target.value) || 0)}
-              className={numberInputCls}
-            />
-          </div>
-        </AccordionSection>
-
-        {/* --- LLM Cleanup --- */}
-        <AccordionSection title="LLM Cleanup">
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>System Prompt: Polished</span>
-            <textarea
-              value={settings.llmSystemPromptPolished}
-              onChange={(e) => set("llmSystemPromptPolished", e.target.value)}
-              placeholder="Leave empty for built-in default"
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>System Prompt: Verbatim</span>
-            <textarea
-              value={settings.llmSystemPromptVerbatim}
-              onChange={(e) => set("llmSystemPromptVerbatim", e.target.value)}
-              placeholder="Leave empty for built-in default"
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>System Prompt: Chat</span>
-            <textarea
-              value={settings.llmSystemPromptChat}
-              onChange={(e) => set("llmSystemPromptChat", e.target.value)}
-              placeholder="Leave empty for built-in default"
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>Command Mode Prompt</span>
-            <textarea
-              value={settings.llmCommandModePrompt}
-              onChange={(e) => set("llmCommandModePrompt", e.target.value)}
-              placeholder="Leave empty for built-in default"
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-            <span className={hintCls}>System prompt used when rewriting selected text via Command Mode (Ctrl+Shift+E).</span>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>LLM Temperature</span>
-              <span className={hintCls}>0.0 – 2.0. Lower = more focused, higher = more varied.</span>
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>STT Prompt (English)</span>
+              <textarea value={settings.sttPromptEn} onChange={(e) => set("sttPromptEn", e.target.value)} placeholder="Context prompt for English transcriptions" rows={2} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Injected as context when language is set to English.</span>
             </div>
-            <input
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={settings.llmTemperature}
-              onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Max Tokens</span>
-              <span className={hintCls}>Maximum output tokens per LLM request.</span>
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>STT Prompt (Auto-detect)</span>
+              <textarea value={settings.sttPromptAuto} onChange={(e) => set("sttPromptAuto", e.target.value)} placeholder="Context prompt for auto-detect mode" rows={2} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
             </div>
-            <input
-              type="number"
-              min={64}
-              max={8192}
-              step={1}
-              value={settings.llmMaxTokens}
-              onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Model: DeepSeek</span>
-              <span className={hintCls}>Model ID sent to the DeepSeek API.</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className={labelCls}>STT Temperature</span>
+                <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+              </div>
+              <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => set("sttTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
             </div>
-            <input
-              type="text"
-              placeholder="deepseek-chat"
-              value={settings.llmModelDeepseek}
-              onChange={(e) => set("llmModelDeepseek", e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
-            />
           </div>
+        )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Model: OpenAI</span>
-              <span className={hintCls}>Model ID sent to the OpenAI API.</span>
+        {/* ── LLM Cleanup ── */}
+        <button onClick={() => toggleSection("llm")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`}>&#9656;</span>
+          LLM Cleanup
+        </button>
+        {openSections.llm && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>System Prompt: Polished</span>
+              <textarea value={settings.llmSystemPromptPolished} onChange={(e) => set("llmSystemPromptPolished", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
             </div>
-            <input
-              type="text"
-              placeholder="gpt-4o-mini"
-              value={settings.llmModelOpenai}
-              onChange={(e) => set("llmModelOpenai", e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
-            />
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>System Prompt: Verbatim</span>
+              <textarea value={settings.llmSystemPromptVerbatim} onChange={(e) => set("llmSystemPromptVerbatim", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>System Prompt: Chat</span>
+              <textarea value={settings.llmSystemPromptChat} onChange={(e) => set("llmSystemPromptChat", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>Command Mode Prompt</span>
+              <textarea value={settings.llmCommandModePrompt} onChange={(e) => set("llmCommandModePrompt", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${inputCls} resize-none`} />
+              <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
+              <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
+              <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
+              <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
+              <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
+              <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
+              <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
+              <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
+              <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+            </div>
           </div>
+        )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Model: Anthropic</span>
-              <span className={hintCls}>Model ID sent to the Anthropic API.</span>
+        {/* ── Audio ── */}
+        <button onClick={() => toggleSection("audio")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`}>&#9656;</span>
+          Audio
+        </button>
+        {openSections.audio && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Silence Threshold</span><span className={hintCls}>RMS below which audio is silence (0.0 – 0.1).</span></div>
+              <input type="number" min={0} max={0.1} step={0.001} value={settings.silenceThreshold} onChange={(e) => set("silenceThreshold", parseFloat(e.target.value) || 0)} className={numberInputCls} />
             </div>
-            <input
-              type="text"
-              placeholder="claude-haiku-4-5-20251001"
-              value={settings.llmModelAnthropic}
-              onChange={(e) => set("llmModelAnthropic", e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
-            />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Whisper Mode Threshold</span><span className={hintCls}>Silence threshold in Whisper Mode (lower than normal).</span></div>
+              <input type="number" min={0} max={0.1} step={0.001} value={settings.whisperModeThreshold} onChange={(e) => set("whisperModeThreshold", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Min Recording (ms)</span><span className={hintCls}>Shorter recordings are discarded.</span></div>
+              <input type="number" min={0} step={50} value={settings.minRecordingMs} onChange={(e) => set("minRecordingMs", parseInt(e.target.value, 10) || 500)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Whisper Mode Gain</span><span className={hintCls}>Amplification multiplier in Whisper Mode.</span></div>
+              <input type="number" min={1} max={20} step={0.5} value={settings.whisperModeGain} onChange={(e) => set("whisperModeGain", parseFloat(e.target.value) || 1)} className={numberInputCls} />
+            </div>
           </div>
+        )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Model: Groq</span>
-              <span className={hintCls}>Model ID sent to the Groq LLM API.</span>
+        {/* ── Paste & Behavior ── */}
+        <button onClick={() => toggleSection("paste")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`}>&#9656;</span>
+          Paste & Behavior
+        </button>
+        {openSections.paste && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Auto-Paste</span><span className={hintCls}>Automatically paste result into active window.</span></div>
+              <Toggle checked={settings.autoPaste} onChange={() => set("autoPaste", !settings.autoPaste)} />
             </div>
-            <input
-              type="text"
-              placeholder="llama-3.3-70b-versatile"
-              value={settings.llmModelGroq}
-              onChange={(e) => set("llmModelGroq", e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44"
-            />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Paste Delay (ms)</span><span className={hintCls}>Wait time before sending paste keystroke.</span></div>
+              <input type="number" min={0} max={2000} step={10} value={settings.pasteDelayMs} onChange={(e) => set("pasteDelayMs", parseInt(e.target.value, 10) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Auto-Capitalize</span><span className={hintCls}>Capitalize first letter of every result.</span></div>
+              <Toggle checked={settings.autoCapitalize} onChange={() => set("autoCapitalize", !settings.autoCapitalize)} />
+            </div>
           </div>
+        )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Chunk Threshold</span>
-              <span className={hintCls}>Word count above which text is split into parallel chunks.</span>
+        {/* ── Webhook ── */}
+        <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`}>&#9656;</span>
+          Webhook
+        </button>
+        {openSections.webhook && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>Custom Headers (JSON)</span>
+              <textarea value={settings.webhookHeaders} onChange={(e) => set("webhookHeaders", e.target.value)} placeholder={'{"Authorization": "Bearer ..."}'} rows={3} className={`${inputCls} resize-none font-mono`} />
+              <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
             </div>
-            <input
-              type="number"
-              min={50}
-              step={1}
-              value={settings.chunkThreshold}
-              onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)}
-              className={numberInputCls}
-            />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Timeout (seconds)</span><span className={hintCls}>Max wait for webhook response.</span></div>
+              <input type="number" min={1} max={120} step={1} value={settings.webhookTimeoutSecs} onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)} className={numberInputCls} />
+            </div>
           </div>
+        )}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Chunk Target Size</span>
-              <span className={hintCls}>Target word count per chunk when splitting long texts.</span>
+        {/* ── System ── */}
+        <button onClick={() => toggleSection("system")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`}>&#9656;</span>
+          System
+        </button>
+        {openSections.system && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>UI Size</span><span className={hintCls}>Scales the entire interface.</span></div>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => set("uiScale", size)}
+                    className={[
+                      "px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-all duration-150 capitalize",
+                      settings.uiScale === size
+                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                        : "bg-[#111113] border-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600",
+                    ].join(" ")}
+                  >
+                    {size === "small" ? "S" : size === "medium" ? "M" : "L"}
+                  </button>
+                ))}
+              </div>
             </div>
-            <input
-              type="number"
-              min={50}
-              step={1}
-              value={settings.chunkTargetSize}
-              onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)}
-              className={numberInputCls}
-            />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={labelCls}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
+              <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer">
+                <option value="debug">debug</option>
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+              </select>
+            </div>
           </div>
-        </AccordionSection>
-
-        {/* --- Audio --- */}
-        <AccordionSection title="Audio">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Silence Threshold</span>
-              <span className={hintCls}>RMS level below which audio is considered silence. Lower = more sensitive (0.0 – 0.1).</span>
-            </div>
-            <input
-              type="number"
-              min={0}
-              max={0.1}
-              step={0.001}
-              value={settings.silenceThreshold}
-              onChange={(e) => set("silenceThreshold", parseFloat(e.target.value) || 0)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Whisper Mode Threshold</span>
-              <span className={hintCls}>Silence threshold used specifically in Whisper Mode (should be lower than the normal threshold).</span>
-            </div>
-            <input
-              type="number"
-              min={0}
-              max={0.1}
-              step={0.001}
-              value={settings.whisperModeThreshold}
-              onChange={(e) => set("whisperModeThreshold", parseFloat(e.target.value) || 0)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Min Recording Duration (ms)</span>
-              <span className={hintCls}>Recordings shorter than this are discarded (avoids accidental triggers).</span>
-            </div>
-            <input
-              type="number"
-              min={0}
-              step={50}
-              value={settings.minRecordingMs}
-              onChange={(e) => set("minRecordingMs", parseInt(e.target.value, 10) || 500)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Whisper Mode Gain</span>
-              <span className={hintCls}>Amplification multiplier applied in Whisper Mode. Higher = louder mic input.</span>
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              step={0.5}
-              value={settings.whisperModeGain}
-              onChange={(e) => set("whisperModeGain", parseFloat(e.target.value) || 1)}
-              className={numberInputCls}
-            />
-          </div>
-        </AccordionSection>
-
-        {/* --- Paste & Behavior --- */}
-        <AccordionSection title="Paste & Behavior">
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Auto-Paste</span>
-              <span className={hintCls}>Automatically paste the result into the active window after cleanup.</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.autoPaste}
-              onClick={() => set("autoPaste", !settings.autoPaste)}
-              className={[
-                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
-                settings.autoPaste ? "bg-emerald-500/40" : "bg-zinc-700",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                  settings.autoPaste ? "translate-x-4" : "",
-                ].join(" ")}
-              />
-            </button>
-          </label>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Paste Delay (ms)</span>
-              <span className={hintCls}>Milliseconds to wait between focusing the target window and sending the paste keystroke.</span>
-            </div>
-            <input
-              type="number"
-              min={0}
-              max={2000}
-              step={10}
-              value={settings.pasteDelayMs}
-              onChange={(e) => set("pasteDelayMs", parseInt(e.target.value, 10) || 0)}
-              className={numberInputCls}
-            />
-          </div>
-
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Auto-Capitalize</span>
-              <span className={hintCls}>Automatically capitalize the first letter of every dictation result.</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.autoCapitalize}
-              onClick={() => set("autoCapitalize", !settings.autoCapitalize)}
-              className={[
-                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
-                settings.autoCapitalize ? "bg-emerald-500/40" : "bg-zinc-700",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                  settings.autoCapitalize ? "translate-x-4" : "",
-                ].join(" ")}
-              />
-            </button>
-          </label>
-        </AccordionSection>
-
-        {/* --- Webhook --- */}
-        <AccordionSection title="Webhook">
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>Custom Headers (JSON)</span>
-            <textarea
-              value={settings.webhookHeaders}
-              onChange={(e) => set("webhookHeaders", e.target.value)}
-              placeholder={'{"Authorization": "Bearer ..."}'}
-              rows={3}
-              className={`${inputCls} resize-none font-mono`}
-            />
-            <span className={hintCls}>Additional HTTP headers sent with each webhook request. Must be valid JSON.</span>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Timeout (seconds)</span>
-              <span className={hintCls}>Maximum time to wait for a webhook response before giving up.</span>
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={120}
-              step={1}
-              value={settings.webhookTimeoutSecs}
-              onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)}
-              className={numberInputCls}
-            />
-          </div>
-        </AccordionSection>
-
-        {/* --- System --- */}
-        <AccordionSection title="System">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={labelCls}>Log Level</span>
-              <span className={hintCls}>Verbosity of backend logs. Use "debug" when troubleshooting.</span>
-            </div>
-            <select
-              value={settings.logLevel}
-              onChange={(e) => set("logLevel", e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
-            >
-              <option value="debug">debug</option>
-              <option value="info">info</option>
-              <option value="warn">warn</option>
-              <option value="error">error</option>
-            </select>
-          </div>
-        </AccordionSection>
+        )}
 
       </div>
 
-      {/* Sticky footer: Save + Reset */}
+      {/* Footer: Save + Reset */}
       <div className="px-4 py-3 border-t border-zinc-800/40 flex gap-2">
         <button
           onClick={handleReset}
@@ -2129,6 +1905,17 @@ export default function App() {
   const [showSnippets, setShowSnippets] = useState(false);
   const [snippetsList, setSnippetsList] = useState<TextSnippet[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [uiScale, setUiScale] = useState("medium");
+
+  // Load UI scale on mount.
+  useEffect(() => {
+    getAdvancedSettings()
+      .then((s) => { if (s.uiScale) setUiScale(s.uiScale); })
+      .catch(() => {});
+  }, []);
+
+  const zoomValue = uiScale === "small" ? 0.85 : uiScale === "large" ? 1.15 : 1.0;
+
   const toggleAdvanced = useCallback(() => {
     setShowAdvanced((prev) => !prev);
     setShowSettings(false);
@@ -2372,8 +2159,8 @@ export default function App() {
 
   return (
     <main
-      className="h-screen bg-[#0a0a0c] text-zinc-100 flex flex-col select-none overflow-hidden"
-      style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+      className="h-screen bg-[#0a0a0c] text-zinc-100 flex flex-col select-none overflow-y-auto"
+      style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif", zoom: zoomValue }}
     >
       {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-2 flex-shrink-0">
@@ -2732,12 +2519,12 @@ export default function App() {
       {/* ── Advanced Settings Panel (toggleable) ── */}
       <div
         className={[
-          "px-4 transition-all duration-250 ease-in-out flex-shrink-0",
-          showAdvanced ? "max-h-[calc(100vh-100px)] opacity-100 py-2 overflow-visible" : "max-h-0 opacity-0 py-0 overflow-hidden",
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showAdvanced ? "max-h-[calc(100vh-80px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
         {showAdvanced && (
-          <AdvancedSettingsPanel onClose={() => setShowAdvanced(false)} />
+          <AdvancedSettingsPanel onClose={() => setShowAdvanced(false)} onScaleChange={setUiScale} />
         )}
       </div>
 

@@ -129,6 +129,7 @@ export interface AdvancedSettings {
   webhookHeaders: string;
   webhookTimeoutSecs: number;
   logLevel: string;
+  uiScale: string;
 }
 
 // Style display metadata.
