@@ -20,3 +20,16 @@
 
 /* Native select dropdown: dark text on light OS dropdown */
 select option { color: #000; background: #fff; }
+
+/*
+ * Force fully transparent background on all root elements.
+ * Critical for the floating bar window — without this, WebView2
+ * shows its default background through the transparent window.
+ */
+html, body, #root {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}

@@ -6,7 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload } from "./types";
+import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload, HistoryEntry, UsageSummary, AppProfile } from "./types";
 
 /**
  * Starts audio capture. Backend begins buffering microphone input.
@@ -67,7 +67,11 @@ export async function saveSettings(
   cleanupStyle: CleanupStyle,
   hotkey?: string,
   hotkeyMode?: HotkeyMode,
-  audioDevice?: string | null
+  audioDevice?: string | null,
+  sttModel?: string | null,
+  customPrompt?: string | null,
+  autostart?: boolean | null,
+  whisperMode?: boolean | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -77,6 +81,10 @@ export async function saveSettings(
     hotkey: hotkey ?? "",
     hotkeyMode: hotkeyMode ?? "hold",
     audioDevice: audioDevice ?? null,
+    sttModel: sttModel ?? null,
+    customPrompt: customPrompt ?? null,
+    autostart: autostart ?? null,
+    whisperMode: whisperMode ?? null,
   });
 }
 
@@ -151,4 +159,59 @@ export async function setCleanupStyle(style: CleanupStyle): Promise<void> {
  */
 export async function listAudioDevices(): Promise<string[]> {
   return invoke<string[]>("list_audio_devices");
+}
+
+// --- History ---
+
+export async function getHistory(limit?: number): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("get_history", { limit: limit ?? null });
+}
+
+export async function searchHistory(query: string, limit?: number): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("search_history", { query, limit: limit ?? null });
+}
+
+export async function deleteHistoryEntry(id: number): Promise<void> {
+  await invoke("delete_history_entry", { id });
+}
+
+export async function clearHistory(): Promise<number> {
+  return invoke<number>("clear_history");
+}
+
+export async function addHistoryEntry(
+  text: string,
+  rawText: string | null,
+  style: string,
+  language: string,
+): Promise<number> {
+  return invoke<number>("add_history_entry", { text, rawText, style, language });
+}
+
+// --- Stats ---
+
+export async function getUsageStats(): Promise<UsageSummary> {
+  return invoke<UsageSummary>("get_usage_stats");
+}
+
+// --- Profiles ---
+
+export async function getProfiles(): Promise<AppProfile[]> {
+  return invoke<AppProfile[]>("get_profiles");
+}
+
+export async function saveProfiles(profiles: AppProfile[]): Promise<void> {
+  await invoke("save_profiles", { profiles });
+}
+
+// --- Bar shape ---
+
+export async function setBarShape(shape: "circle" | "pill"): Promise<void> {
+  await invoke("set_bar_shape", { shape });
+}
+
+// --- Live preview ---
+
+export async function transcribeLivePreview(): Promise<string> {
+  return invoke<string>("transcribe_live_preview");
 }

@@ -30,6 +30,19 @@ export interface AppSettings {
   hotkey: string;
   hotkeyMode: HotkeyMode;
   audioDevice: string | null;
+  sttModel: string;
+  customPrompt: string;
+  autostart: boolean;
+  whisperMode: boolean;
+}
+
+// A per-application recording profile.
+export interface AppProfile {
+  name: string;
+  appPattern: string;
+  cleanupStyle: CleanupStyle;
+  language: string;
+  customPrompt: string;
 }
 
 // API key configuration status from the backend.
@@ -37,6 +50,28 @@ export interface AppSettings {
 export interface ApiKeyStatus {
   groqConfigured: boolean;
   deepseekConfigured: boolean;
+}
+
+// A single dictation history entry from the SQLite database.
+export interface HistoryEntry {
+  id: number;
+  text: string;
+  rawText: string | null;
+  style: string;
+  language: string;
+  createdAt: string;
+}
+
+// Aggregated usage/cost statistics from the backend.
+export interface UsageSummary {
+  totalDictations: number;
+  totalWords: number;
+  totalCostUsd: number;
+  totalAudioSeconds: number;
+  totalSttCostUsd: number;
+  totalLlmCostUsd: number;
+  dictationsToday: number;
+  costTodayUsd: number;
 }
 
 // App-level state shape.
@@ -72,8 +107,8 @@ export const STYLE_OPTIONS: StyleMeta[] = [
   },
   {
     value: "verbatim",
-    label: "Verbatim",
-    description: "Punctuation only, word-for-word",
+    label: "Clean",
+    description: "Remove fillers, keep your words",
   },
   {
     value: "chat",

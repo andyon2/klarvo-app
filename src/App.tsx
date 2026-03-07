@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import "./styles.css";
-import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings } from "./types";
+import type { RecordingState, CleanupStyle, HotkeyMode, AppSettings, AppProfile, HistoryEntry, UsageSummary } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
 import {
   startRecording,
@@ -12,10 +12,18 @@ import {
   getDictionaryTerms,
   addDictionaryTerm,
   removeDictionaryTerm,
+  addHistoryEntry,
   onStateChanged,
   setLanguage as syncLanguage,
   setCleanupStyle as syncCleanupStyle,
   listAudioDevices,
+  getHistory,
+  deleteHistoryEntry,
+  clearHistory,
+  searchHistory,
+  getUsageStats,
+  getProfiles,
+  saveProfiles,
 } from "./tauri-commands";
 
 // --- Icons -------------------------------------------------------------------
@@ -167,7 +175,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: RecordingSt
 
 function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
   return (
-    <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+    <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 flex-shrink min-w-0">
       {STYLE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -175,7 +183,7 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
           onClick={() => onChange(opt.value)}
           title={opt.description}
           className={[
-            "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100",
+            "px-1.5 py-1 rounded-md text-[11px] font-medium transition-all duration-100 whitespace-nowrap",
             "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
               ? "bg-emerald-500/15 text-emerald-400"
@@ -223,7 +231,7 @@ interface SettingsPanelProps {
   audioDevice: string | null;
   audioDevices: string[];
   dictionary: string[];
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onHotkeyChange: (h: string) => void;
@@ -246,15 +254,31 @@ function SettingsPanel({
   const [localHotkey, setLocalHotkey] = useState(hotkey);
   const [localHotkeyMode, setLocalHotkeyMode] = useState(hotkeyMode);
   const [localAudioDevice, setLocalAudioDevice] = useState(audioDevice);
+  const [localSttModel, setLocalSttModel] = useState(loadedSettings?.sttModel ?? "whisper-large-v3-turbo");
+  const [localCustomPrompt, setLocalCustomPrompt] = useState(loadedSettings?.customPrompt ?? "");
+  const [localAutostart, setLocalAutostart] = useState(loadedSettings?.autostart ?? false);
+  const [localWhisperMode, setLocalWhisperMode] = useState(loadedSettings?.whisperMode ?? false);
+  const [profiles, setProfiles] = useState<AppProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [newTerm, setNewTerm] = useState("");
+
+  // Load profiles on mount.
+  useEffect(() => { getProfiles().then(setProfiles).catch(console.error); }, []);
 
   useEffect(() => { setLocalLang(language); }, [language]);
   useEffect(() => { setLocalStyle(cleanupStyle); }, [cleanupStyle]);
   useEffect(() => { setLocalHotkey(hotkey); }, [hotkey]);
   useEffect(() => { setLocalHotkeyMode(hotkeyMode); }, [hotkeyMode]);
   useEffect(() => { setLocalAudioDevice(audioDevice); }, [audioDevice]);
+  useEffect(() => {
+    if (loadedSettings) {
+      setLocalSttModel(loadedSettings.sttModel);
+      setLocalCustomPrompt(loadedSettings.customPrompt);
+      setLocalAutostart(loadedSettings.autostart);
+      setLocalWhisperMode(loadedSettings.whisperMode);
+    }
+  }, [loadedSettings]);
 
   // Close on Escape
   useEffect(() => {
@@ -292,7 +316,7 @@ function SettingsPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice);
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode);
       setGroqKey("");
       setDeepseekKey("");
       setSaveMsg("Saved");
@@ -302,7 +326,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -350,7 +374,7 @@ function SettingsPanel({
             <select
               value={localAudioDevice ?? ""}
               onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-black max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
             >
               <option value="">System Default</option>
               {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -363,8 +387,9 @@ function SettingsPanel({
             <select
               value={localLang}
               onChange={(e) => handleLangChange(e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-black focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
             >
+              <option value="">Auto (DE + EN)</option>
               <option value="de">Deutsch</option>
               <option value="en">English</option>
             </select>
@@ -390,6 +415,20 @@ function SettingsPanel({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* STT Model */}
+          <div className="flex items-center justify-between gap-3">
+            <span className={labelCls}>STT Model</span>
+            <select
+              value={localSttModel}
+              onChange={(e) => setLocalSttModel(e.target.value)}
+              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[200px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+            >
+              <option value="whisper-large-v3-turbo">Large V3 Turbo ($0.04/h)</option>
+              <option value="whisper-large-v3">Large V3 ($0.111/h)</option>
+              <option value="distil-whisper-large-v3-en">Distil V3 EN ($0.02/h)</option>
+            </select>
           </div>
         </div>
 
@@ -425,6 +464,73 @@ function SettingsPanel({
           <p className="text-[11px] text-zinc-600">
             {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
           </p>
+        </div>
+
+        {/* --- Custom Prompt --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>Custom Prompt</span>
+          <textarea
+            value={localCustomPrompt}
+            onChange={(e) => setLocalCustomPrompt(e.target.value)}
+            placeholder="Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'"
+            rows={3}
+            className={`${inputCls} resize-none`}
+          />
+          <p className="text-[11px] text-zinc-600">Appended to the system prompt during cleanup.</p>
+        </div>
+
+        {/* --- General --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>General</span>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <span className={labelCls}>Launch on startup</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={localAutostart}
+              onClick={() => setLocalAutostart(!localAutostart)}
+              className={[
+                "relative w-9 h-5 rounded-full transition-colors duration-200",
+                localAutostart ? "bg-emerald-500/40" : "bg-zinc-700",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                  localAutostart ? "translate-x-4" : "",
+                ].join(" ")}
+              />
+            </button>
+          </label>
+
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelCls}>Whisper mode</span>
+              <span className="text-[10px] text-zinc-600">Amplifies mic input for quiet dictation</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={localWhisperMode}
+              onClick={() => setLocalWhisperMode(!localWhisperMode)}
+              className={[
+                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                localWhisperMode ? "bg-emerald-500/40" : "bg-zinc-700",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                  localWhisperMode ? "translate-x-4" : "",
+                ].join(" ")}
+              />
+            </button>
+          </label>
+
+          <div className="flex flex-col gap-0.5">
+            <span className={labelCls}>Command mode</span>
+            <span className="text-[10px] text-zinc-600">Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+          </div>
         </div>
 
         {/* --- API Keys --- */}
@@ -495,6 +601,105 @@ function SettingsPanel({
           )}
         </div>
 
+        {/* --- App Profiles --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>App Profiles</span>
+          <p className="text-[11px] text-zinc-600">Override style/language per app. Matches window title substring.</p>
+
+          {profiles.map((p, i) => (
+            <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  type="text"
+                  placeholder="Profile name"
+                  value={p.name}
+                  onChange={(e) => {
+                    const next = [...profiles];
+                    next[i] = { ...next[i], name: e.target.value };
+                    setProfiles(next);
+                  }}
+                  className={`flex-1 ${inputCls}`}
+                />
+                <button
+                  onClick={() => {
+                    const next = profiles.filter((_, j) => j !== i);
+                    setProfiles(next);
+                    saveProfiles(next).catch(console.error);
+                  }}
+                  className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Window title pattern, e.g. 'Slack' or 'Visual Studio'"
+                value={p.appPattern}
+                onChange={(e) => {
+                  const next = [...profiles];
+                  next[i] = { ...next[i], appPattern: e.target.value };
+                  setProfiles(next);
+                }}
+                className={inputCls}
+              />
+              <div className="flex gap-2">
+                <select
+                  value={p.cleanupStyle}
+                  onChange={(e) => {
+                    const next = [...profiles];
+                    next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
+                    setProfiles(next);
+                  }}
+                  className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                >
+                  {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+                <select
+                  value={p.language}
+                  onChange={(e) => {
+                    const next = [...profiles];
+                    next[i] = { ...next[i], language: e.target.value };
+                    setProfiles(next);
+                  }}
+                  className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                >
+                  <option value="">Auto</option>
+                  <option value="de">DE</option>
+                  <option value="en">EN</option>
+                </select>
+              </div>
+              <input
+                type="text"
+                placeholder="Custom prompt for this app (optional)"
+                value={p.customPrompt}
+                onChange={(e) => {
+                  const next = [...profiles];
+                  next[i] = { ...next[i], customPrompt: e.target.value };
+                  setProfiles(next);
+                }}
+                className={inputCls}
+              />
+            </div>
+          ))}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+            >
+              + Add Profile
+            </button>
+            {profiles.length > 0 && (
+              <button
+                onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
+                className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+              >
+                Save Profiles
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* --- Save --- */}
         <button
           onClick={handleSave}
@@ -516,6 +721,35 @@ function SettingsPanel({
   );
 }
 
+// --- Stats helpers -----------------------------------------------------------
+
+function formatCost(usd: number): string {
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(0)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins < 60) return `${mins}m ${secs}s`;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
+  return `${hrs}h ${remainMins}m`;
+}
+
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3">
+      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</p>
+      <p className="text-lg font-semibold text-zinc-200 mt-0.5">
+        {value}
+        {sub && <span className="text-[10px] text-zinc-500 font-normal ml-1">{sub}</span>}
+      </p>
+    </div>
+  );
+}
+
 // --- Main App ----------------------------------------------------------------
 
 export default function App() {
@@ -524,7 +758,12 @@ export default function App() {
   const [resultText, setResultText] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [language, setLanguage] = useState("de");
+  const [showHistory, setShowHistory] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historySearch, setHistorySearch] = useState("");
+  const [language, setLanguage] = useState("");
   const [loadedSettings, setLoadedSettings] = useState<AppSettings | null>(null);
   const [dictionary, setDictionary] = useState<string[]>([]);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
@@ -577,8 +816,9 @@ export default function App() {
   const handleSaveSettings = useCallback(async (
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
+    sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode);
     const updated = await getSettings();
     setLoadedSettings(updated);
     setLanguage(updated.language);
@@ -613,6 +853,8 @@ export default function App() {
         const cleanedText = await cleanupText(rawText, currentStyle);
         setResultText(cleanedText);
         setRecordingState("done");
+        // Save to history (fire-and-forget)
+        addHistoryEntry(cleanedText, rawText, currentStyle, language).catch(console.error);
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setRecordingState("error");
@@ -630,7 +872,58 @@ export default function App() {
     }
   }, [recordingState, isRecording, currentStyle, language]);
 
-  const toggleSettings = useCallback(() => setShowSettings((prev) => !prev), []);
+  const toggleSettings = useCallback(() => {
+    setShowSettings((prev) => !prev);
+    setShowHistory(false);
+    setShowStats(false);
+  }, []);
+
+  const toggleHistory = useCallback(() => {
+    setShowHistory((prev) => {
+      if (!prev) {
+        getHistory(50).then(setHistoryEntries).catch(console.error);
+      }
+      return !prev;
+    });
+    setShowSettings(false);
+    setShowStats(false);
+  }, []);
+
+  const toggleStats = useCallback(() => {
+    setShowStats((prev) => {
+      if (!prev) {
+        getUsageStats().then(setUsageStats).catch(console.error);
+      }
+      return !prev;
+    });
+    setShowSettings(false);
+    setShowHistory(false);
+  }, []);
+
+  const handleHistorySearch = useCallback(async (query: string) => {
+    setHistorySearch(query);
+    if (query.trim()) {
+      const results = await searchHistory(query);
+      setHistoryEntries(results);
+    } else {
+      const entries = await getHistory(50);
+      setHistoryEntries(entries);
+    }
+  }, []);
+
+  const handleDeleteHistoryEntry = useCallback(async (id: number) => {
+    await deleteHistoryEntry(id);
+    setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    await clearHistory();
+    setHistoryEntries([]);
+  }, []);
+
+  const handleCopyHistoryText = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).catch(console.error);
+  }, []);
 
   const hotkeyDisplay = formatHotkeyDisplay(loadedSettings?.hotkey ?? "ctrl+shift+d");
 
@@ -661,6 +954,40 @@ export default function App() {
             ].join(" ")}
           >
             <GearIcon />
+          </button>
+
+          {/* History toggle */}
+          <button
+            aria-label="Toggle history"
+            aria-expanded={showHistory}
+            onClick={toggleHistory}
+            className={[
+              "p-1.5 rounded-lg transition-all duration-150",
+              showHistory
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
+            </svg>
+          </button>
+
+          {/* Stats toggle */}
+          <button
+            aria-label="Toggle stats"
+            aria-expanded={showStats}
+            onClick={toggleStats}
+            className={[
+              "p-1.5 rounded-lg transition-all duration-150",
+              showStats
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
+            </svg>
           </button>
         </div>
 
@@ -699,6 +1026,121 @@ export default function App() {
             onAddTerm={handleAddTerm}
             onRemoveTerm={handleRemoveTerm}
           />
+        )}
+      </div>
+
+      {/* ── History Panel (toggleable) ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showHistory ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {showHistory && (
+          <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">History</span>
+              <div className="flex items-center gap-2">
+                {historyEntries.length > 0 && (
+                  <button
+                    onClick={handleClearHistory}
+                    className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 pt-3">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={historySearch}
+                onChange={(e) => handleHistorySearch(e.target.value)}
+                className="w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/40 transition-colors"
+              />
+            </div>
+
+            <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2">
+              {historyEntries.length === 0 ? (
+                <p className="text-xs text-zinc-600 italic text-center py-4">No dictations yet.</p>
+              ) : (
+                historyEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors"
+                  >
+                    <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{entry.text}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-[10px] text-zinc-600">
+                        {new Date(entry.createdAt + "Z").toLocaleString()}
+                        {entry.style !== "polished" && ` · ${entry.style}`}
+                      </span>
+                      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleCopyHistoryText(entry.text)}
+                          className="text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => handleDeleteHistoryEntry(entry.id)}
+                          className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats Panel (toggleable) ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          showStats ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {showStats && usageStats && (
+          <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Statistics & Costs</span>
+              <button
+                onClick={() => setShowStats(false)}
+                className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="p-4 grid grid-cols-2 gap-3">
+              {/* Today */}
+              <StatCard label="Today" value={`${usageStats.dictationsToday}`} sub="dictations" />
+              <StatCard label="Cost Today" value={formatCost(usageStats.costTodayUsd)} sub="USD" />
+
+              {/* All time */}
+              <StatCard label="Total Dictations" value={`${usageStats.totalDictations}`} />
+              <StatCard label="Total Words" value={usageStats.totalWords.toLocaleString()} />
+              <StatCard label="Audio Recorded" value={formatDuration(usageStats.totalAudioSeconds)} />
+              <StatCard label="Total Cost" value={formatCost(usageStats.totalCostUsd)} sub="USD" />
+
+              {/* Cost breakdown */}
+              <StatCard label="STT (Groq)" value={formatCost(usageStats.totalSttCostUsd)} sub="USD" />
+              <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
+            </div>
+          </div>
         )}
       </div>
 
