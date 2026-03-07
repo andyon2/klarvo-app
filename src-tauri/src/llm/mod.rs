@@ -119,7 +119,8 @@ impl CleanupStyle {
                 - Add line breaks between sentences for readability\n\
                 - Do NOT rephrase, summarize, or change the speaker's words\n\
                 - Keep the speaker's style, tone, and sentence structure\n\
-                - Language: respond in the same language as the input\n\
+                - Language: respond in the same language as the input. If the input mixes \
+                  German and English, keep each part in its original language\n\
                 - Return ONLY the cleaned text, no explanations or commentary\
                 {dict_section}{custom_section}"
             ),
@@ -135,7 +136,8 @@ impl CleanupStyle {
                     - Keep it short -- this is for messaging apps\n\
                     - Use line breaks where natural in longer messages\n\
                     - Emojis are okay if they fit naturally\n\
-                    - Language: respond in the same language as the input\n\
+                    - Language: respond in the same language as the input. If the input mixes \
+                      German and English, keep each part in its original language\n\
                     - Return ONLY the cleaned text, no explanations or commentary\
                     {custom_section}"
                 )

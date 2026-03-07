@@ -55,7 +55,7 @@ use llm::{
 };
 use paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
 use serde::{Deserialize, Serialize};
-use stt::{GroqWhisper, OpenAiWhisper, SttProvider};
+use stt::{build_stt_prompt, GroqWhisper, OpenAiWhisper, SttProvider};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconEvent;
@@ -582,13 +582,15 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
             }
         };
 
-        let prompt = match state.dictionary.lock() {
+        let dict_terms = match state.dictionary.lock() {
             Ok(g) => {
                 let p = g.terms_as_prompt();
                 if p.is_empty() { None } else { Some(p) }
             }
             Err(_) => None,
         };
+
+        let prompt = build_stt_prompt(dict_terms.as_deref(), &cfg.language);
 
         (cfg.language.clone(), stt_prov, cleanup_prov, prompt)
     };
@@ -920,8 +922,9 @@ async fn transcribe_audio(state: State<'_, AppState>, language: String) -> Resul
     // Read dictionary terms for the STT prompt hint.
     let dict_prompt = {
         let guard = lock!(inner.dictionary)?;
-        let p = guard.terms_as_prompt();
-        if p.is_empty() { None } else { Some(p) }
+        let terms = guard.terms_as_prompt();
+        let terms_opt = if terms.is_empty() { None } else { Some(terms) };
+        build_stt_prompt(terms_opt.as_deref(), &language)
     };
 
     // Read the current provider (shared read lock -- no contention with other readers).
@@ -1378,13 +1381,14 @@ async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<String, S
         let stt = inner.stt_provider.read()
             .map_err(|e| format!("Lock poisoned: {e}"))?
             .clone();
-        let prompt = match inner.dictionary.lock() {
+        let dict_terms = match inner.dictionary.lock() {
             Ok(g) => {
                 let p = g.terms_as_prompt();
                 if p.is_empty() { None } else { Some(p) }
             }
             Err(_) => None,
         };
+        let prompt = build_stt_prompt(dict_terms.as_deref(), &lang);
         (lang, stt, prompt)
     };
 

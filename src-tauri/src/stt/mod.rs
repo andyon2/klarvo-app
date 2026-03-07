@@ -70,6 +70,33 @@ pub trait SttProvider: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt builder
+// ---------------------------------------------------------------------------
+
+/// Builds the full Whisper `prompt` string from dictionary terms and language.
+///
+/// When `language` is `"de"`, a code-switching hint is prepended so Whisper
+/// preserves embedded English words instead of germanising them.
+///
+/// Returns `None` when the resulting prompt would be empty.
+pub fn build_stt_prompt(dict_terms: Option<&str>, language: &str) -> Option<String> {
+    let hint = match language {
+        "de" => "German with occasional English terms and expressions. ",
+        _ => "",
+    };
+
+    let terms = dict_terms.unwrap_or("");
+
+    let combined = format!("{hint}{terms}");
+    let trimmed = combined.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared response types (both Groq and OpenAI return identical JSON)
 // ---------------------------------------------------------------------------
 
@@ -508,5 +535,48 @@ mod tests {
         let stt = WhisperStt::new("key", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo");
         let result = stt.transcribe(vec![], "en", None).await;
         assert!(matches!(result, Err(SttError::EmptyAudio)));
+    }
+
+    // --- build_stt_prompt tests ---
+
+    #[test]
+    fn test_build_stt_prompt_german_with_terms() {
+        let result = build_stt_prompt(Some("Kubernetes, TypeScript"), "de");
+        let prompt = result.expect("should produce a prompt");
+        assert!(prompt.starts_with("German with occasional English"), "should have code-switching hint");
+        assert!(prompt.contains("Kubernetes, TypeScript"), "should contain dictionary terms");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_german_without_terms() {
+        let result = build_stt_prompt(None, "de");
+        let prompt = result.expect("should produce a prompt for German even without terms");
+        assert!(prompt.contains("German with occasional English"));
+    }
+
+    #[test]
+    fn test_build_stt_prompt_english_with_terms() {
+        let result = build_stt_prompt(Some("Kubernetes"), "en");
+        let prompt = result.expect("should produce a prompt");
+        assert_eq!(prompt, "Kubernetes", "English should not have code-switching hint");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_english_without_terms() {
+        let result = build_stt_prompt(None, "en");
+        assert!(result.is_none(), "no terms + no hint = None");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_auto_detect_with_terms() {
+        let result = build_stt_prompt(Some("Dikta"), "");
+        let prompt = result.expect("should produce a prompt");
+        assert_eq!(prompt, "Dikta", "auto-detect should not have code-switching hint");
+    }
+
+    #[test]
+    fn test_build_stt_prompt_auto_detect_without_terms() {
+        let result = build_stt_prompt(None, "");
+        assert!(result.is_none(), "no terms + no hint = None");
     }
 }
