@@ -268,7 +268,13 @@ pub fn create_paste_handler(prev_hwnd: Option<isize>) -> Box<dyn PasteHandler> {
         Box::new(windows::WindowsPasteHandler::new(prev_hwnd))
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(target_os = "android")]
+    {
+        let _ = prev_hwnd;
+        Box::new(AndroidPasteHandler)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
     {
         let _ = prev_hwnd;
         Box::new(FallbackPasteHandler)
@@ -303,11 +309,11 @@ pub fn capture_foreground_window_title() -> Option<String> {
     }
 }
 
-/// Fallback for unsupported platforms -- clipboard-only, no key simulation.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+/// Fallback for unsupported desktop platforms -- clipboard-only, no key simulation.
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 struct FallbackPasteHandler;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl PasteHandler for FallbackPasteHandler {
     fn paste(&self, text: &str) -> Result<(), PasteError> {
         if text.is_empty() {
@@ -325,6 +331,21 @@ impl PasteHandler for FallbackPasteHandler {
              Text is in clipboard -- paste manually."
         );
 
+        Ok(())
+    }
+}
+
+/// Android stub -- paste happens via InputConnection in the Kotlin IME.
+#[cfg(target_os = "android")]
+struct AndroidPasteHandler;
+
+#[cfg(target_os = "android")]
+impl PasteHandler for AndroidPasteHandler {
+    fn paste(&self, text: &str) -> Result<(), PasteError> {
+        if text.is_empty() {
+            return Err(PasteError::EmptyText);
+        }
+        log::info!("[paste] Android: text ready ({} chars), IME handles insertion", text.len());
         Ok(())
     }
 }

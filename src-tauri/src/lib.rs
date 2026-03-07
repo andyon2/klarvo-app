@@ -57,8 +57,11 @@ use paste::{capture_foreground_window, capture_foreground_window_title, create_p
 use serde::{Deserialize, Serialize};
 use stt::{build_stt_prompt, GroqWhisper, OpenAiWhisper, SttProvider};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
+#[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(desktop)]
 use tauri::tray::TrayIconEvent;
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 // ---------------------------------------------------------------------------
@@ -348,6 +351,7 @@ async fn start_recording_only(handle: AppHandle) {
     }
 
     // Re-install the audio level callback before each recording.
+    #[cfg(desktop)]
     setup_audio_level_emitter(&handle);
 
     let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
@@ -455,11 +459,14 @@ async fn start_command_mode(handle: AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // Read clipboard
+    // Read clipboard (desktop only -- on mobile, command mode is not used)
+    #[cfg(desktop)]
     let selected_text = arboard::Clipboard::new()
         .ok()
         .and_then(|mut cb| cb.get_text().ok())
         .unwrap_or_default();
+    #[cfg(mobile)]
+    let selected_text = String::new();
 
     log::info!("[command-mode] selected text: {:?}", &selected_text[..selected_text.len().min(100)]);
 
@@ -471,6 +478,7 @@ async fn start_command_mode(handle: AppHandle) {
     }
 
     // Start recording the voice command
+    #[cfg(desktop)]
     setup_audio_level_emitter(&handle);
 
     let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
@@ -841,6 +849,7 @@ async fn run_dictation_pipeline(handle: AppHandle) {
 ///
 /// - `Toggle`: Pressed fires `run_dictation_pipeline` (start or stop+process).
 /// - `Hold`: Pressed fires `start_recording_only`; Released fires `stop_and_process_pipeline`.
+#[cfg(desktop)]
 fn register_hotkey(handle: &AppHandle, shortcut: Shortcut, mode: HotkeyMode) -> Result<(), String> {
     println!("[hotkey] Registering shortcut: {shortcut:?} mode={mode:?}");
 
@@ -925,6 +934,7 @@ async fn start_recording(handle: AppHandle, state: State<'_, AppState>) -> Resul
     let inner = state.inner();
 
     // Re-install the audio level callback before recording.
+    #[cfg(desktop)]
     setup_audio_level_emitter(&handle);
 
     let device_name = lock!(inner.config)?.audio_device.clone();
@@ -1111,8 +1121,9 @@ async fn save_settings(
 ) -> Result<(), String> {
     let inner = state.inner();
 
-    // Validate the hotkey string before writing anything to disk.
+    // Validate the hotkey string before writing anything to disk (desktop only).
     println!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
+    #[cfg(desktop)]
     let parsed_shortcut = hotkey
         .parse::<Shortcut>()
         .map_err(|e| {
@@ -1169,7 +1180,8 @@ async fn save_settings(
     *write_lock!(inner.stt_provider)? = new_stt;
     *write_lock!(inner.cleanup_provider)? = new_cleanup;
 
-    // Re-register the global shortcut with the (possibly new) hotkey + mode.
+    // Re-register the global shortcut with the (possibly new) hotkey + mode (desktop only).
+    #[cfg(desktop)]
     register_hotkey(&handle, parsed_shortcut, hotkey_mode)?;
 
     // Apply autostart: write or remove the OS startup entry.
@@ -1365,13 +1377,14 @@ async fn set_hotkey(
     shortcut: String,
     mode: HotkeyMode,
 ) -> Result<(), String> {
-    // Validate the shortcut string before touching system APIs.
-    let parsed = shortcut
-        .parse::<Shortcut>()
-        .map_err(|e| format!("Invalid shortcut string: {e}"))?;
-
-    // Re-register with the new shortcut + mode.
-    register_hotkey(&handle, parsed, mode)?;
+    // Validate and register the shortcut (desktop only).
+    #[cfg(desktop)]
+    {
+        let parsed = shortcut
+            .parse::<Shortcut>()
+            .map_err(|e| format!("Invalid shortcut string: {e}"))?;
+        register_hotkey(&handle, parsed, mode)?;
+    }
 
     // Persist both fields to config.
     let inner = state.inner();
@@ -1841,6 +1854,7 @@ const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 /// Event name for real-time audio level updates sent to the floating bar.
 const EVENT_AUDIO_LEVEL: &str = "dikta://audio-level";
 
+#[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
 fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Start as a tiny circle -- the frontend resizes dynamically based on state.
@@ -1938,6 +1952,7 @@ fn set_window_region_pill(hwnd: isize, width: i32, height: i32) {
     }
 }
 
+#[cfg(desktop)]
 /// Sets up the audio-level callback that emits events to the frontend.
 fn setup_audio_level_emitter(handle: &AppHandle) {
     let state = handle.state::<AppState>();
@@ -1949,11 +1964,17 @@ fn setup_audio_level_emitter(handle: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    let mut builder = builder.setup(|app| {
             // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
             let app_data_dir = app
                 .path()
@@ -2054,40 +2075,47 @@ pub fn run() {
                 log::warn!("[setup] Could not create floating bar: {e}");
             }
 
-            // --- Audio level emitter ---
-            let handle = app.handle().clone();
-            setup_audio_level_emitter(&handle);
+            // --- Desktop-only setup: audio level emitter + global hotkey ---
+            #[cfg(desktop)]
+            {
+                let handle = app.handle().clone();
+                #[cfg(desktop)]
+    setup_audio_level_emitter(&handle);
 
-            // Register the global hotkey from config.
-            println!("[setup] Parsing hotkey: {hotkey_str:?}");
-            let shortcut = hotkey_str
-                .parse::<Shortcut>()
-                .unwrap_or_else(|e| {
-                    log::warn!(
-                        "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
-                        hotkey_str
-                    );
-                    DEFAULT_HOTKEY
-                        .parse::<Shortcut>()
-                        .expect("DEFAULT_HOTKEY must be a valid shortcut string")
-                });
+                println!("[setup] Parsing hotkey: {hotkey_str:?}");
+                let shortcut = hotkey_str
+                    .parse::<Shortcut>()
+                    .unwrap_or_else(|e| {
+                        log::warn!(
+                            "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
+                            hotkey_str
+                        );
+                        DEFAULT_HOTKEY
+                            .parse::<Shortcut>()
+                            .expect("DEFAULT_HOTKEY must be a valid shortcut string")
+                    });
 
-            match register_hotkey(&handle, shortcut, hotkey_mode) {
-                Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"),
-                Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
+                match register_hotkey(&handle, shortcut, hotkey_mode) {
+                    Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"),
+                    Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
+                }
             }
 
-            // Always show the main window on launch.
+            // Always show the main window on launch (desktop only).
+            #[cfg(desktop)]
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
 
             Ok(())
-        })
-        // On Windows with a working system tray, we hide windows on close
-        // instead of quitting. On Linux/WSL2 (no tray), closing main = quit.
-        .on_window_event(|window, event| {
+        });
+
+    // On Windows with a working system tray, we hide windows on close
+    // instead of quitting. On other platforms, closing main = quit.
+    #[cfg(desktop)]
+    {
+        builder = builder.on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let label = window.label();
                 // Bar window: always prevent close (it should always exist).
@@ -2096,14 +2124,16 @@ pub fn run() {
                     api.prevent_close();
                 }
                 // Main window: hide only if tray is available (Windows).
-                // On Linux/WSL2, let it close normally (= quit the app).
                 #[cfg(target_os = "windows")]
                 if label == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
             }
-        })
+        });
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             // Recording
             start_recording,

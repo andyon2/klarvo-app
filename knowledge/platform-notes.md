@@ -41,10 +41,122 @@ Hier werden plattformspezifische Quirks, Workarounds und Lessons Learned dokumen
 - Kein permanenter Service wenn nicht aufgenommen wird
 - Doze-Mode: Kein Netzwerk moeglich -> STT/LLM-Calls scheitern -> Fallback benoetigt oder Doze-Whitelist
 
-### Tauri v2 auf Android
-- TODO: Recherchieren wie Tauri-Plugins aus nativem Kotlin-Code aufgerufen werden
-- TODO: Testen ob Tauri-Android + IME zusammen funktioniert (IME ist ein Service, Tauri erwartet Activity)
-- Das ist ein bekanntes Risiko -- moeglicherweise muss der IME komplett in Kotlin sein und nur die API-Calls machen
+### Tauri v2 auf Android -- Recherche-Ergebnisse (2026-03-07)
+
+#### Prerequisites (genaue Versionen)
+- **JDK 17** (empfohlen, Temurin Distribution in CI-Workflows)
+- **NDK**: kein exaktes "offizielles" Minimum, NDK r26d/27.x funktionieren laut Community.
+  DeepWiki-Quelle nennt NDK 29.0.13846066 + SDK Platform 36 (moeglicherweise aus
+  tauri-cli-Quellcode). Sicher ist: immer NDK via SDK Manager installieren, nicht manuell.
+- **SDK**: Minimum API 24 (Android 7.0) fuer die App; Build-Tools 34.0.0 empfohlen.
+- **Rust targets**: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+- **Rust-Version**: >= 1.77.2 (Tauri-Pflicht), >= 1.82 noetig fuer cpal AAudio-Backend
+
+#### Environment Variables
+```bash
+export JAVA_HOME="$HOME/android-studio/jbr"  # oder wo Android Studio JBR liegt
+export ANDROID_HOME="$HOME/Android/Sdk"
+export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"  # auto-detect
+```
+WICHTIG: In ~/.bashrc oder ~/.zshrc schreiben, sonst gehen sie nach Session-Ende verloren!
+
+#### Projekt-Setup
+```bash
+npx tauri android init   # generiert src-tauri/gen/android/
+```
+Generierte Struktur:
+```
+src-tauri/gen/android/
+  app/
+    src/main/
+      java/{com.dikta.voice}/
+        MainActivity.kt
+        generated/
+      res/
+      AndroidManifest.xml    # INTERNET + WAKE_LOCK vorbelegt, weitere manuell adden
+    build.gradle
+    tauri.properties
+  build.gradle
+  gradle/
+```
+
+#### invoke() auf Android -- identisch zu Desktop
+Das Frontend-invoke()-API ist 1:1 gleich auf Android. Tauri marshallt automatisch:
+```javascript
+import { invoke } from '@tauri-apps/api/core';
+const result = await invoke('my_command', { arg: 'value' });
+```
+Der Rust-Backend-Code mit `#[tauri::command]` laeuft unveraendert.
+ACHTUNG: Mobile braucht `#[tauri::mobile_entry_point]` statt des Desktop-Patterns.
+
+#### Native Kotlin-Plugins (Tauri Plugin Bridge)
+Kotlin-Klasse muss `@TauriPlugin` annotiert sein und `Plugin(activity)` extenden:
+```kotlin
+@TauriPlugin
+class ExamplePlugin(private val activity: Activity): Plugin(activity) {
+  @Command
+  fun doSomething(invoke: Invoke) {
+    val args = invoke.parseArgs(MyArgs::class.java)
+    val ret = JSObject()
+    ret.put("result", "value")
+    invoke.resolve(ret)
+  }
+}
+```
+Rust ruft Kotlin an via `run_mobile_plugin()`:
+```rust
+self.0.run_mobile_plugin("doSomething", payload).map_err(Into::into)
+```
+Plugin-Erstellung: `tauri plugin new --android my-plugin` -- KEINE Bindestriche im Namen!
+
+#### IME + Tauri Activity -- Koexistenz moeglich
+Android erlaubt InputMethodService und Activity im selben APK. Standard-IME-Architektur
+hat bereits eine Settings-Activity. Tauri-App ist die Activity, IME ist ein separater Service.
+RISIKO: Der IME-Service hat KEINEN Zugriff auf Tauri-Laufzeit/WebView. Der IME muss also
+entweder (a) Kotlin-nativ die REST-APIs direkt aufrufen oder (b) via Android IPC
+(Broadcast/Messenger/AIDL) mit der Tauri-Activity kommunizieren.
+Option (b) ist komplex. Option (a) ist einfacher: Kotlin IME macht HTTP-Calls direkt.
+
+#### Audio-Aufnahme in Tauri Android -- KRITISCHE EINSCHRAENKUNGEN
+- `navigator.mediaDevices.getUserMedia()` aus dem WebView funktioniert, aber:
+  - Braucht `<uses-permission android:name="android.permission.RECORD_AUDIO" />`
+  - UND `<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />`
+  - Ohne MODIFY_AUDIO_SETTINGS: "not-allowed" Fehler trotz RECORD_AUDIO! (Bug #10846, gefixt 2024)
+  - WebView-Permissions werden NICHT persistent gespeichert -- erneute Abfrage bei App-Neustart
+- cpal auf Android: Nutzt AAudio-Backend, minAPI 26 (Android 8+), Rust >= 1.82
+  - cpal-crate kompiliert fuer Android, aber aus IME-Service heraus kaum nutzbar
+  - Empfehlung fuer IME: Android AudioRecord API direkt in Kotlin
+
+#### Plugin-Kompatibilitaet auf Android
+- tauri-plugin-opener: NUR Desktop (kein Android/iOS)
+- tauri-plugin-global-shortcut: NUR Desktop (kein Android/iOS)
+- tauri-plugin-updater: Desktop-only (kein Android, kein iOS)
+- tauri-plugin-http: Android unterstuetzt
+- tauri-plugin-fs: Android unterstuetzt
+- tauri-plugin-sql: Android unterstuetzt
+- tauri-plugin-notification: Android unterstuetzt
+KONSEQUENZ: tray-icon und global-shortcut in Cargo.toml muessen mit #[cfg(not(target_os="android"))]
+bedingt kompiliert werden, sonst Build-Fehler!
+
+#### Build & Test Workflow
+- Emulator: `npx tauri android dev` startet Emulator automatisch wenn kein Device angeschlossen
+- Physisches Geraet: USB Debug aktivieren, dann `npx tauri android dev [DEVICE-ID]`
+- Devtools: chrome://inspect/#devices im Chrome-Browser auf dem Entwicklungsrechner
+- AAB fuer Play Store: `npx tauri android build -- --aab`
+- APK fuer Sideload: `npx tauri android build -- --apk`
+- versionCode: Automatisch aus semantic version berechnet: major*1M + minor*1K + patch
+
+#### WSL2-Spezifisches Setup
+Fuer WSL2 (wie bei Dikta!) braucht man:
+```bash
+# Windows-IP ermitteln:
+export WSL_HOST=$(tail -1 /etc/resolv.conf | cut -d' ' -f2)
+# ADB-Verbindung zum Windows-ADB-Server:
+export ADB_SERVER_SOCKET=tcp:$WSL_HOST:5037
+```
+Alternativ: `adb start-server` auf Windows-Seite, dann ADB-Befehle von WSL aus.
+Bekanntes Problem: Bei physischen Geraeten schlaegt Reinstall fehl wegen falschem adb-Flag
+(-s statt -r) -- Issue #9067, Stand 2024 noch offen.
 
 ## Beide Plattformen
 

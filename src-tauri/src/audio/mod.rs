@@ -1,4 +1,8 @@
-//! Audio capture module using cpal for cross-platform microphone access.
+//! Audio capture module.
+//!
+//! On desktop: uses cpal for cross-platform microphone access.
+//! On mobile (Android): stub implementation -- audio capture happens in
+//! Kotlin via AudioRecord API in the IME service.
 //!
 //! Captures microphone input and encodes it as 16kHz mono 16-bit PCM WAV,
 //! which is the format required by Groq Whisper and whisper.cpp.
@@ -15,7 +19,9 @@
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
+#[cfg(desktop)]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+#[cfg(desktop)]
 use cpal::{Device, SampleFormat, StreamConfig};
 use thiserror::Error;
 
@@ -25,12 +31,15 @@ pub enum AudioError {
     #[error("No input device available")]
     NoInputDevice,
 
+    #[cfg(desktop)]
     #[error("Failed to query device config: {0}")]
     DeviceConfig(#[from] cpal::DefaultStreamConfigError),
 
+    #[cfg(desktop)]
     #[error("Failed to build input stream: {0}")]
     BuildStream(#[from] cpal::BuildStreamError),
 
+    #[cfg(desktop)]
     #[error("Failed to start stream: {0}")]
     PlayStream(#[from] cpal::PlayStreamError),
 
@@ -45,6 +54,9 @@ pub enum AudioError {
 
     #[error("Recording thread panicked or channel closed")]
     ThreadError,
+
+    #[error("Not supported on this platform")]
+    NotSupported,
 }
 
 /// Target output format for WAV encoding -- what Groq and whisper.cpp expect.
@@ -61,6 +73,7 @@ pub const TARGET_BIT_DEPTH: u16 = 16;
 /// Must be `Send + Sync` because cpal's stream callback requires `Send`.
 pub type AudioLevelCallback = Box<dyn Fn(f32) + Send + Sync + 'static>;
 
+#[cfg(desktop)]
 /// Everything the recording thread needs to know so it can stop cleanly.
 struct RecordingSession {
     /// Sender: the main thread sends `()` to signal "stop recording".
@@ -69,6 +82,7 @@ struct RecordingSession {
     result_rx: std::sync::mpsc::Receiver<RecordingResult>,
 }
 
+#[cfg(desktop)]
 struct RecordingResult {
     samples: Vec<f32>,
     native_sample_rate: u32,
@@ -81,16 +95,18 @@ struct RecordingResult {
 
 /// Manages microphone recording state.
 ///
-/// `Send + Sync` safe: the non-Send `cpal::Stream` lives on a dedicated
-/// background thread; only `Send` types cross the boundary.
+/// On desktop: uses cpal for audio capture on a dedicated background thread.
+/// On mobile: stub -- audio capture happens in Kotlin (IME service).
 pub struct AudioRecorder {
+    #[cfg(desktop)]
     session: Mutex<Option<RecordingSession>>,
+    #[cfg(desktop)]
     level_callback: Mutex<Option<AudioLevelCallback>>,
-    /// Shared live buffer for streaming preview. Updated in real-time by the
-    /// recording thread. Readers can snapshot this at any time.
+    #[cfg(desktop)]
     live_buffer: Arc<Mutex<LiveBuffer>>,
 }
 
+#[cfg(desktop)]
 /// Shared buffer for live audio preview during recording.
 struct LiveBuffer {
     samples: Vec<f32>,
@@ -102,8 +118,11 @@ impl AudioRecorder {
     /// Creates a new `AudioRecorder`. Does not open any device yet.
     pub fn new() -> Self {
         AudioRecorder {
+            #[cfg(desktop)]
             session: Mutex::new(None),
+            #[cfg(desktop)]
             level_callback: Mutex::new(None),
+            #[cfg(desktop)]
             live_buffer: Arc::new(Mutex::new(LiveBuffer {
                 samples: Vec::new(),
                 native_sample_rate: 16000,
@@ -113,31 +132,24 @@ impl AudioRecorder {
     }
 
     /// Sets a callback that receives RMS audio levels during recording.
-    /// Called approximately 15 times per second from the audio thread.
-    pub fn set_level_callback(&self, cb: AudioLevelCallback) {
-        *self.level_callback.lock().unwrap() = Some(cb);
+    pub fn set_level_callback(&self, _cb: AudioLevelCallback) {
+        #[cfg(desktop)]
+        { *self.level_callback.lock().unwrap() = Some(_cb); }
     }
 
     /// Opens an input device and begins capturing audio on a background thread.
-    ///
-    /// If `device_name` is `None`, the system default input device is used.
-    /// If a name is given but not found, falls back to the default device.
-    ///
-    /// Returns `AudioError::AlreadyRecording` if a session is already active.
+    #[cfg(desktop)]
     pub fn start_recording(&self, device_name: Option<&str>) -> Result<(), AudioError> {
         let mut guard = self.session.lock().unwrap();
         if guard.is_some() {
             return Err(AudioError::AlreadyRecording);
         }
 
-        // These channels cross the thread boundary, so they must be Send.
         let (stop_tx, stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
         let (result_tx, result_rx) = std::sync::mpsc::channel::<RecordingResult>();
 
-        // Take the level callback (if any) to pass into the recording thread.
         let level_cb = self.level_callback.lock().unwrap().take();
 
-        // Clear the live buffer for the new recording.
         if let Ok(mut lb) = self.live_buffer.lock() {
             lb.samples.clear();
         }
@@ -145,7 +157,6 @@ impl AudioRecorder {
 
         let device_name_owned = device_name.map(|s| s.to_string());
 
-        // Spawn a dedicated thread that owns the cpal stream.
         std::thread::spawn(move || {
             if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, device_name_owned.as_deref(), live_buf) {
                 eprintln!("[audio] recording thread error: {e}");
@@ -160,18 +171,19 @@ impl AudioRecorder {
         Ok(())
     }
 
+    /// Stub: audio capture not available on mobile.
+    #[cfg(mobile)]
+    pub fn start_recording(&self, _device_name: Option<&str>) -> Result<(), AudioError> {
+        Err(AudioError::NotSupported)
+    }
+
     /// Stops the active recording and returns the captured audio encoded as WAV bytes.
-    ///
-    /// The returned `Vec<u8>` is a complete WAV file (16kHz, mono, 16-bit PCM)
-    /// ready to be sent to the Groq API or whisper.cpp.
-    ///
-    /// Returns `AudioError::NotRecording` if no session is active.
     pub fn stop_recording(&self) -> Result<Vec<u8>, AudioError> {
         self.stop_recording_with_gain(1.0)
     }
 
     /// Stops recording and applies a gain multiplier to the audio.
-    /// `gain` of 1.0 = normal, 3.0 = 3x louder (whisper mode).
+    #[cfg(desktop)]
     pub fn stop_recording_with_gain(&self, gain: f32) -> Result<Vec<u8>, AudioError> {
         let mut guard = self.session.lock().unwrap();
         let session = guard.take().ok_or(AudioError::NotRecording)?;
@@ -183,8 +195,13 @@ impl AudioRecorder {
         encode_to_wav_with_gain(&result.samples, result.native_sample_rate, result.native_channels, gain)
     }
 
+    #[cfg(mobile)]
+    pub fn stop_recording_with_gain(&self, _gain: f32) -> Result<Vec<u8>, AudioError> {
+        Err(AudioError::NotSupported)
+    }
+
     /// Returns a WAV snapshot of the audio captured so far, without stopping.
-    /// Used for streaming preview during recording.
+    #[cfg(desktop)]
     pub fn snapshot_wav(&self) -> Option<Vec<u8>> {
         let lb = self.live_buffer.lock().ok()?;
         if lb.samples.is_empty() {
@@ -193,9 +210,17 @@ impl AudioRecorder {
         encode_to_wav(&lb.samples, lb.native_sample_rate, lb.native_channels).ok()
     }
 
+    #[cfg(mobile)]
+    pub fn snapshot_wav(&self) -> Option<Vec<u8>> {
+        None
+    }
+
     /// Returns `true` if a recording is currently active.
     pub fn is_recording(&self) -> bool {
-        self.session.lock().unwrap().is_some()
+        #[cfg(desktop)]
+        { self.session.lock().unwrap().is_some() }
+        #[cfg(mobile)]
+        { false }
     }
 }
 
@@ -215,6 +240,7 @@ unsafe impl Sync for AudioRecorder {}
 // ---------------------------------------------------------------------------
 
 /// Returns the names of all available audio input devices.
+#[cfg(desktop)]
 pub fn list_input_devices() -> Vec<String> {
     let host = cpal::default_host();
     host.input_devices()
@@ -226,7 +252,13 @@ pub fn list_input_devices() -> Vec<String> {
         .unwrap_or_default()
 }
 
+#[cfg(mobile)]
+pub fn list_input_devices() -> Vec<String> {
+    Vec::new()
+}
+
 /// Finds an input device by name, falling back to the default if not found.
+#[cfg(desktop)]
 fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
     let host = cpal::default_host();
 
@@ -248,6 +280,7 @@ fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
 // Recording thread -- owns the cpal stream
 // ---------------------------------------------------------------------------
 
+#[cfg(desktop)]
 /// Entry point for the background recording thread.
 ///
 /// Opens the specified (or default) input device, starts the stream,
@@ -311,9 +344,10 @@ fn recording_thread(
 }
 
 // ---------------------------------------------------------------------------
-// Stream builders -- one per sample format
+// Stream builders -- one per sample format (desktop only)
 // ---------------------------------------------------------------------------
 
+#[cfg(desktop)]
 type SampleBuffer = Arc<Mutex<Vec<f32>>>;
 
 /// Computes the RMS (root mean square) amplitude of a sample buffer.
@@ -325,6 +359,7 @@ pub fn compute_rms(samples: &[f32]) -> f32 {
     (sum_sq / samples.len() as f32).sqrt()
 }
 
+#[cfg(desktop)]
 /// Helper: appends f32 data to the sample buffer and periodically fires the level callback.
 fn process_f32_data(
     data: &[f32],
@@ -350,6 +385,7 @@ fn process_f32_data(
     }
 }
 
+#[cfg(desktop)]
 /// Builds a cpal input stream for the given sample format, with audio-level callback support.
 fn build_stream_with_level(
     device: &cpal::Device,
