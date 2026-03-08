@@ -15,7 +15,6 @@ import {
   reformatText,
   getAdvancedSettings,
   type TextSnippet,
-  setOutputLanguage as syncOutputLanguage,
 } from "./tauri-commands";
 import { isMobile, isDesktop } from "./platform";
 import Onboarding from "./Onboarding";
@@ -23,7 +22,7 @@ import Onboarding from "./Onboarding";
 // Components
 import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
-  GlobeIcon, MailIcon, ListIcon, SummaryIcon, NoteIcon, SnippetIcon,
+  MailIcon, ListIcon, SummaryIcon, NoteIcon, SnippetIcon,
 } from "./components/icons";
 import { FillerStatsChart, HighlightedText, StatCard } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -104,7 +103,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
 
 function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
   return (
-    <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 flex-shrink min-w-0">
+    <div className={`flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 ${isMobile ? "w-full" : "flex-shrink min-w-0"}`}>
       {STYLE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -112,7 +111,9 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
           onClick={() => onChange(opt.value)}
           title={opt.description}
           className={[
-            "px-1.5 py-1 rounded-md text-[11px] font-medium transition-all duration-100 whitespace-nowrap",
+            isMobile
+              ? "flex-1 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-100 whitespace-nowrap"
+              : "px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
             "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
               ? "bg-emerald-500/15 text-emerald-400"
@@ -126,60 +127,7 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
   );
 }
 
-// --- Output Language Picker --------------------------------------------------
-
-const OUTPUT_LANGUAGES = [
-  { code: "", label: "No translation" },
-  { code: "en", label: "English" },
-  { code: "de", label: "Deutsch" },
-  { code: "fr", label: "Français" },
-  { code: "es", label: "Español" },
-  { code: "it", label: "Italiano" },
-  { code: "pt", label: "Português" },
-  { code: "nl", label: "Nederlands" },
-  { code: "pl", label: "Polski" },
-  { code: "ru", label: "Русский" },
-  { code: "ja", label: "日本語" },
-  { code: "zh", label: "中文" },
-  { code: "ko", label: "한국어" },
-];
-
-function OutputLanguagePicker({ value, onChange, disabled }: { value: string; onChange: (lang: string) => void; disabled: boolean }) {
-  const isActive = value !== "";
-  const activeLabel = OUTPUT_LANGUAGES.find((l) => l.code === value)?.label ?? "";
-  const badgeLabel = value.toUpperCase();
-
-  return (
-    <div className="relative flex items-center gap-1">
-      {isActive && (
-        <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5 leading-none pointer-events-none select-none">
-          {`→ ${badgeLabel}`}
-        </span>
-      )}
-      <div className="relative flex items-center">
-        <GlobeIcon className={`w-3.5 h-3.5 absolute left-2 pointer-events-none ${isActive ? "text-emerald-400" : "text-zinc-500"}`} />
-        <select
-          disabled={disabled}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          title={isActive ? `Translate to ${activeLabel}` : "No translation"}
-          aria-label="Output language"
-          className={[
-            "bg-[#111113] border rounded-lg pl-7 pr-2 py-1 text-[11px] appearance-none cursor-pointer",
-            "focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-            isActive
-              ? "border-emerald-500/30 text-emerald-400"
-              : "border-zinc-800/60 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700/60",
-          ].join(" ")}
-        >
-          {OUTPUT_LANGUAGES.map((l) => (
-            <option key={l.code} value={l.code}>{l.label}</option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-}
+// OutputLanguagePicker removed from header -- available in Settings only.
 
 // --- Reformat Buttons --------------------------------------------------------
 
@@ -372,11 +320,7 @@ export default function App() {
     setShowOnboarding(false);
   }, [settings]);
 
-  // --- Output language change (sync to backend) ---
-  const handleOutputLanguageChange = useCallback((lang: string) => {
-    settings.handleOutputLanguageChange(lang);
-    syncOutputLanguage(lang).catch(console.error);
-  }, [settings]);
+  // Output language change is handled in SettingsPanel only.
 
   if (showOnboarding) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
@@ -394,8 +338,10 @@ export default function App() {
         } : {}),
       }}
     >
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-2 flex-shrink-0">
+      {/* ── Header ──
+           Mobile: two rows (icon strip on top, StylePicker full-width below).
+           Desktop: single row with icon strip left and StylePicker right. */}
+      <div className={`flex ${isMobile ? "flex-col gap-2" : "items-center justify-between gap-2"} px-4 pt-3.5 pb-2 flex-shrink-0`}>
         <div className="flex items-center gap-2.5">
           {/* Logo */}
           <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
@@ -503,16 +449,11 @@ export default function App() {
           </button>
         </div>
 
-        {/* Style picker + output language in header */}
-        <div className="flex items-center gap-1.5">
+        {/* Style picker in header -- full width on mobile, compact on desktop */}
+        <div className={isMobile ? "w-full mt-1" : "flex items-center"}>
           <StylePicker
             value={settings.cleanupStyle}
             onChange={settings.handleStyleChange}
-            disabled={isBusy || isRecording}
-          />
-          <OutputLanguagePicker
-            value={settings.outputLanguage}
-            onChange={handleOutputLanguageChange}
             disabled={isBusy || isRecording}
           />
         </div>

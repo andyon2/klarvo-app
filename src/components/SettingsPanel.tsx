@@ -588,6 +588,29 @@ export function SettingsPanel({
             rows={3}
             className={`${INPUT_CLS_M} resize-none`}
           />
+          {/* Preset buttons -- one click replaces the entire custom prompt */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Presets:</span>
+            {([
+              { label: "Formal", prompt: "Always use formal language. Avoid colloquialisms and slang." },
+              { label: "Technical", prompt: "Keep technical terms in English. Use precise, professional language." },
+              { label: "Casual", prompt: "Keep it casual and conversational. Use natural, relaxed language." },
+            ] as const).map(({ label, prompt }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setLocalCustomPrompt(prompt)}
+                className={[
+                  "border rounded-lg font-medium transition-colors",
+                  "bg-transparent border-zinc-700/60 text-zinc-400",
+                  "hover:border-zinc-500 hover:text-zinc-200",
+                  isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
+                ].join(" ")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during cleanup.</p>
         </div>
 

@@ -200,6 +200,33 @@ nutzt aktuell `Thread {}` direkt (einfacher fuer Foreground-Service-Kontext).
 Die Coroutines-Dependency schadet nicht, kann spater fuer `lifecycleScope.launch` genutzt
 werden wenn ein LifecycleOwner verfuegbar ist.
 
+#### Bubble UX v2: Pill-Bar + Push-to-Talk + Double-Tap (implementiert 2026-03-08)
+
+##### FloatingBubbleView -- Bar-Modus
+- Im RECORDING-State expandiert die View zu einem Pill-Shape (BAR_WIDTH_DP = 220dp).
+- `onMeasure()` gibt unterschiedliche Breiten zurueck je nach State (IDLE/PROCESSING: square,
+  RECORDING: BAR_WIDTH_DP * density). WindowManager erhaelt immer WRAP_CONTENT -- er ruft
+  selbst ein neues Measure aus sobald `updateViewLayout()` aufgerufen wird.
+- Bar-Layout (links nach rechts): roter X-Kreis | Waveform-Bars | gruener Checkmark-Kreis.
+  Buttons nehmen je 25-30% der Breite ein, Waveform den Rest.
+- `isTouchInCancelZone(touchX)` / `isTouchInConfirmZone(touchX)`: einfache X-Koordinaten-
+  Pruefung relativ zur View-Breite (30% links = cancel, 70% rechts = confirm).
+- Beim State-Wechsel IDLE -> RECORDING shiftet der Service `bubbleParams.x` um die
+  halbe Extra-Breite nach links, damit das Bubble-Zentrum stabil bleibt.
+- Beim State-Wechsel RECORDING -> IDLE/PROCESSING wird das umgekehrt.
+
+##### Touch-Gestenlogik (DiktaOverlayService)
+- IDLE: Single Tap -> startRecording(); Long-Press -> pushToTalkActive=true + startRecording();
+  Release bei PTT -> stopAndProcessRecording(); Double-Tap (< 350ms zwischen Taps) -> showSizeMenu()
+- RECORDING (Bar): Tap links (Cancel-Zone) -> cancelRecording(); Tap rechts (Confirm-Zone) -> stopAndProcessRecording()
+- Long-Press-Runnable laeuft nur im IDLE-State (wird nicht gestartet wenn currentState != IDLE).
+- `pushToTalkActive`-Flag wird bei MOVE-Events mit ausreichend Drag-Distance auf false gesetzt
+  und cancelRecording() gerufen -- verhindert ungewolltes Confirm wenn der User dragged.
+- Double-Tap wird mit `SystemClock.elapsedRealtime()` gegen `lastTapTimeMs` geprueft.
+  Nach erfolgreichem Double-Tap wird `lastTapTimeMs = 0` gesetzt um Triple-Tap zu verhindern.
+- Long-Press-Timeout (500ms) ist identisch mit systemem GestureDetector-Wert.
+  NICHT kuerzer setzen -- fuehrt zu ungewollten PTT-Aktivierungen beim normalen Drag-Start.
+
 #### Opacity-Slider im Long-Press-Menue (implementiert 2026-03-08)
 - `bubbleView.alpha` (Android View-Property, 0.0..1.0) steuert die Transparenz.
 - Der Wert wird als Integer 5..100 in SharedPreferences gespeichert (Key: `bubble_opacity`).

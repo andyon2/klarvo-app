@@ -44,12 +44,14 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ stt: true });
+  // All sections collapsed by default -- user expands what they need.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   const hintCls = "text-[10px] text-zinc-500 leading-relaxed";
   const numberInputCls = `${INPUT_CLS} w-28`;
   const modelInputCls = "bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44";
-  const sectionBtnCls = "flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left";
+  // Larger section title text (text-sm instead of text-[10px]) for better readability.
+  const sectionBtnCls = "flex items-center gap-2 w-full py-2 text-left";
 
   const toggleSection = useCallback((key: string) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -135,8 +137,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* STT */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`}>&#9656;</span>
-          Speech-to-Text (STT)
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Speech-to-Text (STT)</span>
         </button>
         {openSections.stt && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -167,8 +171,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* LLM Cleanup */}
         <button onClick={() => toggleSection("llm")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`}>&#9656;</span>
-          LLM Cleanup
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">LLM Cleanup</span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -229,8 +235,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* Audio */}
         <button onClick={() => toggleSection("audio")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`}>&#9656;</span>
-          Audio
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Audio</span>
         </button>
         {openSections.audio && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -255,8 +263,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* Paste & Behavior */}
         <button onClick={() => toggleSection("paste")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`}>&#9656;</span>
-          Paste & Behavior
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Paste & Behavior</span>
         </button>
         {openSections.paste && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -277,8 +287,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* Webhook */}
         <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`}>&#9656;</span>
-          Webhook
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Webhook</span>
         </button>
         {openSections.webhook && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -296,8 +308,10 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
         {/* System */}
         <button onClick={() => toggleSection("system")} className={sectionBtnCls}>
-          <span className={`transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`}>&#9656;</span>
-          System
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">System</span>
         </button>
         {openSections.system && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">

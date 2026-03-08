@@ -50,9 +50,10 @@ html, body, #root {
 /*
  * Mobile save-button footer: guarantee enough clearance from the navigation bar.
  * The .mobile-safe-bottom class is applied via JS (isMobile check) to the
- * Settings footer div. pb-6 (24px) alone may not be enough on devices with a
- * tall gesture-navigation bar (e.g. Xiaomi HyperOS: ~48px).
+ * Settings footer div. 56px covers both 3-button navigation bars and gesture
+ * navigation on devices like Xiaomi HyperOS (~48px). env(safe-area-inset-bottom)
+ * is unreliable in some Android WebViews, so we use a generous fallback.
  */
 .mobile-safe-bottom {
-  padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  padding-bottom: max(56px, env(safe-area-inset-bottom, 56px));
 }
