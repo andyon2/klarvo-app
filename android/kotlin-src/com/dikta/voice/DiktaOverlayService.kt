@@ -29,7 +29,6 @@ import kotlin.math.abs
  * Touch gestures in IDLE state:
  *   Single tap  -> start recording, bubble expands to pill bar with [X] [waveform] [✓]
  *   Long-press  -> push-to-talk: start recording immediately, release finger = confirm
- *   Double-tap  -> opens BubbleSettingsMenu (size, opacity)
  *
  * Touch gestures in RECORDING state (bar mode):
  *   Tap left zone  (X button)  -> cancel: stop recording, discard audio
@@ -46,9 +45,6 @@ class DiktaOverlayService : Service() {
         private const val PREFS_NAME    = "dikta_bubble_prefs"
         private const val PREF_X        = "bubble_x"
         private const val PREF_Y        = "bubble_y"
-        private const val PREF_BUBBLE_SIZE    = "bubble_size"
-        private const val PREF_BUBBLE_OPACITY = "bubble_opacity"
-        private const val DEFAULT_BUBBLE_OPACITY = 100
 
         /** SharedPreference key: if true the bubble is always visible, not just when keyboard is open. */
         const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
@@ -62,13 +58,8 @@ class DiktaOverlayService : Service() {
         // Long-press threshold -- after this delay a held touch becomes push-to-talk
         private const val LONG_PRESS_TIMEOUT_MS = 500L
 
-        // Double-tap detection window: two taps within this interval = double-tap
-        private const val DOUBLE_TAP_WINDOW_MS = 350L
-
-        // Available bubble sizes in dp
-        val BUBBLE_SIZES_DP   = intArrayOf(32, 44, 56, 72)
-        val BUBBLE_SIZE_LABELS = arrayOf("Mini", "Small", "Normal", "Large")
-        const val DEFAULT_BUBBLE_SIZE_DP = 56
+        // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
+        private const val BASE_BUBBLE_SIZE_DP = 56
 
         /** Live reference used by DiktaAccessibilityService for paste. */
         var instance: DiktaOverlayService? = null
@@ -113,9 +104,10 @@ class DiktaOverlayService : Service() {
     private var isDragging = false
     private var dragThresholdPx = 0f
 
-    // Bubble opacity (5..100). Applied to bubbleView.alpha when state is IDLE.
+    // Bubble opacity (0.0..1.0). Applied to bubbleView.alpha when state is IDLE.
     // During RECORDING / PROCESSING the bubble is always fully opaque.
-    private var bubbleOpacity = DEFAULT_BUBBLE_OPACITY
+    // Loaded from config.json; defaults to 0.85 if config is unavailable.
+    private var bubbleOpacity = 0.85f
 
     // Long-press / push-to-talk state
     private var longPressTriggered = false
@@ -133,12 +125,6 @@ class DiktaOverlayService : Service() {
             startRecording()
         }
     }
-
-    // Double-tap detection
-    private var lastTapTimeMs = 0L
-
-    // Settings menu (null when not visible)
-    private var settingsMenu: BubbleSettingsMenu? = null
 
     /**
      * Receives ACTION_TOGGLE_BUBBLE from the foreground notification's contentIntent.
@@ -203,7 +189,6 @@ class DiktaOverlayService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to unregister toggleBubbleReceiver (already unregistered?)", e)
         }
-        settingsMenu?.dismiss()
         audioRecorder?.releaseImmediately()
         audioRecorder = null
         super.onDestroy()
@@ -371,18 +356,22 @@ class DiktaOverlayService : Service() {
     private fun setupBubble() {
         bubbleView = FloatingBubbleView(this)
 
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedSizeDp = prefs.getInt(PREF_BUBBLE_SIZE, DEFAULT_BUBBLE_SIZE_DP)
-        bubbleOpacity = prefs.getInt(PREF_BUBBLE_OPACITY, DEFAULT_BUBBLE_OPACITY)
+        // Load bubble size and opacity from config.json (written by the Tauri/React settings UI).
+        // Falls back to defaults if the config is not yet available (first launch).
+        val config = DiktaApi.readConfig(this)
+        val sizeScale = config?.bubbleSize ?: 1.0f
+        bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
-        bubbleView.setBubbleSize(savedSizeDp)
-        bubbleView.alpha = bubbleOpacity / 100f
+        val sizeDp = (BASE_BUBBLE_SIZE_DP * sizeScale).toInt().coerceAtLeast(24)
+        bubbleView.setBubbleSize(sizeDp)
+        bubbleView.alpha = bubbleOpacity
 
         val (screenW, screenH) = getScreenDimensions()
         val dp        = resources.displayMetrics.density
-        val bubblePx  = (savedSizeDp * dp).toInt()
+        val bubblePx  = (sizeDp * dp).toInt()
         val marginPx  = (16 * dp).toInt()
 
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedX = prefs.getInt(PREF_X, screenW - bubblePx - marginPx)
         val savedY = prefs.getInt(PREF_Y, screenH / 2)
 
@@ -558,7 +547,6 @@ class DiktaOverlayService : Service() {
      * Handles a tap (no drag, no long-press).
      *
      * In IDLE state:
-     *   - Double-tap (second tap within DOUBLE_TAP_WINDOW_MS) -> open settings menu
      *   - Single tap -> start recording
      *
      * In RECORDING state:
@@ -571,24 +559,8 @@ class DiktaOverlayService : Service() {
      * @param touchX Touch x-coordinate relative to the view's left edge.
      */
     private fun handleTap(touchX: Float) {
-        // Dismiss settings menu on any tap
-        if (settingsMenu?.isVisible == true) {
-            settingsMenu?.dismiss()
-            return
-        }
-
         when (currentState) {
-            RecordingState.IDLE -> {
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastTapTimeMs < DOUBLE_TAP_WINDOW_MS) {
-                    // Double-tap: open settings menu
-                    lastTapTimeMs = 0L  // reset so a third tap doesn't trigger again
-                    showSizeMenu()
-                } else {
-                    lastTapTimeMs = now
-                    startRecording()
-                }
-            }
+            RecordingState.IDLE -> startRecording()
             RecordingState.RECORDING -> {
                 when {
                     bubbleView.isTouchInCancelZone(touchX)  -> cancelRecording()
@@ -599,60 +571,6 @@ class DiktaOverlayService : Service() {
             RecordingState.RECORDING_PTT -> { /* PTT: ignore taps, release handles it */ }
             RecordingState.PROCESSING -> { /* ignore */ }
         }
-    }
-
-    // --- Settings menu ---
-
-    private fun showSizeMenu() {
-        if (settingsMenu?.isVisible == true) return
-
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val (screenW, _) = getScreenDimensions()
-        val dp         = resources.displayMetrics.density
-        val bubbleSizePx = (bubbleView.getBubbleSizeDp() * dp).toInt()
-
-        settingsMenu = BubbleSettingsMenu(
-            context       = this,
-            windowManager = windowManager,
-            overlayType   = overlayType,
-            prefs         = prefs,
-            onSizeChanged = { newSizeDp -> applyBubbleSize(newSizeDp) },
-            onOpacityChanged = { newOpacity, committed ->
-                if (committed) bubbleOpacity = newOpacity
-                if (currentState == RecordingState.IDLE) {
-                    bubbleView.alpha = newOpacity / 100f
-                }
-            }
-        )
-
-        settingsMenu?.show(
-            currentSizeDp  = bubbleView.getBubbleSizeDp(),
-            currentOpacity = bubbleOpacity,
-            bubbleX        = bubbleParams.x,
-            bubbleY        = bubbleParams.y,
-            bubbleSizePx   = bubbleSizePx,
-            screenWidth    = screenW
-        )
-    }
-
-    private fun applyBubbleSize(newSizeDp: Int) {
-        val dp        = resources.displayMetrics.density
-        val oldSizePx = (bubbleView.getBubbleSizeDp() * dp).toInt()
-        val newSizePx = (newSizeDp * dp).toInt()
-
-        val centerX = bubbleParams.x + oldSizePx / 2
-        val centerY = bubbleParams.y + oldSizePx / 2
-        bubbleParams.x = centerX - newSizePx / 2
-        bubbleParams.y = centerY - newSizePx / 2
-
-        bubbleView.setBubbleSize(newSizeDp)
-        updateBubbleLayout()
-
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putInt(PREF_BUBBLE_SIZE, newSizeDp)
-            .putInt(PREF_X, bubbleParams.x)
-            .putInt(PREF_Y, bubbleParams.y)
-            .apply()
     }
 
     // --- Audio recording ---
@@ -825,13 +743,29 @@ class DiktaOverlayService : Service() {
             RecordingState.PROCESSING    -> FloatingBubbleView.State.PROCESSING
         }
         bubbleView.alpha = when (newState) {
-            RecordingState.IDLE -> bubbleOpacity / 100f
+            RecordingState.IDLE -> bubbleOpacity
             RecordingState.RECORDING, RecordingState.RECORDING_PTT,
             RecordingState.PROCESSING -> 1.0f
         }
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f
+            // Re-read config so bubble size/opacity changes from Settings take effect
+            // without requiring a full app restart.
+            reloadBubbleAppearance()
         }
+    }
+
+    /**
+     * Re-reads bubble size and opacity from config.json and applies them live.
+     * Called on every return to IDLE so Settings changes take effect after the next dictation.
+     */
+    private fun reloadBubbleAppearance() {
+        val config = DiktaApi.readConfig(this) ?: return
+        val newSizeDp = (BASE_BUBBLE_SIZE_DP * config.bubbleSize).toInt().coerceAtLeast(24)
+        bubbleOpacity = config.bubbleOpacity
+        bubbleView.setBubbleSize(newSizeDp)
+        bubbleView.alpha = bubbleOpacity
+        updateBubbleLayout()
     }
 
     private fun copyToClipboard(text: String) {

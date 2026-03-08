@@ -26,7 +26,9 @@ object DiktaApi {
         val cleanupStyle: String,
         val tursoUrl: String,
         val tursoToken: String,
-        val deviceId: String
+        val deviceId: String,
+        val bubbleSize: Float = 1.0f,
+        val bubbleOpacity: Float = 0.85f
     )
 
     /**
@@ -61,9 +63,11 @@ object DiktaApi {
             val tursoUrl = json.optString("tursoUrl", "")
             val tursoToken = json.optString("tursoToken", "")
             val deviceId = json.optString("deviceId", "")
+            val bubbleSize = json.optDouble("bubbleSize", 1.0).toFloat()
+            val bubbleOpacity = json.optDouble("bubbleOpacity", 0.85).toFloat()
 
             if (groqKey.isBlank() && deepseekKey.isBlank()) null
-            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId)
+            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId, bubbleSize, bubbleOpacity)
         } catch (e: Exception) {
             null
         }

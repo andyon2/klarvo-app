@@ -24,6 +24,14 @@ export async function stopRecording(): Promise<StopRecordingResult> {
 }
 
 /**
+ * Cancels the active recording and discards captured audio.
+ * Emits state=idle so all windows return to dormant state.
+ */
+export async function cancelRecording(): Promise<void> {
+  await invoke("cancel_recording");
+}
+
+/**
  * Transcribes the last saved audio buffer via the configured STT engine.
  * @param language - BCP-47 language code, e.g. "de" or "en"
  */
@@ -80,6 +88,8 @@ export async function saveSettings(
   webhookUrl?: string | null,
   tursoUrl?: string | null,
   tursoToken?: string | null,
+  bubbleSize?: number | null,
+  bubbleOpacity?: number | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -101,6 +111,8 @@ export async function saveSettings(
     webhookUrl: webhookUrl ?? null,
     tursoUrl: tursoUrl ?? null,
     tursoToken: tursoToken ?? null,
+    bubbleSize: bubbleSize ?? null,
+    bubbleOpacity: bubbleOpacity ?? null,
   });
 }
 
@@ -254,7 +266,7 @@ export async function getFillerStats(): Promise<{ word: string; count: number }[
 
 // --- Bar shape ---
 
-export async function setBarShape(shape: "circle" | "pill"): Promise<void> {
+export async function setBarShape(shape: "idle" | "pill"): Promise<void> {
   await invoke("set_bar_shape", { shape });
 }
 

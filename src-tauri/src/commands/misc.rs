@@ -152,7 +152,7 @@ pub async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), Stri
 // Window / UI helpers
 // ---------------------------------------------------------------------------
 
-/// Updates the floating bar window shape (circle when idle, pill when expanded).
+/// Updates the floating bar window region (thin idle pill vs. expanded active pill).
 /// Called by the frontend whenever the bar state changes.
 #[tauri::command]
 pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
@@ -163,12 +163,13 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
             let scale = bar.scale_factor().unwrap_or(1.0);
             if let Ok(hwnd) = bar.hwnd() {
                 let h = hwnd.0 as isize;
-                if shape == "circle" {
-                    let s = (28.0 * scale) as i32;
-                    crate::set_window_region_ellipse(h, s, s);
+                if shape == "idle" {
+                    let w = (80.0 * scale) as i32;
+                    let ht = (10.0 * scale) as i32;
+                    crate::set_window_region_pill(h, w, ht);
                 } else {
-                    let w = (260.0 * scale) as i32;
-                    let ht = (40.0 * scale) as i32;
+                    let w = (164.0 * scale) as i32;
+                    let ht = (18.0 * scale) as i32;
                     crate::set_window_region_pill(h, w, ht);
                 }
             }

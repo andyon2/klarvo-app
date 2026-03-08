@@ -470,6 +470,18 @@ pub struct AppConfig {
     #[serde(default = "default_device_id")]
     pub device_id: String,
 
+    /// Android floating bubble size multiplier.
+    /// 0.5 = 50% of default, 1.0 = default (56 dp), 2.0 = double size.
+    /// Only used on Android; ignored on desktop.
+    #[serde(default = "default_bubble_size")]
+    pub bubble_size: f32,
+
+    /// Android floating bubble opacity when idle.
+    /// Range: 0.3 (30%) to 1.0 (100%). Default: 0.85.
+    /// Only used on Android; ignored on desktop.
+    #[serde(default = "default_bubble_opacity")]
+    pub bubble_opacity: f32,
+
     /// Fine-grained advanced settings for power users.
     /// Defaults to `AdvancedSettings::default()` so existing config files
     /// without this field load correctly.
@@ -526,6 +538,14 @@ fn default_device_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+fn default_bubble_size() -> f32 {
+    1.0
+}
+
+fn default_bubble_opacity() -> f32 {
+    0.85
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -553,6 +573,8 @@ impl Default for AppConfig {
             turso_url: String::new(),
             turso_token: String::new(),
             device_id: default_device_id(),
+            bubble_size: default_bubble_size(),
+            bubble_opacity: default_bubble_opacity(),
             advanced: AdvancedSettings::default(),
         }
     }

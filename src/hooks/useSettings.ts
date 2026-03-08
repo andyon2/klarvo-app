@@ -62,11 +62,13 @@ export function useSettings() {
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
     outputLang: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
+    bubbleSize?: number | null, bubbleOpacity?: number | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
       sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey,
       sttPriority, llmPriority, outputLang, webhookUrl, tursoUrl, tursoToken,
+      bubbleSize, bubbleOpacity,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);

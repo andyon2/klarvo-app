@@ -44,6 +44,8 @@ export interface AppSettings {
   tursoUrl: string;
   tursoTokenMasked: string;
   deviceId: string;
+  bubbleSize: number;
+  bubbleOpacity: number;
 }
 
 // A per-application recording profile.

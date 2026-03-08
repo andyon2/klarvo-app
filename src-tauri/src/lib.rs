@@ -145,6 +145,10 @@ pub struct SettingsView {
     pub turso_token_masked: String,
     /// Device ID for sync.
     pub device_id: String,
+    /// Android bubble size multiplier (0.5..2.0). Default: 1.0.
+    pub bubble_size: f32,
+    /// Android bubble opacity (0.3..1.0). Default: 0.85.
+    pub bubble_opacity: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -354,9 +358,9 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 #[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
 fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Start as a tiny circle -- the frontend resizes dynamically based on state.
-    let bar_width = 28.0_f64;
-    let bar_height = 28.0_f64;
+    // Start as a thin idle pill -- the frontend resizes dynamically based on state.
+    let bar_width = 80.0_f64;
+    let bar_height = 10.0_f64;
 
     let mut builder = tauri::WebviewWindowBuilder::new(
         app,
@@ -380,14 +384,14 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     let bar = builder.build()?;
 
-    // Set initial elliptic (circle) window region on Windows.
+    // Set initial pill-shaped window region on Windows.
     #[cfg(target_os = "windows")]
     {
         if let Ok(hwnd) = bar.hwnd() {
             let scale = bar.scale_factor().unwrap_or(1.0);
             let pw = (bar_width * scale) as i32;
             let ph = (bar_height * scale) as i32;
-            set_window_region_ellipse(hwnd.0 as isize, pw, ph);
+            set_window_region_pill(hwnd.0 as isize, pw, ph);
         }
     }
 
@@ -629,6 +633,7 @@ pub fn run() {
             commands::misc::save_snippets,
             commands::misc::paste_snippet,
             commands::misc::sync_history,
+            commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
         ])
         .run(tauri::generate_context!())

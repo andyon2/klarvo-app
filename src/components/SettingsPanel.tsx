@@ -295,6 +295,7 @@ export interface SettingsPanelProps {
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
     outputLanguage: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
+    bubbleSize?: number | null, bubbleOpacity?: number | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -332,6 +333,8 @@ export function SettingsPanel({
   const [localWebhookUrl, setLocalWebhookUrl] = useState(loadedSettings?.webhookUrl ?? "");
   const [localTursoUrl, setLocalTursoUrl] = useState(loadedSettings?.tursoUrl ?? "");
   const [tursoToken, setTursoToken] = useState("");
+  const [localBubbleSize, setLocalBubbleSize] = useState(loadedSettings?.bubbleSize ?? 1.0);
+  const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -371,6 +374,8 @@ export function SettingsPanel({
       setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
       setLocalWebhookUrl(loadedSettings.webhookUrl ?? "");
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
+      setLocalBubbleSize(loadedSettings.bubbleSize ?? 1.0);
+      setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
     }
   }, [loadedSettings]);
 
@@ -420,6 +425,7 @@ export function SettingsPanel({
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
         openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority,
         localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), tursoToken.trim(),
+        localBubbleSize, localBubbleOpacity,
       );
       setGroqKey("");
       setDeepseekKey("");

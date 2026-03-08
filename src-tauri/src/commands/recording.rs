@@ -218,6 +218,38 @@ pub async fn cleanup_text(
     .map_err(|e: crate::llm::LlmError| e.to_string())
 }
 
+/// Cancels the active recording, discarding any captured audio.
+///
+/// Stops the cpal stream and emits `state=idle` so the floating bar
+/// returns to its dormant state. Unlike `stop_recording`, no WAV bytes
+/// are retained -- the audio is thrown away entirely.
+#[tauri::command]
+pub async fn cancel_recording(
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let inner = state.inner();
+
+    if !inner.recorder.is_recording() {
+        return Ok(()); // nothing to cancel
+    }
+
+    // Stop the recorder and discard the WAV bytes.
+    let _ = inner.recorder.stop_recording();
+
+    // Clear the start timestamp.
+    *crate::lock!(inner.recording_start)? = None;
+
+    // Emit idle state so all windows (main + floating bar) update.
+    use tauri::Emitter;
+    let _ = handle.emit(
+        crate::hotkey::EVENT_STATE_CHANGED,
+        crate::hotkey::PipelineEvent::idle(),
+    );
+
+    Ok(())
+}
+
 /// Returns whether the recorder is currently active.
 ///
 /// Useful for frontend state sync (e.g. showing a recording indicator).

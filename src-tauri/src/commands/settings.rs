@@ -133,6 +133,8 @@ pub async fn save_settings(
     webhook_url: Option<String>,
     turso_url: Option<String>,
     turso_token: Option<String>,
+    bubble_size: Option<f32>,
+    bubble_opacity: Option<f32>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -195,6 +197,8 @@ pub async fn save_settings(
             _ => existing.turso_token,
         },
         device_id: existing.device_id,
+        bubble_size: bubble_size.unwrap_or(existing.bubble_size),
+        bubble_opacity: bubble_opacity.unwrap_or(existing.bubble_opacity),
         advanced: existing.advanced,
     };
 
@@ -253,6 +257,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         turso_url: cfg.turso_url,
         turso_token_masked: mask_api_key(&cfg.turso_token),
         device_id: cfg.device_id,
+        bubble_size: cfg.bubble_size,
+        bubble_opacity: cfg.bubble_opacity,
     })
 }
 

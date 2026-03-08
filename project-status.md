@@ -5,23 +5,35 @@ Version 0.5.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Wind
 
 ## Offene Tasks
 
-### Naechste Session -- Geplante Features
-- [ ] [android] Bubble Size/Opacity in Settings migrieren (SharedPreferences → config.json, React-UI)
-  - Double-Tap-Menu fuer Settings funktioniert nicht -- muss ueber Settings-Panel gehen
-- [ ] [windows] Floating Bar Redesign -- muss macOS-Qualitaet erreichen
-  - Aktueller gruener Kreis + statische Bar sieht unprofessionell aus vs. Android-Bubble
-  - Orientierung am Android-Stil: kompakt, elegant, animiert, State-basiert
-
 ### Bekannte Bugs
-- [android] Double-Tap auf Bubble oeffnet Settings-Menu NICHT (Geste funktioniert nicht)
 - [windows] Signing Keys noch nicht generiert (Warnung bei jedem Build)
 
 ### Backlog
+- [ ] [android] Bubble Size/Opacity Controls (verschoben -- Slider-UX buggy, naechste Version)
 - [ ] [shared] Lokaler whisper.cpp Fallback (offline STT)
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
 - [ ] [windows] Signing Keys generieren (Tauri Updater braucht Keypair)
 - [ ] [windows] GitHub Releases CI/CD Pipeline fuer Auto-Update
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
+
+## Aenderungen Session 2026-03-08 (Session 3)
+
+### Windows -- Floating Bar Redesign
+- [x] Idle State: Gruener Kreis → Duenne semi-transparente Pill (80x10px, kaum sichtbar)
+- [x] Expanded State: Hoehe halbiert (36→18), Breite reduziert (220→164)
+- [x] Waveform-Farbe: Rot → Weiches Blau (rgba(147,197,253,0.85))
+- [x] Stop/Cancel-Button hinzugefuegt (rotes Quadrat-Icon, bricht Recording ab)
+- [x] cancel_recording Tauri-Command implementiert (stoppt Recorder + emittiert idle)
+- [x] Win32 Window-Region angepasst (idle=pill statt circle)
+- [x] set_bar_shape aktualisiert: "circle"→"idle", neue Dimensionen
+
+### Android -- Bubble Settings Cleanup
+- [x] Bubble Appearance Slider aus Settings entfernt (buggy, Slider springen zurueck)
+- [x] Config-Migration beibehalten (SharedPreferences → config.json mit Defaults)
+- [x] BubbleSettingsMenu.kt geleert (Double-Tap-Menu war broken)
+
+### Shared
+- [x] bubble_size/bubble_opacity in AppConfig, SettingsView, saveSettings (Backend-Infrastruktur steht)
 
 ## Aenderungen Session 2026-03-08 (Session 2)
 
@@ -73,6 +85,7 @@ sync/        -- Cross-Device Sync via Turso HTTP API
 ### Frontend (`src/`)
 ```
 App.tsx                          -- Hauptkomponente
+FloatingBar.tsx                  -- Windows Floating Bar (thin idle pill + compact active pill)
 components/SettingsPanel.tsx     -- Settings (Accordion-Sektionen)
 components/AdvancedSettingsPanel.tsx
 components/MobileTextarea.tsx    -- Fullscreen-Textarea-Popup (Android)
@@ -86,7 +99,7 @@ hooks/useRecording.ts, useSettings.ts, usePanels.ts
 DiktaOverlayService.kt      -- Foreground Service, Touch-Gesten, PTT
 FloatingBubbleView.kt        -- Idle/Recording(Bar)/RecordingPTT/Processing
 DiktaAudioRecorder.kt        -- Audio, WAV, Amplitude mit Noise Gate
-BubbleSettingsMenu.kt         -- Size/Opacity-Menu (Double-Tap -- BROKEN)
+BubbleSettingsMenu.kt         -- (geleert, Double-Tap war broken)
 DiktaApi.kt                  -- STT + Chunked Cleanup + History-DB + Turso
 DiktaAccessibilityService.kt -- Keyboard-Erkennung + Auto-Paste
 MainActivity.kt              -- Permission-Flow
