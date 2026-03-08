@@ -1,20 +1,29 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.5.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Windows + Android Builds laufen.
+Version 0.4.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Windows + Android Builds laufen. GitHub Repo public, erster Release veroeffentlicht.
 
-## Offene Tasks
+## Naechste Sessions (in Reihenfolge)
 
-### Bekannte Bugs
-- [windows] Signing Keys noch nicht generiert (Warnung bei jedem Build)
+1. **Signing Keys + Auto-Update** → `briefings/plan-signing-auto-update.md`
+   - Signing Keys generieren, Updater-Plugin konfigurieren, /release Skill anpassen
+   - Damit Tester automatisch Updates kriegen (nur Windows, Android bleibt APK-Sideload)
 
-### Backlog
-- [ ] [android] Bubble Size/Opacity Controls (verschoben -- Slider-UX buggy, naechste Version)
-- [ ] [shared] Lokaler whisper.cpp Fallback (offline STT)
+2. **Offline whisper.cpp Fallback** → `briefings/plan-offline-whisper.md`
+   - whisper-rs Integration, Model-Download, GPU-Detection, Fallback-Logik
+   - Grosses Feature, 1-2 Sessions. Erstmal nur Windows.
+
+3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
+   - Presets statt Slider (Klein/Normal/Gross). Backend-Infrastruktur steht bereits.
+   - Halbe Session, kann nebenbei passieren.
+
+## Bekannte Bugs
+- [windows] Signing Keys noch nicht generiert (Warnung bei jedem Build) → wird in Session 1 gefixt
+
+## Backlog
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
-- [ ] [windows] Signing Keys generieren (Tauri Updater braucht Keypair)
-- [ ] [windows] GitHub Releases CI/CD Pipeline fuer Auto-Update
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
+- [ ] [windows] GitHub Releases CI/CD Pipeline (erst relevant wenn manueller Release nervt)
 
 ## Aenderungen Session 2026-03-08 (Session 3)
 
@@ -23,46 +32,21 @@ Version 0.5.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Wind
 - [x] Expanded State: Hoehe halbiert (36→18), Breite reduziert (220→164)
 - [x] Waveform-Farbe: Rot → Weiches Blau (rgba(147,197,253,0.85))
 - [x] Stop/Cancel-Button hinzugefuegt (rotes Quadrat-Icon, bricht Recording ab)
-- [x] cancel_recording Tauri-Command implementiert (stoppt Recorder + emittiert idle)
+- [x] cancel_recording Tauri-Command implementiert
 - [x] Win32 Window-Region angepasst (idle=pill statt circle)
-- [x] set_bar_shape aktualisiert: "circle"→"idle", neue Dimensionen
 
 ### Android -- Bubble Settings Cleanup
-- [x] Bubble Appearance Slider aus Settings entfernt (buggy, Slider springen zurueck)
-- [x] Config-Migration beibehalten (SharedPreferences → config.json mit Defaults)
-- [x] BubbleSettingsMenu.kt geleert (Double-Tap-Menu war broken)
+- [x] Bubble Appearance Slider aus Settings entfernt (buggy)
+- [x] Config-Migration beibehalten (SharedPreferences → config.json)
+- [x] BubbleSettingsMenu.kt geleert
 
-### Shared
-- [x] bubble_size/bubble_opacity in AppConfig, SettingsView, saveSettings (Backend-Infrastruktur steht)
-
-## Aenderungen Session 2026-03-08 (Session 2)
-
-### Android
-- [x] Waveform Noise Gate + Smoothing (0.04 Floor, 2.5x Amplify, 3-Sample Average)
-- [x] Waveform Bars groesser (7dp breit, 5 Bars, 10% min, pow(0.6) Amplitude-Kurve)
-- [x] Push-to-Talk: Bubble bleibt rund, skaliert 1.3x mit OvershootInterpolator (kein Bar-Expand)
-- [x] Push-to-Talk: Bubble-Position fixiert waehrend Long-Press (kein Drag/Cancel)
-- [x] Chunked Parallel Cleanup (4-Thread-Pool, ab 800 Zeichen, Sentence-Boundary-Split)
-- [x] UI Size auf Mobile versteckt (CSS zoom glitcht in WebView)
-
-### Shared (Windows + Android)
-- [x] Collapsible Sections in SettingsPanel (Accordion: nur eine Sektion offen)
-- [x] Save-Button-Fix: max-h + 48px Nav-Bar-Abzug auf Mobile
-- [x] "Custom Prompt" umbenannt zu "Cleanup Instructions"
-- [x] "Clear All" Button aus History entfernt
-- [x] Clear-Button bei Cleanup Instructions Presets
-- [x] "LLM Cleanup -- Base Prompts" Titel + Klarstellungs-Hint
-- [x] Snippets ersetzt durch "Integrations" Platzhalter
-- [x] Record-Button versteckt wenn Panel offen
-- [x] MobileTextarea: Fullscreen-Popup fuer Textfelder auf Android
-- [x] MobileTextarea: Safe-Area-Fix fuer Status-Bar (pt-9)
-- [x] UI Size komplett entfernt (auch Desktop -- war buggy)
-- [x] Font-Sizing: text-[10px] → text-[11px] global (bessere Lesbarkeit)
-- [x] Accordion-Verhalten in Settings + Advanced Settings
-
-### Meta
-- [x] Projektdateien konsolidiert: 5 → 3 Dateien (project-status, architecture, MEMORY)
-- [x] architecture.md komplett aktualisiert (Plattform-Split, Cross-Platform-Regeln)
+### Infra -- GitHub + Release-Workflow
+- [x] GitHub Repo erstellt (public): https://github.com/andyon2/dikta
+- [x] Release v0.4.0 veroeffentlicht mit Windows-Installer + Android-APK
+- [x] /release Skill erstellt (Version bump + Build + GitHub Release)
+- [x] README neu geschrieben (tester-tauglich, deutsche Umlaute)
+- [x] Social Preview erstellt und hochgeladen
+- [x] Agent/Skill-Audit eingearbeitet (android-platform, ui-dev, build-app, etc.)
 
 ## Modul-Referenz
 
@@ -99,7 +83,6 @@ hooks/useRecording.ts, useSettings.ts, usePanels.ts
 DiktaOverlayService.kt      -- Foreground Service, Touch-Gesten, PTT
 FloatingBubbleView.kt        -- Idle/Recording(Bar)/RecordingPTT/Processing
 DiktaAudioRecorder.kt        -- Audio, WAV, Amplitude mit Noise Gate
-BubbleSettingsMenu.kt         -- (geleert, Double-Tap war broken)
 DiktaApi.kt                  -- STT + Chunked Cleanup + History-DB + Turso
 DiktaAccessibilityService.kt -- Keyboard-Erkennung + Auto-Paste
 MainActivity.kt              -- Permission-Flow
