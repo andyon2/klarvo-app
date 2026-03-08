@@ -2,6 +2,7 @@ package com.dikta.voice
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -29,6 +30,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 class DiktaAccessibilityService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "DiktaAccess"
         /** Live reference to the running service; null when the service is not connected. */
         var instance: DiktaAccessibilityService? = null
     }
@@ -36,6 +38,7 @@ class DiktaAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        Log.i(TAG, "AccessibilityService connected")
 
         // Reconfigure the service to monitor ALL apps (not just our own package).
         val info = serviceInfo ?: AccessibilityServiceInfo()
@@ -51,6 +54,7 @@ class DiktaAccessibilityService : AccessibilityService() {
         info.packageNames = null
         info.notificationTimeout = 100
         serviceInfo = info
+        Log.i(TAG, "Configured for system-wide keyboard detection")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -77,7 +81,7 @@ class DiktaAccessibilityService : AccessibilityService() {
         val imeVisible = try {
             windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
         } catch (e: Exception) {
-            // windows list unavailable -- ignore; fallback in DiktaOverlayService handles it.
+            Log.w(TAG, "windows list unavailable", e)
             return
         }
         DiktaOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
