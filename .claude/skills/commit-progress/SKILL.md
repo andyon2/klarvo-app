@@ -3,6 +3,8 @@ name: commit-progress
 description: Erstellt einen Git-Commit mit konventioneller Commit-Message. Aufrufen nach abgeschlossenen Teilaufgaben, z.B. "/commit-progress" oder "/commit-progress feat audio capture module".
 argument-hint: "[optionale commit-beschreibung]"
 allowed-tools: Bash
+context: fork
+model: haiku
 ---
 
 Erstelle einen Git-Commit fuer den aktuellen Fortschritt.

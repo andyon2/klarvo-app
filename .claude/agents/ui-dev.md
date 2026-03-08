@@ -27,39 +27,50 @@ Lies zuerst:
 
 ## Kern-Komponenten
 
-### Recording Overlay (`src/components/Overlay.tsx`)
-- Schwebendes Mini-Fenster waehrend der Aufnahme
-- Zeigt: Recording-Indikator (pulsierender Punkt), Timer, ggf. Live-Waveform
-- Optional: Live-Transkript-Preview (wenn STT schnell genug streamt)
-- Erscheint bei Hotkey-Drueck, verschwindet nach Paste
-- Tauri: Separates Fenster mit `always_on_top`, transparent, nicht fokussierbar
+### FloatingBar (`src/FloatingBar.tsx`)
+- Kompakte schwebende Leiste (Desktop: Floating Window, Mobile: im Hauptfenster)
+- Recording-Steuerung: Start/Stop, Stil-Auswahl, Status-Anzeige
+- Erscheint bei Hotkey-Drueck (Desktop), immer sichtbar (Mobile)
+- Minimal: Nur die noetigsten Interaktionen, kein Bloat
 
-### Settings Panel (`src/components/Settings.tsx`)
-- STT-Engine: Cloud (Groq) / Lokal (Whisper) / Auto
-- Cleanup-Engine: DeepSeek API-Key, Modell-Auswahl
-- Hotkey-Konfiguration (Taste + Modus: Toggle vs. Hold)
-- Sprache: Deutsch / Englisch
-- Default-Schreibstil
-- GPU-Nutzung: An / Aus / Nur am Strom (fuer lokales Whisper)
-- Tauri-IPC: `invoke('get_settings')`, `invoke('save_settings', { settings })`
+### SettingsPanel (`src/components/SettingsPanel.tsx`)
+- Haupt-Settings: API-Keys, STT/LLM-Provider-Auswahl, Sprache, Hotkey
+- Schreibstil-Auswahl (Polished / Verbatim / Chat)
+- Custom Cleanup Instructions
+- Desktop-spezifisch: Audio-Device, Whisper-Mode, UI-Groesse, Updates
+- Tauri-IPC via `src/tauri-commands.ts`
 
-### Dictionary Manager (`src/components/Dictionary.tsx`)
-- Liste aller Custom-Woerter/Phrasen
-- Hinzufuegen, Bearbeiten, Loeschen
-- Import/Export (JSON)
-- Suchfeld fuer grosse Woerterbuecher
-- Tauri-IPC: `invoke('get_dictionary')`, `invoke('add_word', { word, replacement })`
+### AdvancedSettingsPanel (`src/components/AdvancedSettingsPanel.tsx`)
+- Erweiterte Einstellungen: STT-Prompts pro Sprache, Fallback-Provider
+- Dictionary/Glossar-Management
+- Sync-Konfiguration (Turso)
+- Webhook-Konfiguration
 
-### Style Picker (`src/components/StylePicker.tsx`)
-- Schnellwahl vor/waehrend der Aufnahme
-- Drei Modi: Polished (bereinigt + formatiert), Verbatim (woertlich), Chat (locker, kurz)
-- Visuell klar unterscheidbar (Icon + Farbe)
-- Tauri-IPC: `invoke('set_style', { style })`
+### MobileTextarea (`src/components/MobileTextarea.tsx`)
+- Mobile-optimiertes Textfeld fuer Diktat-Ergebnisse
+- Touch-optimiert mit angepassten Target-Groessen
 
-### Tray / System Integration
-- Windows: System-Tray-Icon mit Kontextmenue (Settings, Quit, Status)
-- Android: Persistent Notification waehrend aktiver Aufnahme
-- Tauri Tray API nutzen
+### VoiceNotesPanel (`src/components/VoiceNotesPanel.tsx`)
+- Sprachnotiz-Verwaltung und -Anzeige
+- History-Ansicht fuer vergangene Diktate
+
+### SnippetsPanel (`src/components/SnippetsPanel.tsx`)
+- Text-Snippets-Verwaltung (vordefinierte Textbausteine)
+
+### Hooks (`src/hooks/`)
+- `useRecording.ts` -- Recording-State, Start/Stop-Logik
+- `useSettings.ts` -- Settings laden/speichern via Tauri-IPC
+- `usePanels.ts` -- Panel-Navigation und -State
+
+### Weitere Dateien
+- `src/App.tsx` -- Haupt-App-Komponente, Routing, State-Management
+- `src/Onboarding.tsx` -- Ersteinrichtungs-Flow
+- `src/tauri-commands.ts` -- Alle Tauri invoke()-Wrapper (typisiert)
+- `src/types.ts` -- Shared TypeScript-Interfaces
+- `src/platform.ts` -- Plattform-Erkennung (isDesktop/isMobile)
+- `src/media-recorder.ts` -- WebAudio MediaRecorder (Mobile Audio-Capture)
+- `src/components/ui.tsx` -- Wiederverwendbare UI-Primitives
+- `src/components/icons.tsx` -- Icon-Komponenten
 
 ## State Management
 

@@ -25,7 +25,7 @@ Koordiniert das Projekt, trifft finale Entscheidungen. Wenig Erfahrung mit Andro
 - **Desktop-Framework:** Tauri v2 (Rust-Backend + Web-Frontend)
 - **Frontend:** React + TypeScript + Tailwind CSS
 - **Backend:** Rust (Audio-Capture, STT-Pipeline, LLM-Client, Hotkey, Paste)
-- **Mobile:** Tauri v2 Android-Support + Kotlin fuer IME (InputMethodService)
+- **Mobile:** Tauri v2 Android-Support + Kotlin (Floating Bubble Overlay, DiktaApi, AccessibilityService)
 - **STT:** Groq Whisper API (primaer) + whisper.cpp (offline Fallback)
 - **Text-Cleanup:** DeepSeek API (primaer, guenstig)
 - **Speicherung:** SQLite fuer Dictionary, Settings, History
@@ -51,13 +51,14 @@ dikta/
       plan-feature/SKILL.md    -- Feature in Tasks zerlegen
       commit-progress/SKILL.md -- Git-Commit mit konventioneller Message
       debug-error/SKILL.md     -- Fehler analysieren + Fix vorschlagen
+      sync-prompts/SKILL.md    -- LLM-Prompts in Rust/Kotlin vergleichen
   scripts/
     android-platform           -- Starter fuer direkte Android-Sessions
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
   knowledge/
     architecture.md            -- Tech-Entscheidungen, Patterns, Modulstruktur
     api-providers.md           -- Groq + DeepSeek API-Details
-    platform-notes.md          -- Windows/Android-Quirks, Lessons Learned
+    (platform-notes.md entfernt -- Quirks stehen in architecture.md Abschnitt "Plattform-Quirks")
   src-tauri/                   -- Rust-Backend (Tauri)
   src/                         -- React-Frontend
   android/                     -- Android-Plattformcode
@@ -74,7 +75,7 @@ Zentrale Dateien:
 |-------|---------|--------|-------|
 | rust-core | Rust-Backend: Audio, STT, LLM-Client, Paste, Hotkey, Dictionary | sonnet | delegiert |
 | ui-dev | React-Frontend: Overlay, Settings, Dictionary-UI, Styles | sonnet | delegiert |
-| android-platform | Android: IME, Permissions, Background-Services, Tauri-Bridge | sonnet | delegiert + direkt |
+| android-platform | Android: Floating Bubble, AccessibilityService, Kotlin-native Audio/API, Permissions | sonnet | delegiert + direkt |
 
 ## Skills
 
@@ -86,8 +87,9 @@ Zentrale Dateien:
 | /research-api | API-Docs recherchieren, Summary in knowledge/ schreiben | fork (sonnet) |
 | /lint-fix | Linter + Formatter, Auto-Fix | fork (haiku) |
 | /plan-feature | Feature in Tasks mit Dateien + Agent-Zuweisung zerlegen | fork (sonnet) |
-| /commit-progress | Git-Commit mit konventioneller Message | inline |
+| /commit-progress | Git-Commit mit konventioneller Message | fork (haiku) |
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
+| /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
 
 ## Regeln
 

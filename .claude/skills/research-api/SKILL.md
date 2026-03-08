@@ -22,10 +22,12 @@ Aus `$ARGUMENTS` extrahiere das Thema der Recherche.
    - WebFetch der relevanten Docs-Seiten
    - Fokus auf: Endpoints, Authentication, Request/Response-Format, Rate Limits, Pricing, Code-Beispiele
 
-3. **Summary schreiben** in die passende Knowledge-Datei:
+3. **Summary ergaenzen** in die passende Knowledge-Datei:
    - API-Provider (Groq, DeepSeek, etc.) -> `knowledge/api-providers.md` (Sektion hinzufuegen/aktualisieren)
    - Libraries/Frameworks (Tauri, whisper-rs, cpal) -> `knowledge/architecture.md` (Sektion hinzufuegen/aktualisieren)
-   - Plattform-spezifisch (Android IME, Windows APIs) -> `knowledge/platform-notes.md`
+   - Plattform-spezifisch (Android, Windows APIs) -> `knowledge/architecture.md` Abschnitt "Plattform-Quirks"
+
+   **WICHTIG:** Bestehende Dateien IMMER mit Edit ergaenzen, NIE mit Write ueberschreiben! Diese Dateien enthalten vorherige Eintraege die nicht verloren gehen duerfen.
 
 4. **Format der Summary:**
 

@@ -24,7 +24,7 @@ Aus `$ARGUMENTS` extrahiere die Fehler-Beschreibung oder den Error-Output.
 
 2. **Kontext sammeln:**
    - Relevante Quell-Dateien lesen (aus Error-Output die Dateien/Zeilen extrahieren)
-   - `knowledge/platform-notes.md` auf bekannte Quirks pruefen
+   - `knowledge/architecture.md` Abschnitt "Plattform-Quirks" auf bekannte Quirks pruefen
    - Bei unbekannten Fehlern: WebSearch
 
 3. **Analyse:**

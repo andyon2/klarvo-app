@@ -41,6 +41,12 @@ Empfehlung: [Was als naechstes tun -- z.B. "rust-core Agent beauftragen mit Fix 
 
 ### Wenn plattform = `windows`
 
+WICHTIG: Nutze das PowerShell-Build-Skript, NICHT direkt `tauri build`:
+```bash
+cd /home/andyon2/dikta && powershell.exe -File scripts/sync-and-build.ps1 2>&1
+```
+
+Falls PowerShell nicht verfuegbar (z.B. reines WSL ohne Windows-Zugriff), Fallback:
 ```bash
 cd /home/andyon2/dikta && npm run tauri build 2>&1
 ```
@@ -57,19 +63,21 @@ Bei Fehler: Strukturierte Fehlermeldung wie oben.
 
 ### Wenn plattform = `android`
 
+WICHTIG: Nutze das Build-Skript, NICHT direkt `tauri android build`. Das Skript kopiert Kotlin-Quellen aus `android/kotlin-src/` nach `gen/android/`, signiert und deployt. Ohne dieses Skript fehlen die Kotlin-Dateien und der Build schlaegt fehl.
+
 ```bash
-cd /home/andyon2/dikta && npm run tauri android build 2>&1
+cd /home/andyon2/dikta && bash scripts/android-build.sh 2>&1
 ```
 
 Bei Erfolg melde:
 ```
 BUILD ERFOLGREICH (Android)
 
-APK: [Pfad zur .apk]
+APK: [Pfad zur .apk aus Script-Output]
 Groesse: [Dateigroesse]
 ```
 
-Bei Fehler: Strukturierte Fehlermeldung. Android-Build-Fehler sind oft kryptisch -- versuche die eigentliche Ursache zu identifizieren (fehlende SDK-Version, Gradle-Fehler, NDK-Problem).
+Bei Fehler: Strukturierte Fehlermeldung. Android-Build-Fehler sind oft kryptisch -- versuche die eigentliche Ursache zu identifizieren (fehlende SDK-Version, Gradle-Fehler, NDK-Problem, fehlende Kotlin-Quellen).
 
 ### Wenn plattform nicht erkannt
 

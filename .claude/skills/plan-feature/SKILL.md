@@ -58,4 +58,6 @@ Als Dikta-Nutzer moechte ich [was], damit [warum].
 - [Moegliche Probleme und wie wir damit umgehen]
 ```
 
-4. **Plan ausgeben** (nicht in Datei schreiben -- der Main-Agent entscheidet, ob der Plan so umgesetzt wird).
+4. **Plan ausgeben oder persistieren:**
+   - Wenn `$ARGUMENTS` mit `--save` endet: Plan in `briefings/plan-[feature-slug].md` schreiben (Feature-Name als Slug: Kleinbuchstaben, Bindestriche statt Leerzeichen). Melde: "Plan gespeichert in briefings/plan-[slug].md"
+   - Ohne `--save`: Plan nur im Chat ausgeben (der Main-Agent entscheidet, ob der Plan so umgesetzt wird).

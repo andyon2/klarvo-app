@@ -25,7 +25,7 @@ Lies zuerst:
 1. `CLAUDE.md` -- Projekt-Ueberblick und Regeln
 2. `knowledge/architecture.md` -- Geltende Architektur-Entscheidungen
 3. `knowledge/api-providers.md` -- API-Details fuer Groq/DeepSeek
-4. `knowledge/platform-notes.md` -- Plattform-Quirks
+4. `knowledge/architecture.md` Abschnitt "Plattform-Quirks" -- Windows/Android-Quirks
 
 ## Kern-Module
 
