@@ -53,6 +53,7 @@ dikta/
       debug-error/SKILL.md     -- Fehler analysieren + Fix vorschlagen
       sync-prompts/SKILL.md    -- LLM-Prompts in Rust/Kotlin vergleichen
       release/SKILL.md         -- Version bump + Build + GitHub Release
+      track/SKILL.md           -- Projektstatus lesen/aktualisieren
   scripts/
     android-platform           -- Starter fuer direkte Android-Sessions
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
@@ -66,7 +67,7 @@ dikta/
 ```
 
 Zentrale Dateien:
-- `project-status.md` -- Projektstatus (wird bei jedem Sessionstart gelesen, bei Sessionende aktualisiert)
+- `project-status.md` -- Projektstatus (via `/track` Skill bei Sessionstart gelesen, bei Sessionende aktualisiert)
 - `briefings/` -- Briefing-Dokumente fuer direkte Agent-Sessions
 - `knowledge/` -- Gesammeltes Wissen ueber APIs, Plattform-Quirks, Architektur
 
@@ -92,6 +93,7 @@ Zentrale Dateien:
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
 | /release | Version bump + Build + GitHub Release erstellen | fork (haiku) |
+| /track | Projektstatus lesen, ausfuehrlicher Ueberblick, oder aktualisieren | fork (haiku) |
 
 ## Regeln
 

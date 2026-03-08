@@ -728,6 +728,8 @@ mod tests {
             turso_url: String::new(),
             turso_token_masked: String::new(),
             device_id: "test-device".to_string(),
+            bubble_size: 1.0,
+            bubble_opacity: 0.85,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -765,6 +767,8 @@ mod tests {
             turso_url: String::new(),
             turso_token_masked: String::new(),
             device_id: "test-device".to_string(),
+            bubble_size: 1.0,
+            bubble_opacity: 0.85,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -796,6 +800,8 @@ mod tests {
             turso_url: String::new(),
             turso_token_masked: String::new(),
             device_id: "test-device".to_string(),
+            bubble_size: 1.0,
+            bubble_opacity: 0.85,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

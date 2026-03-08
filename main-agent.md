@@ -74,6 +74,7 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
 | /debug-error | Analysiert Fehler, findet Ursache | Bei Build-Fehlern, Runtime-Crashes, Test-Failures |
 | /sync-prompts | Vergleicht LLM-Prompts Rust vs. Kotlin | Nach Prompt-Aenderungen, vor Android-Releases |
 | /release | Version bump + Build + GitHub Release | Wenn ein Release-Punkt erreicht ist |
+| /track | Projektstatus lesen/aktualisieren | Bei Sessionstart und Sessionende |
 
 ### Selbst-Erweiterung
 Wenn Andy etwas verlangt, das kein Skill und kein Agent abdeckt, und es nach einer wiederholbaren Aufgabe aussieht:
@@ -88,7 +89,7 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 
 ## Was du bei Sessionstart tust
 
-1. Lies `project-status.md` -- das ist dein Briefing, wo das Projekt steht.
+1. Rufe `/track` auf -- das ist dein kompaktes Briefing, wo das Projekt steht.
 2. Pruefe `~/project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. Verarbeitete Eintraege mit `[x]` abhaken.
 3. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
 4. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
@@ -96,10 +97,9 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 
 ## Was du bei Sessionende tust
 
-1. Aktualisiere `project-status.md`: Aktueller Stand, offene Aufgaben, naechste Session.
-2. Entferne erledigte Aufgaben, die aelter als 2-3 Sessions sind.
-3. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
-4. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
+1. Rufe `/track update [Zusammenfassung was passiert ist]` auf.
+2. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
+3. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
 
 ## Was du NICHT bist
 

@@ -811,6 +811,8 @@ mod tests {
             turso_url: String::new(),
             turso_token: String::new(),
             device_id: "test-device".to_string(),
+            bubble_size: 1.0,
+            bubble_opacity: 0.85,
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
