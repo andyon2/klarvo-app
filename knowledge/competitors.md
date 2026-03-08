@@ -1,5 +1,81 @@
 # Competitor Analysis
 
+Letzte Aktualisierung: 2026-03-09
+
+## Wispr Flow
+
+- **URL:** https://wisprflow.ai
+- **Plattform:** macOS, Windows, **Android (seit Feb 2026)**
+- **Preis:** Free (2000 Woerter/Woche), Pro $12/mo ($144/Jahr), Enterprise $24/user/mo
+- **Student/Non-Profit:** $8/mo
+- **Kernfeature:** Cloud-basierte Voice-to-Text mit proprietaerem Modell
+- **Positionierung:** Premium, enterprise-ready (SOC 2 Type II, ISO 27001, HIPAA)
+- **Beziehung zu Dikta:** Wispr Flow ist die direkte Inspiration. Diktats Android-Version (Floating Bubble, systemweites Paste) ist an Wispr Flows UX angelehnt.
+
+### Android-Launch (23. Feb 2026)
+- Floating Bubble UI
+- Cloud-basiert, gleiches Abo-Modell
+- Aktuell gratis unlimited Dictation (Promo)
+- 30% schnellere Infrastruktur durch Rewrite
+- Hinglish-Support (Hindi+Englisch Mix)
+- Quelle: TechCrunch, 9to5Google, HotHardware
+
+### Staerken
+- Ausgereifteste UX im Markt
+- Enterprise-Features (SSO/SAML, Admin-Dashboard, Compliance)
+- Proprietaeres Modell (nicht auf 3rd-Party-API angewiesen)
+- Jetzt auch Android (erster grosser Player auf der Plattform)
+
+### Schwaechen aus Dikta-Sicht
+- Abo-Modell ($144/Jahr) -- Subscription Fatigue
+- Cloud-only (kein Offline)
+- Closed Source (keine Transparenz)
+- Android-Promo wird irgendwann enden -> Abo-Huerde
+
+### Dikta-Differenzierung
+Nicht ueber UX-Ueberlegenheit (Wispr hat mehr Ressourcen), sondern:
+- **EUR 29 einmalig vs. $144/Jahr**
+- **Offline-faehig vs. Cloud-only**
+- **Open Source vs. Black Box**
+- **Ownership: Daten lokal vs. Cloud-Abhaengigkeit**
+
+---
+
+## Amical
+
+- **URL:** https://amical.ai
+- **GitHub:** https://github.com/amicalhq/amical
+- **Preis:** Gratis, Open Source (MIT)
+- **Plattform:** macOS, Windows; Android + iOS in **Private Beta**
+- **Framework:** TypeScript (vermutlich Electron)
+- **Recherche-Datum:** 2026-03-09
+
+### Features
+- Lokale STT (Whisper) + Cloud (BYOK)
+- Lokale LLMs fuer Text-Cleanup
+- Context-aware Dictation (erkennt aktive App, passt Format an)
+- 100+ Sprachen
+- Floating Widget
+- Positioniert sich als "Open Source Wispr Flow / Superwhisper / Granola Alternative"
+
+### Staerken
+- MIT-Lizenz, gleiche Vision wie Dikta (offline, open source, privacy-first)
+- Context-aware Dictation (intelligentes Feature)
+- Desktop bereits shipped (Win + Mac)
+
+### Schwaechen aus Dikta-Sicht
+- Android nur Private Beta (nicht shipped)
+- Kein Monetarisierungsmodell (Nachhaltigkeit fraglich)
+- Electron-basiert (Performance)
+- GitHub-Releases nur Desktop-Versionen
+
+### Strategische Einordnung
+Naechster Open-Source-Wettbewerber. Gleiche Vision, aehnlicher Feature-Umfang.
+Dikta-Vorsprung: **Android shipped**, **Bezahlprodukt mit Commitment**, **Tauri/Rust statt Electron**.
+Amical beobachten -- wenn deren Android public wird, schrumpft der Vorsprung.
+
+---
+
 ## Voice Type (Careless Whisper)
 
 - **URL:** https://carelesswhisper.app
@@ -21,65 +97,100 @@ Komplett offline, Privacy-first Voice-to-Text. Kein Backend, keine Telemetrie, k
 - Kein Proxy -- Nutzer kommuniziert direkt mit LLM-Provider
 - 3-Schritt-Setup: Install -> Hotkey -> Go
 
-### Technische Architektur
-
-- Lokale Spracherkennung (macOS-native, kein eigenes Modell)
-- Kein Backend-Server (Marketing-Site ist static export)
-- Keine Analytics, keine Crash-Logs, keine Telemetrie
-- BYO-LLM Rewrites gehen direkt vom Geraet zum Provider
-- Mac App Store Distribution (MDM-kompatibel)
-
 ### Enterprise-Positionierung
 
 - HIPAA-ready im Offline-Modus (kein BAA noetig)
 - SOC 2: Keine Kundendaten-Verarbeitung, minimaler Questionnaire
 - Security Whitepaper auf Anfrage
-- Priority Email Support fuer Volume-Kaeufe
 
-### Wettbewerbsvergleich (deren eigene Darstellung)
-
-| Aspekt | Voice Type | Wispr Flow | Otter |
-|--------|-----------|-----------|-------|
-| Verarbeitung | On-device | Cloud | Cloud |
-| Compliance | HIPAA-ready offline | SOC 2 Type II + BAA | SOC 2, HIPAA ab Juli 2025 |
-| Modell-Kontrolle | Lokal + BYO | Proprietaer | Proprietaer |
-
-### Was wir daraus lernen
-
-**Staerken von Voice Type:**
-1. Offline-first als Hauptargument -- Privacy/Compliance ohne Kompromisse
-2. Extreme Einfachheit -- minimale UI, 3-Schritt-Onboarding
-3. Enterprise/Compliance-Messaging -- HIPAA, SOC 2, MDM
-4. Kein Abo-Modell -- einmalige Zahlung
-
-**Wo Dikta schon besser ist:**
-1. Multi-Provider STT/LLM mit konfigurierbarer Fallback-Kette
-2. 3 Cleanup-Stile + Live Translation + Multi-Format Output
-3. Voice Notes, Text Snippets, App Profiles
-4. History mit Volltextsuche, Filler-Word-Analyse, Kostentracking
-5. Command Mode (Sprachbefehle auf selektierten Text)
-6. Whisper Mode (leises Diktieren)
-7. Kostenlos & Open Source
-8. Multi-Plattform (Windows + Android geplant)
-
-**Inspiration fuer Dikta:**
-1. **whisper.cpp Offline-Modus priorisieren** -- staerkstes Differenzierungsmerkmal von Voice Type
-2. **Privacy-Messaging** -- wenn Offline-Modus steht, koennen wir aehnlich argumentieren
-3. **Enterprise-Features** -- spaeter relevant (MDM, Compliance-Docs)
-4. **Einfachheit bewahren** -- trotz vieler Features muss das Kern-Erlebnis (Hotkey -> Sprechen -> Text) simpel bleiben
+### Strategische Einordnung
+Voice Type zeigt: Offline + Einmalkauf + Privacy funktioniert als Geschaeftsmodell.
+Dikta bietet 5x mehr Features und laeuft auf 2 Plattformen statt nur macOS.
 
 ---
 
-## Wispr Flow
+## OpenWhispr
 
-- **Plattform:** macOS, Windows
-- **Preis:** Abo-Modell
-- **Kernfeature:** Cloud-basierte Voice-to-Text mit proprietaerem Modell
-- **Positionierung:** Premium, enterprise-ready
-- **Dikta-Vergleich:** Wispr Flow ist die direkte Inspiration fuer Dikta. Dikta bietet aehnliche Features ohne Abo-Zwang.
+- **URL:** https://openwhispr.com
+- **GitHub:** https://github.com/OpenWhispr/openwhispr (~1640 Stars)
+- **Preis:** Gratis, Open Source (MIT)
+- **Plattform:** macOS, Windows, Linux
+- **Framework:** Electron
+- **Recherche-Datum:** 2026-03-09
+
+### Features (v1.6.0)
+- Lokale STT (Whisper GGML, NVIDIA Parakeet) + Cloud (BYOK)
+- Multi-Provider LLM (OpenAI, Anthropic, Gemini, Groq, Mistral, Local)
+- Agent Mode mit Streaming Chat Overlay
+- Google Calendar Integration (automatische Meeting-Erkennung)
+- Live Meeting-Transkription (OpenAI Realtime API)
+- Notes-System mit Volltextsuche + Cloud Sync
+- Cross-Platform (macOS, Windows, Linux)
+
+### Staerken
+- MIT-Lizenz, grosse Community
+- Breites Feature-Set (Agent Mode, Meeting-Transkription)
+- Linux-Support
+- Kein Vendor Lock-in
+
+### Schwaechen aus Dikta-Sicht
+- Electron (schwergewichtiger als Tauri/Rust)
+- Kein Android-Support
+- Community-getrieben (kein garantierter Support/Roadmap)
+- Kein Bezahl-Modell (Nachhaltigkeit?)
+
+### Strategische Einordnung
+Nicht als direkter Wettbewerber behandeln, sondern **komplementaer positionieren:**
+OpenWhispr = Open-Source-Projekt zum Mitbauen (Tinkerer/Entwickler).
+Dikta = Fertiges Produkt das einfach funktioniert (End-User).
+Kein Feature-Race gegen MIT-Community fuehren.
 
 ---
+
+## Voicy
+
+- **URL:** https://usevoicy.com
+- **Preis:** $8.49/mo, Jahresabo mit 20% Rabatt, Lifetime $220
+- **Plattform:** macOS, Windows, Browser-Extension
+- **Recherche-Datum:** 2026-03-09
+
+### Features
+- 99%+ Accuracy in 50+ Sprachen
+- Automatische Interpunktion
+- Funktioniert in allen Websites und Apps
+- Privacy: Nur der Nutzer sieht Transkripte
+
+### Strategische Einordnung
+Voicy zeigt die Preis-Obergrenze fuer Lifetime-Deals ($220).
+Dikta positioniert sich mit EUR 29 deutlich darunter -- aggressiverer Einstieg.
+
+---
+
+## Markt-Uebersicht (Stand Maerz 2026)
+
+| Tool | Preis | Plattform | Offline | Open Source |
+|------|-------|-----------|---------|-------------|
+| **Dikta** | EUR 29 einmalig (geplant) | Windows, Android | Ja (geplant) | Ja |
+| Wispr Flow | $12/mo ($144/Jahr) | macOS, Windows, **Android** | Nein | Nein |
+| Amical | Gratis (MIT) | macOS, Windows, Android (Beta) | Ja | Ja |
+| Voice Type | $19.99 einmalig | nur macOS | Ja | Nein |
+| OpenWhispr | Gratis (MIT) | macOS, Windows, Linux | Ja | Ja |
+| Voicy | $8.49/mo oder $220 Lifetime | macOS, Windows, Browser | Nein | Nein |
+| Dragon | $14.99/mo oder $700 | Windows, macOS | Ja | Nein |
+
+## Beobachtungsliste
+
+Regelmaessig pruefen (alle 4-6 Wochen):
+- [ ] **Amical Android-Beta:** Wird sie public? Feature-Umfang? Monetarisierung?
+- [ ] **Wispr Flow Android Pricing:** Aktuell Free Promo -- wann kommt das Abo?
+- [ ] **OpenWhispr Mobile:** Anzeichen fuer Android-Support?
+- [ ] **Neue Wettbewerber:** Handy (Tauri-basiert, kein Android), NotelyVoice (Compose Multiplatform, kein Windows)
 
 ## Fazit
 
-Voice Type ist ein solides, minimalistisches Tool mit Privacy-Fokus. Fuer den Mac-Port von Dikta waere der Offline-Modus (whisper.cpp) ein starkes Differenzierungsmerkmal -- dann kann Dikta beides: offline UND cloud mit besserer Qualitaet. Die Feature-Tiefe von Dikta ist bereits deutlich groesser als Voice Type.
+Der Markt hat sich seit Anfang 2026 bewegt: Wispr Flow ist auf Android, Amical naehert sich
+mit Mobile-Beta. Diktats Differenzierung laeuft nicht mehr ueber "einziger auf Android",
+sondern ueber drei Achsen:
+1. **Einmalkauf** (EUR 29) vs. Abo (Wispr Flow) oder kein Modell (Amical/OpenWhispr)
+2. **Shipped Android** vs. Beta (Amical) oder Cloud-only (Wispr Flow)
+3. **Offline + Open Source + Bezahlprodukt** = nachhaltig UND transparent

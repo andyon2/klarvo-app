@@ -56,10 +56,14 @@ dikta/
       track/SKILL.md           -- Projektstatus lesen/aktualisieren
   scripts/
     android-platform           -- Starter fuer direkte Android-Sessions
+    product-strategist         -- Starter fuer direkte Strategie-Sessions
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
   knowledge/
     architecture.md            -- Tech-Entscheidungen, Patterns, Modulstruktur
     api-providers.md           -- Groq + DeepSeek API-Details
+    competitors.md             -- Wettbewerbsanalysen (Voice Type, Wispr Flow, OpenWhispr)
+    product-strategy.md        -- Positionierung, Zielgruppe, Pricing, Differenzierung
+    wispr-flow-android-ux.md   -- Wispr Flow Android-UX-Recherche
     (platform-notes.md entfernt -- Quirks stehen in architecture.md Abschnitt "Plattform-Quirks")
   src-tauri/                   -- Rust-Backend (Tauri)
   src/                         -- React-Frontend
@@ -78,6 +82,7 @@ Zentrale Dateien:
 | rust-core | Rust-Backend: Audio, STT, LLM-Client, Paste, Hotkey, Dictionary | sonnet | delegiert |
 | ui-dev | React-Frontend: Overlay, Settings, Dictionary-UI, Styles | sonnet | delegiert |
 | android-platform | Android: Floating Bubble, AccessibilityService, Kotlin-native Audio/API, Permissions | sonnet | delegiert + direkt |
+| product-strategist | Positionierung, Monetarisierung, Roadmap-Priorisierung (Business-Sicht), Wettbewerbs-Strategie | sonnet | delegiert + direkt |
 
 ## Skills
 

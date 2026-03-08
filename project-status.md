@@ -1,19 +1,29 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Windows + Android Builds laufen. GitHub Repo public, erster Release veroeffentlicht.
+Version 0.4.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle gruen). Windows + Android Builds stabil. GitHub Repo public mit Release v0.4.0. Rust-Test-Blocker aufgeloest.
 
-## Naechste Sessions (in Reihenfolge)
+## Naechste Sessions (in Reihenfolge, Business-priorisiert)
 
 1. **Signing Keys + Auto-Update** → `briefings/plan-signing-auto-update.md`
    - Signing Keys generieren, Updater-Plugin konfigurieren, /release Skill anpassen
-   - Damit Tester automatisch Updates kriegen (nur Windows, Android bleibt APK-Sideload)
+   - Grundvoraussetzung fuer vertrauenswuerdige Distribution
 
-2. **Offline whisper.cpp Fallback** → `briefings/plan-offline-whisper.md`
+2. **License-Key-System** → [Briefing noch zu erstellen]
+   - Open Core Modell: Free-Tier (Basis-Diktat) vs. Paid-Tier (EUR 29, alle Features)
+   - Muss vor erstem Paid Release stehen
+   - Details siehe `knowledge/product-strategy.md` Abschnitt Monetarisierung
+
+3. **Offline whisper.cpp Fallback** → `briefings/plan-offline-whisper.md`
    - whisper-rs Integration, Model-Download, GPU-Detection, Fallback-Logik
+   - DAS Differenzierungsmerkmal. Staerkster Kaufgrund.
    - Grosses Feature, 1-2 Sessions. Erstmal nur Windows.
 
-3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
+4. **Onboarding/Polish** → [Briefing noch zu erstellen]
+   - 3-Schritt-Setup: Install -> Hotkey -> Go
+   - Erster Eindruck entscheidet bei Paid-Produkt
+
+5. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
    - Presets statt Slider (Klein/Normal/Gross). Backend-Infrastruktur steht bereits.
    - Halbe Session, kann nebenbei passieren.
 
@@ -25,28 +35,16 @@ Version 0.4.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Wind
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
 - [ ] [windows] GitHub Releases CI/CD Pipeline (erst relevant wenn manueller Release nervt)
 
-## Aenderungen Session 2026-03-08 (Session 3)
+## Aenderungen Session 2026-03-09 (Session 4)
 
-### Windows -- Floating Bar Redesign
-- [x] Idle State: Gruener Kreis → Duenne semi-transparente Pill (80x10px, kaum sichtbar)
-- [x] Expanded State: Hoehe halbiert (36→18), Breite reduziert (220→164)
-- [x] Waveform-Farbe: Rot → Weiches Blau (rgba(147,197,253,0.85))
-- [x] Stop/Cancel-Button hinzugefuegt (rotes Quadrat-Icon, bricht Recording ab)
-- [x] cancel_recording Tauri-Command implementiert
-- [x] Win32 Window-Region angepasst (idle=pill statt circle)
-
-### Android -- Bubble Settings Cleanup
-- [x] Bubble Appearance Slider aus Settings entfernt (buggy)
-- [x] Config-Migration beibehalten (SharedPreferences → config.json)
-- [x] BubbleSettingsMenu.kt geleert
-
-### Infra -- GitHub + Release-Workflow
-- [x] GitHub Repo erstellt (public): https://github.com/andyon2/dikta
-- [x] Release v0.4.0 veroeffentlicht mit Windows-Installer + Android-APK
-- [x] /release Skill erstellt (Version bump + Build + GitHub Release)
-- [x] README neu geschrieben (tester-tauglich, deutsche Umlaute)
-- [x] Social Preview erstellt und hochgeladen
-- [x] Agent/Skill-Audit eingearbeitet (android-platform, ui-dev, build-app, etc.)
+### Testing + Competitor Research
+- [x] Rust-Test-Blocker gefixt: bubble_opacity/bubble_size in 4 Test-Stellen ergaenzt
+- [x] cargo test kompiliert wieder, alle 196 Tests gruen
+- [x] OpenWhispr Wettbewerbsanalyse durchgefuehrt:
+  - Electron-basiert, kein Mobile-Support
+  - MIT-Lizenz, 1640 Stars
+  - Feature-Umfang aehnlich (Transcribe + Cleanup + Hotkey)
+  - **Struktur-Entscheidung ausstehend:** Wo und wie Wettbewerbsanalysen in Projektdokumentation ablegen?
 
 ## Modul-Referenz
 
