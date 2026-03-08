@@ -72,7 +72,9 @@ use tauri::tray::TrayIconEvent;
 use tauri_plugin_global_shortcut::Shortcut;
 
 // Re-export pipeline helpers so `commands/` modules can reach them.
-pub use pipeline::{register_hotkey, resolve_cleanup_provider, resolve_stt_provider};
+pub use pipeline::{resolve_cleanup_provider, resolve_stt_provider};
+#[cfg(desktop)]
+pub use pipeline::register_hotkey;
 
 // ---------------------------------------------------------------------------
 // Frontend-facing data types
