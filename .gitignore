@@ -40,6 +40,9 @@ android/app/build/
 .DS_Store
 Thumbs.db
 
+# Generated assets
+social-preview.png
+
 # Whisper models (large files)
 models/
 *.bin
