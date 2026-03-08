@@ -33,3 +33,26 @@ html, body, #root {
   background: transparent !important;
   background-color: transparent !important;
 }
+
+/*
+ * Android safe-area: the system navigation bar (Back/Home/Recent) can overlap
+ * content at the bottom. env(safe-area-inset-bottom) is populated by Android
+ * WebView when the activity uses windowLayoutInDisplayCutoutMode and
+ * fit-system-windows is not applied by the WebView itself.
+ *
+ * We expose a --safe-bottom CSS variable so components can use it via
+ * padding-bottom: var(--safe-bottom, 0px).
+ */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/*
+ * Mobile save-button footer: guarantee enough clearance from the navigation bar.
+ * The .mobile-safe-bottom class is applied via JS (isMobile check) to the
+ * Settings footer div. pb-6 (24px) alone may not be enough on devices with a
+ * tall gesture-navigation bar (e.g. Xiaomi HyperOS: ~48px).
+ */
+.mobile-safe-bottom {
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+}

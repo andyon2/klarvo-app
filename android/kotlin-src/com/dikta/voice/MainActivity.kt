@@ -1,17 +1,35 @@
 package com.dikta.voice
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
+/**
+ * Entry point for the Dikta app on Android.
+ *
+ * Runs a sequential permission/setup chain on every onResume():
+ *
+ *   1. SYSTEM_ALERT_WINDOW   -- overlay permission (system settings screen)
+ *   2. POST_NOTIFICATIONS    -- foreground-service notification (Android 13+)
+ *   3. RECORD_AUDIO          -- microphone access
+ *   4. Accessibility Service -- keyboard detection + auto-paste
+ *                               shown as AlertDialog with direct settings link
+ *   5. Battery Optimization  -- prevent Doze from killing the overlay service
+ *                               shown as AlertDialog with direct settings link
+ *   6. Start DiktaOverlayService
+ *
+ * Each step returns early after prompting the user. onResume() is called again
+ * when the user returns from a system settings screen, which advances the chain.
+ */
 class MainActivity : TauriActivity() {
 
     companion object {
@@ -67,17 +85,85 @@ class MainActivity : TauriActivity() {
             return
         }
 
-        // Step 4 (optional): Hint about accessibility service for auto-paste.
-        // Not blocking -- the bubble works without it (clipboard fallback).
+        // Step 4: Accessibility Service -- required for system-wide keyboard detection
+        // and auto-paste into focused text fields.
+        // Not strictly blocking: the bubble still works without it (clipboard fallback +
+        // reflection-based keyboard detection), but the experience is much better with it.
         if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(
-                this,
-                "Tip: Enable Dikta in Accessibility Settings for auto-paste into text fields.",
-                Toast.LENGTH_LONG
-            ).show()
+            AlertDialog.Builder(this)
+                .setTitle("Enable Accessibility Access")
+                .setMessage(
+                    "Dikta uses the Accessibility Service to detect when the keyboard " +
+                    "opens in any app so the voice bubble appears automatically.\n\n" +
+                    "In the next screen, find \"Dikta\" under Installed Services and " +
+                    "switch it on."
+                )
+                .setPositiveButton("Open Accessibility Settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                .setNegativeButton("Skip for now") { _, _ ->
+                    // Continue without accessibility; reflection fallback will handle it.
+                    checkBatteryOptimization()
+                }
+                .setCancelable(false)
+                .show()
+            return
         }
 
-        // Start the overlay service -- bubble is always visible.
+        checkBatteryOptimization()
+    }
+
+    /**
+     * Step 5: Battery optimization.
+     *
+     * Android's Doze mode can suspend network access and kill background services.
+     * Asking for unrestricted battery usage ensures the overlay service and
+     * Turso sync continue to work reliably even when the screen is off.
+     *
+     * We use ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS when available (API 23+),
+     * which shows a system dialog. As a fallback (e.g. some OEM ROMs that block the
+     * direct request) we fall back to opening the per-app battery settings page.
+     */
+    private fun checkBatteryOptimization() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            !pm.isIgnoringBatteryOptimizations(packageName)
+        ) {
+            AlertDialog.Builder(this)
+                .setTitle("Unrestricted Battery Usage")
+                .setMessage(
+                    "For reliable keyboard detection and background sync, set Dikta's " +
+                    "battery usage to \"Unrestricted\" (or \"No restrictions\").\n\n" +
+                    "This prevents Android from putting the Dikta bubble to sleep."
+                )
+                .setPositiveButton("Open Battery Settings") { _, _ ->
+                    // Try the direct ignore-battery-optimizations request first.
+                    // Some OEMs (Xiaomi HyperOS, Samsung) may redirect this to their own
+                    // power-management screen -- that's fine, the effect is the same.
+                    val directIntent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
+                    if (directIntent.resolveActivity(packageManager) != null) {
+                        startActivity(directIntent)
+                    } else {
+                        // Fallback: open the per-app details page in system settings.
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    }
+                }
+                .setNegativeButton("Skip") { _, _ ->
+                    startOverlayService()
+                }
+                .setCancelable(false)
+                .show()
+            return
+        }
+
         startOverlayService()
     }
 
@@ -95,9 +181,11 @@ class MainActivity : TauriActivity() {
             }
             REQUEST_RECORD_AUDIO -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // Re-run the permission chain so we also check accessibility before starting.
+                    // Re-run the permission chain to proceed to accessibility step.
                     checkPermissionsAndStart()
                 }
+                // If denied: do nothing. User can re-open the app to try again.
+                // Without RECORD_AUDIO the dictation feature simply won't work.
             }
         }
     }

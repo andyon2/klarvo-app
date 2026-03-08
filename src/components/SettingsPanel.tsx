@@ -8,7 +8,7 @@ import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon } from "./icons";
-import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS } from "./ui";
+import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M, SECTION_TITLE_CLS_M } from "./ui";
 
 // --- Shortcut Recorder -------------------------------------------------------
 
@@ -92,6 +92,44 @@ function SortableProviderItem({ id, label, active }: { id: string; label: string
   );
 }
 
+/** Mobile-only row with Up/Down buttons instead of drag handle. */
+function MobileProviderItem({
+  label, active, onUp, onDown, isFirst, isLast,
+}: {
+  label: string; active: boolean; onUp: () => void; onDown: () => void; isFirst: boolean; isLast: boolean;
+}) {
+  return (
+    <div className={[
+      "flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm",
+      "bg-[#111113] border",
+      active ? "border-emerald-500/30 text-zinc-200" : "border-zinc-800/40 text-zinc-500",
+    ].join(" ")}>
+      <span className="flex-1">{label}</span>
+      <span className={["w-2 h-2 rounded-full flex-shrink-0", active ? "bg-emerald-400" : "bg-zinc-700"].join(" ")} />
+      <button
+        onClick={onUp}
+        disabled={isFirst}
+        aria-label="Move up"
+        className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/50 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+      >
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M18 15l-6-6-6 6" />
+        </svg>
+      </button>
+      <button
+        onClick={onDown}
+        disabled={isLast}
+        aria-label="Move down"
+        className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/50 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+      >
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 function ProviderPriorityList({
   items, onChange, keyStatus, labels,
 }: {
@@ -109,6 +147,31 @@ function ProviderPriorityList({
       const newIdx = items.indexOf(over.id as string);
       onChange(arrayMove(items, oldIdx, newIdx));
     }
+  }
+
+  function moveItem(index: number, direction: -1 | 1) {
+    const newIdx = index + direction;
+    if (newIdx < 0 || newIdx >= items.length) return;
+    onChange(arrayMove(items, index, newIdx));
+  }
+
+  // On mobile, show Up/Down buttons instead of drag handles.
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        {items.map((id, i) => (
+          <MobileProviderItem
+            key={id}
+            label={labels[id] ?? id}
+            active={!!keyStatus[id]}
+            onUp={() => moveItem(i, -1)}
+            onDown={() => moveItem(i, 1)}
+            isFirst={i === 0}
+            isLast={i === items.length - 1}
+          />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -397,12 +460,12 @@ export function SettingsPanel({
 
         {/* --- Voice & Recording --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>Voice & Recording</span>
+          <span className={SECTION_TITLE_CLS_M}>Voice & Recording</span>
 
           {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
           {isDesktop && (
             <div className="flex items-center justify-between gap-3">
-              <span className={LABEL_CLS}>Microphone</span>
+              <span className={LABEL_CLS_M}>Microphone</span>
               <select
                 value={localAudioDevice ?? ""}
                 onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
@@ -415,12 +478,12 @@ export function SettingsPanel({
           )}
 
           {/* Language */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={LABEL_CLS}>Language</span>
+          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+            <span className={LABEL_CLS_M}>Language</span>
             <select
               value={localLang}
               onChange={(e) => handleLangChange(e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
             >
               <option value="">Auto (DE + EN)</option>
               <option value="de">Deutsch</option>
@@ -429,12 +492,12 @@ export function SettingsPanel({
           </div>
 
           {/* Output language (translation) */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={LABEL_CLS}>Translate to</span>
+          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+            <span className={LABEL_CLS_M}>Translate to</span>
             <select
               value={localOutputLanguage}
               onChange={(e) => handleOutputLanguageChange(e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
             >
               {OUTPUT_LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code}>{l.label}</option>
@@ -443,8 +506,8 @@ export function SettingsPanel({
           </div>
 
           {/* Cleanup style */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={LABEL_CLS}>Cleanup Style</span>
+          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+            <span className={LABEL_CLS_M}>Cleanup Style</span>
             <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
               {STYLE_OPTIONS.map((opt) => (
                 <button
@@ -452,7 +515,7 @@ export function SettingsPanel({
                   onClick={() => handleStyleChange(opt.value)}
                   title={opt.description}
                   className={[
-                    "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
+                    isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
                     localStyle === opt.value
                       ? "bg-emerald-500/15 text-emerald-400"
                       : "text-zinc-500 hover:text-zinc-300",
@@ -465,12 +528,12 @@ export function SettingsPanel({
           </div>
 
           {/* STT Model */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={LABEL_CLS}>STT Model</span>
+          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+            <span className={LABEL_CLS_M}>STT Model</span>
             <select
               value={localSttModel}
               onChange={(e) => setLocalSttModel(e.target.value)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[200px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : "max-w-[200px]"}`}
             >
               <option value="whisper-large-v3-turbo">Large V3 Turbo ($0.04/h)</option>
               <option value="whisper-large-v3">Large V3 ($0.111/h)</option>
@@ -517,22 +580,22 @@ export function SettingsPanel({
 
         {/* --- Custom Prompt --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>Custom Prompt</span>
+          <span className={SECTION_TITLE_CLS_M}>Custom Prompt</span>
           <textarea
             value={localCustomPrompt}
             onChange={(e) => setLocalCustomPrompt(e.target.value)}
             placeholder="Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'"
             rows={3}
-            className={`${INPUT_CLS} resize-none`}
+            className={`${INPUT_CLS_M} resize-none`}
           />
-          <p className="text-[11px] text-zinc-500">Appended to the system prompt during cleanup.</p>
+          <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during cleanup.</p>
         </div>
 
         {/* --- General -- desktop only features --- */}
         {isDesktop && <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>General</span>
+          <span className={SECTION_TITLE_CLS_M}>General</span>
           <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <span className={LABEL_CLS}>Launch on startup</span>
+            <span className={LABEL_CLS_M}>Launch on startup</span>
             <button
               type="button"
               role="switch"
@@ -554,8 +617,8 @@ export function SettingsPanel({
 
           <label className="flex items-center justify-between gap-3 cursor-pointer">
             <div className="flex flex-col gap-0.5">
-              <span className={LABEL_CLS}>Whisper mode</span>
-              <span className="text-[10px] text-zinc-500">Amplifies mic input for quiet dictation</span>
+              <span className={LABEL_CLS_M}>Whisper mode</span>
+              <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>Amplifies mic input for quiet dictation</span>
             </div>
             <button
               type="button"
@@ -577,52 +640,52 @@ export function SettingsPanel({
           </label>
 
           <div className="flex flex-col gap-0.5">
-            <span className={LABEL_CLS}>Command mode</span>
-            <span className="text-[10px] text-zinc-500">Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+            <span className={LABEL_CLS_M}>Command mode</span>
+            <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
           </div>
         </div>}
 
         {/* --- Webhook -- desktop only --- */}
         {isDesktop && (
           <div className="flex flex-col gap-3">
-            <span className={SECTION_TITLE_CLS}>Webhook</span>
+            <span className={SECTION_TITLE_CLS_M}>Webhook</span>
             <input
               type="url"
               placeholder="https://example.com/webhook"
               value={localWebhookUrl}
               onChange={(e) => setLocalWebhookUrl(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
-            <p className="text-[11px] text-zinc-500">HTTP POST after each dictation. Leave empty to disable.</p>
+            <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>HTTP POST after each dictation. Leave empty to disable.</p>
           </div>
         )}
 
         {/* --- Sync --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>Cross-Device Sync</span>
+          <span className={SECTION_TITLE_CLS_M}>Cross-Device Sync</span>
           <div className="flex flex-col gap-1.5">
-            <span className={LABEL_CLS}>Turso URL</span>
+            <span className={LABEL_CLS_M}>Turso URL</span>
             <input
               type="text"
               placeholder="libsql://your-db.turso.io"
               value={localTursoUrl}
               onChange={(e) => setLocalTursoUrl(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className={LABEL_CLS}>Turso Token</span>
+            <span className={LABEL_CLS_M}>Turso Token</span>
             <input
               type="password"
               autoComplete="off"
               placeholder={loadedSettings?.tursoTokenMasked || "Auth token"}
               value={tursoToken}
               onChange={(e) => setTursoToken(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
           {loadedSettings?.deviceId && (
-            <p className="text-[11px] text-zinc-500">Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
+            <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
           )}
           <button
             onClick={async () => {
@@ -638,21 +701,21 @@ export function SettingsPanel({
               }
             }}
             disabled={syncing || !localTursoUrl}
-            className="px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors"
+            className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}`}
           >
             {syncing ? "Syncing..." : "Sync Now"}
           </button>
-          {syncMsg && <p className="text-[11px] text-zinc-400">{syncMsg}</p>}
-          <p className="text-[11px] text-zinc-500">Sync dictation history across devices via Turso. Leave empty to disable.</p>
+          {syncMsg && <p className={isMobile ? "text-xs text-zinc-400" : "text-[11px] text-zinc-400"}>{syncMsg}</p>}
+          <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
         </div>
 
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>API Keys</span>
+          <span className={SECTION_TITLE_CLS_M}>API Keys</span>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className={LABEL_CLS}>Groq</span>
+              <span className={LABEL_CLS_M}>Groq</span>
               <StatusDot active={groqOk} />
             </div>
             <input
@@ -662,13 +725,13 @@ export function SettingsPanel({
               placeholder={groqOk ? loadedSettings!.groqApiKeyMasked : "gsk_..."}
               value={groqKey}
               onChange={(e) => setGroqKey(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className={LABEL_CLS}>DeepSeek</span>
+              <span className={LABEL_CLS_M}>DeepSeek</span>
               <StatusDot active={deepseekOk} />
             </div>
             <input
@@ -678,13 +741,13 @@ export function SettingsPanel({
               placeholder={deepseekOk ? loadedSettings!.deepseekApiKeyMasked : "sk-..."}
               value={deepseekKey}
               onChange={(e) => setDeepseekKey(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className={LABEL_CLS}>OpenAI</span>
+              <span className={LABEL_CLS_M}>OpenAI</span>
               <StatusDot active={openaiOk} />
             </div>
             <input
@@ -694,15 +757,15 @@ export function SettingsPanel({
               placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
               value={openaiKey}
               onChange={(e) => setOpenaiKey(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className={LABEL_CLS}>Anthropic</span>
+              <span className={LABEL_CLS_M}>Anthropic</span>
               <StatusDot active={anthropicOk} />
-              <span className="text-[10px] text-zinc-500">(LLM only)</span>
+              <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>(LLM only)</span>
             </div>
             <input
               type="password"
@@ -711,18 +774,20 @@ export function SettingsPanel({
               placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
               value={anthropicKey}
               onChange={(e) => setAnthropicKey(e.target.value)}
-              className={INPUT_CLS}
+              className={INPUT_CLS_M}
             />
           </div>
         </div>
 
         {/* --- Provider Priority --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>Provider Priority</span>
-          <p className="text-[10px] text-zinc-500">Drag to reorder. First provider with a configured key is used. If it fails, the next one is tried.</p>
+          <span className={SECTION_TITLE_CLS_M}>Provider Priority</span>
+          <p className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>
+            {isMobile ? "Use arrows to reorder." : "Drag to reorder."} First provider with a configured key is used. If it fails, the next one is tried.
+          </p>
 
           <div className="flex flex-col gap-2">
-            <span className={LABEL_CLS}>Speech-to-Text</span>
+            <span className={LABEL_CLS_M}>Speech-to-Text</span>
             <ProviderPriorityList
               items={localSttPriority}
               onChange={setLocalSttPriority}
@@ -732,7 +797,7 @@ export function SettingsPanel({
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className={LABEL_CLS}>Text Cleanup (LLM)</span>
+            <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
             <ProviderPriorityList
               items={localLlmPriority}
               onChange={setLocalLlmPriority}
@@ -744,7 +809,7 @@ export function SettingsPanel({
 
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>Dictionary</span>
+          <span className={SECTION_TITLE_CLS_M}>Dictionary</span>
 
           <div className="flex gap-2">
             <input
@@ -753,12 +818,12 @@ export function SettingsPanel({
               value={newTerm}
               onChange={(e) => setNewTerm(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddTerm()}
-              className={`flex-1 ${INPUT_CLS}`}
+              className={`flex-1 ${INPUT_CLS_M}`}
             />
             <button
               onClick={handleAddTerm}
               disabled={!newTerm.trim()}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
             >
               Add
             </button>
@@ -773,8 +838,8 @@ export function SettingsPanel({
           )}
         </div>
 
-        {/* --- Updates --- */}
-        <UpdateChecker />
+        {/* --- Updates -- desktop only (Tauri updater not available on sideloaded APKs) --- */}
+        {isDesktop && <UpdateChecker />}
 
         {/* --- App Profiles --- */}
         <div className="flex flex-col gap-3">
@@ -877,8 +942,11 @@ export function SettingsPanel({
 
       </div>
 
-      {/* Save button -- sticky footer, always visible */}
-      <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "pb-6" : ""}`}>
+      {/* Save button -- sticky footer, always visible.
+          On Android the navigation bar (Back/Home/Recent) overlaps the bottom of the WebView.
+          mobile-safe-bottom uses max(24px, env(safe-area-inset-bottom)) for correct clearance
+          even on devices with tall gesture bars (e.g. Xiaomi HyperOS ~48px). */}
+      <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
         <button
           onClick={handleSave}
           disabled={saving}

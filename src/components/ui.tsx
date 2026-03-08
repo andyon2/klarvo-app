@@ -7,12 +7,17 @@ export function StatusDot({ active }: { active: boolean }) {
 }
 
 export function DictionaryTag({ term, onRemove }: { term: string; onRemove: (t: string) => void }) {
+  // Import isMobile here via dynamic check to keep ui.tsx dependency-free of platform.ts at module level.
+  const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
   return (
     <span className="inline-flex items-center gap-1 bg-[#111113] text-zinc-300 pl-2.5 pr-1.5 py-1 rounded-full text-xs border border-zinc-800/60">
       {term}
       <button
         onClick={() => onRemove(term)}
-        className="text-zinc-500 hover:text-red-400 rounded-full p-0.5 transition-colors"
+        className={[
+          "text-zinc-500 hover:text-red-400 rounded-full transition-colors",
+          mobile ? "p-2 min-w-[32px] min-h-[32px] flex items-center justify-center" : "p-0.5",
+        ].join(" ")}
       >
         <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
           <path d="M18 6 6 18M6 6l12 12" />
@@ -119,3 +124,11 @@ export function StatCard({ label, value, sub }: { label: string; value: string; 
 export const INPUT_CLS = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
 export const LABEL_CLS = "text-xs text-zinc-300";
 export const SECTION_TITLE_CLS = "text-[10px] font-semibold text-zinc-400 uppercase tracking-widest";
+
+// Mobile-aware variants -- one size larger on touch screens.
+const _mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+export const INPUT_CLS_M = _mobile
+  ? "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
+  : INPUT_CLS;
+export const LABEL_CLS_M = _mobile ? "text-sm text-zinc-300" : LABEL_CLS;
+export const SECTION_TITLE_CLS_M = _mobile ? "text-xs font-semibold text-zinc-400 uppercase tracking-widest" : SECTION_TITLE_CLS;

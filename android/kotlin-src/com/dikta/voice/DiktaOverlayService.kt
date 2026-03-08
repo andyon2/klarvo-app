@@ -15,10 +15,20 @@ import kotlin.math.abs
 /**
  * Foreground Service that manages the floating bubble overlay.
  *
+ * Keyboard detection -- two-tier approach:
+ *   PRIMARY:  DiktaAccessibilityService calls onKeyboardVisibilityChanged() whenever
+ *             it detects a TYPE_INPUT_METHOD window appearing/disappearing system-wide.
+ *             This is the most reliable mechanism and works in all apps.
+ *   FALLBACK: If the accessibility service is not active, we fall back to polling
+ *             InputMethodManager.getInputMethodWindowVisibleHeight() via reflection.
+ *             This works within the same process but may miss events in some ROMs.
+ *
+ * Bubble visibility modes (stored in SharedPreferences):
+ *   KEYBOARD_ONLY (default): bubble appears only when the soft keyboard is visible.
+ *   ALWAYS_VISIBLE: bubble is always on screen, regardless of keyboard state.
+ *
+ * Other responsibilities:
  * - Creates a WindowManager overlay with TYPE_APPLICATION_OVERLAY
- * - Detects keyboard visibility via InputMethodManager.getInputMethodWindowVisibleHeight()
- *   (reflection). Works system-wide; no AccessibilityService needed.
- * - Shows/hides bubble when keyboard opens/closes
  * - Handles touch events: drag vs. tap (threshold: 10dp), long-press opens settings menu
  * - Delegates audio capture to [DiktaAudioRecorder]
  * - Delegates size/opacity menu to [BubbleSettingsMenu]
@@ -39,6 +49,9 @@ class DiktaOverlayService : Service() {
         private const val PREF_BUBBLE_SIZE = "bubble_size"
         private const val PREF_BUBBLE_OPACITY = "bubble_opacity"
         private const val DEFAULT_BUBBLE_OPACITY = 100
+
+        /** SharedPreference key: if true the bubble is always visible, not just when keyboard is open. */
+        const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
 
         /** BroadcastReceiver action: tap on notification toggles bubble visibility. */
         const val ACTION_TOGGLE_BUBBLE = "com.dikta.voice.TOGGLE_BUBBLE"
@@ -73,6 +86,18 @@ class DiktaOverlayService : Service() {
 
     // Keyboard detection
     private var keyboardVisible = false
+
+    /**
+     * True when the bubble should be shown regardless of keyboard state.
+     * Loaded from SharedPreferences; defaults to false (keyboard-only mode).
+     */
+    private var alwaysVisible = false
+
+    /**
+     * True once the AccessibilityService has called onKeyboardVisibilityChanged() at
+     * least once. While this is false we trust the reflection-based fallback instead.
+     */
+    private var accessibilityServiceActive = false
 
     // Audio
     private var audioRecorder: DiktaAudioRecorder? = null
@@ -144,6 +169,9 @@ class DiktaOverlayService : Service() {
         }
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        alwaysVisible = prefs.getBoolean(PREF_ALWAYS_VISIBLE, false)
 
         setupBubble()
         setupKeyboardDetector()
@@ -243,36 +271,102 @@ class DiktaOverlayService : Service() {
         }
     }
 
-    // --- Keyboard detection via InputMethodManager ---
+    // --- Keyboard detection ---
 
     /**
-     * Starts polling InputMethodManager.getInputMethodWindowVisibleHeight() via reflection.
-     * This internal Android API returns the keyboard height in pixels (0 = hidden).
-     * Works system-wide from a Service context, no AccessibilityService needed.
+     * Starts the keyboard detector.
+     *
+     * If the AccessibilityService is active it will call onKeyboardVisibilityChanged()
+     * directly. We also keep the reflection-based poll running as a fallback for cases
+     * where the service has not been granted yet, but the poll is skipped whenever we
+     * know the AccessibilityService is handling things (accessibilityServiceActive = true).
      */
     private fun setupKeyboardDetector() {
-        handler.post(keyboardCheckRunnable)
+        if (alwaysVisible) {
+            // In always-visible mode we show the bubble immediately and never hide it
+            // based on keyboard state, so no detector is needed.
+            showBubble()
+        } else {
+            handler.post(keyboardCheckRunnable)
+        }
     }
 
+    /**
+     * Called by [DiktaAccessibilityService] whenever a TYPE_INPUT_METHOD window
+     * appears or disappears in the system window list.
+     *
+     * This is the PRIMARY keyboard detection path. Once this has been called once,
+     * the reflection-based fallback becomes a no-op.
+     *
+     * Safe to call from any thread -- posts to the main handler.
+     */
+    fun onKeyboardVisibilityChanged(visible: Boolean) {
+        handler.post {
+            accessibilityServiceActive = true
+            applyKeyboardState(visible)
+        }
+    }
+
+    /**
+     * Applies a keyboard-visibility change to the bubble:
+     *   - keyboard opened  → show bubble (unless alwaysVisible already keeps it up)
+     *   - keyboard closed  → hide bubble, but only when IDLE (never interrupt recording)
+     */
+    private fun applyKeyboardState(isOpen: Boolean) {
+        if (alwaysVisible) return   // always-visible mode ignores keyboard state
+        if (isOpen == keyboardVisible) return
+
+        keyboardVisible = isOpen
+        if (isOpen) {
+            showBubble()
+        } else if (currentState == RecordingState.IDLE) {
+            hideBubble()
+        }
+    }
+
+    /**
+     * Reflection-based fallback: polls InputMethodManager every KEYBOARD_CHECK_INTERVAL ms.
+     * Active only when [accessibilityServiceActive] is false and [alwaysVisible] is false.
+     */
     private fun checkKeyboardVisibility() {
+        if (accessibilityServiceActive) return  // primary mechanism is running, skip fallback
+
         try {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             val method = imm.javaClass.getMethod("getInputMethodWindowVisibleHeight")
             val height = method.invoke(imm) as Int
-            val isKeyboardOpen = height > 0
-
-            if (isKeyboardOpen != keyboardVisible) {
-                keyboardVisible = isKeyboardOpen
-                if (isKeyboardOpen) {
-                    showBubble()
-                } else if (currentState == RecordingState.IDLE) {
-                    hideBubble()
-                }
-            }
+            applyKeyboardState(height > 0)
         } catch (e: Exception) {
             // Reflection failed on this ROM variant -- bubble stays in current state.
             // Not logged at warn level because this can fire hundreds of times per session.
             Log.d(TAG, "getInputMethodWindowVisibleHeight reflection failed", e)
+        }
+    }
+
+    /**
+     * Exposes the current always-visible preference so external callers (e.g. a
+     * future settings screen) can read it without accessing SharedPreferences directly.
+     */
+    fun isAlwaysVisible(): Boolean = alwaysVisible
+
+    /**
+     * Toggles the always-visible mode and persists the preference.
+     * When switching to always-visible, the bubble is shown immediately.
+     * When switching to keyboard-only, the bubble is hidden unless the keyboard is open.
+     */
+    fun setAlwaysVisible(enabled: Boolean) {
+        alwaysVisible = enabled
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(PREF_ALWAYS_VISIBLE, enabled)
+            .apply()
+
+        if (enabled) {
+            showBubble()
+        } else {
+            // Respect the current keyboard state: hide if keyboard is not visible.
+            if (!keyboardVisible && currentState == RecordingState.IDLE) {
+                hideBubble()
+            }
         }
     }
 
@@ -322,6 +416,7 @@ class DiktaOverlayService : Service() {
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedSizeDp = prefs.getInt(PREF_BUBBLE_SIZE, DEFAULT_BUBBLE_SIZE_DP)
+        // Note: alwaysVisible is already loaded in onCreate() before setupBubble() is called.
         bubbleOpacity = prefs.getInt(PREF_BUBBLE_OPACITY, DEFAULT_BUBBLE_OPACITY)
 
         bubbleView.setBubbleSize(savedSizeDp)

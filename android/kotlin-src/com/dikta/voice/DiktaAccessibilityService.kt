@@ -4,22 +4,27 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 /**
- * Accessibility service that detects when the soft keyboard is visible.
+ * Accessibility service that detects when the soft keyboard is visible
+ * and notifies DiktaOverlayService to show/hide the floating bubble.
  *
- * Used to:
- *   1. Show/hide the floating bubble when the keyboard appears/disappears.
- *   2. Paste transcribed text directly into the focused field after dictation.
+ * Detection strategy:
+ *   Listen for TYPE_WINDOWS_CHANGED events, then walk the window list looking
+ *   for a window of type AccessibilityWindowInfo.TYPE_INPUT_METHOD.
+ *   This is far more reliable than reflection-based IMM polling and works
+ *   system-wide across all apps (not just within our own process).
  *
- * Detection strategy: Check the system window list for a window of type
- * TYPE_INPUT_METHOD. This is far more reliable than traversing the accessibility
- * tree looking for focused editable nodes (which varies wildly across apps).
+ * Requirements:
+ *   - FLAG_RETRIEVE_INTERACTIVE_WINDOWS: needed to access the windows list.
+ *   - packageNames = null: receive events from ALL apps.
+ *   - The user enables this service once in Android Settings > Accessibility.
+ *     MainActivity guides the user there if the service is not yet active.
  *
- * Requires FLAG_RETRIEVE_INTERACTIVE_WINDOWS to access the windows list.
- *
- * The user must enable this service once in Android Settings > Accessibility.
- * MainActivity guides the user there if it is not yet enabled.
+ * Fallback:
+ *   If this service is not active, DiktaOverlayService falls back to
+ *   InputMethodManager.getInputMethodWindowVisibleHeight() reflection polling.
  */
 class DiktaAccessibilityService : AccessibilityService() {
 
@@ -31,25 +36,51 @@ class DiktaAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+
         // Reconfigure the service to monitor ALL apps (not just our own package).
         val info = serviceInfo ?: AccessibilityServiceInfo()
-        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_VIEW_FOCUSED or
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        info.eventTypes =
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+            AccessibilityEvent.TYPE_VIEW_FOCUSED or
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.flags = info.flags or
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-        // Explicitly null = monitor events from ALL packages, not just our own.
+        // null = monitor events from ALL packages, not just our own.
         info.packageNames = null
         info.notificationTimeout = 100
         serviceInfo = info
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Bubble visibility is no longer managed by this service (always visible).
-        // This handler is kept alive so the service stays connected and
-        // pasteIntoFocusedField() can be called after dictation.
+        if (event == null) return
+
+        // Only re-check keyboard state on window-change events.
+        // Checking on every event (e.g. TYPE_VIEW_FOCUSED spam) would be wasteful.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ) {
+            notifyKeyboardState()
+        }
+    }
+
+    /**
+     * Inspects the current window list for a window of type TYPE_INPUT_METHOD.
+     * Calls DiktaOverlayService.onKeyboardVisibilityChanged() with the result.
+     *
+     * Must be called from the accessibility thread (which onAccessibilityEvent uses);
+     * DiktaOverlayService.onKeyboardVisibilityChanged() posts to the main handler
+     * internally, so cross-thread calls are safe.
+     */
+    private fun notifyKeyboardState() {
+        val imeVisible = try {
+            windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        } catch (e: Exception) {
+            // windows list unavailable -- ignore; fallback in DiktaOverlayService handles it.
+            return
+        }
+        DiktaOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
     }
 
     /**
