@@ -52,6 +52,7 @@ dikta/
       commit-progress/SKILL.md -- Git-Commit mit konventioneller Message
       debug-error/SKILL.md     -- Fehler analysieren + Fix vorschlagen
       sync-prompts/SKILL.md    -- LLM-Prompts in Rust/Kotlin vergleichen
+      release/SKILL.md         -- Version bump + Build + GitHub Release
   scripts/
     android-platform           -- Starter fuer direkte Android-Sessions
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
@@ -90,6 +91,7 @@ Zentrale Dateien:
 | /commit-progress | Git-Commit mit konventioneller Message | fork (haiku) |
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
+| /release | Version bump + Build + GitHub Release erstellen | fork (haiku) |
 
 ## Regeln
 

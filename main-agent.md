@@ -73,6 +73,7 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
 | /commit-progress | Git-Commit mit konventioneller Message | Nach abgeschlossenen Teilaufgaben |
 | /debug-error | Analysiert Fehler, findet Ursache | Bei Build-Fehlern, Runtime-Crashes, Test-Failures |
 | /sync-prompts | Vergleicht LLM-Prompts Rust vs. Kotlin | Nach Prompt-Aenderungen, vor Android-Releases |
+| /release | Version bump + Build + GitHub Release | Wenn ein Release-Punkt erreicht ist |
 
 ### Selbst-Erweiterung
 Wenn Andy etwas verlangt, das kein Skill und kein Agent abdeckt, und es nach einer wiederholbaren Aufgabe aussieht:
