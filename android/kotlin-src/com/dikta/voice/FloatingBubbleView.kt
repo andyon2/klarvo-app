@@ -16,6 +16,10 @@ import androidx.core.content.ContextCompat
  *   IDLE       -- white circle + Dikta app launcher icon
  *   RECORDING  -- red circle + animated waveform bars (3 bars)
  *   PROCESSING -- amber circle + rotating arc spinner
+ *
+ * Size:
+ *   Call setBubbleSize(dp) to resize the bubble at runtime.
+ *   The canvas-relative drawing code uses width/height, so everything scales automatically.
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
@@ -35,6 +39,9 @@ class FloatingBubbleView(context: Context) : View(context) {
             field = value.coerceIn(0f, 1f)
             invalidate()
         }
+
+    /** Current bubble size in dp. Changed via setBubbleSize(). */
+    private var bubbleSizeDp: Int = 56
 
     // --- Colours ---
     private val colorIdleBackground = Color.parseColor("#F5F5F5")  // light grey/white
@@ -104,8 +111,22 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * Changes the bubble size at runtime.
+     * Caller (DiktaOverlayService) is responsible for updating WindowManager LayoutParams
+     * and calling windowManager.updateViewLayout() after this.
+     */
+    fun setBubbleSize(sizeDp: Int) {
+        bubbleSizeDp = sizeDp
+        // requestLayout triggers a new onMeasure pass, which returns the new size.
+        requestLayout()
+        invalidate()
+    }
+
+    fun getBubbleSizeDp(): Int = bubbleSizeDp
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val size = (56 * resources.displayMetrics.density).toInt()
+        val size = (bubbleSizeDp * resources.displayMetrics.density).toInt()
         setMeasuredDimension(size, size)
     }
 

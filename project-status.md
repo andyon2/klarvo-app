@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Phase 5 in Arbeit. Dikta ist ein voll funktionsfaehiges Voice-Dictation-Tool mit Multi-Provider-Support, History, Stats, Voice Notes, Text Snippets, App-Context-Erkennung, Multi-Format-Output, Webhook-Export, System-Tray und Auto-Update-Infra. 178 Rust-Tests, Windows Release-Build laeuft.
+Version 0.4.0, Phase 5 abgeschlossen. Android-Plattform laeuft (Floating Bubble + Turso Sync). Dikta ist ein voll funktionsfaehiges Voice-Dictation-Tool mit Multi-Provider-Support, History, Stats, Voice Notes, Text Snippets, App-Context-Erkennung, Multi-Format-Output, Webhook-Export, System-Tray, Auto-Update-Infra und Cross-Device Sync. 196 Rust-Tests, Windows Release-Build laeuft, Android APK auf Xiaomi (HyperOS v2) getestet.
 
 ## Abgeschlossene Aufgaben
 
@@ -53,6 +53,11 @@ Phase 5 in Arbeit. Dikta ist ein voll funktionsfaehiges Voice-Dictation-Tool mit
 - [x] System-Tray Integration (Minimize to Tray, Tray-Menue mit Settings/Quit)
 - [x] Auto-Update Infra (tauri-plugin-updater, GitHub Releases Endpoint, Signing)
 - [x] Floating Bar Window (Basis-Fenster am unteren Bildschirmrand)
+- [x] Android-Plattform: Erster APK-Build, Tauri v2 Mobile-Support
+- [x] Android Floating Bubble (Overlay-Service, Keyboard-Erkennung, Diktat-Flow)
+- [x] Android Kotlin-Services (DiktaOverlayService, FloatingBubbleView, DiktaApi, MainActivity)
+- [x] Cross-Device History Sync via Turso (Rust + Kotlin, Push/Pull, UUID-basiert)
+- [x] Kotlin-Dateien persistent in android/kotlin-src/ (ueberleben tauri android init)
 
 ## Module (Rust)
 ```
@@ -65,11 +70,21 @@ src-tauri/src/
   config/     -- JSON Settings + App Profiles + Text Snippets + Webhook
   dictionary/ -- Custom-Woerterbuch (JSON)
   history/    -- SQLite History + Voice Notes + Usage Stats + Filler Analysis
+  sync/       -- Cross-Device Sync via Turso HTTP API (Push/Pull)
+```
+
+## Android-Architektur
+```
+android/kotlin-src/
+  DiktaOverlayService.kt      -- Foreground Service + Overlay + Keyboard-Erkennung + Turso Sync
+  FloatingBubbleView.kt        -- Custom View: Idle/Recording/Processing States
+  DiktaApi.kt                  -- STT + Cleanup + History-DB + Turso Push
+  DiktaAccessibilityService.kt -- Optional Auto-Paste (ACTION_PASTE)
+  MainActivity.kt              -- Permission-Flow: SYSTEM_ALERT_WINDOW -> RECORD_AUDIO -> Service
 ```
 
 ## Offene Aufgaben (naechste Phasen)
 - [ ] Lokaler whisper.cpp Fallback (offline STT)
-- [ ] Android IME (Tauri v2 Mobile + Kotlin InputMethodService)
 - [ ] VAD -- Voice Activity Detection (Auto-Start/Stopp)
 - [ ] Signing Keys generieren (Tauri Updater braucht Keypair)
 - [ ] GitHub Releases CI/CD Pipeline fuer Auto-Update
@@ -87,3 +102,8 @@ src-tauri/src/
 - [2026-03-07]: Webhook: fire-and-forget POST, blockiert nie die Pipeline.
 - [2026-03-07]: Auto-Update: tauri-plugin-updater mit GitHub Releases Endpoint. Keys noch nicht generiert.
 - [2026-03-07]: History-Suche getrennt nach Text und App-Name (AND-Verknuepfung).
+- [2026-03-08]: Android: Floating Bubble statt IME als primaerer Ansatz (Overlay-Service, kein System-Keyboard noetig).
+- [2026-03-08]: Android: Kotlin-Code direkt statt Tauri-Bridge fuer STT/LLM (Option B -- weniger Latenz, einfacher).
+- [2026-03-08]: Cross-Device Sync: Turso HTTP API, lokale SQLite bleibt, UUID als Primary Key remote.
+- [2026-03-08]: Kotlin-Quellen in android/kotlin-src/ persistent, werden bei Build nach gen/android/ kopiert.
+- [2026-03-08]: DB-Lock nie ueber async await halten (rusqlite Connection nicht Send).

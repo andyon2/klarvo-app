@@ -103,7 +103,8 @@ struct ApiError {
 struct ResponseBody {
     #[serde(rename = "type")]
     _type: String,
-    result: QueryResult,
+    #[serde(default)]
+    result: Option<QueryResult>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -195,7 +196,9 @@ async fn execute_pipeline(
         return Err(SyncError::TursoApi(format!("HTTP {status}: {text}")));
     }
 
-    let pipeline_resp: PipelineResponse = resp.json().await?;
+    let text = resp.text().await?;
+    let pipeline_resp: PipelineResponse = serde_json::from_str(&text)
+        .map_err(|e| SyncError::TursoApi(format!("Failed to parse response: {e}\nBody: {text}")))?;
     Ok(pipeline_resp.results)
 }
 
@@ -223,7 +226,9 @@ async fn execute_sql(
     .await?;
 
     match results.into_iter().next() {
-        Some(PipelineResult::Ok { response }) => Ok(response.result),
+        Some(PipelineResult::Ok { response }) => response
+            .result
+            .ok_or_else(|| SyncError::TursoApi("Response has no result field".to_string())),
         Some(PipelineResult::Error { error }) => Err(SyncError::TursoApi(error.message)),
         None => Err(SyncError::TursoApi("Empty response".to_string())),
     }
@@ -384,6 +389,55 @@ pub async fn ensure_and_push(
 
     log::info!("[sync] Pushed {count} entries to Turso");
     Ok((count, uuids))
+}
+
+/// Pushes a single entry to Turso. Unlike `ensure_and_push`, this does NOT
+/// run `CREATE TABLE IF NOT EXISTS` -- it assumes the remote table already
+/// exists from a previous full sync. Intended for fire-and-forget auto-sync
+/// after each dictation.
+///
+/// Returns the UUID of the pushed entry on success so the caller can mark it
+/// as synced in the local DB.
+pub async fn push_single_entry(
+    url: &str,
+    token: &str,
+    entry: SyncEntry,
+) -> Result<String, SyncError> {
+    let base_url = turso_http_url(url)?;
+    let client = reqwest::Client::new();
+
+    let uuid = entry.uuid.clone();
+
+    execute_sql(
+        &client,
+        &base_url,
+        token,
+        "INSERT OR IGNORE INTO history (uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        vec![
+            TursoValue::Text(entry.uuid),
+            TursoValue::Text(entry.text),
+            match entry.raw_text {
+                Some(s) => TursoValue::Text(s),
+                None => TursoValue::Null,
+            },
+            TursoValue::Text(entry.style),
+            TursoValue::Text(entry.language),
+            TursoValue::Integer(entry.is_note.to_string()),
+            match entry.app_name {
+                Some(s) => TursoValue::Text(s),
+                None => TursoValue::Null,
+            },
+            match entry.device_id {
+                Some(s) => TursoValue::Text(s),
+                None => TursoValue::Null,
+            },
+            TursoValue::Text(entry.created_at),
+        ],
+    )
+    .await?;
+
+    log::info!("[sync] Auto-pushed entry {uuid} to Turso");
+    Ok(uuid)
 }
 
 /// Pulls history entries from Turso that belong to other devices.

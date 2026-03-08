@@ -85,9 +85,10 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 ## Was du bei Sessionstart tust
 
 1. Lies `project-status.md` -- das ist dein Briefing, wo das Projekt steht.
-2. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
-3. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
-4. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
+2. Pruefe `~/project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. Verarbeitete Eintraege mit `[x]` abhaken.
+3. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
+4. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
+5. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
 
 ## Was du bei Sessionende tust
 

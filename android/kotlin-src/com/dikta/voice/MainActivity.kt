@@ -16,6 +16,7 @@ class MainActivity : TauriActivity() {
 
     companion object {
         private const val REQUEST_RECORD_AUDIO = 1001
+        private const val REQUEST_POST_NOTIFICATIONS = 1002
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +40,22 @@ class MainActivity : TauriActivity() {
             return
         }
 
-        // Step 2: Microphone runtime permission.
+        // Step 2: POST_NOTIFICATIONS runtime permission (Android 13+ / API 33+).
+        // Required for the foreground-service notification to be visible.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_POST_NOTIFICATIONS
+                )
+                return
+            }
+        }
+
+        // Step 3: Microphone runtime permission.
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -51,7 +67,7 @@ class MainActivity : TauriActivity() {
             return
         }
 
-        // Step 3 (optional): Hint about accessibility service for auto-paste.
+        // Step 4 (optional): Hint about accessibility service for auto-paste.
         // Not blocking -- the bubble works without it (clipboard fallback).
         if (!isAccessibilityServiceEnabled()) {
             Toast.makeText(
@@ -71,11 +87,18 @@ class MainActivity : TauriActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_AUDIO && grantResults.isNotEmpty()
-            && grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            // Re-run the permission chain so we also check accessibility before starting.
-            checkPermissionsAndStart()
+        when (requestCode) {
+            REQUEST_POST_NOTIFICATIONS -> {
+                // Continue the chain regardless of grant result -- the notification
+                // is nice-to-have, but the bubble works without it.
+                checkPermissionsAndStart()
+            }
+            REQUEST_RECORD_AUDIO -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Re-run the permission chain so we also check accessibility before starting.
+                    checkPermissionsAndStart()
+                }
+            }
         }
     }
 

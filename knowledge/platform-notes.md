@@ -200,6 +200,20 @@ nutzt aktuell `Thread {}` direkt (einfacher fuer Foreground-Service-Kontext).
 Die Coroutines-Dependency schadet nicht, kann spater fuer `lifecycleScope.launch` genutzt
 werden wenn ein LifecycleOwner verfuegbar ist.
 
+#### Opacity-Slider im Long-Press-Menue (implementiert 2026-03-08)
+- `bubbleView.alpha` (Android View-Property, 0.0..1.0) steuert die Transparenz.
+- Der Wert wird als Integer 5..100 in SharedPreferences gespeichert (Key: `bubble_opacity`).
+- SeekBar-Trick: `max = 95`, `progress = opacity - 5` ergibt Anzeige 5..100 ohne Float-Arithmetik.
+- Live-Preview via `onProgressChanged(fromUser=true)` -- nur im IDLE-State anwenden,
+  damit Recording/Processing immer alpha=1.0f haben (Status muss sichtbar bleiben).
+- Persistenz erst in `onStopTrackingTouch` (Finger gehoben), nicht bei jedem Frame-Update.
+- Der SeekBar laeuft in einem WindowManager-Overlay ohne Activity-Context -- das funktioniert,
+  weil SeekBar nur den Service-Context benoetigt (kein Theme-Resolving ueber Activity noetig).
+- `FLAG_NOT_FOCUSABLE` auf dem Overlay-Window wuerde Slider-Touch-Events blockieren.
+  Das Menu-Window selbst hat `FLAG_NOT_FOCUSABLE`, aber Touch-Events auf dem SeekBar
+  kommen trotzdem an, weil der SeekBar seine eigenen Motion-Events verarbeitet
+  (kein Fokus noetig fuer Slider-Drag -- nur fuer Tastatur-Input).
+
 ## Beide Plattformen
 
 ### Audio-Formate

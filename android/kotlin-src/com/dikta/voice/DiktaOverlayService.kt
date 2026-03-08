@@ -3,13 +3,18 @@ package com.dikta.voice
 import android.app.*
 import android.content.*
 import android.content.pm.ServiceInfo
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.*
 import android.util.DisplayMetrics
 import android.view.*
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import java.io.IOException
 import kotlin.math.abs
@@ -21,7 +26,7 @@ import kotlin.math.sqrt
  * - Creates a WindowManager overlay with TYPE_APPLICATION_OVERLAY
  * - Detects keyboard visibility via a hidden sensor view (getWindowVisibleDisplayFrame)
  * - Shows/hides bubble when keyboard opens/closes -- works system-wide, no AccessibilityService needed
- * - Handles touch events: drag vs. tap detection (threshold: 10dp)
+ * - Handles touch events: drag vs. tap detection (threshold: 10dp), long-press opens size menu
  * - Coordinates audio recording (AudioRecord), Groq STT, DeepSeek cleanup
  * - Saves result to history DB, pastes via AccessibilityService if available, clipboard fallback
  * - Runs as a foreground service with a persistent notification
@@ -34,6 +39,12 @@ class DiktaOverlayService : Service() {
         private const val PREFS_NAME = "dikta_bubble_prefs"
         private const val PREF_X = "bubble_x"
         private const val PREF_Y = "bubble_y"
+        private const val PREF_BUBBLE_SIZE = "bubble_size"
+        private const val PREF_BUBBLE_OPACITY = "bubble_opacity"
+        private const val DEFAULT_BUBBLE_OPACITY = 100
+
+        /** BroadcastReceiver action: tap on notification toggles bubble visibility. */
+        const val ACTION_TOGGLE_BUBBLE = "com.dikta.voice.TOGGLE_BUBBLE"
 
         // Audio recording parameters
         private const val SAMPLE_RATE = 16000
@@ -44,6 +55,14 @@ class DiktaOverlayService : Service() {
         private const val KEYBOARD_HEIGHT_RATIO = 0.15f
         // Polling interval for keyboard detection (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
+
+        // Long-press threshold in milliseconds
+        private const val LONG_PRESS_TIMEOUT_MS = 500L
+
+        // Available bubble sizes in dp
+        val BUBBLE_SIZES_DP = intArrayOf(32, 44, 56, 72)
+        val BUBBLE_SIZE_LABELS = arrayOf("Mini", "Small", "Normal", "Large")
+        const val DEFAULT_BUBBLE_SIZE_DP = 56
 
         /** Live reference used by DiktaAccessibilityService for paste. */
         var instance: DiktaOverlayService? = null
@@ -79,6 +98,36 @@ class DiktaOverlayService : Service() {
     private var isDragging = false
     private var dragThresholdPx = 0f
 
+    // Bubble opacity (5..100). Applied to bubbleView.alpha when state is IDLE.
+    // During RECORDING / PROCESSING the bubble is always fully opaque so the user can see status.
+    private var bubbleOpacity = DEFAULT_BUBBLE_OPACITY
+
+    // Long-press detection
+    private var longPressTriggered = false
+    private val longPressRunnable = Runnable {
+        // Only open menu if the user hasn't started dragging
+        if (!isDragging) {
+            longPressTriggered = true
+            showSizeMenu()
+        }
+    }
+
+    // Size menu overlay (null when not shown)
+    private var sizeMenuView: View? = null
+    private var sizeMenuParams: WindowManager.LayoutParams? = null
+
+    /**
+     * Receives ACTION_TOGGLE_BUBBLE from the foreground notification's contentIntent.
+     * Registered/unregistered dynamically so no manifest entry is needed.
+     */
+    private val toggleBubbleReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_TOGGLE_BUBBLE) {
+                toggleBubble()
+            }
+        }
+    }
+
     private val keyboardCheckRunnable = object : Runnable {
         override fun run() {
             checkKeyboardVisibility()
@@ -101,6 +150,14 @@ class DiktaOverlayService : Service() {
         createNotificationChannel()
         startForegroundWithNotification()
 
+        // Register toggle receiver -- no manifest entry needed for dynamic receivers.
+        val filter = IntentFilter(ACTION_TOGGLE_BUBBLE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(toggleBubbleReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(toggleBubbleReceiver, filter)
+        }
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         setupBubble()
@@ -114,6 +171,9 @@ class DiktaOverlayService : Service() {
     override fun onDestroy() {
         instance = null
         handler.removeCallbacks(keyboardCheckRunnable)
+        handler.removeCallbacks(longPressRunnable)
+        try { unregisterReceiver(toggleBubbleReceiver) } catch (_: Exception) {}
+        dismissSizeMenu()
         super.onDestroy()
         stopCapture()
         if (::bubbleView.isInitialized && isBubbleVisible) {
@@ -142,6 +202,19 @@ class DiktaOverlayService : Service() {
     }
 
     private fun buildNotification(): Notification {
+        val statusText = if (isBubbleVisible) "Tap to hide bubble" else "Tap to show bubble"
+
+        // PendingIntent that sends ACTION_TOGGLE_BUBBLE to our dynamic receiver.
+        val toggleIntent = Intent(ACTION_TOGGLE_BUBBLE).apply {
+            setPackage(packageName)
+        }
+        val pendingToggle = PendingIntent.getBroadcast(
+            this,
+            0,
+            toggleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -150,10 +223,20 @@ class DiktaOverlayService : Service() {
         }
         return builder
             .setContentTitle("Dikta - Voice Dictation")
-            .setContentText("Tap the bubble to start dictating")
+            .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pendingToggle)
             .setOngoing(true)
             .build()
+    }
+
+    /**
+     * Rebuilds and re-posts the notification to reflect the current bubble visibility.
+     * Called after showBubble() / hideBubble() / toggleBubble().
+     */
+    private fun updateNotification() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun startForegroundWithNotification() {
@@ -201,11 +284,23 @@ class DiktaOverlayService : Service() {
         }
     }
 
+    /**
+     * Toggles bubble visibility.
+     * Called by the BroadcastReceiver when the user taps the foreground notification.
+     * Always runs on a background thread (BroadcastReceiver.onReceive), so we post to main.
+     */
+    private fun toggleBubble() {
+        handler.post {
+            if (isBubbleVisible) hideBubble() else showBubble()
+        }
+    }
+
     private fun showBubble() {
         if (!isBubbleVisible && ::bubbleView.isInitialized) {
             try {
                 windowManager.addView(bubbleView, bubbleParams)
                 isBubbleVisible = true
+                updateNotification()
             } catch (_: Exception) {}
         }
     }
@@ -215,6 +310,7 @@ class DiktaOverlayService : Service() {
             try {
                 windowManager.removeView(bubbleView)
                 isBubbleVisible = false
+                updateNotification()
             } catch (_: Exception) {}
         }
     }
@@ -224,17 +320,27 @@ class DiktaOverlayService : Service() {
     /**
      * Prepares the bubble view and layout params. Bubble starts HIDDEN;
      * it appears when the keyboard detector sees the soft keyboard open.
+     * Restores previously saved size from SharedPreferences.
      */
     private fun setupBubble() {
         bubbleView = FloatingBubbleView(this)
 
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedSizeDp = prefs.getInt(PREF_BUBBLE_SIZE, DEFAULT_BUBBLE_SIZE_DP)
+        bubbleOpacity = prefs.getInt(PREF_BUBBLE_OPACITY, DEFAULT_BUBBLE_OPACITY)
+
+        // Apply saved size to the view before first layout
+        bubbleView.setBubbleSize(savedSizeDp)
+
+        // Apply saved opacity (only while IDLE -- recording/processing always fully opaque)
+        bubbleView.alpha = bubbleOpacity / 100f
+
         val (screenW, screenH) = getScreenDimensions()
         val dp = resources.displayMetrics.density
-        val bubbleSize = (56 * dp).toInt()
+        val bubbleSizePx = (savedSizeDp * dp).toInt()
         val marginPx = (16 * dp).toInt()
 
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedX = prefs.getInt(PREF_X, screenW - bubbleSize - marginPx)
+        val savedX = prefs.getInt(PREF_X, screenW - bubbleSizePx - marginPx)
         val savedY = prefs.getInt(PREF_Y, screenH / 2)
 
         bubbleParams = WindowManager.LayoutParams(
@@ -279,6 +385,9 @@ class DiktaOverlayService : Service() {
                 bubbleStartX = bubbleParams.x
                 bubbleStartY = bubbleParams.y
                 isDragging = false
+                longPressTriggered = false
+                // Schedule long-press detection
+                handler.postDelayed(longPressRunnable, LONG_PRESS_TIMEOUT_MS)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -286,6 +395,8 @@ class DiktaOverlayService : Service() {
                 val dy = event.rawY - dragTouchStartY
                 if (!isDragging && (abs(dx) > dragThresholdPx || abs(dy) > dragThresholdPx)) {
                     isDragging = true
+                    // Cancel long-press if the user starts dragging
+                    handler.removeCallbacks(longPressRunnable)
                 }
                 if (isDragging) {
                     bubbleParams.x = (bubbleStartX + dx).toInt()
@@ -294,11 +405,15 @@ class DiktaOverlayService : Service() {
                 }
                 return true
             }
-            MotionEvent.ACTION_UP -> {
-                if (isDragging) {
-                    savePosition(bubbleParams.x, bubbleParams.y)
-                } else {
-                    handleTap()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (event.action == MotionEvent.ACTION_UP) {
+                    if (isDragging) {
+                        savePosition(bubbleParams.x, bubbleParams.y)
+                    } else if (!longPressTriggered) {
+                        // Only fire tap if long-press menu was NOT shown
+                        handleTap()
+                    }
                 }
                 return true
             }
@@ -316,11 +431,347 @@ class DiktaOverlayService : Service() {
     // --- State machine ---
 
     private fun handleTap() {
+        // If the size menu is open, a tap outside it dismisses it (handled by the menu's own touch).
+        // Taps on the bubble itself while menu is open should dismiss the menu but not start recording.
+        if (sizeMenuView != null) {
+            dismissSizeMenu()
+            return
+        }
         when (currentState) {
             RecordingState.IDLE -> startRecording()
             RecordingState.RECORDING -> stopRecording()
             RecordingState.PROCESSING -> { /* ignore taps while processing */ }
         }
+    }
+
+    // --- Size menu ---
+
+    /**
+     * Builds and attaches a size-selection overlay next to the bubble.
+     *
+     * The menu is a vertical LinearLayout with 4 rows (Mini / Small / Normal / Large).
+     * Each row is a TextView. The currently active size is highlighted.
+     * A transparent full-screen "scrim" view underneath handles outside-tap dismissal.
+     *
+     * Both scrim and menu are added as separate WindowManager overlays so they work
+     * from a Service context (no Activity window anchor needed).
+     */
+    private fun showSizeMenu() {
+        if (sizeMenuView != null) return  // Already visible
+
+        val dp = resources.displayMetrics.density
+        val currentSizeDp = bubbleView.getBubbleSizeDp()
+
+        // --- Transparent full-screen scrim to catch outside taps ---
+        val scrim = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+        }
+        val scrimParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+        }
+        scrim.setOnClickListener { dismissSizeMenu() }
+
+        // --- Menu card ---
+        val menuCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+            // Rounded-corner background: draw as a card with shadow via elevation
+            elevation = 12f * dp
+            // Padding: 8dp top/bottom, 0 left/right (rows have their own horizontal padding)
+            val padV = (8 * dp).toInt()
+            setPadding(0, padV, 0, padV)
+        }
+
+        // Set a rounded background on the card via a programmatic drawable
+        val cardBackground = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.WHITE)
+            cornerRadius = 16f * dp
+        }
+        menuCard.background = cardBackground
+
+        BUBBLE_SIZES_DP.forEachIndexed { index, sizeDp ->
+            val row = buildMenuRow(
+                label = BUBBLE_SIZE_LABELS[index],
+                sizeDp = sizeDp,
+                isSelected = sizeDp == currentSizeDp,
+                dp = dp
+            ) {
+                applyBubbleSize(sizeDp)
+                dismissSizeMenu()
+            }
+            menuCard.addView(row)
+        }
+
+        // --- Divider between size section and opacity section ---
+        val divider = View(this).apply {
+            val dividerHeight = (1 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dividerHeight
+            ).also {
+                val marginH = (16 * dp).toInt()
+                val marginV = (4 * dp).toInt()
+                it.setMargins(marginH, marginV, marginH, marginV)
+            }
+            setBackgroundColor(Color.parseColor("#E0E0E0"))
+        }
+        menuCard.addView(divider)
+
+        // --- Opacity section ---
+        menuCard.addView(buildOpacitySection(dp))
+
+        // --- Position the menu card ---
+        // Prefer left of bubble; if bubble is near left edge, place right of it.
+        val menuWidthPx = (160 * dp).toInt()
+        // Size rows + opacity section (label row ~36dp + seekbar row ~52dp) + divider + card padding
+        val menuEstimatedHeightPx = (BUBBLE_SIZES_DP.size * 48 * dp + 100 * dp + 16 * dp).toInt()
+        val bubbleSizePx = (currentSizeDp * dp).toInt()
+
+        // Place menu to the left if there is room (> menuWidth + 8dp margin from left edge)
+        val menuX: Int
+        val menuY: Int
+        val margin8 = (8 * dp).toInt()
+
+        val (screenW, _) = getScreenDimensions()
+        menuX = if (bubbleParams.x > menuWidthPx + margin8) {
+            // Enough space to the left
+            bubbleParams.x - menuWidthPx - margin8
+        } else {
+            // Place to the right of the bubble
+            bubbleParams.x + bubbleSizePx + margin8
+        }
+        // Vertically: center the menu with the bubble, clamped to screen
+        menuY = (bubbleParams.y + bubbleSizePx / 2 - menuEstimatedHeightPx / 2)
+            .coerceAtLeast(margin8)
+
+        val menuParams = WindowManager.LayoutParams(
+            menuWidthPx,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = menuX
+            y = menuY
+        }
+
+        // Add scrim first (lower z-order), then menu card on top
+        try {
+            windowManager.addView(scrim, scrimParams)
+            windowManager.addView(menuCard, menuParams)
+            sizeMenuView = menuCard
+            sizeMenuParams = menuParams
+            // Keep a reference to the scrim for cleanup
+            menuCard.tag = scrim
+        } catch (e: Exception) {
+            // If adding fails (e.g. permission revoked), clean up gracefully
+            try { windowManager.removeView(scrim) } catch (_: Exception) {}
+            sizeMenuView = null
+            sizeMenuParams = null
+        }
+    }
+
+    /**
+     * Builds a single row in the size menu.
+     * Shows the label and a check mark if this size is currently selected.
+     */
+    private fun buildMenuRow(
+        label: String,
+        sizeDp: Int,
+        isSelected: Boolean,
+        dp: Float,
+        onClick: () -> Unit
+    ): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padH = (16 * dp).toInt()
+            val padV = (12 * dp).toInt()
+            setPadding(padH, padV, padH, padV)
+            isClickable = true
+            isFocusable = true
+            // Highlight selected row
+            if (isSelected) {
+                setBackgroundColor(Color.parseColor("#F0F0F0"))
+            }
+            setOnClickListener { onClick() }
+        }
+
+        // Label text (e.g. "Normal")
+        val labelView = TextView(this).apply {
+            text = label
+            textSize = 15f
+            setTextColor(if (isSelected) Color.parseColor("#1A1A1A") else Color.parseColor("#444444"))
+            if (isSelected) setTypeface(null, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        // Size hint text (e.g. "56dp")
+        val sizeHint = TextView(this).apply {
+            text = "${sizeDp}dp"
+            textSize = 12f
+            setTextColor(Color.parseColor("#999999"))
+        }
+
+        // Checkmark indicator (Unicode heavy check mark)
+        val checkView = TextView(this).apply {
+            text = if (isSelected) "\u2713" else ""
+            textSize = 16f
+            setTextColor(Color.parseColor("#4CAF50"))
+            val marginStart = (8 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).also { it.marginStart = marginStart }
+        }
+
+        row.addView(labelView)
+        row.addView(sizeHint)
+        row.addView(checkView)
+        return row
+    }
+
+    /**
+     * Builds the opacity control section for the long-press menu.
+     *
+     * Layout (inside a vertical LinearLayout):
+     *   [Label: "Opacity"  |  current value: "75%"]
+     *   [SeekBar  5..100 ]
+     *
+     * The SeekBar reports values 0..95 internally (offset by 5) so the minimum
+     * displayed opacity is 5% and the maximum is 100%.
+     * Live changes are applied immediately via bubbleView.alpha; the final value
+     * is persisted to SharedPreferences on ACTION_STOP_TRACKING (finger lifted).
+     */
+    private fun buildOpacitySection(dp: Float): View {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = (16 * dp).toInt()
+            val padTop = (4 * dp).toInt()
+            val padBottom = (8 * dp).toInt()
+            setPadding(padH, padTop, padH, padBottom)
+        }
+
+        // Header row: label on the left, current value on the right
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val opacityLabel = TextView(this).apply {
+            text = "Opacity"
+            textSize = 14f
+            setTextColor(Color.parseColor("#444444"))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val opacityValueLabel = TextView(this).apply {
+            text = "$bubbleOpacity%"
+            textSize = 13f
+            setTextColor(Color.parseColor("#666666"))
+        }
+
+        headerRow.addView(opacityLabel)
+        headerRow.addView(opacityValueLabel)
+        section.addView(headerRow)
+
+        // SeekBar: internally 0..95, displayed as 5..100
+        val seekBar = SeekBar(this).apply {
+            max = 95  // 0 maps to 5%, 95 maps to 100%
+            progress = bubbleOpacity - 5
+            val marginTop = (4 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).also { it.topMargin = marginTop }
+        }
+
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val newOpacity = progress + 5  // clamp to 5..100
+                opacityValueLabel.text = "$newOpacity%"
+                // Live preview: apply to bubble immediately (only when IDLE to avoid
+                // overriding the full-opacity enforcement during recording/processing)
+                if (currentState == RecordingState.IDLE) {
+                    bubbleView.alpha = newOpacity / 100f
+                }
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar) { /* nothing */ }
+
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                // Finger lifted -- commit the new value
+                val newOpacity = sb.progress + 5
+                bubbleOpacity = newOpacity
+                bubbleView.alpha = if (currentState == RecordingState.IDLE) {
+                    newOpacity / 100f
+                } else {
+                    1.0f
+                }
+                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                    .putInt(PREF_BUBBLE_OPACITY, newOpacity)
+                    .apply()
+            }
+        })
+
+        section.addView(seekBar)
+        return section
+    }
+
+    /** Removes both the menu card and its scrim from the WindowManager. */
+    private fun dismissSizeMenu() {
+        val menu = sizeMenuView ?: return
+        val scrim = menu.tag as? View
+        try { windowManager.removeView(menu) } catch (_: Exception) {}
+        try { scrim?.let { windowManager.removeView(it) } } catch (_: Exception) {}
+        sizeMenuView = null
+        sizeMenuParams = null
+    }
+
+    /**
+     * Applies a new bubble size:
+     * 1. Updates FloatingBubbleView internal size
+     * 2. Updates WindowManager LayoutParams (WRAP_CONTENT stays, view reports new measure)
+     * 3. Adjusts bubble position so the center stays stable
+     * 4. Persists the new size to SharedPreferences
+     */
+    private fun applyBubbleSize(newSizeDp: Int) {
+        val dp = resources.displayMetrics.density
+        val oldSizePx = (bubbleView.getBubbleSizeDp() * dp).toInt()
+        val newSizePx = (newSizeDp * dp).toInt()
+
+        // Keep the bubble center at the same screen position
+        val centerX = bubbleParams.x + oldSizePx / 2
+        val centerY = bubbleParams.y + oldSizePx / 2
+        bubbleParams.x = centerX - newSizePx / 2
+        bubbleParams.y = centerY - newSizePx / 2
+
+        // Update the view (triggers requestLayout + invalidate inside setBubbleSize)
+        bubbleView.setBubbleSize(newSizeDp)
+
+        // Push new LayoutParams to WindowManager
+        if (isBubbleVisible) {
+            try {
+                windowManager.updateViewLayout(bubbleView, bubbleParams)
+            } catch (_: Exception) {}
+        }
+
+        // Persist position (shifted to keep center) and new size
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putInt(PREF_BUBBLE_SIZE, newSizeDp)
+            .putInt(PREF_X, bubbleParams.x)
+            .putInt(PREF_Y, bubbleParams.y)
+            .apply()
     }
 
     // --- Audio recording ---
@@ -492,6 +943,12 @@ class DiktaOverlayService : Service() {
             RecordingState.IDLE -> FloatingBubbleView.State.IDLE
             RecordingState.RECORDING -> FloatingBubbleView.State.RECORDING
             RecordingState.PROCESSING -> FloatingBubbleView.State.PROCESSING
+        }
+        // During active states the bubble must be fully visible so the user can see status.
+        // Restore configured opacity only when returning to IDLE.
+        bubbleView.alpha = when (newState) {
+            RecordingState.IDLE -> bubbleOpacity / 100f
+            RecordingState.RECORDING, RecordingState.PROCESSING -> 1.0f
         }
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f

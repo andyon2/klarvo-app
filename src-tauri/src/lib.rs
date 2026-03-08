@@ -57,6 +57,7 @@ use llm::{
 use paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
 use serde::{Deserialize, Serialize};
 use stt::{build_stt_prompt, GroqWhisper, OpenAiWhisper, SttProvider};
+use uuid::Uuid;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
@@ -798,10 +799,64 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
         };
         let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
         let cfg_for_history = state.config.lock().ok().map(|c| (c.device_id.clone(), c.turso_url.clone(), c.turso_token.clone()));
+
+        // Generate UUID here so we can pass it to both the DB insert and the
+        // async Turso push without a second DB read.
+        let entry_uuid = Uuid::new_v4().to_string();
+
         if let Ok(db) = state.history_db.lock() {
             let device_id = cfg_for_history.as_ref().map(|(d, _, _)| d.as_str());
-            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref(), None, device_id) {
+            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref(), Some(&entry_uuid), device_id) {
                 log::warn!("[pipeline] Failed to save to history: {e}");
+            }
+        }
+
+        // --- Auto-sync to Turso (fire-and-forget) ---
+        // Only runs when Turso is configured. Never blocks the pipeline.
+        // The manual "Sync Now" button covers pull + batch push of missed entries.
+        if let Some((device_id, turso_url, turso_token)) = cfg_for_history.clone() {
+            if !turso_url.is_empty() && !turso_token.is_empty() {
+                let sync_entry = sync::SyncEntry {
+                    uuid: entry_uuid.clone(),
+                    text: cleaned_text.clone(),
+                    raw_text: Some(raw_text.clone()),
+                    style: style_str.clone(),
+                    language: language.clone(),
+                    is_note: 0,
+                    app_name: app_name.clone(),
+                    device_id: Some(device_id.clone()),
+                    // created_at will be set by Turso's DEFAULT; we mirror what
+                    // SQLite uses so the field is consistent.
+                    created_at: chrono::Utc::now().naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string(),
+                };
+                let uuid_for_mark = entry_uuid.clone();
+                let handle_for_sync = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    match sync::push_single_entry(&turso_url, &turso_token, sync_entry).await {
+                        Ok(_) => {
+                            // Mark the entry as synced in the local DB.
+                            // Re-acquire state via the handle -- never hold
+                            // the DB lock across an await point.
+                            //
+                            // We acquire the lock, run the update, and
+                            // explicitly drop the guard before `st` is
+                            // dropped by collecting it into a local Result
+                            // and ignoring the value.
+                            let st = handle_for_sync.state::<AppState>();
+                            let mark_result = st.history_db.lock().ok()
+                                .map(|db| sync::mark_entries_synced(&db, &[uuid_for_mark.clone()]));
+                            drop(st);
+                            if let Some(Err(e)) = mark_result {
+                                log::warn!("[sync] Failed to mark entry as synced: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            // Non-fatal: the entry stays synced=0 and will be
+                            // picked up by the next manual "Sync Now".
+                            log::warn!("[sync] Auto-push failed (will retry on next sync): {e}");
+                        }
+                    }
+                });
             }
         }
 
