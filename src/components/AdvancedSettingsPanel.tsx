@@ -3,6 +3,8 @@ import type { AdvancedSettings } from "../types";
 import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
 import { CloseIcon, SpinnerIcon } from "./icons";
 import { INPUT_CLS, LABEL_CLS } from "./ui";
+import { isMobile } from "../platform";
+import { MobileTextarea } from "./MobileTextarea";
 
 const ADVANCED_DEFAULTS: AdvancedSettings = {
   sttPromptDe: "",
@@ -36,10 +38,9 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
 
 interface AdvancedSettingsPanelProps {
   onClose: () => void;
-  onScaleChange: (scale: string) => void;
 }
 
-export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettingsPanelProps) {
+export function AdvancedSettingsPanel({ onClose }: AdvancedSettingsPanelProps) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,14 +48,17 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
   // All sections collapsed by default -- user expands what they need.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
-  const hintCls = "text-[10px] text-zinc-500 leading-relaxed";
+  const hintCls = "text-[11px] text-zinc-500 leading-relaxed";
   const numberInputCls = `${INPUT_CLS} w-28`;
   const modelInputCls = "bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44";
-  // Larger section title text (text-sm instead of text-[10px]) for better readability.
+  // Larger section title text (text-sm instead of text-[11px]) for better readability.
   const sectionBtnCls = "flex items-center gap-2 w-full py-2 text-left";
 
   const toggleSection = useCallback((key: string) => {
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    setOpenSections((prev) => {
+      const wasOpen = prev[key];
+      return wasOpen ? {} : { [key]: true };
+    });
   }, []);
 
   useEffect(() => {
@@ -82,7 +86,6 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
     setSaveMsg(null);
     try {
       await saveAdvancedSettings(settings);
-      onScaleChange(settings.uiScale);
       setSaveMsg("Saved");
       setTimeout(() => setSaveMsg(null), 2000);
     } catch (err) {
@@ -90,7 +93,7 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
     } finally {
       setSaving(false);
     }
-  }, [settings, onScaleChange]);
+  }, [settings]);
 
   const handleReset = useCallback(() => {
     setSettings(ADVANCED_DEFAULTS);
@@ -118,11 +121,16 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
     </button>
   );
 
+  // On Android the system nav bar (~48 px) overlaps the WebView bottom edge.
+  // The panel needs flex-col so the footer stays below the scroll area, and the
+  // scroll area must leave enough room for the footer + nav bar clearance.
+  const scrollMaxH = isMobile ? "max-h-[calc(100vh-230px)]" : "max-h-[calc(100vh-150px)]";
+
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl shadow-xl shadow-black/30">
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl shadow-xl shadow-black/30 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
+        <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
         <button
           aria-label="Close advanced settings"
           onClick={onClose}
@@ -132,8 +140,8 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
         </button>
       </div>
 
-      {/* Content -- scrollable like History panel */}
-      <div className="overflow-y-auto max-h-[calc(100vh-150px)] p-4 flex flex-col gap-1">
+      {/* Content -- scrollable, constrained so footer stays in view */}
+      <div className={`overflow-y-auto ${scrollMaxH} p-4 flex flex-col gap-1`}>
 
         {/* STT */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
@@ -146,17 +154,17 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>STT Prompt (German)</span>
-              <textarea value={settings.sttPromptDe} onChange={(e) => set("sttPromptDe", e.target.value)} placeholder="Context prompt sent with German transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={(v) => set("sttPromptDe", v)} placeholder="Context prompt sent with German transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Injected as context when language is set to German.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>STT Prompt (English)</span>
-              <textarea value={settings.sttPromptEn} onChange={(e) => set("sttPromptEn", e.target.value)} placeholder="Context prompt for English transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={(v) => set("sttPromptEn", v)} placeholder="Context prompt for English transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Injected as context when language is set to English.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
-              <textarea value={settings.sttPromptAuto} onChange={(e) => set("sttPromptAuto", e.target.value)} placeholder="Context prompt for auto-detect mode" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={(v) => set("sttPromptAuto", v)} placeholder="Context prompt for auto-detect mode" rows={2} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -174,28 +182,31 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">LLM Cleanup</span>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">LLM Cleanup -- Base Prompts</span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <p className={hintCls}>
+              Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
+            </p>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>System Prompt: Polished</span>
-              <textarea value={settings.llmSystemPromptPolished} onChange={(e) => set("llmSystemPromptPolished", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={(v) => set("llmSystemPromptPolished", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-              <textarea value={settings.llmSystemPromptVerbatim} onChange={(e) => set("llmSystemPromptVerbatim", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={(v) => set("llmSystemPromptVerbatim", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>System Prompt: Chat</span>
-              <textarea value={settings.llmSystemPromptChat} onChange={(e) => set("llmSystemPromptChat", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={(v) => set("llmSystemPromptChat", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>Command Mode Prompt</span>
-              <textarea value={settings.llmCommandModePrompt} onChange={(e) => set("llmCommandModePrompt", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={(v) => set("llmCommandModePrompt", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
               <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -296,7 +307,7 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>Custom Headers (JSON)</span>
-              <textarea value={settings.webhookHeaders} onChange={(e) => set("webhookHeaders", e.target.value)} placeholder={'{"Authorization": "Bearer ..."}'} rows={3} className={`${INPUT_CLS} resize-none font-mono`} />
+              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={(v) => set("webhookHeaders", v)} placeholder={'{"Authorization": "Bearer ..."}'} rows={3} className={`${INPUT_CLS} resize-none font-mono`} />
               <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -316,25 +327,6 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
         {openSections.system && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>UI Size</span><span className={hintCls}>Scales the entire interface.</span></div>
-              <div className="flex gap-1">
-                {(["small", "medium", "large"] as const).map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => set("uiScale", size)}
-                    className={[
-                      "px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-all duration-150 capitalize",
-                      settings.uiScale === size
-                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-                        : "bg-[#111113] border-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600",
-                    ].join(" ")}
-                  >
-                    {size === "small" ? "S" : size === "medium" ? "M" : "L"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
               <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer">
                 <option value="debug">debug</option>
@@ -348,8 +340,9 @@ export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettin
 
       </div>
 
-      {/* Footer: Save + Reset */}
-      <div className="px-4 py-3 border-t border-zinc-800/40 flex gap-2">
+      {/* Footer: Save + Reset -- mobile-safe-bottom adds 56 px of bottom padding
+          on Android to clear the system nav bar (env() is unreliable in WebView). */}
+      <div className={`px-4 py-3 border-t border-zinc-800/40 flex gap-2 ${isMobile ? "mobile-safe-bottom" : ""}`}>
         <button
           onClick={handleReset}
           className="px-4 py-2.5 rounded-xl text-sm font-medium border bg-[#111113] border-zinc-700/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all duration-150 flex-shrink-0"

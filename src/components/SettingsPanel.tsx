@@ -8,7 +8,8 @@ import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon } from "./icons";
-import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M, SECTION_TITLE_CLS_M } from "./ui";
+import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M } from "./ui";
+import { MobileTextarea } from "./MobileTextarea";
 
 // --- Shortcut Recorder -------------------------------------------------------
 
@@ -250,7 +251,7 @@ function UpdateChecker() {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Updates</span>
+      <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Updates</span>
       <div className="flex items-center gap-2">
         {status === "available" ? (
           <button
@@ -268,9 +269,9 @@ function UpdateChecker() {
             {status === "checking" ? "Checking..." : status === "downloading" ? "Downloading..." : status === "upToDate" ? "Up to date" : "Check for updates"}
           </button>
         )}
-        <span className="text-[10px] text-zinc-500">v0.4.0</span>
+        <span className="text-[11px] text-zinc-500">v0.4.0</span>
       </div>
-      {errorMsg && <p className="text-[10px] text-red-400">{errorMsg}</p>}
+      {errorMsg && <p className="text-[11px] text-red-400">{errorMsg}</p>}
     </div>
   );
 }
@@ -337,6 +338,19 @@ export function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [newTerm, setNewTerm] = useState("");
+  // Accordion: only one section open at a time. First section open by default.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    voiceRecording: true,
+  });
+
+  const toggleSection = useCallback((key: string) => {
+    setOpenSections((prev) => {
+      const wasOpen = prev[key];
+      return wasOpen ? {} : { [key]: true };
+    });
+  }, []);
+
+  const sectionBtnCls = "flex items-center gap-2 w-full py-2 text-left";
 
   // Load profiles on mount.
   useEffect(() => { getProfiles().then(setProfiles).catch(console.error); }, []);
@@ -441,8 +455,13 @@ export function SettingsPanel({
   const openaiOk = !!loadedSettings?.openaiApiKeyMasked;
   const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
 
+  // On Android the system nav bar (~48 px) overlaps the WebView bottom edge.
+  // env(safe-area-inset-bottom) is unreliable in Android WebView so we use a
+  // fixed 48 px deduction on mobile to keep the sticky Save footer visible.
+  const panelMaxH = isMobile ? "max-h-[calc(100vh-168px)]" : "max-h-[calc(100vh-120px)]";
+
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col max-h-[calc(100vh-120px)]">
+    <div className={`w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40 flex-shrink-0">
         <span className={SECTION_TITLE_CLS}>Settings</span>
@@ -459,516 +478,632 @@ export function SettingsPanel({
       <div className="overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-5">
 
         {/* --- Voice & Recording --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>Voice & Recording</span>
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("voiceRecording")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Voice & Recording</span>
+          </button>
+          {openSections.voiceRecording && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
+              {isDesktop && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className={LABEL_CLS_M}>Microphone</span>
+                  <select
+                    value={localAudioDevice ?? ""}
+                    onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
+                    className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+                  >
+                    <option value="">System Default</option>
+                    {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              )}
 
-          {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
-          {isDesktop && (
-            <div className="flex items-center justify-between gap-3">
-              <span className={LABEL_CLS_M}>Microphone</span>
-              <select
-                value={localAudioDevice ?? ""}
-                onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-                className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
-              >
-                <option value="">System Default</option>
-                {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              {/* Language */}
+              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                <span className={LABEL_CLS_M}>Language</span>
+                <select
+                  value={localLang}
+                  onChange={(e) => handleLangChange(e.target.value)}
+                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                >
+                  <option value="">Auto (DE + EN)</option>
+                  <option value="de">Deutsch</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+
+              {/* Output language (translation) */}
+              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                <span className={LABEL_CLS_M}>Translate to</span>
+                <select
+                  value={localOutputLanguage}
+                  onChange={(e) => handleOutputLanguageChange(e.target.value)}
+                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                >
+                  {OUTPUT_LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Cleanup style */}
+              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                <span className={LABEL_CLS_M}>Cleanup Style</span>
+                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                  {STYLE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleStyleChange(opt.value)}
+                      title={opt.description}
+                      className={[
+                        isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
+                        localStyle === opt.value
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "text-zinc-500 hover:text-zinc-300",
+                      ].join(" ")}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* STT Model */}
+              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                <span className={LABEL_CLS_M}>STT Model</span>
+                <select
+                  value={localSttModel}
+                  onChange={(e) => setLocalSttModel(e.target.value)}
+                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : "max-w-[200px]"}`}
+                >
+                  <option value="whisper-large-v3-turbo">Large V3 Turbo ($0.04/h)</option>
+                  <option value="whisper-large-v3">Large V3 ($0.111/h)</option>
+                  <option value="distil-whisper-large-v3-en">Distil V3 EN ($0.02/h)</option>
+                </select>
+              </div>
             </div>
           )}
-
-          {/* Language */}
-          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-            <span className={LABEL_CLS_M}>Language</span>
-            <select
-              value={localLang}
-              onChange={(e) => handleLangChange(e.target.value)}
-              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-            >
-              <option value="">Auto (DE + EN)</option>
-              <option value="de">Deutsch</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-
-          {/* Output language (translation) */}
-          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-            <span className={LABEL_CLS_M}>Translate to</span>
-            <select
-              value={localOutputLanguage}
-              onChange={(e) => handleOutputLanguageChange(e.target.value)}
-              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-            >
-              {OUTPUT_LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>{l.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Cleanup style */}
-          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-            <span className={LABEL_CLS_M}>Cleanup Style</span>
-            <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-              {STYLE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleStyleChange(opt.value)}
-                  title={opt.description}
-                  className={[
-                    isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                    localStyle === opt.value
-                      ? "bg-emerald-500/15 text-emerald-400"
-                      : "text-zinc-500 hover:text-zinc-300",
-                  ].join(" ")}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* STT Model */}
-          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-            <span className={LABEL_CLS_M}>STT Model</span>
-            <select
-              value={localSttModel}
-              onChange={(e) => setLocalSttModel(e.target.value)}
-              className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : "max-w-[200px]"}`}
-            >
-              <option value="whisper-large-v3-turbo">Large V3 Turbo ($0.04/h)</option>
-              <option value="whisper-large-v3">Large V3 ($0.111/h)</option>
-              <option value="distil-whisper-large-v3-en">Distil V3 EN ($0.02/h)</option>
-            </select>
-          </div>
         </div>
 
         {/* --- Hotkey -- desktop only (no global hotkeys on Android) --- */}
         {isDesktop && (
-          <div className="flex flex-col gap-3">
-            <span className={SECTION_TITLE_CLS}>Hotkey</span>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("hotkey")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Hotkey</span>
+            </button>
+            {openSections.hotkey && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-zinc-300">Shortcut</span>
+                  <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
+                </div>
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-zinc-300">Shortcut</span>
-              <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <span className={LABEL_CLS}>Mode</span>
-              <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-                {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => handleHotkeyModeChange(mode)}
-                    title={mode === "hold" ? "Hold to record, release to process" : "Press to start, press to stop"}
-                    className={[
-                      "px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all duration-100",
-                      localHotkeyMode === mode
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : "text-zinc-500 hover:text-zinc-300",
-                    ].join(" ")}
-                  >
-                    {mode}
-                  </button>
-                ))}
+                <div className="flex items-center justify-between gap-3">
+                  <span className={LABEL_CLS}>Mode</span>
+                  <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                    {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => handleHotkeyModeChange(mode)}
+                        title={mode === "hold" ? "Hold to record, release to process" : "Press to start, press to stop"}
+                        className={[
+                          "px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all duration-100",
+                          localHotkeyMode === mode
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "text-zinc-500 hover:text-zinc-300",
+                        ].join(" ")}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
+                </p>
               </div>
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
-            </p>
+            )}
           </div>
         )}
 
-        {/* --- Custom Prompt --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>Custom Prompt</span>
-          <textarea
-            value={localCustomPrompt}
-            onChange={(e) => setLocalCustomPrompt(e.target.value)}
-            placeholder="Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'"
-            rows={3}
-            className={`${INPUT_CLS_M} resize-none`}
-          />
-          {/* Preset buttons -- one click replaces the entire custom prompt */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Presets:</span>
-            {([
-              { label: "Formal", prompt: "Always use formal language. Avoid colloquialisms and slang." },
-              { label: "Technical", prompt: "Keep technical terms in English. Use precise, professional language." },
-              { label: "Casual", prompt: "Keep it casual and conversational. Use natural, relaxed language." },
-            ] as const).map(({ label, prompt }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setLocalCustomPrompt(prompt)}
-                className={[
-                  "border rounded-lg font-medium transition-colors",
-                  "bg-transparent border-zinc-700/60 text-zinc-400",
-                  "hover:border-zinc-500 hover:text-zinc-200",
-                  isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
-                ].join(" ")}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during cleanup.</p>
+        {/* --- Cleanup Instructions --- */}
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("customPrompt")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Cleanup Instructions</span>
+          </button>
+          {openSections.customPrompt && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <MobileTextarea
+                label="Cleanup Instructions"
+                hint="Appended to the system prompt during LLM cleanup."
+                value={localCustomPrompt}
+                onChange={setLocalCustomPrompt}
+                placeholder="Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'"
+                rows={3}
+                className={`${INPUT_CLS_M} resize-none`}
+              />
+              {/* Preset buttons -- one click replaces the entire custom prompt */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Presets:</span>
+                {([
+                  { label: "Formal", prompt: "Always use formal language. Avoid colloquialisms and slang." },
+                  { label: "Technical", prompt: "Keep technical terms in English. Use precise, professional language." },
+                  { label: "Casual", prompt: "Keep it casual and conversational. Use natural, relaxed language." },
+                ] as const).map(({ label, prompt }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setLocalCustomPrompt(prompt)}
+                    className={[
+                      "border rounded-lg font-medium transition-colors",
+                      "bg-transparent border-zinc-700/60 text-zinc-400",
+                      "hover:border-zinc-500 hover:text-zinc-200",
+                      isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
+                    ].join(" ")}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setLocalCustomPrompt("")}
+                  className={[
+                    "transition-colors",
+                    "text-zinc-600 hover:text-zinc-400",
+                    isMobile ? "px-3 min-h-[44px] text-sm" : "px-2 py-1.5 text-xs",
+                  ].join(" ")}
+                >
+                  Clear
+                </button>
+              </div>
+              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during LLM cleanup.</p>
+            </div>
+          )}
         </div>
 
         {/* --- General -- desktop only features --- */}
-        {isDesktop && <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>General</span>
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <span className={LABEL_CLS_M}>Launch on startup</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={localAutostart}
-              onClick={() => setLocalAutostart(!localAutostart)}
-              className={[
-                "relative w-9 h-5 rounded-full transition-colors duration-200",
-                localAutostart ? "bg-emerald-500/40" : "bg-zinc-700",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                  localAutostart ? "translate-x-4" : "",
-                ].join(" ")}
-              />
+        {isDesktop && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("general")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">General</span>
             </button>
-          </label>
+            {openSections.general && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <span className={LABEL_CLS_M}>Launch on startup</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={localAutostart}
+                    onClick={() => setLocalAutostart(!localAutostart)}
+                    className={[
+                      "relative w-9 h-5 rounded-full transition-colors duration-200",
+                      localAutostart ? "bg-emerald-500/40" : "bg-zinc-700",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                        localAutostart ? "translate-x-4" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                </label>
 
-          <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <div className="flex flex-col gap-0.5">
-              <span className={LABEL_CLS_M}>Whisper mode</span>
-              <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>Amplifies mic input for quiet dictation</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={localWhisperMode}
-              onClick={() => setLocalWhisperMode(!localWhisperMode)}
-              className={[
-                "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
-                localWhisperMode ? "bg-emerald-500/40" : "bg-zinc-700",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                  localWhisperMode ? "translate-x-4" : "",
-                ].join(" ")}
-              />
-            </button>
-          </label>
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <div className="flex flex-col gap-0.5">
+                    <span className={LABEL_CLS_M}>Whisper mode</span>
+                    <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Amplifies mic input for quiet dictation</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={localWhisperMode}
+                    onClick={() => setLocalWhisperMode(!localWhisperMode)}
+                    className={[
+                      "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                      localWhisperMode ? "bg-emerald-500/40" : "bg-zinc-700",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                        localWhisperMode ? "translate-x-4" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                </label>
 
-          <div className="flex flex-col gap-0.5">
-            <span className={LABEL_CLS_M}>Command mode</span>
-            <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className={LABEL_CLS_M}>Command mode</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+                </div>
+              </div>
+            )}
           </div>
-        </div>}
+        )}
 
         {/* --- Webhook -- desktop only --- */}
         {isDesktop && (
-          <div className="flex flex-col gap-3">
-            <span className={SECTION_TITLE_CLS_M}>Webhook</span>
-            <input
-              type="url"
-              placeholder="https://example.com/webhook"
-              value={localWebhookUrl}
-              onChange={(e) => setLocalWebhookUrl(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-            <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>HTTP POST after each dictation. Leave empty to disable.</p>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Webhook</span>
+            </button>
+            {openSections.webhook && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                <input
+                  type="url"
+                  placeholder="https://example.com/webhook"
+                  value={localWebhookUrl}
+                  onChange={(e) => setLocalWebhookUrl(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+                <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>HTTP POST after each dictation. Leave empty to disable.</p>
+              </div>
+            )}
           </div>
         )}
 
         {/* --- Sync --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>Cross-Device Sync</span>
-          <div className="flex flex-col gap-1.5">
-            <span className={LABEL_CLS_M}>Turso URL</span>
-            <input
-              type="text"
-              placeholder="libsql://your-db.turso.io"
-              value={localTursoUrl}
-              onChange={(e) => setLocalTursoUrl(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className={LABEL_CLS_M}>Turso Token</span>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={loadedSettings?.tursoTokenMasked || "Auth token"}
-              value={tursoToken}
-              onChange={(e) => setTursoToken(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
-          {loadedSettings?.deviceId && (
-            <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
-          )}
-          <button
-            onClick={async () => {
-              setSyncing(true);
-              setSyncMsg(null);
-              try {
-                const [pushed, pulled] = await syncHistory();
-                setSyncMsg(`Synced: ${pushed} pushed, ${pulled} pulled`);
-              } catch (e: unknown) {
-                setSyncMsg(`Error: ${String(e).slice(0, 80)}`);
-              } finally {
-                setSyncing(false);
-              }
-            }}
-            disabled={syncing || !localTursoUrl}
-            className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}`}
-          >
-            {syncing ? "Syncing..." : "Sync Now"}
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("sync")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Cross-Device Sync</span>
           </button>
-          {syncMsg && <p className={isMobile ? "text-xs text-zinc-400" : "text-[11px] text-zinc-400"}>{syncMsg}</p>}
-          <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
+          {openSections.sync && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS_M}>Turso URL</span>
+                <input
+                  type="text"
+                  placeholder="libsql://your-db.turso.io"
+                  value={localTursoUrl}
+                  onChange={(e) => setLocalTursoUrl(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS_M}>Turso Token</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder={loadedSettings?.tursoTokenMasked || "Auth token"}
+                  value={tursoToken}
+                  onChange={(e) => setTursoToken(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
+              {loadedSettings?.deviceId && (
+                <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
+              )}
+              <button
+                onClick={async () => {
+                  setSyncing(true);
+                  setSyncMsg(null);
+                  try {
+                    const [pushed, pulled] = await syncHistory();
+                    setSyncMsg(`Synced: ${pushed} pushed, ${pulled} pulled`);
+                  } catch (e: unknown) {
+                    setSyncMsg(`Error: ${String(e).slice(0, 80)}`);
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+                disabled={syncing || !localTursoUrl}
+                className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}`}
+              >
+                {syncing ? "Syncing..." : "Sync Now"}
+              </button>
+              {syncMsg && <p className={isMobile ? "text-xs text-zinc-400" : "text-[11px] text-zinc-400"}>{syncMsg}</p>}
+              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
+            </div>
+          )}
         </div>
 
         {/* --- API Keys --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>API Keys</span>
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("apiKeys")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">API Keys</span>
+          </button>
+          {openSections.apiKeys && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={LABEL_CLS_M}>Groq</span>
+                  <StatusDot active={groqOk} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={groqOk ? loadedSettings!.groqApiKeyMasked : "gsk_..."}
+                  value={groqKey}
+                  onChange={(e) => setGroqKey(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className={LABEL_CLS_M}>Groq</span>
-              <StatusDot active={groqOk} />
-            </div>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={groqOk ? loadedSettings!.groqApiKeyMasked : "gsk_..."}
-              value={groqKey}
-              onChange={(e) => setGroqKey(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={LABEL_CLS_M}>DeepSeek</span>
+                  <StatusDot active={deepseekOk} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={deepseekOk ? loadedSettings!.deepseekApiKeyMasked : "sk-..."}
+                  value={deepseekKey}
+                  onChange={(e) => setDeepseekKey(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className={LABEL_CLS_M}>DeepSeek</span>
-              <StatusDot active={deepseekOk} />
-            </div>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={deepseekOk ? loadedSettings!.deepseekApiKeyMasked : "sk-..."}
-              value={deepseekKey}
-              onChange={(e) => setDeepseekKey(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={LABEL_CLS_M}>OpenAI</span>
+                  <StatusDot active={openaiOk} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className={LABEL_CLS_M}>OpenAI</span>
-              <StatusDot active={openaiOk} />
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={LABEL_CLS_M}>Anthropic</span>
+                  <StatusDot active={anthropicOk} />
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(LLM only)</span>
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
+                  value={anthropicKey}
+                  onChange={(e) => setAnthropicKey(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
             </div>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
-              value={openaiKey}
-              onChange={(e) => setOpenaiKey(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className={LABEL_CLS_M}>Anthropic</span>
-              <StatusDot active={anthropicOk} />
-              <span className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>(LLM only)</span>
-            </div>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
-              value={anthropicKey}
-              onChange={(e) => setAnthropicKey(e.target.value)}
-              className={INPUT_CLS_M}
-            />
-          </div>
+          )}
         </div>
 
         {/* --- Provider Priority --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>Provider Priority</span>
-          <p className={isMobile ? "text-xs text-zinc-500" : "text-[10px] text-zinc-500"}>
-            {isMobile ? "Use arrows to reorder." : "Drag to reorder."} First provider with a configured key is used. If it fails, the next one is tried.
-          </p>
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("providerPriority")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.providerPriority ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Provider Priority</span>
+          </button>
+          {openSections.providerPriority && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>
+                {isMobile ? "Use arrows to reorder." : "Drag to reorder."} First provider with a configured key is used. If it fails, the next one is tried.
+              </p>
 
-          <div className="flex flex-col gap-2">
-            <span className={LABEL_CLS_M}>Speech-to-Text</span>
-            <ProviderPriorityList
-              items={localSttPriority}
-              onChange={setLocalSttPriority}
-              keyStatus={{ groq: groqOk, openai: openaiOk }}
-              labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
-            />
-          </div>
+              <div className="flex flex-col gap-2">
+                <span className={LABEL_CLS_M}>Speech-to-Text</span>
+                <ProviderPriorityList
+                  items={localSttPriority}
+                  onChange={setLocalSttPriority}
+                  keyStatus={{ groq: groqOk, openai: openaiOk }}
+                  labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
+                />
+              </div>
 
-          <div className="flex flex-col gap-2">
-            <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
-            <ProviderPriorityList
-              items={localLlmPriority}
-              onChange={setLocalLlmPriority}
-              keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
-              labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
-            />
-          </div>
+              <div className="flex flex-col gap-2">
+                <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
+                <ProviderPriorityList
+                  items={localLlmPriority}
+                  onChange={setLocalLlmPriority}
+                  keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
+                  labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* --- Dictionary --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS_M}>Dictionary</span>
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("dictionary")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Dictionary</span>
+          </button>
+          {openSections.dictionary && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add word or phrase..."
+                  value={newTerm}
+                  onChange={(e) => setNewTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddTerm()}
+                  className={`flex-1 ${INPUT_CLS_M}`}
+                />
+                <button
+                  onClick={handleAddTerm}
+                  disabled={!newTerm.trim()}
+                  className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
+                >
+                  Add
+                </button>
+              </div>
 
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Add word or phrase..."
-              value={newTerm}
-              onChange={(e) => setNewTerm(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddTerm()}
-              className={`flex-1 ${INPUT_CLS_M}`}
-            />
-            <button
-              onClick={handleAddTerm}
-              disabled={!newTerm.trim()}
-              className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
-            >
-              Add
-            </button>
-          </div>
-
-          {dictionary.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
+              {dictionary.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500 italic">No terms yet.</p>
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-zinc-500 italic">No terms yet.</p>
           )}
         </div>
 
         {/* --- Updates -- desktop only (Tauri updater not available on sideloaded APKs) --- */}
-        {isDesktop && <UpdateChecker />}
-
-        {/* --- App Profiles --- */}
-        <div className="flex flex-col gap-3">
-          <span className={SECTION_TITLE_CLS}>App Profiles</span>
-          <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
-
-          {profiles.map((p, i) => (
-            <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <input
-                  type="text"
-                  placeholder="Profile name"
-                  value={p.name}
-                  onChange={(e) => {
-                    const next = [...profiles];
-                    next[i] = { ...next[i], name: e.target.value };
-                    setProfiles(next);
-                  }}
-                  className={`flex-1 ${INPUT_CLS}`}
-                />
-                <button
-                  onClick={() => {
-                    const next = profiles.filter((_, j) => j !== i);
-                    setProfiles(next);
-                    saveProfiles(next).catch(console.error);
-                  }}
-                  className="text-zinc-500 hover:text-red-400 transition-colors p-1"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-              <input
-                type="text"
-                placeholder="Window title pattern, e.g. 'Slack' or 'Visual Studio'"
-                value={p.appPattern}
-                onChange={(e) => {
-                  const next = [...profiles];
-                  next[i] = { ...next[i], appPattern: e.target.value };
-                  setProfiles(next);
-                }}
-                className={INPUT_CLS}
-              />
-              <div className="flex gap-2">
-                <select
-                  value={p.cleanupStyle}
-                  onChange={(e) => {
-                    const next = [...profiles];
-                    next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
-                    setProfiles(next);
-                  }}
-                  className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
-                >
-                  {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-                <select
-                  value={p.language}
-                  onChange={(e) => {
-                    const next = [...profiles];
-                    next[i] = { ...next[i], language: e.target.value };
-                    setProfiles(next);
-                  }}
-                  className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
-                >
-                  <option value="">Auto</option>
-                  <option value="de">DE</option>
-                  <option value="en">EN</option>
-                </select>
-              </div>
-              <input
-                type="text"
-                placeholder="Custom prompt for this app (optional)"
-                value={p.customPrompt}
-                onChange={(e) => {
-                  const next = [...profiles];
-                  next[i] = { ...next[i], customPrompt: e.target.value };
-                  setProfiles(next);
-                }}
-                className={INPUT_CLS}
-              />
-            </div>
-          ))}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
-            >
-              + Add Profile
+        {isDesktop && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("updates")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Updates</span>
             </button>
-            {profiles.length > 0 && (
-              <button
-                onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
-                className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
-              >
-                Save Profiles
-              </button>
+            {openSections.updates && (
+              <div className="pl-4 pb-3 pt-1">
+                <UpdateChecker />
+              </div>
             )}
           </div>
+        )}
+
+        {/* --- App Profiles --- */}
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("appProfiles")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">App Profiles</span>
+          </button>
+          {openSections.appProfiles && (
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
+
+              {profiles.map((p, i) => (
+                <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      type="text"
+                      placeholder="Profile name"
+                      value={p.name}
+                      onChange={(e) => {
+                        const next = [...profiles];
+                        next[i] = { ...next[i], name: e.target.value };
+                        setProfiles(next);
+                      }}
+                      className={`flex-1 ${INPUT_CLS}`}
+                    />
+                    <button
+                      onClick={() => {
+                        const next = profiles.filter((_, j) => j !== i);
+                        setProfiles(next);
+                        saveProfiles(next).catch(console.error);
+                      }}
+                      className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Window title pattern, e.g. 'Slack' or 'Visual Studio'"
+                    value={p.appPattern}
+                    onChange={(e) => {
+                      const next = [...profiles];
+                      next[i] = { ...next[i], appPattern: e.target.value };
+                      setProfiles(next);
+                    }}
+                    className={INPUT_CLS}
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={p.cleanupStyle}
+                      onChange={(e) => {
+                        const next = [...profiles];
+                        next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
+                        setProfiles(next);
+                      }}
+                      className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                    >
+                      {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                    <select
+                      value={p.language}
+                      onChange={(e) => {
+                        const next = [...profiles];
+                        next[i] = { ...next[i], language: e.target.value };
+                        setProfiles(next);
+                      }}
+                      className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                    >
+                      <option value="">Auto</option>
+                      <option value="de">DE</option>
+                      <option value="en">EN</option>
+                    </select>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Custom prompt for this app (optional)"
+                    value={p.customPrompt}
+                    onChange={(e) => {
+                      const next = [...profiles];
+                      next[i] = { ...next[i], customPrompt: e.target.value };
+                      setProfiles(next);
+                    }}
+                    className={INPUT_CLS}
+                  />
+                </div>
+              ))}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+                >
+                  + Add Profile
+                </button>
+                {profiles.length > 0 && (
+                  <button
+                    onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                  >
+                    Save Profiles
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
 
       {/* Save button -- sticky footer, always visible.
-          On Android the navigation bar (Back/Home/Recent) overlaps the bottom of the WebView.
-          mobile-safe-bottom uses max(24px, env(safe-area-inset-bottom)) for correct clearance
-          even on devices with tall gesture bars (e.g. Xiaomi HyperOS ~48px). */}
+          On Android the nav bar (Back/Home/Recent) overlaps the WebView bottom.
+          mobile-safe-bottom adds a fixed 56 px padding (env() is unreliable in
+          Android WebView and returns 0). The parent panel max-h also accounts for
+          the ~48 px nav bar so this footer is never clipped by the container. */}
       <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
         <button
           onClick={handleSave}

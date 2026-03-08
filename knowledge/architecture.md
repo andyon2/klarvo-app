@@ -1,107 +1,144 @@
-# Architektur-Entscheidungen -- Dikta
+# Architektur -- Dikta
 
-## Grundlegende Architektur
+## Tech-Stack
 
-### Framework: Tauri v2
-- **Entscheidung:** Tauri v2 als Desktop- und Mobile-Framework
-- **Warum:** Ein Codebase fuer Windows + Android. Rust-Backend fuer Performance-kritische Teile (Audio, STT). Web-Frontend (React) fuer UI. Kleine Binaries (kein Electron-Bloat). Tauri v2 hat stabilen Mobile-Support.
-- **Trade-off:** Weniger Ecosystem als Electron, aber deutlich schlanker. Tauri-Android ist juenger als Desktop -- moegliche Quirks zu erwarten.
+| Schicht | Technologie | Warum |
+|---------|-------------|-------|
+| Framework | Tauri v2 | Ein Codebase Win+Android, Rust-Backend, kleine Binaries |
+| Frontend | React 19 + TypeScript + Tailwind v4 | Groesstes Ecosystem, Typsicherheit, schnelles Styling |
+| Backend | Rust | whisper.cpp-Integration, niedrige Latenz, native OS-APIs |
+| Mobile Native | Kotlin | Overlay-Service, AudioRecord, AccessibilityService -- braucht Android-APIs |
+| STT | Groq Whisper API (primaer), OpenAI Whisper (Fallback) | Schnell, guenstig |
+| LLM Cleanup | DeepSeek (primaer), OpenAI/Anthropic/Groq (Fallback) | DeepSeek ist guenstigster |
+| Persistenz | JSON (Config, Dictionary), SQLite (History, Stats) | JSON fuer flache Daten, SQLite fuer relationale |
+| Sync | Turso HTTP API | Lokale SQLite bleibt, Turso fuer Push/Pull, UUID als PK remote |
 
-### Frontend: React + TypeScript + Tailwind
-- **Entscheidung:** React mit TypeScript fuer das Web-Frontend im Tauri-Fenster
-- **Warum:** Groesstes Ecosystem, beste LLM-Code-Qualitaet, TypeScript fuer Typsicherheit. Tailwind fuer schnelles Styling ohne CSS-Dateien.
-- **Trade-off:** React ist schwerer als Svelte/Solid, aber bei dieser kleinen App irrelevant.
+## Plattform-Architektur
 
-### Backend: Rust
-- **Entscheidung:** Gesamte Business-Logik in Rust (Tauri-Backend)
-- **Warum:** Direkte Integration mit whisper.cpp (via whisper-rs), niedrige Latenz fuer Audio-Processing, native OS-API-Zugriffe (Hotkeys, Paste, Clipboard).
-
-## Modul-Architektur (Rust)
+### Was wo laeuft
 
 ```
-src-tauri/src/
-  audio/      -- Audio-Capture (cpal), Buffer-Management
-  stt/        -- Speech-to-Text (Trait: GroqWhisper + LocalWhisper)
-  llm/        -- Text-Cleanup (Trait: DeepSeek + erweiterbar)
-  paste/      -- Text-Insertion (plattformspezifisch hinter Trait)
-  hotkey/     -- Globaler Hotkey (plattformspezifisch hinter Trait)
-  dictionary/ -- Custom-Woerterbuch (JSON-Datei, kein SQLite)
-  config/     -- Settings-Persistenz (JSON-Datei)
+                    ┌─────────────────────────┐
+                    │   Shared Frontend (src/) │
+                    │   React + TypeScript     │
+                    └──────────┬──────────────┘
+                               │ invoke()
+              ┌────────────────┴────────────────┐
+              │                                 │
+    ┌─────────▼──────────┐           ┌──────────▼─────────┐
+    │  Desktop (Windows)  │           │  Mobile (Android)   │
+    │  Rust Backend       │           │  Rust Backend       │
+    │  + cpal Audio       │           │  (STT/LLM/History)  │
+    │  + Win32 Paste      │           │                     │
+    │  + Global Hotkey    │           │  Kotlin Services:   │
+    │  + System Tray      │           │  + Overlay Bubble   │
+    │  + Updater          │           │  + AudioRecord      │
+    └─────────────────────┘           │  + Accessibility    │
+                                      │  + DiktaApi (HTTP)  │
+                                      └─────────────────────┘
 ```
 
-Jedes Modul exponiert seine Funktionalitaet via Tauri-Commands an das Frontend.
+### Desktop-only (hinter `#[cfg(desktop)]` oder `isDesktop`)
+- **Rust:** cpal Audio-Capture, arboard Clipboard, Win32 SendInput Paste, global-shortcut, tray-icon, updater, Floating Bar Window
+- **Frontend:** Hotkey-Recorder, Audio-Device-Picker, Whisper Mode, Command Mode, Snippets-Panel, Webhook-Config, Updates-Sektion, UI Size, Footer-Hotkey-Anzeige
 
-### Config-Persistenz (`config/`)
-- **Format:** JSON (`{app_data_dir}/config.json`), nicht SQLite
-- **Warum JSON statt SQLite (MVP):** Eine flache Settings-Struktur braucht kein relationales Schema. JSON ist human-editable und hat null Setup-Overhead.
-- **Env-Var-Fallback:** Falls API-Keys in config.json fehlen, werden `GROQ_API_KEY` / `DEEPSEEK_API_KEY` aus der Prozessumgebung gelesen. Ermoeglicht `.env`-basierte Entwicklung ohne GUI.
-- **API-Keys auf Disk:** Plaintext im user-owned app-data-dir. Zukunft: Windows Credential Manager.
+### Mobile-only (hinter `#[cfg(mobile)]` oder `isMobile`)
+- **Rust:** Stub-Implementierungen fuer Audio (no-op), Paste (no-op)
+- **Frontend:** Safe-Area-Padding, Touch-Target-Groessen, MediaRecorder (WebAudio API), Android-Back-Button
+- **Kotlin:** Gesamter Overlay-Service, Bubble-UI, AudioRecord, AccessibilityService, Permission-Flow, DiktaApi (HTTP-Calls direkt)
 
-### Dictionary-Persistenz (`dictionary/`)
-- **Format:** JSON (`{app_data_dir}/dictionary.json`)
-- **Warum JSON statt SQLite (MVP):** Eine einfache String-Liste braucht keine Datenbank.
-- **Duplikat-Pruefung:** Case-insensitiv beim Hinzufuegen, case-sensitiv beim Entfernen.
-- **Pipeline-Integration:**
-  1. STT: `terms_as_prompt()` -> Groq `prompt`-Parameter (verbessert Whisper-Erkennung von Fachwoertern, max 224 Token)
-  2. LLM: `terms_as_list()` -> DeepSeek System-Prompt (LLM bewahrt die exakte Schreibweise)
+### Shared (beide Plattformen)
+- **Rust:** STT-Provider, LLM-Provider, Config, Dictionary, History, Sync, Pipeline-Logik
+- **Frontend:** Settings-Panel, Advanced-Settings, VoiceNotes, History-Ansicht, Recording-State-Hooks
 
-### AppState-Struktur
-- `config: Mutex<AppConfig>` -- alle persistierten Settings inkl. API-Keys
-- `dictionary: Mutex<Dictionary>` -- User-Wortliste
-- `app_data_dir: PathBuf` -- Pfad fuer Datei-I/O
-- `stt_provider: RwLock<Arc<dyn SttProvider>>` -- hot-swappbar bei Key-Aenderung
-- `cleanup_provider: RwLock<Arc<dyn CleanupProvider>>` -- hot-swappbar
+### Cross-Platform-Regeln
+1. **Shared-First:** Jede Aenderung an `src/` betrifft BEIDE Plattformen
+2. **Build-Reihenfolge:** Windows zuerst testen (`tauri dev`), dann Android (`scripts/android-build.sh`)
+3. **Platform Guards:** `isDesktop`/`isMobile` im Frontend, `#[cfg(desktop)]`/`#[cfg(mobile)]` in Rust
+4. **Android WebView:** `env(safe-area-inset-bottom)` gibt 0 zurueck -- nie darauf verlassen, feste px-Werte nutzen
 
-### API-Key-Sicherheit im Frontend
-- `get_settings()` gibt nur maskierte Keys zurueck: `"****{last4}"` (z.B. `"****1234"`)
-- Volle Keys verlassen das Backend nie Richtung Frontend
-- `get_api_key_status()` gibt nur `bool` zurueck (fuer einfache "konfiguriert"-Anzeige)
+## Modul-Grenzen
 
-## API-Strategie
-
-### STT (Speech-to-Text)
-- **Primaer:** Groq Whisper API (schnell, guenstig, gute Qualitaet)
-- **Fallback:** Lokales whisper.cpp via whisper-rs (offline, GPU optional)
-- **Auto-Modus:** Cloud wenn online + API-Key vorhanden, sonst lokal
-
-### Text-Cleanup (LLM)
-- **Primaer:** DeepSeek API (guenstig, gute Qualitaet fuer Text-Cleanup)
-- **System-Prompt pro Stil:**
-  - Polished: Bereinige Fuellwoerter, korrigiere Grammatik, formatiere professionell
-  - Verbatim: Nur Satzzeichen und offensichtliche Fehler
-  - Chat: Kurz, locker, Emojis erlaubt
-
-### GPU-Strategie
-- Lokal whisper.cpp: GPU wenn am Strom, CPU wenn auf Akku
-- Erkennung via Windows Power-Status API oder manueller Toggle in Settings
-
-## Plattform-Abstraktionen
-
-Plattformspezifischer Code wird hinter Traits versteckt:
-
-```rust
-pub trait PasteHandler: Send + Sync {
-    fn paste(&self, text: &str) -> Result<()>;
-}
-
-pub trait HotkeyManager: Send + Sync {
-    fn register(&self, key: KeyCombo, callback: Box<dyn Fn() + Send>) -> Result<()>;
-    fn unregister(&self, key: KeyCombo) -> Result<()>;
-}
+### Pipeline-Flow (Desktop)
+```
+Hotkey → Audio-Capture (cpal) → WAV → STT (Groq/OpenAI) → Raw Text → LLM Cleanup → Paste (SendInput)
 ```
 
-Implementierungen:
-- Windows: `WindowsPasteHandler`, `WindowsHotkeyManager`
-- Android: `AndroidPasteHandler` (via InputConnection), `AndroidHotkeyManager` (via IME)
+### Pipeline-Flow (Android)
+```
+Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text → LLM Cleanup (Kotlin HTTP) → AccessibilityService Paste
+```
 
-## Android-Architektur
+### Schluessel-Entscheidungen
 
-### IME (InputMethodService)
-- Dikta registriert sich als System-Keyboard
-- Minimale UI: Grosser Speak-Button + Style-Auswahl
-- Audio wird aufgenommen -> an Rust-Backend geschickt (Tauri Plugin Bridge) -> STT -> Cleanup -> Text eingefuegt via InputConnection
+**Android: Floating Bubble statt IME (2026-03-08)**
+- Overlay-Service mit Floating Bubble als primaerer Ansatz
+- Kein System-Keyboard noetig -- Bubble erscheint ueber jeder App
+- Gesten: Single-Tap=Record, Long-Press=Push-to-Talk, Double-Tap=Settings
 
-### Entscheidung offen: Tauri-Bridge vs. Native Kotlin
-- Option A: IME nutzt Tauri Plugin Bridge -> Rust-Backend (Code-Sharing, aber Latenz?)
-- Option B: IME nutzt APIs direkt aus Kotlin (schneller, aber Code-Duplikation)
-- Entscheidung wird in Phase 5 (Android) getroffen nach Prototyp.
+**Android: Native Kotlin statt Tauri-Bridge (2026-03-08)**
+- DiktaApi.kt macht HTTP-Calls direkt (Groq, DeepSeek, Turso)
+- Kein Tauri-Bridge-Overhead, weniger Latenz
+- Trade-off: Prompt-Logik ist in Rust UND Kotlin dupliziert -- bei Aenderungen BEIDE updaten!
+
+**Keyboard-Detection: AccessibilityService (2026-03-08)**
+- TYPE_INPUT_METHOD Window-Events erkennen ob Tastatur sichtbar ist
+- Funktioniert system-weit (nicht nur in-app)
+- Xiaomi: "restricted settings" umgehbar via ADB Security Settings
+
+**Config: JSON fuer Settings, SQLite fuer History**
+- Config/Dictionary: JSON in `{app_data_dir}/` -- human-editable, kein Setup
+- History/Stats: SQLite -- relationale Queries, Volltextsuche
+- Android liest config.json aus `context.dataDir` (identischer Pfad wie Tauri)
+
+**API-Key-Sicherheit**
+- Keys verlassen Backend nie im Klartext (nur `****{last4}` maskiert)
+- Env-Var-Fallback: `GROQ_API_KEY`, `DEEPSEEK_API_KEY` aus `.env`
+
+**Audio: 16kHz mono WAV**
+- Funktioniert fuer Groq API (max 25MB) und whisper.cpp
+- Desktop: cpal mit dediziertem OS-Thread (Stream nicht Send)
+- Android: AudioRecord API, PCM sammeln, bei Stop zu WAV konvertieren
+
+**Sync: Turso HTTP API**
+- Lokale SQLite bleibt, Turso fuer Push/Pull
+- UUID als Primary Key remote (kein AUTOINCREMENT)
+- DB-Lock nie ueber async await halten (rusqlite Connection nicht Send)
+- Android: pusht nach jedem Diktat via DiktaApi.pushToTurso()
+
+**Event-basierte Pipeline**
+- `dikta://state-changed` Events statt Polling
+- States: idle → recording → transcribing → cleaning → idle
+
+**LLM Cleanup: Drei Stile**
+- Polished: Fuellwoerter bereinigen, Grammatik, professionell formatieren
+- Verbatim: Nur Satzzeichen und offensichtliche Fehler
+- Chat: Kurz, locker, Emojis erlaubt
+- Prompts muessen in Rust (llm/mod.rs) UND Kotlin (DiktaApi.kt) synchron gehalten werden!
+
+**Custom Prompts: Zwei Stufen, kein Overlap**
+- "Cleanup Instructions" (Settings): Zusaetzliche LLM-Anweisungen ("formelles Deutsch", "keine Aufzaehlungen")
+- "STT Prompts" (Advanced Settings): Whisper Conditioning Text pro Sprache (verbessert Erkennung)
+- Unterschiedliche Pipeline-Stufen: STT-Prompt → Transkription, Cleanup Instructions → LLM-Bereinigung
+
+## Plattform-Quirks
+
+### Windows
+- **Paste:** Win32 SendInput fuer Ctrl+V. Terminals brauchen Ctrl+Shift+V (Terminal-Erkennung noetig)
+- **Hotkey:** `global-hotkey` Crate (Tauri-integriert), braucht Message-Loop
+- **GPU:** Fuer lokales whisper.cpp: GPU am Strom, CPU auf Akku (SYSTEM_POWER_STATUS API)
+
+### Android
+- **Permissions:** RECORD_AUDIO + POST_NOTIFICATIONS (Runtime), FOREGROUND_SERVICE_MICROPHONE (Android 14+)
+- **Background-Killing:** ForegroundService mit Notification Pflicht. Xiaomi/Samsung besonders aggressiv
+- **Overlay:** SYSTEM_ALERT_WINDOW, TYPE_APPLICATION_OVERLAY (API 26+), in onResume() pruefen
+- **Touch:** rawX/rawY statt x/y fuer Drag. 10dp Tap-vs-Drag Schwelle
+- **Kotlin-Dateien:** Persistent in `android/kotlin-src/`, werden via `scripts/android-build.sh` nach `gen/android/` kopiert
+- **WebView:** `env(safe-area-inset-bottom)` gibt 0 zurueck. Feste 56px Padding + max-h Abzuege nutzen
+- **Accessibility:** FLAG_RETRIEVE_INTERACTIVE_WINDOWS + packageNames=null fuer system-weite Events
+
+### Android Build
+- JDK 17, NDK via SDK Manager, Build-Tools 34.0.0, Rust targets: aarch64-linux-android
+- WSL2: `ADB_SERVER_SOCKET=tcp:$WSL_HOST:5037` fuer ADB-Zugriff
+- Build: `scripts/android-build.sh` (kopiert Kotlin, baut, signiert, deployt nach Dropbox)
+- Tauri Plugins desktop-only: opener, global-shortcut, updater, tray-icon (mit cfg-Guards!)

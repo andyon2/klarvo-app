@@ -74,7 +74,7 @@ class DiktaOverlayService : Service() {
         var instance: DiktaOverlayService? = null
     }
 
-    private enum class RecordingState { IDLE, RECORDING, PROCESSING }
+    private enum class RecordingState { IDLE, RECORDING, RECORDING_PTT, PROCESSING }
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var windowManager: WindowManager
@@ -492,17 +492,16 @@ class DiktaOverlayService : Service() {
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // During push-to-talk the bubble must stay locked in place.
+                // Ignore all movement -- no drag, no cancel, no position update.
+                if (pushToTalkActive) return true
+
                 val dx = event.rawX - dragTouchStartX
                 val dy = event.rawY - dragTouchStartY
                 if (!isDragging && (abs(dx) > dragThresholdPx || abs(dy) > dragThresholdPx)) {
                     isDragging = true
-                    // Moved too much -- cancel long-press and push-to-talk
+                    // Moved too much -- cancel long-press
                     handler.removeCallbacks(longPressRunnable)
-                    if (pushToTalkActive) {
-                        // Finger moved while holding PTT -- cancel recording
-                        pushToTalkActive = false
-                        cancelRecording()
-                    }
                 }
                 if (isDragging) {
                     bubbleParams.x = (bubbleStartX + dx).toInt()
@@ -597,6 +596,7 @@ class DiktaOverlayService : Service() {
                     // Middle zone tap: ignore
                 }
             }
+            RecordingState.RECORDING_PTT -> { /* PTT: ignore taps, release handles it */ }
             RecordingState.PROCESSING -> { /* ignore */ }
         }
     }
@@ -672,8 +672,15 @@ class DiktaOverlayService : Service() {
 
         audioRecorder = recorder
         val previousState = currentState
-        setState(RecordingState.RECORDING)
-        adjustLayoutForState(RecordingState.RECORDING, previousState)
+
+        if (pushToTalkActive) {
+            // PTT mode: bubble stays circular (no bar expansion), just turns red + scales up.
+            // adjustLayoutForState is intentionally skipped -- view size does not change.
+            setState(RecordingState.RECORDING_PTT)
+        } else {
+            setState(RecordingState.RECORDING)
+            adjustLayoutForState(RecordingState.RECORDING, previousState)
+        }
     }
 
     /**
@@ -691,7 +698,10 @@ class DiktaOverlayService : Service() {
 
         val previousState = currentState
         setState(RecordingState.IDLE)
-        adjustLayoutForState(RecordingState.IDLE, previousState)
+        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
+        if (previousState == RecordingState.RECORDING) {
+            adjustLayoutForState(RecordingState.IDLE, previousState)
+        }
     }
 
     /**
@@ -704,7 +714,10 @@ class DiktaOverlayService : Service() {
 
         val previousState = currentState
         setState(RecordingState.PROCESSING)
-        adjustLayoutForState(RecordingState.PROCESSING, previousState)
+        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
+        if (previousState == RecordingState.RECORDING) {
+            adjustLayoutForState(RecordingState.PROCESSING, previousState)
+        }
 
         Thread {
             val wavBytes = recorder.stop()
@@ -753,7 +766,7 @@ class DiktaOverlayService : Service() {
             // Step 2: Text cleanup via DeepSeek (optional -- skip if no key)
             val finalText = if (config.deepseekApiKey.isNotBlank()) {
                 try {
-                    DiktaApi.cleanup(transcript, config.deepseekApiKey, config.cleanupStyle)
+                    DiktaApi.cleanupChunked(transcript, config.deepseekApiKey, config.cleanupStyle)
                 } catch (e: IOException) {
                     Log.w(TAG, "Text cleanup via DeepSeek failed -- using raw transcript", e)
                     transcript
@@ -806,13 +819,15 @@ class DiktaOverlayService : Service() {
     private fun setState(newState: RecordingState) {
         currentState   = newState
         bubbleView.state = when (newState) {
-            RecordingState.IDLE       -> FloatingBubbleView.State.IDLE
-            RecordingState.RECORDING  -> FloatingBubbleView.State.RECORDING
-            RecordingState.PROCESSING -> FloatingBubbleView.State.PROCESSING
+            RecordingState.IDLE          -> FloatingBubbleView.State.IDLE
+            RecordingState.RECORDING     -> FloatingBubbleView.State.RECORDING
+            RecordingState.RECORDING_PTT -> FloatingBubbleView.State.RECORDING_PTT
+            RecordingState.PROCESSING    -> FloatingBubbleView.State.PROCESSING
         }
         bubbleView.alpha = when (newState) {
-            RecordingState.IDLE                            -> bubbleOpacity / 100f
-            RecordingState.RECORDING, RecordingState.PROCESSING -> 1.0f
+            RecordingState.IDLE -> bubbleOpacity / 100f
+            RecordingState.RECORDING, RecordingState.RECORDING_PTT,
+            RecordingState.PROCESSING -> 1.0f
         }
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f

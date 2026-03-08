@@ -3,11 +3,14 @@ package com.dikta.voice
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.os.Build
+import android.util.Log
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 /**
  * API client for Groq Whisper STT and DeepSeek text cleanup.
@@ -398,6 +401,110 @@ object DiktaApi {
                 .trim()
         } finally {
             conn.disconnect()
+        }
+    }
+
+    // --- Chunked cleanup ---
+
+    private const val CHUNK_THRESHOLD = 800
+    private const val CHUNK_TARGET_SIZE = 600
+    private const val CLEANUP_TAG = "DiktaApi"
+
+    /**
+     * Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).
+     * Each chunk targets ~CHUNK_TARGET_SIZE characters but does not break mid-sentence.
+     * Mirrors the Rust `split_into_chunks` function in src-tauri/src/llm/mod.rs.
+     *
+     * @param text Input text to split
+     * @return List of trimmed, non-empty chunks
+     */
+    fun splitIntoChunks(text: String): List<String> {
+        val chunks = mutableListOf<String>()
+        var start = 0
+
+        while (start < text.length) {
+            if (text.length - start <= CHUNK_TARGET_SIZE) {
+                val tail = text.substring(start).trim()
+                if (tail.isNotEmpty()) chunks.add(tail)
+                break
+            }
+
+            // Search for a sentence boundary near the target size.
+            // Search window: from (start + CHUNK_TARGET_SIZE/2) up to (start + CHUNK_TARGET_SIZE + 200).
+            val searchEnd = (start + CHUNK_TARGET_SIZE + 200).coerceAtMost(text.length)
+            var bestSplit: Int? = null
+
+            var i = start + CHUNK_TARGET_SIZE / 2
+            while (i < searchEnd) {
+                val c = text[i]
+                val next = if (i + 1 < text.length) text[i + 1] else '\u0000'
+
+                if ((c == '.' || c == '!' || c == '?') && next == ' ') {
+                    bestSplit = i + 1  // include the punctuation character
+                    if (i >= start + CHUNK_TARGET_SIZE) break  // close enough to target
+                } else if (c == '\n') {
+                    bestSplit = i
+                    if (i >= start + CHUNK_TARGET_SIZE) break
+                }
+                i++
+            }
+
+            val splitAt = bestSplit ?: (start + CHUNK_TARGET_SIZE).coerceAtMost(text.length)
+            val chunk = text.substring(start, splitAt).trim()
+            if (chunk.isNotEmpty()) chunks.add(chunk)
+
+            // Advance past the split point, skipping leading whitespace.
+            start = splitAt
+            while (start < text.length && text[start].isWhitespace()) start++
+        }
+
+        return chunks
+    }
+
+    /**
+     * Cleans up text using the DeepSeek API, with chunked parallel processing for long texts.
+     *
+     * - If text.length <= CHUNK_THRESHOLD: delegates to [cleanup] (single call).
+     * - If text.length > CHUNK_THRESHOLD: splits into chunks via [splitIntoChunks] and
+     *   processes all chunks in parallel using a fixed-size thread pool.
+     *   Results are joined with "\n\n".
+     *   If any chunk fails, falls back to a single [cleanup] call on the full text.
+     *
+     * @param text   Raw transcription text to clean up
+     * @param apiKey DeepSeek API key
+     * @param style  Cleanup style: "polished", "verbatim", or "chat"
+     * @return Cleaned text
+     * @throws IOException if both chunked and fallback calls fail
+     */
+    fun cleanupChunked(text: String, apiKey: String, style: String): String {
+        if (text.length <= CHUNK_THRESHOLD) {
+            return cleanup(text, apiKey, style)
+        }
+
+        val chunks = splitIntoChunks(text)
+        if (chunks.size <= 1) {
+            return cleanup(text, apiKey, style)
+        }
+
+        Log.i(CLEANUP_TAG, "[cleanupChunked] splitting ${text.length} chars into ${chunks.size} chunks")
+
+        val executor = Executors.newFixedThreadPool(4)
+        try {
+            val futures = chunks.map { chunk ->
+                executor.submit(Callable { cleanup(chunk, apiKey, style) })
+            }
+
+            // Collect results -- if any Future throws, we fall through to the catch block.
+            val results = try {
+                futures.map { it.get() }
+            } catch (e: Exception) {
+                Log.w(CLEANUP_TAG, "[cleanupChunked] a chunk failed, falling back to single call", e)
+                return cleanup(text, apiKey, style)
+            }
+
+            return results.joinToString("\n\n")
+        } finally {
+            executor.shutdown()
         }
     }
 

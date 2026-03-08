@@ -1,109 +1,93 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.0, Phase 5 abgeschlossen. Android-Plattform laeuft (Floating Bubble + Turso Sync). Dikta ist ein voll funktionsfaehiges Voice-Dictation-Tool mit Multi-Provider-Support, History, Stats, Voice Notes, Text Snippets, App-Context-Erkennung, Multi-Format-Output, Webhook-Export, System-Tray, Auto-Update-Infra und Cross-Device Sync. 196 Rust-Tests, Windows Release-Build laeuft, Android APK auf Xiaomi (HyperOS v2) getestet.
+Version 0.5.0. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests. Windows + Android Builds laufen.
 
-## Abgeschlossene Aufgaben
+## Offene Tasks
 
-### Phase 1 -- Foundation
-- [x] Tauri v2 Projekt initialisiert (React 19 + TypeScript + Vite 7 + Tailwind CSS v4)
-- [x] Audio-Capture Modul (cpal, WAV 16kHz mono 16-bit PCM, dedizierter Audio-Thread)
-- [x] Groq Whisper STT Client (SttProvider Trait + GroqWhisper Impl, prompt-Parameter)
-- [x] DeepSeek Cleanup Client (CleanupProvider Trait + DeepSeekCleanup Impl, 3 Styles)
-- [x] Overlay-UI (State-Machine, Record-Button, Style-Picker, Status-Bar)
-- [x] API-Provider-Docs recherchiert (Groq Whisper + DeepSeek Chat)
+### Naechste Session -- Geplante Features
+- [ ] [android] Bubble Size/Opacity in Settings migrieren (SharedPreferences → config.json, React-UI)
+  - Double-Tap-Menu fuer Settings funktioniert nicht -- muss ueber Settings-Panel gehen
+- [ ] [windows] Floating Bar Redesign -- muss macOS-Qualitaet erreichen
+  - Aktueller gruener Kreis + statische Bar sieht unprofessionell aus vs. Android-Bubble
+  - Orientierung am Android-Stil: kompakt, elegant, animiert, State-basiert
 
-### Phase 2 -- Integration
-- [x] End-to-End-Flow: Record -> Transcribe -> Cleanup -> Paste
-- [x] API-Key-Management (Settings-Panel mit maskierten Keys)
-- [x] Globaler Hotkey (konfigurierbar, Hold/Toggle Mode)
-- [x] Text-Paste (Win32 SendInput + Clipboard)
-- [x] Event-basierte Pipeline (dikta://state-changed)
-- [x] Settings-Persistenz (JSON config.json)
-- [x] Custom Dictionary (Groq-Prompt + LLM-System-Prompt)
-- [x] Onboarding-Wizard
+### Bekannte Bugs
+- [android] Double-Tap auf Bubble oeffnet Settings-Menu NICHT (Geste funktioniert nicht)
+- [windows] Signing Keys noch nicht generiert (Warnung bei jedem Build)
 
-### Phase 3 -- Multi-Provider & Advanced Features
-- [x] Multi-Provider STT: Groq Whisper, OpenAI Whisper (konfigurierbare Prioritaet)
-- [x] Multi-Provider LLM: DeepSeek, OpenAI, Anthropic, Groq/Llama (konfigurierbare Prioritaet)
-- [x] Provider Priority Drag & Drop UI
-- [x] Command Mode (Ctrl+Shift+E: Text selektieren, Sprachbefehl geben)
-- [x] Whisper Mode (Verstaerkung fuer leises Diktieren)
-- [x] Live Preview (Echtzeit-Transkript waehrend Aufnahme)
-- [x] History + Search (SQLite, Volltextsuche mit Highlighting)
-- [x] Usage Statistics (Kosten-Tracking STT/LLM, Filler-Word-Analyse)
-- [x] Chunked Parallel Cleanup (lange Texte parallel verarbeiten)
-- [x] Raw-Text-Anzeige (Original vs. bereinigt)
-- [x] Code-Switching DE/EN (verbesserte STT-Prompts)
-- [x] App Profiles (Style/Language/Prompt pro App)
+### Backlog
+- [ ] [shared] Lokaler whisper.cpp Fallback (offline STT)
+- [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
+- [ ] [windows] Signing Keys generieren (Tauri Updater braucht Keypair)
+- [ ] [windows] GitHub Releases CI/CD Pipeline fuer Auto-Update
+- [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
 
-### Phase 4 -- Productivity Features
-- [x] Live Translation (Output-Sprache konfigurierbar, 13 Sprachen)
-- [x] Multi-Format Output (Email, Bullets, Summary + Reset-Button)
-- [x] Filler Word Statistics (aufklappbar in Stats)
-- [x] History Search mit Kontext-Highlighting
-- [x] App-Context pro Diktat (App-Name in History gespeichert, durchsuchbar)
-- [x] Voice Notes Mode (eigenes Panel, Aufnahme speichern statt pasten)
-- [x] Text Snippets (Quick-Access Panel, Textbausteine ins aktive Fenster pasten)
-- [x] Verbesserter STT-Prompt (Conditioning Text fuer alle Sprachen)
+## Aenderungen Session 2026-03-08 (Session 2)
 
-### Phase 5 -- Platform & Infra
-- [x] Getrennte History-Suche (Text + App-Name als separate Felder)
-- [x] Webhook/API Export (HTTP POST nach jedem Diktat, konfigurierbare URL)
-- [x] System-Tray Integration (Minimize to Tray, Tray-Menue mit Settings/Quit)
-- [x] Auto-Update Infra (tauri-plugin-updater, GitHub Releases Endpoint, Signing)
-- [x] Floating Bar Window (Basis-Fenster am unteren Bildschirmrand)
-- [x] Android-Plattform: Erster APK-Build, Tauri v2 Mobile-Support
-- [x] Android Floating Bubble (Overlay-Service, Keyboard-Erkennung, Diktat-Flow)
-- [x] Android Kotlin-Services (DiktaOverlayService, FloatingBubbleView, DiktaApi, MainActivity)
-- [x] Cross-Device History Sync via Turso (Rust + Kotlin, Push/Pull, UUID-basiert)
-- [x] Kotlin-Dateien persistent in android/kotlin-src/ (ueberleben tauri android init)
+### Android
+- [x] Waveform Noise Gate + Smoothing (0.04 Floor, 2.5x Amplify, 3-Sample Average)
+- [x] Waveform Bars groesser (7dp breit, 5 Bars, 10% min, pow(0.6) Amplitude-Kurve)
+- [x] Push-to-Talk: Bubble bleibt rund, skaliert 1.3x mit OvershootInterpolator (kein Bar-Expand)
+- [x] Push-to-Talk: Bubble-Position fixiert waehrend Long-Press (kein Drag/Cancel)
+- [x] Chunked Parallel Cleanup (4-Thread-Pool, ab 800 Zeichen, Sentence-Boundary-Split)
+- [x] UI Size auf Mobile versteckt (CSS zoom glitcht in WebView)
 
-## Module (Rust)
+### Shared (Windows + Android)
+- [x] Collapsible Sections in SettingsPanel (Accordion: nur eine Sektion offen)
+- [x] Save-Button-Fix: max-h + 48px Nav-Bar-Abzug auf Mobile
+- [x] "Custom Prompt" umbenannt zu "Cleanup Instructions"
+- [x] "Clear All" Button aus History entfernt
+- [x] Clear-Button bei Cleanup Instructions Presets
+- [x] "LLM Cleanup -- Base Prompts" Titel + Klarstellungs-Hint
+- [x] Snippets ersetzt durch "Integrations" Platzhalter
+- [x] Record-Button versteckt wenn Panel offen
+- [x] MobileTextarea: Fullscreen-Popup fuer Textfelder auf Android
+- [x] MobileTextarea: Safe-Area-Fix fuer Status-Bar (pt-9)
+- [x] UI Size komplett entfernt (auch Desktop -- war buggy)
+- [x] Font-Sizing: text-[10px] → text-[11px] global (bessere Lesbarkeit)
+- [x] Accordion-Verhalten in Settings + Advanced Settings
+
+### Meta
+- [x] Projektdateien konsolidiert: 5 → 3 Dateien (project-status, architecture, MEMORY)
+- [x] architecture.md komplett aktualisiert (Plattform-Split, Cross-Platform-Regeln)
+
+## Modul-Referenz
+
+### Rust (`src-tauri/src/`)
 ```
-src-tauri/src/
-  audio/      -- Audio-Capture (cpal), WAV-Encoding, Silence Detection
-  stt/        -- SttProvider Trait, GroqWhisper, OpenAiWhisper
-  llm/        -- CleanupProvider Trait, DeepSeek/OpenAI/Anthropic/Groq, Chunked Cleanup
-  paste/      -- Win32 SendInput + Clipboard, Foreground Window Capture
-  hotkey/     -- Pipeline-Orchestrierung, Event-Emitter, Command Mode
-  config/     -- JSON Settings + App Profiles + Text Snippets + Webhook
-  dictionary/ -- Custom-Woerterbuch (JSON)
-  history/    -- SQLite History + Voice Notes + Usage Stats + Filler Analysis
-  sync/       -- Cross-Device Sync via Turso HTTP API (Push/Pull)
+lib.rs       -- AppState, run(), invoke_handler
+pipeline.rs  -- Hotkey pipeline: start_recording / stop_and_process
+commands/    -- recording, settings, dictionary, history, misc
+audio/       -- Audio-Capture (cpal, desktop-only), WAV-Encoding
+stt/         -- SttProvider Trait, GroqWhisper, OpenAiWhisper
+llm/         -- CleanupProvider Trait, DeepSeek/OpenAI/Anthropic/Groq
+paste/       -- Win32 SendInput + Clipboard (desktop-only)
+hotkey/      -- Pipeline-Orchestrierung, Event-Emitter, Command Mode
+config/      -- JSON Settings + App Profiles + Text Snippets + Webhook
+dictionary/  -- Custom-Woerterbuch (JSON)
+history/     -- SQLite History + Voice Notes + Usage Stats + Filler Analysis
+sync/        -- Cross-Device Sync via Turso HTTP API
 ```
 
-## Android-Architektur
+### Frontend (`src/`)
 ```
-android/kotlin-src/
-  DiktaOverlayService.kt      -- Foreground Service + Overlay + Keyboard-Erkennung + Turso Sync
-  FloatingBubbleView.kt        -- Custom View: Idle/Recording/Processing States
-  DiktaApi.kt                  -- STT + Cleanup + History-DB + Turso Push
-  DiktaAccessibilityService.kt -- Optional Auto-Paste (ACTION_PASTE)
-  MainActivity.kt              -- Permission-Flow: SYSTEM_ALERT_WINDOW -> RECORD_AUDIO -> Service
+App.tsx                          -- Hauptkomponente
+components/SettingsPanel.tsx     -- Settings (Accordion-Sektionen)
+components/AdvancedSettingsPanel.tsx
+components/MobileTextarea.tsx    -- Fullscreen-Textarea-Popup (Android)
+components/VoiceNotesPanel.tsx
+components/icons.tsx, ui.tsx
+hooks/useRecording.ts, useSettings.ts, usePanels.ts
 ```
 
-## Offene Aufgaben (naechste Phasen)
-- [ ] Lokaler whisper.cpp Fallback (offline STT)
-- [ ] VAD -- Voice Activity Detection (Auto-Start/Stopp)
-- [ ] Signing Keys generieren (Tauri Updater braucht Keypair)
-- [ ] GitHub Releases CI/CD Pipeline fuer Auto-Update
-
-## Entscheidungen
-- [2026-03-06]: Tech-Stack: Tauri v2 + React/TS + Rust.
-- [2026-03-06]: API-Strategie: Groq Whisper (STT) + DeepSeek (Cleanup) primaer, Fallback-Kette konfigurierbar.
-- [2026-03-06]: Audio-Thread: cpal::Stream nicht Send auf Linux -- dedizierter OS-Thread mit Channel.
-- [2026-03-06]: whisper-large-v3-turbo statt v3 (3x guenstiger, reicht fuer Diktat).
-- [2026-03-06]: JSON fuer Config/Dictionary, SQLite fuer History/Stats.
-- [2026-03-06]: API-Keys verlassen Backend nie im Klartext (nur letzte 4 Zeichen maskiert).
-- [2026-03-06]: Event-basierte Pipeline (dikta://state-changed) statt polling.
-- [2026-03-07]: Win32 SendInput fuer Paste statt xdotool. GetForegroundWindow fuer App-Context.
-- [2026-03-07]: STT Conditioning Prompts pro Sprache fuer bessere Kurztext-Erkennung.
-- [2026-03-07]: Webhook: fire-and-forget POST, blockiert nie die Pipeline.
-- [2026-03-07]: Auto-Update: tauri-plugin-updater mit GitHub Releases Endpoint. Keys noch nicht generiert.
-- [2026-03-07]: History-Suche getrennt nach Text und App-Name (AND-Verknuepfung).
-- [2026-03-08]: Android: Floating Bubble statt IME als primaerer Ansatz (Overlay-Service, kein System-Keyboard noetig).
-- [2026-03-08]: Android: Kotlin-Code direkt statt Tauri-Bridge fuer STT/LLM (Option B -- weniger Latenz, einfacher).
-- [2026-03-08]: Cross-Device Sync: Turso HTTP API, lokale SQLite bleibt, UUID als Primary Key remote.
-- [2026-03-08]: Kotlin-Quellen in android/kotlin-src/ persistent, werden bei Build nach gen/android/ kopiert.
-- [2026-03-08]: DB-Lock nie ueber async await halten (rusqlite Connection nicht Send).
+### Android (`android/kotlin-src/com/dikta/voice/`)
+```
+DiktaOverlayService.kt      -- Foreground Service, Touch-Gesten, PTT
+FloatingBubbleView.kt        -- Idle/Recording(Bar)/RecordingPTT/Processing
+DiktaAudioRecorder.kt        -- Audio, WAV, Amplitude mit Noise Gate
+BubbleSettingsMenu.kt         -- Size/Opacity-Menu (Double-Tap -- BROKEN)
+DiktaApi.kt                  -- STT + Chunked Cleanup + History-DB + Turso
+DiktaAccessibilityService.kt -- Keyboard-Erkennung + Auto-Paste
+MainActivity.kt              -- Permission-Flow
+```

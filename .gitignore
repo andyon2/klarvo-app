@@ -43,3 +43,4 @@ Thumbs.db
 # Whisper models (large files)
 models/
 *.bin
+dikta-debug.keystore

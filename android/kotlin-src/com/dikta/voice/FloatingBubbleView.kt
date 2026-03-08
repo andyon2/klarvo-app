@@ -6,6 +6,7 @@ import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.animation.LinearInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.core.content.ContextCompat
 
 /**
@@ -13,13 +14,17 @@ import androidx.core.content.ContextCompat
  * All rendering via Canvas -- no asset files needed.
  *
  * States:
- *   IDLE       -- white circle + Dikta app launcher icon
- *   RECORDING  -- pill/bar shape with [X] [waveform] [checkmark]
- *   PROCESSING -- amber circle + rotating arc spinner
+ *   IDLE          -- white circle + Dikta app launcher icon
+ *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark]
+ *                    Used for tap-to-record where the user needs cancel/confirm buttons.
+ *   RECORDING_PTT -- circular bubble, scaled up + red, waveform inside.
+ *                    Used for push-to-talk: user just holds and releases, no bar needed.
+ *   PROCESSING    -- amber circle + rotating arc spinner
  *
  * Size:
  *   Call setBubbleSize(dp) to resize the bubble at runtime.
  *   In RECORDING state the view widens to BAR_WIDTH_DP; height stays at bubbleSizeDp.
+ *   In RECORDING_PTT state the view stays circular but animates scale via scaleX/scaleY.
  *
  * Touch zones in RECORDING bar:
  *   - Left ~25% of width  -> cancel zone  (X button)
@@ -29,7 +34,7 @@ import androidx.core.content.ContextCompat
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
-    enum class State { IDLE, RECORDING, PROCESSING }
+    enum class State { IDLE, RECORDING, RECORDING_PTT, PROCESSING }
 
     var state: State = State.IDLE
         set(value) {
@@ -95,7 +100,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         style = Paint.Style.FILL
     }
 
-    // --- Bar animation ---
+    // --- Bar animation (drives waveform bars in both RECORDING and RECORDING_PTT) ---
     private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 600
         repeatMode = ValueAnimator.REVERSE
@@ -103,7 +108,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         interpolator = LinearInterpolator()
         addUpdateListener { invalidate() }
     }
-    private val barPhaseOffsets = floatArrayOf(0f, 0.33f, 0.66f)
+    // 5 bars: evenly distributed phase offsets across the 0..1 cycle
+    private val barPhaseOffsets = floatArrayOf(0f, 0.20f, 0.40f, 0.60f, 0.80f)
 
     // --- Rotation animation ---
     private val rotationAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -111,6 +117,34 @@ class FloatingBubbleView(context: Context) : View(context) {
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
         addUpdateListener { invalidate() }
+    }
+
+    /**
+     * PTT scale-up animator: smoothly grows the bubble from 1.0 to 1.3 with a slight
+     * overshoot for a tactile "pop" feel when push-to-talk activates.
+     */
+    private val pttScaleUpAnimator = ValueAnimator.ofFloat(1.0f, 1.3f).apply {
+        duration = 200
+        interpolator = OvershootInterpolator(2.0f)
+        addUpdateListener { anim ->
+            val s = anim.animatedValue as Float
+            scaleX = s
+            scaleY = s
+        }
+    }
+
+    /**
+     * PTT scale-down animator: shrinks back to 1.0 when push-to-talk is released.
+     * No overshoot -- just a clean snap back.
+     */
+    private val pttScaleDownAnimator = ValueAnimator.ofFloat(1.3f, 1.0f).apply {
+        duration = 150
+        interpolator = LinearInterpolator()
+        addUpdateListener { anim ->
+            val s = anim.animatedValue as Float
+            scaleX = s
+            scaleY = s
+        }
     }
 
     override fun onAttachedToWindow() {
@@ -122,15 +156,40 @@ class FloatingBubbleView(context: Context) : View(context) {
         super.onDetachedFromWindow()
         barAnimator.cancel()
         rotationAnimator.cancel()
+        pttScaleUpAnimator.cancel()
+        pttScaleDownAnimator.cancel()
     }
 
     private fun updateAnimators() {
         barAnimator.cancel()
         rotationAnimator.cancel()
         when (state) {
-            State.RECORDING  -> barAnimator.start()
-            State.PROCESSING -> rotationAnimator.start()
-            State.IDLE       -> { /* no animation */ }
+            State.RECORDING     -> barAnimator.start()
+            State.RECORDING_PTT -> {
+                barAnimator.start()
+                // Cancel any in-progress scale-down, then animate scale-up
+                pttScaleDownAnimator.cancel()
+                // Read current scale so the animator starts from wherever we are
+                pttScaleUpAnimator.setFloatValues(scaleX, 1.3f)
+                pttScaleUpAnimator.start()
+            }
+            State.PROCESSING -> {
+                // If we just left PTT, scale back down
+                if (scaleX != 1.0f) {
+                    pttScaleUpAnimator.cancel()
+                    pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
+                    pttScaleDownAnimator.start()
+                }
+                rotationAnimator.start()
+            }
+            State.IDLE -> {
+                // Ensure scale is reset (e.g. cancel was called directly from PTT)
+                if (scaleX != 1.0f) {
+                    pttScaleUpAnimator.cancel()
+                    pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
+                    pttScaleDownAnimator.start()
+                }
+            }
         }
     }
 
@@ -151,6 +210,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         val density = resources.displayMetrics.density
         val heightPx = (bubbleSizeDp * density).toInt()
         val widthPx = when (state) {
+            // Bar mode only for tap-to-record; PTT stays circular
             State.RECORDING -> (BAR_WIDTH_DP * density).toInt()
             else            -> heightPx  // square == circle
         }
@@ -201,6 +261,26 @@ class FloatingBubbleView(context: Context) : View(context) {
             }
             State.RECORDING -> {
                 drawRecordingBar(canvas, w, h)
+            }
+            State.RECORDING_PTT -> {
+                // Circular bubble -- stays same size as IDLE, scale animation via scaleX/scaleY.
+                // Drawn red with waveform bars centered inside.
+                val cx = w / 2f
+                val cy = h / 2f
+                val radius = minOf(cx, cy)
+                // Shadow (slightly offset downward for depth)
+                canvas.drawCircle(cx, cy + radius * 0.06f, radius * 0.92f, shadowPaint)
+                // Red filled circle
+                circlePaint.color = colorRecordingBar
+                canvas.drawCircle(cx, cy, radius, circlePaint)
+                // Waveform bars inside the circle.
+                // Half-height limit: 70% of radius so bars are tall and clearly visible.
+                // The bar draws ±halfHeight from center, so this is nearly full diameter.
+                val waveHalfH = radius * 0.70f
+                // Left/right bounds: 75% of radius each side for a wide waveform footprint.
+                val waveLeft  = cx - radius * 0.75f
+                val waveRight = cx + radius * 0.75f
+                drawWaveformBarsInZone(canvas, waveLeft, waveRight, cx, cy, waveHalfH)
             }
             State.PROCESSING -> {
                 val cx = w / 2f
@@ -291,10 +371,17 @@ class FloatingBubbleView(context: Context) : View(context) {
         drawCheckMark(canvas, confirmCx, confirmCy, btnRadius * 0.55f)
 
         // --- Waveform in the middle zone ---
-        val waveLeft  = cancelCx + btnRadius + h * 0.05f
-        val waveRight = confirmCx - btnRadius - h * 0.05f
+        // Cancel zone: left 0..h (button centered at h/2, radius btnRadius)
+        // Confirm zone: right (w-h)..w (button centered at w-h/2, radius btnRadius)
+        // Waveform zone: the middle 65-70% between the two button edges.
+        // Each button occupies h px (one bubble-diameter), so the middle span is w - 2*h.
+        // We shrink it slightly (5% each side) so bars never overlap the button circles.
+        val middleSpan = w - 2f * h
+        val waveLeft  = h + middleSpan * 0.08f
+        val waveRight = w - h - middleSpan * 0.08f
         val waveMidX  = (waveLeft + waveRight) / 2f
-        drawWaveformBarsInZone(canvas, waveLeft, waveRight, waveMidX, h / 2f, h / 2f)
+        // Use 80% of half-height so bars nearly fill the bar height
+        drawWaveformBarsInZone(canvas, waveLeft, waveRight, waveMidX, h / 2f, h / 2f * 0.80f)
     }
 
     private fun drawXMark(canvas: Canvas, cx: Float, cy: Float, arm: Float) {
@@ -333,33 +420,43 @@ class FloatingBubbleView(context: Context) : View(context) {
         cy: Float,
         maxBarHalfHeight: Float
     ) {
-        val dp   = resources.displayMetrics.density
-        val barW = 4f * dp
-        val barGap = 3f * dp
+        val dp     = resources.displayMetrics.density
+        val barW   = 7f * dp   // 7dp wide bars for strong visual presence
+        val barGap = 4f * dp   // 4dp gap keeps bars distinct without wasting space
 
-        val totalW  = barW * 3 + barGap * 2
-        val startX  = cx - totalW / 2f + barW / 2f
+        val barCount = barPhaseOffsets.size   // 5
+        val totalW   = barW * barCount + barGap * (barCount - 1)
+        val startX   = cx - totalW / 2f + barW / 2f
 
-        val maxBarH = maxBarHalfHeight * 1.0f
-        val minBarH = maxBarHalfHeight * 0.25f
+        // maxBarHalfHeight is the half-height limit; full bar draws ±maxBarHalfHeight
+        val maxBarH = maxBarHalfHeight * 2f  // total bar height (symmetric, top+bottom)
+        val minBarH = maxBarH * 0.10f        // nearly flat during silence -- max contrast
 
         val t = (barAnimator.animatedValue as? Float) ?: 0f
 
-        for (i in 0..2) {
-            val phase         = (t + barPhaseOffsets[i]) % 1f
-            val dynamicFactor = 0.5f + amplitude * 0.5f
-            val barH          = (minBarH + (maxBarH - minBarH) * phase * dynamicFactor)
-                .coerceIn(minBarH, maxBarH)
+        // Silence gate: below this threshold bars stay static at min height.
+        val silenceThreshold = 0.02f
+        val isSilent = amplitude < silenceThreshold
 
+        // Power curve: amplitude.pow(0.6) boosts mid-range values so moderate
+        // speech looks dramatically more visible than a linear mapping would.
+        val dynamicFactor = if (isSilent) 0f else Math.pow(amplitude.toDouble(), 0.6).toFloat()
+
+        for (i in 0 until barCount) {
             val barX = startX + i * (barW + barGap)
 
-            // Clamp bars inside waveform zone
-            if (barX < zoneLeft || barX > zoneRight) continue
+            // Skip bars that would overflow the zone (e.g. if zone is narrower than totalW)
+            if (barX - barW / 2f < zoneLeft || barX + barW / 2f > zoneRight) continue
 
-            val top      = cy - barH / 2f
-            val bottom   = cy + barH / 2f
-            val cornerR  = barW / 2f
-            val barRect  = RectF(barX - barW / 2f, top, barX + barW / 2f, bottom)
+            val phase = if (isSilent) 0f else (t + barPhaseOffsets[i]) % 1f
+            // Height oscillates with the animation phase, scaled by the boosted amplitude
+            val barH = (minBarH + (maxBarH - minBarH) * phase * dynamicFactor)
+                .coerceIn(minBarH, maxBarH)
+
+            val top     = cy - barH / 2f
+            val bottom  = cy + barH / 2f
+            val cornerR = barW / 2f
+            val barRect = RectF(barX - barW / 2f, top, barX + barW / 2f, bottom)
             canvas.drawRoundRect(barRect, cornerR, cornerR, whitePaint)
         }
     }

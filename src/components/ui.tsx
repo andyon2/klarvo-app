@@ -50,7 +50,7 @@ export function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
               style={{ width: `${Math.round((count / max) * 100)}%` }}
             />
           </div>
-          <span className="text-[10px] text-zinc-500 w-6 text-right shrink-0">{count}</span>
+          <span className="text-[11px] text-zinc-500 w-6 text-right shrink-0">{count}</span>
         </div>
       ))}
     </div>
@@ -111,10 +111,10 @@ export function HighlightedText({ text, query, className }: { text: string; quer
 export function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3">
-      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</p>
+      <p className="text-[11px] text-zinc-500 uppercase tracking-wide">{label}</p>
       <p className="text-lg font-semibold text-zinc-200 mt-0.5">
         {value}
-        {sub && <span className="text-[10px] text-zinc-500 font-normal ml-1">{sub}</span>}
+        {sub && <span className="text-[11px] text-zinc-500 font-normal ml-1">{sub}</span>}
       </p>
     </div>
   );
@@ -123,7 +123,7 @@ export function StatCard({ label, value, sub }: { label: string; value: string; 
 // Shared CSS class strings for form inputs, used across Settings panels.
 export const INPUT_CLS = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
 export const LABEL_CLS = "text-xs text-zinc-300";
-export const SECTION_TITLE_CLS = "text-[10px] font-semibold text-zinc-400 uppercase tracking-widest";
+export const SECTION_TITLE_CLS = "text-[11px] font-semibold text-zinc-400 uppercase tracking-widest";
 
 // Mobile-aware variants -- one size larger on touch screens.
 const _mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);

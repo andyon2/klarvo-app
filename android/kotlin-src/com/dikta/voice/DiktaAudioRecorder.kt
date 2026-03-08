@@ -40,6 +40,10 @@ class DiktaAudioRecorder(
     private var recordingThread: Thread? = null
     private var isCapturing = false
 
+    // Rolling average for amplitude smoothing (last 3 values).
+    private val amplitudeHistory = FloatArray(3) { 0f }
+    private var amplitudeHistoryIndex = 0
+
     /**
      * Returns true if [start] has been called and [stop] has not yet returned.
      */
@@ -78,6 +82,9 @@ class DiktaAudioRecorder(
         isCapturing = true
 
         recorder.startRecording()
+        // Reset smoothing state for the new recording session.
+        amplitudeHistory.fill(0f)
+        amplitudeHistoryIndex = 0
 
         recordingThread = Thread {
             val buf = ShortArray(bufferSize / 2)
@@ -88,8 +95,8 @@ class DiktaAudioRecorder(
                         pcmBuffer.add(buf[i])
                     }
                     val rms = calculateRms(buf, read)
-                    val normalizedAmp = (rms / 32768f).coerceIn(0f, 1f)
-                    onAmplitude(normalizedAmp)
+                    val smoothedAmp = smoothedAmplitude(rms)
+                    onAmplitude(smoothedAmp)
                 }
             }
         }.also { it.start() }
@@ -169,5 +176,34 @@ class DiktaAudioRecorder(
             sum += buffer[i].toDouble() * buffer[i].toDouble()
         }
         return sqrt(sum / length).toFloat()
+    }
+
+    /**
+     * Converts a raw RMS value (0..32768) into a noise-gated, amplified, smoothed
+     * amplitude in [0, 1] suitable for waveform display.
+     *
+     * - Values below NOISE_FLOOR_NORMALIZED are silenced (report 0).
+     * - Values above the floor are remapped to [0, 1] and amplified so that
+     *   normal speech peaks are clearly visible.
+     * - A 3-sample rolling average removes frame-to-frame jitter.
+     */
+    private fun smoothedAmplitude(rawRms: Float): Float {
+        val normalized = (rawRms / 32768f).coerceIn(0f, 1f)
+
+        // Noise floor: anything below this is treated as silence.
+        val noiseFloor = 0.04f
+
+        val gated = if (normalized < noiseFloor) {
+            0f
+        } else {
+            // Remap [noiseFloor..1] -> [0..1], then amplify to make speech peaks pop.
+            val remapped = (normalized - noiseFloor) / (1f - noiseFloor)
+            (remapped * 2.5f).coerceIn(0f, 1f)
+        }
+
+        // Rolling average over the last 3 samples.
+        amplitudeHistory[amplitudeHistoryIndex % amplitudeHistory.size] = gated
+        amplitudeHistoryIndex++
+        return amplitudeHistory.average().toFloat()
     }
 }

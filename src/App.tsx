@@ -6,15 +6,11 @@ import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
 import {
   getHistory,
   deleteHistoryEntry,
-  clearHistory,
   searchHistory,
   getUsageStats,
   getFillerStats,
   getNotes,
-  getSnippets,
   reformatText,
-  getAdvancedSettings,
-  type TextSnippet,
 } from "./tauri-commands";
 import { isMobile, isDesktop } from "./platform";
 import Onboarding from "./Onboarding";
@@ -22,12 +18,11 @@ import Onboarding from "./Onboarding";
 // Components
 import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
-  MailIcon, ListIcon, SummaryIcon, NoteIcon, SnippetIcon,
+  MailIcon, ListIcon, SummaryIcon, NoteIcon,
 } from "./components/icons";
 import { FillerStatsChart, HighlightedText, StatCard } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AdvancedSettingsPanel } from "./components/AdvancedSettingsPanel";
-import { SnippetsPanel } from "./components/SnippetsPanel";
 import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
 
 // Hooks
@@ -172,7 +167,7 @@ function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps)
         <button
           onClick={handleReset}
           title="Reset to original"
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium border bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:text-zinc-100 transition-all duration-100"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:text-zinc-100 transition-all duration-100"
         >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
@@ -188,7 +183,7 @@ function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps)
           disabled={loading !== null}
           title={`Reformat as ${label}`}
           className={[
-            "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium border",
+            "flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border",
             "transition-all duration-100 disabled:opacity-50 disabled:cursor-not-allowed",
             loading === id
               ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
@@ -225,12 +220,8 @@ export default function App() {
   const [fillerStats, setFillerStats] = useState<{ word: string; count: number }[]>([]);
   const [showFillerStats, setShowFillerStats] = useState(false);
 
-  // Notes + Snippets state
+  // Notes state
   const [notes, setNotes] = useState<HistoryEntry[]>([]);
-  const [snippetsList, setSnippetsList] = useState<TextSnippet[]>([]);
-
-  // UI scale (from advanced settings)
-  const [uiScale, setUiScale] = useState("medium");
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -243,15 +234,7 @@ export default function App() {
       getFillerStats().then(setFillerStats).catch(console.error);
     },
     onOpenNotes: () => getNotes(50).then(setNotes).catch(console.error),
-    onOpenSnippets: () => getSnippets().then(setSnippetsList).catch(console.error),
   });
-
-  // Load UI scale on mount
-  useEffect(() => {
-    getAdvancedSettings()
-      .then((s) => { if (s.uiScale) setUiScale(s.uiScale); })
-      .catch(() => {});
-  }, []);
 
   // Check for first run / onboarding
   useEffect(() => {
@@ -278,7 +261,6 @@ export default function App() {
   // --- Derived state ---
   const isBusy = recording.recordingState === "transcribing" || recording.recordingState === "cleaning";
   const isRecording = recording.recordingState === "recording";
-  const zoomValue = uiScale === "small" ? 0.85 : uiScale === "large" ? 1.15 : 1.0;
   const headerBtnPad = isMobile ? "p-2.5" : "p-1.5";
   const hotkeyDisplay = formatHotkeyDisplay(settings.loadedSettings?.hotkey ?? "ctrl+shift+d");
 
@@ -298,11 +280,6 @@ export default function App() {
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
     await deleteHistoryEntry(id);
     setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
-  }, []);
-
-  const handleClearHistory = useCallback(async () => {
-    await clearHistory();
-    setHistoryEntries([]);
   }, []);
 
   // --- Onboarding handler ---
@@ -331,7 +308,6 @@ export default function App() {
       className="h-screen bg-[#0a0a0c] text-zinc-100 flex flex-col select-none overflow-y-auto"
       style={{
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-        zoom: zoomValue,
         ...(isMobile ? {
           paddingTop: "env(safe-area-inset-top, 24px)",
           paddingBottom: "env(safe-area-inset-bottom, 24px)",
@@ -413,20 +389,23 @@ export default function App() {
             <NoteIcon className="w-4 h-4" />
           </button>
 
-          {/* Snippets toggle -- desktop only */}
+          {/* Integrations toggle -- desktop only */}
           {isDesktop && (
             <button
-              aria-label="Toggle snippets"
-              aria-expanded={panels.showSnippets}
-              onClick={() => panels.toggle("snippets")}
+              aria-label="Toggle integrations"
+              aria-expanded={panels.showIntegrations}
+              onClick={() => panels.toggle("integrations")}
               className={[
                 `${headerBtnPad} rounded-lg transition-all duration-150`,
-                panels.showSnippets
+                panels.showIntegrations
                   ? "text-emerald-400 bg-emerald-500/10"
                   : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
               ].join(" ")}
             >
-              <SnippetIcon className="w-4 h-4" />
+              {/* Plug/integration icon */}
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
+              </svg>
             </button>
           )}
 
@@ -463,7 +442,12 @@ export default function App() {
       <div
         className={[
           "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          panels.showSettings ? "max-h-[calc(100vh-100px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+          // On Android the nav bar (~48 px) overlaps the bottom of the WebView, so we
+          // subtract an extra 48 px from the available height. Without this the sticky
+          // Save-button footer in SettingsPanel ends up behind the nav bar.
+          panels.showSettings
+            ? (isMobile ? "max-h-[calc(100vh-148px)] opacity-100 py-2" : "max-h-[calc(100vh-100px)] opacity-100 py-2")
+            : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
         {panels.showSettings && (
@@ -501,23 +485,13 @@ export default function App() {
         {panels.showHistory && (
           <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">History</span>
-              <div className="flex items-center gap-2">
-                {historyEntries.length > 0 && (
-                  <button
-                    onClick={handleClearHistory}
-                    className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
-                  >
-                    Clear All
-                  </button>
-                )}
-                <button
-                  onClick={() => panels.close("history")}
-                  className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
+              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">History</span>
+              <button
+                onClick={() => panels.close("history")}
+                className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+              >
+                <CloseIcon />
+              </button>
             </div>
 
             <div className="px-4 pt-3 flex gap-2">
@@ -555,7 +529,7 @@ export default function App() {
                             next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id);
                             return next;
                           })}
-                          className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                          className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
                         >
                           {expandedHistoryRaw.has(entry.id) ? "Hide original" : "Show original"}
                         </button>
@@ -566,7 +540,7 @@ export default function App() {
                             </p>
                             <button
                               onClick={() => navigator.clipboard.writeText(entry.rawText!)}
-                              className="absolute top-1 right-1 text-[10px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/raw:opacity-100 transition-opacity"
+                              className="absolute top-1 right-1 text-[11px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/raw:opacity-100 transition-opacity"
                             >
                               Copy
                             </button>
@@ -575,7 +549,7 @@ export default function App() {
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-[10px] text-zinc-500">
+                      <span className="text-[11px] text-zinc-500">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
                         {entry.style !== "polished" && ` · ${entry.style}`}
                         {entry.appName && (
@@ -585,13 +559,13 @@ export default function App() {
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => navigator.clipboard.writeText(entry.text).catch(console.error)}
-                          className="text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors"
+                          className="text-[11px] text-zinc-500 hover:text-emerald-400 transition-colors"
                         >
                           Copy
                         </button>
                         <button
                           onClick={() => handleDeleteHistoryEntry(entry.id)}
-                          className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
+                          className="text-[11px] text-zinc-500 hover:text-red-400 transition-colors"
                         >
                           Delete
                         </button>
@@ -615,7 +589,7 @@ export default function App() {
         {panels.showStats && usageStats && (
           <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Statistics & Costs</span>
+              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Statistics & Costs</span>
               <button
                 onClick={() => panels.close("stats")}
                 className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
@@ -639,7 +613,7 @@ export default function App() {
               <div className="px-4 pb-4">
                 <button
                   onClick={() => setShowFillerStats((v) => !v)}
-                  className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
+                  className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
                 >
                   <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
                   Top Filler Words
@@ -671,20 +645,33 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Snippets Panel (desktop only) ── */}
+      {/* ── Integrations Panel (desktop only) ── */}
       {isDesktop && (
         <div
           className={[
             "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-            panels.showSnippets ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+            panels.showIntegrations ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
           ].join(" ")}
         >
-          {panels.showSnippets && (
-            <SnippetsPanel
-              snippets={snippetsList}
-              onUpdate={setSnippetsList}
-              onClose={() => panels.close("snippets")}
-            />
+          {panels.showIntegrations && (
+            <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+                <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Integrations</span>
+                <button
+                  onClick={() => panels.close("integrations")}
+                  className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+              <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
+                <svg className="w-8 h-8 text-zinc-700 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
+                </svg>
+                <p className="text-sm font-medium text-zinc-400">Integrations</p>
+                <p className="text-xs text-zinc-600 max-w-[220px]">Coming soon -- connect Dikta with Notion, Todoist, and more.</p>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -693,18 +680,21 @@ export default function App() {
       <div
         className={[
           "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          panels.showAdvanced ? "max-h-[calc(100vh-80px)] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+          // Same 48 px nav-bar adjustment as the Settings panel above.
+          panels.showAdvanced
+            ? (isMobile ? "max-h-[calc(100vh-128px)] opacity-100 py-2" : "max-h-[calc(100vh-80px)] opacity-100 py-2")
+            : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
         {panels.showAdvanced && (
           <AdvancedSettingsPanel
             onClose={() => panels.close("advanced")}
-            onScaleChange={setUiScale}
           />
         )}
       </div>
 
-      {/* ── Center: Record Button ── */}
+      {/* ── Center: Record Button (hidden when any panel is open) ── */}
+      {!panels.anyOpen && (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 min-h-0">
         <RecordButton
           recordingState={recording.recordingState === "done" || recording.recordingState === "error" ? "idle" : recording.recordingState}
@@ -747,7 +737,7 @@ export default function App() {
               <div>
                 <button
                   onClick={() => recording.setShowRawText((v) => !v)}
-                  className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                  className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
                   {recording.showRawText ? "Hide original" : "Show original"}
                 </button>
@@ -761,7 +751,7 @@ export default function App() {
                     />
                     <button
                       onClick={() => navigator.clipboard.writeText(recording.rawText!)}
-                      className="absolute top-1.5 right-1.5 text-[10px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1.5 right-1.5 text-[11px] text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Copy
                     </button>
@@ -772,6 +762,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Footer (desktop only) ── */}
       {isDesktop && (

@@ -35,25 +35,27 @@ html, body, #root {
 }
 
 /*
- * Android safe-area: the system navigation bar (Back/Home/Recent) can overlap
- * content at the bottom. env(safe-area-inset-bottom) is populated by Android
- * WebView when the activity uses windowLayoutInDisplayCutoutMode and
- * fit-system-windows is not applied by the WebView itself.
+ * Android safe-area: env(safe-area-inset-bottom) is supposed to report the
+ * height of the system navigation bar, but it returns 0 in Tauri's Android
+ * WebView. We therefore do NOT rely on it for critical layout clearances.
  *
- * We expose a --safe-bottom CSS variable so components can use it via
- * padding-bottom: var(--safe-bottom, 0px).
+ * The CSS variable is kept for informational use only; all actual clearance
+ * is handled with fixed pixel values in component styles and max-h constraints.
  */
 :root {
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /*
- * Mobile save-button footer: guarantee enough clearance from the navigation bar.
- * The .mobile-safe-bottom class is applied via JS (isMobile check) to the
- * Settings footer div. 56px covers both 3-button navigation bars and gesture
- * navigation on devices like Xiaomi HyperOS (~48px). env(safe-area-inset-bottom)
- * is unreliable in some Android WebViews, so we use a generous fallback.
+ * Mobile save-button footer: 56 px of bottom padding keeps Save buttons above
+ * the Android system nav bar (3-button ~48 px, gesture bar ~20 px on Xiaomi
+ * HyperOS). env(safe-area-inset-bottom) is NOT used here because it returns
+ * 0 in the Android WebView -- the fixed 56 px covers all known nav bar heights.
+ *
+ * Applied via isMobile check in SettingsPanel and AdvancedSettingsPanel.
+ * The parent panel max-h in App.tsx also subtracts 48 px on mobile so the
+ * footer is never clipped by the container before this padding even applies.
  */
 .mobile-safe-bottom {
-  padding-bottom: max(56px, env(safe-area-inset-bottom, 56px));
+  padding-bottom: 56px;
 }
