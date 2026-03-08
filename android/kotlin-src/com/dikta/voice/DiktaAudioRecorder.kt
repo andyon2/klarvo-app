@@ -1,0 +1,173 @@
+package com.dikta.voice
+
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.util.Log
+import kotlin.math.sqrt
+
+/**
+ * Manages audio capture from the microphone.
+ *
+ * Usage:
+ *   val recorder = DiktaAudioRecorder { amplitude -> updateWaveform(amplitude) }
+ *   recorder.start()
+ *   ...
+ *   val wavBytes = recorder.stop()  // returns WAV-encoded bytes, ready for STT API
+ *
+ * The [onAmplitude] callback fires on the recording thread for every audio chunk,
+ * delivering a normalized RMS value in [0, 1]. Callers must post UI updates to
+ * the main thread themselves (e.g. via Handler.post).
+ *
+ * [stop] blocks for up to 500 ms waiting for the recording thread to finish, then
+ * releases the [AudioRecord] and returns the captured data as a WAV byte array.
+ * If no audio was captured, an empty ByteArray is returned.
+ */
+class DiktaAudioRecorder(
+    private val onAmplitude: (Float) -> Unit
+) {
+
+    companion object {
+        private const val TAG = "DiktaAudioRecorder"
+
+        private const val SAMPLE_RATE = 16000
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+    }
+
+    private var audioRecord: AudioRecord? = null
+    private val pcmBuffer = ArrayList<Short>()
+    private var recordingThread: Thread? = null
+    private var isCapturing = false
+
+    /**
+     * Returns true if [start] has been called and [stop] has not yet returned.
+     */
+    val isRecording: Boolean
+        get() = isCapturing
+
+    /**
+     * Starts capturing audio from the microphone.
+     *
+     * Throws [IllegalStateException] if the microphone is unavailable or permissions
+     * are missing. The caller (DiktaOverlayService) handles the error and shows a toast.
+     */
+    fun start() {
+        val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        if (minBufSize == AudioRecord.ERROR || minBufSize == AudioRecord.ERROR_BAD_VALUE) {
+            throw IllegalStateException("AudioRecord.getMinBufferSize returned error: $minBufSize")
+        }
+
+        val bufferSize = maxOf(minBufSize, 8192)
+
+        val recorder = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            SAMPLE_RATE,
+            CHANNEL_CONFIG,
+            AUDIO_FORMAT,
+            bufferSize
+        )
+
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            throw IllegalStateException("AudioRecord failed to initialize -- microphone not available")
+        }
+
+        audioRecord = recorder
+        pcmBuffer.clear()
+        isCapturing = true
+
+        recorder.startRecording()
+
+        recordingThread = Thread {
+            val buf = ShortArray(bufferSize / 2)
+            while (isCapturing) {
+                val read = recorder.read(buf, 0, buf.size)
+                if (read > 0) {
+                    for (i in 0 until read) {
+                        pcmBuffer.add(buf[i])
+                    }
+                    val rms = calculateRms(buf, read)
+                    val normalizedAmp = (rms / 32768f).coerceIn(0f, 1f)
+                    onAmplitude(normalizedAmp)
+                }
+            }
+        }.also { it.start() }
+
+        Log.d(TAG, "Recording started (bufferSize=$bufferSize, sampleRate=$SAMPLE_RATE)")
+    }
+
+    /**
+     * Stops capturing, releases [AudioRecord], and returns the recorded audio
+     * encoded as a WAV byte array (16-bit mono, 16 kHz).
+     *
+     * Blocks for up to 500 ms waiting for the recording thread to finish cleanly.
+     * Safe to call from any thread.
+     *
+     * Returns an empty [ByteArray] if [start] was never called or no samples were captured.
+     */
+    fun stop(): ByteArray {
+        isCapturing = false
+
+        try {
+            recordingThread?.join(500)
+        } catch (e: InterruptedException) {
+            Log.w(TAG, "Interrupted while waiting for recording thread to finish", e)
+            Thread.currentThread().interrupt()
+        }
+        recordingThread = null
+
+        val recorder = audioRecord
+        audioRecord = null
+        try {
+            recorder?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop AudioRecord cleanly", e)
+        }
+        try {
+            recorder?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to release AudioRecord", e)
+        }
+
+        val pcmData = pcmBuffer.toShortArray()
+        pcmBuffer.clear()
+
+        Log.d(TAG, "Recording stopped (${pcmData.size} samples captured)")
+
+        if (pcmData.isEmpty()) return ByteArray(0)
+
+        return encodeWav(pcmData, SAMPLE_RATE)
+    }
+
+    /**
+     * Emergency release -- called from Service.onDestroy when we need to tear down
+     * without waiting for a clean stop. Does not return WAV data.
+     */
+    fun releaseImmediately() {
+        isCapturing = false
+        recordingThread?.interrupt()
+        recordingThread = null
+        try {
+            audioRecord?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseImmediately: failed to stop AudioRecord", e)
+        }
+        try {
+            audioRecord?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseImmediately: failed to release AudioRecord", e)
+        }
+        audioRecord = null
+        pcmBuffer.clear()
+    }
+
+    private fun calculateRms(buffer: ShortArray, length: Int): Float {
+        if (length == 0) return 0f
+        var sum = 0.0
+        for (i in 0 until length) {
+            sum += buffer[i].toDouble() * buffer[i].toDouble()
+        }
+        return sqrt(sum / length).toFloat()
+    }
+}

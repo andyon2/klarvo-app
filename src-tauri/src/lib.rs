@@ -3,6 +3,20 @@
 //! Wires together the audio, STT, LLM, paste, hotkey, config and dictionary
 //! modules and exposes them to the React frontend via Tauri commands and events.
 //!
+//! ## Module layout
+//!
+//! ```text
+//! lib.rs           -- AppState, run(), invoke_handler, shared helpers
+//! pipeline.rs      -- hotkey pipeline: start_recording / stop_and_process
+//! commands/
+//!   recording.rs   -- start/stop/transcribe/cleanup Tauri commands
+//!   settings.rs    -- save/get settings, API keys, hotkey, language
+//!   dictionary.rs  -- get/add/remove dictionary terms
+//!   history.rs     -- CRUD, search, notes, stats
+//!   misc.rs        -- profiles, snippets, sync, paste, bar-shape
+//! test_helpers.rs  -- shared helpers for unit tests
+//! ```
+//!
 //! ## Command flow (frontend perspective)
 //!
 //! ```text
@@ -23,48 +37,42 @@
 //! When the global shortcut fires (default: Ctrl+Shift+D), the backend runs
 //! the full pipeline automatically and emits `dikta://state-changed` events
 //! so the frontend can update the UI without being in the loop.
-//!
-//! ## Settings & Dictionary persistence
-//!
-//! On startup the app loads `config.json` and `dictionary.json` from the Tauri
-//! app-data directory. Settings can be updated at runtime via `save_settings`;
-//! dictionary terms via `add_dictionary_term` / `remove_dictionary_term`.
-//! Both writes are synchronous and happen in the command handler -- no
-//! background flush needed for these small files.
 
 mod audio;
+mod commands;
 mod config;
 mod dictionary;
+mod history;
 mod hotkey;
 mod llm;
-mod history;
 mod paste;
+mod pipeline;
 mod stt;
 mod sync;
+
+#[cfg(test)]
+mod test_helpers;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
-use config::{load_config, save_config, AppConfig, HotkeyMode, TextSnippet};
-use dictionary::{load_dictionary, save_dictionary, Dictionary};
-use hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
-use history::UsageSummary;
-use llm::{
-    chunked_cleanup, AnthropicCleanup, CleanupProvider, CleanupStyle, DeepSeekCleanup,
-    GroqCleanup, OpenAiCleanup,
-};
-use paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
+use config::{load_config, AppConfig, HotkeyMode};
+use dictionary::{load_dictionary, Dictionary};
+use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
-use stt::{build_stt_prompt, GroqWhisper, OpenAiWhisper, SttProvider};
-use uuid::Uuid;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WindowEvent};
+use stt::SttProvider;
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WindowEvent};
+
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconEvent;
 #[cfg(desktop)]
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::Shortcut;
+
+// Re-export pipeline helpers so `commands/` modules can reach them.
+pub use pipeline::{register_hotkey, resolve_cleanup_provider, resolve_stt_provider};
 
 // ---------------------------------------------------------------------------
 // Frontend-facing data types
@@ -137,19 +145,6 @@ pub struct SettingsView {
     pub device_id: String,
 }
 
-/// Kept for backward compatibility -- the old monolithic result type.
-///
-/// No longer returned by any command; retained so external callers that may
-/// have deserialized it don't break.  New callers should use the individual
-/// step commands.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TranscriptionResult {
-    pub raw_text: String,
-    pub cleaned_text: String,
-    pub duration_ms: u64,
-}
-
 // ---------------------------------------------------------------------------
 // Application state
 // ---------------------------------------------------------------------------
@@ -161,34 +156,34 @@ pub struct TranscriptionResult {
 ///
 /// Tauri requires `State<T>: Send + Sync + 'static`.
 pub struct AppState {
-    recorder: Arc<AudioRecorder>,
+    pub recorder: Arc<AudioRecorder>,
     /// Wrapping in `RwLock` lets `save_settings` replace the provider.
-    stt_provider: RwLock<Arc<dyn SttProvider>>,
-    cleanup_provider: RwLock<Arc<dyn CleanupProvider>>,
+    pub stt_provider: RwLock<Arc<dyn SttProvider>>,
+    pub cleanup_provider: RwLock<Arc<dyn CleanupProvider>>,
     /// Timestamp set by `start_recording`, cleared by `stop_recording`.
-    recording_start: Mutex<Option<std::time::Instant>>,
+    pub recording_start: Mutex<Option<std::time::Instant>>,
     /// WAV bytes from the most recent recording. Set by `stop_recording`,
     /// consumed (read, not cleared) by `transcribe_audio`.
-    last_recording: Mutex<Option<Vec<u8>>>,
+    pub last_recording: Mutex<Option<Vec<u8>>>,
     /// Full persisted configuration (includes API keys).
-    config: Mutex<AppConfig>,
+    pub config: Mutex<AppConfig>,
     /// User's custom word list -- injected into STT prompt and LLM system prompt.
-    dictionary: Mutex<Dictionary>,
+    pub dictionary: Mutex<Dictionary>,
     /// Path to the app-data directory for persisting config and dictionary.
-    app_data_dir: PathBuf,
+    pub app_data_dir: PathBuf,
     /// Window handle (HWND) of the app that was focused when recording started.
     /// Used on Windows to restore focus before pasting.
-    prev_foreground_hwnd: Mutex<Option<isize>>,
+    pub prev_foreground_hwnd: Mutex<Option<isize>>,
     /// SQLite connection for dictation history.
-    history_db: Mutex<rusqlite::Connection>,
+    pub history_db: Mutex<rusqlite::Connection>,
     /// Window title of the app that was focused when recording started.
     /// Used for app-profile matching.
-    prev_window_title: Mutex<Option<String>>,
+    pub prev_window_title: Mutex<Option<String>>,
     /// Whether the current recording is a Command Mode session.
     /// When true, the pipeline will rewrite selected text instead of dictating.
-    command_mode_active: Mutex<bool>,
+    pub command_mode_active: Mutex<bool>,
     /// The text that was selected when Command Mode was triggered (via Ctrl+C).
-    command_mode_selected_text: Mutex<Option<String>>,
+    pub command_mode_selected_text: Mutex<Option<String>>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -200,7 +195,12 @@ unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
 
 impl AppState {
-    fn new(cfg: AppConfig, dictionary: Dictionary, app_data_dir: PathBuf, history_db: rusqlite::Connection) -> Self {
+    pub fn new(
+        cfg: AppConfig,
+        dictionary: Dictionary,
+        app_data_dir: PathBuf,
+        history_db: rusqlite::Connection,
+    ) -> Self {
         let stt = resolve_stt_provider(&cfg);
         let cleanup = resolve_cleanup_provider(&cfg);
         AppState {
@@ -222,11 +222,12 @@ impl AppState {
 }
 
 // ---------------------------------------------------------------------------
-// Helper -- lock/rwlock macros with descriptive error strings
+// Lock/RwLock macros with descriptive error strings
 // ---------------------------------------------------------------------------
 
 /// Acquires a `Mutex` lock and converts a poisoned-lock panic into a
 /// `Result<_, String>` (Tauri command convention).
+#[macro_export]
 macro_rules! lock {
     ($mutex:expr) => {
         $mutex
@@ -236,6 +237,7 @@ macro_rules! lock {
 }
 
 /// Acquires a `RwLock` read guard.
+#[macro_export]
 macro_rules! read_lock {
     ($rwlock:expr) => {
         $rwlock
@@ -245,6 +247,7 @@ macro_rules! read_lock {
 }
 
 /// Acquires a `RwLock` write guard.
+#[macro_export]
 macro_rules! write_lock {
     ($rwlock:expr) => {
         $rwlock
@@ -254,7 +257,7 @@ macro_rules! write_lock {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Shared helper functions
 // ---------------------------------------------------------------------------
 
 /// Masks an API key for safe display in the frontend.
@@ -262,7 +265,7 @@ macro_rules! write_lock {
 /// Returns an empty string if the key is empty.
 /// Returns `"****{last4}"` for keys longer than 4 characters.
 /// Returns `"****"` for keys with 4 or fewer characters (avoids leaking short keys).
-fn mask_api_key(key: &str) -> String {
+pub fn mask_api_key(key: &str) -> String {
     if key.is_empty() {
         return String::new();
     }
@@ -274,11 +277,11 @@ fn mask_api_key(key: &str) -> String {
 
 /// Wraps an error message with a human-readable hint based on common HTTP/network
 /// error patterns. The hint is appended after the raw error string.
-///
-/// Keeps error messages actionable for non-technical users without losing the
-/// original diagnostic information.
-fn friendly_error(context: &str, err: &str) -> String {
-    let hint = if err.contains("401") || err.contains("Unauthorized") || err.contains("invalid_api_key") {
+pub fn friendly_error(context: &str, err: &str) -> String {
+    let hint = if err.contains("401")
+        || err.contains("Unauthorized")
+        || err.contains("invalid_api_key")
+    {
         " Check your API key in Settings."
     } else if err.contains("429") || err.contains("rate_limit") {
         " Rate limit reached \u{2014} wait a moment and try again."
@@ -293,1750 +296,58 @@ fn friendly_error(context: &str, err: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Hotkey dictation pipeline
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Provider resolution from priority lists
-// ---------------------------------------------------------------------------
-
-fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
-    for id in &cfg.stt_priority {
-        match id.as_str() {
-            "groq" if !cfg.groq_api_key.is_empty() => {
-                return Arc::new(GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()));
-            }
-            "openai" if !cfg.openai_api_key.is_empty() => {
-                return Arc::new(OpenAiWhisper::new(&cfg.openai_api_key));
-            }
-            _ => continue,
-        }
-    }
-    Arc::new(GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
-}
-
-fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
-    for id in &cfg.llm_priority {
-        match id.as_str() {
-            "deepseek" if !cfg.deepseek_api_key.is_empty() => {
-                return Arc::new(DeepSeekCleanup::new(&cfg.deepseek_api_key));
-            }
-            "openai" if !cfg.openai_api_key.is_empty() => {
-                return Arc::new(OpenAiCleanup::new(&cfg.openai_api_key));
-            }
-            "anthropic" if !cfg.anthropic_api_key.is_empty() => {
-                return Arc::new(AnthropicCleanup::new(&cfg.anthropic_api_key));
-            }
-            "groq" if !cfg.groq_api_key.is_empty() => {
-                return Arc::new(GroqCleanup::new(&cfg.groq_api_key));
-            }
-            _ => continue,
-        }
-    }
-    Arc::new(DeepSeekCleanup::new(&cfg.deepseek_api_key))
-}
-
-/// Starts recording audio and emits `state=recording`.
-///
-/// Does nothing (returns silently) if recording is already in progress.
-/// Used by the hold-mode hotkey handler on key-press.
-async fn start_recording_only(handle: AppHandle) {
-    let state = handle.state::<AppState>();
-
-    if state.recorder.is_recording() {
-        return;
-    }
-
-    // Capture the foreground window BEFORE we start recording.
-    // This is the window the user was typing in -- we'll restore focus to it
-    // before pasting the result.
-    if let Ok(mut guard) = state.prev_foreground_hwnd.lock() {
-        *guard = capture_foreground_window();
-    }
-    if let Ok(mut guard) = state.prev_window_title.lock() {
-        *guard = capture_foreground_window_title();
-        log::debug!("[hotkey] foreground window title: {:?}", *guard);
-    }
-
-    // Re-install the audio level callback before each recording.
-    #[cfg(desktop)]
-    setup_audio_level_emitter(&handle);
-
-    let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
-    if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error(format!("Failed to start recording: {e}")),
-        );
-        return;
-    }
-
-    *match state.recording_start.lock() {
-        Ok(g) => g,
-        Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
-            return;
-        }
-    } = Some(std::time::Instant::now());
-
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
-}
-
-/// Starts Command Mode: copies selected text via Ctrl+C, then starts recording.
-///
-/// The voice command will be transcribed and used to rewrite the selected text.
-async fn start_command_mode(handle: AppHandle) {
-    let state = handle.state::<AppState>();
-
-    if state.recorder.is_recording() {
-        return;
-    }
-
-    // Capture foreground window
-    if let Ok(mut guard) = state.prev_foreground_hwnd.lock() {
-        *guard = capture_foreground_window();
-    }
-
-    // Copy selected text via clipboard
-    #[cfg(target_os = "windows")]
-    {
-        // Simulate Ctrl+C to copy selected text
-        use windows::Win32::UI::Input::KeyboardAndMouse::{
-            SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-            KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_C,
-        };
-
-        unsafe {
-            let inputs = [
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_CONTROL,
-                            wScan: 0,
-                            dwFlags: KEYBD_EVENT_FLAGS(0),
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VIRTUAL_KEY(VK_C.0),
-                            wScan: 0,
-                            dwFlags: KEYBD_EVENT_FLAGS(0),
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VIRTUAL_KEY(VK_C.0),
-                            wScan: 0,
-                            dwFlags: KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VK_CONTROL,
-                            wScan: 0,
-                            dwFlags: KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-            ];
-            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-        }
-
-        // Wait for clipboard to populate
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-
-    // Read clipboard (desktop only -- on mobile, command mode is not used)
-    #[cfg(desktop)]
-    let selected_text = arboard::Clipboard::new()
-        .ok()
-        .and_then(|mut cb| cb.get_text().ok())
-        .unwrap_or_default();
-    #[cfg(mobile)]
-    let selected_text = String::new();
-
-    log::info!("[command-mode] selected text: {:?}", &selected_text[..selected_text.len().min(100)]);
-
-    if let Ok(mut guard) = state.command_mode_selected_text.lock() {
-        *guard = if selected_text.is_empty() { None } else { Some(selected_text) };
-    }
-    if let Ok(mut guard) = state.command_mode_active.lock() {
-        *guard = true;
-    }
-
-    // Start recording the voice command
-    #[cfg(desktop)]
-    setup_audio_level_emitter(&handle);
-
-    let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
-    if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error(format!("Failed to start recording: {e}")),
-        );
-        if let Ok(mut guard) = state.command_mode_active.lock() {
-            *guard = false;
-        }
-        return;
-    }
-
-    *match state.recording_start.lock() {
-        Ok(g) => g,
-        Err(_) => {
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::error("State lock poisoned"));
-            return;
-        }
-    } = Some(std::time::Instant::now());
-
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
-}
-
-/// Stops the active recording and runs the full STT → LLM → paste pipeline.
-///
-/// Does nothing (returns silently) if no recording is active.
-/// Used by the hold-mode hotkey handler on key-release, and called internally
-/// by `run_dictation_pipeline` for the toggle case.
-///
-/// Dictionary terms are injected at both the STT step (as a Groq `prompt`
-/// hint) and the LLM step (as `dictionary_terms` in the system prompt).
-async fn stop_and_process_pipeline(handle: AppHandle) {
-    let state = handle.state::<AppState>();
-
-    if !state.recorder.is_recording() {
-        // Not recording -- key released without a corresponding press (race condition or
-        // hold mode released before recording started). Safe to ignore.
-        return;
-    }
-
-    // --- Stop recording ---
-    let duration_ms = {
-        match state.recording_start.lock() {
-            Ok(g) => g.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0),
-            Err(_) => 0,
-        }
-    };
-
-    let (whisper_mode, adv) = state.config.lock().ok()
-        .map(|c| (c.whisper_mode, c.advanced.clone()))
-        .unwrap_or((false, config::AdvancedSettings::default()));
-    let gain = if whisper_mode { adv.whisper_mode_gain } else { 1.0 };
-
-    let wav_bytes = match state.recorder.stop_recording_with_gain(gain) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error(format!("Failed to stop recording: {e}")),
-            );
-            return;
-        }
-    };
-
-    // Clear recording start timestamp.
-    if let Ok(mut g) = state.recording_start.lock() {
-        *g = None;
-    }
-
-    // Store WAV bytes for manual transcribe commands too.
-    if let Ok(mut g) = state.last_recording.lock() {
-        *g = Some(wav_bytes.clone());
-    }
-
-    log::debug!(
-        "[pipeline] recording stopped after {duration_ms}ms, {len} WAV bytes",
-        len = wav_bytes.len()
-    );
-
-    // --- Silence detection ---
-    // If the recording is very short (<500ms) or essentially silent, skip the
-    // STT/LLM pipeline. This matches Wispr Flow's "nothing said" behaviour.
-    if duration_ms < adv.min_recording_ms as u64 {
-        log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-        return;
-    }
-
-    // Check RMS of the raw WAV samples. If the audio is near-silent, abort.
-    // Whisper mode uses a lower threshold since the audio has been amplified.
-    let silence_threshold = if whisper_mode { adv.whisper_mode_threshold } else { adv.silence_threshold };
-    if let Some(rms) = compute_wav_rms(&wav_bytes) {
-        log::debug!("[pipeline] audio RMS = {rms:.5} (threshold={silence_threshold})");
-        if rms < silence_threshold {
-            log::info!("[pipeline] audio is silent (rms={rms:.5}), skipping");
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-            return;
-        }
-    }
-
-    // --- Collect config + dictionary (release locks before await points) ---
-    let (language, stt_provider, cleanup_provider, dict_prompt) = {
-        let cfg = match state.config.lock() {
-            Ok(g) => g.clone(),
-            Err(_) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
-                );
-                return;
-            }
-        };
-
-        let stt_prov = match state.stt_provider.read() {
-            Ok(g) => g.clone(),
-            Err(_) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
-                );
-                return;
-            }
-        };
-
-        let cleanup_prov = match state.cleanup_provider.read() {
-            Ok(g) => g.clone(),
-            Err(_) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
-                );
-                return;
-            }
-        };
-
-        let dict_terms = match state.dictionary.lock() {
-            Ok(g) => {
-                let p = g.terms_as_prompt();
-                if p.is_empty() { None } else { Some(p) }
-            }
-            Err(_) => None,
-        };
-
-        // Use custom STT hint from advanced settings if set.
-        let stt_hint = match cfg.language.as_str() {
-            "de" if !cfg.advanced.stt_prompt_de.is_empty() => Some(cfg.advanced.stt_prompt_de.clone()),
-            "en" if !cfg.advanced.stt_prompt_en.is_empty() => Some(cfg.advanced.stt_prompt_en.clone()),
-            _ if !cfg.advanced.stt_prompt_auto.is_empty() => Some(cfg.advanced.stt_prompt_auto.clone()),
-            _ => None,
-        };
-        let prompt = stt::build_stt_prompt_with_hint(
-            dict_terms.as_deref(),
-            &cfg.language,
-            stt_hint.as_deref(),
-        );
-
-        (cfg.language.clone(), stt_prov, cleanup_prov, prompt)
-    };
-
-    // --- Transcribe ---
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
-
-    let raw_text = match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
-        .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error(friendly_error("Transcription failed", &e.to_string())),
-            );
-            return;
-        }
-    };
-
-    log::debug!("[pipeline] raw transcription: {raw_text:?}");
-
-    // --- Check Command Mode ---
-    let is_command_mode = state.command_mode_active.lock().ok().map(|g| *g).unwrap_or(false);
-    let selected_text = if is_command_mode {
-        // Reset command mode flags
-        if let Ok(mut guard) = state.command_mode_active.lock() { *guard = false; }
-        state.command_mode_selected_text.lock().ok().and_then(|mut g| g.take())
-    } else {
-        None
-    };
-
-    // --- LLM step ---
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
-
-    let cleanup_result = if let Some(ref sel_text) = selected_text {
-        // Command Mode: rewrite selected text using the voice command
-        log::info!("[pipeline] command mode: rewriting with voice command");
-
-        match cleanup_provider.rewrite(sel_text, &raw_text).await {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error(format!("Command mode failed: {e}")),
-                );
-                return;
-            }
-        }
-    } else {
-        // Normal dictation: cleanup raw transcription
-        let (style, custom_prompt) = {
-            match state.config.lock() {
-                Ok(g) => {
-                    let prev_title = state.prev_window_title.lock().ok().and_then(|t| t.clone());
-                    let matched = prev_title.as_deref().and_then(|title| {
-                        let title_lower = title.to_lowercase();
-                        g.profiles.iter().find(|p| {
-                            !p.app_pattern.is_empty() && title_lower.contains(&p.app_pattern.to_lowercase())
-                        })
-                    });
-                    if let Some(profile) = matched {
-                        log::info!("[pipeline] profile matched: {:?}", profile.name);
-                        let prompt = if profile.custom_prompt.is_empty() {
-                            let p = g.custom_prompt.clone();
-                            if p.is_empty() { None } else { Some(p) }
-                        } else {
-                            Some(profile.custom_prompt.clone())
-                        };
-                        (profile.cleanup_style, prompt)
-                    } else {
-                        (g.cleanup_style, {
-                            let p = g.custom_prompt.clone();
-                            if p.is_empty() { None } else { Some(p) }
-                        })
-                    }
-                }
-                Err(_) => (CleanupStyle::Polished, None),
-            }
-        };
-
-        let dict_list = match state.dictionary.lock() {
-            Ok(g) => {
-                let l = g.terms_as_list();
-                if l.is_empty() { None } else { Some(l) }
-            }
-            Err(_) => None,
-        };
-
-        let output_lang = state.config.lock().ok()
-            .map(|c| c.output_language.clone())
-            .unwrap_or_default();
-        let output_lang_opt = if output_lang.is_empty() { None } else { Some(output_lang.as_str()) };
-
-        match chunked_cleanup(
-            cleanup_provider.as_ref(), &raw_text, style,
-            dict_list.as_deref(), custom_prompt.as_deref(),
-            output_lang_opt,
-        ).await {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error(friendly_error("Text cleanup failed", &e.to_string())),
-                );
-                return;
-            }
-        }
-    };
-
-    let is_command = selected_text.is_some();
-    let cleaned_text = cleanup_result.text;
-    log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
-
-    // --- Record usage ---
-    if let Ok(db) = state.history_db.lock() {
-        // STT cost per audio hour depends on the model
-        let stt_rate = match state.config.lock().ok().as_ref().map(|c| c.stt_model.as_str()) {
-            Some("whisper-large-v3") => 0.111,
-            Some("distil-whisper-large-v3-en") => 0.02,
-            _ => 0.04, // whisper-large-v3-turbo (default)
-        };
-        let stt_cost = duration_ms as f64 / 3_600_000.0 * stt_rate;
-        if let Err(e) = history::record_usage(&db, "groq_stt", Some(duration_ms as i64), None, None, stt_cost) {
-            log::warn!("[pipeline] Failed to record STT usage: {e}");
-        }
-        // LLM cost: DeepSeek input=$0.27/1M, output=$1.10/1M tokens
-        let llm_cost = (cleanup_result.prompt_tokens.unwrap_or(0) as f64 * 0.27
-            + cleanup_result.completion_tokens.unwrap_or(0) as f64 * 1.10)
-            / 1_000_000.0;
-        if let Err(e) = history::record_usage(
-            &db, "deepseek_cleanup", None,
-            cleanup_result.prompt_tokens, cleanup_result.completion_tokens, llm_cost,
-        ) {
-            log::warn!("[pipeline] Failed to record LLM usage: {e}");
-        }
-    }
-
-    // --- Paste ---
-    let prev_hwnd = state.prev_foreground_hwnd.lock().ok().and_then(|g| *g);
-    let paste_handler = create_paste_handler(prev_hwnd);
-    if let Err(e) = paste_handler.paste(&cleaned_text) {
-        log::warn!("[pipeline] paste failed: {e}. Text is still available.");
-    }
-
-    // --- Save to history ---
-    {
-        let style_str = if is_command { "command".to_string() } else {
-            state.config.lock().ok()
-                .map(|c| serde_json::to_string(&c.cleanup_style).unwrap_or_default().replace('"', ""))
-                .unwrap_or_else(|| "polished".to_string())
-        };
-        let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
-        let cfg_for_history = state.config.lock().ok().map(|c| (c.device_id.clone(), c.turso_url.clone(), c.turso_token.clone()));
-
-        // Generate UUID here so we can pass it to both the DB insert and the
-        // async Turso push without a second DB read.
-        let entry_uuid = Uuid::new_v4().to_string();
-
-        if let Ok(db) = state.history_db.lock() {
-            let device_id = cfg_for_history.as_ref().map(|(d, _, _)| d.as_str());
-            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref(), Some(&entry_uuid), device_id) {
-                log::warn!("[pipeline] Failed to save to history: {e}");
-            }
-        }
-
-        // --- Auto-sync to Turso (fire-and-forget) ---
-        // Only runs when Turso is configured. Never blocks the pipeline.
-        // The manual "Sync Now" button covers pull + batch push of missed entries.
-        if let Some((device_id, turso_url, turso_token)) = cfg_for_history.clone() {
-            if !turso_url.is_empty() && !turso_token.is_empty() {
-                let sync_entry = sync::SyncEntry {
-                    uuid: entry_uuid.clone(),
-                    text: cleaned_text.clone(),
-                    raw_text: Some(raw_text.clone()),
-                    style: style_str.clone(),
-                    language: language.clone(),
-                    is_note: 0,
-                    app_name: app_name.clone(),
-                    device_id: Some(device_id.clone()),
-                    // created_at will be set by Turso's DEFAULT; we mirror what
-                    // SQLite uses so the field is consistent.
-                    created_at: chrono::Utc::now().naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string(),
-                };
-                let uuid_for_mark = entry_uuid.clone();
-                let handle_for_sync = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    match sync::push_single_entry(&turso_url, &turso_token, sync_entry).await {
-                        Ok(_) => {
-                            // Mark the entry as synced in the local DB.
-                            // Re-acquire state via the handle -- never hold
-                            // the DB lock across an await point.
-                            //
-                            // We acquire the lock, run the update, and
-                            // explicitly drop the guard before `st` is
-                            // dropped by collecting it into a local Result
-                            // and ignoring the value.
-                            let st = handle_for_sync.state::<AppState>();
-                            let mark_result = st.history_db.lock().ok()
-                                .map(|db| sync::mark_entries_synced(&db, &[uuid_for_mark.clone()]));
-                            drop(st);
-                            if let Some(Err(e)) = mark_result {
-                                log::warn!("[sync] Failed to mark entry as synced: {e}");
-                            }
-                        }
-                        Err(e) => {
-                            // Non-fatal: the entry stays synced=0 and will be
-                            // picked up by the next manual "Sync Now".
-                            log::warn!("[sync] Auto-push failed (will retry on next sync): {e}");
-                        }
-                    }
-                });
-            }
-        }
-
-        // --- Webhook ---
-        let webhook_url = state.config.lock().ok()
-            .map(|c| c.webhook_url.clone())
-            .unwrap_or_default();
-        if !webhook_url.is_empty() {
-            let payload = serde_json::json!({
-                "text": &cleaned_text,
-                "rawText": &raw_text,
-                "style": &style_str,
-                "language": &language,
-                "appName": app_name.as_deref(),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "durationMs": duration_ms,
-            });
-            let url = webhook_url.clone();
-            // Fire-and-forget: don't block the pipeline on webhook delivery.
-            tauri::async_runtime::spawn(async move {
-                let client = reqwest::Client::new();
-                if let Err(e) = client.post(&url)
-                    .json(&payload)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .send()
-                    .await
-                {
-                    log::warn!("[webhook] POST to {url} failed: {e}");
-                }
-            });
-        }
-    }
-
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text, raw_text));
-}
-
-/// Toggle-mode hotkey handler: press once to start, press again to stop + process.
-///
-/// This is the legacy behaviour, kept for users who prefer toggle mode.
-async fn run_dictation_pipeline(handle: AppHandle) {
-    let state = handle.state::<AppState>();
-
-    if !state.recorder.is_recording() {
-        start_recording_only(handle).await;
-    } else {
-        stop_and_process_pipeline(handle).await;
-    }
-}
-
-/// Registers the global shortcut with mode-aware handlers.
-///
-/// Unregisters all existing shortcuts first so this can be called to
-/// re-register after a settings change.
-///
-/// - `Toggle`: Pressed fires `run_dictation_pipeline` (start or stop+process).
-/// - `Hold`: Pressed fires `start_recording_only`; Released fires `stop_and_process_pipeline`.
-#[cfg(desktop)]
-fn register_hotkey(handle: &AppHandle, shortcut: Shortcut, mode: HotkeyMode) -> Result<(), String> {
-    println!("[hotkey] Registering shortcut: {shortcut:?} mode={mode:?}");
-
-    handle
-        .global_shortcut()
-        .unregister_all()
-        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
-
-    // --- Dictation hotkey ---
-    let handle_clone = handle.clone();
-    handle
-        .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _shortcut, event| {
-            println!("[hotkey] Event: {event:?}");
-
-            let h = handle_clone.clone();
-            println!("[hotkey] mode={mode:?} state={:?}", event.state);
-            match (mode, event.state) {
-                (HotkeyMode::Toggle, ShortcutState::Pressed) => {
-                    tauri::async_runtime::spawn(async move {
-                        run_dictation_pipeline(h).await;
-                    });
-                }
-                (HotkeyMode::Hold, ShortcutState::Pressed) => {
-                    tauri::async_runtime::spawn(async move {
-                        start_recording_only(h).await;
-                    });
-                }
-                (HotkeyMode::Hold, ShortcutState::Released) => {
-                    tauri::async_runtime::spawn(async move {
-                        stop_and_process_pipeline(h).await;
-                    });
-                }
-                _ => {}
-            }
-        })
-        .map_err(|e| format!("Failed to register shortcut: {e}"))?;
-
-    // --- Command Mode hotkey ---
-    let cmd_shortcut_str = handle
-        .state::<AppState>()
-        .config
-        .lock()
-        .ok()
-        .map(|c| c.command_hotkey.clone())
-        .unwrap_or_else(|| "ctrl+shift+e".to_string());
-
-    if let Ok(cmd_shortcut) = cmd_shortcut_str.parse::<Shortcut>() {
-        let handle_clone2 = handle.clone();
-        let _ = handle
-            .global_shortcut()
-            .on_shortcut(cmd_shortcut, move |_app, _shortcut, event| {
-                let h = handle_clone2.clone();
-                match event.state {
-                    ShortcutState::Pressed => {
-                        tauri::async_runtime::spawn(async move {
-                            start_command_mode(h).await;
-                        });
-                    }
-                    ShortcutState::Released => {
-                        tauri::async_runtime::spawn(async move {
-                            stop_and_process_pipeline(h).await;
-                        });
-                    }
-                }
-            });
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Recording
-// ---------------------------------------------------------------------------
-
-/// Opens the default microphone and starts capturing audio.
-///
-/// Returns an error string if recording is already in progress or no
-/// microphone is available.
-#[tauri::command]
-async fn start_recording(handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let inner = state.inner();
-
-    // Re-install the audio level callback before recording.
-    #[cfg(desktop)]
-    setup_audio_level_emitter(&handle);
-
-    let device_name = lock!(inner.config)?.audio_device.clone();
-    inner
-        .recorder
-        .start_recording(device_name.as_deref())
-        .map_err(|e: audio::AudioError| e.to_string())?;
-
-    *lock!(inner.recording_start)? = Some(std::time::Instant::now());
-
-    Ok(())
-}
-
-/// Stops the active recording and stores the WAV bytes in `AppState`.
-///
-/// Returns `RecordingInfo` with the recording duration. This command does NOT
-/// run STT or cleanup -- call `transcribe_audio` and `cleanup_text` for that.
-///
-/// Returns an error if no recording is active.
-#[tauri::command]
-async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingInfo, String> {
-    let inner = state.inner();
-
-    // Measure duration before stopping (start timestamp is cleared below).
-    let duration_ms = {
-        let start_guard = lock!(inner.recording_start)?;
-        start_guard
-            .map(|t: std::time::Instant| t.elapsed().as_millis() as u64)
-            .unwrap_or(0)
-    };
-
-    // Stop the cpal stream and get WAV bytes.
-    let wav_bytes = inner
-        .recorder
-        .stop_recording()
-        .map_err(|e: audio::AudioError| e.to_string())?;
-
-    // Persist WAV for the subsequent `transcribe_audio` call.
-    *lock!(inner.last_recording)? = Some(wav_bytes);
-
-    // Clear the start timestamp.
-    *lock!(inner.recording_start)? = None;
-
-    Ok(RecordingInfo { duration_ms })
-}
-
-/// Transcribes the most recently recorded audio using the configured STT provider.
-///
-/// Reads WAV bytes stored by the last `stop_recording` call.
-/// Dictionary terms are injected as a Groq `prompt` hint to improve accuracy
-/// for technical vocabulary.
-///
-/// `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
-///
-/// Returns an error if no recording is available or the STT call fails.
-#[tauri::command]
-async fn transcribe_audio(state: State<'_, AppState>, language: String) -> Result<String, String> {
-    let inner = state.inner();
-
-    // Clone the WAV out of the mutex so we don't hold the lock across the await.
-    let wav_bytes = {
-        let guard = lock!(inner.last_recording)?;
-        guard
-            .clone()
-            .ok_or_else(|| "No recording available. Call stop_recording first.".to_string())?
-    };
-
-    // Read dictionary terms for the STT prompt hint.
-    let dict_prompt = {
-        let guard = lock!(inner.dictionary)?;
-        let terms = guard.terms_as_prompt();
-        let terms_opt = if terms.is_empty() { None } else { Some(terms) };
-        build_stt_prompt(terms_opt.as_deref(), &language)
-    };
-
-    // Read the current provider (shared read lock -- no contention with other readers).
-    let provider = read_lock!(inner.stt_provider)?.clone();
-
-    provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
-        .await
-        .map_err(|e: stt::SttError| e.to_string())
-}
-
-/// Transcribes raw audio bytes passed directly from the frontend.
-///
-/// Intended for Android, where `cpal` is not available and audio capture is
-/// handled on the JavaScript/Kotlin side. The bytes are stored as
-/// `last_recording` so the rest of the pipeline (history, stats) can reference
-/// them, then the same STT provider pipeline as `transcribe_audio` is used.
-///
-/// `audio_data`: raw WAV or PCM bytes recorded by the caller.
-/// `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
-#[tauri::command]
-async fn transcribe_audio_bytes(
-    state: State<'_, AppState>,
-    audio_data: Vec<u8>,
-    language: String,
-) -> Result<String, String> {
-    let inner = state.inner();
-
-    // Store the audio data as last_recording so history/stats can reference it.
-    {
-        let mut guard = lock!(inner.last_recording)?;
-        *guard = Some(audio_data.clone());
-    }
-
-    // Read dictionary terms for the STT prompt hint.
-    let dict_prompt = {
-        let guard = lock!(inner.dictionary)?;
-        let terms = guard.terms_as_prompt();
-        let terms_opt = if terms.is_empty() { None } else { Some(terms) };
-        build_stt_prompt(terms_opt.as_deref(), &language)
-    };
-
-    // Read the current provider (shared read lock -- no contention with other readers).
-    let provider = read_lock!(inner.stt_provider)?.clone();
-
-    provider
-        .transcribe(audio_data, &language, dict_prompt.as_deref())
-        .await
-        .map_err(|e: stt::SttError| e.to_string())
-}
-
-/// Cleans up raw transcription text using the configured LLM provider.
-///
-/// Can be called independently of the recording pipeline (e.g. to re-clean
-/// text with a different style).
-///
-/// `raw_text`: text to clean up.
-/// `style`: cleanup aggressiveness.
-/// `dictionary_terms`: optional comma-separated list of terms to preserve
-///   verbatim. If `None`, the current app dictionary is used automatically.
-#[tauri::command]
-async fn cleanup_text(
-    state: State<'_, AppState>,
-    raw_text: String,
-    style: CleanupStyle,
-    dictionary_terms: Option<String>,
-) -> Result<String, String> {
-    let inner = state.inner();
-    let provider = read_lock!(inner.cleanup_provider)?.clone();
-
-    // Use caller-supplied terms if provided; otherwise fall back to app dictionary.
-    let terms = match dictionary_terms {
-        Some(t) => {
-            if t.is_empty() {
-                None
-            } else {
-                Some(t)
-            }
-        }
-        None => {
-            let guard = lock!(inner.dictionary)?;
-            let l = guard.terms_as_list();
-            if l.is_empty() { None } else { Some(l) }
-        }
-    };
-
-    let custom_prompt = match state.inner().config.lock() {
-        Ok(g) => {
-            let p = g.custom_prompt.clone();
-            if p.is_empty() { None } else { Some(p) }
-        }
-        Err(_) => None,
-    };
-
-    let output_lang = match state.inner().config.lock() {
-        Ok(c) => {
-            let l = c.output_language.clone();
-            if l.is_empty() { None } else { Some(l) }
-        }
-        Err(_) => None,
-    };
-
-    chunked_cleanup(provider.as_ref(), &raw_text, style, terms.as_deref(), custom_prompt.as_deref(), output_lang.as_deref())
-        .await
-        .map(|r| r.text)
-        .map_err(|e: llm::LlmError| e.to_string())
-}
-
-/// Returns whether the recorder is currently active.
-///
-/// Useful for frontend state sync (e.g. showing a recording indicator).
-#[tauri::command]
-fn is_recording(state: State<'_, AppState>) -> bool {
-    state.inner().recorder.is_recording()
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Settings
-// ---------------------------------------------------------------------------
-
-/// Persists new settings and hot-reloads the affected providers.
-///
-/// After saving to disk:
-/// - STT and LLM providers are replaced with new instances (API key changes
-///   take effect immediately without a restart).
-/// - The global shortcut is re-registered with the new hotkey string and mode.
-///
-/// Passing an empty string for an API key disables that provider (requests
-/// will fail with an auth error from the API until a valid key is supplied).
-#[tauri::command]
-async fn save_settings(
-    handle: AppHandle,
-    state: State<'_, AppState>,
-    groq_api_key: String,
-    deepseek_api_key: String,
-    language: String,
-    cleanup_style: CleanupStyle,
-    hotkey: String,
-    hotkey_mode: HotkeyMode,
-    audio_device: Option<String>,
-    stt_model: Option<String>,
-    custom_prompt: Option<String>,
-    autostart: Option<bool>,
-    whisper_mode: Option<bool>,
-    openai_api_key: Option<String>,
-    anthropic_api_key: Option<String>,
-    stt_priority: Option<Vec<String>>,
-    llm_priority: Option<Vec<String>>,
-    output_language: Option<String>,
-    webhook_url: Option<String>,
-    turso_url: Option<String>,
-    turso_token: Option<String>,
-) -> Result<(), String> {
-    let inner = state.inner();
-
-    // Validate the hotkey string before writing anything to disk (desktop only).
-    println!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
-    #[cfg(desktop)]
-    let parsed_shortcut = hotkey
-        .parse::<Shortcut>()
-        .map_err(|e| {
-            println!("[save_settings] Invalid shortcut: {e}");
-            format!("Invalid shortcut string: {e}")
-        })?;
-
-    // Build updated config. Empty API key strings preserve the existing key
-    // so the user can change other settings without re-entering keys.
-    let existing = lock!(inner.config)?.clone();
-    let new_cfg = AppConfig {
-        groq_api_key: if groq_api_key.is_empty() { existing.groq_api_key } else { groq_api_key.clone() },
-        deepseek_api_key: if deepseek_api_key.is_empty() { existing.deepseek_api_key } else { deepseek_api_key.clone() },
-        language,
-        cleanup_style,
-        hotkey,
-        hotkey_mode,
-        audio_device,
-        stt_model: stt_model.unwrap_or(existing.stt_model),
-        custom_prompt: custom_prompt.unwrap_or(existing.custom_prompt),
-        profiles: existing.profiles,
-        autostart: autostart.unwrap_or(existing.autostart),
-        whisper_mode: whisper_mode.unwrap_or(existing.whisper_mode),
-        command_hotkey: existing.command_hotkey,
-        openai_api_key: match openai_api_key {
-            Some(ref k) if !k.is_empty() => k.clone(),
-            _ => existing.openai_api_key,
-        },
-        anthropic_api_key: match anthropic_api_key {
-            Some(ref k) if !k.is_empty() => k.clone(),
-            _ => existing.anthropic_api_key,
-        },
-        stt_priority: stt_priority.unwrap_or(existing.stt_priority),
-        llm_priority: llm_priority.unwrap_or(existing.llm_priority),
-        output_language: output_language.unwrap_or(existing.output_language),
-        snippets: existing.snippets,
-        voice_notes_hotkey: existing.voice_notes_hotkey,
-        webhook_url: webhook_url.unwrap_or(existing.webhook_url),
-        turso_url: match turso_url {
-            Some(ref u) if !u.is_empty() => u.clone(),
-            Some(ref u) if u.is_empty() => String::new(), // explicitly cleared
-            _ => existing.turso_url,
-        },
-        turso_token: match turso_token {
-            Some(ref t) if !t.is_empty() => t.clone(),
-            _ => existing.turso_token,
-        },
-        device_id: existing.device_id,
-        advanced: existing.advanced,
-    };
-
-    // Resolve providers from the new config before persisting.
-    let new_stt = resolve_stt_provider(&new_cfg);
-    let new_cleanup = resolve_cleanup_provider(&new_cfg);
-
-    // Persist to disk.
-    save_config(&inner.app_data_dir, &new_cfg)
-        .map_err(|e| format!("Failed to save settings: {e}"))?;
-
-    // Update in-memory config.
-    *lock!(inner.config)? = new_cfg;
-
-    // Hot-reload providers based on priority lists.
-    *write_lock!(inner.stt_provider)? = new_stt;
-    *write_lock!(inner.cleanup_provider)? = new_cleanup;
-
-    // Re-register the global shortcut with the (possibly new) hotkey + mode (desktop only).
-    #[cfg(desktop)]
-    register_hotkey(&handle, parsed_shortcut, hotkey_mode)?;
-
-    // Apply autostart: write or remove the OS startup entry.
-    let autostart_enabled = lock!(inner.config)?.autostart;
-    apply_autostart(autostart_enabled);
-
-    Ok(())
-}
-
-/// Returns the current settings for display in the frontend.
-///
-/// API keys are masked (only last 4 characters visible) so this can be sent
-/// to the frontend without exposing the full secrets.
-#[tauri::command]
-fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
-    let cfg = lock!(state.inner().config)?.clone();
-
-    Ok(SettingsView {
-        groq_api_key_masked: mask_api_key(&cfg.groq_api_key),
-        deepseek_api_key_masked: mask_api_key(&cfg.deepseek_api_key),
-        language: cfg.language,
-        cleanup_style: cfg.cleanup_style,
-        hotkey: cfg.hotkey,
-        hotkey_mode: cfg.hotkey_mode,
-        audio_device: cfg.audio_device,
-        stt_model: cfg.stt_model,
-        custom_prompt: cfg.custom_prompt,
-        autostart: cfg.autostart,
-        whisper_mode: cfg.whisper_mode,
-        openai_api_key_masked: mask_api_key(&cfg.openai_api_key),
-        anthropic_api_key_masked: mask_api_key(&cfg.anthropic_api_key),
-        stt_priority: cfg.stt_priority,
-        llm_priority: cfg.llm_priority,
-        output_language: cfg.output_language,
-        webhook_url: cfg.webhook_url,
-        turso_url: cfg.turso_url,
-        turso_token_masked: mask_api_key(&cfg.turso_token),
-        device_id: cfg.device_id,
-    })
-}
-
-/// Returns the current advanced settings.
-#[tauri::command]
-fn get_advanced_settings(state: State<'_, AppState>) -> Result<config::AdvancedSettings, String> {
-    let cfg = lock!(state.inner().config)?;
-    Ok(cfg.advanced.clone())
-}
-
-/// Saves updated advanced settings. Replaces the entire advanced block.
-#[tauri::command]
-fn save_advanced_settings(
-    state: State<'_, AppState>,
-    settings: config::AdvancedSettings,
-) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.advanced = settings;
-    save_config(&inner.app_data_dir, &cfg)
-        .map_err(|e| format!("Failed to save advanced settings: {e}"))?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Sync
-// ---------------------------------------------------------------------------
-
-/// Syncs history with the remote Turso database.
-///
-/// Returns `(pushed, pulled)` counts. If Turso is not configured (empty URL
-/// or token), returns `(0, 0)` without error.
-///
-/// Steps are interleaved so the Mutex is never held across an await:
-/// 1. Read config + unsynced entries (sync, lock held briefly)
-/// 2. Ensure remote table + push to Turso (async, no lock)
-/// 3. Mark synced + pull from Turso (async, no lock)
-/// 4. Insert pulled entries (sync, lock held briefly)
-#[tauri::command]
-async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), String> {
-    let inner = state.inner();
-    let cfg = lock!(inner.config)?.clone();
-
-    if cfg.turso_url.is_empty() || cfg.turso_token.is_empty() {
-        return Ok((0, 0));
-    }
-
-    // Step 1: Read unsynced entries (lock DB briefly, then release).
-    let unsynced = {
-        let db = lock!(inner.history_db)?;
-        sync::read_unsynced_entries(&db)
-            .map_err(|e| format!("Sync failed (read): {e}"))?
-    };
-
-    // Step 2: Ensure remote table + push (async, no DB lock).
-    let (pushed, uuids) = sync::ensure_and_push(&cfg.turso_url, &cfg.turso_token, unsynced)
-        .await
-        .map_err(|e| format!("Sync failed (push): {e}"))?;
-
-    // Step 3: Mark pushed entries as synced (lock DB briefly).
-    if pushed > 0 {
-        let db = lock!(inner.history_db)?;
-        sync::mark_entries_synced(&db, &uuids)
-            .map_err(|e| format!("Sync failed (mark): {e}"))?;
-    }
-
-    // Step 4: Pull remote entries (async, no DB lock).
-    let remote = sync::pull_remote_entries(&cfg.turso_url, &cfg.turso_token, &cfg.device_id)
-        .await
-        .map_err(|e| format!("Sync failed (pull): {e}"))?;
-
-    // Step 5: Insert pulled entries into local DB (lock DB briefly).
-    let pulled = if !remote.is_empty() {
-        let db = lock!(inner.history_db)?;
-        sync::insert_pulled_entries(&db, &remote)
-            .map_err(|e| format!("Sync failed (insert): {e}"))?
-    } else {
-        0
-    };
-
-    Ok((pushed, pulled))
-}
-
-/// Returns which API keys are currently configured (non-empty).
-///
-/// Does NOT return the key values themselves -- only booleans indicating
-/// presence. The frontend uses this to show configuration status.
-#[tauri::command]
-fn get_api_key_status(state: State<'_, AppState>) -> Result<ApiKeyStatus, String> {
-    let cfg = lock!(state.inner().config)?.clone();
-
-    Ok(ApiKeyStatus {
-        groq_configured: !cfg.groq_api_key.is_empty(),
-        deepseek_configured: !cfg.deepseek_api_key.is_empty(),
-    })
-}
-
-/// Replaces the STT and/or LLM provider with a new instance using the supplied
-/// API keys. Settings are also persisted to disk.
-///
-/// Passing `None` for a key leaves that provider unchanged.
-/// Passing `Some("")` effectively disables the provider.
-///
-/// Kept for backward compatibility with existing frontend code.
-/// New code should prefer `save_settings`.
-#[tauri::command]
-async fn update_api_keys(
-    state: State<'_, AppState>,
-    groq_api_key: Option<String>,
-    deepseek_api_key: Option<String>,
-) -> Result<(), String> {
-    let inner = state.inner();
-
-    {
-        let mut cfg = lock!(inner.config)?;
-
-        if let Some(ref key) = groq_api_key {
-            cfg.groq_api_key = key.clone();
-        }
-        if let Some(ref key) = deepseek_api_key {
-            cfg.deepseek_api_key = key.clone();
-        }
-
-        // Persist updated config.
-        let cfg_clone = cfg.clone();
-        drop(cfg); // release lock before I/O
-        save_config(&inner.app_data_dir, &cfg_clone)
-            .map_err(|e| format!("Failed to persist API keys: {e}"))?;
-    }
-
-    if let Some(key) = groq_api_key {
-        let model = lock!(inner.config)?.stt_model.clone();
-        *write_lock!(inner.stt_provider)? = Arc::new(GroqWhisper::new(key).with_model(model));
-    }
-
-    if let Some(key) = deepseek_api_key {
-        *write_lock!(inner.cleanup_provider)? = Arc::new(DeepSeekCleanup::new(key));
-    }
-
-    Ok(())
-}
-
-/// Sets the language used by the hotkey pipeline and persists the change.
-///
-/// `language`: ISO-639-1 code, e.g. `"de"` or `"en"`. Empty string = auto-detect.
-#[tauri::command]
-fn set_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.language = language;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist language setting: {e}"))
-}
-
-/// Sets the cleanup style used by the hotkey pipeline and persists the change.
-#[tauri::command]
-fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.cleanup_style = style;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist cleanup style: {e}"))
-}
-
-/// Sets the output language for translation and persists the change.
-///
-/// `language`: ISO-639-1 code, e.g. `"en"` to translate to English.
-/// Empty string = no translation (dictation stays in original language).
-#[tauri::command]
-fn set_output_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.output_language = language;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist output language setting: {e}"))
-}
-
-/// Reformats text into a specific output format (email, bullets, summary).
-///
-/// Uses the currently configured LLM provider to transform the text.
-#[tauri::command]
-async fn reformat_text(state: State<'_, AppState>, text: String, format: String) -> Result<String, String> {
-    let inner = state.inner();
-    let provider = read_lock!(inner.cleanup_provider)?.clone();
-    provider
-        .reformat(&text, &format)
-        .await
-        .map(|r| r.text)
-        .map_err(|e| format!("Reformat failed: {e}"))
-}
-
-/// Returns filler word statistics from raw transcripts in history.
-#[tauri::command]
-fn get_filler_stats(state: State<'_, AppState>) -> Result<Vec<history::FillerStat>, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::get_filler_stats(&db)
-        .map_err(|e| format!("Failed to get filler stats: {e}"))
-}
-
-/// Changes the registered global hotkey and/or mode at runtime.
-///
-/// `shortcut`: a Tauri shortcut string, e.g. `"ctrl+shift+d"`.
-/// `mode`: `HotkeyMode::Hold` or `HotkeyMode::Toggle`.
-///
-/// Returns an error if the shortcut string is invalid or registration fails.
-/// Persists both the new shortcut and mode to config.
-#[tauri::command]
-async fn set_hotkey(
-    handle: AppHandle,
-    state: State<'_, AppState>,
-    shortcut: String,
-    mode: HotkeyMode,
-) -> Result<(), String> {
-    // Validate and register the shortcut (desktop only).
-    #[cfg(desktop)]
-    {
-        let parsed = shortcut
-            .parse::<Shortcut>()
-            .map_err(|e| format!("Invalid shortcut string: {e}"))?;
-        register_hotkey(&handle, parsed, mode)?;
-    }
-
-    // Persist both fields to config.
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.hotkey = shortcut;
-    cfg.hotkey_mode = mode;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist hotkey setting: {e}"))
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Audio devices
-// ---------------------------------------------------------------------------
-
-/// Returns the names of all available audio input devices.
-#[tauri::command]
-fn list_audio_devices() -> Vec<String> {
-    audio::list_input_devices()
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Dictionary
-// ---------------------------------------------------------------------------
-
-/// Returns all terms in the custom dictionary.
-#[tauri::command]
-fn get_dictionary_terms(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    let guard = lock!(state.inner().dictionary)?;
-    Ok(guard.terms().to_vec())
-}
-
-/// Adds a term to the custom dictionary and persists the change.
-///
-/// Duplicate terms (case-insensitive) and empty strings are silently ignored.
-#[tauri::command]
-fn add_dictionary_term(state: State<'_, AppState>, term: String) -> Result<(), String> {
-    let inner = state.inner();
-    let mut dict = lock!(inner.dictionary)?;
-    dict.add_term(term);
-    let dict_clone = dict.clone();
-    drop(dict);
-    save_dictionary(&inner.app_data_dir, &dict_clone)
-        .map_err(|e| format!("Failed to save dictionary: {e}"))
-}
-
-/// Removes a term from the custom dictionary and persists the change.
-///
-/// Does nothing if the term is not present.
-#[tauri::command]
-fn remove_dictionary_term(state: State<'_, AppState>, term: String) -> Result<(), String> {
-    let inner = state.inner();
-    let mut dict = lock!(inner.dictionary)?;
-    dict.remove_term(&term);
-    let dict_clone = dict.clone();
-    drop(dict);
-    save_dictionary(&inner.app_data_dir, &dict_clone)
-        .map_err(|e| format!("Failed to save dictionary: {e}"))
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- History
-// ---------------------------------------------------------------------------
-
-/// Returns the most recent history entries.
-#[tauri::command]
-fn get_history(state: State<'_, AppState>, limit: Option<u32>) -> Result<Vec<history::HistoryEntry>, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::get_entries(&db, limit.unwrap_or(50))
-        .map_err(|e| format!("Failed to load history: {e}"))
-}
-
-/// Searches history entries by text content and/or app name.
-#[tauri::command]
-fn search_history(
-    state: State<'_, AppState>,
-    text_query: Option<String>,
-    app_query: Option<String>,
-    limit: Option<u32>,
-) -> Result<Vec<history::HistoryEntry>, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::search_entries(
-        &db,
-        text_query.as_deref(),
-        app_query.as_deref(),
-        limit.unwrap_or(50),
-    )
-    .map_err(|e| format!("Failed to search history: {e}"))
-}
-
-/// Deletes a single history entry.
-#[tauri::command]
-fn delete_history_entry(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let db = lock!(state.inner().history_db)?;
-    history::delete_entry(&db, id)
-        .map_err(|e| format!("Failed to delete history entry: {e}"))?;
-    Ok(())
-}
-
-/// Deletes all history entries.
-#[tauri::command]
-fn clear_history(state: State<'_, AppState>) -> Result<u64, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::clear_history(&db)
-        .map_err(|e| format!("Failed to clear history: {e}"))
-}
-
-/// Saves a dictation result to history (used by the frontend manual flow).
-#[tauri::command]
-fn add_history_entry(
-    state: State<'_, AppState>,
-    text: String,
-    raw_text: Option<String>,
-    style: String,
-    language: String,
-) -> Result<i64, String> {
-    let inner = state.inner();
-    let db = lock!(inner.history_db)?;
-    let app_name = inner.prev_window_title.lock().ok().and_then(|t| t.clone());
-    let device_id = lock!(inner.config).ok().map(|c| c.device_id.clone());
-    history::add_entry(&db, &text, raw_text.as_deref(), &style, &language, false, app_name.as_deref(), None, device_id.as_deref())
-        .map_err(|e| format!("Failed to save history entry: {e}"))
-}
-
-/// Returns the most recent voice notes.
-#[tauri::command]
-fn get_notes(state: State<'_, AppState>, limit: u32) -> Result<Vec<history::HistoryEntry>, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::get_notes(&db, limit).map_err(|e| format!("Failed to get notes: {e}"))
-}
-
-/// Saves a dictation result as a voice note (not pasted).
-#[tauri::command]
-fn save_note(
-    state: State<'_, AppState>,
-    text: String,
-    raw_text: String,
-    style: String,
-) -> Result<i64, String> {
-    let inner = state.inner();
-    let db = lock!(inner.history_db)?;
-    let cfg = lock!(inner.config)?;
-    let language = cfg.language.clone();
-    let device_id = cfg.device_id.clone();
-    drop(cfg);
-    history::add_entry(&db, &text, Some(&raw_text), &style, &language, true, None, None, Some(&device_id))
-        .map_err(|e| format!("Failed to save note: {e}"))
-}
-
-/// Updates the floating bar window shape (circle when idle, pill when expanded).
-/// Called by the frontend whenever the bar state changes.
-#[tauri::command]
-fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use tauri::Manager;
-        if let Some(bar) = handle.get_webview_window("bar") {
-            let scale = bar.scale_factor().unwrap_or(1.0);
-            if let Ok(hwnd) = bar.hwnd() {
-                let h = hwnd.0 as isize;
-                if shape == "circle" {
-                    let s = (28.0 * scale) as i32;
-                    set_window_region_ellipse(h, s, s);
-                } else {
-                    let w = (260.0 * scale) as i32;
-                    let ht = (40.0 * scale) as i32;
-                    set_window_region_pill(h, w, ht);
-                }
-            }
-        }
-    }
-    let _ = (handle, shape); // suppress unused warnings on non-Windows
-    Ok(())
-}
-
-/// Takes a snapshot of the current audio buffer and transcribes it for live preview.
-/// Returns the partial transcription text, or empty string if nothing recorded yet.
-#[tauri::command]
-async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<String, String> {
-    let inner = state.inner();
-
-    // Only preview while actually recording
-    if !inner.recorder.is_recording() {
-        return Ok(String::new());
-    }
-
-    let wav_bytes = match inner.recorder.snapshot_wav() {
-        Some(b) if b.len() > 44 => b, // 44 = WAV header only (no audio data)
-        _ => return Ok(String::new()),
-    };
-
-    let (language, stt_provider, dict_prompt) = {
-        let cfg = lock!(inner.config)?;
-        let lang = cfg.language.clone();
-        let stt = inner.stt_provider.read()
-            .map_err(|e| format!("Lock poisoned: {e}"))?
-            .clone();
-        let dict_terms = match inner.dictionary.lock() {
-            Ok(g) => {
-                let p = g.terms_as_prompt();
-                if p.is_empty() { None } else { Some(p) }
-            }
-            Err(_) => None,
-        };
-        let prompt = build_stt_prompt(dict_terms.as_deref(), &lang);
-        (lang, stt, prompt)
-    };
-
-    match stt_provider.transcribe(wav_bytes, &language, dict_prompt.as_deref()).await {
-        Ok(text) => Ok(text),
-        Err(e) => {
-            log::warn!("[live-preview] transcription failed: {e}");
-            Ok(String::new()) // Don't error out, just return empty
-        }
-    }
-}
-
-/// Returns aggregated usage statistics (cost tracker + dictation stats).
-#[tauri::command]
-fn get_usage_stats(state: State<'_, AppState>) -> Result<UsageSummary, String> {
-    let db = lock!(state.inner().history_db)?;
-    history::get_usage_summary(&db)
-        .map_err(|e| format!("Failed to get usage stats: {e}"))
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Profiles
-// ---------------------------------------------------------------------------
-
-/// Returns the app-specific profiles list.
-#[tauri::command]
-fn get_profiles(state: State<'_, AppState>) -> Result<Vec<config::AppProfile>, String> {
-    let cfg = lock!(state.inner().config)?;
-    Ok(cfg.profiles.clone())
-}
-
-/// Replaces the full profiles list and persists to disk.
-#[tauri::command]
-fn save_profiles(
-    state: State<'_, AppState>,
-    profiles: Vec<config::AppProfile>,
-) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.profiles = profiles;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist profiles: {e}"))
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Snippets
-// ---------------------------------------------------------------------------
-
-/// Returns all user-defined text snippets from config.
-#[tauri::command]
-fn get_snippets(state: State<'_, AppState>) -> Result<Vec<TextSnippet>, String> {
-    let cfg = lock!(state.inner().config)?;
-    Ok(cfg.snippets.clone())
-}
-
-/// Replaces the full snippet list and persists to disk.
-///
-/// The caller supplies the complete list; individual add/remove operations
-/// are handled on the frontend and the resulting list is sent here.
-#[tauri::command]
-fn save_snippets(
-    state: State<'_, AppState>,
-    snippets: Vec<TextSnippet>,
-) -> Result<(), String> {
-    let inner = state.inner();
-    let mut cfg = lock!(inner.config)?;
-    cfg.snippets = snippets;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist snippets: {e}"))
-}
-
-/// Pastes snippet content into the previously focused window.
-///
-/// Reuses the same foreground-window capture and paste infrastructure as the
-/// dictation pipeline. The caller is responsible for supplying the content
-/// string -- no look-up by name happens here.
-///
-/// If `prev_foreground_hwnd` is `None` (e.g. no dictation has run yet),
-/// the paste handler falls back to clipboard-based pasting into whatever
-/// window currently has focus.
-#[tauri::command]
-async fn paste_snippet(
-    state: State<'_, AppState>,
-    content: String,
-) -> Result<(), String> {
-    let prev_hwnd = state.inner()
-        .prev_foreground_hwnd
-        .lock()
-        .map_err(|_| "Internal state lock poisoned".to_string())?
-        .clone();
-
-    // Capture current foreground window if we have no stored one from recording.
-    let hwnd = prev_hwnd.or_else(capture_foreground_window);
-
-    let paste_handler = create_paste_handler(hwnd);
-    paste_handler
-        .paste(&content)
-        .map_err(|e| format!("Failed to paste snippet: {e}"))
-}
-
-// ---------------------------------------------------------------------------
-// Tauri commands -- Misc / Onboarding
-// ---------------------------------------------------------------------------
-
-/// Returns `true` if no API keys have been configured yet.
-///
-/// Used by the frontend to decide whether to show the onboarding wizard on
-/// startup. Treated as "first run" when all provider keys are empty.
-#[tauri::command]
-fn is_first_run(state: State<'_, AppState>) -> bool {
-    let inner = state.inner();
-    match inner.config.lock() {
-        Ok(g) => {
-            g.groq_api_key.is_empty()
-                && g.deepseek_api_key.is_empty()
-                && g.openai_api_key.is_empty()
-                && g.anthropic_api_key.is_empty()
-        }
-        Err(_) => true,
-    }
-}
-
-/// Returns the title of the last window that was active before Dikta received
-/// focus (captured at hotkey press time), or `None` when no title was captured.
-#[tauri::command]
-fn get_active_app(state: State<'_, AppState>) -> Option<String> {
-    state.prev_window_title.lock().ok().and_then(|t| t.clone())
-}
-
-// ---------------------------------------------------------------------------
-// Autostart helper (Windows only)
-// ---------------------------------------------------------------------------
-
-/// Writes or removes the autostart registry entry under
-/// `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-///
-/// On non-Windows platforms this is a no-op (the config field is still
-/// persisted, but OS-level startup is not wired up).
-#[cfg(target_os = "windows")]
-fn apply_autostart(enabled: bool) {
-    use windows::Win32::System::Registry::{
-        RegCreateKeyExW, RegDeleteValueW, RegSetValueExW, RegCloseKey,
-        HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, REG_OPTION_NON_VOLATILE,
-    };
-    use windows::Win32::Foundation::ERROR_SUCCESS;
-    use windows::core::PCWSTR;
-
-    // Encode the registry key path as a null-terminated wide string.
-    let key_path: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0"
-        .encode_utf16()
-        .collect();
-    let value_name: Vec<u16> = "Dikta\0".encode_utf16().collect();
-
-    unsafe {
-        let mut hkey = windows::Win32::System::Registry::HKEY::default();
-        let result = RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            Some(0),
-            PCWSTR::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_SET_VALUE,
-            None,
-            &mut hkey,
-            None,
-        );
-
-        if result != ERROR_SUCCESS {
-            log::warn!("[autostart] Failed to open registry key: {:?}", result);
-            return;
-        }
-
-        if enabled {
-            // Determine path to the current executable.
-            match std::env::current_exe() {
-                Ok(exe_path) => {
-                    let exe_str = exe_path.to_string_lossy();
-                    // Quote the path in case it contains spaces.
-                    let quoted = format!("\"{exe_str}\"\0");
-                    let wide: Vec<u16> = quoted.encode_utf16().collect();
-                    let byte_len = (wide.len() * 2) as u32;
-                    let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, byte_len as usize);
-
-                    let set_result = RegSetValueExW(
-                        hkey,
-                        PCWSTR(value_name.as_ptr()),
-                        Some(0),
-                        REG_SZ,
-                        Some(bytes),
-                    );
-                    if set_result != ERROR_SUCCESS {
-                        log::warn!("[autostart] Failed to write registry value: {:?}", set_result);
-                    } else {
-                        log::info!("[autostart] Autostart enabled: {exe_str}");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[autostart] Could not determine exe path: {e}");
-                }
-            }
-        } else {
-            // Delete the value (ignore error if it doesn't exist).
-            let _ = RegDeleteValueW(hkey, PCWSTR(value_name.as_ptr()));
-            log::info!("[autostart] Autostart disabled (registry entry removed)");
-        }
-
-        let _ = RegCloseKey(hkey);
-    }
-}
-
-/// No-op stub for non-Windows platforms.
-#[cfg(not(target_os = "windows"))]
-fn apply_autostart(_enabled: bool) {}
-
-// ---------------------------------------------------------------------------
-// Silence detection helper
-// ---------------------------------------------------------------------------
-
-/// Parses a WAV byte buffer and computes the overall RMS of the audio samples.
-///
-/// Returns `None` if the WAV cannot be parsed (should not happen since we
-/// encoded it ourselves, but we handle it gracefully).
-fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
-    let cursor = std::io::Cursor::new(wav_bytes);
-    let mut reader = match hound::WavReader::new(cursor) {
-        Ok(r) => r,
-        Err(_) => return None,
-    };
-
-    let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .filter_map(|s| s.ok())
-            .collect(),
-        hound::SampleFormat::Int => {
-            let max_val = (1_i64 << (spec.bits_per_sample - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .filter_map(|s| s.ok())
-                .map(|s| s as f32 / max_val)
-                .collect()
-        }
-    };
-
-    if samples.is_empty() {
-        return Some(0.0);
-    }
-
-    Some(audio::compute_rms(&samples))
-}
-
-// ---------------------------------------------------------------------------
 // Default hotkey string
 // ---------------------------------------------------------------------------
 
 const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 
 // ---------------------------------------------------------------------------
-// Tauri entry point
+// Desktop-only window helpers
 // ---------------------------------------------------------------------------
 
 /// Event name for real-time audio level updates sent to the floating bar.
 const EVENT_AUDIO_LEVEL: &str = "dikta://audio-level";
+
+/// Sets the window region to an ellipse (circle when w==h) using Win32 API.
+/// This clips the window shape at the OS level, hiding any WebView2 artifacts.
+#[cfg(target_os = "windows")]
+pub fn set_window_region_ellipse(hwnd: isize, width: i32, height: i32) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateEllipticRgn, SetWindowRgn};
+
+    unsafe {
+        let rgn = CreateEllipticRgn(0, 0, width, height);
+        if !rgn.is_invalid() {
+            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
+            // Note: after SetWindowRgn the system owns the region, do NOT delete it.
+        }
+    }
+}
+
+/// Sets the window region to a rounded rectangle using Win32 API.
+#[cfg(target_os = "windows")]
+pub fn set_window_region_pill(hwnd: isize, width: i32, height: i32) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+
+    unsafe {
+        // Corner radius = height for a pill shape
+        let rgn = CreateRoundRectRgn(0, 0, width, height, height, height);
+        if !rgn.is_invalid() {
+            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
+        }
+    }
+}
+
+#[cfg(desktop)]
+/// Sets up the audio-level callback that emits events to the frontend.
+pub fn setup_audio_level_emitter(handle: &AppHandle) {
+    let state = handle.state::<AppState>();
+    let handle_clone = handle.clone();
+    state.recorder.set_level_callback(Box::new(move |level| {
+        let _ = handle_clone.emit(EVENT_AUDIO_LEVEL, serde_json::json!({ "level": level }));
+    }));
+}
 
 #[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
@@ -2068,7 +379,6 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let bar = builder.build()?;
 
     // Set initial elliptic (circle) window region on Windows.
-    // This clips the window at the OS level so WebView2 artifacts are invisible.
     #[cfg(target_os = "windows")]
     {
         if let Ok(hwnd) = bar.hwnd() {
@@ -2105,46 +415,9 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// Sets the window region to an ellipse (circle when w==h) using Win32 API.
-/// This clips the window shape at the OS level, hiding any WebView2 artifacts.
-#[cfg(target_os = "windows")]
-fn set_window_region_ellipse(hwnd: isize, width: i32, height: i32) {
-    use windows::Win32::Graphics::Gdi::{CreateEllipticRgn, SetWindowRgn};
-    use windows::Win32::Foundation::HWND;
-
-    unsafe {
-        let rgn = CreateEllipticRgn(0, 0, width, height);
-        if !rgn.is_invalid() {
-            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
-            // Note: after SetWindowRgn the system owns the region, do NOT delete it.
-        }
-    }
-}
-
-/// Sets the window region to a rounded rectangle using Win32 API.
-#[cfg(target_os = "windows")]
-fn set_window_region_pill(hwnd: isize, width: i32, height: i32) {
-    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
-    use windows::Win32::Foundation::HWND;
-
-    unsafe {
-        // Corner radius = height for a pill shape
-        let rgn = CreateRoundRectRgn(0, 0, width, height, height, height);
-        if !rgn.is_invalid() {
-            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
-        }
-    }
-}
-
-#[cfg(desktop)]
-/// Sets up the audio-level callback that emits events to the frontend.
-fn setup_audio_level_emitter(handle: &AppHandle) {
-    let state = handle.state::<AppState>();
-    let handle_clone = handle.clone();
-    state.recorder.set_level_callback(Box::new(move |level| {
-        let _ = handle_clone.emit(EVENT_AUDIO_LEVEL, serde_json::json!({ "level": level }));
-    }));
-}
+// ---------------------------------------------------------------------------
+// Tauri entry point
+// ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -2159,141 +432,132 @@ pub fn run() {
     }
 
     let mut builder = builder.setup(|app| {
-            // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("Tauri must provide an app-data directory");
+        // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .expect("Tauri must provide an app-data directory");
 
-            // Create the directory if it doesn't exist yet.
-            std::fs::create_dir_all(&app_data_dir)?;
+        // Create the directory if it doesn't exist yet.
+        std::fs::create_dir_all(&app_data_dir)?;
 
-            // Load persisted config (falls back to defaults + env vars on first run).
-            let cfg = load_config(&app_data_dir);
+        // Load persisted config (falls back to defaults + env vars on first run).
+        let cfg = load_config(&app_data_dir);
 
-            // Restore the hotkey from config (or fall back to the compile-time default).
-            let hotkey_str = if cfg.hotkey.is_empty() {
-                DEFAULT_HOTKEY.to_string()
-            } else {
-                cfg.hotkey.clone()
-            };
+        // Restore the hotkey from config (or fall back to the compile-time default).
+        let hotkey_str = if cfg.hotkey.is_empty() {
+            DEFAULT_HOTKEY.to_string()
+        } else {
+            cfg.hotkey.clone()
+        };
 
-            let hotkey_mode = cfg.hotkey_mode;
+        let hotkey_mode = cfg.hotkey_mode;
 
-            // Load persisted dictionary.
-            let dictionary = load_dictionary(&app_data_dir);
+        // Load persisted dictionary.
+        let dictionary = load_dictionary(&app_data_dir);
 
-            log::info!(
-                "[setup] Loaded config: language={}, style={:?}, hotkey={}, mode={:?}",
-                cfg.language,
-                cfg.cleanup_style,
-                hotkey_str,
-                hotkey_mode,
-            );
-            log::info!(
-                "[setup] Loaded dictionary: {} terms",
-                dictionary.len()
-            );
+        log::info!(
+            "[setup] Loaded config: language={}, style={:?}, hotkey={}, mode={:?}",
+            cfg.language,
+            cfg.cleanup_style,
+            hotkey_str,
+            hotkey_mode,
+        );
+        log::info!("[setup] Loaded dictionary: {} terms", dictionary.len());
 
-            // Open history database.
-            let history_db = history::open_db(&app_data_dir)
-                .expect("Failed to open history database");
+        // Open history database.
+        let history_db = history::open_db(&app_data_dir)
+            .expect("Failed to open history database");
 
-            // Detect first run: no API keys configured means the user hasn't gone
-            // through setup yet. We'll show the main window in this case even though
-            // tauri.conf.json has visible:false (tray-first for returning users).
-            let is_first_run = cfg.groq_api_key.is_empty()
-                && cfg.deepseek_api_key.is_empty()
-                && cfg.openai_api_key.is_empty()
-                && cfg.anthropic_api_key.is_empty();
+        // Apply autostart on launch: ensure registry entry matches config.
+        commands::settings::apply_autostart(cfg.autostart);
 
-            // Apply autostart on launch: ensure registry entry matches config.
-            apply_autostart(cfg.autostart);
+        // Build and register the application state.
+        let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
+        app.manage(app_state);
 
-            // Build and register the application state.
-            let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
-            app.manage(app_state);
+        // --- System tray (Windows only -- WSL2/Linux lacks proper tray support) ---
+        #[cfg(target_os = "windows")]
+        {
+            let show_settings =
+                MenuItem::with_id(app, "show_settings", "Settings", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
-            // --- System tray (Windows only -- WSL2/Linux lacks proper tray support) ---
-            #[cfg(target_os = "windows")]
-            {
-                let show_settings = MenuItem::with_id(app, "show_settings", "Settings", true, None::<&str>)?;
-                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&show_settings, &quit])?;
-
-                let tray_tooltip = format!("Dikta \u{2014} {hotkey_str}");
-                let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
-                    .icon(app.default_window_icon().unwrap().clone())
-                    .tooltip(&tray_tooltip)
-                    .menu(&menu)
-                    .on_menu_event(|app, event| {
-                        match event.id.as_ref() {
-                            "show_settings" => {
-                                if let Some(w) = app.get_webview_window("main") {
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
-                                }
-                            }
-                            "quit" => {
-                                app.exit(0);
-                            }
-                            _ => {}
+            let tray_tooltip = format!("Dikta \u{2014} {hotkey_str}");
+            let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip(&tray_tooltip)
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show_settings" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
                         }
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                            if let Some(w) = tray.app_handle().get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
                         }
-                    })
-                    .build(app)?;
-            }
+                    }
+                })
+                .build(app)?;
+        }
 
-            // --- Floating bar window ---
-            // Only create on Windows; WSL2/Linux lacks decorations(false),
-            // transparency, and proper always-on-top support.
-            #[cfg(target_os = "windows")]
-            if let Err(e) = create_bar_window(app) {
-                log::warn!("[setup] Could not create floating bar: {e}");
-            }
+        // --- Floating bar window ---
+        #[cfg(target_os = "windows")]
+        if let Err(e) = create_bar_window(app) {
+            log::warn!("[setup] Could not create floating bar: {e}");
+        }
 
-            // --- Desktop-only setup: audio level emitter + global hotkey ---
-            #[cfg(desktop)]
-            {
-                let handle = app.handle().clone();
-                #[cfg(desktop)]
-    setup_audio_level_emitter(&handle);
+        // --- Desktop-only setup: audio level emitter + global hotkey ---
+        #[cfg(desktop)]
+        {
+            let handle = app.handle().clone();
+            setup_audio_level_emitter(&handle);
 
-                println!("[setup] Parsing hotkey: {hotkey_str:?}");
-                let shortcut = hotkey_str
+            println!("[setup] Parsing hotkey: {hotkey_str:?}");
+            let shortcut = hotkey_str.parse::<Shortcut>().unwrap_or_else(|e| {
+                log::warn!(
+                    "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
+                    hotkey_str
+                );
+                DEFAULT_HOTKEY
                     .parse::<Shortcut>()
-                    .unwrap_or_else(|e| {
-                        log::warn!(
-                            "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
-                            hotkey_str
-                        );
-                        DEFAULT_HOTKEY
-                            .parse::<Shortcut>()
-                            .expect("DEFAULT_HOTKEY must be a valid shortcut string")
-                    });
+                    .expect("DEFAULT_HOTKEY must be a valid shortcut string")
+            });
 
-                match register_hotkey(&handle, shortcut, hotkey_mode) {
-                    Ok(()) => log::info!("[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"),
-                    Err(e) => log::warn!("[hotkey] Could not register shortcut: {e}. Use the UI button instead."),
-                }
+            match register_hotkey(&handle, shortcut, hotkey_mode) {
+                Ok(()) => log::info!(
+                    "[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"
+                ),
+                Err(e) => log::warn!(
+                    "[hotkey] Could not register shortcut: {e}. Use the UI button instead."
+                ),
             }
+        }
 
-            // Always show the main window on launch (desktop only).
-            #[cfg(desktop)]
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+        // Always show the main window on launch (desktop only).
+        #[cfg(desktop)]
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
 
-            Ok(())
-        });
+        Ok(())
+    });
 
     // On Windows with a working system tray, we hide windows on close
     // instead of quitting. On other platforms, closing main = quit.
@@ -2320,61 +584,50 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             // Recording
-            start_recording,
-            stop_recording,
-            transcribe_audio,
-            transcribe_audio_bytes,
-            cleanup_text,
-            is_recording,
+            commands::recording::start_recording,
+            commands::recording::stop_recording,
+            commands::recording::transcribe_audio,
+            commands::recording::transcribe_audio_bytes,
+            commands::recording::cleanup_text,
+            commands::recording::is_recording,
+            commands::recording::list_audio_devices,
+            commands::recording::transcribe_live_preview,
             // Settings
-            save_settings,
-            get_settings,
-            get_api_key_status,
-            update_api_keys,
-            set_language,
-            set_cleanup_style,
-            set_output_language,
-            set_hotkey,
-            // Reformat
-            reformat_text,
-            // Audio devices
-            list_audio_devices,
+            commands::settings::save_settings,
+            commands::settings::get_settings,
+            commands::settings::get_api_key_status,
+            commands::settings::update_api_keys,
+            commands::settings::set_language,
+            commands::settings::set_cleanup_style,
+            commands::settings::set_output_language,
+            commands::settings::set_hotkey,
+            commands::settings::reformat_text,
+            commands::settings::is_first_run,
+            commands::settings::get_active_app,
+            commands::settings::get_advanced_settings,
+            commands::settings::save_advanced_settings,
             // Dictionary
-            get_dictionary_terms,
-            add_dictionary_term,
-            remove_dictionary_term,
+            commands::dictionary::get_dictionary_terms,
+            commands::dictionary::add_dictionary_term,
+            commands::dictionary::remove_dictionary_term,
             // History
-            get_history,
-            search_history,
-            delete_history_entry,
-            clear_history,
-            add_history_entry,
-            // Stats
-            get_usage_stats,
-            get_filler_stats,
-            // Voice Notes
-            get_notes,
-            save_note,
-            // Profiles
-            get_profiles,
-            save_profiles,
-            // Snippets
-            get_snippets,
-            save_snippets,
-            paste_snippet,
-            // Bar shape
-            set_bar_shape,
-            // Live preview
-            transcribe_live_preview,
-            // Onboarding
-            is_first_run,
-            // Window context
-            get_active_app,
-            // Advanced settings
-            get_advanced_settings,
-            save_advanced_settings,
-            // Sync
-            sync_history,
+            commands::history::get_history,
+            commands::history::search_history,
+            commands::history::delete_history_entry,
+            commands::history::clear_history,
+            commands::history::add_history_entry,
+            commands::history::get_usage_stats,
+            commands::history::get_filler_stats,
+            commands::history::get_notes,
+            commands::history::save_note,
+            // Misc: profiles, snippets, sync, paste, UI helpers
+            commands::misc::get_profiles,
+            commands::misc::save_profiles,
+            commands::misc::get_snippets,
+            commands::misc::save_snippets,
+            commands::misc::paste_snippet,
+            commands::misc::sync_history,
+            commands::misc::set_bar_shape,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2387,16 +640,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("failed to create temp dir")
-    }
-
-    fn make_state(dir: &TempDir) -> AppState {
-        let db = rusqlite::Connection::open_in_memory().unwrap();
-        AppState::new(AppConfig::default(), Dictionary::new(), dir.path().to_path_buf(), db)
-    }
+    use crate::test_helpers::{make_state, temp_dir};
 
     // --- AppState initial conditions ---
 
@@ -2482,7 +726,10 @@ mod tests {
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("deepseekApiKeyMasked"), "expected camelCase key");
         assert!(json.contains("cleanupStyle"), "expected camelCase key");
-        assert!(json.contains("hotkeyMode"), "expected camelCase 'hotkeyMode'");
+        assert!(
+            json.contains("hotkeyMode"),
+            "expected camelCase 'hotkeyMode'"
+        );
         assert!(json.contains("webhookUrl"), "expected camelCase 'webhookUrl'");
     }
 
@@ -2513,7 +760,10 @@ mod tests {
             device_id: "test-device".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
-        assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
+        assert!(
+            json.contains(r#""hotkeyMode":"hold""#),
+            "hold variant must serialize as lowercase 'hold'"
+        );
     }
 
     #[test]
@@ -2541,7 +791,10 @@ mod tests {
             device_id: "test-device".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
-        assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");
+        assert!(
+            json.contains(r#""hotkeyMode":"toggle""#),
+            "toggle variant must serialize as lowercase 'toggle'"
+        );
     }
 
     // --- ApiKeyStatus ---
@@ -2564,7 +817,8 @@ mod tests {
             deepseek_api_key: "ds-key-456".to_string(),
             ..AppConfig::default()
         };
-        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let db = rusqlite::Connection::open_in_memory()
+            .expect("in-memory SQLite must always open successfully");
         let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
         let locked = state.config.lock().unwrap();
         assert!(!locked.groq_api_key.is_empty());

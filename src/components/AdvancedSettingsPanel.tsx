@@ -1,0 +1,363 @@
+import { useState, useEffect, useCallback } from "react";
+import type { AdvancedSettings } from "../types";
+import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
+import { CloseIcon, SpinnerIcon } from "./icons";
+import { INPUT_CLS, LABEL_CLS } from "./ui";
+
+const ADVANCED_DEFAULTS: AdvancedSettings = {
+  sttPromptDe: "",
+  sttPromptEn: "",
+  sttPromptAuto: "",
+  sttTemperature: 0,
+  llmSystemPromptPolished: "",
+  llmSystemPromptVerbatim: "",
+  llmSystemPromptChat: "",
+  llmCommandModePrompt: "",
+  llmTemperature: 0.3,
+  llmMaxTokens: 1024,
+  llmModelDeepseek: "deepseek-chat",
+  llmModelOpenai: "gpt-4o-mini",
+  llmModelAnthropic: "claude-haiku-4-5-20251001",
+  llmModelGroq: "llama-3.3-70b-versatile",
+  chunkThreshold: 400,
+  chunkTargetSize: 300,
+  silenceThreshold: 0.005,
+  whisperModeThreshold: 0.001,
+  minRecordingMs: 500,
+  whisperModeGain: 3.0,
+  autoPaste: true,
+  pasteDelayMs: 80,
+  autoCapitalize: false,
+  webhookHeaders: "",
+  webhookTimeoutSecs: 10,
+  logLevel: "info",
+  uiScale: "medium",
+};
+
+interface AdvancedSettingsPanelProps {
+  onClose: () => void;
+  onScaleChange: (scale: string) => void;
+}
+
+export function AdvancedSettingsPanel({ onClose, onScaleChange }: AdvancedSettingsPanelProps) {
+  const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ stt: true });
+
+  const hintCls = "text-[10px] text-zinc-500 leading-relaxed";
+  const numberInputCls = `${INPUT_CLS} w-28`;
+  const modelInputCls = "bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44";
+  const sectionBtnCls = "flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left";
+
+  const toggleSection = useCallback((key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  useEffect(() => {
+    getAdvancedSettings()
+      .then((s) => { setSettings(s); setLoaded(true); })
+      .catch((err) => {
+        console.warn("get_advanced_settings failed, using defaults:", err);
+        setLoaded(true);
+      });
+  }, []);
+
+  // Close on Escape.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const set = useCallback(<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await saveAdvancedSettings(settings);
+      onScaleChange(settings.uiScale);
+      setSaveMsg("Saved");
+      setTimeout(() => setSaveMsg(null), 2000);
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [settings, onScaleChange]);
+
+  const handleReset = useCallback(() => {
+    setSettings(ADVANCED_DEFAULTS);
+    setSaveMsg(null);
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl p-6 text-center">
+        <SpinnerIcon className="w-5 h-5 text-zinc-500 mx-auto" />
+      </div>
+    );
+  }
+
+  // Toggle switch helper (local to this panel).
+  const Toggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={["relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0", checked ? "bg-emerald-500/40" : "bg-zinc-700"].join(" ")}
+    >
+      <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", checked ? "translate-x-4" : ""].join(" ")} />
+    </button>
+  );
+
+  return (
+    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl shadow-xl shadow-black/30">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
+        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
+        <button
+          aria-label="Close advanced settings"
+          onClick={onClose}
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* Content -- scrollable like History panel */}
+      <div className="overflow-y-auto max-h-[calc(100vh-150px)] p-4 flex flex-col gap-1">
+
+        {/* STT */}
+        <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`}>&#9656;</span>
+          Speech-to-Text (STT)
+        </button>
+        {openSections.stt && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>STT Prompt (German)</span>
+              <textarea value={settings.sttPromptDe} onChange={(e) => set("sttPromptDe", e.target.value)} placeholder="Context prompt sent with German transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Injected as context when language is set to German.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>STT Prompt (English)</span>
+              <textarea value={settings.sttPromptEn} onChange={(e) => set("sttPromptEn", e.target.value)} placeholder="Context prompt for English transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Injected as context when language is set to English.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
+              <textarea value={settings.sttPromptAuto} onChange={(e) => set("sttPromptAuto", e.target.value)} placeholder="Context prompt for auto-detect mode" rows={2} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className={LABEL_CLS}>STT Temperature</span>
+                <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+              </div>
+              <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => set("sttTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+          </div>
+        )}
+
+        {/* LLM Cleanup */}
+        <button onClick={() => toggleSection("llm")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`}>&#9656;</span>
+          LLM Cleanup
+        </button>
+        {openSections.llm && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>System Prompt: Polished</span>
+              <textarea value={settings.llmSystemPromptPolished} onChange={(e) => set("llmSystemPromptPolished", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>System Prompt: Verbatim</span>
+              <textarea value={settings.llmSystemPromptVerbatim} onChange={(e) => set("llmSystemPromptVerbatim", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>System Prompt: Chat</span>
+              <textarea value={settings.llmSystemPromptChat} onChange={(e) => set("llmSystemPromptChat", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>Command Mode Prompt</span>
+              <textarea value={settings.llmCommandModePrompt} onChange={(e) => set("llmCommandModePrompt", e.target.value)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
+              <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
+              <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
+              <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
+              <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
+              <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
+              <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
+              <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
+              <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
+              <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+            </div>
+          </div>
+        )}
+
+        {/* Audio */}
+        <button onClick={() => toggleSection("audio")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`}>&#9656;</span>
+          Audio
+        </button>
+        {openSections.audio && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Silence Threshold</span><span className={hintCls}>RMS below which audio is silence (0.0 – 0.1).</span></div>
+              <input type="number" min={0} max={0.1} step={0.001} value={settings.silenceThreshold} onChange={(e) => set("silenceThreshold", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Whisper Mode Threshold</span><span className={hintCls}>Silence threshold in Whisper Mode (lower than normal).</span></div>
+              <input type="number" min={0} max={0.1} step={0.001} value={settings.whisperModeThreshold} onChange={(e) => set("whisperModeThreshold", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Min Recording (ms)</span><span className={hintCls}>Shorter recordings are discarded.</span></div>
+              <input type="number" min={0} step={50} value={settings.minRecordingMs} onChange={(e) => set("minRecordingMs", parseInt(e.target.value, 10) || 500)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Whisper Mode Gain</span><span className={hintCls}>Amplification multiplier in Whisper Mode.</span></div>
+              <input type="number" min={1} max={20} step={0.5} value={settings.whisperModeGain} onChange={(e) => set("whisperModeGain", parseFloat(e.target.value) || 1)} className={numberInputCls} />
+            </div>
+          </div>
+        )}
+
+        {/* Paste & Behavior */}
+        <button onClick={() => toggleSection("paste")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`}>&#9656;</span>
+          Paste & Behavior
+        </button>
+        {openSections.paste && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Paste</span><span className={hintCls}>Automatically paste result into active window.</span></div>
+              <Toggle checked={settings.autoPaste} onChange={() => set("autoPaste", !settings.autoPaste)} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className={hintCls}>Wait time before sending paste keystroke.</span></div>
+              <input type="number" min={0} max={2000} step={10} value={settings.pasteDelayMs} onChange={(e) => set("pasteDelayMs", parseInt(e.target.value, 10) || 0)} className={numberInputCls} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className={hintCls}>Capitalize first letter of every result.</span></div>
+              <Toggle checked={settings.autoCapitalize} onChange={() => set("autoCapitalize", !settings.autoCapitalize)} />
+            </div>
+          </div>
+        )}
+
+        {/* Webhook */}
+        <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`}>&#9656;</span>
+          Webhook
+        </button>
+        {openSections.webhook && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>Custom Headers (JSON)</span>
+              <textarea value={settings.webhookHeaders} onChange={(e) => set("webhookHeaders", e.target.value)} placeholder={'{"Authorization": "Bearer ..."}'} rows={3} className={`${INPUT_CLS} resize-none font-mono`} />
+              <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Timeout (seconds)</span><span className={hintCls}>Max wait for webhook response.</span></div>
+              <input type="number" min={1} max={120} step={1} value={settings.webhookTimeoutSecs} onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)} className={numberInputCls} />
+            </div>
+          </div>
+        )}
+
+        {/* System */}
+        <button onClick={() => toggleSection("system")} className={sectionBtnCls}>
+          <span className={`transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`}>&#9656;</span>
+          System
+        </button>
+        {openSections.system && (
+          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>UI Size</span><span className={hintCls}>Scales the entire interface.</span></div>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => set("uiScale", size)}
+                    className={[
+                      "px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-all duration-150 capitalize",
+                      settings.uiScale === size
+                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                        : "bg-[#111113] border-zinc-800/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600",
+                    ].join(" ")}
+                  >
+                    {size === "small" ? "S" : size === "medium" ? "M" : "L"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
+              <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer">
+                <option value="debug">debug</option>
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Footer: Save + Reset */}
+      <div className="px-4 py-3 border-t border-zinc-800/40 flex gap-2">
+        <button
+          onClick={handleReset}
+          className="px-4 py-2.5 rounded-xl text-sm font-medium border bg-[#111113] border-zinc-700/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all duration-150 flex-shrink-0"
+        >
+          Reset to Defaults
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={[
+            "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
+            saveMsg === "Saved"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+              : saveMsg && saveMsg !== "Saved"
+              ? "bg-red-500/10 border-red-500/20 text-red-400"
+              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/30",
+            "disabled:opacity-50 disabled:cursor-not-allowed",
+          ].join(" ")}
+        >
+          {saving ? "Saving..." : saveMsg ?? "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
