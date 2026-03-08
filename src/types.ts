@@ -41,6 +41,9 @@ export interface AppSettings {
   llmPriority: string[];
   outputLanguage: string;
   webhookUrl: string;
+  tursoUrl: string;
+  tursoTokenMasked: string;
+  deviceId: string;
 }
 
 // A per-application recording profile.

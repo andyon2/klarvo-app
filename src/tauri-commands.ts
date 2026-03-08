@@ -78,6 +78,8 @@ export async function saveSettings(
   llmPriority?: string[] | null,
   outputLanguage?: string | null,
   webhookUrl?: string | null,
+  tursoUrl?: string | null,
+  tursoToken?: string | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -97,6 +99,8 @@ export async function saveSettings(
     llmPriority: llmPriority ?? null,
     outputLanguage: outputLanguage ?? null,
     webhookUrl: webhookUrl ?? null,
+    tursoUrl: tursoUrl ?? null,
+    tursoToken: tursoToken ?? null,
   });
 }
 
@@ -332,4 +336,14 @@ export async function transcribeAudioBytes(
  */
 export async function saveAdvancedSettings(settings: AdvancedSettings): Promise<void> {
   await invoke("save_advanced_settings", { settings });
+}
+
+// --- Sync ---
+
+/**
+ * Syncs history with the remote Turso database.
+ * Returns [pushed, pulled] counts. Returns [0, 0] if not configured.
+ */
+export async function syncHistory(): Promise<[number, number]> {
+  return invoke<[number, number]>("sync_history");
 }

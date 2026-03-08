@@ -9,6 +9,7 @@ use std::path::Path;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -44,6 +45,10 @@ pub struct HistoryEntry {
     pub app_name: Option<String>,
     /// ISO 8601 timestamp.
     pub created_at: String,
+    /// Stable UUID for cross-device sync deduplication.
+    pub uuid: Option<String>,
+    /// ID of the device that created this entry (set during sync).
+    pub device_id: Option<String>,
 }
 
 /// A single API usage entry for cost tracking.
@@ -135,6 +140,39 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
         conn.execute_batch("ALTER TABLE history ADD COLUMN app_name TEXT")?;
     }
 
+    // Migration: add uuid column for sync deduplication.
+    let has_uuid: bool = conn.prepare("SELECT uuid FROM history LIMIT 0").is_ok();
+    if !has_uuid {
+        conn.execute_batch("ALTER TABLE history ADD COLUMN uuid TEXT")?;
+        // Backfill existing entries with generated UUIDs.
+        let mut stmt = conn.prepare("SELECT id FROM history WHERE uuid IS NULL")?;
+        let ids: Vec<i64> = stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        for id in ids {
+            let uuid = Uuid::new_v4().to_string();
+            conn.execute("UPDATE history SET uuid = ?1 WHERE id = ?2", params![uuid, id])?;
+        }
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_history_uuid ON history(uuid)",
+        )?;
+    }
+
+    // Migration: add device_id column.
+    let has_device_id: bool = conn.prepare("SELECT device_id FROM history LIMIT 0").is_ok();
+    if !has_device_id {
+        conn.execute_batch("ALTER TABLE history ADD COLUMN device_id TEXT")?;
+    }
+
+    // Migration: add synced flag (0 = not yet pushed to remote).
+    let has_synced: bool = conn.prepare("SELECT synced FROM history LIMIT 0").is_ok();
+    if !has_synced {
+        conn.execute_batch(
+            "ALTER TABLE history ADD COLUMN synced INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+
     Ok(conn)
 }
 
@@ -143,6 +181,10 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
 // ---------------------------------------------------------------------------
 
 /// Inserts a new dictation into the history.
+///
+/// - `uuid`: stable identifier for cross-device sync. If `None`, a new v4 UUID
+///   is generated automatically.
+/// - `device_id`: ID of the originating device. Pass `None` for local entries.
 pub fn add_entry(
     conn: &Connection,
     text: &str,
@@ -151,15 +193,24 @@ pub fn add_entry(
     language: &str,
     is_note: bool,
     app_name: Option<&str>,
+    uuid: Option<&str>,
+    device_id: Option<&str>,
 ) -> Result<i64, HistoryError> {
+    let entry_uuid = uuid
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     conn.execute(
-        "INSERT INTO history (text, raw_text, style, language, is_note, app_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![text, raw_text, style, language, is_note as i32, app_name],
+        "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![text, raw_text, style, language, is_note as i32, app_name, entry_uuid, device_id],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
-/// Reads a `HistoryEntry` from a row with columns: id, text, raw_text, style, language, is_note, app_name, created_at.
+/// Reads a `HistoryEntry` from a row.
+///
+/// Expected column order: id, text, raw_text, style, language, is_note,
+/// app_name, created_at, uuid, device_id.
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
     Ok(HistoryEntry {
         id: row.get(0)?,
@@ -170,13 +221,15 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
         is_note: row.get::<_, i32>(5)? != 0,
         app_name: row.get(6)?,
         created_at: row.get(7)?,
+        uuid: row.get(8)?,
+        device_id: row.get(9)?,
     })
 }
 
 /// Returns the most recent history entries (newest first), excluding notes.
 pub fn get_entries(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, HistoryError> {
     let mut stmt = conn.prepare(
-        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at
+        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
          FROM history WHERE is_note = 0 ORDER BY created_at DESC, id DESC LIMIT ?1",
     )?;
     let entries = stmt.query_map(params![limit], row_to_entry)?.collect::<Result<Vec<_>, _>>()?;
@@ -186,7 +239,7 @@ pub fn get_entries(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, H
 /// Returns the most recent voice notes (newest first).
 pub fn get_notes(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, HistoryError> {
     let mut stmt = conn.prepare(
-        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at
+        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
          FROM history WHERE is_note = 1 ORDER BY created_at DESC, id DESC LIMIT ?1",
     )?;
     let entries = stmt.query_map(params![limit], row_to_entry)?.collect::<Result<Vec<_>, _>>()?;
@@ -210,7 +263,7 @@ pub fn search_entries(
             let tp = format!("%{tq}%");
             let ap = format!("%{aq}%");
             let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at
+                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
                  FROM history WHERE text LIKE ?1 AND app_name LIKE ?2
                  ORDER BY created_at DESC, id DESC LIMIT ?3",
             )?;
@@ -221,7 +274,7 @@ pub fn search_entries(
         (Some(tq), None) => {
             let tp = format!("%{tq}%");
             let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at
+                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
                  FROM history WHERE text LIKE ?1
                  ORDER BY created_at DESC, id DESC LIMIT ?2",
             )?;
@@ -232,7 +285,7 @@ pub fn search_entries(
         (None, Some(aq)) => {
             let ap = format!("%{aq}%");
             let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at
+                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
                  FROM history WHERE app_name LIKE ?1
                  ORDER BY created_at DESC, id DESC LIMIT ?2",
             )?;
@@ -442,8 +495,12 @@ mod tests {
                 language   TEXT NOT NULL DEFAULT '',
                 is_note    INTEGER NOT NULL DEFAULT 0,
                 app_name   TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                uuid       TEXT,
+                device_id  TEXT,
+                synced     INTEGER NOT NULL DEFAULT 0
             );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_history_uuid ON history(uuid);
             CREATE TABLE IF NOT EXISTS usage (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 service             TEXT NOT NULL,
@@ -461,7 +518,7 @@ mod tests {
     #[test]
     fn test_add_and_get_entry() {
         let conn = mem_db();
-        let id = add_entry(&conn, "Hello world", Some("hello world"), "polished", "en", false, None).unwrap();
+        let id = add_entry(&conn, "Hello world", Some("hello world"), "polished", "en", false, None, None, None).unwrap();
         assert!(id > 0);
 
         let entries = get_entries(&conn, 10).unwrap();
@@ -474,9 +531,9 @@ mod tests {
     #[test]
     fn test_get_entries_ordered_newest_first() {
         let conn = mem_db();
-        add_entry(&conn, "First", None, "polished", "de", false, None).unwrap();
-        add_entry(&conn, "Second", None, "polished", "de", false, None).unwrap();
-        add_entry(&conn, "Third", None, "polished", "de", false, None).unwrap();
+        add_entry(&conn, "First", None, "polished", "de", false, None, None, None).unwrap();
+        add_entry(&conn, "Second", None, "polished", "de", false, None, None, None).unwrap();
+        add_entry(&conn, "Third", None, "polished", "de", false, None, None, None).unwrap();
 
         let entries = get_entries(&conn, 10).unwrap();
         assert_eq!(entries.len(), 3);
@@ -489,7 +546,7 @@ mod tests {
     fn test_get_entries_limit() {
         let conn = mem_db();
         for i in 0..10 {
-            add_entry(&conn, &format!("Entry {i}"), None, "polished", "", false, None).unwrap();
+            add_entry(&conn, &format!("Entry {i}"), None, "polished", "", false, None, None, None).unwrap();
         }
         let entries = get_entries(&conn, 3).unwrap();
         assert_eq!(entries.len(), 3);
@@ -498,9 +555,9 @@ mod tests {
     #[test]
     fn test_search_entries_text_only() {
         let conn = mem_db();
-        add_entry(&conn, "Kubernetes deployment", None, "polished", "en", false, None).unwrap();
-        add_entry(&conn, "Hello world", None, "polished", "en", false, None).unwrap();
-        add_entry(&conn, "Kubernetes service", None, "polished", "en", false, None).unwrap();
+        add_entry(&conn, "Kubernetes deployment", None, "polished", "en", false, None, None, None).unwrap();
+        add_entry(&conn, "Hello world", None, "polished", "en", false, None, None, None).unwrap();
+        add_entry(&conn, "Kubernetes service", None, "polished", "en", false, None, None, None).unwrap();
 
         let results = search_entries(&conn, Some("kubernetes"), None, 10).unwrap();
         assert_eq!(results.len(), 2);
@@ -509,9 +566,9 @@ mod tests {
     #[test]
     fn test_search_entries_app_only() {
         let conn = mem_db();
-        add_entry(&conn, "Hello from Slack", None, "polished", "en", false, Some("Slack - #general")).unwrap();
-        add_entry(&conn, "Hello from VS Code", None, "polished", "en", false, Some("Visual Studio Code")).unwrap();
-        add_entry(&conn, "No app context", None, "polished", "en", false, None).unwrap();
+        add_entry(&conn, "Hello from Slack", None, "polished", "en", false, Some("Slack - #general"), None, None).unwrap();
+        add_entry(&conn, "Hello from VS Code", None, "polished", "en", false, Some("Visual Studio Code"), None, None).unwrap();
+        add_entry(&conn, "No app context", None, "polished", "en", false, None, None, None).unwrap();
 
         let results = search_entries(&conn, None, Some("Slack"), 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -521,9 +578,9 @@ mod tests {
     #[test]
     fn test_search_entries_text_and_app() {
         let conn = mem_db();
-        add_entry(&conn, "Deploy k8s", None, "polished", "en", false, Some("Terminal")).unwrap();
-        add_entry(&conn, "Deploy k8s", None, "polished", "en", false, Some("Slack")).unwrap();
-        add_entry(&conn, "Hello world", None, "polished", "en", false, Some("Terminal")).unwrap();
+        add_entry(&conn, "Deploy k8s", None, "polished", "en", false, Some("Terminal"), None, None).unwrap();
+        add_entry(&conn, "Deploy k8s", None, "polished", "en", false, Some("Slack"), None, None).unwrap();
+        add_entry(&conn, "Hello world", None, "polished", "en", false, Some("Terminal"), None, None).unwrap();
 
         let results = search_entries(&conn, Some("Deploy"), Some("Terminal"), 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -533,8 +590,8 @@ mod tests {
     #[test]
     fn test_search_entries_none_returns_all() {
         let conn = mem_db();
-        add_entry(&conn, "A", None, "polished", "en", false, None).unwrap();
-        add_entry(&conn, "B", None, "polished", "en", false, None).unwrap();
+        add_entry(&conn, "A", None, "polished", "en", false, None, None, None).unwrap();
+        add_entry(&conn, "B", None, "polished", "en", false, None, None, None).unwrap();
 
         let results = search_entries(&conn, None, None, 10).unwrap();
         assert_eq!(results.len(), 2);
@@ -543,7 +600,7 @@ mod tests {
     #[test]
     fn test_delete_entry() {
         let conn = mem_db();
-        let id = add_entry(&conn, "To delete", None, "polished", "", false, None).unwrap();
+        let id = add_entry(&conn, "To delete", None, "polished", "", false, None, None, None).unwrap();
         assert!(delete_entry(&conn, id).unwrap());
         assert!(!delete_entry(&conn, id).unwrap()); // already deleted
 
@@ -554,8 +611,8 @@ mod tests {
     #[test]
     fn test_clear_history() {
         let conn = mem_db();
-        add_entry(&conn, "A", None, "polished", "", false, None).unwrap();
-        add_entry(&conn, "B", None, "chat", "", false, None).unwrap();
+        add_entry(&conn, "A", None, "polished", "", false, None, None, None).unwrap();
+        add_entry(&conn, "B", None, "chat", "", false, None, None, None).unwrap();
 
         let deleted = clear_history(&conn).unwrap();
         assert_eq!(deleted, 2);
@@ -575,6 +632,8 @@ mod tests {
             is_note: false,
             app_name: Some("Slack".to_string()),
             created_at: "2026-03-07T12:00:00".to_string(),
+            uuid: Some("test-uuid".to_string()),
+            device_id: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("rawText"));
@@ -615,8 +674,8 @@ mod tests {
         let conn = mem_db();
 
         // Two history entries.
-        add_entry(&conn, "Hello world", None, "polished", "en", false, None).unwrap();
-        add_entry(&conn, "Kubernetes deployment works", None, "polished", "en", false, None).unwrap();
+        add_entry(&conn, "Hello world", None, "polished", "en", false, None, None, None).unwrap();
+        add_entry(&conn, "Kubernetes deployment works", None, "polished", "en", false, None, None, None).unwrap();
 
         // STT usage: 5000ms audio, cost = 5000/3600000 * 0.04 ≈ 0.0000556
         record_usage(&conn, "groq_stt", Some(5000), None, None, 0.0000556).unwrap();
@@ -703,8 +762,8 @@ mod tests {
     #[test]
     fn test_filler_stats_counts_fillers() {
         let conn = mem_db();
-        add_entry(&conn, "cleaned", Some("also äh ich meine also halt"), "polished", "de", false, None).unwrap();
-        add_entry(&conn, "cleaned", Some("basically like you know"), "polished", "en", false, None).unwrap();
+        add_entry(&conn, "cleaned", Some("also äh ich meine also halt"), "polished", "de", false, None, None, None).unwrap();
+        add_entry(&conn, "cleaned", Some("basically like you know"), "polished", "en", false, None, None, None).unwrap();
 
         let stats = get_filler_stats(&conn).unwrap();
         assert!(!stats.is_empty());
@@ -719,7 +778,7 @@ mod tests {
     #[test]
     fn test_filler_stats_sorted_by_count() {
         let conn = mem_db();
-        add_entry(&conn, "cleaned", Some("äh äh äh also halt"), "polished", "de", false, None).unwrap();
+        add_entry(&conn, "cleaned", Some("äh äh äh also halt"), "polished", "de", false, None, None, None).unwrap();
 
         let stats = get_filler_stats(&conn).unwrap();
         assert!(stats.len() >= 2);

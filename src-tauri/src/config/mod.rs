@@ -454,6 +454,22 @@ pub struct AppConfig {
     #[serde(default)]
     pub webhook_url: String,
 
+    /// Turso database URL for cross-device history sync.
+    /// Format: `libsql://db-name.turso.io` — the sync module converts to HTTPS.
+    /// Empty string = sync disabled.
+    #[serde(default)]
+    pub turso_url: String,
+
+    /// Turso authentication token (JWT).
+    /// Empty string = sync disabled.
+    #[serde(default)]
+    pub turso_token: String,
+
+    /// Unique device identifier for sync deduplication.
+    /// Auto-generated on first run (UUID v4 format).
+    #[serde(default = "default_device_id")]
+    pub device_id: String,
+
     /// Fine-grained advanced settings for power users.
     /// Defaults to `AdvancedSettings::default()` so existing config files
     /// without this field load correctly.
@@ -506,6 +522,10 @@ pub fn default_voice_notes_hotkey() -> String {
     String::new() // empty = Voice Notes Mode disabled
 }
 
+fn default_device_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -530,6 +550,9 @@ impl Default for AppConfig {
             snippets: Vec::new(),
             voice_notes_hotkey: default_voice_notes_hotkey(),
             webhook_url: String::new(),
+            turso_url: String::new(),
+            turso_token: String::new(),
+            device_id: default_device_id(),
             advanced: AdvancedSettings::default(),
         }
     }
@@ -609,6 +632,24 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
             if !key.is_empty() {
                 log::info!("[config] anthropic_api_key loaded from ANTHROPIC_API_KEY env var");
                 config.anthropic_api_key = key;
+            }
+        }
+    }
+
+    if config.turso_url.is_empty() {
+        if let Ok(url) = std::env::var("TURSO_URL") {
+            if !url.is_empty() {
+                log::info!("[config] turso_url loaded from TURSO_URL env var");
+                config.turso_url = url;
+            }
+        }
+    }
+
+    if config.turso_token.is_empty() {
+        if let Ok(token) = std::env::var("TURSO_TOKEN") {
+            if !token.is_empty() {
+                log::info!("[config] turso_token loaded from TURSO_TOKEN env var");
+                config.turso_token = token;
             }
         }
     }
@@ -695,7 +736,10 @@ mod tests {
     fn test_load_config_missing_file_returns_defaults() {
         let dir = temp_dir();
         let cfg = load_config(dir.path());
-        assert_eq!(cfg, AppConfig::default());
+        // device_id is a random UUID, so compare everything except that field.
+        let mut expected = AppConfig::default();
+        expected.device_id = cfg.device_id.clone();
+        assert_eq!(cfg, expected);
     }
 
     /// Save then load round-trips the config correctly.
@@ -742,6 +786,9 @@ mod tests {
                 auto_paste: false,
                 ..AdvancedSettings::default()
             },
+            turso_url: String::new(),
+            turso_token: String::new(),
+            device_id: "test-device".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

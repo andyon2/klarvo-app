@@ -40,6 +40,7 @@ mod llm;
 mod history;
 mod paste;
 mod stt;
+mod sync;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -127,6 +128,12 @@ pub struct SettingsView {
     pub output_language: String,
     /// Webhook URL for HTTP POST after each dictation. Empty = disabled.
     pub webhook_url: String,
+    /// Turso database URL (shown in full, not secret).
+    pub turso_url: String,
+    /// Masked Turso auth token.
+    pub turso_token_masked: String,
+    /// Device ID for sync.
+    pub device_id: String,
 }
 
 /// Kept for backward compatibility -- the old monolithic result type.
@@ -790,8 +797,10 @@ async fn stop_and_process_pipeline(handle: AppHandle) {
                 .unwrap_or_else(|| "polished".to_string())
         };
         let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+        let cfg_for_history = state.config.lock().ok().map(|c| (c.device_id.clone(), c.turso_url.clone(), c.turso_token.clone()));
         if let Ok(db) = state.history_db.lock() {
-            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref()) {
+            let device_id = cfg_for_history.as_ref().map(|(d, _, _)| d.as_str());
+            if let Err(e) = history::add_entry(&db, &cleaned_text, Some(&raw_text), &style_str, &language, false, app_name.as_deref(), None, device_id) {
                 log::warn!("[pipeline] Failed to save to history: {e}");
             }
         }
@@ -1158,6 +1167,8 @@ async fn save_settings(
     llm_priority: Option<Vec<String>>,
     output_language: Option<String>,
     webhook_url: Option<String>,
+    turso_url: Option<String>,
+    turso_token: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -1202,6 +1213,16 @@ async fn save_settings(
         snippets: existing.snippets,
         voice_notes_hotkey: existing.voice_notes_hotkey,
         webhook_url: webhook_url.unwrap_or(existing.webhook_url),
+        turso_url: match turso_url {
+            Some(ref u) if !u.is_empty() => u.clone(),
+            Some(ref u) if u.is_empty() => String::new(), // explicitly cleared
+            _ => existing.turso_url,
+        },
+        turso_token: match turso_token {
+            Some(ref t) if !t.is_empty() => t.clone(),
+            _ => existing.turso_token,
+        },
+        device_id: existing.device_id,
         advanced: existing.advanced,
     };
 
@@ -1257,6 +1278,9 @@ fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> {
         llm_priority: cfg.llm_priority,
         output_language: cfg.output_language,
         webhook_url: cfg.webhook_url,
+        turso_url: cfg.turso_url,
+        turso_token_masked: mask_api_key(&cfg.turso_token),
+        device_id: cfg.device_id,
     })
 }
 
@@ -1279,6 +1303,65 @@ fn save_advanced_settings(
     save_config(&inner.app_data_dir, &cfg)
         .map_err(|e| format!("Failed to save advanced settings: {e}"))?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Sync
+// ---------------------------------------------------------------------------
+
+/// Syncs history with the remote Turso database.
+///
+/// Returns `(pushed, pulled)` counts. If Turso is not configured (empty URL
+/// or token), returns `(0, 0)` without error.
+///
+/// Steps are interleaved so the Mutex is never held across an await:
+/// 1. Read config + unsynced entries (sync, lock held briefly)
+/// 2. Ensure remote table + push to Turso (async, no lock)
+/// 3. Mark synced + pull from Turso (async, no lock)
+/// 4. Insert pulled entries (sync, lock held briefly)
+#[tauri::command]
+async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), String> {
+    let inner = state.inner();
+    let cfg = lock!(inner.config)?.clone();
+
+    if cfg.turso_url.is_empty() || cfg.turso_token.is_empty() {
+        return Ok((0, 0));
+    }
+
+    // Step 1: Read unsynced entries (lock DB briefly, then release).
+    let unsynced = {
+        let db = lock!(inner.history_db)?;
+        sync::read_unsynced_entries(&db)
+            .map_err(|e| format!("Sync failed (read): {e}"))?
+    };
+
+    // Step 2: Ensure remote table + push (async, no DB lock).
+    let (pushed, uuids) = sync::ensure_and_push(&cfg.turso_url, &cfg.turso_token, unsynced)
+        .await
+        .map_err(|e| format!("Sync failed (push): {e}"))?;
+
+    // Step 3: Mark pushed entries as synced (lock DB briefly).
+    if pushed > 0 {
+        let db = lock!(inner.history_db)?;
+        sync::mark_entries_synced(&db, &uuids)
+            .map_err(|e| format!("Sync failed (mark): {e}"))?;
+    }
+
+    // Step 4: Pull remote entries (async, no DB lock).
+    let remote = sync::pull_remote_entries(&cfg.turso_url, &cfg.turso_token, &cfg.device_id)
+        .await
+        .map_err(|e| format!("Sync failed (pull): {e}"))?;
+
+    // Step 5: Insert pulled entries into local DB (lock DB briefly).
+    let pulled = if !remote.is_empty() {
+        let db = lock!(inner.history_db)?;
+        sync::insert_pulled_entries(&db, &remote)
+            .map_err(|e| format!("Sync failed (insert): {e}"))?
+    } else {
+        0
+    };
+
+    Ok((pushed, pulled))
 }
 
 /// Returns which API keys are currently configured (non-empty).
@@ -1542,9 +1625,11 @@ fn add_history_entry(
     style: String,
     language: String,
 ) -> Result<i64, String> {
-    let db = lock!(state.inner().history_db)?;
-    let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
-    history::add_entry(&db, &text, raw_text.as_deref(), &style, &language, false, app_name.as_deref())
+    let inner = state.inner();
+    let db = lock!(inner.history_db)?;
+    let app_name = inner.prev_window_title.lock().ok().and_then(|t| t.clone());
+    let device_id = lock!(inner.config).ok().map(|c| c.device_id.clone());
+    history::add_entry(&db, &text, raw_text.as_deref(), &style, &language, false, app_name.as_deref(), None, device_id.as_deref())
         .map_err(|e| format!("Failed to save history entry: {e}"))
 }
 
@@ -1563,9 +1648,13 @@ fn save_note(
     raw_text: String,
     style: String,
 ) -> Result<i64, String> {
-    let db = lock!(state.inner().history_db)?;
-    let language = lock!(state.inner().config)?.language.clone();
-    history::add_entry(&db, &text, Some(&raw_text), &style, &language, true, None)
+    let inner = state.inner();
+    let db = lock!(inner.history_db)?;
+    let cfg = lock!(inner.config)?;
+    let language = cfg.language.clone();
+    let device_id = cfg.device_id.clone();
+    drop(cfg);
+    history::add_entry(&db, &text, Some(&raw_text), &style, &language, true, None, None, Some(&device_id))
         .map_err(|e| format!("Failed to save note: {e}"))
 }
 
@@ -2229,6 +2318,8 @@ pub fn run() {
             // Advanced settings
             get_advanced_settings,
             save_advanced_settings,
+            // Sync
+            sync_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2328,6 +2419,9 @@ mod tests {
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
             webhook_url: String::new(),
+            turso_url: String::new(),
+            turso_token_masked: String::new(),
+            device_id: "test-device".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -2359,6 +2453,9 @@ mod tests {
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
             webhook_url: String::new(),
+            turso_url: String::new(),
+            turso_token_masked: String::new(),
+            device_id: "test-device".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"hold""#), "hold variant must serialize as lowercase 'hold'");
@@ -2384,6 +2481,9 @@ mod tests {
             llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
             output_language: String::new(),
             webhook_url: String::new(),
+            turso_url: String::new(),
+            turso_token_masked: String::new(),
+            device_id: "test-device".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains(r#""hotkeyMode":"toggle""#), "toggle variant must serialize as lowercase 'toggle'");

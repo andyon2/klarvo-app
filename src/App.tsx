@@ -40,6 +40,7 @@ import {
   getAdvancedSettings,
   saveAdvancedSettings,
   transcribeAudioBytes,
+  syncHistory,
   type TextSnippet,
 } from "./tauri-commands";
 import { isMobile, isDesktop } from "./platform";
@@ -664,7 +665,7 @@ interface SettingsPanelProps {
   audioDevices: string[];
   dictionary: string[];
   outputLanguage: string;
-  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[], outputLanguage: string, webhookUrl: string) => Promise<void>;
+  onSave: (groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle, hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null, sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean, openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[], outputLanguage: string, webhookUrl: string, tursoUrl: string, tursoToken: string) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
   onHotkeyChange: (h: string) => void;
@@ -699,6 +700,10 @@ function SettingsPanel({
   const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
   useEffect(() => { setLocalOutputLanguage(outputLanguage); }, [outputLanguage]);
   const [localWebhookUrl, setLocalWebhookUrl] = useState(loadedSettings?.webhookUrl ?? "");
+  const [localTursoUrl, setLocalTursoUrl] = useState(loadedSettings?.tursoUrl ?? "");
+  const [tursoToken, setTursoToken] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -722,6 +727,7 @@ function SettingsPanel({
       setLocalLlmPriority(loadedSettings.llmPriority);
       setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
       setLocalWebhookUrl(loadedSettings.webhookUrl ?? "");
+      setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
     }
   }, [loadedSettings]);
 
@@ -766,11 +772,12 @@ function SettingsPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
-      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl.trim());
+      await onSave(groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), tursoToken.trim());
       setGroqKey("");
       setDeepseekKey("");
       setOpenaiKey("");
       setAnthropicKey("");
+      setTursoToken("");
       setSaveMsg("Saved");
       setTimeout(() => setSaveMsg(null), 2000);
     } catch (err) {
@@ -778,7 +785,7 @@ function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, onSave]);
+  }, [groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey, localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken, onSave]);
 
   const handleAddTerm = useCallback(async () => {
     const trimmed = newTerm.trim();
@@ -1019,6 +1026,55 @@ function SettingsPanel({
             <p className="text-[11px] text-zinc-500">HTTP POST after each dictation. Leave empty to disable.</p>
           </div>
         )}
+
+        {/* --- Sync --- */}
+        <div className="flex flex-col gap-3">
+          <span className={sectionTitleCls}>Cross-Device Sync</span>
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>Turso URL</span>
+            <input
+              type="text"
+              placeholder="libsql://your-db.turso.io"
+              value={localTursoUrl}
+              onChange={(e) => setLocalTursoUrl(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className={labelCls}>Turso Token</span>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={loadedSettings?.tursoTokenMasked || "Auth token"}
+              value={tursoToken}
+              onChange={(e) => setTursoToken(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          {loadedSettings?.deviceId && (
+            <p className="text-[11px] text-zinc-500">Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
+          )}
+          <button
+            onClick={async () => {
+              setSyncing(true);
+              setSyncMsg(null);
+              try {
+                const [pushed, pulled] = await syncHistory();
+                setSyncMsg(`Synced: ${pushed} pushed, ${pulled} pulled`);
+              } catch (e: any) {
+                setSyncMsg(`Error: ${e?.toString()?.slice(0, 80)}`);
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing || !localTursoUrl}
+            className="px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors"
+          >
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+          {syncMsg && <p className="text-[11px] text-zinc-400">{syncMsg}</p>}
+          <p className="text-[11px] text-zinc-500">Sync dictation history across devices via Turso. Leave empty to disable.</p>
+        </div>
 
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-3">
@@ -2041,9 +2097,9 @@ export default function App() {
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
-    outputLang: string, webhookUrl: string,
+    outputLang: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
   ) => {
-    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority, outputLang, webhookUrl);
+    await saveSettings(groqKey, deepseekKey, lang, style, hotkey, hotkeyMode, audioDevice, sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, sttPriority, llmPriority, outputLang, webhookUrl, tursoUrl, tursoToken);
     const updated = await getSettings();
     setLoadedSettings(updated);
     setLanguage(updated.language);
