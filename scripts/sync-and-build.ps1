@@ -9,8 +9,8 @@ $env:PATH = "C:\Users\Andi\.cargo\bin;$env:PATH"
 
 Write-Host "Syncing files from WSL..." -ForegroundColor Cyan
 
-# Sync with robocopy, excluding build artifacts
-robocopy $src $dst /E /XD target node_modules .git /NFL /NDL /NJH /NJS /NP
+# Sync with robocopy, excluding build artifacts and Android native libs
+robocopy $src $dst /E /XD target node_modules .git jniLibs /XF "*.so" /NFL /NDL /NJH /NJS /NP /R:1 /W:1
 
 Write-Host "Installing npm dependencies..." -ForegroundColor Cyan
 Set-Location $dst
