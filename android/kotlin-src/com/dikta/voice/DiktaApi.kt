@@ -20,7 +20,10 @@ object DiktaApi {
         val groqApiKey: String,
         val deepseekApiKey: String,
         val language: String,
-        val cleanupStyle: String
+        val cleanupStyle: String,
+        val tursoUrl: String,
+        val tursoToken: String,
+        val deviceId: String
     )
 
     /**
@@ -52,9 +55,12 @@ object DiktaApi {
             val deepseekKey = json.optString("deepseekApiKey", "")
             val language = json.optString("language", "")
             val cleanupStyle = json.optString("cleanupStyle", "polished")
+            val tursoUrl = json.optString("tursoUrl", "")
+            val tursoToken = json.optString("tursoToken", "")
+            val deviceId = json.optString("deviceId", "")
 
             if (groqKey.isBlank() && deepseekKey.isBlank()) null
-            else Config(groqKey, deepseekKey, language, cleanupStyle)
+            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId)
         } catch (e: Exception) {
             null
         }
@@ -63,20 +69,24 @@ object DiktaApi {
     /**
      * Saves a transcription entry to the SQLite history database.
      * Uses the same schema as the Rust/Tauri desktop app so history is shared.
+     * Includes uuid, device_id, and synced columns for Turso cross-device sync.
      *
      * @param context   Android context (used to resolve the DB path)
      * @param finalText Cleaned/final text shown to the user
      * @param rawText   Raw transcript before LLM cleanup
      * @param style     Cleanup style (e.g. "polished", "verbatim", "chat")
      * @param language  Language code or empty string for auto-detect
+     * @param deviceId  Device identifier for sync tracking (empty string if not configured)
      */
     fun saveToHistory(
         context: Context,
         finalText: String,
         rawText: String,
         style: String,
-        language: String
+        language: String,
+        deviceId: String = ""
     ) {
+        val uuid = java.util.UUID.randomUUID().toString()
         val dbFile = File(getDataDir(context), "history.db")
         var db: SQLiteDatabase? = null
         try {
@@ -91,23 +101,170 @@ object DiktaApi {
                     language TEXT NOT NULL DEFAULT '',
                     is_note INTEGER NOT NULL DEFAULT 0,
                     app_name TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    uuid TEXT,
+                    device_id TEXT,
+                    synced INTEGER NOT NULL DEFAULT 0
                 )
                 """.trimIndent()
             )
+            // Migrate existing tables that predate sync columns (best-effort).
+            for (col in listOf(
+                "uuid TEXT",
+                "device_id TEXT",
+                "synced INTEGER NOT NULL DEFAULT 0"
+            )) {
+                try { db.execSQL("ALTER TABLE history ADD COLUMN $col") } catch (_: Exception) {}
+            }
             val stmt = db.compileStatement(
-                "INSERT INTO history (text, raw_text, style, language, is_note, app_name) VALUES (?, ?, ?, ?, 0, NULL)"
+                "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id, synced) VALUES (?, ?, ?, ?, 0, NULL, ?, ?, 0)"
             )
             stmt.bindString(1, finalText)
             stmt.bindString(2, rawText)
             stmt.bindString(3, style)
             stmt.bindString(4, language)
+            stmt.bindString(5, uuid)
+            stmt.bindString(6, deviceId)
             stmt.executeInsert()
         } catch (_: Exception) {
             // History saving is best-effort; never crash the main flow.
         } finally {
             try { db?.close() } catch (_: Exception) {}
         }
+    }
+
+    /**
+     * Pushes unsynced history entries to Turso via the HTTP pipeline API.
+     * Sync is best-effort: any failure is silently ignored.
+     * Marks entries as synced (synced=1) only after a successful HTTP 2xx response.
+     *
+     * @param context     Android context
+     * @param tursoUrl    Turso database URL (libsql:// or https://)
+     * @param tursoToken  Turso auth token
+     */
+    fun pushToTurso(context: Context, tursoUrl: String, tursoToken: String) {
+        if (tursoUrl.isBlank() || tursoToken.isBlank()) return
+
+        val dbFile = File(getDataDir(context), "history.db")
+        if (!dbFile.exists()) return
+
+        var db: SQLiteDatabase? = null
+        try {
+            db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+
+            // Read unsynced entries that have a uuid (entries before the migration may lack one).
+            val cursor = db.rawQuery(
+                "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at FROM history WHERE synced = 0 AND uuid IS NOT NULL",
+                null
+            )
+
+            if (cursor.count == 0) {
+                cursor.close()
+                return
+            }
+
+            val httpsUrl = tursoUrl.replace("libsql://", "https://")
+
+            // Ensure the remote table exists before inserting rows.
+            ensureRemoteTable(httpsUrl, tursoToken)
+
+            val requests = JSONArray()
+            val uuids = mutableListOf<String>()
+
+            while (cursor.moveToNext()) {
+                val entryUuid = cursor.getString(0)
+                uuids.add(entryUuid)
+
+                val args = JSONArray().apply {
+                    put(JSONObject().put("type", "text").put("value", entryUuid))
+                    put(JSONObject().put("type", "text").put("value", cursor.getString(1))) // text
+                    if (cursor.isNull(2)) put(JSONObject().put("type", "null"))
+                    else put(JSONObject().put("type", "text").put("value", cursor.getString(2))) // raw_text
+                    put(JSONObject().put("type", "text").put("value", cursor.getString(3))) // style
+                    put(JSONObject().put("type", "text").put("value", cursor.getString(4))) // language
+                    put(JSONObject().put("type", "integer").put("value", cursor.getInt(5).toString())) // is_note
+                    if (cursor.isNull(6)) put(JSONObject().put("type", "null"))
+                    else put(JSONObject().put("type", "text").put("value", cursor.getString(6))) // app_name
+                    if (cursor.isNull(7)) put(JSONObject().put("type", "null"))
+                    else put(JSONObject().put("type", "text").put("value", cursor.getString(7))) // device_id
+                    put(JSONObject().put("type", "text").put("value", cursor.getString(8))) // created_at
+                }
+
+                requests.put(JSONObject().apply {
+                    put("type", "execute")
+                    put("stmt", JSONObject().apply {
+                        put("sql", "INSERT OR IGNORE INTO history (uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                        put("args", args)
+                    })
+                })
+            }
+            cursor.close()
+
+            requests.put(JSONObject().put("type", "close"))
+
+            val body = JSONObject().put("requests", requests).toString().toByteArray(Charsets.UTF_8)
+            val url = URL("$httpsUrl/v2/pipeline")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 15_000
+            conn.setRequestProperty("Authorization", "Bearer $tursoToken")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(body) }
+
+            if (conn.responseCode in 200..299) {
+                // Mark successfully pushed entries as synced.
+                for (uuid in uuids) {
+                    db.execSQL("UPDATE history SET synced = 1 WHERE uuid = ?", arrayOf(uuid))
+                }
+            }
+            conn.disconnect()
+
+        } catch (_: Exception) {
+            // Sync is best-effort -- never crash the main flow.
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Creates the history table in the remote Turso database if it does not exist yet.
+     * The remote schema uses uuid as PRIMARY KEY (no local autoincrement id).
+     */
+    private fun ensureRemoteTable(httpsUrl: String, token: String) {
+        val requests = JSONArray().apply {
+            put(JSONObject().apply {
+                put("type", "execute")
+                put("stmt", JSONObject().apply {
+                    put("sql", """CREATE TABLE IF NOT EXISTS history (
+                        uuid TEXT PRIMARY KEY,
+                        text TEXT NOT NULL,
+                        raw_text TEXT,
+                        style TEXT NOT NULL DEFAULT 'polished',
+                        language TEXT NOT NULL DEFAULT '',
+                        is_note INTEGER NOT NULL DEFAULT 0,
+                        app_name TEXT,
+                        device_id TEXT,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    )""")
+                })
+            })
+            put(JSONObject().put("type", "close"))
+        }
+
+        val body = JSONObject().put("requests", requests).toString().toByteArray(Charsets.UTF_8)
+        val url = URL("$httpsUrl/v2/pipeline")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 10_000
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.outputStream.use { it.write(body) }
+        conn.responseCode  // wait for response
+        conn.disconnect()
     }
 
     /**

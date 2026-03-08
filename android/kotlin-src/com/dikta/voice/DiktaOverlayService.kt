@@ -452,8 +452,12 @@ class DiktaOverlayService : Service() {
                 finalText = finalText,
                 rawText = transcript,
                 style = config.cleanupStyle,
-                language = config.language
+                language = config.language,
+                deviceId = config.deviceId
             )
+
+            // Step 3b: Push unsynced entries to Turso (best-effort, same background thread)
+            DiktaApi.pushToTurso(this, config.tursoUrl, config.tursoToken)
 
             // Step 4: Copy to clipboard and paste via AccessibilityService if available
             handler.post {
