@@ -1019,6 +1019,46 @@ async fn transcribe_audio(state: State<'_, AppState>, language: String) -> Resul
         .map_err(|e: stt::SttError| e.to_string())
 }
 
+/// Transcribes raw audio bytes passed directly from the frontend.
+///
+/// Intended for Android, where `cpal` is not available and audio capture is
+/// handled on the JavaScript/Kotlin side. The bytes are stored as
+/// `last_recording` so the rest of the pipeline (history, stats) can reference
+/// them, then the same STT provider pipeline as `transcribe_audio` is used.
+///
+/// `audio_data`: raw WAV or PCM bytes recorded by the caller.
+/// `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
+#[tauri::command]
+async fn transcribe_audio_bytes(
+    state: State<'_, AppState>,
+    audio_data: Vec<u8>,
+    language: String,
+) -> Result<String, String> {
+    let inner = state.inner();
+
+    // Store the audio data as last_recording so history/stats can reference it.
+    {
+        let mut guard = lock!(inner.last_recording)?;
+        *guard = Some(audio_data.clone());
+    }
+
+    // Read dictionary terms for the STT prompt hint.
+    let dict_prompt = {
+        let guard = lock!(inner.dictionary)?;
+        let terms = guard.terms_as_prompt();
+        let terms_opt = if terms.is_empty() { None } else { Some(terms) };
+        build_stt_prompt(terms_opt.as_deref(), &language)
+    };
+
+    // Read the current provider (shared read lock -- no contention with other readers).
+    let provider = read_lock!(inner.stt_provider)?.clone();
+
+    provider
+        .transcribe(audio_data, &language, dict_prompt.as_deref())
+        .await
+        .map_err(|e: stt::SttError| e.to_string())
+}
+
 /// Cleans up raw transcription text using the configured LLM provider.
 ///
 /// Can be called independently of the recording pipeline (e.g. to re-clean
@@ -2139,6 +2179,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             transcribe_audio,
+            transcribe_audio_bytes,
             cleanup_text,
             is_recording,
             // Settings

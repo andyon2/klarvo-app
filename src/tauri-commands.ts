@@ -308,6 +308,24 @@ export async function getAdvancedSettings(): Promise<AdvancedSettings> {
   return invoke<AdvancedSettings>("get_advanced_settings");
 }
 
+// --- Mobile audio ---
+
+/**
+ * Transcribes audio from raw WAV bytes (used on Android where cpal is not
+ * available). The frontend captures audio via MediaRecorder, encodes it as a
+ * WAV, and sends the bytes here. The backend feeds them into the same STT
+ * pipeline used by the desktop hotkey flow.
+ *
+ * @param audioData - WAV file contents as a plain number[] (JS Array of u8)
+ * @param language  - BCP-47 language code ("de", "en", "") -- "" means auto
+ */
+export async function transcribeAudioBytes(
+  audioData: number[],
+  language: string,
+): Promise<string> {
+  return invoke<string>("transcribe_audio_bytes", { audioData, language });
+}
+
 /**
  * Persists advanced settings to disk.
  * @param settings - Full AdvancedSettings object

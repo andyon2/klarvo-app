@@ -158,6 +158,48 @@ Alternativ: `adb start-server` auf Windows-Seite, dann ADB-Befehle von WSL aus.
 Bekanntes Problem: Bei physischen Geraeten schlaegt Reinstall fehl wegen falschem adb-Flag
 (-s statt -r) -- Issue #9067, Stand 2024 noch offen.
 
+### Floating Bubble Overlay (implementiert 2026-03-08)
+
+#### Architektur-Entscheidung: Direkte Kotlin-Implementierung (kein Tauri-Bridge)
+Der `DiktaOverlayService` ist komplett unabhaengig von der Tauri-Runtime. Er liest
+`config.json` direkt aus `context.filesDir` (identischer Pfad den Tauri auch schreibt).
+HTTP-Calls laufen via `java.net.HttpURLConnection` ohne OkHttp oder andere Abhaengigkeiten.
+
+#### SYSTEM_ALERT_WINDOW Permission
+- Muss in `onResume()` geprueft werden (nicht nur `onCreate()`!) -- User kann Permission
+  nach dem ersten Start in den Settings wieder entziehen.
+- Bei fehlendem Permission: `Settings.ACTION_MANAGE_OVERLAY_PERMISSION` oeffnen.
+- TYPE_APPLICATION_OVERLAY (API 26+) ist der korrekte Window-Type fuer Overlays.
+  Der alte TYPE_PHONE/TYPE_SYSTEM_OVERLAY-Typ ist seit Android 8 deprecated/blockiert.
+
+#### ForegroundService mit Mikrofon
+- `android:foregroundServiceType="microphone"` im Manifest noetig (Android 10+).
+- `startForeground()` muss `FOREGROUND_SERVICE_TYPE_MICROPHONE` als dritten Parameter
+  erhalten (Android 10+ = API 29+). Ohne: Crash mit `MissingForegroundServiceTypeException`.
+- `FOREGROUND_SERVICE_MICROPHONE` Permission ist ab Android 14 (API 34) Pflicht.
+
+#### AudioRecord direkt aus Service
+- `AudioRecord` funktioniert problemlos aus einem `Service` heraus (nicht nur Activity).
+- Minmal-Puffergroesse via `AudioRecord.getMinBufferSize()` abfragen, dann mindestens
+  8192 Bytes nehmen (manche Geraete liefern sehr kleine Werte).
+- PCM Short-Array (16-bit) direkt sammeln, dann erst beim Stop in WAV konvertieren.
+
+#### Touch-Handling im WindowManager
+- `FLAG_NOT_FOCUSABLE` noetig, damit Tastatur-Events nicht abgefangen werden.
+- Drag vs. Tap: 10dp Schwelle (in Pixel umrechnen!). `event.rawX/rawY` statt `x/y`
+  verwenden, sonst gibt es Drift beim Drag (rawX ist Bildschirmkoordinate).
+- `windowManager.updateViewLayout()` fuer Echtzeit-Drag-Updates.
+
+#### Kotlin-Warnung: unused variable in `when`-Block
+Der Kotlin-Compiler warnt bei unbenutzten lokalen Variablen auch in Canvas-Zeichencode.
+Einfach weglassen wenn nicht benoetigt (z.B. `micH` in `drawMicIcon`).
+
+#### coroutines-android Dependency
+Im Build wurde `kotlinx-coroutines-android:1.8.0` hinzugefuegt. Die Implementierung
+nutzt aktuell `Thread {}` direkt (einfacher fuer Foreground-Service-Kontext).
+Die Coroutines-Dependency schadet nicht, kann spater fuer `lifecycleScope.launch` genutzt
+werden wenn ein LifecycleOwner verfuegbar ist.
+
 ## Beide Plattformen
 
 ### Audio-Formate

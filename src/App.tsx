@@ -39,8 +39,11 @@ import {
   pasteSnippet,
   getAdvancedSettings,
   saveAdvancedSettings,
+  transcribeAudioBytes,
   type TextSnippet,
 } from "./tauri-commands";
+import { isMobile, isDesktop } from "./platform";
+import { startBrowserRecording, stopBrowserRecording } from "./media-recorder";
 import Onboarding from "./Onboarding";
 
 // --- Icons -------------------------------------------------------------------
@@ -215,7 +218,8 @@ function RecordButton({ recordingState, onClick }: { recordingState: RecordingSt
       onClick={onClick}
       className={[
         "relative flex items-center justify-center",
-        "w-24 h-24 rounded-full",
+        isMobile ? "w-32 h-32" : "w-24 h-24",
+        "rounded-full",
         "transition-all duration-200",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
         "disabled:cursor-not-allowed disabled:opacity-60",
@@ -818,18 +822,20 @@ function SettingsPanel({
         <div className="flex flex-col gap-3">
           <span className={sectionTitleCls}>Voice & Recording</span>
 
-          {/* Microphone */}
-          <div className="flex items-center justify-between gap-3">
-            <span className={labelCls}>Microphone</span>
-            <select
-              value={localAudioDevice ?? ""}
-              onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-              className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
-            >
-              <option value="">System Default</option>
-              {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
+          {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
+          {isDesktop && (
+            <div className="flex items-center justify-between gap-3">
+              <span className={labelCls}>Microphone</span>
+              <select
+                value={localAudioDevice ?? ""}
+                onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
+                className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+              >
+                <option value="">System Default</option>
+                {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Language */}
           <div className="flex items-center justify-between gap-3">
@@ -896,39 +902,41 @@ function SettingsPanel({
           </div>
         </div>
 
-        {/* --- Hotkey --- */}
-        <div className="flex flex-col gap-3">
-          <span className={sectionTitleCls}>Hotkey</span>
+        {/* --- Hotkey -- desktop only (no global hotkeys on Android) --- */}
+        {isDesktop && (
+          <div className="flex flex-col gap-3">
+            <span className={sectionTitleCls}>Hotkey</span>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-zinc-300">Shortcut</span>
-            <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <span className={labelCls}>Mode</span>
-            <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-              {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => handleHotkeyModeChange(mode)}
-                  title={mode === "hold" ? "Hold to record, release to process" : "Press to start, press to stop"}
-                  className={[
-                    "px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all duration-100",
-                    localHotkeyMode === mode
-                      ? "bg-emerald-500/15 text-emerald-400"
-                      : "text-zinc-500 hover:text-zinc-300",
-                  ].join(" ")}
-                >
-                  {mode}
-                </button>
-              ))}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-zinc-300">Shortcut</span>
+              <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
             </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className={labelCls}>Mode</span>
+              <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => handleHotkeyModeChange(mode)}
+                    title={mode === "hold" ? "Hold to record, release to process" : "Press to start, press to stop"}
+                    className={[
+                      "px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all duration-100",
+                      localHotkeyMode === mode
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
+            </p>
           </div>
-          <p className="text-[11px] text-zinc-500">
-            {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
-          </p>
-        </div>
+        )}
 
         {/* --- Custom Prompt --- */}
         <div className="flex flex-col gap-3">
@@ -943,8 +951,8 @@ function SettingsPanel({
           <p className="text-[11px] text-zinc-500">Appended to the system prompt during cleanup.</p>
         </div>
 
-        {/* --- General --- */}
-        <div className="flex flex-col gap-3">
+        {/* --- General -- desktop only features --- */}
+        {isDesktop && <div className="flex flex-col gap-3">
           <span className={sectionTitleCls}>General</span>
           <label className="flex items-center justify-between gap-3 cursor-pointer">
             <span className={labelCls}>Launch on startup</span>
@@ -995,20 +1003,22 @@ function SettingsPanel({
             <span className={labelCls}>Command mode</span>
             <span className="text-[10px] text-zinc-500">Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
           </div>
-        </div>
+        </div>}
 
-        {/* --- Webhook --- */}
-        <div className="flex flex-col gap-3">
-          <span className={sectionTitleCls}>Webhook</span>
-          <input
-            type="url"
-            placeholder="https://example.com/webhook"
-            value={localWebhookUrl}
-            onChange={(e) => setLocalWebhookUrl(e.target.value)}
-            className={inputCls}
-          />
-          <p className="text-[11px] text-zinc-500">HTTP POST after each dictation. Leave empty to disable.</p>
-        </div>
+        {/* --- Webhook -- desktop only --- */}
+        {isDesktop && (
+          <div className="flex flex-col gap-3">
+            <span className={sectionTitleCls}>Webhook</span>
+            <input
+              type="url"
+              placeholder="https://example.com/webhook"
+              value={localWebhookUrl}
+              onChange={(e) => setLocalWebhookUrl(e.target.value)}
+              className={inputCls}
+            />
+            <p className="text-[11px] text-zinc-500">HTTP POST after each dictation. Leave empty to disable.</p>
+          </div>
+        )}
 
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-3">
@@ -1242,7 +1252,7 @@ function SettingsPanel({
       </div>
 
       {/* Save button -- sticky footer, always visible */}
-      <div className="px-4 py-3 border-t border-zinc-800/40">
+      <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? 'pb-6' : ''}`}>
         <button
           onClick={handleSave}
           disabled={saving}
@@ -1425,8 +1435,14 @@ function VoiceNotesPanel({
       // Stop and save as note
       setNoteState("processing");
       try {
-        await stopRecording();
-        const transcript = await transcribeAudio("");
+        let transcript: string;
+        if (isMobile) {
+          const wavBytes = await stopBrowserRecording();
+          transcript = await transcribeAudioBytes(Array.from(wavBytes), "");
+        } else {
+          await stopRecording();
+          transcript = await transcribeAudio("");
+        }
         const cleaned = await cleanupText(transcript, "polished");
         await saveNote(cleaned, transcript, "polished");
         onRefresh();
@@ -1438,7 +1454,11 @@ function VoiceNotesPanel({
     } else {
       setNoteError(null);
       try {
-        await startRecording();
+        if (isMobile) {
+          await startBrowserRecording();
+        } else {
+          await startRecording();
+        }
         setNoteState("recording");
       } catch (err) {
         setNoteError(err instanceof Error ? err.message : String(err));
@@ -1928,6 +1948,9 @@ export default function App() {
   const isBusy = recordingState === "transcribing" || recordingState === "cleaning";
   const isRecording = recordingState === "recording";
 
+  // Touch-friendly padding for header buttons on mobile.
+  const headerBtnPad = isMobile ? "p-2.5" : "p-1.5";
+
   // Load settings + dictionary + devices on mount.
   useEffect(() => {
     getSettings().then((s) => {
@@ -1962,6 +1985,39 @@ export default function App() {
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
+
+  // Helper: close all open panels. Returns true if something was open.
+  const closeAllPanels = useCallback(() => {
+    let wasOpen = false;
+    setShowSettings((v) => { if (v) wasOpen = true; return false; });
+    setShowHistory((v) => { if (v) wasOpen = true; return false; });
+    setShowStats((v) => { if (v) wasOpen = true; return false; });
+    setShowNotes((v) => { if (v) wasOpen = true; return false; });
+    setShowSnippets((v) => { if (v) wasOpen = true; return false; });
+    setShowAdvanced((v) => { if (v) wasOpen = true; return false; });
+    return wasOpen;
+  }, []);
+
+  // Android back button: close open panel instead of leaving the app.
+  // We push a history entry whenever a panel opens, and intercept popstate.
+  const anyPanelOpen = showSettings || showHistory || showStats || showNotes || showSnippets || showAdvanced;
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (anyPanelOpen) {
+      window.history.pushState({ panel: true }, "");
+    }
+  }, [anyPanelOpen]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const handler = () => {
+      // popstate fired = back button pressed. Close panel if open.
+      closeAllPanels();
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, [closeAllPanels]);
 
   // --- Handlers ---
 
@@ -2017,8 +2073,14 @@ export default function App() {
     if (isRecording) {
       try {
         setRecordingState("transcribing");
-        await stopRecording();
-        const transcript = await transcribeAudio(language);
+        let transcript: string;
+        if (isMobile) {
+          const wavBytes = await stopBrowserRecording();
+          transcript = await transcribeAudioBytes(Array.from(wavBytes), language);
+        } else {
+          await stopRecording();
+          transcript = await transcribeAudio(language);
+        }
         setRawText(transcript);
         setRecordingState("cleaning");
         const cleanedText = await cleanupText(transcript, currentStyle);
@@ -2038,7 +2100,11 @@ export default function App() {
       setShowRawText(false);
       setErrorMessage(null);
       try {
-        await startRecording();
+        if (isMobile) {
+          await startBrowserRecording();
+        } else {
+          await startRecording();
+        }
         setRecordingState("recording");
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : String(err));
@@ -2160,7 +2226,14 @@ export default function App() {
   return (
     <main
       className="h-screen bg-[#0a0a0c] text-zinc-100 flex flex-col select-none overflow-y-auto"
-      style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif", zoom: zoomValue }}
+      style={{
+        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        zoom: zoomValue,
+        ...(isMobile ? {
+          paddingTop: 'env(safe-area-inset-top, 24px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+        } : {}),
+      }}
     >
       {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-3.5 pb-2 flex-shrink-0">
@@ -2177,7 +2250,7 @@ export default function App() {
             aria-expanded={showSettings}
             onClick={toggleSettings}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showSettings
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2192,7 +2265,7 @@ export default function App() {
             aria-expanded={showHistory}
             onClick={toggleHistory}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showHistory
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2209,7 +2282,7 @@ export default function App() {
             aria-expanded={showStats}
             onClick={toggleStats}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showStats
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2226,7 +2299,7 @@ export default function App() {
             aria-expanded={showNotes}
             onClick={toggleNotes}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showNotes
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2235,13 +2308,14 @@ export default function App() {
             <NoteIcon className="w-4 h-4" />
           </button>
 
-          {/* Snippets toggle */}
+          {/* Snippets toggle -- desktop only (paste-to-window not available on Android) */}
+          {isDesktop && (
           <button
             aria-label="Toggle snippets"
             aria-expanded={showSnippets}
             onClick={toggleSnippets}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showSnippets
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2249,13 +2323,14 @@ export default function App() {
           >
             <SnippetIcon className="w-4 h-4" />
           </button>
+          )}
           <button
             title="Advanced settings"
             aria-label="Toggle advanced settings"
             aria-expanded={showAdvanced}
             onClick={toggleAdvanced}
             className={[
-              "p-1.5 rounded-lg transition-all duration-150",
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
               showAdvanced
                 ? "text-emerald-400 bg-emerald-500/10"
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
@@ -2500,7 +2575,8 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Snippets Panel (toggleable) ── */}
+      {/* ── Snippets Panel (toggleable, desktop only) ── */}
+      {isDesktop && (
       <div
         className={[
           "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
@@ -2515,6 +2591,7 @@ export default function App() {
           />
         )}
       </div>
+      )}
 
       {/* ── Advanced Settings Panel (toggleable) ── */}
       <div
@@ -2594,10 +2671,12 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Footer ── */}
+      {/* ── Footer (desktop only — shows hotkey shortcut) ── */}
+      {isDesktop && (
       <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
         <span className="text-[11px] font-mono text-zinc-500">{hotkeyDisplay}</span>
       </div>
+      )}
     </main>
   );
 }
