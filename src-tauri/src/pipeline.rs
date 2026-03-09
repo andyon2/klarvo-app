@@ -162,8 +162,27 @@ pub async fn start_recording_only(handle: AppHandle) {
 /// Starts Command Mode: copies selected text via Ctrl+C, then starts recording.
 ///
 /// The voice command will be transcribed and used to rewrite the selected text.
+///
+/// Requires a paid license. If the user is unlicensed, emits an error event
+/// and returns without starting recording.
 pub async fn start_command_mode(handle: AppHandle) {
     let state = handle.state::<AppState>();
+
+    // License gate: Command Mode requires a paid license.
+    // Because this function returns () we use an if-check instead of the macro.
+    let command_mode_allowed = state
+        .license_status
+        .lock()
+        .ok()
+        .map(|s| crate::license::is_feature_allowed(&s, crate::license::LicensedFeature::CommandMode))
+        .unwrap_or(false);
+    if !command_mode_allowed {
+        let _ = handle.emit(
+            EVENT_STATE_CHANGED,
+            PipelineEvent::error("feature_requires_license:CommandMode"),
+        );
+        return;
+    }
 
     if state.recorder.is_recording() {
         return;

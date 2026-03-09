@@ -25,5 +25,6 @@ pub fn make_state(dir: &TempDir) -> AppState {
         Dictionary::new(),
         dir.path().to_path_buf(),
         db,
+        false, // is_early_adopter
     )
 }

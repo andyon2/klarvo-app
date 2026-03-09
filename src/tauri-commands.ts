@@ -359,3 +359,29 @@ export async function saveAdvancedSettings(settings: AdvancedSettings): Promise<
 export async function syncHistory(): Promise<[number, number]> {
   return invoke<[number, number]>("sync_history");
 }
+
+// --- License ---
+
+/**
+ * Validates a license key. Returns the raw status string from the backend:
+ * "licensed" | "grace_period:{timestamp}" | error string
+ * @param key - License key in DIKTA-XXXX-XXXX-XXXX-XXXX format
+ */
+export async function validateLicense(key: string): Promise<string> {
+  return invoke<string>("validate_license", { key });
+}
+
+/**
+ * Returns the current license status as a raw string:
+ * "licensed" | "grace_period:{timestamp}" | "unlicensed"
+ */
+export async function getLicenseStatus(): Promise<string> {
+  return invoke<string>("get_license_status");
+}
+
+/**
+ * Removes the stored license key and resets to unlicensed state.
+ */
+export async function removeLicense(): Promise<void> {
+  await invoke("remove_license");
+}

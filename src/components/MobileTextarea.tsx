@@ -10,6 +10,7 @@ export interface MobileTextareaProps {
   rows?: number;
   className?: string;
   hint?: string;
+  disabled?: boolean;
 }
 
 // Fullscreen overlay shown on mobile when the user taps the preview div.
@@ -101,6 +102,7 @@ export function MobileTextarea({
   rows = 3,
   className,
   hint,
+  disabled = false,
 }: MobileTextareaProps) {
   const [overlayOpen, setOverlayOpen] = useState(false);
 
@@ -120,6 +122,7 @@ export function MobileTextarea({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
+        disabled={disabled}
         className={className}
       />
     );
@@ -131,11 +134,11 @@ export function MobileTextarea({
   return (
     <>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOverlayOpen(true)}
+        role={disabled ? undefined : "button"}
+        tabIndex={disabled ? undefined : 0}
+        onClick={() => { if (!disabled) setOverlayOpen(true); }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setOverlayOpen(true);
+          if (!disabled && (e.key === "Enter" || e.key === " ")) setOverlayOpen(true);
         }}
         className={[
           // Match INPUT_CLS_M appearance so it looks like the surrounding inputs.

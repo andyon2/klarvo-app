@@ -487,6 +487,20 @@ pub struct AppConfig {
     /// without this field load correctly.
     #[serde(default)]
     pub advanced: AdvancedSettings,
+
+    // --- License ---
+
+    /// Validated license key string. Empty = no license.
+    /// Stored in config.json; the key itself is not secret but the HMAC
+    /// embedded in it can only be forged with the compile-time secret.
+    #[serde(default)]
+    pub license_key: String,
+
+    /// Unix timestamp (seconds) at which the license key was last validated.
+    /// Used together with `license_key` to compute offline status.
+    /// 0 = never validated.
+    #[serde(default)]
+    pub license_validated_at: u64,
 }
 
 fn default_stt_priority() -> Vec<String> {
@@ -576,6 +590,8 @@ impl Default for AppConfig {
             bubble_size: default_bubble_size(),
             bubble_opacity: default_bubble_opacity(),
             advanced: AdvancedSettings::default(),
+            license_key: String::new(),
+            license_validated_at: 0,
         }
     }
 }
@@ -677,6 +693,27 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
     }
 
     config
+}
+
+/// Returns `true` if the on-disk config.json contains a `licenseKey` field.
+///
+/// This is used for the early-adopter migration: existing users whose config
+/// predates the license system will not have that field, and we grant them
+/// a 60-day grace period automatically.
+///
+/// Returns `false` if the file does not exist, cannot be read, or lacks the
+/// field.
+pub fn config_file_has_license_field(app_data_dir: &Path) -> bool {
+    let path = app_data_dir.join(CONFIG_FILE);
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => {
+            match serde_json::from_str::<serde_json::Value>(&contents) {
+                Ok(v) => v.get("licenseKey").is_some(),
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
+    }
 }
 
 /// Saves the configuration to `{app_data_dir}/config.json`.
@@ -813,6 +850,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            license_key: String::new(),
+            license_validated_at: 0,
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

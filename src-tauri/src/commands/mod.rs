@@ -5,6 +5,7 @@
 
 pub mod dictionary;
 pub mod history;
+pub mod license;
 pub mod misc;
 pub mod recording;
 pub mod settings;

@@ -7,9 +7,10 @@
 use tauri::{AppHandle, State};
 
 use crate::audio;
+use crate::license::LicensedFeature;
 use crate::llm::{chunked_cleanup, CleanupStyle};
 use crate::stt::{self, build_stt_prompt};
-use crate::{AppState, RecordingInfo};
+use crate::{require_license, AppState, RecordingInfo};
 
 #[cfg(desktop)]
 use crate::setup_audio_level_emitter;
@@ -73,6 +74,46 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingInfo,
     Ok(RecordingInfo { duration_ms })
 }
 
+/// Returns the ID of the active STT provider based on the priority list and available keys.
+///
+/// Walks `stt_priority` and returns the ID of the first provider with a non-empty key.
+/// Returns `"groq"` as fallback (matching `resolve_stt_provider` behaviour).
+fn active_stt_provider_id(state: &AppState) -> String {
+    let cfg = match state.config.lock() {
+        Ok(g) => g,
+        Err(_) => return "groq".to_string(),
+    };
+    for id in &cfg.stt_priority {
+        match id.as_str() {
+            "groq" if !cfg.groq_api_key.is_empty() => return "groq".to_string(),
+            "openai" if !cfg.openai_api_key.is_empty() => return "openai".to_string(),
+            _ => continue,
+        }
+    }
+    "groq".to_string()
+}
+
+/// Returns the ID of the active LLM cleanup provider based on the priority list and available keys.
+///
+/// Walks `llm_priority` and returns the ID of the first provider with a non-empty key.
+/// Returns `"deepseek"` as fallback (matching `resolve_cleanup_provider` behaviour).
+fn active_llm_provider_id(state: &AppState) -> String {
+    let cfg = match state.config.lock() {
+        Ok(g) => g,
+        Err(_) => return "deepseek".to_string(),
+    };
+    for id in &cfg.llm_priority {
+        match id.as_str() {
+            "deepseek" if !cfg.deepseek_api_key.is_empty() => return "deepseek".to_string(),
+            "openai" if !cfg.openai_api_key.is_empty() => return "openai".to_string(),
+            "anthropic" if !cfg.anthropic_api_key.is_empty() => return "anthropic".to_string(),
+            "groq" if !cfg.groq_api_key.is_empty() => return "groq".to_string(),
+            _ => continue,
+        }
+    }
+    "deepseek".to_string()
+}
+
 /// Transcribes the most recently recorded audio using the configured STT provider.
 ///
 /// Reads WAV bytes stored by the last `stop_recording` call.
@@ -88,6 +129,11 @@ pub async fn transcribe_audio(
     language: String,
 ) -> Result<String, String> {
     let inner = state.inner();
+
+    // License gate: non-Groq STT providers require a paid license.
+    if active_stt_provider_id(inner) != "groq" {
+        require_license!(state, LicensedFeature::AlternativeProviders);
+    }
 
     // Clone the WAV out of the mutex so we don't hold the lock across the await.
     let wav_bytes = {
@@ -131,6 +177,11 @@ pub async fn transcribe_audio_bytes(
 ) -> Result<String, String> {
     let inner = state.inner();
 
+    // License gate: non-Groq STT providers require a paid license.
+    if active_stt_provider_id(inner) != "groq" {
+        require_license!(state, LicensedFeature::AlternativeProviders);
+    }
+
     // Store the audio data as last_recording so history/stats can reference it.
     {
         let mut guard = crate::lock!(inner.last_recording)?;
@@ -171,6 +222,17 @@ pub async fn cleanup_text(
     dictionary_terms: Option<String>,
 ) -> Result<String, String> {
     let inner = state.inner();
+
+    // License gate: non-Polished cleanup styles require a paid license.
+    if style != CleanupStyle::Polished {
+        require_license!(state, LicensedFeature::AllCleanupStyles);
+    }
+
+    // License gate: non-DeepSeek LLM providers require a paid license.
+    if active_llm_provider_id(inner) != "deepseek" {
+        require_license!(state, LicensedFeature::AlternativeProviders);
+    }
+
     let provider = crate::read_lock!(inner.cleanup_provider)?.clone();
 
     // Use caller-supplied terms if provided; otherwise fall back to app dictionary.

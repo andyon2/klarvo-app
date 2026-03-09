@@ -29,6 +29,7 @@ import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
 import { useRecording } from "./hooks/useRecording";
 import { useSettings } from "./hooks/useSettings";
 import { usePanels } from "./hooks/usePanels";
+import { useLicense } from "./hooks/useLicense";
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -208,6 +209,7 @@ export default function App() {
   // --- Hooks ---
   const settings = useSettings();
   const recording = useRecording(settings.cleanupStyle, settings.language);
+  const license = useLicense();
 
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
@@ -471,6 +473,10 @@ export default function App() {
             onRemoveTerm={settings.handleRemoveTerm}
             outputLanguage={settings.outputLanguage}
             onOutputLanguageChange={settings.handleOutputLanguageChange}
+            licenseStatus={license.licenseStatus}
+            licenseLoading={license.licenseLoading}
+            onValidateLicense={license.validateLicense}
+            onRemoveLicense={license.removeLicense}
           />
         )}
       </div>

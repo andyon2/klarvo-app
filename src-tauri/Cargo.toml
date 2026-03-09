@@ -27,6 +27,9 @@ futures = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+hmac = "0.12"
+sha2 = "0.10"
+base32 = "0.4"
 
 # Desktop-only dependencies (not available on Android/iOS)
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

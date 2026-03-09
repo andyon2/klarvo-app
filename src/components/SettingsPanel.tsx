@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile } from "../types";
+import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
 import { isDesktop, isMobile } from "../platform";
-import { CloseIcon } from "./icons";
+import { CloseIcon, LockIcon } from "./icons";
 import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M } from "./ui";
 import { MobileTextarea } from "./MobileTextarea";
 
@@ -278,6 +278,244 @@ function UpdateChecker() {
   );
 }
 
+// --- License Section ---------------------------------------------------------
+
+// Auto-formats a license key input: uppercase, inserts dashes after every 4 chars
+// in the payload section (after "DIKTA-").
+function formatLicenseKeyInput(raw: string): string {
+  // Strip everything that is not alphanumeric.
+  const stripped = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  // The key format is DIKTA-XXXX-XXXX-XXXX-XXXX.
+  // The prefix "DIKTA" is 5 chars, then groups of 4 separated by dashes.
+  if (stripped.length === 0) return "";
+  const prefix = "DIKTA";
+  if (!stripped.startsWith(prefix)) {
+    // Let the user type freely if they haven't matched the prefix yet.
+    // Still uppercase, no dashes until prefix is complete.
+    if (stripped.length <= prefix.length) return stripped;
+    // Prefix matched now.
+  }
+  const body = stripped.startsWith(prefix) ? stripped.slice(prefix.length) : stripped;
+  const chunks: string[] = [];
+  for (let i = 0; i < body.length && i < 16; i += 4) {
+    chunks.push(body.slice(i, i + 4));
+  }
+  const formatted = prefix + (chunks.length > 0 ? "-" + chunks.join("-") : "");
+  return formatted;
+}
+
+function formatGraceDate(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
+const LOCKED_FEATURES = [
+  "All Providers",
+  "Cleanup Styles",
+  "Command Mode",
+  "Snippets",
+  "Profiles",
+  "Voice Notes",
+  "Sync",
+  "Offline Mode",
+  "Analytics",
+];
+
+interface LicenseSectionProps {
+  licenseStatus: ParsedLicenseStatus;
+  onValidate: (key: string) => Promise<string | null>;
+  onRemove: () => Promise<void>;
+  licenseLoading: boolean;
+}
+
+function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }: LicenseSectionProps) {
+  const [keyInput, setKeyInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleKeyChange = useCallback((raw: string) => {
+    setKeyInput(formatLicenseKeyInput(raw));
+    setError(null);
+  }, []);
+
+  const handleActivate = useCallback(async () => {
+    const trimmed = keyInput.trim();
+    if (!trimmed) return;
+    setError(null);
+    const err = await onValidate(trimmed);
+    if (err) {
+      setError(err);
+    } else {
+      setKeyInput("");
+    }
+  }, [keyInput, onValidate]);
+
+  const handleRemoveClick = useCallback(() => {
+    if (!confirmRemove) {
+      setConfirmRemove(true);
+      confirmTimerRef.current = setTimeout(() => setConfirmRemove(false), 4000);
+      return;
+    }
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmRemove(false);
+    onRemove();
+  }, [confirmRemove, onRemove]);
+
+  // Cleanup timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    };
+  }, []);
+
+  const isLicensed = licenseStatus.type === "licensed";
+  const isGrace = licenseStatus.type === "grace_period";
+  const isUnlicensed = licenseStatus.type === "unlicensed";
+
+  return (
+    <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+      {/* Status badge */}
+      <div className="flex items-center gap-2">
+        {isLicensed && (
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            Licensed
+          </span>
+        )}
+        {isGrace && (
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400">
+            Grace Period
+          </span>
+        )}
+        {isUnlicensed && (
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-zinc-700 text-zinc-400">
+            Free Tier
+          </span>
+        )}
+      </div>
+
+      {/* Licensed state */}
+      {isLicensed && (
+        <>
+          <p className={isMobile ? "text-sm text-zinc-300" : "text-xs text-zinc-300"}>All features unlocked.</p>
+          <button
+            onClick={handleRemoveClick}
+            disabled={licenseLoading}
+            className={[
+              "self-start transition-colors disabled:opacity-40",
+              isMobile ? "text-sm" : "text-[11px]",
+              confirmRemove ? "text-red-400 hover:text-red-300" : "text-zinc-500 hover:text-zinc-300",
+            ].join(" ")}
+          >
+            {confirmRemove ? "Click again to confirm removal" : "Remove License"}
+          </button>
+        </>
+      )}
+
+      {/* Grace period state */}
+      {isGrace && (
+        <>
+          {licenseStatus.graceUntil && (
+            <p className={isMobile ? "text-sm text-yellow-400/80" : "text-xs text-yellow-400/80"}>
+              License expires on {formatGraceDate(licenseStatus.graceUntil)}
+            </p>
+          )}
+          <p className={isMobile ? "text-sm text-zinc-400" : "text-[11px] text-zinc-400"}>
+            Re-validate your license to continue using all features.
+          </p>
+          <LicenseKeyInput
+            value={keyInput}
+            onChange={handleKeyChange}
+            onActivate={handleActivate}
+            loading={licenseLoading}
+            error={error}
+          />
+        </>
+      )}
+
+      {/* Unlicensed state */}
+      {isUnlicensed && (
+        <>
+          <LicenseKeyInput
+            value={keyInput}
+            onChange={handleKeyChange}
+            onActivate={handleActivate}
+            loading={licenseLoading}
+            error={error}
+          />
+          <div className="flex flex-wrap gap-1.5 mt-0.5">
+            {LOCKED_FEATURES.map((f) => (
+              <span key={f} className="rounded-full px-2 py-0.5 text-[11px] font-medium bg-zinc-700 text-zinc-400">
+                {f}
+              </span>
+            ))}
+          </div>
+          <button
+            onClick={() => openUrl("https://dikta.app")}
+            className={[
+              "self-start transition-colors",
+              isMobile ? "text-sm" : "text-[11px]",
+              "text-zinc-400 hover:text-zinc-200 underline underline-offset-2",
+            ].join(" ")}
+          >
+            Get a license at dikta.app
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LicenseKeyInput({
+  value, onChange, onActivate, loading, error,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onActivate: () => void;
+  loading: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="DIKTA-XXXX-XXXX-XXXX-XXXX"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !loading && onActivate()}
+          maxLength={24} // DIKTA(5) + 4 dashes + 16 chars
+          className={[
+            "flex-1 font-mono tracking-widest",
+            isMobile ? INPUT_CLS_M : INPUT_CLS,
+          ].join(" ")}
+        />
+        <button
+          onClick={onActivate}
+          disabled={loading || !value.trim()}
+          className={[
+            "rounded-lg font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400",
+            "hover:bg-emerald-500/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+            isMobile ? "px-4 py-2.5 text-sm" : "px-3 py-2 text-xs",
+          ].join(" ")}
+        >
+          {loading ? "..." : "Activate"}
+        </button>
+      </div>
+      {error && (
+        <p className={["text-red-400", isMobile ? "text-sm" : "text-xs"].join(" ")}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // --- SettingsPanel -----------------------------------------------------------
 
 export interface SettingsPanelProps {
@@ -291,6 +529,10 @@ export interface SettingsPanelProps {
   audioDevices: string[];
   dictionary: string[];
   outputLanguage: string;
+  licenseStatus: ParsedLicenseStatus;
+  licenseLoading: boolean;
+  onValidateLicense: (key: string) => Promise<string | null>;
+  onRemoveLicense: () => Promise<void>;
   onSave: (
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
@@ -312,6 +554,7 @@ export interface SettingsPanelProps {
 export function SettingsPanel({
   onClose, loadedSettings, language, cleanupStyle, hotkey, hotkeyMode,
   audioDevice, audioDevices, dictionary, outputLanguage,
+  licenseStatus, licenseLoading, onValidateLicense, onRemoveLicense,
   onSave, onLanguageChange, onStyleChange, onHotkeyChange, onHotkeyModeChange,
   onAudioDeviceChange, onAddTerm, onRemoveTerm, onOutputLanguageChange,
 }: SettingsPanelProps) {
@@ -467,6 +710,13 @@ export function SettingsPanel({
   const openaiOk = !!loadedSettings?.openaiApiKeyMasked;
   const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
 
+  // Feature gate: user has an active paid license (licensed or valid grace period).
+  const isPaid =
+    licenseStatus.type === "licensed" ||
+    (licenseStatus.type === "grace_period" &&
+      licenseStatus.graceUntil !== undefined &&
+      licenseStatus.graceUntil > Date.now() / 1000);
+
   // On Android the system nav bar (~48 px) overlaps the WebView bottom edge.
   // env(safe-area-inset-bottom) is unreliable in Android WebView so we use a
   // fixed 48 px deduction on mobile to keep the sticky Save footer visible.
@@ -546,21 +796,29 @@ export function SettingsPanel({
               <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                 <span className={LABEL_CLS_M}>Cleanup Style</span>
                 <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-                  {STYLE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleStyleChange(opt.value)}
-                      title={opt.description}
-                      className={[
-                        isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                        localStyle === opt.value
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "text-zinc-500 hover:text-zinc-300",
-                      ].join(" ")}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  {STYLE_OPTIONS.map((opt) => {
+                    const locked = !isPaid && opt.value !== "polished";
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => { if (!locked) handleStyleChange(opt.value); }}
+                        title={locked ? "Requires Dikta License" : opt.description}
+                        disabled={locked}
+                        className={[
+                          isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
+                          locked ? "opacity-50 cursor-not-allowed" : "",
+                          localStyle === opt.value
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "text-zinc-500 hover:text-zinc-300",
+                        ].join(" ")}
+                      >
+                        <span className="flex items-center gap-1 justify-center">
+                          {opt.label}
+                          {locked && <LockIcon className="w-2.5 h-2.5 text-zinc-600" />}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -631,7 +889,10 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Cleanup Instructions</span>
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+              Cleanup Instructions
+              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            </span>
           </button>
           {openSections.customPrompt && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -639,10 +900,11 @@ export function SettingsPanel({
                 label="Cleanup Instructions"
                 hint="Appended to the system prompt during LLM cleanup."
                 value={localCustomPrompt}
-                onChange={setLocalCustomPrompt}
-                placeholder="Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'"
+                onChange={isPaid ? setLocalCustomPrompt : () => {}}
+                placeholder={isPaid ? "Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'" : "Requires Dikta License"}
                 rows={3}
-                className={`${INPUT_CLS_M} resize-none`}
+                className={`${INPUT_CLS_M} resize-none${!isPaid ? " opacity-50 cursor-not-allowed" : ""}`}
+                disabled={!isPaid}
               />
               {/* Preset buttons -- one click replaces the entire custom prompt */}
               <div className="flex items-center gap-2 flex-wrap">
@@ -715,18 +977,23 @@ export function SettingsPanel({
                   </button>
                 </label>
 
-                <label className="flex items-center justify-between gap-3 cursor-pointer">
-                  <div className="flex flex-col gap-0.5">
-                    <span className={LABEL_CLS_M}>Whisper mode</span>
+                <label className={`flex items-center justify-between gap-3 ${isPaid ? "cursor-pointer" : "cursor-not-allowed"}`}>
+                  <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
+                    <span className="flex items-center gap-1.5">
+                      <span className={LABEL_CLS_M}>Whisper mode</span>
+                      {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                    </span>
                     <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Amplifies mic input for quiet dictation</span>
                   </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={localWhisperMode}
-                    onClick={() => setLocalWhisperMode(!localWhisperMode)}
+                    disabled={!isPaid}
+                    onClick={() => { if (isPaid) setLocalWhisperMode(!localWhisperMode); }}
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                      !isPaid ? "opacity-50 cursor-not-allowed" : "",
                       localWhisperMode ? "bg-emerald-500/40" : "bg-zinc-700",
                     ].join(" ")}
                   >
@@ -759,13 +1026,16 @@ export function SettingsPanel({
             </button>
             {openSections.webhook && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-                <input
-                  type="url"
-                  placeholder="https://example.com/webhook"
-                  value={localWebhookUrl}
-                  onChange={(e) => setLocalWebhookUrl(e.target.value)}
-                  className={INPUT_CLS_M}
-                />
+                <div className={!isPaid ? "opacity-50" : ""}>
+                  <input
+                    type="url"
+                    placeholder={isPaid ? "https://example.com/webhook" : "Requires Dikta License"}
+                    value={localWebhookUrl}
+                    disabled={!isPaid}
+                    onChange={(e) => setLocalWebhookUrl(e.target.value)}
+                    className={`${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
+                  />
+                </div>
                 <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>HTTP POST after each dictation. Leave empty to disable.</p>
               </div>
             )}
@@ -781,15 +1051,19 @@ export function SettingsPanel({
             <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Cross-Device Sync</span>
           </button>
           {openSections.sync && (
-            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+            <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
               <div className="flex flex-col gap-1.5">
-                <span className={LABEL_CLS_M}>Turso URL</span>
+                <span className="flex items-center gap-1.5">
+                  <span className={LABEL_CLS_M}>Turso URL</span>
+                  {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                </span>
                 <input
                   type="text"
-                  placeholder="libsql://your-db.turso.io"
+                  placeholder={isPaid ? "libsql://your-db.turso.io" : "Requires Dikta License"}
                   value={localTursoUrl}
+                  disabled={!isPaid}
                   onChange={(e) => setLocalTursoUrl(e.target.value)}
-                  className={INPUT_CLS_M}
+                  className={`${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -797,10 +1071,11 @@ export function SettingsPanel({
                 <input
                   type="password"
                   autoComplete="off"
-                  placeholder={loadedSettings?.tursoTokenMasked || "Auth token"}
+                  placeholder={isPaid ? (loadedSettings?.tursoTokenMasked || "Auth token") : "Requires Dikta License"}
                   value={tursoToken}
+                  disabled={!isPaid}
                   onChange={(e) => setTursoToken(e.target.value)}
-                  className={INPUT_CLS_M}
+                  className={`${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
                 />
               </div>
               {loadedSettings?.deviceId && (
@@ -819,8 +1094,8 @@ export function SettingsPanel({
                     setSyncing(false);
                   }
                 }}
-                disabled={syncing || !localTursoUrl}
-                className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}`}
+                disabled={syncing || !localTursoUrl || !isPaid}
+                className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}${!isPaid ? " cursor-not-allowed" : ""}`}
               >
                 {syncing ? "Syncing..." : "Sync Now"}
               </button>
@@ -1106,6 +1381,24 @@ export function SettingsPanel({
                 )}
               </div>
             </div>
+          )}
+        </div>
+
+        {/* --- License --- */}
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("license")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">License</span>
+          </button>
+          {openSections.license && (
+            <LicenseSection
+              licenseStatus={licenseStatus}
+              onValidate={onValidateLicense}
+              onRemove={onRemoveLicense}
+              licenseLoading={licenseLoading}
+            />
           )}
         </div>
 

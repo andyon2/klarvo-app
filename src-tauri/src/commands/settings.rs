@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::config::{self, save_config, AppConfig, HotkeyMode};
+use crate::license::LicensedFeature;
+use crate::require_license;
 use crate::llm::{self, CleanupStyle};
 use crate::pipeline::{resolve_cleanup_provider, resolve_stt_provider};
 use crate::stt::{self};
@@ -138,6 +140,11 @@ pub async fn save_settings(
 ) -> Result<(), String> {
     let inner = state.inner();
 
+    // License gate: Whisper Mode requires a paid license.
+    if whisper_mode.unwrap_or(false) {
+        require_license!(state, LicensedFeature::WhisperMode);
+    }
+
     // Validate the hotkey string before writing anything to disk (desktop only).
     println!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
     #[cfg(desktop)]
@@ -200,6 +207,8 @@ pub async fn save_settings(
         bubble_size: bubble_size.unwrap_or(existing.bubble_size),
         bubble_opacity: bubble_opacity.unwrap_or(existing.bubble_opacity),
         advanced: existing.advanced,
+        license_key: existing.license_key,
+        license_validated_at: existing.license_validated_at,
     };
 
     // Resolve providers from the new config before persisting.
@@ -272,11 +281,23 @@ pub fn get_advanced_settings(
 }
 
 /// Saves updated advanced settings. Replaces the entire advanced block.
+///
+/// If any custom LLM system prompt field is non-empty (i.e. the user is
+/// overriding built-in prompts), a paid license is required.
 #[tauri::command]
 pub fn save_advanced_settings(
     state: State<'_, AppState>,
     settings: config::AdvancedSettings,
 ) -> Result<(), String> {
+    // License gate: custom LLM system prompts require a paid license.
+    let has_custom_prompt = !settings.llm_system_prompt_polished.is_empty()
+        || !settings.llm_system_prompt_verbatim.is_empty()
+        || !settings.llm_system_prompt_chat.is_empty()
+        || !settings.llm_command_mode_prompt.is_empty();
+    if has_custom_prompt {
+        require_license!(state, LicensedFeature::CustomPrompts);
+    }
+
     let inner = state.inner();
     let mut cfg = crate::lock!(inner.config)?;
     cfg.advanced = settings;

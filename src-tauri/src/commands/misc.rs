@@ -4,6 +4,8 @@
 use tauri::{AppHandle, State};
 
 use crate::config::{save_config, AppProfile, TextSnippet};
+use crate::license::LicensedFeature;
+use crate::require_license;
 use crate::paste::{capture_foreground_window, create_paste_handler};
 use crate::sync;
 use crate::AppState;
@@ -13,18 +15,24 @@ use crate::AppState;
 // ---------------------------------------------------------------------------
 
 /// Returns the app-specific profiles list.
+///
+/// Requires a paid license (App Profiles is a paid feature).
 #[tauri::command]
 pub fn get_profiles(state: State<'_, AppState>) -> Result<Vec<AppProfile>, String> {
+    require_license!(state, LicensedFeature::AppProfiles);
     let cfg = crate::lock!(state.inner().config)?;
     Ok(cfg.profiles.clone())
 }
 
 /// Replaces the full profiles list and persists to disk.
+///
+/// Requires a paid license (App Profiles is a paid feature).
 #[tauri::command]
 pub fn save_profiles(
     state: State<'_, AppState>,
     profiles: Vec<AppProfile>,
 ) -> Result<(), String> {
+    require_license!(state, LicensedFeature::AppProfiles);
     let inner = state.inner();
     let mut cfg = crate::lock!(inner.config)?;
     cfg.profiles = profiles;
@@ -39,8 +47,11 @@ pub fn save_profiles(
 // ---------------------------------------------------------------------------
 
 /// Returns all user-defined text snippets from config.
+///
+/// Requires a paid license (Text Snippets is a paid feature).
 #[tauri::command]
 pub fn get_snippets(state: State<'_, AppState>) -> Result<Vec<TextSnippet>, String> {
+    require_license!(state, LicensedFeature::Snippets);
     let cfg = crate::lock!(state.inner().config)?;
     Ok(cfg.snippets.clone())
 }
@@ -49,11 +60,14 @@ pub fn get_snippets(state: State<'_, AppState>) -> Result<Vec<TextSnippet>, Stri
 ///
 /// The caller supplies the complete list; individual add/remove operations
 /// are handled on the frontend and the resulting list is sent here.
+///
+/// Requires a paid license (Text Snippets is a paid feature).
 #[tauri::command]
 pub fn save_snippets(
     state: State<'_, AppState>,
     snippets: Vec<TextSnippet>,
 ) -> Result<(), String> {
+    require_license!(state, LicensedFeature::Snippets);
     let inner = state.inner();
     let mut cfg = crate::lock!(inner.config)?;
     cfg.snippets = snippets;
@@ -104,8 +118,11 @@ pub async fn paste_snippet(state: State<'_, AppState>, content: String) -> Resul
 /// 2. Ensure remote table + push to Turso (async, no lock)
 /// 3. Mark synced + pull from Turso (async, no lock)
 /// 4. Insert pulled entries (sync, lock held briefly)
+///
+/// Requires a paid license (Cross-device Sync is a paid feature).
 #[tauri::command]
 pub async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), String> {
+    require_license!(state, LicensedFeature::Sync);
     let inner = state.inner();
     let cfg = crate::lock!(inner.config)?.clone();
 

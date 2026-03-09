@@ -44,6 +44,7 @@ mod config;
 mod dictionary;
 mod history;
 mod hotkey;
+mod license;
 mod llm;
 mod paste;
 mod pipeline;
@@ -57,8 +58,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use audio::AudioRecorder;
-use config::{load_config, AppConfig, HotkeyMode};
+use config::{config_file_has_license_field, load_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
+use license::{compute_status_from_cache, LicenseStatus, EARLY_ADOPTER_GRACE_SECS};
 use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
@@ -190,6 +192,9 @@ pub struct AppState {
     pub command_mode_active: Mutex<bool>,
     /// The text that was selected when Command Mode was triggered (via Ctrl+C).
     pub command_mode_selected_text: Mutex<Option<String>>,
+    /// Current license status, computed from config on startup and updated
+    /// when the user validates or removes a key.
+    pub license_status: Mutex<license::LicenseStatus>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -206,9 +211,27 @@ impl AppState {
         dictionary: Dictionary,
         app_data_dir: PathBuf,
         history_db: rusqlite::Connection,
+        is_early_adopter: bool,
     ) -> Self {
         let stt = resolve_stt_provider(&cfg);
         let cleanup = resolve_cleanup_provider(&cfg);
+
+        // Compute the initial license status from the cached key + timestamp.
+        let initial_license_status = if is_early_adopter {
+            // Existing user who predates the license system: grant 60-day grace period.
+            let until = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+                + EARLY_ADOPTER_GRACE_SECS;
+            log::info!("[license] Early-adopter migration: 60-day grace period until {until}");
+            LicenseStatus::GracePeriod { until }
+        } else {
+            compute_status_from_cache(&cfg.license_key, cfg.license_validated_at)
+        };
+
+        log::info!("[license] Initial status: {initial_license_status:?}");
+
         AppState {
             recorder: Arc::new(AudioRecorder::new()),
             stt_provider: RwLock::new(stt),
@@ -223,6 +246,7 @@ impl AppState {
             prev_window_title: Mutex::new(None),
             command_mode_active: Mutex::new(false),
             command_mode_selected_text: Mutex::new(None),
+            license_status: Mutex::new(initial_license_status),
         }
     }
 }
@@ -260,6 +284,30 @@ macro_rules! write_lock {
             .write()
             .map_err(|_| "Internal state lock poisoned".to_string())
     };
+}
+
+/// Guards a Tauri command behind a paid feature check.
+///
+/// Acquires the `license_status` lock from `$state` and calls
+/// `license::is_feature_allowed`. If the feature is not allowed, the
+/// enclosing function returns an `Err` with a machine-readable error string
+/// that the frontend can parse to show the upgrade prompt.
+///
+/// Usage inside a `#[tauri::command]` that returns `Result<_, String>`:
+/// ```ignore
+/// require_license!(state, LicensedFeature::Sync);
+/// ```
+#[macro_export]
+macro_rules! require_license {
+    ($state:expr, $feature:expr) => {{
+        let status = $state
+            .license_status
+            .lock()
+            .map_err(|_| "license lock error".to_string())?;
+        if !crate::license::is_feature_allowed(&status, $feature) {
+            return Err(format!("feature_requires_license:{:?}", $feature));
+        }
+    }};
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +495,10 @@ pub fn run() {
         // Create the directory if it doesn't exist yet.
         std::fs::create_dir_all(&app_data_dir)?;
 
+        // Check for early-adopter migration BEFORE loading config (we need to
+        // know whether the license_key field was absent in the on-disk file).
+        let is_early_adopter = !config_file_has_license_field(&app_data_dir);
+
         // Load persisted config (falls back to defaults + env vars on first run).
         let cfg = load_config(&app_data_dir);
 
@@ -479,7 +531,7 @@ pub fn run() {
         commands::settings::apply_autostart(cfg.autostart);
 
         // Build and register the application state.
-        let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
+        let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db, is_early_adopter);
         app.manage(app_state);
 
         // --- System tray (Windows only -- WSL2/Linux lacks proper tray support) ---
@@ -635,6 +687,10 @@ pub fn run() {
             commands::misc::sync_history,
             commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
+            // License
+            commands::license::validate_license,
+            commands::license::get_license_status,
+            commands::license::remove_license,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -832,7 +888,7 @@ mod tests {
         };
         let db = rusqlite::Connection::open_in_memory()
             .expect("in-memory SQLite must always open successfully");
-        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db, false);
         let locked = state.config.lock().unwrap();
         assert!(!locked.groq_api_key.is_empty());
         assert!(!locked.deepseek_api_key.is_empty());
