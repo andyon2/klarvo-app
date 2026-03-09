@@ -1,6 +1,6 @@
 # Dikta -- Team-Reflection
 
-Stand: 2026-03-08
+Stand: 2026-03-09
 
 ---
 
@@ -10,24 +10,28 @@ Stand: 2026-03-08
 
 | Agent | Was ich tue | Was ich NICHT tue |
 |-------|-------------|------------------|
-| **Tech Lead** (main-agent.md) | Architektur-Entscheidungen, Delegation, Review, Sessionstart/-ende-Protokoll, Kontext-Management, Skill-Auswahl | Code schreiben (ausser strategische 2-3-Nachrichten-Entscheidungen), Android debuggen, Frontend stylen, Rust compilieren |
+| **Tech Lead** (main-agent.md) | Architektur-Entscheidungen, Delegation, Review, Sessionstart/-ende-Protokoll, Kontext-Management, Skill-Auswahl, Dispatches pruefen | Code schreiben (ausser strategische 2-3-Nachrichten-Entscheidungen), Android debuggen, Frontend stylen, Rust compilieren |
 | **rust-core** | Alles in `src-tauri/`: Audio-Capture (cpal), STT-Pipeline (Groq/OpenAI), LLM-Cleanup-Client, Text-Paste (Win32), Hotkey, Dictionary, Config, History, Sync | Android-Kotlin-Code, Frontend-React-Code, Build-Deployment |
-| **ui-dev** | Alles in `src/`: FloatingBar, SettingsPanel, AdvancedSettings, MobileTextarea, VoiceNotes, Hooks, Tauri-IPC-Calls im Frontend | Rust-Backend, Android-Kotlin-Code, Build-Skripte |
+| **ui-dev** | Alles in `src/`: FloatingBar, SettingsPanel, AdvancedSettingsPanel, MobileTextarea, VoiceNotesPanel, SnippetsPanel, Hooks, Tauri-IPC-Calls im Frontend, Onboarding | Rust-Backend, Android-Kotlin-Code, Build-Skripte |
 | **android-platform** | Alles in `android/kotlin-src/`: DiktaOverlayService, FloatingBubbleView, DiktaAudioRecorder, DiktaApi, DiktaAccessibilityService, MainActivity; Android-Build-Workflow | Rust-Backend-Logik, React-Frontend-Code, Windows-spezifische Features |
+| **product-strategist** | Positionierung, Monetarisierung, Roadmap-Priorisierung aus Marktsicht, Wettbewerbs-Strategie, Release-Scoping | Tech-Entscheidungen, Architektur, Code |
 
 ### Skills
 
 | Skill | Was ich tue | Was ich NICHT tue |
 |-------|-------------|------------------|
 | `/scaffold` | Leeres Modul/Komponente aus Template anlegen (Rust-Modul, React-Component, Android-Service) | Implementieren -- nur Boilerplate |
-| `/build` | `tauri dev` oder `tauri android build` ausfuehren, Fehler strukturiert melden | Fehler beheben -- nur diagnostizieren |
+| `/build` | `scripts/sync-and-build.ps1` (Windows) oder `scripts/android-build.sh` (Android) ausfuehren, Fehler strukturiert melden | Fehler beheben -- nur diagnostizieren |
 | `/run-tests` | `cargo test` und `npm test` ausfuehren, Report formatieren | Tests schreiben oder Fehler fixen |
 | `/research-api` | Docs recherchieren (WebSearch + WebFetch), Summary in `knowledge/` schreiben | Implementieren was recherchiert wurde |
 | `/lint-fix` | `cargo fmt`, `clippy`, `prettier`, `eslint` ausfuehren, Auto-Fix wo moeglich | Code umstrukturieren -- nur Formatter-Level |
-| `/plan-feature` | Feature in Tasks mit Agent-Zuweisung und Abhaengigkeiten zerlegen | Tasks ausfuehren oder entscheiden ob der Plan gut ist |
-| `/commit-progress` | `git status`, `git diff`, konventionellen Commit erstellen | Code-Review vor dem Commit |
+| `/plan-feature` | Feature in Tasks mit Agent-Zuweisung und Abhaengigkeiten zerlegen; optional `--save` in briefings/ | Tasks ausfuehren oder entscheiden ob der Plan gut ist |
+| `/commit-progress` | `git status`, `git diff`, konventionellen Commit erstellen | Code-Review vor dem Commit, Tests pruefen |
 | `/debug-error` | Fehler klassifizieren, Root Cause finden, Fix vorschlagen | Fix selbst implementieren -- nur analysieren |
-| `/reflect` (dieses Skill) | Team-Inventur, Schwachstellen-Analyse, Verbesserungsvorschlaege | Aenderungen selbst durchfuehren |
+| `/sync-prompts` | LLM-Prompts in `llm/mod.rs` (Rust) vs. `DiktaApi.kt` (Kotlin) vergleichen, Drift sichtbar machen | Drift beheben -- nur diagnostizieren |
+| `/release` | Version bump in 3 Dateien, beide Plattformen bauen, `latest.json` generieren, GitHub Release erstellen | Post-Release-Marketing, App-Store-Publishing |
+| `/track` | `project-status.md` nach Session aktualisieren, Karteileichen bereinigen, max 50 Zeilen halten | Ausfuehrliche Dokumentation, Code-Aenderungen |
+| `/reflect` (dieses Skill) | Team-Inventur, Schwachstellen-Analyse, Verbesserungsvorschlaege, schreibt nach `.claude/team-reflection.md` | Aenderungen selbst durchfuehren |
 
 ---
 
@@ -46,123 +50,104 @@ CLAUDE.md / Agents    -- "Wer tut was wie?" (selten geaendert, strukturgebend)
 | Trigger | Aktion | Automatisch? |
 |---------|--------|-------------|
 | Sessionstart | Tech Lead liest `project-status.md` + `knowledge/architecture.md` | Manuell (via System-Prompt-Instruktion) |
-| Feature abgeschlossen | `project-status.md` aktualisieren, abgehakte Tasks loeschen | NEIN -- manuell, oft vergessen |
+| Sessionstart | Tech Lead prueft `~/project-builder/dispatches.md` auf Dikta-Eintraege | Manuell (via System-Prompt-Instruktion) |
+| Feature abgeschlossen | `/track` ausfuehren: `project-status.md` aktualisieren | NEIN -- manuell per Konvention, kann vergessen werden |
 | Architektur-Entscheidung getroffen | `knowledge/architecture.md` aktualisieren | NEIN -- manuell, Disziplinfrage |
-| Android-Quirk entdeckt | `knowledge/platform-notes.md` ergaenzen | NEIN -- manuell, bei android-platform-Sessions oft vergessen |
 | API-Research | Summary in `knowledge/api-providers.md` oder `architecture.md` | Durch `/research-api` Skill semi-automatisch |
 | Agent fertig | Tech Lead reviewt, gibt OK oder fordert Korrekturen | Manuell |
 | Kotlin-Code geaendert | `scripts/android-build.sh` kopiert nach `gen/android/` | Semi-automatisch -- nur wenn Script genutzt wird |
+| LLM-Prompts geaendert | `/sync-prompts` ausfuehren, beide Dateien manuell synchronisieren | NEIN -- kein Mechanismus zwingt dazu |
 
 ### Was NICHT automatisch synchronisiert wird
 
-1. **LLM-Prompts in Rust vs. Kotlin** -- `llm/mod.rs` und `DiktaApi.kt` enthalten denselben Prompt-Code. Kein Mechanismus sichert, dass beide synchron bleiben. Dieser Punkt ist in `architecture.md` als bekannter Trade-off dokumentiert, aber es gibt keine technische Absicherung.
+1. **LLM-Prompts in Rust vs. Kotlin** -- `llm/mod.rs` und `DiktaApi.kt` enthalten denselben Prompt-Code. `/sync-prompts` macht Drift sichtbar, aber es gibt keine automatische Absicherung. In MEMORY.md explizit als wiederkehrende Falle dokumentiert.
 
-2. **Agent-Wissen nach Architektur-Aenderungen** -- Wenn sich die Architektur aendert (z.B. "IME wurde durch Bubble ersetzt"), lesen delegierte Agents die aktuellen Projektdateien erst beim naechsten Auftrag. Es gibt keine Push-Benachrichtigung an Agents.
+2. **Agent-Wissen nach Architektur-Aenderungen** -- Agents lesen Projektdateien erst beim naechsten Auftrag. Es gibt keine Push-Benachrichtigung.
 
-3. **platform-notes.md existiert nicht mehr** -- Die Datei ist in `CLAUDE.md`, `android-platform.md` und `rust-core.md` als Ziel fuer Plattform-Quirks referenziert. Sie existiert nicht (`ls knowledge/` zeigt: api-providers.md, architecture.md, competitors.md, wispr-flow-android-ux.md). Das ist eine tote Referenz in drei Dateien gleichzeitig.
-
-4. **ui-dev.md referenziert Komponenten, die nicht existieren** -- `Overlay.tsx`, `Dictionary.tsx`, `StylePicker.tsx` stehen im ui-dev Agent-Prompt als Kern-Komponenten. Die tatsaechlichen Dateien heissen `FloatingBar.tsx`, `SettingsPanel.tsx` etc. Die Agent-Beschreibung ist mehrere Entwicklungsphasen alt.
+3. **`/reflect` und `/track` sind nicht in CLAUDE.md Skill-Tabelle registriert** -- `/sync-prompts`, `/release` und `/reflect` fehlen in der Skill-Tabelle in `CLAUDE.md`. Wer nur `CLAUDE.md` liest (z.B. ein neuer Assistent), sieht diese Skills nicht. Nur `main-agent.md` hat die vollstaendige Skill-Tabelle.
 
 ---
 
 ## 3. Ziele und Organisation
 
-### Kurz-/mittelfristige Ziele (aus project-status.md)
+### Kurz-/mittelfristige Ziele (aus project-status.md, Stand 2026-03-09)
 
-**Bekannte Bugs:**
-- Windows Signing Keys nicht generiert (Warnung bei jedem Build)
+Aktueller Stand: Version 0.4.1, Windows + Android signiert, GitHub Release v0.4.1, Auto-Update-Infrastruktur steht.
 
-**Backlog (kein priorisierter Zeitrahmen):**
-- Android: Bubble Size/Opacity Controls (wegen Slider-Bug verschoben)
-- Shared: Lokaler whisper.cpp Fallback (offline STT)
-- Shared: Voice Activity Detection (Auto-Start/Stopp)
-- Windows: Signing Keys + GitHub CI/CD fuer Auto-Update
-- Shared: Integrationen (Notion, Todoist -- Platzhalter existiert)
+**Priorisierte naechste Schritte:**
+1. License-Key-System (Open Core: Free vs. Paid EUR 29) -- kein Briefing existiert noch
+2. Offline whisper.cpp Fallback -- Briefing existiert (`briefings/plan-offline-whisper.md`)
+3. Onboarding/Polish -- kein Briefing existiert noch
+4. Bubble Size/Opacity Controls (Presets) -- Briefing existiert (`briefings/plan-bubble-appearance.md`)
 
-### Langfristige Ziele (aus CLAUDE.md)
-
-- Vollstaendige Wispr-Flow-Alternative
-- Kein Abo, keine Cloud-Abhaengigkeit (offline-first via whisper.cpp)
-- Sowohl Windows als auch Android
+**Backlog (niedrig priorisiert):**
+- VAD (Voice Activity Detection)
+- Notion/Todoist Integrationen
+- GitHub CI/CD Pipeline
 
 ### Wie organisiert sich das Team dafuer?
 
-Derzeit: Feature-by-Feature, reaktiv. Ein Feature wird besprochen, an den passenden Agent delegiert, committet. Es gibt keine Sprint-Planung, keine Priorisierungs-Sessions, keinen Meilenstein-Begriff.
+Reaktiv, feature-by-feature. Ein Feature wird besprochen, an den passenden Agent delegiert, committet. Es gibt keine Sprint-Planung, keine Meilensteine. Der Backlog ist eine flat list ohne Gewichtung oder Abhaengigkeits-Graph.
 
-Der Backlog ist eine flache Liste ohne Prioritaet, Abhaengigkeiten oder Zeitrahmen. Das ist fuer ein Soloprojekt okay -- aber wenn mehrere grosse Backlog-Items gleichzeitig angegangen werden, fehlt ein Koordinationsrahmen.
+Fuer die naechste Business-kritische Phase (License-Key-System vor erstem Paid Release) fehlt ein vollstaendiger Plan. Das Briefing wurde noch nicht erstellt -- das ist eine echte Luecke zwischen Strategie und Ausfuehrung.
 
 ---
 
 ## 4. Schwachstellen und Luecken
 
-### 4.1 Tote Referenz: platform-notes.md
+### 4.1 CLAUDE.md Skill-Tabelle ist unvollstaendig
 
-**Problem:** `rust-core.md`, `android-platform.md` und `briefings/android-platform-research.md` referenzieren `knowledge/platform-notes.md`. Die Datei existiert nicht.
+**Problem:** `CLAUDE.md` listet 8 Skills in der Tabelle: `/scaffold`, `/build`, `/run-tests`, `/research-api`, `/lint-fix`, `/plan-feature`, `/commit-progress`, `/debug-error`. Tatsaechlich existieren 12 Skills: zusaetzlich `/sync-prompts`, `/release`, `/track`, `/reflect`. Diese vier fehlen in der CLAUDE.md Skill-Tabelle komplett.
 
-**Auswirkung:** Agents bekommen beim Lesen des Kontexts eine Lese-Fehlermeldung, oder sie ignorieren den Verweis. Plattform-Quirks, die eigentlich in dieser Datei landen sollten, landen nirgendwo -- oder in `architecture.md`, was dieses Dokument aufblaehlt.
+**Auswirkung:** Wer CLAUDE.md als Orientierung nutzt (neue Assistenten, Andy wenn er nachschaut), sieht ein unvollstaendiges Bild. `/track` ist besonders kritisch -- es ist der Sessionende-Skill der in main-agent.md explizit genutzt wird, fehlt aber in CLAUDE.md.
 
-**Moegliche Loesung:** Entweder `platform-notes.md` erstellen (mit dem Android-spezifischen Inhalt, der aktuell in `architecture.md` unter "Plattform-Quirks" steht), oder alle Referenzen auf `architecture.md` umbiegen.
+**Moegliche Loesung:** CLAUDE.md Skill-Tabelle um die vier fehlenden Skills ergaenzen.
 
-### 4.2 ui-dev.md veraltet
+### 4.2 /commit-progress hat nur Bash-Tool, macht kein Review
 
-**Problem:** Der ui-dev Agent beschreibt Komponenten (`Overlay.tsx`, `Settings.tsx`, `Dictionary.tsx`, `StylePicker.tsx`), die entweder nicht existieren oder anders heissen (`FloatingBar.tsx`, `SettingsPanel.tsx`, etc.). Er hat keine Kenntnis von `MobileTextarea`, `VoiceNotesPanel`, `usePanels`, `useRecording`.
+**Problem:** Der `/commit-progress`-Skill staged und committet ohne zu pruefen ob Linter/Tests gruen sind. Tool-Liste: nur `Bash`. Er kann keine Dateien lesen, keine Patterns suchen, keinen Code-Review machen.
 
-**Auswirkung:** Wenn ui-dev beauftragt wird, orientiert er sich an einem falschen Datei-Modell. Er liest zwar tatsaechliche Dateien via Glob/Grep, aber seine interne Vorstellung ("Kern-Komponenten") stimmt nicht mit der Realitaet. Das fuehrt zu suboptimalen Entscheidungen ueber Komponenten-Grenzen.
+**Auswirkung:** Defekter Code kann committed werden. Im Soloprojekt kein kritisches Problem -- aber der Skill hat keine Defense gegen "vergessen zu testen".
 
-**Moegliche Loesung:** ui-dev.md Kern-Komponenten-Liste an den tatsaechlichen `src/`-Baum angleichen.
+**Moegliche Loesung:** Explizit in der Skill-Beschreibung dokumentieren: "User soll vor dem Aufruf selbst /run-tests und /lint-fix ausfuehren." Oder: `/commit-progress` ruft optional `/run-tests` vor dem Commit auf.
 
-### 4.3 android-platform.md beschreibt IME -- Projekt hat Bubble
+### 4.3 Kein rust-core Direkt-Session-Starter
 
-**Problem:** Der android-platform Agent-Prompt widmet ~60% seines Inhalts dem InputMethodService (IME/Keyboard-Ansatz). Das Projekt hat diesen Ansatz zugunsten der Floating Bubble verworfen (Entscheidung: 2026-03-08). Die IME-Code-Beispiele im Agent sind Dead Code in der Beschreibung.
+**Problem:** Fuer Android und Product-Strategist gibt es direkte Session-Starter (`scripts/android-platform`, `scripts/product-strategist`). Fuer Windows-spezifische Rust-Arbeit (Win32 Paste-Debug, Hotkey-Probleme, Audio-Pipeline-Tuning) gibt es nur den normalen Tech-Lead-Workflow. Der Tech Lead muss alles im Haupt-Kontextfenster halten.
 
-**Auswirkung:** Beim naechsten Android-Feature koennte der Agent irrtuemlicherweise einen IME-Ansatz vorschlagen, weil sein System-Prompt das als "das Herzstueck" bezeichnet. Das Risiko ist real bei komplexen Features (z.B. "Wie integrieren wir X in die Android-App?").
+**Auswirkung:** Windows-Rust-Debugging verbraucht Tech-Lead-Kontext, widerspricht dem "Kontext schuetzen"-Prinzip aus main-agent.md. Beim naechsten grossen Rust-Debugging (z.B. whisper.cpp Integration) wird das spaetestens spaerbar.
 
-**Moegliche Loesung:** android-platform.md auf Bubble-Architektur aktualisieren. IME-Abschnitt deutlich kuerzen oder als "evaluiert, verworfen" markieren.
+**Moegliche Loesung:** `scripts/rust-core` Starter analog zu `scripts/android-platform` erstellen.
 
-### 4.4 Prompt-Duplikation Rust/Kotlin ohne technische Absicherung
+### 4.4 License-Key-Briefing fehlt, obwohl erste Prioritaet
 
-**Problem:** LLM-Cleanup-Prompts existieren in `src-tauri/src/llm/mod.rs` (Rust) und `android/kotlin-src/com/dikta/voice/DiktaApi.kt` (Kotlin). Bei jeder Prompt-Aenderung muessen beide manuell synchron gehalten werden. Das ist als bekannter Trade-off in architecture.md dokumentiert -- aber ohne Absicherung.
+**Problem:** `project-status.md` listet das License-Key-System als erste Prioritaet ("Muss vor erstem Paid Release stehen"). Das Briefing (`briefings/plan-license-key.md`) existiert jedoch nicht. Die Planung fuer das kritischste naechste Feature wurde nicht gemacht.
 
-**Auswirkung:** In der letzten Session war "LLM Prompts dupliziert: Rust UND Kotlin -- bei Aenderungen BEIDE updaten!" bereits in MEMORY.md als wiederkehrende Falle. Das zeigt, dass dieser Fehler schon passiert ist.
+**Auswirkung:** In der naechsten Session muss die Planung on-the-fly stattfinden, ohne vorbereitetem Kontext. Das kostet Zeit und Kontext, die vermeidbar waerenwaeren.
 
-**Moegliche Loesung:** Entweder ein Skill `/sync-prompts` der beide Dateien vergleicht und Diff anzeigt, oder die Prompts in eine gemeinsame JSON-Datei auslagern, die beide Seiten lesen.
+**Moegliche Loesung:** `/plan-feature license key system --save` ausfuehren um Briefing zu erstellen. Oder: product-strategist direct session fuer Requirements, dann Tech Lead fuer technischen Plan.
 
-### 4.5 /build Skill ist zu simpel fuer die tatsaechliche Build-Komplexitaet
+### 4.5 product-strategist fehlt in CLAUDE.md Direkt-Modus-Beschreibung
 
-**Problem:** Der `/build`-Skill kennt nur `npm run tauri build`. Der tatsaechliche Build-Workflow ist:
-- Windows: PowerShell-Skript via WSL2 (`sync-and-build.ps1`), nicht direkt `tauri build`
-- Android: `scripts/android-build.sh` (kopiert Kotlin-Quellen, signiert, deployt nach Dropbox)
-- Direct `tauri android build` ohne das Script baut ohne die Kotlin-Quellen -- und das war ~8 fehlgeschlagene Debug-Versuche wert (laut MEMORY.md)
+**Problem:** CLAUDE.md listet in der Agenten-Tabelle `product-strategist` mit "delegiert + direkt" -- aber die Tabelle in main-agent.md (die der Tech Lead liest) hat dieselbe Abkuerzung. Kein Ort beschreibt explizit den Briefing-Pfad fuer product-strategist analog zu android-platform. android-platform.md hat einen expliziten Abschnitt "Interaktionsmodi" -- product-strategist.md hat diesen Abschnitt auch, aber die Integration in den Tech-Lead-Workflow ist nicht symmetrisch zur Android-Seite.
 
-**Auswirkung:** Wer `/build android` nutzt, laeuft geradewegs in den bekannten Kotlin-Quelle-fehlen-Bug. Der Skill ist nicht falsch -- er ist gefaehrlich einfach.
+**Auswirkung:** Geringes Risiko. Der Prozess funktioniert -- aber der Onboarding-Overhead ist etwas hoeher.
 
-**Moegliche Loesung:** `/build`-Skill auf die tatsaechlichen Build-Skripte umbiegen. `android` -> `scripts/android-build.sh`, `windows` -> `scripts/sync-and-build.ps1`.
+### 4.6 /release Skill kann nicht fehlschlagen ohne kompletten Abbruch zu triggern
 
-### 4.6 /commit-progress macht kein Review vor dem Commit
+**Problem:** Der `/release`-Skill baut Windows UND Android sequentiell. Wenn Windows erfolgreich ist und Android fehlschlaegt (oder umgekehrt), gibt es keinen dokumentierten Recovery-Pfad. Der Skill sagt "Falls ein Build fehlschlaegt: Abbrechen" -- aber der Windows-Build hat dann bereits Artefakte erzeugt und die Version wurde bereits gebumpt.
 
-**Problem:** Der `/commit-progress`-Skill staged und committet ohne zu pruefen ob Linter/Tests gruen sind. Er hat nur `Bash`-Tool-Zugriff (kein Read, kein Grep), kann also auch keine Dateien auf offensichtliche Fehler pruefen.
+**Auswirkung:** Partieller Release-Zustand: Version gebumpt, ein Build fertig, kein GitHub Release. Recovery ist manuell und undokumentiert.
 
-**Auswirkung:** Defekter Code kann committed werden. In der Praxis bei einem Soloprojekt mit regelmaessigen Commits kein kritisches Problem -- aber es widerspricht dem Anspruch aus CLAUDE.md ("Jedes neue Modul bekommt Tests. Kein Modul ohne mindestens einen Basis-Test.").
+**Moegliche Loesung:** Im Skill dokumentieren: "Wenn ein Build fehlschlaegt, versionsbump revertern und Status melden." Oder: Beide Builds vor dem Version-Bump ausfuehren.
 
-**Moegliche Loesung:** `/commit-progress` koennte optional `/run-tests` und `/lint-fix` vorschalten. Oder: Explizit dokumentieren dass der User selbst testen soll bevor er `/commit-progress` ausfuehrt.
+### 4.7 Keine strukturierte Kostentransparenz fuer API-Nutzung
 
-### 4.7 Kein Session-Briefing-Mechanismus fuer Windows-Arbeit
+**Problem:** Das Projekt nutzt bezahlte APIs (Groq, DeepSeek). Usage wird in SQLite History gespeichert -- aber es gibt keinen Tauri-Command, Skill oder Agent der Kosten-Estimation liefert.
 
-**Problem:** Fuer Android existiert ein ausgereifter Direkt-Session-Mechanismus: `scripts/android-platform` starter, Briefings in `briefings/`, Hin-und-Her-Dialog dokumentiert.
+**Auswirkung:** Kein Ueberschreiten eines Budget-Limits merkbar ausser via API-Dashboard. Fuer ein Produkt das in Richtung kommerzieller Nutzung geht (Open Core) ist das relevant: Wenn Nutzer auf eigene API-Keys angewiesen sind, sollten sie wissen was sie ausgeben.
 
-Fuer Windows-spezifische iterative Arbeit (z.B. Win32 Paste-Debug, Hotkey-Probleme) gibt es nur den normalen Tech-Lead-Workflow -- kein direkter rust-core-Starter, kein Briefing-Pfad. Der Tech Lead muss alles im Haupt-Kontextfenster halten.
-
-**Auswirkung:** Windows-Debugging verbraucht Tech-Lead-Kontextfenster. Das widerspricht dem "Kontext schuetzen"-Prinzip aus main-agent.md.
-
-**Moegliche Loesung:** `scripts/dikta-tech-lead` (existiert bereits, neu in diesem Commit-Stand) koennte ein Aequivalent zu `scripts/android-platform` sein. Ein `scripts/rust-core` Starter fuer direkte Rust-Sessions wuerde den Luecke schliessen.
-
-### 4.8 Keine strukturierte Kostentransparenz
-
-**Problem:** Das Projekt nutzt bezahlte APIs (Groq, DeepSeek). Die Nutzung wird in SQLite History gespeichert (Filler-Analysis, Stats) -- aber ob ein Dashboard oder Report fuer API-Kosten existiert, ist unklar.
-
-**Auswirkung:** Kein Ueberschreiten eines Budget-Limits merkbar, ausser man schaut manuell in die API-Dashboards. Kein Skill, kein Agent, kein Command ist dafuer zustaendig.
-
-**Moegliche Loesung:** Entweder Tauri-Command `get_usage_stats` erweitern um Token-Kosten-Estimation, oder Hinweis dass Kostenkontrolle Sache des Users via API-Dashboard ist.
+**Moegliche Loesung:** Token-Count und Kosten-Estimation in `get_usage_stats` Command ergaenzen. Niedrige Prioritaet bis erstes Paid Release.
 
 ---
 
@@ -170,27 +155,27 @@ Fuer Windows-spezifische iterative Arbeit (z.B. Win32 Paste-Debug, Hotkey-Proble
 
 ### 5.1 `/build` und `/debug-error` ueberlappen bei Build-Fehlern
 
-Wenn `/build` fehlschlaegt, liefert es bereits eine strukturierte Fehleranalyse ("Wahrscheinliche Ursache"). `/debug-error` macht dasselbe gruendlicher. In der Praxis: Wer `/build` nutzt und einen Fehler bekommt, ruft danach `/debug-error` mit demselben Error-Output auf. Das ist ein manueller Two-Step-Workflow.
+`/build` gibt bei Fehler bereits strukturierte Analyse mit "Wahrscheinliche Ursache" aus. `/debug-error` macht dasselbe gruendlicher. In der Praxis: Wer `/build` nutzt und einen Fehler bekommt, ruft danach haeufig `/debug-error` mit demselben Error-Output auf. Das ist ein manueller Two-Step.
 
-**Vorschlag:** `/build` koennte bei Fehler automatisch den Error-Output an `/debug-error` weitergeben (wenn das technisch moeglich ist). Oder `/build` Fehlermeldungen sind so detailliert, dass `/debug-error` nicht mehr noetig ist.
+**Status:** Bekannt, akzeptiert. Die Trennung (diagnostizieren vs. implementieren) ist sinnvoll. Overhead ist gering.
 
-### 5.2 Tech Lead und android-platform kennen beide die Android-Architektur
+### 5.2 `/scaffold` und Agent-Direkt-Implementation
 
-Der Tech Lead hat android-relevante Architektur-Entscheidungen in main-agent.md (Android IME-Verweis, Direkt-Session-Empfehlung). Der android-platform Agent hat dasselbe Wissen aus seinen eigenen Dateien. Wenn Andy direkt im android-platform Starter arbeitet, hat der Agent vollstaendigen Kontext ohne den Tech Lead. Das ist wie gedacht -- aber der Tech Lead behaelt veraltetes Android-Wissen in seinem System-Prompt.
+`/scaffold` erzeugt leere Templates. Ein direkt beauftragter Agent wuerde das Template als ersten Schritt selbst anlegen. `/scaffold` hat Wert wenn: standardisiertes Template-Format erzwungen werden soll, oder Placeholder ohne Implementierungsauftrag gebraucht wird.
 
-**Vorschlag:** main-agent.md koennte android-platform-spezifische Implementierungsdetails rausloesen und nur auf die Agent-Datei verweisen.
+**Status:** Selten genutzter Skill. Kein Quick-Win bei der Bereinigung -- der Overhead ist gering. Behalten als optionales Tool.
 
-### 5.3 `/scaffold` und Agent-Direkt-Implementation ueberlappen
+### 5.3 CLAUDE.md Skill-Tabelle vs. main-agent.md Skill-Tabelle
 
-`/scaffold` erzeugt ein leeres Template. Der zustaendige Agent wuerde direkt mit der Implementierung beginnen, wenn er beauftragt wird. In der Praxis: Der Tech Lead koennte direkt den Agent beauftragen mit "Erstelle Modul X und implementiere Y", und der Agent legt das Template selbst an.
+Beide Dateien haben eine Skill-Tabelle. `main-agent.md` hat die vollstaendige mit "Wann nutzen"-Spalte. `CLAUDE.md` hat eine gekuerzte Version, die jetzt auch veraltet ist (4 Skills fehlen). Bei jeder Skill-Aenderung muss man in zwei Dateien aktualisieren.
 
-`/scaffold` hat also nur Wert wenn: (a) das Template-Format wirklich standardisiert ist und sich lohnt zu forcen, oder (b) wenn ohne Implementierungsauftrag ein Placeholder gebraucht wird. Fuer ein kleines Team mit einem Developer-per-Layer ist `/scaffold` wahrscheinlich selten genutztes Overhead.
+**Vorschlag:** CLAUDE.md nur noch auf main-agent.md verweisen fuer die vollstaendige Skill-Liste. Oder: CLAUDE.md Tabelle automatisch generieren statt manuell pflegen.
 
-### 5.4 `/plan-feature` gibt Plan aus, schreibt ihn nicht
+### 5.4 Drei Dateien beschreiben das Team, nicht eine
 
-Der Plan wird ausgegeben ("nicht in Datei schreiben -- der Main-Agent entscheidet"), aber wenn der Tech Lead den Plan gut findet, gibt es keinen einfachen Weg ihn zu persistieren. Er landet im Chat und verschwindet. Wenn in der naechsten Session danach gefragt wird, ist er weg.
+Team-Struktur steht in: `CLAUDE.md` (Tabellen), `main-agent.md` (ausfuehrliche Orchestrierungslogik), `agents/*.md` (individuelle Agent-Prompts). Ein Aussenstehender muss alle drei lesen um das Team zu verstehen.
 
-**Vorschlag:** `/plan-feature` koennte optional in `briefings/plan-[feature].md` schreiben, mit explizitem Flag. Oder der Tech Lead persistiert ihn manuell -- was aber selten passiert.
+**Status:** Akzeptierbar. Die drei Schichten haben verschiedene Zwecke (User-Ueberblick, Tech-Lead-Instruktion, Agent-Instruktion). Keine Redundanz eliminieren -- nur konsistent halten.
 
 ---
 
@@ -198,47 +183,44 @@ Der Plan wird ausgegeben ("nicht in Datei schreiben -- der Main-Agent entscheide
 
 ### Sofort umsetzbar (Quick Wins)
 
-1. **`knowledge/platform-notes.md` erstellen** -- Entweder neudatei mit Android-Quirks (aus architecture.md "Plattform-Quirks"-Abschnitt hierher verschieben), oder alle drei Referenzen auf architecture.md umbiegen. Beseitigt tote Referenz in drei Dateien.
+1. **CLAUDE.md Skill-Tabelle um 4 fehlende Skills ergaenzen** -- `/sync-prompts`, `/release`, `/track`, `/reflect` fehlen in der Tabelle. 5 Minuten Arbeit, behebt eine echte Informations-Luecke.
 
-2. **`ui-dev.md` Kern-Komponenten-Liste aktualisieren** -- Tatysaechliche Dateien aus `src/` listen: FloatingBar, SettingsPanel, AdvancedSettingsPanel, MobileTextarea, VoiceNotesPanel, hooks/. Dauert 5 Minuten, spart dem Agent falsche Orientierung.
+2. **License-Key-Briefing erstellen** -- `/plan-feature license key system --save` ausfuehren oder tech lead direkt beauftragen. Das kritischste naechste Feature hat kein Briefing.
 
-3. **`android-platform.md` IME-Abschnitt markieren** -- Den IME-Abschnitt mit einem Kommentar versehen: "EVALUIERT, VERWORFEN (2026-03-08). Aktueller Ansatz: Floating Bubble via DiktaOverlayService." Kein Loeschen, nur Kontext geben.
-
-4. **`/build`-Skill auf tatsaechliche Skripte umbiegen** -- `android` -> `scripts/android-build.sh` statt direktem `tauri android build`. `windows` -> `scripts/sync-and-build.ps1`. Verhindert den bekannten Kotlin-fehlen-Bug.
-
-5. **Referenz auf `platform-notes.md` in Agents durch Existierendes ersetzen** -- In rust-core.md und android-platform.md: Entweder auf `architecture.md` zeigen (wo Plattform-Quirks jetzt stehen) oder auf die neu erstellte platform-notes.md.
+3. **`/commit-progress` Nutzungs-Hinweis ergaenzen** -- Explizit in der Skill-Beschreibung: "Soll erst nach /run-tests und /lint-fix aufgerufen werden." Keine technische Aenderung, nur dokumentarische Klarheit.
 
 ### Mittelfristig
 
-6. **`/sync-prompts` Skill erstellen** -- Skill, der LLM-Prompt-Inhalte aus `src-tauri/src/llm/mod.rs` und `android/kotlin-src/com/dikta/voice/DiktaApi.kt` vergleicht und Diff ausgibt. Keine Automatisierung -- nur Sichtbarkeit. Verhindert stillen Drift.
+4. **`scripts/rust-core` Starter erstellen** -- Analoges Skript zu `scripts/android-platform`. Wichtig vor der whisper.cpp Integration (Offline-Fallback) -- das wird iteratives Rust-Debugging erfordern. Ohne direkten Starter landet alles im Tech-Lead-Kontext.
 
-7. **`/plan-feature` persistiert Output** -- Plan in `briefings/plan-[feature-slug].md` schreiben (optional, z.B. via `--save` Argument). Macht geplante aber noch nicht gestartete Features sichtbar.
+5. **`/release` Recovery-Pfad dokumentieren** -- Was tun wenn ein Build im mehrstufigen Release-Prozess fehlschlaegt? Versionsbump revertern? Partial-Release als Issue? Konkrete Anleitung im Skill-Prompt ergaenzen.
 
-8. **`scripts/rust-core` Starter** -- Analog zu `scripts/android-platform`: Direkte Session mit rust-core Agent fuer iteratives Rust-Debugging. Entlastet den Tech-Lead-Kontext bei Windows-Debugging.
-
-9. **Backlog in project-status.md priorisieren** -- Aktueller Backlog: 6 Items, alle gleichwertig. Eine einfache Priorisierung (H/M/L oder Reihenfolge) wuerde klarstellen was in der naechsten Session angegangen werden soll.
+6. **Backlog in project-status.md mit Abhaengigkeiten versehen** -- VAD und whisper.cpp sind technische Abhaengigkeiten voneinander (whisper.cpp sollte vor VAD kommen). Notion/Todoist Integrationen sind erst relevant nach License-Key-System. Eine simple Reihenfolge-Angabe spart Diskussionszeit.
 
 ---
 
 ## 7. Bewusst beibehalten
 
 **Drei-Quellen-Wissenshierarchie (`project-status.md` / `knowledge/` / `CLAUDE.md`+Agents)**
-Sinnvoll. Die Trennung zwischen "kurzlebiger Projektstatus", "stabiles gesammeltes Wissen" und "Teamstruktur" funktioniert gut. Keine Zusammenfuehrung empfohlen.
+Sinnvoll. Die Trennung zwischen kurzlebigem Projektstatus, stabilem Wissen und Teamstruktur funktioniert gut. Keine Zusammenfuehrung empfohlen.
 
 **android-platform Direkt-Session-Modus mit Briefing-System**
-Sinnvoll. Android-Entwicklung ist iterativ und erfordert echten Dialog. Der Briefing-Pfad (`briefings/android-platform-*.md`) und der Script-Starter funktionieren. Die Grundidee "Tech Lead schreibt Briefing, Spezialist arbeitet es durch" ist solid.
+Sinnvoll. Android-Entwicklung erfordert echten iterativen Dialog. Der Briefing-Pfad (`briefings/android-platform-*.md`) und der Script-Starter sind das richtige Pattern. Es sollte auf rust-core ausgedehnt werden (Quick Win 4).
 
 **Skills als Haiku (operationell) vs. Agents als Sonnet (urteilend)**
-Sinnvoll. Die Modell-Differenzierung (Haiku fuer build/lint/test/scaffold, Sonnet fuer research/plan/debug) ist kosteneffizient. Haiku-Skills fuer deterministische Tasks, Sonnet-Agents fuer Tasks die Urteilsvermoegen brauchen.
+Sinnvoll. Die Modell-Differenzierung (Haiku fuer build/lint/test/scaffold, Sonnet fuer research/plan/debug/agents) ist kosteneffizient. Haiku-Skills fuer deterministische Tasks, Sonnet fuer Urteilsvermoegen.
 
 **`/debug-error` fixt nicht selbst, schlaegt nur Fix vor**
-Sinnvoll. Analysieren und Implementieren trennen schuetzt vor voreiligen Fixes. Der Tech Lead entscheidet nach der Analyse, welcher Agent den Fix umsetzt. Das ist ein korrektes Kontrollprinzip.
+Sinnvoll. Analysieren und Implementieren trennen schuetzt vor voreiligen Fixes. Der Tech Lead entscheidet nach der Analyse.
 
-**Konventionelle Commits via `/commit-progress`**
-Sinnvoll. Kleine, haeufige Commits mit klarer Prafix-Konvention (feat/fix/refactor/docs/chore). Ergibt lesbare History ohne grossen Overhead.
+**`/sync-prompts` als reines Diagnose-Tool**
+Sinnvoll. Prompt-Sync automatisch zu machen (z.B. via Pre-Commit-Hook) waere fragil. Sichtbarmachen und manuell entscheiden ist das richtige Pattern fuer Prompt-Engineering.
 
-**Keine Redux / kein komplexes State-Management im Frontend**
-Sinnvoll fuer die aktuelle Projektgroesse. React Context + useReducer ist ausreichend. Das Hinzufuegen von Zustand oder Redux wuerde nichts loesen was jetzt ein Problem ist.
+**android-platform.md IME als "EVALUIERT, VERWORFEN" markiert**
+Gut geloest. Der Abschnitt bleibt als Entscheidungsdokumentation (warum nicht), ist aber klar als verworfen markiert.
+
+**Native Kotlin DiktaApi statt Tauri-Bridge**
+Richtige Entscheidung beibehalten. Weniger Latenz, direkter HTTP-Stack. Trade-off (Prompt-Duplikation) ist akzeptiert und durch `/sync-prompts` adressiert.
 
 ---
 
@@ -246,42 +228,51 @@ Sinnvoll fuer die aktuelle Projektgroesse. React Context + useReducer ist ausrei
 
 ```
 dikta/
-  CLAUDE.md                          -- Projekt-Ueberblick, Regeln, Team-Tabelle [AKTUELL]
-  main-agent.md                      -- Tech-Lead System-Prompt [AKTUELL]
-  project-status.md                  -- Projektstatus, Backlog, Session-Changelog [AKTUELL]
+  CLAUDE.md                          -- Projekt-Ueberblick, Regeln, Team-Tabelle [SKILL-TABELLE UNVOLLSTAENDIG -- 4 Skills fehlen]
+  main-agent.md                      -- Tech-Lead System-Prompt [VOLLSTAENDIG, aktuell]
+  project-status.md                  -- Projektstatus, Backlog, Session-Changelog [AKTUELL, v0.4.1]
   .claude/
-    settings.json                    -- Tool-Permissions (alle erlaubt)
+    settings.json                    -- Tool-Permissions
     settings.local.json              -- Lokale Overrides
+    team-reflection.md               -- Diese Datei [AKTUELL, 2026-03-09]
     agents/
-      rust-core.md                   -- Rust-Backend-Agent [AKTUELL, korrekt]
-      ui-dev.md                      -- Frontend-Agent [VERALTET -- Komponenten-Namen falsch]
-      android-platform.md            -- Android-Agent [VERALTET -- IME-Fokus, Bubble ignoriert]
+      rust-core.md                   -- Rust-Backend-Agent [AKTUELL]
+      ui-dev.md                      -- Frontend-Agent [AKTUELL -- Komponenten-Liste korrigiert]
+      android-platform.md            -- Android-Agent [AKTUELL -- IME als verworfen markiert]
+      product-strategist.md          -- Strategie-Agent [AKTUELL]
     skills/
       scaffold/SKILL.md              -- Modul-Templates [OK, selten genutzt]
-      build-app/SKILL.md             -- Build-Wrapper [GEFAEHRLICH -- nutzt nicht android-build.sh]
+      build-app/SKILL.md             -- Build-Wrapper [KORRIGIERT -- nutzt jetzt android-build.sh]
       run-tests/SKILL.md             -- Test-Runner [OK]
-      research-api/SKILL.md          -- API-Recherche + Knowledge-Schreiber [OK, gut]
+      research-api/SKILL.md          -- API-Recherche + Knowledge-Schreiber [OK]
       lint-fix/SKILL.md              -- Linter/Formatter [OK]
-      plan-feature/SKILL.md          -- Feature-Planer (Output nicht persistiert) [OK, Luecke]
-      commit-progress/SKILL.md       -- Git-Commit [OK, kein Review vor Commit]
+      plan-feature/SKILL.md          -- Feature-Planer, --save persistiert in briefings/ [OK]
+      commit-progress/SKILL.md       -- Git-Commit [LUECKE: kein Pre-Commit-Check]
       debug-error/SKILL.md           -- Fehler-Analyse [OK]
-      reflect/SKILL.md               -- Diese Analyse [NEU]
-    worktrees/
-      agent-ab3b1285/                -- Git-Worktree fuer Agent-Session (existiert noch)
+      sync-prompts/SKILL.md          -- Prompt-Drift-Detektion [OK, fehlt in CLAUDE.md Tabelle]
+      release/SKILL.md               -- Version + Build + GitHub Release [OK, fehlt in CLAUDE.md Tabelle]
+      track/SKILL.md                 -- Status-Update [OK, fehlt in CLAUDE.md Tabelle]
+      reflect/SKILL.md               -- Team-Reflection [OK, fehlt in CLAUDE.md Tabelle]
+    worktrees/                       -- Git-Worktrees fuer Agent-Sessions
   scripts/
     android-build.sh                 -- Kotlin-Copy + Build + Sign + Dropbox-Deploy [KRITISCH]
     android-platform                 -- Direkter Android-Session-Starter [OK]
-    dikta-tech-lead                  -- Direkter Tech-Lead-Starter [NEU]
+    dikta-tech-lead                  -- Direkter Tech-Lead-Starter [OK]
+    product-strategist               -- Direkter Strategie-Session-Starter [OK]
     sync-and-build.ps1               -- Windows-Build via PowerShell [OK]
+    [FEHLT: rust-core]               -- Direkter Rust-Session-Starter [LUECKE]
   briefings/
-    android-platform-research.md    -- Tauri-Android-Setup-Recherche (2026-03-07) [EXISTIERT]
-    .gitkeep
+    android-platform-research.md    -- Tauri-Android-Setup-Recherche [EXISTIERT]
+    plan-signing-auto-update.md      -- Signing + Auto-Update Plan [EXISTIERT, ERLEDIGT]
+    plan-offline-whisper.md          -- Offline Whisper Plan [EXISTIERT, naechste Session]
+    plan-bubble-appearance.md        -- Bubble Presets Plan [EXISTIERT]
+    [FEHLT: plan-license-key.md]     -- License-Key-System Plan [LUECKE -- erste Prioritaet]
   knowledge/
-    architecture.md                  -- Tech-Entscheidungen, Plattform-Split [AKTUELL, gelegentlich aufgeblaehlt]
+    architecture.md                  -- Tech-Entscheidungen, Plattform-Split [AKTUELL]
     api-providers.md                 -- Groq + DeepSeek API-Details [AKTUELL]
     competitors.md                   -- Konkurrenz-Analyse [EXISTIERT]
+    product-strategy.md              -- Positionierung, Pricing, Differenzierung [EXISTIERT]
     wispr-flow-android-ux.md         -- Wispr-Flow-UX-Recherche [EXISTIERT]
-    platform-notes.md                -- [FEHLT -- tote Referenz in 3 Dateien]
   src-tauri/                         -- Rust-Backend [AKTUELL]
   src/                               -- React-Frontend [AKTUELL]
   android/kotlin-src/                -- Kotlin-Quellen [AKTUELL, via android-build.sh deployt]

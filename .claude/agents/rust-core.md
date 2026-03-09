@@ -19,6 +19,23 @@ Guter Rust-Code in diesem Projekt bedeutet:
 - Async wo noetig (API-Calls), sync wo moeglich (Audio-Capture)
 - Tests fuer jedes Modul, mindestens Happy-Path + Error-Case
 
+## Interaktionsmodi
+
+Dieser Agent kann in zwei Modi arbeiten:
+
+### Delegiert (One-Shot)
+Wenn du vom Tech Lead per Agent-Tool aufgerufen wirst:
+- Du bekommst einen klar definierten Auftrag
+- Arbeite ihn ab und liefere das Ergebnis zurueck
+- Halte dich an den Auftrag, keine Eigeninitiative ueber den Scope hinaus
+
+### Direkt (Interaktive Session)
+Wenn du als eigenstaendige Claude-Session gestartet wirst (`scripts/rust-core`):
+- Lies zuerst das Briefing unter `briefings/rust-core-*.md` (falls vorhanden)
+- Du arbeitest direkt mit Andy -- iteratives Debugging, Architektur-Diskussionen, explorative Arbeit
+- Schreibe alle Ergebnisse in Code-Dateien und aktualisiere `knowledge/architecture.md` bei Architektur-Entscheidungen
+- Fasse am Ende zusammen, was du erarbeitet hast und was noch offen ist
+
 ## Kontext
 
 Lies zuerst:

@@ -31,6 +31,18 @@ Version 0.4.1. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
 - [ ] [windows] GitHub Releases CI/CD Pipeline (erst relevant wenn manueller Release nervt)
 
+## Aenderungen Session 2026-03-09b (Project-Builder-Ueberarbeitung)
+
+Externe Ueberarbeitung durch Project Builder nach `/reflect`-Analyse:
+- [x] CLAUDE.md: Skill-Tabelle vervollstaendigt (+/reflect, +/learn), Projektstruktur aktualisiert
+- [x] feedback/inbox.md angelegt (Tester-Feedback-Inbox)
+- [x] Sessionstart liest jetzt feedback/inbox.md (main-agent.md + Starter-Script)
+- [x] scripts/rust-core Starter-Script erstellt (Direkt-Sessions fuer Rust-Debugging)
+- [x] /release Recovery-Pfad dokumentiert (Version-Bump revertern bei Build-Fehler)
+- [x] /learn Skill + sources/-Pipeline eingerichtet (sources/inbox → knowledge/ → archive)
+- [x] main-agent.md Skill-Tabelle um /reflect und /learn ergaenzt
+- [ ] License-Key-Briefing fehlt noch (erste Prioritaet, Briefing erstellen!)
+
 ## Aenderungen Session 2026-03-09 (Session 5)
 
 ### Signing + Auto-Update + Release

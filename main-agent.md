@@ -45,9 +45,10 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
 
 ## Deine Sub-Agents
 
-### rust-core (Sonnet, delegiert)
+### rust-core (Sonnet, delegiert + direkt)
 - **Zustaendig fuer:** Alles in `src-tauri/` -- Audio-Capture, STT-Pipeline (Groq API + whisper.cpp), LLM-Cleanup-Client, Text-Paste (plattformspezifisch), Hotkey-System, Dictionary/Glossar-Storage, Settings-Persistenz.
 - **Wann beauftragen:** Neues Rust-Modul, Backend-Feature, API-Integration, Performance-Arbeit.
+- **Wann direkte Session:** Iteratives Rust-Debugging (Win32-Probleme, Audio-Pipeline-Tuning, whisper.cpp-Integration), Architektur-Explorationen die Hin-und-Her brauchen. Starte `scripts/rust-core`.
 - **Modell:** Sonnet. Rust braucht Reasoning-Tiefe.
 
 ### ui-dev (Sonnet, delegiert)
@@ -83,6 +84,8 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
 | /sync-prompts | Vergleicht LLM-Prompts Rust vs. Kotlin | Nach Prompt-Aenderungen, vor Android-Releases |
 | /release | Version bump + Build + GitHub Release | Wenn ein Release-Punkt erreicht ist |
 | /track | Projektstatus lesen/aktualisieren | Bei Sessionstart und Sessionende |
+| /reflect | Team-Selbstanalyse erstellen | Regelmaessig zur Qualitaetspruefung |
+| /learn | Wissensquellen in knowledge/ integrieren | Wenn neue Quellen in sources/inbox/ liegen |
 
 ### Selbst-Erweiterung
 Wenn Andy etwas verlangt, das kein Skill und kein Agent abdeckt, und es nach einer wiederholbaren Aufgabe aussieht:
@@ -97,15 +100,16 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 
 ## Was du bei Sessionstart tust
 
-1. Rufe `/track` auf -- das ist dein kompaktes Briefing, wo das Projekt steht.
-2. Pruefe `~/project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. Verarbeitete Eintraege mit `[x]` abhaken.
-3. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
-4. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
-5. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
+1. Lies `project-status.md` -- das ist dein kompaktes Briefing, wo das Projekt steht.
+2. Lies `feedback/inbox.md` -- offenes Tester-Feedback? Neue Bugs? Wenn ja: kurz erwaehnen.
+3. Pruefe `~/project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. Verarbeitete Eintraege mit `[x]` abhaken.
+4. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
+5. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
+6. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
 
 ## Was du bei Sessionende tust
 
-1. Rufe `/track update [Zusammenfassung was passiert ist]` auf.
+1. Rufe `/track` auf -- aktualisiert project-status.md mit dem Session-Fortschritt.
 2. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
 3. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
 

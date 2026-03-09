@@ -55,9 +55,17 @@ dikta/
       release/SKILL.md         -- Version bump + Build + GitHub Release
       track/SKILL.md           -- Projektstatus lesen/aktualisieren
   scripts/
+    dikta-tech-lead            -- Starter fuer den Tech Lead (Main-Agent)
     android-platform           -- Starter fuer direkte Android-Sessions
     product-strategist         -- Starter fuer direkte Strategie-Sessions
+    rust-core                  -- Starter fuer direkte Rust-Backend-Sessions
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
+  feedback/
+    inbox.md                   -- Tester-Feedback (Bugs, Feature-Wuensche, UX-Probleme)
+  sources/
+    inbox/                     -- Neue Wissensquellen hier ablegen
+    archive/                   -- Verarbeitete Quellen
+    log.md                     -- Integrationslog
   knowledge/
     architecture.md            -- Tech-Entscheidungen, Patterns, Modulstruktur
     api-providers.md           -- Groq + DeepSeek API-Details
@@ -72,14 +80,16 @@ dikta/
 
 Zentrale Dateien:
 - `project-status.md` -- Projektstatus (via `/track` Skill bei Sessionstart gelesen, bei Sessionende aktualisiert)
+- `feedback/inbox.md` -- Tester-Feedback (bei jedem Sessionstart pruefen)
 - `briefings/` -- Briefing-Dokumente fuer direkte Agent-Sessions
 - `knowledge/` -- Gesammeltes Wissen ueber APIs, Plattform-Quirks, Architektur
+- `sources/` -- Wissensquellen-Pipeline (inbox → verarbeiten → archive)
 
 ## Agenten
 
 | Agent | Aufgabe | Modell | Modus |
 |-------|---------|--------|-------|
-| rust-core | Rust-Backend: Audio, STT, LLM-Client, Paste, Hotkey, Dictionary | sonnet | delegiert |
+| rust-core | Rust-Backend: Audio, STT, LLM-Client, Paste, Hotkey, Dictionary | sonnet | delegiert + direkt |
 | ui-dev | React-Frontend: Overlay, Settings, Dictionary-UI, Styles | sonnet | delegiert |
 | android-platform | Android: Floating Bubble, AccessibilityService, Kotlin-native Audio/API, Permissions | sonnet | delegiert + direkt |
 | product-strategist | Positionierung, Monetarisierung, Roadmap-Priorisierung (Business-Sicht), Wettbewerbs-Strategie | sonnet | delegiert + direkt |
@@ -98,7 +108,9 @@ Zentrale Dateien:
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
 | /release | Version bump + Build + GitHub Release erstellen | fork (haiku) |
-| /track | Projektstatus lesen oder aktualisieren | fork (haiku) |
+| /track | Aktualisiert project-status.md mit Session-Fortschritt | inline |
+| /reflect | Team-Selbstanalyse erstellen | fork (sonnet) |
+| /learn | Neue Wissensquellen in knowledge/ integrieren | fork (sonnet) |
 
 ## Regeln
 

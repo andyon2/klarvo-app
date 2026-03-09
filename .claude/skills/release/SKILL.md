@@ -57,7 +57,11 @@ Android:
 cd /home/andyon2/dikta && bash scripts/android-build.sh 2>&1
 ```
 
-Falls ein Build fehlschlaegt: Abbrechen und strukturierten Fehler melden. NICHT den Release erstellen.
+Falls ein Build fehlschlaegt:
+1. **Version-Bump revertern:** `git checkout -- src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json`
+2. Strukturierten Fehler melden (welcher Build, welcher Fehler, wahrscheinliche Ursache)
+3. NICHT den Release erstellen, NICHT committen
+4. Wenn nur EIN Build fehlschlaegt (z.B. Android OK, Windows nicht): Trotzdem komplett abbrechen. Kein partieller Release.
 
 ### 5. Updater-Artefakte pruefen und latest.json generieren
 
