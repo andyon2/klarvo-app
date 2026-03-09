@@ -59,7 +59,34 @@ cd /home/andyon2/dikta && bash scripts/android-build.sh 2>&1
 
 Falls ein Build fehlschlaegt: Abbrechen und strukturierten Fehler melden. NICHT den Release erstellen.
 
-### 5. Git Commit + Push
+### 5. Updater-Artefakte pruefen und latest.json generieren
+
+Nach dem Windows-Build existieren diese Dateien (durch `createUpdaterArtifacts: true` + Signing Key):
+- NSIS Installer: `/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe`
+- Signatur: `/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe.sig`
+
+Lies den Inhalt der `.sig`-Datei (das ist die Signatur als String, base64-kodiert).
+
+Erstelle `/tmp/latest.json` mit diesem Inhalt:
+```json
+{
+  "version": "X.Y.Z",
+  "notes": "Release vX.Y.Z",
+  "pub_date": "<aktuelles ISO-8601 Datum, z.B. 2026-03-09T12:00:00Z>",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<Inhalt der .sig-Datei>",
+      "url": "https://github.com/andyon2/dikta/releases/download/vX.Y.Z/Dikta_X.Y.Z_x64-setup.exe"
+    }
+  }
+}
+```
+
+Nutze `date -u +%Y-%m-%dT%H:%M:%SZ` fuer das Datum.
+
+Falls die `.sig` Datei NICHT existiert: Warnung ausgeben. Der Build hat vermutlich den Signing Key nicht gefunden. Trotzdem fortfahren, aber in der Ergebnis-Meldung darauf hinweisen.
+
+### 6. Git Commit + Push
 
 ```bash
 cd /home/andyon2/dikta
@@ -68,17 +95,15 @@ git commit -m "chore: bump version to X.Y.Z"
 git push origin master
 ```
 
-### 6. GitHub Release erstellen
+### 7. GitHub Release erstellen
 
-Finde die Build-Artefakte:
-- Windows NSIS: `/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe`
-- Android APK: `/mnt/d/Dropbox/App Development/dikta/Dikta.apk`
-
-Pruefe dass beide Dateien existieren und eine plausible Groesse haben (>1MB).
+Pruefe dass alle Artefakte existieren und eine plausible Groesse haben (>1MB fuer Installer/APK).
 
 ```bash
 gh release create vX.Y.Z \
   "/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe" \
+  "/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe.sig#Dikta_X.Y.Z_x64-setup.exe.sig" \
+  "/tmp/latest.json" \
   "/mnt/d/Dropbox/App Development/dikta/Dikta.apk#Dikta-vX.Y.Z.apk" \
   --repo andyon2/dikta \
   --title "vX.Y.Z" \
@@ -87,15 +112,18 @@ gh release create vX.Y.Z \
 
 HINWEIS: Die Release-Notes sind bewusst minimal. Der Main-Agent oder Andy kann sie nachtraeglich ueber die GitHub-Webseite oder `gh release edit` ergaenzen.
 
-### 7. Ergebnis melden
+### 8. Ergebnis melden
 
 ```
 RELEASE ERSTELLT: vX.Y.Z
 
 Version: X.Y.Z (vorher: A.B.C)
-Windows: Dikta_X.Y.Z_x64-setup.exe ([Groesse])
+Windows Installer: Dikta_X.Y.Z_x64-setup.exe ([Groesse])
+Signatur: Dikta_X.Y.Z_x64-setup.exe.sig
+Updater Manifest: latest.json (signiert: ja/nein)
 Android: Dikta-vX.Y.Z.apk ([Groesse])
 Release: https://github.com/andyon2/dikta/releases/tag/vX.Y.Z
 
+Auto-Update: Nutzer mit v0.4.0+ bekommen Update-Benachrichtigung in den Settings.
 Naechster Schritt: Release-Notes ergaenzen (gh release edit vX.Y.Z --notes "...")
 ```

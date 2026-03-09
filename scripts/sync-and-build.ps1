@@ -16,6 +16,26 @@ Write-Host "Installing npm dependencies..." -ForegroundColor Cyan
 Set-Location $dst
 npm install
 
+# Load .env for API keys etc (Tauri dotenvy also picks these up from synced .env)
+if (Test-Path "$dst\.env") {
+    Get-Content "$dst\.env" | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+?)\s*=\s*(.*?)\s*$') {
+            [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+        }
+    }
+    Write-Host "Loaded .env" -ForegroundColor Yellow
+}
+
+# Signing key: read directly from WSL key file to avoid encoding issues with .env
+$wslKeyFile = "\\wsl$\Ubuntu\home\andyon2\.tauri\dikta.key"
+if (Test-Path $wslKeyFile) {
+    $keyContent = (Get-Content $wslKeyFile -Raw).Trim()
+    [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", $keyContent, "Process")
+    Write-Host "Loaded signing key from $wslKeyFile" -ForegroundColor Yellow
+} else {
+    Write-Host "WARNING: Signing key not found at $wslKeyFile" -ForegroundColor Red
+}
+
 Write-Host "Building Dikta..." -ForegroundColor Cyan
 npx tauri build
 

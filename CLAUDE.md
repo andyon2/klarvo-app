@@ -98,7 +98,7 @@ Zentrale Dateien:
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
 | /release | Version bump + Build + GitHub Release erstellen | fork (haiku) |
-| /track | Projektstatus lesen, ausfuehrlicher Ueberblick, oder aktualisieren | fork (haiku) |
+| /track | Projektstatus lesen oder aktualisieren | fork (haiku) |
 
 ## Regeln
 
