@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -341,6 +343,7 @@ export function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [newTerm, setNewTerm] = useState("");
+  const [appVersion, setAppVersion] = useState<string>("");
   // Accordion: only one section open at a time. First section open by default.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     voiceRecording: true,
@@ -357,6 +360,9 @@ export function SettingsPanel({
 
   // Load profiles on mount.
   useEffect(() => { getProfiles().then(setProfiles).catch(console.error); }, []);
+
+  // Load app version on mount.
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => setAppVersion("0.4.1")); }, []);
 
   useEffect(() => { setLocalLang(language); }, [language]);
   useEffect(() => { setLocalStyle(cleanupStyle); }, [cleanupStyle]);
@@ -1098,6 +1104,35 @@ export function SettingsPanel({
                     Save Profiles
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* --- About --- */}
+        <div className="flex flex-col gap-1">
+          <button onClick={() => toggleSection("about")} className={sectionBtnCls}>
+            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">About</span>
+          </button>
+          {openSections.about && (
+            <div className="flex flex-col gap-2 pl-4 pb-3 pt-1">
+              <p className="text-xs font-medium text-zinc-300">
+                Dikta{appVersion ? ` v${appVersion}` : ""}
+              </p>
+              <p className="text-[11px] text-zinc-500">Voice dictation you own.</p>
+              <p className="text-[11px] text-zinc-500">by Andreas Nolte</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <button
+                  onClick={() => openUrl("https://github.com/andyon2/dikta")}
+                  className="text-[11px] text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors"
+                >
+                  GitHub
+                </button>
+                <span className="text-[11px] text-zinc-600">·</span>
+                <span className="text-[11px] text-zinc-500">MIT License</span>
               </div>
             </div>
           )}
