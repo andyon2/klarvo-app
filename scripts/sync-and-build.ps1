@@ -4,8 +4,8 @@
 $src = "\\wsl$\Ubuntu\home\andyon2\dikta"
 $dst = "D:\apps\dikta"
 
-# Ensure cargo is in PATH
-$env:PATH = "C:\Users\Andi\.cargo\bin;$env:PATH"
+# Ensure cargo and LLVM 18 are in PATH
+$env:PATH = "C:\Program Files\LLVM\bin;C:\Users\Andi\.cargo\bin;$env:PATH"
 
 Write-Host "Syncing files from WSL..." -ForegroundColor Cyan
 
@@ -43,5 +43,20 @@ Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
 
 Write-Host "Building Dikta..." -ForegroundColor Cyan
 npx tauri build
+
+# Copy installer to Dropbox for easy access
+$version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
+$dropboxDir = "D:\Dropbox\App Development\dikta\releases\v$version"
+$nsisDir = "$dst\src-tauri\target\release\bundle\nsis"
+$installer = Get-ChildItem "$nsisDir\*.exe" -Exclude "*.exe.sig" | Select-Object -First 1
+
+if ($installer) {
+    New-Item -ItemType Directory -Force -Path $dropboxDir | Out-Null
+    Copy-Item "$($installer.FullName)" "$dropboxDir\"
+    Copy-Item "$($installer.FullName).sig" "$dropboxDir\" -ErrorAction SilentlyContinue
+    Write-Host "Installer copied to $dropboxDir\" -ForegroundColor Green
+} else {
+    Write-Host "WARNING: No installer found to copy" -ForegroundColor Yellow
+}
 
 Write-Host "Done!" -ForegroundColor Green

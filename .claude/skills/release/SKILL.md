@@ -132,7 +132,7 @@ gh release create vX.Y.Z \
   "/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe" \
   "/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe.sig#Dikta_X.Y.Z_x64-setup.exe.sig" \
   "/tmp/latest.json" \
-  "/mnt/d/Dropbox/App Development/dikta/Dikta.apk#Dikta-vX.Y.Z.apk" \
+  "/mnt/d/Dropbox/App Development/dikta/releases/vX.Y.Z/Dikta-vX.Y.Z.apk" \
   --repo andyon2/dikta-public \
   --title "vX.Y.Z" \
   --notes "Release vX.Y.Z"

@@ -220,7 +220,6 @@ pub async fn download_model<F>(
 where
     F: FnMut(u64, u64) + Send + 'static,
 {
-    use futures::StreamExt;
     use tokio::io::AsyncWriteExt;
 
     let info = find_model(model_id)
@@ -237,7 +236,7 @@ where
     log::info!("[model_manager] Downloading {} from {}", info.filename, url);
 
     let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
+    let mut response = client.get(&url).send().await?;
 
     let status = response.status();
     if !status.is_success() {
@@ -251,10 +250,10 @@ where
     // Open the temp file for writing.
     let mut file = tokio::fs::File::create(&part_path).await?;
     let mut bytes_received: u64 = 0;
-    let mut stream = response.bytes_stream();
 
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result?;
+    // Use chunk() instead of bytes_stream() to avoid requiring the reqwest
+    // "stream" feature. chunk() returns the next bytes chunk or None on EOF.
+    while let Some(chunk) = response.chunk().await? {
         file.write_all(&chunk).await?;
         bytes_received += chunk.len() as u64;
         progress_fn(bytes_received, total_bytes);

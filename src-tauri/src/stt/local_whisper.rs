@@ -320,18 +320,24 @@ fn transcribe_blocking(
         ))?;
 
     // Collect segment text.
-    let n_segments = state.full_n_segments().map_err(|e| {
-        SttError::LocalWhisper(LocalWhisperError::SegmentRead(e.to_string()).to_string())
-    })?;
+    // In whisper-rs 0.15+, full_n_segments() returns i32 directly (no Result),
+    // and full_get_segment_text() is replaced by get_segment(i) -> Option<WhisperSegment>
+    // with WhisperSegment::to_str_lossy() for the text.
+    let n_segments = state.full_n_segments();
 
     let mut transcript = String::new();
     for i in 0..n_segments {
-        let seg = state.full_get_segment_text(i).map_err(|e| {
+        let seg = state.get_segment(i).ok_or_else(|| {
+            SttError::LocalWhisper(
+                LocalWhisperError::SegmentRead(format!("segment {i}: index out of bounds")).to_string()
+            )
+        })?;
+        let text = seg.to_str_lossy().map_err(|e| {
             SttError::LocalWhisper(
                 LocalWhisperError::SegmentRead(format!("segment {i}: {e}")).to_string()
             )
         })?;
-        transcript.push_str(&seg);
+        transcript.push_str(&text);
     }
 
     let result = transcript.trim().to_string();

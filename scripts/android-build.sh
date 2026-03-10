@@ -37,7 +37,9 @@ echo "[version] Building v${VERSION}"
 # --- Sign + deploy ---
 APK_IN="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
 APK_ALIGNED="/tmp/dikta-aligned.apk"
-APK_OUT="/mnt/d/Dropbox/App Development/dikta/Dikta-v${VERSION}.apk"
+APK_DIR="/mnt/d/Dropbox/App Development/dikta/releases/v${VERSION}"
+mkdir -p "$APK_DIR"
+APK_OUT="$APK_DIR/Dikta-v${VERSION}.apk"
 
 echo "[sign] Aligning and signing APK..."
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED"
