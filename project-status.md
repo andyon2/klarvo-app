@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.1. 230 Rust-Tests (alle gruen). Paid-Feature-Gates ueberarbeitet: Lock-Icons an Cross-Device Sync, Dictionary, Speech Recognition, Webhook, Integrations. Stats/Integrations-Panel zeigen Paid-Nachricht statt leerem Raum. Cleanup Styles (Clean/Chat) gelockt in Settings UND Header-StylePicker. Offline-Modus blendet LLM-Provider-Liste und Cleanup Instructions aus. Projektverzeichnis nach ~/claude-projects/dikta verschoben, alle Pfade aktualisiert.
+Version 0.4.1. 239 Rust-Tests (alle gruen). Free/Paid-Aufteilung finalisiert: Cleanup Styles alle free, Dictionary free mit 20-Limit, Offline-Whisper small free / medium+large-v3 paid. tiny/base Modelle entfernt (Qualitaet zu niedrig). Offline-Whisper E2E getestet und funktioniert. Voice & Recording Sektion redesigned: Cloud/Offline Toggle oben, Modellauswahl mit Provider-Preisen. Pipeline-Bug gefixt (com.dikta.app → com.dikta.voice). knowledge/workflow.md eingefuehrt fuer session-uebergreifendes Lernen.
 
 ## Blocker
 
@@ -9,10 +9,9 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Paid/Free Feature-Aufteilung finalisieren** — Stratege konsultieren
-2. **Offline-Whisper end-to-end testen** — Modell laden, diktieren, Ergebnis pruefen
-3. **Onboarding/Polish** → [Briefing noch zu erstellen]
-4. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
+1. **Provider Priority entfernen** — Modell-Dropdown oben reicht, Priority-Liste ist redundant. STT+LLM Dropdown dynamisch nach hinterlegten Keys. Backend-Pipeline anpassen.
+2. **Onboarding/Polish** → [Briefing noch zu erstellen]
+3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
 
 ## Bekannte Bugs
 Keine.
@@ -20,5 +19,4 @@ Keine.
 ## Backlog
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
-- [ ] [ui] STT/LLM Settings UX weiter vereinfachen
 - [ ] [ui] 20 Compiler-Warnings aufraumen (dead code, private interfaces)

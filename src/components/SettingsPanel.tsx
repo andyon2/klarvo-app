@@ -196,6 +196,14 @@ function ProviderPriorityList({
   );
 }
 
+// --- Cloud STT models ---------------------------------------------------------
+
+const CLOUD_STT_MODELS = [
+  { value: "whisper-large-v3-turbo", label: "Groq — Large V3 Turbo", price: "~$0.0007/min" },
+  { value: "whisper-large-v3", label: "Groq — Large V3", price: "~$0.002/min" },
+  { value: "whisper-1", label: "OpenAI — Whisper 1", price: "~$0.006/min" },
+];
+
 // --- Output language options --------------------------------------------------
 
 const OUTPUT_LANGUAGES = [
@@ -755,6 +763,80 @@ export function SettingsPanel({
           </button>
           {openSections.voiceRecording && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+
+              {/* Cloud / Offline toggle -- same visual style as StylePicker */}
+              <div className="flex flex-col gap-2">
+                <span className={LABEL_CLS_M}>Speech Recognition</span>
+                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setLocalSttPriority(["groq", "openai"])}
+                    className={[
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
+                      localSttPriority[0] !== "local"
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Cloud
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLocalSttPriority(["local"])}
+                    className={[
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
+                      localSttPriority[0] === "local"
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Offline
+                  </button>
+                </div>
+
+                {/* Cloud mode: model picker */}
+                {localSttPriority[0] !== "local" && (
+                  <div className="flex flex-col gap-2 mt-1">
+                    <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                      <span className={LABEL_CLS_M}>Model</span>
+                      <select
+                        value={localSttModel}
+                        onChange={(e) => setLocalSttModel(e.target.value)}
+                        className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                      >
+                        {CLOUD_STT_MODELS.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label} ({m.price})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">Configure cloud providers in the Providers section below.</p>
+                  </div>
+                )}
+
+                {/* Offline mode: WhisperModelManager */}
+                {localSttPriority[0] === "local" && isDesktop && (
+                  <div className="flex flex-col gap-3 mt-1">
+                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
+                      <svg className="w-3.5 h-3.5 text-zinc-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+                      </svg>
+                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                        Speech is transcribed locally. Text cleanup is skipped (no internet needed).
+                      </p>
+                    </div>
+                    <WhisperModelManager
+                      selectedModel={localWhisperModel}
+                      gpuEnabled={localWhisperGpu}
+                      onModelChange={setLocalWhisperModel}
+                      onGpuChange={setLocalWhisperGpu}
+                      isPaid={isPaid}
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
               {isDesktop && (
                 <div className="flex items-center justify-between gap-3">
@@ -818,20 +900,6 @@ export function SettingsPanel({
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* STT Model */}
-              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-                <span className={LABEL_CLS_M}>STT Model</span>
-                <select
-                  value={localSttModel}
-                  onChange={(e) => setLocalSttModel(e.target.value)}
-                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : "max-w-[200px]"}`}
-                >
-                  <option value="whisper-large-v3-turbo">Large V3 Turbo ($0.04/h)</option>
-                  <option value="whisper-large-v3">Large V3 ($0.111/h)</option>
-                  <option value="distil-whisper-large-v3-en">Distil V3 EN ($0.02/h)</option>
-                </select>
               </div>
             </div>
           )}
@@ -1158,71 +1226,24 @@ export function SettingsPanel({
           )}
         </div>
 
-        {/* --- Provider Priority --- */}
+        {/* --- Providers -- only relevant in Cloud mode --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("providerPriority")} className={sectionBtnCls}>
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.providerPriority ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Provider Priority</span>
+            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Providers</span>
           </button>
           {openSections.providerPriority && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-
-              {/* STT mode toggle: Cloud vs Offline */}
-              <div className="flex flex-col gap-2">
-                <span className={LABEL_CLS_M}>Speech-to-Text</span>
-                <div className="flex items-center gap-1 p-0.5 bg-[#111113] border border-zinc-800/60 rounded-lg w-fit">
-                  <button
-                    type="button"
-                    onClick={() => setLocalSttPriority(["groq", "openai"])}
-                    className={[
-                      "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                      !localSttPriority.includes("local") || localSttPriority[0] !== "local"
-                        ? "bg-emerald-500/15 border border-emerald-500/25 text-emerald-400"
-                        : "text-zinc-500 hover:text-zinc-300",
-                    ].join(" ")}
-                  >
-                    Cloud
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLocalSttPriority(["local"])}
-                    className={[
-                      "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                      localSttPriority[0] === "local"
-                        ? "bg-emerald-500/15 border border-emerald-500/25 text-emerald-400"
-                        : "text-zinc-500 hover:text-zinc-300",
-                    ].join(" ")}
-                  >
-                    Offline
-                  </button>
-                </div>
-
-                {/* Offline mode: info + WhisperModelManager */}
-                {localSttPriority[0] === "local" ? (
-                  <div className="flex flex-col gap-3 mt-1">
-                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
-                      <svg className="w-3.5 h-3.5 text-zinc-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
-                      </svg>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Offline mode: Speech is transcribed locally. Text cleanup is skipped (no internet needed).
-                      </p>
-                    </div>
-                    {isDesktop && (
-                      <WhisperModelManager
-                        selectedModel={localWhisperModel}
-                        gpuEnabled={localWhisperGpu}
-                        onModelChange={setLocalWhisperModel}
-                        onGpuChange={setLocalWhisperGpu}
-                        isPaid={isPaid}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  /* Cloud mode: show provider priority list (groq, openai only -- no local) */
-                  <div className="flex flex-col gap-2 mt-1">
+              {localSttPriority[0] === "local" ? (
+                /* Offline mode active -- providers not used */
+                <p className="text-[11px] text-zinc-500 italic">Only relevant in Cloud mode. Switch to Cloud in Voice &amp; Recording above.</p>
+              ) : (
+                <>
+                  {/* STT provider priority */}
+                  <div className="flex flex-col gap-2">
+                    <span className={LABEL_CLS_M}>Speech-to-Text</span>
                     <ProviderPriorityList
                       items={localSttPriority.filter((p) => p !== "local").length > 0
                         ? localSttPriority.filter((p) => p !== "local")
@@ -1233,19 +1254,18 @@ export function SettingsPanel({
                     />
                     <p className="text-[11px] text-zinc-500">Drag to reorder. First provider with a key is used, falls back to next.</p>
                   </div>
-                )}
-              </div>
 
-              {localSttPriority[0] !== "local" && (
-                <div className="flex flex-col gap-2">
-                  <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
-                  <ProviderPriorityList
-                    items={localLlmPriority}
-                    onChange={setLocalLlmPriority}
-                    keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
-                    labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
-                  />
-                </div>
+                  {/* LLM provider priority */}
+                  <div className="flex flex-col gap-2">
+                    <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
+                    <ProviderPriorityList
+                      items={localLlmPriority}
+                      onChange={setLocalLlmPriority}
+                      keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
+                      labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
+                    />
+                  </div>
+                </>
               )}
             </div>
           )}
