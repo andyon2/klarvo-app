@@ -82,7 +82,7 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
 | /commit-progress | Git-Commit mit konventioneller Message | Nach abgeschlossenen Teilaufgaben |
 | /debug-error | Analysiert Fehler, findet Ursache | Bei Build-Fehlern, Runtime-Crashes, Test-Failures |
 | /sync-prompts | Vergleicht LLM-Prompts Rust vs. Kotlin | Nach Prompt-Aenderungen, vor Android-Releases |
-| /release | Version bump + Build + GitHub Release | Wenn ein Release-Punkt erreicht ist |
+| /release | Version bump + Build + publish.sh sync + GitHub Release auf dikta-public | Wenn ein Release-Punkt erreicht ist |
 | /track | Projektstatus lesen/aktualisieren | Bei Sessionstart und Sessionende |
 | /reflect | Team-Selbstanalyse erstellen | Regelmaessig zur Qualitaetspruefung |
 | /learn | Wissensquellen in knowledge/ integrieren | Wenn neue Quellen in sources/inbox/ liegen |

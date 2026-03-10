@@ -6,7 +6,7 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 
 ## Downloads
 
-➡️ **[Aktueller Release](https://github.com/andyon2/dikta/releases/latest)**
+➡️ **[Aktueller Release](https://github.com/andyon2/dikta-public/releases/latest)**
 
 - **Windows:** `.exe`-Installer herunterladen und ausführen
 - **Android:** `.apk` herunterladen, "Aus unbekannten Quellen installieren" erlauben, installieren
@@ -88,4 +88,4 @@ Noch nicht festgelegt. Der Quellcode ist öffentlich einsehbar.
 
 ## Feedback
 
-Bugs und Wünsche gerne als [GitHub Issue](https://github.com/andyon2/dikta/issues) melden.
+Bugs und Wünsche gerne als [GitHub Issue](https://github.com/andyon2/dikta-public/issues) melden.

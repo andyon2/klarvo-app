@@ -107,7 +107,7 @@ Zentrale Dateien:
 | /commit-progress | Git-Commit mit konventioneller Message | fork (haiku) |
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
-| /release | Version bump + Build + GitHub Release erstellen | fork (haiku) |
+| /release | Version bump + Build + publish.sh sync + GitHub Release auf dikta-public | fork (haiku) |
 | /track | Aktualisiert project-status.md mit Session-Fortschritt | inline |
 | /reflect | Team-Selbstanalyse erstellen | fork (sonnet) |
 | /learn | Neue Wissensquellen in knowledge/ integrieren | fork (sonnet) |

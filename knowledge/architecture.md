@@ -121,6 +121,16 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - "STT Prompts" (Advanced Settings): Whisper Conditioning Text pro Sprache (verbessert Erkennung)
 - Unterschiedliche Pipeline-Stufen: STT-Prompt → Transkription, Cleanup Instructions → LLM-Bereinigung
 
+## Repository-Architektur
+
+**Zwei-Repo-Setup (2026-03-10)**
+- `andyon2/dikta` (privat): Arbeitsrepo. Gesamter Code + Agent-Infrastruktur (CLAUDE.md, main-agent.md, .claude/, knowledge/, briefings/, feedback/, sources/, scripts/).
+- `andyon2/dikta-public` (oeffentlich): Produktcode-Mirror fuer Nutzer. Kein Agent-Zeug.
+- `scripts/publish.sh`: rsync-basierter Sync mit Exclude-Liste + Marker-Check (verhindert Agent-Daten-Leak).
+- **Releases:** Immer auf dikta-public (`gh release create --repo andyon2/dikta-public`).
+- **Updater-Endpoint:** `https://github.com/andyon2/dikta-public/releases/latest/download/latest.json`
+- **Taegliche Arbeit:** Nur in dikta (privat). Commit + Push geht nur hierhin. dikta-public wird nur bei Releases via publish.sh aktualisiert.
+
 ## Plattform-Quirks
 
 ### Windows

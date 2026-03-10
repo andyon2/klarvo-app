@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.1. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle gruen). Windows + Android Builds stabil und signiert. GitHub Repo public mit Release v0.4.1. Auto-Update-Infrastruktur steht.
+Version 0.4.1. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle gruen). Windows + Android Builds stabil und signiert. Zwei-Repo-Setup: dikta (privat, Arbeitsrepo) + dikta-public (oeffentlich, Releases). Auto-Update-Infrastruktur steht (Updater-Endpoint zeigt auf dikta-public).
 
 ## Naechste Sessions (in Reihenfolge, Business-priorisiert)
 
