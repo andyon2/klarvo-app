@@ -131,6 +131,13 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - **Updater-Endpoint:** `https://github.com/andyon2/dikta-public/releases/latest/download/latest.json`
 - **Taegliche Arbeit:** Nur in dikta (privat). Commit + Push geht nur hierhin. dikta-public wird nur bei Releases via publish.sh aktualisiert.
 
+## Build-Anforderungen whisper-rs
+
+- **CMake:** Muss auf Windows im PATH sein (whisper.cpp wird beim Build kompiliert)
+- **LLVM/Clang:** Bindgen braucht libclang.dll. **LLVM 18.1.8 nutzen, NICHT 22+!** Clang 22 generiert kaputte Struct-Bindings (Codeberg whisper-rs #268).
+- **Install:** `https://github.com/llvm/llvm-project/releases/tag/llvmorg-18.1.8` → `LLVM-18.1.8-win64.exe`, "Add to PATH" anhaeken.
+- **Build-Script:** `sync-and-build.ps1` setzt `BINDGEN_EXTRA_CLANG_ARGS=--target=x86_64-pc-windows-msvc`
+
 ## Plattform-Quirks
 
 ### Windows
