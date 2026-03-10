@@ -8,14 +8,20 @@ import {
   onModelDownloadError,
   type WhisperModelWithStatus,
 } from "../tauri-commands";
+import { LockIcon } from "./icons";
 
-// Static metadata for the three supported models.
+// Static metadata for all supported models.
 // The backend provides sizeBytes, but we keep labels here for the UI.
 const MODEL_LABELS: Record<string, string> = {
   tiny: "tiny (78 MB)",
   base: "base (148 MB) — Recommended",
   small: "small (488 MB)",
+  medium: "medium (1.5 GB)",
+  "large-v3": "large-v3 (3.1 GB)",
 };
+
+// Models that require a paid license (everything except tiny).
+const PAID_MODELS = new Set(["base", "small", "medium", "large-v3"]);
 
 interface DownloadState {
   bytesReceived: number;
@@ -31,6 +37,8 @@ interface WhisperModelManagerProps {
   onModelChange: (modelId: string) => void;
   /** Called when user toggles GPU setting */
   onGpuChange: (enabled: boolean) => void;
+  /** Whether user has a paid license */
+  isPaid: boolean;
 }
 
 export function WhisperModelManager({
@@ -38,6 +46,7 @@ export function WhisperModelManager({
   gpuEnabled,
   onModelChange,
   onGpuChange,
+  isPaid,
 }: WhisperModelManagerProps) {
   const [models, setModels] = useState<WhisperModelWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,12 +203,21 @@ export function WhisperModelManager({
         <span className={LABEL_CLS}>Model</span>
         <select
           value={selectedModel}
-          onChange={(e) => onModelChange(e.target.value)}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (!isPaid && PAID_MODELS.has(id)) return;
+            onModelChange(id);
+          }}
           className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer max-w-[220px]"
         >
-          {Object.entries(MODEL_LABELS).map(([id, label]) => (
-            <option key={id} value={id}>{label}</option>
-          ))}
+          {Object.entries(MODEL_LABELS).map(([id, label]) => {
+            const locked = !isPaid && PAID_MODELS.has(id);
+            return (
+              <option key={id} value={id} disabled={locked}>
+                {locked ? `${label} (Paid)` : label}
+              </option>
+            );
+          })}
         </select>
       </div>
 
@@ -245,10 +263,21 @@ export function WhisperModelManager({
 
               {!isReady && !isDownloading && (
                 <button
-                  onClick={() => handleDownload(model.id)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+                  onClick={() => { if (!isPaid && PAID_MODELS.has(model.id)) return; handleDownload(model.id); }}
+                  disabled={!isPaid && PAID_MODELS.has(model.id)}
+                  title={!isPaid && PAID_MODELS.has(model.id) ? "Requires Dikta License" : undefined}
+                  className={[
+                    "px-3 py-1.5 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 transition-colors",
+                    !isPaid && PAID_MODELS.has(model.id)
+                      ? "text-zinc-600 cursor-not-allowed opacity-50"
+                      : "text-zinc-300 hover:bg-zinc-800/60",
+                  ].join(" ")}
                 >
-                  Download ({formatBytes(model.sizeBytes)})
+                  {!isPaid && PAID_MODELS.has(model.id) ? (
+                    <span className="flex items-center gap-1"><LockIcon className="w-3 h-3" /> Paid</span>
+                  ) : (
+                    <>Download ({formatBytes(model.sizeBytes)})</>
+                  )}
                 </button>
               )}
 

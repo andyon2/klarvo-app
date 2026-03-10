@@ -97,31 +97,28 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
   );
 }
 
-function StylePicker({ value, onChange, disabled, isPaid = true }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean; isPaid?: boolean }) {
+function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
   return (
     <div className={`flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 ${isMobile ? "w-full" : "flex-shrink min-w-0"}`}>
-      {STYLE_OPTIONS.map((opt) => {
-        const locked = !isPaid && opt.value !== "polished";
-        return (
+      {STYLE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
-          disabled={disabled || locked}
-          onClick={() => { if (!locked) onChange(opt.value); }}
-          title={locked ? "Requires Dikta License" : opt.description}
+          disabled={disabled}
+          onClick={() => onChange(opt.value)}
+          title={opt.description}
           className={[
             isMobile
               ? "flex-1 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-100 whitespace-nowrap"
               : "px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-            locked ? "opacity-40 cursor-not-allowed" : "disabled:cursor-not-allowed disabled:opacity-50",
+            "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
               ? "bg-emerald-500/15 text-emerald-400"
-              : locked ? "text-zinc-600" : "text-zinc-500 hover:text-zinc-300",
+              : "text-zinc-500 hover:text-zinc-300",
           ].join(" ")}
         >
           {opt.label}
         </button>
-        );
-      })}
+      ))}
     </div>
   );
 }
@@ -446,7 +443,6 @@ export default function App() {
             value={settings.cleanupStyle}
             onChange={settings.handleStyleChange}
             disabled={isBusy || isRecording}
-            isPaid={isPaid}
           />
         </div>
       </div>
@@ -615,13 +611,7 @@ export default function App() {
               </button>
             </div>
 
-            {!isPaid ? (
-              <div className="px-4 py-10 flex flex-col items-center gap-3 text-center">
-                <LockIcon className="w-5 h-5 text-zinc-600" />
-                <p className="text-sm font-medium text-zinc-400">Statistics require a Dikta license</p>
-                <p className="text-xs text-zinc-600 max-w-[240px]">Track your dictation usage, costs, and filler words with a license key.</p>
-              </div>
-            ) : usageStats ? (
+            {usageStats ? (
               <>
                 <div className="p-4 grid grid-cols-2 gap-3">
                   <StatCard label="Today" value={`${usageStats.dictationsToday}`} sub="dictations" />
@@ -634,7 +624,12 @@ export default function App() {
                   <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
                 </div>
 
-                {fillerStats.length > 0 && (
+                {!isPaid ? (
+                  <div className="px-4 pb-4 flex items-center gap-2">
+                    <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
+                    <p className="text-xs text-zinc-500">Filler word analysis requires a Dikta license.</p>
+                  </div>
+                ) : fillerStats.length > 0 ? (
                   <div className="px-4 pb-4">
                     <button
                       onClick={() => setShowFillerStats((v) => !v)}
@@ -649,7 +644,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                )}
+                ) : null}
               </>
             ) : null}
           </div>

@@ -133,6 +133,8 @@ pub enum LicensedFeature {
     FillerAnalysis,
     /// API cost tracking dashboard.
     CostTracking,
+    /// Dictionary entries beyond the free-tier limit of 20 terms.
+    UnlimitedDictionary,
 }
 
 // ---------------------------------------------------------------------------

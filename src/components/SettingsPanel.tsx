@@ -311,15 +311,13 @@ function formatGraceDate(timestamp: number): string {
 }
 
 const LOCKED_FEATURES = [
-  // "All Providers" removed — provider selection is free
-  "Cleanup Styles",
+  "Offline HD Models",
   "Command Mode",
   "Snippets",
-  "Profiles",
+  "Unlimited Dictionary",
   "Voice Notes",
-  "Sync",
-  "Offline Mode",
-  "Analytics",
+  "Whisper Mode",
+  "Advanced Statistics",
 ];
 
 interface LicenseSectionProps {
@@ -804,29 +802,21 @@ export function SettingsPanel({
               <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                 <span className={LABEL_CLS_M}>Cleanup Style</span>
                 <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-                  {STYLE_OPTIONS.map((opt) => {
-                    const locked = !isPaid && opt.value !== "polished";
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => { if (!locked) handleStyleChange(opt.value); }}
-                        title={locked ? "Requires Dikta License" : opt.description}
-                        disabled={locked}
-                        className={[
-                          isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                          locked ? "opacity-40 cursor-not-allowed" : "",
-                          localStyle === opt.value
-                            ? "bg-emerald-500/15 text-emerald-400"
-                            : locked ? "text-zinc-600" : "text-zinc-500 hover:text-zinc-300",
-                        ].join(" ")}
-                      >
-                        <span className="flex items-center gap-1 justify-center">
-                          {opt.label}
-                          {locked && <LockIcon className="w-2.5 h-2.5 text-zinc-600" />}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {STYLE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleStyleChange(opt.value)}
+                      title={opt.description}
+                      className={[
+                        isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
+                        localStyle === opt.value
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "text-zinc-500 hover:text-zinc-300",
+                      ].join(" ")}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1226,6 +1216,7 @@ export function SettingsPanel({
                         gpuEnabled={localWhisperGpu}
                         onModelChange={setLocalWhisperModel}
                         onGpuChange={setLocalWhisperGpu}
+                        isPaid={isPaid}
                       />
                     )}
                   </div>
@@ -1268,32 +1259,41 @@ export function SettingsPanel({
             </svg>
             <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
               Dictionary
-              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-amber-500/80" : "text-zinc-600"}`}>
+                {!isPaid ? `${dictionary.length}/20` : `${dictionary.length}`}
+              </span>
             </span>
           </button>
           {openSections.dictionary && (
-            <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
-              <div className={`flex gap-2${!isPaid ? " pointer-events-none" : ""}`}>
+            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+              <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder={isPaid ? "Add word or phrase..." : "Requires Dikta License"}
+                  placeholder="Add word or phrase..."
                   value={newTerm}
-                  disabled={!isPaid}
+                  disabled={!isPaid && dictionary.length >= 20}
                   onChange={(e) => setNewTerm(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddTerm()}
-                  className={`flex-1 ${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
+                  className={`flex-1 ${INPUT_CLS_M}${(!isPaid && dictionary.length >= 20) ? " cursor-not-allowed opacity-50" : ""}`}
                 />
                 <button
                   onClick={handleAddTerm}
-                  disabled={!newTerm.trim() || !isPaid}
+                  disabled={!newTerm.trim() || (!isPaid && dictionary.length >= 20)}
+                  title={(!isPaid && dictionary.length >= 20) ? "Free limit reached (20 terms). Upgrade for unlimited." : undefined}
                   className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
                 >
                   Add
                 </button>
               </div>
 
+              {!isPaid && dictionary.length >= 20 && (
+                <p className="text-[11px] text-amber-500/80">
+                  Free limit reached (20 terms). Upgrade for unlimited.
+                </p>
+              )}
+
               {dictionary.length > 0 ? (
-                <div className={`flex flex-wrap gap-1.5${!isPaid ? " pointer-events-none" : ""}`}>
+                <div className="flex flex-wrap gap-1.5">
                   {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
                 </div>
               ) : (

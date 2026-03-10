@@ -3,7 +3,7 @@
 Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Dikta.
 Diese Datei ist die Source of Truth fuer alle strategischen Produkt-Entscheidungen.
 
-Letzte Aktualisierung: 2026-03-09 (Strategy-Session mit Andy, inkl. Wettbewerbs-Validierung)
+Letzte Aktualisierung: 2026-03-10 (Free/Paid-Aufteilung ueberarbeitet: Styles free, Dictionary-Limit, Offline-Modell-Gate)
 
 ## Positionierung
 
@@ -85,23 +85,29 @@ EUR 29 ist:
 
 ### Free-Tier (Open Source)
 - Kern-Diktat (Hotkey -> Sprechen -> Text)
-- Ein STT-Provider (Groq Whisper)
-- Ein LLM-Provider (DeepSeek)
+- Alle STT/LLM-Provider (Groq, DeepSeek, OpenAI, Anthropic) -- BYOK-Prinzip
+- Alle Basis-Cleanup-Stile (Polished, Clean, Chat)
+- Cleanup Instructions (Custom Prompt)
+- Offline-Modus mit Whisper tiny-Modell (~75 MB) -- brauchbar, aber nicht beste Qualitaet
+- Dictionary (limitiert: 20 Eintraege)
+- Basis-Statistiken (Diktat-Anzahl, API-Kosten)
 - Basis-Settings
 - Limitierte History (letzte 50 Eintraege)
 
 ### Paid-Tier (License Key, EUR 29)
-- Alle STT/LLM-Provider (OpenAI, Anthropic, Groq, etc.)
-- Alle Cleanup-Stile + Custom Styles
+- Offline-Modus mit groesseren Whisper-Modellen (base, small, medium, large-v3) -- deutlich bessere Qualitaet
+- Custom Style Templates (gespeicherte, benannte Prompt-Sets)
 - Command Mode
 - Text Snippets
 - App Profiles
 - Unbegrenzte History + Volltextsuche
 - Voice Notes
 - Cross-Device Sync (Turso)
-- Offline-Modus (whisper.cpp)
+- Dictionary (unbegrenzt)
 - Whisper Mode (leises Diktieren)
-- Filler-Word-Analyse + Kostentracking
+- Filler-Word-Analyse + erweiterte Statistiken
+- Webhooks
+- Integrations (Notion, Todoist -- spaeter)
 
 ### Spaetere Preis-Optionen
 - Preis auf EUR 39-49 erhoehen nach Offline-Modus-Launch

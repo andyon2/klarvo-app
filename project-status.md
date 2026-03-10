@@ -9,13 +9,13 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Uncommitted Changes committen** — Paid-Gates, Offline-UX, Pfad-Fixes (noch nicht committed)
+1. **Paid/Free Feature-Aufteilung finalisieren** — Stratege konsultieren
 2. **Offline-Whisper end-to-end testen** — Modell laden, diktieren, Ergebnis pruefen
 3. **Onboarding/Polish** → [Briefing noch zu erstellen]
 4. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
 
 ## Bekannte Bugs
-- Statistics-Panel: Leer nach Rebuild — Ursache noch unklar (DB-Pfad? App-Identifier?)
+Keine.
 
 ## Backlog
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
