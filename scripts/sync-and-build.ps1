@@ -36,6 +36,11 @@ if (Test-Path $wslKeyFile) {
     Write-Host "WARNING: Signing key not found at $wslKeyFile" -ForegroundColor Red
 }
 
+# whisper-rs-sys: force bindgen to target Windows (not Linux)
+# Without this, clang may pick up Linux headers and generate incompatible bindings.
+$env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
+Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
+
 Write-Host "Building Dikta..." -ForegroundColor Cyan
 npx tauri build
 
