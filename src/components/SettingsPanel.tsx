@@ -311,7 +311,7 @@ function formatGraceDate(timestamp: number): string {
 }
 
 const LOCKED_FEATURES = [
-  "All Providers",
+  // "All Providers" removed — provider selection is free
   "Cleanup Styles",
   "Command Mode",
   "Snippets",
@@ -814,10 +814,10 @@ export function SettingsPanel({
                         disabled={locked}
                         className={[
                           isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                          locked ? "opacity-50 cursor-not-allowed" : "",
+                          locked ? "opacity-40 cursor-not-allowed" : "",
                           localStyle === opt.value
                             ? "bg-emerald-500/15 text-emerald-400"
-                            : "text-zinc-500 hover:text-zinc-300",
+                            : locked ? "text-zinc-600" : "text-zinc-500 hover:text-zinc-300",
                         ].join(" ")}
                       >
                         <span className="flex items-center gap-1 justify-center">
@@ -891,8 +891,8 @@ export function SettingsPanel({
           </div>
         )}
 
-        {/* --- Cleanup Instructions --- */}
-        <div className="flex flex-col gap-1">
+        {/* --- Cleanup Instructions -- hidden when offline STT mode is active --- */}
+        {localSttPriority[0] !== "local" && <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("customPrompt")} className={sectionBtnCls}>
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
@@ -951,7 +951,7 @@ export function SettingsPanel({
               <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during LLM cleanup.</p>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* --- General -- desktop only features --- */}
         {isDesktop && (
@@ -1030,7 +1030,10 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Cross-Device Sync</span>
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+              Cross-Device Sync
+              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            </span>
           </button>
           {openSections.sync && (
             <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
@@ -1242,15 +1245,17 @@ export function SettingsPanel({
                 )}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
-                <ProviderPriorityList
-                  items={localLlmPriority}
-                  onChange={setLocalLlmPriority}
-                  keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
-                  labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
-                />
-              </div>
+              {localSttPriority[0] !== "local" && (
+                <div className="flex flex-col gap-2">
+                  <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
+                  <ProviderPriorityList
+                    items={localLlmPriority}
+                    onChange={setLocalLlmPriority}
+                    keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
+                    labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1261,22 +1266,26 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Dictionary</span>
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+              Dictionary
+              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            </span>
           </button>
           {openSections.dictionary && (
-            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-              <div className="flex gap-2">
+            <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
+              <div className={`flex gap-2${!isPaid ? " pointer-events-none" : ""}`}>
                 <input
                   type="text"
-                  placeholder="Add word or phrase..."
+                  placeholder={isPaid ? "Add word or phrase..." : "Requires Dikta License"}
                   value={newTerm}
+                  disabled={!isPaid}
                   onChange={(e) => setNewTerm(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddTerm()}
-                  className={`flex-1 ${INPUT_CLS_M}`}
+                  className={`flex-1 ${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
                 />
                 <button
                   onClick={handleAddTerm}
-                  disabled={!newTerm.trim()}
+                  disabled={!newTerm.trim() || !isPaid}
                   className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
                 >
                   Add
@@ -1284,7 +1293,7 @@ export function SettingsPanel({
               </div>
 
               {dictionary.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
+                <div className={`flex flex-wrap gap-1.5${!isPaid ? " pointer-events-none" : ""}`}>
                   {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
                 </div>
               ) : (

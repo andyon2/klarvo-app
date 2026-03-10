@@ -18,7 +18,7 @@ import Onboarding from "./Onboarding";
 // Components
 import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
-  MailIcon, ListIcon, SummaryIcon, NoteIcon,
+  MailIcon, ListIcon, SummaryIcon, NoteIcon, LockIcon,
 } from "./components/icons";
 import { FillerStatsChart, HighlightedText, StatCard } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -97,28 +97,31 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
   );
 }
 
-function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
+function StylePicker({ value, onChange, disabled, isPaid = true }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean; isPaid?: boolean }) {
   return (
     <div className={`flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 ${isMobile ? "w-full" : "flex-shrink min-w-0"}`}>
-      {STYLE_OPTIONS.map((opt) => (
+      {STYLE_OPTIONS.map((opt) => {
+        const locked = !isPaid && opt.value !== "polished";
+        return (
         <button
           key={opt.value}
-          disabled={disabled}
-          onClick={() => onChange(opt.value)}
-          title={opt.description}
+          disabled={disabled || locked}
+          onClick={() => { if (!locked) onChange(opt.value); }}
+          title={locked ? "Requires Dikta License" : opt.description}
           className={[
             isMobile
               ? "flex-1 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-100 whitespace-nowrap"
               : "px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-            "disabled:cursor-not-allowed disabled:opacity-50",
+            locked ? "opacity-40 cursor-not-allowed" : "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
               ? "bg-emerald-500/15 text-emerald-400"
-              : "text-zinc-500 hover:text-zinc-300",
+              : locked ? "text-zinc-600" : "text-zinc-500 hover:text-zinc-300",
           ].join(" ")}
         >
           {opt.label}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -443,6 +446,7 @@ export default function App() {
             value={settings.cleanupStyle}
             onChange={settings.handleStyleChange}
             disabled={isBusy || isRecording}
+            isPaid={isPaid}
           />
         </div>
       </div>
@@ -599,7 +603,7 @@ export default function App() {
           panels.showStats ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
-        {panels.showStats && usageStats && (
+        {panels.showStats && (
           <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
               <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Statistics & Costs</span>
@@ -611,33 +615,43 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-4 grid grid-cols-2 gap-3">
-              <StatCard label="Today" value={`${usageStats.dictationsToday}`} sub="dictations" />
-              <StatCard label="Cost Today" value={formatCost(usageStats.costTodayUsd)} sub="USD" />
-              <StatCard label="Total Dictations" value={`${usageStats.totalDictations}`} />
-              <StatCard label="Total Words" value={usageStats.totalWords.toLocaleString()} />
-              <StatCard label="Audio Recorded" value={formatDuration(usageStats.totalAudioSeconds)} />
-              <StatCard label="Total Cost" value={formatCost(usageStats.totalCostUsd)} sub="USD" />
-              <StatCard label="STT (Groq)" value={formatCost(usageStats.totalSttCostUsd)} sub="USD" />
-              <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
-            </div>
+            {!isPaid ? (
+              <div className="px-4 py-10 flex flex-col items-center gap-3 text-center">
+                <LockIcon className="w-5 h-5 text-zinc-600" />
+                <p className="text-sm font-medium text-zinc-400">Statistics require a Dikta license</p>
+                <p className="text-xs text-zinc-600 max-w-[240px]">Track your dictation usage, costs, and filler words with a license key.</p>
+              </div>
+            ) : usageStats ? (
+              <>
+                <div className="p-4 grid grid-cols-2 gap-3">
+                  <StatCard label="Today" value={`${usageStats.dictationsToday}`} sub="dictations" />
+                  <StatCard label="Cost Today" value={formatCost(usageStats.costTodayUsd)} sub="USD" />
+                  <StatCard label="Total Dictations" value={`${usageStats.totalDictations}`} />
+                  <StatCard label="Total Words" value={usageStats.totalWords.toLocaleString()} />
+                  <StatCard label="Audio Recorded" value={formatDuration(usageStats.totalAudioSeconds)} />
+                  <StatCard label="Total Cost" value={formatCost(usageStats.totalCostUsd)} sub="USD" />
+                  <StatCard label="STT (Groq)" value={formatCost(usageStats.totalSttCostUsd)} sub="USD" />
+                  <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
+                </div>
 
-            {fillerStats.length > 0 && (
-              <div className="px-4 pb-4">
-                <button
-                  onClick={() => setShowFillerStats((v) => !v)}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
-                >
-                  <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
-                  Top Filler Words
-                </button>
-                {showFillerStats && (
-                  <div className="mt-2">
-                    <FillerStatsChart entries={fillerStats} />
+                {fillerStats.length > 0 && (
+                  <div className="px-4 pb-4">
+                    <button
+                      onClick={() => setShowFillerStats((v) => !v)}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
+                    >
+                      <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
+                      Top Filler Words
+                    </button>
+                    {showFillerStats && (
+                      <div className="mt-2">
+                        <FillerStatsChart entries={fillerStats} />
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
+              </>
+            ) : null}
           </div>
         )}
       </div>
@@ -677,12 +691,22 @@ export default function App() {
                   <CloseIcon />
                 </button>
               </div>
-              <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
-                <svg className="w-8 h-8 text-zinc-700 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
-                </svg>
-                <p className="text-sm font-medium text-zinc-400">Integrations</p>
-                <p className="text-xs text-zinc-600 max-w-[220px]">Coming soon -- connect Dikta with Notion, Todoist, and more.</p>
+              <div className="px-4 py-8 flex flex-col items-center gap-3 text-center">
+                {!isPaid ? (
+                  <>
+                    <LockIcon className="w-5 h-5 text-zinc-600" />
+                    <p className="text-sm font-medium text-zinc-400">Integrations require a Dikta license</p>
+                    <p className="text-xs text-zinc-600 max-w-[240px]">Connect Dikta with Notion, Todoist, and more with a license key.</p>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-8 h-8 text-zinc-700 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
+                    </svg>
+                    <p className="text-sm font-medium text-zinc-400">Integrations</p>
+                    <p className="text-xs text-zinc-600 max-w-[220px]">Coming soon -- connect Dikta with Notion, Todoist, and more.</p>
+                  </>
+                )}
               </div>
             </div>
           )}

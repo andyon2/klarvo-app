@@ -149,7 +149,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Speech Recognition</span>
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            Speech Recognition
+            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+          </span>
         </button>
         {openSections.stt && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -320,18 +323,21 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Webhook</span>
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            Webhook
+            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+          </span>
         </button>
         {openSections.webhook && (
-          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-            <div className="flex flex-col gap-1.5">
+          <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
+            <div className={`flex flex-col gap-1.5${!isPaid ? " pointer-events-none" : ""}`}>
               <span className={LABEL_CLS}>Custom Headers (JSON)</span>
-              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={(v) => set("webhookHeaders", v)} placeholder={'{"Authorization": "Bearer ..."}'} rows={3} className={`${INPUT_CLS} resize-none font-mono`} />
+              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={isPaid ? (v) => set("webhookHeaders", v) : () => {}} placeholder={isPaid ? '{"Authorization": "Bearer ..."}' : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none font-mono${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
               <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
             </div>
-            <div className="flex items-center justify-between gap-3">
+            <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
               <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Timeout (seconds)</span><span className={hintCls}>Max wait for webhook response.</span></div>
-              <input type="number" min={1} max={120} step={1} value={settings.webhookTimeoutSecs} onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)} className={numberInputCls} />
+              <input type="number" min={1} max={120} step={1} value={settings.webhookTimeoutSecs} onChange={(e) => { if (isPaid) set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10); }} disabled={!isPaid} className={`${numberInputCls}${!isPaid ? " cursor-not-allowed" : ""}`} />
             </div>
           </div>
         )}
