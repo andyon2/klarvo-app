@@ -12,6 +12,7 @@ import { isDesktop, isMobile } from "../platform";
 import { CloseIcon, LockIcon } from "./icons";
 import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M } from "./ui";
 import { MobileTextarea } from "./MobileTextarea";
+import { WhisperModelManager } from "./WhisperModelManager";
 
 // --- Shortcut Recorder -------------------------------------------------------
 
@@ -540,6 +541,7 @@ export interface SettingsPanelProps {
     openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
     outputLanguage: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
     bubbleSize?: number | null, bubbleOpacity?: number | null,
+    localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -580,6 +582,8 @@ export function SettingsPanel({
   const [tursoToken, setTursoToken] = useState("");
   const [localBubbleSize, setLocalBubbleSize] = useState(loadedSettings?.bubbleSize ?? 1.0);
   const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
+  const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "base");
+  const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -625,6 +629,8 @@ export function SettingsPanel({
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
       setLocalBubbleSize(loadedSettings.bubbleSize ?? 1.0);
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
+      setLocalWhisperModel(loadedSettings.localWhisperModel ?? "base");
+      setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
     }
   }, [loadedSettings]);
 
@@ -675,6 +681,7 @@ export function SettingsPanel({
         openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority,
         localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), tursoToken.trim(),
         localBubbleSize, localBubbleOpacity,
+        localWhisperModel, localWhisperGpu,
       );
       setGroqKey("");
       setDeepseekKey("");
@@ -691,7 +698,8 @@ export function SettingsPanel({
   }, [
     groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
-    localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken, onSave,
+    localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
+    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
   ]);
 
   const handleAddTerm = useCallback(async () => {
@@ -1202,9 +1210,31 @@ export function SettingsPanel({
                 <ProviderPriorityList
                   items={localSttPriority}
                   onChange={setLocalSttPriority}
-                  keyStatus={{ groq: groqOk, openai: openaiOk }}
-                  labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
+                  keyStatus={{ groq: groqOk, openai: openaiOk, local: true }}
+                  labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper", local: "Local (whisper.cpp)" }}
                 />
+                {/* Add / remove "local" from the list -- desktop only */}
+                {isDesktop && (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {!localSttPriority.includes("local") ? (
+                      <button
+                        type="button"
+                        onClick={() => setLocalSttPriority([...localSttPriority, "local"])}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        + Add Local (whisper.cpp)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setLocalSttPriority(localSttPriority.filter((id) => id !== "local"))}
+                        className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                      >
+                        Remove Local
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">
@@ -1219,6 +1249,31 @@ export function SettingsPanel({
             </div>
           )}
         </div>
+
+        {/* --- Offline Transcription -- desktop only --- */}
+        {isDesktop && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("offlineTranscription")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.offlineTranscription ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Offline Transcription</span>
+            </button>
+            {openSections.offlineTranscription && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                <p className="text-[11px] text-zinc-500">
+                  Local whisper.cpp model — works without internet. Select a model, download it once, then add "local" to your STT priority list.
+                </p>
+                <WhisperModelManager
+                  selectedModel={localWhisperModel}
+                  gpuEnabled={localWhisperGpu}
+                  onModelChange={setLocalWhisperModel}
+                  onGpuChange={setLocalWhisperGpu}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">

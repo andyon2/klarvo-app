@@ -46,6 +46,8 @@ export interface AppSettings {
   deviceId: string;
   bubbleSize: number;
   bubbleOpacity: number;
+  localWhisperModel: string;
+  localWhisperGpu: boolean;
 }
 
 // A per-application recording profile.

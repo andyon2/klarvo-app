@@ -695,6 +695,13 @@ pub fn run() {
             commands::license::validate_license,
             commands::license::get_license_status,
             commands::license::remove_license,
+            // Whisper model manager (Windows only)
+            #[cfg(target_os = "windows")]
+            commands::whisper::windows::get_whisper_models,
+            #[cfg(target_os = "windows")]
+            commands::whisper::windows::download_whisper_model,
+            #[cfg(target_os = "windows")]
+            commands::whisper::windows::delete_whisper_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

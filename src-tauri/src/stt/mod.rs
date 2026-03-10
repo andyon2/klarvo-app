@@ -30,6 +30,8 @@ pub mod local_whisper;
 #[cfg(target_os = "windows")]
 pub use local_whisper::LocalWhisperProvider;
 
+pub mod model_manager;
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------

@@ -90,6 +90,8 @@ export async function saveSettings(
   tursoToken?: string | null,
   bubbleSize?: number | null,
   bubbleOpacity?: number | null,
+  localWhisperModel?: string | null,
+  localWhisperGpu?: boolean | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -113,6 +115,8 @@ export async function saveSettings(
     tursoToken: tursoToken ?? null,
     bubbleSize: bubbleSize ?? null,
     bubbleOpacity: bubbleOpacity ?? null,
+    localWhisperModel: localWhisperModel ?? null,
+    localWhisperGpu: localWhisperGpu ?? null,
   });
 }
 
@@ -358,6 +362,91 @@ export async function saveAdvancedSettings(settings: AdvancedSettings): Promise<
  */
 export async function syncHistory(): Promise<[number, number]> {
   return invoke<[number, number]>("sync_history");
+}
+
+// --- Whisper Model Management (Desktop only) ---
+
+export interface WhisperModelWithStatus {
+  id: string;
+  filename: string;
+  sizeBytes: number;
+  description: string;
+  status: "downloaded" | "notDownloaded";
+}
+
+export interface ModelDownloadProgressPayload {
+  modelId: string;
+  bytesReceived: number;
+  totalBytes: number;
+}
+
+export interface ModelDownloadCompletePayload {
+  modelId: string;
+}
+
+export interface ModelDownloadErrorPayload {
+  modelId: string;
+  error: string;
+}
+
+/**
+ * Returns all available whisper models with their download status.
+ */
+export async function getWhisperModels(): Promise<WhisperModelWithStatus[]> {
+  return invoke<WhisperModelWithStatus[]>("get_whisper_models");
+}
+
+/**
+ * Starts downloading a whisper model in the background.
+ * Progress is reported via dikta://model-download-progress events.
+ * @param modelId - Model identifier, e.g. "base"
+ */
+export async function downloadWhisperModel(modelId: string): Promise<void> {
+  await invoke("download_whisper_model", { modelId });
+}
+
+/**
+ * Deletes a downloaded whisper model from disk.
+ * @param modelId - Model identifier, e.g. "base"
+ */
+export async function deleteWhisperModel(modelId: string): Promise<void> {
+  await invoke("delete_whisper_model", { modelId });
+}
+
+/**
+ * Subscribes to model download progress events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onModelDownloadProgress(
+  callback: (payload: ModelDownloadProgressPayload) => void
+): Promise<() => void> {
+  return listen<ModelDownloadProgressPayload>("dikta://model-download-progress", (e) => {
+    callback(e.payload);
+  });
+}
+
+/**
+ * Subscribes to model download complete events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onModelDownloadComplete(
+  callback: (payload: ModelDownloadCompletePayload) => void
+): Promise<() => void> {
+  return listen<ModelDownloadCompletePayload>("dikta://model-download-complete", (e) => {
+    callback(e.payload);
+  });
+}
+
+/**
+ * Subscribes to model download error events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onModelDownloadError(
+  callback: (payload: ModelDownloadErrorPayload) => void
+): Promise<() => void> {
+  return listen<ModelDownloadErrorPayload>("dikta://model-download-error", (e) => {
+    callback(e.payload);
+  });
 }
 
 // --- License ---

@@ -9,3 +9,4 @@ pub mod license;
 pub mod misc;
 pub mod recording;
 pub mod settings;
+pub mod whisper;
