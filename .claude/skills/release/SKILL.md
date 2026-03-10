@@ -21,7 +21,7 @@ Falls kein Argument: Fehler melden. Nie raten.
 
 ## Zwei-Repo-Architektur
 
-- `dikta` (privat, `~/dikta`): Arbeitsrepo. Code + Agents. Hier wird entwickelt und gebaut.
+- `dikta` (privat, `~/claude-projects/dikta`): Arbeitsrepo. Code + Agents. Hier wird entwickelt und gebaut.
 - `dikta-public` (oeffentlich, `~/dikta-public`): Produktcode-Mirror. Hier landen Releases fuer Nutzer.
 
 Releases werden IMMER auf `dikta-public` erstellt (--repo andyon2/dikta-public).
@@ -56,7 +56,7 @@ Nutze `Edit` (nicht sed) fuer jede Datei. Ersetze NUR die alte Version durch die
 
 Windows:
 ```bash
-cd /home/andyon2/claude-projects/dikta && powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\dikta\scripts\sync-and-build.ps1' 2>&1
+cd /home/andyon2/claude-projects/dikta && powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\claude-projects\dikta\scripts\sync-and-build.ps1' 2>&1
 ```
 
 Android:
@@ -118,7 +118,7 @@ Falls publish.sh mit Marker-Warnung abbricht: STOPP. Dem Nutzer melden. Nicht we
 
 Falls OK:
 ```bash
-cd /home/andyon2/claude-projects/dikta-public
+cd /home/andyon2/dikta-public
 git commit -m "chore: sync release vX.Y.Z"
 git push origin main
 ```

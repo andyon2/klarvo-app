@@ -1,7 +1,7 @@
 # Dikta: Sync from WSL and build for Windows
-# Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\dikta\scripts\sync-and-build.ps1
+# Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\claude-projects\dikta\scripts\sync-and-build.ps1
 
-$src = "\\wsl$\Ubuntu\home\andyon2\dikta"
+$src = "\\wsl$\Ubuntu\home\andyon2\claude-projects\dikta"
 $dst = "D:\apps\dikta"
 
 # Ensure cargo and LLVM 18 are in PATH
