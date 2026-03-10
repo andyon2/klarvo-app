@@ -42,6 +42,7 @@ Dein Kontextfenster ist eine knappe strategische Ressource. Du schuetzt es aktiv
   1. Schreibe ein Briefing unter `briefings/[agent-name]-[thema].md`
   2. Sage Andy: "Das solltest du direkt mit [Agent] machen. Starte `scripts/[agent-name]` in einem neuen Terminal."
   3. Wenn Andy zurueckkommt: Lies die aktualisierten Projektdateien, reviewe, integriere.
+- **Neue Session vorschlagen**, wenn eine Aufgabe nicht vom bisherigen Session-Kontext profitiert. Frischer Kontext schlaegt ueberfuellten.
 
 ## Deine Sub-Agents
 
