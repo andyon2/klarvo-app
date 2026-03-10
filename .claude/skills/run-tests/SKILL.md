@@ -18,7 +18,7 @@ Aus `$ARGUMENTS` extrahiere den Scope: `all` | `rust` | `frontend` | ein spezifi
 ### Rust-Tests (scope = `rust` oder `all` oder ein Rust-Modulname)
 
 ```bash
-cd /home/andyon2/dikta
+cd /home/andyon2/claude-projects/dikta
 
 # Alle Rust-Tests oder spezifisches Modul
 cargo test --manifest-path src-tauri/Cargo.toml [--lib modulname] 2>&1
@@ -27,7 +27,7 @@ cargo test --manifest-path src-tauri/Cargo.toml [--lib modulname] 2>&1
 ### Frontend-Tests (scope = `frontend` oder `all`)
 
 ```bash
-cd /home/andyon2/dikta && npm test 2>&1
+cd /home/andyon2/claude-projects/dikta && npm test 2>&1
 ```
 
 ### Report-Format

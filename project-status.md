@@ -1,30 +1,23 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.1. 222 Rust-Tests (alle gruen). Zwei-Repo-Setup: dikta (privat) + dikta-public (oeffentlich). Offline whisper.cpp Feature komplett implementiert (Backend + UI), aber Windows-Build BLOCKIERT durch LLVM/Clang-Version-Problem.
+Version 0.4.1. 230 Rust-Tests (alle gruen). Windows-Build mit Offline-Whisper funktioniert. Settings-UI ueberarbeitet (Cloud/Offline Toggle, Paid-Feature-Gates). 13 Dateien mit uncommitted Changes aus letzter Session (Offline-Modus, Settings-Redesign, License-Fix, LLM-Chunk-Threshold).
 
 ## Blocker
 
-- **Windows-Build mit whisper-rs:** Clang 22 generiert kaputte Bindings (Codeberg #268). LLVM 18.1.8 muss installiert werden. Danach Build testen. Siehe `knowledge/architecture.md` Abschnitt "Build-Anforderungen whisper-rs".
+Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **LLVM 18 installieren + Windows-Build testen** — Blocker loesen, dann Offline-Whisper end-to-end testen
-2. **Onboarding/Polish** → [Briefing noch zu erstellen]
-3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
+1. **Uncommitted Changes committen + neuen Build machen** — 13 Dateien, substantielle Aenderungen
+2. **Offline-Whisper end-to-end testen** — Modell laden, diktieren, Ergebnis pruefen
+3. **Onboarding/Polish** → [Briefing noch zu erstellen]
+4. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
 
 ## Bekannte Bugs
-- Keine kritischen Bugs (ausser Build-Blocker oben)
+- License-Key-Eingabe: maxLength 24 statt 25 (Fix lokal, nicht committed/released, von Andy bestaetigt 2026-03-10)
 
 ## Backlog
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
-- [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
-
-## Aenderungen Session 2026-03-10b (Offline Whisper + Housekeeping)
-
-- [x] Repo-Trennung: dikta (privat) + dikta-public (oeffentlich), initialer Push
-- [x] /release Skill: Releases gehen auf dikta-public, publish.sh integriert
-- [x] Offline whisper.cpp: LocalWhisperProvider, Model-Manager, Config, Pipeline-Fallback
-- [x] Offline whisper.cpp UI: WhisperModelManager, Download-Button, STT-Priority "local"
-- [x] whisper-rs Recherche dokumentiert in knowledge/api-providers.md
-- [ ] Windows-Build blockiert: LLVM 18.1.8 installieren, Build erneut testen
+- [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
+- [ ] [ui] STT/LLM Settings UX weiter vereinfachen

@@ -18,7 +18,7 @@ Aus `$ARGUMENTS` extrahiere den Scope: `all` (default) | `rust` | `frontend`
 ### Rust (scope = `rust` oder `all`)
 
 ```bash
-cd /home/andyon2/dikta
+cd /home/andyon2/claude-projects/dikta
 
 # Formatter
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check 2>&1
@@ -32,7 +32,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings 2>&1
 ### Frontend (scope = `frontend` oder `all`)
 
 ```bash
-cd /home/andyon2/dikta
+cd /home/andyon2/claude-projects/dikta
 
 # Prettier (Formatter)
 npx prettier --check "src/**/*.{ts,tsx}" 2>&1

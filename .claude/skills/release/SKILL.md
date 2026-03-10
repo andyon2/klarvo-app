@@ -56,12 +56,12 @@ Nutze `Edit` (nicht sed) fuer jede Datei. Ersetze NUR die alte Version durch die
 
 Windows:
 ```bash
-cd /home/andyon2/dikta && powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\dikta\scripts\sync-and-build.ps1' 2>&1
+cd /home/andyon2/claude-projects/dikta && powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null; powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\dikta\scripts\sync-and-build.ps1' 2>&1
 ```
 
 Android:
 ```bash
-cd /home/andyon2/dikta && bash scripts/android-build.sh 2>&1
+cd /home/andyon2/claude-projects/dikta && bash scripts/android-build.sh 2>&1
 ```
 
 Falls ein Build fehlschlaegt:
@@ -102,7 +102,7 @@ Falls die `.sig` Datei NICHT existiert: Warnung ausgeben. Der Build hat vermutli
 ### 6. Git Commit + Push (privates Repo)
 
 ```bash
-cd /home/andyon2/dikta
+cd /home/andyon2/claude-projects/dikta
 git add src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
 git commit -m "chore: bump version to X.Y.Z"
 git push origin master
@@ -111,14 +111,14 @@ git push origin master
 ### 7. Public Repo sync + commit + push
 
 ```bash
-cd /home/andyon2/dikta && bash scripts/publish.sh
+cd /home/andyon2/claude-projects/dikta && bash scripts/publish.sh
 ```
 
 Falls publish.sh mit Marker-Warnung abbricht: STOPP. Dem Nutzer melden. Nicht weiter machen.
 
 Falls OK:
 ```bash
-cd /home/andyon2/dikta-public
+cd /home/andyon2/claude-projects/dikta-public
 git commit -m "chore: sync release vX.Y.Z"
 git push origin main
 ```
