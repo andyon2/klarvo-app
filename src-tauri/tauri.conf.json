@@ -51,7 +51,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/andyon2/dikta/releases/latest/download/latest.json"
+        "https://github.com/andyon2/dikta-public/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEExNjU2OUIyOEMyRTUzOEQKUldTTlV5Nk1zbWxsb2ZITjBINnVtK0JxajluWkJxT2dwb0pTRXMvaUFkTGIzclJwa0lJUlR4NEQK"
     }

@@ -1,13 +1,13 @@
 ---
 name: release
-description: Bumpt die Version, baut beide Plattformen, erstellt GitHub Release mit Artefakten. Aufrufen mit Version-Bump-Typ, z.B. "/release minor" oder "/release patch" oder "/release 0.6.0".
+description: Bumpt die Version, baut beide Plattformen, synct nach dikta-public, erstellt GitHub Release dort. Aufrufen mit Version-Bump-Typ, z.B. "/release minor" oder "/release patch" oder "/release 0.6.0".
 argument-hint: "[minor | patch | major | X.Y.Z] -- Version bump type or explicit version"
 allowed-tools: Read, Edit, Bash, Glob
 context: fork
 model: haiku
 ---
 
-Erstelle einen vollstaendigen Release: Version bump, Build, GitHub Release.
+Erstelle einen vollstaendigen Release: Version bump, Build, Sync nach Public Repo, GitHub Release.
 
 ## Argumente
 
@@ -18,6 +18,13 @@ Aus `$ARGUMENTS` extrahiere den Bump-Typ oder die explizite Version:
 - `X.Y.Z` → Explizite Version (z.B. `0.6.0`)
 
 Falls kein Argument: Fehler melden. Nie raten.
+
+## Zwei-Repo-Architektur
+
+- `dikta` (privat, `~/dikta`): Arbeitsrepo. Code + Agents. Hier wird entwickelt und gebaut.
+- `dikta-public` (oeffentlich, `~/dikta-public`): Produktcode-Mirror. Hier landen Releases fuer Nutzer.
+
+Releases werden IMMER auf `dikta-public` erstellt (--repo andyon2/dikta-public).
 
 ## Vorgehensweise
 
@@ -80,7 +87,7 @@ Erstelle `/tmp/latest.json` mit diesem Inhalt:
   "platforms": {
     "windows-x86_64": {
       "signature": "<Inhalt der .sig-Datei>",
-      "url": "https://github.com/andyon2/dikta/releases/download/vX.Y.Z/Dikta_X.Y.Z_x64-setup.exe"
+      "url": "https://github.com/andyon2/dikta-public/releases/download/vX.Y.Z/Dikta_X.Y.Z_x64-setup.exe"
     }
   }
 }
@@ -88,9 +95,11 @@ Erstelle `/tmp/latest.json` mit diesem Inhalt:
 
 Nutze `date -u +%Y-%m-%dT%H:%M:%SZ` fuer das Datum.
 
+WICHTIG: Die URL zeigt auf `dikta-public`, NICHT auf `dikta`!
+
 Falls die `.sig` Datei NICHT existiert: Warnung ausgeben. Der Build hat vermutlich den Signing Key nicht gefunden. Trotzdem fortfahren, aber in der Ergebnis-Meldung darauf hinweisen.
 
-### 6. Git Commit + Push
+### 6. Git Commit + Push (privates Repo)
 
 ```bash
 cd /home/andyon2/dikta
@@ -99,7 +108,22 @@ git commit -m "chore: bump version to X.Y.Z"
 git push origin master
 ```
 
-### 7. GitHub Release erstellen
+### 7. Public Repo sync + commit + push
+
+```bash
+cd /home/andyon2/dikta && bash scripts/publish.sh
+```
+
+Falls publish.sh mit Marker-Warnung abbricht: STOPP. Dem Nutzer melden. Nicht weiter machen.
+
+Falls OK:
+```bash
+cd /home/andyon2/dikta-public
+git commit -m "chore: sync release vX.Y.Z"
+git push origin main
+```
+
+### 8. GitHub Release erstellen (auf dikta-public!)
 
 Pruefe dass alle Artefakte existieren und eine plausible Groesse haben (>1MB fuer Installer/APK).
 
@@ -109,14 +133,14 @@ gh release create vX.Y.Z \
   "/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe.sig#Dikta_X.Y.Z_x64-setup.exe.sig" \
   "/tmp/latest.json" \
   "/mnt/d/Dropbox/App Development/dikta/Dikta.apk#Dikta-vX.Y.Z.apk" \
-  --repo andyon2/dikta \
+  --repo andyon2/dikta-public \
   --title "vX.Y.Z" \
   --notes "Release vX.Y.Z"
 ```
 
-HINWEIS: Die Release-Notes sind bewusst minimal. Der Main-Agent oder Andy kann sie nachtraeglich ueber die GitHub-Webseite oder `gh release edit` ergaenzen.
+WICHTIG: `--repo andyon2/dikta-public` (NICHT dikta!)
 
-### 8. Ergebnis melden
+### 9. Ergebnis melden
 
 ```
 RELEASE ERSTELLT: vX.Y.Z
@@ -126,8 +150,9 @@ Windows Installer: Dikta_X.Y.Z_x64-setup.exe ([Groesse])
 Signatur: Dikta_X.Y.Z_x64-setup.exe.sig
 Updater Manifest: latest.json (signiert: ja/nein)
 Android: Dikta-vX.Y.Z.apk ([Groesse])
-Release: https://github.com/andyon2/dikta/releases/tag/vX.Y.Z
+Public Repo: synced + pushed
+Release: https://github.com/andyon2/dikta-public/releases/tag/vX.Y.Z
 
-Auto-Update: Nutzer mit v0.4.0+ bekommen Update-Benachrichtigung in den Settings.
-Naechster Schritt: Release-Notes ergaenzen (gh release edit vX.Y.Z --notes "...")
+Auto-Update: Nutzer mit v0.4.1+ bekommen Update-Benachrichtigung in den Settings.
+Naechster Schritt: Release-Notes ergaenzen (gh release edit vX.Y.Z --repo andyon2/dikta-public --notes "...")
 ```
