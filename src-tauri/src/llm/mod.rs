@@ -1147,11 +1147,12 @@ impl CleanupProvider for AnthropicCleanup {
 
 /// Minimum character count before chunked cleanup kicks in.
 /// Below this threshold, a single API call is used (faster for short texts).
-const CHUNK_THRESHOLD: usize = 800;
+/// Set conservatively low to avoid hitting provider token limits (e.g. Groq).
+const CHUNK_THRESHOLD: usize = 400;
 
 /// Target size per chunk in characters. Actual chunks may be slightly larger
 /// because we split on sentence boundaries to preserve context.
-const CHUNK_TARGET_SIZE: usize = 600;
+const CHUNK_TARGET_SIZE: usize = 350;
 
 /// Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).
 /// Each chunk targets ~`CHUNK_TARGET_SIZE` characters but won't break mid-sentence.

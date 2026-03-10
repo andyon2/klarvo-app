@@ -490,7 +490,7 @@ function LicenseKeyInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !loading && onActivate()}
-          maxLength={24} // DIKTA(5) + 4 dashes + 16 chars
+          maxLength={25} // DIKTA(5) + 4 dashes + 16 chars = 25
           className={[
             "flex-1 font-mono tracking-widest",
             isMobile ? INPUT_CLS_M : INPUT_CLS,
@@ -1023,32 +1023,6 @@ export function SettingsPanel({
           </div>
         )}
 
-        {/* --- Webhook -- desktop only --- */}
-        {isDesktop && (
-          <div className="flex flex-col gap-1">
-            <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Webhook</span>
-            </button>
-            {openSections.webhook && (
-              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-                <div className={!isPaid ? "opacity-50" : ""}>
-                  <input
-                    type="url"
-                    placeholder={isPaid ? "https://example.com/webhook" : "Requires Dikta License"}
-                    value={localWebhookUrl}
-                    disabled={!isPaid}
-                    onChange={(e) => setLocalWebhookUrl(e.target.value)}
-                    className={`${INPUT_CLS_M}${!isPaid ? " cursor-not-allowed" : ""}`}
-                  />
-                </div>
-                <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>HTTP POST after each dictation. Leave empty to disable.</p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* --- Sync --- */}
         <div className="flex flex-col gap-1">
@@ -1201,38 +1175,69 @@ export function SettingsPanel({
           </button>
           {openSections.providerPriority && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>
-                {isMobile ? "Use arrows to reorder." : "Drag to reorder."} First provider with a configured key is used. If it fails, the next one is tried.
-              </p>
 
+              {/* STT mode toggle: Cloud vs Offline */}
               <div className="flex flex-col gap-2">
                 <span className={LABEL_CLS_M}>Speech-to-Text</span>
-                <ProviderPriorityList
-                  items={localSttPriority}
-                  onChange={setLocalSttPriority}
-                  keyStatus={{ groq: groqOk, openai: openaiOk, local: true }}
-                  labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper", local: "Local (whisper.cpp)" }}
-                />
-                {/* Add / remove "local" from the list -- desktop only */}
-                {isDesktop && (
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {!localSttPriority.includes("local") ? (
-                      <button
-                        type="button"
-                        onClick={() => setLocalSttPriority([...localSttPriority, "local"])}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-                      >
-                        + Add Local (whisper.cpp)
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setLocalSttPriority(localSttPriority.filter((id) => id !== "local"))}
-                        className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
-                      >
-                        Remove Local
-                      </button>
+                <div className="flex items-center gap-1 p-0.5 bg-[#111113] border border-zinc-800/60 rounded-lg w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setLocalSttPriority(["groq", "openai"])}
+                    className={[
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                      !localSttPriority.includes("local") || localSttPriority[0] !== "local"
+                        ? "bg-emerald-500/15 border border-emerald-500/25 text-emerald-400"
+                        : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Cloud
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLocalSttPriority(["local"])}
+                    className={[
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                      localSttPriority[0] === "local"
+                        ? "bg-emerald-500/15 border border-emerald-500/25 text-emerald-400"
+                        : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Offline
+                  </button>
+                </div>
+
+                {/* Offline mode: info + WhisperModelManager */}
+                {localSttPriority[0] === "local" ? (
+                  <div className="flex flex-col gap-3 mt-1">
+                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
+                      <svg className="w-3.5 h-3.5 text-zinc-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+                      </svg>
+                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                        Offline mode: Speech is transcribed locally. Text cleanup is skipped (no internet needed).
+                      </p>
+                    </div>
+                    {isDesktop && (
+                      <WhisperModelManager
+                        selectedModel={localWhisperModel}
+                        gpuEnabled={localWhisperGpu}
+                        onModelChange={setLocalWhisperModel}
+                        onGpuChange={setLocalWhisperGpu}
+                      />
                     )}
+                  </div>
+                ) : (
+                  /* Cloud mode: show provider priority list (groq, openai only -- no local) */
+                  <div className="flex flex-col gap-2 mt-1">
+                    <ProviderPriorityList
+                      items={localSttPriority.filter((p) => p !== "local").length > 0
+                        ? localSttPriority.filter((p) => p !== "local")
+                        : ["groq", "openai"]}
+                      onChange={(updated) => setLocalSttPriority(updated)}
+                      keyStatus={{ groq: groqOk, openai: openaiOk }}
+                      labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
+                    />
+                    <p className="text-[11px] text-zinc-500">Drag to reorder. First provider with a key is used, falls back to next.</p>
                   </div>
                 )}
               </div>
@@ -1249,31 +1254,6 @@ export function SettingsPanel({
             </div>
           )}
         </div>
-
-        {/* --- Offline Transcription -- desktop only --- */}
-        {isDesktop && (
-          <div className="flex flex-col gap-1">
-            <button onClick={() => toggleSection("offlineTranscription")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.offlineTranscription ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Offline Transcription</span>
-            </button>
-            {openSections.offlineTranscription && (
-              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-                <p className="text-[11px] text-zinc-500">
-                  Local whisper.cpp model — works without internet. Select a model, download it once, then add "local" to your STT priority list.
-                </p>
-                <WhisperModelManager
-                  selectedModel={localWhisperModel}
-                  gpuEnabled={localWhisperGpu}
-                  onModelChange={setLocalWhisperModel}
-                  onGpuChange={setLocalWhisperGpu}
-                />
-              </div>
-            )}
-          </div>
-        )}
 
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">

@@ -359,6 +359,14 @@ mod tests {
         assert_eq!(result.unwrap(), LicenseStatus::Licensed);
     }
 
+    /// Prints a dev license key to stdout. Run with:
+    /// `cargo test --lib license::tests::print_dev_key -- --nocapture`
+    #[test]
+    fn print_dev_key() {
+        let key = generate_license_key(b"andyon");
+        println!("\n=== DEV LICENSE KEY ===\n{key}\n=======================\n");
+    }
+
     #[test]
     fn test_empty_key_is_rejected() {
         let result = validate_license_key("");

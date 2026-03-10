@@ -211,6 +211,13 @@ export default function App() {
   const recording = useRecording(settings.cleanupStyle, settings.language);
   const license = useLicense();
 
+  // Feature gate: active paid license (licensed or valid grace period).
+  const isPaid =
+    license.licenseStatus.type === "licensed" ||
+    (license.licenseStatus.type === "grace_period" &&
+      license.licenseStatus.graceUntil !== undefined &&
+      license.licenseStatus.graceUntil > Date.now() / 1000);
+
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -695,6 +702,7 @@ export default function App() {
         {panels.showAdvanced && (
           <AdvancedSettingsPanel
             onClose={() => panels.close("advanced")}
+            isPaid={isPaid}
           />
         )}
       </div>

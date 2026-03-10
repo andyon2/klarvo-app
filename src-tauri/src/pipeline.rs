@@ -435,7 +435,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     }
 
     // --- Collect config + dictionary (release locks before await points) ---
-    let (language, stt_provider, cleanup_provider, dict_prompt) = {
+    let (language, stt_provider, cleanup_provider, dict_prompt, offline_mode) = {
         let cfg = match state.config.lock() {
             Ok(g) => g.clone(),
             Err(_) => {
@@ -496,7 +496,13 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             stt_hint.as_deref(),
         );
 
-        (cfg.language.clone(), stt_prov, cleanup_prov, prompt)
+        // Offline mode: if the first entry in stt_priority is "local", the
+        // user has explicitly chosen to stay offline. In this case we skip the
+        // LLM cleanup step entirely -- no network call, raw text goes straight
+        // to paste.
+        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+
+        (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline)
     };
 
     // --- Transcribe ---
@@ -540,9 +546,22 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     };
 
     // --- LLM step ---
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
+    // Skip the entire cleanup step in offline mode (stt_priority[0] == "local").
+    // Command Mode still requires an LLM call even offline, so we only skip
+    // for normal dictation.
+    if !offline_mode || selected_text.is_some() {
+        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
+    }
 
-    let cleanup_result = if let Some(ref sel_text) = selected_text {
+    let cleanup_result = if offline_mode && selected_text.is_none() {
+        // Offline dictation: return raw transcript without any LLM call.
+        log::info!("[pipeline] Offline mode: skipping LLM cleanup");
+        llm::CleanupResult {
+            text: raw_text.clone(),
+            prompt_tokens: None,
+            completion_tokens: None,
+        }
+    } else if let Some(ref sel_text) = selected_text {
         // Command Mode: rewrite selected text using the voice command
         log::info!("[pipeline] command mode: rewriting with voice command");
 
@@ -914,4 +933,54 @@ pub fn register_hotkey(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+
+    /// When `stt_priority` starts with `"local"`, the `offline` flag must be
+    /// set so the pipeline skips the LLM cleanup step.
+    ///
+    /// This test verifies the extraction logic in `stop_and_process_pipeline`
+    /// by replicating it directly -- the full pipeline cannot be unit-tested
+    /// without a Tauri `AppHandle`.
+    #[test]
+    fn test_offline_flag_derived_from_stt_priority_local() {
+        let cfg = AppConfig {
+            stt_priority: vec!["local".to_string()],
+            ..AppConfig::default()
+        };
+        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+        assert!(offline, "offline flag should be true when stt_priority[0] == 'local'");
+    }
+
+    /// When `stt_priority` starts with a cloud provider, the offline flag must
+    /// be `false` even if `"local"` appears later in the list.
+    #[test]
+    fn test_offline_flag_false_when_cloud_first() {
+        let cfg = AppConfig {
+            stt_priority: vec!["groq".to_string(), "local".to_string()],
+            groq_api_key: "gsk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+        assert!(!offline, "offline flag should be false when stt_priority[0] != 'local'");
+    }
+
+    /// When `stt_priority` is empty the offline flag defaults to `false`.
+    #[test]
+    fn test_offline_flag_false_when_priority_empty() {
+        let cfg = AppConfig {
+            stt_priority: vec![],
+            ..AppConfig::default()
+        };
+        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+        assert!(!offline);
+    }
 }

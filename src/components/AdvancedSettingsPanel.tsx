@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AdvancedSettings } from "../types";
 import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
-import { CloseIcon, SpinnerIcon } from "./icons";
+import { CloseIcon, SpinnerIcon, LockIcon } from "./icons";
 import { INPUT_CLS, LABEL_CLS } from "./ui";
 import { isMobile } from "../platform";
 import { MobileTextarea } from "./MobileTextarea";
@@ -38,9 +38,10 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
 
 interface AdvancedSettingsPanelProps {
   onClose: () => void;
+  isPaid: boolean;
 }
 
-export function AdvancedSettingsPanel({ onClose }: AdvancedSettingsPanelProps) {
+export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanelProps) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -143,103 +144,121 @@ export function AdvancedSettingsPanel({ onClose }: AdvancedSettingsPanelProps) {
       {/* Content -- scrollable, constrained so footer stays in view */}
       <div className={`overflow-y-auto ${scrollMaxH} p-4 flex flex-col gap-1`}>
 
-        {/* STT */}
+        {/* Speech Recognition */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Speech-to-Text (STT)</span>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Speech Recognition</span>
         </button>
         {openSections.stt && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>STT Prompt (German)</span>
-              <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={(v) => set("sttPromptDe", v)} placeholder="Context prompt sent with German transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Injected as context when language is set to German.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>STT Prompt (English)</span>
-              <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={(v) => set("sttPromptEn", v)} placeholder="Context prompt for English transcriptions" rows={2} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Injected as context when language is set to English.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
-              <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={(v) => set("sttPromptAuto", v)} placeholder="Context prompt for auto-detect mode" rows={2} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <span className={LABEL_CLS}>STT Temperature</span>
-                <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+            {/* Custom STT Prompts -- paid feature */}
+            <div className={`flex flex-col gap-3${!isPaid ? " opacity-50" : ""}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Custom STT Prompts</span>
+                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
               </div>
-              <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => set("sttTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>STT Prompt (German)</span>
+                <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={isPaid ? (v) => set("sttPromptDe", v) : () => {}} placeholder={isPaid ? "Context prompt sent with German transcriptions" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Injected as context when language is set to German.</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>STT Prompt (English)</span>
+                <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={isPaid ? (v) => set("sttPromptEn", v) : () => {}} placeholder={isPaid ? "Context prompt for English transcriptions" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Injected as context when language is set to English.</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
+                <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
+              </div>
+              <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
+                <div className="flex flex-col gap-0.5">
+                  <span className={LABEL_CLS}>STT Temperature</span>
+                  <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+                </div>
+                <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => { if (isPaid) set("sttTemperature", parseFloat(e.target.value) || 0); }} disabled={!isPaid} className={numberInputCls} />
+              </div>
             </div>
           </div>
         )}
 
-        {/* LLM Cleanup */}
+        {/* Text Cleanup */}
         <button onClick={() => toggleSection("llm")} className={sectionBtnCls}>
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">LLM Cleanup -- Base Prompts</span>
+          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Text Cleanup</span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-            <p className={hintCls}>
-              Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Polished</span>
-              <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={(v) => set("llmSystemPromptPolished", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
+            {/* Custom cleanup instructions -- paid feature */}
+            <div className={`flex flex-col gap-3${!isPaid ? " opacity-50" : ""}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Custom Cleanup Instructions</span>
+                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              </div>
+              <p className={hintCls}>
+                Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>System Prompt: Polished</span>
+                <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>System Prompt: Verbatim</span>
+                <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>System Prompt: Chat</span>
+                <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>Command Mode Prompt</span>
+                <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-              <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={(v) => set("llmSystemPromptVerbatim", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Chat</span>
-              <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={(v) => set("llmSystemPromptChat", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>Command Mode Prompt</span>
-              <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={(v) => set("llmCommandModePrompt", v)} placeholder="Leave empty for built-in default" rows={3} className={`${INPUT_CLS} resize-none`} />
-              <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
-              <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
-              <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
-              <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
-              <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
-              <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
-              <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
-              <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
-              <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+            {/* Technical LLM parameters -- free */}
+            <div className="flex flex-col gap-3 mt-1">
+              <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Model & Parameters</span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
+                <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
+                <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
+                <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
+                <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
+                <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
+                <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
+                <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
+                <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+              </div>
             </div>
           </div>
         )}
@@ -313,6 +332,40 @@ export function AdvancedSettingsPanel({ onClose }: AdvancedSettingsPanelProps) {
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Timeout (seconds)</span><span className={hintCls}>Max wait for webhook response.</span></div>
               <input type="number" min={1} max={120} step={1} value={settings.webhookTimeoutSecs} onChange={(e) => set("webhookTimeoutSecs", parseInt(e.target.value, 10) || 10)} className={numberInputCls} />
+            </div>
+          </div>
+        )}
+
+        {/* Integrations -- paid feature */}
+        <button onClick={() => toggleSection("integrations")} className={sectionBtnCls}>
+          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.integrations ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            Integrations
+            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+          </span>
+        </button>
+        {openSections.integrations && (
+          <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
+            {!isPaid && (
+              <p className={hintCls}>Requires Dikta License. Integrations send your transcriptions to external services.</p>
+            )}
+            <div className={`flex flex-col gap-2${!isPaid ? " pointer-events-none" : ""}`}>
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#111113] border border-zinc-800/60">
+                <div className="flex flex-col gap-0.5">
+                  <span className={LABEL_CLS}>Notion</span>
+                  <span className={hintCls}>Append transcriptions to a Notion page.</span>
+                </div>
+                <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Coming soon</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#111113] border border-zinc-800/60">
+                <div className="flex flex-col gap-0.5">
+                  <span className={LABEL_CLS}>Todoist</span>
+                  <span className={hintCls}>Create tasks from voice commands.</span>
+                </div>
+                <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Coming soon</span>
+              </div>
             </div>
           </div>
         )}

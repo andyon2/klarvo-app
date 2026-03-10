@@ -77,6 +77,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingInfo,
 /// Returns the ID of the active STT provider based on the priority list and available keys.
 ///
 /// Walks `stt_priority` and returns the ID of the first provider with a non-empty key.
+/// `"local"` is treated as always-available (no API key required).
 /// Returns `"groq"` as fallback (matching `resolve_stt_provider` behaviour).
 fn active_stt_provider_id(state: &AppState) -> String {
     let cfg = match state.config.lock() {
@@ -87,10 +88,24 @@ fn active_stt_provider_id(state: &AppState) -> String {
         match id.as_str() {
             "groq" if !cfg.groq_api_key.is_empty() => return "groq".to_string(),
             "openai" if !cfg.openai_api_key.is_empty() => return "openai".to_string(),
+            // "local" requires no API key -- always considered available.
+            "local" => return "local".to_string(),
             _ => continue,
         }
     }
     "groq".to_string()
+}
+
+/// Returns `true` if the user is in offline mode, i.e. the first entry in
+/// `stt_priority` is `"local"`.
+fn is_offline_mode(state: &AppState) -> bool {
+    state
+        .config
+        .lock()
+        .ok()
+        .and_then(|c| c.stt_priority.first().cloned())
+        .map(|id| id == "local")
+        .unwrap_or(false)
 }
 
 /// Returns the ID of the active LLM cleanup provider based on the priority list and available keys.
@@ -222,6 +237,13 @@ pub async fn cleanup_text(
     dictionary_terms: Option<String>,
 ) -> Result<String, String> {
     let inner = state.inner();
+
+    // Offline mode: if stt_priority[0] == "local", skip the LLM call entirely
+    // and return the raw transcription unchanged.
+    if is_offline_mode(inner) {
+        log::info!("[cleanup] Offline mode: returning raw text without cleanup");
+        return Ok(raw_text);
+    }
 
     // License gate: non-Polished cleanup styles require a paid license.
     if style != CleanupStyle::Polished {
@@ -371,5 +393,81 @@ pub async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<Strin
             log::warn!("[live-preview] transcription failed: {e}");
             Ok(String::new()) // Don't error out, just return empty
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_helpers::{make_state, temp_dir};
+
+    /// `is_offline_mode` returns `true` when the first STT priority is "local".
+    #[test]
+    fn test_is_offline_mode_local_first() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_priority = vec!["local".to_string(), "groq".to_string()];
+        }
+        assert!(is_offline_mode(&state));
+    }
+
+    /// `is_offline_mode` returns `false` when "local" is not the first entry.
+    #[test]
+    fn test_is_offline_mode_cloud_first() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_priority = vec!["groq".to_string(), "local".to_string()];
+            cfg.groq_api_key = "test-key".to_string();
+        }
+        assert!(!is_offline_mode(&state));
+    }
+
+    /// `is_offline_mode` returns `false` when `stt_priority` is empty.
+    #[test]
+    fn test_is_offline_mode_empty_priority() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_priority = vec![];
+        }
+        assert!(!is_offline_mode(&state));
+    }
+
+    /// `active_stt_provider_id` returns `"local"` when "local" appears in the
+    /// priority list and no cloud key is configured before it.
+    #[test]
+    fn test_active_stt_provider_id_local() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_priority = vec!["local".to_string()];
+            cfg.groq_api_key = String::new();
+        }
+        assert_eq!(active_stt_provider_id(&state), "local");
+    }
+
+    /// `active_stt_provider_id` returns `"groq"` when a Groq key is present and
+    /// "groq" comes before "local" in the priority list.
+    #[test]
+    fn test_active_stt_provider_id_groq_beats_local() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_priority = vec!["groq".to_string(), "local".to_string()];
+            cfg.groq_api_key = "gsk-test".to_string();
+        }
+        assert_eq!(active_stt_provider_id(&state), "groq");
     }
 }
