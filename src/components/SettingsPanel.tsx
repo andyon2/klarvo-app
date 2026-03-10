@@ -2,9 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
@@ -61,138 +58,6 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
     >
       {listening ? "Press shortcut..." : value || "Click to set"}
     </button>
-  );
-}
-
-// --- Drag-and-drop provider priority -----------------------------------------
-
-function SortableProviderItem({ id, label, active }: { id: string; label: string; active: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={[
-        "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-grab active:cursor-grabbing select-none",
-        "bg-[#111113] border",
-        active ? "border-emerald-500/30 text-zinc-200" : "border-zinc-800/40 text-zinc-500",
-      ].join(" ")}
-    >
-      <svg viewBox="0 0 16 16" className="w-3 h-3 text-zinc-600 flex-shrink-0" fill="currentColor">
-        <circle cx="5" cy="4" r="1.2" /><circle cx="11" cy="4" r="1.2" />
-        <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
-        <circle cx="5" cy="12" r="1.2" /><circle cx="11" cy="12" r="1.2" />
-      </svg>
-      <span className="flex-1">{label}</span>
-      <span className={["w-1.5 h-1.5 rounded-full flex-shrink-0", active ? "bg-emerald-400" : "bg-zinc-700"].join(" ")} />
-    </div>
-  );
-}
-
-/** Mobile-only row with Up/Down buttons instead of drag handle. */
-function MobileProviderItem({
-  label, active, onUp, onDown, isFirst, isLast,
-}: {
-  label: string; active: boolean; onUp: () => void; onDown: () => void; isFirst: boolean; isLast: boolean;
-}) {
-  return (
-    <div className={[
-      "flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm",
-      "bg-[#111113] border",
-      active ? "border-emerald-500/30 text-zinc-200" : "border-zinc-800/40 text-zinc-500",
-    ].join(" ")}>
-      <span className="flex-1">{label}</span>
-      <span className={["w-2 h-2 rounded-full flex-shrink-0", active ? "bg-emerald-400" : "bg-zinc-700"].join(" ")} />
-      <button
-        onClick={onUp}
-        disabled={isFirst}
-        aria-label="Move up"
-        className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/50 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-      >
-        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M18 15l-6-6-6 6" />
-        </svg>
-      </button>
-      <button
-        onClick={onDown}
-        disabled={isLast}
-        aria-label="Move down"
-        className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/50 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-      >
-        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-function ProviderPriorityList({
-  items, onChange, keyStatus, labels,
-}: {
-  items: string[];
-  onChange: (items: string[]) => void;
-  keyStatus: Record<string, boolean>;
-  labels: Record<string, string>;
-}) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIdx = items.indexOf(active.id as string);
-      const newIdx = items.indexOf(over.id as string);
-      onChange(arrayMove(items, oldIdx, newIdx));
-    }
-  }
-
-  function moveItem(index: number, direction: -1 | 1) {
-    const newIdx = index + direction;
-    if (newIdx < 0 || newIdx >= items.length) return;
-    onChange(arrayMove(items, index, newIdx));
-  }
-
-  // On mobile, show Up/Down buttons instead of drag handles.
-  if (isMobile) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        {items.map((id, i) => (
-          <MobileProviderItem
-            key={id}
-            label={labels[id] ?? id}
-            active={!!keyStatus[id]}
-            onUp={() => moveItem(i, -1)}
-            onDown={() => moveItem(i, 1)}
-            isFirst={i === 0}
-            isLast={i === items.length - 1}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-col gap-1">
-          {items.map((id) => (
-            <SortableProviderItem
-              key={id}
-              id={id}
-              label={labels[id] ?? id}
-              active={!!keyStatus[id]}
-            />
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
   );
 }
 
@@ -544,10 +409,11 @@ export interface SettingsPanelProps {
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
-    openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
+    openaiKey: string, anthropicKey: string,
     outputLanguage: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
+    sttProvider?: string | null, llmProvider?: string | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -579,8 +445,8 @@ export function SettingsPanel({
   const [localWhisperMode, setLocalWhisperMode] = useState(loadedSettings?.whisperMode ?? false);
   const [openaiKey, setOpenaiKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
-  const [localSttPriority, setLocalSttPriority] = useState<string[]>(loadedSettings?.sttPriority ?? ["groq", "openai"]);
-  const [localLlmPriority, setLocalLlmPriority] = useState<string[]>(loadedSettings?.llmPriority ?? ["deepseek", "openai", "anthropic", "groq"]);
+  const [localSttProvider, setLocalSttProvider] = useState<string>(loadedSettings?.sttProvider ?? "groq");
+  const [localLlmProvider, setLocalLlmProvider] = useState<string>(loadedSettings?.llmProvider ?? "deepseek");
   const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
   useEffect(() => { setLocalOutputLanguage(outputLanguage); }, [outputLanguage]);
   const [localWebhookUrl, setLocalWebhookUrl] = useState(loadedSettings?.webhookUrl ?? "");
@@ -628,8 +494,8 @@ export function SettingsPanel({
       setLocalCustomPrompt(loadedSettings.customPrompt);
       setLocalAutostart(loadedSettings.autostart);
       setLocalWhisperMode(loadedSettings.whisperMode);
-      setLocalSttPriority(loadedSettings.sttPriority);
-      setLocalLlmPriority(loadedSettings.llmPriority);
+      setLocalSttProvider(loadedSettings.sttProvider ?? "groq");
+      setLocalLlmProvider(loadedSettings.llmProvider ?? "deepseek");
       setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
       setLocalWebhookUrl(loadedSettings.webhookUrl ?? "");
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
@@ -684,10 +550,11 @@ export function SettingsPanel({
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
-        openaiKey.trim(), anthropicKey.trim(), localSttPriority, localLlmPriority,
+        openaiKey.trim(), anthropicKey.trim(),
         localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), tursoToken.trim(),
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
+        localSttProvider, localLlmProvider,
       );
       setGroqKey("");
       setDeepseekKey("");
@@ -704,7 +571,7 @@ export function SettingsPanel({
   }, [
     groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
-    localSttPriority, localLlmPriority, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
+    localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
   ]);
 
@@ -770,10 +637,14 @@ export function SettingsPanel({
                 <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 w-fit">
                   <button
                     type="button"
-                    onClick={() => setLocalSttPriority(["groq", "openai"])}
+                    onClick={() => {
+                      if (localSttProvider === "local") {
+                        setLocalSttProvider("groq");
+                      }
+                    }}
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-                      localSttPriority[0] !== "local"
+                      localSttProvider !== "local"
                         ? "bg-emerald-500/15 text-emerald-400"
                         : "text-zinc-500 hover:text-zinc-300",
                     ].join(" ")}
@@ -782,10 +653,10 @@ export function SettingsPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setLocalSttPriority(["local"])}
+                    onClick={() => setLocalSttProvider("local")}
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-                      localSttPriority[0] === "local"
+                      localSttProvider === "local"
                         ? "bg-emerald-500/15 text-emerald-400"
                         : "text-zinc-500 hover:text-zinc-300",
                     ].join(" ")}
@@ -795,13 +666,22 @@ export function SettingsPanel({
                 </div>
 
                 {/* Cloud mode: model picker */}
-                {localSttPriority[0] !== "local" && (
+                {localSttProvider !== "local" && (
                   <div className="flex flex-col gap-2 mt-1">
                     <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                       <span className={LABEL_CLS_M}>Model</span>
                       <select
                         value={localSttModel}
-                        onChange={(e) => setLocalSttModel(e.target.value)}
+                        onChange={(e) => {
+                          const model = e.target.value;
+                          setLocalSttModel(model);
+                          // Sync provider to match the selected model's API.
+                          if (model === "whisper-1") {
+                            setLocalSttProvider("openai");
+                          } else {
+                            setLocalSttProvider("groq");
+                          }
+                        }}
                         className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                       >
                         {CLOUD_STT_MODELS.map((m) => (
@@ -811,12 +691,11 @@ export function SettingsPanel({
                         ))}
                       </select>
                     </div>
-                    <p className="text-[11px] text-zinc-500">Configure cloud providers in the Providers section below.</p>
                   </div>
                 )}
 
                 {/* Offline mode: WhisperModelManager */}
-                {localSttPriority[0] === "local" && isDesktop && (
+                {localSttProvider === "local" && isDesktop && (
                   <div className="flex flex-col gap-3 mt-1">
                     <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
                       <svg className="w-3.5 h-3.5 text-zinc-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -950,7 +829,7 @@ export function SettingsPanel({
         )}
 
         {/* --- Cleanup Instructions -- hidden when offline STT mode is active --- */}
-        {localSttPriority[0] !== "local" && <div className="flex flex-col gap-1">
+        {localSttProvider !== "local" && <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("customPrompt")} className={sectionBtnCls}>
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
@@ -1226,50 +1105,35 @@ export function SettingsPanel({
           )}
         </div>
 
-        {/* --- Providers -- only relevant in Cloud mode --- */}
-        <div className="flex flex-col gap-1">
-          <button onClick={() => toggleSection("providerPriority")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.providerPriority ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 18l6-6-6-6" />
-            </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Providers</span>
-          </button>
-          {openSections.providerPriority && (
-            <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-              {localSttPriority[0] === "local" ? (
-                /* Offline mode active -- providers not used */
-                <p className="text-[11px] text-zinc-500 italic">Only relevant in Cloud mode. Switch to Cloud in Voice &amp; Recording above.</p>
-              ) : (
-                <>
-                  {/* STT provider priority */}
-                  <div className="flex flex-col gap-2">
-                    <span className={LABEL_CLS_M}>Speech-to-Text</span>
-                    <ProviderPriorityList
-                      items={localSttPriority.filter((p) => p !== "local").length > 0
-                        ? localSttPriority.filter((p) => p !== "local")
-                        : ["groq", "openai"]}
-                      onChange={(updated) => setLocalSttPriority(updated)}
-                      keyStatus={{ groq: groqOk, openai: openaiOk }}
-                      labels={{ groq: "Groq Whisper", openai: "OpenAI Whisper" }}
-                    />
-                    <p className="text-[11px] text-zinc-500">Drag to reorder. First provider with a key is used, falls back to next.</p>
-                  </div>
-
-                  {/* LLM provider priority */}
-                  <div className="flex flex-col gap-2">
-                    <span className={LABEL_CLS_M}>Text Cleanup (LLM)</span>
-                    <ProviderPriorityList
-                      items={localLlmPriority}
-                      onChange={setLocalLlmPriority}
-                      keyStatus={{ deepseek: deepseekOk, openai: openaiOk, anthropic: anthropicOk, groq: groqOk }}
-                      labels={{ deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic", groq: "Groq (Llama)" }}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+        {/* --- Text Cleanup Provider -- only relevant in Cloud mode --- */}
+        {localSttProvider !== "local" && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("providerPriority")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.providerPriority ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Text Cleanup</span>
+            </button>
+            {openSections.providerPriority && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                  <span className={LABEL_CLS_M}>LLM Provider</span>
+                  <select
+                    value={localLlmProvider}
+                    onChange={(e) => setLocalLlmProvider(e.target.value)}
+                    className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                  >
+                    <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
+                    <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
+                    <option value="anthropic" disabled={!anthropicOk}>Anthropic{!anthropicOk ? " (no key)" : ""}</option>
+                    <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
+                  </select>
+                </div>
+                <p className="text-[11px] text-zinc-500">Used for text cleanup after transcription. Only providers with an API key are available.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">

@@ -129,7 +129,9 @@ pub async fn save_settings(
     whisper_mode: Option<bool>,
     openai_api_key: Option<String>,
     anthropic_api_key: Option<String>,
+    // deprecated: ignored -- kept for backwards compatibility with older frontend versions
     stt_priority: Option<Vec<String>>,
+    // deprecated: ignored -- kept for backwards compatibility with older frontend versions
     llm_priority: Option<Vec<String>>,
     output_language: Option<String>,
     webhook_url: Option<String>,
@@ -139,6 +141,8 @@ pub async fn save_settings(
     bubble_opacity: Option<f32>,
     local_whisper_model: Option<String>,
     local_whisper_gpu: Option<bool>,
+    stt_provider: Option<String>,
+    llm_provider: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -190,8 +194,12 @@ pub async fn save_settings(
             Some(ref k) if !k.is_empty() => k.clone(),
             _ => existing.anthropic_api_key,
         },
-        stt_priority: stt_priority.unwrap_or(existing.stt_priority),
-        llm_priority: llm_priority.unwrap_or(existing.llm_priority),
+        stt_provider: stt_provider.unwrap_or(existing.stt_provider),
+        llm_provider: llm_provider.unwrap_or(existing.llm_provider),
+        // deprecated fields: ignore the incoming values, preserve what was on disk
+        // so old config.json files round-trip cleanly
+        stt_priority: existing.stt_priority,
+        llm_priority: existing.llm_priority,
         output_language: output_language.unwrap_or(existing.output_language),
         snippets: existing.snippets,
         voice_notes_hotkey: existing.voice_notes_hotkey,
@@ -263,8 +271,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         whisper_mode: cfg.whisper_mode,
         openai_api_key_masked: mask_api_key(&cfg.openai_api_key),
         anthropic_api_key_masked: mask_api_key(&cfg.anthropic_api_key),
-        stt_priority: cfg.stt_priority,
-        llm_priority: cfg.llm_priority,
+        stt_provider: cfg.stt_provider,
+        llm_provider: cfg.llm_provider,
         output_language: cfg.output_language,
         webhook_url: cfg.webhook_url,
         turso_url: cfg.turso_url,

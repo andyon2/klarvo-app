@@ -60,16 +60,18 @@ export function useSettings() {
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     newHotkey: string, newHotkeyMode: HotkeyMode, newAudioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
-    openaiKey: string, anthropicKey: string, sttPriority: string[], llmPriority: string[],
+    openaiKey: string, anthropicKey: string,
     outputLang: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
+    sttProvider?: string | null, llmProvider?: string | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
       sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey,
-      sttPriority, llmPriority, outputLang, webhookUrl, tursoUrl, tursoToken,
+      null, null, outputLang, webhookUrl, tursoUrl, tursoToken,
       bubbleSize, bubbleOpacity, localWhisperModel, localWhisperGpu,
+      sttProvider, llmProvider,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);

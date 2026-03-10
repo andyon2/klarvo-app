@@ -37,8 +37,11 @@ export interface AppSettings {
   whisperMode: boolean;
   openaiApiKeyMasked: string;
   anthropicApiKeyMasked: string;
-  sttPriority: string[];
-  llmPriority: string[];
+  sttProvider: string;
+  llmProvider: string;
+  // Deprecated: use sttProvider / llmProvider instead.
+  sttPriority?: string[];
+  llmPriority?: string[];
   outputLanguage: string;
   webhookUrl: string;
   tursoUrl: string;

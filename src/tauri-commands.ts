@@ -82,7 +82,9 @@ export async function saveSettings(
   whisperMode?: boolean | null,
   openaiApiKey?: string | null,
   anthropicApiKey?: string | null,
+  /** @deprecated Use sttProvider instead. */
   sttPriority?: string[] | null,
+  /** @deprecated Use llmProvider instead. */
   llmPriority?: string[] | null,
   outputLanguage?: string | null,
   webhookUrl?: string | null,
@@ -92,6 +94,8 @@ export async function saveSettings(
   bubbleOpacity?: number | null,
   localWhisperModel?: string | null,
   localWhisperGpu?: boolean | null,
+  sttProvider?: string | null,
+  llmProvider?: string | null,
 ): Promise<void> {
   await invoke("save_settings", {
     groqApiKey,
@@ -117,6 +121,8 @@ export async function saveSettings(
     bubbleOpacity: bubbleOpacity ?? null,
     localWhisperModel: localWhisperModel ?? null,
     localWhisperGpu: localWhisperGpu ?? null,
+    sttProvider: sttProvider ?? null,
+    llmProvider: llmProvider ?? null,
   });
 }
 

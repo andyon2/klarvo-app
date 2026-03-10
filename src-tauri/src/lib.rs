@@ -133,10 +133,10 @@ pub struct SettingsView {
     pub openai_api_key_masked: String,
     /// Masked Anthropic API key.
     pub anthropic_api_key_masked: String,
-    /// Ordered list of STT provider IDs (first with a key wins).
-    pub stt_priority: Vec<String>,
-    /// Ordered list of LLM provider IDs (first with a key wins).
-    pub llm_priority: Vec<String>,
+    /// Selected STT provider: "groq", "openai", or "local".
+    pub stt_provider: String,
+    /// Selected LLM cleanup provider: "deepseek", "openai", "anthropic", or "groq".
+    pub llm_provider: String,
     /// Output language for translation (empty = no translation).
     pub output_language: String,
     /// Webhook URL for HTTP POST after each dictation. Empty = disabled.
@@ -788,8 +788,8 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
-            stt_priority: vec!["groq".to_string(), "openai".to_string()],
-            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            stt_provider: "groq".to_string(),
+            llm_provider: "deepseek".to_string(),
             output_language: String::new(),
             webhook_url: String::new(),
             turso_url: String::new(),
@@ -829,8 +829,8 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
-            stt_priority: vec!["groq".to_string(), "openai".to_string()],
-            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            stt_provider: "groq".to_string(),
+            llm_provider: "deepseek".to_string(),
             output_language: String::new(),
             webhook_url: String::new(),
             turso_url: String::new(),
@@ -864,8 +864,8 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
-            stt_priority: vec!["groq".to_string(), "openai".to_string()],
-            llm_priority: vec!["deepseek".to_string(), "openai".to_string()],
+            stt_provider: "groq".to_string(),
+            llm_provider: "deepseek".to_string(),
             output_language: String::new(),
             webhook_url: String::new(),
             turso_url: String::new(),

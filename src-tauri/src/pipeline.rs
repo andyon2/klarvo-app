@@ -22,36 +22,30 @@ use crate::{AppState, friendly_error};
 use crate::setup_audio_level_emitter;
 
 // ---------------------------------------------------------------------------
-// Provider resolution from priority lists
+// Provider resolution from config
 // ---------------------------------------------------------------------------
 
-/// Selects the STT provider to use based on the priority list and available keys.
+/// Selects the STT provider based on `cfg.stt_provider`.
 ///
-/// Walks `cfg.stt_priority` left-to-right and returns the first usable provider:
-/// - `"groq"` / `"openai"`: requires a non-empty API key.
-/// - `"local"`: Windows-only; uses the offline whisper.cpp model (no key needed).
+/// - `"groq"`: Groq Whisper API (primary, fast). Requires `groq_api_key`.
+/// - `"openai"`: OpenAI Whisper API. Requires `openai_api_key`.
+/// - `"local"`: offline whisper.cpp model (Windows-only, no key needed).
 ///
-/// Falls back to a no-key Groq instance if nothing matches (will fail at
-/// call-time with an auth error).
+/// Falls back to a Groq instance (which will fail at call-time with an auth
+/// error) if the provider string is unrecognised, so startup always succeeds.
 pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
-    for id in &cfg.stt_priority {
-        match id.as_str() {
-            "groq" if !cfg.groq_api_key.is_empty() => {
-                return Arc::new(
-                    stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()),
-                );
-            }
-            "openai" if !cfg.openai_api_key.is_empty() => {
-                return Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key));
-            }
-            #[cfg(target_os = "windows")]
-            "local" => {
-                return build_local_whisper_provider(cfg);
-            }
-            _ => continue,
+    match cfg.stt_provider.as_str() {
+        "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
+        #[cfg(target_os = "windows")]
+        "local" => build_local_whisper_provider(cfg),
+        #[cfg(not(target_os = "windows"))]
+        "local" => {
+            log::warn!("[pipeline] local STT provider is only supported on Windows; falling back to groq");
+            Arc::new(stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
         }
+        // "groq" and any unrecognised value
+        _ => Arc::new(stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone())),
     }
-    Arc::new(stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
 }
 
 /// Builds a `LocalWhisperProvider` with the model path derived from `%APPDATA%`.
@@ -82,28 +76,23 @@ fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     ))
 }
 
-/// Selects the LLM cleanup provider based on the priority list and available keys.
+/// Selects the LLM cleanup provider based on `cfg.llm_provider`.
 ///
-/// Same walk-and-pick logic as [`resolve_stt_provider`].
+/// - `"deepseek"`: DeepSeek API (primary, cheap). Requires `deepseek_api_key`.
+/// - `"openai"`: OpenAI API. Requires `openai_api_key`.
+/// - `"anthropic"`: Anthropic API. Requires `anthropic_api_key`.
+/// - `"groq"`: Groq LLM API. Requires `groq_api_key`.
+///
+/// Falls back to DeepSeek (which will fail at call-time with an auth error)
+/// for unrecognised values, so startup always succeeds.
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
-    for id in &cfg.llm_priority {
-        match id.as_str() {
-            "deepseek" if !cfg.deepseek_api_key.is_empty() => {
-                return Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key));
-            }
-            "openai" if !cfg.openai_api_key.is_empty() => {
-                return Arc::new(llm::OpenAiCleanup::new(&cfg.openai_api_key));
-            }
-            "anthropic" if !cfg.anthropic_api_key.is_empty() => {
-                return Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key));
-            }
-            "groq" if !cfg.groq_api_key.is_empty() => {
-                return Arc::new(llm::GroqCleanup::new(&cfg.groq_api_key));
-            }
-            _ => continue,
-        }
+    match cfg.llm_provider.as_str() {
+        "openai" => Arc::new(llm::OpenAiCleanup::new(&cfg.openai_api_key)),
+        "anthropic" => Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key)),
+        "groq" => Arc::new(llm::GroqCleanup::new(&cfg.groq_api_key)),
+        // "deepseek" and any unrecognised value
+        _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
     }
-    Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key))
 }
 
 // ---------------------------------------------------------------------------
@@ -496,11 +485,10 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             stt_hint.as_deref(),
         );
 
-        // Offline mode: if the first entry in stt_priority is "local", the
-        // user has explicitly chosen to stay offline. In this case we skip the
-        // LLM cleanup step entirely -- no network call, raw text goes straight
-        // to paste.
-        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+        // Offline mode: if stt_provider is "local", the user has explicitly
+        // chosen to stay offline. In this case we skip the LLM cleanup step
+        // entirely -- no network call, raw text goes straight to paste.
+        let offline = cfg.stt_provider == "local";
 
         (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline)
     };
@@ -944,43 +932,140 @@ mod tests {
     use super::*;
     use crate::config::AppConfig;
 
-    /// When `stt_priority` starts with `"local"`, the `offline` flag must be
-    /// set so the pipeline skips the LLM cleanup step.
+    /// When `stt_provider` is `"local"`, the offline flag must be `true` so
+    /// the pipeline skips the LLM cleanup step.
     ///
     /// This test verifies the extraction logic in `stop_and_process_pipeline`
     /// by replicating it directly -- the full pipeline cannot be unit-tested
     /// without a Tauri `AppHandle`.
     #[test]
-    fn test_offline_flag_derived_from_stt_priority_local() {
+    fn test_offline_flag_derived_from_stt_provider_local() {
         let cfg = AppConfig {
-            stt_priority: vec!["local".to_string()],
+            stt_provider: "local".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
-        assert!(offline, "offline flag should be true when stt_priority[0] == 'local'");
+        let offline = cfg.stt_provider == "local";
+        assert!(offline, "offline flag should be true when stt_provider == 'local'");
     }
 
-    /// When `stt_priority` starts with a cloud provider, the offline flag must
-    /// be `false` even if `"local"` appears later in the list.
+    /// When `stt_provider` is a cloud provider, the offline flag must be `false`.
     #[test]
-    fn test_offline_flag_false_when_cloud_first() {
+    fn test_offline_flag_false_when_provider_is_groq() {
         let cfg = AppConfig {
-            stt_priority: vec!["groq".to_string(), "local".to_string()],
+            stt_provider: "groq".to_string(),
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
-        assert!(!offline, "offline flag should be false when stt_priority[0] != 'local'");
+        let offline = cfg.stt_provider == "local";
+        assert!(!offline, "offline flag should be false when stt_provider != 'local'");
     }
 
-    /// When `stt_priority` is empty the offline flag defaults to `false`.
+    /// When `stt_provider` is `"openai"`, the offline flag must be `false`.
     #[test]
-    fn test_offline_flag_false_when_priority_empty() {
+    fn test_offline_flag_false_when_provider_is_openai() {
         let cfg = AppConfig {
-            stt_priority: vec![],
+            stt_provider: "openai".to_string(),
+            openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_priority.first().map(|s| s == "local").unwrap_or(false);
+        let offline = cfg.stt_provider == "local";
         assert!(!offline);
+    }
+
+    /// Default stt_provider is "groq", so offline flag is false by default.
+    #[test]
+    fn test_offline_flag_false_by_default() {
+        let cfg = AppConfig::default();
+        let offline = cfg.stt_provider == "local";
+        assert!(!offline, "default config should not be in offline mode");
+    }
+
+    /// `resolve_stt_provider` for "groq" returns a GroqWhisper instance.
+    /// We cannot inspect the concrete type directly, but we can verify that
+    /// it does not panic and returns a usable `Arc<dyn SttProvider>`.
+    #[test]
+    fn test_resolve_stt_provider_groq() {
+        let cfg = AppConfig {
+            stt_provider: "groq".to_string(),
+            groq_api_key: "gsk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_stt_provider(&cfg);
+        // If we reach here, construction did not panic.
+    }
+
+    /// `resolve_stt_provider` for "openai" returns an OpenAiWhisper instance.
+    #[test]
+    fn test_resolve_stt_provider_openai() {
+        let cfg = AppConfig {
+            stt_provider: "openai".to_string(),
+            openai_api_key: "sk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_stt_provider(&cfg);
+    }
+
+    /// `resolve_stt_provider` for an unknown value falls back to Groq (no panic).
+    #[test]
+    fn test_resolve_stt_provider_unknown_fallback() {
+        let cfg = AppConfig {
+            stt_provider: "unknown_provider".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_stt_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for "deepseek" does not panic.
+    #[test]
+    fn test_resolve_cleanup_provider_deepseek() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for "openai" does not panic.
+    #[test]
+    fn test_resolve_cleanup_provider_openai() {
+        let cfg = AppConfig {
+            llm_provider: "openai".to_string(),
+            openai_api_key: "sk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for "anthropic" does not panic.
+    #[test]
+    fn test_resolve_cleanup_provider_anthropic() {
+        let cfg = AppConfig {
+            llm_provider: "anthropic".to_string(),
+            anthropic_api_key: "sk-ant-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for "groq" does not panic.
+    #[test]
+    fn test_resolve_cleanup_provider_groq() {
+        let cfg = AppConfig {
+            llm_provider: "groq".to_string(),
+            groq_api_key: "gsk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for an unknown value falls back to DeepSeek (no panic).
+    #[test]
+    fn test_resolve_cleanup_provider_unknown_fallback() {
+        let cfg = AppConfig {
+            llm_provider: "unknown_provider".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
     }
 }
