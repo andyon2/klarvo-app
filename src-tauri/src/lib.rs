@@ -151,6 +151,10 @@ pub struct SettingsView {
     pub bubble_size: f32,
     /// Android bubble opacity (0.3..1.0). Default: 0.85.
     pub bubble_opacity: f32,
+    /// GGML model variant for offline STT (e.g. `"base"`, `"tiny-q5_1"`).
+    pub local_whisper_model: String,
+    /// Whether GPU acceleration (CUDA) is enabled for local whisper.
+    pub local_whisper_gpu: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +790,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            local_whisper_model: "base".to_string(),
+            local_whisper_gpu: true,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -825,6 +831,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            local_whisper_model: "base".to_string(),
+            local_whisper_gpu: true,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -858,6 +866,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            local_whisper_model: "base".to_string(),
+            local_whisper_gpu: true,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

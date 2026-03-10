@@ -137,6 +137,8 @@ pub async fn save_settings(
     turso_token: Option<String>,
     bubble_size: Option<f32>,
     bubble_opacity: Option<f32>,
+    local_whisper_model: Option<String>,
+    local_whisper_gpu: Option<bool>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -207,6 +209,8 @@ pub async fn save_settings(
         bubble_size: bubble_size.unwrap_or(existing.bubble_size),
         bubble_opacity: bubble_opacity.unwrap_or(existing.bubble_opacity),
         advanced: existing.advanced,
+        local_whisper_model: local_whisper_model.unwrap_or(existing.local_whisper_model),
+        local_whisper_gpu: local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
         license_key: existing.license_key,
         license_validated_at: existing.license_validated_at,
     };
@@ -268,6 +272,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         device_id: cfg.device_id,
         bubble_size: cfg.bubble_size,
         bubble_opacity: cfg.bubble_opacity,
+        local_whisper_model: cfg.local_whisper_model,
+        local_whisper_gpu: cfg.local_whisper_gpu,
     })
 }
 

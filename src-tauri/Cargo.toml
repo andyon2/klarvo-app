@@ -49,5 +49,12 @@ windows = { version = "0.61", features = [
     "Win32_Security",
 ] }
 
+# whisper-rs: offline STT fallback (CPU-only by default; CUDA support is an
+# optional feature flag for later). Windows-only because:
+# - Android: cloud STT is used exclusively (GGML aarch64 build needs extra cmake)
+# - Linux/macOS: not yet supported in production, cmake may not be available
+[target.'cfg(windows)'.dependencies.whisper-rs]
+version = "0.15.1"
+
 [dev-dependencies]
 tempfile = "3"

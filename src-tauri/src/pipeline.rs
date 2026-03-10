@@ -27,9 +27,12 @@ use crate::setup_audio_level_emitter;
 
 /// Selects the STT provider to use based on the priority list and available keys.
 ///
-/// Walks `cfg.stt_priority` left-to-right and returns the first provider for
-/// which a non-empty API key is configured.  Falls back to a no-key Groq
-/// instance if nothing matches (will fail at call-time with an auth error).
+/// Walks `cfg.stt_priority` left-to-right and returns the first usable provider:
+/// - `"groq"` / `"openai"`: requires a non-empty API key.
+/// - `"local"`: Windows-only; uses the offline whisper.cpp model (no key needed).
+///
+/// Falls back to a no-key Groq instance if nothing matches (will fail at
+/// call-time with an auth error).
 pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     for id in &cfg.stt_priority {
         match id.as_str() {
@@ -41,10 +44,42 @@ pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
             "openai" if !cfg.openai_api_key.is_empty() => {
                 return Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key));
             }
+            #[cfg(target_os = "windows")]
+            "local" => {
+                return build_local_whisper_provider(cfg);
+            }
             _ => continue,
         }
     }
     Arc::new(stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
+}
+
+/// Builds a `LocalWhisperProvider` with the model path derived from `%APPDATA%`.
+///
+/// Path convention: `%APPDATA%\com.dikta.app\models\ggml-{model_name}.bin`
+///
+/// We derive the path from `APPDATA` rather than `AppState.app_data_dir`
+/// because `resolve_stt_provider` takes only `&AppConfig`. If `APPDATA` is
+/// not set (unlikely on Windows), falls back to `.\models\`.
+#[cfg(target_os = "windows")]
+fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
+    use stt::LocalWhisperProvider;
+
+    let model_dir = std::env::var("APPDATA")
+        .map(|d| std::path::PathBuf::from(d).join("com.dikta.app").join("models"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("models"));
+
+    let model_file = format!("ggml-{}.bin", cfg.local_whisper_model);
+    let model_path = model_dir.join(&model_file);
+
+    log::info!(
+        "[pipeline] Local whisper provider: model={}",
+        model_path.display()
+    );
+
+    Arc::new(LocalWhisperProvider::new(
+        model_path.to_string_lossy().into_owned(),
+    ))
 }
 
 /// Selects the LLM cleanup provider based on the priority list and available keys.

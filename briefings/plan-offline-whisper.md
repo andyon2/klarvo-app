@@ -1,60 +1,76 @@
 # Feature-Plan: Offline whisper.cpp Fallback
 
-## Priorität: 2
-
 ## Ziel
-Dikta kann ohne Internet-Verbindung und ohne API-Keys transkribieren. Nutzt whisper.cpp lokal über die whisper-rs Crate. Automatischer Fallback wenn Cloud-API nicht erreichbar.
+Dikta kann ohne Internet und ohne API-Keys transkribieren. whisper.cpp lokal via whisper-rs. Automatischer Fallback wenn Cloud-API fehlschlaegt und "local" in der STT-Priority-Liste steht.
 
-## Betroffene Module
-- `src-tauri/src/stt/` — Neuer LocalWhisperProvider
-- `src-tauri/Cargo.toml` — whisper-rs Dependency
-- `src-tauri/src/config/` — Model-Pfad, GPU-Einstellung
-- `src/components/SettingsPanel.tsx` — Model-Download-UI, Offline-Toggle
-- `src/components/AdvancedSettingsPanel.tsx` — STT Priority Liste (Whisper Local einfügen)
+## Scope
+- Nur Windows (erstmal). Android ist ein eigenes Thema (NDK-Build).
+- Kein CUDA im Default-Build. CUDA als optionales Cargo-Feature.
 
 ## Tasks
 
-### Task 1: Recherche whisper-rs
-- **Skill:** /research-api whisper-rs
-- **Beschreibung:** Aktuelle API, GPU-Support (CUDA/Vulkan), Model-Formate, Performance-Benchmarks. Ergebnis in knowledge/api-providers.md.
+### Session 1: Backend-Kern
 
-### Task 2: whisper-rs Integration
-- **Agent:** rust-core
-- **Dateien:** `src-tauri/src/stt/local_whisper.rs` (neu), `src-tauri/src/stt/mod.rs`
-- **Beschreibung:** Neuer `LocalWhisperProvider` der das SttProvider-Trait implementiert. Model laden, Audio transkribieren, Sprache erkennen. GPU nutzen wenn verfügbar (CUDA), sonst CPU.
-- **Abhängigkeit:** Task 1
+**Task 1: Recherche whisper-rs** → `/research-api whisper-rs`
+- API (0.x vs 1.x), CUDA-Feature-Flags, GGML-Model-Format, Build-Anforderungen
+- Latenz tiny/base/small auf CPU vs GPU
+- Ergebnis in `knowledge/api-providers.md`
 
-### Task 3: Model-Management
-- **Agent:** rust-core
-- **Dateien:** `src-tauri/src/stt/model_manager.rs` (neu)
-- **Beschreibung:** Model-Download von HuggingFace. Fortschritts-Events an Frontend emittieren. Models in App-Data-Dir speichern. Verschiedene Größen: tiny (75MB, schnell), base (142MB, gut), small (466MB, besser).
-- **Abhängigkeit:** Task 2
+**Task 2: Cargo.toml** → rust-core
+- `whisper-rs` unter `[target.'cfg(windows)'.dependencies]`
+- Feature `local-whisper-cuda` optional
+- Android-Build darf nicht brechen
 
-### Task 4: Fallback-Logik
-- **Agent:** rust-core
-- **Dateien:** `src-tauri/src/stt/mod.rs`, `src-tauri/src/pipeline.rs`
-- **Beschreibung:** STT Priority Liste erweitern. Wenn Cloud-Provider fehlschlägt (Timeout, kein Key, kein Internet) → automatisch auf Local Whisper fallen. Konfigurierbar: "cloud-first", "local-first", "local-only".
+**Task 3: LocalWhisperProvider** → rust-core
+- `src-tauri/src/stt/local_whisper.rs` (neu)
+- Implementiert `SttProvider`-Trait
+- WAV → PCM-f32 (hound vorhanden) → whisper_rs transcribe
+- `SttError::LocalWhisper(String)` Variante
+- `#[cfg(windows)]`, mindestens 2 Unit-Tests
 
-### Task 5: Settings-UI
-- **Agent:** ui-dev
-- **Dateien:** `src/components/SettingsPanel.tsx`, `src/components/AdvancedSettingsPanel.tsx`
-- **Beschreibung:** Model-Download-Button mit Fortschrittsbalken. Offline-Modus-Toggle. Model-Größe wählen (tiny/base/small). GPU-Status anzeigen.
-- **Abhängigkeit:** Task 3
+**Task 4: Config-Erweiterung** → rust-core
+- `local_whisper_model: String` (default "base")
+- `local_whisper_gpu: bool` (default true)
+- Beide mit `#[serde(default)]`, in SettingsResponse integrieren
 
-### Task 6: GPU-Detection
-- **Agent:** rust-core
-- **Beschreibung:** Erkennen ob CUDA verfügbar. Andys Laptop hat GPU aber nutzt sie nur am Strom — ggf. Battery-Detection einbauen (Windows Power API).
-- **Optional, kann nachgezogen werden**
+**Task 5: Fallback in Pipeline** → rust-core
+- `resolve_stt_provider()` erkennt `"local"` als Provider-ID
+- Bei Cloud-STT-Fehler (Request/ApiError 401/429): automatisch naechsten Provider aus Priority-Liste nehmen
+- Kein separates `stt_fallback_to_local` Flag — STT-Priority-Liste reicht
+
+### Session 2: UI + Model-Download
+
+**Task 6: Model-Manager** → rust-core
+- `src-tauri/src/stt/model_manager.rs` (neu)
+- `list_available_models()`, `download_model()`, `model_path()`
+- Chunked HTTP-Download, Progress-Events `dikta://model-download-progress`
+- Atomic rename (temp → final nur bei vollstaendigem Download)
+- Tauri-Commands: `get_local_model_status`, `download_local_model`
+
+**Task 7: Settings-UI** → ui-dev
+- "Offline Transcription" Sektion (nur Desktop via `isDesktop`)
+- Model-Auswahl (tiny 75MB / base 142MB / small 466MB)
+- Download-Button + Fortschrittsbalken
+- Status-Badge "Bereit" / "Nicht installiert"
+- GPU-Checkbox
+
+**Task 8: STT-Priority-UI** → ui-dev
+- `"local"` als Option in AdvancedSettings STT-Provider-Liste
+- Label: "Local (whisper.cpp)"
+- Nur auf Desktop sichtbar
 
 ## Testplan
-- [ ] Transkription ohne Internet funktioniert
-- [ ] Model-Download mit Fortschrittsanzeige
-- [ ] Fallback Cloud → Local wenn API nicht erreichbar
-- [ ] GPU-Beschleunigung wenn CUDA verfügbar
-- [ ] Verschiedene Model-Größen wählbar
+- [ ] Transkription ohne Internet (tiny-Model, CPU)
+- [ ] Model-Download + Fortschrittsbalken + Badge
+- [ ] Abgebrochener Download: kein korruptes Model
+- [ ] Cloud-Key ungueltig → Pipeline faellt auf Local (wenn in Priority-Liste)
+- [ ] Android-Build bricht nicht
+- [ ] Unit-Tests: Provider-Konstruktion, leeres Audio
 
 ## Risiken
-- whisper-rs Binary-Größe: Kann die App deutlich vergrößern (CUDA-Libs)
-- Model-Download: Große Dateien (75MB-466MB), braucht gute UX
-- Android: whisper.cpp auf Android ist ein eigenes Thema (NDK-Build). Erstmal nur Windows.
-- Compile-Zeit: whisper-rs mit CUDA-Support kann den Build deutlich verlangsamen
+| Risiko | Gegenmassnahme |
+|--------|----------------|
+| whisper-rs Build-Probleme (cmake) | Task 1 klaert das; ggf. pre-built oder pure-Rust-Alternative |
+| Binary-Groesse (CUDA-Libs) | CUDA optional, Standard ohne |
+| Download-Abbruch | Atomic rename, kein Resume fuer MVP |
+| Compile-Zeit | Nur Windows-Target betroffen |

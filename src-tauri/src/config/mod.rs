@@ -488,6 +488,26 @@ pub struct AppConfig {
     #[serde(default)]
     pub advanced: AdvancedSettings,
 
+    // --- Local Whisper (offline STT) ---
+
+    /// GGML model variant for offline transcription.
+    ///
+    /// The provider resolves the actual file path as:
+    /// `{app_data_dir}/models/ggml-{local_whisper_model}.bin`
+    ///
+    /// Supported values: `"tiny"`, `"tiny-q5_1"`, `"base"` (default),
+    /// `"base-q5_1"`, `"small"`, etc. See the whisper.cpp model list.
+    #[serde(default = "default_local_whisper_model")]
+    pub local_whisper_model: String,
+
+    /// Whether to enable GPU acceleration (CUDA) for local whisper inference.
+    ///
+    /// Has no effect unless the binary was compiled with the `cuda` feature.
+    /// Default is `true` so users with a GPU benefit automatically once they
+    /// enable the CUDA build.
+    #[serde(default = "default_local_whisper_gpu")]
+    pub local_whisper_gpu: bool,
+
     // --- License ---
 
     /// Validated license key string. Empty = no license.
@@ -552,6 +572,14 @@ fn default_device_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+fn default_local_whisper_model() -> String {
+    "base".to_string()
+}
+
+fn default_local_whisper_gpu() -> bool {
+    true
+}
+
 fn default_bubble_size() -> f32 {
     1.0
 }
@@ -590,6 +618,8 @@ impl Default for AppConfig {
             bubble_size: default_bubble_size(),
             bubble_opacity: default_bubble_opacity(),
             advanced: AdvancedSettings::default(),
+            local_whisper_model: default_local_whisper_model(),
+            local_whisper_gpu: default_local_whisper_gpu(),
             license_key: String::new(),
             license_validated_at: 0,
         }
@@ -850,6 +880,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            local_whisper_model: "tiny-q5_1".to_string(),
+            local_whisper_gpu: false,
             license_key: String::new(),
             license_validated_at: 0,
         };
@@ -1317,5 +1349,68 @@ mod tests {
         let cfg = AppConfig::default();
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("\"advanced\""), "AppConfig should serialize an 'advanced' key");
+    }
+
+    // --- local_whisper field tests ---
+
+    /// Default `local_whisper_model` is `"base"`.
+    #[test]
+    fn test_default_local_whisper_model_is_base() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.local_whisper_model, "base");
+    }
+
+    /// Default `local_whisper_gpu` is `true`.
+    #[test]
+    fn test_default_local_whisper_gpu_is_true() {
+        let cfg = AppConfig::default();
+        assert!(cfg.local_whisper_gpu, "default local_whisper_gpu should be true");
+    }
+
+    /// `local_whisper_model` and `local_whisper_gpu` round-trip through save/load.
+    #[test]
+    fn test_local_whisper_fields_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            local_whisper_model: "tiny-q5_1".to_string(),
+            local_whisper_gpu: false,
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).expect("save should succeed");
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.local_whisper_model, "tiny-q5_1");
+        assert!(!loaded.local_whisper_gpu);
+    }
+
+    /// Partial JSON without `localWhisperModel` fills in the default.
+    #[test]
+    fn test_partial_json_local_whisper_model_defaults_to_base() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.local_whisper_model, "base",
+            "missing localWhisperModel should default to 'base'"
+        );
+        assert!(
+            cfg.local_whisper_gpu,
+            "missing localWhisperGpu should default to true"
+        );
+    }
+
+    /// Config serializes local_whisper fields with camelCase keys.
+    #[test]
+    fn test_local_whisper_fields_serialize_camel_case() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(
+            json.contains("localWhisperModel"),
+            "expected camelCase 'localWhisperModel'"
+        );
+        assert!(
+            json.contains("localWhisperGpu"),
+            "expected camelCase 'localWhisperGpu'"
+        );
     }
 }
