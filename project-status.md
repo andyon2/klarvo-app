@@ -5,23 +5,22 @@ Version 0.4.1. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle
 
 ## Naechste Sessions (in Reihenfolge, Business-priorisiert)
 
-1. **License-Key-System** → [Briefing noch zu erstellen]
-   - Open Core Modell: Free-Tier (Basis-Diktat) vs. Paid-Tier (EUR 29, alle Features)
-   - Muss vor erstem Paid Release stehen
-   - Details siehe `knowledge/product-strategy.md` Abschnitt Monetarisierung
-
-2. **Offline whisper.cpp Fallback** → `briefings/plan-offline-whisper.md`
+1. **Offline whisper.cpp Fallback** → `briefings/plan-offline-whisper.md`
    - whisper-rs Integration, Model-Download, GPU-Detection, Fallback-Logik
    - DAS Differenzierungsmerkmal. Staerkster Kaufgrund.
    - Grosses Feature, 1-2 Sessions. Erstmal nur Windows.
 
-3. **Onboarding/Polish** → [Briefing noch zu erstellen]
+2. **Onboarding/Polish** → [Briefing noch zu erstellen]
    - 3-Schritt-Setup: Install -> Hotkey -> Go
    - Erster Eindruck entscheidet bei Paid-Produkt
 
-4. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
+3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
    - Presets statt Slider (Klein/Normal/Gross). Backend-Infrastruktur steht bereits.
    - Halbe Session, kann nebenbei passieren.
+
+## Abgeschlossen
+- [x] **License-Key-System** (v0.4.1) -- HMAC-Validierung, Feature-Gating, Open Core Modell
+- [x] **Repo-Trennung** -- dikta (privat) + dikta-public (oeffentlich), publish.sh Script
 
 ## Bekannte Bugs
 - Keine kritischen Bugs bekannt
@@ -30,6 +29,13 @@ Version 0.4.1. Voll funktionsfaehiges Voice-Dictation-Tool. 196 Rust-Tests (alle
 - [ ] [shared] VAD -- Voice Activity Detection (Auto-Start/Stopp)
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter existiert)
 - [ ] [windows] GitHub Releases CI/CD Pipeline (erst relevant wenn manueller Release nervt)
+
+## Aenderungen Session 2026-03-10 (Housekeeping)
+
+- [x] Repo-Trennung: dikta (privat) + dikta-public (oeffentlich)
+- [x] publish.sh Script (rsync + Marker-Check gegen Agent-Daten-Leak)
+- [x] dikta-tech-lead: --remote und --get-prompt Flags (fuer Claude Launcher)
+- [x] project-status.md: License-Key als erledigt, Prioritaeten aktualisiert
 
 ## Aenderungen Session 2026-03-09b (Project-Builder-Ueberarbeitung)
 
@@ -41,7 +47,7 @@ Externe Ueberarbeitung durch Project Builder nach `/reflect`-Analyse:
 - [x] /release Recovery-Pfad dokumentiert (Version-Bump revertern bei Build-Fehler)
 - [x] /learn Skill + sources/-Pipeline eingerichtet (sources/inbox → knowledge/ → archive)
 - [x] main-agent.md Skill-Tabelle um /reflect und /learn ergaenzt
-- [ ] License-Key-Briefing fehlt noch (erste Prioritaet, Briefing erstellen!)
+- [x] License-Key-System implementiert (HMAC-Validierung, Feature-Gating)
 
 ## Aenderungen Session 2026-03-09 (Session 5)
 
