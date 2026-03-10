@@ -111,9 +111,10 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - States: idle → recording → transcribing → cleaning → idle
 
 **Paid/Free Feature-Gates (2026-03-10)**
-- Free: Alle Cleanup-Stile (Polished/Clean/Chat), alle Provider, Cleanup Instructions, Offline tiny-Modell, Dictionary (max 20 Eintraege), Basis-Statistiken
-- Paid: Groessere Whisper-Modelle (base/small/medium/large-v3), unbegrenztes Dictionary, Snippets, Command Mode, Cross-Device Sync, Webhooks, Integrations, erweiterte Stats, Voice Notes, Whisper Mode
-- Offline-Gate ist ein Modell-Gate, kein Feature-Gate: tiny ist free, Rest ist paid. Kein harter "Offline gesperrt"-Moment.
+- Free: Alle Cleanup-Stile (Polished/Clean/Chat), alle Provider, Cleanup Instructions, Offline small-Modell (488 MB), Dictionary (max 20 Eintraege), Basis-Statistiken
+- Paid: Groessere Whisper-Modelle (medium/large-v3), unbegrenztes Dictionary, Snippets, Command Mode, Cross-Device Sync, Webhooks, Integrations, erweiterte Stats, Voice Notes, Whisper Mode
+- Offline-Gate ist ein Modell-Gate, kein Feature-Gate: small ist free, medium/large-v3 sind paid. Kein harter "Offline gesperrt"-Moment.
+- tiny und base entfernt — Qualitaet zu niedrig fuer ein Produkt.
 
 **LLM Cleanup: Drei Stile**
 - Polished: Fuellwoerter bereinigen, Grammatik, professionell formatieren

@@ -3,7 +3,7 @@
 Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Dikta.
 Diese Datei ist die Source of Truth fuer alle strategischen Produkt-Entscheidungen.
 
-Letzte Aktualisierung: 2026-03-10 (Free/Paid-Aufteilung ueberarbeitet: Styles free, Dictionary-Limit, Offline-Modell-Gate)
+Letzte Aktualisierung: 2026-03-10 (Free/Paid-Aufteilung ueberarbeitet: Styles free, Dictionary-Limit, Offline-Modell-Gate; tiny+base entfernt, small = neues Free-Modell)
 
 ## Positionierung
 
@@ -88,14 +88,14 @@ EUR 29 ist:
 - Alle STT/LLM-Provider (Groq, DeepSeek, OpenAI, Anthropic) -- BYOK-Prinzip
 - Alle Basis-Cleanup-Stile (Polished, Clean, Chat)
 - Cleanup Instructions (Custom Prompt)
-- Offline-Modus mit Whisper tiny-Modell (~75 MB) -- brauchbar, aber nicht beste Qualitaet
+- Offline-Modus mit Whisper small-Modell (~488 MB) -- brauchbar, guter erster Eindruck
 - Dictionary (limitiert: 20 Eintraege)
 - Basis-Statistiken (Diktat-Anzahl, API-Kosten)
 - Basis-Settings
 - Limitierte History (letzte 50 Eintraege)
 
 ### Paid-Tier (License Key, EUR 29)
-- Offline-Modus mit groesseren Whisper-Modellen (base, small, medium, large-v3) -- deutlich bessere Qualitaet
+- Offline-Modus mit groesseren Whisper-Modellen (medium, large-v3) -- deutlich bessere Qualitaet, besonders bei Hintergrundgeraeusch und Fachjargon
 - Custom Style Templates (gespeicherte, benannte Prompt-Sets)
 - Command Mode
 - Text Snippets

@@ -56,7 +56,7 @@ pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
 
 /// Builds a `LocalWhisperProvider` with the model path derived from `%APPDATA%`.
 ///
-/// Path convention: `%APPDATA%\com.dikta.app\models\ggml-{model_name}.bin`
+/// Path convention: `%APPDATA%\com.dikta.voice\models\ggml-{model_name}.bin`
 ///
 /// We derive the path from `APPDATA` rather than `AppState.app_data_dir`
 /// because `resolve_stt_provider` takes only `&AppConfig`. If `APPDATA` is
@@ -66,7 +66,7 @@ fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     use stt::LocalWhisperProvider;
 
     let model_dir = std::env::var("APPDATA")
-        .map(|d| std::path::PathBuf::from(d).join("com.dikta.app").join("models"))
+        .map(|d| std::path::PathBuf::from(d).join("com.dikta.voice").join("models"))
         .unwrap_or_else(|_| std::path::PathBuf::from("models"));
 
     let model_file = format!("ggml-{}.bin", cfg.local_whisper_model);

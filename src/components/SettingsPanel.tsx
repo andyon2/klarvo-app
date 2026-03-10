@@ -580,7 +580,7 @@ export function SettingsPanel({
   const [tursoToken, setTursoToken] = useState("");
   const [localBubbleSize, setLocalBubbleSize] = useState(loadedSettings?.bubbleSize ?? 1.0);
   const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
-  const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "base");
+  const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "small");
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -627,7 +627,7 @@ export function SettingsPanel({
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
       setLocalBubbleSize(loadedSettings.bubbleSize ?? 1.0);
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
-      setLocalWhisperModel(loadedSettings.localWhisperModel ?? "base");
+      setLocalWhisperModel(loadedSettings.localWhisperModel ?? "small");
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
     }
   }, [loadedSettings]);

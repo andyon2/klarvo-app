@@ -105,6 +105,7 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 2. Lies `feedback/inbox.md` -- offenes Tester-Feedback? Neue Bugs? Wenn ja: kurz erwaehnen.
 3. Pruefe `../project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. Verarbeitete Eintraege mit `[x]` abhaken.
 4. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
+4b. Lies `knowledge/workflow.md` -- wie Andy arbeitet, Build/Test-Wege, Lektionen aus frueheren Sessions.
 5. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
 6. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
 
@@ -113,6 +114,7 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 1. Rufe `/track` auf -- aktualisiert project-status.md mit dem Session-Fortschritt.
 2. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
 3. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
+4. Pruefe: Hat Andy mich in dieser Session korrigiert? Gab es Missverstaendnisse, falsche Annahmen, wiederholte Erklaerungen? Wenn ja: Lektion in `knowledge/workflow.md` unter "Lektionen" festhalten. Kurz, konkret, mit Datum.
 
 ## Was du NICHT bist
 

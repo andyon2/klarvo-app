@@ -11,17 +11,15 @@ import {
 import { LockIcon } from "./icons";
 
 // Static metadata for all supported models.
-// The backend provides sizeBytes, but we keep labels here for the UI.
+// tiny/base removed — quality too low to represent Dikta.
 const MODEL_LABELS: Record<string, string> = {
-  tiny: "tiny (78 MB)",
-  base: "base (148 MB) — Recommended",
-  small: "small (488 MB)",
+  small: "small (488 MB) — Recommended",
   medium: "medium (1.5 GB)",
   "large-v3": "large-v3 (3.1 GB)",
 };
 
-// Models that require a paid license (everything except tiny).
-const PAID_MODELS = new Set(["base", "small", "medium", "large-v3"]);
+// Models that require a paid license (small is free).
+const PAID_MODELS = new Set(["medium", "large-v3"]);
 
 interface DownloadState {
   bytesReceived: number;

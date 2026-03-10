@@ -573,7 +573,7 @@ fn default_device_id() -> String {
 }
 
 fn default_local_whisper_model() -> String {
-    "base".to_string()
+    "small".to_string()
 }
 
 fn default_local_whisper_gpu() -> bool {
@@ -1353,11 +1353,11 @@ mod tests {
 
     // --- local_whisper field tests ---
 
-    /// Default `local_whisper_model` is `"base"`.
+    /// Default `local_whisper_model` is `"small"`.
     #[test]
-    fn test_default_local_whisper_model_is_base() {
+    fn test_default_local_whisper_model_is_small() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.local_whisper_model, "base");
+        assert_eq!(cfg.local_whisper_model, "small");
     }
 
     /// Default `local_whisper_gpu` is `true`.
@@ -1384,14 +1384,14 @@ mod tests {
 
     /// Partial JSON without `localWhisperModel` fills in the default.
     #[test]
-    fn test_partial_json_local_whisper_model_defaults_to_base() {
+    fn test_partial_json_local_whisper_model_defaults_to_small() {
         let dir = temp_dir();
         let partial = r#"{"language": "de"}"#;
         std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
         let cfg = load_config(dir.path());
         assert_eq!(
-            cfg.local_whisper_model, "base",
-            "missing localWhisperModel should default to 'base'"
+            cfg.local_whisper_model, "small",
+            "missing localWhisperModel should default to 'small'"
         );
         assert!(
             cfg.local_whisper_gpu,

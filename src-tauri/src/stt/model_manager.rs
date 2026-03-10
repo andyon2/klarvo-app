@@ -101,24 +101,25 @@ const HF_BASE_URL: &str =
 /// and a short description. Callers should prefer `get_model_status` or
 /// `list_models_with_status` when they also need the download state.
 pub fn list_available_models() -> Vec<WhisperModelInfo> {
+    // tiny/base removed — quality too low to ship.
     vec![
-        WhisperModelInfo {
-            id: "tiny".to_string(),
-            filename: "ggml-tiny.bin".to_string(),
-            size_bytes: 77_700_000,
-            description: "Fast, lower quality".to_string(),
-        },
-        WhisperModelInfo {
-            id: "base".to_string(),
-            filename: "ggml-base.bin".to_string(),
-            size_bytes: 148_000_000,
-            description: "Recommended — good balance".to_string(),
-        },
         WhisperModelInfo {
             id: "small".to_string(),
             filename: "ggml-small.bin".to_string(),
             size_bytes: 488_000_000,
-            description: "Best quality, slower".to_string(),
+            description: "Recommended — good balance of speed and quality".to_string(),
+        },
+        WhisperModelInfo {
+            id: "medium".to_string(),
+            filename: "ggml-medium.bin".to_string(),
+            size_bytes: 1_533_000_000,
+            description: "High quality, slower".to_string(),
+        },
+        WhisperModelInfo {
+            id: "large-v3".to_string(),
+            filename: "ggml-large-v3.bin".to_string(),
+            size_bytes: 3_094_000_000,
+            description: "Best quality, requires more RAM".to_string(),
         },
     ]
 }
@@ -348,15 +349,15 @@ mod tests {
         }
     }
 
-    /// The `base` model must be described as "Recommended" since the UI
+    /// The `small` model must be described as "Recommended" since the UI
     /// defaults to it and the description is shown to users.
     #[test]
-    fn test_base_model_is_marked_recommended() {
-        let base = find_model("base").expect("base model must exist");
+    fn test_small_model_is_marked_recommended() {
+        let small = find_model("small").expect("small model must exist");
         assert!(
-            base.description.contains("Recommended"),
-            "base description should contain 'Recommended', got: {}",
-            base.description
+            small.description.contains("Recommended"),
+            "small description should contain 'Recommended', got: {}",
+            small.description
         );
     }
 
@@ -387,7 +388,7 @@ mod tests {
     fn test_get_model_status_not_downloaded() {
         // Use a temp dir that definitely doesn't have the model files.
         let dir = PathBuf::from("/tmp/dikta-test-no-models-12345");
-        let status = get_model_status("base", &dir).expect("base is a known model");
+        let status = get_model_status("small", &dir).expect("small is a known model");
         assert_eq!(
             status,
             ModelStatus::NotDownloaded,
@@ -416,9 +417,9 @@ mod tests {
         std::fs::create_dir_all(&models).expect("create models dir");
 
         // Create a dummy .bin file.
-        std::fs::write(models.join("ggml-tiny.bin"), b"dummy").expect("write dummy model");
+        std::fs::write(models.join("ggml-small.bin"), b"dummy").expect("write dummy model");
 
-        let status = get_model_status("tiny", dir.path()).expect("tiny is a known model");
+        let status = get_model_status("small", dir.path()).expect("small is a known model");
         assert_eq!(status, ModelStatus::Downloaded);
     }
 
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn test_delete_model_nonexistent_is_ok() {
         let dir = PathBuf::from("/tmp/dikta-no-models-12345");
-        let result = delete_model("base", &dir);
+        let result = delete_model("small", &dir);
         assert!(result.is_ok(), "deleting a missing file should not error");
     }
 
