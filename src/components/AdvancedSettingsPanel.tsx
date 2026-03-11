@@ -48,6 +48,11 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   // All sections collapsed by default -- user expands what they need.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  // Subsections within sections: free subsections open by default, paid ones closed.
+  const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({
+    llmParams: true,   // "Model & Parameters" -- free, default open
+    llmCustom: false,  // "Custom Cleanup Instructions" -- paid, default closed
+  });
 
   const hintCls = "text-[11px] text-zinc-500 leading-relaxed";
   const numberInputCls = `${INPUT_CLS} w-28`;
@@ -60,6 +65,11 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
       const wasOpen = prev[key];
       return wasOpen ? {} : { [key]: true };
     });
+  }, []);
+
+  // Independent toggle -- no accordion behavior, multiple subsections can be open at once.
+  const toggleSubSection = useCallback((key: string) => {
+    setOpenSubSections((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   useEffect(() => {
@@ -196,73 +206,104 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Text Cleanup</span>
         </button>
         {openSections.llm && (
-          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-            {/* Custom cleanup instructions -- paid feature */}
-            <div className={`flex flex-col gap-3${!isPaid ? " opacity-50" : ""}`}>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Custom Cleanup Instructions</span>
+          <div className="flex flex-col gap-1 pl-4 pb-3 pt-1">
+
+            {/* Subsection: Model & Parameters -- free, default open */}
+            <button
+              onClick={() => toggleSubSection("llmParams")}
+              className="flex items-center gap-1.5 w-full py-1.5 text-left"
+            >
+              <svg
+                className={`w-3 h-3 text-zinc-600 flex-shrink-0 transition-transform duration-150 ${openSubSections.llmParams ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Model & Parameters</span>
+            </button>
+            {openSubSections.llmParams && (
+              <div className="flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-zinc-800/50 ml-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
+                  <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
+                  <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
+                  <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
+                  <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
+                  <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
+                  <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
+                  <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
+                  <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+                </div>
+              </div>
+            )}
+
+            {/* Subsection: Custom Cleanup Instructions -- paid, default collapsed */}
+            <button
+              onClick={() => toggleSubSection("llmCustom")}
+              className="flex items-center gap-1.5 w-full py-1.5 text-left mt-1"
+            >
+              <svg
+                className={`w-3 h-3 text-zinc-600 flex-shrink-0 transition-transform duration-150 ${openSubSections.llmCustom ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
+                Custom Cleanup Instructions
                 {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              </span>
+            </button>
+            {openSubSections.llmCustom && (
+              <div className={`flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-zinc-800/50 ml-1.5${!isPaid ? " opacity-50" : ""}`}>
+                <p className={hintCls}>
+                  Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
+                </p>
+                <div className={`flex flex-col gap-3${!isPaid ? " pointer-events-none" : ""}`}>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>System Prompt: Polished</span>
+                    <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>System Prompt: Verbatim</span>
+                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>System Prompt: Chat</span>
+                    <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>Command Mode Prompt</span>
+                    <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
+                  </div>
+                </div>
               </div>
-              <p className={hintCls}>
-                Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
-              </p>
-              <div className="flex flex-col gap-1.5">
-                <span className={LABEL_CLS}>System Prompt: Polished</span>
-                <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-                <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className={LABEL_CLS}>System Prompt: Chat</span>
-                <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className={LABEL_CLS}>Command Mode Prompt</span>
-                <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
-              </div>
-            </div>
-            {/* Technical LLM parameters -- free */}
-            <div className="flex flex-col gap-3 mt-1">
-              <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Model & Parameters</span>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
-                <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
-                <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
-                <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
-                <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
-                <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
-                <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
-                <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
-                <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
-              </div>
-            </div>
+            )}
+
           </div>
         )}
 

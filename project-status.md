@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.1. 284 Rust-Tests (alle gruen). Settings-Panel ueberarbeitet: Text Cleanup in Voice & Recording integriert, STT-Modelle nach API-Keys gefiltert, API Keys Labels mit Einsatzzweck. Save-Button nur bei Dirty-State sichtbar. Lizenz-Activate speichert sofort. Trial-Keys mit Ablaufdatum implementiert. License-Secret aus publish.sh fuer dikta-public gescrubbt. Build-Skill auf Sonnet + Test-Checkliste erweitert.
+Version 0.4.1. 284 Rust-Tests (alle gruen). Windows-Build erfolgreich (2026-03-11). Advanced Settings: Collapsible Subsections in Text Cleanup (free=offen, paid=zugeklappt). Provider-Direktauswahl, Cloud/Offline STT-Toggle, Modell-Picker. Settings-Panel mit Dirty-State Save-Button, Trial-Keys mit Ablaufdatum.
 
 ## Blocker
 
@@ -9,7 +9,7 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Build + Test** → Settings-Umbau verifizieren (Code steht, noch nicht gebaut/getestet)
+1. **Manueller Test** → Settings-Umbau + Collapsible Subsections auf Windows verifizieren
 2. **Onboarding/Polish** → [Briefing noch zu erstellen]
 3. **Bubble Size/Opacity Controls** → `briefings/plan-bubble-appearance.md`
 
