@@ -16,10 +16,10 @@ async function getAppVersion(): Promise<string> {
 }
 
 /** Opens a URL in the system browser. Falls back to window.open in preview mode. */
-async function openExternalUrl(url: string): Promise<void> {
+async function openUrl(url: string): Promise<void> {
   try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
+    const { openUrl: tauriOpenUrl } = await import("@tauri-apps/plugin-opener");
+    await tauriOpenUrl(url);
   } catch {
     window.open(url, "_blank", "noopener,noreferrer");
   }
@@ -295,7 +295,9 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
         )}
         {isTrial && (
           <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/15 text-blue-400">
-            Trial{licenseStatus.trialUntil ? ` — expires ${formatGraceDate(licenseStatus.trialUntil)}` : ""}
+            {isPreviewMode
+              ? "Trial — Preview Mode"
+              : `Trial${licenseStatus.trialUntil ? ` — expires ${formatGraceDate(licenseStatus.trialUntil)}` : ""}`}
           </span>
         )}
         {isGrace && (
@@ -1342,110 +1344,126 @@ export function SettingsPanel({
           </div>
         )}
 
-        {/* --- App Profiles --- */}
+        {/* --- App Profiles (paid feature) --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("appProfiles")} className={sectionBtnCls}>
             <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">App Profiles</span>
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+              App Profiles
+              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            </span>
           </button>
           {openSections.appProfiles && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-              <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
-
-              {profiles.map((p, i) => (
-                <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <input
-                      type="text"
-                      placeholder="Profile name"
-                      value={p.name}
-                      onChange={(e) => {
-                        const next = [...profiles];
-                        next[i] = { ...next[i], name: e.target.value };
-                        setProfiles(next);
-                      }}
-                      className={`flex-1 ${INPUT_CLS}`}
-                    />
-                    <button
-                      onClick={() => {
-                        const next = profiles.filter((_, j) => j !== i);
-                        setProfiles(next);
-                        saveProfiles(next).catch(console.error);
-                      }}
-                      className="text-zinc-500 hover:text-red-400 transition-colors p-1"
-                    >
-                      <CloseIcon />
-                    </button>
+              {!isPaid ? (
+                // Free-tier paygate: show lock message, no profile editing allowed.
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-zinc-500">
+                    <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
+                    <p className="text-xs">App Profiles require a Dikta license.</p>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Window title pattern, e.g. 'Slack' or 'Visual Studio'"
-                    value={p.appPattern}
-                    onChange={(e) => {
-                      const next = [...profiles];
-                      next[i] = { ...next[i], appPattern: e.target.value };
-                      setProfiles(next);
-                    }}
-                    className={INPUT_CLS}
-                  />
-                  <div className="flex gap-2">
-                    <select
-                      value={p.cleanupStyle}
-                      onChange={(e) => {
-                        const next = [...profiles];
-                        next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
-                        setProfiles(next);
-                      }}
-                      className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
-                    >
-                      {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                    </select>
-                    <select
-                      value={p.language}
-                      onChange={(e) => {
-                        const next = [...profiles];
-                        next[i] = { ...next[i], language: e.target.value };
-                        setProfiles(next);
-                      }}
-                      className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
-                    >
-                      <option value="">Auto</option>
-                      <option value="de">DE</option>
-                      <option value="en">EN</option>
-                    </select>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Custom prompt for this app (optional)"
-                    value={p.customPrompt}
-                    onChange={(e) => {
-                      const next = [...profiles];
-                      next[i] = { ...next[i], customPrompt: e.target.value };
-                      setProfiles(next);
-                    }}
-                    className={INPUT_CLS}
-                  />
+                  <p className="text-[11px] text-zinc-600">Override style and language per app based on window title.</p>
                 </div>
-              ))}
+              ) : (
+                <>
+                  <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
-                  className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
-                >
-                  + Add Profile
-                </button>
-                {profiles.length > 0 && (
-                  <button
-                    onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
-                    className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
-                  >
-                    Save Profiles
-                  </button>
-                )}
-              </div>
+                  {profiles.map((p, i) => (
+                    <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          placeholder="Profile name"
+                          value={p.name}
+                          onChange={(e) => {
+                            const next = [...profiles];
+                            next[i] = { ...next[i], name: e.target.value };
+                            setProfiles(next);
+                          }}
+                          className={`flex-1 ${INPUT_CLS}`}
+                        />
+                        <button
+                          onClick={() => {
+                            const next = profiles.filter((_, j) => j !== i);
+                            setProfiles(next);
+                            saveProfiles(next).catch(console.error);
+                          }}
+                          className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                        >
+                          <CloseIcon />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Window title pattern, e.g. 'Slack' or 'Visual Studio'"
+                        value={p.appPattern}
+                        onChange={(e) => {
+                          const next = [...profiles];
+                          next[i] = { ...next[i], appPattern: e.target.value };
+                          setProfiles(next);
+                        }}
+                        className={INPUT_CLS}
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={p.cleanupStyle}
+                          onChange={(e) => {
+                            const next = [...profiles];
+                            next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
+                            setProfiles(next);
+                          }}
+                          className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                        >
+                          {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                        <select
+                          value={p.language}
+                          onChange={(e) => {
+                            const next = [...profiles];
+                            next[i] = { ...next[i], language: e.target.value };
+                            setProfiles(next);
+                          }}
+                          className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                        >
+                          <option value="">Auto</option>
+                          <option value="de">DE</option>
+                          <option value="en">EN</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Custom prompt for this app (optional)"
+                        value={p.customPrompt}
+                        onChange={(e) => {
+                          const next = [...profiles];
+                          next[i] = { ...next[i], customPrompt: e.target.value };
+                          setProfiles(next);
+                        }}
+                        className={INPUT_CLS}
+                      />
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
+                      className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+                    >
+                      + Add Profile
+                    </button>
+                    {profiles.length > 0 && (
+                      <button
+                        onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
+                        className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                      >
+                        Save Profiles
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

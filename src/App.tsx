@@ -100,7 +100,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
 
 function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
   return (
-    <div className={`flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 ${isMobile ? "w-full" : "flex-shrink min-w-0"}`}>
+    <div className={`flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 ${isMobile ? "w-full" : "w-fit"}`}>
       {STYLE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -328,128 +328,130 @@ export default function App() {
       }}
     >
       {/* ── Header ──
-           Mobile: two rows (icon strip on top, StylePicker full-width below).
-           Desktop: single row with icon strip left and StylePicker right. */}
-      <div className={`flex ${isMobile ? "flex-col gap-2" : "items-center justify-between gap-2"} px-4 pt-3.5 pb-2 flex-shrink-0`}>
-        <div className="flex items-center gap-2.5">
-          {/* Logo */}
-          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-            <MicIcon className="w-3.5 h-3.5 text-emerald-400" />
-          </div>
-          <span className="text-sm font-semibold text-zinc-300 tracking-wide">Dikta</span>
-
-          {/* Settings toggle */}
-          <button
-            aria-label="Toggle settings"
-            aria-expanded={panels.showSettings}
-            onClick={() => panels.toggle("settings")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showSettings
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-            ].join(" ")}
-          >
-            <GearIcon />
-          </button>
-
-          {/* History toggle */}
-          <button
-            aria-label="Toggle history"
-            aria-expanded={panels.showHistory}
-            onClick={() => panels.toggle("history")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showHistory
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-            ].join(" ")}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
-            </svg>
-          </button>
-
-          {/* Stats toggle */}
-          <button
-            aria-label="Toggle stats"
-            aria-expanded={panels.showStats}
-            onClick={() => panels.toggle("stats")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showStats
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-            ].join(" ")}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
-            </svg>
-          </button>
-
-          {/* Notes toggle */}
-          <button
-            aria-label="Toggle voice notes"
-            aria-expanded={panels.showNotes}
-            onClick={() => panels.toggle("notes")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showNotes
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-            ].join(" ")}
-          >
-            <NoteIcon className="w-4 h-4" />
-          </button>
-
-          {/* Integrations toggle -- desktop only */}
-          {isDesktop && (
-            <button
-              aria-label="Toggle integrations"
-              aria-expanded={panels.showIntegrations}
-              onClick={() => panels.toggle("integrations")}
-              className={[
-                `${headerBtnPad} rounded-lg transition-all duration-150`,
-                panels.showIntegrations
-                  ? "text-emerald-400 bg-emerald-500/10"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-              ].join(" ")}
-            >
-              {/* Plug/integration icon */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
-              </svg>
-            </button>
-          )}
-
-          {/* Advanced settings toggle */}
-          <button
-            title="Advanced settings"
-            aria-label="Toggle advanced settings"
-            aria-expanded={panels.showAdvanced}
-            onClick={() => panels.toggle("advanced")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showAdvanced
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
-            ].join(" ")}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-          </button>
+           Single row: logo + icon strip. StylePicker lives below as its own row
+           (only visible on the home/recording view, hidden when a panel is open). */}
+      <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2 flex-shrink-0">
+        {/* Logo */}
+        <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+          <MicIcon className="w-3.5 h-3.5 text-emerald-400" />
         </div>
+        <span className="text-sm font-semibold text-zinc-300 tracking-wide">Dikta</span>
 
-        {/* Style picker in header -- full width on mobile, compact on desktop */}
-        <div className={isMobile ? "w-full mt-1" : "flex items-center"}>
+        {/* Settings toggle */}
+        <button
+          aria-label="Toggle settings"
+          aria-expanded={panels.showSettings}
+          onClick={() => panels.toggle("settings")}
+          className={[
+            `${headerBtnPad} rounded-lg transition-all duration-150`,
+            panels.showSettings
+              ? "text-emerald-400 bg-emerald-500/10"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <GearIcon />
+        </button>
+
+        {/* History toggle */}
+        <button
+          aria-label="Toggle history"
+          aria-expanded={panels.showHistory}
+          onClick={() => panels.toggle("history")}
+          className={[
+            `${headerBtnPad} rounded-lg transition-all duration-150`,
+            panels.showHistory
+              ? "text-emerald-400 bg-emerald-500/10"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
+          </svg>
+        </button>
+
+        {/* Stats toggle */}
+        <button
+          aria-label="Toggle stats"
+          aria-expanded={panels.showStats}
+          onClick={() => panels.toggle("stats")}
+          className={[
+            `${headerBtnPad} rounded-lg transition-all duration-150`,
+            panels.showStats
+              ? "text-emerald-400 bg-emerald-500/10"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
+          </svg>
+        </button>
+
+        {/* Notes toggle */}
+        <button
+          aria-label="Toggle voice notes"
+          aria-expanded={panels.showNotes}
+          onClick={() => panels.toggle("notes")}
+          className={[
+            `${headerBtnPad} rounded-lg transition-all duration-150`,
+            panels.showNotes
+              ? "text-emerald-400 bg-emerald-500/10"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <NoteIcon className="w-4 h-4" />
+        </button>
+
+        {/* Integrations toggle -- desktop only */}
+        {isDesktop && (
+          <button
+            aria-label="Toggle integrations"
+            aria-expanded={panels.showIntegrations}
+            onClick={() => panels.toggle("integrations")}
+            className={[
+              `${headerBtnPad} rounded-lg transition-all duration-150`,
+              panels.showIntegrations
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+            ].join(" ")}
+          >
+            {/* Plug/integration icon */}
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
+            </svg>
+          </button>
+        )}
+
+        {/* Advanced settings toggle */}
+        <button
+          title="Advanced settings"
+          aria-label="Toggle advanced settings"
+          aria-expanded={panels.showAdvanced}
+          onClick={() => panels.toggle("advanced")}
+          className={[
+            `${headerBtnPad} rounded-lg transition-all duration-150`,
+            panels.showAdvanced
+              ? "text-emerald-400 bg-emerald-500/10"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+        </button>
+      </div>
+
+      {/* ── Mode picker row ──
+           Shown only on the home/recording view (no panel open). Always fully
+           visible regardless of window width because it is its own dedicated row. */}
+      {!panels.anyOpen && (
+        <div className="px-4 pb-2 flex-shrink-0">
           <StylePicker
             value={settings.cleanupStyle}
             onChange={settings.handleStyleChange}
             disabled={isBusy || isRecording}
           />
         </div>
-      </div>
+      )}
 
       {/* ── Settings Panel ── */}
       <div
