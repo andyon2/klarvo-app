@@ -36,6 +36,7 @@ EXCLUDE_LIST=(
   ".tauri/"
   "models/"
   # Secrets und generierte Dateien
+  ".dev-keys"
   ".env"
   "dikta-debug.keystore"
   "social-preview.png"
@@ -63,6 +64,19 @@ rsync -av --delete \
   $RSYNC_EXCLUDES \
   --exclude=".git/" \
   "$SOURCE_DIR/" "$TARGET_DIR/"
+
+# --- Scrub license secret from public copy ---
+# Replace the real HMAC secret with dummy values so dikta-public compiles
+# but cannot generate keys valid for official builds.
+echo "Scrubbing license secret..."
+LICENSE_FILE="$TARGET_DIR/src-tauri/src/license/mod.rs"
+if [ -f "$LICENSE_FILE" ]; then
+  sed -i 's|b"dikta-license-v1"|b"public-dummy-v1xx"|' "$LICENSE_FILE"
+  sed -i 's|b"-2025-open-core!"|b"-xxxx-not-secret"|' "$LICENSE_FILE"
+  echo "  License secret replaced with dummy values."
+else
+  echo "  Warning: license/mod.rs not found -- skipping."
+fi
 
 # --- Public .gitignore sicherstellen ---
 # Die bestehende .gitignore wird aus dem Source uebernommen.

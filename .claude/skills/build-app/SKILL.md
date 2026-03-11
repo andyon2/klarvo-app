@@ -4,14 +4,16 @@ description: Baut Dikta fuer eine Zielplattform (Windows oder Android). Meldet F
 argument-hint: "[plattform] -- windows | android | check"
 allowed-tools: Read, Bash, Glob
 context: fork
-model: haiku
+model: sonnet
 ---
 
 Baue Dikta fuer die angegebene Zielplattform.
 
 ## Argumente
 
-Aus `$ARGUMENTS` extrahiere die Plattform: `windows` | `android` | `check` (nur Kompilier-Check ohne Build)
+`$ARGUMENTS` enthaelt die Plattform: `windows` | `android` | `check` (nur Kompilier-Check ohne Build).
+
+WICHTIG: Frage NICHT nochmal nach der Plattform. Sie steht bereits in `$ARGUMENTS`. Extrahiere sie und fuehre den Build SOFORT aus. Kein Dialog, keine Rueckfragen.
 
 ## Vorgehensweise
 
@@ -41,9 +43,9 @@ Empfehlung: [Was als naechstes tun -- z.B. "rust-core Agent beauftragen mit Fix 
 
 ### Wenn plattform = `windows`
 
-WICHTIG: Nutze das PowerShell-Build-Skript, NICHT direkt `tauri build`:
+WICHTIG: Zuerst laufende Instanz beenden, dann das PowerShell-Build-Skript nutzen, NICHT direkt `tauri build`:
 ```bash
-cd /home/andyon2/claude-projects/dikta && powershell.exe -File scripts/sync-and-build.ps1 2>&1
+taskkill.exe /IM dikta.exe /F 2>/dev/null; powershell.exe -Command "cd D:\Apps\dikta; .\scripts\sync-and-build.ps1" 2>&1
 ```
 
 Falls PowerShell nicht verfuegbar (z.B. reines WSL ohne Windows-Zugriff), Fallback:
@@ -78,6 +80,31 @@ Groesse: [Dateigroesse]
 ```
 
 Bei Fehler: Strukturierte Fehlermeldung. Android-Build-Fehler sind oft kryptisch -- versuche die eigentliche Ursache zu identifizieren (fehlende SDK-Version, Gradle-Fehler, NDK-Problem, fehlende Kotlin-Quellen).
+
+### Nach erfolgreichem Build: Test-Checkliste ausgeben
+
+Nach JEDEM erfolgreichen Build (windows oder android), ermittle was sich seit dem letzten Build geaendert hat und gib eine Testliste aus.
+
+1. Lies die relevanten Commits. Fuer Windows:
+```bash
+git log --oneline --since="$(stat -c '%Y' /mnt/d/Apps/dikta/src-tauri/target/release/dikta.exe 2>/dev/null | xargs -I{} date -d @{} --iso-8601=seconds 2>/dev/null || echo '1 week ago')" HEAD 2>/dev/null
+```
+Falls der Timestamp nicht ermittelbar, nimm die letzten 10 Commits: `git log --oneline -10`
+
+2. Analysiere die Commit-Messages und fasse die nutzer-sichtbaren Aenderungen als Testliste zusammen. Ignoriere reine Refactorings, Docs, CI-Aenderungen -- nur was man in der App sehen/testen kann.
+
+3. Gib die Liste so aus (direkt im Terminal, KEINE Datei):
+```
+🧪 Teste bitte die neuen Features:
+
+1. [Feature/Fix-Beschreibung in 1 Satz, aus Nutzersicht]
+2. [...]
+3. [...]
+
+Starte: D:\Apps\dikta\src-tauri\target\release\dikta.exe
+```
+
+Falls keine nutzer-sichtbaren Aenderungen: "Keine neuen Features -- nur interne Aenderungen."
 
 ### Wenn plattform nicht erkannt
 

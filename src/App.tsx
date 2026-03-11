@@ -211,9 +211,12 @@ export default function App() {
   const recording = useRecording(settings.cleanupStyle, settings.language);
   const license = useLicense();
 
-  // Feature gate: active paid license (licensed or valid grace period).
+  // Feature gate: active paid license (licensed, active trial, or valid grace period).
   const isPaid =
     license.licenseStatus.type === "licensed" ||
+    (license.licenseStatus.type === "trial" &&
+      license.licenseStatus.trialUntil !== undefined &&
+      license.licenseStatus.trialUntil > Date.now() / 1000) ||
     (license.licenseStatus.type === "grace_period" &&
       license.licenseStatus.graceUntil !== undefined &&
       license.licenseStatus.graceUntil > Date.now() / 1000);

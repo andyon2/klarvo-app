@@ -150,16 +150,21 @@ export interface StyleMeta {
 }
 
 // License status types.
-export type LicenseStatus = "licensed" | "grace_period" | "unlicensed";
+export type LicenseStatus = "licensed" | "trial" | "grace_period" | "unlicensed";
 
 export interface ParsedLicenseStatus {
   type: LicenseStatus;
-  graceUntil?: number; // Unix timestamp seconds, only present for grace_period
+  trialUntil?: number;  // Unix timestamp seconds, only present for trial
+  graceUntil?: number;  // Unix timestamp seconds, only present for grace_period
 }
 
 export function parseLicenseStatus(raw: string): ParsedLicenseStatus {
   if (raw === "licensed") return { type: "licensed" };
   if (raw === "unlicensed") return { type: "unlicensed" };
+  if (raw.startsWith("trial:")) {
+    const until = parseInt(raw.split(":")[1], 10);
+    return { type: "trial", trialUntil: isNaN(until) ? undefined : until };
+  }
   if (raw.startsWith("grace_period:")) {
     const until = parseInt(raw.split(":")[1], 10);
     return { type: "grace_period", graceUntil: isNaN(until) ? undefined : until };

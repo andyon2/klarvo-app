@@ -5,30 +5,23 @@
 //! `DIKTA-XXXX-XXXX-XXXX-XXXX`
 //!
 //! The payload is Base32-encoded (RFC 4648, no padding) with groups of 4
-//! characters separated by hyphens.  Decoded it is 20 bytes:
-//! - bytes 0..12 : 96-bit payload (version byte + 11 bytes of random data)
-//! - bytes 12..20: first 8 bytes of HMAC-SHA256(secret, payload[0..12])
+//! characters separated by hyphens.  Decoded it is 10 bytes:
+//! - bytes 0..6 : 6-byte payload
+//! - bytes 6..10: first 4 bytes of HMAC-SHA256(secret, payload[0..6])
 //!
-//! The `DIKTA-` prefix + 4 groups of 4 Base32 chars = 4 * 4 = 16 chars of
-//! Base32 = 10 bytes of data per group... actually let's be precise:
+//! ## Payload layout
 //!
-//! Base32: 5 bits per char. 20 bytes = 160 bits = 32 chars.
-//! We display as `DIKTA-` + 4 groups of 4 + the remaining chars.
-//! To keep it simple: 20 bytes → 32 Base32 chars → split as 8-8-8-8.
-//! Display: `DIKTA-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX` is too long.
+//! Byte 0 encodes the key type:
+//! - `0x00` = permanent (regular purchase)
+//! - `0x01` = trial/tester (has an expiry date)
+//! - Any other value = permanent (backward-compatibility for legacy keys)
 //!
-//! Revised: 12 bytes payload + 4 bytes HMAC-truncated = 16 bytes total.
-//! 16 bytes = 128 bits → 26 Base32 chars (padded to 32, but we strip padding).
-//! We use 20 chars split 4-4-4-4 with one more group -- simpler:
+//! For trial keys (byte 0 == `0x01`):
+//! - bytes 1-2: expiry as `u16` big-endian (days since 2025-01-01)
+//! - bytes 3-5: 3-byte identifier (e.g. tester initials or a serial number)
 //!
-//! Final design: 12-byte payload + 8-byte HMAC = 20 bytes.
-//! 20 bytes in Base32 = 32 chars (with padding). Strip `=`.
-//! Display as: `DIKTA-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX` (too long).
-//!
-//! Practical approach matching the briefing `DIKTA-XXXX-XXXX-XXXX-XXXX`:
-//! - 4 groups of 4 Base32 chars = 16 chars = 80 bits = 10 bytes.
-//! - Split: 6 bytes payload + 4 bytes HMAC-truncated = 10 bytes.
-//! - Regex: `^DIKTA-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}$`
+//! Legacy keys (e.g. `b"andyon"`) have byte 0 != `0x00` and != `0x01`.
+//! They are treated as permanent.
 //!
 //! ## HMAC secret
 //!
@@ -78,6 +71,15 @@ const GRACE_PERIOD_SECS: u64 = 48 * 60 * 60;
 /// Early-adopter migration: existing users get a 60-day grace period.
 pub const EARLY_ADOPTER_GRACE_SECS: u64 = 60 * 24 * 60 * 60;
 
+/// Unix timestamp of the trial epoch: 2025-01-01T00:00:00Z.
+///
+/// Trial expiry dates are encoded as days since this date to fit into 2 bytes
+/// (max representable date: 2025-01-01 + 65535 days ≈ year 2204).
+const TRIAL_EPOCH_SECS: u64 = 1_735_689_600; // 2025-01-01 00:00:00 UTC
+
+/// Number of seconds in one day, used for day-offset arithmetic.
+const SECS_PER_DAY: u64 = 24 * 60 * 60;
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -97,6 +99,9 @@ pub enum LicenseStatus {
     GracePeriod { until: u64 },
     /// Fully licensed. All paid features are unlocked.
     Licensed,
+    /// Trial / tester key. All paid features are unlocked until `until`
+    /// (Unix timestamp of the expiry date at midnight UTC).
+    Trial { until: u64 },
 }
 
 /// Paid features that require a valid license.
@@ -143,11 +148,13 @@ pub enum LicensedFeature {
 
 /// Validates a license key string.
 ///
-/// Returns `LicenseStatus::Licensed` if the key is correctly formatted and
-/// its HMAC matches. Returns `Err` with a human-readable message otherwise.
+/// Returns `Ok(LicenseStatus::Licensed)` for permanent keys and
+/// `Ok(LicenseStatus::Trial { until })` for valid, non-expired trial keys.
+/// Returns `Err` with a human-readable message for invalid or expired keys.
 ///
 /// This does NOT check the cache timestamp -- call `compute_status_from_cache`
-/// for that. This function only answers: "is this a genuine Dikta key?"
+/// for that. This function only answers: "is this a genuine Dikta key, and if
+/// it is a trial key, has it expired?"
 pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
     if key.is_empty() {
         return Err("License key is empty".to_string());
@@ -213,7 +220,25 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
         return Err("Invalid key: HMAC verification failed".to_string());
     }
 
-    Ok(LicenseStatus::Licensed)
+    // Inspect byte 0 to determine key type.
+    match payload[0] {
+        0x01 => {
+            // Trial key: bytes 1-2 are days since TRIAL_EPOCH (big-endian u16).
+            let days_since_epoch = u16::from_be_bytes([payload[1], payload[2]]) as u64;
+            let expiry_secs = TRIAL_EPOCH_SECS + days_since_epoch * SECS_PER_DAY;
+
+            let now = current_unix_timestamp();
+            if now >= expiry_secs {
+                // Convert expiry to a human-readable date for the error message.
+                let expiry_date = unix_secs_to_date_string(expiry_secs);
+                return Err(format!("Trial license expired on {expiry_date}"));
+            }
+
+            Ok(LicenseStatus::Trial { until: expiry_secs })
+        }
+        // 0x00 = permanent, anything else = legacy key (backward-compat).
+        _ => Ok(LicenseStatus::Licensed),
+    }
 }
 
 /// Computes the license status from a cached key and the timestamp at which
@@ -221,20 +246,35 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
 ///
 /// - If `key` is empty: returns `Unlicensed`.
 /// - If `key` is invalid (bad HMAC): returns `Unlicensed`.
+/// - If `key` is an expired trial: returns `Unlicensed` (ignores cache).
 /// - If `validated_at == 0`: returns `Unlicensed`.
-/// - If `now - validated_at <= 30 days`: returns `Licensed`.
-/// - If `now - validated_at <= 30 days + 48 hours`: returns `GracePeriod { until }`.
-/// - Otherwise: returns `Unlicensed`.
+/// - For trial keys: returns `Trial { until }` if not expired.
+/// - For permanent keys:
+///   - If `now - validated_at <= 30 days`: returns `Licensed`.
+///   - If `now - validated_at <= 30 days + 48 hours`: returns `GracePeriod { until }`.
+///   - Otherwise: returns `Unlicensed`.
 pub fn compute_status_from_cache(key: &str, validated_at: u64) -> LicenseStatus {
     if key.is_empty() || validated_at == 0 {
         return LicenseStatus::Unlicensed;
     }
 
     // Verify the key is genuine before trusting the cache.
-    if validate_license_key(key).is_err() {
-        return LicenseStatus::Unlicensed;
+    // For trial keys, validate_license_key also checks expiry.
+    let validated = match validate_license_key(key) {
+        Ok(status) => status,
+        Err(_) => return LicenseStatus::Unlicensed,
+    };
+
+    // Trial keys: the embedded expiry date always wins over the cache timestamp.
+    if let LicenseStatus::Trial { until } = validated {
+        let now = current_unix_timestamp();
+        if now >= until {
+            return LicenseStatus::Unlicensed;
+        }
+        return LicenseStatus::Trial { until };
     }
 
+    // Permanent keys: apply the 30-day + 48h grace window against validated_at.
     let now = current_unix_timestamp();
     let elapsed = now.saturating_sub(validated_at);
 
@@ -252,15 +292,15 @@ pub fn compute_status_from_cache(key: &str, validated_at: u64) -> LicenseStatus 
 ///
 /// Rules:
 /// - `Licensed`: all features allowed.
+/// - `Trial { until }`: all features allowed if `until > now`.
 /// - `GracePeriod { until }`: all features allowed if `until > now`.
 /// - `Unlicensed`: no paid features allowed.
 pub fn is_feature_allowed(status: &LicenseStatus, _feature: LicensedFeature) -> bool {
+    let now = current_unix_timestamp();
     match status {
         LicenseStatus::Licensed => true,
-        LicenseStatus::GracePeriod { until } => {
-            let now = current_unix_timestamp();
-            *until > now
-        }
+        LicenseStatus::Trial { until } => *until > now,
+        LicenseStatus::GracePeriod { until } => *until > now,
         LicenseStatus::Unlicensed => false,
     }
 }
@@ -269,11 +309,13 @@ pub fn is_feature_allowed(status: &LicenseStatus, _feature: LicensedFeature) -> 
 /// passing back to the frontend via Tauri commands.
 ///
 /// - `"licensed"` for `Licensed`
-/// - `"grace_period"` for `GracePeriod { .. }`
+/// - `"trial:<until>"` for `Trial { until }`
+/// - `"grace_period:<until>"` for `GracePeriod { .. }`
 /// - `"unlicensed"` for `Unlicensed`
 pub fn status_to_string(status: &LicenseStatus) -> String {
     match status {
         LicenseStatus::Licensed => "licensed".to_string(),
+        LicenseStatus::Trial { until } => format!("trial:{until}"),
         LicenseStatus::GracePeriod { until } => format!("grace_period:{until}"),
         LicenseStatus::Unlicensed => "unlicensed".to_string(),
     }
@@ -306,6 +348,26 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         diff |= x ^ y;
     }
     diff == 0
+}
+
+/// Converts a Unix timestamp (seconds) to a `"YYYY-MM-DD"` string.
+///
+/// Purely arithmetic -- no external date crate required.
+/// Handles dates from 1970 through ~2200 correctly for our use case.
+fn unix_secs_to_date_string(secs: u64) -> String {
+    let days_since_epoch = secs / SECS_PER_DAY;
+    // Gregorian calendar calculation (Tomohiko Sakamoto algorithm variant).
+    let z = days_since_epoch as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +405,38 @@ pub fn generate_license_key(payload: &[u8; 6]) -> String {
     format!("DIKTA-{}", groups.join("-"))
 }
 
+/// Generates a trial license key with an embedded expiry date.
+///
+/// Only available in test builds.
+///
+/// - `identifier`: 3-byte tester identifier (e.g. `b"ts1"`).
+/// - `days_valid`: number of days from today until the key expires.
+///
+/// Payload layout:
+/// - byte 0: `0x01` (trial key type)
+/// - bytes 1-2: (today + days_valid) as days since 2025-01-01, big-endian u16
+/// - bytes 3-5: identifier
+#[cfg(test)]
+pub fn generate_trial_key(identifier: &[u8; 3], days_valid: u16) -> String {
+    let now = current_unix_timestamp();
+    // Compute how many days from TRIAL_EPOCH to (now + days_valid).
+    let expiry_secs = now + days_valid as u64 * SECS_PER_DAY;
+    // Clamp to TRIAL_EPOCH to avoid underflow on systems with clock issues.
+    let days_since_epoch = expiry_secs.saturating_sub(TRIAL_EPOCH_SECS) / SECS_PER_DAY;
+    // Saturate to u16::MAX (year ~2204) -- more than enough.
+    let days_u16 = days_since_epoch.min(u16::MAX as u64) as u16;
+
+    let mut payload = [0u8; 6];
+    payload[0] = 0x01;
+    payload[1] = (days_u16 >> 8) as u8;
+    payload[2] = (days_u16 & 0xFF) as u8;
+    payload[3] = identifier[0];
+    payload[4] = identifier[1];
+    payload[5] = identifier[2];
+
+    generate_license_key(&payload)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -355,7 +449,8 @@ mod tests {
 
     #[test]
     fn test_valid_key_is_accepted() {
-        let key = generate_license_key(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+        // Use byte 0 = 0x02 (permanent, non-trial) to avoid the trial branch.
+        let key = generate_license_key(&[0x02, 0x02, 0x03, 0x04, 0x05, 0x06]);
         let result = validate_license_key(&key);
         assert!(result.is_ok(), "Generated key must be accepted: {result:?}");
         assert_eq!(result.unwrap(), LicenseStatus::Licensed);
@@ -424,6 +519,86 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // --- Trial key tests ---
+
+    #[test]
+    fn test_trial_key_valid() {
+        let key = generate_trial_key(b"ts1", 90);
+        let result = validate_license_key(&key);
+        assert!(result.is_ok(), "90-day trial key must be accepted: {result:?}");
+        match result.unwrap() {
+            LicenseStatus::Trial { until } => {
+                let now = current_unix_timestamp();
+                // Expiry should be roughly 90 days from now (allow 1-day tolerance).
+                assert!(until > now, "Trial expiry must be in the future");
+                assert!(
+                    until <= now + 91 * SECS_PER_DAY,
+                    "Trial expiry must not exceed 91 days from now"
+                );
+            }
+            other => panic!("Expected Trial status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_trial_key_expired() {
+        // Build a trial key that expired yesterday by manually crafting the payload.
+        // days_valid = 0 means expiry = today (start of day), which may or may not
+        // have elapsed. To be safe, use a fixed past date: 1 day since epoch = 2025-01-02.
+        let past_days: u16 = 1; // 2025-01-02 -- long in the past.
+        let mut payload = [0u8; 6];
+        payload[0] = 0x01;
+        payload[1] = (past_days >> 8) as u8;
+        payload[2] = (past_days & 0xFF) as u8;
+        payload[3] = b't';
+        payload[4] = b'x';
+        payload[5] = b'p';
+        let key = generate_license_key(&payload);
+
+        let result = validate_license_key(&key);
+        assert!(result.is_err(), "Expired trial key must be rejected");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("expired"),
+            "Error message must mention 'expired': {err}"
+        );
+        assert!(
+            err.contains("2025"),
+            "Error message must contain the expiry year: {err}"
+        );
+    }
+
+    #[test]
+    fn test_permanent_key_still_works() {
+        // Andy's existing key -- payload b"andyon" = [0x61, 0x6e, 0x64, 0x79, 0x6f, 0x6e].
+        // Byte 0 is 0x61 ('a'), which is neither 0x00 nor 0x01 -> treated as permanent.
+        let key = generate_license_key(b"andyon");
+        let result = validate_license_key(&key);
+        assert!(result.is_ok(), "Andy's key must still be accepted: {result:?}");
+        assert_eq!(
+            result.unwrap(),
+            LicenseStatus::Licensed,
+            "Andy's key must yield Licensed (permanent)"
+        );
+    }
+
+    /// Prints tester keys to stdout. Run with:
+    /// `cargo test --lib license::tests::print_tester_keys -- --nocapture`
+    #[test]
+    fn print_tester_keys() {
+        let testers: [(&[u8; 3], &str); 3] = [
+            (b"ts1", "Tester 1"),
+            (b"ts2", "Tester 2"),
+            (b"ts3", "Tester 3"),
+        ];
+        println!("\n=== TESTER KEYS (90 days) ===");
+        for (id, name) in testers {
+            let key = generate_trial_key(id, 90);
+            println!("{name}: {key}");
+        }
+        println!("=============================\n");
+    }
+
     // --- compute_status_from_cache ---
 
     #[test]
@@ -481,6 +656,40 @@ mod tests {
         assert_eq!(status, LicenseStatus::Unlicensed);
     }
 
+    #[test]
+    fn test_trial_key_cache_returns_trial_status() {
+        let key = generate_trial_key(b"ts1", 90);
+        let now = current_unix_timestamp();
+        let status = compute_status_from_cache(&key, now);
+        assert!(
+            matches!(status, LicenseStatus::Trial { .. }),
+            "Valid trial key in cache must yield Trial status, got {status:?}"
+        );
+    }
+
+    #[test]
+    fn test_expired_trial_key_cache_returns_unlicensed() {
+        // Craft a trial key with a past expiry date.
+        let past_days: u16 = 1;
+        let mut payload = [0u8; 6];
+        payload[0] = 0x01;
+        payload[1] = (past_days >> 8) as u8;
+        payload[2] = (past_days & 0xFF) as u8;
+        payload[3] = b'e';
+        payload[4] = b'x';
+        payload[5] = b'p';
+        let key = generate_license_key(&payload);
+
+        let now = current_unix_timestamp();
+        // Even with a recent validated_at, an expired trial must be Unlicensed.
+        let status = compute_status_from_cache(&key, now);
+        assert_eq!(
+            status,
+            LicenseStatus::Unlicensed,
+            "Expired trial key must yield Unlicensed even with fresh cache timestamp"
+        );
+    }
+
     // --- is_feature_allowed ---
 
     #[test]
@@ -507,6 +716,36 @@ mod tests {
                 "Licensed must allow {feature:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_trial_allows_all_features() {
+        let now = current_unix_timestamp();
+        // Trial expires in 24 hours -- still active.
+        let status = LicenseStatus::Trial {
+            until: now + 24 * 60 * 60,
+        };
+        let features = [
+            LicensedFeature::AlternativeProviders,
+            LicensedFeature::AllCleanupStyles,
+            LicensedFeature::OfflineMode,
+        ];
+        for feature in features {
+            assert!(
+                is_feature_allowed(&status, feature),
+                "Active trial must allow {feature:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_expired_trial_blocks_features() {
+        // Trial expired 1 second ago.
+        let status = LicenseStatus::Trial { until: 1 };
+        assert!(
+            !is_feature_allowed(&status, LicensedFeature::UnlimitedHistory),
+            "Expired trial must block paid features"
+        );
     }
 
     #[test]
@@ -565,5 +804,33 @@ mod tests {
         let s = status_to_string(&LicenseStatus::GracePeriod { until: 9999 });
         assert!(s.starts_with("grace_period:"));
         assert!(s.contains("9999"));
+    }
+
+    #[test]
+    fn test_status_to_string_trial() {
+        let s = status_to_string(&LicenseStatus::Trial { until: 9999 });
+        assert!(s.starts_with("trial:"));
+        assert!(s.contains("9999"));
+    }
+
+    // --- unix_secs_to_date_string ---
+
+    #[test]
+    fn test_date_string_epoch() {
+        // 1970-01-01
+        assert_eq!(unix_secs_to_date_string(0), "1970-01-01");
+    }
+
+    #[test]
+    fn test_date_string_trial_epoch() {
+        // TRIAL_EPOCH_SECS should be 2025-01-01
+        assert_eq!(unix_secs_to_date_string(TRIAL_EPOCH_SECS), "2025-01-01");
+    }
+
+    #[test]
+    fn test_date_string_known_date() {
+        // 2026-03-11 00:00:00 UTC = 1773187200
+        // Verified with: date -d "2026-03-11 00:00:00 UTC" +%s
+        assert_eq!(unix_secs_to_date_string(1_773_187_200), "2026-03-11");
     }
 }

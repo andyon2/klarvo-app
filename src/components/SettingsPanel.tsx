@@ -64,9 +64,9 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
 // --- Cloud STT models ---------------------------------------------------------
 
 const CLOUD_STT_MODELS = [
-  { value: "whisper-large-v3-turbo", label: "Groq — Large V3 Turbo", price: "~$0.0007/min" },
-  { value: "whisper-large-v3", label: "Groq — Large V3", price: "~$0.002/min" },
-  { value: "whisper-1", label: "OpenAI — Whisper 1", price: "~$0.006/min" },
+  { value: "whisper-large-v3-turbo", label: "Groq — Large V3 Turbo", price: "~$0.0007/min", provider: "groq" },
+  { value: "whisper-large-v3", label: "Groq — Large V3", price: "~$0.002/min", provider: "groq" },
+  { value: "whisper-1", label: "OpenAI — Whisper 1", price: "~$0.006/min", provider: "openai" },
 ];
 
 // --- Output language options --------------------------------------------------
@@ -189,7 +189,9 @@ const LOCKED_FEATURES = [
   "Snippets",
   "Unlimited Dictionary",
   "Voice Notes",
-  "Whisper Mode",
+  "Live Transcription",
+  "Cleanup Instructions",
+  "Cross-Device Sync",
   "Advanced Statistics",
 ];
 
@@ -242,6 +244,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
   }, []);
 
   const isLicensed = licenseStatus.type === "licensed";
+  const isTrial = licenseStatus.type === "trial";
   const isGrace = licenseStatus.type === "grace_period";
   const isUnlicensed = licenseStatus.type === "unlicensed";
 
@@ -255,6 +258,11 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
               <path d="M20 6L9 17l-5-5" />
             </svg>
             Licensed
+          </span>
+        )}
+        {isTrial && (
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/15 text-blue-400">
+            Trial{licenseStatus.trialUntil ? ` — expires ${formatGraceDate(licenseStatus.trialUntil)}` : ""}
           </span>
         )}
         {isGrace && (
@@ -273,6 +281,24 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
       {isLicensed && (
         <>
           <p className={isMobile ? "text-sm text-zinc-300" : "text-xs text-zinc-300"}>All features unlocked.</p>
+          <button
+            onClick={handleRemoveClick}
+            disabled={licenseLoading}
+            className={[
+              "self-start transition-colors disabled:opacity-40",
+              isMobile ? "text-sm" : "text-[11px]",
+              confirmRemove ? "text-red-400 hover:text-red-300" : "text-zinc-500 hover:text-zinc-300",
+            ].join(" ")}
+          >
+            {confirmRemove ? "Click again to confirm removal" : "Remove License"}
+          </button>
+        </>
+      )}
+
+      {/* Trial state */}
+      {isTrial && (
+        <>
+          <p className={isMobile ? "text-sm text-zinc-300" : "text-xs text-zinc-300"}>All features unlocked during trial.</p>
           <button
             onClick={handleRemoveClick}
             disabled={licenseLoading}
@@ -463,6 +489,9 @@ export function SettingsPanel({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [newTerm, setNewTerm] = useState("");
   const [appVersion, setAppVersion] = useState<string>("");
+  // isDirty: true when any local state differs from the persisted loadedSettings.
+  // License activation must NOT set this flag (it auto-saves immediately).
+  const [isDirty, setIsDirty] = useState(false);
   // Accordion: only one section open at a time. First section open by default.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     voiceRecording: true,
@@ -506,6 +535,44 @@ export function SettingsPanel({
     }
   }, [loadedSettings]);
 
+  // Track dirty state: compare local values against the last saved settings.
+  // API key fields: any non-empty input counts as dirty (new key to save).
+  // License activation is excluded -- it triggers auto-save and must not set dirty.
+  useEffect(() => {
+    if (!loadedSettings) return;
+    const dirty =
+      localLang !== (loadedSettings.language ?? "") ||
+      localStyle !== (loadedSettings.cleanupStyle ?? "polished") ||
+      localHotkey !== (loadedSettings.hotkey ?? "") ||
+      localHotkeyMode !== (loadedSettings.hotkeyMode ?? "hold") ||
+      localAudioDevice !== (loadedSettings.audioDevice ?? null) ||
+      localSttModel !== (loadedSettings.sttModel ?? "whisper-large-v3-turbo") ||
+      localCustomPrompt !== (loadedSettings.customPrompt ?? "") ||
+      localAutostart !== (loadedSettings.autostart ?? false) ||
+      localWhisperMode !== (loadedSettings.whisperMode ?? false) ||
+      localSttProvider !== (loadedSettings.sttProvider ?? "groq") ||
+      localLlmProvider !== (loadedSettings.llmProvider ?? "deepseek") ||
+      localOutputLanguage !== (loadedSettings.outputLanguage ?? "") ||
+      localWebhookUrl !== (loadedSettings.webhookUrl ?? "") ||
+      localTursoUrl !== (loadedSettings.tursoUrl ?? "") ||
+      localBubbleSize !== (loadedSettings.bubbleSize ?? 1.0) ||
+      localBubbleOpacity !== (loadedSettings.bubbleOpacity ?? 0.85) ||
+      localWhisperModel !== (loadedSettings.localWhisperModel ?? "small") ||
+      localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
+      groqKey.trim() !== "" ||
+      deepseekKey.trim() !== "" ||
+      openaiKey.trim() !== "" ||
+      anthropicKey.trim() !== "" ||
+      tursoToken.trim() !== "";
+    setIsDirty(dirty);
+  }, [
+    loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
+    localSttModel, localCustomPrompt, localAutostart, localWhisperMode, localSttProvider,
+    localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
+    localBubbleOpacity, localWhisperModel, localWhisperGpu,
+    groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
+  ]);
+
   // Close on Escape.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -543,9 +610,11 @@ export function SettingsPanel({
     onAudioDeviceChange(d);
   }, [onAudioDeviceChange]);
 
-  const handleSave = useCallback(async () => {
+  // Internal helper: calls onSave with all current values. Used by both the
+  // explicit Save button and the auto-save after license activation.
+  const saveCurrentSettings = useCallback(async (opts?: { silent?: boolean }) => {
     setSaving(true);
-    setSaveMsg(null);
+    if (!opts?.silent) setSaveMsg(null);
     try {
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
@@ -561,10 +630,12 @@ export function SettingsPanel({
       setOpenaiKey("");
       setAnthropicKey("");
       setTursoToken("");
-      setSaveMsg("Saved");
-      setTimeout(() => setSaveMsg(null), 2000);
+      if (!opts?.silent) {
+        setSaveMsg("Saved");
+        setTimeout(() => setSaveMsg(null), 2000);
+      }
     } catch (err) {
-      setSaveMsg(err instanceof Error ? err.message : String(err));
+      if (!opts?.silent) setSaveMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -572,6 +643,38 @@ export function SettingsPanel({
     groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
+    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
+  ]);
+
+  const handleSave = useCallback(async () => {
+    await saveCurrentSettings();
+  }, [saveCurrentSettings]);
+
+  // Called from LicenseSection after successful activation: persist immediately
+  // so the user never has to click Save Settings for license changes.
+  // We do NOT want to mark this as a dirty operation -- use silent mode and
+  // pass empty strings for API keys (backend ignores them when empty).
+  const handleLicenseAutoSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await onSave(
+        "", "", localLang, localStyle, localHotkey, localHotkeyMode,
+        localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
+        "", "",
+        localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), "",
+        localBubbleSize, localBubbleOpacity,
+        localWhisperModel, localWhisperGpu,
+        localSttProvider, localLlmProvider,
+      );
+    } catch (err) {
+      console.error("License auto-save failed:", err);
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
+    localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
+    localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
   ]);
 
@@ -591,9 +694,12 @@ export function SettingsPanel({
   const openaiOk = !!loadedSettings?.openaiApiKeyMasked;
   const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
 
-  // Feature gate: user has an active paid license (licensed or valid grace period).
+  // Feature gate: user has an active paid license (licensed, active trial, or valid grace period).
   const isPaid =
     licenseStatus.type === "licensed" ||
+    (licenseStatus.type === "trial" &&
+      licenseStatus.trialUntil !== undefined &&
+      licenseStatus.trialUntil > Date.now() / 1000) ||
     (licenseStatus.type === "grace_period" &&
       licenseStatus.graceUntil !== undefined &&
       licenseStatus.graceUntil > Date.now() / 1000);
@@ -633,7 +739,8 @@ export function SettingsPanel({
 
               {/* Cloud / Offline toggle -- same visual style as StylePicker */}
               <div className="flex flex-col gap-2">
-                <span className={LABEL_CLS_M}>Speech Recognition</span>
+                <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Speech Recognition</span>
+                <div className="flex flex-col gap-2 pl-0">
                 <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 w-fit">
                   <button
                     type="button"
@@ -684,7 +791,11 @@ export function SettingsPanel({
                         }}
                         className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                       >
-                        {CLOUD_STT_MODELS.map((m) => (
+                        {CLOUD_STT_MODELS.filter((m) => {
+                          if (m.provider === "groq") return groqOk;
+                          if (m.provider === "openai") return openaiOk;
+                          return true;
+                        }).map((m) => (
                           <option key={m.value} value={m.value}>
                             {m.label} ({m.price})
                           </option>
@@ -714,20 +825,48 @@ export function SettingsPanel({
                     />
                   </div>
                 )}
+                </div>
               </div>
 
-              {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
-              {isDesktop && (
-                <div className="flex items-center justify-between gap-3">
-                  <span className={LABEL_CLS_M}>Microphone</span>
-                  <select
-                    value={localAudioDevice ?? ""}
-                    onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-                    className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
-                  >
-                    <option value="">System Default</option>
-                    {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
+              {/* Text Cleanup -- only in Cloud mode */}
+              {localSttProvider !== "local" && (
+                <div className="flex flex-col gap-2.5">
+                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Text Cleanup</span>
+
+                  <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                    <span className={LABEL_CLS_M}>Provider</span>
+                    <select
+                      value={localLlmProvider}
+                      onChange={(e) => setLocalLlmProvider(e.target.value)}
+                      className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                    >
+                      <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
+                      <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
+                      <option value="anthropic" disabled={!anthropicOk}>Anthropic{!anthropicOk ? " (no key)" : ""}</option>
+                      <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
+                    </select>
+                  </div>
+
+                  <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
+                    <span className={LABEL_CLS_M}>Style</span>
+                    <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                      {STYLE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleStyleChange(opt.value)}
+                          title={opt.description}
+                          className={[
+                            isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
+                            localStyle === opt.value
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : "text-zinc-500 hover:text-zinc-300",
+                          ].join(" ")}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -759,27 +898,20 @@ export function SettingsPanel({
                 </select>
               </div>
 
-              {/* Cleanup style */}
-              <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-                <span className={LABEL_CLS_M}>Cleanup Style</span>
-                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-                  {STYLE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleStyleChange(opt.value)}
-                      title={opt.description}
-                      className={[
-                        isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                        localStyle === opt.value
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "text-zinc-500 hover:text-zinc-300",
-                      ].join(" ")}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+              {/* Microphone -- desktop only (Android uses its own mic via MediaRecorder) */}
+              {isDesktop && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className={LABEL_CLS_M}>Microphone</span>
+                  <select
+                    value={localAudioDevice ?? ""}
+                    onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
+                    className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+                  >
+                    <option value="">System Default</option>
+                    {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -1040,6 +1172,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Groq</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Speech + Cleanup)</span>
                   <StatusDot active={groqOk} />
                 </div>
                 <input
@@ -1056,6 +1189,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>DeepSeek</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
                   <StatusDot active={deepseekOk} />
                 </div>
                 <input
@@ -1072,6 +1206,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>OpenAI</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Speech + Cleanup)</span>
                   <StatusDot active={openaiOk} />
                 </div>
                 <input
@@ -1088,8 +1223,8 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Anthropic</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
                   <StatusDot active={anthropicOk} />
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(LLM only)</span>
                 </div>
                 <input
                   type="password"
@@ -1104,36 +1239,6 @@ export function SettingsPanel({
             </div>
           )}
         </div>
-
-        {/* --- Text Cleanup Provider -- only relevant in Cloud mode --- */}
-        {localSttProvider !== "local" && (
-          <div className="flex flex-col gap-1">
-            <button onClick={() => toggleSection("providerPriority")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.providerPriority ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Text Cleanup</span>
-            </button>
-            {openSections.providerPriority && (
-              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-                <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-                  <span className={LABEL_CLS_M}>LLM Provider</span>
-                  <select
-                    value={localLlmProvider}
-                    onChange={(e) => setLocalLlmProvider(e.target.value)}
-                    className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-                  >
-                    <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
-                    <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
-                    <option value="anthropic" disabled={!anthropicOk}>Anthropic{!anthropicOk ? " (no key)" : ""}</option>
-                    <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
-                  </select>
-                </div>
-                <p className="text-[11px] text-zinc-500">Used for text cleanup after transcription. Only providers with an API key are available.</p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">
@@ -1323,7 +1428,16 @@ export function SettingsPanel({
           {openSections.license && (
             <LicenseSection
               licenseStatus={licenseStatus}
-              onValidate={onValidateLicense}
+              onValidate={async (key) => {
+                const err = await onValidateLicense(key);
+                if (!err) {
+                  // Persist immediately so the license is not lost on app restart.
+                  // This must not affect isDirty -- handleLicenseAutoSave uses
+                  // empty key strings (backend keeps existing keys unchanged).
+                  await handleLicenseAutoSave();
+                }
+                return err;
+              }}
               onRemove={onRemoveLicense}
               licenseLoading={licenseLoading}
             />
@@ -1361,28 +1475,30 @@ export function SettingsPanel({
 
       </div>
 
-      {/* Save button -- sticky footer, always visible.
+      {/* Save button -- sticky footer, visible only when there are unsaved changes.
           On Android the nav bar (Back/Home/Recent) overlaps the WebView bottom.
           mobile-safe-bottom adds a fixed 56 px padding (env() is unreliable in
           Android WebView and returns 0). The parent panel max-h also accounts for
           the ~48 px nav bar so this footer is never clipped by the container. */}
-      <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className={[
-            "w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
-            saveMsg === "Saved"
-              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-              : saveMsg && saveMsg !== "Saved"
-              ? "bg-red-500/10 border-red-500/20 text-red-400"
-              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/30",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-          ].join(" ")}
-        >
-          {saving ? "Saving..." : saveMsg ?? "Save Settings"}
-        </button>
-      </div>
+      {(isDirty || saveMsg) && (
+        <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={[
+              "w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
+              saveMsg === "Saved"
+                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                : saveMsg && saveMsg !== "Saved"
+                ? "bg-red-500/10 border-red-500/20 text-red-400"
+                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/40 animate-pulse",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            ].join(" ")}
+          >
+            {saving ? "Saving..." : saveMsg ?? "Save Settings"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
