@@ -24,3 +24,5 @@ Diese Datei wird bei jedem Sessionstart gelesen und waechst organisch.
 ## Lektionen (was schon mal schiefging)
 
 - **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `dikta.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
+- **2026-03-11:** Release-Notes nur mit Aenderungen der aktuellen Session erstellt, statt den vollen Changelog seit dem letzten oeffentlichen Release zu pruefen. Merke: Immer `git log v<LETZTE_VERSION>..HEAD` nutzen, um ALLE Aenderungen zu sammeln. Im Release-Skill unter Schritt 8 dokumentiert.
+- **2026-03-11:** Dev-Tooling (UI Preview Mode) in Release-Notes aufgenommen. Gehoert nicht rein — Nutzer interessiert nur, was sich fuer sie aendert. Filter-Regel im Release-Skill ergaenzt.

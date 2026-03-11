@@ -123,7 +123,26 @@ git commit -m "chore: sync release vX.Y.Z"
 git push origin main
 ```
 
-### 8. GitHub Release erstellen (auf dikta-public!)
+### 8. Release-Notes aus VOLLEM Changelog erstellen
+
+**WICHTIG:** Release-Notes muessen ALLE Aenderungen seit dem letzten oeffentlichen Release enthalten, nicht nur die der aktuellen Session!
+
+So sammelst du den vollstaendigen Changelog:
+```bash
+# Alle Feature/Fix-Commits seit dem letzten Tag (ohne chore/docs/PB):
+git log v<LETZTE_VERSION>..HEAD --oneline --no-merges | grep -v "^\w\+ \[PB\]\|^\w\+ chore:\|^\w\+ docs:"
+```
+
+Gruppiere die Commits in:
+- **Features** (feat:) — neue Funktionalitaet
+- **Bug Fixes** (fix:) — Fehlerbehebungen
+- **Improvements** — UX-Verbesserungen, Performance, etc.
+
+**Filter:** Nur nutzerrelevante Aenderungen aufnehmen. Dev-Tooling (Preview Mode, Build-Scripts, Agent-Infrastruktur, Skill-Aenderungen) gehoert NICHT in Release-Notes. Nutzer interessiert nur, was sich fuer sie aendert.
+
+Schreibe nutzerfreundliche Beschreibungen (nicht die Commit-Messages 1:1). Fasse zusammengehoerende Commits zusammen (z.B. mehrere Commits zu "offline whisper" → ein Punkt "Offline Speech-to-Text").
+
+### 9. GitHub Release erstellen (auf dikta-public!)
 
 Pruefe dass alle Artefakte existieren und eine plausible Groesse haben (>1MB fuer Installer/APK).
 
@@ -134,8 +153,8 @@ gh release create vX.Y.Z \
   "/tmp/latest.json" \
   "/mnt/d/Dropbox/App Development/dikta/releases/vX.Y.Z/Dikta-vX.Y.Z.apk" \
   --repo andyon2/dikta-public \
-  --title "vX.Y.Z" \
-  --notes "Release vX.Y.Z"
+  --title "Dikta vX.Y.Z" \
+  --notes "<Release-Notes aus Schritt 8, als HEREDOC>"
 ```
 
 WICHTIG: `--repo andyon2/dikta-public` (NICHT dikta!)
