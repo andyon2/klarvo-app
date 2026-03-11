@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# scripts/dikta -- Unified starter for the Dikta team
+# Usage: dikta [role] [flags]
+#   dikta              → Main-Agent / Tech Lead (interactive)
+#   dikta rust         → Rust Backend Specialist (interactive)
+#   dikta android      → Android Platform Specialist (interactive)
+#   dikta strategy     → Product Strategist (interactive)
+#   Flags: --get-prompt, --remote
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
+# --- Help (no args or explicit help) ---
+if [[ -z "${1:-}" || "${1:-}" == "help" || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "dikta — Dikta Agent-Team"
+  echo ""
+  echo "Rollen:"
+  echo "  main       Tech Lead / Main-Agent"
+  echo "  rust       Rust Backend Specialist"
+  echo "  android    Android Platform Specialist"
+  echo "  strategy   Product Strategist"
+  echo ""
+  echo "Flags: --get-prompt, --remote"
+  exit 0
+fi
+
+# --- Parse role and flags ---
+ROLE="$1"
+shift 2>/dev/null || true
+if [[ "$ROLE" == --* ]]; then
+  FLAG="$ROLE"
+  ROLE="main"
+else
+  FLAG="${1:-}"
+fi
+
+# --- Role configuration ---
+case "$ROLE" in
+  main)
+    PROMPT_TYPE="system"
+    PROMPT_FILE="main-agent.md"
+    MODEL=""
+    STARTER_PROMPT="Sessionstart: Lies project-status.md und feedback/inbox.md, pruefe Dispatches und architecture.md, dann fasse den Stand zusammen und schlage den naechsten Schritt vor. Wenn neue Feedback-Eintraege da sind, erwaehne sie. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    ;;
+  rust)
+    PROMPT_TYPE="append"
+    PROMPT_FILE=".claude/agents/rust-core.md"
+    MODEL=""
+    if ls briefings/rust-core-*.md 1>/dev/null 2>&1; then
+      STARTER_PROMPT="Der Main-Agent hat dir ein Briefing hinterlegt. Lies es zuerst: briefings/rust-core-*.md. Arbeite dann mit dem User an der beschriebenen Aufgabe. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    else
+      STARTER_PROMPT="Keine Briefing-Datei gefunden. Frage den User, woran ihr arbeiten sollt. Lies zuerst die CLAUDE.md und die relevanten Projektdateien. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    fi
+    ;;
+  android)
+    PROMPT_TYPE="append"
+    PROMPT_FILE=".claude/agents/android-platform.md"
+    MODEL=""
+    if ls briefings/android-platform-*.md 1>/dev/null 2>&1; then
+      STARTER_PROMPT="Der Main-Agent hat dir ein Briefing hinterlegt. Lies es zuerst: briefings/android-platform-*.md. Arbeite dann mit dem User an der beschriebenen Aufgabe."
+    else
+      STARTER_PROMPT="Keine Briefing-Datei gefunden. Frage den User, woran ihr arbeiten sollt. Lies zuerst die CLAUDE.md und die relevanten Projektdateien."
+    fi
+    ;;
+  strategy)
+    PROMPT_TYPE="append"
+    PROMPT_FILE=".claude/agents/product-strategist.md"
+    MODEL=""
+    if ls briefings/product-strategist-*.md 1>/dev/null 2>&1; then
+      STARTER_PROMPT="Der Tech Lead hat dir ein Briefing hinterlegt. Lies es zuerst: briefings/product-strategist-*.md. Arbeite dann mit Andy an der beschriebenen Aufgabe. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    else
+      STARTER_PROMPT="Keine Briefing-Datei gefunden. Lies zuerst knowledge/product-strategy.md und knowledge/competitors.md, dann frage Andy woran ihr arbeiten sollt. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    fi
+    ;;
+  *)
+    echo "Unbekannte Rolle: $ROLE"
+    echo "Verfuegbar: main, rust, android, strategy (--help fuer Details)"
+    exit 1
+    ;;
+esac
+
+# --- --get-prompt: Output and exit ---
+if [[ "$FLAG" == "--get-prompt" ]]; then
+  echo "$STARTER_PROMPT"
+  exit 0
+fi
+
+# --- Git pull check ---
+if git rev-parse --git-dir &>/dev/null; then
+  git fetch origin --quiet 2>/dev/null || true
+  BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+  if [[ "$BEHIND" -gt 0 ]]; then
+    echo ""
+    echo "⚠  Remote hat $BEHIND neuere Commits. Willst du pullen? (j/n)"
+    read -r ANSWER
+    [[ "$ANSWER" == "j" ]] && git pull --ff-only origin main || echo "Pull fehlgeschlagen."
+    echo ""
+  fi
+fi
+
+# --- Launch Claude ---
+MODEL_FLAG=""
+[[ -n "$MODEL" ]] && MODEL_FLAG="--model $MODEL"
+
+if [[ "$PROMPT_TYPE" == "system" ]]; then
+  if [[ "$FLAG" == "--remote" ]]; then
+    exec claude $MODEL_FLAG --system-prompt-file "$PROJECT_ROOT/$PROMPT_FILE"
+  else
+    exec claude $MODEL_FLAG --system-prompt-file "$PROJECT_ROOT/$PROMPT_FILE" "$STARTER_PROMPT"
+  fi
+else
+  if [[ "$FLAG" == "--remote" ]]; then
+    exec claude $MODEL_FLAG --append-system-prompt "$(cat "$PROJECT_ROOT/$PROMPT_FILE")"
+  else
+    exec claude $MODEL_FLAG --append-system-prompt "$(cat "$PROJECT_ROOT/$PROMPT_FILE")" "$STARTER_PROMPT"
+  fi
+fi
