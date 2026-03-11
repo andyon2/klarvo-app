@@ -7,6 +7,7 @@
 //!
 //! Status strings returned to the frontend:
 //! - `"licensed"`
+//! - `"trial:{unix_timestamp_expires}"`
 //! - `"grace_period:{unix_timestamp_until}"`
 //! - `"unlicensed"`
 
@@ -34,8 +35,8 @@ use crate::AppState;
 /// - Returns an error if persisting the config fails.
 #[tauri::command]
 pub fn validate_license(key: String, state: State<'_, AppState>) -> Result<String, String> {
-    // Validate the key cryptographically.
-    validate_license_key(&key)?;
+    // Validate the key cryptographically and obtain the resulting status.
+    let new_status = validate_license_key(&key)?;
 
     // Record the current timestamp as the validation time.
     let validated_at = SystemTime::now()
@@ -46,7 +47,7 @@ pub fn validate_license(key: String, state: State<'_, AppState>) -> Result<Strin
     // Update the in-memory license status.
     {
         let mut status = crate::lock!(state.license_status)?;
-        *status = LicenseStatus::Licensed;
+        *status = new_status.clone();
     }
 
     // Persist key + timestamp to config.
@@ -61,7 +62,7 @@ pub fn validate_license(key: String, state: State<'_, AppState>) -> Result<Strin
             .map_err(|e| format!("Failed to persist license key: {e}"))?;
     }
 
-    Ok("licensed".to_string())
+    Ok(status_to_string(&new_status))
 }
 
 /// Returns the current license status as a string.
