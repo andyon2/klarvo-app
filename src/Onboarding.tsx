@@ -7,8 +7,18 @@
  *   Step 3 - Ready / usage instructions
  */
 import { useState, useCallback } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { saveSettings, getSettings } from "./tauri-commands";
+
+/** Opens a URL in the system browser. No-op in preview mode (no Tauri runtime). */
+async function openExternalUrl(url: string): Promise<void> {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch {
+    // In preview mode the plugin is not available -- fall back to window.open.
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
 import type { AppSettings } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -185,7 +195,7 @@ function StepApiKeys({
   const hasKey = groqKey.trim() || openaiKey.trim() || deepseekKey.trim() || anthropicKey.trim();
 
   const handleGroqLink = useCallback(() => {
-    openUrl("https://console.groq.com").catch(console.error);
+    openExternalUrl("https://console.groq.com").catch(console.error);
   }, []);
 
   return (

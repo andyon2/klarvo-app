@@ -1,7 +1,40 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { check } from "@tauri-apps/plugin-updater";
+import { isPreviewMode } from "../tauri-commands";
+
+// Plugin imports are loaded dynamically so that this module can be evaluated
+// in a plain browser (preview mode) without crashing on missing Tauri globals.
+
+/** Returns the app version string. Falls back to a hardcoded string in preview mode. */
+async function getAppVersion(): Promise<string> {
+  if (isPreviewMode) return "0.4.1-preview";
+  try {
+    const { getVersion } = await import("@tauri-apps/api/app");
+    return getVersion();
+  } catch {
+    return "0.4.1";
+  }
+}
+
+/** Opens a URL in the system browser. Falls back to window.open in preview mode. */
+async function openExternalUrl(url: string): Promise<void> {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/** Checks for app updates. Returns null in preview mode. */
+async function checkForUpdate(): Promise<{ version: string; downloadAndInstall: () => Promise<void> } | null> {
+  if (isPreviewMode) return null;
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    return check();
+  } catch {
+    return null;
+  }
+}
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
@@ -98,7 +131,7 @@ function UpdateChecker() {
     setStatus("checking");
     setErrorMsg(null);
     try {
-      const update = await check();
+      const update = await checkForUpdate();
       if (update) {
         setUpdateVersion(update.version);
         setStatus("available");
@@ -115,7 +148,7 @@ function UpdateChecker() {
   const handleInstall = useCallback(async () => {
     setStatus("downloading");
     try {
-      const update = await check();
+      const update = await checkForUpdate();
       if (update) {
         await update.downloadAndInstall();
       }
@@ -510,7 +543,7 @@ export function SettingsPanel({
   useEffect(() => { getProfiles().then(setProfiles).catch(console.error); }, []);
 
   // Load app version on mount.
-  useEffect(() => { getVersion().then(setAppVersion).catch(() => setAppVersion("0.4.1")); }, []);
+  useEffect(() => { getAppVersion().then(setAppVersion).catch(() => setAppVersion("0.4.1")); }, []);
 
   useEffect(() => { setLocalLang(language); }, [language]);
   useEffect(() => { setLocalStyle(cleanupStyle); }, [cleanupStyle]);

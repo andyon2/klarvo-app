@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import "./styles.css";
 import type { CleanupStyle, HistoryEntry, UsageSummary } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
@@ -11,6 +10,8 @@ import {
   getFillerStats,
   getNotes,
   reformatText,
+  isFirstRun,
+  isPreviewMode,
 } from "./tauri-commands";
 import { isMobile, isDesktop } from "./platform";
 import Onboarding from "./Onboarding";
@@ -250,7 +251,7 @@ export default function App() {
 
   // Check for first run / onboarding
   useEffect(() => {
-    invoke<boolean>("is_first_run")
+    isFirstRun()
       .then((firstRun) => { if (firstRun) setShowOnboarding(true); })
       .catch(console.error);
   }, []);
@@ -804,6 +805,18 @@ export default function App() {
       {isDesktop && (
         <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
           <span className="text-[11px] font-mono text-zinc-500">{hotkeyDisplay}</span>
+        </div>
+      )}
+
+      {/* ── Preview-mode banner ── */}
+      {isPreviewMode && (
+        <div
+          className="fixed bottom-3 right-3 z-50 pointer-events-none"
+          aria-hidden="true"
+        >
+          <span className="px-2 py-1 rounded-md text-[10px] font-mono font-semibold tracking-wide bg-zinc-900/80 border border-zinc-700/50 text-zinc-500 backdrop-blur-sm">
+            Preview Mode
+          </span>
         </div>
       )}
     </main>
