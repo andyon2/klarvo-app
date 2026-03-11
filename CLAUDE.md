@@ -55,10 +55,7 @@ dikta/
       release/SKILL.md         -- Version bump + Build + GitHub Release
       track/SKILL.md           -- Projektstatus lesen/aktualisieren
   scripts/
-    dikta-tech-lead            -- Starter fuer den Tech Lead (Main-Agent)
-    android-platform           -- Starter fuer direkte Android-Sessions
-    product-strategist         -- Starter fuer direkte Strategie-Sessions
-    rust-core                  -- Starter fuer direkte Rust-Backend-Sessions
+    dikta                      -- Unified Starter (dikta [rolle]: main, rust, android, strategy)
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
   feedback/
     inbox.md                   -- Tester-Feedback (Bugs, Feature-Wuensche, UX-Probleme)
