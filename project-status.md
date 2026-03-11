@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.2. Release auf GitHub (Windows + Android). 284 Rust-Tests (alle gruen). UI Preview Mode auf Hetzner-Server und lokal. Release-Notes und README auf Deutsch.
+Version 0.4.2. Release auf GitHub (Windows + Android). 284 Rust-Tests (alle gruen). UI Preview Mode auf Hetzner-Server und lokal. Konvention: README, Release-Notes und nutzerseitige Texte auf Deutsch. Code bleibt Englisch.
 
 ## Blocker
 
