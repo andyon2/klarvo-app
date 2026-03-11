@@ -112,6 +112,10 @@ Zentrale Dateien:
 | /reflect | Team-Selbstanalyse erstellen | fork (sonnet) |
 | /learn | Neue Wissensquellen in knowledge/ integrieren | fork (sonnet) |
 
+## Sessionstart
+
+`git pull --ff-only` ausfuehren bevor du arbeitest.
+
 ## Regeln
 
 1. **Code-Sprache ist Englisch.** Variablen, Funktionen, Kommentare, Commits -- alles Englisch.
