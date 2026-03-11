@@ -140,6 +140,8 @@ Gruppiere die Commits in:
 
 **Filter:** Nur nutzerrelevante Aenderungen aufnehmen. Dev-Tooling (Preview Mode, Build-Scripts, Agent-Infrastruktur, Skill-Aenderungen) gehoert NICHT in Release-Notes. Nutzer interessiert nur, was sich fuer sie aendert.
 
+**Nutzerperspektive:** Schreibe aus Sicht des Nutzers, nicht des Entwicklers. Wenn ein Feature im vorherigen Release noch nicht existierte, ist ein Bugfix daran kein "Fix" sondern Teil des neuen Features. Beispiel: "Trial-Keys zeigen jetzt korrekt das Ablaufdatum" ist falsch wenn Trial-Keys im letzten Release noch gar nicht existierten — dann gehoert es unter das neue Feature "Lizenzschluessel-System". Faustregel: Kannte der Nutzer das kaputte Verhalten? Nein → kein Bugfix erwaehnen.
+
 Schreibe nutzerfreundliche Beschreibungen (nicht die Commit-Messages 1:1). Fasse zusammengehoerende Commits zusammen (z.B. mehrere Commits zu "offline whisper" → ein Punkt "Offline Speech-to-Text").
 
 ### 9. GitHub Release erstellen (auf dikta-public!)
