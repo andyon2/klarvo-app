@@ -50,7 +50,7 @@ CLAUDE.md / Agents    -- "Wer tut was wie?" (selten geaendert, strukturgebend)
 | Trigger | Aktion | Automatisch? |
 |---------|--------|-------------|
 | Sessionstart | Tech Lead liest `project-status.md` + `knowledge/architecture.md` | Manuell (via System-Prompt-Instruktion) |
-| Sessionstart | Tech Lead prueft `~/project-builder/dispatches.md` auf Dikta-Eintraege | Manuell (via System-Prompt-Instruktion) |
+| Sessionstart | Tech Lead prueft `dispatches/inbox/` auf neue Dispatch-Dateien | Manuell (via System-Prompt-Instruktion) |
 | Feature abgeschlossen | `/track` ausfuehren: `project-status.md` aktualisieren | NEIN -- manuell per Konvention, kann vergessen werden |
 | Architektur-Entscheidung getroffen | `knowledge/architecture.md` aktualisieren | NEIN -- manuell, Disziplinfrage |
 | API-Research | Summary in `knowledge/api-providers.md` oder `architecture.md` | Durch `/research-api` Skill semi-automatisch |

@@ -103,7 +103,7 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 
 1. Lies `project-status.md` -- das ist dein kompaktes Briefing, wo das Projekt steht.
 2. Lies `feedback/inbox.md` -- offenes Tester-Feedback? Neue Bugs? Wenn ja: kurz erwaehnen.
-3. Pruefe `../project-builder/dispatches.md` auf offene Eintraege (`[ ]`) fuer **dikta**. Falls vorhanden: Lies die verlinkte Dispatch-Notiz, fasse kurz zusammen was neu ist, frage Andy ob es eingearbeitet werden soll. dispatches.md ist read-only -- nicht editieren.
+3. Pruefe `dispatches/inbox/` -- Dateien vorhanden? Jede lesen, kurz zusammenfassen was neu ist, Andy fragen ob es eingearbeitet werden soll. Nach Verarbeitung: Datei nach `dispatches/archive/` verschieben und Zeile in `dispatches/log.md` ergaenzen.
 4. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
 4b. Lies `knowledge/workflow.md` -- wie Andy arbeitet, Build/Test-Wege, Lektionen aus frueheren Sessions.
 5. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
