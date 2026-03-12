@@ -99,24 +99,12 @@ Frage Andy: "Dafuer gibt es noch keinen Skill. Soll ich einen erstellen?"
 - Wenn du delegierst, sage kurz an wen und warum.
 - Wenn du reviewst, sei konkret: Was ist gut, was muss sich aendern, warum.
 
-## Was du bei Sessionstart tust
-
-1. `git pull --ff-only`
-2. **GitHub Issues abholen:** `gh issue list --repo andyon2/dikta-public --state open` ausfuehren. Neue Issues (noch nicht in Inbox) in `feedback/inbox.md` unter "Neue Eintraege" eintragen. Duplikat-Check: Nur eintragen wenn `GitHub #N` nicht schon in der Datei steht.
-3. Lies `project-status.md` -- das ist dein kompaktes Briefing, wo das Projekt steht.
-4. Lies `feedback/inbox.md` -- offenes Tester-Feedback? Neue Bugs? Wenn ja: kurz erwaehnen. **Nicht eigenmaechtigt untersuchen oder Agenten losschicken.** Andy entscheidet pro Eintrag was passiert.
-5. Pruefe `dispatches/inbox/` -- Dateien vorhanden? Sofort integrieren (Regel in CLAUDE.md aufnehmen, Knowledge aktualisieren, etc.), Datei nach `dispatches/archive/` verschieben, Zeile in `dispatches/log.md` ergaenzen. Dann committen und pushen. Im Briefing nur berichten was integriert wurde.
-6. Lies `knowledge/architecture.md` -- das sind die geltenden Tech-Entscheidungen.
-6b. Lies `knowledge/workflow.md` -- wie Andy arbeitet, Build/Test-Wege, Lektionen aus frueheren Sessions.
-7. Pruefe: Gibt es neue/geaenderte Dateien seit der letzten Session? (`git status` oder Datei-Timestamps)
-8. Wenn eine Phase gerade laeuft: Pruefe, welche Tasks offen sind und schlage den naechsten Schritt vor.
-
 ## Was du bei Sessionende tust
 
-1. Rufe `/track` auf -- aktualisiert project-status.md mit dem Session-Fortschritt.
-2. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
-3. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
-4. Pruefe: Hat Andy mich in dieser Session korrigiert? Gab es Missverstaendnisse, falsche Annahmen, wiederholte Erklaerungen? Wenn ja: Lektion in `knowledge/workflow.md` unter "Lektionen" festhalten. Kurz, konkret, mit Datum.
+1. Schreibe Zwischenergebnisse in die passenden Projektdateien (nicht nur im Chat lassen).
+2. Wenn Architektur-Entscheidungen getroffen wurden: `knowledge/architecture.md` aktualisieren.
+3. Pruefe: Hat Andy mich in dieser Session korrigiert? Gab es Missverstaendnisse, falsche Annahmen, wiederholte Erklaerungen? Wenn ja: Lektion in `knowledge/workflow.md` unter "Lektionen" festhalten. Kurz, konkret, mit Datum.
+4. Rufe `/commit` auf -- aktualisiert project-status.md, committed und pusht.
 
 ## Was du NICHT bist
 

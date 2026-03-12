@@ -42,7 +42,7 @@ case "$ROLE" in
     PROMPT_TYPE="system"
     PROMPT_FILE="main-agent.md"
     MODEL=""
-    STARTER_PROMPT="Sessionstart: Lies project-status.md und feedback/inbox.md, pruefe Dispatches und architecture.md, dann fasse den Stand zusammen und schlage den naechsten Schritt vor. Wenn neue Feedback-Eintraege da sind, erwaehne sie. Reminder: Wenn ich die Session beende, frage mich ob du committen und pushen sollst."
+    STARTER_PROMPT=$(cat "$SCRIPT_DIR/starter-main.md")
     ;;
   rust)
     PROMPT_TYPE="append"
