@@ -2,6 +2,7 @@
 
 ## Neue Eintraege (unsortiert)
 <!-- Format: - [ ] YYYY-MM-DD | Quelle | "Beschreibung" | bug/feature/ux/perf -->
+- [ ] 2026-03-12 | GitHub #1 | "Authentifizierung schlägt nach Update fehl" | bug
 
 ## Priorisiert (naechste Session)
 <!-- Vom Tech Lead oder Product Strategist priorisierte Eintraege -->
