@@ -154,13 +154,13 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
       {/* Content -- scrollable, constrained so footer stays in view */}
       <div className={`overflow-y-auto ${scrollMaxH} p-4 flex flex-col gap-1`}>
 
-        {/* Speech Recognition */}
+        {/* Speech-to-Text */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
           <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
           <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
-            Speech Recognition
+            Speech-to-Text
             {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
           </span>
         </button>
@@ -286,9 +286,9 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
                     <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim (Clean) mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                    <span className={hintCls}>Overrides the built-in system prompt for Verbatim (Clean) mode.</span>
+                    <span className={LABEL_CLS}>System Prompt: Clean</span>
+                    <MobileTextarea label="System Prompt: Clean" hint="Overrides the built-in system prompt for Clean mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>Overrides the built-in system prompt for Clean mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Chat</span>
