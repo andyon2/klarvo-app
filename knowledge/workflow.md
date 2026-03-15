@@ -21,6 +21,13 @@ Diese Datei wird bei jedem Sessionstart gelesen und waechst organisch.
 
 **Vor dem Build:** Immer zuerst `taskkill.exe /IM dikta.exe /F` ausfuehren (geht aus WSL). Sonst schlaegt der Build fehl mit "Zugriff verweigert" weil die .exe noch laeuft. Der Befehl ist harmlos wenn die App nicht laeuft (gibt nur "nicht gefunden" Fehler).
 
+**Builds selbst ausfuehren, nie Andy fragen.** Der Windows-Build geht aus WSL:
+```bash
+powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null
+powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\claude-projects\dikta\scripts\sync-and-build.ps1' 2>&1
+```
+Andy nur einbeziehen wenn etwas interaktive Eingabe auf Windows erfordert.
+
 ## Lektionen (was schon mal schiefging)
 
 - **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `dikta.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
