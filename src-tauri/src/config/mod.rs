@@ -727,6 +727,68 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
         }
     }
 
+    // ---------------------------------------------------------------------------
+    // Migration: sttPriority / llmPriority → sttProvider / llmProvider
+    //
+    // In v0.4.2 we renamed the priority-list fields to a single provider string.
+    // Old config files still have sttPriority / llmPriority populated but no
+    // sttProvider / llmProvider entry, so serde assigns the field defaults
+    // ("groq" / "deepseek"). We detect this by checking whether the provider
+    // field is still at its default value while the legacy list is non-empty.
+    // Only then do we promote the first entry of the old list.
+    //
+    // Guard: if the user had already written a real sttProvider value (i.e. the
+    // field was present in the JSON), serde will have deserialized it to a
+    // non-default string and we skip the migration entirely.
+    // ---------------------------------------------------------------------------
+    let mut migrated = false;
+
+    if config.stt_provider == default_stt_provider() && !config.stt_priority.is_empty() {
+        let promoted = config.stt_priority[0].clone();
+        log::info!("[config] Migrated legacy sttPriority[0]=\"{promoted}\" to sttProvider");
+        config.stt_provider = promoted;
+        migrated = true;
+    }
+
+    if config.llm_provider == default_llm_provider() && !config.llm_priority.is_empty() {
+        let promoted = config.llm_priority[0].clone();
+        log::info!("[config] Migrated legacy llmPriority[0]=\"{promoted}\" to llmProvider");
+        config.llm_provider = promoted;
+        migrated = true;
+    }
+
+    if migrated {
+        log::info!("[config] Migrated legacy sttPriority/llmPriority to provider fields");
+        config.stt_priority.clear();
+        config.llm_priority.clear();
+        // Persist immediately so the next start is clean and needs no migration.
+        if let Err(e) = save_config(app_data_dir, &config) {
+            log::warn!("[config] Failed to persist migrated config: {e}");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Validation: reject unknown provider values and fall back to defaults.
+    // ---------------------------------------------------------------------------
+    const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
+    const VALID_LLM_PROVIDERS: &[&str] = &["deepseek", "openai", "anthropic", "groq"];
+
+    if !VALID_STT_PROVIDERS.contains(&config.stt_provider.as_str()) {
+        log::warn!(
+            "[config] Unknown stt_provider {:?}, falling back to \"groq\"",
+            config.stt_provider
+        );
+        config.stt_provider = default_stt_provider();
+    }
+
+    if !VALID_LLM_PROVIDERS.contains(&config.llm_provider.as_str()) {
+        log::warn!(
+            "[config] Unknown llm_provider {:?}, falling back to \"deepseek\"",
+            config.llm_provider
+        );
+        config.llm_provider = default_llm_provider();
+    }
+
     config
 }
 
@@ -1012,9 +1074,9 @@ mod tests {
     }
 
     /// Old config.json with stt_priority/llm_priority but no provider fields
-    /// loads without error and fills in defaults for the new provider fields.
+    /// migrates the first entry of each list to the new provider fields.
     #[test]
-    fn test_old_config_with_priority_fields_loads_with_provider_defaults() {
+    fn test_old_config_with_priority_fields_migrates_to_provider() {
         let dir = temp_dir();
         // Simulate a legacy config.json that has the old priority lists but no new fields.
         let legacy = r#"{
@@ -1024,12 +1086,77 @@ mod tests {
         }"#;
         std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
         let cfg = load_config(dir.path());
-        // New fields default to their own defaults -- old fields are not promoted.
-        assert_eq!(cfg.stt_provider, "groq", "legacy config should get stt_provider default");
-        assert_eq!(cfg.llm_provider, "deepseek", "legacy config should get llm_provider default");
-        // Old fields are still present in the struct (kept for compat) but we don't use them.
-        assert_eq!(cfg.stt_priority, vec!["openai", "groq"]);
-        assert_eq!(cfg.llm_priority, vec!["anthropic", "openai"]);
+        // Migration should promote the first entry of each list.
+        assert_eq!(cfg.stt_provider, "openai", "sttPriority[0] should be promoted to stt_provider");
+        assert_eq!(cfg.llm_provider, "anthropic", "llmPriority[0] should be promoted to llm_provider");
+        // After migration the legacy lists are cleared.
+        assert!(cfg.stt_priority.is_empty(), "stt_priority should be cleared after migration");
+        assert!(cfg.llm_priority.is_empty(), "llm_priority should be cleared after migration");
+    }
+
+    /// Migration is persisted: a second load_config call reads the already-migrated
+    /// on-disk file and does NOT touch the provider fields again.
+    #[test]
+    fn test_migration_is_persisted_to_disk() {
+        let dir = temp_dir();
+        let legacy = r#"{
+            "language": "de",
+            "sttPriority": ["openai", "groq"],
+            "llmPriority": ["anthropic", "openai"]
+        }"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        // First load triggers migration + save.
+        let _ = load_config(dir.path());
+
+        // Second load reads the already-migrated file.
+        let cfg2 = load_config(dir.path());
+        assert_eq!(cfg2.stt_provider, "openai");
+        assert_eq!(cfg2.llm_provider, "anthropic");
+        assert!(cfg2.stt_priority.is_empty());
+        assert!(cfg2.llm_priority.is_empty());
+    }
+
+    /// Fresh config (no sttPriority / llmPriority) keeps the defaults.
+    #[test]
+    fn test_fresh_config_keeps_defaults() {
+        let dir = temp_dir();
+        // Only set a key -- no priority lists.
+        let fresh = r#"{"groqApiKey": "gsk_test"}"#;
+        std::fs::write(dir.path().join("config.json"), fresh.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.stt_provider, "groq", "fresh config should keep default stt_provider");
+        assert_eq!(cfg.llm_provider, "deepseek", "fresh config should keep default llm_provider");
+    }
+
+    /// Config that already has an explicit sttProvider is NOT overwritten by migration,
+    /// even when sttPriority is also present.
+    #[test]
+    fn test_explicit_provider_field_suppresses_migration() {
+        let dir = temp_dir();
+        // User had already explicitly set sttProvider = "local" before this session.
+        let already_set = r#"{
+            "sttProvider": "local",
+            "llmProvider": "groq",
+            "sttPriority": ["openai", "groq"],
+            "llmPriority": ["anthropic", "openai"]
+        }"#;
+        std::fs::write(dir.path().join("config.json"), already_set.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        // Explicit values must be preserved -- migration must NOT overwrite them.
+        assert_eq!(cfg.stt_provider, "local");
+        assert_eq!(cfg.llm_provider, "groq");
+    }
+
+    /// An unknown provider value is rejected and falls back to the default.
+    #[test]
+    fn test_unknown_provider_falls_back_to_default() {
+        let dir = temp_dir();
+        let bad = r#"{"sttProvider": "fakeai", "llmProvider": "madeup"}"#;
+        std::fs::write(dir.path().join("config.json"), bad.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.stt_provider, "groq", "unknown stt_provider should fall back to groq");
+        assert_eq!(cfg.llm_provider, "deepseek", "unknown llm_provider should fall back to deepseek");
     }
 
     /// Provider fields serialize with camelCase keys.

@@ -414,8 +414,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         null,           // whisperMode
         openaiKey.trim() || null,
         anthropicKey.trim() || null,
-        null,           // sttPriority
-        null,           // llmPriority
       );
       const updated = await getSettings();
       onComplete(updated);
