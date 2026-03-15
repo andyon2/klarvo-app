@@ -529,6 +529,20 @@ pub struct AppConfig {
     /// 0 = never validated.
     #[serde(default)]
     pub license_validated_at: u64,
+
+    // --- Floating bar position ---
+
+    /// Last saved X position of the floating bar window (logical pixels).
+    /// `None` = no saved position; the app will use the default placement
+    /// (bottom-center of the primary monitor above the taskbar).
+    #[serde(default)]
+    pub bar_x: Option<f64>,
+
+    /// Last saved Y position of the floating bar window (logical pixels).
+    /// `None` = no saved position; paired with `bar_x` -- both are set or
+    /// neither is set.
+    #[serde(default)]
+    pub bar_y: Option<f64>,
 }
 
 fn default_stt_provider() -> String {
@@ -627,6 +641,8 @@ impl Default for AppConfig {
             local_whisper_gpu: default_local_whisper_gpu(),
             license_key: String::new(),
             license_validated_at: 0,
+            bar_x: None,
+            bar_y: None,
         }
     }
 }
@@ -956,6 +972,8 @@ mod tests {
             local_whisper_gpu: false,
             license_key: String::new(),
             license_validated_at: 0,
+            bar_x: Some(123.5),
+            bar_y: Some(456.0),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");
@@ -1579,5 +1597,62 @@ mod tests {
             json.contains("localWhisperGpu"),
             "expected camelCase 'localWhisperGpu'"
         );
+    }
+
+    // --- bar_x / bar_y position persistence tests ---
+
+    /// Default bar_x and bar_y are None (no saved position on first run).
+    #[test]
+    fn test_default_bar_position_is_none() {
+        let cfg = AppConfig::default();
+        assert!(cfg.bar_x.is_none(), "default bar_x should be None");
+        assert!(cfg.bar_y.is_none(), "default bar_y should be None");
+    }
+
+    /// bar_x and bar_y round-trip through save/load with concrete values.
+    #[test]
+    fn test_bar_position_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            bar_x: Some(320.5),
+            bar_y: Some(1024.0),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).expect("save should succeed");
+        let loaded = load_config(dir.path());
+        assert_eq!(loaded.bar_x, Some(320.5));
+        assert_eq!(loaded.bar_y, Some(1024.0));
+    }
+
+    /// Old config.json without barX / barY loads with None defaults (backwards compat).
+    #[test]
+    fn test_old_config_without_bar_position_loads_with_none() {
+        let dir = temp_dir();
+        // Simulate a config.json written before bar_x/bar_y were added.
+        let legacy = r#"{"language": "de", "groqApiKey": "gsk_test"}"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        let cfg = load_config(dir.path());
+        assert!(
+            cfg.bar_x.is_none(),
+            "bar_x should be None when field is absent in config.json"
+        );
+        assert!(
+            cfg.bar_y.is_none(),
+            "bar_y should be None when field is absent in config.json"
+        );
+    }
+
+    /// bar_x and bar_y serialize with camelCase keys.
+    #[test]
+    fn test_bar_position_serializes_camel_case() {
+        let cfg = AppConfig {
+            bar_x: Some(100.0),
+            bar_y: Some(200.0),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"barX\""), "expected camelCase 'barX'");
+        assert!(json.contains("\"barY\""), "expected camelCase 'barY'");
     }
 }

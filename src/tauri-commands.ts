@@ -696,3 +696,25 @@ export async function removeLicense(): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("remove_license");
 }
+
+// --- Bar position ---
+
+/**
+ * Persists the floating bar window position (logical pixels) to disk.
+ * Called after every drag-end so the bar reopens at the same spot.
+ * @param x - Logical x coordinate of the window's top-left corner
+ * @param y - Logical y coordinate of the window's top-left corner
+ */
+export async function saveBarPosition(x: number, y: number): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("save_bar_position", { x, y });
+}
+
+/**
+ * Returns the last persisted bar position, or null when no position has been
+ * saved yet (first run or after a reset).
+ */
+export async function getBarPosition(): Promise<{ x: number; y: number } | null> {
+  if (isPreviewMode) return mockAsync(null);
+  return invoke<{ x: number; y: number } | null>("get_bar_position");
+}

@@ -333,6 +333,51 @@ pub fn mask_api_key(key: &str) -> String {
     format!("****{}", &key[key.len() - 4..])
 }
 
+/// Updates the system tray icon tooltip to reflect the current pipeline state.
+///
+/// Tooltip strings per state:
+/// - idle / done  → "Dikta"
+/// - recording    → "Dikta — Recording..."
+/// - transcribing → "Dikta — Transcribing..."
+/// - cleaning     → "Dikta — Processing..."
+/// - error        → "Dikta — Error"
+///
+/// If the tray icon cannot be found, the failure is logged and ignored -- the
+/// app must not crash because the tray tooltip failed to update.
+#[cfg(desktop)]
+pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
+    use tauri::Manager;
+
+    let tooltip = match state {
+        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Dikta",
+        hotkey::PipelineState::Recording => "Dikta \u{2014} Recording...",
+        hotkey::PipelineState::Transcribing => "Dikta \u{2014} Transcribing...",
+        hotkey::PipelineState::Cleaning => "Dikta \u{2014} Processing...",
+        hotkey::PipelineState::Error => "Dikta \u{2014} Error",
+    };
+
+    match handle.tray_by_id("dikta-tray") {
+        Some(tray) => {
+            if let Err(e) = tray.set_tooltip(Some(tooltip)) {
+                log::warn!("[tray] Failed to set tooltip to {tooltip:?}: {e}");
+            }
+        }
+        None => {
+            log::debug!("[tray] Tray icon 'dikta-tray' not found, skipping tooltip update");
+        }
+    }
+}
+
+/// Emits a pipeline state-changed event and updates the tray tooltip
+/// to match the new state. This is the single call site for all state
+/// transitions so tray and frontend stay in sync automatically.
+pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
+    let pipeline_state = event.state.clone();
+    let _ = handle.emit(hotkey::EVENT_STATE_CHANGED, event);
+    #[cfg(desktop)]
+    update_tray_tooltip(handle, &pipeline_state);
+}
+
 /// Wraps an error message with a human-readable hint based on common HTTP/network
 /// error patterns. The hint is appended after the raw error string.
 pub fn friendly_error(context: &str, err: &str) -> String {
@@ -691,6 +736,8 @@ pub fn run() {
             commands::misc::sync_history,
             commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
+            commands::misc::save_bar_position,
+            commands::misc::get_bar_position,
             // License
             commands::license::validate_license,
             commands::license::get_license_status,

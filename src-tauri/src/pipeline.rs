@@ -162,8 +162,8 @@ pub async fn start_recording_only(handle: AppHandle) {
 
     let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
     if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
+        crate::emit_pipeline_state(
+            &handle,
             PipelineEvent::error(format!("Failed to start recording: {e}")),
         );
         return;
@@ -172,15 +172,12 @@ pub async fn start_recording_only(handle: AppHandle) {
     *match state.recording_start.lock() {
         Ok(g) => g,
         Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
+            crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned"));
             return;
         }
     } = Some(std::time::Instant::now());
 
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+    crate::emit_pipeline_state(&handle, PipelineEvent::recording());
 }
 
 /// Starts Command Mode: copies selected text via Ctrl+C, then starts recording.

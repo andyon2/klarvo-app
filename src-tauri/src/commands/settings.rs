@@ -221,6 +221,8 @@ pub async fn save_settings(
         local_whisper_gpu: local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
         license_key: existing.license_key,
         license_validated_at: existing.license_validated_at,
+        bar_x: existing.bar_x,
+        bar_y: existing.bar_y,
     };
 
     // Resolve providers from the new config before persisting.
