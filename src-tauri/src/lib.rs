@@ -454,7 +454,17 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 
 #[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
-fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// `saved_x` / `saved_y`: persisted logical position from the config. When
+/// present they are used as-is; the work-area calculation is skipped. On
+/// first launch (both `None`) the position is derived from the Win32
+/// `SPI_GETWORKAREA` work area on Windows, or from the monitor bounds on
+/// other platforms.
+fn create_bar_window(
+    app: &tauri::App,
+    saved_x: Option<f64>,
+    saved_y: Option<f64>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Start as a thin idle pill -- the frontend resizes dynamically based on state.
     let bar_width = 80.0_f64;
     let bar_height = 10.0_f64;
@@ -492,7 +502,67 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
         }
     }
 
-    // Position at bottom-center of the current monitor, above the taskbar.
+    // --- Position the bar ---
+    //
+    // Priority:
+    //   1. Persisted config position  (user dragged the bar, we saved it)
+    //   2. Win32 SPI_GETWORKAREA      (correct usable area, excludes taskbar)
+    //   3. monitor.size() fallback    (60 px conservative taskbar estimate)
+    //   4. Hard-coded fallback        (no monitor detected at all)
+
+    if let (Some(cx), Some(cy)) = (saved_x, saved_y) {
+        log::info!("[bar] Using saved config position ({cx}, {cy})");
+        let _ = bar.set_position(tauri::LogicalPosition::new(cx, cy));
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        };
+
+        let mut work_area = RECT::default();
+        // SAFETY: `work_area` is a valid stack-allocated RECT; the Win32 call
+        // writes into it and we check the return value before using the data.
+        let ok = unsafe {
+            SystemParametersInfoW(
+                SPI_GETWORKAREA,
+                0,
+                Some(&raw mut work_area as *mut _),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+        };
+
+        match ok {
+            Ok(()) => {
+                // `SPI_GETWORKAREA` returns physical pixels; divide by the bar
+                // window's scale factor to get logical coordinates that Tauri
+                // expects for `set_position`.
+                let scale = bar.scale_factor().unwrap_or(1.0);
+                let work_w = (work_area.right - work_area.left) as f64 / scale;
+                let work_bottom = work_area.bottom as f64 / scale;
+                let work_left = work_area.left as f64 / scale;
+
+                let x = work_left + (work_w - bar_width) / 2.0;
+                let y = work_bottom - bar_height - 8.0;
+
+                log::info!(
+                    "[bar] SPI_GETWORKAREA -> work_area=({},{},{},{}) scale={scale:.2}, placing at ({x:.1}, {y:.1})",
+                    work_area.left, work_area.top, work_area.right, work_area.bottom,
+                );
+                let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
+                return Ok(());
+            }
+            Err(e) => {
+                log::warn!("[bar] SPI_GETWORKAREA failed ({e}), falling back to monitor size");
+            }
+        }
+    }
+
+    // Fallback: derive position from monitor bounds with a conservative
+    // 60 px taskbar estimate.
     match bar.current_monitor() {
         Ok(Some(monitor)) => {
             let screen_size = monitor.size();
@@ -503,14 +573,16 @@ fn create_bar_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
             let offset_x = monitor_pos.x as f64 / scale;
             let offset_y = monitor_pos.y as f64 / scale;
             let x = offset_x + (screen_w - bar_width) / 2.0;
-            let y = offset_y + screen_h - bar_height - 52.0;
+            // 60 px: conservative estimate for taskbar height at common DPI settings.
+            let y = offset_y + screen_h - bar_height - 60.0;
             log::info!(
-                "[bar] screen={screen_w}x{screen_h} scale={scale} offset=({offset_x},{offset_y}), placing at ({x}, {y})"
+                "[bar] monitor fallback: screen={screen_w}x{screen_h} scale={scale:.2} \
+                 offset=({offset_x},{offset_y}), placing at ({x:.1}, {y:.1})"
             );
             let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
         }
         _ => {
-            log::warn!("[bar] No monitor detected, using fallback position");
+            log::warn!("[bar] No monitor detected, using hard-coded fallback position");
             let _ = bar.set_position(tauri::LogicalPosition::new(400.0, 10.0));
         }
     }
@@ -579,6 +651,10 @@ pub fn run() {
         // Apply autostart on launch: ensure registry entry matches config.
         commands::settings::apply_autostart(cfg.autostart);
 
+        // Extract bar position before `cfg` is moved into AppState.
+        let saved_bar_x = cfg.bar_x;
+        let saved_bar_y = cfg.bar_y;
+
         // Build and register the application state.
         let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db, is_early_adopter);
         app.manage(app_state);
@@ -625,7 +701,7 @@ pub fn run() {
 
         // --- Floating bar window ---
         #[cfg(target_os = "windows")]
-        if let Err(e) = create_bar_window(app) {
+        if let Err(e) = create_bar_window(app, saved_bar_x, saved_bar_y) {
             log::warn!("[setup] Could not create floating bar: {e}");
         }
 

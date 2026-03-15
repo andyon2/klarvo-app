@@ -123,3 +123,4 @@ Zentrale Dateien:
 6. **Kleine Commits, oft.** Lieber 10 kleine als 1 riesiger Commit.
 7. **Bei Unsicherheit: `/research-api` nutzen** statt zu raten. Lieber 2 Minuten recherchieren als 20 Minuten debuggen.
 8. **Rueckwaerts-Suche bei Umbau:** Vor dem ersten Edit bei strukturellen Aenderungen: `grep -r` nach allen Konsumenten des Geaenderten. Erst dann editieren. Strukturell = Entfernen, Umbenennen, Output-Format aendern, Verantwortlichkeit zwischen Komponenten verschieben. Nicht strukturell = Hinzufuegen, Erweitern, neue Datei anlegen.
+9. **Bug-Reports: Erst analysieren, dann fixen.** Bei jedem gemeldeten Problem erst Root Cause identifizieren und pruefen welches Prinzip/welcher Prozess es haette verhindern koennen. Jeder Fix-Output enthaelt "Root Cause" und "Verhindert durch". Erst danach wird gefixt.
