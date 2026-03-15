@@ -473,6 +473,8 @@ export default function App() {
             cleanupStyle={settings.cleanupStyle}
             hotkey={settings.hotkey}
             hotkeyMode={settings.hotkeyMode}
+            hotkeySlot2={settings.hotkeySlot2}
+            hotkeyModeSlot2={settings.hotkeyModeSlot2}
             audioDevice={settings.audioDevice}
             audioDevices={settings.audioDevices}
             dictionary={settings.dictionary}

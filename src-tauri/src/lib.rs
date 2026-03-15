@@ -71,8 +71,6 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconEvent;
-#[cfg(desktop)]
-use tauri_plugin_global_shortcut::Shortcut;
 
 // Re-export pipeline helpers so `commands/` modules can reach them.
 pub use pipeline::{resolve_cleanup_provider, resolve_stt_provider};
@@ -162,6 +160,10 @@ pub struct SettingsView {
     pub autostop_silence_secs: f32,
     /// Silence duration (seconds) before Auto mode triggers stop + pipeline.
     pub auto_mode_silence_secs: f32,
+    /// Hotkey string for the optional second slot (empty = slot disabled).
+    pub hotkey_slot2: String,
+    /// Recording mode for the optional second slot.
+    pub hotkey_mode_slot2: HotkeyMode,
 }
 
 // ---------------------------------------------------------------------------
@@ -735,23 +737,11 @@ pub fn run() {
             let handle = app.handle().clone();
             setup_audio_level_emitter(&handle);
 
-            println!("[setup] Parsing hotkey: {hotkey_str:?}");
-            let shortcut = hotkey_str.parse::<Shortcut>().unwrap_or_else(|e| {
-                log::warn!(
-                    "[hotkey] Saved hotkey {:?} is invalid ({e}), falling back to default",
-                    hotkey_str
-                );
-                DEFAULT_HOTKEY
-                    .parse::<Shortcut>()
-                    .expect("DEFAULT_HOTKEY must be a valid shortcut string")
-            });
-
-            match register_hotkey(&handle, shortcut, hotkey_mode) {
-                Ok(()) => log::info!(
-                    "[hotkey] Registered shortcut: {hotkey_str} (mode={hotkey_mode:?})"
-                ),
+            println!("[setup] Registering hotkey slots from config");
+            match register_hotkey(&handle) {
+                Ok(()) => log::info!("[hotkey] Hotkey slots registered"),
                 Err(e) => log::warn!(
-                    "[hotkey] Could not register shortcut: {e}. Use the UI button instead."
+                    "[hotkey] Could not register hotkey slots: {e}. Use the UI button instead."
                 ),
             }
         }
@@ -950,6 +940,8 @@ mod tests {
             insert_and_send: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
+            hotkey_slot2: String::new(),
+            hotkey_mode_slot2: HotkeyMode::Hold,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -994,6 +986,8 @@ mod tests {
             insert_and_send: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
+            hotkey_slot2: String::new(),
+            hotkey_mode_slot2: HotkeyMode::Hold,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1032,6 +1026,8 @@ mod tests {
             insert_and_send: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
+            hotkey_slot2: String::new(),
+            hotkey_mode_slot2: HotkeyMode::Hold,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

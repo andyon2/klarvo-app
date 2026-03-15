@@ -70,6 +70,8 @@ const MOCK_SETTINGS: AppSettings = {
   insertAndSend: false,
   autostopSilenceSecs: 2.0,
   autoModeSilenceSecs: 2.0,
+  hotkeySlot2: "",
+  hotkeyModeSlot2: "hold",
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -261,6 +263,8 @@ export async function saveSettings(
   insertAndSend?: boolean | null,
   autostopSilenceSecs?: number | null,
   autoModeSilenceSecs?: number | null,
+  hotkey_slot2?: string | null,
+  hotkey_mode_slot2?: HotkeyMode | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -292,6 +296,8 @@ export async function saveSettings(
     insertAndSend: insertAndSend ?? null,
     autostopSilenceSecs: autostopSilenceSecs ?? null,
     autoModeSilenceSecs: autoModeSilenceSecs ?? null,
+    hotkeySlot2: hotkey_slot2 ?? null,
+    hotkeyModeSlot2: hotkey_mode_slot2 ?? null,
   });
 }
 

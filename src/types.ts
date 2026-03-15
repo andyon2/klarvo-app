@@ -57,6 +57,9 @@ export interface AppSettings {
   insertAndSend: boolean;
   autostopSilenceSecs: number;
   autoModeSilenceSecs: number;
+  // Second hotkey slot (optional — empty string means disabled).
+  hotkeySlot2: string;
+  hotkeyModeSlot2: HotkeyMode;
 }
 
 // A per-application recording profile.

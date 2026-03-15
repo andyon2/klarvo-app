@@ -1092,112 +1092,40 @@ pub async fn run_dictation_pipeline(handle: AppHandle) {
     }
 }
 
-/// Registers the global shortcut with mode-aware handlers.
+/// Registers the global shortcut(s) with mode-aware handlers.
+///
+/// Reads `hotkey_slots` from the current `AppState` config. Each enabled slot
+/// (non-empty `hotkey` string) gets its own independent handler that uses the
+/// slot's `mode`. Disabled slots (empty `hotkey`) are silently skipped.
 ///
 /// Unregisters all existing shortcuts first so this can be called to
 /// re-register after a settings change.
 ///
-/// - `Toggle`: Pressed fires [`run_dictation_pipeline`] (start or stop+process).
-/// - `Hold`: Pressed fires [`start_recording_only`]; Released fires [`stop_and_process_pipeline`].
+/// Both slots share the same recorder: the `is_recording()` guard inside each
+/// handler prevents two slots from starting a recording simultaneously.
+///
+/// Recording modes per slot:
+/// - `Toggle`:  Pressed fires [`run_dictation_pipeline`] (start or stop+process).
+/// - `Hold`:    Pressed fires [`start_recording_only`]; Released fires
+///              [`stop_and_process_pipeline`].
+/// - `AutoStop`: Press once to start; silence stops automatically. Second press
+///               stops manually if still recording.
+/// - `Auto`:    Like AutoStop but loops until the user presses again.
 #[cfg(desktop)]
-pub fn register_hotkey(
-    handle: &AppHandle,
-    shortcut: tauri_plugin_global_shortcut::Shortcut,
-    mode: HotkeyMode,
-) -> Result<(), String> {
+pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-    println!("[hotkey] Registering shortcut: {shortcut:?} mode={mode:?}");
+    // Read enabled slots from the current config. We clone the data out of the
+    // lock immediately so we don't hold the Mutex while calling into the
+    // global-shortcut plugin (which may acquire its own internal lock).
+    let slots: Vec<crate::config::HotkeySlot> = handle
+        .state::<AppState>()
+        .config
+        .lock()
+        .ok()
+        .map(|c| c.hotkey_slots.clone())
+        .unwrap_or_default();
 
-    handle
-        .global_shortcut()
-        .unregister_all()
-        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
-
-    // --- Dictation hotkey ---
-    let handle_clone = handle.clone();
-    handle
-        .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _shortcut, event| {
-            println!("[hotkey] Event: {event:?}");
-
-            // While the ShortcutRecorder is active, swallow all hotkey events
-            // so the user can press the current shortcut without triggering
-            // the pipeline.
-            if handle_clone
-                .state::<AppState>()
-                .hotkey_paused
-                .load(Ordering::SeqCst)
-            {
-                println!("[hotkey] paused (ShortcutRecorder active), ignoring");
-                return;
-            }
-
-            let h = handle_clone.clone();
-            println!("[hotkey] mode={mode:?} state={:?}", event.state);
-            match (mode, event.state) {
-                (HotkeyMode::Toggle, ShortcutState::Pressed) => {
-                    tauri::async_runtime::spawn(async move {
-                        run_dictation_pipeline(h).await;
-                    });
-                }
-                (HotkeyMode::Hold, ShortcutState::Pressed) => {
-                    tauri::async_runtime::spawn(async move {
-                        start_recording_only(h).await;
-                    });
-                }
-                (HotkeyMode::Hold, ShortcutState::Released) => {
-                    tauri::async_runtime::spawn(async move {
-                        stop_and_process_pipeline(h).await;
-                    });
-                }
-                (HotkeyMode::AutoStop, ShortcutState::Pressed) => {
-                    // If already recording: second press = manual stop.
-                    // stop_and_process_pipeline clears the silence callback
-                    // before doing anything else, so no double-invocation.
-                    let is_recording = handle_clone
-                        .state::<AppState>()
-                        .recorder
-                        .is_recording();
-                    if is_recording {
-                        tauri::async_runtime::spawn(async move {
-                            stop_and_process_pipeline(h).await;
-                        });
-                    } else {
-                        tauri::async_runtime::spawn(async move {
-                            start_autostop_recording(h).await;
-                        });
-                    }
-                }
-                (HotkeyMode::AutoStop, ShortcutState::Released) => {
-                    // No-op: AutoStop is toggle-style, release has no meaning.
-                }
-                (HotkeyMode::Auto, ShortcutState::Pressed) => {
-                    let state = handle_clone.state::<AppState>();
-                    if state.recorder.is_recording() {
-                        // Second press while recording: stop the loop and process
-                        // whatever was recorded so far.
-                        state.auto_loop_active.store(false, Ordering::SeqCst);
-                        tauri::async_runtime::spawn(async move {
-                            stop_and_process_pipeline(h).await;
-                        });
-                    } else {
-                        // First press: activate loop and start first cycle.
-                        state.auto_loop_active.store(true, Ordering::SeqCst);
-                        tauri::async_runtime::spawn(async move {
-                            start_auto_recording(h).await;
-                        });
-                    }
-                }
-                (HotkeyMode::Auto, ShortcutState::Released) => {
-                    // No-op: Auto mode is toggle-style, release has no meaning.
-                }
-                _ => {}
-            }
-        })
-        .map_err(|e| format!("Failed to register shortcut: {e}"))?;
-
-    // --- Command Mode hotkey ---
     let cmd_shortcut_str = handle
         .state::<AppState>()
         .config
@@ -1206,6 +1134,150 @@ pub fn register_hotkey(
         .map(|c| c.command_hotkey.clone())
         .unwrap_or_else(|| "ctrl+shift+e".to_string());
 
+    println!("[hotkey] Re-registering hotkeys: {} slot(s)", slots.len());
+
+    handle
+        .global_shortcut()
+        .unregister_all()
+        .map_err(|e| format!("Failed to unregister shortcuts: {e}"))?;
+
+    // --- Dictation slots ---
+    //
+    // FIX: Previously each slot called `on_shortcut()` in a loop, which caused
+    // the plugin to overwrite the per-shortcut handler map entry for the last
+    // registered shortcut, making ALL slots behave like the last slot's mode.
+    //
+    // Now we build a (shortcut_id, mode) dispatch map up front, collect all
+    // valid shortcut objects, and register them with a SINGLE `on_shortcuts()`
+    // call + one shared handler.  Inside the handler we look up the mode by
+    // `shortcut.id()` so each slot dispatches to its own mode correctly.
+    //
+    // `Shortcut` does not implement `Hash`/`Eq`, so we key the map by the
+    // `u32` hotkey ID returned by `shortcut.id()`.
+
+    // Build dispatch map: hotkey_id -> mode
+    let mut slot_map: Vec<(u32, HotkeyMode)> = Vec::new();
+    let mut shortcut_objects: Vec<tauri_plugin_global_shortcut::Shortcut> = Vec::new();
+
+    for slot in &slots {
+        if !slot.is_enabled() {
+            println!("[hotkey] Slot {:?} disabled (empty hotkey), skipping", slot.mode);
+            continue;
+        }
+
+        let shortcut = match slot.hotkey.parse::<tauri_plugin_global_shortcut::Shortcut>() {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "[hotkey] Slot hotkey {:?} is invalid ({e}), skipping",
+                    slot.hotkey
+                );
+                continue;
+            }
+        };
+
+        println!("[hotkey] Queuing slot: {:?} id={} mode={:?}", slot.hotkey, shortcut.id(), slot.mode);
+        slot_map.push((shortcut.id(), slot.mode));
+        shortcut_objects.push(shortcut);
+    }
+
+    if !shortcut_objects.is_empty() {
+        let handle_clone = handle.clone();
+        handle
+            .global_shortcut()
+            .on_shortcuts(shortcut_objects, move |_app, shortcut, event| {
+                println!("[hotkey] Event: shortcut_id={} {event:?}", shortcut.id());
+
+                // While the ShortcutRecorder is active, swallow all hotkey
+                // events so the user can press the current shortcut without
+                // triggering the pipeline.
+                if handle_clone
+                    .state::<AppState>()
+                    .hotkey_paused
+                    .load(Ordering::SeqCst)
+                {
+                    println!("[hotkey] paused (ShortcutRecorder active), ignoring");
+                    return;
+                }
+
+                // Resolve the mode for the specific shortcut that fired.
+                // Linear scan is fine: there are at most two slots.
+                let mode = match slot_map.iter().find(|(id, _)| *id == shortcut.id()) {
+                    Some((_, m)) => *m,
+                    None => {
+                        log::warn!("[hotkey] Unknown shortcut id={}, ignoring", shortcut.id());
+                        return;
+                    }
+                };
+
+                let h = handle_clone.clone();
+                println!("[hotkey] mode={mode:?} state={:?}", event.state);
+                match (mode, event.state) {
+                    (HotkeyMode::Toggle, ShortcutState::Pressed) => {
+                        tauri::async_runtime::spawn(async move {
+                            run_dictation_pipeline(h).await;
+                        });
+                    }
+                    (HotkeyMode::Hold, ShortcutState::Pressed) => {
+                        tauri::async_runtime::spawn(async move {
+                            start_recording_only(h).await;
+                        });
+                    }
+                    (HotkeyMode::Hold, ShortcutState::Released) => {
+                        tauri::async_runtime::spawn(async move {
+                            stop_and_process_pipeline(h).await;
+                        });
+                    }
+                    (HotkeyMode::AutoStop, ShortcutState::Pressed) => {
+                        // If already recording: second press = manual stop.
+                        // stop_and_process_pipeline clears the silence callback
+                        // before doing anything else, so no double-invocation.
+                        // Guard also prevents slot 2 from starting while slot 1
+                        // is already recording.
+                        let is_recording = handle_clone
+                            .state::<AppState>()
+                            .recorder
+                            .is_recording();
+                        if is_recording {
+                            tauri::async_runtime::spawn(async move {
+                                stop_and_process_pipeline(h).await;
+                            });
+                        } else {
+                            tauri::async_runtime::spawn(async move {
+                                start_autostop_recording(h).await;
+                            });
+                        }
+                    }
+                    (HotkeyMode::AutoStop, ShortcutState::Released) => {
+                        // No-op: AutoStop is toggle-style, release has no meaning.
+                    }
+                    (HotkeyMode::Auto, ShortcutState::Pressed) => {
+                        let state = handle_clone.state::<AppState>();
+                        if state.recorder.is_recording() {
+                            // Second press while recording: stop the loop and
+                            // process whatever was recorded so far.
+                            state.auto_loop_active.store(false, Ordering::SeqCst);
+                            tauri::async_runtime::spawn(async move {
+                                stop_and_process_pipeline(h).await;
+                            });
+                        } else {
+                            // First press: activate loop and start first cycle.
+                            state.auto_loop_active.store(true, Ordering::SeqCst);
+                            tauri::async_runtime::spawn(async move {
+                                start_auto_recording(h).await;
+                            });
+                        }
+                    }
+                    (HotkeyMode::Auto, ShortcutState::Released) => {
+                        // No-op: Auto mode is toggle-style, release has no meaning.
+                    }
+                    _ => {}
+                }
+            })
+            .map_err(|e| format!("Failed to register dictation shortcuts: {e}"))?;
+    }
+
+    // --- Command Mode hotkey ---
     if let Ok(cmd_shortcut) = cmd_shortcut_str.parse::<tauri_plugin_global_shortcut::Shortcut>() {
         let handle_clone2 = handle.clone();
         let _ = handle

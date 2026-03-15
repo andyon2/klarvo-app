@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.3. 300 Rust-Tests (alle gruen). Recording-Modi Pipeline-Integration fertig: AutoStop (silence-basiert), Auto-Loop (endlos mit Restart), Insert+Send (Enter nach Paste). Whisper-Halluzinations-Guard (Prompt-Echo-Erkennung). FloatingBar mit Dikta-Logo und Modus-Badge. Hotkey wird beim Shortcut-Konfigurieren pausiert. Silence Detection wartet auf Speech bevor sie zaehlt.
+Version 0.4.3. 311 Rust-Tests (alle gruen). Dual-Hotkey-System fertig: 2 konfigurierbare Hotkey-Slots, jeder mit eigenem Recording-Modus. Tab-UI in Settings (Hotkey 1 / Hotkey 2). Config-Migration von altem Single-Hotkey-Format. Dispatch via on_shortcuts() mit Shortcut-ID-Map.
 
 ## Blocker
 
@@ -9,10 +9,9 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Dual-Hotkey-System** → 2 konfigurierbare Hotkey-Slots, jeder mit eigenem Modus (Andy-Wunsch)
-2. **Background Paste (Windows)** → HWND beim Recording-Start merken, nach Cleanup dort einfuegen
-3. **Clean-Mode Ueberarbeitung** → Andy findet Clean-Modus entfremdet zu sehr das Original
-4. **Onboarding/Polish** → [Briefing noch zu erstellen]
+1. **Background Paste (Windows)** → HWND beim Recording-Start merken, nach Cleanup dort einfuegen
+2. **Clean-Mode Ueberarbeitung** → Andy findet Clean-Modus entfremdet zu sehr das Original
+3. **Onboarding/Polish** → [Briefing noch zu erstellen]
 
 ## Bekannte Bugs
 

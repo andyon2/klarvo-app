@@ -18,6 +18,8 @@ export function useSettings() {
   const [cleanupStyle, setCleanupStyle] = useState<CleanupStyle>("polished");
   const [hotkey, setHotkey] = useState("ctrl+shift+d");
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
+  const [hotkeySlot2, setHotkeySlot2] = useState("");
+  const [hotkeyModeSlot2, setHotkeyModeSlot2] = useState<HotkeyMode>("hold");
   const [audioDevice, setAudioDevice] = useState<string | null>(null);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [outputLanguage, setOutputLanguage] = useState("");
@@ -39,6 +41,8 @@ export function useSettings() {
       setInsertAndSend(s.insertAndSend ?? false);
       setAutostopSilenceSecs(s.autostopSilenceSecs ?? 2.0);
       setAutoModeSilenceSecs(s.autoModeSilenceSecs ?? 2.0);
+      setHotkeySlot2(s.hotkeySlot2 ?? "");
+      setHotkeyModeSlot2(s.hotkeyModeSlot2 ?? "hold");
       syncLanguage(s.language).catch(console.error);
       syncCleanupStyle(s.cleanupStyle).catch(console.error);
     }).catch(console.error);
@@ -73,6 +77,7 @@ export function useSettings() {
     sttProvider?: string | null, llmProvider?: string | null,
     newInsertAndSend?: boolean | null, newAutostopSilenceSecs?: number | null,
     newAutoModeSilenceSecs?: number | null,
+    newHotkeySlot2?: string | null, newHotkeyModeSlot2?: HotkeyMode | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -81,6 +86,7 @@ export function useSettings() {
       bubbleSize, bubbleOpacity, localWhisperModel, localWhisperGpu,
       sttProvider, llmProvider,
       newInsertAndSend, newAutostopSilenceSecs, newAutoModeSilenceSecs,
+      newHotkeySlot2 ?? null, newHotkeyModeSlot2 ?? null,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);
@@ -93,6 +99,8 @@ export function useSettings() {
     setInsertAndSend(updated.insertAndSend ?? false);
     setAutostopSilenceSecs(updated.autostopSilenceSecs ?? 2.0);
     setAutoModeSilenceSecs(updated.autoModeSilenceSecs ?? 2.0);
+    setHotkeySlot2(updated.hotkeySlot2 ?? "");
+    setHotkeyModeSlot2(updated.hotkeyModeSlot2 ?? "hold");
   }, []);
 
   const handleAddTerm = useCallback(async (term: string) => {
@@ -118,8 +126,12 @@ export function useSettings() {
     insertAndSend,
     autostopSilenceSecs,
     autoModeSilenceSecs,
+    hotkeySlot2,
+    hotkeyModeSlot2,
     setHotkey,
     setHotkeyMode,
+    setHotkeySlot2,
+    setHotkeyModeSlot2,
     setAudioDevice,
     handleLanguageChange,
     handleStyleChange,
