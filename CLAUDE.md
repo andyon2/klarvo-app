@@ -122,3 +122,4 @@ Zentrale Dateien:
 5. **Plattform-spezifischer Code wird hinter Abstraktionen versteckt.** Nie `#[cfg(target_os)]` quer durch die Business-Logik.
 6. **Kleine Commits, oft.** Lieber 10 kleine als 1 riesiger Commit.
 7. **Bei Unsicherheit: `/research-api` nutzen** statt zu raten. Lieber 2 Minuten recherchieren als 20 Minuten debuggen.
+8. **Rueckwaerts-Suche bei Umbau:** Vor dem ersten Edit bei strukturellen Aenderungen: `grep -r` nach allen Konsumenten des Geaenderten. Erst dann editieren. Strukturell = Entfernen, Umbenennen, Output-Format aendern, Verantwortlichkeit zwischen Komponenten verschieben. Nicht strukturell = Hinzufuegen, Erweitern, neue Datei anlegen.
