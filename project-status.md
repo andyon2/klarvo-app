@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.3. Release auf GitHub (Windows). 281 Rust-Tests (alle gruen). FloatingBar redesigned. Recording-Modi Foundation implementiert: Config (4 Modi: Hold/Toggle/AutoStop/Auto), Silence Detection (RMS-basiert), Frontend-UI (Modus-Auswahl, Stille-Slider, Insert+Send Toggle). Pipeline-Integration steht noch aus.
+Version 0.4.3. 300 Rust-Tests (alle gruen). Recording-Modi Pipeline-Integration fertig: AutoStop (silence-basiert), Auto-Loop (endlos mit Restart), Insert+Send (Enter nach Paste). Whisper-Halluzinations-Guard (Prompt-Echo-Erkennung). FloatingBar mit Dikta-Logo und Modus-Badge. Hotkey wird beim Shortcut-Konfigurieren pausiert. Silence Detection wartet auf Speech bevor sie zaehlt.
 
 ## Blocker
 
@@ -9,7 +9,7 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Recording-Modi Pipeline-Integration** → Tasks 3-6: AutoStop/Auto Pipeline-Logik, Hotkey-Handler, Insert+Send (Enter nach Paste), Commands aktualisieren
+1. **Dual-Hotkey-System** → 2 konfigurierbare Hotkey-Slots, jeder mit eigenem Modus (Andy-Wunsch)
 2. **Background Paste (Windows)** → HWND beim Recording-Start merken, nach Cleanup dort einfuegen
 3. **Clean-Mode Ueberarbeitung** → Andy findet Clean-Modus entfremdet zu sehr das Original
 4. **Onboarding/Polish** → [Briefing noch zu erstellen]
@@ -17,6 +17,7 @@ Keine.
 ## Bekannte Bugs
 
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
+- [ ] Whisper-Halluzination "proper punctuation" taucht gelegentlich in der Bar auf (wird gefiltert, kein Effekt aufs Transkript). Low-Prio.
 
 ## Backlog
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
