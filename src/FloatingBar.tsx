@@ -98,24 +98,24 @@ function DiktaLogo() {
         xmlns="http://www.w3.org/2000/svg"
         style={{ width: 18, height: 18 }}
       >
-        {/* Bottom-left cyan arc with dot */}
+        {/* Bottom-left cyan arc (opens right) with dot */}
         <path
-          d="M25 65 A20 20 0 1 1 55 55"
+          d="M55 58 A18 18 0 1 1 35 38"
           stroke="#38BDF8"
           strokeWidth="7"
           strokeLinecap="round"
           fill="none"
         />
-        <circle cx="32" cy="58" r="5" fill="#38BDF8" />
-        {/* Top-right gold arc with dot */}
+        <circle cx="35" cy="55" r="5" fill="#38BDF8" />
+        {/* Top-right gold arc (opens left) with dot */}
         <path
-          d="M75 35 A20 20 0 1 1 45 45"
+          d="M45 42 A18 18 0 1 1 65 62"
           stroke="#FBBF24"
           strokeWidth="7"
           strokeLinecap="round"
           fill="none"
         />
-        <circle cx="68" cy="42" r="5" fill="#FBBF24" />
+        <circle cx="65" cy="45" r="5" fill="#FBBF24" />
       </svg>
     </div>
   );
