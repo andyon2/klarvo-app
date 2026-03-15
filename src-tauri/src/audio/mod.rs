@@ -427,7 +427,13 @@ fn recording_thread(
         // Silence-aware wait loop.
         // We use try_recv on the stop channel so we can interleave RMS checks
         // and stop-signal checks without blocking on either alone.
+        //
+        // IMPORTANT: We only start counting silence AFTER speech has been
+        // detected (at least one chunk above the threshold). This prevents
+        // the callback from firing immediately when the user hasn't started
+        // speaking yet (e.g. ambient noise in a quiet room).
         let mut consecutive_silent_chunks = 0usize;
+        let mut has_seen_speech = false;
         let mut fired = false;
 
         'outer: loop {
@@ -441,12 +447,20 @@ fn recording_thread(
             loop {
                 match rms_rx.try_recv() {
                     Ok(rms) => {
-                        if rms < cfg.threshold {
-                            consecutive_silent_chunks += 1;
-                        } else {
+                        if rms >= cfg.threshold {
+                            // Speech detected -- from now on we track silence.
+                            has_seen_speech = true;
                             consecutive_silent_chunks = 0;
+                        } else if has_seen_speech {
+                            // Silence AFTER speech -- count towards auto-stop.
+                            consecutive_silent_chunks += 1;
                         }
-                        if consecutive_silent_chunks >= cfg.silent_chunks_required && !fired {
+                        // else: silence before any speech -- ignore.
+
+                        if has_seen_speech
+                            && consecutive_silent_chunks >= cfg.silent_chunks_required
+                            && !fired
+                        {
                             fired = true;
                             (cfg.callback)();
                         }

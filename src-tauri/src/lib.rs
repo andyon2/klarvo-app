@@ -206,6 +206,10 @@ pub struct AppState {
     /// Current license status, computed from config on startup and updated
     /// when the user validates or removes a key.
     pub license_status: Mutex<license::LicenseStatus>,
+    /// When `true`, the global hotkey handler ignores all key events.
+    /// Set by the frontend when the ShortcutRecorder is active, so the user
+    /// can press the current hotkey without triggering the pipeline.
+    pub hotkey_paused: AtomicBool,
     /// Controls the Auto-Loop recording mode.
     ///
     /// Set to `true` when Auto mode is activated (first hotkey press).
@@ -266,6 +270,7 @@ impl AppState {
             command_mode_active: Mutex::new(false),
             command_mode_selected_text: Mutex::new(None),
             license_status: Mutex::new(initial_license_status),
+            hotkey_paused: AtomicBool::new(false),
             auto_loop_active: AtomicBool::new(false),
         }
     }
@@ -806,6 +811,7 @@ pub fn run() {
             commands::settings::reformat_text,
             commands::settings::is_first_run,
             commands::settings::get_active_app,
+            commands::settings::set_hotkey_paused,
             commands::settings::get_advanced_settings,
             commands::settings::save_advanced_settings,
             // Dictionary

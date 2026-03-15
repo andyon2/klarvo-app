@@ -1071,6 +1071,18 @@ pub fn register_hotkey(
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
             println!("[hotkey] Event: {event:?}");
 
+            // While the ShortcutRecorder is active, swallow all hotkey events
+            // so the user can press the current shortcut without triggering
+            // the pipeline.
+            if handle_clone
+                .state::<AppState>()
+                .hotkey_paused
+                .load(Ordering::SeqCst)
+            {
+                println!("[hotkey] paused (ShortcutRecorder active), ignoring");
+                return;
+            }
+
             let h = handle_clone.clone();
             println!("[hotkey] mode={mode:?} state={:?}", event.state);
             match (mode, event.state) {

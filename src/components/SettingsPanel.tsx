@@ -49,6 +49,23 @@ import { WhisperModelManager } from "./WhisperModelManager";
 function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: string) => void }) {
   const [listening, setListening] = useState(false);
 
+  // Pause/resume the global hotkey while the recorder is listening,
+  // so pressing the current shortcut doesn't trigger the pipeline.
+  useEffect(() => {
+    if (listening) {
+      import("@tauri-apps/api/core")
+        .then(({ invoke: inv }) => inv("set_hotkey_paused", { paused: true }))
+        .catch(console.error);
+    }
+    return () => {
+      if (listening) {
+        import("@tauri-apps/api/core")
+          .then(({ invoke: inv }) => inv("set_hotkey_paused", { paused: false }))
+          .catch(console.error);
+      }
+    };
+  }, [listening]);
+
   useEffect(() => {
     if (!listening) return;
     const handler = (e: KeyboardEvent) => {

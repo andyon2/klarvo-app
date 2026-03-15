@@ -510,6 +510,19 @@ pub fn get_active_app(state: State<'_, AppState>) -> Option<String> {
     state.prev_window_title.lock().ok().and_then(|t| t.clone())
 }
 
+/// Pauses or resumes the global hotkey handler.
+///
+/// Called by the frontend ShortcutRecorder when it enters/exits listening mode.
+/// While paused, all global hotkey events are silently swallowed so the user
+/// can press the current shortcut without triggering the pipeline.
+#[tauri::command]
+pub fn set_hotkey_paused(state: State<'_, AppState>, paused: bool) {
+    state
+        .hotkey_paused
+        .store(paused, std::sync::atomic::Ordering::SeqCst);
+    log::debug!("[settings] hotkey_paused = {paused}");
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
