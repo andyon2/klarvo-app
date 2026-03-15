@@ -22,6 +22,9 @@ export function useSettings() {
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [outputLanguage, setOutputLanguage] = useState("");
   const [dictionary, setDictionary] = useState<string[]>([]);
+  const [insertAndSend, setInsertAndSend] = useState(false);
+  const [autostopSilenceSecs, setAutostopSilenceSecs] = useState(2.0);
+  const [autoModeSilenceSecs, setAutoModeSilenceSecs] = useState(2.0);
 
   // Load settings + dictionary + devices on mount.
   useEffect(() => {
@@ -33,6 +36,9 @@ export function useSettings() {
       setHotkeyMode(s.hotkeyMode);
       setAudioDevice(s.audioDevice);
       setOutputLanguage(s.outputLanguage || "");
+      setInsertAndSend(s.insertAndSend ?? false);
+      setAutostopSilenceSecs(s.autostopSilenceSecs ?? 2.0);
+      setAutoModeSilenceSecs(s.autoModeSilenceSecs ?? 2.0);
       syncLanguage(s.language).catch(console.error);
       syncCleanupStyle(s.cleanupStyle).catch(console.error);
     }).catch(console.error);
@@ -65,6 +71,8 @@ export function useSettings() {
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
     sttProvider?: string | null, llmProvider?: string | null,
+    newInsertAndSend?: boolean | null, newAutostopSilenceSecs?: number | null,
+    newAutoModeSilenceSecs?: number | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -72,6 +80,7 @@ export function useSettings() {
       null, null, outputLang, webhookUrl, tursoUrl, tursoToken,
       bubbleSize, bubbleOpacity, localWhisperModel, localWhisperGpu,
       sttProvider, llmProvider,
+      newInsertAndSend, newAutostopSilenceSecs, newAutoModeSilenceSecs,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);
@@ -81,6 +90,9 @@ export function useSettings() {
     setHotkeyMode(updated.hotkeyMode);
     setAudioDevice(updated.audioDevice);
     setOutputLanguage(updated.outputLanguage || "");
+    setInsertAndSend(updated.insertAndSend ?? false);
+    setAutostopSilenceSecs(updated.autostopSilenceSecs ?? 2.0);
+    setAutoModeSilenceSecs(updated.autoModeSilenceSecs ?? 2.0);
   }, []);
 
   const handleAddTerm = useCallback(async (term: string) => {
@@ -103,6 +115,9 @@ export function useSettings() {
     audioDevices,
     outputLanguage,
     dictionary,
+    insertAndSend,
+    autostopSilenceSecs,
+    autoModeSilenceSecs,
     setHotkey,
     setHotkeyMode,
     setAudioDevice,

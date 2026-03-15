@@ -73,6 +73,22 @@ pub const TARGET_BIT_DEPTH: u16 = 16;
 /// Must be `Send + Sync` because cpal's stream callback requires `Send`.
 pub type AudioLevelCallback = Box<dyn Fn(f32) + Send + Sync + 'static>;
 
+/// Callback type fired once when continuous silence is detected.
+/// No arguments -- the consumer just needs to know "silence happened".
+pub type SilenceCallback = Box<dyn Fn() + Send + 'static>;
+
+/// Configuration for silence detection. Stored per-recorder so it can be
+/// cleared or updated between recording sessions.
+#[cfg(desktop)]
+struct SilenceConfig {
+    /// Minimum number of consecutive silent chunks before firing the callback.
+    silent_chunks_required: usize,
+    /// RMS threshold below which audio is considered silence.
+    threshold: f32,
+    /// The closure to call (exactly once) when silence is detected.
+    callback: SilenceCallback,
+}
+
 #[cfg(desktop)]
 /// Everything the recording thread needs to know so it can stop cleanly.
 struct RecordingSession {
@@ -104,6 +120,10 @@ pub struct AudioRecorder {
     level_callback: Mutex<Option<AudioLevelCallback>>,
     #[cfg(desktop)]
     live_buffer: Arc<Mutex<LiveBuffer>>,
+    /// Optional silence detection config. Installed before `start_recording`,
+    /// consumed by the recording thread, cleared by `clear_silence_callback`.
+    #[cfg(desktop)]
+    silence_config: Mutex<Option<SilenceConfig>>,
 }
 
 #[cfg(desktop)]
@@ -128,6 +148,51 @@ impl AudioRecorder {
                 native_sample_rate: 16000,
                 native_channels: 1,
             })),
+            #[cfg(desktop)]
+            silence_config: Mutex::new(None),
+        }
+    }
+
+    /// Installs a silence-detection callback.
+    ///
+    /// When the RMS of the incoming audio stays below `threshold` for at least
+    /// `duration_secs` seconds, `callback` is called exactly once and then
+    /// removed.  Call this *before* `start_recording`.
+    ///
+    /// The chunk size used for RMS evaluation is ~66 ms (same as the level
+    /// callback interval), so `duration_secs` is rounded to the nearest
+    /// chunk boundary.
+    pub fn set_silence_callback(
+        &self,
+        _duration_secs: f32,
+        _threshold: f32,
+        _callback: SilenceCallback,
+    ) {
+        #[cfg(desktop)]
+        {
+            // We resolve the chunk count here (at install time) and store it
+            // so the recording thread just needs an atomic counter to track
+            // progress. The actual sample rate is not known yet (it comes from
+            // the device at stream-open time), so we use the target rate as an
+            // approximation. For speech, 66 ms resolution is more than enough.
+            let chunks_per_sec = 15.0_f32; // ~66 ms per chunk (see recording_thread)
+            let silent_chunks_required = ((_duration_secs * chunks_per_sec).round() as usize).max(1);
+            let config = SilenceConfig {
+                silent_chunks_required,
+                threshold: _threshold,
+                callback: _callback,
+            };
+            if let Ok(mut guard) = self.silence_config.lock() {
+                *guard = Some(config);
+            }
+        }
+    }
+
+    /// Removes any installed silence callback (e.g. when stopping early).
+    pub fn clear_silence_callback(&self) {
+        #[cfg(desktop)]
+        if let Ok(mut guard) = self.silence_config.lock() {
+            *guard = None;
         }
     }
 
@@ -150,6 +215,9 @@ impl AudioRecorder {
 
         let level_cb = self.level_callback.lock().unwrap().take();
 
+        // Take the silence config so the recording thread owns it.
+        let silence_cfg = self.silence_config.lock().ok().and_then(|mut g| g.take());
+
         if let Ok(mut lb) = self.live_buffer.lock() {
             lb.samples.clear();
         }
@@ -158,7 +226,7 @@ impl AudioRecorder {
         let device_name_owned = device_name.map(|s| s.to_string());
 
         std::thread::spawn(move || {
-            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, device_name_owned.as_deref(), live_buf) {
+            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, silence_cfg, device_name_owned.as_deref(), live_buf) {
                 eprintln!("[audio] recording thread error: {e}");
             }
         });
@@ -286,10 +354,16 @@ fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
 /// Opens the specified (or default) input device, starts the stream,
 /// accumulates samples until the stop signal arrives, then sends samples
 /// back and exits.
+///
+/// If `silence_cfg` is provided, the thread monitors RMS on each ~66ms chunk
+/// and fires the callback (once) when silence has lasted the required number
+/// of chunks.  The stop signal always takes priority -- if the main thread
+/// sends a stop while waiting for silence, the thread exits normally.
 fn recording_thread(
     stop_rx: std::sync::mpsc::Receiver<()>,
     result_tx: std::sync::mpsc::Sender<RecordingResult>,
     level_cb: Option<AudioLevelCallback>,
+    silence_cfg: Option<SilenceConfig>,
     device_name: Option<&str>,
     live_buffer: Arc<Mutex<LiveBuffer>>,
 ) -> Result<(), AudioError> {
@@ -319,15 +393,58 @@ fn recording_thread(
     let level_chunk_writer = Arc::clone(&level_chunk);
     let samples_per_tick = (native_sample_rate / 15) as usize; // ~66ms chunks
 
+    // Silence detection: channel from stream callback to this thread.
+    // The stream callback sends the RMS of each completed chunk.
+    let (rms_tx, rms_rx) = std::sync::mpsc::channel::<f32>();
+
     let stream = build_stream_with_level(
         &device, &stream_config, sample_format, samples_writer,
         level_cb_clone, level_chunk_writer, samples_per_tick, live_buffer,
+        Some(rms_tx),
     )?;
 
     stream.play()?;
 
-    // Block until the main thread sends a stop signal (or the channel closes).
-    let _ = stop_rx.recv();
+    if let Some(cfg) = silence_cfg {
+        // Silence-aware wait loop.
+        // We use try_recv on the stop channel so we can interleave RMS checks
+        // and stop-signal checks without blocking on either alone.
+        let mut consecutive_silent_chunks = 0usize;
+        let mut fired = false;
+
+        'outer: loop {
+            // Check stop signal (non-blocking).
+            match stop_rx.try_recv() {
+                Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'outer,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+
+            // Drain all pending RMS values (may be multiple per loop iteration).
+            loop {
+                match rms_rx.try_recv() {
+                    Ok(rms) => {
+                        if rms < cfg.threshold {
+                            consecutive_silent_chunks += 1;
+                        } else {
+                            consecutive_silent_chunks = 0;
+                        }
+                        if consecutive_silent_chunks >= cfg.silent_chunks_required && !fired {
+                            fired = true;
+                            (cfg.callback)();
+                        }
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'outer,
+                }
+            }
+
+            // Small sleep to avoid busy-waiting (5 ms -- well within 66 ms chunk).
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    } else {
+        // No silence detection -- just block until the stop signal arrives.
+        let _ = stop_rx.recv();
+    }
 
     // Drop stream to stop capture before reading samples.
     drop(stream);
@@ -361,6 +478,10 @@ pub fn compute_rms(samples: &[f32]) -> f32 {
 
 #[cfg(desktop)]
 /// Helper: appends f32 data to the sample buffer and periodically fires the level callback.
+///
+/// When `rms_tx` is provided, sends the computed RMS to the recording thread
+/// for silence detection after each completed chunk. This avoids any shared-state
+/// synchronization inside the cpal callback: the callback stays cheap and lock-free.
 fn process_f32_data(
     data: &[f32],
     buffer: &SampleBuffer,
@@ -368,25 +489,38 @@ fn process_f32_data(
     level_chunk: &Arc<Mutex<Vec<f32>>>,
     samples_per_tick: usize,
     live_buf: &Arc<Mutex<LiveBuffer>>,
+    rms_tx: &Option<std::sync::mpsc::Sender<f32>>,
 ) {
     buffer.lock().unwrap().extend_from_slice(data);
     if let Ok(mut lb) = live_buf.lock() {
         lb.samples.extend_from_slice(data);
     }
 
-    if let Some(ref cb) = level_cb {
-        let mut chunk = level_chunk.lock().unwrap();
-        chunk.extend_from_slice(data);
-        if chunk.len() >= samples_per_tick {
-            let rms = compute_rms(&chunk);
-            chunk.clear();
+    let mut chunk = level_chunk.lock().unwrap();
+    chunk.extend_from_slice(data);
+    if chunk.len() >= samples_per_tick {
+        let rms = compute_rms(&chunk);
+        chunk.clear();
+
+        // Fire the UI level callback (for the recording bar animation).
+        if let Some(ref cb) = level_cb {
             cb(rms);
+        }
+
+        // Send RMS to the recording thread for silence detection.
+        if let Some(ref tx) = rms_tx {
+            // Ignore send errors -- the thread may have exited already.
+            let _ = tx.send(rms);
         }
     }
 }
 
 #[cfg(desktop)]
 /// Builds a cpal input stream for the given sample format, with audio-level callback support.
+///
+/// `rms_tx`: if provided, the completed RMS value of each chunk is sent to this
+/// channel so the recording thread can do silence detection without touching the
+/// stream callback closure (which must be `Send`).
 fn build_stream_with_level(
     device: &cpal::Device,
     config: &StreamConfig,
@@ -396,13 +530,14 @@ fn build_stream_with_level(
     level_chunk: Arc<Mutex<Vec<f32>>>,
     samples_per_tick: usize,
     live_buf: Arc<Mutex<LiveBuffer>>,
+    rms_tx: Option<std::sync::mpsc::Sender<f32>>,
 ) -> Result<cpal::Stream, AudioError> {
     match sample_format {
         SampleFormat::F32 => {
             let stream = device.build_input_stream(
                 config,
                 move |data: &[f32], _| {
-                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -414,7 +549,7 @@ fn build_stream_with_level(
                 config,
                 move |data: &[i16], _| {
                     let converted: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
-                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -426,7 +561,7 @@ fn build_stream_with_level(
                 config,
                 move |data: &[u16], _| {
                     let converted: Vec<f32> = data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0).collect();
-                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
+                    process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -437,7 +572,7 @@ fn build_stream_with_level(
             let stream = device.build_input_stream(
                 config,
                 move |data: &[f32], _| {
-                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf);
+                    process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx);
                 },
                 |err| eprintln!("[audio] stream error: {err}"),
                 None,
@@ -663,5 +798,45 @@ mod tests {
         for (a, b) in input.iter().zip(output.iter()) {
             assert!((a - b).abs() < 1e-6);
         }
+    }
+
+    /// compute_rms returns 0.0 for an empty slice.
+    #[test]
+    fn test_compute_rms_empty() {
+        assert_eq!(compute_rms(&[]), 0.0);
+    }
+
+    /// compute_rms for a constant amplitude signal equals the amplitude.
+    #[test]
+    fn test_compute_rms_constant_signal() {
+        let samples = vec![0.5f32; 100];
+        let rms = compute_rms(&samples);
+        assert!((rms - 0.5).abs() < 1e-6, "rms of constant 0.5 signal should be 0.5, got {rms}");
+    }
+
+    /// compute_rms for silence (all zeros) returns 0.0.
+    #[test]
+    fn test_compute_rms_silence() {
+        let samples = vec![0.0f32; 1000];
+        let rms = compute_rms(&samples);
+        assert_eq!(rms, 0.0);
+    }
+
+    /// compute_rms for a full-scale sine-like signal stays below 1.0.
+    #[test]
+    fn test_compute_rms_mixed_signal() {
+        // Alternating +0.8 / -0.8 -- RMS should be 0.8.
+        let samples: Vec<f32> = (0..100).map(|i| if i % 2 == 0 { 0.8 } else { -0.8 }).collect();
+        let rms = compute_rms(&samples);
+        assert!((rms - 0.8).abs() < 1e-5, "expected rms ≈ 0.8, got {rms}");
+    }
+
+    /// AudioRecorder: set_silence_callback and clear_silence_callback do not panic.
+    #[test]
+    fn test_set_and_clear_silence_callback() {
+        let recorder = AudioRecorder::new();
+        recorder.set_silence_callback(2.0, 0.01, Box::new(|| {}));
+        recorder.clear_silence_callback();
+        // No panic = pass
     }
 }

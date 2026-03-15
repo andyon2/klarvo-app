@@ -4,7 +4,7 @@
 //! directly exposed as Tauri commands. They operate on [`AppState`] via
 //! an [`AppHandle`] so they can emit state-change events to the frontend.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager};
 

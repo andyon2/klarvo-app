@@ -475,6 +475,8 @@ export interface SettingsPanelProps {
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
     sttProvider?: string | null, llmProvider?: string | null,
+    insertAndSend?: boolean | null, autostopSilenceSecs?: number | null,
+    autoModeSilenceSecs?: number | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;

@@ -223,6 +223,9 @@ pub async fn save_settings(
         license_validated_at: existing.license_validated_at,
         bar_x: existing.bar_x,
         bar_y: existing.bar_y,
+        insert_and_send: existing.insert_and_send,
+        autostop_silence_secs: existing.autostop_silence_secs,
+        auto_mode_silence_secs: existing.auto_mode_silence_secs,
     };
 
     // Resolve providers from the new config before persisting.

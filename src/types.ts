@@ -2,9 +2,11 @@
 export type CleanupStyle = "polished" | "verbatim" | "chat";
 
 // Hotkey activation mode.
-// hold   = push-to-talk: record while key is held, release to process.
-// toggle = press to start, press again to stop and process.
-export type HotkeyMode = "toggle" | "hold";
+// hold     = push-to-talk: record while key is held, release to process.
+// toggle   = press to start, press again to stop and process.
+// autostop = like toggle, but stops automatically after configurable silence.
+// auto     = continuous dictation: each silence gap triggers a transcription cycle.
+export type HotkeyMode = "toggle" | "hold" | "autostop" | "auto";
 
 // Payload emitted by the backend on every state transition of the hotkey pipeline.
 export interface StateChangedPayload {
@@ -51,6 +53,10 @@ export interface AppSettings {
   bubbleOpacity: number;
   localWhisperModel: string;
   localWhisperGpu: boolean;
+  // Recording behaviour extensions.
+  insertAndSend: boolean;
+  autostopSilenceSecs: number;
+  autoModeSilenceSecs: number;
 }
 
 // A per-application recording profile.

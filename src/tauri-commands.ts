@@ -67,6 +67,9 @@ const MOCK_SETTINGS: AppSettings = {
   bubbleOpacity: 90,
   localWhisperModel: "small",
   localWhisperGpu: false,
+  insertAndSend: false,
+  autostopSilenceSecs: 2.0,
+  autoModeSilenceSecs: 2.0,
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -255,6 +258,9 @@ export async function saveSettings(
   localWhisperGpu?: boolean | null,
   sttProvider?: string | null,
   llmProvider?: string | null,
+  insertAndSend?: boolean | null,
+  autostopSilenceSecs?: number | null,
+  autoModeSilenceSecs?: number | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -283,6 +289,9 @@ export async function saveSettings(
     localWhisperGpu: localWhisperGpu ?? null,
     sttProvider: sttProvider ?? null,
     llmProvider: llmProvider ?? null,
+    insertAndSend: insertAndSend ?? null,
+    autostopSilenceSecs: autostopSilenceSecs ?? null,
+    autoModeSilenceSecs: autoModeSilenceSecs ?? null,
   });
 }
 

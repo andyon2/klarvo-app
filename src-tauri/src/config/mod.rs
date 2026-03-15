@@ -322,6 +322,8 @@ pub struct AppProfile {
 ///
 /// - `Toggle`: one press starts recording, the next press stops and processes.
 /// - `Hold`: hold the key to record; releasing triggers stop + pipeline.
+/// - `AutoStop`: press once to start; recording stops automatically on silence.
+/// - `Auto`: like AutoStop but loops continuously -- press again to exit.
 ///
 /// Default is `Hold` -- this matches the Wispr Flow UX that users expect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -329,6 +331,8 @@ pub struct AppProfile {
 pub enum HotkeyMode {
     Toggle,
     Hold,
+    AutoStop,
+    Auto,
 }
 
 impl Default for HotkeyMode {
@@ -532,6 +536,21 @@ pub struct AppConfig {
 
     // --- Floating bar position ---
 
+    /// When true, the pipeline sends a Return key press after pasting text.
+    /// Useful for chat apps where Enter submits the message.
+    #[serde(default)]
+    pub insert_and_send: bool,
+
+    /// Silence duration (seconds) before AutoStop mode triggers stop + pipeline.
+    /// Default: 2.0 seconds.
+    #[serde(default = "default_autostop_silence_secs")]
+    pub autostop_silence_secs: f32,
+
+    /// Silence duration (seconds) before Auto mode triggers stop + pipeline
+    /// (and then restarts listening). Default: 2.0 seconds.
+    #[serde(default = "default_auto_mode_silence_secs")]
+    pub auto_mode_silence_secs: f32,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -605,6 +624,14 @@ fn default_bubble_opacity() -> f32 {
     0.85
 }
 
+fn default_autostop_silence_secs() -> f32 {
+    2.0
+}
+
+fn default_auto_mode_silence_secs() -> f32 {
+    2.0
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -641,6 +668,9 @@ impl Default for AppConfig {
             local_whisper_gpu: default_local_whisper_gpu(),
             license_key: String::new(),
             license_validated_at: 0,
+            insert_and_send: false,
+            autostop_silence_secs: default_autostop_silence_secs(),
+            auto_mode_silence_secs: default_auto_mode_silence_secs(),
             bar_x: None,
             bar_y: None,
         }
@@ -972,6 +1002,9 @@ mod tests {
             local_whisper_gpu: false,
             license_key: String::new(),
             license_validated_at: 0,
+            insert_and_send: true,
+            autostop_silence_secs: 1.5,
+            auto_mode_silence_secs: 3.0,
             bar_x: Some(123.5),
             bar_y: Some(456.0),
         };
@@ -1654,5 +1687,73 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("\"barX\""), "expected camelCase 'barX'");
         assert!(json.contains("\"barY\""), "expected camelCase 'barY'");
+    }
+
+    /// `AutoStop` and `Auto` variants serialize with lowercase names.
+    #[test]
+    fn test_hotkey_mode_new_variants_serialize() {
+        let autostop = serde_json::to_string(&HotkeyMode::AutoStop).unwrap();
+        let auto = serde_json::to_string(&HotkeyMode::Auto).unwrap();
+        assert_eq!(autostop, r#""autostop""#);
+        assert_eq!(auto, r#""auto""#);
+    }
+
+    /// `AutoStop` and `Auto` variants deserialize from lowercase strings.
+    #[test]
+    fn test_hotkey_mode_new_variants_deserialize() {
+        let autostop: HotkeyMode = serde_json::from_str(r#""autostop""#).unwrap();
+        let auto: HotkeyMode = serde_json::from_str(r#""auto""#).unwrap();
+        assert_eq!(autostop, HotkeyMode::AutoStop);
+        assert_eq!(auto, HotkeyMode::Auto);
+    }
+
+    /// All four `HotkeyMode` variants survive a save/load round-trip.
+    #[test]
+    fn test_all_hotkey_modes_roundtrip() {
+        for mode in [HotkeyMode::Toggle, HotkeyMode::Hold, HotkeyMode::AutoStop, HotkeyMode::Auto] {
+            let dir = temp_dir();
+            let cfg = AppConfig { hotkey_mode: mode, ..AppConfig::default() };
+            save_config(dir.path(), &cfg).unwrap();
+            let loaded = load_config(dir.path());
+            assert_eq!(loaded.hotkey_mode, mode, "mode {mode:?} should survive roundtrip");
+        }
+    }
+
+    /// Default values for new recording-mode config fields are correct.
+    #[test]
+    fn test_new_recording_mode_defaults() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.insert_and_send, "insert_and_send should default to false");
+        assert!((cfg.autostop_silence_secs - 2.0).abs() < f32::EPSILON);
+        assert!((cfg.auto_mode_silence_secs - 2.0).abs() < f32::EPSILON);
+    }
+
+    /// New recording-mode fields survive a save/load round-trip.
+    #[test]
+    fn test_new_recording_mode_fields_roundtrip() {
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            insert_and_send: true,
+            autostop_silence_secs: 1.5,
+            auto_mode_silence_secs: 3.0,
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+        let loaded = load_config(dir.path());
+        assert!(loaded.insert_and_send);
+        assert!((loaded.autostop_silence_secs - 1.5).abs() < f32::EPSILON);
+        assert!((loaded.auto_mode_silence_secs - 3.0).abs() < f32::EPSILON);
+    }
+
+    /// Partial JSON without new fields fills in defaults (backward compat).
+    #[test]
+    fn test_new_fields_absent_from_json_use_defaults() {
+        let dir = temp_dir();
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert!(!cfg.insert_and_send);
+        assert!((cfg.autostop_silence_secs - 2.0).abs() < f32::EPSILON);
+        assert!((cfg.auto_mode_silence_secs - 2.0).abs() < f32::EPSILON);
     }
 }
