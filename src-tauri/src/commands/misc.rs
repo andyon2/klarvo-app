@@ -220,8 +220,8 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
                     let ht = (10.0 * scale) as i32;
                     crate::set_window_region_pill(h, w, ht);
                 } else {
-                    let w = (164.0 * scale) as i32;
-                    let ht = (18.0 * scale) as i32;
+                    let w = (200.0 * scale) as i32;
+                    let ht = (36.0 * scale) as i32;
                     crate::set_window_region_pill(h, w, ht);
                 }
             }
