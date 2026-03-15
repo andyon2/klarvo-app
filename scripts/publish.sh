@@ -22,6 +22,7 @@ EXCLUDE_LIST=(
   "briefings/"
   "feedback/"
   "sources/"
+  "dispatches/"
   "marketing/"
   # Build-Artefakte und Dependencies (via .gitignore ignoriert, aber rsync kennt das nicht)
   "node_modules/"
