@@ -331,7 +331,10 @@ export default function FloatingBar() {
         if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
         doneTimerRef.current = setTimeout(() => {
           setShowDone(false);
-          setState("idle");
+          // Only transition to idle if we're still in "done" state.
+          // In Auto-Loop mode, the next recording cycle may have already
+          // started (state = "recording"), and we must not overwrite it.
+          setState((prev) => (prev === "done" ? "idle" : prev));
         }, 1500);
       } else if (newState === "idle") {
         setLevels(new Array(20).fill(0));
