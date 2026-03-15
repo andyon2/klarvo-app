@@ -77,15 +77,15 @@ const BAR_ANIMATION_DURATION = 600;
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Dikta brand logo: dark-purple circle with white "D" lettermark. */
+/** Dikta brand logo: two interlocking circles (cyan + gold) on dark bg. */
 function DiktaLogo() {
   return (
     <div
       style={{
-        width: 22,
-        height: 22,
+        width: 24,
+        height: 24,
         borderRadius: "50%",
-        background: "#2d1b69",
+        background: "#1a1a2e",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
@@ -93,20 +93,29 @@ function DiktaLogo() {
       }}
     >
       <svg
-        viewBox="0 0 12 14"
+        viewBox="0 0 100 100"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        style={{ width: 8, height: 9 }}
+        style={{ width: 18, height: 18 }}
       >
-        {/* "D" lettermark */}
+        {/* Bottom-left cyan arc with dot */}
         <path
-          d="M1 1h3.8c2.9 0 5.2 2.2 5.2 6s-2.3 6-5.2 6H1V1z"
-          fill="white"
+          d="M25 65 A20 20 0 1 1 55 55"
+          stroke="#38BDF8"
+          strokeWidth="7"
+          strokeLinecap="round"
+          fill="none"
         />
+        <circle cx="32" cy="58" r="5" fill="#38BDF8" />
+        {/* Top-right gold arc with dot */}
         <path
-          d="M3.2 3.2v7.6h1.4c1.9 0 3.2-1.5 3.2-3.8S6.5 3.2 4.6 3.2H3.2z"
-          fill="#2d1b69"
+          d="M75 35 A20 20 0 1 1 45 45"
+          stroke="#FBBF24"
+          strokeWidth="7"
+          strokeLinecap="round"
+          fill="none"
         />
+        <circle cx="68" cy="42" r="5" fill="#FBBF24" />
       </svg>
     </div>
   );
