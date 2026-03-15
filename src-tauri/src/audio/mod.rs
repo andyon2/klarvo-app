@@ -196,6 +196,24 @@ impl AudioRecorder {
         }
     }
 
+    /// Returns `true` if a silence callback is currently installed.
+    ///
+    /// Used in tests to verify that `set_silence_callback` took effect.
+    pub fn has_silence_callback(&self) -> bool {
+        #[cfg(desktop)]
+        {
+            self.silence_config
+                .lock()
+                .ok()
+                .map(|g| g.is_some())
+                .unwrap_or(false)
+        }
+        #[cfg(mobile)]
+        {
+            false
+        }
+    }
+
     /// Sets a callback that receives RMS audio levels during recording.
     pub fn set_level_callback(&self, _cb: AudioLevelCallback) {
         #[cfg(desktop)]

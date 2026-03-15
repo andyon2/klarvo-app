@@ -56,6 +56,7 @@ mod test_helpers;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::AtomicBool;
 
 use audio::AudioRecorder;
 use config::{config_file_has_license_field, load_config, AppConfig, HotkeyMode};
@@ -155,6 +156,12 @@ pub struct SettingsView {
     pub local_whisper_model: String,
     /// Whether GPU acceleration (CUDA) is enabled for local whisper.
     pub local_whisper_gpu: bool,
+    /// Send Enter after pasting (useful for chat apps).
+    pub insert_and_send: bool,
+    /// Silence duration (seconds) before AutoStop mode triggers stop + pipeline.
+    pub autostop_silence_secs: f32,
+    /// Silence duration (seconds) before Auto mode triggers stop + pipeline.
+    pub auto_mode_silence_secs: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +206,14 @@ pub struct AppState {
     /// Current license status, computed from config on startup and updated
     /// when the user validates or removes a key.
     pub license_status: Mutex<license::LicenseStatus>,
+    /// Controls the Auto-Loop recording mode.
+    ///
+    /// Set to `true` when Auto mode is activated (first hotkey press).
+    /// Set to `false` when the user presses the hotkey again to stop the loop.
+    /// The pipeline itself never touches this flag -- only the hotkey handler
+    /// controls the loop lifecycle. `SeqCst` ordering ensures visibility across
+    /// the cpal OS-thread and the Tauri async runtime.
+    pub auto_loop_active: AtomicBool,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -251,6 +266,7 @@ impl AppState {
             command_mode_active: Mutex::new(false),
             command_mode_selected_text: Mutex::new(None),
             license_status: Mutex::new(initial_license_status),
+            auto_loop_active: AtomicBool::new(false),
         }
     }
 }
@@ -925,6 +941,9 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
+            insert_and_send: false,
+            autostop_silence_secs: 2.0,
+            auto_mode_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -966,6 +985,9 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
+            insert_and_send: false,
+            autostop_silence_secs: 2.0,
+            auto_mode_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1001,6 +1023,9 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
+            insert_and_send: false,
+            autostop_silence_secs: 2.0,
+            auto_mode_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

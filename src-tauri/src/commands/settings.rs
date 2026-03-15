@@ -143,6 +143,9 @@ pub async fn save_settings(
     local_whisper_gpu: Option<bool>,
     stt_provider: Option<String>,
     llm_provider: Option<String>,
+    insert_and_send: Option<bool>,
+    autostop_silence_secs: Option<f32>,
+    auto_mode_silence_secs: Option<f32>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -223,9 +226,9 @@ pub async fn save_settings(
         license_validated_at: existing.license_validated_at,
         bar_x: existing.bar_x,
         bar_y: existing.bar_y,
-        insert_and_send: existing.insert_and_send,
-        autostop_silence_secs: existing.autostop_silence_secs,
-        auto_mode_silence_secs: existing.auto_mode_silence_secs,
+        insert_and_send: insert_and_send.unwrap_or(existing.insert_and_send),
+        autostop_silence_secs: autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
+        auto_mode_silence_secs: auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
     };
 
     // Resolve providers from the new config before persisting.
@@ -287,6 +290,9 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_opacity: cfg.bubble_opacity,
         local_whisper_model: cfg.local_whisper_model,
         local_whisper_gpu: cfg.local_whisper_gpu,
+        insert_and_send: cfg.insert_and_send,
+        autostop_silence_secs: cfg.autostop_silence_secs,
+        auto_mode_silence_secs: cfg.auto_mode_silence_secs,
     })
 }
 
@@ -502,4 +508,81 @@ pub fn is_first_run(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub fn get_active_app(state: State<'_, AppState>) -> Option<String> {
     state.prev_window_title.lock().ok().and_then(|t| t.clone())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{load_config, save_config, AppConfig};
+
+    fn temp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("tempdir creation failed")
+    }
+
+    /// The three new recording-mode fields (`insert_and_send`,
+    /// `autostop_silence_secs`, `auto_mode_silence_secs`) survive a
+    /// save → load round-trip through `config.json`.
+    ///
+    /// This validates that `save_settings` can persist these fields and
+    /// `get_settings` will return them correctly (both delegate to
+    /// `AppConfig`/`save_config`/`load_config`).
+    #[test]
+    fn test_save_settings_persists_recording_mode_fields() {
+        let dir = temp_dir();
+
+        let cfg = AppConfig {
+            insert_and_send: true,
+            autostop_silence_secs: 1.5,
+            auto_mode_silence_secs: 3.5,
+            ..AppConfig::default()
+        };
+
+        save_config(dir.path(), &cfg).expect("save_config should succeed");
+        let loaded = load_config(dir.path());
+
+        assert!(
+            loaded.insert_and_send,
+            "insert_and_send should round-trip as true"
+        );
+        assert!(
+            (loaded.autostop_silence_secs - 1.5).abs() < f32::EPSILON,
+            "autostop_silence_secs should round-trip to 1.5, got {}",
+            loaded.autostop_silence_secs
+        );
+        assert!(
+            (loaded.auto_mode_silence_secs - 3.5).abs() < f32::EPSILON,
+            "auto_mode_silence_secs should round-trip to 3.5, got {}",
+            loaded.auto_mode_silence_secs
+        );
+    }
+
+    /// When `insert_and_send` is omitted from the saved JSON (old config),
+    /// it defaults to `false` -- no migration step needed.
+    #[test]
+    fn test_save_settings_recording_mode_defaults_when_absent() {
+        let dir = temp_dir();
+
+        // Write a minimal config without the new fields.
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes())
+            .expect("write partial config");
+
+        let loaded = load_config(dir.path());
+
+        assert!(
+            !loaded.insert_and_send,
+            "insert_and_send should default to false when absent from config"
+        );
+        assert!(
+            (loaded.autostop_silence_secs - 2.0).abs() < f32::EPSILON,
+            "autostop_silence_secs should default to 2.0 when absent"
+        );
+        assert!(
+            (loaded.auto_mode_silence_secs - 2.0).abs() < f32::EPSILON,
+            "auto_mode_silence_secs should default to 2.0 when absent"
+        );
+    }
 }

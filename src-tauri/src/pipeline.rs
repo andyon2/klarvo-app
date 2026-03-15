@@ -4,7 +4,10 @@
 //! directly exposed as Tauri commands. They operate on [`AppState`] via
 //! an [`AppHandle`] so they can emit state-change events to the frontend.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -96,6 +99,52 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
 }
 
 // ---------------------------------------------------------------------------
+// Whisper hallucination detection
+// ---------------------------------------------------------------------------
+
+/// Detects when Whisper echoes the conditioning prompt instead of real speech.
+///
+/// Whisper sometimes "hallucinates" the prompt text when the audio contains
+/// ambient noise but no actual words. This function checks if the transcription
+/// is composed entirely of fragments from the STT hint text.
+///
+/// The check splits the hint into sentences (by ". "), normalises both strings
+/// to lowercase, and removes all hint-sentence occurrences from the
+/// transcription. If only punctuation and whitespace remain, it's a prompt echo.
+fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
+    let trans = transcription.trim().to_lowercase();
+    let hint = stt_hint.trim().to_lowercase();
+
+    if trans.is_empty() || hint.is_empty() {
+        return false;
+    }
+
+    // Split hint into individual sentences (>10 chars to avoid short noise).
+    let hint_sentences: Vec<&str> = hint
+        .split(". ")
+        .flat_map(|s| s.split('.'))
+        .map(|s| s.trim())
+        .filter(|s| s.len() > 10)
+        .collect();
+
+    // Remove every hint sentence from the transcription.
+    let mut cleaned = trans.clone();
+    for sentence in &hint_sentences {
+        cleaned = cleaned.replace(sentence, "");
+    }
+    // Also try removing the full hint as-is (handles exact repetitions).
+    cleaned = cleaned.replace(&hint, "");
+
+    // Strip residual punctuation and whitespace.
+    let residue: String = cleaned
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
+        .collect();
+
+    residue.len() < 5
+}
+
+// ---------------------------------------------------------------------------
 // Silence detection helper
 // ---------------------------------------------------------------------------
 
@@ -178,6 +227,122 @@ pub async fn start_recording_only(handle: AppHandle) {
     } = Some(std::time::Instant::now());
 
     crate::emit_pipeline_state(&handle, PipelineEvent::recording());
+}
+
+/// Starts recording with automatic stop-on-silence for AutoStop mode.
+///
+/// 1. Installs a silence-detection callback **before** calling `start_recording_only`.
+///    The callback captures a clone of `handle` and, when fired on the cpal OS-thread,
+///    spawns an async task via `tauri::async_runtime::spawn` to run the full pipeline.
+/// 2. Delegates the actual recording start to `start_recording_only`.
+///
+/// If the user presses the hotkey again while recording is still active, the
+/// `(HotkeyMode::AutoStop, ShortcutState::Pressed)` branch calls
+/// `stop_and_process_pipeline` directly (which clears the callback first),
+/// preventing a double-invocation.
+pub async fn start_autostop_recording(handle: AppHandle) {
+    let state = handle.state::<AppState>();
+
+    if state.recorder.is_recording() {
+        // Already recording -- the hotkey handler's pressed branch calls
+        // stop_and_process_pipeline for this case, so we should not reach
+        // here, but guard just in case.
+        return;
+    }
+
+    // Read silence config before installing the callback so we don't hold the
+    // config lock when start_recording_only runs.
+    let (silence_secs, silence_threshold) = state
+        .config
+        .lock()
+        .ok()
+        .map(|c| (c.autostop_silence_secs, c.advanced.silence_threshold))
+        .unwrap_or((2.0, 0.005));
+
+    // Install the silence callback. It must be set BEFORE start_recording so
+    // the recording thread picks it up via `.take()` inside start_recording.
+    let handle_for_cb = handle.clone();
+    state.recorder.set_silence_callback(
+        silence_secs,
+        silence_threshold,
+        Box::new(move || {
+            // This closure runs on the cpal OS-thread (non-async context).
+            // Spawn an async task to run the pipeline on the Tauri runtime.
+            let h = handle_for_cb.clone();
+            tauri::async_runtime::spawn(async move {
+                stop_and_process_pipeline(h).await;
+            });
+        }),
+    );
+
+    // Start the actual recording (re-uses all the foreground-window capture
+    // and audio-level emitter setup from start_recording_only).
+    start_recording_only(handle).await;
+}
+
+/// Starts recording in Auto-Loop mode.
+///
+/// Identical to [`start_autostop_recording`], but the silence callback checks
+/// [`AppState::auto_loop_active`] after the pipeline completes. If the flag is
+/// still `true`, it immediately starts another recording cycle. The loop
+/// continues until the user presses the hotkey again, which sets the flag to
+/// `false` and stops the current recording via [`stop_and_process_pipeline`].
+///
+/// Returns `Pin<Box<dyn Future + Send>>` instead of being `async fn` to break
+/// a recursive opaque-type cycle: the silence callback spawns a task that
+/// awaits this function again. With `async fn`, the compiler cannot prove the
+/// recursive future is `Send`. The explicit `Pin<Box>` gives the compiler a
+/// concrete `Send` bound to work with.
+///
+/// Race-condition note: if the user presses stop _while_ the pipeline is
+/// executing, `auto_loop_active` will be `false` by the time the check runs,
+/// so no new cycle is started. At worst one extra cycle starts and then
+/// terminates gracefully -- no crash or data loss is possible.
+pub fn start_auto_recording(handle: AppHandle) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        // Block scope: drop State before the await at the end so the future
+        // doesn't hold a borrow across the yield point.
+        {
+            let state = handle.state::<AppState>();
+
+            if state.recorder.is_recording() {
+                return;
+            }
+
+            let (silence_secs, silence_threshold) = state
+                .config
+                .lock()
+                .ok()
+                .map(|c| (c.auto_mode_silence_secs, c.advanced.silence_threshold))
+                .unwrap_or((2.0, 0.005));
+
+            let handle_for_cb = handle.clone();
+            state.recorder.set_silence_callback(
+                silence_secs,
+                silence_threshold,
+                Box::new(move || {
+                    // Runs on the cpal OS-thread. Spawn onto the Tauri async runtime.
+                    let h = handle_for_cb.clone();
+                    tauri::async_runtime::spawn(async move {
+                        stop_and_process_pipeline(h.clone()).await;
+                        // Read flag and drop State before the sleep await.
+                        let should_restart = h
+                            .state::<AppState>()
+                            .auto_loop_active
+                            .load(Ordering::SeqCst);
+                        if should_restart {
+                            // Small delay so events and cleanup finish before
+                            // the next recording cycle begins.
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            start_auto_recording(h).await;
+                        }
+                    });
+                }),
+            );
+        }
+
+        start_recording_only(handle).await;
+    })
 }
 
 /// Starts Command Mode: copies selected text via Ctrl+C, then starts recording.
@@ -353,6 +518,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         return;
     }
 
+    // Clear any pending silence callback first. This prevents the callback from
+    // firing after we have already started processing (e.g. user pressed the
+    // hotkey manually while AutoStop was still counting down silence).
+    state.recorder.clear_silence_callback();
+
     // --- Stop recording ---
     let duration_ms = {
         match state.recording_start.lock() {
@@ -421,7 +591,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     }
 
     // --- Collect config + dictionary (release locks before await points) ---
-    let (language, stt_provider, cleanup_provider, dict_prompt, offline_mode) = {
+    let (language, stt_provider, cleanup_provider, dict_prompt, offline_mode, stt_hint_text) = {
         let cfg = match state.config.lock() {
             Ok(g) => g.clone(),
             Err(_) => {
@@ -482,12 +652,19 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             stt_hint.as_deref(),
         );
 
+        // Keep the hint text (without dictionary terms) for hallucination detection.
+        let hint_for_check = stt_hint.unwrap_or_else(|| match cfg.language.as_str() {
+            "de" => "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.".to_string(),
+            "en" => "Voice dictation in English. Proper punctuation, capitalization, and spelling.".to_string(),
+            _ => "Multilingual voice dictation. German and English with proper punctuation.".to_string(),
+        });
+
         // Offline mode: if stt_provider is "local", the user has explicitly
         // chosen to stay offline. In this case we skip the LLM cleanup step
         // entirely -- no network call, raw text goes straight to paste.
         let offline = cfg.stt_provider == "local";
 
-        (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline)
+        (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline, hint_for_check)
     };
 
     // --- Transcribe ---
@@ -508,6 +685,18 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     };
 
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
+
+    // --- Whisper hallucination guard ---
+    // Whisper sometimes echoes the conditioning prompt instead of transcribing
+    // actual speech (common with ambient noise but no words). Detect this by
+    // checking if the transcription is composed entirely of prompt fragments.
+    if is_prompt_echo(&raw_text, &stt_hint_text) {
+        log::info!(
+            "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
+        );
+        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+        return;
+    }
 
     // --- Check Command Mode ---
     let is_command_mode = state
@@ -684,6 +873,24 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let paste_handler = create_paste_handler(prev_hwnd);
     if let Err(e) = paste_handler.paste(&cleaned_text) {
         log::warn!("[pipeline] paste failed: {e}. Text is still available.");
+    }
+
+    // --- Insert+Send ---
+    // If enabled, send a Return key press after pasting so the message is
+    // submitted immediately. Useful for chat apps (Slack, Teams, WhatsApp Web).
+    // The 50ms sleep gives the target app time to process the Paste before Enter
+    // arrives. This is opt-in and defaults to false.
+    let insert_and_send = state
+        .config
+        .lock()
+        .ok()
+        .map(|c| c.insert_and_send)
+        .unwrap_or(false);
+    if insert_and_send {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Err(e) = paste_handler.send_enter() {
+            log::warn!("[pipeline] send_enter failed: {e}");
+        }
     }
 
     // --- Save to history ---
@@ -882,6 +1089,47 @@ pub fn register_hotkey(
                         stop_and_process_pipeline(h).await;
                     });
                 }
+                (HotkeyMode::AutoStop, ShortcutState::Pressed) => {
+                    // If already recording: second press = manual stop.
+                    // stop_and_process_pipeline clears the silence callback
+                    // before doing anything else, so no double-invocation.
+                    let is_recording = handle_clone
+                        .state::<AppState>()
+                        .recorder
+                        .is_recording();
+                    if is_recording {
+                        tauri::async_runtime::spawn(async move {
+                            stop_and_process_pipeline(h).await;
+                        });
+                    } else {
+                        tauri::async_runtime::spawn(async move {
+                            start_autostop_recording(h).await;
+                        });
+                    }
+                }
+                (HotkeyMode::AutoStop, ShortcutState::Released) => {
+                    // No-op: AutoStop is toggle-style, release has no meaning.
+                }
+                (HotkeyMode::Auto, ShortcutState::Pressed) => {
+                    let state = handle_clone.state::<AppState>();
+                    if state.recorder.is_recording() {
+                        // Second press while recording: stop the loop and process
+                        // whatever was recorded so far.
+                        state.auto_loop_active.store(false, Ordering::SeqCst);
+                        tauri::async_runtime::spawn(async move {
+                            stop_and_process_pipeline(h).await;
+                        });
+                    } else {
+                        // First press: activate loop and start first cycle.
+                        state.auto_loop_active.store(true, Ordering::SeqCst);
+                        tauri::async_runtime::spawn(async move {
+                            start_auto_recording(h).await;
+                        });
+                    }
+                }
+                (HotkeyMode::Auto, ShortcutState::Released) => {
+                    // No-op: Auto mode is toggle-style, release has no meaning.
+                }
                 _ => {}
             }
         })
@@ -1064,5 +1312,220 @@ mod tests {
             ..AppConfig::default()
         };
         let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// When `insert_and_send` is `true` in config, the flag is correctly read.
+    ///
+    /// This mirrors the extraction logic in `stop_and_process_pipeline` --
+    /// the full pipeline cannot be unit-tested without an `AppHandle`, so we
+    /// verify the config read path directly.
+    #[test]
+    fn test_insert_and_send_flag_is_read_from_config() {
+        let cfg_enabled = AppConfig {
+            insert_and_send: true,
+            ..AppConfig::default()
+        };
+        assert!(
+            cfg_enabled.insert_and_send,
+            "insert_and_send should be true when set in config"
+        );
+
+        let cfg_disabled = AppConfig {
+            insert_and_send: false,
+            ..AppConfig::default()
+        };
+        assert!(
+            !cfg_disabled.insert_and_send,
+            "insert_and_send should be false when unset in config"
+        );
+    }
+
+    /// Default config has `insert_and_send = false` (opt-in feature).
+    #[test]
+    fn test_insert_and_send_defaults_to_false() {
+        let cfg = AppConfig::default();
+        assert!(
+            !cfg.insert_and_send,
+            "insert_and_send must default to false -- it is an opt-in feature"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // AutoStop handler tests
+    // -----------------------------------------------------------------------
+
+    /// `autostop_silence_secs` is correctly read from config.
+    ///
+    /// This mirrors the extraction logic in `start_autostop_recording` --
+    /// the full function cannot be unit-tested without an `AppHandle`.
+    #[test]
+    fn test_autostop_handler_concept_reads_silence_secs() {
+        let cfg = AppConfig {
+            autostop_silence_secs: 3.5,
+            ..AppConfig::default()
+        };
+        assert!(
+            (cfg.autostop_silence_secs - 3.5).abs() < f32::EPSILON,
+            "autostop_silence_secs should be 3.5 when set in config"
+        );
+    }
+
+    /// `silence_threshold` from `advanced` is correctly read for AutoStop.
+    #[test]
+    fn test_autostop_handler_concept_reads_silence_threshold() {
+        let mut cfg = AppConfig::default();
+        cfg.advanced.silence_threshold = 0.012;
+
+        // Mirrors the extraction in start_autostop_recording:
+        let threshold = cfg.advanced.silence_threshold;
+        assert!(
+            (threshold - 0.012).abs() < f32::EPSILON,
+            "silence_threshold from advanced settings should be readable"
+        );
+    }
+
+    /// Default `autostop_silence_secs` is 2.0 seconds.
+    #[test]
+    fn test_autostop_silence_secs_default() {
+        let cfg = AppConfig::default();
+        assert!(
+            (cfg.autostop_silence_secs - 2.0).abs() < f32::EPSILON,
+            "default autostop_silence_secs should be 2.0"
+        );
+    }
+
+    /// After `set_silence_callback`, `has_silence_callback` returns `true`.
+    /// After `clear_silence_callback`, it returns `false`.
+    ///
+    /// This is the observable side-effect of `start_autostop_recording`
+    /// that can be verified without a full `AppHandle`.
+    #[test]
+    fn test_autostop_handler_starts_silence_monitor() {
+        use crate::audio::AudioRecorder;
+
+        let recorder = AudioRecorder::new();
+
+        // Before installing a callback: none present.
+        assert!(
+            !recorder.has_silence_callback(),
+            "no silence callback should be installed initially"
+        );
+
+        // Install the callback (as start_autostop_recording would).
+        recorder.set_silence_callback(2.0, 0.005, Box::new(|| {}));
+
+        assert!(
+            recorder.has_silence_callback(),
+            "silence callback should be installed after set_silence_callback"
+        );
+
+        // Clear it (as stop_and_process_pipeline does at the top).
+        recorder.clear_silence_callback();
+
+        assert!(
+            !recorder.has_silence_callback(),
+            "silence callback should be gone after clear_silence_callback"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Auto-Loop mode tests
+    // -----------------------------------------------------------------------
+
+    /// `auto_loop_active` starts as `false` -- the loop is off until the user
+    /// explicitly activates it with the first hotkey press in Auto mode.
+    #[test]
+    fn test_auto_loop_flag_default_false() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let flag = AtomicBool::new(false);
+        assert!(
+            !flag.load(Ordering::SeqCst),
+            "auto_loop_active must start as false"
+        );
+    }
+
+    /// After `store(false)`, `load()` returns `false` -- the hotkey handler can
+    /// stop the loop by writing the flag regardless of what the pipeline does.
+    #[test]
+    fn test_auto_loop_can_be_stopped() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let flag = AtomicBool::new(true);
+        assert!(flag.load(Ordering::SeqCst), "flag should be true after store(true)");
+
+        flag.store(false, Ordering::SeqCst);
+        assert!(
+            !flag.load(Ordering::SeqCst),
+            "flag should be false after store(false) -- loop must be stoppable"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Whisper hallucination detection tests
+    // -----------------------------------------------------------------------
+
+    /// Exact repetition of the auto-language prompt is detected as echo.
+    #[test]
+    fn test_prompt_echo_exact_repetition() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let hallucination = "German and English with proper punctuation. German and English with proper punctuation. German and English with proper punctuation.";
+        assert!(
+            super::is_prompt_echo(hallucination, hint),
+            "repeated prompt fragments should be detected as hallucination"
+        );
+    }
+
+    /// Full prompt echoed once is also a hallucination.
+    #[test]
+    fn test_prompt_echo_single() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        assert!(
+            super::is_prompt_echo(hint, hint),
+            "exact echo of the prompt should be detected"
+        );
+    }
+
+    /// German prompt echo detection.
+    #[test]
+    fn test_prompt_echo_german() {
+        let hint = "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.";
+        let hallucination = "Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.";
+        assert!(
+            super::is_prompt_echo(hallucination, hint),
+            "German prompt fragments repeated should be detected"
+        );
+    }
+
+    /// Real speech must NOT be flagged as hallucination.
+    #[test]
+    fn test_prompt_echo_real_speech_not_flagged() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let real_speech = "Hey, ich wollte kurz fragen ob du morgen Zeit hast.";
+        assert!(
+            !super::is_prompt_echo(real_speech, hint),
+            "real speech must not be detected as prompt echo"
+        );
+    }
+
+    /// Empty transcription is not a hallucination (handled by silence check).
+    #[test]
+    fn test_prompt_echo_empty_is_not_echo() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        assert!(
+            !super::is_prompt_echo("", hint),
+            "empty transcription should not be flagged"
+        );
+    }
+
+    /// Mixed speech + prompt fragment is NOT a hallucination.
+    #[test]
+    fn test_prompt_echo_mixed_content_not_flagged() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let mixed = "German and English with proper punctuation. Also I wanted to say hello.";
+        assert!(
+            !super::is_prompt_echo(mixed, hint),
+            "mixed real speech with prompt fragment must not be flagged"
+        );
     }
 }

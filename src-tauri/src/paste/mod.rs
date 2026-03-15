@@ -44,6 +44,15 @@ pub enum PasteError {
 pub trait PasteHandler: Send + Sync {
     /// Copy `text` to the clipboard and simulate Ctrl+V in the focused window.
     fn paste(&self, text: &str) -> Result<(), PasteError>;
+
+    /// Simulate a Return/Enter key press in the focused window.
+    ///
+    /// Used by the Insert+Send feature to submit chat messages after pasting.
+    /// The default implementation is a no-op so existing backends don't need
+    /// to implement it.
+    fn send_enter(&self) -> Result<(), PasteError> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +145,7 @@ mod windows {
     use super::*;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_V,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_RETURN, VK_V,
     };
     use ::windows::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
@@ -193,6 +202,11 @@ mod windows {
 
             Ok(())
         }
+
+        fn send_enter(&self) -> Result<(), PasteError> {
+            simulate_return();
+            Ok(())
+        }
     }
 
     /// Builds a keyboard INPUT event for SendInput.
@@ -224,6 +238,21 @@ mod windows {
             let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
             if sent != inputs.len() as u32 {
                 log::warn!("[paste] SendInput returned {sent}, expected {}", inputs.len());
+            }
+        }
+    }
+
+    /// Simulates a Return key press using the Win32 SendInput API.
+    fn simulate_return() {
+        let inputs = [
+            kbd_input(VK_RETURN, false), // Return down
+            kbd_input(VK_RETURN, true),  // Return up
+        ];
+
+        unsafe {
+            let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            if sent != inputs.len() as u32 {
+                log::warn!("[paste] SendInput (Return) returned {sent}, expected {}", inputs.len());
             }
         }
     }

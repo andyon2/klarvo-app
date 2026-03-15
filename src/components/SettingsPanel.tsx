@@ -519,6 +519,12 @@ export function SettingsPanel({
   const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
   const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "small");
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
+  const [localInsertAndSend, setLocalInsertAndSend] = useState(loadedSettings?.insertAndSend ?? false);
+  const [localSilenceSecs, setLocalSilenceSecs] = useState(() => {
+    const mode = loadedSettings?.hotkeyMode ?? "hold";
+    if (mode === "auto") return loadedSettings?.autoModeSilenceSecs ?? 2.0;
+    return loadedSettings?.autostopSilenceSecs ?? 2.0;
+  });
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -569,6 +575,13 @@ export function SettingsPanel({
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
       setLocalWhisperModel(loadedSettings.localWhisperModel ?? "small");
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
+      setLocalInsertAndSend(loadedSettings.insertAndSend ?? false);
+      const mode = loadedSettings.hotkeyMode ?? "hold";
+      if (mode === "auto") {
+        setLocalSilenceSecs(loadedSettings.autoModeSilenceSecs ?? 2.0);
+      } else {
+        setLocalSilenceSecs(loadedSettings.autostopSilenceSecs ?? 2.0);
+      }
     }
   }, [loadedSettings]);
 
@@ -596,6 +609,9 @@ export function SettingsPanel({
       localBubbleOpacity !== (loadedSettings.bubbleOpacity ?? 0.85) ||
       localWhisperModel !== (loadedSettings.localWhisperModel ?? "small") ||
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
+      localInsertAndSend !== (loadedSettings.insertAndSend ?? false) ||
+      (localHotkeyMode === "autostop" && localSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0)) ||
+      (localHotkeyMode === "auto" && localSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0)) ||
       groqKey.trim() !== "" ||
       deepseekKey.trim() !== "" ||
       openaiKey.trim() !== "" ||
@@ -607,6 +623,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, localSttProvider,
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
+    localInsertAndSend, localSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
   ]);
 
@@ -653,6 +670,8 @@ export function SettingsPanel({
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
     try {
+      const autostopSecs = localHotkeyMode === "autostop" ? localSilenceSecs : null;
+      const autoModeSecs = localHotkeyMode === "auto" ? localSilenceSecs : null;
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
@@ -661,6 +680,7 @@ export function SettingsPanel({
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
         localSttProvider, localLlmProvider,
+        localInsertAndSend, autostopSecs, autoModeSecs,
       );
       setGroqKey("");
       setDeepseekKey("");
@@ -680,7 +700,8 @@ export function SettingsPanel({
     groqKey, deepseekKey, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
-    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
+    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
+    localInsertAndSend, localSilenceSecs, onSave,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -694,6 +715,8 @@ export function SettingsPanel({
   const handleLicenseAutoSave = useCallback(async () => {
     setSaving(true);
     try {
+      const autostopSecs = localHotkeyMode === "autostop" ? localSilenceSecs : null;
+      const autoModeSecs = localHotkeyMode === "auto" ? localSilenceSecs : null;
       await onSave(
         "", "", localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
@@ -702,6 +725,7 @@ export function SettingsPanel({
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
         localSttProvider, localLlmProvider,
+        localInsertAndSend, autostopSecs, autoModeSecs,
       );
     } catch (err) {
       console.error("License auto-save failed:", err);
@@ -712,7 +736,8 @@ export function SettingsPanel({
     localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl,
-    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu, onSave,
+    localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
+    localInsertAndSend, localSilenceSecs, onSave,
   ]);
 
   const handleAddTerm = useCallback(async () => {
@@ -969,29 +994,87 @@ export function SettingsPanel({
                   <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-1.5">
                   <span className={LABEL_CLS}>Mode</span>
                   <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
-                    {(["hold", "toggle"] as HotkeyMode[]).map((mode) => (
+                    {([
+                      { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
+                      { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
+                      { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
+                      { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                    ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                       <button
-                        key={mode}
-                        onClick={() => handleHotkeyModeChange(mode)}
-                        title={mode === "hold" ? "Hold to record, release to process" : "Press to start, press to stop"}
+                        key={value}
+                        onClick={() => {
+                          handleHotkeyModeChange(value);
+                          // When switching modes, load the appropriate silence default from persisted settings
+                          if (value === "auto") {
+                            setLocalSilenceSecs(loadedSettings?.autoModeSilenceSecs ?? 2.0);
+                          } else if (value === "autostop") {
+                            setLocalSilenceSecs(loadedSettings?.autostopSilenceSecs ?? 2.0);
+                          }
+                        }}
+                        title={tooltip}
                         className={[
-                          "px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all duration-100",
-                          localHotkeyMode === mode
+                          "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                          localHotkeyMode === value
                             ? "bg-emerald-500/15 text-emerald-400"
                             : "text-zinc-500 hover:text-zinc-300",
                         ].join(" ")}
                       >
-                        {mode}
+                        {label}
                       </button>
                     ))}
                   </div>
                 </div>
                 <p className="text-[11px] text-zinc-500">
-                  {localHotkeyMode === "hold" ? "Hold to record, release to process" : "Press once to start, press again to stop"}
+                  {localHotkeyMode === "hold" && "Hold to record, release to process"}
+                  {localHotkeyMode === "toggle" && "Press once to start, press again to stop"}
+                  {localHotkeyMode === "autostop" && "Press to start, stops automatically on silence"}
+                  {localHotkeyMode === "auto" && "Continuous — restarts after each silence gap"}
                 </p>
+
+                {(localHotkeyMode === "autostop" || localHotkeyMode === "auto") && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className={LABEL_CLS}>Silence Duration</span>
+                      <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={5.0}
+                      step={0.5}
+                      value={localSilenceSecs}
+                      onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                    <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-0.5">
+                    <span className={LABEL_CLS}>Insert &amp; Send</span>
+                    <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={localInsertAndSend}
+                    onClick={() => setLocalInsertAndSend((v) => !v)}
+                    className={[
+                      "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
+                      localInsertAndSend ? "bg-emerald-500/30 border border-emerald-500/40" : "bg-zinc-800 border border-zinc-700/60",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute top-0.5 w-4 h-4 rounded-full transition-transform duration-150",
+                        localInsertAndSend ? "translate-x-4 bg-emerald-400" : "translate-x-0.5 bg-zinc-500",
+                      ].join(" ")}
+                    />
+                  </button>
+                </div>
               </div>
             )}
           </div>
