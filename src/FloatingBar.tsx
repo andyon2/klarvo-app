@@ -207,6 +207,7 @@ function CheckIcon({ color }: { color: string }) {
 function StopButton({ onClick }: { onClick: () => void }) {
   return (
     <div
+      data-stop-btn
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       style={{
         width: 14,
@@ -369,13 +370,42 @@ export default function FloatingBar() {
     return () => { clearTimeout(initialDelay); clearInterval(interval); };
   }, [isRecording]);
 
-  // --- Manual drag via startDragging() + save position after drag ends ---
+  // --- Manual drag via mouse events + setPosition() ---
+  // Tauri's startDragging() and data-tauri-drag-region don't work reliably
+  // on transparent decorationless WebView2 windows. We implement drag manually.
+  const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
+
   function handleMouseDown(e: React.MouseEvent) {
-    // Only primary button; don't interfere with the StopButton click.
     if (e.button !== 0) return;
+    // Don't drag when clicking the StopButton.
+    if ((e.target as HTMLElement).closest("[data-stop-btn]")) return;
     const win = getCurrentWebviewWindow();
-    win.startDragging().then(() => {
-      // startDragging() resolves when the drag ends -- save new position.
+    win.outerPosition().then(async (pos) => {
+      const scale = (await win.scaleFactor()) || 1;
+      dragRef.current = {
+        startX: e.screenX,
+        startY: e.screenY,
+        winX: pos.x / scale,
+        winY: pos.y / scale,
+      };
+    }).catch(() => {});
+  }
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = e.screenX - d.startX;
+      const dy = e.screenY - d.startY;
+      const win = getCurrentWebviewWindow();
+      win.setPosition(new LogicalPosition(d.winX + dx, d.winY + dy)).catch(() => {});
+    }
+    function onMouseUp() {
+      const d = dragRef.current;
+      if (!d) return;
+      dragRef.current = null;
+      // Save final position.
+      const win = getCurrentWebviewWindow();
       win.outerPosition().then(async (pos) => {
         const scale = (await win.scaleFactor()) || 1;
         const lx = pos.x / scale;
@@ -384,8 +414,14 @@ export default function FloatingBar() {
         barY.current = ly;
         saveBarPosition(lx, ly).catch(() => {});
       }).catch(() => {});
-    }).catch(() => {});
-  }
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Render: idle -- window is hidden, render nothing
