@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
-import type { RecordingState } from "./types";
+import type { RecordingState, HotkeyMode } from "./types";
 import {
   onStateChanged,
   setBarShape,
@@ -10,6 +10,7 @@ import {
   cancelRecording,
   saveBarPosition,
   getBarPosition,
+  getSettings,
 } from "./tauri-commands";
 
 // ---------------------------------------------------------------------------
@@ -76,52 +77,38 @@ const BAR_ANIMATION_DURATION = 600;
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Minimal mic icon as inline SVG. */
-function MicIcon() {
+/** Dikta brand logo: dark-purple circle with white "D" lettermark. */
+function DiktaLogo() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ width: 16, height: 16, flexShrink: 0 }}
+    <div
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: "50%",
+        background: "#2d1b69",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
     >
-      {/* Capsule body */}
-      <rect
-        x="5.5"
-        y="1"
-        width="5"
-        height="8"
-        rx="2.5"
-        fill="rgba(147,197,253,0.85)"
-      />
-      {/* Stand arc */}
-      <path
-        d="M3 7.5a5 5 0 0 0 10 0"
-        stroke="rgba(147,197,253,0.85)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      {/* Stem */}
-      <line
-        x1="8"
-        y1="12.5"
-        x2="8"
-        y2="15"
-        stroke="rgba(147,197,253,0.85)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      {/* Base */}
-      <line
-        x1="5.5"
-        y1="15"
-        x2="10.5"
-        y2="15"
-        stroke="rgba(147,197,253,0.85)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
+      <svg
+        viewBox="0 0 12 14"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: 8, height: 9 }}
+      >
+        {/* "D" lettermark */}
+        <path
+          d="M1 1h3.8c2.9 0 5.2 2.2 5.2 6s-2.3 6-5.2 6H1V1z"
+          fill="white"
+        />
+        <path
+          d="M3.2 3.2v7.6h1.4c1.9 0 3.2-1.5 3.2-3.8S6.5 3.2 4.6 3.2H3.2z"
+          fill="#2d1b69"
+        />
+      </svg>
+    </div>
   );
 }
 
@@ -236,12 +223,23 @@ function StopButton({ onClick }: { onClick: () => void }) {
 // Main component
 // ---------------------------------------------------------------------------
 
+/** Maps HotkeyMode enum to a short display label. */
+function hotkeyModeLabel(mode: HotkeyMode): string {
+  switch (mode) {
+    case "hold":     return "Hold";
+    case "toggle":   return "Toggle";
+    case "autostop": return "Auto Stop";
+    case "auto":     return "Auto";
+  }
+}
+
 export default function FloatingBar() {
   const [state, setState] = useState<RecordingState>("idle");
   const [levels, setLevels] = useState<number[]>(new Array(20).fill(0));
   const [showDone, setShowDone] = useState(false);
   const [livePreview, setLivePreview] = useState("");
   const [collapsing, setCollapsing] = useState(false);
+  const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -279,6 +277,13 @@ export default function FloatingBar() {
         // Non-critical: bar will appear wherever Tauri placed it initially.
       }
     })();
+  }, []);
+
+  // --- Load hotkey mode from settings on mount ---
+  useEffect(() => {
+    getSettings()
+      .then((s) => setHotkeyMode(s.hotkeyMode))
+      .catch(() => { /* non-critical, default "hold" stays */ });
   }, []);
 
   // --- Show / hide the Tauri window based on pill visibility ---
@@ -478,10 +483,10 @@ export default function FloatingBar() {
         }}
       >
 
-        {/* Mic logo -- always visible as brand anchor */}
-        <MicIcon />
+        {/* Dikta logo -- always visible as brand anchor */}
+        <DiktaLogo />
 
-        {/* Recording: stop button + waveform or live preview */}
+        {/* Recording: stop button + waveform or live preview + mode badge */}
         {isRecording && (
           <>
             <StopButton onClick={() => { cancelRecording().catch(() => {}); }} />
@@ -505,6 +510,17 @@ export default function FloatingBar() {
             ) : (
               <Waveform levels={levels} />
             )}
+            <span
+              style={{
+                fontSize: 10,
+                color: "#71717a",
+                flexShrink: 0,
+                letterSpacing: "0.02em",
+                lineHeight: 1,
+              }}
+            >
+              {hotkeyModeLabel(hotkeyMode)}
+            </span>
           </>
         )}
 

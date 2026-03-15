@@ -105,12 +105,18 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
 /// Detects when Whisper echoes the conditioning prompt instead of real speech.
 ///
 /// Whisper sometimes "hallucinates" the prompt text when the audio contains
-/// ambient noise but no actual words. This function checks if the transcription
-/// is composed entirely of fragments from the STT hint text.
+/// ambient noise but no actual words. The hallucinated text may not be an
+/// exact copy — Whisper can vary words slightly (e.g. "punctuation" →
+/// "pronunciation") or reorder phrases.
 ///
-/// The check splits the hint into sentences (by ". "), normalises both strings
-/// to lowercase, and removes all hint-sentence occurrences from the
-/// transcription. If only punctuation and whitespace remain, it's a prompt echo.
+/// Two complementary checks:
+/// 1. **Exact fragment removal** — splits the hint into sentences and removes
+///    all occurrences from the transcription. If nothing meaningful remains,
+///    it's an echo.
+/// 2. **Word-overlap** — extracts significant words (≥3 chars) from both
+///    texts and measures how many transcription words appear in the hint.
+///    If ≥60% overlap AND the transcription is short (≤30 words), it's
+///    likely a hallucination with slight word variation.
 fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
     let trans = transcription.trim().to_lowercase();
     let hint = stt_hint.trim().to_lowercase();
@@ -119,7 +125,7 @@ fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
         return false;
     }
 
-    // Split hint into individual sentences (>10 chars to avoid short noise).
+    // --- Check 1: exact fragment removal ---
     let hint_sentences: Vec<&str> = hint
         .split(". ")
         .flat_map(|s| s.split('.'))
@@ -127,21 +133,65 @@ fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
         .filter(|s| s.len() > 10)
         .collect();
 
-    // Remove every hint sentence from the transcription.
     let mut cleaned = trans.clone();
     for sentence in &hint_sentences {
         cleaned = cleaned.replace(sentence, "");
     }
-    // Also try removing the full hint as-is (handles exact repetitions).
     cleaned = cleaned.replace(&hint, "");
 
-    // Strip residual punctuation and whitespace.
     let residue: String = cleaned
         .chars()
         .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
         .collect();
 
-    residue.len() < 5
+    if residue.len() < 5 {
+        return true;
+    }
+
+    // --- Check 2: word-overlap (catches Whisper word variations) ---
+    let extract_words = |text: &str| -> Vec<String> {
+        text.split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+            .map(|w| w.to_lowercase())
+            .filter(|w| w.len() >= 3)
+            .collect()
+    };
+
+    let trans_words = extract_words(&trans);
+    let hint_words: std::collections::HashSet<String> =
+        extract_words(&hint).into_iter().collect();
+
+    if trans_words.is_empty() {
+        return false;
+    }
+
+    // Longer texts are unlikely to be pure hallucination.
+    if trans_words.len() > 30 {
+        return false;
+    }
+
+    // Check 2a: high word-overlap with the hint (≥70%).
+    let matching = trans_words
+        .iter()
+        .filter(|w| hint_words.contains(w.as_str()))
+        .count();
+    let overlap = matching as f32 / trans_words.len() as f32;
+
+    if overlap >= 0.7 {
+        return true;
+    }
+
+    // Check 2b: highly repetitive text (low vocabulary diversity).
+    // Whisper hallucinations often repeat the same 2-3 words/phrases.
+    // Real speech has much higher word diversity.
+    let unique: std::collections::HashSet<&String> = trans_words.iter().collect();
+    let diversity = unique.len() as f32 / trans_words.len() as f32;
+    // If fewer than half the words are unique AND at least some hint words
+    // appear, it's a repetitive hallucination with word variations.
+    if diversity < 0.5 && overlap >= 0.3 {
+        return true;
+    }
+
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -1538,6 +1588,44 @@ mod tests {
         assert!(
             !super::is_prompt_echo(mixed, hint),
             "mixed real speech with prompt fragment must not be flagged"
+        );
+    }
+
+    /// Whisper varies words: "punctuation" → "pronunciation". Word-overlap
+    /// check catches this even though exact substring match fails.
+    #[test]
+    fn test_prompt_echo_word_variation_detected() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let hallucination = "German and English with proper pronunciation.";
+        assert!(
+            super::is_prompt_echo(hallucination, hint),
+            "word-variation hallucination should be detected via overlap check"
+        );
+    }
+
+    /// Repeated word-varied hallucination is also caught.
+    #[test]
+    fn test_prompt_echo_repeated_variation() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let hallucination = "Proper pronunciation. Proper pronunciation. Proper pronunciation.";
+        assert!(
+            super::is_prompt_echo(hallucination, hint),
+            "repeated variation should be detected"
+        );
+    }
+
+    /// Long real text (>30 words) must never be flagged, even if some prompt
+    /// words appear naturally.
+    #[test]
+    fn test_prompt_echo_long_real_text_not_flagged() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let real = "This is a long text about multilingual voice recognition systems. \
+                    German and English are both supported in many modern applications. \
+                    The technology has improved significantly with proper training data \
+                    and neural network architectures that handle punctuation well.";
+        assert!(
+            !super::is_prompt_echo(real, hint),
+            "long real text with incidental prompt-word overlap must not be flagged"
         );
     }
 }

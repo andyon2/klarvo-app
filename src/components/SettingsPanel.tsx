@@ -1080,14 +1080,14 @@ export function SettingsPanel({
                     aria-checked={localInsertAndSend}
                     onClick={() => setLocalInsertAndSend((v) => !v)}
                     className={[
-                      "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
-                      localInsertAndSend ? "bg-emerald-500/30 border border-emerald-500/40" : "bg-zinc-800 border border-zinc-700/60",
+                      "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                      localInsertAndSend ? "bg-emerald-500/40" : "bg-zinc-700",
                     ].join(" ")}
                   >
                     <span
                       className={[
-                        "absolute top-0.5 w-4 h-4 rounded-full transition-transform duration-150",
-                        localInsertAndSend ? "translate-x-4 bg-emerald-400" : "translate-x-0.5 bg-zinc-500",
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                        localInsertAndSend ? "translate-x-4" : "",
                       ].join(" ")}
                     />
                   </button>
