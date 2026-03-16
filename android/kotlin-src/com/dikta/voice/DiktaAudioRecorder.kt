@@ -33,12 +33,30 @@ class DiktaAudioRecorder(
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+        // Silence detection: amplitude below this for REQUIRED_SILENT_CHUNKS triggers callback.
+        private const val SILENCE_THRESHOLD = 0.03f
+        private const val REQUIRED_SILENT_CHUNKS = 30  // ~2s at ~15 chunks/sec
     }
+
+    /**
+     * Optional callback fired once when sustained silence is detected.
+     * Set by DiktaOverlayService for AUTOSTOP / AUTO modes.
+     * Fires on the recording thread -- caller must post to main thread.
+     */
+    var onSilenceDetected: (() -> Unit)? = null
 
     private var audioRecord: AudioRecord? = null
     private val pcmBuffer = ArrayList<Short>()
     private var recordingThread: Thread? = null
     private var isCapturing = false
+
+    // Silence detection state
+    private var silentChunks = 0
+    private var silenceCallbackFired = false
+    // Require at least 1s of audio before silence detection activates (avoids instant trigger)
+    private var totalChunks = 0
+    private val minChunksBeforeSilence = 15  // ~1s
 
     // Rolling average for amplitude smoothing (last 3 values).
     private val amplitudeHistory = FloatArray(3) { 0f }
@@ -85,6 +103,10 @@ class DiktaAudioRecorder(
         // Reset smoothing state for the new recording session.
         amplitudeHistory.fill(0f)
         amplitudeHistoryIndex = 0
+        // Reset silence detection state.
+        silentChunks = 0
+        silenceCallbackFired = false
+        totalChunks = 0
 
         recordingThread = Thread {
             val buf = ShortArray(bufferSize / 2)
@@ -97,6 +119,20 @@ class DiktaAudioRecorder(
                     val rms = calculateRms(buf, read)
                     val smoothedAmp = smoothedAmplitude(rms)
                     onAmplitude(smoothedAmp)
+
+                    // Silence detection
+                    totalChunks++
+                    if (onSilenceDetected != null && !silenceCallbackFired) {
+                        if (smoothedAmp < SILENCE_THRESHOLD) {
+                            silentChunks++
+                            if (silentChunks >= REQUIRED_SILENT_CHUNKS && totalChunks >= minChunksBeforeSilence) {
+                                silenceCallbackFired = true
+                                onSilenceDetected?.invoke()
+                            }
+                        } else {
+                            silentChunks = 0
+                        }
+                    }
                 }
             }
         }.also { it.start() }

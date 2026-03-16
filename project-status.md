@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.3. 311 Rust-Tests (alle gruen). Dual-Hotkey-System fertig: 2 konfigurierbare Hotkey-Slots, jeder mit eigenem Recording-Modus. Tab-UI in Settings (Hotkey 1 / Hotkey 2). Config-Migration von altem Single-Hotkey-Format. Dispatch via on_shortcuts() mit Shortcut-ID-Map.
+Version 0.4.3. 311 Rust-Tests (alle gruen). Android: 4 Recording-Modi (Hold/Toggle/AutoStop/Auto) via Notification-Actions umschaltbar. Silence-Detection im AudioRecorder. Long-Press = PTT in allen Modi. Direkte Modus-Buttons in Notification (3 nicht-aktive Modi sichtbar).
 
 ## Blocker
 
@@ -23,4 +23,7 @@ Keine.
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
 - [ ] [ui] 23 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
-- [ ] [android] Recording-Modi + Bubble Long-Press Modi-Auswahl (nach Windows-Implementierung)
+- [ ] [android] Recording-Modi via Notification-Actions implementiert (Hold/Toggle/AutoStop/Auto). Offen:
+  - [ ] Silence-Threshold in Android-App einstellbar machen (aktuell hardcoded 0.03 / 2s)
+  - [ ] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
+  - [ ] Auto-Modus: nur einfuegen (insert), nicht senden (kein Enter/Send nach Paste)
