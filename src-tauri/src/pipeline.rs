@@ -1212,6 +1212,11 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
 
                 let h = handle_clone.clone();
                 println!("[hotkey] mode={mode:?} state={:?}", event.state);
+
+                // Tell the FloatingBar which mode is active so it shows the
+                // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).
+                let _ = handle_clone.emit("dikta://active-mode", mode);
+
                 match (mode, event.state) {
                     (HotkeyMode::Toggle, ShortcutState::Pressed) => {
                         tauri::async_runtime::spawn(async move {

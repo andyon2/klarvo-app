@@ -28,7 +28,8 @@ object DiktaApi {
         val tursoToken: String,
         val deviceId: String,
         val bubbleSize: Float = 1.0f,
-        val bubbleOpacity: Float = 0.85f
+        val bubbleOpacity: Float = 0.85f,
+        val bubbleRecordingMode: String = "hold"
     )
 
     /**
@@ -65,9 +66,11 @@ object DiktaApi {
             val deviceId = json.optString("deviceId", "")
             val bubbleSize = json.optDouble("bubbleSize", 1.0).toFloat()
             val bubbleOpacity = json.optDouble("bubbleOpacity", 0.85).toFloat()
+            // Rust serializes with snake_case; valid values: "hold", "toggle", "autostop", "auto"
+            val bubbleRecordingMode = json.optString("bubble_recording_mode", "hold")
 
             if (groqKey.isBlank() && deepseekKey.isBlank()) null
-            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId, bubbleSize, bubbleOpacity)
+            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId, bubbleSize, bubbleOpacity, bubbleRecordingMode)
         } catch (e: Exception) {
             null
         }

@@ -48,6 +48,17 @@ import { WhisperModelManager } from "./WhisperModelManager";
 
 function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: string) => void }) {
   const [listening, setListening] = useState(false);
+  // Track which modifier keys are currently held. This is needed for the
+  // keyup-based Alt fallback: when Alt is the last key released, e.altKey is
+  // already false in the keyup event, so we cannot derive the modifier state
+  // from the event alone.
+  const heldModifiers = useRef<Set<string>>(new Set());
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancel = useCallback(() => {
+    heldModifiers.current.clear();
+    setListening(false);
+  }, []);
 
   // Pause/resume the global hotkey while the recorder is listening,
   // so pressing the current shortcut doesn't trigger the pipeline.
@@ -66,38 +77,111 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
     };
   }, [listening]);
 
+  // Auto-cancel after 5 seconds so the button never stays stuck.
   useEffect(() => {
     if (!listening) return;
-    const handler = (e: KeyboardEvent) => {
+    timeoutRef.current = setTimeout(cancel, 5000);
+    return () => {
+      if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
+    };
+  }, [listening, cancel]);
+
+  useEffect(() => {
+    if (!listening) return;
+
+    const KEY_MAP: Record<string, string> = {
+      " ": "space", Enter: "enter", Tab: "tab",
+      Backspace: "backspace", Delete: "delete", Insert: "insert",
+      Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
+      ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+    };
+    const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
+
+    const buildParts = (ctrl: boolean, shift: boolean, alt: boolean, meta: boolean, rawKey: string): string | null => {
+      const parts: string[] = [];
+      if (ctrl) parts.push("ctrl");
+      if (shift) parts.push("shift");
+      if (alt) parts.push("alt");
+      if (meta) parts.push("super");
+      if (parts.length === 0) return null;
+      let key = KEY_MAP[rawKey] ?? rawKey.toLowerCase();
+      if (/^F\d+$/.test(rawKey)) key = rawKey.toLowerCase();
+      parts.push(key);
+      return parts.join("+");
+    };
+
+    const keydownHandler = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push("ctrl");
-      if (e.shiftKey) parts.push("shift");
-      if (e.altKey) parts.push("alt");
-      if (e.metaKey) parts.push("super");
-      if (parts.length === 0) return;
-      const KEY_MAP: Record<string, string> = {
-        " ": "space", Enter: "enter", Escape: "escape", Tab: "tab",
-        Backspace: "backspace", Delete: "delete", Insert: "insert",
-        Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
-        ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
-      };
-      let key = KEY_MAP[e.key] ?? e.key.toLowerCase();
-      if (/^F\d+$/.test(e.key)) key = e.key.toLowerCase();
-      parts.push(key);
-      onChange(parts.join("+"));
-      setListening(false);
+
+      // Escape cancels listening regardless of modifiers.
+      if (e.key === "Escape") {
+        cancel();
+        return;
+      }
+
+      // Track held modifiers for the keyup fallback.
+      if (MODIFIERS.has(e.key)) {
+        heldModifiers.current.add(e.key);
+        return;
+      }
+
+      // Normal path: at least one modifier must be held.
+      const combo = buildParts(e.ctrlKey, e.shiftKey, e.altKey, e.metaKey, e.key);
+      if (combo === null) return;
+
+      onChange(combo);
+      cancel();
     };
-    document.addEventListener("keydown", handler, true);
-    return () => document.removeEventListener("keydown", handler, true);
-  }, [listening, onChange]);
+
+    // keyup fallback for Alt-based shortcuts on Windows. WebView2 sometimes
+    // swallows keydown events that include Alt before JS sees them (the browser
+    // treats Alt as "focus the menu bar"). The keyup event is more reliably
+    // delivered. We only use this path when the keydown handler did NOT already
+    // commit a combo (i.e. listening is still true when keyup fires).
+    //
+    // Caveat: on keyup the modifier flags already reflect the *released* state,
+    // so e.altKey is false when Alt itself is being released. We therefore fall
+    // back to heldModifiers to reconstruct the held set at the moment the
+    // non-modifier key was pressed.
+    const keyupHandler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (MODIFIERS.has(e.key)) {
+        heldModifiers.current.delete(e.key);
+        return;
+      }
+
+      // Only engage if this is an Alt-combo that keydown might have missed.
+      if (!heldModifiers.current.has("Alt")) return;
+
+      const ctrl = heldModifiers.current.has("Control") || e.ctrlKey;
+      const shift = heldModifiers.current.has("Shift") || e.shiftKey;
+      const alt = true; // we know Alt is/was held
+      const meta = heldModifiers.current.has("Meta") || e.metaKey;
+
+      const combo = buildParts(ctrl, shift, alt, meta, e.key);
+      if (combo === null) return;
+
+      onChange(combo);
+      cancel();
+    };
+
+    document.addEventListener("keydown", keydownHandler, true);
+    document.addEventListener("keyup", keyupHandler, true);
+    return () => {
+      document.removeEventListener("keydown", keydownHandler, true);
+      document.removeEventListener("keyup", keyupHandler, true);
+      heldModifiers.current.clear();
+    };
+  }, [listening, onChange, cancel]);
 
   return (
     <button
       type="button"
       onClick={() => setListening(true)}
+      onBlur={cancel}
       className={[
         "w-full bg-[#111113] border rounded-lg px-3 py-2 text-sm text-left font-mono",
         listening
@@ -106,7 +190,7 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
         "focus:outline-none transition-all duration-150",
       ].join(" ")}
     >
-      {listening ? "Press shortcut..." : value || "Click to set"}
+      {listening ? "Press shortcut... (Esc to cancel)" : value || "Click to set"}
     </button>
   );
 }
@@ -1040,7 +1124,7 @@ export function SettingsPanel({
                       hotkeyTab === 1 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
                     ].join(" ")}
                   >
-                    {localHotkeySlot2 ? `Hotkey 2 · ${localHotkeySlot2}` : "Hotkey 2"}
+                    Hotkey 2
                   </button>
                 </div>
 

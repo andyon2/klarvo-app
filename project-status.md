@@ -19,6 +19,7 @@ Keine.
 - [ ] Whisper-Halluzination "proper punctuation" taucht gelegentlich in der Bar auf (wird gefiltert, kein Effekt aufs Transkript). Low-Prio.
 
 ## Backlog
+- [ ] [ui] Startgroesse des Windows-Fensters erhoehen — zu klein beim Oeffnen, Settings haben Scrollbalken rechts und unten
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
 - [ ] [ui] 23 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen

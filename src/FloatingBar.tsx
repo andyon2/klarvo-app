@@ -288,11 +288,21 @@ export default function FloatingBar() {
     })();
   }, []);
 
-  // --- Load hotkey mode from settings on mount ---
+  // --- Load hotkey mode from settings on mount, update on hotkey events ---
   useEffect(() => {
     getSettings()
       .then((s) => setHotkeyMode(s.hotkeyMode))
       .catch(() => { /* non-critical, default "hold" stays */ });
+  }, []);
+
+  // Listen for active-mode events from the hotkey handler so the badge
+  // reflects the correct mode when Hotkey 2 fires (which may differ from
+  // Hotkey 1's mode loaded above).
+  useEffect(() => {
+    const unlisten = listen<HotkeyMode>("dikta://active-mode", (event) => {
+      setHotkeyMode(event.payload);
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   // --- Show / hide the Tauri window based on pill visibility ---

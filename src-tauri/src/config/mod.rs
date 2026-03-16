@@ -643,6 +643,20 @@ pub struct AppConfig {
     /// neither is set.
     #[serde(default)]
     pub bar_y: Option<f64>,
+
+    /// Recording mode for the Android floating bubble.
+    ///
+    /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
+    /// Default: `"hold"`.
+    ///
+    /// Kotlin reads this field directly from config.json, so it must remain a
+    /// plain String (not a Rust enum) to avoid deserialization coupling between
+    /// the two runtimes.
+    ///
+    /// Note: the desktop equivalent is `HotkeyMode` inside `hotkey_slots`.
+    /// This field is Android-only; desktop code should ignore it.
+    #[serde(default = "default_bubble_recording_mode")]
+    pub bubble_recording_mode: String,
 }
 
 fn default_stt_provider() -> String {
@@ -713,6 +727,10 @@ fn default_auto_mode_silence_secs() -> f32 {
     2.0
 }
 
+fn default_bubble_recording_mode() -> String {
+    "hold".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -755,6 +773,7 @@ impl Default for AppConfig {
             auto_mode_silence_secs: default_auto_mode_silence_secs(),
             bar_x: None,
             bar_y: None,
+            bubble_recording_mode: default_bubble_recording_mode(),
         }
     }
 }
@@ -1140,6 +1159,7 @@ mod tests {
             auto_mode_silence_secs: 3.0,
             bar_x: Some(123.5),
             bar_y: Some(456.0),
+            bubble_recording_mode: "toggle".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

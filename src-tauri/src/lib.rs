@@ -164,6 +164,9 @@ pub struct SettingsView {
     pub hotkey_slot2: String,
     /// Recording mode for the optional second slot.
     pub hotkey_mode_slot2: HotkeyMode,
+    /// Recording mode for the Android floating bubble.
+    /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
+    pub bubble_recording_mode: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -942,6 +945,7 @@ mod tests {
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
+            bubble_recording_mode: "hold".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -988,6 +992,7 @@ mod tests {
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
+            bubble_recording_mode: "hold".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1028,6 +1033,7 @@ mod tests {
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
+            bubble_recording_mode: "hold".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

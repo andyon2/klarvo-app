@@ -154,6 +154,10 @@ pub async fn save_settings(
     // encoding as the existing `hotkey_mode` parameter.
     // None = leave slot 1 mode unchanged.
     hotkey_mode_slot2: Option<String>,
+    // Recording mode for the Android floating bubble.
+    // Valid values: "hold", "toggle", "autostop", "auto".
+    // None = leave unchanged (backward-compatible with older frontend versions).
+    bubble_recording_mode: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -281,6 +285,7 @@ pub async fn save_settings(
         insert_and_send: insert_and_send.unwrap_or(existing.insert_and_send),
         autostop_silence_secs: autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
         auto_mode_silence_secs: auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
+        bubble_recording_mode: bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
     };
 
     // Resolve providers from the new config before persisting.
@@ -371,6 +376,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         auto_mode_silence_secs: cfg.auto_mode_silence_secs,
         hotkey_slot2: slot1_hotkey,
         hotkey_mode_slot2: slot1_mode,
+        bubble_recording_mode: cfg.bubble_recording_mode,
     })
 }
 
@@ -676,6 +682,55 @@ mod tests {
             (loaded.auto_mode_silence_secs - 3.5).abs() < f32::EPSILON,
             "auto_mode_silence_secs should round-trip to 3.5, got {}",
             loaded.auto_mode_silence_secs
+        );
+    }
+
+    /// `bubble_recording_mode` defaults to `"hold"` when the field is absent
+    /// from an old config.json (backward-compatibility).
+    #[test]
+    fn test_bubble_recording_mode_default_value() {
+        assert_eq!(
+            AppConfig::default().bubble_recording_mode,
+            "hold",
+            "bubble_recording_mode must default to \"hold\""
+        );
+    }
+
+    /// `bubble_recording_mode` survives a save → load round-trip intact.
+    #[test]
+    fn test_bubble_recording_mode_roundtrip() {
+        let dir = temp_dir();
+
+        let cfg = AppConfig {
+            bubble_recording_mode: "toggle".to_string(),
+            ..AppConfig::default()
+        };
+
+        save_config(dir.path(), &cfg).expect("save_config should succeed");
+        let loaded = load_config(dir.path());
+
+        assert_eq!(
+            loaded.bubble_recording_mode, "toggle",
+            "bubble_recording_mode should round-trip as \"toggle\""
+        );
+    }
+
+    /// When `bubble_recording_mode` is absent from JSON (old config file),
+    /// `load_config` returns `"hold"` as the default -- no crash, no data loss.
+    #[test]
+    fn test_bubble_recording_mode_defaults_when_absent_from_json() {
+        let dir = temp_dir();
+
+        // Write a minimal config that does not contain the new field.
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes())
+            .expect("write partial config");
+
+        let loaded = load_config(dir.path());
+
+        assert_eq!(
+            loaded.bubble_recording_mode, "hold",
+            "bubble_recording_mode should default to \"hold\" when absent from config"
         );
     }
 
