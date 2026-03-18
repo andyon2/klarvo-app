@@ -195,6 +195,95 @@ fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt-fragment stripping
+// ---------------------------------------------------------------------------
+
+/// Default STT conditioning prompts used by the pipeline.
+///
+/// Whisper can leak fragments of these prompts into the transcription output,
+/// especially for longer recordings. We remove any recognised fragments before
+/// the text reaches the LLM cleanup step or the hallucination guard.
+const DEFAULT_STT_HINTS: &[&str] = &[
+    "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.",
+    "Voice dictation in English. Proper punctuation, capitalization, and spelling.",
+    "Multilingual voice dictation. German and English with proper punctuation.",
+];
+
+/// Removes known STT conditioning-prompt fragments from `text`.
+///
+/// Whisper occasionally leaks parts of its `initial_prompt` into the
+/// transcription (e.g. "German and English with proper punctuation." appearing
+/// mid-sentence). This function strips those fragments so they do not pollute
+/// the LLM cleanup input or trigger false positives in the hallucination guard.
+///
+/// Algorithm:
+/// 1. Collect candidate fragments from `stt_hint` **and** every entry in
+///    `DEFAULT_STT_HINTS`.
+/// 2. Split each hint string on `". "` and `"."` to get individual sentences.
+/// 3. Remove every fragment that is at least 10 characters long, using a
+///    case-insensitive search (original casing is preserved in the output).
+/// 4. Collapse multiple consecutive spaces and trim leading/trailing whitespace.
+pub fn strip_prompt_fragments(text: &str, stt_hint: &str) -> String {
+    // Build the de-duplicated list of all hint strings to check.
+    let mut all_hints: Vec<&str> = DEFAULT_STT_HINTS.to_vec();
+    if !stt_hint.is_empty() && !DEFAULT_STT_HINTS.contains(&stt_hint) {
+        all_hints.push(stt_hint);
+    }
+
+    // Collect unique fragments (≥10 chars) from every hint string.
+    let mut fragments: Vec<String> = Vec::new();
+    for hint in &all_hints {
+        let hint_lower = hint.to_lowercase();
+        // Split on ". " first, then on ".".
+        for part in hint_lower.split(". ").flat_map(|s| s.split('.')) {
+            let fragment = part.trim().to_string();
+            if fragment.len() >= 10 && !fragments.contains(&fragment) {
+                fragments.push(fragment);
+            }
+        }
+        // Also try the full hint string as a single fragment (case-insensitive).
+        let full = hint_lower.trim().to_string();
+        if full.len() >= 10 && !fragments.contains(&full) {
+            fragments.push(full);
+        }
+    }
+
+    // Apply all fragments to the *lowercased* version of the text to find
+    // positions, but rebuild from the *original* text so casing is preserved.
+    let mut result = text.to_string();
+    for fragment in &fragments {
+        // We need a case-insensitive replace. Rust's std doesn't have one, so
+        // we do it manually: find the fragment in the lowercased result and
+        // remove the corresponding byte range from the original.
+        loop {
+            let result_lower = result.to_lowercase();
+            match result_lower.find(fragment.as_str()) {
+                Some(start) => {
+                    let end = start + fragment.len();
+                    result.replace_range(start..end, "");
+                }
+                None => break,
+            }
+        }
+    }
+
+    // Clean up in two passes:
+    // 1. Remove punctuation tokens that are now orphaned (i.e. a token that
+    //    consists entirely of punctuation characters with no surrounding word).
+    //    This handles leftover ". ." artefacts when an entire prompt sentence
+    //    was removed but the trailing period was not part of the fragment string.
+    // 2. Collapse multiple spaces and trim.
+    let tokens: Vec<&str> = result
+        .split_whitespace()
+        .filter(|token| {
+            // Keep the token if it has at least one alphanumeric character.
+            token.chars().any(|c| c.is_alphanumeric())
+        })
+        .collect();
+    tokens.join(" ")
+}
+
+// ---------------------------------------------------------------------------
 // Silence detection helper
 // ---------------------------------------------------------------------------
 
@@ -736,6 +825,18 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
 
+    // --- Strip leaked STT prompt fragments ---
+    // Whisper can embed parts of the conditioning prompt into the transcription
+    // output (e.g. "German and English with proper punctuation." mid-sentence).
+    // Strip these *before* the hallucination guard so the guard sees clean text.
+    let raw_text = {
+        let stripped = strip_prompt_fragments(&raw_text, &stt_hint_text);
+        if stripped != raw_text {
+            log::debug!("[pipeline] stripped prompt fragments from transcription");
+        }
+        stripped
+    };
+
     // --- Whisper hallucination guard ---
     // Whisper sometimes echoes the conditioning prompt instead of transcribing
     // actual speech (common with ambient noise but no words). Detect this by
@@ -928,8 +1029,9 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Insert+Send ---
     // If enabled, send a Return key press after pasting so the message is
     // submitted immediately. Useful for chat apps (Slack, Teams, WhatsApp Web).
-    // The 50ms sleep gives the target app time to process the Paste before Enter
-    // arrives. This is opt-in and defaults to false.
+    // The 150ms sleep gives the target app time to process the Paste before Enter
+    // arrives. Terminals (ConPTY) need more time than simple editors.
+    // This is opt-in and defaults to false.
     let insert_and_send = state
         .config
         .lock()
@@ -937,7 +1039,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         .map(|c| c.insert_and_send)
         .unwrap_or(false);
     if insert_and_send {
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(150));
         if let Err(e) = paste_handler.send_enter() {
             log::warn!("[pipeline] send_enter failed: {e}");
         }
@@ -1703,6 +1805,127 @@ mod tests {
         assert!(
             !super::is_prompt_echo(real, hint),
             "long real text with incidental prompt-word overlap must not be flagged"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // strip_prompt_fragments tests
+    // -----------------------------------------------------------------------
+
+    /// A known default-prompt fragment appearing mid-sentence is removed.
+    #[test]
+    fn test_strip_fragment_mid_sentence() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        // Simulates Whisper leaking "German and English with proper punctuation."
+        // into the middle of a real transcription.
+        let raw = "Ich wollte sagen German and English with proper punctuation. dass das Projekt gut laeuft.";
+        let result = super::strip_prompt_fragments(raw, hint);
+        assert!(
+            !result.contains("German and English with proper punctuation"),
+            "leaked prompt fragment should be removed; got: {result:?}"
+        );
+        assert!(
+            result.contains("Ich wollte sagen") && result.contains("dass das Projekt gut laeuft"),
+            "real speech content must be preserved; got: {result:?}"
+        );
+    }
+
+    /// Real text without any prompt fragment is returned unchanged (modulo
+    /// whitespace normalisation).
+    #[test]
+    fn test_strip_real_text_unchanged() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        let real = "Hey, kannst du morgen Bescheid geben?";
+        let result = super::strip_prompt_fragments(real, hint);
+        assert_eq!(
+            result, real,
+            "text without prompt fragments should come out identical"
+        );
+    }
+
+    /// Matching is case-insensitive: lower-cased fragment is still stripped.
+    #[test]
+    fn test_strip_case_insensitive() {
+        let hint = "Voice dictation in English. Proper punctuation, capitalization, and spelling.";
+        // Fragment with different casing than the original hint.
+        let raw = "I want to say proper punctuation, capitalization, and spelling. something important.";
+        let result = super::strip_prompt_fragments(raw, hint);
+        assert!(
+            !result.to_lowercase().contains("proper punctuation, capitalization, and spelling"),
+            "case-insensitive fragment should be stripped; got: {result:?}"
+        );
+        assert!(
+            result.contains("I want to say") && result.contains("something important"),
+            "surrounding real text must be preserved; got: {result:?}"
+        );
+    }
+
+    /// Multiple prompt fragments from the same hint are all removed.
+    #[test]
+    fn test_strip_multiple_fragments_same_hint() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        // Both sentences of the hint appear in the raw text.
+        let raw = "Multilingual voice dictation. Das ist toll. German and English with proper punctuation.";
+        let result = super::strip_prompt_fragments(raw, hint);
+        assert!(
+            !result.contains("Multilingual voice dictation"),
+            "first fragment should be stripped; got: {result:?}"
+        );
+        assert!(
+            !result.contains("German and English with proper punctuation"),
+            "second fragment should be stripped; got: {result:?}"
+        );
+        assert!(
+            result.contains("Das ist toll"),
+            "real content between fragments must survive; got: {result:?}"
+        );
+    }
+
+    /// A fragment from a *different* default hint (not the active stt_hint) is
+    /// also stripped, because DEFAULT_STT_HINTS are always checked.
+    #[test]
+    fn test_strip_default_hint_even_when_not_active() {
+        // Active hint is German, but Whisper leaked the English default.
+        let active_hint = "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.";
+        let raw = "Hier ist der Bericht. Voice dictation in English. Das war es.";
+        let result = super::strip_prompt_fragments(raw, active_hint);
+        assert!(
+            !result.contains("Voice dictation in English"),
+            "English default-hint fragment should be stripped even when German hint is active; got: {result:?}"
+        );
+        assert!(
+            result.contains("Hier ist der Bericht") && result.contains("Das war es"),
+            "surrounding real text must be preserved; got: {result:?}"
+        );
+    }
+
+    /// When the entire transcription is composed of prompt text, the result is
+    /// empty (or near-empty after whitespace collapse).
+    #[test]
+    fn test_strip_entire_text_is_prompt() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        // The transcription IS the prompt (edge case: guard hasn't caught it yet).
+        let raw = "Multilingual voice dictation. German and English with proper punctuation.";
+        let result = super::strip_prompt_fragments(raw, hint);
+        assert!(
+            result.trim().is_empty(),
+            "transcription that is entirely prompt should collapse to empty; got: {result:?}"
+        );
+    }
+
+    /// A custom (user-configured) stt_hint is also stripped.
+    #[test]
+    fn test_strip_custom_hint() {
+        let custom_hint = "Medical transcription with proper terminology and spelling.";
+        let raw = "Patient presented with chest pain. Medical transcription with proper terminology and spelling. Vitals are stable.";
+        let result = super::strip_prompt_fragments(raw, custom_hint);
+        assert!(
+            !result.contains("Medical transcription with proper terminology and spelling"),
+            "custom hint fragment should be stripped; got: {result:?}"
+        );
+        assert!(
+            result.contains("Patient presented with chest pain") && result.contains("Vitals are stable"),
+            "real medical content must be preserved; got: {result:?}"
         );
     }
 }

@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.3. 311 Rust-Tests (alle gruen). Android: 4 Recording-Modi (Hold/Toggle/AutoStop/Auto) via Notification-Actions umschaltbar. Silence-Detection im AudioRecorder. Long-Press = PTT in allen Modi. Direkte Modus-Buttons in Notification (3 nicht-aktive Modi sichtbar).
+Version 0.4.3. 318 Rust-Tests (alle gruen). Insert+Send Delay auf 150ms erhoeht (Terminal-Kompatibilitaet). Prompt-Fragment-Stripping verhindert Whisper-Prompt-Leaks in Transkriptionen. Android: 4 Recording-Modi via Notification-Actions.
 
 ## Blocker
 
@@ -16,7 +16,6 @@ Keine.
 ## Bekannte Bugs
 
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
-- [ ] Whisper-Halluzination "proper punctuation" taucht gelegentlich in der Bar auf (wird gefiltert, kein Effekt aufs Transkript). Low-Prio.
 
 ## Backlog
 - [ ] [ui] Startgroesse des Windows-Fensters erhoehen — zu klein beim Oeffnen, Settings haben Scrollbalken rechts und unten
@@ -27,3 +26,4 @@ Keine.
   - [ ] Silence-Threshold in Android-App einstellbar machen (aktuell hardcoded 0.03 / 2s)
   - [ ] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
   - [ ] Auto-Modus: nur einfuegen (insert), nicht senden (kein Enter/Send nach Paste)
+- [ ] [feature] User-definierbare Transkript-Blocklist: Phrasen, die immer aus dem Transkript entfernt werden sollen (z.B. wiederkehrende Whisper-Artefakte). Phase: Polish.
