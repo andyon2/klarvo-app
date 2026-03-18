@@ -162,6 +162,13 @@ pub async fn save_settings(
     // Valid values: "hold", "toggle", "autostop", "auto".
     // None = leave unchanged (backward-compatible with older frontend versions).
     bubble_recording_mode: Option<String>,
+    // Per-gesture bubble controls. None = leave existing value unchanged.
+    bubble_tap_mode: Option<String>,
+    bubble_tap_auto_send: Option<bool>,
+    bubble_tap_silence_secs: Option<f32>,
+    bubble_long_press_mode: Option<String>,
+    bubble_long_press_auto_send: Option<bool>,
+    bubble_long_press_silence_secs: Option<f32>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -297,6 +304,15 @@ pub async fn save_settings(
         autostop_silence_secs: autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
         auto_mode_silence_secs: auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
         bubble_recording_mode: bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
+        bubble_tap_mode: bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
+        bubble_tap_auto_send: bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
+        bubble_tap_silence_secs: bubble_tap_silence_secs
+            .unwrap_or(existing.bubble_tap_silence_secs),
+        bubble_long_press_mode: bubble_long_press_mode.unwrap_or(existing.bubble_long_press_mode),
+        bubble_long_press_auto_send: bubble_long_press_auto_send
+            .unwrap_or(existing.bubble_long_press_auto_send),
+        bubble_long_press_silence_secs: bubble_long_press_silence_secs
+            .unwrap_or(existing.bubble_long_press_silence_secs),
     };
 
     // Resolve providers from the new config before persisting.
@@ -389,6 +405,12 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         hotkey_slot2: slot1_hotkey,
         hotkey_mode_slot2: slot1_mode,
         bubble_recording_mode: cfg.bubble_recording_mode,
+        bubble_tap_mode: cfg.bubble_tap_mode,
+        bubble_tap_auto_send: cfg.bubble_tap_auto_send,
+        bubble_tap_silence_secs: cfg.bubble_tap_silence_secs,
+        bubble_long_press_mode: cfg.bubble_long_press_mode,
+        bubble_long_press_auto_send: cfg.bubble_long_press_auto_send,
+        bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
     })
 }
 
@@ -730,6 +752,82 @@ mod tests {
         assert_eq!(
             loaded.bubble_recording_mode, "toggle",
             "bubble_recording_mode should round-trip as \"toggle\""
+        );
+    }
+
+    /// Old config.json without the six new bubble gesture fields loads correctly
+    /// and returns the documented defaults for each field.
+    #[test]
+    fn test_bubble_gesture_fields_default_when_absent_from_json() {
+        let dir = temp_dir();
+
+        // Minimal config -- none of the new bubble gesture fields are present.
+        let partial = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), partial.as_bytes())
+            .expect("write partial config");
+
+        let loaded = load_config(dir.path());
+
+        assert_eq!(
+            loaded.bubble_tap_mode, "toggle",
+            "bubble_tap_mode must default to \"toggle\""
+        );
+        assert!(
+            !loaded.bubble_tap_auto_send,
+            "bubble_tap_auto_send must default to false"
+        );
+        assert!(
+            (loaded.bubble_tap_silence_secs - 2.0).abs() < f32::EPSILON,
+            "bubble_tap_silence_secs must default to 2.0, got {}",
+            loaded.bubble_tap_silence_secs
+        );
+        assert_eq!(
+            loaded.bubble_long_press_mode, "hold",
+            "bubble_long_press_mode must default to \"hold\""
+        );
+        assert!(
+            !loaded.bubble_long_press_auto_send,
+            "bubble_long_press_auto_send must default to false"
+        );
+        assert!(
+            (loaded.bubble_long_press_silence_secs - 2.0).abs() < f32::EPSILON,
+            "bubble_long_press_silence_secs must default to 2.0, got {}",
+            loaded.bubble_long_press_silence_secs
+        );
+    }
+
+    /// Round-trip: serialize AppConfig with non-default bubble gesture values,
+    /// then reload from disk -- all six fields must survive intact.
+    #[test]
+    fn test_bubble_gesture_fields_roundtrip() {
+        let dir = temp_dir();
+
+        let cfg = AppConfig {
+            bubble_tap_mode: "autostop".to_string(),
+            bubble_tap_auto_send: true,
+            bubble_tap_silence_secs: 1.5,
+            bubble_long_press_mode: "auto".to_string(),
+            bubble_long_press_auto_send: true,
+            bubble_long_press_silence_secs: 3.5,
+            ..AppConfig::default()
+        };
+
+        save_config(dir.path(), &cfg).expect("save_config should succeed");
+        let loaded = load_config(dir.path());
+
+        assert_eq!(loaded.bubble_tap_mode, "autostop");
+        assert!(loaded.bubble_tap_auto_send);
+        assert!(
+            (loaded.bubble_tap_silence_secs - 1.5).abs() < f32::EPSILON,
+            "bubble_tap_silence_secs should be 1.5, got {}",
+            loaded.bubble_tap_silence_secs
+        );
+        assert_eq!(loaded.bubble_long_press_mode, "auto");
+        assert!(loaded.bubble_long_press_auto_send);
+        assert!(
+            (loaded.bubble_long_press_silence_secs - 3.5).abs() < f32::EPSILON,
+            "bubble_long_press_silence_secs should be 3.5, got {}",
+            loaded.bubble_long_press_silence_secs
         );
     }
 

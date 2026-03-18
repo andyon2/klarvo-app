@@ -2,6 +2,7 @@ package com.dikta.voice
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -96,6 +97,46 @@ class DiktaAccessibilityService : AccessibilityService() {
         val focusedNode = findFocusedEditable(rootNode)
         focusedNode?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         focusedNode?.recycle()
+        rootNode.recycle()
+    }
+
+    /**
+     * Sends an Enter / Send action to the currently focused editable node.
+     * Called by DiktaOverlayService when auto-send is enabled for the active gesture.
+     *
+     * Implementation strategy:
+     *   Primary: ACTION_IME_ENTER -- maps to the IME's action button (Send, Go, Search, etc.).
+     *            Works in most chat apps (WhatsApp, Telegram, Signal) when the field
+     *            has imeOptions set to actionSend.
+     *   Fallback: ACTION_NEXT_AT_MOVEMENT_GRANULARITY is NOT used here -- not useful.
+     *            There is no universal "press Enter key" via AccessibilityService.
+     *
+     * Limitation: Apps that implement a custom send button (not tied to IME action)
+     * may not respond to ACTION_IME_ENTER. In those cases the user must tap Send manually.
+     * This is documented behavior -- no workaround without knowing the specific app layout.
+     */
+    fun performEnter() {
+        val rootNode = rootInActiveWindow ?: run {
+            Log.w(TAG, "performEnter: rootInActiveWindow is null")
+            return
+        }
+        val focusedNode = findFocusedEditable(rootNode)
+        if (focusedNode != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+ — use the proper IME Enter action
+                val performed = focusedNode.performAction(
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+                )
+                if (!performed) {
+                    Log.d(TAG, "performEnter: ACTION_IME_ENTER returned false (app may not support it)")
+                }
+            } else {
+                Log.d(TAG, "performEnter: ACTION_IME_ENTER requires API 30+, skipping")
+            }
+            focusedNode.recycle()
+        } else {
+            Log.d(TAG, "performEnter: no focused editable node found")
+        }
         rootNode.recycle()
     }
 

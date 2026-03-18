@@ -286,9 +286,9 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
                     <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <span className={LABEL_CLS}>System Prompt: Clean</span>
-                    <MobileTextarea label="System Prompt: Clean" hint="Overrides the built-in system prompt for Clean mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-                    <span className={hintCls}>Overrides the built-in system prompt for Clean mode.</span>
+                    <span className={LABEL_CLS}>System Prompt: Verbatim</span>
+                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <span className={hintCls}>Overrides the built-in system prompt for Verbatim mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Chat</span>

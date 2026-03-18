@@ -582,6 +582,9 @@ export interface SettingsPanelProps {
     autoModeSilenceSecs?: number | null,
     hotkeySlot2?: string | null, hotkeyModeSlot2?: HotkeyMode | null,
     insertAndSendSlot2?: boolean | null,
+    bubbleTapMode?: string | null, bubbleTapAutoSend?: boolean | null,
+    bubbleTapSilenceSecs?: number | null, bubbleLongPressMode?: string | null,
+    bubbleLongPressAutoSend?: boolean | null, bubbleLongPressSilenceSecs?: number | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -634,6 +637,13 @@ export function SettingsPanel({
     if (mode === "auto") return loadedSettings?.autoModeSilenceSecs ?? 2.0;
     return loadedSettings?.autostopSilenceSecs ?? 2.0;
   });
+  const [bubbleTab, setBubbleTab] = useState<0 | 1>(0);
+  const [localBubbleTapMode, setLocalBubbleTapMode] = useState<HotkeyMode>((loadedSettings?.bubbleTapMode ?? "toggle") as HotkeyMode);
+  const [localBubbleTapAutoSend, setLocalBubbleTapAutoSend] = useState(loadedSettings?.bubbleTapAutoSend ?? false);
+  const [localBubbleTapSilenceSecs, setLocalBubbleTapSilenceSecs] = useState(loadedSettings?.bubbleTapSilenceSecs ?? 2.0);
+  const [localBubbleLongPressMode, setLocalBubbleLongPressMode] = useState<HotkeyMode>((loadedSettings?.bubbleLongPressMode ?? "hold") as HotkeyMode);
+  const [localBubbleLongPressAutoSend, setLocalBubbleLongPressAutoSend] = useState(loadedSettings?.bubbleLongPressAutoSend ?? false);
+  const [localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs] = useState(loadedSettings?.bubbleLongPressSilenceSecs ?? 2.0);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -647,6 +657,7 @@ export function SettingsPanel({
   // Accordion: only one section open at a time. First section open by default.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     voiceRecording: true,
+    bubble: false,
   });
   // Active tab inside the combined Hotkey section: 0 = Hotkey 1, 1 = Hotkey 2
   const [hotkeyTab, setHotkeyTab] = useState<0 | 1>(0);
@@ -698,6 +709,12 @@ export function SettingsPanel({
       }
       setLocalHotkeySlot2(loadedSettings.hotkeySlot2 ?? "");
       setLocalHotkeyModeSlot2(loadedSettings.hotkeyModeSlot2 ?? "hold");
+      setLocalBubbleTapMode((loadedSettings.bubbleTapMode ?? "toggle") as HotkeyMode);
+      setLocalBubbleTapAutoSend(loadedSettings.bubbleTapAutoSend ?? false);
+      setLocalBubbleTapSilenceSecs(loadedSettings.bubbleTapSilenceSecs ?? 2.0);
+      setLocalBubbleLongPressMode((loadedSettings.bubbleLongPressMode ?? "hold") as HotkeyMode);
+      setLocalBubbleLongPressAutoSend(loadedSettings.bubbleLongPressAutoSend ?? false);
+      setLocalBubbleLongPressSilenceSecs(loadedSettings.bubbleLongPressSilenceSecs ?? 2.0);
     }
   }, [loadedSettings]);
 
@@ -735,7 +752,15 @@ export function SettingsPanel({
       deepseekKey.trim() !== "" ||
       openaiKey.trim() !== "" ||
       anthropicKey.trim() !== "" ||
-      tursoToken.trim() !== "";
+      tursoToken.trim() !== "" ||
+      (!isDesktop && (
+        localBubbleTapMode !== (loadedSettings.bubbleTapMode ?? "toggle") ||
+        localBubbleTapAutoSend !== (loadedSettings.bubbleTapAutoSend ?? false) ||
+        localBubbleTapSilenceSecs !== (loadedSettings.bubbleTapSilenceSecs ?? 2.0) ||
+        localBubbleLongPressMode !== (loadedSettings.bubbleLongPressMode ?? "hold") ||
+        localBubbleLongPressAutoSend !== (loadedSettings.bubbleLongPressAutoSend ?? false) ||
+        localBubbleLongPressSilenceSecs !== (loadedSettings.bubbleLongPressSilenceSecs ?? 2.0)
+      ));
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -743,6 +768,8 @@ export function SettingsPanel({
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
     localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
+    localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
   ]);
 
@@ -802,6 +829,9 @@ export function SettingsPanel({
         localInsertAndSendSlot1, autostopSecs, autoModeSecs,
         localHotkeySlot2, localHotkeyModeSlot2,
         localInsertAndSendSlot2,
+        localBubbleTapMode, localBubbleTapAutoSend,
+        localBubbleTapSilenceSecs, localBubbleLongPressMode,
+        localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
       );
       setGroqKey("");
       setDeepseekKey("");
@@ -822,7 +852,10 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
+    localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+    onSave,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -849,6 +882,9 @@ export function SettingsPanel({
         localInsertAndSendSlot1, autostopSecs, autoModeSecs,
         localHotkeySlot2, localHotkeyModeSlot2,
         localInsertAndSendSlot2,
+        localBubbleTapMode, localBubbleTapAutoSend,
+        localBubbleTapSilenceSecs, localBubbleLongPressMode,
+        localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
       );
     } catch (err) {
       console.error("License auto-save failed:", err);
@@ -860,7 +896,10 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
+    localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+    onSave,
   ]);
 
   const handleAddTerm = useCallback(async () => {
@@ -1310,6 +1349,159 @@ export function SettingsPanel({
                         />
                       </button>
                     </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- Bubble Controls -- mobile only --- */}
+        {!isDesktop && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("bubble")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Bubble Controls</span>
+            </button>
+            {openSections.bubble && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                {/* Tab bar: Tap / Long Press */}
+                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 self-start">
+                  <button
+                    onClick={() => setBubbleTab(0)}
+                    className={[
+                      "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                      bubbleTab === 0 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Tap
+                  </button>
+                  <button
+                    onClick={() => setBubbleTab(1)}
+                    className={[
+                      "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                      bubbleTab === 1 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                    ].join(" ")}
+                  >
+                    Long Press
+                  </button>
+                </div>
+
+                {/* Tab 0: Tap */}
+                {bubbleTab === 0 && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <span className={LABEL_CLS}>Mode</span>
+                      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                        {([
+                          { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
+                          { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
+                          { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
+                          { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                        ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
+                          <button
+                            key={value}
+                            onClick={() => setLocalBubbleTapMode(value)}
+                            title={tooltip}
+                            className={[
+                              "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                              localBubbleTapMode === value
+                                ? "bg-emerald-500/15 text-emerald-400"
+                                : "text-zinc-500 hover:text-zinc-300",
+                            ].join(" ")}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      {localBubbleTapMode === "hold" && "Hold to record, release to process"}
+                      {localBubbleTapMode === "toggle" && "Press once to start, press again to stop"}
+                      {localBubbleTapMode === "autostop" && "Press to start, stops automatically on silence"}
+                      {localBubbleTapMode === "auto" && "Continuous — restarts after each silence gap"}
+                    </p>
+
+                    {(localBubbleTapMode === "autostop" || localBubbleTapMode === "auto") && (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className={LABEL_CLS}>Silence Duration</span>
+                          <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={5.0}
+                          step={0.5}
+                          value={localBubbleTapSilenceSecs}
+                          onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                      </div>
+                    )}
+
+                    {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
+                  </>
+                )}
+
+                {/* Tab 1: Long Press */}
+                {bubbleTab === 1 && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <span className={LABEL_CLS}>Mode</span>
+                      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                        {([
+                          { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
+                          { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
+                          { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
+                          { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                        ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
+                          <button
+                            key={value}
+                            onClick={() => setLocalBubbleLongPressMode(value)}
+                            title={tooltip}
+                            className={[
+                              "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                              localBubbleLongPressMode === value
+                                ? "bg-emerald-500/15 text-emerald-400"
+                                : "text-zinc-500 hover:text-zinc-300",
+                            ].join(" ")}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      {localBubbleLongPressMode === "hold" && "Hold to record, release to process"}
+                      {localBubbleLongPressMode === "toggle" && "Press once to start, press again to stop"}
+                      {localBubbleLongPressMode === "autostop" && "Press to start, stops automatically on silence"}
+                      {localBubbleLongPressMode === "auto" && "Continuous — restarts after each silence gap"}
+                    </p>
+
+                    {(localBubbleLongPressMode === "autostop" || localBubbleLongPressMode === "auto") && (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className={LABEL_CLS}>Silence Duration</span>
+                          <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={5.0}
+                          step={0.5}
+                          value={localBubbleLongPressSilenceSecs}
+                          onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                      </div>
+                    )}
+
+                    {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
                   </>
                 )}
               </div>

@@ -63,6 +63,14 @@ export interface AppSettings {
   // Second hotkey slot (optional — empty string means disabled).
   hotkeySlot2: string;
   hotkeyModeSlot2: HotkeyMode;
+  // Bubble touch controls (Android only).
+  // Tap and long-press each have their own mode, auto-send, and silence config.
+  bubbleTapMode: string;
+  bubbleTapAutoSend: boolean;
+  bubbleTapSilenceSecs: number;
+  bubbleLongPressMode: string;
+  bubbleLongPressAutoSend: boolean;
+  bubbleLongPressSilenceSecs: number;
 }
 
 // A per-application recording profile.
@@ -188,12 +196,12 @@ export const STYLE_OPTIONS: StyleMeta[] = [
   {
     value: "polished",
     label: "Polished",
-    description: "Clean grammar, no filler words",
+    description: "Fix grammar, smooth flow",
   },
   {
     value: "verbatim",
-    label: "Clean",
-    description: "Remove fillers, keep your words",
+    label: "Verbatim",
+    description: "Your words, just clean",
   },
   {
     value: "chat",

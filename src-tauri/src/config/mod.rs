@@ -670,6 +670,45 @@ pub struct AppConfig {
     /// This field is Android-only; desktop code should ignore it.
     #[serde(default = "default_bubble_recording_mode")]
     pub bubble_recording_mode: String,
+
+    // --- Android bubble per-gesture controls ---
+    //
+    // The six fields below replace the single `bubble_recording_mode` field
+    // with per-gesture configuration. `bubble_recording_mode` is kept for
+    // backwards compatibility with existing config files and Kotlin code that
+    // has not yet been updated to read the new fields.
+
+    /// Recording mode triggered by a single tap on the Android bubble.
+    /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
+    /// Default: `"toggle"`.
+    #[serde(default = "default_bubble_tap_mode")]
+    pub bubble_tap_mode: String,
+
+    /// When `true`, the pipeline automatically sends (presses Enter) after
+    /// pasting for the bubble tap gesture. Default: `false`.
+    #[serde(default)]
+    pub bubble_tap_auto_send: bool,
+
+    /// Silence duration (seconds) before AutoStop / Auto mode stops recording
+    /// when triggered by a bubble tap. Default: 2.0 seconds.
+    #[serde(default = "default_bubble_silence_secs")]
+    pub bubble_tap_silence_secs: f32,
+
+    /// Recording mode triggered by a long press on the Android bubble.
+    /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
+    /// Default: `"hold"`.
+    #[serde(default = "default_bubble_long_press_mode")]
+    pub bubble_long_press_mode: String,
+
+    /// When `true`, the pipeline automatically sends (presses Enter) after
+    /// pasting for the bubble long-press gesture. Default: `false`.
+    #[serde(default)]
+    pub bubble_long_press_auto_send: bool,
+
+    /// Silence duration (seconds) before AutoStop / Auto mode stops recording
+    /// when triggered by a bubble long press. Default: 2.0 seconds.
+    #[serde(default = "default_bubble_silence_secs")]
+    pub bubble_long_press_silence_secs: f32,
 }
 
 fn default_stt_provider() -> String {
@@ -744,6 +783,20 @@ fn default_bubble_recording_mode() -> String {
     "hold".to_string()
 }
 
+fn default_bubble_tap_mode() -> String {
+    "toggle".to_string()
+}
+
+fn default_bubble_long_press_mode() -> String {
+    "hold".to_string()
+}
+
+/// Shared default silence duration (seconds) for bubble gesture auto-stop.
+/// Used by both `bubble_tap_silence_secs` and `bubble_long_press_silence_secs`.
+fn default_bubble_silence_secs() -> f32 {
+    2.0
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -787,6 +840,12 @@ impl Default for AppConfig {
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
+            bubble_tap_mode: default_bubble_tap_mode(),
+            bubble_tap_auto_send: false,
+            bubble_tap_silence_secs: default_bubble_silence_secs(),
+            bubble_long_press_mode: default_bubble_long_press_mode(),
+            bubble_long_press_auto_send: false,
+            bubble_long_press_silence_secs: default_bubble_silence_secs(),
         }
     }
 }
@@ -1204,6 +1263,12 @@ mod tests {
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
+            bubble_tap_mode: "autostop".to_string(),
+            bubble_tap_auto_send: true,
+            bubble_tap_silence_secs: 3.0,
+            bubble_long_press_mode: "hold".to_string(),
+            bubble_long_press_auto_send: false,
+            bubble_long_press_silence_secs: 1.5,
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

@@ -73,6 +73,12 @@ const MOCK_SETTINGS: AppSettings = {
   autoModeSilenceSecs: 2.0,
   hotkeySlot2: "",
   hotkeyModeSlot2: "hold",
+  bubbleTapMode: "toggle",
+  bubbleTapAutoSend: false,
+  bubbleTapSilenceSecs: 2.0,
+  bubbleLongPressMode: "hold",
+  bubbleLongPressAutoSend: false,
+  bubbleLongPressSilenceSecs: 2.0,
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -267,6 +273,12 @@ export async function saveSettings(
   hotkey_slot2?: string | null,
   hotkey_mode_slot2?: HotkeyMode | null,
   insertAndSendSlot2?: boolean | null,
+  bubbleTapMode?: string | null,
+  bubbleTapAutoSend?: boolean | null,
+  bubbleTapSilenceSecs?: number | null,
+  bubbleLongPressMode?: string | null,
+  bubbleLongPressAutoSend?: boolean | null,
+  bubbleLongPressSilenceSecs?: number | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -301,6 +313,12 @@ export async function saveSettings(
     hotkeySlot2: hotkey_slot2 ?? null,
     hotkeyModeSlot2: hotkey_mode_slot2 ?? null,
     insertAndSendSlot2: insertAndSendSlot2 ?? null,
+    bubbleTapMode: bubbleTapMode ?? null,
+    bubbleTapAutoSend: bubbleTapAutoSend ?? null,
+    bubbleTapSilenceSecs: bubbleTapSilenceSecs ?? null,
+    bubbleLongPressMode: bubbleLongPressMode ?? null,
+    bubbleLongPressAutoSend: bubbleLongPressAutoSend ?? null,
+    bubbleLongPressSilenceSecs: bubbleLongPressSilenceSecs ?? null,
   });
 }
 

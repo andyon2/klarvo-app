@@ -29,7 +29,15 @@ object DiktaApi {
         val deviceId: String,
         val bubbleSize: Float = 1.0f,
         val bubbleOpacity: Float = 0.85f,
-        val bubbleRecordingMode: String = "hold"
+        // Kept for backwards compatibility -- no longer used in overlay logic.
+        val bubbleRecordingMode: String = "hold",
+        // Per-gesture recording controls (tap and long-press independently configured).
+        val bubbleTapMode: String = "toggle",
+        val bubbleTapAutoSend: Boolean = false,
+        val bubbleTapSilenceSecs: Float = 2.0f,
+        val bubbleLongPressMode: String = "hold",
+        val bubbleLongPressAutoSend: Boolean = false,
+        val bubbleLongPressSilenceSecs: Float = 2.0f
     )
 
     /**
@@ -66,11 +74,24 @@ object DiktaApi {
             val deviceId = json.optString("deviceId", "")
             val bubbleSize = json.optDouble("bubbleSize", 1.0).toFloat()
             val bubbleOpacity = json.optDouble("bubbleOpacity", 0.85).toFloat()
-            // Rust serializes with snake_case; valid values: "hold", "toggle", "autostop", "auto"
-            val bubbleRecordingMode = json.optString("bubble_recording_mode", "hold")
+            // Rust serializes with camelCase (rename_all on AppConfig struct).
+            val bubbleRecordingMode = json.optString("bubbleRecordingMode", "hold")
+            // Per-gesture controls (tap and long-press independently configured).
+            val bubbleTapMode = json.optString("bubbleTapMode", "toggle")
+            val bubbleTapAutoSend = json.optBoolean("bubbleTapAutoSend", false)
+            val bubbleTapSilenceSecs = json.optDouble("bubbleTapSilenceSecs", 2.0).toFloat()
+            val bubbleLongPressMode = json.optString("bubbleLongPressMode", "hold")
+            val bubbleLongPressAutoSend = json.optBoolean("bubbleLongPressAutoSend", false)
+            val bubbleLongPressSilenceSecs = json.optDouble("bubbleLongPressSilenceSecs", 2.0).toFloat()
+            Log.d("DiktaApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             if (groqKey.isBlank() && deepseekKey.isBlank()) null
-            else Config(groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId, bubbleSize, bubbleOpacity, bubbleRecordingMode)
+            else Config(
+                groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
+                bubbleSize, bubbleOpacity, bubbleRecordingMode,
+                bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
+                bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs
+            )
         } catch (e: Exception) {
             null
         }
@@ -330,35 +351,50 @@ object DiktaApi {
      */
     fun cleanup(text: String, apiKey: String, style: String): String {
         val systemPrompt = when (style) {
-            "verbatim" -> """You are a text cleanup assistant. The user will give you raw speech-to-text output. Light cleanup -- keep the original wording:
+            "verbatim" -> """You are a minimal text cleanup assistant. The user gives you raw speech-to-text output. Apply ONLY these changes:
+- Remove filler words (um, uh, like, you know / äh, ähm, also, halt, sozusagen, quasi)
+- Remove stutters and repeated words (e.g. "the the" → "the")
+- Resolve mid-speech corrections: when the speaker backtracks (e.g. "tomorrow, no wait, Friday" → "Friday"), keep ONLY the final intended version
+- Add punctuation and fix capitalization
+- Fix obvious transcription errors (misheard words)
+- Language: respond in the same language as the input. If the speaker mixes languages (e.g. German with English terms, or English with German words), preserve EXACTLY which words were said in which language. NEVER translate between languages.
+
+STRICT RULES — you MUST follow these:
+- NEVER change, rephrase, reorder, or add words beyond the rules above
+- NEVER improve grammar or sentence structure
+- NEVER remove hedge words like "ich denke", "vielleicht", "basically", "I think"
+- NEVER remove greetings or interjections (hey, hi, ok, na ja, ach)
+- NEVER add line breaks, paragraphs, lists, or any formatting
+- NEVER add or remove meaning
+- NEVER translate words from one language to another
+- Output ONLY the cleaned text, no explanations"""
+            "chat" -> """IMPORTANT: Your output language MUST match the input language. German input → German output. English input → English output. NEVER translate.
+
+You are a text cleanup assistant. The user gives you raw speech-to-text output. Make it chat-ready:
+- Remove all filler words and stutters
+- Resolve mid-speech corrections: keep only the final version
+- Make it concise — this is for messaging apps
+- Keep it casual and natural
+- Emojis are allowed where they fit naturally
+- Language: respond in the SAME language as the input. If the speaker mixes languages, keep the mix — NEVER translate.
+- Output ONLY the cleaned text, no explanations"""
+            else -> """You are a text cleanup assistant. The user gives you raw speech-to-text output. Clean it up so it reads well:
 - Remove filler words (um, uh, like, you know / äh, ähm, also, halt, sozusagen)
-- Handle mid-speech corrections: when the speaker backtracks or corrects themselves, output ONLY the final intended version
-- Add punctuation and capitalization
-- Fix obvious transcription errors
-- Add line breaks between sentences for readability
-- Do NOT rephrase, summarize, or change the speaker's words
-- Keep the speaker's style, tone, and sentence structure
-- Language: respond in the same language as the input
-- Return ONLY the cleaned text, no explanations or commentary"""
-            "chat" -> """You are a text cleanup assistant. The user will give you raw speech-to-text output. Make it chat-ready:
-- Remove all filler words
-- Handle mid-speech corrections: when the speaker backtracks, keep only the final intended version
-- Make it concise and casual
-- Keep it short -- this is for messaging apps
-- Use line breaks where natural in longer messages
-- Emojis are okay if they fit naturally
-- Language: respond in the same language as the input
-- Return ONLY the cleaned text, no explanations or commentary"""
-            else -> """You are a text cleanup assistant. The user will give you raw speech-to-text output. Clean it up:
-- Remove filler words (um, uh, like, you know / äh, ähm, also)
-- Handle mid-speech corrections: when the speaker backtracks or corrects themselves, output ONLY the final intended version
-- Fix grammar and punctuation
-- Format for readability: use line breaks between distinct thoughts, paragraph breaks for topic changes, and blank lines to separate sections
-- Use proper capitalization
-- For lists or enumerations, use bullet points or numbered lists
-- Preserve the speaker's meaning exactly -- do not add or change content
-- Language: respond in the same language as the input
-- Return ONLY the cleaned text, no explanations or commentary"""
+- Remove stutters and repeated words
+- Resolve mid-speech corrections: keep ONLY the final intended version
+- Fix grammar, punctuation, and capitalization
+- Smooth sentence flow: fix run-on sentences, improve connectors, remove verbal padding ("du weißt schon", "you know what I mean", "und so weiter")
+- You MAY lightly rephrase for clarity, but keep the speaker's voice
+- Language: IMPORTANT — your output language MUST match the input language. German input → German output. English input → English output. If the speaker mixes languages, preserve EXACTLY which words were said in which language. NEVER translate between languages.
+
+STRICT RULES:
+- NEVER substitute words with different words that change the meaning. If the speaker said a specific word, keep that exact word
+- NEVER add content, opinions, or information the speaker did not say
+- NEVER restructure into lists, bullet points, or multiple paragraphs unless the speaker clearly enumerated items
+- NEVER make it sound formal or academic — keep the speaker's natural register
+- NEVER translate words from one language to another — keep code-switching as spoken
+- Keep hedge words ("ich denke", "I think") — they reflect intent
+- Output ONLY the cleaned text, no explanations"""
         }
 
         val url = URL("https://api.deepseek.com/chat/completions")

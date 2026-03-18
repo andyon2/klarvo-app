@@ -170,6 +170,18 @@ pub struct SettingsView {
     /// Recording mode for the Android floating bubble.
     /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
     pub bubble_recording_mode: String,
+    /// Recording mode for bubble single-tap gesture.
+    pub bubble_tap_mode: String,
+    /// Auto-send after paste for bubble tap gesture.
+    pub bubble_tap_auto_send: bool,
+    /// Silence duration (seconds) for auto-stop on bubble tap.
+    pub bubble_tap_silence_secs: f32,
+    /// Recording mode for bubble long-press gesture.
+    pub bubble_long_press_mode: String,
+    /// Auto-send after paste for bubble long-press gesture.
+    pub bubble_long_press_auto_send: bool,
+    /// Silence duration (seconds) for auto-stop on bubble long press.
+    pub bubble_long_press_silence_secs: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -958,6 +970,12 @@ mod tests {
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
             bubble_recording_mode: "hold".to_string(),
+            bubble_tap_mode: "toggle".to_string(),
+            bubble_tap_auto_send: false,
+            bubble_tap_silence_secs: 2.0,
+            bubble_long_press_mode: "hold".to_string(),
+            bubble_long_press_auto_send: false,
+            bubble_long_press_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1006,6 +1024,12 @@ mod tests {
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
             bubble_recording_mode: "hold".to_string(),
+            bubble_tap_mode: "toggle".to_string(),
+            bubble_tap_auto_send: false,
+            bubble_tap_silence_secs: 2.0,
+            bubble_long_press_mode: "hold".to_string(),
+            bubble_long_press_auto_send: false,
+            bubble_long_press_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1048,6 +1072,12 @@ mod tests {
             hotkey_slot2: String::new(),
             hotkey_mode_slot2: HotkeyMode::Hold,
             bubble_recording_mode: "hold".to_string(),
+            bubble_tap_mode: "toggle".to_string(),
+            bubble_tap_auto_send: false,
+            bubble_tap_silence_secs: 2.0,
+            bubble_long_press_mode: "hold".to_string(),
+            bubble_long_press_auto_send: false,
+            bubble_long_press_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

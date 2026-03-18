@@ -24,7 +24,12 @@ import kotlin.math.sqrt
  * If no audio was captured, an empty ByteArray is returned.
  */
 class DiktaAudioRecorder(
-    private val onAmplitude: (Float) -> Unit
+    private val onAmplitude: (Float) -> Unit,
+    /**
+     * Seconds of continuous silence required to trigger [onSilenceDetected].
+     * Defaults to 2.0s. Roughly 15 audio chunks per second at 16 kHz.
+     */
+    private val silenceSecs: Float = 2.0f
 ) {
 
     companion object {
@@ -34,10 +39,15 @@ class DiktaAudioRecorder(
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
-        // Silence detection: amplitude below this for REQUIRED_SILENT_CHUNKS triggers callback.
+        // Silence detection: amplitude below this for requiredSilentChunks triggers callback.
         private const val SILENCE_THRESHOLD = 0.03f
-        private const val REQUIRED_SILENT_CHUNKS = 30  // ~2s at ~15 chunks/sec
+        // Approximate audio chunks per second at 16 kHz with bufferSize ~8192 shorts.
+        private const val CHUNKS_PER_SECOND = 15
     }
+
+    /** Computed required-silent-chunks from the silenceSecs constructor parameter. */
+    private val requiredSilentChunks: Int
+        get() = (silenceSecs * CHUNKS_PER_SECOND).toInt().coerceAtLeast(1)
 
     /**
      * Optional callback fired once when sustained silence is detected.
@@ -125,7 +135,7 @@ class DiktaAudioRecorder(
                     if (onSilenceDetected != null && !silenceCallbackFired) {
                         if (smoothedAmp < SILENCE_THRESHOLD) {
                             silentChunks++
-                            if (silentChunks >= REQUIRED_SILENT_CHUNKS && totalChunks >= minChunksBeforeSilence) {
+                            if (silentChunks >= requiredSilentChunks && totalChunks >= minChunksBeforeSilence) {
                                 silenceCallbackFired = true
                                 onSilenceDetected?.invoke()
                             }

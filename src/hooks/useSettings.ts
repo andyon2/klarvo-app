@@ -81,6 +81,9 @@ export function useSettings() {
     newAutoModeSilenceSecs?: number | null,
     newHotkeySlot2?: string | null, newHotkeyModeSlot2?: HotkeyMode | null,
     newInsertAndSendSlot2?: boolean | null,
+    newBubbleTapMode?: string | null, newBubbleTapAutoSend?: boolean | null,
+    newBubbleTapSilenceSecs?: number | null, newBubbleLongPressMode?: string | null,
+    newBubbleLongPressAutoSend?: boolean | null, newBubbleLongPressSilenceSecs?: number | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -91,6 +94,9 @@ export function useSettings() {
       newInsertAndSendSlot1, newAutostopSilenceSecs, newAutoModeSilenceSecs,
       newHotkeySlot2 ?? null, newHotkeyModeSlot2 ?? null,
       newInsertAndSendSlot2 ?? null,
+      newBubbleTapMode ?? null, newBubbleTapAutoSend ?? null,
+      newBubbleTapSilenceSecs ?? null, newBubbleLongPressMode ?? null,
+      newBubbleLongPressAutoSend ?? null, newBubbleLongPressSilenceSecs ?? null,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);
