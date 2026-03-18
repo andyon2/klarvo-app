@@ -154,6 +154,10 @@ pub async fn save_settings(
     // encoding as the existing `hotkey_mode` parameter.
     // None = leave slot 1 mode unchanged.
     hotkey_mode_slot2: Option<String>,
+    // Whether to press Enter after pasting for slot 0. None = leave unchanged.
+    insert_and_send_slot1: Option<bool>,
+    // Whether to press Enter after pasting for slot 1. None = leave unchanged.
+    insert_and_send_slot2: Option<bool>,
     // Recording mode for the Android floating bubble.
     // Valid values: "hold", "toggle", "autostop", "auto".
     // None = leave unchanged (backward-compatible with older frontend versions).
@@ -242,12 +246,16 @@ pub async fn save_settings(
                 slots.push(crate::config::HotkeySlot {
                     hotkey: String::new(),
                     mode: crate::config::HotkeyMode::Hold,
+                    insert_and_send: false,
                 });
             }
 
             // Slot 0 -- always updated from the `hotkey` / `hotkey_mode` params.
             slots[0].hotkey = hotkey.clone();
             slots[0].mode = hotkey_mode;
+            if let Some(v) = insert_and_send_slot1 {
+                slots[0].insert_and_send = v;
+            }
 
             // Slot 1 -- updated only when the caller explicitly passes a value.
             if let Some(ref h2) = hotkey_slot2 {
@@ -255,6 +263,9 @@ pub async fn save_settings(
             }
             if let Some(ref m2_str) = hotkey_mode_slot2 {
                 slots[1].mode = m2_str.parse().unwrap_or(crate::config::HotkeyMode::Hold);
+            }
+            if let Some(v) = insert_and_send_slot2 {
+                slots[1].insert_and_send = v;
             }
 
             slots
@@ -371,7 +382,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_opacity: cfg.bubble_opacity,
         local_whisper_model: cfg.local_whisper_model,
         local_whisper_gpu: cfg.local_whisper_gpu,
-        insert_and_send: cfg.insert_and_send,
+        insert_and_send_slot1: cfg.hotkey_slots.get(0).map(|s| s.insert_and_send).unwrap_or(false),
+        insert_and_send_slot2: cfg.hotkey_slots.get(1).map(|s| s.insert_and_send).unwrap_or(false),
         autostop_silence_secs: cfg.autostop_silence_secs,
         auto_mode_silence_secs: cfg.auto_mode_silence_secs,
         hotkey_slot2: slot1_hotkey,
@@ -554,6 +566,7 @@ pub async fn set_hotkey(
             cfg.hotkey_slots.push(crate::config::HotkeySlot {
                 hotkey: String::new(),
                 mode: crate::config::HotkeyMode::Hold,
+                insert_and_send: false,
             });
         }
 
@@ -669,9 +682,14 @@ mod tests {
         save_config(dir.path(), &cfg).expect("save_config should succeed");
         let loaded = load_config(dir.path());
 
+        // Migration: global insert_and_send=true is moved to slots, global reset to false
         assert!(
-            loaded.insert_and_send,
-            "insert_and_send should round-trip as true"
+            !loaded.insert_and_send,
+            "global insert_and_send should be false after migration to slots"
+        );
+        assert!(
+            loaded.hotkey_slots.iter().all(|s| s.insert_and_send),
+            "all slots should have insert_and_send=true after migration"
         );
         assert!(
             (loaded.autostop_silence_secs - 1.5).abs() < f32::EPSILON,
@@ -731,6 +749,34 @@ mod tests {
         assert_eq!(
             loaded.bubble_recording_mode, "hold",
             "bubble_recording_mode should default to \"hold\" when absent from config"
+        );
+    }
+
+    /// `insert_and_send` is stored per-slot. Verify that per-slot values
+    /// survive a save → load round-trip independently.
+    #[test]
+    fn test_insert_and_send_per_slot_roundtrip() {
+        use crate::config::{HotkeyMode, HotkeySlot};
+
+        let dir = temp_dir();
+
+        let mut cfg = AppConfig::default();
+        // Slot 0: insert_and_send = true, slot 1: insert_and_send = false.
+        cfg.hotkey_slots = vec![
+            HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold, insert_and_send: true },
+            HotkeySlot { hotkey: "ctrl+shift+e".to_string(), mode: HotkeyMode::Toggle, insert_and_send: false },
+        ];
+
+        save_config(dir.path(), &cfg).expect("save_config should succeed");
+        let loaded = load_config(dir.path());
+
+        assert!(
+            loaded.hotkey_slots[0].insert_and_send,
+            "slot 0 insert_and_send should be true after round-trip"
+        );
+        assert!(
+            !loaded.hotkey_slots[1].insert_and_send,
+            "slot 1 insert_and_send should be false after round-trip"
         );
     }
 

@@ -67,7 +67,8 @@ const MOCK_SETTINGS: AppSettings = {
   bubbleOpacity: 90,
   localWhisperModel: "small",
   localWhisperGpu: false,
-  insertAndSend: false,
+  insertAndSendSlot1: false,
+  insertAndSendSlot2: false,
   autostopSilenceSecs: 2.0,
   autoModeSilenceSecs: 2.0,
   hotkeySlot2: "",
@@ -260,11 +261,12 @@ export async function saveSettings(
   localWhisperGpu?: boolean | null,
   sttProvider?: string | null,
   llmProvider?: string | null,
-  insertAndSend?: boolean | null,
+  insertAndSendSlot1?: boolean | null,
   autostopSilenceSecs?: number | null,
   autoModeSilenceSecs?: number | null,
   hotkey_slot2?: string | null,
   hotkey_mode_slot2?: HotkeyMode | null,
+  insertAndSendSlot2?: boolean | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -293,11 +295,12 @@ export async function saveSettings(
     localWhisperGpu: localWhisperGpu ?? null,
     sttProvider: sttProvider ?? null,
     llmProvider: llmProvider ?? null,
-    insertAndSend: insertAndSend ?? null,
+    insertAndSendSlot1: insertAndSendSlot1 ?? null,
     autostopSilenceSecs: autostopSilenceSecs ?? null,
     autoModeSilenceSecs: autoModeSilenceSecs ?? null,
     hotkeySlot2: hotkey_slot2 ?? null,
     hotkeyModeSlot2: hotkey_mode_slot2 ?? null,
+    insertAndSendSlot2: insertAndSendSlot2 ?? null,
   });
 }
 

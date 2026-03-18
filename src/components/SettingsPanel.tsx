@@ -578,9 +578,10 @@ export interface SettingsPanelProps {
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
     sttProvider?: string | null, llmProvider?: string | null,
-    insertAndSend?: boolean | null, autostopSilenceSecs?: number | null,
+    insertAndSendSlot1?: boolean | null, autostopSilenceSecs?: number | null,
     autoModeSilenceSecs?: number | null,
     hotkeySlot2?: string | null, hotkeyModeSlot2?: HotkeyMode | null,
+    insertAndSendSlot2?: boolean | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -626,7 +627,8 @@ export function SettingsPanel({
   const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
   const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "small");
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
-  const [localInsertAndSend, setLocalInsertAndSend] = useState(loadedSettings?.insertAndSend ?? false);
+  const [localInsertAndSendSlot1, setLocalInsertAndSendSlot1] = useState(loadedSettings?.insertAndSendSlot1 ?? false);
+  const [localInsertAndSendSlot2, setLocalInsertAndSendSlot2] = useState(loadedSettings?.insertAndSendSlot2 ?? false);
   const [localSilenceSecs, setLocalSilenceSecs] = useState(() => {
     const mode = loadedSettings?.hotkeyMode ?? "hold";
     if (mode === "auto") return loadedSettings?.autoModeSilenceSecs ?? 2.0;
@@ -686,7 +688,8 @@ export function SettingsPanel({
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
       setLocalWhisperModel(loadedSettings.localWhisperModel ?? "small");
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
-      setLocalInsertAndSend(loadedSettings.insertAndSend ?? false);
+      setLocalInsertAndSendSlot1(loadedSettings.insertAndSendSlot1 ?? false);
+      setLocalInsertAndSendSlot2(loadedSettings.insertAndSendSlot2 ?? false);
       const mode = loadedSettings.hotkeyMode ?? "hold";
       if (mode === "auto") {
         setLocalSilenceSecs(loadedSettings.autoModeSilenceSecs ?? 2.0);
@@ -722,7 +725,8 @@ export function SettingsPanel({
       localBubbleOpacity !== (loadedSettings.bubbleOpacity ?? 0.85) ||
       localWhisperModel !== (loadedSettings.localWhisperModel ?? "small") ||
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
-      localInsertAndSend !== (loadedSettings.insertAndSend ?? false) ||
+      localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
+      localInsertAndSendSlot2 !== (loadedSettings.insertAndSendSlot2 ?? false) ||
       (localHotkeyMode === "autostop" && localSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0)) ||
       (localHotkeyMode === "auto" && localSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0)) ||
       localHotkeySlot2 !== (loadedSettings.hotkeySlot2 ?? "") ||
@@ -738,7 +742,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, localSttProvider,
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSend, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
   ]);
 
@@ -795,8 +799,9 @@ export function SettingsPanel({
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
         localSttProvider, localLlmProvider,
-        localInsertAndSend, autostopSecs, autoModeSecs,
+        localInsertAndSendSlot1, autostopSecs, autoModeSecs,
         localHotkeySlot2, localHotkeyModeSlot2,
+        localInsertAndSendSlot2,
       );
       setGroqKey("");
       setDeepseekKey("");
@@ -817,7 +822,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSend, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
   ]);
 
   const handleSave = useCallback(async () => {
@@ -841,8 +846,9 @@ export function SettingsPanel({
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
         localSttProvider, localLlmProvider,
-        localInsertAndSend, autostopSecs, autoModeSecs,
+        localInsertAndSendSlot1, autostopSecs, autoModeSecs,
         localHotkeySlot2, localHotkeyModeSlot2,
+        localInsertAndSendSlot2,
       );
     } catch (err) {
       console.error("License auto-save failed:", err);
@@ -854,7 +860,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSend, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2, onSave,
   ]);
 
   const handleAddTerm = useCallback(async () => {
@@ -1194,6 +1200,30 @@ export function SettingsPanel({
                         <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                       </div>
                     )}
+
+                    {/* Insert & Send -- per-slot option for Hotkey 1 */}
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-800/40">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={LABEL_CLS}>Insert &amp; Send</span>
+                        <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
+                      </div>
+                      <button
+                        role="switch"
+                        aria-checked={localInsertAndSendSlot1}
+                        onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
+                        className={[
+                          "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                          localInsertAndSendSlot1 ? "bg-emerald-500/40" : "bg-zinc-700",
+                        ].join(" ")}
+                      >
+                        <span
+                          className={[
+                            "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                            localInsertAndSendSlot1 ? "translate-x-4" : "",
+                          ].join(" ")}
+                        />
+                      </button>
+                    </div>
                   </>
                 )}
 
@@ -1256,32 +1286,32 @@ export function SettingsPanel({
                         </p>
                       </div>
                     )}
+
+                    {/* Insert & Send -- per-slot option for Hotkey 2 */}
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-800/40">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={LABEL_CLS}>Insert &amp; Send</span>
+                        <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
+                      </div>
+                      <button
+                        role="switch"
+                        aria-checked={localInsertAndSendSlot2}
+                        onClick={() => setLocalInsertAndSendSlot2((v) => !v)}
+                        className={[
+                          "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                          localInsertAndSendSlot2 ? "bg-emerald-500/40" : "bg-zinc-700",
+                        ].join(" ")}
+                      >
+                        <span
+                          className={[
+                            "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                            localInsertAndSendSlot2 ? "translate-x-4" : "",
+                          ].join(" ")}
+                        />
+                      </button>
+                    </div>
                   </>
                 )}
-
-                {/* Insert & Send -- shared option below both tabs */}
-                <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-800/40">
-                  <div className="flex flex-col gap-0.5">
-                    <span className={LABEL_CLS}>Insert &amp; Send</span>
-                    <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
-                  </div>
-                  <button
-                    role="switch"
-                    aria-checked={localInsertAndSend}
-                    onClick={() => setLocalInsertAndSend((v) => !v)}
-                    className={[
-                      "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                      localInsertAndSend ? "bg-emerald-500/40" : "bg-zinc-700",
-                    ].join(" ")}
-                  >
-                    <span
-                      className={[
-                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                        localInsertAndSend ? "translate-x-4" : "",
-                      ].join(" ")}
-                    />
-                  </button>
-                </div>
               </div>
             )}
           </div>

@@ -154,8 +154,11 @@ pub struct SettingsView {
     pub local_whisper_model: String,
     /// Whether GPU acceleration (CUDA) is enabled for local whisper.
     pub local_whisper_gpu: bool,
-    /// Send Enter after pasting (useful for chat apps).
-    pub insert_and_send: bool,
+    /// Send Enter after pasting for hotkey slot 0.
+    /// Replaces the deprecated global `insert_and_send` field.
+    pub insert_and_send_slot1: bool,
+    /// Send Enter after pasting for hotkey slot 1.
+    pub insert_and_send_slot2: bool,
     /// Silence duration (seconds) before AutoStop mode triggers stop + pipeline.
     pub autostop_silence_secs: f32,
     /// Silence duration (seconds) before Auto mode triggers stop + pipeline.
@@ -223,6 +226,13 @@ pub struct AppState {
     /// controls the loop lifecycle. `SeqCst` ordering ensures visibility across
     /// the cpal OS-thread and the Tauri async runtime.
     pub auto_loop_active: AtomicBool,
+    /// The `insert_and_send` flag from the slot that triggered the current
+    /// (or most recent) recording. Written by the hotkey handler when a slot
+    /// starts recording; read by `stop_and_process_pipeline` so the pipeline
+    /// knows whether to send Enter after pasting.
+    ///
+    /// Default: `false`. Reusing an `AtomicBool` keeps this lock-free.
+    pub active_insert_and_send: AtomicBool,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -277,6 +287,7 @@ impl AppState {
             license_status: Mutex::new(initial_license_status),
             hotkey_paused: AtomicBool::new(false),
             auto_loop_active: AtomicBool::new(false),
+            active_insert_and_send: AtomicBool::new(false),
         }
     }
 }
@@ -940,7 +951,8 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
-            insert_and_send: false,
+            insert_and_send_slot1: false,
+            insert_and_send_slot2: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),
@@ -987,7 +999,8 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
-            insert_and_send: false,
+            insert_and_send_slot1: false,
+            insert_and_send_slot2: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),
@@ -1028,7 +1041,8 @@ mod tests {
             bubble_opacity: 0.85,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
-            insert_and_send: false,
+            insert_and_send_slot1: false,
+            insert_and_send_slot2: false,
             autostop_silence_secs: 2.0,
             auto_mode_silence_secs: 2.0,
             hotkey_slot2: String::new(),

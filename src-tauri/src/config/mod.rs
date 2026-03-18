@@ -381,6 +381,11 @@ pub struct HotkeySlot {
     pub hotkey: String,
     /// How this slot triggers recording.
     pub mode: HotkeyMode,
+    /// When `true`, the pipeline sends a Return key press after pasting text.
+    /// Useful for chat apps where Enter submits the message. Defaults to `false`
+    /// so existing configs are unaffected.
+    #[serde(default)]
+    pub insert_and_send: bool,
 }
 
 impl HotkeySlot {
@@ -395,10 +400,12 @@ fn default_hotkey_slots() -> Vec<HotkeySlot> {
         HotkeySlot {
             hotkey: default_hotkey(),
             mode: HotkeyMode::Hold,
+            insert_and_send: false,
         },
         HotkeySlot {
             hotkey: String::new(), // slot 2 disabled by default
             mode: HotkeyMode::Hold,
+            insert_and_send: false,
         },
     ]
 }
@@ -617,8 +624,14 @@ pub struct AppConfig {
 
     // --- Floating bar position ---
 
-    /// When true, the pipeline sends a Return key press after pasting text.
-    /// Useful for chat apps where Enter submits the message.
+    /// Deprecated: superseded by `HotkeySlot::insert_and_send`.
+    ///
+    /// Kept as a migration tombstone so that old config.json files load
+    /// without data loss. `load_config` propagates this value to all slots
+    /// when the slots do not yet carry their own `insertAndSend` flag
+    /// (i.e. when the slot was serialised by an older binary).
+    ///
+    /// New code must NOT write to this field -- write to the slot instead.
     #[serde(default)]
     pub insert_and_send: bool,
 
@@ -948,16 +961,47 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
             HotkeySlot {
                 hotkey: slot0_hotkey,
                 mode: slot0_mode,
+                insert_and_send: false,
             },
             HotkeySlot {
                 hotkey: String::new(), // slot 1 disabled
                 mode: HotkeyMode::Hold,
+                insert_and_send: false,
             },
         ];
 
         // Persist immediately so future starts skip this migration path.
         if let Err(e) = save_config(app_data_dir, &config) {
             log::warn!("[config] Failed to persist hotkey_slots migration: {e}");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Migration: global `insert_and_send` → per-slot `insert_and_send`
+    //
+    // In the per-slot redesign we moved `insert_and_send` from `AppConfig` into
+    // each `HotkeySlot`. Old config files may have the global flag set but the
+    // slots still have their serde default (`false`).
+    //
+    // We detect this by checking whether the global flag is `true` while ALL
+    // slots still carry the default value (`false`). In that case we propagate
+    // the global value to all slots and clear the global flag.
+    //
+    // If any slot already has `insert_and_send = true` (set by a newer binary),
+    // we leave everything as-is to avoid overwriting intentional per-slot config.
+    // ---------------------------------------------------------------------------
+    if config.insert_and_send && config.hotkey_slots.iter().all(|s| !s.insert_and_send) {
+        log::info!(
+            "[config] Migrated global insert_and_send=true to {} slot(s)",
+            config.hotkey_slots.len()
+        );
+        for slot in &mut config.hotkey_slots {
+            slot.insert_and_send = true;
+        }
+        // Clear the global flag so we no longer re-trigger this migration.
+        config.insert_and_send = false;
+        if let Err(e) = save_config(app_data_dir, &config) {
+            log::warn!("[config] Failed to persist insert_and_send slot migration: {e}");
         }
     }
 
@@ -1114,8 +1158,8 @@ mod tests {
             hotkey: "ctrl+alt+r".to_string(),
             hotkey_mode: HotkeyMode::Toggle,
             hotkey_slots: vec![
-                HotkeySlot { hotkey: "ctrl+alt+r".to_string(), mode: HotkeyMode::Toggle },
-                HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold },
+                HotkeySlot { hotkey: "ctrl+alt+r".to_string(), mode: HotkeyMode::Toggle, insert_and_send: true },
+                HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold, insert_and_send: true },
             ],
             audio_device: Some("Test Mic".to_string()),
             stt_model: "whisper-large-v3".to_string(),
@@ -1893,7 +1937,10 @@ mod tests {
         };
         save_config(dir.path(), &cfg).unwrap();
         let loaded = load_config(dir.path());
-        assert!(loaded.insert_and_send);
+        // Migration: global insert_and_send=true is moved to slots, global reset to false
+        assert!(!loaded.insert_and_send, "global insert_and_send should be false after migration");
+        assert!(loaded.hotkey_slots.iter().all(|s| s.insert_and_send),
+            "all slots should have insert_and_send=true after migration");
         assert!((loaded.autostop_silence_secs - 1.5).abs() < f32::EPSILON);
         assert!((loaded.auto_mode_silence_secs - 3.0).abs() < f32::EPSILON);
     }
@@ -1920,6 +1967,7 @@ mod tests {
         let slot = HotkeySlot {
             hotkey: "ctrl+shift+d".to_string(),
             mode: HotkeyMode::Hold,
+            insert_and_send: false,
         };
         let json = serde_json::to_string(&slot).unwrap();
         assert!(json.contains("\"hotkey\""), "expected key 'hotkey'");
@@ -1943,6 +1991,7 @@ mod tests {
             let slot = HotkeySlot {
                 hotkey: "ctrl+shift+x".to_string(),
                 mode,
+                insert_and_send: false,
             };
             let json = serde_json::to_string(&slot).unwrap();
             let back: HotkeySlot = serde_json::from_str(&json).unwrap();
@@ -1953,8 +2002,8 @@ mod tests {
     /// `HotkeySlot::is_enabled` returns `true` for non-empty hotkeys and `false` for empty.
     #[test]
     fn test_hotkey_slot_is_enabled() {
-        let enabled = HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold };
-        let disabled = HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold };
+        let enabled = HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold, insert_and_send: false };
+        let disabled = HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold, insert_and_send: false };
         assert!(enabled.is_enabled());
         assert!(!disabled.is_enabled());
     }
@@ -1979,8 +2028,8 @@ mod tests {
         let dir = temp_dir();
         let cfg = AppConfig {
             hotkey_slots: vec![
-                HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Toggle },
-                HotkeySlot { hotkey: "ctrl+shift+f".to_string(), mode: HotkeyMode::AutoStop },
+                HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Toggle, insert_and_send: false },
+                HotkeySlot { hotkey: "ctrl+shift+f".to_string(), mode: HotkeyMode::AutoStop, insert_and_send: false },
             ],
             ..AppConfig::default()
         };

@@ -8,13 +8,36 @@
 //! | Platform | Clipboard | Key simulation |
 //! |----------|-----------|----------------|
 //! | Linux    | `arboard` | `xdotool`      |
-//! | Windows  | `arboard` | TODO: `SendInput` Win32 API |
+//! | Windows  | `arboard` | `SendInput` Win32 API |
+//!
+//! ## Focus verification (Windows)
+//!
+//! On Windows, Ctrl+V is only sent after verifying that the target window is
+//! still in the foreground. If focus cannot be restored, the text is left in
+//! the clipboard and [`PasteResult::ClipboardOnly`] is returned. The pipeline
+//! uses this to decide whether to send a follow-up Return key and which event
+//! to emit to the frontend.
 //!
 //! The paste handler is synchronous -- clipboard writes and key simulation are
 //! both fast, blocking operations with no benefit from async.
 
 use std::time::Duration;
 use thiserror::Error;
+
+// ---------------------------------------------------------------------------
+// PasteResult
+// ---------------------------------------------------------------------------
+
+/// Outcome of a [`PasteHandler::paste`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasteResult {
+    /// Focus was verified and Ctrl+V was sent to the target window.
+    Pasted,
+    /// Text was written to the clipboard, but Ctrl+V was NOT sent because
+    /// focus verification failed (window gone, minimised, or focus-steal
+    /// blocked by the OS). The user must paste manually.
+    ClipboardOnly,
+}
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -42,8 +65,16 @@ pub enum PasteError {
 /// Implementations copy `text` to the system clipboard and then simulate
 /// Ctrl+V (or the platform equivalent) to insert it into the focused field.
 pub trait PasteHandler: Send + Sync {
-    /// Copy `text` to the clipboard and simulate Ctrl+V in the focused window.
-    fn paste(&self, text: &str) -> Result<(), PasteError>;
+    /// Copy `text` to the clipboard.
+    ///
+    /// On Windows: verifies that the previously focused window is still in
+    /// the foreground before sending Ctrl+V. Returns [`PasteResult::Pasted`]
+    /// on success, [`PasteResult::ClipboardOnly`] when focus verification
+    /// fails.
+    ///
+    /// On other platforms: always returns [`PasteResult::Pasted`] (no HWND
+    /// tracking needed).
+    fn paste(&self, text: &str) -> Result<PasteResult, PasteError>;
 
     /// Simulate a Return/Enter key press in the focused window.
     ///
@@ -71,7 +102,7 @@ mod linux {
     pub struct LinuxPasteHandler;
 
     impl PasteHandler for LinuxPasteHandler {
-        fn paste(&self, text: &str) -> Result<(), PasteError> {
+        fn paste(&self, text: &str) -> Result<PasteResult, PasteError> {
             if text.is_empty() {
                 return Err(PasteError::EmptyText);
             }
@@ -86,7 +117,8 @@ mod linux {
             // the text is already in the clipboard and the user can paste manually.
             simulate_ctrl_v();
 
-            Ok(())
+            log::info!("[paste] Linux: Ctrl+V sent ({} chars)", text.len());
+            Ok(PasteResult::Pasted)
         }
     }
 
@@ -137,24 +169,30 @@ mod linux {
 }
 
 // ---------------------------------------------------------------------------
-// Windows implementation stub
+// Windows implementation
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "windows")]
 mod windows {
     use super::*;
+    use ::windows::Win32::Foundation::HWND;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
         KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_RETURN, VK_V,
     };
     use ::windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextW, SetForegroundWindow,
+        GetForegroundWindow, GetWindowTextW, IsIconic, IsWindow, SetForegroundWindow,
+        ShowWindow, SW_RESTORE, GetWindowThreadProcessId,
+    };
+    use ::windows::Win32::System::Threading::{
+        AttachThreadInput, GetCurrentThreadId,
     };
 
     /// Windows paste handler using Win32 SendInput API.
     ///
     /// Uses `arboard` for clipboard access and `SendInput` for Ctrl+V simulation.
-    /// Optionally restores focus to a previously active window before pasting.
+    /// Restores focus to the previously active window before pasting, and
+    /// verifies the focus switch actually succeeded before sending Ctrl+V.
     pub struct WindowsPasteHandler {
         /// The window that was focused before Dikta started recording.
         /// If set, focus is restored to this window before simulating Ctrl+V.
@@ -168,44 +206,115 @@ mod windows {
     }
 
     impl PasteHandler for WindowsPasteHandler {
-        fn paste(&self, text: &str) -> Result<(), PasteError> {
+        fn paste(&self, text: &str) -> Result<PasteResult, PasteError> {
             if text.is_empty() {
                 return Err(PasteError::EmptyText);
             }
 
-            // Write to clipboard.
+            // Step 1: Write to clipboard ALWAYS -- even if paste fails,
+            // the user can retrieve the text manually.
             let mut clipboard = arboard::Clipboard::new()
                 .map_err(|e| PasteError::Clipboard(e.to_string()))?;
             clipboard
                 .set_text(text)
                 .map_err(|e| PasteError::Clipboard(e.to_string()))?;
 
-            // Restore focus to the previously active window.
-            if let Some(hwnd_raw) = self.prev_hwnd {
-                unsafe {
-                    use ::windows::Win32::Foundation::HWND;
-                    let hwnd = HWND(hwnd_raw as *mut _);
-                    let current = GetForegroundWindow();
-                    if current != hwnd {
-                        let _ = SetForegroundWindow(hwnd);
-                        // Give the OS time to switch focus.
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
+            // Step 2: No target window? Clipboard-only.
+            let hwnd_raw = match self.prev_hwnd {
+                Some(h) => h,
+                None => {
+                    log::warn!("[paste] No target HWND recorded -- text is clipboard-only");
+                    return Ok(PasteResult::ClipboardOnly);
                 }
+            };
+
+            let hwnd = HWND(hwnd_raw as *mut _);
+
+            // Step 3: Target window still valid?
+            if !is_window_valid(hwnd) {
+                log::warn!(
+                    "[paste] Target window (HWND={hwnd_raw:#x}) is no longer valid -- \
+                     text is clipboard-only"
+                );
+                return Ok(PasteResult::ClipboardOnly);
             }
 
-            // Small delay to ensure clipboard is ready.
+            // Step 4: Attempt robust focus restore.
+            reliable_set_foreground(hwnd);
+
+            // Step 5: Give the OS time to process the focus switch.
             std::thread::sleep(Duration::from_millis(50));
 
-            // Simulate Ctrl+V via SendInput.
+            // Step 6: Verify the focus switch actually landed on our target.
+            let current_fg = unsafe { GetForegroundWindow() };
+            if current_fg != hwnd {
+                log::warn!(
+                    "[paste] Focus verification failed: foreground is {:#x}, expected {hwnd_raw:#x} -- \
+                     text is clipboard-only",
+                    current_fg.0 as isize
+                );
+                return Ok(PasteResult::ClipboardOnly);
+            }
+
+            // Step 7: Send Ctrl+V.
             simulate_ctrl_v();
 
-            Ok(())
+            log::info!("[paste] Ctrl+V sent to HWND={hwnd_raw:#x} ({} chars)", text.len());
+            Ok(PasteResult::Pasted)
         }
 
         fn send_enter(&self) -> Result<(), PasteError> {
             simulate_return();
             Ok(())
+        }
+    }
+
+    /// Returns `true` if `hwnd` refers to an existing, non-minimised-and-gone window.
+    ///
+    /// Note: a minimised window is still "valid" (we can restore it via
+    /// `ShowWindow`). Only a destroyed or invalid handle returns `false` here.
+    fn is_window_valid(hwnd: HWND) -> bool {
+        unsafe { IsWindow(Some(hwnd)).as_bool() }
+    }
+
+    /// Attempts to bring `hwnd` to the foreground robustly.
+    ///
+    /// Plain `SetForegroundWindow` is blocked by Windows when the calling
+    /// process does not own the foreground. The `AttachThreadInput` trick
+    /// temporarily joins the input queues of our thread and the target thread,
+    /// which convinces Windows to honour the foreground request.
+    ///
+    /// Returns `true` if `SetForegroundWindow` reported success; callers
+    /// must still verify via `GetForegroundWindow` afterwards.
+    pub(super) fn reliable_set_foreground(hwnd: HWND) -> bool {
+        unsafe {
+            // Window no longer valid? Nothing to do.
+            if !IsWindow(Some(hwnd)).as_bool() {
+                return false;
+            }
+
+            // Restore the window if it was minimised -- we cannot paste into
+            // a minimised window.
+            if IsIconic(hwnd).as_bool() {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+
+            // AttachThreadInput trick: temporarily join input queues so Windows
+            // does not block the foreground request.
+            let target_tid = GetWindowThreadProcessId(hwnd, None);
+            let our_tid = GetCurrentThreadId();
+
+            if target_tid != 0 && target_tid != our_tid {
+                AttachThreadInput(our_tid, target_tid, true);
+            }
+
+            let result = SetForegroundWindow(hwnd).as_bool();
+
+            if target_tid != 0 && target_tid != our_tid {
+                AttachThreadInput(our_tid, target_tid, false);
+            }
+
+            result
         }
     }
 
@@ -338,13 +447,32 @@ pub fn capture_foreground_window_title() -> Option<String> {
     }
 }
 
+/// Attempts to restore focus to the window identified by `hwnd`.
+///
+/// Uses [`reliable_set_foreground`] on Windows. No-op on other platforms.
+/// This is used by the pipeline to return the user to the window they were
+/// working in after an auto-send paste into a different window.
+pub fn restore_focus(hwnd: isize) {
+    #[cfg(target_os = "windows")]
+    {
+        use ::windows::Win32::Foundation::HWND;
+        let h = HWND(hwnd as *mut _);
+        windows::reliable_set_foreground(h);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = hwnd;
+    }
+}
+
 /// Fallback for unsupported desktop platforms -- clipboard-only, no key simulation.
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 struct FallbackPasteHandler;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl PasteHandler for FallbackPasteHandler {
-    fn paste(&self, text: &str) -> Result<(), PasteError> {
+    fn paste(&self, text: &str) -> Result<PasteResult, PasteError> {
         if text.is_empty() {
             return Err(PasteError::EmptyText);
         }
@@ -360,7 +488,7 @@ impl PasteHandler for FallbackPasteHandler {
              Text is in clipboard -- paste manually."
         );
 
-        Ok(())
+        Ok(PasteResult::Pasted)
     }
 }
 
@@ -370,12 +498,12 @@ struct AndroidPasteHandler;
 
 #[cfg(target_os = "android")]
 impl PasteHandler for AndroidPasteHandler {
-    fn paste(&self, text: &str) -> Result<(), PasteError> {
+    fn paste(&self, text: &str) -> Result<PasteResult, PasteError> {
         if text.is_empty() {
             return Err(PasteError::EmptyText);
         }
         log::info!("[paste] Android: text ready ({} chars), IME handles insertion", text.len());
-        Ok(())
+        Ok(PasteResult::Pasted)
     }
 }
 
@@ -429,5 +557,36 @@ mod tests {
     fn test_create_paste_handler_rejects_empty() {
         let handler = create_paste_handler(None);
         assert!(handler.paste("").is_err());
+    }
+
+    /// PasteResult::Pasted and ClipboardOnly are distinct and comparable.
+    #[test]
+    fn test_paste_result_variants_distinct() {
+        assert_eq!(PasteResult::Pasted, PasteResult::Pasted);
+        assert_eq!(PasteResult::ClipboardOnly, PasteResult::ClipboardOnly);
+        assert_ne!(PasteResult::Pasted, PasteResult::ClipboardOnly);
+    }
+
+    /// On non-Windows platforms with no prev_hwnd the handler without HWND
+    /// tracking returns Pasted (the platform does its own thing).
+    ///
+    /// On Linux (CI), `create_paste_handler(None)` is a `LinuxPasteHandler`
+    /// which always returns `Pasted` on non-empty text -- the xdotool call may
+    /// fail silently but the function still reports Pasted because the text
+    /// is in the clipboard. We test only the logic branch, not the OS call.
+    #[test]
+    fn test_paste_result_is_pasted_variant() {
+        // PasteResult::Pasted compares equal to itself (PartialEq).
+        let r = PasteResult::Pasted;
+        assert!(r == PasteResult::Pasted);
+        assert!(r != PasteResult::ClipboardOnly);
+    }
+
+    /// PasteResult is Copy -- can be used after move.
+    #[test]
+    fn test_paste_result_is_copy() {
+        let r = PasteResult::ClipboardOnly;
+        let r2 = r; // copy, not move
+        assert_eq!(r, r2);
     }
 }

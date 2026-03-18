@@ -102,6 +102,7 @@ pub async fn paste_snippet(state: State<'_, AppState>, content: String) -> Resul
     paste_handler
         .paste(&content)
         .map_err(|e| format!("Failed to paste snippet: {e}"))
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------

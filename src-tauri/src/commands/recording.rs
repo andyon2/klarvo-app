@@ -9,6 +9,7 @@ use tauri::{AppHandle, State};
 use crate::audio;
 use crate::license::LicensedFeature;
 use crate::llm::{chunked_cleanup, CleanupStyle};
+use crate::paste::{capture_foreground_window, capture_foreground_window_title};
 use crate::stt::{self, build_stt_prompt};
 use crate::{require_license, AppState, RecordingInfo};
 
@@ -25,6 +26,17 @@ pub async fn start_recording(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let inner = state.inner();
+
+    // Capture the foreground window BEFORE we start recording.
+    // This is the window the user was typing in -- we'll restore focus to it
+    // before pasting the result.
+    if let Ok(mut guard) = inner.prev_foreground_hwnd.lock() {
+        *guard = capture_foreground_window();
+    }
+    if let Ok(mut guard) = inner.prev_window_title.lock() {
+        *guard = capture_foreground_window_title();
+        log::debug!("[start_recording] foreground window title: {:?}", *guard);
+    }
 
     // Re-install the audio level callback before recording.
     #[cfg(desktop)]

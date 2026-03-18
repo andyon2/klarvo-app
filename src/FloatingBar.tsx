@@ -26,6 +26,7 @@ const BAR_COUNT = 5;
 
 /** Expanded pill dimensions. */
 const PILL_WIDTH = 200;
+const PILL_WIDTH_CLIPBOARD = 220;
 const PILL_HEIGHT = 36;
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,7 @@ export default function FloatingBar() {
   const [state, setState] = useState<RecordingState>("idle");
   const [levels, setLevels] = useState<number[]>(new Array(20).fill(0));
   const [showDone, setShowDone] = useState(false);
+  const [clipboardOnly, setClipboardOnly] = useState(false);
   const [livePreview, setLivePreview] = useState("");
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
@@ -306,12 +308,14 @@ export default function FloatingBar() {
   }, []);
 
   // --- Show / hide the Tauri window based on pill visibility ---
+  const pillWidth = (isDone && clipboardOnly) ? PILL_WIDTH_CLIPBOARD : PILL_WIDTH;
+
   useEffect(() => {
     const win = getCurrentWebviewWindow();
     (async () => {
       if (isPillVisible) {
         // Resize first so the window has correct dimensions before showing.
-        await win.setSize(new LogicalSize(PILL_WIDTH, PILL_HEIGHT));
+        await win.setSize(new LogicalSize(pillWidth, PILL_HEIGHT));
         await setBarShape("pill").catch(() => {});
         if (barX.current != null && barY.current != null) {
           await win.setPosition(new LogicalPosition(barX.current, barY.current));
@@ -320,7 +324,7 @@ export default function FloatingBar() {
       }
       // Hiding is handled by the collapse animation handler below.
     })();
-  }, [isPillVisible]);
+  }, [isPillVisible, pillWidth]);
 
   // --- Trigger collapse animation then hide ---
   // When the bar transitions from visible to idle we play bar-collapse first.
@@ -351,15 +355,20 @@ export default function FloatingBar() {
       setState(newState);
 
       if (newState === "done") {
+        const isClipboardOnly = !!payload.clipboardOnly;
+        setClipboardOnly(isClipboardOnly);
         setShowDone(true);
         if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+        // ClipboardOnly: show longer (4s) so user notices; normal done: 1.5s
+        const doneTimeout = isClipboardOnly ? 4000 : 1500;
         doneTimerRef.current = setTimeout(() => {
           setShowDone(false);
+          setClipboardOnly(false);
           // Only transition to idle if we're still in "done" state.
           // In Auto-Loop mode, the next recording cycle may have already
           // started (state = "recording"), and we must not overwrite it.
           setState((prev) => (prev === "done" ? "idle" : prev));
-        }, 1500);
+        }, doneTimeout);
       } else if (newState === "idle") {
         setLevels(new Array(20).fill(0));
       } else if (newState === "error") {
@@ -464,11 +473,13 @@ export default function FloatingBar() {
 
   const accentColor = isRecording ? "#93c5fd"
     : isProcessing ? "#fbbf24"
+    : (isDone && clipboardOnly) ? "#fbbf24"
     : isDone ? "#34d399"
     : "#f87171";
 
   const borderColor = isRecording ? "rgba(147,197,253,0.25)"
     : isProcessing ? "rgba(245,158,11,0.2)"
+    : (isDone && clipboardOnly) ? "rgba(251,191,36,0.25)"
     : isDone ? "rgba(52,211,153,0.25)"
     : "rgba(248,113,113,0.2)";
 
@@ -570,7 +581,7 @@ export default function FloatingBar() {
           </div>
         )}
 
-        {/* Done: check icon + label */}
+        {/* Done: check icon + label (or clipboard hint) */}
         {isDone && (
           <div
             style={{
@@ -582,8 +593,19 @@ export default function FloatingBar() {
               animation: "done-pop 280ms cubic-bezier(0.34,1.56,0.64,1) forwards",
             }}
           >
-            <CheckIcon color={accentColor} />
-            <span style={{ fontSize: 11, color: "#34d399", letterSpacing: "0.01em" }}>Done</span>
+            {clipboardOnly ? (
+              <>
+                <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1 }}>📋</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#fbbf24", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+                  In Clipboard
+                </span>
+              </>
+            ) : (
+              <>
+                <CheckIcon color={accentColor} />
+                <span style={{ fontSize: 11, color: "#34d399", letterSpacing: "0.01em" }}>Done</span>
+              </>
+            )}
           </div>
         )}
 

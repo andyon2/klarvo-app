@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.3. 318 Rust-Tests (alle gruen). Insert+Send Delay auf 150ms erhoeht (Terminal-Kompatibilitaet). Prompt-Fragment-Stripping verhindert Whisper-Prompt-Leaks in Transkriptionen. Android: 4 Recording-Modi via Notification-Actions.
+Version 0.4.3. 326 Rust-Tests (alle gruen). Background Paste mit Verify-or-Clipboard-Only: Text wird nur eingefuegt wenn Zielfenster verifiziert, sonst Zwischenablage + FloatingBar-Hinweis. Insert+Send pro Hotkey-Slot statt global. Return-to-Current bei Autosend (zurueck zum Fenster wo User gerade war).
 
 ## Blocker
 
@@ -9,9 +9,8 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Background Paste (Windows)** → HWND beim Recording-Start merken, nach Cleanup dort einfuegen
-2. **Clean-Mode Ueberarbeitung** → Andy findet Clean-Modus entfremdet zu sehr das Original
-3. **Onboarding/Polish** → [Briefing noch zu erstellen]
+1. **Clean-Mode Ueberarbeitung** → Andy findet Clean-Modus entfremdet zu sehr das Original
+2. **Onboarding/Polish** → [Briefing noch zu erstellen]
 
 ## Bekannte Bugs
 
@@ -20,7 +19,7 @@ Keine.
 ## Backlog
 - [ ] [ui] Startgroesse des Windows-Fensters erhoehen — zu klein beim Oeffnen, Settings haben Scrollbalken rechts und unten
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
-- [ ] [ui] 23 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports)
+- [ ] [ui] 27 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports, unused BOOL)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
 - [ ] [android] Recording-Modi via Notification-Actions implementiert (Hold/Toggle/AutoStop/Auto). Offen:
   - [ ] Silence-Threshold in Android-App einstellbar machen (aktuell hardcoded 0.03 / 2s)

@@ -53,6 +53,14 @@ pub struct PipelineEvent {
     /// Human-readable error message (only present when `state == Error`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// True when the text was written to the clipboard but Ctrl+V was NOT sent
+    /// (focus verification failed). The frontend should show a "Text in clipboard"
+    /// indicator so the user knows to paste manually.
+    ///
+    /// Only present (and `true`) when `state == Done` and focus-restore failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "clipboardOnly")]
+    pub clipboard_only: Option<bool>,
 }
 
 impl PipelineEvent {
@@ -62,6 +70,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            clipboard_only: None,
         }
     }
 
@@ -71,6 +80,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            clipboard_only: None,
         }
     }
 
@@ -80,6 +90,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            clipboard_only: None,
         }
     }
 
@@ -89,15 +100,31 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            clipboard_only: None,
         }
     }
 
+    /// Paste succeeded -- focus was verified, Ctrl+V was sent.
     pub fn done(text: String, raw_text: String) -> Self {
         PipelineEvent {
             state: PipelineState::Done,
             text: Some(text),
             raw_text: Some(raw_text),
             error: None,
+            clipboard_only: None,
+        }
+    }
+
+    /// Paste not attempted -- focus verification failed, text is clipboard-only.
+    ///
+    /// The frontend should show a "Text in clipboard" indicator.
+    pub fn done_with_clipboard_only(text: String, raw_text: String) -> Self {
+        PipelineEvent {
+            state: PipelineState::Done,
+            text: Some(text),
+            raw_text: Some(raw_text),
+            error: None,
+            clipboard_only: Some(true),
         }
     }
 
@@ -107,6 +134,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: Some(msg.into()),
+            clipboard_only: None,
         }
     }
 }
@@ -140,6 +168,22 @@ mod tests {
         assert!(json.contains("\"state\":\"done\""));
         assert!(json.contains("\"text\":\"Hello world\""));
         assert!(json.contains("\"rawText\":\"uh hello world\""));
+        assert!(!json.contains("\"error\""));
+        // Normal done does NOT set clipboardOnly.
+        assert!(!json.contains("clipboardOnly"));
+    }
+
+    /// PipelineEvent::done_with_clipboard_only sets the clipboardOnly flag.
+    #[test]
+    fn test_pipeline_event_done_clipboard_only() {
+        let event = PipelineEvent::done_with_clipboard_only(
+            "Hello world".to_string(),
+            "uh hello world".to_string(),
+        );
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"state\":\"done\""));
+        assert!(json.contains("\"text\":\"Hello world\""));
+        assert!(json.contains("\"clipboardOnly\":true"));
         assert!(!json.contains("\"error\""));
     }
 

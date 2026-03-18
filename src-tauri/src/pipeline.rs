@@ -16,7 +16,9 @@ use crate::config::{self, AppConfig, HotkeyMode};
 use crate::history;
 use crate::hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
 use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
-use crate::paste::{capture_foreground_window, capture_foreground_window_title, create_paste_handler};
+use crate::paste::{
+    capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
+};
 use crate::stt::{self, SttProvider};
 use crate::sync;
 use crate::{AppState, friendly_error};
@@ -1020,28 +1022,65 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     }
 
     // --- Paste ---
+    // Capture the window the user is CURRENTLY in, before paste switches focus.
+    // Used for Return-to-Current after autosend.
+    let current_hwnd_before_paste = crate::paste::capture_foreground_window();
     let prev_hwnd = state.prev_foreground_hwnd.lock().ok().and_then(|g| *g);
     let paste_handler = create_paste_handler(prev_hwnd);
-    if let Err(e) = paste_handler.paste(&cleaned_text) {
-        log::warn!("[pipeline] paste failed: {e}. Text is still available.");
-    }
+    let paste_result = match paste_handler.paste(&cleaned_text) {
+        Ok(result) => result,
+        Err(e) => {
+            log::warn!("[pipeline] paste failed: {e}. Text is still available.");
+            // A hard error (e.g. clipboard unavailable) is treated as
+            // clipboard-only -- the user gets an indication but the pipeline
+            // continues so the done event is still emitted.
+            PasteResult::ClipboardOnly
+        }
+    };
 
-    // --- Insert+Send ---
-    // If enabled, send a Return key press after pasting so the message is
-    // submitted immediately. Useful for chat apps (Slack, Teams, WhatsApp Web).
-    // The 150ms sleep gives the target app time to process the Paste before Enter
-    // arrives. Terminals (ConPTY) need more time than simple editors.
-    // This is opt-in and defaults to false.
+    // --- Insert+Send + Return-to-Current ---
+    //
+    // insert_and_send is now a per-slot flag stored in AppState by the hotkey
+    // handler when recording starts. Reading it here (after the paste) is safe
+    // because the hotkey handler cannot fire again while we are still in the
+    // pipeline (the recorder is marked as recording until stop_recording_with_gain
+    // returns above, and a second hotkey press would be a no-op or a race).
+    //
+    // Only sent when Ctrl+V actually landed in the right window.
+    // Sending Enter into the wrong window (e.g. after a failed focus-restore)
+    // would be worse than not sending it at all.
+    //
+    // The 150ms sleep gives the target app time to process the Paste before
+    // Enter arrives. Terminals (ConPTY) need more time than simple editors.
+    // This is opt-in and defaults to false per slot.
     let insert_and_send = state
-        .config
-        .lock()
-        .ok()
-        .map(|c| c.insert_and_send)
-        .unwrap_or(false);
-    if insert_and_send {
+        .active_insert_and_send
+        .load(Ordering::SeqCst);
+    if insert_and_send && paste_result == PasteResult::Pasted {
         std::thread::sleep(std::time::Duration::from_millis(150));
         if let Err(e) = paste_handler.send_enter() {
             log::warn!("[pipeline] send_enter failed: {e}");
+        }
+
+        // Return-to-Current: if the user switched to a different window while
+        // Dikta was processing (STT + LLM cleanup takes seconds), bring them
+        // back to where they were just before paste, not the recording-start
+        // window.
+        //
+        // current_hwnd_before_paste was captured BEFORE paste() switched focus
+        // to the target window. If it differs from prev_hwnd, the user moved
+        // to a different window during processing and we should return them.
+        if let Some(current) = current_hwnd_before_paste {
+            if Some(current) != prev_hwnd {
+                log::info!(
+                    "[pipeline] Return-to-current: restoring focus to HWND={current:#x} \
+                     (user was here during processing; paste target was {:#x})",
+                    prev_hwnd.unwrap_or(0)
+                );
+                // Small delay to let Enter land before we switch away.
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                crate::paste::restore_focus(current);
+            }
         }
     }
 
@@ -1178,7 +1217,13 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         }
     }
 
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::done(cleaned_text, raw_text));
+    // Emit the appropriate done event based on whether the paste succeeded.
+    let done_event = if paste_result == PasteResult::ClipboardOnly {
+        PipelineEvent::done_with_clipboard_only(cleaned_text, raw_text)
+    } else {
+        PipelineEvent::done(cleaned_text, raw_text)
+    };
+    let _ = handle.emit(EVENT_STATE_CHANGED, done_event);
 }
 
 /// Toggle-mode hotkey handler: press once to start, press again to stop + process.
@@ -1257,8 +1302,8 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
     // `Shortcut` does not implement `Hash`/`Eq`, so we key the map by the
     // `u32` hotkey ID returned by `shortcut.id()`.
 
-    // Build dispatch map: hotkey_id -> mode
-    let mut slot_map: Vec<(u32, HotkeyMode)> = Vec::new();
+    // Build dispatch map: hotkey_id -> (mode, insert_and_send)
+    let mut slot_map: Vec<(u32, HotkeyMode, bool)> = Vec::new();
     let mut shortcut_objects: Vec<tauri_plugin_global_shortcut::Shortcut> = Vec::new();
 
     for slot in &slots {
@@ -1278,8 +1323,11 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
             }
         };
 
-        println!("[hotkey] Queuing slot: {:?} id={} mode={:?}", slot.hotkey, shortcut.id(), slot.mode);
-        slot_map.push((shortcut.id(), slot.mode));
+        println!(
+            "[hotkey] Queuing slot: {:?} id={} mode={:?} insert_and_send={}",
+            slot.hotkey, shortcut.id(), slot.mode, slot.insert_and_send
+        );
+        slot_map.push((shortcut.id(), slot.mode, slot.insert_and_send));
         shortcut_objects.push(shortcut);
     }
 
@@ -1302,15 +1350,16 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                     return;
                 }
 
-                // Resolve the mode for the specific shortcut that fired.
-                // Linear scan is fine: there are at most two slots.
-                let mode = match slot_map.iter().find(|(id, _)| *id == shortcut.id()) {
-                    Some((_, m)) => *m,
-                    None => {
-                        log::warn!("[hotkey] Unknown shortcut id={}, ignoring", shortcut.id());
-                        return;
-                    }
-                };
+                // Resolve the mode and insert_and_send flag for the specific
+                // shortcut that fired. Linear scan is fine: at most two slots.
+                let (mode, slot_insert_and_send) =
+                    match slot_map.iter().find(|(id, _, _)| *id == shortcut.id()) {
+                        Some((_, m, ias)) => (*m, *ias),
+                        None => {
+                            log::warn!("[hotkey] Unknown shortcut id={}, ignoring", shortcut.id());
+                            return;
+                        }
+                    };
 
                 let h = handle_clone.clone();
                 println!("[hotkey] mode={mode:?} state={:?}", event.state);
@@ -1319,13 +1368,25 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                 // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).
                 let _ = handle_clone.emit("dikta://active-mode", mode);
 
+                // Helper: stores the slot's insert_and_send flag in AppState
+                // so stop_and_process_pipeline can read it without needing to
+                // know which slot triggered the pipeline.
+                let store_insert_and_send = |ias: bool| {
+                    handle_clone
+                        .state::<AppState>()
+                        .active_insert_and_send
+                        .store(ias, Ordering::SeqCst);
+                };
+
                 match (mode, event.state) {
                     (HotkeyMode::Toggle, ShortcutState::Pressed) => {
+                        store_insert_and_send(slot_insert_and_send);
                         tauri::async_runtime::spawn(async move {
                             run_dictation_pipeline(h).await;
                         });
                     }
                     (HotkeyMode::Hold, ShortcutState::Pressed) => {
+                        store_insert_and_send(slot_insert_and_send);
                         tauri::async_runtime::spawn(async move {
                             start_recording_only(h).await;
                         });
@@ -1350,6 +1411,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                                 stop_and_process_pipeline(h).await;
                             });
                         } else {
+                            store_insert_and_send(slot_insert_and_send);
                             tauri::async_runtime::spawn(async move {
                                 start_autostop_recording(h).await;
                             });
@@ -1369,6 +1431,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                             });
                         } else {
                             // First press: activate loop and start first cycle.
+                            store_insert_and_send(slot_insert_and_send);
                             state.auto_loop_active.store(true, Ordering::SeqCst);
                             tauri::async_runtime::spawn(async move {
                                 start_auto_recording(h).await;

@@ -24,7 +24,8 @@ export function useSettings() {
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [outputLanguage, setOutputLanguage] = useState("");
   const [dictionary, setDictionary] = useState<string[]>([]);
-  const [insertAndSend, setInsertAndSend] = useState(false);
+  const [insertAndSendSlot1, setInsertAndSendSlot1] = useState(false);
+  const [insertAndSendSlot2, setInsertAndSendSlot2] = useState(false);
   const [autostopSilenceSecs, setAutostopSilenceSecs] = useState(2.0);
   const [autoModeSilenceSecs, setAutoModeSilenceSecs] = useState(2.0);
 
@@ -38,7 +39,8 @@ export function useSettings() {
       setHotkeyMode(s.hotkeyMode);
       setAudioDevice(s.audioDevice);
       setOutputLanguage(s.outputLanguage || "");
-      setInsertAndSend(s.insertAndSend ?? false);
+      setInsertAndSendSlot1(s.insertAndSendSlot1 ?? false);
+      setInsertAndSendSlot2(s.insertAndSendSlot2 ?? false);
       setAutostopSilenceSecs(s.autostopSilenceSecs ?? 2.0);
       setAutoModeSilenceSecs(s.autoModeSilenceSecs ?? 2.0);
       setHotkeySlot2(s.hotkeySlot2 ?? "");
@@ -75,9 +77,10 @@ export function useSettings() {
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
     sttProvider?: string | null, llmProvider?: string | null,
-    newInsertAndSend?: boolean | null, newAutostopSilenceSecs?: number | null,
+    newInsertAndSendSlot1?: boolean | null, newAutostopSilenceSecs?: number | null,
     newAutoModeSilenceSecs?: number | null,
     newHotkeySlot2?: string | null, newHotkeyModeSlot2?: HotkeyMode | null,
+    newInsertAndSendSlot2?: boolean | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -85,8 +88,9 @@ export function useSettings() {
       null, null, outputLang, webhookUrl, tursoUrl, tursoToken,
       bubbleSize, bubbleOpacity, localWhisperModel, localWhisperGpu,
       sttProvider, llmProvider,
-      newInsertAndSend, newAutostopSilenceSecs, newAutoModeSilenceSecs,
+      newInsertAndSendSlot1, newAutostopSilenceSecs, newAutoModeSilenceSecs,
       newHotkeySlot2 ?? null, newHotkeyModeSlot2 ?? null,
+      newInsertAndSendSlot2 ?? null,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);
@@ -96,7 +100,8 @@ export function useSettings() {
     setHotkeyMode(updated.hotkeyMode);
     setAudioDevice(updated.audioDevice);
     setOutputLanguage(updated.outputLanguage || "");
-    setInsertAndSend(updated.insertAndSend ?? false);
+    setInsertAndSendSlot1(updated.insertAndSendSlot1 ?? false);
+    setInsertAndSendSlot2(updated.insertAndSendSlot2 ?? false);
     setAutostopSilenceSecs(updated.autostopSilenceSecs ?? 2.0);
     setAutoModeSilenceSecs(updated.autoModeSilenceSecs ?? 2.0);
     setHotkeySlot2(updated.hotkeySlot2 ?? "");
@@ -123,7 +128,8 @@ export function useSettings() {
     audioDevices,
     outputLanguage,
     dictionary,
-    insertAndSend,
+    insertAndSendSlot1,
+    insertAndSendSlot2,
     autostopSilenceSecs,
     autoModeSilenceSecs,
     hotkeySlot2,
