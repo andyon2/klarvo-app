@@ -40,6 +40,7 @@ export interface AppSettings {
   whisperMode: boolean;
   openaiApiKeyMasked: string;
   anthropicApiKeyMasked: string;
+  openrouterApiKeyMasked: string;
   sttProvider: string;
   llmProvider: string;
   // Deprecated: use sttProvider / llmProvider instead.

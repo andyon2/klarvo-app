@@ -95,6 +95,11 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
         "openai" => Arc::new(llm::OpenAiCleanup::new(&cfg.openai_api_key)),
         "anthropic" => Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key)),
         "groq" => Arc::new(llm::GroqCleanup::new(&cfg.groq_api_key)),
+        "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
+            &cfg.openrouter_api_key,
+            "https://openrouter.ai/api/v1/chat/completions",
+            "deepseek/deepseek-chat",
+        )),
         // "deepseek" and any unrecognised value
         _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
     }
@@ -1603,6 +1608,17 @@ mod tests {
         let cfg = AppConfig {
             llm_provider: "groq".to_string(),
             groq_api_key: "gsk-test".to_string(),
+            ..AppConfig::default()
+        };
+        let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    /// `resolve_cleanup_provider` for "openrouter" does not panic.
+    #[test]
+    fn test_resolve_cleanup_provider_openrouter() {
+        let cfg = AppConfig {
+            llm_provider: "openrouter".to_string(),
+            openrouter_api_key: "sk-or-test".to_string(),
             ..AppConfig::default()
         };
         let _provider = resolve_cleanup_provider(&cfg);

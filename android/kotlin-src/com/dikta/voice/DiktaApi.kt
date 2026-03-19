@@ -53,9 +53,10 @@ object DiktaApi {
         val bubbleLongPressMode: String = "hold",
         val bubbleLongPressAutoSend: Boolean = false,
         val bubbleLongPressSilenceSecs: Float = 2.0f,
-        // LLM provider selection: "deepseek" (default), "groq", or "openai"
+        // LLM provider selection: "deepseek" (default), "groq", "openai", or "openrouter"
         val llmProvider: String = "deepseek",
-        val openaiApiKey: String = ""
+        val openaiApiKey: String = "",
+        val openrouterApiKey: String = ""
     )
 
     /**
@@ -83,6 +84,11 @@ object DiktaApi {
                 model  = "gpt-4o-mini",
                 apiKey = config.openaiApiKey
             ) else null
+            "openrouter" -> if (config.openrouterApiKey.isNotBlank()) LlmProviderInfo(
+                url    = "https://openrouter.ai/api/v1/chat/completions",
+                model  = "deepseek/deepseek-chat",
+                apiKey = config.openrouterApiKey
+            ) else null
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.deepseek.com/chat/completions",
                 model  = "deepseek-chat",
@@ -108,6 +114,11 @@ object DiktaApi {
                 url    = "https://api.openai.com/v1/chat/completions",
                 model  = "gpt-4o-mini",
                 apiKey = config.openaiApiKey
+            )),
+            Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
+                "https://openrouter.ai/api/v1/chat/completions",
+                "deepseek/deepseek-chat",
+                config.openrouterApiKey
             ))
         )
         return fallbacks.firstOrNull { it.second.isNotBlank() }?.let {
@@ -161,6 +172,7 @@ object DiktaApi {
             val bubbleLongPressSilenceSecs = json.optDouble("bubbleLongPressSilenceSecs", 2.0).toFloat()
             val llmProvider = json.optString("llmProvider", "deepseek")
             val openaiApiKey = json.optString("openaiApiKey", "")
+            val openrouterApiKey = json.optString("openrouterApiKey", "")
             Log.d("DiktaApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             // Require at least a Groq key for STT; LLM key is optional (cleanup is skipped if absent).
@@ -170,7 +182,7 @@ object DiktaApi {
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
-                llmProvider, openaiApiKey
+                llmProvider, openaiApiKey, openrouterApiKey
             )
         } catch (e: Exception) {
             null

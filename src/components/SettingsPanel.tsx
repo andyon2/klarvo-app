@@ -619,6 +619,7 @@ export function SettingsPanel({
   const [localWhisperMode, setLocalWhisperMode] = useState(loadedSettings?.whisperMode ?? false);
   const [openaiKey, setOpenaiKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
+  const [openrouterKey, setOpenrouterKey] = useState("");
   const [localSttProvider, setLocalSttProvider] = useState<string>(loadedSettings?.sttProvider ?? "groq");
   const [localLlmProvider, setLocalLlmProvider] = useState<string>(loadedSettings?.llmProvider ?? "deepseek");
   const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
@@ -697,9 +698,10 @@ export function SettingsPanel({
         openai: loadedSettings.openaiApiKeyMasked,
         anthropic: loadedSettings.anthropicApiKeyMasked,
         groq: loadedSettings.groqApiKeyMasked,
+        openrouter: loadedSettings.openrouterApiKeyMasked,
       };
       if (!llmKeyMap[llmProv]) {
-        const fallback = ["deepseek", "openai", "groq", "anthropic"].find(p => llmKeyMap[p]);
+        const fallback = ["deepseek", "openai", "groq", "anthropic", "openrouter"].find(p => llmKeyMap[p]);
         setLocalLlmProvider(fallback ?? llmProv);
       } else {
         setLocalLlmProvider(llmProv);
@@ -929,6 +931,7 @@ export function SettingsPanel({
   const deepseekOk = !!loadedSettings?.deepseekApiKeyMasked;
   const openaiOk = !!loadedSettings?.openaiApiKeyMasked;
   const anthropicOk = !!loadedSettings?.anthropicApiKeyMasked;
+  const openrouterOk = !!loadedSettings?.openrouterApiKeyMasked;
 
   // Feature gate: user has an active paid license (licensed, active trial, or valid grace period).
   const isPaid =
@@ -1079,6 +1082,7 @@ export function SettingsPanel({
                       <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
                       <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
                       <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
+                      <option value="openrouter" disabled={!openrouterOk}>OpenRouter{!openrouterOk ? " (no key)" : ""}</option>
                     </select>
                   </div>
 
@@ -1793,6 +1797,23 @@ export function SettingsPanel({
                   placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
                   value={anthropicKey}
                   onChange={(e) => setAnthropicKey(e.target.value)}
+                  className={INPUT_CLS_M}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={LABEL_CLS_M}>OpenRouter</span>
+                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
+                  <StatusDot active={openrouterOk} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={openrouterOk ? loadedSettings!.openrouterApiKeyMasked : "sk-or-..."}
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
                   className={INPUT_CLS_M}
                 />
               </div>

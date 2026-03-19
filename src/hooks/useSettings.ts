@@ -72,7 +72,7 @@ export function useSettings() {
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     newHotkey: string, newHotkeyMode: HotkeyMode, newAudioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
-    openaiKey: string, anthropicKey: string,
+    openaiKey: string, anthropicKey: string, openrouterKey: string,
     outputLang: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
@@ -87,7 +87,7 @@ export function useSettings() {
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
-      sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey,
+      sttModel, customPrompt, autostart, whisperMode, openaiKey, anthropicKey, openrouterKey,
       null, null, outputLang, webhookUrl, tursoUrl, tursoToken,
       bubbleSize, bubbleOpacity, localWhisperModel, localWhisperGpu,
       sttProvider, llmProvider,

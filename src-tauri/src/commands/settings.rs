@@ -169,6 +169,7 @@ pub async fn save_settings(
     bubble_long_press_mode: Option<String>,
     bubble_long_press_auto_send: Option<bool>,
     bubble_long_press_silence_secs: Option<f32>,
+    openrouter_api_key: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -233,6 +234,10 @@ pub async fn save_settings(
         anthropic_api_key: match anthropic_api_key {
             Some(ref k) if !k.is_empty() => k.clone(),
             _ => existing.anthropic_api_key,
+        },
+        openrouter_api_key: match openrouter_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.openrouter_api_key,
         },
         stt_provider: stt_provider.unwrap_or(existing.stt_provider),
         llm_provider: llm_provider.unwrap_or(existing.llm_provider),
@@ -387,6 +392,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         whisper_mode: cfg.whisper_mode,
         openai_api_key_masked: mask_api_key(&cfg.openai_api_key),
         anthropic_api_key_masked: mask_api_key(&cfg.anthropic_api_key),
+        openrouter_api_key_masked: mask_api_key(&cfg.openrouter_api_key),
         stt_provider: cfg.stt_provider,
         llm_provider: cfg.llm_provider,
         output_language: cfg.output_language,

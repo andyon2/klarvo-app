@@ -437,6 +437,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub anthropic_api_key: String,
 
+    /// OpenRouter API key (OpenAI-compatible gateway for multi-provider routing).
+    #[serde(default, rename = "openrouterApiKey")]
+    pub openrouter_api_key: String,
+
     /// Selected STT provider.
     /// Valid values: `"groq"`, `"openai"`, `"local"`.
     /// Default: `"groq"`.
@@ -804,6 +808,7 @@ impl Default for AppConfig {
             deepseek_api_key: String::new(),
             openai_api_key: String::new(),
             anthropic_api_key: String::new(),
+            openrouter_api_key: String::new(),
             stt_provider: default_stt_provider(),
             llm_provider: default_llm_provider(),
             stt_priority: Vec::new(),
@@ -1068,7 +1073,7 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
     // Validation: reject unknown provider values and fall back to defaults.
     // ---------------------------------------------------------------------------
     const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
-    const VALID_LLM_PROVIDERS: &[&str] = &["deepseek", "openai", "anthropic", "groq"];
+    const VALID_LLM_PROVIDERS: &[&str] = &["deepseek", "openai", "anthropic", "groq", "openrouter"];
 
     if !VALID_STT_PROVIDERS.contains(&config.stt_provider.as_str()) {
         log::warn!(
@@ -1101,20 +1106,22 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
     // clear error at runtime when they actually trigger cleanup.
     // ---------------------------------------------------------------------------
     let current_key_empty = match config.llm_provider.as_str() {
-        "deepseek"  => config.deepseek_api_key.is_empty(),
-        "openai"    => config.openai_api_key.is_empty(),
-        "anthropic" => config.anthropic_api_key.is_empty(),
-        "groq"      => config.groq_api_key.is_empty(),
-        _           => false, // already validated above; unreachable in practice
+        "deepseek"    => config.deepseek_api_key.is_empty(),
+        "openai"      => config.openai_api_key.is_empty(),
+        "anthropic"   => config.anthropic_api_key.is_empty(),
+        "groq"        => config.groq_api_key.is_empty(),
+        "openrouter"  => config.openrouter_api_key.is_empty(),
+        _             => false, // already validated above; unreachable in practice
     };
 
     if current_key_empty {
         // Walk the preference list and pick the first provider that has a key.
         let candidates: &[(&str, &str)] = &[
-            ("deepseek",  &config.deepseek_api_key),
-            ("openai",    &config.openai_api_key),
-            ("groq",      &config.groq_api_key),
-            ("anthropic", &config.anthropic_api_key),
+            ("deepseek",   &config.deepseek_api_key),
+            ("openai",     &config.openai_api_key),
+            ("groq",       &config.groq_api_key),
+            ("anthropic",  &config.anthropic_api_key),
+            ("openrouter", &config.openrouter_api_key),
         ];
         if let Some((name, _)) = candidates
             .iter()
@@ -1311,6 +1318,7 @@ mod tests {
             bubble_long_press_mode: "hold".to_string(),
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 1.5,
+            openrouter_api_key: "sk-or-test-key".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

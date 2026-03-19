@@ -132,6 +132,8 @@ pub struct SettingsView {
     pub openai_api_key_masked: String,
     /// Masked Anthropic API key.
     pub anthropic_api_key_masked: String,
+    /// Masked OpenRouter API key.
+    pub openrouter_api_key_masked: String,
     /// Selected STT provider: "groq", "openai", or "local".
     pub stt_provider: String,
     /// Selected LLM cleanup provider: "deepseek", "openai", "anthropic", or "groq".
@@ -952,6 +954,7 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
+            openrouter_api_key_masked: String::new(),
             stt_provider: "groq".to_string(),
             llm_provider: "deepseek".to_string(),
             output_language: String::new(),
@@ -1006,6 +1009,7 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
+            openrouter_api_key_masked: String::new(),
             stt_provider: "groq".to_string(),
             llm_provider: "deepseek".to_string(),
             output_language: String::new(),
@@ -1054,6 +1058,7 @@ mod tests {
             whisper_mode: false,
             openai_api_key_masked: String::new(),
             anthropic_api_key_masked: String::new(),
+            openrouter_api_key_masked: String::new(),
             stt_provider: "groq".to_string(),
             llm_provider: "deepseek".to_string(),
             output_language: String::new(),

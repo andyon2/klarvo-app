@@ -56,6 +56,7 @@ const MOCK_SETTINGS: AppSettings = {
   whisperMode: false,
   openaiApiKeyMasked: "",
   anthropicApiKeyMasked: "",
+  openrouterApiKeyMasked: "",
   sttProvider: "groq",
   llmProvider: "deepseek",
   outputLanguage: "",
@@ -253,6 +254,7 @@ export async function saveSettings(
   whisperMode?: boolean | null,
   openaiApiKey?: string | null,
   anthropicApiKey?: string | null,
+  openrouterApiKey?: string | null,
   /** @deprecated Use sttProvider instead. */
   sttPriority?: string[] | null,
   /** @deprecated Use llmProvider instead. */
@@ -295,6 +297,7 @@ export async function saveSettings(
     whisperMode: whisperMode ?? null,
     openaiApiKey: openaiApiKey ?? null,
     anthropicApiKey: anthropicApiKey ?? null,
+    openrouterApiKey: openrouterApiKey ?? null,
     sttPriority: sttPriority ?? null,
     llmPriority: llmPriority ?? null,
     outputLanguage: outputLanguage ?? null,
