@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.4. 328 Rust-Tests (alle gruen). Cleanup-Modi ueberarbeitet (Verbatim/Polished/Chat mit verbesserter Worttreue, Code-Switching-Schutz, Anti-Substitution). UI-Label "Clean" → "Verbatim". Android: Bubble Controls Settings-Sektion (Tap/Long Press unabhaengig konfigurierbar), Notification-Actions fuer Mode-Switching entfernt, performEnter() im AccessibilityService.
+Version 0.4.5 (released 2026-03-19). 331 Rust-Tests (alle gruen). API-Key-Fallback: LLM-Provider wechselt automatisch auf verfuegbaren Provider wenn konfigurierter keinen Key hat. Alle Aenderungen seit v0.4.3 (Dual-Hotkeys, Recording-Modi, Cleanup-Overhaul, FloatingBar-Redesign, Background-Paste) sind jetzt oeffentlich.
 
 ## Blocker
 
