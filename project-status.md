@@ -21,6 +21,7 @@ Keine.
 - [ ] [android] Accessibility-Permission-Popup erscheint bei jedem App-Start obwohl Service bereits aktiviert. `isAccessibilityServiceEnabled()` Check fehlerhaft.
 
 ## Backlog
+- [ ] [desktop] Auto-Updater funktioniert nicht bei Tester (v0.4.3). latest.json + Signature korrekt. Ursache unklar (Firewall/AV?). Tester laedt manuell von GitHub.
 - [ ] [ui] Startgroesse des Windows-Fensters erhoehen — zu klein beim Oeffnen, Settings haben Scrollbalken rechts und unten
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
 - [ ] [ui] 27 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports, unused BOOL)
