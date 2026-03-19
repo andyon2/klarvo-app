@@ -1086,6 +1086,48 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
         config.llm_provider = default_llm_provider();
     }
 
+    // ---------------------------------------------------------------------------
+    // Auto-fallback: if the chosen llm_provider has no API key, switch to the
+    // first alternative that does have a key.
+    //
+    // This avoids a confusing 401 error for users who set up Groq/OpenAI but
+    // left DeepSeek (the default) unconfigured.  We only auto-switch when the
+    // current provider's key is EMPTY; an explicit choice with a present key is
+    // never touched.
+    //
+    // Preference order for the fallback search: deepseek, openai, groq, anthropic
+    // (same as VALID_LLM_PROVIDERS order so the "best" provider wins first).
+    // If every key is empty we leave the config as-is -- the user will get a
+    // clear error at runtime when they actually trigger cleanup.
+    // ---------------------------------------------------------------------------
+    let current_key_empty = match config.llm_provider.as_str() {
+        "deepseek"  => config.deepseek_api_key.is_empty(),
+        "openai"    => config.openai_api_key.is_empty(),
+        "anthropic" => config.anthropic_api_key.is_empty(),
+        "groq"      => config.groq_api_key.is_empty(),
+        _           => false, // already validated above; unreachable in practice
+    };
+
+    if current_key_empty {
+        // Walk the preference list and pick the first provider that has a key.
+        let candidates: &[(&str, &str)] = &[
+            ("deepseek",  &config.deepseek_api_key),
+            ("openai",    &config.openai_api_key),
+            ("groq",      &config.groq_api_key),
+            ("anthropic", &config.anthropic_api_key),
+        ];
+        if let Some((name, _)) = candidates
+            .iter()
+            .find(|(n, k)| *n != config.llm_provider.as_str() && !k.is_empty())
+        {
+            let old = config.llm_provider.clone();
+            config.llm_provider = name.to_string();
+            log::info!(
+                "[config] llm_provider \"{old}\" has no API key, auto-switching to \"{name}\""
+            );
+        }
+    }
+
     config
 }
 
@@ -1434,12 +1476,17 @@ mod tests {
     #[test]
     fn test_fresh_config_keeps_defaults() {
         let dir = temp_dir();
-        // Only set a key -- no priority lists.
+        // Only a Groq key is set, no priority lists, no explicit llmProvider.
+        // The default llm_provider is "deepseek", but deepseek has no key while
+        // Groq does -- so the auto-fallback switches llm_provider to "groq".
         let fresh = r#"{"groqApiKey": "gsk_test"}"#;
         std::fs::write(dir.path().join("config.json"), fresh.as_bytes()).unwrap();
         let cfg = load_config(dir.path());
         assert_eq!(cfg.stt_provider, "groq", "fresh config should keep default stt_provider");
-        assert_eq!(cfg.llm_provider, "deepseek", "fresh config should keep default llm_provider");
+        assert_eq!(
+            cfg.llm_provider, "groq",
+            "auto-fallback: deepseek has no key, groq does, so llm_provider should switch to groq"
+        );
     }
 
     /// Config that already has an explicit sttProvider is NOT overwritten by migration,
@@ -2185,5 +2232,58 @@ mod tests {
         let cfg = AppConfig::default();
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("hotkeySlots"), "expected camelCase 'hotkeySlots'");
+    }
+
+    // -----------------------------------------------------------------------
+    // Auto-fallback for llm_provider when the configured provider has no key
+    // -----------------------------------------------------------------------
+
+    /// llm_provider is "deepseek" (default) but deepseek key is empty while
+    /// openai key is present → auto-switch to "openai".
+    #[test]
+    fn test_llm_provider_auto_fallback_to_openai() {
+        let dir = temp_dir();
+        let json = r#"{
+            "llmProvider": "deepseek",
+            "deepseekApiKey": "",
+            "openaiApiKey": "sk-openai-test-key"
+        }"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.llm_provider, "openai",
+            "should auto-switch away from deepseek when its key is empty and openai has a key"
+        );
+    }
+
+    /// llm_provider is "deepseek" and deepseekApiKey is non-empty → no switch.
+    #[test]
+    fn test_llm_provider_no_switch_when_key_present() {
+        let dir = temp_dir();
+        let json = r#"{
+            "llmProvider": "deepseek",
+            "deepseekApiKey": "ds-real-key-abc",
+            "openaiApiKey": "sk-openai-test-key"
+        }"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.llm_provider, "deepseek",
+            "should NOT switch when the chosen provider already has a key"
+        );
+    }
+
+    /// All API keys empty → llm_provider stays at default, no panic.
+    #[test]
+    fn test_llm_provider_no_switch_when_all_keys_empty() {
+        let dir = temp_dir();
+        // No keys at all; serde fills everything with defaults.
+        let json = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.llm_provider, "deepseek",
+            "should stay at default when every provider key is empty"
+        );
     }
 }

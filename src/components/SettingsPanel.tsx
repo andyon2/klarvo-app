@@ -691,7 +691,19 @@ export function SettingsPanel({
       setLocalAutostart(loadedSettings.autostart);
       setLocalWhisperMode(loadedSettings.whisperMode);
       setLocalSttProvider(loadedSettings.sttProvider ?? "groq");
-      setLocalLlmProvider(loadedSettings.llmProvider ?? "deepseek");
+      const llmProv = loadedSettings.llmProvider ?? "deepseek";
+      const llmKeyMap: Record<string, string | undefined> = {
+        deepseek: loadedSettings.deepseekApiKeyMasked,
+        openai: loadedSettings.openaiApiKeyMasked,
+        anthropic: loadedSettings.anthropicApiKeyMasked,
+        groq: loadedSettings.groqApiKeyMasked,
+      };
+      if (!llmKeyMap[llmProv]) {
+        const fallback = ["deepseek", "openai", "groq", "anthropic"].find(p => llmKeyMap[p]);
+        setLocalLlmProvider(fallback ?? llmProv);
+      } else {
+        setLocalLlmProvider(llmProv);
+      }
       setLocalOutputLanguage(loadedSettings.outputLanguage ?? "");
       setLocalWebhookUrl(loadedSettings.webhookUrl ?? "");
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
