@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.5 (released 2026-03-19). 331 Rust-Tests (alle gruen). API-Key-Fallback: LLM-Provider wechselt automatisch auf verfuegbaren Provider wenn konfigurierter keinen Key hat. Alle Aenderungen seit v0.4.3 (Dual-Hotkeys, Recording-Modi, Cleanup-Overhaul, FloatingBar-Redesign, Background-Paste) sind jetzt oeffentlich.
+Version 0.4.5 (released 2026-03-19). 331 Rust-Tests (alle gruen). Alle 4 Android-Audio-Bugs gefixt (Auto-Mode stoppbar, wait-for-speech Silence-Detection, Pipeline-Latenz async Turso + Config-Cache, robuster Accessibility-Check). API-Key-Fallback: LLM-Provider wechselt automatisch auf verfuegbaren Provider wenn konfigurierter keinen Key hat.
 
 ## Blocker
 
@@ -9,16 +9,11 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Android Audio-Bugs fixen** → Silence-Detection, Auto-Mode-Loop, API-Latenz (siehe Bekannte Bugs)
-2. **Onboarding/Polish** → [Briefing noch zu erstellen]
+1. **Onboarding/Polish** → [Briefing noch zu erstellen]
 
 ## Bekannte Bugs
 
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
-- [ ] [android] Auto-Mode laesst sich nicht stoppen: Tap/LongPress waehrend PROCESSING werden ignoriert. User kann Loop nur beenden wenn Bubble gerade NICHT im Cleanup ist. Fix: Tap waehrend PROCESSING soll `autoLoopActive = false` setzen.
-- [ ] [android] Auto-Mode greift Hintergrundgeraeusche auf: Silence-Detection zaehlt sofort los ohne auf Speech zu warten. Windows hat den Fix (wait-for-speech, Commit 5f9660e), Android nicht. DiktaAudioRecorder braucht gleiche Logik.
-- [ ] [android] Cleanup dauert 10-20 Sekunden (Groq STT + DeepSeek ueber WLAN). Ursache unklar — koennte API-Latenz oder Overhead durch mehrfache Config-Reads sein. Muss profiled werden.
-- [ ] [android] Accessibility-Permission-Popup erscheint bei jedem App-Start obwohl Service bereits aktiviert. `isAccessibilityServiceEnabled()` Check fehlerhaft.
 
 ## Backlog
 - [ ] [desktop] Auto-Updater funktioniert nicht bei Tester (v0.4.3). latest.json + Signature korrekt. Ursache unklar (Firewall/AV?). Tester laedt manuell von GitHub.
