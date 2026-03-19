@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.5 (released 2026-03-19). 331 Rust-Tests (alle gruen). Alle 4 Android-Audio-Bugs gefixt (Auto-Mode stoppbar, wait-for-speech Silence-Detection, Pipeline-Latenz async Turso + Config-Cache, robuster Accessibility-Check). API-Key-Fallback: LLM-Provider wechselt automatisch auf verfuegbaren Provider wenn konfigurierter keinen Key hat.
+Version 0.4.5 (released 2026-03-19). 332 Rust-Tests (alle gruen). Android-Pipeline von 10-20s auf ~0.4s (async Turso, Config-Cache). Multi-Provider LLM Cleanup: DeepSeek, Groq, OpenAI, OpenRouter (Windows + Android). Anthropic aus UI entfernt (ungetestet, anderes API-Format). API-Key-Fallback auf beiden Plattformen.
 
 ## Blocker
 
@@ -16,11 +16,14 @@ Keine.
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
 
 ## Backlog
-- [ ] [desktop] Auto-Updater funktioniert nicht bei Tester (v0.4.3). latest.json + Signature korrekt. Ursache unklar (Firewall/AV?). Tester laedt manuell von GitHub.
-- [ ] [ui] Startgroesse des Windows-Fensters erhoehen — zu klein beim Oeffnen, Settings haben Scrollbalken rechts und unten
+- [ ] [desktop] Auto-Updater funktioniert nicht bei Tester. latest.json + Signature korrekt. Ursache unklar (Firewall/AV?).
+- [ ] [shared] Anthropic-Provider verifizieren und ggf. wieder freischalten (anderes API-Format, nie getestet)
+- [ ] [shared] OpenAI-Provider mit echtem Key testen
+- [ ] [shared] Chunking-Drift Rust vs Kotlin angleichen (Threshold 400/800, Join \n/\n\n)
+- [ ] [ui] Startgroesse des Windows-Fensters erhoehen
+- [ ] [ui] 27 Compiler-Warnings aufraumen
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
-- [ ] [ui] 27 Compiler-Warnings aufraumen (dead code, private interfaces, unused imports, unused BOOL)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
-- [ ] [android] Silence-Threshold in Android-App einstellbar machen (aktuell hardcoded 0.03 / 2s)
+- [ ] [android] Silence-Threshold einstellbar machen (aktuell hardcoded 0.03 / 2s)
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
-- [ ] [feature] User-definierbare Transkript-Blocklist: Phrasen, die immer aus dem Transkript entfernt werden sollen (z.B. wiederkehrende Whisper-Artefakte). Phase: Polish.
+- [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
