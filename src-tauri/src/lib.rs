@@ -832,6 +832,10 @@ pub fn run() {
             commands::settings::set_hotkey_paused,
             commands::settings::get_advanced_settings,
             commands::settings::save_advanced_settings,
+            // Onboarding
+            commands::settings::get_onboarding_state,
+            commands::settings::set_onboarding_state,
+            commands::settings::validate_api_key,
             // Dictionary
             commands::dictionary::get_dictionary_terms,
             commands::dictionary::add_dictionary_term,
@@ -846,6 +850,8 @@ pub fn run() {
             commands::history::get_filler_stats,
             commands::history::get_notes,
             commands::history::save_note,
+            commands::history::is_tip_shown,
+            commands::history::mark_tip_shown,
             // Misc: profiles, snippets, sync, paste, UI helpers
             commands::misc::get_profiles,
             commands::misc::save_profiles,

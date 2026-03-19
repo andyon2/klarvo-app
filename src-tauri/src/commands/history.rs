@@ -141,6 +141,24 @@ pub fn get_notes(
     history::get_notes(&db, limit).map_err(|e| format!("Failed to get notes: {e}"))
 }
 
+/// Returns `true` if the given tip has already been shown to the user.
+///
+/// `tip_id` is a stable string identifier defined by the frontend (e.g.
+/// `"onboarding_hotkey"`). This lets the frontend persist per-tip state
+/// without adding new config fields.
+#[tauri::command]
+pub fn is_tip_shown(state: State<'_, AppState>, tip_id: String) -> Result<bool, String> {
+    let db = crate::lock!(state.inner().history_db)?;
+    history::is_tip_shown(&db, &tip_id).map_err(|e| format!("Failed to check tip: {e}"))
+}
+
+/// Marks a tip as shown. Idempotent -- calling multiple times is safe.
+#[tauri::command]
+pub fn mark_tip_shown(state: State<'_, AppState>, tip_id: String) -> Result<(), String> {
+    let db = crate::lock!(state.inner().history_db)?;
+    history::mark_tip_shown(&db, &tip_id).map_err(|e| format!("Failed to mark tip shown: {e}"))
+}
+
 /// Saves a dictation result as a voice note (not pasted).
 ///
 /// Requires a paid license (Voice Notes is a paid feature).

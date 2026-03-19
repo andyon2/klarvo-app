@@ -125,7 +125,12 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
             estimated_cost_usd  REAL NOT NULL DEFAULT 0,
             created_at          TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage(created_at DESC);",
+        CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS tips_shown (
+            tip_id   TEXT PRIMARY KEY,
+            shown_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
     )?;
 
     // Migration: add is_note column for existing databases.
@@ -395,6 +400,29 @@ pub fn get_usage_summary(conn: &Connection) -> Result<UsageSummary, HistoryError
 }
 
 // ---------------------------------------------------------------------------
+// Tips tracking
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if the given tip has already been shown to the user.
+pub fn is_tip_shown(conn: &Connection, tip_id: &str) -> Result<bool, HistoryError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tips_shown WHERE tip_id = ?1",
+        params![tip_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Records that a tip has been shown. Idempotent -- calling twice is safe.
+pub fn mark_tip_shown(conn: &Connection, tip_id: &str) -> Result<(), HistoryError> {
+    conn.execute(
+        "INSERT OR IGNORE INTO tips_shown (tip_id) VALUES (?1)",
+        params![tip_id],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Filler word statistics
 // ---------------------------------------------------------------------------
 
@@ -509,6 +537,10 @@ mod tests {
                 completion_tokens   INTEGER,
                 estimated_cost_usd  REAL NOT NULL DEFAULT 0,
                 created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS tips_shown (
+                tip_id   TEXT PRIMARY KEY,
+                shown_at TEXT NOT NULL DEFAULT (datetime('now'))
             );",
         )
         .unwrap();
@@ -791,5 +823,32 @@ mod tests {
         let json = serde_json::to_string(&stat).unwrap();
         assert!(json.contains("\"word\""));
         assert!(json.contains("\"count\""));
+    }
+
+    // --- Tips tracking ---
+
+    #[test]
+    fn test_is_tip_shown_new_tip_returns_false() {
+        let conn = mem_db();
+        let shown = is_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        assert!(!shown, "a brand-new tip must not be shown yet");
+    }
+
+    #[test]
+    fn test_mark_tip_shown_then_is_tip_shown_returns_true() {
+        let conn = mem_db();
+        mark_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        let shown = is_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        assert!(shown, "tip must be shown after mark_tip_shown");
+    }
+
+    #[test]
+    fn test_mark_tip_shown_idempotent() {
+        let conn = mem_db();
+        // Calling twice must not produce an error.
+        mark_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        mark_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        let shown = is_tip_shown(&conn, "onboarding_hotkey").unwrap();
+        assert!(shown);
     }
 }

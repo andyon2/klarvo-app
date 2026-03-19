@@ -414,6 +414,34 @@ fn default_hotkey_slots() -> Vec<HotkeySlot> {
 // Configuration struct
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// OnboardingState
+// ---------------------------------------------------------------------------
+
+/// Tracks the user's progress through the first-run onboarding wizard.
+///
+/// Persisted as part of `AppConfig` so the wizard survives app restarts.
+/// All fields default to "not started" via `Default`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingState {
+    /// `true` when the user has completed the wizard successfully.
+    pub completed: bool,
+    /// `true` when the user explicitly clicked "Skip" on the wizard.
+    pub skipped: bool,
+    /// The last step the user reached. 0 = not started.
+    pub current_step: u8,
+    /// Chosen operating mode. One of `"cloud"`, `"offline"`, or `""` (not chosen yet).
+    pub mode: String,
+    /// Chosen input language. ISO-639-1 code (e.g. `"de"`, `"en"`).
+    /// Empty string = not chosen yet.
+    pub language: String,
+}
+
+// ---------------------------------------------------------------------------
+// AppConfig
+// ---------------------------------------------------------------------------
+
 /// Persisted application settings.
 ///
 /// All fields have defaults via `Default` so a partially-written or
@@ -713,6 +741,14 @@ pub struct AppConfig {
     /// when triggered by a bubble long press. Default: 2.0 seconds.
     #[serde(default = "default_bubble_silence_secs")]
     pub bubble_long_press_silence_secs: f32,
+
+    /// Onboarding wizard state.
+    ///
+    /// Tracks whether the user has completed, skipped, or is partway through
+    /// the first-run setup wizard. Uses `#[serde(default)]` so old config
+    /// files (without this field) load correctly -- they get `OnboardingState::default()`.
+    #[serde(default)]
+    pub onboarding: OnboardingState,
 }
 
 fn default_stt_provider() -> String {
@@ -851,6 +887,7 @@ impl Default for AppConfig {
             bubble_long_press_mode: default_bubble_long_press_mode(),
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: default_bubble_silence_secs(),
+            onboarding: OnboardingState::default(),
         }
     }
 }
