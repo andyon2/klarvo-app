@@ -67,6 +67,8 @@ class DiktaAudioRecorder(
     // Require at least 1s of audio before silence detection activates (avoids instant trigger)
     private var totalChunks = 0
     private val minChunksBeforeSilence = 15  // ~1s
+    // True once speech has been detected -- silence before first speech is ignored.
+    private var speechDetected = false
 
     // Rolling average for amplitude smoothing (last 3 values).
     private val amplitudeHistory = FloatArray(3) { 0f }
@@ -117,6 +119,7 @@ class DiktaAudioRecorder(
         silentChunks = 0
         silenceCallbackFired = false
         totalChunks = 0
+        speechDetected = false
 
         recordingThread = Thread {
             val buf = ShortArray(bufferSize / 2)
@@ -133,15 +136,20 @@ class DiktaAudioRecorder(
                     // Silence detection
                     totalChunks++
                     if (onSilenceDetected != null && !silenceCallbackFired) {
-                        if (smoothedAmp < SILENCE_THRESHOLD) {
+                        if (smoothedAmp >= SILENCE_THRESHOLD) {
+                            // Speech detected: mark it, reset consecutive-silence counter.
+                            speechDetected = true
+                            silentChunks = 0
+                        } else if (speechDetected) {
+                            // Silence after speech has been detected: count it.
                             silentChunks++
                             if (silentChunks >= requiredSilentChunks && totalChunks >= minChunksBeforeSilence) {
                                 silenceCallbackFired = true
+                                Log.d(TAG, "Silence detected after speech ($silentChunks chunks, totalChunks=$totalChunks)")
                                 onSilenceDetected?.invoke()
                             }
-                        } else {
-                            silentChunks = 0
                         }
+                        // else: silence before any speech -- ignore pre-speech ambient noise
                     }
                 }
             }

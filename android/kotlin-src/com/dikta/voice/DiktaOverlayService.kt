@@ -685,7 +685,13 @@ class DiktaOverlayService : Service() {
                 }
                 // If pushToTalkActive: ignore taps, finger release handles it
             }
-            RecordingState.PROCESSING -> { /* ignore */ }
+            RecordingState.PROCESSING -> {
+                // Stop auto-loop so the cycle doesn't repeat after this processing finishes.
+                if (autoLoopActive) {
+                    autoLoopActive = false
+                    Log.d(TAG, "Auto-loop deactivated by tap during processing")
+                }
+            }
         }
     }
 

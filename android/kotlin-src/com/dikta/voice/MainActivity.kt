@@ -1,7 +1,10 @@
 package com.dikta.voice
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlertDialog
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -9,6 +12,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -191,16 +196,51 @@ class MainActivity : TauriActivity() {
     }
 
     /**
-     * Returns true when DiktaAccessibilityService is listed in the system's enabled services.
-     * The enabled-services string uses "package/fully.qualified.ClassName" format.
+     * Returns true when DiktaAccessibilityService is active.
+     *
+     * Uses two methods to handle OEM variations (Xiaomi, Samsung use non-standard
+     * separator formats or component name casing in ENABLED_ACCESSIBILITY_SERVICES):
+     *
+     *   Method 1 (primary): AccessibilityManager.getEnabledAccessibilityServiceList()
+     *     Queries the live list of running accessibility services -- most reliable.
+     *
+     *   Method 2 (fallback): Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES string.
+     *     Splits by ":" and compares using ComponentName.flattenToString() for
+     *     case-insensitive matching, which handles OEM formatting quirks.
      */
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val service = "$packageName/${DiktaAccessibilityService::class.java.canonicalName}"
-        val enabledServices = Settings.Secure.getString(
+        // Method 1: Query the live service list via AccessibilityManager.
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        if (am != null) {
+            val runningServices = am.getEnabledAccessibilityServiceList(
+                AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+            )
+            for (info in runningServices) {
+                if (info.resolveInfo.serviceInfo.packageName == packageName) {
+                    Log.d("MainActivity", "Accessibility service confirmed via AccessibilityManager")
+                    return true
+                }
+            }
+        }
+
+        // Method 2: Fallback -- parse the Settings.Secure string manually.
+        // Split by ":" (standard separator) and compare with ComponentName to handle
+        // OEMs that store entries in a different case or with extra whitespace.
+        val expectedComponent = ComponentName(
+            this,
+            DiktaAccessibilityService::class.java
+        ).flattenToString()
+        val enabledString = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
-        return enabledServices.contains(service)
+        val found = enabledString.split(":").any {
+            it.trim().equals(expectedComponent, ignoreCase = true)
+        }
+        if (found) {
+            Log.d("MainActivity", "Accessibility service confirmed via Settings.Secure fallback")
+        }
+        return found
     }
 
     private fun startOverlayService() {
