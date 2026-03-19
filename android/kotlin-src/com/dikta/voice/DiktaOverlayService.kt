@@ -874,19 +874,20 @@ class DiktaOverlayService : Service() {
                 return
             }
 
-            // Step 2: Text cleanup via DeepSeek (optional -- skip if no key)
-            val finalText = if (config.deepseekApiKey.isNotBlank()) {
+            // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
+            val llmProvider = DiktaApi.resolveLlmProvider(config)
+            val finalText = if (llmProvider != null) {
                 try {
-                    val result = DiktaApi.cleanupChunked(transcript, config.deepseekApiKey, config.cleanupStyle)
+                    val result = DiktaApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
-                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms")
+                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                     result
                 } catch (e: IOException) {
-                    Log.w(TAG, "Text cleanup via DeepSeek failed -- using raw transcript", e)
+                    Log.w(TAG, "Text cleanup failed -- using raw transcript", e)
                     transcript
                 }
             } else {
-                Log.d(TAG, "[pipeline] cleanup: skipped (no DeepSeek key)")
+                Log.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
                 transcript
             }
 
