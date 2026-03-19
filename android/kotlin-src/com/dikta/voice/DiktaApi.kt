@@ -19,6 +19,10 @@ import java.util.concurrent.Executors
  */
 object DiktaApi {
 
+    // Set to true after the first successful ensureRemoteTable() call.
+    // Avoids an extra HTTP roundtrip on every subsequent Turso push.
+    private var remoteTableEnsured = false
+
     data class Config(
         val groqApiKey: String,
         val deepseekApiKey: String,
@@ -197,7 +201,12 @@ object DiktaApi {
             val httpsUrl = tursoUrl.replace("libsql://", "https://")
 
             // Ensure the remote table exists before inserting rows.
-            ensureRemoteTable(httpsUrl, tursoToken)
+            // Only runs once per app session -- the flag avoids a redundant HTTP roundtrip
+            // on every subsequent push.
+            if (!remoteTableEnsured) {
+                ensureRemoteTable(httpsUrl, tursoToken)
+                remoteTableEnsured = true
+            }
 
             val requests = JSONArray()
             val uuids = mutableListOf<String>()

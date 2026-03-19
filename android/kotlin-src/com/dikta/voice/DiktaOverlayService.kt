@@ -67,6 +67,10 @@ class DiktaOverlayService : Service() {
         var instance: DiktaOverlayService? = null
     }
 
+    // Cached config -- populated by loadBubbleControls(), reused in processAudio().
+    // Avoids redundant disk reads within a single dictation cycle.
+    private var cachedConfig: DiktaApi.Config? = null
+
     enum class RecordingMode(val label: String, val badge: String) {
         HOLD("Hold", "H"),
         TOGGLE("Toggle", "T"),
@@ -327,6 +331,7 @@ class DiktaOverlayService : Service() {
      */
     private fun loadBubbleControls() {
         val config = DiktaApi.readConfig(this)
+        cachedConfig = config  // cache for processAudio() to avoid redundant disk read
         if (config != null) {
             tapMode = RecordingMode.fromString(config.bubbleTapMode)
             longPressMode = RecordingMode.fromString(config.bubbleLongPressMode)
@@ -698,9 +703,6 @@ class DiktaOverlayService : Service() {
     // --- Audio recording ---
 
     private fun startRecording() {
-        // Re-read config so any Settings changes take effect immediately.
-        loadBubbleControls()
-
         // Determine which mode governs this recording session.
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -825,6 +827,8 @@ class DiktaOverlayService : Service() {
     // --- API pipeline ---
 
     private fun processAudio(wavBytes: ByteArray) {
+        val t0 = System.currentTimeMillis()
+
         if (wavBytes.isEmpty()) {
             handler.post {
                 showToast("No audio recorded")
@@ -836,7 +840,12 @@ class DiktaOverlayService : Service() {
             return
         }
 
-        val config = DiktaApi.readConfig(this)
+        // Use cached config from loadBubbleControls() (called moments ago by handleTap/longPress).
+        // Fall back to a fresh read if the cache is somehow stale (e.g. auto-loop restart path).
+        val config = cachedConfig ?: DiktaApi.readConfig(this)
+        val tConfig = System.currentTimeMillis()
+        Log.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
+
         if (config == null || config.groqApiKey.isBlank()) {
             handler.post {
                 showToast("No API keys configured. Please open Dikta and add your Groq key in Settings.")
@@ -851,6 +860,8 @@ class DiktaOverlayService : Service() {
         try {
             // Step 1: STT via Groq Whisper
             val transcript = DiktaApi.transcribe(wavBytes, config.groqApiKey, config.language)
+            val tStt = System.currentTimeMillis()
+            Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio)")
 
             if (transcript.isBlank()) {
                 handler.post {
@@ -866,16 +877,21 @@ class DiktaOverlayService : Service() {
             // Step 2: Text cleanup via DeepSeek (optional -- skip if no key)
             val finalText = if (config.deepseekApiKey.isNotBlank()) {
                 try {
-                    DiktaApi.cleanupChunked(transcript, config.deepseekApiKey, config.cleanupStyle)
+                    val result = DiktaApi.cleanupChunked(transcript, config.deepseekApiKey, config.cleanupStyle)
+                    val tCleanup = System.currentTimeMillis()
+                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms")
+                    result
                 } catch (e: IOException) {
                     Log.w(TAG, "Text cleanup via DeepSeek failed -- using raw transcript", e)
                     transcript
                 }
             } else {
+                Log.d(TAG, "[pipeline] cleanup: skipped (no DeepSeek key)")
                 transcript
             }
 
             // Step 3: Save to history DB
+            val tBeforeHistory = System.currentTimeMillis()
             DiktaApi.saveToHistory(
                 context  = this,
                 finalText = finalText,
@@ -884,9 +900,22 @@ class DiktaOverlayService : Service() {
                 language = config.language,
                 deviceId = config.deviceId
             )
+            val tHistory = System.currentTimeMillis()
+            Log.d(TAG, "[pipeline] history save: ${tHistory - tBeforeHistory}ms")
+            Log.d(TAG, "[pipeline] total so far (after history): ${tHistory - t0}ms")
 
-            // Step 3b: Push unsynced entries to Turso (best-effort)
-            DiktaApi.pushToTurso(this, config.tursoUrl, config.tursoToken)
+            // Step 3b: Push unsynced entries to Turso (fire-and-forget -- must not block paste)
+            if (config.tursoUrl.isNotBlank() && config.tursoToken.isNotBlank()) {
+                Thread {
+                    try {
+                        DiktaApi.pushToTurso(this@DiktaOverlayService, config.tursoUrl, config.tursoToken)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Turso sync failed (non-blocking)", e)
+                    }
+                }.start()
+            }
+
+            Log.d(TAG, "[pipeline] total before paste: ${System.currentTimeMillis() - t0}ms")
 
             // Step 4: Copy to clipboard and paste
             // Capture activeGesture before posting to main thread (it may change on next gesture).
