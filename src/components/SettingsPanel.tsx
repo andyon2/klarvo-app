@@ -1078,7 +1078,6 @@ export function SettingsPanel({
                     >
                       <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
                       <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
-                      <option value="anthropic" disabled={!anthropicOk}>Anthropic{!anthropicOk ? " (no key)" : ""}</option>
                       <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
                     </select>
                   </div>
