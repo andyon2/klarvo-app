@@ -29,3 +29,4 @@ Keine.
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
+- [ ] [ux] Live-Preview: Whisper-Halluzinationen ("ZDF 2020") bei Stille filtern. `is_prompt_echo`-Check auf `transcribe_live_preview` anwenden. Phase: Polish.

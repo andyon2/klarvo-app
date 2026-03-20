@@ -437,8 +437,8 @@ pub fn friendly_error(context: &str, err: &str) -> String {
         || err.contains("invalid_api_key")
     {
         " Check your API key in Settings."
-    } else if err.contains("429") || err.contains("rate_limit") {
-        " Rate limit reached \u{2014} wait a moment and try again."
+    } else if err.contains("429") || err.contains("rate_limit") || err.contains("Rate limit") {
+        " Groq Free-Tier-Limit erreicht \u{2014} warte einen Moment und versuche es erneut."
     } else if err.contains("timeout") || err.contains("timed out") {
         " Request timed out \u{2014} check your internet connection."
     } else if err.contains("connection") || err.contains("ConnectError") {

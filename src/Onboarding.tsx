@@ -426,7 +426,7 @@ function StepMode({ selected, onSelect, onNext }: {
             )}
           </div>
           <ul className="flex flex-col gap-1">
-            {["Beste Qualität", "API-Key benötigt", "Groq kostenlos"].map((b) => (
+            {["Beste Qualität", "API-Key benötigt", "Groq kostenlos (mit Limit)"].map((b) => (
               <li key={b} className="text-[11px] text-zinc-500 flex items-start gap-1.5">
                 <span className="text-emerald-500/60 mt-0.5">•</span>
                 {b}
@@ -618,7 +618,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Spracherkennung einrichten</h2>
-        <p className="text-sm text-zinc-400">Dikta nutzt Groq Whisper zum Transkribieren — kostenlos und schnell.</p>
+        <p className="text-sm text-zinc-400">Dikta nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
       </div>
 
       {/* Groq highlighted block */}
@@ -629,7 +629,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
           </span>
           <span className="text-sm font-semibold text-zinc-200">Groq</span>
           <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
-            empfohlen — kostenlos
+            empfohlen — kostenloses Free-Tier
           </span>
         </div>
         <ApiKeyField
@@ -638,7 +638,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
           onChange={setGroqKey}
           placeholder="gsk_..."
           provider="groq"
-          costHint="Groq Whisper ist derzeit kostenlos."
+          costHint="Groq Whisper ist kostenlos nutzbar. Bei intensiver Nutzung kann ein kurzes Limit greifen."
           magicLinkUrl="https://console.groq.com"
           magicLinkLabel="Kostenlosen Key holen"
           validationState={groqValidation.state}
