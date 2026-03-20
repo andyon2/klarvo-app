@@ -370,8 +370,11 @@ export default function FloatingBar() {
   // --- Real-time audio level ring buffer ---
   useEffect(() => {
     const unlisten = listen<AudioLevelPayload>("dikta://audio-level", (event) => {
-      const raw = Math.min(1, event.payload.level * 2.8);
-      const boosted = Math.pow(raw, 0.6);
+      // Scale RMS to visual range. Typical speech RMS is 0.01–0.1.
+      // Multiplier of 10 maps 0.1 RMS to full scale (1.0).
+      // Power of 0.4 compresses the range so quiet speech is still visible.
+      const raw = Math.min(1, event.payload.level * 10);
+      const boosted = Math.pow(raw, 0.4);
       setLevels((prev) => [...prev.slice(1), boosted]);
     });
     return () => { unlisten.then((fn) => fn()); };
