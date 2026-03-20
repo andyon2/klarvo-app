@@ -41,12 +41,6 @@ const RESET_CSS = `
   }
   ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
 
-  @keyframes bar-bounce-0 { 0%,100%{transform:scaleY(0.15)} 50%{transform:scaleY(1)} }
-  @keyframes bar-bounce-1 { 0%,100%{transform:scaleY(0.15)} 50%{transform:scaleY(1)} }
-  @keyframes bar-bounce-2 { 0%,100%{transform:scaleY(0.15)} 50%{transform:scaleY(1)} }
-  @keyframes bar-bounce-3 { 0%,100%{transform:scaleY(0.15)} 50%{transform:scaleY(1)} }
-  @keyframes bar-bounce-4 { 0%,100%{transform:scaleY(0.15)} 50%{transform:scaleY(1)} }
-
   @keyframes spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
@@ -68,10 +62,6 @@ const RESET_CSS = `
     to   { transform: scale(0.85); opacity: 0; }
   }
 `;
-
-// Phase offsets per bar, spread evenly.
-const BAR_PHASE_DELAYS = [0, 0.2, 0.4, 0.6, 0.8];
-const BAR_ANIMATION_DURATION = 600;
 
 // ---------------------------------------------------------------------------
 // Sub-components
