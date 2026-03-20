@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.6 released (Windows + Android). 335 Rust-Tests (alle gruen). Hotkey-Modi funktionieren. Waveform echtzeit-responsiv. Live-Preview deaktiviert (Groq-Quota-Fix). Onboarding mit Free-Tier-Hinweis. Auto-Modi als Experimental markiert. OpenRouter verifiziert (API-Test erfolgreich). README ueberarbeitet (Quick Start, Provider-Tabellen, Cloud/Offline-Weiche) aber Feature-Sektion unvollstaendig -- wartet auf USP-Analyse.
+Version 0.4.7 released (Windows + Android). 369 Rust-Tests (alle gruen). Silero VAD v5 ersetzt RMS-Silence-Detection (beide Plattformen). Whisper-Hallucination-Blocklist aktiv. Verbatim/Chat Cleanup-Stile und Whisper small jetzt Free. Feature-Inventar mit USP-Analyse liegt unter `knowledge/feature-inventory.md`. README Feature-Sektionen ueberarbeitet aber enthalten noch Fehler -- muss gegen Inventar abgeglichen werden.
 
 ## Blocker
 
@@ -9,13 +9,12 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Feature-Inventar + USP-Analyse** → Vollstaendige Feature-Liste aus Code erstellen. Jedes Feature gegen Wispr Flow und andere Konkurrenten pruefen. Ergebnis in zentralem Dokument (`knowledge/feature-inventory.md`). Dann README-Feature-Sektion daraus ableiten. Briefing liegt unter `briefings/readme-feature-analysis.md`.
-2. **Silence Detection Deep Research** → Ergebnisse aus Claude Deep Research integrieren, VAD evaluieren. Briefing: `briefings/deep-research-silence-detection.md`.
-3. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+1. **README gegen Feature-Inventar abgleichen** → Jede Zeile in der README gegen `knowledge/feature-inventory.md` pruefen. Bekannte Fehler: Android Bubble-Beschreibung falsch (fehlende Keyboard-Detection, falsche Gestenbeschreibung). Lektion: Inventar als Checkliste nutzen, nicht aus dem Kopf schreiben.
+2. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+3. **Live-Preview als Opt-In** → Nach VAD-Overhaul jetzt moeglich. Whisper-Halluzinationen werden gefiltert.
 
 ## Bekannte Bugs
 
-- [ ] Auto-Mode Silence-Detection unzuverlaessig: Duration-Slider scheint wenig Wirkung, Musik-Bleed-Through verhindert Silence-Erkennung. Wartet auf VAD-Overhaul.
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
 - [ ] Updater ACL-Fehler: "Command plugin:updater|check not allowed by ACL". Low-Prio.
 
@@ -29,5 +28,4 @@ Keine.
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
-- [ ] [ux] Live-Preview als Opt-In wiederbeleben (nach VAD-Overhaul). Whisper-Halluzinationen filtern.
 - [ ] [feature] OpenRouter Modell-Dropdown in Settings (aktuell hardcoded auf deepseek/deepseek-chat).
