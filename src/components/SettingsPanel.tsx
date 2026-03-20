@@ -775,8 +775,8 @@ export function SettingsPanel({
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
       localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
       localInsertAndSendSlot2 !== (loadedSettings.insertAndSendSlot2 ?? false) ||
-      (localHotkeyMode === "autostop" && localSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0)) ||
-      (localHotkeyMode === "auto" && localSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0)) ||
+      ((localHotkeyMode === "autostop" || localHotkeyModeSlot2 === "autostop") && localSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0)) ||
+      ((localHotkeyMode === "auto" || localHotkeyModeSlot2 === "auto") && localSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0)) ||
       localHotkeySlot2 !== (loadedSettings.hotkeySlot2 ?? "") ||
       localHotkeyModeSlot2 !== (loadedSettings.hotkeyModeSlot2 ?? "hold") ||
       groqKey.trim() !== "" ||
