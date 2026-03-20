@@ -121,7 +121,7 @@ function DiktaLogo() {
   );
 }
 
-/** Animated waveform: 5 bars, soft color. */
+/** Real-time waveform: 5 bars driven by audio level events (~15 Hz). */
 function Waveform({ levels }: { levels: number[] }) {
   return (
     <div
@@ -138,7 +138,6 @@ function Waveform({ levels }: { levels: number[] }) {
         const levelIdx = Math.round((i / (BAR_COUNT - 1)) * (levels.length - 1));
         const amplitude = Math.max(0.12, levels[levelIdx] ?? 0);
         const heightPx = Math.max(3, amplitude * 19);
-        const delayMs = BAR_PHASE_DELAYS[i] * BAR_ANIMATION_DURATION;
         return (
           <div
             key={i}
@@ -147,13 +146,8 @@ function Waveform({ levels }: { levels: number[] }) {
               borderRadius: 9999,
               background: "rgba(147,197,253,0.85)",
               height: heightPx,
-              transformOrigin: "center",
-              animation: `bar-bounce-${i} ${BAR_ANIMATION_DURATION}ms ease-in-out ${delayMs}ms infinite`,
-              willChange: "transform",
-              // No transition: bars must respond instantly to the 15 Hz audio-level
-              // events. A CSS transition longer than the ~66 ms event interval
-              // would keep the element perpetually mid-transition and make the
-              // waveform feel sluggish / unresponsive.
+              // No animation or transition: bars respond instantly to the
+              // 15 Hz audio-level events from the Rust backend.
             }}
           />
         );

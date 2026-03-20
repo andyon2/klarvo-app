@@ -1279,22 +1279,6 @@ export function SettingsPanel({
                           <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                         </div>
 
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className={LABEL_CLS}>Silence Threshold</span>
-                            <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(3)}</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0.003}
-                            max={0.15}
-                            step={0.001}
-                            value={localSilenceThreshold}
-                            onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
-                            className="w-full accent-emerald-500"
-                          />
-                          <p className="text-[11px] text-zinc-500">Audio level below which silence is detected. Higher = less sensitive to background noise.</p>
-                        </div>
                       </>
                     )}
 
@@ -1401,22 +1385,6 @@ export function SettingsPanel({
                               <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                             </div>
 
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className={LABEL_CLS}>Silence Threshold</span>
-                                <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(3)}</span>
-                              </div>
-                              <input
-                                type="range"
-                                min={0.003}
-                                max={0.15}
-                                step={0.001}
-                                value={localSilenceThreshold}
-                                onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
-                                className="w-full accent-emerald-500"
-                              />
-                              <p className="text-[11px] text-zinc-500">Audio level below which silence is detected. Higher = less sensitive to background noise.</p>
-                            </div>
                           </>
                         )}
                       </div>
