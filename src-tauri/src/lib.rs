@@ -51,6 +51,9 @@ mod pipeline;
 mod stt;
 mod sync;
 
+#[cfg(desktop)]
+mod vad;
+
 #[cfg(test)]
 mod test_helpers;
 
