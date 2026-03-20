@@ -716,6 +716,7 @@ class DiktaOverlayService : Service() {
         }
 
         val recorder = DiktaAudioRecorder(
+            context = this,
             onAmplitude = { amplitude -> handler.post { bubbleView.amplitude = amplitude } },
             silenceSecs = activeSilenceSecs
         )

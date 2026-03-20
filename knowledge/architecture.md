@@ -168,6 +168,7 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - **Kotlin-Dateien:** Persistent in `android/kotlin-src/`, werden via `scripts/android-build.sh` nach `gen/android/` kopiert
 - **WebView:** `env(safe-area-inset-bottom)` gibt 0 zurueck. Feste 56px Padding + max-h Abzuege nutzen
 - **Accessibility:** FLAG_RETRIEVE_INTERACTIVE_WINDOWS + packageNames=null fuer system-weite Events
+- **VAD (android-vad Library):** `VadSilero` braucht exakt 512 Samples/Frame bei 16kHz. AudioRecord liefert variable Chunk-Groessen → Ring Buffer noetig. Library via JitPack (`com.github.gkonovalov.android-vad:silero:2.0.10`). JitPack muss in `allprojects.repositories` (top-level `build.gradle.kts`) stehen, NICHT nur in `app/build.gradle.kts`. `VadSilero` implementiert `Closeable` → `close()` in `stop()` und `releaseImmediately()` aufrufen um ONNX-Session zu schliessen. `isSpeech()` hat 3 Ueberladungen: ShortArray, ByteArray, FloatArray -- ShortArray direkt nutzbar mit Android PCM 16-bit.
 
 ### Android Build
 - JDK 17, NDK via SDK Manager, Build-Tools 34.0.0, Rust targets: aarch64-linux-android
