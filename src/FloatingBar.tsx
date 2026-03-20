@@ -151,7 +151,10 @@ function Waveform({ levels }: { levels: number[] }) {
               transformOrigin: "center",
               animation: `bar-bounce-${i} ${BAR_ANIMATION_DURATION}ms ease-in-out ${delayMs}ms infinite`,
               willChange: "transform",
-              transition: "height 75ms ease-out",
+              // No transition: bars must respond instantly to the 15 Hz audio-level
+              // events. A CSS transition longer than the ~66 ms event interval
+              // would keep the element perpetually mid-transition and make the
+              // waveform feel sluggish / unresponsive.
             }}
           />
         );
@@ -392,19 +395,22 @@ export default function FloatingBar() {
   }, []);
 
   // --- Live preview polling while recording ---
-  useEffect(() => {
-    if (!isRecording) {
-      setLivePreview("");
-      return;
-    }
-    const initialDelay = setTimeout(() => {
-      transcribeLivePreview().then((t) => { if (t) setLivePreview(t); }).catch(() => {});
-    }, 2000);
-    const interval = setInterval(() => {
-      transcribeLivePreview().then((t) => { if (t) setLivePreview(t); }).catch(() => {});
-    }, 3000);
-    return () => { clearTimeout(initialDelay); clearInterval(interval); };
-  }, [isRecording]);
+  // Disabled: causes 10-20x Groq API quota usage with no meaningful UX benefit.
+  // The waveform provides sufficient recording feedback. Re-enable via a
+  // settings flag if needed in the future.
+  // useEffect(() => {
+  //   if (!isRecording) {
+  //     setLivePreview("");
+  //     return;
+  //   }
+  //   const initialDelay = setTimeout(() => {
+  //     transcribeLivePreview().then((t) => { if (t) setLivePreview(t); }).catch(() => {});
+  //   }, 2000);
+  //   const interval = setInterval(() => {
+  //     transcribeLivePreview().then((t) => { if (t) setLivePreview(t); }).catch(() => {});
+  //   }, 3000);
+  //   return () => { clearTimeout(initialDelay); clearInterval(interval); };
+  // }, [isRecording]);
 
   // --- Manual drag via mouse events + setPosition() ---
   // Tauri's startDragging() and data-tauri-drag-region don't work reliably
@@ -520,26 +526,7 @@ export default function FloatingBar() {
         {isRecording && (
           <>
             <StopButton onClick={() => { cancelRecording().catch(() => {}); }} />
-            {livePreview ? (
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "#d4d4d8",
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  direction: "rtl",
-                  textAlign: "left",
-                  lineHeight: 1,
-                }}
-              >
-                {livePreview}
-              </span>
-            ) : (
-              <Waveform levels={levels} />
-            )}
+            <Waveform levels={levels} />
             <span
               style={{
                 fontSize: 10,
