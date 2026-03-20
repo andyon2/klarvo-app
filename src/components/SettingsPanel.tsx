@@ -1226,8 +1226,8 @@ export function SettingsPanel({
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                          { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
-                          { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                          { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
+                          { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
                         ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                           <button
                             key={value}
@@ -1341,8 +1341,8 @@ export function SettingsPanel({
                           {([
                             { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                             { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                            { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
-                            { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                            { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
+                            { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
                           ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                             <button
                               key={value}
@@ -1462,8 +1462,8 @@ export function SettingsPanel({
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                          { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
-                          { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                          { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
+                          { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
                         ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                           <button
                             key={value}
@@ -1518,8 +1518,8 @@ export function SettingsPanel({
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                          { value: "autostop", label: "Auto Stop", tooltip: "Press to start, stops automatically on silence" },
-                          { value: "auto", label: "Auto", tooltip: "Continuous — restarts after each silence gap" },
+                          { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
+                          { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
                         ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                           <button
                             key={value}
