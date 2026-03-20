@@ -2007,4 +2007,107 @@ mod tests {
             "real medical content must be preserved; got: {result:?}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Characterization tests for compute_wav_rms
+    //
+    // Golden Master for the WAV-level RMS check used in stop_and_process_pipeline
+    // to detect whether the recording contains audible speech.
+    // -----------------------------------------------------------------------
+
+    /// Builds a minimal 16kHz mono 16-bit PCM WAV buffer from f32 samples.
+    ///
+    /// Replicates the encoding path used in production (`encode_to_wav`) so
+    /// the tests are independent of the audio module.
+    fn make_wav(samples: &[f32]) -> Vec<u8> {
+        use std::io::Cursor;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut cursor = Cursor::new(Vec::new());
+        let mut writer = hound::WavWriter::new(&mut cursor, spec).unwrap();
+        for &s in samples {
+            let int_sample = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+            writer.write_sample(int_sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        cursor.into_inner()
+    }
+
+    /// compute_wav_rms of a silence WAV must return Some(0.0).
+    ///
+    /// A silence WAV (all i16 zeros) round-trips through int normalisation and
+    /// should produce exactly 0.0 -- not None, not a small epsilon.
+    #[test]
+    fn characterize_compute_wav_rms_silence_is_zero() {
+        let wav = make_wav(&vec![0.0f32; 1600]); // 100 ms of silence
+        let rms = compute_wav_rms(&wav);
+        assert!(rms.is_some(), "compute_wav_rms must return Some(...) for a valid WAV");
+        let rms = rms.unwrap();
+        assert_eq!(rms, 0.0, "silence WAV must produce RMS = 0.0, got {rms}");
+    }
+
+    /// compute_wav_rms of a sine-tone WAV must be approximately 1/sqrt(2).
+    ///
+    /// We use a 440 Hz sine at full scale (amplitude 1.0).  The i16 quantisation
+    /// introduces a tiny error, so we use a loose 1e-3 tolerance.
+    #[test]
+    fn characterize_compute_wav_rms_sine_tone_snapshot() {
+        let n = 16_000usize;
+        let freq = 440.0f32;
+        let sr = 16_000.0f32;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / sr).sin())
+            .collect();
+
+        let wav = make_wav(&samples);
+        let rms = compute_wav_rms(&wav).expect("sine WAV must parse successfully");
+
+        let expected = 1.0_f32 / 2.0_f32.sqrt(); // ≈ 0.70710678
+        assert!(
+            (rms - expected).abs() < 1e-3,
+            "sine-tone WAV RMS should be ≈{expected:.5}, got {rms:.5}"
+        );
+
+        // Snapshot: locks in the concrete value so any change to the i16
+        // quantisation or normalisation path is immediately visible.
+        insta::assert_debug_snapshot!("compute_wav_rms_sine_tone", rms);
+    }
+
+    /// compute_wav_rms of an invalid byte slice returns None.
+    #[test]
+    fn characterize_compute_wav_rms_invalid_bytes_returns_none() {
+        let garbage: &[u8] = b"this is not a WAV file at all!";
+        let result = compute_wav_rms(garbage);
+        assert!(result.is_none(), "invalid WAV bytes must return None, got {result:?}");
+    }
+
+    /// compute_wav_rms of an empty byte slice returns None.
+    #[test]
+    fn characterize_compute_wav_rms_empty_bytes_returns_none() {
+        let result = compute_wav_rms(&[]);
+        assert!(result.is_none(), "empty byte slice must return None");
+    }
+
+    /// compute_wav_rms is above threshold for a typical speech-level signal.
+    ///
+    /// In production, the silence threshold is 0.005.  A signal with amplitude
+    /// 0.3 (typical speech level in a dictation recording) must produce an RMS
+    /// well above that threshold.
+    #[test]
+    fn characterize_compute_wav_rms_speech_level_above_default_threshold() {
+        // Constant 0.3 amplitude -- RMS = 0.3.
+        let samples = vec![0.3f32; 3200]; // 200 ms
+        let wav = make_wav(&samples);
+        let rms = compute_wav_rms(&wav).expect("speech-level WAV must parse");
+
+        let default_threshold = 0.005_f32;
+        assert!(
+            rms > default_threshold,
+            "speech-level RMS ({rms:.4}) must exceed default silence threshold ({default_threshold})"
+        );
+    }
 }
