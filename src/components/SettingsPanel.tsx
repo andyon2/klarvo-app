@@ -650,7 +650,7 @@ export function SettingsPanel({
   const [localBubbleLongPressAutoSend, setLocalBubbleLongPressAutoSend] = useState(loadedSettings?.bubbleLongPressAutoSend ?? false);
   const [localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs] = useState(loadedSettings?.bubbleLongPressSilenceSecs ?? 2.0);
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
-  const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.03);
+  const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -1282,13 +1282,13 @@ export function SettingsPanel({
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <span className={LABEL_CLS}>Silence Threshold</span>
-                            <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(2)}</span>
+                            <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(3)}</span>
                           </div>
                           <input
                             type="range"
-                            min={0.01}
+                            min={0.003}
                             max={0.15}
-                            step={0.01}
+                            step={0.001}
                             value={localSilenceThreshold}
                             onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
                             className="w-full accent-emerald-500"
@@ -1404,13 +1404,13 @@ export function SettingsPanel({
                             <div className="flex flex-col gap-1.5">
                               <div className="flex items-center justify-between">
                                 <span className={LABEL_CLS}>Silence Threshold</span>
-                                <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(2)}</span>
+                                <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(3)}</span>
                               </div>
                               <input
                                 type="range"
-                                min={0.01}
+                                min={0.003}
                                 max={0.15}
-                                step={0.01}
+                                step={0.001}
                                 value={localSilenceThreshold}
                                 onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
                                 className="w-full accent-emerald-500"
