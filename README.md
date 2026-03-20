@@ -21,6 +21,9 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 - **Windows:** `.exe`-Installer herunterladen und ausführen
 - **Android:** `.apk` herunterladen, "Aus unbekannten Quellen installieren" erlauben, installieren
 
+> **Windows zeigt eine SmartScreen-Warnung beim ersten Start. Das ist normal.**
+> Dikta hat noch kein Code-Signing-Zertifikat — die kosten $180-300/Jahr. Da Dikta source-available ist, kannst du den Code selbst prüfen bevor du die App startest. Klick auf "Weitere Informationen" → "Trotzdem ausführen". Zertifikat folgt sobald die ersten Verkäufe es finanzieren.
+
 ## Was Dikta kann
 
 ### Kernfunktionen
