@@ -22,6 +22,7 @@ pub mod windows {
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager, State};
 
+    use crate::license::{is_feature_allowed, LicensedFeature};
     use crate::stt::model_manager::{
         self, ModelManagerError, WhisperModelWithStatus,
     };
@@ -100,6 +101,20 @@ pub mod windows {
             .path()
             .app_data_dir()
             .map_err(|e| format!("Could not resolve app data dir: {e}"))?;
+
+        // License gate: large-v3 requires a paid license.
+        // small and medium are free (no gate).
+        if model_id == "large-v3" {
+            let license_status = handle
+                .state::<AppState>()
+                .license_status
+                .lock()
+                .map_err(|_| "License state lock poisoned".to_string())?
+                .clone();
+            if !is_feature_allowed(&license_status, LicensedFeature::OfflineMode) {
+                return Err("feature_requires_license:OfflineMode".to_string());
+            }
+        }
 
         // Validate model_id eagerly to surface errors before spawning.
         model_manager::list_available_models()

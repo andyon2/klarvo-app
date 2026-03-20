@@ -59,8 +59,8 @@ All features extracted directly from source. Platform: W = Windows desktop, A = 
 | Feature | Description | Platform | License | Source |
 |---------|-------------|----------|---------|--------|
 | Polished style | LLM cleanup removing filler words, fixing grammar, producing professional prose | B | Free | `llm/mod.rs` |
-| Verbatim style | Minimal LLM cleanup, preserves the speaker's original phrasing and word choice | B | Paid | `llm/mod.rs`, `license/mod.rs` |
-| Chat style | LLM cleanup targeting casual conversational tone for messaging contexts | B | Paid | `llm/mod.rs`, `license/mod.rs` |
+| Verbatim style | Minimal LLM cleanup, preserves the speaker's original phrasing and word choice | B | Free | `llm/mod.rs` |
+| Chat style | LLM cleanup targeting casual conversational tone for messaging contexts | B | Free | `llm/mod.rs` |
 | Command Mode rewrite | Uses rewrite() method to rewrite selected text per the voice command | W | Paid | `llm/mod.rs`, `license/mod.rs` |
 | Reformat: Email | Post-dictation LLM transform that restructures result as a professional email | B | Free | `llm/mod.rs`, `commands/settings.rs` |
 | Reformat: Bullets | Post-dictation LLM transform that converts result into a bulleted list | B | Free | `llm/mod.rs`, `commands/settings.rs` |
@@ -184,8 +184,8 @@ All features extracted directly from source. Platform: W = Windows desktop, A = 
 | Feature | Description | Platform | License | Source |
 |---------|-------------|----------|---------|--------|
 | Whisper Model Manager | UI to download, delete, and select offline GGML model files | W | Paid | `WhisperModelManager.tsx`, `license/mod.rs` |
-| Small model (488 MB) | ggml-small model | W | Paid | `WhisperModelManager.tsx` |
-| Medium model (1.5 GB) | ggml-medium model, higher accuracy | W | Paid | `WhisperModelManager.tsx` |
+| Small model (488 MB) | ggml-small model | W | Free | `WhisperModelManager.tsx` |
+| Medium model (1.5 GB) | ggml-medium model, higher accuracy | W | Free | `WhisperModelManager.tsx` |
 | Large-v3 model (3.1 GB) | ggml-large-v3 model, highest accuracy | W | Paid | `WhisperModelManager.tsx` |
 | Download with progress | Model download shows progress events | W | Paid | `WhisperModelManager.tsx` |
 | GPU / CUDA acceleration | Enables CUDA GPU acceleration for local Whisper inference | W | Paid | `WhisperModelManager.tsx`, `config/mod.rs` |
@@ -299,5 +299,7 @@ Als einzige Open-Source-Alternative mit shipped Android-Support (Amical ist Beta
 
 ## Discrepancies Found
 
-1. **Cleanup Styles:** `architecture.md` says "Free: Alle Cleanup-Stile (Polished/Clean/Chat)" but code gates Verbatim and Chat behind license check. Code is truth -- architecture.md may be outdated.
-2. **Offline small model:** `architecture.md` says "small ist free" but code gates all local Whisper behind Paid. Needs verification.
+~~1. Cleanup Styles: Fixed 2026-03-20. All three styles (Polished/Verbatim/Chat) are now Free in code.~~
+~~2. Offline models: Fixed 2026-03-20. small+medium are Free, large-v3 is Paid in code.~~
+
+All discrepancies resolved.

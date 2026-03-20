@@ -328,9 +328,9 @@ mod tests {
         let models = list_available_models();
         assert_eq!(models.len(), 3);
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"tiny"), "catalogue must include 'tiny'");
-        assert!(ids.contains(&"base"), "catalogue must include 'base'");
         assert!(ids.contains(&"small"), "catalogue must include 'small'");
+        assert!(ids.contains(&"medium"), "catalogue must include 'medium'");
+        assert!(ids.contains(&"large-v3"), "catalogue must include 'large-v3'");
     }
 
     /// Each catalogue entry must have a non-empty filename, description and

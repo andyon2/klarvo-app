@@ -114,7 +114,8 @@ pub enum LicensedFeature {
     /// Non-default STT providers (OpenAI Whisper) and non-default LLM
     /// providers (OpenAI, Anthropic, Groq LLM).
     AlternativeProviders,
-    /// Verbatim and Chat cleanup styles (Polished is free).
+    /// All cleanup styles (Polished, Verbatim, Chat) are now free.
+    /// Kept as a variant for backward compatibility with any serialized data.
     AllCleanupStyles,
     /// User-supplied custom LLM system prompts.
     CustomPrompts,
@@ -130,7 +131,8 @@ pub enum LicensedFeature {
     VoiceNotes,
     /// Cross-device history sync via Turso.
     Sync,
-    /// Offline transcription via whisper.cpp (when implemented).
+    /// Offline transcription via whisper.cpp: large-v3 model requires paid license.
+    /// small and medium models are free (no gate).
     OfflineMode,
     /// Whisper Mode: amplified mic for quiet dictation.
     WhisperMode,

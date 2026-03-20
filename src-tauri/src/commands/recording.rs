@@ -257,11 +257,6 @@ pub async fn cleanup_text(
         return Ok(raw_text);
     }
 
-    // License gate: non-Polished cleanup styles require a paid license.
-    if style != CleanupStyle::Polished {
-        require_license!(state, LicensedFeature::AllCleanupStyles);
-    }
-
     // License gate: non-DeepSeek LLM providers require a paid license.
     if active_llm_provider_id(inner) != "deepseek" {
         require_license!(state, LicensedFeature::AlternativeProviders);
