@@ -6,7 +6,6 @@ import type { RecordingState, HotkeyMode } from "./types";
 import {
   onStateChanged,
   setBarShape,
-  transcribeLivePreview,
   cancelRecording,
   saveBarPosition,
   getBarPosition,
@@ -251,7 +250,7 @@ export default function FloatingBar() {
   const [levels, setLevels] = useState<number[]>(new Array(20).fill(0));
   const [showDone, setShowDone] = useState(false);
   const [clipboardOnly, setClipboardOnly] = useState(false);
-  const [livePreview, setLivePreview] = useState("");
+  // const [livePreview, setLivePreview] = useState(""); // disabled: re-enable when preview becomes opt-in
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
