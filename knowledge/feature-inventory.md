@@ -185,7 +185,7 @@ All features extracted directly from source. Platform: W = Windows desktop, A = 
 |---------|-------------|----------|---------|--------|
 | Whisper Model Manager | UI to download, delete, and select offline GGML model files | W | Paid | `WhisperModelManager.tsx`, `license/mod.rs` |
 | Small model (488 MB) | ggml-small model | W | Free | `WhisperModelManager.tsx` |
-| Medium model (1.5 GB) | ggml-medium model, higher accuracy | W | Free | `WhisperModelManager.tsx` |
+| Medium model (1.5 GB) | ggml-medium model, higher accuracy | W | Paid | `WhisperModelManager.tsx` |
 | Large-v3 model (3.1 GB) | ggml-large-v3 model, highest accuracy | W | Paid | `WhisperModelManager.tsx` |
 | Download with progress | Model download shows progress events | W | Paid | `WhisperModelManager.tsx` |
 | GPU / CUDA acceleration | Enables CUDA GPU acceleration for local Whisper inference | W | Paid | `WhisperModelManager.tsx`, `config/mod.rs` |

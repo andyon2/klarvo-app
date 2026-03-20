@@ -131,8 +131,8 @@ pub enum LicensedFeature {
     VoiceNotes,
     /// Cross-device history sync via Turso.
     Sync,
-    /// Offline transcription via whisper.cpp: large-v3 model requires paid license.
-    /// small and medium models are free (no gate).
+    /// Offline transcription via whisper.cpp: medium and large-v3 models require paid license.
+    /// Only small model is free (no gate).
     OfflineMode,
     /// Whisper Mode: amplified mic for quiet dictation.
     WhisperMode,
