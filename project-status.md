@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.5 (released 2026-03-19). 332 Rust-Tests (alle gruen). Android-Pipeline von 10-20s auf ~0.4s (async Turso, Config-Cache). Multi-Provider LLM Cleanup: DeepSeek, Groq, OpenAI, OpenRouter (Windows + Android). Anthropic aus UI entfernt (ungetestet, anderes API-Format). API-Key-Fallback auf beiden Plattformen.
+Version 0.4.5. 335 Rust-Tests (alle gruen). Onboarding-Wizard implementiert (Cloud/Offline-Weiche, API-Key-Validierung, Test-Diktat, Android-Permissions). Kosten-Dashboard mit Wispr-Flow-Savings. Quick-Tip-System (5 kontextuelle Tipps). Silence-Slider (Duration + Threshold) in Settings. Fenstergroesse auf 480x720 erhoeht. Auto-Skip fuer bestehende Nutzer.
 
 ## Blocker
 
@@ -9,21 +9,23 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Onboarding/Polish** → [Briefing noch zu erstellen]
+1. **Auto-Mode Cleanup-Bug** → Silence erkennt, STT laeuft, aber Cleanup-Ergebnis fehlt + kein Paste. Vorbestehend, nicht durch Onboarding verursacht.
+2. **Onboarding Polish** → Android Smoke-Test (Task 12), UX-Feinschliff nach Tester-Feedback
+3. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
 
 ## Bekannte Bugs
 
+- [ ] Auto-Mode: Nach Silence-Stop laeuft STT, aber Cleanup-Ergebnis verschwindet, kein Paste, Zyklus startet neu. Vorbestehend.
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
+- [ ] Updater ACL-Fehler: "Command plugin:updater|check not allowed by ACL". Low-Prio.
 
 ## Backlog
-- [ ] [desktop] Auto-Updater funktioniert nicht bei Tester. latest.json + Signature korrekt. Ursache unklar (Firewall/AV?).
-- [ ] [shared] Anthropic-Provider verifizieren und ggf. wieder freischalten (anderes API-Format, nie getestet)
+- [ ] [desktop] Auto-Updater funktioniert nicht bei Tester. Ursache unklar (Firewall/AV?).
+- [ ] [shared] Anthropic-Provider verifizieren und ggf. wieder freischalten
 - [ ] [shared] OpenAI-Provider mit echtem Key testen
-- [ ] [shared] Chunking-Drift Rust vs Kotlin angleichen (Threshold 400/800, Join \n/\n\n)
-- [ ] [ui] Startgroesse des Windows-Fensters erhoehen
+- [ ] [shared] Chunking-Drift Rust vs Kotlin angleichen
 - [ ] [ui] 27 Compiler-Warnings aufraumen
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
-- [ ] [android] Silence-Threshold einstellbar machen (aktuell hardcoded 0.03 / 2s)
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.

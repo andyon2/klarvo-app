@@ -10,7 +10,7 @@
  */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload, HistoryEntry, UsageSummary, AppProfile, AdvancedSettings } from "./types";
+import type { CleanupStyle, HotkeyMode, StopRecordingResult, AppSettings, StateChangedPayload, HistoryEntry, UsageSummary, AppProfile, AdvancedSettings, OnboardingState } from "./types";
 
 // ---------------------------------------------------------------------------
 // Preview-mode detection
@@ -756,4 +756,66 @@ export async function saveBarPosition(x: number, y: number): Promise<void> {
 export async function getBarPosition(): Promise<{ x: number; y: number } | null> {
   if (isPreviewMode) return mockAsync(null);
   return invoke<{ x: number; y: number } | null>("get_bar_position");
+}
+
+// --- Onboarding ---
+
+const MOCK_ONBOARDING_STATE: OnboardingState = {
+  completed: false,
+  skipped: false,
+  currentStep: 0,
+  mode: "",
+  language: "",
+};
+
+/**
+ * Returns the current onboarding wizard state from config.json.
+ * Defaults to a fresh state (completed=false, currentStep=0) when not set yet.
+ */
+export async function getOnboardingState(): Promise<OnboardingState> {
+  if (isPreviewMode) return mockAsync({ ...MOCK_ONBOARDING_STATE });
+  return invoke<OnboardingState>("get_onboarding_state");
+}
+
+/**
+ * Persists the onboarding wizard state to config.json.
+ * Called on every step transition and on skip/complete.
+ */
+export async function setOnboardingState(state: OnboardingState): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("set_onboarding_state", { state });
+}
+
+/**
+ * Validates an API key against the provider's endpoint.
+ * Returns true when the key is valid (HTTP 200), false on 401/403,
+ * and throws on network errors.
+ * @param provider - "groq" | "deepseek" | "openrouter" | "openai"
+ * @param key      - The API key to validate
+ */
+export async function validateApiKey(provider: string, key: string): Promise<boolean> {
+  if (isPreviewMode) return mockAsync(key.length > 10, 600);
+  return invoke<boolean>("validate_api_key", { provider, key });
+}
+
+// --- Tips ---
+
+/**
+ * Returns true when the given tip has already been shown to this user
+ * (stored in the tips_shown SQLite table by the backend).
+ * @param tipId - Unique tip identifier, e.g. "cleanup-styles"
+ */
+export async function isTipShown(tipId: string): Promise<boolean> {
+  if (isPreviewMode) return mockAsync(false);
+  return invoke<boolean>("is_tip_shown", { tipId });
+}
+
+/**
+ * Marks a tip as shown so it is never displayed again.
+ * Idempotent: calling it multiple times for the same tipId is safe.
+ * @param tipId - Unique tip identifier, e.g. "cleanup-styles"
+ */
+export async function markTipShown(tipId: string): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("mark_tip_shown", { tipId });
 }

@@ -37,7 +37,8 @@ async function checkForUpdate(): Promise<{ version: string; downloadAndInstall: 
 }
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
-import { getProfiles, saveProfiles, syncHistory } from "../tauri-commands";
+import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
+import type { AdvancedSettings } from "../types";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon, LockIcon } from "./icons";
 import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M } from "./ui";
@@ -573,7 +574,7 @@ export interface SettingsPanelProps {
     groqKey: string, deepseekKey: string, lang: string, style: CleanupStyle,
     hotkey: string, hotkeyMode: HotkeyMode, audioDevice: string | null,
     sttModel: string, customPrompt: string, autostart: boolean, whisperMode: boolean,
-    openaiKey: string, anthropicKey: string,
+    openaiKey: string, anthropicKey: string, openrouterKey: string,
     outputLanguage: string, webhookUrl: string, tursoUrl: string, tursoToken: string,
     bubbleSize?: number | null, bubbleOpacity?: number | null,
     localWhisperModel?: string | null, localWhisperGpu?: boolean | null,
@@ -594,6 +595,8 @@ export interface SettingsPanelProps {
   onAddTerm: (term: string) => Promise<void>;
   onRemoveTerm: (term: string) => Promise<void>;
   onOutputLanguageChange: (lang: string) => void;
+  /** Called when user clicks "Setup-Assistent erneut starten". */
+  onRestartOnboarding?: () => void;
 }
 
 export function SettingsPanel({
@@ -603,6 +606,7 @@ export function SettingsPanel({
   licenseStatus, licenseLoading, onValidateLicense, onRemoveLicense,
   onSave, onLanguageChange, onStyleChange, onHotkeyChange, onHotkeyModeChange,
   onAudioDeviceChange, onAddTerm, onRemoveTerm, onOutputLanguageChange,
+  onRestartOnboarding,
 }: SettingsPanelProps) {
   const [groqKey, setGroqKey] = useState("");
   const [deepseekKey, setDeepseekKey] = useState("");
@@ -645,6 +649,8 @@ export function SettingsPanel({
   const [localBubbleLongPressMode, setLocalBubbleLongPressMode] = useState<HotkeyMode>((loadedSettings?.bubbleLongPressMode ?? "hold") as HotkeyMode);
   const [localBubbleLongPressAutoSend, setLocalBubbleLongPressAutoSend] = useState(loadedSettings?.bubbleLongPressAutoSend ?? false);
   const [localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs] = useState(loadedSettings?.bubbleLongPressSilenceSecs ?? 2.0);
+  // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
+  const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.03);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -674,6 +680,17 @@ export function SettingsPanel({
 
   // Load profiles on mount.
   useEffect(() => { getProfiles().then(setProfiles).catch(console.error); }, []);
+
+  // Load advanced settings on mount to initialise localSilenceThreshold.
+  const [advancedSettings, setAdvancedSettings] = useState<AdvancedSettings | null>(null);
+  useEffect(() => {
+    getAdvancedSettings()
+      .then((adv) => {
+        setAdvancedSettings(adv);
+        setLocalSilenceThreshold(adv.silenceThreshold);
+      })
+      .catch(console.error);
+  }, []);
 
   // Load app version on mount.
   useEffect(() => { getAppVersion().then(setAppVersion).catch(() => setAppVersion("0.4.1")); }, []);
@@ -835,7 +852,7 @@ export function SettingsPanel({
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
-        openaiKey.trim(), anthropicKey.trim(),
+        openaiKey.trim(), anthropicKey.trim(), openrouterKey.trim(),
         localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), tursoToken.trim(),
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
@@ -847,6 +864,12 @@ export function SettingsPanel({
         localBubbleTapSilenceSecs, localBubbleLongPressMode,
         localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
       );
+      // Save silence threshold into AdvancedSettings when it has changed.
+      if (advancedSettings !== null && advancedSettings.silenceThreshold !== localSilenceThreshold) {
+        const updatedAdv: AdvancedSettings = { ...advancedSettings, silenceThreshold: localSilenceThreshold };
+        await saveAdvancedSettings(updatedAdv);
+        setAdvancedSettings(updatedAdv);
+      }
       setGroqKey("");
       setDeepseekKey("");
       setOpenaiKey("");
@@ -869,6 +892,7 @@ export function SettingsPanel({
     localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+    advancedSettings, localSilenceThreshold,
     onSave,
   ]);
 
@@ -888,7 +912,7 @@ export function SettingsPanel({
       await onSave(
         "", "", localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
-        "", "",
+        "", "", "",
         localOutputLanguage, localWebhookUrl.trim(), localTursoUrl.trim(), "",
         localBubbleSize, localBubbleOpacity,
         localWhisperModel, localWhisperGpu,
@@ -1237,22 +1261,41 @@ export function SettingsPanel({
                     </p>
 
                     {(localHotkeyMode === "autostop" || localHotkeyMode === "auto") && (
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className={LABEL_CLS}>Silence Duration</span>
+                            <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={1.0}
+                            max={4.0}
+                            step={0.1}
+                            value={localSilenceSecs}
+                            onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
+                            className="w-full accent-emerald-500"
+                          />
+                          <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                         </div>
-                        <input
-                          type="range"
-                          min={0.5}
-                          max={5.0}
-                          step={0.5}
-                          value={localSilenceSecs}
-                          onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-emerald-500"
-                        />
-                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
-                      </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className={LABEL_CLS}>Silence Threshold</span>
+                            <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(2)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.01}
+                            max={0.15}
+                            step={0.01}
+                            value={localSilenceThreshold}
+                            onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
+                            className="w-full accent-emerald-500"
+                          />
+                          <p className="text-[11px] text-zinc-500">Audio level below which silence is detected. Higher = less sensitive to background noise.</p>
+                        </div>
+                      </>
                     )}
 
                     {/* Insert & Send -- per-slot option for Hotkey 1 */}
@@ -1338,6 +1381,44 @@ export function SettingsPanel({
                           {localHotkeyModeSlot2 === "autostop" && "Press to start, stops automatically on silence"}
                           {localHotkeyModeSlot2 === "auto" && "Continuous — restarts after each silence gap"}
                         </p>
+
+                        {(localHotkeyModeSlot2 === "autostop" || localHotkeyModeSlot2 === "auto") && (
+                          <>
+                            <div className="flex flex-col gap-1.5 mt-1">
+                              <div className="flex items-center justify-between">
+                                <span className={LABEL_CLS}>Silence Duration</span>
+                                <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={1.0}
+                                max={4.0}
+                                step={0.1}
+                                value={localSilenceSecs}
+                                onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
+                                className="w-full accent-emerald-500"
+                              />
+                              <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className={LABEL_CLS}>Silence Threshold</span>
+                                <span className="text-xs font-mono text-emerald-400">{localSilenceThreshold.toFixed(2)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0.01}
+                                max={0.15}
+                                step={0.01}
+                                value={localSilenceThreshold}
+                                onChange={(e) => setLocalSilenceThreshold(parseFloat(e.target.value))}
+                                className="w-full accent-emerald-500"
+                              />
+                              <p className="text-[11px] text-zinc-500">Audio level below which silence is detected. Higher = less sensitive to background noise.</p>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -1439,24 +1520,22 @@ export function SettingsPanel({
                       {localBubbleTapMode === "auto" && "Continuous — restarts after each silence gap"}
                     </p>
 
-                    {(localBubbleTapMode === "autostop" || localBubbleTapMode === "auto") && (
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0.5}
-                          max={5.0}
-                          step={0.5}
-                          value={localBubbleTapSilenceSecs}
-                          onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-emerald-500"
-                        />
-                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className={LABEL_CLS}>Silence Duration</span>
+                        <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
                       </div>
-                    )}
+                      <input
+                        type="range"
+                        min={1.0}
+                        max={4.0}
+                        step={0.1}
+                        value={localBubbleTapSilenceSecs}
+                        onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
+                        className="w-full accent-emerald-500"
+                      />
+                      <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                    </div>
 
                     {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
                   </>
@@ -1497,24 +1576,22 @@ export function SettingsPanel({
                       {localBubbleLongPressMode === "auto" && "Continuous — restarts after each silence gap"}
                     </p>
 
-                    {(localBubbleLongPressMode === "autostop" || localBubbleLongPressMode === "auto") && (
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0.5}
-                          max={5.0}
-                          step={0.5}
-                          value={localBubbleLongPressSilenceSecs}
-                          onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-emerald-500"
-                        />
-                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className={LABEL_CLS}>Silence Duration</span>
+                        <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
                       </div>
-                    )}
+                      <input
+                        type="range"
+                        min={1.0}
+                        max={4.0}
+                        step={0.1}
+                        value={localBubbleLongPressSilenceSecs}
+                        onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
+                        className="w-full accent-emerald-500"
+                      />
+                      <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                    </div>
 
                     {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
                   </>
@@ -2066,6 +2143,14 @@ export function SettingsPanel({
                 <span className="text-[11px] text-zinc-600">·</span>
                 <span className="text-[11px] text-zinc-500">MIT License</span>
               </div>
+              {onRestartOnboarding && (
+                <button
+                  onClick={onRestartOnboarding}
+                  className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors text-left"
+                >
+                  Setup assistant restart
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -114,6 +114,15 @@ export interface UsageSummary {
   costTodayUsd: number;
 }
 
+// Onboarding wizard state -- persisted in config.json via set_onboarding_state.
+export interface OnboardingState {
+  completed: boolean;
+  skipped: boolean;
+  currentStep: number;   // 0 = not started
+  mode: string;          // "cloud" | "offline" | ""
+  language: string;      // ISO-639-1, e.g. "de", "" = not set
+}
+
 // App-level state shape.
 export interface AppState {
   recordingState: RecordingState;

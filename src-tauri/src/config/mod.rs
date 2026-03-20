@@ -1356,6 +1356,7 @@ mod tests {
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 1.5,
             openrouter_api_key: "sk-or-test-key".to_string(),
+            onboarding: OnboardingState::default(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

@@ -319,6 +319,7 @@ pub async fn save_settings(
             .unwrap_or(existing.bubble_long_press_auto_send),
         bubble_long_press_silence_secs: bubble_long_press_silence_secs
             .unwrap_or(existing.bubble_long_press_silence_secs),
+        onboarding: existing.onboarding,
     };
 
     // Resolve providers from the new config before persisting.

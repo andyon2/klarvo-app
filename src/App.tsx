@@ -12,7 +12,12 @@ import {
   reformatText,
   isFirstRun,
   isPreviewMode,
+  getOnboardingState,
+  setOnboardingState,
 } from "./tauri-commands";
+import { CostDashboard } from "./components/CostDashboard";
+import { QuickTip } from "./components/QuickTip";
+import { useQuickTip } from "./hooks/useQuickTip";
 import { isMobile, isDesktop } from "./platform";
 import Onboarding from "./Onboarding";
 
@@ -21,7 +26,7 @@ import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
   MailIcon, ListIcon, SummaryIcon, NoteIcon, LockIcon,
 } from "./components/icons";
-import { FillerStatsChart, HighlightedText, StatCard } from "./components/ui";
+import { FillerStatsChart, HighlightedText } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AdvancedSettingsPanel } from "./components/AdvancedSettingsPanel";
 import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
@@ -36,21 +41,6 @@ import { useLicense } from "./hooks/useLicense";
 
 function formatHotkeyDisplay(hotkey: string): string {
   return hotkey.split("+").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" + ");
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(0)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  if (mins < 60) return `${mins}m ${secs}s`;
-  const hrs = Math.floor(mins / 60);
-  const remainMins = mins % 60;
-  return `${hrs}h ${remainMins}m`;
 }
 
 // --- Sub-components ----------------------------------------------------------
@@ -238,6 +228,12 @@ export default function App() {
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingInitialState, setOnboardingInitialState] = useState<import("./types").OnboardingState | undefined>(undefined);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+
+  // Quick-tip system
+  const isIdle = recording.recordingState === "idle" || recording.recordingState === "done" || recording.recordingState === "error";
+  const quickTip = useQuickTip({ isIdle, onboardingCompleted });
 
   // Panel callbacks for lazy loading
   const panels = usePanels({
@@ -250,10 +246,40 @@ export default function App() {
   });
 
   // Check for first run / onboarding
+  // Show wizard when not completed and not skipped.
+  // Auto-skip for existing users: if keys already configured but onboarding never ran,
+  // mark it as completed so the wizard doesn't nag returning users.
   useEffect(() => {
-    isFirstRun()
-      .then((firstRun) => { if (firstRun) setShowOnboarding(true); })
-      .catch(console.error);
+    getOnboardingState()
+      .then(async (state) => {
+        if (!state.completed && !state.skipped) {
+          // Check if user already has keys (existing user upgrading)
+          try {
+            const { getSettings: fetchSettings } = await import("./tauri-commands");
+            const s = await fetchSettings();
+            const hasKeys = !!(s.groqApiKeyMasked || s.deepseekApiKeyMasked || s.openaiApiKeyMasked || s.openrouterApiKeyMasked);
+            if (hasKeys) {
+              // Auto-complete onboarding for existing users
+              await setOnboardingState({ ...state, completed: true, skipped: true });
+              setOnboardingCompleted(true);
+              return;
+            }
+          } catch { /* fall through to show wizard */ }
+          setOnboardingInitialState(state);
+          setShowOnboarding(true);
+        } else {
+          setOnboardingCompleted(true);
+        }
+      })
+      .catch(() => {
+        // Backend command not yet available (Task 1 not done) — fall back to isFirstRun
+        isFirstRun()
+          .then((firstRun) => {
+            if (firstRun) setShowOnboarding(true);
+            else setOnboardingCompleted(true);
+          })
+          .catch(console.error);
+      });
   }, []);
 
   // Android back button: close open panel instead of leaving the app
@@ -297,23 +323,41 @@ export default function App() {
 
   // --- Onboarding handler ---
   const handleOnboardingComplete = useCallback(async (updated: import("./types").AppSettings) => {
-    settings.setLoadedSettings(updated);
-    settings.setLanguage(updated.language);
-    settings.setCleanupStyle(updated.cleanupStyle);
-    settings.setHotkey(updated.hotkey);
-    settings.setHotkeyMode(updated.hotkeyMode);
-    settings.setAudioDevice(updated.audioDevice);
-    import("./tauri-commands").then(({ setLanguage, setCleanupStyle }) => {
-      setLanguage(updated.language).catch(console.error);
-      setCleanupStyle(updated.cleanupStyle).catch(console.error);
-    });
+    if (updated && updated.language) {
+      settings.setLoadedSettings(updated);
+      settings.setLanguage(updated.language);
+      settings.setCleanupStyle(updated.cleanupStyle);
+      settings.setHotkey(updated.hotkey);
+      settings.setHotkeyMode(updated.hotkeyMode);
+      settings.setAudioDevice(updated.audioDevice);
+      import("./tauri-commands").then(({ setLanguage, setCleanupStyle }) => {
+        setLanguage(updated.language).catch(console.error);
+        setCleanupStyle(updated.cleanupStyle).catch(console.error);
+      });
+    }
     setShowOnboarding(false);
+    setOnboardingCompleted(true);
   }, [settings]);
+
+  // Called by SettingsPanel "Setup-Assistent erneut starten"
+  const handleRestartOnboarding = useCallback(async () => {
+    const freshState: import("./types").OnboardingState = {
+      completed: false,
+      skipped: false,
+      currentStep: 0,
+      mode: "",
+      language: "",
+    };
+    await setOnboardingState(freshState).catch(console.error);
+    setOnboardingInitialState(freshState);
+    panels.closeAll();
+    setShowOnboarding(true);
+  }, [panels]);
 
   // Output language change is handled in SettingsPanel only.
 
   if (showOnboarding) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
+    return <Onboarding onComplete={handleOnboardingComplete} initialState={onboardingInitialState} />;
   }
 
   return (
@@ -492,6 +536,7 @@ export default function App() {
             licenseLoading={license.licenseLoading}
             onValidateLicense={license.validateLicense}
             onRemoveLicense={license.removeLicense}
+            onRestartOnboarding={handleRestartOnboarding}
           />
         )}
       </div>
@@ -620,25 +665,20 @@ export default function App() {
             </div>
 
             {usageStats ? (
-              <>
-                <div className="p-4 grid grid-cols-2 gap-3">
-                  <StatCard label="Today" value={`${usageStats.dictationsToday}`} sub="dictations" />
-                  <StatCard label="Cost Today" value={formatCost(usageStats.costTodayUsd)} sub="USD" />
-                  <StatCard label="Total Dictations" value={`${usageStats.totalDictations}`} />
-                  <StatCard label="Total Words" value={usageStats.totalWords.toLocaleString()} />
-                  <StatCard label="Audio Recorded" value={formatDuration(usageStats.totalAudioSeconds)} />
-                  <StatCard label="Total Cost" value={formatCost(usageStats.totalCostUsd)} sub="USD" />
-                  <StatCard label="STT (Groq)" value={formatCost(usageStats.totalSttCostUsd)} sub="USD" />
-                  <StatCard label="LLM (DeepSeek)" value={formatCost(usageStats.totalLlmCostUsd)} sub="USD" />
+              <div className="overflow-y-auto max-h-[calc(100vh-200px)]">
+                {/* Cost Dashboard */}
+                <div className="p-4">
+                  <CostDashboard stats={usageStats} />
                 </div>
 
+                {/* Filler word analysis */}
                 {!isPaid ? (
-                  <div className="px-4 pb-4 flex items-center gap-2">
+                  <div className="px-4 pb-4 flex items-center gap-2 border-t border-zinc-800/40 pt-3">
                     <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
                     <p className="text-xs text-zinc-500">Filler word analysis requires a Dikta license.</p>
                   </div>
                 ) : fillerStats.length > 0 ? (
-                  <div className="px-4 pb-4">
+                  <div className="px-4 pb-4 border-t border-zinc-800/40 pt-3">
                     <button
                       onClick={() => setShowFillerStats((v) => !v)}
                       className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors w-full text-left"
@@ -653,7 +693,7 @@ export default function App() {
                     )}
                   </div>
                 ) : null}
-              </>
+              </div>
             ) : null}
           </div>
         )}
@@ -810,6 +850,20 @@ export default function App() {
         <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
           <span className="text-[11px] font-mono text-zinc-500">{hotkeyDisplay}</span>
         </div>
+      )}
+
+      {/* ── Quick Tip ── */}
+      {!showOnboarding && quickTip.activeTip && (
+        <QuickTip
+          title={quickTip.activeTip.title}
+          text={quickTip.activeTip.text}
+          actionLabel={quickTip.activeTip.actionLabel}
+          onAction={() => {
+            quickTip.handleAction();
+            if (quickTip.openPanel) panels.toggle(quickTip.openPanel);
+          }}
+          onDismiss={quickTip.dismissTip}
+        />
       )}
 
       {/* ── Preview-mode banner ── */}
