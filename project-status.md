@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.7 (Windows + Android). Auto-Updater funktioniert (ACL-Fix, Signing-Keypair, latest.json auf GitHub). Groq LLM und Cost Tracking jetzt Free. Versions-Anzeige in Settings dynamisch statt hardcoded. SmartScreen-Messaging fuer Launch ohne Zertifikat vorbereitet (briefings/). Entscheidung: Launch ohne Windows Code Signing, Zertifikat nach ersten Verkaeufen.
+Version 0.4.8 (Windows + Android). Auto-Updater funktioniert. v0.4.8 auf GitHub released. Build-Signing-Problem geloest: Tauri's eingebauter Signer haengt auf Windows/WSL, Workaround via `rsign` direkt aus WSL (`scripts/sign-installer.sh`). Build-Script (`sync-and-build.ps1`) angepasst — Signing entkoppelt, laeuft jetzt zuverlaessig. SmartScreen-Hinweis in README.
 
 ## Blocker
 

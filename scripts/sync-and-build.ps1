@@ -26,16 +26,9 @@ if (Test-Path "$dst\.env") {
     Write-Host "Loaded .env" -ForegroundColor Yellow
 }
 
-# Signing key: read directly from WSL key file to avoid encoding issues with .env
-$wslKeyFile = "\\wsl$\Ubuntu\home\andyon2\.tauri\dikta.key"
-if (Test-Path $wslKeyFile) {
-    $keyContent = (Get-Content $wslKeyFile -Raw).Trim()
-    [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", $keyContent, "Process")
-    [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "", "Process")
-    Write-Host "Loaded signing key from $wslKeyFile" -ForegroundColor Yellow
-} else {
-    Write-Host "WARNING: Signing key not found at $wslKeyFile" -ForegroundColor Red
-}
+# NOTE: Tauri's built-in signer hangs on Windows/WSL (confirmed 2026-03-21).
+# Signing is done AFTER the build via WSL rsign (scripts/sign-installer.sh).
+# Do NOT set TAURI_SIGNING_PRIVATE_KEY here — it triggers the hanging signer.
 
 # whisper-rs-sys: force bindgen to target Windows (not Linux)
 # Without this, clang may pick up Linux headers and generate incompatible bindings.
@@ -44,6 +37,10 @@ Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
 
 Write-Host "Building Dikta..." -ForegroundColor Cyan
 npx tauri build 2>&1 | Write-Host
+
+# Sign the installer via WSL rsign (Tauri's signer hangs)
+Write-Host "Signing installer via WSL rsign..." -ForegroundColor Cyan
+wsl bash ~/claude-projects/dikta/scripts/sign-installer.sh
 
 # Copy installer to Dropbox for easy access
 $version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
