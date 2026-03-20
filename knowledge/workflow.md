@@ -40,3 +40,34 @@ Andy nur einbeziehen wenn etwas interaktive Eingabe auf Windows erfordert.
 - **2026-03-18:** Manueller Version-Bump hat `package.json` vergessen (nur Cargo.toml + tauri.conf.json geaendert). Dadurch landete der Installer im falschen Dropbox-Ordner. Merke: Version-Bump NIE manuell machen — immer `/release` Skill nutzen, der alle drei Dateien synchron haelt (Cargo.toml, tauri.conf.json, package.json).
 - **2026-03-18:** Andy verstand "Release" als "Publish auf GitHub Public" — ich meinte den ganzen Prozess (Bump+Build+Publish). Merke: Beim Wort "Release" immer klaeren was genau gemeint ist. Schritte explizit benennen.
 - **2026-03-19:** Kumpel hatte persistent API-Fehler. Wir haben Auto-Fallback fuer fehlende Keys gebaut — war aber nicht das Problem. Er nutzte Anthropic als LLM-Provider, dessen Implementierung nie mit echten API-Calls getestet wurde (anderes API-Format als DeepSeek/Groq/OpenAI). Merke: Bei Bug-Reports von Testern ZUERST fragen welchen Provider / welche Settings sie nutzen. Keine ungetesteten Optionen im UI anbieten — Anthropic aus dem Dropdown entfernt bis verifiziert.
+
+## Engineering-Prinzipien (aus AI-Hero-Research, 2026-03-19)
+
+### Characterization Tests vor Refactoring
+- Bestehendes Verhalten als Golden Master erfassen BEVOR refactored wird — verhindert versehentliche Verhaltensaenderungen
+- Approval-Test-Ansatz: Aktuelles Output als "korrekt" snapshotten, dann gegen Snapshot testen
+- Besonders wichtig wenn AI bestehenden Code umstrukturiert — implizites Verhalten wird nicht immer erkannt
+- Fuer Rust: `insta` Crate fuer Snapshot-Tests
+
+### Task-Groesse: 5-15 Minuten
+- Ideale Task-Groesse fuer AI-Agents: 5-15 Minuten (human-equivalent), Maximum 35 Minuten
+- METR-Studie: Verdopplung der Task-Dauer = 4-fache Fehlerrate
+- Grosse Aufgaben in kleinere, abgeschlossene Einheiten aufteilen BEVOR der Agent startet
+
+### 60% Kontextauslastungs-Limit
+- Ab 40-60% Kontextauslastung degradiert die Output-Qualitaet merklich
+- Frischer Kontext (neue Session) schlaegt ueberfuellten Kontext
+- Sessions neu starten BEVOR Compaction einsetzt — danach ist Qualitaetsverlust bereits eingetreten
+- CLAUDE.md kurz halten (≤60 Zeilen empirisch begruendet)
+
+### TDD-Subagent-Pattern
+- Separate Subagents fuer Test-Schreiben, Implementierung und Refactoring verhindern Context Pollution
+- Red-Green-Refactor mit getrennten Agent-Kontexten: Test-Agent → Implementierungs-Agent → Refactoring-Agent
+- Jeder Agent hat frischen Kontext und klaren Fokus
+- Besonders wertvoll bei Rust wo Compile-Fehler + Test-Output den Kontext schnell fuellen
+
+### Pre-Commit Hooks als Guardrails
+- Pre-Commit Hooks zuverlaessiger als CLAUDE.md-Instruktionen — Hooks werden IMMER ausgefuehrt
+- Drei-Schichten-Modell: Prompts verduennen / Skills bleiben frisch / Hooks sind extern und unbestechlich
+- Empfohlene Hooks: `cargo fmt --check && cargo clippy`, `cargo test`, Commit-Message-Validation
+- In `.claude/settings.json` konfigurieren (`hooks.pre_commit`), nicht in git hooks

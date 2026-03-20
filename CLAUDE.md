@@ -124,3 +124,6 @@ Zentrale Dateien:
 7. **Bei Unsicherheit: `/research-api` nutzen** statt zu raten. Lieber 2 Minuten recherchieren als 20 Minuten debuggen.
 8. **Rueckwaerts-Suche bei Umbau:** Vor dem ersten Edit bei strukturellen Aenderungen: `grep -r` nach allen Konsumenten des Geaenderten. Erst dann editieren. Strukturell = Entfernen, Umbenennen, Output-Format aendern, Verantwortlichkeit zwischen Komponenten verschieben. Nicht strukturell = Hinzufuegen, Erweitern, neue Datei anlegen.
 9. **Bug-Reports: Erst analysieren, dann fixen.** Bei jedem gemeldeten Problem erst Root Cause identifizieren und pruefen welches Prinzip/welcher Prozess es haette verhindern koennen. Jeder Fix-Output enthaelt "Root Cause" und "Verhindert durch". Erst danach wird gefixt.
+10. **Characterization Tests vor Refactoring.** Bestehendes Verhalten als Golden Master erfassen BEVOR refactored wird. `insta` Crate fuer Rust-Snapshots.
+11. **Task-Groesse: 5-15 Minuten.** Grosse Aufgaben vor Agent-Delegation in kleinere Einheiten zerlegen. Max 35 Min pro Task.
+12. **Frischer Kontext > ueberfuellter Kontext.** Bei komplexen Aufgaben neue Session bevorzugen statt in langer Session weiterzuarbeiten.

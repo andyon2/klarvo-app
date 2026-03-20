@@ -57,6 +57,15 @@
 3. **Platform Guards:** `isDesktop`/`isMobile` im Frontend, `#[cfg(desktop)]`/`#[cfg(mobile)]` in Rust
 4. **Android WebView:** `env(safe-area-inset-bottom)` gibt 0 zurueck -- nie darauf verlassen, feste px-Werte nutzen
 
+## Design-Prinzipien
+
+### Deep Modules + Vertical Slices (2026-03-19)
+- Code nach Features organisieren statt nach technischen Schichten — AI arbeitet praeziser wenn zusammengehoeriger Code beieinander liegt
+- Deep Modules (Ousterhout): Einfache Interfaces, komplexe Implementierung dahinter — reduziert die Anzahl Dateien die gleichzeitig im Kontext sein muessen
+- AI-Genauigkeit: ~60% bei tight coupling → ~95% bei sauberen Modulen (Thoughtworks Radar)
+- Fuer Rust/Tauri: Trait-basierte Module mit klaren Boundaries. Jedes Feature als eigenes Modul mit definiertem Public Interface
+- Tracer Bullets: Bei neuen Features zuerst minimale End-to-End-Implementierung (UI → Backend → Persistence), dann ausbauen
+
 ## Modul-Grenzen
 
 ### Pipeline-Flow (Desktop)
