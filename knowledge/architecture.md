@@ -9,7 +9,7 @@
 | Backend | Rust | whisper.cpp-Integration, niedrige Latenz, native OS-APIs |
 | Mobile Native | Kotlin | Overlay-Service, AudioRecord, AccessibilityService -- braucht Android-APIs |
 | STT | Groq Whisper API (primaer), OpenAI Whisper (Fallback) | Schnell, guenstig |
-| LLM Cleanup | DeepSeek (primaer), OpenAI/Anthropic/Groq (Fallback) | DeepSeek ist guenstigster |
+| LLM Cleanup | DeepSeek (primaer), Groq/Llama, OpenAI, OpenRouter (Fallback) | DeepSeek ist guenstigster. Anthropic deaktiviert (nie mit echtem Key verifiziert). |
 | Persistenz | JSON (Config, Dictionary), SQLite (History, Stats) | JSON fuer flache Daten, SQLite fuer relationale |
 | Sync | Turso HTTP API | Lokale SQLite bleibt, Turso fuer Push/Pull, UUID als PK remote |
 
@@ -135,6 +135,18 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - "Cleanup Instructions" (Settings): Zusaetzliche LLM-Anweisungen ("formelles Deutsch", "keine Aufzaehlungen")
 - "STT Prompts" (Advanced Settings): Whisper Conditioning Text pro Sprache (verbessert Erkennung)
 - Unterschiedliche Pipeline-Stufen: STT-Prompt → Transkription, Cleanup Instructions → LLM-Bereinigung
+
+## Lizenz
+
+**BSL 1.1 -- Source-Available (2026-03-20)**
+- **Lizenz:** Business Source License 1.1. Quellcode einsehbar, aber Redistribution und kommerzielle Nutzung verboten.
+- **Licensor:** Andreas Nolte
+- **Additional Use Grant:** Private Nutzung und Modifikation fuer den Eigengebrauch erlaubt. Kein Weiterverteilen, kein Verkauf, kein SaaS.
+- **Change Date:** 4 Jahre nach erstem Paid Release. Danach automatisch MIT.
+- **Change License:** MIT
+- **Warum BSL statt MIT:** Dikta soll als Produkt vermarktet werden (EUR 29 Einmalkauf). MIT wuerde erlauben dass jemand forkt, License-Checks entfernt und weiterverteilt. BSL schuetzt die Monetarisierung rechtlich, waehrend der Code einsehbar bleibt (Transparenz-Argument vs. Wispr Flow Black Box).
+- **Warum nicht Closed Source:** "Quellcode einsehbar" ist ein Differenzierungsmerkmal. Nutzer koennen pruefen was die App tut -- kein Tracking, kein Lock-in, kein Vertrauensvorschuss noetig.
+- **WICHTIG:** In user-facing Texten NIE "Open Source", "MIT", "GPL" verwenden. Korrekt: "source-available" oder "Quellcode einsehbar".
 
 ## Repository-Architektur
 

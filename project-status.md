@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.7 released (Windows + Android). 369 Rust-Tests (alle gruen). Silero VAD v5 ersetzt RMS-Silence-Detection (beide Plattformen). Whisper-Hallucination-Blocklist aktiv. Verbatim/Chat Cleanup-Stile und Whisper small jetzt Free. Feature-Inventar mit USP-Analyse liegt unter `knowledge/feature-inventory.md`. README Feature-Sektionen ueberarbeitet aber enthalten noch Fehler -- muss gegen Inventar abgeglichen werden.
+Version 0.4.7 released (Windows + Android). 369 Rust-Tests (alle gruen). README komplett gegen Feature-Inventar abgeglichen und ueberarbeitet. BSL 1.1 Lizenz eingefuehrt (LICENSE Datei, CLAUDE.md Regel 13, architecture.md). Pricing-Strategie dokumentiert (EUR 29 Launch, Play Store EUR 14 als 2. Welle). Dreifach-Sicherung gegen Lizenz-Fehler in user-facing Texten.
 
 ## Blocker
 
@@ -9,8 +9,8 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **README gegen Feature-Inventar abgleichen** → Jede Zeile in der README gegen `knowledge/feature-inventory.md` pruefen. Bekannte Fehler: Android Bubble-Beschreibung falsch (fehlende Keyboard-Detection, falsche Gestenbeschreibung). Lektion: Inventar als Checkliste nutzen, nicht aus dem Kopf schreiben.
-2. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+1. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+2. **License-Gate Code-Aenderungen** → Groq LLM Free machen, Cost Tracking Grundfunktion Free machen (`license/mod.rs`)
 3. **Live-Preview als Opt-In** → Nach VAD-Overhaul jetzt moeglich. Whisper-Halluzinationen werden gefiltert.
 
 ## Bekannte Bugs
@@ -29,3 +29,5 @@ Keine.
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
 - [ ] [feature] OpenRouter Modell-Dropdown in Settings (aktuell hardcoded auf deepseek/deepseek-chat).
+- [ ] [feature] Reformat-Prompts (Email/Bullets/Summary) verbessern -- aktuell schlechte Qualitaet, aus README entfernt.
+- [ ] [android] Bubble Size/Opacity UI-Controls implementieren (Backend-Config existiert, Frontend fehlt).

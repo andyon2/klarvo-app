@@ -1,6 +1,6 @@
 # Dikta
 
-Eine freie, selbst gehostete Alternative zu Wispr Flow. Sprachdiktat mit KI-Text-Cleanup fuer Windows Desktop und Android.
+Source-available Alternative zu Wispr Flow. Sprachdiktat mit KI-Text-Cleanup fuer Windows Desktop und Android. Lizenziert unter BSL 1.1.
 
 ## Ziel
 
@@ -127,3 +127,4 @@ Zentrale Dateien:
 10. **Characterization Tests vor Refactoring.** Bestehendes Verhalten als Golden Master erfassen BEVOR refactored wird. `insta` Crate fuer Rust-Snapshots.
 11. **Task-Groesse: 5-15 Minuten.** Grosse Aufgaben vor Agent-Delegation in kleinere Einheiten zerlegen. Max 35 Min pro Task.
 12. **Frischer Kontext > ueberfuellter Kontext.** Bei komplexen Aufgaben neue Session bevorzugen statt in langer Session weiterzuarbeiten.
+13. **Lizenz ist BSL 1.1 (source-available).** In KEINEM user-facing Text "Open Source", "MIT", "GPL", "frei lizenziert" oder aehnliches verwenden. Korrekte Begriffe: "source-available", "Quellcode einsehbar". Redistribution und kommerzielle Nutzung sind NICHT erlaubt. Private Nutzung und Modifikation fuer den Eigengebrauch sind erlaubt. Quelle der Wahrheit: `LICENSE` im Repo-Root.

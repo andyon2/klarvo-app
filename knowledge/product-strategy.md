@@ -85,7 +85,7 @@ EUR 29 ist:
 
 ### Free-Tier (Open Source)
 - Kern-Diktat (Hotkey -> Sprechen -> Text)
-- Alle STT/LLM-Provider (Groq, DeepSeek, OpenAI, Anthropic) -- BYOK-Prinzip
+- Alle STT/LLM-Provider (Groq, DeepSeek, OpenAI, OpenRouter) -- BYOK-Prinzip. Anthropic deaktiviert (nie verifiziert).
 - Alle Basis-Cleanup-Stile (Polished, Clean, Chat)
 - Cleanup Instructions (Custom Prompt)
 - Offline-Modus mit Whisper small-Modell (~488 MB) -- brauchbar, guter erster Eindruck
@@ -122,7 +122,7 @@ Floating-Bubble-UI angelehnt. Differenzierung laeuft NICHT ueber UX-Ueberlegenhe
 (Wispr Flow hat mehr Ressourcen), sondern ueber:
 - **Preis:** EUR 29 einmalig vs. $144/Jahr
 - **Offline:** Funktioniert ohne Internet (wenn whisper.cpp steht)
-- **Transparenz:** Open Source, keine Black Box
+- **Transparenz:** Source-available (BSL 1.1), Quellcode einsehbar, keine Black Box
 - **Ownership:** Keine Cloud-Abhaengigkeit, Daten bleiben lokal
 
 ### Strategische Positionierung gegenueber Amical

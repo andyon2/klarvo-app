@@ -4,6 +4,16 @@ Freie Alternative zu Wispr Flow — Sprachdiktat mit KI-Text-Cleanup für Window
 
 Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, keine Cloud-Abhängigkeit, alles gehört dem Nutzer.
 
+## Inhalt
+
+- [Downloads](#downloads)
+- [Was Dikta kann](#was-dikta-kann)
+- [Free vs. Paid](#free-vs-paid)
+- [Voraussetzungen](#voraussetzungen)
+- [Tech-Stack](#tech-stack)
+- [Lizenz](#lizenz)
+- [Feedback](#feedback)
+
 ## Downloads
 
 ➡️ **[Aktueller Release](https://github.com/andyon2/dikta-public/releases/latest)**
@@ -13,39 +23,71 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 
 ## Was Dikta kann
 
-- **End-to-End Diktat-Pipeline:** Aufnehmen → Transkribieren → Bereinigen → Einfügen ins aktive Fenster
-- **3 Schreibstile:** Polished (bereinigt), Verbatim (wörtlich), Chat (locker)
-- **Live Preview:** Echtzeit-Transkript während der Aufnahme
-- **Live-Übersetzung:** Output-Sprache konfigurierbar (13 Sprachen)
-- **Custom Dictionary:** Fachbegriffe, die STT und LLM beibehalten sollen
-- **App Profiles:** Stil/Sprache/Prompt pro App automatisch anpassen
-- **History + Volltextsuche:** Vergangene Diktate durchsuchen
-- **Voice Notes:** Aufnahmen speichern statt einfügen
-- **Command Mode:** Text selektieren, Sprachbefehl geben (Strg+Shift+E)
-- **Whisper Mode:** Verstärkung für leises Diktieren
-- **Multi-Provider:** STT und LLM-Provider frei konfigurierbar (Groq, OpenAI, DeepSeek, Anthropic)
+### Kernfunktionen
+
+- **End-to-End Diktat-Pipeline:** Aufnehmen → Transkribieren → KI-Bereinigung → Einfügen
+- **3 Schreibstile:** Polished (professionell bereinigt), Verbatim (nah am Original), Chat (locker, mit Emojis)
+- **Sauberer Output:** Whisper-Halluzinationen werden automatisch erkannt und entfernt — keine mysteriösen Textfragmente im Ergebnis
+- **Custom Dictionary:** Fachbegriffe, Namen und Abkürzungen die STT und LLM korrekt beibehalten sollen
+- **History:** Jedes Diktat wird lokal gespeichert, durchsuchbar, löschbar
+- **Cross-Device Sync:** Diktat-History über Turso-Cloud zwischen Geräten synchronisieren
+- **Output-Sprache wählbar:** Diktat wird via LLM in die gewünschte Sprache übersetzt
+- **Cost Tracking:** Zeigt STT- und LLM-Kosten pro Diktat — Überblick was das Diktieren tatsächlich kostet
+- **Eigene API-Keys:** Groq, DeepSeek, OpenAI oder OpenRouter — kein Proxy, keine Marge, kein Vendor Lock-in
 
 ### Windows
-- Globaler Hotkey (Hold oder Toggle, konfigurierbar)
-- Floating Bar am Bildschirmrand (zeigt Aufnahme-Status)
-- System-Tray mit Schnellzugriff
-- Automatisches Einfügen per Ctrl+V in jedes Textfeld
+
+- **Paste ins richtige Fenster:** Dikta merkt sich das aktive Fenster vor der Aufnahme und fügt das Ergebnis dort ein — egal welches Fenster gerade im Vordergrund ist
+- **Insert-and-Send:** Drückt optional Enter nach dem Einfügen, um den Text direkt abzuschicken (Slack, Teams, WhatsApp Web). Pro Hotkey-Slot konfigurierbar
+- **2 unabhängige Hotkey-Slots:** Jeder Slot hat eigenen Shortcut, eigenen Aufnahme-Modus und eigene Insert-and-Send-Einstellung. Slot 1 für Hold in Slack, Slot 2 für AutoStop im Dokument — kein Umkonfigurieren
+- **4 Aufnahme-Modi:** Hold (halten), Toggle (an/aus), AutoStop (stoppt bei Stille), Auto-Loop (diktiert fortlaufend)
+- **Floating Pill Bar:** Transparente Statusanzeige am Bildschirmrand mit Echtzeit-Waveform
+- **System-Tray:** Schnellzugriff über das Tray-Icon
+- **App Profiles:** Cleanup-Stil und Prompt automatisch pro App anpassen (Window-Title-Matching)
+- **Command Mode:** Text selektieren, Sprachbefehl geben, LLM schreibt den Text um (experimentell)
+- **Whisper Mode:** Mikrofonverstärkung für leises Diktieren
+- **Offline-Modus:** Lokales Whisper mit GPU-Beschleunigung (small/medium/large-v3), kein Internet nötig
 
 ### Android
-- Floating Bubble über allen Apps
-- Tap = Aufnahme starten/stoppen, Long-Press = Push-to-Talk
-- Einfügen über AccessibilityService in jedes Textfeld
+
+- **Floating Bubble** über allen Apps — erscheint nur wenn die Tastatur sichtbar ist (konfigurierbar: immer oder nur bei Tastatur)
+- **Per-Geste konfigurierbar:** Tap und Long-Press jeweils unabhängig einstellbar mit eigenem Modus (Hold, AutoStop, Push-to-Talk, Auto-Loop) und eigener Silence-Dauer
+- **5 Bubble-Zustände** mit Animationen: Idle → Recording (Waveform) → Push-to-Talk (rote Blase) → Processing (Spinner) → Done
+- **Silero VAD:** Erkennt Sprechpausen automatisch — kein manuelles Stoppen nötig im AutoStop-Modus
+- **Einfügen** über AccessibilityService in jedes Textfeld
+
+## Free vs. Paid
+
+Dikta ist ohne Lizenzkey voll nutzbar — inklusive kostenlosem Groq-Key für STT und LLM. Mit Lizenzkey gibt es zusätzliche Power-Features. Einmalkauf, kein Abo.
+
+| Feature | Free | Paid |
+|---------|------|------|
+| Diktat-Pipeline (STT + Cleanup + Paste) | ✅ | ✅ |
+| Alle 3 Schreibstile | ✅ | ✅ |
+| Groq (STT + LLM) + DeepSeek LLM | ✅ | ✅ |
+| OpenAI STT, OpenAI/OpenRouter LLM | — | ✅ |
+| Alle Aufnahme-Modi (Hold, Toggle, AutoStop, Loop) | ✅ | ✅ |
+| 2 Hotkey-Slots + Insert-and-Send | ✅ | ✅ |
+| Android Floating Bubble (alle Features) | ✅ | ✅ |
+| Cost Tracking (Grundfunktion) | ✅ | ✅ |
+| Dictionary | 20 Einträge | Unbegrenzt |
+| History | 50 Einträge | Unbegrenzt + Suche |
+| Lokales Whisper (Offline) | small (488 MB) | + medium, large-v3 |
+| App Profiles, Command Mode, Whisper Mode | — | ✅ |
+| Voice Notes, Text Snippets | — | ✅ |
+| Savings-Dashboard (Wispr Flow Vergleich) | — | ✅ |
+| Cross-Device Sync (Turso) | — | ✅ |
+| Custom LLM System-Prompts | — | ✅ |
 
 ## Voraussetzungen
 
-Dikta nutzt Cloud-APIs für Transkription und Text-Bereinigung. Du brauchst mindestens:
+Du brauchst einen **Groq API Key** (kostenlos) — damit funktioniert Dikta komplett: Sprache-zu-Text (Whisper) und Text-Bereinigung (Llama).
 
-1. **Groq API Key** (kostenlos) — für Sprache-zu-Text (Whisper)
-2. **DeepSeek API Key** (sehr günstig) — für Text-Bereinigung
+Optional: **DeepSeek API Key** (sehr günstig) für bessere Text-Bereinigung. Groq reicht aber alleine.
 
 API-Keys werden beim ersten Start über den Einrichtungs-Wizard eingegeben, oder später in den Settings.
 
-> **Kosten:** Bei normalem Gebrauch (30-60 Diktate/Tag) unter 0,10 € pro Tag. Groq hat ein großzügiges Free Tier, DeepSeek kostet ~0,001 € pro Diktat.
+> **Kosten:** Groq ist kostenlos (mit Rate Limit). Mit DeepSeek ~0,001 € pro Diktat. Bei normalem Gebrauch (30-60 Diktate/Tag) unter 0,10 € pro Tag.
 
 ## Tech-Stack
 
@@ -56,35 +98,12 @@ API-Keys werden beim ersten Start über den Einrichtungs-Wizard eingegeben, oder
 | Backend | Rust (Audio, STT, LLM, Paste, Hotkey) |
 | Mobile | Tauri v2 Android + Kotlin (Floating Bubble, native Audio) |
 | STT | Groq Whisper API (primär), OpenAI Whisper (Fallback) |
-| Text-Cleanup | DeepSeek (primär), OpenAI, Anthropic, Groq/Llama (konfigurierbar) |
+| Text-Cleanup | DeepSeek (primär), Groq/Llama, OpenAI, OpenRouter (konfigurierbar) |
 | Speicherung | JSON (Config, Dictionary), SQLite (History, Stats) |
-
-## Selbst bauen
-
-**Voraussetzungen:** Node.js, Rust/Cargo, Tauri v2 CLI
-
-```bash
-# Dependencies installieren
-npm install
-
-# .env mit API-Keys anlegen (siehe .env.example)
-cp .env.example .env
-
-# Entwicklungsserver starten
-npm run tauri dev
-
-# Release-Build (Windows)
-npm run tauri build
-```
-
-**Android-Build** (aus WSL2):
-```bash
-scripts/android-build.sh
-```
 
 ## Lizenz
 
-Noch nicht festgelegt. Der Quellcode ist öffentlich einsehbar.
+Dikta ist source-available unter der [Business Source License 1.1](LICENSE). Der Quellcode ist einsehbar — du kannst prüfen was die App tut. Private Nutzung und Modifikation für den Eigengebrauch sind erlaubt. Redistribution und kommerzielle Nutzung sind nicht gestattet.
 
 ## Feedback
 
