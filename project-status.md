@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.6 released (Windows + Android). 335 Rust-Tests (alle gruen). Hotkey-Modi (Toggle/Hold/AutoStop) funktionieren. Waveform reagiert auf echte Audio-Levels. Live-Preview deaktiviert (Groq-Quota-Fix). Onboarding mit Free-Tier-Hinweis. Auto-Modi als Experimental markiert. Pre-Commit-Hooks eingerichtet (non-blocking). Deep-Research-Prompts fuer Silence-Detection vorbereitet.
+Version 0.4.6 released (Windows + Android). 335 Rust-Tests (alle gruen). Hotkey-Modi funktionieren. Waveform echtzeit-responsiv. Live-Preview deaktiviert (Groq-Quota-Fix). Onboarding mit Free-Tier-Hinweis. Auto-Modi als Experimental markiert. OpenRouter verifiziert (API-Test erfolgreich). README ueberarbeitet (Quick Start, Provider-Tabellen, Cloud/Offline-Weiche) aber Feature-Sektion unvollstaendig -- wartet auf USP-Analyse.
 
 ## Blocker
 
@@ -9,9 +9,9 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Silence Detection Deep Research** → Ergebnisse aus Claude Deep Research integrieren, VAD evaluieren (WebRTC VAD, Silero). Briefing liegt unter `briefings/deep-research-silence-detection.md`.
-2. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
-3. **Onboarding Polish** → Android Smoke-Test, UX-Feinschliff nach Tester-Feedback
+1. **Feature-Inventar + USP-Analyse** → Vollstaendige Feature-Liste aus Code erstellen. Jedes Feature gegen Wispr Flow und andere Konkurrenten pruefen. Ergebnis in zentralem Dokument (`knowledge/feature-inventory.md`). Dann README-Feature-Sektion daraus ableiten. Briefing liegt unter `briefings/readme-feature-analysis.md`.
+2. **Silence Detection Deep Research** → Ergebnisse aus Claude Deep Research integrieren, VAD evaluieren. Briefing: `briefings/deep-research-silence-detection.md`.
+3. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
 
 ## Bekannte Bugs
 
@@ -30,3 +30,4 @@ Keine.
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
 - [ ] [ux] Live-Preview als Opt-In wiederbeleben (nach VAD-Overhaul). Whisper-Halluzinationen filtern.
+- [ ] [feature] OpenRouter Modell-Dropdown in Settings (aktuell hardcoded auf deepseek/deepseek-chat).
