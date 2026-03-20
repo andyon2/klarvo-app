@@ -1488,22 +1488,24 @@ export function SettingsPanel({
                       {localBubbleTapMode === "auto" && "Continuous — restarts after each silence gap"}
                     </p>
 
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className={LABEL_CLS}>Silence Duration</span>
-                        <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                    {(localBubbleTapMode === "autostop" || localBubbleTapMode === "auto") && (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className={LABEL_CLS}>Silence Duration</span>
+                          <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1.0}
+                          max={4.0}
+                          step={0.1}
+                          value={localBubbleTapSilenceSecs}
+                          onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                       </div>
-                      <input
-                        type="range"
-                        min={1.0}
-                        max={4.0}
-                        step={0.1}
-                        value={localBubbleTapSilenceSecs}
-                        onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
-                        className="w-full accent-emerald-500"
-                      />
-                      <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
-                    </div>
+                    )}
 
                     {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
                   </>
@@ -1544,22 +1546,24 @@ export function SettingsPanel({
                       {localBubbleLongPressMode === "auto" && "Continuous — restarts after each silence gap"}
                     </p>
 
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className={LABEL_CLS}>Silence Duration</span>
-                        <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                    {(localBubbleLongPressMode === "autostop" || localBubbleLongPressMode === "auto") && (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className={LABEL_CLS}>Silence Duration</span>
+                          <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1.0}
+                          max={4.0}
+                          step={0.1}
+                          value={localBubbleLongPressSilenceSecs}
+                          onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
                       </div>
-                      <input
-                        type="range"
-                        min={1.0}
-                        max={4.0}
-                        step={0.1}
-                        value={localBubbleLongPressSilenceSecs}
-                        onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
-                        className="w-full accent-emerald-500"
-                      />
-                      <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
-                    </div>
+                    )}
 
                     {/* Insert & Send hidden on Android — Enter key rarely works in mobile apps */}
                   </>
