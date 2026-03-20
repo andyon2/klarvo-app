@@ -43,7 +43,7 @@ $env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
 Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
 
 Write-Host "Building Dikta..." -ForegroundColor Cyan
-npx tauri build
+npx tauri build 2>&1 | Write-Host
 
 # Copy installer to Dropbox for easy access
 $version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
@@ -61,3 +61,4 @@ if ($installer) {
 }
 
 Write-Host "Done!" -ForegroundColor Green
+[System.Environment]::Exit(0)
