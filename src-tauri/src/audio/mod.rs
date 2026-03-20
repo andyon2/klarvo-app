@@ -88,10 +88,12 @@ pub type SilenceCallback = Box<dyn Fn() + Send + 'static>;
 /// cleared or updated between recording sessions.
 #[cfg(desktop)]
 struct SilenceConfig {
-    /// Previously used as the minimum number of silent RMS chunks before firing.
-    /// Now forwarded to VadConfig::energy_floor so audio below this amplitude
-    /// is skipped by Silero inference (CPU savings, matches prior user expectation).
+    /// Forwarded to VadConfig::energy_floor so audio below this amplitude
+    /// is skipped by Silero inference (CPU savings).
     threshold: f32,
+    /// How many seconds of post-speech silence before firing the callback.
+    /// Forwarded to VadConfig::hangover_ms.
+    duration_secs: f32,
     /// The closure to call (exactly once) when silence is detected.
     callback: SilenceCallback,
 }
@@ -177,12 +179,9 @@ impl AudioRecorder {
     ) {
         #[cfg(desktop)]
         {
-            // Previously: computed silent_chunks_required from duration_secs
-            // and a 15 Hz chunk rate, then counted RMS chunks below threshold.
-            // Now: the VAD hangover window (default ~608 ms) handles the
-            // post-speech grace period. threshold is kept as energy_floor.
             let config = SilenceConfig {
                 threshold: _threshold,
+                duration_secs: _duration_secs,
                 callback: _callback,
             };
             if let Ok(mut guard) = self.silence_config.lock() {
@@ -446,8 +445,10 @@ fn recording_thread(
         //
         // VadConfig::energy_floor is set from the user's silence threshold
         // slider value so the prior UX behaviour is preserved.
+        let hangover_ms = (cfg.duration_secs * 1000.0) as u32;
         let vad_config = VadConfig {
             energy_floor: cfg.threshold,
+            hangover_ms: hangover_ms.max(200), // minimum 200ms to bridge word gaps
             ..VadConfig::default()
         };
         let mut vad = SileroVad::with_config(vad_config)?;
@@ -465,10 +466,24 @@ fn recording_thread(
 
             // Drain all pending sample chunks and feed them to the VAD.
             // Each chunk is ~66 ms of audio at the native sample rate.
+            // Silero VAD expects 16 kHz mono — downsample if the device
+            // runs at a higher rate (e.g. 44.1/48 kHz).
             loop {
                 match samples_chunk_rx.try_recv() {
                     Ok(chunk) => {
-                        let new_state = vad.feed(&chunk);
+                        let vad_input = if native_sample_rate != 16_000 {
+                            let ratio = native_sample_rate as f32 / 16_000.0;
+                            let out_len = (chunk.len() as f32 / ratio) as usize;
+                            (0..out_len)
+                                .map(|i| {
+                                    let src = (i as f32 * ratio) as usize;
+                                    chunk[src.min(chunk.len() - 1)]
+                                })
+                                .collect::<Vec<f32>>()
+                        } else {
+                            chunk
+                        };
+                        let new_state = vad.feed(&vad_input);
 
                         // Fire callback exactly once on Speaking → Silence transition.
                         // The VAD's hysteresis hangover (~608 ms default) ensures we
