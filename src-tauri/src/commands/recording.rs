@@ -257,8 +257,8 @@ pub async fn cleanup_text(
         return Ok(raw_text);
     }
 
-    // License gate: non-DeepSeek LLM providers require a paid license.
-    if active_llm_provider_id(inner) != "deepseek" {
+    // License gate: DeepSeek and Groq are free; all other LLM providers require a paid license.
+    if !["deepseek", "groq"].contains(&active_llm_provider_id(inner).as_str()) {
         require_license!(state, LicensedFeature::AlternativeProviders);
     }
 

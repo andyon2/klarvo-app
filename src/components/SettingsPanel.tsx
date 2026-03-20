@@ -228,6 +228,11 @@ function UpdateChecker() {
   const [status, setStatus] = useState<"idle" | "checking" | "available" | "downloading" | "upToDate" | "error">("idle");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("…");
+
+  useEffect(() => {
+    getAppVersion().then(setAppVersion);
+  }, []);
 
   const handleCheck = useCallback(async () => {
     setStatus("checking");
@@ -280,7 +285,7 @@ function UpdateChecker() {
             {status === "checking" ? "Checking..." : status === "downloading" ? "Downloading..." : status === "upToDate" ? "Up to date" : "Check for updates"}
           </button>
         )}
-        <span className="text-[11px] text-zinc-500">v0.4.0</span>
+        <span className="text-[11px] text-zinc-500">v{appVersion}</span>
       </div>
       {errorMsg && <p className="text-[11px] text-red-400">{errorMsg}</p>}
     </div>

@@ -108,10 +108,9 @@ pub fn add_history_entry(
 
 /// Returns aggregated usage statistics (cost tracker + dictation stats).
 ///
-/// Requires a paid license (cost tracking is a paid feature).
+/// Available to all users (free and paid) — cost transparency is a core differentiator.
 #[tauri::command]
 pub fn get_usage_stats(state: State<'_, AppState>) -> Result<UsageSummary, String> {
-    require_license!(state, LicensedFeature::CostTracking);
     let db = crate::lock!(state.inner().history_db)?;
     history::get_usage_summary(&db).map_err(|e| format!("Failed to get usage stats: {e}"))
 }

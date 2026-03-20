@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.7 released (Windows + Android). 369 Rust-Tests (alle gruen). README komplett gegen Feature-Inventar abgeglichen und ueberarbeitet. BSL 1.1 Lizenz eingefuehrt (LICENSE Datei, CLAUDE.md Regel 13, architecture.md). Pricing-Strategie dokumentiert (EUR 29 Launch, Play Store EUR 14 als 2. Welle). Dreifach-Sicherung gegen Lizenz-Fehler in user-facing Texten.
+Version 0.4.7 (Windows + Android). Auto-Updater funktioniert (ACL-Fix, Signing-Keypair, latest.json auf GitHub). Groq LLM und Cost Tracking jetzt Free. Versions-Anzeige in Settings dynamisch statt hardcoded. SmartScreen-Messaging fuer Launch ohne Zertifikat vorbereitet (briefings/). Entscheidung: Launch ohne Windows Code Signing, Zertifikat nach ersten Verkaeufen.
 
 ## Blocker
 
@@ -9,14 +9,12 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
-2. **License-Gate Code-Aenderungen** → Groq LLM Free machen, Cost Tracking Grundfunktion Free machen (`license/mod.rs`)
-3. **Live-Preview als Opt-In** → Nach VAD-Overhaul jetzt moeglich. Whisper-Halluzinationen werden gefiltert.
+1. **Live-Preview als Opt-In** → Nach VAD-Overhaul jetzt moeglich. Whisper-Halluzinationen werden gefiltert.
+2. **Launch-Vorbereitung** → SmartScreen-Hinweis in README/Landingpage einbauen, Release-Skill um latest.json-Upload erweitern.
 
 ## Bekannte Bugs
 
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
-- [ ] Updater ACL-Fehler: "Command plugin:updater|check not allowed by ACL". Low-Prio.
 
 ## Backlog
 - [ ] [desktop] Auto-Updater funktioniert nicht bei Tester. Ursache unklar (Firewall/AV?).

@@ -1,0 +1,11 @@
+{
+  "version": "0.4.7",
+  "notes": "VAD-Overhaul, Updater-Fix, License-Gate-Anpassungen",
+  "pub_date": "2026-03-20T21:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTTlV5Nk1zbWxsb1l4ZjdabjJTSlAvMEl1VUFkSGtpZ01EazMxMnhVRGdjM0x1MlNpWEZXdXJwQWZnUkF1aTUzTzk4SHdkZGVwSnRaaGNabm51N3psNkk1MllnTGk3ZHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc0MDM4OTg2CWZpbGU6RGlrdGFfMC40LjdfeDY0LXNldHVwLmV4ZQpKbnFWcDg1WkZENTVwNG0zQXl6V0pvUU4xZnpxa3dyTjZ5aS9iaVhyTHJXVVJLUFd6ek9kQ3h0dE9OL01zQ09IUTlCNXhRbzJCVmVNTEl6KzBtYVRDZz09Cg==",
+      "url": "https://github.com/andyon2/dikta-public/releases/download/v0.4.7/Dikta_0.4.7_x64-setup.exe"
+    }
+  }
+}

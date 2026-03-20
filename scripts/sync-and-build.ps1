@@ -31,6 +31,7 @@ $wslKeyFile = "\\wsl$\Ubuntu\home\andyon2\.tauri\dikta.key"
 if (Test-Path $wslKeyFile) {
     $keyContent = (Get-Content $wslKeyFile -Raw).Trim()
     [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY", $keyContent, "Process")
+    [System.Environment]::SetEnvironmentVariable("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "", "Process")
     Write-Host "Loaded signing key from $wslKeyFile" -ForegroundColor Yellow
 } else {
     Write-Host "WARNING: Signing key not found at $wslKeyFile" -ForegroundColor Red
