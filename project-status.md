@@ -1,7 +1,7 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.5. 335 Rust-Tests (alle gruen). Onboarding-Wizard implementiert (Cloud/Offline-Weiche, API-Key-Validierung, Test-Diktat, Android-Permissions). Kosten-Dashboard mit Wispr-Flow-Savings. Quick-Tip-System (5 kontextuelle Tipps). Silence-Slider (Duration + Threshold) in Settings. Fenstergroesse auf 480x720 erhoeht. Auto-Skip fuer bestehende Nutzer.
+Version 0.4.6 released (Windows + Android). 335 Rust-Tests (alle gruen). Hotkey-Modi (Toggle/Hold/AutoStop) funktionieren. Waveform reagiert auf echte Audio-Levels. Live-Preview deaktiviert (Groq-Quota-Fix). Onboarding mit Free-Tier-Hinweis. Auto-Modi als Experimental markiert. Pre-Commit-Hooks eingerichtet (non-blocking). Deep-Research-Prompts fuer Silence-Detection vorbereitet.
 
 ## Blocker
 
@@ -9,13 +9,13 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Auto-Mode Cleanup-Bug** → Silence erkennt, STT laeuft, aber Cleanup-Ergebnis fehlt + kein Paste. Vorbestehend, nicht durch Onboarding verursacht.
-2. **Onboarding Polish** → Android Smoke-Test (Task 12), UX-Feinschliff nach Tester-Feedback
-3. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+1. **Silence Detection Deep Research** → Ergebnisse aus Claude Deep Research integrieren, VAD evaluieren (WebRTC VAD, Silero). Briefing liegt unter `briefings/deep-research-silence-detection.md`.
+2. **Signing + Auto-Update** → Grundvoraussetzung fuer Paid Release
+3. **Onboarding Polish** → Android Smoke-Test, UX-Feinschliff nach Tester-Feedback
 
 ## Bekannte Bugs
 
-- [ ] Auto-Mode: Nach Silence-Stop laeuft STT, aber Cleanup-Ergebnis verschwindet, kein Paste, Zyklus startet neu. Vorbestehend.
+- [ ] Auto-Mode Silence-Detection unzuverlaessig: Duration-Slider scheint wenig Wirkung, Musik-Bleed-Through verhindert Silence-Erkennung. Wartet auf VAD-Overhaul.
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
 - [ ] Updater ACL-Fehler: "Command plugin:updater|check not allowed by ACL". Low-Prio.
 
@@ -24,9 +24,9 @@ Keine.
 - [ ] [shared] Anthropic-Provider verifizieren und ggf. wieder freischalten
 - [ ] [shared] OpenAI-Provider mit echtem Key testen
 - [ ] [shared] Chunking-Drift Rust vs Kotlin angleichen
-- [ ] [ui] 27 Compiler-Warnings aufraumen
+- [ ] [rust] 43 Clippy-Warnings + 27 Compiler-Warnings aufraumen. Pre-Commit-Hooks auf blocking umstellen danach.
 - [ ] [shared] Integrationen: Notion, Todoist (Platzhalter in Advanced Settings)
 - [ ] [frontend] @dnd-kit aus node_modules entfernen
 - [ ] [android] Long-Press-Dauer einstellbar machen (aktuell hardcoded 500ms)
 - [ ] [feature] User-definierbare Transkript-Blocklist. Phase: Polish.
-- [ ] [ux] Live-Preview: Whisper-Halluzinationen ("ZDF 2020") bei Stille filtern. `is_prompt_echo`-Check auf `transcribe_live_preview` anwenden. Phase: Polish.
+- [ ] [ux] Live-Preview als Opt-In wiederbeleben (nach VAD-Overhaul). Whisper-Halluzinationen filtern.
