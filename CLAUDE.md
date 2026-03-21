@@ -1,4 +1,4 @@
-# Dikta
+# Voxlit
 
 Source-available Alternative zu Wispr Flow. Sprachdiktat mit KI-Text-Cleanup fuer Windows Desktop und Android. Lizenziert unter BSL 1.1.
 
@@ -25,7 +25,7 @@ Koordiniert das Projekt, trifft finale Entscheidungen. Wenig Erfahrung mit Andro
 - **Desktop-Framework:** Tauri v2 (Rust-Backend + Web-Frontend)
 - **Frontend:** React + TypeScript + Tailwind CSS
 - **Backend:** Rust (Audio-Capture, STT-Pipeline, LLM-Client, Hotkey, Paste)
-- **Mobile:** Tauri v2 Android-Support + Kotlin (Floating Bubble Overlay, DiktaApi, AccessibilityService)
+- **Mobile:** Tauri v2 Android-Support + Kotlin (Floating Bubble Overlay, VoxlitApi, AccessibilityService)
 - **STT:** Groq Whisper API (primaer) + whisper.cpp (offline Fallback)
 - **Text-Cleanup:** DeepSeek API (primaer, guenstig)
 - **Speicherung:** SQLite fuer Dictionary, Settings, History
@@ -33,7 +33,7 @@ Koordiniert das Projekt, trifft finale Entscheidungen. Wenig Erfahrung mit Andro
 ## Projektstruktur
 
 ```
-dikta/
+voxlit/
   CLAUDE.md                    -- Dieses Dokument (Projektkontext)
   main-agent.md                -- System Prompt fuer den Tech-Lead
   project-status.md            -- Zentraler Projektstatus (bei jedem Sessionstart lesen!)
@@ -55,7 +55,7 @@ dikta/
       release/SKILL.md         -- Version bump + Build + GitHub Release
       track/SKILL.md           -- Projektstatus lesen/aktualisieren
   scripts/
-    dikta                      -- Unified Starter (dikta [rolle]: main, rust, android, strategy)
+    voxlit                     -- Unified Starter (voxlit [rolle]: main, rust, android, strategy)
   briefings/                   -- Briefing-Dokumente fuer direkte Agent-Sessions
   feedback/
     inbox.md                   -- Tester-Feedback (Bugs, Feature-Wuensche, UX-Probleme)
@@ -104,7 +104,7 @@ Zentrale Dateien:
 | /commit-progress | Git-Commit mit konventioneller Message | fork (haiku) |
 | /debug-error | Fehler-Output analysieren, Ursache finden, Fix vorschlagen | fork (sonnet) |
 | /sync-prompts | LLM-Prompts in Rust und Kotlin auf Drift vergleichen | fork (haiku) |
-| /release | Version bump + Build + publish.sh sync + GitHub Release auf dikta-public | fork (haiku) |
+| /release | Version bump + Build + publish.sh sync + GitHub Release auf voxlit-app | fork (haiku) |
 | /track | Aktualisiert project-status.md mit Session-Fortschritt | inline |
 | /reflect | Team-Selbstanalyse erstellen | fork (sonnet) |
 | /learn | Neue Wissensquellen in knowledge/ integrieren | fork (sonnet) |

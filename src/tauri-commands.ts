@@ -340,7 +340,7 @@ export async function setHotkey(shortcut: string, mode: HotkeyMode): Promise<voi
  * Returns all custom dictionary terms.
  */
 export async function getDictionaryTerms(): Promise<string[]> {
-  if (isPreviewMode) return mockAsync(["Dikta", "Tauri", "Whisper"]);
+  if (isPreviewMode) return mockAsync(["Voxlit", "Tauri", "Whisper"]);
   return invoke<string[]>("get_dictionary_terms");
 }
 
@@ -366,14 +366,14 @@ export async function removeDictionaryTerm(_term: string): Promise<void> {
  * Subscribes to backend pipeline state changes triggered by the global hotkey.
  * Returns a promise that resolves to an unlisten function -- call it on cleanup.
  *
- * The backend emits "dikta://state-changed" at every pipeline step:
+ * The backend emits "voxlit://state-changed" at every pipeline step:
  * recording -> transcribing -> cleaning -> done | error
  */
 export function onStateChanged(
   _callback: (payload: StateChangedPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<StateChangedPayload>("dikta://state-changed", (event) => {
+  return listen<StateChangedPayload>("voxlit://state-changed", (event) => {
     _callback(event.payload);
   });
 }
@@ -650,7 +650,7 @@ export async function getWhisperModels(): Promise<WhisperModelWithStatus[]> {
 
 /**
  * Starts downloading a whisper model in the background.
- * Progress is reported via dikta://model-download-progress events.
+ * Progress is reported via voxlit://model-download-progress events.
  * @param modelId - Model identifier, e.g. "base"
  */
 export async function downloadWhisperModel(_modelId: string): Promise<void> {
@@ -675,7 +675,7 @@ export function onModelDownloadProgress(
   _callback: (payload: ModelDownloadProgressPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadProgressPayload>("dikta://model-download-progress", (e) => {
+  return listen<ModelDownloadProgressPayload>("voxlit://model-download-progress", (e) => {
     _callback(e.payload);
   });
 }
@@ -688,7 +688,7 @@ export function onModelDownloadComplete(
   _callback: (payload: ModelDownloadCompletePayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadCompletePayload>("dikta://model-download-complete", (e) => {
+  return listen<ModelDownloadCompletePayload>("voxlit://model-download-complete", (e) => {
     _callback(e.payload);
   });
 }
@@ -701,7 +701,7 @@ export function onModelDownloadError(
   _callback: (payload: ModelDownloadErrorPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadErrorPayload>("dikta://model-download-error", (e) => {
+  return listen<ModelDownloadErrorPayload>("voxlit://model-download-error", (e) => {
     _callback(e.payload);
   });
 }
@@ -711,7 +711,7 @@ export function onModelDownloadError(
 /**
  * Validates a license key. Returns the raw status string from the backend:
  * "licensed" | "grace_period:{timestamp}" | error string
- * @param key - License key in DIKTA-XXXX-XXXX-XXXX-XXXX format
+ * @param key - License key in VOXLIT-XXXX-XXXX-XXXX-XXXX format
  */
 export async function validateLicense(_key: string): Promise<string> {
   if (isPreviewMode) return mockAsync("licensed");

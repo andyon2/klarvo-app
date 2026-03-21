@@ -7,7 +7,7 @@ context: fork
 model: haiku
 ---
 
-Erstelle ein neues Modul/Component fuer das Dikta-Projekt.
+Erstelle ein neues Modul/Component fuer das Voxlit-Projekt.
 
 ## Argumente parsen
 
@@ -22,7 +22,7 @@ Aus `$ARGUMENTS` extrahiere:
 1. Erstelle Verzeichnis `src-tauri/src/[name]/`
 2. Erstelle `src-tauri/src/[name]/mod.rs`:
    ```rust
-   //! [Name] module for Dikta
+   //! [Name] module for Voxlit
    //!
    //! TODO: Add module description
 
@@ -76,10 +76,10 @@ Aus `$ARGUMENTS` extrahiere:
 
 ### Wenn typ = `android-service`
 
-1. Ermittle das Package aus bestehenden Kotlin-Dateien in `android/` oder nutze `com.dikta.app`
+1. Ermittle das Package aus bestehenden Kotlin-Dateien in `android/` oder nutze `com.voxlit.app`
 2. Erstelle die Kotlin-Datei im passenden Verzeichnis:
    ```kotlin
-   package com.dikta.app
+   package com.voxlit.app
 
    // TODO: Implement [Name]
    class [Name] {

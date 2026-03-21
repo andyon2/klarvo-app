@@ -366,11 +366,11 @@ mod tests {
     /// `model_path` must produce the expected `{dir}/models/{filename}` path.
     #[test]
     fn test_model_path_construction() {
-        let dir = PathBuf::from("/tmp/dikta-test-appdata");
+        let dir = PathBuf::from("/tmp/voxlit-test-appdata");
         let path = model_path(&dir, "ggml-base.bin");
         assert_eq!(
             path,
-            PathBuf::from("/tmp/dikta-test-appdata/models/ggml-base.bin")
+            PathBuf::from("/tmp/voxlit-test-appdata/models/ggml-base.bin")
         );
     }
 
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_get_model_status_not_downloaded() {
         // Use a temp dir that definitely doesn't have the model files.
-        let dir = PathBuf::from("/tmp/dikta-test-no-models-12345");
+        let dir = PathBuf::from("/tmp/voxlit-test-no-models-12345");
         let status = get_model_status("small", &dir).expect("small is a known model");
         assert_eq!(
             status,
@@ -428,7 +428,7 @@ mod tests {
     /// `list_models_with_status` returns one entry per catalogue model.
     #[test]
     fn test_list_models_with_status_count() {
-        let dir = PathBuf::from("/tmp/dikta-no-models");
+        let dir = PathBuf::from("/tmp/voxlit-no-models");
         let result = list_models_with_status(&dir);
         assert_eq!(result.len(), 3, "should return one entry per catalogue model");
     }
@@ -438,7 +438,7 @@ mod tests {
     /// Deleting a non-existent model is idempotent (no error).
     #[test]
     fn test_delete_model_nonexistent_is_ok() {
-        let dir = PathBuf::from("/tmp/dikta-no-models-12345");
+        let dir = PathBuf::from("/tmp/voxlit-no-models-12345");
         let result = delete_model("small", &dir);
         assert!(result.is_ok(), "deleting a missing file should not error");
     }

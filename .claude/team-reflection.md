@@ -1,4 +1,4 @@
-# Dikta -- Team-Reflection
+# Voxlit -- Team-Reflection
 
 Stand: 2026-03-09
 
@@ -13,7 +13,7 @@ Stand: 2026-03-09
 | **Tech Lead** (main-agent.md) | Architektur-Entscheidungen, Delegation, Review, Sessionstart/-ende-Protokoll, Kontext-Management, Skill-Auswahl, Dispatches pruefen | Code schreiben (ausser strategische 2-3-Nachrichten-Entscheidungen), Android debuggen, Frontend stylen, Rust compilieren |
 | **rust-core** | Alles in `src-tauri/`: Audio-Capture (cpal), STT-Pipeline (Groq/OpenAI), LLM-Cleanup-Client, Text-Paste (Win32), Hotkey, Dictionary, Config, History, Sync | Android-Kotlin-Code, Frontend-React-Code, Build-Deployment |
 | **ui-dev** | Alles in `src/`: FloatingBar, SettingsPanel, AdvancedSettingsPanel, MobileTextarea, VoiceNotesPanel, SnippetsPanel, Hooks, Tauri-IPC-Calls im Frontend, Onboarding | Rust-Backend, Android-Kotlin-Code, Build-Skripte |
-| **android-platform** | Alles in `android/kotlin-src/`: DiktaOverlayService, FloatingBubbleView, DiktaAudioRecorder, DiktaApi, DiktaAccessibilityService, MainActivity; Android-Build-Workflow | Rust-Backend-Logik, React-Frontend-Code, Windows-spezifische Features |
+| **android-platform** | Alles in `android/kotlin-src/`: VoxlitOverlayService, FloatingBubbleView, VoxlitAudioRecorder, VoxlitApi, VoxlitAccessibilityService, MainActivity; Android-Build-Workflow | Rust-Backend-Logik, React-Frontend-Code, Windows-spezifische Features |
 | **product-strategist** | Positionierung, Monetarisierung, Roadmap-Priorisierung aus Marktsicht, Wettbewerbs-Strategie, Release-Scoping | Tech-Entscheidungen, Architektur, Code |
 
 ### Skills
@@ -28,7 +28,7 @@ Stand: 2026-03-09
 | `/plan-feature` | Feature in Tasks mit Agent-Zuweisung und Abhaengigkeiten zerlegen; optional `--save` in briefings/ | Tasks ausfuehren oder entscheiden ob der Plan gut ist |
 | `/commit-progress` | `git status`, `git diff`, konventionellen Commit erstellen | Code-Review vor dem Commit, Tests pruefen |
 | `/debug-error` | Fehler klassifizieren, Root Cause finden, Fix vorschlagen | Fix selbst implementieren -- nur analysieren |
-| `/sync-prompts` | LLM-Prompts in `llm/mod.rs` (Rust) vs. `DiktaApi.kt` (Kotlin) vergleichen, Drift sichtbar machen | Drift beheben -- nur diagnostizieren |
+| `/sync-prompts` | LLM-Prompts in `llm/mod.rs` (Rust) vs. `VoxlitApi.kt` (Kotlin) vergleichen, Drift sichtbar machen | Drift beheben -- nur diagnostizieren |
 | `/release` | Version bump in 3 Dateien, beide Plattformen bauen, `latest.json` generieren, GitHub Release erstellen | Post-Release-Marketing, App-Store-Publishing |
 | `/track` | `project-status.md` nach Session aktualisieren, Karteileichen bereinigen, max 50 Zeilen halten | Ausfuehrliche Dokumentation, Code-Aenderungen |
 | `/reflect` (dieses Skill) | Team-Inventur, Schwachstellen-Analyse, Verbesserungsvorschlaege, schreibt nach `.claude/team-reflection.md` | Aenderungen selbst durchfuehren |
@@ -60,7 +60,7 @@ CLAUDE.md / Agents    -- "Wer tut was wie?" (selten geaendert, strukturgebend)
 
 ### Was NICHT automatisch synchronisiert wird
 
-1. **LLM-Prompts in Rust vs. Kotlin** -- `llm/mod.rs` und `DiktaApi.kt` enthalten denselben Prompt-Code. `/sync-prompts` macht Drift sichtbar, aber es gibt keine automatische Absicherung. In MEMORY.md explizit als wiederkehrende Falle dokumentiert.
+1. **LLM-Prompts in Rust vs. Kotlin** -- `llm/mod.rs` und `VoxlitApi.kt` enthalten denselben Prompt-Code. `/sync-prompts` macht Drift sichtbar, aber es gibt keine automatische Absicherung. In MEMORY.md explizit als wiederkehrende Falle dokumentiert.
 
 2. **Agent-Wissen nach Architektur-Aenderungen** -- Agents lesen Projektdateien erst beim naechsten Auftrag. Es gibt keine Push-Benachrichtigung.
 
@@ -219,7 +219,7 @@ Sinnvoll. Prompt-Sync automatisch zu machen (z.B. via Pre-Commit-Hook) waere fra
 **android-platform.md IME als "EVALUIERT, VERWORFEN" markiert**
 Gut geloest. Der Abschnitt bleibt als Entscheidungsdokumentation (warum nicht), ist aber klar als verworfen markiert.
 
-**Native Kotlin DiktaApi statt Tauri-Bridge**
+**Native Kotlin VoxlitApi statt Tauri-Bridge**
 Richtige Entscheidung beibehalten. Weniger Latenz, direkter HTTP-Stack. Trade-off (Prompt-Duplikation) ist akzeptiert und durch `/sync-prompts` adressiert.
 
 ---
@@ -227,7 +227,7 @@ Richtige Entscheidung beibehalten. Weniger Latenz, direkter HTTP-Stack. Trade-of
 ## Anhang: Dateistruktur
 
 ```
-dikta/
+voxlit/
   CLAUDE.md                          -- Projekt-Ueberblick, Regeln, Team-Tabelle [SKILL-TABELLE UNVOLLSTAENDIG -- 4 Skills fehlen]
   main-agent.md                      -- Tech-Lead System-Prompt [VOLLSTAENDIG, aktuell]
   project-status.md                  -- Projektstatus, Backlog, Session-Changelog [AKTUELL, v0.4.1]
@@ -257,7 +257,7 @@ dikta/
   scripts/
     android-build.sh                 -- Kotlin-Copy + Build + Sign + Dropbox-Deploy [KRITISCH]
     android-platform                 -- Direkter Android-Session-Starter [OK]
-    dikta-tech-lead                  -- Direkter Tech-Lead-Starter [OK]
+    voxlit-tech-lead                  -- Direkter Tech-Lead-Starter [OK]
     product-strategist               -- Direkter Strategie-Session-Starter [OK]
     sync-and-build.ps1               -- Windows-Build via PowerShell [OK]
     [FEHLT: rust-core]               -- Direkter Rust-Session-Starter [LUECKE]

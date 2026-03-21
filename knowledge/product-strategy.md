@@ -1,11 +1,11 @@
 # Product Strategy
 
-Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Dikta.
+Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Voxlit.
 Diese Datei ist die Source of Truth fuer alle strategischen Produkt-Entscheidungen.
 
-Letzte Aktualisierung: 2026-03-21 (Umbenennung: Dikta → Voxlit entschieden)
+Letzte Aktualisierung: 2026-03-21 (Umbenennung: Voxlit → Voxlit entschieden)
 
-## Umbenennung: Dikta → Voxlit
+## Umbenennung: Voxlit → Voxlit
 
 **Status:** Entschieden (2026-03-21). Neuer Produktname ist **Voxlit**.
 
@@ -33,7 +33,7 @@ Letzte Aktualisierung: 2026-03-21 (Umbenennung: Dikta → Voxlit entschieden)
 
 **Umbenennung durchfuehren (wenn bereit):**
 - [ ] Codebase (Rust + React + Android)
-- [ ] GitHub-Repo (dikta-public → voxlit)
+- [ ] GitHub-Repo (voxlit-app → voxlit)
 - [ ] README, Branding, Icons
 - [ ] Landingpage-Briefing anpassen
 - [ ] Portfolio-Text auf Berater-Website anpassen (Website-Agent informieren)
@@ -50,20 +50,20 @@ Letzte Aktualisierung: 2026-03-21 (Umbenennung: Dikta → Voxlit entschieden)
 
 ### 1. Einmalkauf vs. Abo (vs. Wispr Flow)
 Wispr Flow ist die direkte Inspiration und der staerkste Wettbewerber -- auch auf Android (seit Feb 2026).
-Aber: $144/Jahr Abo. Dikta kostet EUR 29 einmalig. Das ist ~2.5 Monate Wispr Flow.
+Aber: $144/Jahr Abo. Voxlit kostet EUR 29 einmalig. Das ist ~2.5 Monate Wispr Flow.
 In einem Markt mit wachsender Subscription Fatigue (+6% Einmalkauf-Praeferenz 2025/26)
 ist das ein klarer Kaufgrund.
 
 ### 2. Shipped vs. Beta (vs. Amical)
 Amical ist der naechste Open-Source-Wettbewerber (MIT, offline, Win+Mac).
 Aber: Android ist dort nur Private Beta, kein shipped Product.
-Dikta hat Android jetzt, mit Floating Bubble, AccessibilityService, systemweitem Paste.
-Wer heute Android braucht, hat genau eine Open-Source-Option: Dikta.
+Voxlit hat Android jetzt, mit Floating Bubble, AccessibilityService, systemweitem Paste.
+Wer heute Android braucht, hat genau eine Open-Source-Option: Voxlit.
 
 ### 3. Bezahlprodukt vs. Hobby-Projekt (vs. Open-Source-Alternativen)
 OpenWhispr, Amical, Handy -- alle gratis, alle Community-getrieben.
 EUR 29 signalisiert: Hier kuemmert sich jemand langfristig. Updates, Support, Roadmap.
-Gratis-Tools haben kein Nachhaltigkeitsmodell. Dikta schon.
+Gratis-Tools haben kein Nachhaltigkeitsmodell. Voxlit schon.
 
 **Kaufgruende vs. Wettbewerb (aktualisiert):**
 - Vs. Wispr Flow: EUR 29 einmalig statt $144/Jahr, offline-faehig, Open Source, kein Cloud-Zwang
@@ -72,7 +72,7 @@ Gratis-Tools haben kein Nachhaltigkeitsmodell. Dikta schon.
 - Vs. OpenWhispr: Android-Support, native Performance (Tauri statt Electron), poliertes Produkt
 - Vs. Dragon: Moderner, guenstiger, nicht Enterprise-aufgeblasen
 
-**Wichtig:** Dikta positioniert sich NICHT ueber "4 Checkboxen die niemand hat" (falsifizierbar),
+**Wichtig:** Voxlit positioniert sich NICHT ueber "4 Checkboxen die niemand hat" (falsifizierbar),
 sondern ueber die Kombination aus Preis, Plattform-Reife und Nachhaltigkeit.
 
 ## Zielgruppe
@@ -90,7 +90,7 @@ sondern ueber die Kombination aus Preis, Plattform-Reife und Nachhaltigkeit.
 
 ### Tertiaer: Android-Nutzer
 - Wispr Flow ist seit Feb 2026 auf Android, aber Abo-only und cloud-only
-- Dikta ist die einzige Open-Source + Offline-Alternative auf Android
+- Voxlit ist die einzige Open-Source + Offline-Alternative auf Android
 - Amical-Android ist nur Private Beta
 
 ## Monetarisierung
@@ -105,9 +105,9 @@ Repo bleibt Open Source. Build laeuft ohne Key. Bestimmte Features schalten sich
 
 | Referenz | Preis | Vergleich |
 |----------|-------|-----------|
-| Voice Type | ~EUR 18 einmalig | Dikta hat 5x mehr Features, 2 Plattformen |
+| Voice Type | ~EUR 18 einmalig | Voxlit hat 5x mehr Features, 2 Plattformen |
 | Wispr Flow | ~EUR 130/Jahr | EUR 29 = ~2.5 Monate Wispr Flow |
-| Voicy Lifetime | ~EUR 200 | Dikta juenger, niedriger Einstieg zum Start |
+| Voicy Lifetime | ~EUR 200 | Voxlit juenger, niedriger Einstieg zum Start |
 | VoiceTypr | EUR 32-90 | Aehnliche Range |
 
 EUR 29 ist:
@@ -150,7 +150,7 @@ EUR 29 ist:
 ## Differenzierung
 
 ### Strategische Positionierung gegenueber Wispr Flow
-Wispr Flow ist die direkte Inspiration fuer Dikta. Diktats Android-Version ist an Wispr Flows
+Wispr Flow ist die direkte Inspiration fuer Voxlit. Diktats Android-Version ist an Wispr Flows
 Floating-Bubble-UI angelehnt. Differenzierung laeuft NICHT ueber UX-Ueberlegenheit
 (Wispr Flow hat mehr Ressourcen), sondern ueber:
 - **Preis:** EUR 29 einmalig vs. $144/Jahr
@@ -169,11 +169,11 @@ Wispr-Flow-Alternative). Differenzierung:
 ### Strategische Positionierung gegenueber OpenWhispr
 Nicht bekaempfen, nicht kopieren, **komplementaer positionieren:**
 - OpenWhispr = Open-Source-Projekt zum Mitbauen (Community-driven, Tinkerer)
-- Dikta = Fertiges Tool das einfach funktioniert (Product-driven, End-User)
+- Voxlit = Fertiges Tool das einfach funktioniert (Product-driven, End-User)
 - Kein Feature-Race gegen MIT-Community. Stattdessen: Polish, Android, Zuverlaessigkeit.
 
 ### Feature-Vorsprung vs. Voice Type
-Dikta bietet bereits deutlich mehr als Voice Type (EUR 18):
+Voxlit bietet bereits deutlich mehr als Voice Type (EUR 18):
 - 3 Cleanup-Stile + Live Translation + Multi-Format
 - Command Mode, Snippets, App Profiles
 - History mit Volltextsuche, Filler-Analyse, Kostentracking

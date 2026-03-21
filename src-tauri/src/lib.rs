@@ -1,4 +1,4 @@
-//! Dikta -- Tauri backend entry point.
+//! Voxlit -- Tauri backend entry point.
 //!
 //! Wires together the audio, STT, LLM, paste, hotkey, config and dictionary
 //! modules and exposes them to the React frontend via Tauri commands and events.
@@ -35,7 +35,7 @@
 //! ## Hotkey pipeline
 //!
 //! When the global shortcut fires (default: Ctrl+Shift+D), the backend runs
-//! the full pipeline automatically and emits `dikta://state-changed` events
+//! the full pipeline automatically and emits `voxlit://state-changed` events
 //! so the frontend can update the UI without being in the loop.
 
 mod audio;
@@ -390,11 +390,11 @@ pub fn mask_api_key(key: &str) -> String {
 /// Updates the system tray icon tooltip to reflect the current pipeline state.
 ///
 /// Tooltip strings per state:
-/// - idle / done  → "Dikta"
-/// - recording    → "Dikta — Recording..."
-/// - transcribing → "Dikta — Transcribing..."
-/// - cleaning     → "Dikta — Processing..."
-/// - error        → "Dikta — Error"
+/// - idle / done  → "Voxlit"
+/// - recording    → "Voxlit — Recording..."
+/// - transcribing → "Voxlit — Transcribing..."
+/// - cleaning     → "Voxlit — Processing..."
+/// - error        → "Voxlit — Error"
 ///
 /// If the tray icon cannot be found, the failure is logged and ignored -- the
 /// app must not crash because the tray tooltip failed to update.
@@ -403,21 +403,21 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
     use tauri::Manager;
 
     let tooltip = match state {
-        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Dikta",
-        hotkey::PipelineState::Recording => "Dikta \u{2014} Recording...",
-        hotkey::PipelineState::Transcribing => "Dikta \u{2014} Transcribing...",
-        hotkey::PipelineState::Cleaning => "Dikta \u{2014} Processing...",
-        hotkey::PipelineState::Error => "Dikta \u{2014} Error",
+        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Voxlit",
+        hotkey::PipelineState::Recording => "Voxlit \u{2014} Recording...",
+        hotkey::PipelineState::Transcribing => "Voxlit \u{2014} Transcribing...",
+        hotkey::PipelineState::Cleaning => "Voxlit \u{2014} Processing...",
+        hotkey::PipelineState::Error => "Voxlit \u{2014} Error",
     };
 
-    match handle.tray_by_id("dikta-tray") {
+    match handle.tray_by_id("voxlit-tray") {
         Some(tray) => {
             if let Err(e) = tray.set_tooltip(Some(tooltip)) {
                 log::warn!("[tray] Failed to set tooltip to {tooltip:?}: {e}");
             }
         }
         None => {
-            log::debug!("[tray] Tray icon 'dikta-tray' not found, skipping tooltip update");
+            log::debug!("[tray] Tray icon 'voxlit-tray' not found, skipping tooltip update");
         }
     }
 }
@@ -463,7 +463,7 @@ const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 // ---------------------------------------------------------------------------
 
 /// Event name for real-time audio level updates sent to the floating bar.
-const EVENT_AUDIO_LEVEL: &str = "dikta://audio-level";
+const EVENT_AUDIO_LEVEL: &str = "voxlit://audio-level";
 
 /// Sets the window region to an ellipse (circle when w==h) using Win32 API.
 /// This clips the window shape at the OS level, hiding any WebView2 artifacts.
@@ -664,7 +664,7 @@ pub fn run() {
     }
 
     let mut builder = builder.setup(|app| {
-        // Resolve the app-data directory (e.g. %APPDATA%\com.dikta.voice on Windows).
+        // Resolve the app-data directory (e.g. %APPDATA%\com.voxlit.voice on Windows).
         let app_data_dir = app
             .path()
             .app_data_dir()
@@ -724,8 +724,8 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
-            let tray_tooltip = format!("Dikta \u{2014} {hotkey_str}");
-            let _tray = tauri::tray::TrayIconBuilder::with_id("dikta-tray")
+            let tray_tooltip = format!("Voxlit \u{2014} {hotkey_str}");
+            let _tray = tauri::tray::TrayIconBuilder::with_id("voxlit-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip(&tray_tooltip)
                 .menu(&menu)

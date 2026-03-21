@@ -4,7 +4,7 @@ description: "Aktualisiert project-status.md mit dem, was in der aktuellen Sessi
 allowed-tools: Read, Edit, Grep, Glob
 ---
 
-Du aktualisierst den Projektstatus von Dikta basierend auf dem, was in dieser Session passiert ist.
+Du aktualisierst den Projektstatus von Voxlit basierend auf dem, was in dieser Session passiert ist.
 
 ## Vorgehen
 

@@ -546,7 +546,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub profiles: Vec<AppProfile>,
 
-    /// Launch Dikta automatically when the user logs in.
+    /// Launch Voxlit automatically when the user logs in.
     /// On Windows this writes/removes a `HKCU\...\Run` registry entry.
     #[serde(default)]
     pub autostart: bool,
@@ -1771,12 +1771,12 @@ mod tests {
     fn test_webhook_url_roundtrip() {
         let dir = temp_dir();
         let cfg = AppConfig {
-            webhook_url: "https://hooks.example.com/dikta".to_string(),
+            webhook_url: "https://hooks.example.com/voxlit".to_string(),
             ..AppConfig::default()
         };
         save_config(dir.path(), &cfg).unwrap();
         let loaded = load_config(dir.path());
-        assert_eq!(loaded.webhook_url, "https://hooks.example.com/dikta");
+        assert_eq!(loaded.webhook_url, "https://hooks.example.com/voxlit");
     }
 
     /// Partial JSON without webhook_url defaults to empty string.

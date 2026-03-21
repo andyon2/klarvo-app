@@ -68,7 +68,7 @@ function StatTile({ label, value, sub, highlight }: StatTileProps) {
 const WISPR_MONTHLY_USD = 12.0;
 
 /**
- * Estimates monthly Dikta cost and computes savings vs Wispr Flow.
+ * Estimates monthly Voxlit cost and computes savings vs Wispr Flow.
  *
  * We cannot know the first-dictation date from UsageSummary alone (the backend
  * does not expose it yet), so we conservatively assume 1 month of usage.
@@ -148,7 +148,7 @@ export function CostDashboard({ stats }: CostDashboardProps) {
               </p>
               <p className="text-[11px] text-emerald-600 leading-snug">
                 Wispr Flow kostet ${WISPR_MONTHLY_USD.toFixed(2)}/Monat. Deine
-                Dikta-Kosten: {formatCost(monthly)}/Monat.
+                Voxlit-Kosten: {formatCost(monthly)}/Monat.
               </p>
             </>
           ) : (

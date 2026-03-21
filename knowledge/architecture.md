@@ -1,4 +1,4 @@
-# Architektur -- Dikta
+# Architektur -- Voxlit
 
 ## Tech-Stack
 
@@ -34,7 +34,7 @@
     │  + System Tray      │           │  + Overlay Bubble   │
     │  + Updater          │           │  + AudioRecord      │
     └─────────────────────┘           │  + Accessibility    │
-                                      │  + DiktaApi (HTTP)  │
+                                      │  + VoxlitApi (HTTP)  │
                                       └─────────────────────┘
 ```
 
@@ -45,7 +45,7 @@
 ### Mobile-only (hinter `#[cfg(mobile)]` oder `isMobile`)
 - **Rust:** Stub-Implementierungen fuer Audio (no-op), Paste (no-op)
 - **Frontend:** Safe-Area-Padding, Touch-Target-Groessen, MediaRecorder (WebAudio API), Android-Back-Button
-- **Kotlin:** Gesamter Overlay-Service, Bubble-UI, AudioRecord, AccessibilityService, Permission-Flow, DiktaApi (HTTP-Calls direkt)
+- **Kotlin:** Gesamter Overlay-Service, Bubble-UI, AudioRecord, AccessibilityService, Permission-Flow, VoxlitApi (HTTP-Calls direkt)
 
 ### Shared (beide Plattformen)
 - **Rust:** STT-Provider, LLM-Provider, Config, Dictionary, History, Sync, Pipeline-Logik
@@ -86,7 +86,7 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Gesten: Single-Tap=Record, Long-Press=Push-to-Talk, Double-Tap=Settings
 
 **Android: Native Kotlin statt Tauri-Bridge (2026-03-08)**
-- DiktaApi.kt macht HTTP-Calls direkt (Groq, DeepSeek, Turso)
+- VoxlitApi.kt macht HTTP-Calls direkt (Groq, DeepSeek, Turso)
 - Kein Tauri-Bridge-Overhead, weniger Latenz
 - Trade-off: Prompt-Logik ist in Rust UND Kotlin dupliziert -- bei Aenderungen BEIDE updaten!
 
@@ -113,10 +113,10 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Lokale SQLite bleibt, Turso fuer Push/Pull
 - UUID als Primary Key remote (kein AUTOINCREMENT)
 - DB-Lock nie ueber async await halten (rusqlite Connection nicht Send)
-- Android: pusht nach jedem Diktat via DiktaApi.pushToTurso()
+- Android: pusht nach jedem Diktat via VoxlitApi.pushToTurso()
 
 **Event-basierte Pipeline**
-- `dikta://state-changed` Events statt Polling
+- `voxlit://state-changed` Events statt Polling
 - States: idle → recording → transcribing → cleaning → idle
 
 **Paid/Free Feature-Gates (2026-03-10)**
@@ -129,7 +129,7 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Polished: Fuellwoerter bereinigen, Grammatik, professionell formatieren
 - Verbatim: Nur Satzzeichen und offensichtliche Fehler
 - Chat: Kurz, locker, Emojis erlaubt
-- Prompts muessen in Rust (llm/mod.rs) UND Kotlin (DiktaApi.kt) synchron gehalten werden!
+- Prompts muessen in Rust (llm/mod.rs) UND Kotlin (VoxlitApi.kt) synchron gehalten werden!
 
 **Custom Prompts: Zwei Stufen, kein Overlap**
 - "Cleanup Instructions" (Settings): Zusaetzliche LLM-Anweisungen ("formelles Deutsch", "keine Aufzaehlungen")
@@ -144,19 +144,19 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - **Additional Use Grant:** Private Nutzung und Modifikation fuer den Eigengebrauch erlaubt. Kein Weiterverteilen, kein Verkauf, kein SaaS.
 - **Change Date:** 4 Jahre nach erstem Paid Release. Danach automatisch MIT.
 - **Change License:** MIT
-- **Warum BSL statt MIT:** Dikta soll als Produkt vermarktet werden (EUR 29 Einmalkauf). MIT wuerde erlauben dass jemand forkt, License-Checks entfernt und weiterverteilt. BSL schuetzt die Monetarisierung rechtlich, waehrend der Code einsehbar bleibt (Transparenz-Argument vs. Wispr Flow Black Box).
+- **Warum BSL statt MIT:** Voxlit soll als Produkt vermarktet werden (EUR 29 Einmalkauf). MIT wuerde erlauben dass jemand forkt, License-Checks entfernt und weiterverteilt. BSL schuetzt die Monetarisierung rechtlich, waehrend der Code einsehbar bleibt (Transparenz-Argument vs. Wispr Flow Black Box).
 - **Warum nicht Closed Source:** "Quellcode einsehbar" ist ein Differenzierungsmerkmal. Nutzer koennen pruefen was die App tut -- kein Tracking, kein Lock-in, kein Vertrauensvorschuss noetig.
 - **WICHTIG:** In user-facing Texten NIE "Open Source", "MIT", "GPL" verwenden. Korrekt: "source-available" oder "Quellcode einsehbar".
 
 ## Repository-Architektur
 
 **Zwei-Repo-Setup (2026-03-10)**
-- `andyon2/dikta` (privat): Arbeitsrepo. Gesamter Code + Agent-Infrastruktur (CLAUDE.md, main-agent.md, .claude/, knowledge/, briefings/, feedback/, sources/, scripts/).
-- `andyon2/dikta-public` (oeffentlich): Produktcode-Mirror fuer Nutzer. Kein Agent-Zeug.
+- `andyon2/voxlit` (privat): Arbeitsrepo. Gesamter Code + Agent-Infrastruktur (CLAUDE.md, main-agent.md, .claude/, knowledge/, briefings/, feedback/, sources/, scripts/).
+- `andyon2/voxlit-app` (oeffentlich): Produktcode-Mirror fuer Nutzer. Kein Agent-Zeug.
 - `scripts/publish.sh`: rsync-basierter Sync mit Exclude-Liste + Marker-Check (verhindert Agent-Daten-Leak).
-- **Releases:** Immer auf dikta-public (`gh release create --repo andyon2/dikta-public`).
-- **Updater-Endpoint:** `https://github.com/andyon2/dikta-public/releases/latest/download/latest.json`
-- **Taegliche Arbeit:** Nur in dikta (privat). Commit + Push geht nur hierhin. dikta-public wird nur bei Releases via publish.sh aktualisiert.
+- **Releases:** Immer auf voxlit-app (`gh release create --repo andyon2/voxlit-app`).
+- **Updater-Endpoint:** `https://github.com/andyon2/voxlit-app/releases/latest/download/latest.json`
+- **Taegliche Arbeit:** Nur in voxlit (privat). Commit + Push geht nur hierhin. voxlit-app wird nur bei Releases via publish.sh aktualisiert.
 
 ## Build-Anforderungen whisper-rs
 

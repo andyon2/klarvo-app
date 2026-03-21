@@ -2,13 +2,13 @@
 # Exportiert den Produktcode (ohne Agent-Daten) ins Public Repo.
 #
 # Usage: ./scripts/publish.sh [public-repo-pfad]
-# Default: ~/dikta-public
+# Default: ~/voxlit-app
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
-TARGET_DIR="${1:-$HOME/dikta-public}"
+TARGET_DIR="${1:-$HOME/voxlit-app}"
 
 # --- Dateien die NICHT ins Public Repo gehoeren ---
 EXCLUDE_LIST=(
@@ -39,7 +39,7 @@ EXCLUDE_LIST=(
   # Secrets und generierte Dateien
   ".dev-keys"
   ".env"
-  "dikta-debug.keystore"
+  "voxlit-debug.keystore"
   "social-preview.png"
   "*.apk"
   "*.aab"
@@ -50,7 +50,7 @@ EXCLUDE_LIST=(
 # --- Erstes Setup ---
 if [ ! -d "$TARGET_DIR/.git" ]; then
   echo "Public Repo existiert noch nicht. Clone $TARGET_DIR..."
-  git clone https://github.com/andyon2/dikta-public.git "$TARGET_DIR"
+  git clone https://github.com/andyon2/voxlit-app.git "$TARGET_DIR"
 fi
 
 # --- Sync ---
@@ -67,12 +67,12 @@ rsync -av --delete \
   "$SOURCE_DIR/" "$TARGET_DIR/"
 
 # --- Scrub license secret from public copy ---
-# Replace the real HMAC secret with dummy values so dikta-public compiles
+# Replace the real HMAC secret with dummy values so voxlit-app compiles
 # but cannot generate keys valid for official builds.
 echo "Scrubbing license secret..."
 LICENSE_FILE="$TARGET_DIR/src-tauri/src/license/mod.rs"
 if [ -f "$LICENSE_FILE" ]; then
-  sed -i 's|b"dikta-license-v1"|b"public-dummy-v1xx"|' "$LICENSE_FILE"
+  sed -i 's|b"voxlit-license-v1"|b"public-dummy-v1xx"|' "$LICENSE_FILE"
   sed -i 's|b"-2025-open-core!"|b"-xxxx-not-secret"|' "$LICENSE_FILE"
   echo "  License secret replaced with dummy values."
 else
@@ -96,7 +96,7 @@ MARKER_PATTERNS=(
   "knowledge/"
   "/feedback/"
   "dispatches/"
-  "dikta-tech-lead"
+  "voxlit-tech-lead"
   "rust-core\.md"
   "product-strategist"
 )

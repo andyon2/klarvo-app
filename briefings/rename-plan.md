@@ -6,12 +6,12 @@ Erstellt: 2026-03-21. Status: Geplant, noch nicht begonnen.
 
 | # | Frage | Entscheidung |
 |---|-------|-------------|
-| 1 | Repo-Verzeichnis `~/claude-projects/dikta/` → `~/claude-projects/voxlit/`? | TODO |
-| 2 | Windows-Pfad `D:\Apps\dikta\` → `D:\Apps\voxlit\`? | TODO |
-| 3 | GitHub-Repo `dikta-public` → `voxlit-public` oder `voxlit`? | TODO |
-| 4 | Keystore nur umbenennen oder neu generieren? | Empfehlung: nur umbenennen |
-| 5 | AppData-Migration (alte Settings/History mitnehmen)? | Empfehlung: spaeter, nicht jetzt |
-| 6 | Social Preview / Logo fuer neues Repo? | TODO |
+| 1 | Repo-Verzeichnis `~/claude-projects/dikta/` → `~/claude-projects/voxlit/`? | **Ja** |
+| 2 | Windows-Pfad `D:\Apps\dikta\` → `D:\Apps\voxlit\`? | **Ja** |
+| 3 | GitHub-Repos umbenennen? | **`dikta` → `voxlit`, `dikta-public` → `voxlit-app`** |
+| 4 | Keystore nur umbenennen oder neu generieren? | **Nur umbenennen** |
+| 5 | AppData-Migration (alte Settings/History mitnehmen)? | **Nein, spaeter** |
+| 6 | Social Preview / Logo fuer neues Repo? | **Bestehendes Logo weiterverwenden, Social Preview mit "Voxlit" Text neu erstellen** |
 
 ## Kritisch: License-Key-Format
 

@@ -414,7 +414,7 @@ fn recording_thread(
     let samples_per_tick = (native_sample_rate / 15) as usize; // ~66ms chunks
 
     // RMS channel: stream callback → this thread.
-    // Still used for the audio-level waveform display (dikta://audio-level events).
+    // Still used for the audio-level waveform display (voxlit://audio-level events).
     // Previously also used for RMS-based silence detection -- that role is now
     // handled by SileroVad below.
     let (rms_tx, rms_rx) = std::sync::mpsc::channel::<f32>();
@@ -556,7 +556,7 @@ pub fn compute_rms(samples: &[f32]) -> f32 {
 /// Helper: appends f32 data to the sample buffer and periodically fires the level callback.
 ///
 /// When `rms_tx` is provided, sends the computed RMS to the recording thread
-/// for the waveform audio-level display (dikta://audio-level events).
+/// for the waveform audio-level display (voxlit://audio-level events).
 ///
 /// When `samples_chunk_tx` is provided, sends the raw sample chunk to the
 /// recording thread for SileroVad inference. Previously the RMS alone was sent

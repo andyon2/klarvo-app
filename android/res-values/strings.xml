@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Dikta</string>
-    <string name="main_activity_title">Dikta</string>
-    <string name="accessibility_service_description">Dikta uses accessibility to detect text fields and insert dictated text automatically.</string>
+    <string name="app_name">Voxlit</string>
+    <string name="main_activity_title">Voxlit</string>
+    <string name="accessibility_service_description">Voxlit uses accessibility to detect text fields and insert dictated text automatically.</string>
 </resources>

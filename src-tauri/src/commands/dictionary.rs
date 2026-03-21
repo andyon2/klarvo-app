@@ -54,7 +54,7 @@ pub(crate) fn add_dictionary_term_inner(inner: &AppState, term: String) -> Resul
             if !is_duplicate && dict.len() >= FREE_DICTIONARY_LIMIT {
                 return Err(format!(
                     "Free dictionary limit reached ({FREE_DICTIONARY_LIMIT} terms). \
-                     Upgrade to Dikta License for unlimited terms."
+                     Upgrade to Voxlit License for unlimited terms."
                 ));
             }
         }
@@ -134,7 +134,7 @@ mod tests {
             "Error must mention the limit, got: {err}"
         );
         assert!(
-            err.contains("Upgrade to Dikta License"),
+            err.contains("Upgrade to Voxlit License"),
             "Error must mention upgrade path, got: {err}"
         );
     }

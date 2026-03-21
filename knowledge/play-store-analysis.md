@@ -1,4 +1,4 @@
-# Google Play Store Analyse fuer Dikta
+# Google Play Store Analyse fuer Voxlit
 
 Erstellt: 2026-03-15
 Autor: Product Strategist
@@ -7,9 +7,9 @@ Autor: Product Strategist
 
 ## Executive Summary
 
-Play Store Eintritt ist fuer Dikta moeglich, aber nicht trivial. Der groesste Blocker ist der AccessibilityService -- er wird von Google nicht verboten, aber er unterliegt seit Januar 2026 einem deutlich verschaerften Review-Prozess. Wispr Flow ist bereits im Play Store (mit AccessibilityService), das ist das wichtigste Praezedenzfall-Signal: Es geht, wenn man es richtig macht.
+Play Store Eintritt ist fuer Voxlit moeglich, aber nicht trivial. Der groesste Blocker ist der AccessibilityService -- er wird von Google nicht verboten, aber er unterliegt seit Januar 2026 einem deutlich verschaerften Review-Prozess. Wispr Flow ist bereits im Play Store (mit AccessibilityService), das ist das wichtigste Praezedenzfall-Signal: Es geht, wenn man es richtig macht.
 
-Die strategische Frage ist nicht "Schafft Dikta den Play Store?" -- sondern "Wann und in welcher Reihenfolge?" Die Empfehlung steht am Ende des Dokuments.
+Die strategische Frage ist nicht "Schafft Voxlit den Play Store?" -- sondern "Wann und in welcher Reihenfolge?" Die Empfehlung steht am Ende des Dokuments.
 
 ---
 
@@ -17,7 +17,7 @@ Die strategische Frage ist nicht "Schafft Dikta den Play Store?" -- sondern "Wan
 
 **Schwierigkeit: Mittel bis hoch -- machbar, aber nicht in einer Woche.**
 
-Drei Permissions machen Dikta zu einem "sensitiven" App-Profil:
+Drei Permissions machen Voxlit zu einem "sensitiven" App-Profil:
 
 | Permission | Risikostufe | Begruendung |
 |------------|-------------|-------------|
@@ -25,7 +25,7 @@ Drei Permissions machen Dikta zu einem "sensitiven" App-Profil:
 | `AccessibilityService` | Hoch | Strengstes Review-Verfahren seit Jan 2026. Pflicht: Declaration Form + Video + Begruendung |
 | `FOREGROUND_SERVICE_MICROPHONE` | Niedrig | Standard fuer alle Diktat-Apps. Kein besonderes Risiko wenn korrekt deklariert |
 
-Zusaetzlich: Dikta sendet Audiodaten an Drittanbieter (Groq, DeepSeek). Das muss vollstaendig in der Data Safety Section deklariert werden. Kein Blocker, aber Arbeit.
+Zusaetzlich: Voxlit sendet Audiodaten an Drittanbieter (Groq, DeepSeek). Das muss vollstaendig in der Data Safety Section deklariert werden. Kein Blocker, aber Arbeit.
 
 ---
 
@@ -45,16 +45,16 @@ Zwei Wege:
 
 **Weg A: `isAccessibilityTool=true`**
 - Nur fuer Apps, die Nutzern mit Behinderungen helfen
-- Dikta koennte argumentieren: motorisch eingeschraenkte Nutzer profitieren von Sprachdiktat
+- Voxlit koennte argumentieren: motorisch eingeschraenkte Nutzer profitieren von Sprachdiktat
 - Erfordert: Video-Demo + Erklaerung der Zielgruppe (Menschen mit Behinderungen) + Disability-Fokus in der App-Beschreibung
 - Risiko: Wenn Google das als "Missbrauch des Disability-Labels" wertet, harter Rejection
 - Wispr Flows Weg laut ihrer Dokumentation: Sie bezeichnen sich explizit als "accessibility tool" in ihrer Beschreibung ("Revolutionizing Accessibility Tools with AI Voice Recognition Technology" -- ihr eigener Blog-Titel)
 
 **Weg B: `isAccessibilityTool=false` + Declaration Form**
-- Ehrlicherer Weg fuer Dikta (wir sind kein Disability-Tool)
+- Ehrlicherer Weg fuer Voxlit (wir sind kein Disability-Tool)
 - Erfordert: Declaration Form in Play Console ausfuellen + Prominent Disclosure in der App (In-App-Erklaerung was der Service tut + User Consent)
 - Der Reviewer prueft: Ist der AccessibilityService-Einsatz auf den deklarierten Zweck beschraenkt?
-- Diktas Zweck ist klar: Text-Paste in aktives Textfeld nach Diktat. Das ist begrenzt, nicht fishing.
+- Voxlits Zweck ist klar: Text-Paste in aktives Textfeld nach Diktat. Das ist begrenzt, nicht fishing.
 
 ### Wie Wispr Flow es macht
 
@@ -66,16 +66,16 @@ Wispr Flow ist im Play Store, nutzt AccessibilityService, und beschreibt es so:
 
 Wispr Flow hat sich als "accessibility tool" positioniert (ihr Marketing nennt es explizit so). Das ist eine bewusste Entscheidung. Ob das Google-seitig als isAccessibilityTool=true deklariert ist, ist von aussen nicht sichtbar, aber ihre Wortwahl deutet darauf hin.
 
-**Fuer Dikta:** Der ehrliche Weg (Weg B, Non-Accessibility-Tool) ist langfristig sicherer. Der Einsatz von AccessibilityService ist bei Dikta klar begrenzt und auf einen Nutzer-initiierten Vorgang beschraenkt (Nutzer drueckt Hotkey -> Diktat -> Text wird eingefuegt). Das ist gut vertretbar.
+**Fuer Voxlit:** Der ehrliche Weg (Weg B, Non-Accessibility-Tool) ist langfristig sicherer. Der Einsatz von AccessibilityService ist bei Voxlit klar begrenzt und auf einen Nutzer-initiierten Vorgang beschraenkt (Nutzer drueckt Hotkey -> Diktat -> Text wird eingefuegt). Das ist gut vertretbar.
 
 ### Technische Alternative zu AccessibilityService
 
-Ja, es gibt eine: **InputMethodService (IME)** -- d.h. Dikta wird zu einer eigenen Tastatur.
+Ja, es gibt eine: **InputMethodService (IME)** -- d.h. Voxlit wird zu einer eigenen Tastatur.
 
 | Ansatz | Pro | Contra |
 |--------|-----|--------|
 | AccessibilityService (aktuell) | Kein Keyboard-Wechsel noetig, nahtlose UX | Play Store Compliance-Aufwand, strenger Review |
-| IME (Dikta als Keyboard) | Kein Compliance-Problem, Standard-API | Nutzer muss Dikta als Tastatur aktivieren + waehrend Diktat zur Dikta-Tastatur wechseln -- schlechte UX |
+| IME (Voxlit als Keyboard) | Kein Compliance-Problem, Standard-API | Nutzer muss Voxlit als Tastatur aktivieren + waehrend Diktat zur Voxlit-Tastatur wechseln -- schlechte UX |
 
 Der IME-Weg ist technisch moeglich aber kaputt fuer die Core-UX. Wispr Flow hat sich dagegen entschieden, wir sollten es auch nicht tun. Der AccessibilityService-Weg mit korrekter Deklaration ist der richtige Weg.
 
@@ -89,7 +89,7 @@ Der IME-Weg ist technisch moeglich aber kaputt fuer die Core-UX. Wispr Flow hat 
 - Zeitaufwand: 1-2 Tage bis Freischaltung
 
 ### Schritt 2: Data Safety Section ausfuellen
-Dikta muss deklarieren:
+Voxlit muss deklarieren:
 - **Audio-Daten** werden gesammelt (Sprache des Nutzers)
 - Audio wird an **Drittanbieter** uebertragen (Groq fuer STT, DeepSeek fuer Cleanup)
 - Daten werden **nicht** gespeichert (wenn das stimmt -- sicherstellen dass Groq/DeepSeek keine Daten persistieren oder das im UI klar kommunizieren)
@@ -112,12 +112,12 @@ Das klingt schlimmer als es ist. Jede Diktat-App muss das machen. Kein Blocker, 
 ### Schritt 5: SYSTEM_ALERT_WINDOW Onboarding
 - Kein Play-Store-Blocker, aber Onboarding-Problem
 - Android zeigt seit API 30 keinen automatischen Permission-Dialog mehr
-- Dikta muss den Nutzer aktiv zur Settings-Seite fuehren ("Display over other apps" aktivieren)
+- Voxlit muss den Nutzer aktiv zur Settings-Seite fuehren ("Display over other apps" aktivieren)
 - Ohne das: Floating Bubble erscheint nicht, App wirkt kaputt
 
 ### Schritt 6: Target API Level
 - Google verlangt aktuell targetSdkVersion 34+ fuer neue Apps (Stand Anfang 2026)
-- Pruefen ob Diktas Android-Build das erfuellt
+- Pruefen ob Voxlits Android-Build das erfuellt
 
 ### Schritt 7: App-Beschreibung und Screenshots
 - Klar kommunizieren was AccessibilityService macht und warum
@@ -138,8 +138,8 @@ Das klingt schlimmer als es ist. Jede Diktat-App muss das machen. Kein Blocker, 
 - Pflicht: Policy-Announcements regelmaessig lesen (Play Console schickt Mails)
 - Wenn Google etwas aendert: Reaktionszeit ist meist 30-90 Tage
 
-### Google Play Billing (wenn Dikta paid wird)
-- Wenn Dikta direkt im Play Store verkauft wird: Google nimmt 15% (erste $1M/Jahr) bzw. 30%
+### Google Play Billing (wenn Voxlit paid wird)
+- Wenn Voxlit direkt im Play Store verkauft wird: Google nimmt 15% (erste $1M/Jahr) bzw. 30%
 - Fuer EUR 29 License Key: 15% = EUR 4.35 pro Verkauf
 - Alternative: License Key wird auf eigener Website verkauft (Gumroad, LemonSqueezy), App im Play Store ist kostenlos. Dann umgeht man Google Billing komplett.
 - Wichtig: Google erzwingt Google Play Billing nur wenn das In-App-Kaufobjekt ein "digital good" ist das in der App konsumiert wird. Ein License Key der auf einer externen Website gekauft wird und dann in der App eingegeben wird, ist eine Grauzone -- aber Wispr Flow und andere machen es genau so (externe Subscription, App kostenlos im Store).
@@ -188,9 +188,9 @@ Das klingt schlimmer als es ist. Jede Diktat-App muss das machen. Kein Blocker, 
 ### F-Droid
 - F-Droid ist die FOSS-Alternative zum Play Store
 - Anforderung: App muss vollstaendig Open Source sein, kein proprietaerer Code, keine Tracking-Libraries
-- Diktas Open-Core-Modell ist ein Problem: Der License-Key-Code ist proprietary
+- Voxlits Open-Core-Modell ist ein Problem: Der License-Key-Code ist proprietary
 - Loesbar durch: F-Droid-Variante ohne License-Key-Features (FOSS-only Build)
-- Nutzerschaft: Sehr tech-savvy, Privacy-fokussiert -- passt gut zu Diktas Sekundaerzielgruppe
+- Nutzerschaft: Sehr tech-savvy, Privacy-fokussiert -- passt gut zu Voxlits Sekundaerzielgruppe
 - Aufwand: Einmaliger Setup (fdroiddata PR) + Build-Reproducibility sicherstellen
 - Empfehlung: Mittelfristig attraktiv fuer Privacy-Zielgruppe, aber kein v1.0-Thema
 
@@ -215,7 +215,7 @@ Das klingt schlimmer als es ist. Jede Diktat-App muss das machen. Kein Blocker, 
 - Fokus: Produkt fertig machen, nicht Vertriebskanal ausbauen
 
 ### Nach v1.0 (Paid Release): Play Store vorbereiten
-- Wenn License-Key-System steht und Dikta kaufbar ist
+- Wenn License-Key-System steht und Voxlit kaufbar ist
 - Dann lohnt sich Play Store, weil breitere Zielgruppe erreichbar wird
 - Parallel: Privacy Policy fertigstellen, Data Safety Section vorbereiten
 - Zeitplanung: 4-6 Wochen fuer ersten Review-Durchlauf einplanen
@@ -235,17 +235,17 @@ Das klingt schlimmer als es ist. Jede Diktat-App muss das machen. Kein Blocker, 
 
 **Kurzfassung: Play Store ist das Ziel, aber nicht die naechste Aufgabe.**
 
-Dikta sollte den Play Store nicht als "netter Bonus" behandeln, sondern als strategischen Wachstumskanal -- aber erst dann, wenn das Produkt stabil und paid ist. Der Aufwand fuer den ersten Submission-Durchlauf ist real (4-6 Wochen), der laufende Compliance-Aufwand ist beherrschbar.
+Voxlit sollte den Play Store nicht als "netter Bonus" behandeln, sondern als strategischen Wachstumskanal -- aber erst dann, wenn das Produkt stabil und paid ist. Der Aufwand fuer den ersten Submission-Durchlauf ist real (4-6 Wochen), der laufende Compliance-Aufwand ist beherrschbar.
 
 Das groesste Risiko ist nicht Ablehnung, sondern **spaetere Delistung** nach einer Policy-Aenderung. Dem kann man mit einem sauberen Implementierungsansatz entgegenwirken:
 - AccessibilityService nur waehrend aktivem Diktat, nicht dauerhaft
 - Kein Lesen von Daten aus anderen Apps ausser dem aktuellen Textfeld-Kontext
 - Klare In-App-Kommunikation was der Service tut
 
-**Wispr Flow als Praezedenz:** Sie sind im Store, sie nutzen AccessibilityService, sie senden Audio an Cloud. Das ist exakt Diktas Profil. Wenn Wispr Flow es schafft, schafft Dikta es auch -- mit dem Unterschied dass Dikta weniger Ressourcen fuer einen ggf. langen Back-and-forth mit Google-Reviewern hat.
+**Wispr Flow als Praezedenz:** Sie sind im Store, sie nutzen AccessibilityService, sie senden Audio an Cloud. Das ist exakt Voxlits Profil. Wenn Wispr Flow es schafft, schafft Voxlit es auch -- mit dem Unterschied dass Voxlit weniger Ressourcen fuer einen ggf. langen Back-and-forth mit Google-Reviewern hat.
 
 **Konkrete naechste Schritte (wenn v1.0 fertig ist):**
-1. Privacy Policy auf dikta.app (oder eigene Domain) publizieren -- 1 Stunde
+1. Privacy Policy auf voxlit.app (oder eigene Domain) publizieren -- 1 Stunde
 2. AccessibilityService In-App-Disclosure implementieren (Onboarding-Step) -- 2-4 Stunden
 3. Google Play Developer Account registrieren -- 1 Tag
 4. Data Safety Section ausfuellen -- 2-3 Stunden

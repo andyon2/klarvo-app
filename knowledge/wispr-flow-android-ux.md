@@ -171,7 +171,7 @@ Quellen: wisprflow.ai, docs.wisprflow.ai, Android Police, 9to5Google, The Intell
 
 ---
 
-## 9. Relevanz fuer Dikta Android
+## 9. Relevanz fuer Voxlit Android
 
 ### Was wir uebernehmen sollten
 1. **Floating Bubble** als primaeres UI-Element (nicht IME)
@@ -194,7 +194,7 @@ Wispr Flow zeigt: Der Overlay-Ansatz (Accessibility Service) hat UX-Vorteile (ke
 Unser Plan laut `memory/android-ime-plan.md`: IME-basiert. Die Bubble koennte trotzdem als Overlay realisiert werden (SYSTEM_ALERT_WINDOW), waehrend die Text-Einfuegung ueber den IME laeuft. Das waere ein **Hybrid-Ansatz**:
 - Overlay-Bubble fuer die Aktivierung (wie Wispr Flow)
 - IME fuer die Text-Einfuegung (zuverlaessiger als Accessibility)
-- Nachteil: Nutzer muss Dikta als Keyboard aktivieren (einmaliger Setup-Schritt)
+- Nachteil: Nutzer muss Voxlit als Keyboard aktivieren (einmaliger Setup-Schritt)
 
 ---
 

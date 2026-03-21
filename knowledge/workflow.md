@@ -8,29 +8,29 @@ Diese Datei wird bei jedem Sessionstart gelesen und waechst organisch.
 - Windows-Laptop mit NVIDIA GPU
 - GPU nur am Strom, CPU auf Akku
 - WSL2 fuer CLI/Git, PowerShell fuer Builds
-- Projektpfad Windows: `D:\Apps\dikta\`
-- Projektpfad WSL: `~/claude-projects/dikta/`
+- Projektpfad Windows: `D:\Apps\voxlit\`
+- Projektpfad WSL: `~/claude-projects/voxlit/`
 
 ## Build & Test -- Die 3 Wege
 
 1. **`cargo test`** — Automatisierte Unit-Tests (aktuell 239). Laeuft in WSL.
 2. **`tauri dev`** — Dev-Modus mit Hot-Reload. Fuer schnelles Frontend-Testen.
-3. **`dikta.exe` direkt** — Andys primaerer Test-Weg. `sync-and-build.ps1` in PowerShell ausfuehren, dann `D:\Apps\dikta\src-tauri\target\release\dikta.exe` starten. Kein Installer noetig. Das ist die fertige App wie sie beim Nutzer laeuft.
+3. **`voxlit.exe` direkt** — Andys primaerer Test-Weg. `sync-and-build.ps1` in PowerShell ausfuehren, dann `D:\Apps\voxlit\src-tauri\target\release\voxlit.exe` starten. Kein Installer noetig. Das ist die fertige App wie sie beim Nutzer laeuft.
 
-**Wichtig:** Andy nutzt fast immer Weg 3. Wenn er fragt "kann ich testen?", meint er: Ist ein frischer Build moeglich? Die Antwort ist immer `sync-and-build.ps1` auf Windows, dann `dikta.exe` starten.
+**Wichtig:** Andy nutzt fast immer Weg 3. Wenn er fragt "kann ich testen?", meint er: Ist ein frischer Build moeglich? Die Antwort ist immer `sync-and-build.ps1` auf Windows, dann `voxlit.exe` starten.
 
-**Vor dem Build:** Immer zuerst `taskkill.exe /IM dikta.exe /F` ausfuehren (geht aus WSL). Sonst schlaegt der Build fehl mit "Zugriff verweigert" weil die .exe noch laeuft. Der Befehl ist harmlos wenn die App nicht laeuft (gibt nur "nicht gefunden" Fehler).
+**Vor dem Build:** Immer zuerst `taskkill.exe /IM voxlit.exe /F` ausfuehren (geht aus WSL). Sonst schlaegt der Build fehl mit "Zugriff verweigert" weil die .exe noch laeuft. Der Befehl ist harmlos wenn die App nicht laeuft (gibt nur "nicht gefunden" Fehler).
 
 **Builds selbst ausfuehren, nie Andy fragen.** Der Windows-Build geht aus WSL:
 ```bash
-powershell.exe -Command "Get-Process dikta -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null
-powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\claude-projects\dikta\scripts\sync-and-build.ps1' 2>&1
+powershell.exe -Command "Get-Process voxlit -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null
+powershell.exe -ExecutionPolicy Bypass -File '\\wsl$\Ubuntu\home\andyon2\claude-projects\voxlit\scripts\sync-and-build.ps1' 2>&1
 ```
 Andy nur einbeziehen wenn etwas interaktive Eingabe auf Windows erfordert.
 
 ## Lektionen (was schon mal schiefging)
 
-- **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `dikta.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
+- **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `voxlit.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
 - **2026-03-11:** Release-Notes nur mit Aenderungen der aktuellen Session erstellt, statt den vollen Changelog seit dem letzten oeffentlichen Release zu pruefen. Merke: Immer `git log v<LETZTE_VERSION>..HEAD` nutzen, um ALLE Aenderungen zu sammeln. Im Release-Skill unter Schritt 8 dokumentiert.
 - **2026-03-11:** Dev-Tooling (UI Preview Mode) in Release-Notes aufgenommen. Gehoert nicht rein — Nutzer interessiert nur, was sich fuer sie aendert. Filter-Regel im Release-Skill ergaenzt.
 - **2026-03-12:** Bei erstem GitHub-Issue sofort Explore-Agent losgeschickt ohne Andy zu fragen. Zu viel Eigeninitiative. Merke: Bei neuen Issues/Feedback nur zusammenfassen und Andy fragen was passieren soll. Keine eigenmaechtigen Untersuchungen oder Agent-Delegationen.
@@ -44,7 +44,7 @@ Andy nur einbeziehen wenn etwas interaktive Eingabe auf Windows erfordert.
 - **2026-03-20:** README mehrfach ueberarbeitet basierend auf Halbwissen statt Code-Audit. Fuehrte zu falschen Aussagen ("du brauchst zwei API-Keys" — stimmt nicht, Groq reicht alleine). Erst nach explizitem Code-Audit (Explore-Agent ueber alle Provider) war die Datenlage korrekt. Merke: README und Marketing-Texte IMMER gegen den tatsaechlichen Code verifizieren, nie aus dem Gedaechtnis schreiben. Feature-Inventar als zentrales Dokument fuehren.
 - **2026-03-20:** README Feature-Sektionen erneut aus dem Kopf geschrieben statt feature-inventory.md als Checkliste zu nutzen. Ergebnis: Android Bubble-Beschreibung falsch (fehlende Keyboard-Detection, feste Gesten-Zuordnung statt konfigurierbarer Per-Geste-Modi). Feature-Inventar war 30 Minuten vorher erstellt worden — trotzdem nicht als Checkliste benutzt. Merke: Bei README/Marketing-Texten jede Sektion Zeile fuer Zeile gegen das Inventar abgleichen. Nicht "ich weiss das schon" — die Datei offen haben und abhaken.
 - **2026-03-20:** Waveform-Animation war nie mit echten Audio-Daten verbunden — CSS bar-bounce Keyframes ueberdeckten die tatsaechlichen Level-Werte. Fiel erst auf als die Animation entfernt wurde und die Bars statisch waren (Amplitude zu niedrig: Sprach-RMS 0.01-0.05 bei Scaling x2.8 = nur 3px). Merke: Visuelle Features immer mit echten Daten testen, nicht nur pruefen ob "etwas passiert".
-- **2026-03-20:** "Selbst bauen"-Sektion blind aus alter README uebernommen, ohne zu pruefen ob sie auf dikta-public gehoert. Merke: Bei jeder README-Sektion fragen "Braucht ein Nutzer das?" — nicht einfach alte Inhalte kopieren.
+- **2026-03-20:** "Selbst bauen"-Sektion blind aus alter README uebernommen, ohne zu pruefen ob sie auf voxlit-app gehoert. Merke: Bei jeder README-Sektion fragen "Braucht ein Nutzer das?" — nicht einfach alte Inhalte kopieren.
 - **2026-03-20:** Lizenz-Begriffe ("Open Source", "oeffentlich einsehbar") unscharf verwendet. Fuehrte zu Verwirrung ob der Quellcode frei nutzbar ist. Merke: Lizenz ist BSL 1.1 (source-available). Begriffe "Open Source", "MIT", "GPL" NIEMALS in user-facing Texten. Abgesichert durch CLAUDE.md Regel 13 + architecture.md + LICENSE Datei.
 - **2026-03-21:** `tauri signer sign` haengt auf Windows/WSL nach "Signing without password." — reproduzierbar, sowohl standalone als auch innerhalb von `tauri build`. Betrifft alle Builds seit Signing eingefuehrt wurde. Root Cause: Vermutlich stdin/pipe-Bug in Tauri CLI v2 auf Windows. Workaround: `rsign` direkt aus WSL nutzen (`rsign sign -W -s key ...`), Output von .minisig nach base64 .sig konvertieren. Fix: `sync-and-build.ps1` setzt `TAURI_SIGNING_PRIVATE_KEY` NICHT mehr (verhindert Tauri-internen Signing-Versuch), ruft stattdessen `scripts/sign-installer.sh` via `wsl` auf. Merke: Wenn ein Tool persistent haengt, das darunterliegende Tool direkt nutzen statt endlos den Wrapper zu debuggen.
 

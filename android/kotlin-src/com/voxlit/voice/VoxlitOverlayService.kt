@@ -1,4 +1,4 @@
-package com.dikta.voice
+package com.voxlit.voice
 
 import android.app.*
 import android.content.*
@@ -16,7 +16,7 @@ import kotlin.math.abs
  * Foreground Service that manages the floating bubble overlay.
  *
  * Keyboard detection -- two-tier approach:
- *   PRIMARY:  DiktaAccessibilityService calls onKeyboardVisibilityChanged() whenever
+ *   PRIMARY:  VoxlitAccessibilityService calls onKeyboardVisibilityChanged() whenever
  *             it detects a TYPE_INPUT_METHOD window appearing/disappearing system-wide.
  *             This is the most reliable mechanism and works in all apps.
  *   FALLBACK: If the accessibility service is not active, we fall back to polling
@@ -37,14 +37,14 @@ import kotlin.math.abs
  *   Tap right zone (✓ button)  -> confirm: stop recording, start STT + cleanup pipeline
  *   Drag                       -> moves the bar (drag threshold still applies)
  */
-class DiktaOverlayService : Service() {
+class VoxlitOverlayService : Service() {
 
     companion object {
-        private const val TAG = "DiktaOverlayService"
+        private const val TAG = "VoxlitOverlayService"
 
-        private const val CHANNEL_ID    = "dikta_overlay"
+        private const val CHANNEL_ID    = "voxlit_overlay"
         private const val NOTIFICATION_ID = 1
-        private const val PREFS_NAME    = "dikta_bubble_prefs"
+        private const val PREFS_NAME    = "voxlit_bubble_prefs"
         private const val PREF_X        = "bubble_x"
         private const val PREF_Y        = "bubble_y"
 
@@ -52,7 +52,7 @@ class DiktaOverlayService : Service() {
         const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
 
         /** BroadcastReceiver actions. */
-        const val ACTION_TOGGLE_BUBBLE = "com.dikta.voice.TOGGLE_BUBBLE"
+        const val ACTION_TOGGLE_BUBBLE = "com.voxlit.voice.TOGGLE_BUBBLE"
 
         // Keyboard detection: poll InputMethodManager at this interval (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
@@ -63,13 +63,13 @@ class DiktaOverlayService : Service() {
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
-        /** Live reference used by DiktaAccessibilityService for paste. */
-        var instance: DiktaOverlayService? = null
+        /** Live reference used by VoxlitAccessibilityService for paste. */
+        var instance: VoxlitOverlayService? = null
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
     // Avoids redundant disk reads within a single dictation cycle.
-    private var cachedConfig: DiktaApi.Config? = null
+    private var cachedConfig: VoxlitApi.Config? = null
 
     enum class RecordingMode(val label: String, val badge: String) {
         HOLD("Hold", "H"),
@@ -122,7 +122,7 @@ class DiktaOverlayService : Service() {
     private var accessibilityServiceActive = false
 
     // Audio
-    private var audioRecorder: DiktaAudioRecorder? = null
+    private var audioRecorder: VoxlitAudioRecorder? = null
 
     // Touch handling
     private var dragTouchStartX = 0f
@@ -268,10 +268,10 @@ class DiktaOverlayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Dikta Overlay",
+                "Voxlit Overlay",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the Dikta voice bubble visible"
+                description = "Keeps the Voxlit voice bubble visible"
                 setShowBadge(false)
             }
             val nm = getSystemService(NotificationManager::class.java)
@@ -297,7 +297,7 @@ class DiktaOverlayService : Service() {
             Notification.Builder(this)
         }
         builder
-            .setContentTitle("Dikta")
+            .setContentTitle("Voxlit")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingToggle)
@@ -330,7 +330,7 @@ class DiktaOverlayService : Service() {
      * Replaces the old single-mode loadRecordingMode().
      */
     private fun loadBubbleControls() {
-        val config = DiktaApi.readConfig(this)
+        val config = VoxlitApi.readConfig(this)
         cachedConfig = config  // cache for processAudio() to avoid redundant disk read
         if (config != null) {
             tapMode = RecordingMode.fromString(config.bubbleTapMode)
@@ -443,7 +443,7 @@ class DiktaOverlayService : Service() {
 
         // Load bubble size and opacity from config.json (written by the Tauri/React settings UI).
         // Falls back to defaults if the config is not yet available (first launch).
-        val config = DiktaApi.readConfig(this)
+        val config = VoxlitApi.readConfig(this)
         val sizeScale = config?.bubbleSize ?: 1.0f
         bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
@@ -715,7 +715,7 @@ class DiktaOverlayService : Service() {
             else        -> tapSilenceSecs
         }
 
-        val recorder = DiktaAudioRecorder(
+        val recorder = VoxlitAudioRecorder(
             context = this,
             onAmplitude = { amplitude -> handler.post { bubbleView.amplitude = amplitude } },
             silenceSecs = activeSilenceSecs
@@ -843,13 +843,13 @@ class DiktaOverlayService : Service() {
 
         // Use cached config from loadBubbleControls() (called moments ago by handleTap/longPress).
         // Fall back to a fresh read if the cache is somehow stale (e.g. auto-loop restart path).
-        val config = cachedConfig ?: DiktaApi.readConfig(this)
+        val config = cachedConfig ?: VoxlitApi.readConfig(this)
         val tConfig = System.currentTimeMillis()
         Log.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
 
         if (config == null || config.groqApiKey.isBlank()) {
             handler.post {
-                showToast("No API keys configured. Please open Dikta and add your Groq key in Settings.")
+                showToast("No API keys configured. Please open Voxlit and add your Groq key in Settings.")
                 autoLoopActive = false
                 val prev = currentState
                 setState(RecordingState.IDLE)
@@ -860,7 +860,7 @@ class DiktaOverlayService : Service() {
 
         try {
             // Step 1: STT via Groq Whisper
-            val transcript = DiktaApi.transcribe(wavBytes, config.groqApiKey, config.language)
+            val transcript = VoxlitApi.transcribe(wavBytes, config.groqApiKey, config.language)
             val tStt = System.currentTimeMillis()
             Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio)")
 
@@ -876,10 +876,10 @@ class DiktaOverlayService : Service() {
             }
 
             // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
-            val llmProvider = DiktaApi.resolveLlmProvider(config)
+            val llmProvider = VoxlitApi.resolveLlmProvider(config)
             val finalText = if (llmProvider != null) {
                 try {
-                    val result = DiktaApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
+                    val result = VoxlitApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
                     Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                     result
@@ -894,7 +894,7 @@ class DiktaOverlayService : Service() {
 
             // Step 3: Save to history DB
             val tBeforeHistory = System.currentTimeMillis()
-            DiktaApi.saveToHistory(
+            VoxlitApi.saveToHistory(
                 context  = this,
                 finalText = finalText,
                 rawText  = transcript,
@@ -910,7 +910,7 @@ class DiktaOverlayService : Service() {
             if (config.tursoUrl.isNotBlank() && config.tursoToken.isNotBlank()) {
                 Thread {
                     try {
-                        DiktaApi.pushToTurso(this@DiktaOverlayService, config.tursoUrl, config.tursoToken)
+                        VoxlitApi.pushToTurso(this@VoxlitOverlayService, config.tursoUrl, config.tursoToken)
                     } catch (e: Exception) {
                         Log.w(TAG, "Turso sync failed (non-blocking)", e)
                     }
@@ -925,8 +925,8 @@ class DiktaOverlayService : Service() {
             handler.post {
                 copyToClipboard(finalText)
 
-                val pasted = DiktaAccessibilityService.instance != null
-                DiktaAccessibilityService.instance?.pasteIntoFocusedField()
+                val pasted = VoxlitAccessibilityService.instance != null
+                VoxlitAccessibilityService.instance?.pasteIntoFocusedField()
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
                 if (pasted) showToast("Inserted: $preview") else showToast("Copied: $preview")
@@ -944,7 +944,7 @@ class DiktaOverlayService : Service() {
                 if (shouldAutoSend && pasted) {
                     // Short delay so the pasted text is committed before Enter fires.
                     handler.postDelayed({
-                        DiktaAccessibilityService.instance?.performEnter()
+                        VoxlitAccessibilityService.instance?.performEnter()
                     }, 150)
                 }
 
@@ -998,7 +998,7 @@ class DiktaOverlayService : Service() {
      * Called on every return to IDLE so Settings changes take effect after the next dictation.
      */
     private fun reloadBubbleAppearance() {
-        val config = DiktaApi.readConfig(this) ?: return
+        val config = VoxlitApi.readConfig(this) ?: return
         val newSizeDp = (BASE_BUBBLE_SIZE_DP * config.bubbleSize).toInt().coerceAtLeast(24)
         bubbleOpacity = config.bubbleOpacity
         bubbleView.setBubbleSize(newSizeDp)
@@ -1010,7 +1010,7 @@ class DiktaOverlayService : Service() {
 
     private fun copyToClipboard(text: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip      = ClipData.newPlainText("Dikta transcription", text)
+        val clip      = ClipData.newPlainText("Voxlit transcription", text)
         clipboard.setPrimaryClip(clip)
     }
 

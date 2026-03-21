@@ -1,4 +1,4 @@
-package com.dikta.voice
+package com.voxlit.voice
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -19,7 +19,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Entry point for the Dikta app on Android.
+ * Entry point for the Voxlit app on Android.
  *
  * Runs a sequential permission/setup chain on every onResume():
  *
@@ -30,7 +30,7 @@ import androidx.core.content.ContextCompat
  *                               shown as AlertDialog with direct settings link
  *   5. Battery Optimization  -- prevent Doze from killing the overlay service
  *                               shown as AlertDialog with direct settings link
- *   6. Start DiktaOverlayService
+ *   6. Start VoxlitOverlayService
  *
  * Each step returns early after prompting the user. onResume() is called again
  * when the user returns from a system settings screen, which advances the chain.
@@ -98,9 +98,9 @@ class MainActivity : TauriActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Enable Accessibility Access")
                 .setMessage(
-                    "Dikta uses the Accessibility Service to detect when the keyboard " +
+                    "Voxlit uses the Accessibility Service to detect when the keyboard " +
                     "opens in any app so the voice bubble appears automatically.\n\n" +
-                    "In the next screen, find \"Dikta\" under Installed Services and " +
+                    "In the next screen, find \"Voxlit\" under Installed Services and " +
                     "switch it on."
                 )
                 .setPositiveButton("Open Accessibility Settings") { _, _ ->
@@ -137,9 +137,9 @@ class MainActivity : TauriActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Unrestricted Battery Usage")
                 .setMessage(
-                    "For reliable keyboard detection and background sync, set Dikta's " +
+                    "For reliable keyboard detection and background sync, set Voxlit's " +
                     "battery usage to \"Unrestricted\" (or \"No restrictions\").\n\n" +
-                    "This prevents Android from putting the Dikta bubble to sleep."
+                    "This prevents Android from putting the Voxlit bubble to sleep."
                 )
                 .setPositiveButton("Open Battery Settings") { _, _ ->
                     // Try the direct ignore-battery-optimizations request first.
@@ -196,7 +196,7 @@ class MainActivity : TauriActivity() {
     }
 
     /**
-     * Returns true when DiktaAccessibilityService is active.
+     * Returns true when VoxlitAccessibilityService is active.
      *
      * Uses two methods to handle OEM variations (Xiaomi, Samsung use non-standard
      * separator formats or component name casing in ENABLED_ACCESSIBILITY_SERVICES):
@@ -228,7 +228,7 @@ class MainActivity : TauriActivity() {
         // OEMs that store entries in a different case or with extra whitespace.
         val expectedComponent = ComponentName(
             this,
-            DiktaAccessibilityService::class.java
+            VoxlitAccessibilityService::class.java
         ).flattenToString()
         val enabledString = Settings.Secure.getString(
             contentResolver,
@@ -244,7 +244,7 @@ class MainActivity : TauriActivity() {
     }
 
     private fun startOverlayService() {
-        val intent = Intent(this, DiktaOverlayService::class.java)
+        val intent = Intent(this, VoxlitOverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {

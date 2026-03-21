@@ -1,13 +1,13 @@
 ---
 name: build-app
-description: Baut Dikta fuer eine Zielplattform (Windows oder Android). Meldet Fehler strukturiert. Aufrufen mit Plattform, z.B. "/build windows" oder "/build android".
+description: Baut Voxlit fuer eine Zielplattform (Windows oder Android). Meldet Fehler strukturiert. Aufrufen mit Plattform, z.B. "/build windows" oder "/build android".
 argument-hint: "[plattform] -- windows | android | check"
 allowed-tools: Read, Bash, Glob
 context: fork
 model: sonnet
 ---
 
-Baue Dikta fuer die angegebene Zielplattform.
+Baue Voxlit fuer die angegebene Zielplattform.
 
 ## Argumente
 
@@ -26,7 +26,7 @@ WICHTIG: Frage NICHT nochmal nach der Plattform. Sie steht bereits in `$ARGUMENT
 ### Wenn plattform = `check`
 
 ```bash
-cd /home/andyon2/claude-projects/dikta && cargo check --manifest-path src-tauri/Cargo.toml 2>&1
+cd /home/andyon2/claude-projects/voxlit && cargo check --manifest-path src-tauri/Cargo.toml 2>&1
 ```
 
 Falls Fehler: Parse die Compiler-Ausgabe und melde strukturiert:
@@ -45,12 +45,12 @@ Empfehlung: [Was als naechstes tun -- z.B. "rust-core Agent beauftragen mit Fix 
 
 WICHTIG: Zuerst laufende Instanz beenden, dann das PowerShell-Build-Skript nutzen, NICHT direkt `tauri build`:
 ```bash
-taskkill.exe /IM dikta.exe /F 2>/dev/null; powershell.exe -Command "cd D:\Apps\dikta; .\scripts\sync-and-build.ps1" 2>&1
+taskkill.exe /IM voxlit.exe /F 2>/dev/null; powershell.exe -Command "cd D:\Apps\voxlit; .\scripts\sync-and-build.ps1" 2>&1
 ```
 
 Falls PowerShell nicht verfuegbar (z.B. reines WSL ohne Windows-Zugriff), Fallback:
 ```bash
-cd /home/andyon2/claude-projects/dikta && npm run tauri build 2>&1
+cd /home/andyon2/claude-projects/voxlit && npm run tauri build 2>&1
 ```
 
 Bei Erfolg melde:
@@ -68,7 +68,7 @@ Bei Fehler: Strukturierte Fehlermeldung wie oben.
 WICHTIG: Nutze das Build-Skript, NICHT direkt `tauri android build`. Das Skript kopiert Kotlin-Quellen aus `android/kotlin-src/` nach `gen/android/`, signiert und deployt. Ohne dieses Skript fehlen die Kotlin-Dateien und der Build schlaegt fehl.
 
 ```bash
-cd /home/andyon2/claude-projects/dikta && bash scripts/android-build.sh 2>&1
+cd /home/andyon2/claude-projects/voxlit && bash scripts/android-build.sh 2>&1
 ```
 
 Bei Erfolg melde:
@@ -87,7 +87,7 @@ Nach JEDEM erfolgreichen Build (windows oder android), ermittle was sich seit de
 
 1. Lies die relevanten Commits. Fuer Windows:
 ```bash
-git log --oneline --since="$(stat -c '%Y' /mnt/d/Apps/dikta/src-tauri/target/release/dikta.exe 2>/dev/null | xargs -I{} date -d @{} --iso-8601=seconds 2>/dev/null || echo '1 week ago')" HEAD 2>/dev/null
+git log --oneline --since="$(stat -c '%Y' /mnt/d/Apps/voxlit/src-tauri/target/release/voxlit.exe 2>/dev/null | xargs -I{} date -d @{} --iso-8601=seconds 2>/dev/null || echo '1 week ago')" HEAD 2>/dev/null
 ```
 Falls der Timestamp nicht ermittelbar, nimm die letzten 10 Commits: `git log --oneline -10`
 
@@ -101,7 +101,7 @@ Falls der Timestamp nicht ermittelbar, nimm die letzten 10 Commits: `git log --o
 2. [...]
 3. [...]
 
-Starte: D:\Apps\dikta\src-tauri\target\release\dikta.exe
+Starte: D:\Apps\voxlit\src-tauri\target\release\voxlit.exe
 ```
 
 Falls keine nutzer-sichtbaren Aenderungen: "Keine neuen Features -- nur interne Aenderungen."

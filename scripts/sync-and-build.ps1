@@ -1,8 +1,8 @@
-# Dikta: Sync from WSL and build for Windows
-# Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\claude-projects\dikta\scripts\sync-and-build.ps1
+# Voxlit: Sync from WSL and build for Windows
+# Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\claude-projects\voxlit\scripts\sync-and-build.ps1
 
-$src = "\\wsl$\Ubuntu\home\andyon2\claude-projects\dikta"
-$dst = "D:\apps\dikta"
+$src = "\\wsl$\Ubuntu\home\andyon2\claude-projects\voxlit"
+$dst = "D:\apps\voxlit"
 
 # Ensure cargo and LLVM 18 are in PATH
 $env:PATH = "C:\Program Files\LLVM\bin;C:\Users\Andi\.cargo\bin;$env:PATH"
@@ -35,16 +35,16 @@ if (Test-Path "$dst\.env") {
 $env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
 Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
 
-Write-Host "Building Dikta..." -ForegroundColor Cyan
+Write-Host "Building Voxlit..." -ForegroundColor Cyan
 npx tauri build 2>&1 | Write-Host
 
 # Sign the installer via WSL rsign (Tauri's signer hangs)
 Write-Host "Signing installer via WSL rsign..." -ForegroundColor Cyan
-wsl bash ~/claude-projects/dikta/scripts/sign-installer.sh
+wsl bash ~/claude-projects/voxlit/scripts/sign-installer.sh
 
 # Copy installer to Dropbox for easy access
 $version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
-$dropboxDir = "D:\Dropbox\App Development\dikta\releases\v$version"
+$dropboxDir = "D:\Dropbox\App Development\voxlit\releases\v$version"
 $nsisDir = "$dst\src-tauri\target\release\bundle\nsis"
 $installer = Get-ChildItem "$nsisDir\*.exe" -Exclude "*.exe.sig" | Select-Object -First 1
 

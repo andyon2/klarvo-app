@@ -5,11 +5,11 @@ Version 0.4.8 (Windows + Android). v0.4.8 auf GitHub released. Build-Signing via
 
 ## Blocker
 
-- **Umbenennung Dikta → Voxlit:** Domain voxlit.app gesichert. Codebase-Rename noch nicht durchgefuehrt (12-Task-Plan bereit). Markenanmeldung DPMA vor Paid Launch.
+- **Umbenennung Voxlit → Voxlit:** Domain voxlit.app gesichert. Codebase-Rename noch nicht durchgefuehrt (12-Task-Plan bereit). Markenanmeldung DPMA vor Paid Launch.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Codebase-Rename Dikta → Voxlit** → 12 Tasks, 3 Phasen. Plan: `briefings/rename-plan.md`. 6 Vorab-Entscheidungen offen (Repo-Pfade, GitHub-Repo-Name, Social Preview).
+1. **Codebase-Rename Voxlit → Voxlit** → 12 Tasks, 3 Phasen. Plan: `briefings/rename-plan.md`. 6 Vorab-Entscheidungen offen (Repo-Pfade, GitHub-Repo-Name, Social Preview).
 2. **Live-Preview als Opt-In** → Nach VAD-Overhaul moeglich. Whisper-Halluzinationen werden gefiltert.
 3. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Release-Skill aktualisiert.
 

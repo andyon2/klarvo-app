@@ -52,7 +52,7 @@ const TIPS: TipDefinition[] = [
     id: "hotkey-change",
     trigger: { dictations: 20 },
     title: "Hotkey anpassen",
-    text: "Du kannst den Diktat-Shortcut in den Einstellungen ändern.",
+    text: "Du kannst den Diktat-Shortcut in den Einstellungen ändern.", // "Diktat" is the German word, keep as-is
     actionLabel: "Jetzt ändern",
     panel: "settings",
   },
@@ -68,7 +68,7 @@ const TIPS: TipDefinition[] = [
     id: "offline-mode",
     trigger: { dictations: 50 },
     title: "Offline-Modus",
-    text: "Dikta kann auch ohne Internet funktionieren — mit einem lokalen Whisper-Modell.",
+    text: "Voxlit kann auch ohne Internet funktionieren — mit einem lokalen Whisper-Modell.",
     actionLabel: "Einrichten",
     panel: "settings",
   },
@@ -129,7 +129,7 @@ export function useQuickTip({ isIdle, onboardingCompleted }: UseQuickTipOptions)
             // days-trigger only fires after the app has been open long enough.
             // In practice this means the cost-dashboard tip fires after 7 days
             // of the App being installed (tracked via localStorage).
-            const installKey = "dikta_install_day";
+            const installKey = "voxlit_install_day";
             let installDay = parseFloat(localStorage.getItem(installKey) ?? "0");
             if (!installDay) {
               installDay = nowDays;

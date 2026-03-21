@@ -7,7 +7,7 @@ context: fork
 model: haiku
 ---
 
-Fuehre Tests fuer Dikta aus und erstelle einen strukturierten Report.
+Fuehre Tests fuer Voxlit aus und erstelle einen strukturierten Report.
 
 ## Argumente
 
@@ -18,7 +18,7 @@ Aus `$ARGUMENTS` extrahiere den Scope: `all` | `rust` | `frontend` | ein spezifi
 ### Rust-Tests (scope = `rust` oder `all` oder ein Rust-Modulname)
 
 ```bash
-cd /home/andyon2/claude-projects/dikta
+cd /home/andyon2/claude-projects/voxlit
 
 # Alle Rust-Tests oder spezifisches Modul
 cargo test --manifest-path src-tauri/Cargo.toml [--lib modulname] 2>&1
@@ -27,13 +27,13 @@ cargo test --manifest-path src-tauri/Cargo.toml [--lib modulname] 2>&1
 ### Frontend-Tests (scope = `frontend` oder `all`)
 
 ```bash
-cd /home/andyon2/claude-projects/dikta && npm test 2>&1
+cd /home/andyon2/claude-projects/voxlit && npm test 2>&1
 ```
 
 ### Report-Format
 
 ```
-TEST REPORT -- Dikta ([scope])
+TEST REPORT -- Voxlit ([scope])
 Datum: [aktuelles Datum]
 
 ZUSAMMENFASSUNG:

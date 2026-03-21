@@ -55,7 +55,7 @@ pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
 
 /// Builds a `LocalWhisperProvider` with the model path derived from `%APPDATA%`.
 ///
-/// Path convention: `%APPDATA%\com.dikta.voice\models\ggml-{model_name}.bin`
+/// Path convention: `%APPDATA%\com.voxlit.voice\models\ggml-{model_name}.bin`
 ///
 /// We derive the path from `APPDATA` rather than `AppState.app_data_dir`
 /// because `resolve_stt_provider` takes only `&AppConfig`. If `APPDATA` is
@@ -65,7 +65,7 @@ fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     use stt::LocalWhisperProvider;
 
     let model_dir = std::env::var("APPDATA")
-        .map(|d| std::path::PathBuf::from(d).join("com.dikta.voice").join("models"))
+        .map(|d| std::path::PathBuf::from(d).join("com.voxlit.voice").join("models"))
         .unwrap_or_else(|_| std::path::PathBuf::from("models"));
 
     let model_file = format!("ggml-{}.bin", cfg.local_whisper_model);
@@ -1121,7 +1121,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         }
 
         // Return-to-Current: if the user switched to a different window while
-        // Dikta was processing (STT + LLM cleanup takes seconds), bring them
+        // Voxlit was processing (STT + LLM cleanup takes seconds), bring them
         // back to where they were just before paste, not the recording-start
         // window.
         //
@@ -1424,7 +1424,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
 
                 // Tell the FloatingBar which mode is active so it shows the
                 // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).
-                let _ = handle_clone.emit("dikta://active-mode", mode);
+                let _ = handle_clone.emit("voxlit://active-mode", mode);
 
                 // Helper: stores the slot's insert_and_send flag in AppState
                 // so stop_and_process_pipeline can read it without needing to

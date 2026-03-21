@@ -11,7 +11,7 @@ import {
 import { LockIcon } from "./icons";
 
 // Static metadata for all supported models.
-// tiny/base removed — quality too low to represent Dikta.
+// tiny/base removed — quality too low to represent Voxlit.
 const MODEL_LABELS: Record<string, string> = {
   small: "small (488 MB) — Recommended",
   medium: "medium (1.5 GB)",
@@ -263,7 +263,7 @@ export function WhisperModelManager({
                 <button
                   onClick={() => { if (!isPaid && PAID_MODELS.has(model.id)) return; handleDownload(model.id); }}
                   disabled={!isPaid && PAID_MODELS.has(model.id)}
-                  title={!isPaid && PAID_MODELS.has(model.id) ? "Requires Dikta License" : undefined}
+                  title={!isPaid && PAID_MODELS.has(model.id) ? "Requires Voxlit License" : undefined}
                   className={[
                     "px-3 py-1.5 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 transition-colors",
                     !isPaid && PAID_MODELS.has(model.id)

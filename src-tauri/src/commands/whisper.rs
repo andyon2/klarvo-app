@@ -13,9 +13,9 @@
 //!
 //! | Event | Payload |
 //! |-------|---------|
-//! | `dikta://model-download-progress` | `{ modelId, bytesReceived, totalBytes }` |
-//! | `dikta://model-download-complete` | `{ modelId }` |
-//! | `dikta://model-download-error`    | `{ modelId, error }` |
+//! | `voxlit://model-download-progress` | `{ modelId, bytesReceived, totalBytes }` |
+//! | `voxlit://model-download-complete` | `{ modelId }` |
+//! | `voxlit://model-download-error`    | `{ modelId, error }` |
 
 #[cfg(target_os = "windows")]
 pub mod windows {
@@ -32,9 +32,9 @@ pub mod windows {
     // Event names
     // -----------------------------------------------------------------------
 
-    const EVENT_PROGRESS: &str = "dikta://model-download-progress";
-    const EVENT_COMPLETE: &str = "dikta://model-download-complete";
-    const EVENT_ERROR: &str = "dikta://model-download-error";
+    const EVENT_PROGRESS: &str = "voxlit://model-download-progress";
+    const EVENT_COMPLETE: &str = "voxlit://model-download-complete";
+    const EVENT_ERROR: &str = "voxlit://model-download-error";
 
     // -----------------------------------------------------------------------
     // Event payloads
@@ -85,9 +85,9 @@ pub mod windows {
     /// Starts a background download for the given model.
     ///
     /// Returns immediately (non-blocking). Download progress is reported via
-    /// `dikta://model-download-progress` events. On completion
-    /// `dikta://model-download-complete` is emitted; on failure
-    /// `dikta://model-download-error` is emitted.
+    /// `voxlit://model-download-progress` events. On completion
+    /// `voxlit://model-download-complete` is emitted; on failure
+    /// `voxlit://model-download-error` is emitted.
     ///
     /// `app_data_dir` comes from the `AppHandle`, not `AppState`, to avoid
     /// holding the state lock across async boundaries.

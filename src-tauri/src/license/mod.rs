@@ -1,8 +1,8 @@
-//! License validation module for the Dikta open-core monetization model.
+//! License validation module for the Voxlit open-core monetization model.
 //!
 //! ## Key format
 //!
-//! `DIKTA-XXXX-XXXX-XXXX-XXXX`
+//! `VOXLIT-XXXX-XXXX-XXXX-XXXX`
 //!
 //! The payload is Base32-encoded (RFC 4648, no padding) with groups of 4
 //! characters separated by hyphens.  Decoded it is 10 bytes:
@@ -45,7 +45,7 @@ use sha2::Sha256;
 // ---------------------------------------------------------------------------
 
 /// First half of the embedded HMAC secret.
-const SECRET_PART_A: &[u8] = b"dikta-license-v1";
+const SECRET_PART_A: &[u8] = b"voxlit-license-v1";
 /// Second half of the embedded HMAC secret.
 const SECRET_PART_B: &[u8] = b"-2025-open-core!";
 
@@ -155,15 +155,15 @@ pub enum LicensedFeature {
 /// Returns `Err` with a human-readable message for invalid or expired keys.
 ///
 /// This does NOT check the cache timestamp -- call `compute_status_from_cache`
-/// for that. This function only answers: "is this a genuine Dikta key, and if
+/// for that. This function only answers: "is this a genuine Voxlit key, and if
 /// it is a trial key, has it expired?"
 pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
     if key.is_empty() {
         return Err("License key is empty".to_string());
     }
 
-    // Expected format: DIKTA-XXXX-XXXX-XXXX-XXXX
-    // 5 segments separated by '-', first is "DIKTA", rest are 4-char Base32 groups.
+    // Expected format: VOXLIT-XXXX-XXXX-XXXX-XXXX
+    // 5 segments separated by '-', first is "VOXLIT", rest are 4-char Base32 groups.
     let parts: Vec<&str> = key.split('-').collect();
     if parts.len() != 5 {
         return Err(format!(
@@ -172,8 +172,8 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
         ));
     }
 
-    if parts[0] != "DIKTA" {
-        return Err("Invalid key format: must start with 'DIKTA'".to_string());
+    if parts[0] != "VOXLIT" {
+        return Err("Invalid key format: must start with 'VOXLIT'".to_string());
     }
 
     for (i, group) in parts[1..].iter().enumerate() {
@@ -376,7 +376,7 @@ fn unix_secs_to_date_string(secs: u64) -> String {
 // Test-only key generation
 // ---------------------------------------------------------------------------
 
-/// Generates a valid Dikta license key from arbitrary payload bytes.
+/// Generates a valid Voxlit license key from arbitrary payload bytes.
 ///
 /// Only available in test builds. Uses the same HMAC secret as
 /// `validate_license_key` so the generated keys pass validation.
@@ -397,14 +397,14 @@ pub fn generate_license_key(payload: &[u8; 6]) -> String {
     // Encode to Base32 (no padding).
     let b32 = base32::encode(base32::Alphabet::RFC4648 { padding: false }, &raw);
 
-    // Split into 4-char groups and prepend "DIKTA-".
+    // Split into 4-char groups and prepend "VOXLIT-".
     let groups: Vec<&str> = b32
         .as_bytes()
         .chunks(4)
         .map(|c| std::str::from_utf8(c).expect("Base32 output is always valid UTF-8"))
         .collect();
 
-    format!("DIKTA-{}", groups.join("-"))
+    format!("VOXLIT-{}", groups.join("-"))
 }
 
 /// Generates a trial license key with an embedded expiry date.
@@ -477,20 +477,20 @@ mod tests {
     fn test_wrong_prefix_is_rejected() {
         let result = validate_license_key("WRONG-AAAA-BBBB-CCCC-DDDD");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("DIKTA"));
+        assert!(result.unwrap_err().contains("VOXLIT"));
     }
 
     #[test]
     fn test_wrong_segment_length_is_rejected() {
         // Third segment has 3 chars instead of 4.
-        let result = validate_license_key("DIKTA-AAAA-BBB-CCCC-DDDD");
+        let result = validate_license_key("VOXLIT-AAAA-BBB-CCCC-DDDD");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_invalid_base32_chars_are_rejected() {
         // '0', '1', '8', '9' are not valid RFC 4648 Base32 characters.
-        let result = validate_license_key("DIKTA-AAAA-0000-CCCC-DDDD");
+        let result = validate_license_key("VOXLIT-AAAA-0000-CCCC-DDDD");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid Base32 characters"));
     }
@@ -511,13 +511,13 @@ mod tests {
 
     #[test]
     fn test_too_few_segments_is_rejected() {
-        let result = validate_license_key("DIKTA-AAAA-BBBB-CCCC");
+        let result = validate_license_key("VOXLIT-AAAA-BBBB-CCCC");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_too_many_segments_is_rejected() {
-        let result = validate_license_key("DIKTA-AAAA-BBBB-CCCC-DDDD-EEEE");
+        let result = validate_license_key("VOXLIT-AAAA-BBBB-CCCC-DDDD-EEEE");
         assert!(result.is_err());
     }
 
@@ -653,7 +653,7 @@ mod tests {
     #[test]
     fn test_cache_invalid_key_is_unlicensed() {
         let now = current_unix_timestamp();
-        let status = compute_status_from_cache("DIKTA-AAAA-AAAA-AAAA-AAAA", now);
+        let status = compute_status_from_cache("VOXLIT-AAAA-AAAA-AAAA-AAAA", now);
         // HMAC won't match, so it must be rejected.
         assert_eq!(status, LicenseStatus::Unlicensed);
     }

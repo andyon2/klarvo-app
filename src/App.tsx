@@ -379,7 +379,7 @@ export default function App() {
         <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
           <MicIcon className="w-3.5 h-3.5 text-emerald-400" />
         </div>
-        <span className="text-sm font-semibold text-zinc-300 tracking-wide">Dikta</span>
+        <span className="text-sm font-semibold text-zinc-300 tracking-wide">Voxlit</span>
 
         {/* Settings toggle */}
         <button
@@ -675,7 +675,7 @@ export default function App() {
                 {!isPaid ? (
                   <div className="px-4 pb-4 flex items-center gap-2 border-t border-zinc-800/40 pt-3">
                     <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
-                    <p className="text-xs text-zinc-500">Filler word analysis requires a Dikta license.</p>
+                    <p className="text-xs text-zinc-500">Filler word analysis requires a Voxlit license.</p>
                   </div>
                 ) : fillerStats.length > 0 ? (
                   <div className="px-4 pb-4 border-t border-zinc-800/40 pt-3">
@@ -738,8 +738,8 @@ export default function App() {
                 {!isPaid ? (
                   <>
                     <LockIcon className="w-5 h-5 text-zinc-600" />
-                    <p className="text-sm font-medium text-zinc-400">Integrations require a Dikta license</p>
-                    <p className="text-xs text-zinc-600 max-w-[240px]">Connect Dikta with Notion, Todoist, and more with a license key.</p>
+                    <p className="text-sm font-medium text-zinc-400">Integrations require a Voxlit license</p>
+                    <p className="text-xs text-zinc-600 max-w-[240px]">Connect Voxlit with Notion, Todoist, and more with a license key.</p>
                   </>
                 ) : (
                   <>
@@ -747,7 +747,7 @@ export default function App() {
                       <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
                     </svg>
                     <p className="text-sm font-medium text-zinc-400">Integrations</p>
-                    <p className="text-xs text-zinc-600 max-w-[220px]">Coming soon -- connect Dikta with Notion, Todoist, and more.</p>
+                    <p className="text-xs text-zinc-600 max-w-[220px]">Coming soon -- connect Voxlit with Notion, Todoist, and more.</p>
                   </>
                 )}
               </div>

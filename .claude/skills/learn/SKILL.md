@@ -7,7 +7,7 @@ context: fork
 model: sonnet
 ---
 
-Du integrierst neue Wissensquellen in Diktas Knowledge-Base.
+Du integrierst neue Wissensquellen in Voxlits Knowledge-Base.
 
 ## Argumente
 
@@ -27,7 +27,7 @@ Lies die Datei aus `sources/inbox/`. Wenn die Datei nur eine URL enthaelt:
 
 ### 2. Relevanz pruefen
 
-Dikta-relevantes Wissen:
+Voxlit-relevantes Wissen:
 - Voice Dictation, STT, TTS, Audio-Processing
 - Tauri, Rust (Desktop/Mobile), React
 - API-Provider (Groq, DeepSeek, OpenAI, Whisper)

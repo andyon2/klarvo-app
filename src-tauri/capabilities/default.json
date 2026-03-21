@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for all Dikta windows",
+  "description": "Capability for all Voxlit windows",
   "windows": ["main", "bar"],
   "permissions": [
     "core:default",

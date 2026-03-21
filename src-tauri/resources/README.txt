@@ -1,11 +1,11 @@
 ===============================================================================
-  DIKTA v0.4.0 -- Voice Dictation with AI Cleanup
+  VOXLIT v0.4.0 -- Voice Dictation with AI Cleanup
   Eine freie Alternative zu Wispr Flow
 ===============================================================================
 
 SCHNELLSTART
 ------------
-1. Dikta starten (Desktop-Shortcut oder Startmenue)
+1. Voxlit starten (Desktop-Shortcut oder Startmenue)
 2. Beim ersten Start: Onboarding-Wizard fuehrt durch die Einrichtung
 3. Mindestens einen API-Key eintragen (Empfehlung: Groq -- kostenlos!)
    -> https://console.groq.com (Account erstellen, API Key generieren)
@@ -39,8 +39,8 @@ FEATURES
 
 API-KEYS
 --------
-Dikta braucht API-Keys fuer die Sprach- und Texterkennung.
-Alle Keys bleiben lokal auf deinem Rechner (in %APPDATA%\com.dikta.voice).
+Voxlit braucht API-Keys fuer die Sprach- und Texterkennung.
+Alle Keys bleiben lokal auf deinem Rechner (in %APPDATA%\com.voxlit.voice).
 
   Empfohlene Kombination (kostenlos/guenstig):
     STT:  Groq Whisper   -> https://console.groq.com
@@ -57,15 +57,15 @@ Alle Keys bleiben lokal auf deinem Rechner (in %APPDATA%\com.dikta.voice).
 
 SYSTEM-TRAY
 -----------
-Dikta minimiert sich in den System-Tray (Infobereich der Taskleiste).
+Voxlit minimiert sich in den System-Tray (Infobereich der Taskleiste).
   - Linksklick: Hauptfenster oeffnen
   - Rechtsklick: Menue mit Settings und Beenden
 
 DATEIEN
 -------
-  Einstellungen:  %APPDATA%\com.dikta.voice\config.json
-  Woerterbuch:    %APPDATA%\com.dikta.voice\dictionary.json
-  History (DB):   %APPDATA%\com.dikta.voice\history.db
+  Einstellungen:  %APPDATA%\com.voxlit.voice\config.json
+  Woerterbuch:    %APPDATA%\com.voxlit.voice\dictionary.json
+  History (DB):   %APPDATA%\com.voxlit.voice\history.db
 
 PROBLEMLOESUNG
 --------------
@@ -76,6 +76,6 @@ PROBLEMLOESUNG
 
 KONTAKT
 -------
-  GitHub: https://github.com/andyon2/dikta
+  GitHub: https://github.com/andyon2/voxlit
 
 ===============================================================================

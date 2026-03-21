@@ -1,4 +1,4 @@
-package com.dikta.voice
+package com.voxlit.voice
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -28,7 +28,7 @@ data class LlmProviderInfo(
  * Uses java.net.HttpURLConnection -- no extra dependencies needed.
  * All methods throw IOException on failure -- caller handles errors.
  */
-object DiktaApi {
+object VoxlitApi {
 
     // Set to true after the first successful ensureRemoteTable() call.
     // Avoids an extra HTTP roundtrip on every subsequent Turso push.
@@ -122,7 +122,7 @@ object DiktaApi {
             ))
         )
         return fallbacks.firstOrNull { it.second.isNotBlank() }?.let {
-            Log.i("DiktaApi", "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
+            Log.i("VoxlitApi", "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
             it.third
         }
     }
@@ -173,7 +173,7 @@ object DiktaApi {
             val llmProvider = json.optString("llmProvider", "deepseek")
             val openaiApiKey = json.optString("openaiApiKey", "")
             val openrouterApiKey = json.optString("openrouterApiKey", "")
-            Log.d("DiktaApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
+            Log.d("VoxlitApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             // Require at least a Groq key for STT; LLM key is optional (cleanup is skipped if absent).
             if (groqKey.isBlank()) null
@@ -406,7 +406,7 @@ object DiktaApi {
      * @throws IOException on network or API errors
      */
     fun transcribe(wavBytes: ByteArray, apiKey: String, language: String): String {
-        val boundary = "----DiktaBoundary" + System.currentTimeMillis()
+        val boundary = "----VoxlitBoundary" + System.currentTimeMillis()
         val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
         val conn = url.openConnection() as HttpURLConnection
 
@@ -549,7 +549,7 @@ STRICT RULES:
 
     private const val CHUNK_THRESHOLD = 800
     private const val CHUNK_TARGET_SIZE = 600
-    private const val CLEANUP_TAG = "DiktaApi"
+    private const val CLEANUP_TAG = "VoxlitApi"
 
     /**
      * Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).

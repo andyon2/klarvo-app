@@ -1,4 +1,4 @@
-# Pricing-Strategie -- Dikta
+# Pricing-Strategie -- Voxlit
 
 **Stand: 2026-03-20 | Entscheidungstraeger: Andy | Quelle: Product Strategist Analyse**
 

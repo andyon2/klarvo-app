@@ -10,7 +10,7 @@ Letzte Aktualisierung: 2026-03-09
 - **Student/Non-Profit:** $8/mo
 - **Kernfeature:** Cloud-basierte Voice-to-Text mit proprietaerem Modell
 - **Positionierung:** Premium, enterprise-ready (SOC 2 Type II, ISO 27001, HIPAA)
-- **Beziehung zu Dikta:** Wispr Flow ist die direkte Inspiration. Diktats Android-Version (Floating Bubble, systemweites Paste) ist an Wispr Flows UX angelehnt.
+- **Beziehung zu Voxlit:** Wispr Flow ist die direkte Inspiration. Diktats Android-Version (Floating Bubble, systemweites Paste) ist an Wispr Flows UX angelehnt.
 
 ### Android-Launch (23. Feb 2026)
 - Floating Bubble UI
@@ -26,13 +26,13 @@ Letzte Aktualisierung: 2026-03-09
 - Proprietaeres Modell (nicht auf 3rd-Party-API angewiesen)
 - Jetzt auch Android (erster grosser Player auf der Plattform)
 
-### Schwaechen aus Dikta-Sicht
+### Schwaechen aus Voxlit-Sicht
 - Abo-Modell ($144/Jahr) -- Subscription Fatigue
 - Cloud-only (kein Offline)
 - Closed Source (keine Transparenz)
 - Android-Promo wird irgendwann enden -> Abo-Huerde
 
-### Dikta-Differenzierung
+### Voxlit-Differenzierung
 Nicht ueber UX-Ueberlegenheit (Wispr hat mehr Ressourcen), sondern:
 - **EUR 29 einmalig vs. $144/Jahr**
 - **Offline-faehig vs. Cloud-only**
@@ -59,11 +59,11 @@ Nicht ueber UX-Ueberlegenheit (Wispr hat mehr Ressourcen), sondern:
 - Positioniert sich als "Open Source Wispr Flow / Superwhisper / Granola Alternative"
 
 ### Staerken
-- MIT-Lizenz, gleiche Vision wie Dikta (offline, open source, privacy-first)
+- MIT-Lizenz, gleiche Vision wie Voxlit (offline, open source, privacy-first)
 - Context-aware Dictation (intelligentes Feature)
 - Desktop bereits shipped (Win + Mac)
 
-### Schwaechen aus Dikta-Sicht
+### Schwaechen aus Voxlit-Sicht
 - Android nur Private Beta (nicht shipped)
 - Kein Monetarisierungsmodell (Nachhaltigkeit fraglich)
 - Electron-basiert (Performance)
@@ -71,7 +71,7 @@ Nicht ueber UX-Ueberlegenheit (Wispr hat mehr Ressourcen), sondern:
 
 ### Strategische Einordnung
 Naechster Open-Source-Wettbewerber. Gleiche Vision, aehnlicher Feature-Umfang.
-Dikta-Vorsprung: **Android shipped**, **Bezahlprodukt mit Commitment**, **Tauri/Rust statt Electron**.
+Voxlit-Vorsprung: **Android shipped**, **Bezahlprodukt mit Commitment**, **Tauri/Rust statt Electron**.
 Amical beobachten -- wenn deren Android public wird, schrumpft der Vorsprung.
 
 ---
@@ -105,7 +105,7 @@ Komplett offline, Privacy-first Voice-to-Text. Kein Backend, keine Telemetrie, k
 
 ### Strategische Einordnung
 Voice Type zeigt: Offline + Einmalkauf + Privacy funktioniert als Geschaeftsmodell.
-Dikta bietet 5x mehr Features und laeuft auf 2 Plattformen statt nur macOS.
+Voxlit bietet 5x mehr Features und laeuft auf 2 Plattformen statt nur macOS.
 
 ---
 
@@ -133,7 +133,7 @@ Dikta bietet 5x mehr Features und laeuft auf 2 Plattformen statt nur macOS.
 - Linux-Support
 - Kein Vendor Lock-in
 
-### Schwaechen aus Dikta-Sicht
+### Schwaechen aus Voxlit-Sicht
 - Electron (schwergewichtiger als Tauri/Rust)
 - Kein Android-Support
 - Community-getrieben (kein garantierter Support/Roadmap)
@@ -142,7 +142,7 @@ Dikta bietet 5x mehr Features und laeuft auf 2 Plattformen statt nur macOS.
 ### Strategische Einordnung
 Nicht als direkter Wettbewerber behandeln, sondern **komplementaer positionieren:**
 OpenWhispr = Open-Source-Projekt zum Mitbauen (Tinkerer/Entwickler).
-Dikta = Fertiges Produkt das einfach funktioniert (End-User).
+Voxlit = Fertiges Produkt das einfach funktioniert (End-User).
 Kein Feature-Race gegen MIT-Community fuehren.
 
 ---
@@ -162,7 +162,7 @@ Kein Feature-Race gegen MIT-Community fuehren.
 
 ### Strategische Einordnung
 Voicy zeigt die Preis-Obergrenze fuer Lifetime-Deals ($220).
-Dikta positioniert sich mit EUR 29 deutlich darunter -- aggressiverer Einstieg.
+Voxlit positioniert sich mit EUR 29 deutlich darunter -- aggressiverer Einstieg.
 
 ---
 
@@ -170,7 +170,7 @@ Dikta positioniert sich mit EUR 29 deutlich darunter -- aggressiverer Einstieg.
 
 | Tool | Preis | Plattform | Offline | Open Source |
 |------|-------|-----------|---------|-------------|
-| **Dikta** | EUR 29 einmalig (geplant) | Windows, Android | Ja (geplant) | Ja |
+| **Voxlit** | EUR 29 einmalig (geplant) | Windows, Android | Ja (geplant) | Ja |
 | Wispr Flow | $12/mo ($144/Jahr) | macOS, Windows, **Android** | Nein | Nein |
 | Amical | Gratis (MIT) | macOS, Windows, Android (Beta) | Ja | Ja |
 | Voice Type | $19.99 einmalig | nur macOS | Ja | Nein |

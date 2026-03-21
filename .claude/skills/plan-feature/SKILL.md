@@ -33,7 +33,7 @@ Aus `$ARGUMENTS` extrahiere die Feature-Beschreibung.
 # Feature-Plan: [Feature-Name]
 
 ## User Story
-Als Dikta-Nutzer moechte ich [was], damit [warum].
+Als Voxlit-Nutzer moechte ich [was], damit [warum].
 
 ## Betroffene Module
 - [Modul 1]: [Was dort geaendert/erstellt wird]

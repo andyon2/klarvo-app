@@ -1,4 +1,4 @@
-# API-Provider -- Dikta
+# API-Provider -- Voxlit
 
 ## Groq -- Speech-to-Text (Whisper API) -- Recherchiert 2026-03-06
 
@@ -58,7 +58,7 @@ Response (`verbose_json`) -- zusaetzlich:
 | `whisper-large-v3-turbo` | $0.04 | 228x Echtzeit | ~12% | Nein |
 | `whisper-large-v3` | $0.111 | 217x Echtzeit | ~10.3% | Ja |
 
-**Empfehlung fuer Dikta:** `whisper-large-v3-turbo` -- 3x guenstiger, minimal schlechtere Genauigkeit, voellig ausreichend fuer Diktat-Usecase.
+**Empfehlung fuer Voxlit:** `whisper-large-v3-turbo` -- 3x guenstiger, minimal schlechtere Genauigkeit, voellig ausreichend fuer Diktat-Usecase.
 
 ### Code-Beispiel (Rust)
 
@@ -495,7 +495,7 @@ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin
 ```
 
-**Empfehlung fuer Dikta-Offline-Modus:**
+**Empfehlung fuer Voxlit-Offline-Modus:**
 - **`ggml-base.bin`** (148 MB): Bestes Qualitaets-/Groessen-Verhaeltnis fuer Diktat. Laeuft auf jedem Rechner.
 - **`ggml-tiny-q5_1.bin`** (32 MB): Minimale Groesse, niedrigste RAM-Last, fuer schwache Hardware.
 - **`ggml-small.bin`** nicht empfohlen: Zu gross fuer integrierten Download, Nutzer kann selbst waehlen.
@@ -524,7 +524,7 @@ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin
 | RTX 3090 | base.en | ~80ms | ~8-10x vs CPU |
 | RTX 4080 | small | ~200ms | ~10-15x vs i7 CPU |
 
-**Praktische Faustregeln fuer Dikta:**
+**Praktische Faustregeln fuer Voxlit:**
 - **tiny auf moderner CPU (i7/Ryzen 5+):** ~600-800ms pro 30s Clip -- fuer Diktat-Usecase absolut ausreichend (Nutzer spricht selten laenger als 30s am Stueck)
 - **base auf moderner CPU:** ~1-2s fuer 30s Audio -- noch akzeptabel
 - **GPU aktiviert (CUDA):** 5-10x schneller als CPU, tiny wird unter 100ms
@@ -541,7 +541,7 @@ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin
 - **Audio muss exakt 16kHz Mono f32 sein.** cpal liefert oft i16 -- `convert_integer_to_float_audio()` nutzen. Bei Stereo: `convert_stereo_to_mono_audio()` vorher.
 - **Windows-Build mit CUDA:** `CUDA_PATH` env-var muss gesetzt sein, CMake muss im PATH liegen. Ohne CUDA einfach `cuda`-Feature weglassen -- dann reine CPU-Version.
 - **`set_language(Some("de"))` explizit setzen!** Default ist English-Erkennung. Bei deutschem Input ohne Language-Flag koennen Fehler entstehen.
-- **`set_initial_prompt` fuer Dictionary:** Fachbegriffe/Namen aus dem Dikta-Dictionary als initial_prompt mitgeben verbessert Transkription (wie bei Groq-API). Max ~200 Token.
+- **`set_initial_prompt` fuer Dictionary:** Fachbegriffe/Namen aus dem Voxlit-Dictionary als initial_prompt mitgeben verbessert Transkription (wie bei Groq-API). Max ~200 Token.
 - **Bindings-Generierung schlaegt fehl?** `WHISPER_DONT_GENERATE_BINDINGS=1` als env-var setzen, dann werden die gecachten Bindings aus dem Crate genutzt.
 - **Repo auf Codeberg migriert:** Seit Juli 2025 ist https://github.com/tazz4843/whisper-rs archiviert. Issues/PRs nur noch auf Codeberg: https://codeberg.org/tazz4843/whisper-rs
 - **Android:** whisper-rs funktioniert technisch als Rust-Crate auch im Android-Build (NDK), aber der GGML-Build fuer aarch64 braucht extra cmake-Konfiguration. Fuer MVP besser: Groq API auf Android, whisper-rs nur Desktop.

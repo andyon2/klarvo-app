@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --color-dikta-bg: #0d0d0f;
-  --color-dikta-surface: #18181b;
-  --color-dikta-border: #27272a;
-  --color-dikta-muted: #71717a;
-  --color-dikta-text: #fafafa;
-  --color-dikta-primary: #10b981;
-  --color-dikta-danger: #ef4444;
-  --color-dikta-warning: #f59e0b;
-  --color-dikta-accent: #34d399;
+  --color-voxlit-bg: #0d0d0f;
+  --color-voxlit-surface: #18181b;
+  --color-voxlit-border: #27272a;
+  --color-voxlit-muted: #71717a;
+  --color-voxlit-text: #fafafa;
+  --color-voxlit-primary: #10b981;
+  --color-voxlit-danger: #ef4444;
+  --color-voxlit-warning: #f59e0b;
+  --color-voxlit-accent: #34d399;
 }
 
 /* Smooth scrollbar for settings */

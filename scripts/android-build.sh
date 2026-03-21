@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Dikta for Android.
+# Build Voxlit for Android.
 # Copies Kotlin source files from android/kotlin-src/ to gen/android/ before building,
 # because Tauri does not manage custom Kotlin files automatically.
 
@@ -7,8 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # --- Sync Kotlin sources ---
-SRC="android/kotlin-src/com/dikta/voice"
-DST="src-tauri/gen/android/app/src/main/java/com/dikta/voice"
+SRC="android/kotlin-src/com/voxlit/voice"
+DST="src-tauri/gen/android/app/src/main/java/com/voxlit/voice"
 
 if [ ! -d "$DST" ]; then
     echo "Error: $DST does not exist. Run 'npx tauri android init' first."
@@ -36,15 +36,15 @@ echo "[version] Building v${VERSION}"
 
 # --- Sign + deploy ---
 APK_IN="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
-APK_ALIGNED="/tmp/dikta-aligned.apk"
-APK_DIR="/mnt/d/Dropbox/App Development/dikta/releases/v${VERSION}"
+APK_ALIGNED="/tmp/voxlit-aligned.apk"
+APK_DIR="/mnt/d/Dropbox/App Development/voxlit/releases/v${VERSION}"
 mkdir -p "$APK_DIR"
-APK_OUT="$APK_DIR/Dikta-v${VERSION}.apk"
+APK_OUT="$APK_DIR/Voxlit-v${VERSION}.apk"
 
 echo "[sign] Aligning and signing APK..."
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED"
 "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
-    --ks dikta-debug.keystore \
+    --ks voxlit-debug.keystore \
     --ks-pass pass:dikta123 \
     --key-pass pass:dikta123 \
     --out "$APK_OUT" \

@@ -1,12 +1,12 @@
 [package]
-name = "dikta"
+name = "voxlit"
 version = "0.4.8"
 description = "Free voice dictation with AI text cleanup"
 authors = ["Andy"]
 edition = "2021"
 
 [lib]
-name = "dikta_lib"
+name = "voxlit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

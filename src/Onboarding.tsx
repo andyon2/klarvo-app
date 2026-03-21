@@ -369,10 +369,10 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
 
       <div className="flex flex-col gap-3">
         <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">
-          Sprich. Dikta tippt.
+          Sprich. Voxlit tippt.
         </h1>
         <p className="text-sm text-zinc-400 leading-relaxed max-w-xs">
-          Freies Sprachdiktat mit KI-Bereinigung. Dikta transkribiert und poliert deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
+          Freies Sprachdiktat mit KI-Bereinigung. Voxlit transkribiert und poliert deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
         </p>
       </div>
 
@@ -395,7 +395,7 @@ function StepMode({ selected, onSelect, onNext }: {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Wie willst du Dikta nutzen?</h2>
+        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Wie willst du Voxlit nutzen?</h2>
         <p className="text-sm text-zinc-400">Beide Varianten sind kostengünstig — du entscheidest.</p>
       </div>
 
@@ -618,7 +618,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Spracherkennung einrichten</h2>
-        <p className="text-sm text-zinc-400">Dikta nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
+        <p className="text-sm text-zinc-400">Voxlit nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
       </div>
 
       {/* Groq highlighted block */}
@@ -853,7 +853,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Offline-Modell herunterladen</h2>
-        <p className="text-sm text-zinc-400">Einmaliger Download — danach laeuft Dikta ohne Internet.</p>
+        <p className="text-sm text-zinc-400">Einmaliger Download — danach laeuft Voxlit ohne Internet.</p>
       </div>
 
       {/* Model card */}
@@ -1100,7 +1100,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
       {isDesktop && (
         <div className="rounded-xl bg-zinc-800/30 border border-zinc-700/30 px-4 py-3">
           <p className="text-xs text-zinc-500">
-            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-700 border border-zinc-600 text-[11px] font-mono text-zinc-300">Ctrl+Shift+D</kbd> zum Diktieren — Dikta fügt den Text direkt ein.
+            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-700 border border-zinc-600 text-[11px] font-mono text-zinc-300">Ctrl+Shift+D</kbd> zum Diktieren — Voxlit fügt den Text direkt ein.
           </p>
         </div>
       )}
@@ -1148,7 +1148,7 @@ function StepDone({ mode, language, hasLlm, onFinish }: {
       </div>
 
       <button onClick={onFinish} className={BTN_PRIMARY}>
-        Dikta starten
+        Voxlit starten
       </button>
     </div>
   );
@@ -1377,8 +1377,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<OverlayIcon />}
             title="Overlay-Berechtigung"
-            description="Dikta braucht Overlay-Berechtigung um über anderen Apps zu erscheinen und den Diktat-Button anzuzeigen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Dikta → Spezielle App-Zugriffe → Ueber anderen Apps anzeigen → Aktivieren"
+            description="Voxlit braucht Overlay-Berechtigung um über anderen Apps zu erscheinen und den Diktat-Button anzuzeigen."
+            settingsHint="Gehe zu: Einstellungen → Apps → Voxlit → Spezielle App-Zugriffe → Ueber anderen Apps anzeigen → Aktivieren"
             onNext={() => advance()}
           />
         )}
@@ -1387,8 +1387,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<MicIconSm className="w-7 h-7" />}
             title="Mikrofon-Berechtigung"
-            description="Dikta braucht Zugriff auf dein Mikrofon um Sprache aufzunehmen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Dikta → Berechtigungen → Mikrofon → Erlauben"
+            description="Voxlit braucht Zugriff auf dein Mikrofon um Sprache aufzunehmen."
+            settingsHint="Gehe zu: Einstellungen → Apps → Voxlit → Berechtigungen → Mikrofon → Erlauben"
             onNext={() => advance()}
           />
         )}
@@ -1397,8 +1397,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<AccessibilityIcon />}
             title="Bedienungshilfen"
-            description="Dikta nutzt Bedienungshilfen um Text direkt in das aktive Textfeld einzufügen — ohne Zwischenablage."
-            settingsHint="Gehe zu: Einstellungen → Bedienungshilfen → Heruntergeladene Apps → Dikta → Aktivieren"
+            description="Voxlit nutzt Bedienungshilfen um Text direkt in das aktive Textfeld einzufügen — ohne Zwischenablage."
+            settingsHint="Gehe zu: Einstellungen → Bedienungshilfen → Heruntergeladene Apps → Voxlit → Aktivieren"
             onNext={() => advance()}
           />
         )}
@@ -1407,8 +1407,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<BatteryIcon />}
             title="Akku-Optimierung"
-            description="Verhindert, dass Android Dikta im Hintergrund stoppt und den Diktat-Button unsichtbar macht."
-            settingsHint="Gehe zu: Einstellungen → Akku → Akku-Optimierung → Dikta → Nicht optimieren"
+            description="Verhindert, dass Android Voxlit im Hintergrund stoppt und den Diktat-Button unsichtbar macht."
+            settingsHint="Gehe zu: Einstellungen → Akku → Akku-Optimierung → Voxlit → Nicht optimieren"
             onNext={() => advance()}
           />
         )}

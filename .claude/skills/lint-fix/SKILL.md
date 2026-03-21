@@ -7,7 +7,7 @@ context: fork
 model: haiku
 ---
 
-Fuehre Linter und Formatter fuer Dikta aus.
+Fuehre Linter und Formatter fuer Voxlit aus.
 
 ## Argumente
 
@@ -18,7 +18,7 @@ Aus `$ARGUMENTS` extrahiere den Scope: `all` (default) | `rust` | `frontend`
 ### Rust (scope = `rust` oder `all`)
 
 ```bash
-cd /home/andyon2/claude-projects/dikta
+cd /home/andyon2/claude-projects/voxlit
 
 # Formatter
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check 2>&1
@@ -32,7 +32,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings 2>&1
 ### Frontend (scope = `frontend` oder `all`)
 
 ```bash
-cd /home/andyon2/claude-projects/dikta
+cd /home/andyon2/claude-projects/voxlit
 
 # Prettier (Formatter)
 npx prettier --check "src/**/*.{ts,tsx}" 2>&1
@@ -46,7 +46,7 @@ npx eslint "src/**/*.{ts,tsx}" 2>&1
 ### Report
 
 ```
-LINT REPORT -- Dikta ([scope])
+LINT REPORT -- Voxlit ([scope])
 
 FORMATTER:
   Rust: [OK / n Dateien formatiert]

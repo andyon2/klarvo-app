@@ -1,4 +1,4 @@
-package com.dikta.voice
+package com.voxlit.voice
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -10,7 +10,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * Accessibility service that detects when the soft keyboard is visible
- * and notifies DiktaOverlayService to show/hide the floating bubble.
+ * and notifies VoxlitOverlayService to show/hide the floating bubble.
  *
  * Detection strategy:
  *   Listen for TYPE_WINDOWS_CHANGED events, then walk the window list looking
@@ -25,15 +25,15 @@ import android.view.accessibility.AccessibilityWindowInfo
  *     MainActivity guides the user there if the service is not yet active.
  *
  * Fallback:
- *   If this service is not active, DiktaOverlayService falls back to
+ *   If this service is not active, VoxlitOverlayService falls back to
  *   InputMethodManager.getInputMethodWindowVisibleHeight() reflection polling.
  */
-class DiktaAccessibilityService : AccessibilityService() {
+class VoxlitAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "DiktaAccess"
+        private const val TAG = "VoxlitAccess"
         /** Live reference to the running service; null when the service is not connected. */
-        var instance: DiktaAccessibilityService? = null
+        var instance: VoxlitAccessibilityService? = null
     }
 
     override fun onServiceConnected() {
@@ -72,10 +72,10 @@ class DiktaAccessibilityService : AccessibilityService() {
 
     /**
      * Inspects the current window list for a window of type TYPE_INPUT_METHOD.
-     * Calls DiktaOverlayService.onKeyboardVisibilityChanged() with the result.
+     * Calls VoxlitOverlayService.onKeyboardVisibilityChanged() with the result.
      *
      * Must be called from the accessibility thread (which onAccessibilityEvent uses);
-     * DiktaOverlayService.onKeyboardVisibilityChanged() posts to the main handler
+     * VoxlitOverlayService.onKeyboardVisibilityChanged() posts to the main handler
      * internally, so cross-thread calls are safe.
      */
     private fun notifyKeyboardState() {
@@ -85,12 +85,12 @@ class DiktaAccessibilityService : AccessibilityService() {
             Log.w(TAG, "windows list unavailable", e)
             return
         }
-        DiktaOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
+        VoxlitOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
     }
 
     /**
      * Performs a paste action on the currently focused editable node.
-     * Called by DiktaOverlayService after the transcription result is on the clipboard.
+     * Called by VoxlitOverlayService after the transcription result is on the clipboard.
      */
     fun pasteIntoFocusedField() {
         val rootNode = rootInActiveWindow ?: return
@@ -102,7 +102,7 @@ class DiktaAccessibilityService : AccessibilityService() {
 
     /**
      * Sends an Enter / Send action to the currently focused editable node.
-     * Called by DiktaOverlayService when auto-send is enabled for the active gesture.
+     * Called by VoxlitOverlayService when auto-send is enabled for the active gesture.
      *
      * Implementation strategy:
      *   Primary: ACTION_IME_ENTER -- maps to the IME's action button (Send, Go, Search, etc.).

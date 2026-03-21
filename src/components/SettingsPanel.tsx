@@ -295,14 +295,14 @@ function UpdateChecker() {
 // --- License Section ---------------------------------------------------------
 
 // Auto-formats a license key input: uppercase, inserts dashes after every 4 chars
-// in the payload section (after "DIKTA-").
+// in the payload section (after "VOXLIT-").
 function formatLicenseKeyInput(raw: string): string {
   // Strip everything that is not alphanumeric.
   const stripped = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  // The key format is DIKTA-XXXX-XXXX-XXXX-XXXX.
-  // The prefix "DIKTA" is 5 chars, then groups of 4 separated by dashes.
+  // The key format is VOXLIT-XXXX-XXXX-XXXX-XXXX.
+  // The prefix "VOXLIT" is 6 chars, then groups of 4 separated by dashes.
   if (stripped.length === 0) return "";
-  const prefix = "DIKTA";
+  const prefix = "VOXLIT";
   if (!stripped.startsWith(prefix)) {
     // Let the user type freely if they haven't matched the prefix yet.
     // Still uppercase, no dashes until prefix is complete.
@@ -494,14 +494,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             ))}
           </div>
           <button
-            onClick={() => openUrl("https://dikta.app")}
+            onClick={() => openUrl("https://voxlit.app")}
             className={[
               "self-start transition-colors",
               isMobile ? "text-sm" : "text-[11px]",
               "text-zinc-400 hover:text-zinc-200 underline underline-offset-2",
             ].join(" ")}
           >
-            Get a license at dikta.app
+            Get a license at voxlit.app
           </button>
         </>
       )}
@@ -525,11 +525,11 @@ function LicenseKeyInput({
           type="text"
           spellCheck={false}
           autoComplete="off"
-          placeholder="DIKTA-XXXX-XXXX-XXXX-XXXX"
+          placeholder="VOXLIT-XXXX-XXXX-XXXX-XXXX"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !loading && onActivate()}
-          maxLength={25} // DIKTA(5) + 4 dashes + 16 chars = 25
+          maxLength={26} // VOXLIT(6) + 4 dashes + 16 chars = 26
           className={[
             "flex-1 font-mono tracking-widest",
             isMobile ? INPUT_CLS_M : INPUT_CLS,
@@ -1596,7 +1596,7 @@ export function SettingsPanel({
                 hint="Appended to the system prompt during LLM cleanup."
                 value={localCustomPrompt}
                 onChange={isPaid ? setLocalCustomPrompt : () => {}}
-                placeholder={isPaid ? "Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'" : "Requires Dikta License"}
+                placeholder={isPaid ? "Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'" : "Requires Voxlit License"}
                 rows={3}
                 className={`${INPUT_CLS_M} resize-none${!isPaid ? " opacity-50 cursor-not-allowed" : ""}`}
                 disabled={!isPaid}
@@ -1731,7 +1731,7 @@ export function SettingsPanel({
                 </span>
                 <input
                   type="text"
-                  placeholder={isPaid ? "libsql://your-db.turso.io" : "Requires Dikta License"}
+                  placeholder={isPaid ? "libsql://your-db.turso.io" : "Requires Voxlit License"}
                   value={localTursoUrl}
                   disabled={!isPaid}
                   onChange={(e) => setLocalTursoUrl(e.target.value)}
@@ -1743,7 +1743,7 @@ export function SettingsPanel({
                 <input
                   type="password"
                   autoComplete="off"
-                  placeholder={isPaid ? (loadedSettings?.tursoTokenMasked || "Auth token") : "Requires Dikta License"}
+                  placeholder={isPaid ? (loadedSettings?.tursoTokenMasked || "Auth token") : "Requires Voxlit License"}
                   value={tursoToken}
                   disabled={!isPaid}
                   onChange={(e) => setTursoToken(e.target.value)}
@@ -1962,7 +1962,7 @@ export function SettingsPanel({
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2 text-zinc-500">
                     <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
-                    <p className="text-xs">App Profiles require a Dikta license.</p>
+                    <p className="text-xs">App Profiles require a Voxlit license.</p>
                   </div>
                   <p className="text-[11px] text-zinc-600">Override style and language per app based on window title.</p>
                 </div>
@@ -2106,13 +2106,13 @@ export function SettingsPanel({
           {openSections.about && (
             <div className="flex flex-col gap-2 pl-4 pb-3 pt-1">
               <p className="text-xs font-medium text-zinc-300">
-                Dikta{appVersion ? ` v${appVersion}` : ""}
+                Voxlit{appVersion ? ` v${appVersion}` : ""}
               </p>
               <p className="text-[11px] text-zinc-500">Voice dictation you own.</p>
               <p className="text-[11px] text-zinc-500">by Andreas Nolte</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <button
-                  onClick={() => openUrl("https://github.com/andyon2/dikta")}
+                  onClick={() => openUrl("https://github.com/andyon2/voxlit")}
                   className="text-[11px] text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors"
                 >
                   GitHub

@@ -174,17 +174,17 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (German)</span>
-                <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={isPaid ? (v) => set("sttPromptDe", v) : () => {}} placeholder={isPaid ? "Context prompt sent with German transcriptions" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={isPaid ? (v) => set("sttPromptDe", v) : () => {}} placeholder={isPaid ? "Context prompt sent with German transcriptions" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Injected as context when language is set to German.</span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (English)</span>
-                <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={isPaid ? (v) => set("sttPromptEn", v) : () => {}} placeholder={isPaid ? "Context prompt for English transcriptions" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={isPaid ? (v) => set("sttPromptEn", v) : () => {}} placeholder={isPaid ? "Context prompt for English transcriptions" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Injected as context when language is set to English.</span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
-                <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Dikta License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
               </div>
               <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
@@ -282,22 +282,22 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
                 <div className={`flex flex-col gap-3${!isPaid ? " pointer-events-none" : ""}`}>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Polished</span>
-                    <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Verbatim mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Chat</span>
-                    <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>Command Mode Prompt</span>
-                    <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
                   </div>
                 </div>
@@ -373,7 +373,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
             <div className={`flex flex-col gap-1.5${!isPaid ? " pointer-events-none" : ""}`}>
               <span className={LABEL_CLS}>Custom Headers (JSON)</span>
-              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={isPaid ? (v) => set("webhookHeaders", v) : () => {}} placeholder={isPaid ? '{"Authorization": "Bearer ..."}' : "Requires Dikta License"} rows={3} className={`${INPUT_CLS} resize-none font-mono${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={isPaid ? (v) => set("webhookHeaders", v) : () => {}} placeholder={isPaid ? '{"Authorization": "Bearer ..."}' : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none font-mono${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
               <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
             </div>
             <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
@@ -396,7 +396,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
         {openSections.integrations && (
           <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
             {!isPaid && (
-              <p className={hintCls}>Requires Dikta License. Integrations send your transcriptions to external services.</p>
+              <p className={hintCls}>Requires Voxlit License. Integrations send your transcriptions to external services.</p>
             )}
             <div className={`flex flex-col gap-2${!isPaid ? " pointer-events-none" : ""}`}>
               <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#111113] border border-zinc-800/60">
