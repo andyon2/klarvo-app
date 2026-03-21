@@ -1148,7 +1148,7 @@ function StepDone({ mode, language, hasLlm, onFinish }: {
       </div>
 
       <button onClick={onFinish} className={BTN_PRIMARY}>
-        Voxlit starten
+        Los geht's
       </button>
     </div>
   );
@@ -1224,16 +1224,23 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
   );
 
   const handleSkip = useCallback(async () => {
-    await setOnboardingState({
-      completed: true,
-      skipped: true,
-      currentStep: stepIndex,
-      mode,
-      language,
-    }).catch(console.error);
-    // We still need to close the wizard — save minimal settings then call onComplete
+    // Persist the skip decision first -- must not silently fail or the wizard
+    // will reappear on next launch.
     try {
-      await saveSettings("", "", language || "de", "polished");
+      await setOnboardingState({
+        completed: true,
+        skipped: true,
+        currentStep: stepIndex,
+        mode,
+        language,
+      });
+    } catch (err) {
+      console.error("[onboarding] Failed to persist skip state:", err);
+    }
+    // Don't call saveSettings here -- it sends hotkey="" which fails backend
+    // validation and is redundant anyway (defaults are already correct).
+    // Just fetch current settings for the onComplete callback.
+    try {
       const updated = await getSettings();
       onComplete(updated);
     } catch {

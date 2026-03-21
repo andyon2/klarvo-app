@@ -339,8 +339,13 @@ pub async fn save_settings(
     *crate::write_lock!(inner.cleanup_provider)? = new_cleanup;
 
     // Re-register all hotkey slots from the (now-updated) in-memory config (desktop only).
+    // Non-fatal: hotkey re-registration is a side-effect. API key changes and other
+    // settings are already saved at this point -- don't roll back because of a
+    // hotkey conflict (e.g. "already registered" race or duplicate slots).
     #[cfg(desktop)]
-    crate::pipeline::register_hotkey(&handle)?;
+    if let Err(e) = crate::pipeline::register_hotkey(&handle) {
+        log::warn!("[settings] Hotkey re-registration failed (settings saved anyway): {e}");
+    }
 
     // Apply autostart: write or remove the OS startup entry.
     let autostart_enabled = crate::lock!(inner.config)?.autostart;

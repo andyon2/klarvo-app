@@ -37,7 +37,7 @@ async function checkForUpdate(): Promise<{ version: string; downloadAndInstall: 
 }
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
-import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode } from "../tauri-commands";
+import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode, getVoiceCommandActive } from "../tauri-commands";
 import type { AdvancedSettings } from "../types";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon, LockIcon } from "./icons";
@@ -677,11 +677,7 @@ export function SettingsPanel({
   // License activation must NOT set this flag (it auto-saves immediately).
   const [isDirty, setIsDirty] = useState(false);
   // Accordion: only one section open at a time. First section open by default.
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    voiceRecording: true,
-    bubble: false,
-    voiceCommand: false,
-  });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   // Active tab inside the combined Hotkey section: 0 = Hotkey 1, 1 = Hotkey 2
   const [hotkeyTab, setHotkeyTab] = useState<0 | 1>(0);
 
@@ -706,6 +702,25 @@ export function SettingsPanel({
         setLocalSilenceThreshold(adv.silenceThreshold);
       })
       .catch(console.error);
+  }, []);
+
+  // Sync Voice Command toggle with the actual backend runtime state on mount,
+  // and keep it in sync via events (e.g. when monitor stops itself via "Voxlit off").
+  useEffect(() => {
+    if (!isDesktop) return;
+
+    getVoiceCommandActive()
+      .then(setLocalVoiceCommandEnabled)
+      .catch(console.error);
+
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<{ active: boolean }>("voxlit://voice-command-state-changed", (event) => {
+        setLocalVoiceCommandEnabled(event.payload.active);
+      }).then((fn) => { unlisten = fn; }).catch(console.error);
+    });
+
+    return () => { unlisten?.(); };
   }, []);
 
   // Load app version on mount.
@@ -1437,8 +1452,8 @@ export function SettingsPanel({
           </div>
         )}
 
-        {/* --- Voice Command Mode -- desktop only --- */}
-        {isDesktop && (
+        {/* --- Voice Command Mode -- desktop only, parked until SAPI implementation --- */}
+        {false && isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("voiceCommand")} className={sectionBtnCls}>
               <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1451,10 +1466,10 @@ export function SettingsPanel({
             </button>
             {openSections.voiceCommand && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-                {/* Whisper model warning: voice command needs a local model */}
-                {!localWhisperModel && (
+                {/* Voice command requires a Groq API key for real-time STT */}
+                {!groqOk && (
                   <p className="text-[11px] text-amber-500/80">
-                    Requires a local Whisper model (Settings &rarr; Whisper Model)
+                    Requires a Groq API key (Settings &rarr; API Keys)
                   </p>
                 )}
 
@@ -1466,7 +1481,7 @@ export function SettingsPanel({
                       {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
                     </span>
                     <span className="text-[11px] text-zinc-500">
-                      Activate dictation by saying &ldquo;Voxlit start&rdquo; &mdash; no hotkey needed
+                      Activate dictation by saying &ldquo;Klarvo toggle&rdquo; &mdash; no hotkey needed
                     </span>
                   </div>
                   <button
@@ -1503,7 +1518,7 @@ export function SettingsPanel({
                 {/* Running indicator */}
                 {localVoiceCommandEnabled && (
                   <p className="text-[11px] text-emerald-400/80">
-                    Listening for &ldquo;Voxlit start&rdquo;&hellip;
+                    Listening for &ldquo;Klarvo&rdquo; commands&hellip;
                   </p>
                 )}
               </div>

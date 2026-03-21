@@ -390,9 +390,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
     let state = handle.state::<AppState>();
 
     if state.recorder.is_recording() {
-        // Already recording -- the hotkey handler's pressed branch calls
-        // stop_and_process_pipeline for this case, so we should not reach
-        // here, but guard just in case.
+        eprintln!("[autostop] Already recording, skipping");
         return;
     }
 
@@ -405,6 +403,8 @@ pub async fn start_autostop_recording(handle: AppHandle) {
         .map(|c| (c.autostop_silence_secs, c.advanced.silence_threshold))
         .unwrap_or((2.0, 0.005));
 
+    eprintln!("[autostop] Installing silence callback: silence_secs={silence_secs}, threshold={silence_threshold}");
+
     // Install the silence callback. It must be set BEFORE start_recording so
     // the recording thread picks it up via `.take()` inside start_recording.
     let handle_for_cb = handle.clone();
@@ -412,6 +412,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
         silence_secs,
         silence_threshold,
         Box::new(move || {
+            eprintln!("[autostop] Silence callback fired! Stopping pipeline...");
             // This closure runs on the cpal OS-thread (non-async context).
             // Spawn an async task to run the pipeline on the Tauri runtime.
             let h = handle_for_cb.clone();
@@ -420,6 +421,10 @@ pub async fn start_autostop_recording(handle: AppHandle) {
             });
         }),
     );
+
+    // Check callback is installed before we move handle into start_recording_only.
+    let cb_installed = state.recorder.has_silence_callback();
+    eprintln!("[autostop] Silence callback installed before recording: {cb_installed}");
 
     // Start the actual recording (re-uses all the foreground-window capture
     // and audio-level emitter setup from start_recording_only).
@@ -1336,6 +1341,17 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                 continue;
             }
         };
+
+        // Deduplicate: if two slots share the same shortcut key, keep only the
+        // first one. Prevents "HotKey already registered" errors from the OS.
+        if slot_map.iter().any(|(id, _, _)| *id == shortcut.id()) {
+            log::warn!(
+                "[hotkey] Slot {:?} has duplicate shortcut id={}, skipping",
+                slot.hotkey,
+                shortcut.id()
+            );
+            continue;
+        }
 
         println!(
             "[hotkey] Queuing slot: {:?} id={} mode={:?} insert_and_send={}",

@@ -131,6 +131,14 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Chat: Kurz, locker, Emojis erlaubt
 - Prompts muessen in Rust (llm/mod.rs) UND Kotlin (VoxlitApi.kt) synchron gehalten werden!
 
+**Voice Command Mode (2026-03-21)**
+- Trigger-Wort: "Klarvo" (mit phonetischen Varianten: Clarvo, Klarfo, Klarwo, etc.)
+- Befehle: toggle, auto-stop, full auto, stop, cancel, off/aus (DE+EN)
+- Erkennung: Groq Whisper API mit Prompt Conditioning
+- Architektur-Limitation: Monitor wird waehrend Recording pausiert → Commands nur fuer Modus-Start, nicht fuer Stop waehrend Diktat
+- Stoppen waehrend Diktat: Nur per Hotkey, UI-Button oder Stille (AutoStop/FullAuto)
+- Geplant (Paid Feature, Post-Launch): SAPI-basierte Command-Erkennung parallel zum Recording. Windows Speech Recognition API (COM) mit Custom Grammar. Erkennt "Klarvo stop" on-device in Echtzeit (~50ms) waehrend cpal aufnimmt. Phonem-Definition fuer Kunstwort "Klarvo" via ISpLexicon. Android braucht das nicht (Bubble-Gesten reichen).
+
 **Custom Prompts: Zwei Stufen, kein Overlap**
 - "Cleanup Instructions" (Settings): Zusaetzliche LLM-Anweisungen ("formelles Deutsch", "keine Aufzaehlungen")
 - "STT Prompts" (Advanced Settings): Whisper Conditioning Text pro Sprache (verbessert Erkennung)

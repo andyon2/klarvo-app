@@ -4,7 +4,7 @@
 //! `cpal` continuous capture which is wired up only on desktop targets.
 
 #[cfg(desktop)]
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(desktop)]
 use crate::config::save_config;
@@ -54,6 +54,23 @@ pub fn toggle_voice_command_mode(app: AppHandle) -> Result<bool, String> {
                 cfg.voice_command_enabled = false;
                 let _ = save_config(&inner.app_data_dir, &cfg);
             }
+        }
+
+        // Cancel any active recording that was started by a voice command.
+        // If we don't do this, the recording keeps running after the monitor
+        // is stopped, leaving orphaned state that breaks the next toggle cycle.
+        if state.recorder.is_recording() {
+            log::info!("[voice_command_cmd] Cancelling active recording before stopping monitor");
+            let _ = state.recorder.stop_recording();
+            if let Ok(mut guard) = state.recording_start.lock() {
+                *guard = None;
+            }
+            // Also clear any auto-loop flag.
+            state.auto_loop_active.store(false, Ordering::SeqCst);
+            let _ = app.emit(
+                crate::hotkey::EVENT_STATE_CHANGED,
+                crate::hotkey::PipelineEvent::idle(),
+            );
         }
 
         // Stop the monitor if it's actually running. Log errors but don't

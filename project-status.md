@@ -1,27 +1,16 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.8 (Windows + Android). Rename Dikta → Voxlit vollstaendig abgeschlossen. Domain `voxlit.app` gesichert. Markenanmeldung DPMA vor Paid Launch. Namensaenderung zu "Klarvo" steht bevor — betrifft Trigger-Wortliste in voice_command/mod.rs.
-
-**VAD-Overhaul:** 5/6 Tasks erledigt. Offen: Task 6 (Manueller Test). Hallucination-Blocklist (Task 4) refactored nach `stt/hallucination.rs` mit 18 Tests.
-
-**Voice Command Mode:** 8/8 Tasks implementiert, aber **Debugging noetig.** Architektur steht (Monitor → VAD → Snippet → Groq → Command-Match → Dispatch). Offene Bugs:
-- Auto-Start feuert obwohl Config `voiceCommandEnabled: false` sagt (Phantom-Start)
-- Toggle-Desync: UI-State und Backend-Runtime-State laufen auseinander
-- Build-Sync: `sync-and-build.ps1` uebernimmt manchmal Aenderungen nicht (Cargo-Cache)
-- Erkennung noch nicht live getestet (Groq-Pfad noch nie erfolgreich durchlaufen)
-
-Alle eprintln-Debug-Ausgaben sind noch aktiv fuer die naechste Debug-Session.
+Version 0.4.8 (Windows + Android). Rename Dikta → Voxlit abgeschlossen. Domain `voxlit.app` gesichert. Voice Command Mode geparkt (Architektur-Limitation, wird mit SAPI neu aufgesetzt). Kernfunktion (Hotkey-Diktat) stabil.
 
 ## Blocker
 
-Voice Command Mode: Debug-Session noetig (siehe oben). Feature ist implementiert aber nicht funktional getestet.
+Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Voice Command Mode debuggen** → Auto-Start-Bug fixen, Toggle-Desync loesen, Groq-Pfad end-to-end testen. Dann: eprintln durch log:: ersetzen. Siehe `briefings/voice-command-debug-status.md`.
-2. **Live-Preview als Opt-In** → Whisper-Halluzinationen werden gefiltert (Blocklist steht).
-3. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen (`marketing/social-preview-voxlit.png`).
+1. **Live-Preview als Opt-In** → Whisper-Halluzinationen werden gefiltert (Blocklist steht).
+2. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen.
 
 ## Bekannte Bugs
 
@@ -40,3 +29,4 @@ Voice Command Mode: Debug-Session noetig (siehe oben). Feature ist implementiert
 - [ ] [feature] OpenRouter Modell-Dropdown in Settings (aktuell hardcoded auf deepseek/deepseek-chat).
 - [ ] [feature] Reformat-Prompts (Email/Bullets/Summary) verbessern -- aktuell schlechte Qualitaet, aus README entfernt.
 - [ ] [android] Bubble Size/Opacity UI-Controls implementieren (Backend-Config existiert, Frontend fehlt).
+- [ ] [desktop] [paid] SAPI-basierte Command-Erkennung: Windows Speech Recognition API fuer Echtzeit-Befehle waehrend Diktat. Custom Grammar mit "Klarvo" Phonem-Definition. Parallel zu cpal Recording, on-device, ~50ms Latenz. Phase: Post-Launch.

@@ -33,9 +33,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::{self, query_input_format};
-use crate::config;
 use crate::hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
-use crate::pipeline::{start_recording_only, stop_and_process_pipeline};
+use crate::pipeline::{stop_and_process_pipeline, run_dictation_pipeline, start_autostop_recording, start_auto_recording};
 use crate::AppState;
 
 use super::{recognize_command, VoiceCommand, VoiceCommandEngine, VoiceCommandError};
@@ -112,8 +111,6 @@ pub fn start_voice_command_monitor(handle: &AppHandle) -> Result<(), String> {
             (DEFAULT_MONITOR_SAMPLE_RATE, DEFAULT_MONITOR_CHANNELS)
         });
 
-    eprintln!("[voice_command] Device format: {sample_rate} Hz, {channels} ch");
-
     let engine = VoiceCommandEngine::new(sample_rate, channels)
         .map_err(|e: VoiceCommandError| format!("VoiceCommandEngine init failed: {e}"))?;
 
@@ -136,6 +133,10 @@ pub fn start_voice_command_monitor(handle: &AppHandle) -> Result<(), String> {
     if groq_key.is_empty() {
         return Err("Voice Command Mode requires a Groq API key (Settings → API Keys)".to_string());
     }
+
+    // Log device format only after the Groq-key check passes -- avoids
+    // misleading output when the monitor fails early due to a missing key.
+    eprintln!("[voice_command] Device format: {sample_rate} Hz, {channels} ch");
 
     let groq_provider = Arc::new(crate::stt::GroqWhisper::new(&groq_key));
     eprintln!("[voice_command] Using Groq Whisper for command recognition");
@@ -332,8 +333,8 @@ fn transcribe_with_groq(
     };
 
     let start = std::time::Instant::now();
-    // Conditioning prompt: helps Groq recognize "Voxlit" as a keyword.
-    let prompt = Some("Voxlit start, Voxlit stop, Voxlit cancel, Voxlit dictate, Voxlit off, Voxlit polished, Voxlit verbatim, Voxlit chat, Voxlit aus");
+    // Conditioning prompt: helps Groq recognize "Klarvo" as a keyword.
+    let prompt = Some("Klarvo toggle, Klarvo start, Klarvo auto-stop, Klarvo autostop, Klarvo full auto, Klarvo stop, Klarvo stopp, Klarvo cancel, Klarvo abbrechen, Klarvo off, Klarvo aus");
     let result = rt.block_on(provider.transcribe(wav, language, prompt));
 
     eprintln!(
@@ -361,10 +362,26 @@ fn transcribe_with_groq(
 /// from a `std::thread::spawn` thread).
 fn dispatch_command(cmd: VoiceCommand, handle: AppHandle) {
     match cmd {
-        VoiceCommand::StartDictation => {
-            log::info!("[voice_command] Dispatching: StartDictation");
+        VoiceCommand::StartToggle => {
+            log::info!("[voice_command] Dispatching: StartToggle");
             tauri::async_runtime::spawn(async move {
-                start_recording_only(handle).await;
+                run_dictation_pipeline(handle).await;
+            });
+        }
+
+        VoiceCommand::StartAutoStop => {
+            log::info!("[voice_command] Dispatching: StartAutoStop");
+            tauri::async_runtime::spawn(async move {
+                start_autostop_recording(handle).await;
+            });
+        }
+
+        VoiceCommand::StartFullAuto => {
+            log::info!("[voice_command] Dispatching: StartFullAuto");
+            let state_ref = handle.state::<AppState>();
+            state_ref.auto_loop_active.store(true, std::sync::atomic::Ordering::SeqCst);
+            tauri::async_runtime::spawn(async move {
+                start_auto_recording(handle).await;
             });
         }
 
@@ -389,14 +406,6 @@ fn dispatch_command(cmd: VoiceCommand, handle: AppHandle) {
             }
         }
 
-        VoiceCommand::SetStyle(style_str) => {
-            log::info!("[voice_command] Dispatching: SetStyle({style_str:?})");
-            let handle_clone = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                dispatch_set_style(&handle_clone, &style_str).await;
-            });
-        }
-
         VoiceCommand::TurnOff => {
             log::info!("[voice_command] Dispatching: TurnOff");
             // stop_voice_command_monitor needs &AppHandle, call synchronously.
@@ -405,49 +414,6 @@ fn dispatch_command(cmd: VoiceCommand, handle: AppHandle) {
             }
         }
     }
-}
-
-/// Updates `cleanup_style` in the persisted config and notifies the frontend.
-async fn dispatch_set_style(handle: &AppHandle, style_str: &str) {
-    use crate::llm::CleanupStyle;
-
-    let new_style = match style_str {
-        "polished" => CleanupStyle::Polished,
-        "verbatim" => CleanupStyle::Verbatim,
-        "chat" => CleanupStyle::Chat,
-        other => {
-            log::warn!("[voice_command] Unknown style {other:?}, ignoring SetStyle");
-            return;
-        }
-    };
-
-    let state = handle.state::<AppState>();
-    let app_data_dir = state.app_data_dir.clone();
-
-    // Update in-memory config.
-    {
-        let mut cfg = match state.config.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::warn!("[voice_command] Config lock poisoned in SetStyle");
-                return;
-            }
-        };
-        cfg.cleanup_style = new_style;
-
-        // Persist to disk (best-effort; log on failure).
-        if let Err(e) = config::save_config(&app_data_dir, &*cfg) {
-            log::warn!("[voice_command] Failed to persist config after SetStyle: {e}");
-        }
-    }
-
-    // Notify frontend so the style selector updates.
-    let _ = handle.emit(
-        "voxlit://style-changed",
-        serde_json::json!({ "style": style_str }),
-    );
-
-    log::info!("[voice_command] Cleanup style set to {new_style:?}");
 }
 
 // ---------------------------------------------------------------------------

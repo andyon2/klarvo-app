@@ -72,8 +72,8 @@ export interface AppSettings {
   bubbleLongPressMode: string;
   bubbleLongPressAutoSend: boolean;
   bubbleLongPressSilenceSecs: number;
-  // Voice Command Mode: activate dictation by voice trigger ("Voxlit start").
-  // Desktop-only, requires a local Whisper model.
+  // Voice Command Mode: activate dictation by voice trigger ("Klarvo toggle").
+  // Desktop-only, requires a Groq API key.
   voiceCommandEnabled: boolean;
 }
 

@@ -65,7 +65,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::AtomicBool;
 
 use audio::AudioRecorder;
-use config::{config_file_has_license_field, load_config, AppConfig, HotkeyMode};
+use config::{config_file_has_license_field, load_config, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
 use license::{compute_status_from_cache, LicenseStatus, EARLY_ADOPTER_GRACE_SECS};
 use llm::{CleanupProvider, CleanupStyle};
@@ -787,14 +787,28 @@ pub fn run() {
                 ),
             }
 
-            // Auto-start Voice Command Monitor if the user had it enabled last session.
-            {
+            // Auto-start Voice Command Monitor -- DISABLED (parked until SAPI implementation).
+            // Code kept for when we re-enable with Windows Speech Recognition API.
+            #[allow(unreachable_code)]
+            if false {
                 let state = app.state::<AppState>();
                 let vc_enabled = state.config.lock().map(|c| c.voice_command_enabled).unwrap_or(false);
+                eprintln!("[setup] vc_enabled={vc_enabled}");
                 if vc_enabled {
                     log::info!("[setup] voice_command_enabled=true -- starting monitor");
                     if let Err(e) = voice_command::start_voice_command_monitor(&handle) {
                         log::warn!("[setup] Failed to auto-start voice command monitor: {e}");
+                        // Reset config flag so the next launch does not attempt
+                        // auto-start again (avoids a phantom-start loop).
+                        if let Ok(mut cfg) = state.config.lock() {
+                            cfg.voice_command_enabled = false;
+                            let dir = state.app_data_dir.clone();
+                            if let Err(save_err) = save_config(&dir, &cfg) {
+                                log::warn!("[setup] Could not persist voice_command_enabled=false: {save_err}");
+                            } else {
+                                log::info!("[setup] voice_command_enabled reset to false in config");
+                            }
+                        }
                     }
                 }
             }

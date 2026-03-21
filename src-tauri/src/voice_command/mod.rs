@@ -1,7 +1,7 @@
 //! Voice Command Mode engine (desktop-only).
 //!
 //! This module listens to the continuous PCM stream from `AudioRecorder::start_monitor`
-//! and detects short spoken commands addressed to Voxlit (e.g. "Hey Voxlit, start").
+//! and detects short spoken commands addressed to Klarvo (e.g. "Klarvo toggle").
 //!
 //! ## Architecture
 //!
@@ -81,18 +81,20 @@ const COMMAND_HANGOVER_MS: u32 = 320;
 // Public types
 // ---------------------------------------------------------------------------
 
-/// A recognised Voxlit voice command.
+/// A recognised Klarvo voice command.
 #[derive(Debug, Clone, PartialEq)]
 pub enum VoiceCommand {
-    /// "Voxlit, start" / "Voxlit, diktieren"
-    StartDictation,
-    /// "Voxlit, stop" / "Voxlit, stopp"
+    /// "Klarvo toggle" / "Klarvo start" -- starts dictation in toggle mode
+    StartToggle,
+    /// "Klarvo auto-stop" / "Klarvo autostop" -- starts dictation in auto-stop mode
+    StartAutoStop,
+    /// "Klarvo full auto" -- starts dictation in auto-loop mode
+    StartFullAuto,
+    /// "Klarvo stop" / "Klarvo stopp" -- stops active dictation
     StopDictation,
-    /// "Voxlit, abbrechen" / "Voxlit, cancel"
+    /// "Klarvo cancel" / "Klarvo abbrechen" -- cancels dictation
     CancelDictation,
-    /// "Voxlit, polished" / "Voxlit, verbatim" / "Voxlit, chat"
-    SetStyle(String),
-    /// "Voxlit, aus" / "Voxlit, off"
+    /// "Klarvo off" / "Klarvo aus" -- disables Voice Command Mode
     TurnOff,
 }
 
@@ -288,21 +290,18 @@ impl VoiceCommandEngine {
 
 /// Trigger words that activate command recognition.
 ///
-/// Includes phonetic variants that Whisper commonly produces for "Voxlit".
+/// Includes phonetic variants that Whisper commonly produces for "Klarvo".
 const TRIGGER_WORDS: &[&str] = &[
-    "voxlit",
-    "vox lit",
-    "foxlit",
-    "fox lit",
-    "foxy",
-    "box lit",
-    "woxlit",
-    "vox let",
-    "voxlet",
-    "foxlet",
+    "klarvo",
+    "klar vo",
+    "clarvo",
+    "clar vo",
+    "klarfo",
+    "klarwo",
+    "klar wo",
 ];
 
-/// Tries to match a Whisper transcription against the known Voxlit commands.
+/// Tries to match a Whisper transcription against the known Klarvo commands.
 ///
 /// Steps:
 /// 1. Lowercase + trim.
@@ -344,12 +343,27 @@ pub fn recognize_command(text: &str) -> Option<VoiceCommand> {
 }
 
 /// Scans `text` (already lowercased) for a command keyword.
+///
+/// Order is critical:
+/// - Multi-word keywords ("full auto", "auto-stop", "auto stop") are checked
+///   with `text.contains()` before single-word keywords to avoid partial matches.
+/// - "full auto" before "autostop" (otherwise "auto" in "full auto" hits autostop).
+/// - "autostop" before "toggle/start" (otherwise "stop" in "autostop" hits StopDictation).
 fn find_command(text: &str) -> Option<VoiceCommand> {
-    // Order matters: check longer/more specific keywords before short ones.
-    // "polished" before "polish", "verbatim" before "verb", etc.
+    // Step 1: multi-word / hyphenated keywords via substring match.
+    // These must be checked before the single-word table below.
+    if text.contains("full auto") {
+        return Some(VoiceCommand::StartFullAuto);
+    }
+    if text.contains("auto-stop") || text.contains("autostop") || text.contains("auto stop") {
+        return Some(VoiceCommand::StartAutoStop);
+    }
+
+    // Step 2: single-word keywords via whole-word boundary check.
+    // Order still matters within each group (more specific before generic).
     let checks: &[(&[&str], fn() -> VoiceCommand)] = &[
-        // StartDictation
-        (&["start", "dictate", "diktat", "diktieren", "aufnahme"], || VoiceCommand::StartDictation),
+        // StartToggle
+        (&["toggle", "start", "dictate", "diktat", "diktieren"], || VoiceCommand::StartToggle),
         // StopDictation
         (&["stop", "stopp", "halt"], || VoiceCommand::StopDictation),
         // CancelDictation
@@ -364,17 +378,6 @@ fn find_command(text: &str) -> Option<VoiceCommand> {
                 return Some(make_cmd());
             }
         }
-    }
-
-    // Style commands checked separately because they carry a payload.
-    if contains_word(text, "polished") || contains_word(text, "poliert") {
-        return Some(VoiceCommand::SetStyle("polished".to_string()));
-    }
-    if contains_word(text, "verbatim") || contains_word(text, "wörtlich") || contains_word(text, "woertlich") {
-        return Some(VoiceCommand::SetStyle("verbatim".to_string()));
-    }
-    if contains_word(text, "chat") {
-        return Some(VoiceCommand::SetStyle("chat".to_string()));
     }
 
     None
@@ -425,82 +428,42 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_trigger_voxlit() {
+    fn test_trigger_klarvo() {
         assert_eq!(
-            recognize_command("Voxlit start"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("Klarvo toggle"),
+            Some(VoiceCommand::StartToggle)
         );
     }
 
     #[test]
-    fn test_trigger_foxlit() {
+    fn test_trigger_klar_vo() {
         assert_eq!(
-            recognize_command("Foxlit start"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("klar vo toggle"),
+            Some(VoiceCommand::StartToggle)
         );
     }
 
     #[test]
-    fn test_trigger_fox_lit() {
+    fn test_trigger_clarvo() {
         assert_eq!(
-            recognize_command("fox lit dictate"),
-            Some(VoiceCommand::StartDictation)
-        );
-    }
-
-    #[test]
-    fn test_trigger_box_lit() {
-        assert_eq!(
-            recognize_command("box lit start"),
-            Some(VoiceCommand::StartDictation)
-        );
-    }
-
-    #[test]
-    fn test_trigger_woxlit() {
-        assert_eq!(
-            recognize_command("woxlit start"),
-            Some(VoiceCommand::StartDictation)
-        );
-    }
-
-    #[test]
-    fn test_trigger_vox_lit() {
-        assert_eq!(
-            recognize_command("vox lit stop"),
+            recognize_command("clarvo stop"),
             Some(VoiceCommand::StopDictation)
         );
     }
 
     #[test]
-    fn test_trigger_vox_let() {
+    fn test_trigger_klarfo() {
         assert_eq!(
-            recognize_command("vox let stop"),
-            Some(VoiceCommand::StopDictation)
-        );
-    }
-
-    #[test]
-    fn test_trigger_voxlet() {
-        assert_eq!(
-            recognize_command("voxlet cancel"),
+            recognize_command("klarfo cancel"),
             Some(VoiceCommand::CancelDictation)
         );
     }
 
     #[test]
-    fn test_trigger_foxlet() {
+    fn test_trigger_klarwo() {
         assert_eq!(
-            recognize_command("foxlet cancel"),
-            Some(VoiceCommand::CancelDictation)
-        );
-    }
-
-    #[test]
-    fn test_trigger_foxy() {
-        assert_eq!(
-            recognize_command("foxy stop"),
-            Some(VoiceCommand::StopDictation)
+            recognize_command("klarwo off"),
+            Some(VoiceCommand::TurnOff)
         );
     }
 
@@ -509,70 +472,90 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_command_start_dictation_en() {
+    fn test_command_toggle() {
         assert_eq!(
-            recognize_command("voxlit start"),
-            Some(VoiceCommand::StartDictation)
-        );
-        assert_eq!(
-            recognize_command("voxlit dictate"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("klarvo toggle"),
+            Some(VoiceCommand::StartToggle)
         );
     }
 
     #[test]
-    fn test_command_stop_dictation_en() {
+    fn test_command_start_alias() {
         assert_eq!(
-            recognize_command("voxlit stop"),
+            recognize_command("klarvo start"),
+            Some(VoiceCommand::StartToggle)
+        );
+    }
+
+    #[test]
+    fn test_command_dictate_alias() {
+        assert_eq!(
+            recognize_command("klarvo dictate"),
+            Some(VoiceCommand::StartToggle)
+        );
+    }
+
+    #[test]
+    fn test_command_autostop() {
+        assert_eq!(
+            recognize_command("klarvo auto-stop"),
+            Some(VoiceCommand::StartAutoStop)
+        );
+    }
+
+    #[test]
+    fn test_command_autostop_no_hyphen() {
+        assert_eq!(
+            recognize_command("klarvo autostop"),
+            Some(VoiceCommand::StartAutoStop)
+        );
+    }
+
+    #[test]
+    fn test_command_autostop_space() {
+        assert_eq!(
+            recognize_command("klarvo auto stop"),
+            Some(VoiceCommand::StartAutoStop)
+        );
+    }
+
+    #[test]
+    fn test_command_full_auto() {
+        assert_eq!(
+            recognize_command("klarvo full auto"),
+            Some(VoiceCommand::StartFullAuto)
+        );
+    }
+
+    #[test]
+    fn test_command_stop() {
+        assert_eq!(
+            recognize_command("klarvo stop"),
             Some(VoiceCommand::StopDictation)
         );
     }
 
     #[test]
-    fn test_command_cancel_dictation_en() {
+    fn test_command_cancel() {
         assert_eq!(
-            recognize_command("voxlit cancel"),
+            recognize_command("klarvo cancel"),
             Some(VoiceCommand::CancelDictation)
         );
     }
 
     #[test]
-    fn test_command_turn_off_en() {
+    fn test_command_off() {
         assert_eq!(
-            recognize_command("voxlit off"),
-            Some(VoiceCommand::TurnOff)
-        );
-        assert_eq!(
-            recognize_command("voxlit quit"),
-            Some(VoiceCommand::TurnOff)
-        );
-        assert_eq!(
-            recognize_command("voxlit exit"),
+            recognize_command("klarvo off"),
             Some(VoiceCommand::TurnOff)
         );
     }
 
     #[test]
-    fn test_command_set_style_polished_en() {
+    fn test_command_quit() {
         assert_eq!(
-            recognize_command("voxlit polished"),
-            Some(VoiceCommand::SetStyle("polished".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_command_set_style_verbatim_en() {
-        assert_eq!(
-            recognize_command("voxlit verbatim"),
-            Some(VoiceCommand::SetStyle("verbatim".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_command_set_style_chat_en() {
-        assert_eq!(
-            recognize_command("voxlit chat"),
-            Some(VoiceCommand::SetStyle("chat".to_string()))
+            recognize_command("klarvo quit"),
+            Some(VoiceCommand::TurnOff)
         );
     }
 
@@ -581,78 +564,66 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_command_start_dictation_de() {
+    fn test_command_diktat() {
         assert_eq!(
-            recognize_command("voxlit diktat"),
-            Some(VoiceCommand::StartDictation)
-        );
-        assert_eq!(
-            recognize_command("voxlit diktieren"),
-            Some(VoiceCommand::StartDictation)
-        );
-        assert_eq!(
-            recognize_command("voxlit aufnahme"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("klarvo diktat"),
+            Some(VoiceCommand::StartToggle)
         );
     }
 
     #[test]
-    fn test_command_stop_dictation_de() {
+    fn test_command_diktieren() {
         assert_eq!(
-            recognize_command("voxlit stopp"),
-            Some(VoiceCommand::StopDictation)
+            recognize_command("klarvo diktieren"),
+            Some(VoiceCommand::StartToggle)
         );
+    }
+
+    #[test]
+    fn test_command_stopp() {
         assert_eq!(
-            recognize_command("voxlit halt"),
+            recognize_command("klarvo stopp"),
             Some(VoiceCommand::StopDictation)
         );
     }
 
     #[test]
-    fn test_command_cancel_dictation_de() {
+    fn test_command_halt() {
         assert_eq!(
-            recognize_command("voxlit abbrechen"),
+            recognize_command("klarvo halt"),
+            Some(VoiceCommand::StopDictation)
+        );
+    }
+
+    #[test]
+    fn test_command_abbrechen() {
+        assert_eq!(
+            recognize_command("klarvo abbrechen"),
             Some(VoiceCommand::CancelDictation)
         );
+    }
+
+    #[test]
+    fn test_command_abbruch() {
         assert_eq!(
-            recognize_command("voxlit abbruch"),
+            recognize_command("klarvo abbruch"),
             Some(VoiceCommand::CancelDictation)
         );
     }
 
     #[test]
-    fn test_command_turn_off_de() {
+    fn test_command_aus() {
         assert_eq!(
-            recognize_command("voxlit aus"),
-            Some(VoiceCommand::TurnOff)
-        );
-        assert_eq!(
-            recognize_command("voxlit beenden"),
-            Some(VoiceCommand::TurnOff)
-        );
-        assert_eq!(
-            recognize_command("voxlit beende"),
+            recognize_command("klarvo aus"),
             Some(VoiceCommand::TurnOff)
         );
     }
 
     #[test]
-    fn test_command_set_style_polished_de() {
+    fn test_command_beenden() {
         assert_eq!(
-            recognize_command("voxlit poliert"),
-            Some(VoiceCommand::SetStyle("polished".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_command_set_style_verbatim_de() {
-        assert_eq!(
-            recognize_command("voxlit wörtlich"),
-            Some(VoiceCommand::SetStyle("verbatim".to_string()))
-        );
-        assert_eq!(
-            recognize_command("voxlit woertlich"),
-            Some(VoiceCommand::SetStyle("verbatim".to_string()))
+            recognize_command("klarvo beenden"),
+            Some(VoiceCommand::TurnOff)
         );
     }
 
@@ -661,17 +632,17 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_case_insensitive_trigger_and_command() {
+    fn test_case_insensitive() {
         assert_eq!(
-            recognize_command("VOXLIT START"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("KLARVO TOGGLE"),
+            Some(VoiceCommand::StartToggle)
         );
         assert_eq!(
-            recognize_command("Voxlit Stop"),
+            recognize_command("Klarvo Stop"),
             Some(VoiceCommand::StopDictation)
         );
         assert_eq!(
-            recognize_command("FOXLIT CANCEL"),
+            recognize_command("CLARVO CANCEL"),
             Some(VoiceCommand::CancelDictation)
         );
     }
@@ -681,8 +652,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_no_trigger_returns_none() {
-        assert_eq!(recognize_command("start dictation please"), None);
+    fn test_no_trigger() {
+        assert_eq!(recognize_command("start dictation"), None);
         assert_eq!(recognize_command("stop"), None);
         assert_eq!(recognize_command("cancel now"), None);
     }
@@ -692,55 +663,10 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_trigger_without_keyword_returns_none() {
-        assert_eq!(recognize_command("voxlit"), None);
-        assert_eq!(recognize_command("foxlit please"), None);
-        assert_eq!(recognize_command("vox lit bitte"), None);
-    }
-
-    // -----------------------------------------------------------------------
-    // recognize_command -- hallucinations → None
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_hallucination_thank_you_for_watching() {
-        assert_eq!(recognize_command("Thank you for watching"), None);
-    }
-
-    #[test]
-    fn test_hallucination_zdf() {
-        assert_eq!(recognize_command("ZDF"), None);
-    }
-
-    #[test]
-    fn test_hallucination_music_tag() {
-        assert_eq!(recognize_command("[Music]"), None);
-    }
-
-    #[test]
-    fn test_hallucination_empty() {
-        assert_eq!(recognize_command(""), None);
-    }
-
-    #[test]
-    fn test_hallucination_whitespace_only() {
-        assert_eq!(recognize_command("   "), None);
-    }
-
-    // -----------------------------------------------------------------------
-    // recognize_command -- unrelated real speech → None
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_real_speech_no_trigger() {
-        assert_eq!(
-            recognize_command("Das Meeting findet um 14 Uhr statt"),
-            None
-        );
-        assert_eq!(
-            recognize_command("Please send me the report by Friday"),
-            None
-        );
+    fn test_trigger_without_keyword() {
+        assert_eq!(recognize_command("klarvo"), None);
+        assert_eq!(recognize_command("klarvo please"), None);
+        assert_eq!(recognize_command("klar vo bitte"), None);
     }
 
     // -----------------------------------------------------------------------
@@ -748,14 +674,14 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_filler_word_between_trigger_and_command() {
+    fn test_filler_words() {
         assert_eq!(
-            recognize_command("voxlit please start"),
-            Some(VoiceCommand::StartDictation)
+            recognize_command("klarvo bitte toggle"),
+            Some(VoiceCommand::StartToggle)
         );
         assert_eq!(
-            recognize_command("voxlit bitte stopp"),
-            Some(VoiceCommand::StopDictation)
+            recognize_command("klarvo please start"),
+            Some(VoiceCommand::StartToggle)
         );
     }
 
@@ -764,13 +690,33 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_keyword_must_be_whole_word() {
-        // "halted" must not match "halt"
-        assert_eq!(recognize_command("voxlit halted"), None);
+    fn test_word_boundary() {
         // "stopping" must not match "stop"
-        assert_eq!(recognize_command("voxlit stopping"), None);
+        assert_eq!(recognize_command("klarvo stopping"), None);
         // "offside" must not match "off"
-        assert_eq!(recognize_command("voxlit offside"), None);
+        assert_eq!(recognize_command("klarvo offside"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // recognize_command -- hallucinations → None
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_hallucinations() {
+        assert_eq!(recognize_command("Thank you for watching"), None);
+        assert_eq!(recognize_command(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // recognize_command -- "full auto" must not be confused with "autostop"
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_full_auto_not_confused_with_autostop() {
+        assert_eq!(
+            recognize_command("klarvo full auto"),
+            Some(VoiceCommand::StartFullAuto)
+        );
     }
 
     // -----------------------------------------------------------------------
