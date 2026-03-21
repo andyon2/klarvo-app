@@ -3,7 +3,33 @@
 Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Dikta.
 Diese Datei ist die Source of Truth fuer alle strategischen Produkt-Entscheidungen.
 
-Letzte Aktualisierung: 2026-03-10 (Free/Paid-Aufteilung ueberarbeitet: Styles free, Dictionary-Limit, Offline-Modell-Gate; tiny+base entfernt, small = neues Free-Modell)
+Letzte Aktualisierung: 2026-03-21 (Namenskonflikt entdeckt, Umbenennung noetig)
+
+## ⚠ Umbenennung erforderlich
+
+**Status:** Name "Dikta" ist nicht haltbar. Deep Research fuer neuen Namen laeuft.
+
+**Gruende (recherchiert 2026-03-21):**
+- **dikta iOS App** (rohe technik OÜ / rohe.ai): AI Voice Keyboard im App Store, gleicher Markt
+- **dIKta.me**: Private AI Voice Dictation fuer Windows, $20 Einmalkauf, Source-Available -- praktisch unser Zwilling
+- **DIKTA INC SRL** (Rumaenien): EU-Bildmarke in Klasse 09 (Software), eingetragen bis 2032 (EUIPO #018737941)
+
+Drei Produkte mit demselben Namen im selben Markt = nicht verteidigbar, nicht suchbar, nicht vermarktbar.
+
+**Naechste Schritte:**
+- [ ] Deep Research: Namenskandidaten recherchieren (laeuft)
+- [ ] Shortlist bewerten (Product Strategist)
+- [ ] Entscheidung treffen (Andy)
+- [ ] Umbenennung durchfuehren: Codebase, Repo, README, Branding, Landingpage-Briefing
+
+**Anforderungen an neuen Namen:**
+- Englisch (international, aber auf Deutsch gut aussprechbar)
+- Kurz (2-3 Silben, max 7 Buchstaben ideal)
+- Domain verfuegbar (.app, .dev, .software, .io, .com, .de)
+- Kein Markenkonflikt Klasse 09 (DPMA + EUIPO)
+- Kein bestehender Wettbewerber im Voice/Dictation/STT-Markt
+
+**Domain dikta.software:** Reservierung bei Hostinger storniert (2026-03-21).
 
 ## Positionierung
 

@@ -186,6 +186,66 @@ Regelmaessig pruefen (alle 4-6 Wochen):
 - [ ] **OpenWhispr Mobile:** Anzeichen fuer Android-Support?
 - [ ] **Neue Wettbewerber:** Handy (Tauri-basiert, kein Android), NotelyVoice (Compose Multiplatform, kein Windows)
 
+---
+
+## dikta (rohe.ai) -- Namenskonflikt
+
+- **URL:** dikta.net
+- **App Store:** apps.apple.com/us/app/dikta-ai-voice-keyboard/id6759268402
+- **Entwickler:** rohe technik OÜ (rohe.ai)
+- **Plattform:** iOS
+- **Preis:** Abo (dikta pro monthly / yearly)
+- **Recherche-Datum:** 2026-03-21
+- **Status:** Kaum Bewertungen im App Store, relativ neu
+- **Relevanz:** Namenskonflikt. Gleicher Name, gleicher Markt (AI Voice Keyboard). Kein direkter Produkt-Wettbewerber (nur iOS, Abo).
+
+---
+
+## dIKta.me -- Namenskonflikt + direkter Wettbewerber
+
+- **URL:** dikta.me
+- **GitHub:** github.com/geckogtmx/diktame
+- **Plattform:** nur Windows (10 2004+, 11)
+- **Preis:** $20 Einmalkauf (Power Version), Free Trial mit Credits
+- **Lizenz:** "Source-Available" auf Website, aber kein Lizenzfile im Repo (rechtlich unklar)
+- **Tech-Stack:** C# / .NET 8, WinUI 3 (Fluent Design), SQLite
+- **Entwickler:** Solo-Entwickler, 246 Commits. Vorheriges Projekt war Python + Electron, dann nativer Rewrite.
+- **Recherche-Datum:** 2026-03-21
+
+### Features (detailliert)
+- 7 Workflow-Modi: Dictate, Refine, Ask, Translate, Oops, Note, Read Selection
+- Cloud STT (Deepgram, Gemini) + lokal (Whisper.net mit Vulkan GPU)
+- TTS: Read Selection mit Kokoro-ONNX Fallback
+- LLM: Gemini, Anthropic, OpenAI, Ollama (eingebettetes Management)
+- Dual-Profile-System mit 16 Custom Prompts
+- Voice Snippets (Trigger-basierte Makro-Expansion)
+- Quick Chat (Floating LLM-Overlay)
+- 90-Tage SQLite-Historie
+- Sicherheit: DPAPI-Secrets, PII-Scrubber, API-Key-Validierung
+- ~173MB unkomprimiert, ~70MB komprimiert
+
+### Qualitaet
+- 950 Tests (479 in CI), 74% Line-Coverage, 52% Branch-Coverage
+- 0 Fehler, 0 Warnungen im Release-Build
+- CI/CD Pipeline (Lint → Build → Test → Publish)
+
+### Staerken
+- Professionelle Codequalitaet (Tests, Coverage, CI/CD)
+- Natives Windows-UI (WinUI 3, kein Electron)
+- 7 Modi vs. unsere 3-4
+- TTS (Read Selection) -- Feature das wir nicht haben
+- Ollama eingebettet mit Health-Checks und Model-Library
+
+### Schwaechen aus unserer Sicht
+- **Nur Windows** -- kein Android, kein Mobile
+- **Distribution noch nicht fertig** -- Installer steht aus, kein Auto-Updater
+- **Kein Lizenzfile im Repo** -- "Source-Available" ohne rechtliche Grundlage
+- **.NET 8** -- schwergewichtiger als Tauri/Rust
+- **Credit/Wallet-System geplant** -- geht Richtung Mikrotransaktionen, weg vom klaren Einmalkauf
+
+### Strategische Einordnung
+Naechster direkter Wettbewerber nach Amical. Validiert unser Geschaeftsmodell (Einmalkauf + Source-Available + Voice Dictation). Aber: nur Windows, Distribution nicht shipped, kein Mobile. Unser Vorsprung: Android shipped + Auto-Updater + signierte Builds + echte Tester. Namenskonflikt macht Umbenennung zwingend.
+
 ## Fazit
 
 Der Markt hat sich seit Anfang 2026 bewegt: Wispr Flow ist auf Android, Amical naehert sich

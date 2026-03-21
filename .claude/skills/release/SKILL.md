@@ -70,9 +70,18 @@ Falls ein Build fehlschlaegt:
 3. NICHT den Release erstellen, NICHT committen
 4. Wenn nur EIN Build fehlschlaegt (z.B. Android OK, Windows nicht): Trotzdem komplett abbrechen. Kein partieller Release.
 
-### 5. Updater-Artefakte pruefen und latest.json generieren
+### 5. Installer signieren und latest.json generieren
 
-Nach dem Windows-Build existieren diese Dateien (durch `createUpdaterArtifacts: true` + Signing Key):
+Tauri's eingebauter Signer haengt auf Windows/WSL. Signing geschieht separat via rsign.
+
+Das Build-Script (`sync-and-build.ps1`) ruft automatisch `scripts/sign-installer.sh` auf. Falls das
+nicht geklappt hat oder die `.sig` fehlt, manuell signieren:
+
+```bash
+bash ~/claude-projects/dikta/scripts/sign-installer.sh
+```
+
+Danach existieren:
 - NSIS Installer: `/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe`
 - Signatur: `/mnt/d/Apps/dikta/src-tauri/target/release/bundle/nsis/Dikta_X.Y.Z_x64-setup.exe.sig`
 
@@ -97,7 +106,7 @@ Nutze `date -u +%Y-%m-%dT%H:%M:%SZ` fuer das Datum.
 
 WICHTIG: Die URL zeigt auf `dikta-public`, NICHT auf `dikta`!
 
-Falls die `.sig` Datei NICHT existiert: Warnung ausgeben. Der Build hat vermutlich den Signing Key nicht gefunden. Trotzdem fortfahren, aber in der Ergebnis-Meldung darauf hinweisen.
+Falls die `.sig` Datei NICHT existiert: `bash scripts/sign-installer.sh` ausfuehren. Falls das auch fehlschlaegt (z.B. rsign nicht installiert): `cargo install rsign2` und erneut versuchen.
 
 ### 6. Git Commit + Push (privates Repo)
 

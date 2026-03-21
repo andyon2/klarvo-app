@@ -5,7 +5,7 @@ Version 0.4.8 (Windows + Android). Auto-Updater funktioniert. v0.4.8 auf GitHub 
 
 ## Blocker
 
-Keine.
+- **Namenskonflikt:** "Dikta" ist dreifach belegt im Voice-Dictation-Markt (dikta iOS App, dIKta.me, DIKTA INC EU-Marke). Umbenennung noetig vor v1.0 / Paid Launch. Deep Research fuer neuen Namen laeuft. Details: `knowledge/product-strategy.md`.
 
 ## Naechste Sessions (in Reihenfolge)
 
