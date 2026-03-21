@@ -1,16 +1,17 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.8 (Windows + Android). Auto-Updater funktioniert. v0.4.8 auf GitHub released. Build-Signing-Problem geloest: Tauri's eingebauter Signer haengt auf Windows/WSL, Workaround via `rsign` direkt aus WSL (`scripts/sign-installer.sh`). Build-Script (`sync-and-build.ps1`) angepasst — Signing entkoppelt, laeuft jetzt zuverlaessig. SmartScreen-Hinweis in README.
+Version 0.4.8 (Windows + Android). v0.4.8 auf GitHub released. Build-Signing via `rsign` aus WSL (`scripts/sign-installer.sh`), in `sync-and-build.ps1` integriert. Produktname wird Voxlit (Domain `voxlit.app` gesichert). Rename-Plan mit 12 Tasks in 3 Phasen erstellt (`briefings/rename-plan.md`). Landingpage-Briefing fertig (`briefings/product-strategist-landingpage.md`).
 
 ## Blocker
 
-- **Umbenennung Dikta → Voxlit:** Entschieden (2026-03-21). Domains (voxlit.com, voxlit.app) noch nicht gesichert. Markenanmeldung DPMA spaetestens vor Paid Launch. Codebase-Umbenennung noch nicht durchgefuehrt. Details: `knowledge/product-strategy.md`.
+- **Umbenennung Dikta → Voxlit:** Domain voxlit.app gesichert. Codebase-Rename noch nicht durchgefuehrt (12-Task-Plan bereit). Markenanmeldung DPMA vor Paid Launch.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Live-Preview als Opt-In** → Nach VAD-Overhaul jetzt moeglich. Whisper-Halluzinationen werden gefiltert.
-2. **Launch-Vorbereitung** → SmartScreen-Hinweis in README/Landingpage einbauen, Release-Skill um latest.json-Upload erweitern.
+1. **Codebase-Rename Dikta → Voxlit** → 12 Tasks, 3 Phasen. Plan: `briefings/rename-plan.md`. 6 Vorab-Entscheidungen offen (Repo-Pfade, GitHub-Repo-Name, Social Preview).
+2. **Live-Preview als Opt-In** → Nach VAD-Overhaul moeglich. Whisper-Halluzinationen werden gefiltert.
+3. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Release-Skill aktualisiert.
 
 ## Bekannte Bugs
 
