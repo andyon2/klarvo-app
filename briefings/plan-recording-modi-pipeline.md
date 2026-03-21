@@ -2,7 +2,7 @@
 
 ## User Story
 
-Als Dikta-Nutzer möchte ich mit AutoStop/Auto-Modi sprechen und Dikta hört automatisch auf zu
+Als Voxlit-Nutzer möchte ich mit AutoStop/Auto-Modi sprechen und Voxlit hört automatisch auf zu
 aufzunehmen, wenn ich eine Pause mache — damit ich die Hände frei behalte und kein Hotkey mehr
 zum Stoppen nötig ist. Mit Insert+Send kann ich direkt in Chat-Feldern diktieren, ohne
 nachher Enter drücken zu müssen.

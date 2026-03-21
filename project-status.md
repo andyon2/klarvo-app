@@ -1,17 +1,16 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.8 (Windows + Android). v0.4.8 auf GitHub released. Build-Signing via `rsign` aus WSL (`scripts/sign-installer.sh`), in `sync-and-build.ps1` integriert. Produktname wird Voxlit (Domain `voxlit.app` gesichert). Rename-Plan mit 12 Tasks in 3 Phasen erstellt (`briefings/rename-plan.md`). Landingpage-Briefing fertig (`briefings/product-strategist-landingpage.md`).
+Version 0.4.8 (Windows + Android). Rename Dikta → Voxlit vollstaendig abgeschlossen: Codebase, GitHub-Releases, Repo-Description, README auf voxlit-app, Social Preview erstellt. Domain `voxlit.app` gesichert. Naechster Build erzeugt `Voxlit_x.y.z`-Installer. Markenanmeldung DPMA vor Paid Launch.
 
 ## Blocker
 
-- **Umbenennung Voxlit → Voxlit:** Domain voxlit.app gesichert. Codebase-Rename noch nicht durchgefuehrt (12-Task-Plan bereit). Markenanmeldung DPMA vor Paid Launch.
+Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Codebase-Rename Voxlit → Voxlit** → 12 Tasks, 3 Phasen. Plan: `briefings/rename-plan.md`. 6 Vorab-Entscheidungen offen (Repo-Pfade, GitHub-Repo-Name, Social Preview).
-2. **Live-Preview als Opt-In** → Nach VAD-Overhaul moeglich. Whisper-Halluzinationen werden gefiltert.
-3. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Release-Skill aktualisiert.
+1. **Live-Preview als Opt-In** → Nach VAD-Overhaul moeglich. Whisper-Halluzinationen werden gefiltert.
+2. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen (`marketing/social-preview-voxlit.png`).
 
 ## Bekannte Bugs
 

@@ -2,18 +2,18 @@
 
 ## Kontext
 
-Die README auf dikta-public wurde in der Session vom 2026-03-20 ueberarbeitet:
+Die README auf voxlit-app wurde in der Session vom 2026-03-20 ueberarbeitet:
 - Quick Start mit Cloud/Offline-Weiche ✅
 - Provider-Tabellen (STT + LLM) mit Plattform-Support ✅
 - Groq als einziger Pflicht-Key, DeepSeek empfohlen ✅
 - OpenRouter verifiziert (API-Test erfolgreich) ✅
 
-**Was FEHLT:** Die Feature-Sektion ("Was Dikta kann") ist unvollstaendig. Viele Features die Dikta von der Konkurrenz abheben sind nicht erwaehnt. Der Grund: Vorherige Sessions haben Features eingebaut ohne sie zu dokumentieren. Es gibt kein zentrales Dokument das alle Features auflistet.
+**Was FEHLT:** Die Feature-Sektion ("Was Voxlit kann") ist unvollstaendig. Viele Features die Voxlit von der Konkurrenz abheben sind nicht erwaehnt. Der Grund: Vorherige Sessions haben Features eingebaut ohne sie zu dokumentieren. Es gibt kein zentrales Dokument das alle Features auflistet.
 
 ## Das Problem
 
 Andy hat erkannt dass die README nicht fertiggestellt werden kann, bevor wir wissen:
-1. Welche Features Dikta TATSAECHLICH hat (Code-Audit, nicht Erinnerung)
+1. Welche Features Voxlit TATSAECHLICH hat (Code-Audit, nicht Erinnerung)
 2. Welche davon echte USPs sind (Konkurrenz-Vergleich)
 3. Welche davon in die README gehoeren (Marketing-Relevanz)
 
@@ -53,13 +53,13 @@ Ergebnis: USP-Spalte im Feature-Inventar.
 
 ### Schritt 3: README Feature-Sektion neu schreiben
 
-Basierend auf dem Inventar die "Was Dikta kann" Sektion in der README neu schreiben:
+Basierend auf dem Inventar die "Was Voxlit kann" Sektion in der README neu schreiben:
 - USP-Features prominent
 - Nicht-USP-Features als "auch dabei"
 - Platform-Sektionen (Windows/Android) mit den plattform-spezifischen Highlights
 
-README liegt auf dikta-public: `~/dikta-public/README.md`
-Aenderungen committen und pushen auf dikta-public.
+README liegt auf voxlit-app: `~/voxlit-app/README.md`
+Aenderungen committen und pushen auf voxlit-app.
 
 ## Wichtig
 

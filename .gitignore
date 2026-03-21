@@ -46,4 +46,4 @@ social-preview.png
 # Whisper models (large files)
 models/
 *.bin
-dikta-debug.keystore
+voxlit-debug.keystore

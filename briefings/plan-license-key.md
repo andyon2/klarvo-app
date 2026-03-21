@@ -8,7 +8,7 @@ License Key wird offline via HMAC-SHA256 validiert. Kein externer Server noetig 
 ## Architektur
 
 ### Key-Format
-`DIKTA-XXXX-XXXX-XXXX-XXXX` (Base32-kodiert, 16 Bytes Payload + 8 Bytes HMAC-Truncated)
+`VOXLIT-XXXX-XXXX-XXXX-XXXX` (Base32-kodiert, 16 Bytes Payload + 8 Bytes HMAC-Truncated)
 
 ### Validierung
 - HMAC-SHA256 mit im Binary eingebettetem Secret
@@ -120,7 +120,7 @@ Geaenderte Dateien: SettingsPanel.tsx, AdvancedSettingsPanel.tsx, App.tsx
 
 ### Task 5: Android — License-Lesen + Feature-Gating
 Agent: android-platform
-Geaenderte Dateien: DiktaApi.kt, DiktaOverlayService.kt
+Geaenderte Dateien: VoxlitApi.kt, VoxlitOverlayService.kt
 
 ## Reihenfolge
 Task 1 zuerst → Task 2 + Task 3 parallel → Task 4 → Task 5

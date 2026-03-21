@@ -1,7 +1,7 @@
 # Feature-Plan: Offline whisper.cpp Fallback
 
 ## Ziel
-Dikta kann ohne Internet und ohne API-Keys transkribieren. whisper.cpp lokal via whisper-rs. Automatischer Fallback wenn Cloud-API fehlschlaegt und "local" in der STT-Priority-Liste steht.
+Voxlit kann ohne Internet und ohne API-Keys transkribieren. whisper.cpp lokal via whisper-rs. Automatischer Fallback wenn Cloud-API fehlschlaegt und "local" in der STT-Priority-Liste steht.
 
 ## Scope
 - Nur Windows (erstmal). Android ist ein eigenes Thema (NDK-Build).
@@ -43,7 +43,7 @@ Dikta kann ohne Internet und ohne API-Keys transkribieren. whisper.cpp lokal via
 **Task 6: Model-Manager** → rust-core
 - `src-tauri/src/stt/model_manager.rs` (neu)
 - `list_available_models()`, `download_model()`, `model_path()`
-- Chunked HTTP-Download, Progress-Events `dikta://model-download-progress`
+- Chunked HTTP-Download, Progress-Events `voxlit://model-download-progress`
 - Atomic rename (temp → final nur bei vollstaendigem Download)
 - Tauri-Commands: `get_local_model_status`, `download_local_model`
 

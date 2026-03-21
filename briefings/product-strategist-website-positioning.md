@@ -1,16 +1,16 @@
-# Briefing: Dikta-Positionierung auf KI-Berater-Website
+# Briefing: Voxlit-Positionierung auf KI-Berater-Website
 
 ## Kontext
 
-Andy baut eine persoenliche Website um sich als KI-Berater zu positionieren (Teilzeit-Job-Suche). Dikta soll dort doppelt genutzt werden: als Portfolio-Stueck und als Produkt zum Verkauf.
+Andy baut eine persoenliche Website um sich als KI-Berater zu positionieren (Teilzeit-Job-Suche). Voxlit soll dort doppelt genutzt werden: als Portfolio-Stueck und als Produkt zum Verkauf.
 
 ## Was schon besprochen wurde (Session 2026-03-21)
 
 Der Product Strategist hat eine erste Analyse geliefert. Kernpunkte:
 
 1. **Doppelrolle funktioniert** — aber klare Trennung noetig:
-   - Berater-Website: Dikta als Portfolio (4 Saetze + Screenshot + GitHub, kein Pricing)
-   - Separate Produktseite fuer Dikta (eigene Domain, Kaufentscheidung)
+   - Berater-Website: Voxlit als Portfolio (4 Saetze + Screenshot + GitHub, kein Pricing)
+   - Separate Produktseite fuer Voxlit (eigene Domain, Kaufentscheidung)
 
 2. **Narrativ:** "Ich baue KI-Tools fuer meine eigene Arbeit und mache sie produktreif"
    - Zeigt technische Tiefe + KI-Anwendung + Produktdenken
@@ -21,12 +21,12 @@ Der Product Strategist hat eine erste Analyse geliefert. Kernpunkte:
 
 ## Was Andy jetzt braucht
 
-- Konkrete Texte/Formulierungen fuer die Berater-Website (Portfolio-Sektion zu Dikta)
-- Empfehlung fuer Dikta-Produktseite: Was drauf, wie strukturieren, wann bauen
+- Konkrete Texte/Formulierungen fuer die Berater-Website (Portfolio-Sektion zu Voxlit)
+- Empfehlung fuer Voxlit-Produktseite: Was drauf, wie strukturieren, wann bauen
 - Wie die beiden Seiten sich gegenseitig verstaerken koennen ohne sich zu kannibalisieren
-- Positionierung als KI-Berater generell — wie Dikta das Profil schaerft
+- Positionierung als KI-Berater generell — wie Voxlit das Profil schaerft
 
-## Dikta-Fakten (fuer korrekte Texte)
+## Voxlit-Fakten (fuer korrekte Texte)
 
 - **Was:** Voice-Dictation mit KI-Text-Cleanup fuer Windows + Android
 - **Tech:** Tauri v2 (Rust-Backend + React-Frontend), Groq Whisper STT, DeepSeek LLM Cleanup
@@ -35,7 +35,7 @@ Der Product Strategist hat eine erste Analyse geliefert. Kernpunkte:
 - **Alternative zu:** Wispr Flow (USD 8-10/Monat Abo)
 - **Status:** v0.4.8, aktiv in Entwicklung, Auto-Updater funktioniert, echte Tester
 - **Differenzierung:** Source-available, Einmalkauf statt Abo, laeuft lokal, kein Cloud-Lock-in
-- **Repo:** github.com/andyon2/dikta-public (oeffentlich)
+- **Repo:** github.com/andyon2/voxlit-app (oeffentlich)
 
 ## Andys Profil (fuer Berater-Positionierung)
 

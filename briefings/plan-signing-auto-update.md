@@ -16,7 +16,7 @@ Tester bekommen Updates automatisch, ohne manuell neu installieren zu müssen. W
 
 ### Task 1: Signing Keys generieren
 - **Agent:** keiner (CLI-Befehl)
-- **Befehl:** `npx tauri signer generate -w ~/.tauri/dikta.key`
+- **Befehl:** `npx tauri signer generate -w ~/.tauri/voxlit.key`
 - **Danach:** Private Key in `.env` als `TAURI_SIGNING_PRIVATE_KEY`, Public Key in `tauri.conf.json`
 - **WICHTIG:** Private Key NIEMALS committen
 
@@ -24,7 +24,7 @@ Tester bekommen Updates automatisch, ohne manuell neu installieren zu müssen. W
 - **Agent:** rust-core
 - **Dateien:** `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`
 - **Beschreibung:** tauri-plugin-updater aktivieren. Endpoint auf GitHub Releases zeigen:
-  `https://github.com/andyon2/dikta/releases/latest/download/latest.json`
+  `https://github.com/andyon2/voxlit/releases/latest/download/latest.json`
 - **Tauri v2 Docs:** https://v2.tauri.app/plugin/updater/
 
 ### Task 3: Update-Check im Backend

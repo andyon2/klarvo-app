@@ -4,13 +4,13 @@
 
 Die Windows-Seite hat ein Dual-Hotkey-System mit 4 Recording-Modi (Hold, Toggle, AutoStop, Auto). Android soll dieselben Modi für die Floating Bubble bekommen.
 
-**Task 1 (Config) ist bereits erledigt:** `bubble_recording_mode` existiert in `AppConfig` (Rust) und `DiktaApi.Config` (Kotlin). Default: `"hold"`.
+**Task 1 (Config) ist bereits erledigt:** `bubble_recording_mode` existiert in `AppConfig` (Rust) und `VoxlitApi.Config` (Kotlin). Default: `"hold"`.
 
 ## Was zu tun ist
 
-### Task 2: State-Machine-Erweiterung in DiktaOverlayService
+### Task 2: State-Machine-Erweiterung in VoxlitOverlayService
 
-**Datei:** `android/kotlin-src/com/dikta/voice/DiktaOverlayService.kt`
+**Datei:** `android/kotlin-src/com/voxlit/voice/VoxlitOverlayService.kt`
 
 Neues `RecordingMode`-Enum (privat in der Klasse):
 ```kotlin
@@ -22,7 +22,7 @@ Aktiven Modus aus Config laden (beim Service-Start und nach jedem IDLE-Return):
 private var recordingMode = RecordingMode.HOLD
 
 private fun loadRecordingMode() {
-    val config = DiktaApi.readConfig(this)
+    val config = VoxlitApi.readConfig(this)
     recordingMode = when (config.bubbleRecordingMode) {
         "toggle" -> RecordingMode.TOGGLE
         "autostop" -> RecordingMode.AUTOSTOP
@@ -45,7 +45,7 @@ Touch-Handling anpassen (`handleTap()` / `handleTouch()`):
 
 ### Task 3: Mode-Picker-Overlay
 
-**Dateien:** `DiktaOverlayService.kt`, `FloatingBubbleView.kt`
+**Dateien:** `VoxlitOverlayService.kt`, `FloatingBubbleView.kt`
 
 Long-Press im IDLE-State (nicht-HOLD-Modi) zeigt ein Overlay mit 4 Buttons:
 - Hold / Toggle / Auto Stop / Auto
@@ -68,9 +68,9 @@ private fun saveRecordingMode(mode: RecordingMode) {
 
 ### Task 4: AutoStop-Silence-Detection
 
-**Dateien:** `DiktaOverlayService.kt`, `DiktaAudioRecorder.kt`
+**Dateien:** `VoxlitOverlayService.kt`, `VoxlitAudioRecorder.kt`
 
-`DiktaAudioRecorder` hat bereits Amplitude-Callbacks. Erweitern um:
+`VoxlitAudioRecorder` hat bereits Amplitude-Callbacks. Erweitern um:
 ```kotlin
 var onSilenceDetected: (() -> Unit)? = null
 private var silentChunks = 0
@@ -80,7 +80,7 @@ private val requiredSilentChunks = 30 // ~2s bei 15Hz Chunks
 
 In der Amplitude-Berechnung: Wenn Amplitude < threshold für N Chunks → Callback feuern.
 
-In `DiktaOverlayService`:
+In `VoxlitOverlayService`:
 - AUTOSTOP: Bei Silence → `stopAndProcessRecording()`
 - AUTO: Bei Silence → `stopAndProcessRecording()`, dann `startRecording()`
 - Sicherheitsnetz für AUTO: Max 10 Loops oder 5 Minuten
@@ -105,6 +105,6 @@ Die Desktop-Pendants stehen in:
 ## Start
 
 ```bash
-scripts/dikta android
+scripts/voxlit android
 ```
 Dann dieses Briefing lesen und mit Task 2 anfangen.

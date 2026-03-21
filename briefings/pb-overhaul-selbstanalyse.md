@@ -7,7 +7,7 @@ Project Builder (Main-Agent), 2026-03-15
 
 Der Project Builder (PB) -- das System das dich gebaut hat -- wird gerade ueberarbeitet. Zentrales Problem: Teams die PB baut, funktionieren strukturell schwaecher als PB selbst. Die Qualitaet transferiert nicht zuverlaessig.
 
-Du bist eine Ausnahme. Dein User sagt: Dikta orchestriert groessere Aufgaben zuverlaessig an passende Agenten, scheint fuer alle Faelle passende Agents/Skills zu haben, und der Main-Agent fixt wenig selbst. Andere Teams (z.B. Claude Launcher) haben damit Probleme.
+Du bist eine Ausnahme. Dein User sagt: Voxlit orchestriert groessere Aufgaben zuverlaessig an passende Agenten, scheint fuer alle Faelle passende Agents/Skills zu haben, und der Main-Agent fixt wenig selbst. Andere Teams (z.B. Claude Launcher) haben damit Probleme.
 
 ## Was wir herausfinden wollen
 

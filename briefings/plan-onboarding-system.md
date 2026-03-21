@@ -2,7 +2,7 @@
 
 ## User Story
 
-Als neuer Dikta-Nutzer moechte ich in wenigen Minuten vom Download bis zum ersten erfolgreichen Diktat geleitet werden, damit ich sofort produktiv bin ohne Dokumentation lesen zu muessen. Als Bestandsnutzer moechte ich meine API-Kosten im Blick haben und kontextuelle Tipps erhalten, wenn ich neue Features noch nicht kenne.
+Als neuer Voxlit-Nutzer moechte ich in wenigen Minuten vom Download bis zum ersten erfolgreichen Diktat geleitet werden, damit ich sofort produktiv bin ohne Dokumentation lesen zu muessen. Als Bestandsnutzer moechte ich meine API-Kosten im Blick haben und kontextuelle Tipps erhalten, wenn ich neue Features noch nicht kenne.
 
 ---
 
@@ -16,8 +16,8 @@ Als neuer Dikta-Nutzer moechte ich in wenigen Minuten vom Download bis zum erste
 - **`src-tauri/src/commands/settings.rs`**: Neue Commands: `get_onboarding_state`, `set_onboarding_state`, `validate_api_key`.
 - **`src-tauri/src/history/mod.rs`**: `tips_shown`-Tabelle hinzufuegen. Migration. `get_tips_shown`, `mark_tip_shown`.
 - **`src-tauri/src/commands/history.rs`**: Neue Commands fuer Tips-Tabelle.
-- **`src-tauri/src/stt/model_manager.rs`**: Progress-Events pruefen -- sind bereits implementiert (`dikta://model-download-progress` etc.), kein Aenderungsbedarf.
-- **`android/kotlin-src/com/dikta/voice/MainActivity.kt`**: Permissions-Chain ist bereits in `checkPermissionsAndStart()` -- kein Umbau. Webview-seitig Integration pruefen.
+- **`src-tauri/src/stt/model_manager.rs`**: Progress-Events pruefen -- sind bereits implementiert (`voxlit://model-download-progress` etc.), kein Aenderungsbedarf.
+- **`android/kotlin-src/com/voxlit/voice/MainActivity.kt`**: Permissions-Chain ist bereits in `checkPermissionsAndStart()` -- kein Umbau. Webview-seitig Integration pruefen.
 
 ---
 
@@ -25,7 +25,7 @@ Als neuer Dikta-Nutzer moechte ich in wenigen Minuten vom Download bis zum erste
 
 Was bereits existiert und wiederverwendet werden kann:
 
-- Whisper-Download mit Progress-Events: `dikta://model-download-progress`, `dikta://model-download-complete`, `dikta://model-download-error` (in `commands/whisper.rs`)
+- Whisper-Download mit Progress-Events: `voxlit://model-download-progress`, `voxlit://model-download-complete`, `voxlit://model-download-error` (in `commands/whisper.rs`)
 - `WhisperModelManager.tsx`: fertige Download-UI-Komponente, kann im Onboarding eingebettet werden
 - `UsageSummary`-Struct in Rust (`history/mod.rs`) und TypeScript (`types.ts`) mit `totalDictations`, `totalCostUsd`, `totalSttCostUsd`, `totalLlmCostUsd`, `totalAudioSeconds` -- deckt fast alles ab
 - `get_usage_stats` Tauri-Command bereits vorhanden und im Frontend verkabelt
@@ -144,7 +144,7 @@ export async function validateApiKey(provider: string, key: string): Promise<boo
 - **Abhaengigkeit:** Task 3
 - **Beschreibung:**
 
-**Step 0 (Welcome):** "Sprich. Dikta tippt." als grosse H1, darunter Untertitel. Animiertes Mic-Icon mit Pulse-Ring (CSS animation, kein External-Dependency). "Loslegen"-Button rechts unten. Optional: Skip-Link als kleiner Text-Link oben rechts ("Ich kenn mich aus →").
+**Step 0 (Welcome):** "Sprich. Voxlit tippt." als grosse H1, darunter Untertitel. Animiertes Mic-Icon mit Pulse-Ring (CSS animation, kein External-Dependency). "Loslegen"-Button rechts unten. Optional: Skip-Link als kleiner Text-Link oben rechts ("Ich kenn mich aus →").
 
 **Step 1 (Cloud/Offline-Weiche):** Zwei gleichgrosse Karten nebeneinander (CSS grid, 2 cols).
 - **Cloud-Karte:** Icon Cloud, Titel "Cloud (empfohlen)", Bullet: "Beste Qualitaet", "API-Key benoetigt", "Groq kostenlos verfuegbar". Border smaragdgruen wenn selected.
@@ -165,12 +165,12 @@ export async function validateApiKey(provider: string, key: string): Promise<boo
 
 **Android Permissions-Steps (nur wenn `isMobile`):** Vier aufeinanderfolgende Info-Steps (je ein Step-Screen), die zwischen Step 1 Mode und Step 2 Language eingeschoben werden:
 
-1. **Overlay-Permission:** Icon Bubble, Text "Dikta braucht Overlay-Berechtigung um ueber anderen Apps zu erscheinen.", Button "Berechtigung erteilen" → oeffnet Settings (via Tauri-Invoke oder direkter Android-Intent). Automatisch weiter wenn `canDrawOverlays` true (nach Return aus Settings -- pruefen via `on_resume`-aehnlichem Event oder einfach per Button "Ich habe es erteilt").
+1. **Overlay-Permission:** Icon Bubble, Text "Voxlit braucht Overlay-Berechtigung um ueber anderen Apps zu erscheinen.", Button "Berechtigung erteilen" → oeffnet Settings (via Tauri-Invoke oder direkter Android-Intent). Automatisch weiter wenn `canDrawOverlays` true (nach Return aus Settings -- pruefen via `on_resume`-aehnlichem Event oder einfach per Button "Ich habe es erteilt").
 2. **Mikrofon-Permission:** Analoges Pattern. Icon Mic. Button "Erteilen" triggert native Runtime-Permission.
 3. **Accessibility-Permission:** Icon Accessibility. Erklaerung warum. Button "Zu den Einstellungen".
-4. **Batterie-Optimierung:** Icon Battery. "Verhindert, dass Android Dikta im Hintergrund stoppt." Button "Ausnahme hinzufuegen".
+4. **Batterie-Optimierung:** Icon Battery. "Verhindert, dass Android Voxlit im Hintergrund stoppt." Button "Ausnahme hinzufuegen".
 
-Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Buttons zeigen eine Info-Card "Geh zu Einstellungen → Apps → Dikta → Berechtigungen" und warten auf manuellen "Weiter"-Button. Kein automatisches Pruefen -- zu komplex fuer Phase 1.
+Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Buttons zeigen eine Info-Card "Geh zu Einstellungen → Apps → Voxlit → Berechtigungen" und warten auf manuellen "Weiter"-Button. Kein automatisches Pruefen -- zu komplex fuer Phase 1.
 
 ---
 
@@ -190,7 +190,7 @@ Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Bu
 
 **Step 4a (LLM-Key, Cloud-Pfad):**
 - Ueberschrift: "Text-Bereinigung (optional)"
-- Erklaerung: "Dikta nutzt ein Sprach-Modell um rohen Transkript-Text zu bereinigen. Optional -- ohne Key wird der rohe Text eingefuegt."
+- Erklaerung: "Voxlit nutzt ein Sprach-Modell um rohen Transkript-Text zu bereinigen. Optional -- ohne Key wird der rohe Text eingefuegt."
 - DeepSeek empfohlen (Preis-Leistung), OpenRouter als Alternative.
 - Skip-Button prominent: "Ueberspringen -- rohen Text nutzen"
 - Analog zu STT-Key: Inline-Validierung wenn Key eingegeben.
@@ -207,7 +207,7 @@ Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Bu
 **Step 3b (Modell-Download, Offline-Pfad, nur Desktop):**
 - Zeige "Whisper small (488 MB) -- kostenlos" als einzige Option (tiny/base entfernt, medium/large sind paid).
 - "Jetzt herunterladen" Button triggert `downloadWhisperModel("small")` (existing Command).
-- Progress-Bar konsumiert existierende Events `dikta://model-download-progress` und `dikta://model-download-complete`.
+- Progress-Bar konsumiert existierende Events `voxlit://model-download-progress` und `voxlit://model-download-complete`.
 - Verwende `WhisperModelManager.tsx` NICHT direkt (zu viel UI-Overhead fuer Onboarding) -- implementiere minimale Progress-UI inline.
 - Waehrend Download laeuft: nebeneinander optionale LLM-Key-Eingabe (DeepSeek/OpenRouter). Ueberschrift "Waehrend du wartest: Text-Bereinigung einrichten (optional)".
 - Wenn Download fertig: Gruenes Checkmark, "Weiter"-Button aktiv.
@@ -226,7 +226,7 @@ Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Bu
 - Ueberschrift: "Probiere es aus!"
 - Grosser Record-Button (identisch zu `RecordButton` aus `App.tsx` -- als separate importierbare Komponente auslagern oder direkt rendern).
 - Status-Text zeigt Pipeline-State (`idle` → `recording` → `transcribing` → `cleaning` → `done`).
-- Event-Listener auf `dikta://state-changed` (wiederverwendbar via `useRecording`-Hook oder direktes Listen auf Tauri-Events).
+- Event-Listener auf `voxlit://state-changed` (wiederverwendbar via `useRecording`-Hook oder direktes Listen auf Tauri-Events).
 - Wenn `done`-State: Zeige Ergebnis-Text in editierbarem Textfeld. Darunter: "Super! Dein Text wird in jedes Textfeld eingefuegt."
 - "Weiter"-Button aktiv sobald mindestens einmal `done` erreicht (oder Skip "Spaeter ausprobieren").
 - Hinweis auf Desktop: "Druecke Strg+Shift+D um zu diktieren" (platfformspezifisch via `isDesktop`).
@@ -247,7 +247,7 @@ Da Tauri/Android-Permissions nicht direkt aus dem Webview steuerbar sind: Die Bu
 **Step 6 (Fertig):**
 - Gross: Checkmark-Animation (CSS, kein SVG-Library). "Du bist startklar!"
 - Zusammenfassung als 2-3 Zeilen: Modus (Cloud mit Groq / Offline mit Whisper small), Sprache, LLM-Cleanup (aktiv/inaktiv).
-- "Dikta starten"-Button: ruft `set_onboarding_state({...state, completed: true})` auf, schliesst Wizard, App ladet Settings.
+- "Voxlit starten"-Button: ruft `set_onboarding_state({...state, completed: true})` auf, schliesst Wizard, App ladet Settings.
 
 **Onboarding-Trigger-Logik in `App.tsx`:**
 - Ersetze `isFirstRun()`-Check durch `getOnboardingState()`. Zeige Wizard wenn `!completed && !skipped`.
@@ -321,7 +321,7 @@ const TIPS = [
   { id: "cleanup-instr",     trigger: { dictations: 10 }, title: "Eigene Anweisungen", text: "Unter Einstellungen kannst du dem KI-Modell eigene Stilanweisungen geben.", action: { label: "Einstellungen", panel: "settings" } },
   { id: "hotkey-change",     trigger: { dictations: 20 }, title: "Hotkey anpassen", text: "Du kannst den Diktat-Shortcut in den Einstellungen aendern.", action: { label: "Jetzt aendern", panel: "settings" } },
   { id: "cost-dashboard",    trigger: { days: 7        }, title: "Deine Kosten", text: "Schau dir an, wie viel du gegenueber Wispr Flow sparst.", action: { label: "Dashboard zeigen", panel: "stats" } },
-  { id: "offline-mode",      trigger: { dictations: 50 }, title: "Offline-Modus", text: "Dikta kann auch ohne Internet funktionieren -- mit einem lokalen Whisper-Modell.", action: { label: "Einrichten", panel: "settings" } },
+  { id: "offline-mode",      trigger: { dictations: 50 }, title: "Offline-Modus", text: "Voxlit kann auch ohne Internet funktionieren -- mit einem lokalen Whisper-Modell.", action: { label: "Einrichten", panel: "settings" } },
 ];
 ```
 
@@ -345,7 +345,7 @@ const TIPS = [
 
 - **Agent:** android-platform
 - **Dateien:**
-  - `android/kotlin-src/com/dikta/voice/MainActivity.kt` (lesend + ggf. kleiner Patch)
+  - `android/kotlin-src/com/voxlit/voice/MainActivity.kt` (lesend + ggf. kleiner Patch)
 - **Abhaengigkeit:** Task 3-8
 - **Beschreibung:**
 

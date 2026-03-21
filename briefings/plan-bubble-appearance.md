@@ -23,8 +23,8 @@ Presets sind ein einzelner Tap, kein Slider-Gefummel. Und der Wert wird atomar g
 ## Betroffene Module
 - `src/components/SettingsPanel.tsx` — Preset-Buttons (Mobile-only Sektion)
 - `src-tauri/src/config/mod.rs` — bubble_size/bubble_opacity (Infrastruktur steht bereits!)
-- `android/kotlin-src/com/dikta/voice/DiktaOverlayService.kt` — reloadBubbleAppearance() existiert bereits
-- `android/kotlin-src/com/dikta/voice/DiktaApi.kt` — readConfig() liest bereits bubble_size/opacity
+- `android/kotlin-src/com/voxlit/voice/VoxlitOverlayService.kt` — reloadBubbleAppearance() existiert bereits
+- `android/kotlin-src/com/voxlit/voice/VoxlitApi.kt` — readConfig() liest bereits bubble_size/opacity
 
 ## Tasks
 

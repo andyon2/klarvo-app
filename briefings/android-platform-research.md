@@ -35,7 +35,7 @@ export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
 KRITISCH: In ~/.bashrc schreiben. Nur in der Session setzen reicht nicht -- tauri android
 init prueft diese Variablen und schlaegt mit kryptischen Fehlern fehl wenn sie fehlen.
 
-### WSL2-Zusatz (Diktas Dev-Umgebung!)
+### WSL2-Zusatz (Voxlits Dev-Umgebung!)
 ```bash
 export WSL_HOST=$(tail -1 /etc/resolv.conf | cut -d' ' -f2)
 export ADB_SERVER_SOCKET=tcp:$WSL_HOST:5037
@@ -53,7 +53,7 @@ npx tauri android init
 ```
 
 Was passiert:
-- Liest identifier aus tauri.conf.json (`com.dikta.voice`)
+- Liest identifier aus tauri.conf.json (`com.voxlit.voice`)
 - Generiert vollstaendiges Android Studio Projekt unter src-tauri/gen/android/
 - Fuegt minimale Permissions hinzu (INTERNET, WAKE_LOCK)
 - Erstellt tauri.properties fuer Gradle-Integration
@@ -64,7 +64,7 @@ Was passiert:
 src-tauri/gen/android/
   app/
     src/main/
-      java/com/dikta/voice/
+      java/com/voxlit/voice/
         MainActivity.kt          -- Einziger Einstiegspunkt fuer Tauri-Activity
         generated/               -- Auto-generiert, nicht manuell bearbeiten
       res/
@@ -83,7 +83,7 @@ src-tauri/gen/android/
 ### Was manuell nachbearbeitet werden muss
 In gen/android/app/src/main/AndroidManifest.xml:
 ```xml
-<!-- Pflicht fuer Dikta: -->
+<!-- Pflicht fuer Voxlit: -->
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -187,8 +187,8 @@ Diese Architektur-Entscheidung muss in knowledge/architecture.md dokumentiert we
 
 ## 6. Bekannte Limitierungen und Gotchas
 
-### Plugin-Inkompatibilitaeten (betrifft Dikta direkt!)
-| Plugin | Android | Auswirkung auf Dikta |
+### Plugin-Inkompatibilitaeten (betrifft Voxlit direkt!)
+| Plugin | Android | Auswirkung auf Voxlit |
 |--------|---------|----------------------|
 | tauri-plugin-global-shortcut | NEIN | Muss mit cfg(target_os) ausgeschlossen werden |
 | tauri-plugin-updater | NEIN | Muss mit cfg(target_os) ausgeschlossen werden |
@@ -251,7 +251,7 @@ Artefakte landen in: `src-tauri/gen/android/app/build/outputs/`
 
 ---
 
-## 8. Strategische Einschaetzung fuer Dikta
+## 8. Strategische Einschaetzung fuer Voxlit
 
 ### Was einfach ist
 - Frontend-Code (React) laeuft unveraendert in Tauri-WebView
@@ -269,7 +269,7 @@ Artefakte landen in: `src-tauri/gen/android/app/build/outputs/`
 
 ### Empfohlene Android-Architektur
 ```
-Dikta Android APK:
+Voxlit Android APK:
   MainActivity (Tauri WebView)
     - Settings, API-Key-Management, History
     - invoke() -> Rust Backend (STT/LLM via Groq-API)
