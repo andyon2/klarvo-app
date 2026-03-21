@@ -465,7 +465,20 @@ STRICT RULES — you MUST follow these:
 - NEVER add line breaks, paragraphs, lists, or any formatting
 - NEVER add or remove meaning
 - NEVER translate words from one language to another
-- Output ONLY the cleaned text, no explanations"""
+- Output ONLY the cleaned text, no explanations
+
+PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:
+- "Punkt" or "period" → .
+- "Komma" or "comma" → ,
+- "Ausrufezeichen" or "exclamation mark" → !
+- "Fragezeichen" or "question mark" → ?
+- "Doppelpunkt" or "colon" → :
+- "Semikolon" or "semicolon" → ;
+- "Neuer Absatz" or "new paragraph" → (line break)
+- "Neue Zeile" or "new line" → (line break)
+- "Gedankenstrich" or "dash" → —
+- "Anführungszeichen auf" or "open quote" → "
+- "Anführungszeichen zu" or "close quote" → """"
             "chat" -> """IMPORTANT: Your output language MUST match the input language. German input → German output. English input → English output. NEVER translate.
 
 You are a text cleanup assistant. The user gives you raw speech-to-text output. Make it chat-ready:
@@ -475,7 +488,20 @@ You are a text cleanup assistant. The user gives you raw speech-to-text output. 
 - Keep it casual and natural
 - Emojis are allowed where they fit naturally
 - Language: respond in the SAME language as the input. If the speaker mixes languages, keep the mix — NEVER translate.
-- Output ONLY the cleaned text, no explanations"""
+- Output ONLY the cleaned text, no explanations
+
+PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:
+- "Punkt" or "period" → .
+- "Komma" or "comma" → ,
+- "Ausrufezeichen" or "exclamation mark" → !
+- "Fragezeichen" or "question mark" → ?
+- "Doppelpunkt" or "colon" → :
+- "Semikolon" or "semicolon" → ;
+- "Neuer Absatz" or "new paragraph" → (line break)
+- "Neue Zeile" or "new line" → (line break)
+- "Gedankenstrich" or "dash" → —
+- "Anführungszeichen auf" or "open quote" → "
+- "Anführungszeichen zu" or "close quote" → """"
             else -> """You are a text cleanup assistant. The user gives you raw speech-to-text output. Clean it up so it reads well:
 - Remove filler words (um, uh, like, you know / äh, ähm, also, halt, sozusagen)
 - Remove stutters and repeated words
@@ -492,7 +518,20 @@ STRICT RULES:
 - NEVER make it sound formal or academic — keep the speaker's natural register
 - NEVER translate words from one language to another — keep code-switching as spoken
 - Keep hedge words ("ich denke", "I think") — they reflect intent
-- Output ONLY the cleaned text, no explanations"""
+- Output ONLY the cleaned text, no explanations
+
+PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:
+- "Punkt" or "period" → .
+- "Komma" or "comma" → ,
+- "Ausrufezeichen" or "exclamation mark" → !
+- "Fragezeichen" or "question mark" → ?
+- "Doppelpunkt" or "colon" → :
+- "Semikolon" or "semicolon" → ;
+- "Neuer Absatz" or "new paragraph" → (line break)
+- "Neue Zeile" or "new line" → (line break)
+- "Gedankenstrich" or "dash" → —
+- "Anführungszeichen auf" or "open quote" → "
+- "Anführungszeichen zu" or "close quote" → """"
         }
 
         val url = URL(provider.url)

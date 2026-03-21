@@ -80,6 +80,7 @@ const MOCK_SETTINGS: AppSettings = {
   bubbleLongPressMode: "hold",
   bubbleLongPressAutoSend: false,
   bubbleLongPressSilenceSecs: 2.0,
+  voiceCommandEnabled: false,
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -796,6 +797,27 @@ export async function setOnboardingState(state: OnboardingState): Promise<void> 
 export async function validateApiKey(provider: string, key: string): Promise<boolean> {
   if (isPreviewMode) return mockAsync(key.length > 10, 600);
   return invoke<boolean>("validate_api_key", { provider, key });
+}
+
+// --- Voice Command Mode ---
+
+/**
+ * Toggles the Voice Command Mode monitor on or off.
+ * Returns the new active state (true = enabled).
+ * Desktop-only: the backend command is a no-op on Android.
+ */
+export async function toggleVoiceCommandMode(): Promise<boolean> {
+  if (isPreviewMode) return mockAsync(false);
+  return invoke<boolean>("toggle_voice_command_mode");
+}
+
+/**
+ * Returns the current Voice Command Mode active state.
+ * Desktop-only: always returns false on Android.
+ */
+export async function getVoiceCommandActive(): Promise<boolean> {
+  if (isPreviewMode) return mockAsync(false);
+  return invoke<boolean>("get_voice_command_active");
 }
 
 // --- Tips ---

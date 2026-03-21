@@ -1,16 +1,27 @@
 # Projektstatus
 
 ## Aktueller Stand
-Version 0.4.8 (Windows + Android). Rename Dikta → Voxlit vollstaendig abgeschlossen: Codebase, GitHub-Releases, Repo-Description, README auf voxlit-app, Social Preview erstellt. Domain `voxlit.app` gesichert. Naechster Build erzeugt `Voxlit_x.y.z`-Installer. Markenanmeldung DPMA vor Paid Launch.
+Version 0.4.8 (Windows + Android). Rename Dikta → Voxlit vollstaendig abgeschlossen. Domain `voxlit.app` gesichert. Markenanmeldung DPMA vor Paid Launch. Namensaenderung zu "Klarvo" steht bevor — betrifft Trigger-Wortliste in voice_command/mod.rs.
+
+**VAD-Overhaul:** 5/6 Tasks erledigt. Offen: Task 6 (Manueller Test). Hallucination-Blocklist (Task 4) refactored nach `stt/hallucination.rs` mit 18 Tests.
+
+**Voice Command Mode:** 8/8 Tasks implementiert, aber **Debugging noetig.** Architektur steht (Monitor → VAD → Snippet → Groq → Command-Match → Dispatch). Offene Bugs:
+- Auto-Start feuert obwohl Config `voiceCommandEnabled: false` sagt (Phantom-Start)
+- Toggle-Desync: UI-State und Backend-Runtime-State laufen auseinander
+- Build-Sync: `sync-and-build.ps1` uebernimmt manchmal Aenderungen nicht (Cargo-Cache)
+- Erkennung noch nicht live getestet (Groq-Pfad noch nie erfolgreich durchlaufen)
+
+Alle eprintln-Debug-Ausgaben sind noch aktiv fuer die naechste Debug-Session.
 
 ## Blocker
 
-Keine.
+Voice Command Mode: Debug-Session noetig (siehe oben). Feature ist implementiert aber nicht funktional getestet.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Live-Preview als Opt-In** → Nach VAD-Overhaul moeglich. Whisper-Halluzinationen werden gefiltert.
-2. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen (`marketing/social-preview-voxlit.png`).
+1. **Voice Command Mode debuggen** → Auto-Start-Bug fixen, Toggle-Desync loesen, Groq-Pfad end-to-end testen. Dann: eprintln durch log:: ersetzen. Siehe `briefings/voice-command-debug-status.md`.
+2. **Live-Preview als Opt-In** → Whisper-Halluzinationen werden gefiltert (Blocklist steht).
+3. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen (`marketing/social-preview-voxlit.png`).
 
 ## Bekannte Bugs
 

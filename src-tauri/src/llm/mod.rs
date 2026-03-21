@@ -159,7 +159,20 @@ impl CleanupStyle {
                 - NEVER make it sound formal or academic — keep the speaker's natural register\n\
                 - NEVER translate words from one language to another — keep code-switching as spoken\n\
                 - Keep hedge words (\"ich denke\", \"I think\") — they reflect intent\n\
-                - Output ONLY the cleaned text, no explanations\
+                - Output ONLY the cleaned text, no explanations\n\
+                \n\
+                PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:\n\
+                - \"Punkt\" or \"period\" → .\n\
+                - \"Komma\" or \"comma\" → ,\n\
+                - \"Ausrufezeichen\" or \"exclamation mark\" → !\n\
+                - \"Fragezeichen\" or \"question mark\" → ?\n\
+                - \"Doppelpunkt\" or \"colon\" → :\n\
+                - \"Semikolon\" or \"semicolon\" → ;\n\
+                - \"Neuer Absatz\" or \"new paragraph\" → (line break)\n\
+                - \"Neue Zeile\" or \"new line\" → (line break)\n\
+                - \"Gedankenstrich\" or \"dash\" → —\n\
+                - \"Anführungszeichen auf\" or \"open quote\" → \"\n\
+                - \"Anführungszeichen zu\" or \"close quote\" → \"\
                 {dict_section}{custom_section}{translation_section}"
             ),
             CleanupStyle::Verbatim => format!(
@@ -179,7 +192,20 @@ impl CleanupStyle {
                 - NEVER add line breaks, paragraphs, lists, or any formatting\n\
                 - NEVER add or remove meaning\n\
                 - NEVER translate words from one language to another\n\
-                - Output ONLY the cleaned text, no explanations\
+                - Output ONLY the cleaned text, no explanations\n\
+                \n\
+                PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:\n\
+                - \"Punkt\" or \"period\" → .\n\
+                - \"Komma\" or \"comma\" → ,\n\
+                - \"Ausrufezeichen\" or \"exclamation mark\" → !\n\
+                - \"Fragezeichen\" or \"question mark\" → ?\n\
+                - \"Doppelpunkt\" or \"colon\" → :\n\
+                - \"Semikolon\" or \"semicolon\" → ;\n\
+                - \"Neuer Absatz\" or \"new paragraph\" → (line break)\n\
+                - \"Neue Zeile\" or \"new line\" → (line break)\n\
+                - \"Gedankenstrich\" or \"dash\" → —\n\
+                - \"Anführungszeichen auf\" or \"open quote\" → \"\n\
+                - \"Anführungszeichen zu\" or \"close quote\" → \"\
                 {dict_section}{custom_section}{translation_section}"
             ),
             CleanupStyle::Chat => format!(
@@ -194,7 +220,20 @@ impl CleanupStyle {
                 - Emojis are allowed where they fit naturally\n\
                 - Language: respond in the SAME language as the input. \
                 If the speaker mixes languages, keep the mix — NEVER translate.\n\
-                - Output ONLY the cleaned text, no explanations\
+                - Output ONLY the cleaned text, no explanations\n\
+                \n\
+                PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol:\n\
+                - \"Punkt\" or \"period\" → .\n\
+                - \"Komma\" or \"comma\" → ,\n\
+                - \"Ausrufezeichen\" or \"exclamation mark\" → !\n\
+                - \"Fragezeichen\" or \"question mark\" → ?\n\
+                - \"Doppelpunkt\" or \"colon\" → :\n\
+                - \"Semikolon\" or \"semicolon\" → ;\n\
+                - \"Neuer Absatz\" or \"new paragraph\" → (line break)\n\
+                - \"Neue Zeile\" or \"new line\" → (line break)\n\
+                - \"Gedankenstrich\" or \"dash\" → —\n\
+                - \"Anführungszeichen auf\" or \"open quote\" → \"\n\
+                - \"Anführungszeichen zu\" or \"close quote\" → \"\
                 {custom_section}{translation_section}"
             ),
         }

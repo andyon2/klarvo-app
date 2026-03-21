@@ -9,4 +9,5 @@ pub mod license;
 pub mod misc;
 pub mod recording;
 pub mod settings;
+pub mod voice_command;
 pub mod whisper;

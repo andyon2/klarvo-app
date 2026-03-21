@@ -49,11 +49,23 @@ const SECRET_PART_A: &[u8] = b"voxlit-license-v1";
 /// Second half of the embedded HMAC secret.
 const SECRET_PART_B: &[u8] = b"-2025-open-core!";
 
+/// Legacy HMAC secret from before the Dikta → Voxlit rename.
+/// Keys issued under the old name use this secret for HMAC verification.
+const LEGACY_SECRET_PART_A: &[u8] = b"dikta-license-v1";
+
 /// Combines the two secret parts into a single key used for HMAC operations.
 /// The result is dropped after use -- not stored as a static.
 fn build_secret() -> Vec<u8> {
     let mut s = Vec::with_capacity(SECRET_PART_A.len() + SECRET_PART_B.len());
     s.extend_from_slice(SECRET_PART_A);
+    s.extend_from_slice(SECRET_PART_B);
+    s
+}
+
+/// Builds the legacy HMAC secret for Dikta-era keys.
+fn build_legacy_secret() -> Vec<u8> {
+    let mut s = Vec::with_capacity(LEGACY_SECRET_PART_A.len() + SECRET_PART_B.len());
+    s.extend_from_slice(LEGACY_SECRET_PART_A);
     s.extend_from_slice(SECRET_PART_B);
     s
 }
@@ -172,8 +184,10 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
         ));
     }
 
-    if parts[0] != "VOXLIT" {
-        return Err("Invalid key format: must start with 'VOXLIT'".to_string());
+    // Accept both "VOXLIT" and legacy "DIKTA" prefixes so keys issued
+    // before the rename continue to work.
+    if parts[0] != "VOXLIT" && parts[0] != "DIKTA" {
+        return Err("Invalid key format: must start with 'VOXLIT' or 'DIKTA'".to_string());
     }
 
     for (i, group) in parts[1..].iter().enumerate() {
@@ -209,16 +223,28 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
     let payload = &decoded[0..6];
     let stored_hmac = &decoded[6..10];
 
-    // Verify HMAC.
-    let secret = build_secret();
-    let mut mac = Hmac::<Sha256>::new_from_slice(&secret)
-        .map_err(|e| format!("HMAC init error: {e}"))?;
-    mac.update(payload);
-    let computed = mac.finalize().into_bytes();
+    // Verify HMAC. Try the current secret first; if the key has a legacy
+    // "DIKTA" prefix, also try the legacy secret so old keys keep working.
+    let is_legacy = parts[0] == "DIKTA";
+    let secrets_to_try: Vec<Vec<u8>> = if is_legacy {
+        vec![build_legacy_secret(), build_secret()]
+    } else {
+        vec![build_secret()]
+    };
 
-    // Constant-time comparison of the 4-byte truncated HMAC.
-    let computed_truncated = &computed[..4];
-    if !constant_time_eq(computed_truncated, stored_hmac) {
+    let mut hmac_ok = false;
+    for secret in &secrets_to_try {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret)
+            .map_err(|e| format!("HMAC init error: {e}"))?;
+        mac.update(payload);
+        let computed = mac.finalize().into_bytes();
+        if constant_time_eq(&computed[..4], stored_hmac) {
+            hmac_ok = true;
+            break;
+        }
+    }
+
+    if !hmac_ok {
         return Err("Invalid key: HMAC verification failed".to_string());
     }
 
@@ -464,6 +490,36 @@ mod tests {
     fn print_dev_key() {
         let key = generate_license_key(b"andyon");
         println!("\n=== DEV LICENSE KEY ===\n{key}\n=======================\n");
+    }
+
+    /// Generates a legacy DIKTA-prefixed key using the old HMAC secret.
+    fn generate_legacy_dikta_key(payload: &[u8; 6]) -> String {
+        let secret = build_legacy_secret();
+        let mut mac = Hmac::<Sha256>::new_from_slice(&secret)
+            .expect("HMAC init must succeed in tests");
+        mac.update(payload);
+        let digest = mac.finalize().into_bytes();
+
+        let mut raw = [0u8; 10];
+        raw[..6].copy_from_slice(payload);
+        raw[6..10].copy_from_slice(&digest[..4]);
+
+        let b32 = base32::encode(base32::Alphabet::RFC4648 { padding: false }, &raw);
+        let groups: Vec<&str> = b32
+            .as_bytes()
+            .chunks(4)
+            .map(|c| std::str::from_utf8(c).expect("valid UTF-8"))
+            .collect();
+
+        format!("DIKTA-{}", groups.join("-"))
+    }
+
+    #[test]
+    fn test_legacy_dikta_key_is_accepted() {
+        let key = generate_legacy_dikta_key(b"andyon");
+        let result = validate_license_key(&key);
+        assert!(result.is_ok(), "Legacy DIKTA key must be accepted: {result:?}");
+        assert_eq!(result.unwrap(), LicenseStatus::Licensed);
     }
 
     #[test]

@@ -72,6 +72,9 @@ export interface AppSettings {
   bubbleLongPressMode: string;
   bubbleLongPressAutoSend: boolean;
   bubbleLongPressSilenceSecs: number;
+  // Voice Command Mode: activate dictation by voice trigger ("Voxlit start").
+  // Desktop-only, requires a local Whisper model.
+  voiceCommandEnabled: boolean;
 }
 
 // A per-application recording profile.

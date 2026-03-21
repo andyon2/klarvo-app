@@ -320,6 +320,7 @@ pub async fn save_settings(
         bubble_long_press_silence_secs: bubble_long_press_silence_secs
             .unwrap_or(existing.bubble_long_press_silence_secs),
         onboarding: existing.onboarding,
+        voice_command_enabled: existing.voice_command_enabled,
     };
 
     // Resolve providers from the new config before persisting.
@@ -419,6 +420,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_long_press_mode: cfg.bubble_long_press_mode,
         bubble_long_press_auto_send: cfg.bubble_long_press_auto_send,
         bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
+        voice_command_enabled: cfg.voice_command_enabled,
     })
 }
 

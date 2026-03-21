@@ -37,7 +37,7 @@ async function checkForUpdate(): Promise<{ version: string; downloadAndInstall: 
 }
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
-import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
+import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode } from "../tauri-commands";
 import type { AdvancedSettings } from "../types";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon, LockIcon } from "./icons";
@@ -299,22 +299,29 @@ function UpdateChecker() {
 function formatLicenseKeyInput(raw: string): string {
   // Strip everything that is not alphanumeric.
   const stripped = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  // The key format is VOXLIT-XXXX-XXXX-XXXX-XXXX.
-  // The prefix "VOXLIT" is 6 chars, then groups of 4 separated by dashes.
+  // The key format is VOXLIT-XXXX-XXXX-XXXX-XXXX (or legacy DIKTA-XXXX-...).
   if (stripped.length === 0) return "";
-  const prefix = "VOXLIT";
-  if (!stripped.startsWith(prefix)) {
-    // Let the user type freely if they haven't matched the prefix yet.
-    // Still uppercase, no dashes until prefix is complete.
-    if (stripped.length <= prefix.length) return stripped;
-    // Prefix matched now.
+
+  // Detect prefix: "VOXLIT" (6 chars) or legacy "DIKTA" (5 chars).
+  let prefix = "";
+  let prefixLen = 0;
+  if (stripped.startsWith("VOXLIT")) {
+    prefix = "VOXLIT";
+    prefixLen = 6;
+  } else if (stripped.startsWith("DIKTA")) {
+    prefix = "DIKTA";
+    prefixLen = 5;
+  } else {
+    // Let the user type freely until a prefix is matched.
+    if (stripped.length <= 6) return stripped;
   }
-  const body = stripped.startsWith(prefix) ? stripped.slice(prefix.length) : stripped;
+
+  const body = prefixLen > 0 ? stripped.slice(prefixLen) : stripped;
   const chunks: string[] = [];
   for (let i = 0; i < body.length && i < 16; i += 4) {
     chunks.push(body.slice(i, i + 4));
   }
-  const formatted = prefix + (chunks.length > 0 ? "-" + chunks.join("-") : "");
+  const formatted = (prefix || stripped.slice(0, 6)) + (chunks.length > 0 ? "-" + chunks.join("-") : "");
   return formatted;
 }
 
@@ -654,6 +661,9 @@ export function SettingsPanel({
   const [localBubbleLongPressMode, setLocalBubbleLongPressMode] = useState<HotkeyMode>((loadedSettings?.bubbleLongPressMode ?? "hold") as HotkeyMode);
   const [localBubbleLongPressAutoSend, setLocalBubbleLongPressAutoSend] = useState(loadedSettings?.bubbleLongPressAutoSend ?? false);
   const [localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs] = useState(loadedSettings?.bubbleLongPressSilenceSecs ?? 2.0);
+  // Voice Command Mode: reflects what the backend monitor is currently doing.
+  // Toggling this calls toggle_voice_command_mode and syncs the backend directly.
+  const [localVoiceCommandEnabled, setLocalVoiceCommandEnabled] = useState(loadedSettings?.voiceCommandEnabled ?? false);
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
   const [syncing, setSyncing] = useState(false);
@@ -670,6 +680,7 @@ export function SettingsPanel({
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     voiceRecording: true,
     bubble: false,
+    voiceCommand: false,
   });
   // Active tab inside the combined Hotkey section: 0 = Hotkey 1, 1 = Hotkey 2
   const [hotkeyTab, setHotkeyTab] = useState<0 | 1>(0);
@@ -751,6 +762,7 @@ export function SettingsPanel({
       setLocalBubbleLongPressMode((loadedSettings.bubbleLongPressMode ?? "hold") as HotkeyMode);
       setLocalBubbleLongPressAutoSend(loadedSettings.bubbleLongPressAutoSend ?? false);
       setLocalBubbleLongPressSilenceSecs(loadedSettings.bubbleLongPressSilenceSecs ?? 2.0);
+      setLocalVoiceCommandEnabled(loadedSettings.voiceCommandEnabled ?? false);
     }
   }, [loadedSettings]);
 
@@ -1419,6 +1431,80 @@ export function SettingsPanel({
                       </button>
                     </div>
                   </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- Voice Command Mode -- desktop only --- */}
+        {isDesktop && (
+          <div className="flex flex-col gap-1">
+            <button onClick={() => toggleSection("voiceCommand")} className={sectionBtnCls}>
+              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+                Voice Command Mode
+                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              </span>
+            </button>
+            {openSections.voiceCommand && (
+              <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
+                {/* Whisper model warning: voice command needs a local model */}
+                {!localWhisperModel && (
+                  <p className="text-[11px] text-amber-500/80">
+                    Requires a local Whisper model (Settings &rarr; Whisper Model)
+                  </p>
+                )}
+
+                {/* Toggle row */}
+                <label className={`flex items-center justify-between gap-3 ${isPaid ? "cursor-pointer" : "cursor-not-allowed"}`}>
+                  <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
+                    <span className="flex items-center gap-1.5">
+                      <span className={LABEL_CLS}>Voice Command Mode</span>
+                      {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                    </span>
+                    <span className="text-[11px] text-zinc-500">
+                      Activate dictation by saying &ldquo;Voxlit start&rdquo; &mdash; no hotkey needed
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={localVoiceCommandEnabled}
+                    disabled={!isPaid && !localVoiceCommandEnabled}
+                    onClick={async () => {
+                      if (!isPaid && !localVoiceCommandEnabled) return;
+                      try {
+                        const newState = await toggleVoiceCommandMode();
+                        setLocalVoiceCommandEnabled(newState);
+                      } catch (e) {
+                        // If toggle failed, force UI to "off" so user isn't stuck.
+                        console.error("[voice_command] toggle failed:", e);
+                        setLocalVoiceCommandEnabled(false);
+                      }
+                    }}
+                    className={[
+                      "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                      (!isPaid && !localVoiceCommandEnabled) ? "opacity-50 cursor-not-allowed" : "",
+                      localVoiceCommandEnabled ? "bg-emerald-500/40" : "bg-zinc-700",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
+                        localVoiceCommandEnabled ? "translate-x-4" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                </label>
+
+                {/* Running indicator */}
+                {localVoiceCommandEnabled && (
+                  <p className="text-[11px] text-emerald-400/80">
+                    Listening for &ldquo;Voxlit start&rdquo;&hellip;
+                  </p>
                 )}
               </div>
             )}

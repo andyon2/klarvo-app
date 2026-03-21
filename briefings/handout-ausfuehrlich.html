@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page {
+    size: A4;
+    margin: 2.2cm 2cm;
+    @bottom-center {
+      content: counter(page);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 9pt;
+      color: #94a3b8;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1e293b;
+  }
+
+  /* === HEADER === */
+  .header {
+    text-align: center;
+    margin-bottom: 1.8em;
+    padding-bottom: 1.2em;
+    border-bottom: 3px solid #6366f1;
+  }
+
+  .header h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.3em;
+    letter-spacing: -0.02em;
+  }
+
+  .header .subtitle {
+    font-size: 10.5pt;
+    color: #64748b;
+    font-weight: 400;
+  }
+
+  /* === HEADINGS === */
+  h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #6366f1;
+    margin-top: 1.8em;
+    margin-bottom: 0.5em;
+    padding-bottom: 0.25em;
+    border-bottom: 1.5px solid #e2e8f0;
+  }
+
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #334155;
+    margin-top: 1.3em;
+    margin-bottom: 0.4em;
+  }
+
+  h4 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #6366f1;
+    margin-top: 1em;
+    margin-bottom: 0.3em;
+  }
+
+  p { margin-bottom: 0.6em; }
+  strong { color: #1e293b; }
+  em { color: #64748b; }
+
+  /* === BOXES === */
+  .highlight {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    padding: 0.9em 1.2em;
+    border-radius: 8px;
+    margin: 1em 0;
+    font-size: 10.5pt;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  .highlight strong { color: white; }
+
+  .insight {
+    background: #f8fafc;
+    border-left: 4px solid #6366f1;
+    padding: 0.8em 1.2em;
+    margin: 1em 0;
+    border-radius: 0 6px 6px 0;
+    color: #475569;
+    font-size: 10pt;
+  }
+
+  .warning {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 0.8em 1.2em;
+    margin: 1em 0;
+    border-radius: 0 6px 6px 0;
+    color: #92400e;
+    font-size: 10pt;
+  }
+
+  .success {
+    background: #ecfdf5;
+    border-left: 4px solid #10b981;
+    padding: 0.8em 1.2em;
+    margin: 1em 0;
+    border-radius: 0 6px 6px 0;
+    color: #065f46;
+    font-size: 10pt;
+  }
+
+  /* === TABLES === */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8em 0;
+    font-size: 9.5pt;
+  }
+
+  th {
+    background: #6366f1;
+    color: white;
+    padding: 0.5em 0.8em;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  th:first-child { border-radius: 6px 0 0 0; }
+  th:last-child { border-radius: 0 6px 0 0; }
+
+  td {
+    padding: 0.45em 0.8em;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) { background: #f8fafc; }
+
+  /* === PIPELINE === */
+  .pipeline { margin: 1em 0; }
+
+  .pipeline-step {
+    display: flex;
+    align-items: stretch;
+    margin-bottom: 2px;
+  }
+
+  .pipeline-number {
+    background: #6366f1;
+    color: white;
+    min-width: 2em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 11pt;
+    border-radius: 6px 0 0 6px;
+  }
+
+  .pipeline-content {
+    background: #f1f5f9;
+    padding: 0.5em 0.9em;
+    flex: 1;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .pipeline-content .label {
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 10pt;
+  }
+
+  .pipeline-content .desc {
+    color: #64748b;
+    font-size: 9pt;
+  }
+
+  /* === FLOW DIAGRAM === */
+  .flow {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1em 1.2em;
+    margin: 1em 0;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 9pt;
+    line-height: 1.6;
+    color: #475569;
+    white-space: pre;
+  }
+
+  .flow strong {
+    color: #6366f1;
+    font-weight: 700;
+  }
+
+  /* === CODE === */
+  code {
+    background: #f1f5f9;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 9pt;
+    color: #6366f1;
+  }
+
+  /* === LISTS === */
+  ul, ol {
+    margin: 0.4em 0 0.8em 1.4em;
+  }
+
+  li {
+    margin-bottom: 0.25em;
+  }
+
+  /* === TWO COLUMN === */
+  .two-col {
+    display: flex;
+    gap: 1.2em;
+    margin: 1em 0;
+  }
+
+  .two-col > div {
+    flex: 1;
+  }
+
+  /* === OBJECTION BLOCK === */
+  .objection {
+    margin: 0.8em 0;
+    page-break-inside: avoid;
+  }
+
+  .objection-q {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 0.5em 1em;
+    border-radius: 6px 6px 0 0;
+    font-weight: 600;
+    font-size: 10pt;
+  }
+
+  .objection-a {
+    background: #ecfdf5;
+    color: #065f46;
+    padding: 0.6em 1em;
+    border-radius: 0 0 6px 6px;
+    font-size: 10pt;
+  }
+
+  /* === COMPARISON TABLE === */
+  .compare-table td:first-child {
+    font-weight: 600;
+    color: #64748b;
+    width: 40%;
+  }
+
+  /* === FOOTER === */
+  .footer {
+    margin-top: 2em;
+    padding-top: 0.8em;
+    border-top: 2px solid #e2e8f0;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 8.5pt;
+  }
+
+  .bottom-line {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    padding: 1em 1.2em;
+    border-radius: 8px;
+    margin-top: 1.5em;
+    text-align: center;
+    font-size: 11pt;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  /* Page break control */
+  .page-break { page-break-before: always; }
+  table { page-break-inside: avoid; }
+  .flow { page-break-inside: avoid; }
+  .pipeline { page-break-inside: avoid; }
+  .success { page-break-inside: avoid; }
+  .highlight { page-break-inside: avoid; }
+  h3 { page-break-after: avoid; }
+  h2 { page-break-after: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PAGE 1: TITLE + PROBLEM ==================== -->
+
+<div class="header">
+  <h1>KI-gest&uuml;tzte Software-Entwicklung:<br>Agent-Architektur in der Praxis</h1>
+  <div class="subtitle">Wie strukturierte KI-Teams Codequalit&auml;t liefern, die &uuml;ber &bdquo;es l&auml;uft halt&ldquo; hinausgeht</div>
+</div>
+
+<h2>1. Das Problem: Warum naive KI-Nutzung entt&auml;uscht</h2>
+
+<p>Die typische KI-Nutzung beim Coden: Chat &ouml;ffnen, Anforderung beschreiben, Code zur&uuml;ckbekommen. Das Ergebnis l&auml;uft meistens &mdash; aber Struktur, Fehlerbehandlung und Konventionstreue sind bestenfalls zuf&auml;llig.</p>
+
+<h4>Warum?</h4>
+
+<ul>
+  <li><strong>Kein Projektkontext:</strong> Die KI kennt weder Codebase, noch Architektur, noch Konventionen</li>
+  <li><strong>Kein Review-Prozess:</strong> Der Output wird 1:1 &uuml;bernommen oder manuell nachgebessert</li>
+  <li><strong>Kein Quality Gate:</strong> Kein Linting, keine Tests, kein Build-Check vor der &Uuml;bernahme</li>
+  <li><strong>Kein Spezialistenwissen:</strong> Eine generische KI-Session wei&szlig; nicht, dass in <em>diesem</em> Projekt <code>.unwrap()</code> verboten ist</li>
+</ul>
+
+<div class="insight">
+Das ist exakt das Szenario, in dem auch ein menschlicher Entwickler schlechte Arbeit abliefern w&uuml;rde: ohne Onboarding, ohne Review, ohne CI/CD. Nicht weil er unf&auml;hig ist, sondern weil der Prozess fehlt.
+</div>
+
+
+<!-- ==================== BUILDING BLOCKS ==================== -->
+
+<h2>2. Die L&ouml;sung: Agent-Architektur</h2>
+
+<h3>2.1 Die Bausteine</h3>
+
+<p>Claude Code (Anthropics CLI-Tool) unterst&uuml;tzt seit 2025 ein System, das &uuml;ber einfache Chat-Interaktion weit hinausgeht:</p>
+
+<h4>CLAUDE.md &mdash; Das Projektged&auml;chtnis</h4>
+<p>Eine Markdown-Datei im Repo-Root, die bei <em>jeder</em> Claude-Session automatisch geladen wird. Enth&auml;lt Projektstruktur, Architektur-Entscheidungen, Coding-Konventionen und harte Regeln. Vergleichbar mit einem Onboarding-Dokument &mdash; nur dass die KI es bei jeder Session liest und sich daran h&auml;lt.</p>
+
+<h4>Agents &mdash; Spezialisierte Entwickler</h4>
+<p>Eigenst&auml;ndige Claude-Sessions mit:</p>
+<ul>
+  <li><strong>Eigenem System Prompt</strong> &mdash; Identit&auml;t, Denkweise, Zust&auml;ndigkeit</li>
+  <li><strong>Eingeschr&auml;nktem Toolset</strong> &mdash; ein UI-Agent braucht kein Bash, ein Stratege kein Write</li>
+  <li><strong>Eigener Modellwahl</strong> &mdash; teure Modelle f&uuml;r Urteilsverm&ouml;gen, g&uuml;nstige f&uuml;r mechanische Tasks</li>
+  <li><strong>Begrenzter Turn-Anzahl</strong> &mdash; verhindert endlose Schleifen</li>
+</ul>
+
+<div class="highlight">
+Entscheidend: Ein Agent bekommt nicht nur gesagt <em>was</em> er tun soll, sondern <em>wie er denken</em> soll. &bdquo;Du bist ein erfahrener Rust-Entwickler, der Fehlerbehandlung ernst nimmt&ldquo; produziert fundamental anderen Code als ein generischer Prompt.
+</div>
+
+<h4>Skills &mdash; Automatisierte Workflows</h4>
+<p>Wiederverwendbare Prozeduren f&uuml;r mechanische Aufgaben: Linting, Tests, Builds, Commits, Releases. Skills brauchen kein Urteilsverm&ouml;gen &mdash; sie f&uuml;hren definierte Schritte aus. Deshalb laufen sie auf dem g&uuml;nstigsten Modell.</p>
+
+<h4>Main Agent &mdash; Der Tech Lead</h4>
+<p>Der zentrale Orchestrator. Er plant, delegiert, <strong>reviewt</strong> und eskaliert. Er codet selbst nicht &mdash; wie ein Tech Lead im echten Team.</p>
+
+<h4>Plugins &mdash; Die Packaging-Schicht</h4>
+<p>Seit Oktober 2025 k&ouml;nnen Skills, Agents, Hooks, MCP-Server und LSP-Konfigurationen als <strong>Plugin</strong> geb&uuml;ndelt werden. Ein einziger Install-Befehl gibt dem gesamten Team identisches Tooling &mdash; keine manuelle Einrichtung, kein &bdquo;Works on my machine&ldquo;. &Uuml;ber 9.000 Extensions existieren bereits im &Ouml;kosystem.</p>
+
+<div class="success">
+<strong>F&uuml;r Teams entscheidend:</strong> Eine komplette Entwicklungs-Pipeline (Agents, Skills, Quality Gates) l&auml;sst sich als Plugin paketieren und per <code>claude plugin install</code> verteilen. Neue Teammitglieder sind sofort produktiv &mdash; mit denselben Prozessen, Konventionen und Checks.
+</div>
+
+<h3>2.2 Die Entscheidungslogik</h3>
+
+<div class="flow"><strong>Aufgabe kommt rein</strong>
+    &darr;
+Gibt es einen Skill daf&uuml;r?           &rarr; Skill ausf&uuml;hren (g&uuml;nstig, deterministisch)
+    &darr; nein
+Ist es ein wiederholbarer Workflow?   &rarr; Neuen Skill vorschlagen
+    &darr; nein
+Braucht es Urteilsverm&ouml;gen?           &rarr; An spezialisierten Agent delegieren
+    &darr; nein
+Braucht es Dialog mit dem Menschen?   &rarr; Direkte Session empfehlen</div>
+
+<p>Diese Hierarchie optimiert gleichzeitig Qualit&auml;t und Kosten. Mechanische Arbeit wird mechanisch erledigt. Urteilsverm&ouml;gen wird dort eingesetzt, wo es gebraucht wird.</p>
+
+
+<!-- ==================== PIPELINE DETAIL ==================== -->
+
+<div class="page-break"></div>
+
+<h2>3. Die Pipeline am konkreten Beispiel</h2>
+
+<p>Das folgende Beispiel stammt aus einem produktiven Projekt: eine Cross-Platform Sprache-zu-Text-App (Rust/Tauri Backend, React Frontend, Kotlin Android). ~15.000 LOC, echte Nutzer, regelm&auml;&szlig;ige Releases.</p>
+
+<h3>Team-Aufstellung</h3>
+
+<table>
+  <tr>
+    <th>Rolle</th>
+    <th>Zust&auml;ndigkeit</th>
+    <th>Modell</th>
+    <th>Warum?</th>
+  </tr>
+  <tr>
+    <td><strong>Tech Lead</strong></td>
+    <td>Planung, Delegation, Review</td>
+    <td>Opus</td>
+    <td>Strategisches Urteilsverm&ouml;gen</td>
+  </tr>
+  <tr>
+    <td><strong>rust-core</strong></td>
+    <td>Audio, STT-Pipeline, LLM-Cleanup, Hotkeys</td>
+    <td>Sonnet</td>
+    <td>Inhaltliche Entwicklung</td>
+  </tr>
+  <tr>
+    <td><strong>ui-dev</strong></td>
+    <td>React-Overlay, Settings-UI, Styling</td>
+    <td>Sonnet</td>
+    <td>Inhaltliche Entwicklung</td>
+  </tr>
+  <tr>
+    <td><strong>android-platform</strong></td>
+    <td>Kotlin: Floating Bubble, Permissions</td>
+    <td>Sonnet</td>
+    <td>Inhaltliche Entwicklung</td>
+  </tr>
+  <tr>
+    <td><strong>product-strategist</strong></td>
+    <td>Positionierung, Pricing, Roadmap</td>
+    <td>Sonnet</td>
+    <td>Recherche + Urteil</td>
+  </tr>
+</table>
+
+<h3>Stufe 1: Planung</h3>
+
+<p>Der Entwickler sagt: <em>&bdquo;Wir brauchen einen Offline-Fallback f&uuml;r die Spracherkennung.&ldquo;</em></p>
+
+<p>Der Tech Lead:</p>
+<ol>
+  <li>Liest die Architektur-Dokumentation</li>
+  <li>Zerlegt das Feature in Tasks mit Agent-Zuordnung</li>
+  <li>Identifiziert Abh&auml;ngigkeiten zwischen Tasks</li>
+  <li>Persistiert den Plan als Briefing-Datei</li>
+</ol>
+
+<div class="success">
+<strong>Warum besser als ein Prompt:</strong> Die Zerlegung passiert <em>vor</em> dem Coden. Jeder Agent bekommt nur seinen Teil mit klarem Scope. Abh&auml;ngigkeiten sind explizit.
+</div>
+
+<h3>Stufe 2: Implementierung + Review</h3>
+
+<p>Der Tech Lead delegiert an den passenden Sub-Agent. Dieser kennt durch System Prompt und CLAUDE.md die bestehende Architektur, verbotene Patterns und Konventionen.</p>
+
+<div class="flow"><strong>Tech Lead</strong> &rarr; beauftragt Sub-Agent
+        &darr;
+<strong>Sub-Agent</strong> &rarr; implementiert (kennt Architektur + Konventionen)
+        &darr;
+<strong>Tech Lead</strong> &rarr; reviewt:
+        &check; Architektur-konform?
+        &check; Fehlerbehandlung sauber?
+        &check; Tests vorhanden?
+        &cross; Problem? &rarr; Korrektur-Anweisung
+        &darr;
+<strong>Sub-Agent</strong> &rarr; &uuml;berarbeitet (max. 2 Runden)
+        &darr;
+&check; Approved &rarr; weiter zu Stufe 3
+&cross; 2&times; gescheitert &rarr; Abbruch, <strong>Mensch wird informiert</strong></div>
+
+<div class="success">
+<strong>Warum besser als ein Prompt:</strong> Ein zweites Modell reviewt &mdash; wie bei menschlichen Code-Reviews f&auml;ngt ein zweites Augenpaar Fehler. Die 2-Runden-Grenze verhindert endloses Verschlimmbessern.
+</div>
+
+<h3>Stufe 3: Qualit&auml;tssicherung</h3>
+
+<div class="pipeline">
+  <div class="pipeline-step">
+    <div class="pipeline-number" style="font-size: 9pt;">QA</div>
+    <div class="pipeline-content">
+      <span class="label">/lint-fix</span><br>
+      <span class="desc"><code>cargo fmt</code> + <code>clippy</code> (600+ Regeln) + <code>prettier</code> + <code>eslint</code> &mdash; alles mit Auto-Fix</span>
+    </div>
+  </div>
+  <div class="pipeline-step">
+    <div class="pipeline-number" style="font-size: 9pt;">QA</div>
+    <div class="pipeline-content">
+      <span class="label">/build</span><br>
+      <span class="desc">Kompiliert f&uuml;r Windows UND Android &mdash; f&auml;ngt Typ-Fehler, fehlende Imports, ABI-Probleme</span>
+    </div>
+  </div>
+  <div class="pipeline-step">
+    <div class="pipeline-number" style="font-size: 9pt;">QA</div>
+    <div class="pipeline-content">
+      <span class="label">/run-tests</span><br>
+      <span class="desc"><code>cargo test</code> + <code>npm test</code> &mdash; kein Code ohne gr&uuml;ne Tests im Commit</span>
+    </div>
+  </div>
+  <div class="pipeline-step">
+    <div class="pipeline-number" style="font-size: 9pt;">&nbsp;!&nbsp;</div>
+    <div class="pipeline-content">
+      <span class="label">/debug-error</span><br>
+      <span class="desc">Nur bei Fehlschlag: Analyse im Codebase-Kontext, gezielter Fix statt Raten</span>
+    </div>
+  </div>
+</div>
+
+<div class="success">
+<strong>Warum besser als ein Prompt:</strong> Diese Checks passieren <em>automatisch als Pipeline-Stufe</em>, nicht &bdquo;wenn der Entwickler dran denkt&ldquo;. Ein Linter hat keine schlechten Tage.
+</div>
+
+<h3>Stufe 4: Integration</h3>
+
+<p>Conventional Commits (<code>feat:</code>, <code>fix:</code>, <code>refactor:</code>). Nur relevante Dateien werden gestaged. Architektur-Entscheidungen werden in Knowledge-Dateien festgehalten &mdash; nicht nur im Chat.</p>
+
+<h3>Stufe 5: Release</h3>
+
+<p>Ein einziger Befehl (<code>/release</code>) f&uuml;hrt aus:</p>
+
+<ol>
+  <li>Version-Bump in drei Konfigurationsdateien</li>
+  <li>Windows-Build (inkl. Installer + Update-Signatur)</li>
+  <li>Android-Build (APK)</li>
+  <li>Auto-Update-Manifest generieren</li>
+  <li>Git Commit + Push &rarr; Sync zum Public Repo &rarr; GitHub Release</li>
+</ol>
+
+
+<!-- ==================== SKILL CREATOR ==================== -->
+
+<h3>Meta-Qualit&auml;t: Der Skill Creator</h3>
+
+<p>Die Pipeline sichert die Qualit&auml;t des <em>Codes</em>. Aber wer sichert die Qualit&auml;t der <em>Arbeitsanweisungen</em> (Skills) an die KI? Seit M&auml;rz 2026 gibt es daf&uuml;r den <strong>Skill Creator</strong> &mdash; ein offizielles Anthropic-Plugin, das Software-Engineering-Methoden auf die Skill-Entwicklung anwendet:</p>
+
+<table>
+  <tr>
+    <th>Modus</th>
+    <th>Funktion</th>
+  </tr>
+  <tr>
+    <td><strong>Create</strong></td>
+    <td>Skill aus nat&uuml;rlicher Sprache erstellen</td>
+  </tr>
+  <tr>
+    <td><strong>Eval</strong></td>
+    <td>Tests definieren, die pr&uuml;fen ob ein Skill tut was er soll &mdash; parallel, in isolierten Kontexten</td>
+  </tr>
+  <tr>
+    <td><strong>Improve</strong></td>
+    <td>Skill automatisch optimieren: Train/Test-Split (60/40), bis zu 5 Iterationen, Anti-Overfitting</td>
+  </tr>
+  <tr>
+    <td><strong>Benchmark</strong></td>
+    <td>Standardisierte Messung: Pass-Rate, Token-Verbrauch, Laufzeit &mdash; vergleichbar &uuml;ber Versionen</td>
+  </tr>
+</table>
+
+<p>Vier spezialisierte Sub-Agents (Executor, Grader, Comparator, Analyzer) arbeiten parallel und isoliert. Das Ergebnis: Skill-Qualit&auml;t wird nicht &bdquo;gehofft&ldquo;, sondern <strong>gemessen, verglichen und iterativ verbessert</strong>.</p>
+
+<div class="highlight">
+Nicht nur der Code wird getestet &mdash; auch die Prozesse, die den Code erzeugen, durchlaufen Evals und Benchmarks. Qualit&auml;tssicherung auf zwei Ebenen.
+</div>
+
+
+<!-- ==================== OBJECTIONS ==================== -->
+
+<h2>4. H&auml;ufige Einw&auml;nde &mdash; und wie die Architektur sie adressiert</h2>
+
+<div class="objection">
+  <div class="objection-q">&bdquo;Der Code l&auml;uft, aber ist schlecht strukturiert&ldquo;</div>
+  <div class="objection-a">
+    <strong>Architektur-Kontext l&ouml;st das.</strong> CLAUDE.md definiert Projektstruktur und Entscheidungen. Agents kennen die bestehende Codebase und schreiben <em>passenden</em> Code, nicht <em>irgendeinen</em>. Der Main Agent reviewt auf Architektur-Konformit&auml;t.
+  </div>
+</div>
+
+<div class="objection">
+  <div class="objection-q">&bdquo;Fehlerbehandlung ist oberfl&auml;chlich&ldquo;</div>
+  <div class="objection-a">
+    <strong>Harte Regeln im Kontext.</strong> CLAUDE.md kann Regeln wie &bdquo;kein <code>.unwrap()</code> in Nicht-Test-Code&ldquo; definieren. Der Linter f&auml;ngt Verst&ouml;&szlig;e automatisch. Der Review pr&uuml;ft gezielt Fehlerbehandlung.
+  </div>
+</div>
+
+<div class="objection">
+  <div class="objection-q">&bdquo;Es fehlen Tests&ldquo;</div>
+  <div class="objection-a">
+    <strong>Tests als Pipeline-Stufe.</strong> <code>/run-tests</code> ist Teil der Pipeline &mdash; Code ohne gr&uuml;ne Tests erreicht keinen Commit. Agents k&ouml;nnen angewiesen werden, Tests als Teil der Implementierung zu schreiben.
+  </div>
+</div>
+
+<div class="objection">
+  <div class="objection-q">&bdquo;Ich verliere die Kontrolle &uuml;ber meinen Code&ldquo;</div>
+  <div class="objection-a">
+    <strong>Der Mensch definiert die Regeln.</strong> Er schreibt CLAUDE.md, System Prompts und Skill-Definitionen. Er definiert <em>wie</em> gearbeitet wird. Jeder Agent hat begrenzte Tools und begrenzte Autonomie. Nach 2 gescheiterten Versuchen wird an den Menschen eskaliert. Nichts wird gepusht ohne explizite Freigabe.
+  </div>
+</div>
+
+<div class="objection">
+  <div class="objection-q">&bdquo;Ein Modell reviewt sich quasi selbst&ldquo;</div>
+  <div class="objection-a">
+    <strong>Strukturelle Trennung auf drei Ebenen.</strong> (1) Implementierung und Review laufen in getrennten Sessions mit getrenntem Kontext &mdash; verschiedene Modelle m&ouml;glich (Sonnet implementiert, Opus reviewt). (2) Linter, Tests und Build-Checks sind komplett modellunabh&auml;ngig. (3) Seit 2026 werden selbst die Skill-Definitionen mit formalen Evals und Benchmarks gepr&uuml;ft (Skill Creator) &mdash; Qualit&auml;tssicherung auf der Meta-Ebene.
+  </div>
+</div>
+
+
+<!-- ==================== COST MODEL ==================== -->
+
+<h2>5. Modellwahl als Kostenhebel</h2>
+
+<p>Nicht jede Aufgabe braucht das teuerste Modell:</p>
+
+<table>
+  <tr>
+    <th>Modell</th>
+    <th>St&auml;rke</th>
+    <th>Einsatz</th>
+    <th>Relativer Preis</th>
+  </tr>
+  <tr>
+    <td><strong>Opus</strong></td>
+    <td>Strategisches Denken, Review</td>
+    <td>Main Agent, Architektur</td>
+    <td style="text-align: center; font-size: 12pt;">&#8364;&#8364;&#8364;</td>
+  </tr>
+  <tr>
+    <td><strong>Sonnet</strong></td>
+    <td>Solide Implementierung</td>
+    <td>Sub-Agents, inhaltliche Arbeit</td>
+    <td style="text-align: center; font-size: 12pt;">&#8364;&#8364;</td>
+  </tr>
+  <tr>
+    <td><strong>Haiku</strong></td>
+    <td>Schnelle Ausf&uuml;hrung</td>
+    <td>Skills (Lint, Test, Build, Commit)</td>
+    <td style="text-align: center; font-size: 12pt;">&#8364;</td>
+  </tr>
+</table>
+
+<p>Ein naiver Ansatz schickt alles an das teuerste Modell. Die Agent-Architektur setzt Opus nur dort ein, wo Urteilsverm&ouml;gen gebraucht wird &mdash; und spart bei mechanischen Tasks &uuml;ber 90% der Kosten.</p>
+
+
+<!-- ==================== IMPLICATIONS ==================== -->
+
+<h2>6. Was das f&uuml;r ein Entwicklungsteam bedeutet</h2>
+
+<table class="compare-table">
+  <tr>
+    <th>Vorher</th>
+    <th>Nachher</th>
+  </tr>
+  <tr>
+    <td>Entwickler schreibt Code</td>
+    <td>Entwickler definiert <em>wie</em> Code geschrieben wird</td>
+  </tr>
+  <tr>
+    <td>KI als Autovervollst&auml;ndigung</td>
+    <td>KI als strukturiertes Entwicklungsteam</td>
+  </tr>
+  <tr>
+    <td>Qualit&auml;t h&auml;ngt vom Prompt ab</td>
+    <td>Qualit&auml;t h&auml;ngt von der Architektur ab</td>
+  </tr>
+  <tr>
+    <td>Ein Modell, ein Chat, ein Versuch</td>
+    <td>Spezialisierte Agents mit Review-Loops</td>
+  </tr>
+  <tr>
+    <td>&bdquo;Es l&auml;uft halt&ldquo;</td>
+    <td>Linting, Tests, Build-Checks als Pipeline</td>
+  </tr>
+  <tr>
+    <td>Jeder richtet sich sein Setup ein</td>
+    <td>Plugin installieren &mdash; ganzes Team hat identische Prozesse</td>
+  </tr>
+</table>
+
+<div class="bottom-line">
+  Die Qualit&auml;t von KI-generiertem Code ist keine Eigenschaft des Modells &mdash;<br>
+  sie ist eine Funktion der Architektur, in der das Modell arbeitet.
+  <br><br>
+  <span style="font-weight: 400; font-size: 9.5pt; opacity: 0.9;">
+  Ein erfahrener Entwickler ohne Code-Review, ohne CI/CD und ohne Architektur-Vorgaben produziert auch mittelm&auml;&szlig;igen Code. Nicht weil er unf&auml;hig ist, sondern weil der Prozess fehlt. Dasselbe gilt f&uuml;r KI &mdash; nur dass die Architektur einmal aufgesetzt wird und danach konsistent arbeitet: ohne schlechte Tage, ohne vergessene Reviews, ohne &bdquo;ich push das schnell ohne Tests&ldquo;.
+  </span>
+</div>
+
+<div class="footer">
+  Basierend auf einem produktiven Projekt: Cross-Platform Desktop/Mobile-App, Rust/React/Kotlin, ~15.000 LOC.<br>
+  Regelm&auml;&szlig;ige Releases an echte Nutzer. Gesamte Entwicklung &uuml;ber Agent-Architektur mit Claude Code.
+</div>
+
+</body>
+</html>

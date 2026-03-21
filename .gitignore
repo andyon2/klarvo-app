@@ -47,3 +47,5 @@ social-preview.png
 models/
 *.bin
 voxlit-debug.keystore
+.dev-keys/
+src-tauri/null

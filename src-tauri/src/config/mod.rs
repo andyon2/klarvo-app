@@ -749,6 +749,17 @@ pub struct AppConfig {
     /// files (without this field) load correctly -- they get `OnboardingState::default()`.
     #[serde(default)]
     pub onboarding: OnboardingState,
+
+    /// Whether the Voice Command Mode monitor is enabled (user preference).
+    ///
+    /// This is the persisted preference -- "does the user want voice commands
+    /// to be active?" -- distinct from `AppState::voice_command_active` which
+    /// reflects the live runtime state.
+    ///
+    /// When `true` on startup the monitor is automatically started.
+    /// Default: `false` (opt-in feature).
+    #[serde(default)]
+    pub voice_command_enabled: bool,
 }
 
 fn default_stt_provider() -> String {
@@ -888,6 +899,7 @@ impl Default for AppConfig {
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: default_bubble_silence_secs(),
             onboarding: OnboardingState::default(),
+            voice_command_enabled: false,
         }
     }
 }
@@ -1357,6 +1369,7 @@ mod tests {
             bubble_long_press_silence_secs: 1.5,
             openrouter_api_key: "sk-or-test-key".to_string(),
             onboarding: OnboardingState::default(),
+            voice_command_enabled: false,
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

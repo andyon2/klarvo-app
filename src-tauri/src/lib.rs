@@ -54,6 +54,9 @@ mod sync;
 #[cfg(desktop)]
 mod vad;
 
+#[cfg(desktop)]
+mod voice_command;
+
 #[cfg(test)]
 mod test_helpers;
 
@@ -187,6 +190,8 @@ pub struct SettingsView {
     pub bubble_long_press_auto_send: bool,
     /// Silence duration (seconds) for auto-stop on bubble long press.
     pub bubble_long_press_silence_secs: f32,
+    /// Whether Voice Command Mode is enabled (persisted user preference).
+    pub voice_command_enabled: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +255,11 @@ pub struct AppState {
     ///
     /// Default: `false`. Reusing an `AtomicBool` keeps this lock-free.
     pub active_insert_and_send: AtomicBool,
+    /// Whether the Voice Command Mode monitor is currently running.
+    ///
+    /// Set to `true` by `start_voice_command_monitor`, cleared by
+    /// `stop_voice_command_monitor`. Used as a guard to prevent double-start.
+    pub voice_command_active: AtomicBool,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -305,6 +315,7 @@ impl AppState {
             hotkey_paused: AtomicBool::new(false),
             auto_loop_active: AtomicBool::new(false),
             active_insert_and_send: AtomicBool::new(false),
+            voice_command_active: AtomicBool::new(false),
         }
     }
 }
@@ -775,6 +786,18 @@ pub fn run() {
                     "[hotkey] Could not register hotkey slots: {e}. Use the UI button instead."
                 ),
             }
+
+            // Auto-start Voice Command Monitor if the user had it enabled last session.
+            {
+                let state = app.state::<AppState>();
+                let vc_enabled = state.config.lock().map(|c| c.voice_command_enabled).unwrap_or(false);
+                if vc_enabled {
+                    log::info!("[setup] voice_command_enabled=true -- starting monitor");
+                    if let Err(e) = voice_command::start_voice_command_monitor(&handle) {
+                        log::warn!("[setup] Failed to auto-start voice command monitor: {e}");
+                    }
+                }
+            }
         }
 
         // Always show the main window on launch (desktop only).
@@ -877,6 +900,11 @@ pub fn run() {
             commands::whisper::windows::download_whisper_model,
             #[cfg(target_os = "windows")]
             commands::whisper::windows::delete_whisper_model,
+            // Voice Command Mode (desktop only)
+            #[cfg(desktop)]
+            commands::voice_command::toggle_voice_command_mode,
+            #[cfg(desktop)]
+            commands::voice_command::get_voice_command_active,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -988,6 +1016,7 @@ mod tests {
             bubble_long_press_mode: "hold".to_string(),
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
+            voice_command_enabled: false,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1043,6 +1072,7 @@ mod tests {
             bubble_long_press_mode: "hold".to_string(),
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
+            voice_command_enabled: false,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1092,6 +1122,7 @@ mod tests {
             bubble_long_press_mode: "hold".to_string(),
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
+            voice_command_enabled: false,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

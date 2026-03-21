@@ -26,6 +26,9 @@ use serde::Deserialize;
 use thiserror::Error;
 
 // Sub-modules
+pub mod hallucination;
+pub use hallucination::is_hallucination;
+
 pub mod local_whisper;
 #[cfg(target_os = "windows")]
 pub use local_whisper::LocalWhisperProvider;

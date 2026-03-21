@@ -19,7 +19,7 @@ use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
 use crate::paste::{
     capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
 };
-use crate::stt::{self, SttProvider};
+use crate::stt::{self, is_hallucination, SttProvider};
 use crate::sync;
 use crate::{AppState, friendly_error};
 
@@ -103,50 +103,6 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
         // "deepseek" and any unrecognised value
         _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Whisper hallucination blocklist
-// ---------------------------------------------------------------------------
-
-/// Known Whisper hallucination phrases from training data artifacts.
-/// These appear when Whisper processes silence or non-speech audio.
-const HALLUCINATION_BLOCKLIST: &[&str] = &[
-    "zdf",
-    "wdr",
-    "untertitel der dctp",
-    "untertitelung des zdf",
-    "copyright wdr",
-    "vielen dank für ihre aufmerksamkeit",
-    "vielen dank fuer ihre aufmerksamkeit",
-    "untertitel im auftrag",
-    "thank you for watching",
-    "thanks for watching",
-    "please subscribe",
-    "subtitles by",
-    "amara.org",
-    "sous-titres",
-    "sottotitoli",
-    "napisy pobrano",
-];
-
-/// Returns true if the text is likely a Whisper hallucination from training
-/// data artifacts.
-///
-/// Only blocks SHORT texts (≤ 8 words after trimming) that contain a blocklist
-/// phrase. Longer texts with a blocklist phrase embedded are real speech and
-/// pass through unchanged.
-fn is_hallucination(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return true; // empty text is not useful
-    }
-    let word_count = trimmed.split_whitespace().count();
-    if word_count > 8 {
-        return false; // real speech, even if it mentions "ZDF"
-    }
-    let lower = trimmed.to_lowercase();
-    HALLUCINATION_BLOCKLIST.iter().any(|phrase| lower.contains(phrase))
 }
 
 // ---------------------------------------------------------------------------
@@ -2164,86 +2120,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // Hallucination blocklist tests
-    // -----------------------------------------------------------------------
-
-    /// Known hallucinations are blocked.
-    #[test]
-    fn test_hallucination_blocklist_known_phrases() {
-        assert!(
-            super::is_hallucination("ZDF 2020"),
-            "\"ZDF 2020\" must be blocked"
-        );
-        assert!(
-            super::is_hallucination("Copyright WDR"),
-            "\"Copyright WDR\" must be blocked"
-        );
-        assert!(
-            super::is_hallucination("Thank you for watching"),
-            "\"Thank you for watching\" must be blocked"
-        );
-        assert!(
-            super::is_hallucination("Untertitel im Auftrag des ZDF"),
-            "\"Untertitel im Auftrag des ZDF\" must be blocked"
-        );
-    }
-
-    /// Empty string is blocked (empty text is not useful output).
-    #[test]
-    fn test_hallucination_blocklist_empty_string() {
-        assert!(
-            super::is_hallucination(""),
-            "empty string must be blocked"
-        );
-    }
-
-    /// Real speech with >8 words passes through even if it contains a blocklist word.
-    #[test]
-    fn test_hallucination_blocklist_long_text_passes_through() {
-        let long = "Ich habe heute beim ZDF angerufen und mit dem Redakteur gesprochen über das neue Projekt";
-        assert!(
-            !super::is_hallucination(long),
-            "long real-speech text mentioning ZDF must not be blocked"
-        );
-    }
-
-    /// Normal dictation without any blocklist match passes through.
-    #[test]
-    fn test_hallucination_blocklist_real_speech_not_blocked() {
-        assert!(
-            !super::is_hallucination("Bitte schick mir die Datei"),
-            "\"Bitte schick mir die Datei\" must not be blocked"
-        );
-        assert!(
-            !super::is_hallucination("Das Meeting ist um 14 Uhr"),
-            "\"Das Meeting ist um 14 Uhr\" must not be blocked"
-        );
-    }
-
-    /// Leading/trailing whitespace is ignored -- the phrase is still blocked.
-    #[test]
-    fn test_hallucination_blocklist_whitespace_trimmed() {
-        assert!(
-            super::is_hallucination("  ZDF  "),
-            "\"  ZDF  \" with surrounding whitespace must be blocked"
-        );
-    }
-
-    /// Matching is case-insensitive.
-    #[test]
-    fn test_hallucination_blocklist_case_insensitive() {
-        assert!(
-            super::is_hallucination("zdf"),
-            "lowercase \"zdf\" must be blocked"
-        );
-        assert!(
-            super::is_hallucination("ZDF"),
-            "uppercase \"ZDF\" must be blocked"
-        );
-        assert!(
-            super::is_hallucination("Zdf"),
-            "mixed-case \"Zdf\" must be blocked"
-        );
-    }
+    // Note: hallucination blocklist tests live in src/stt/hallucination.rs,
+    // co-located with the implementation. See `stt::hallucination` module.
 }

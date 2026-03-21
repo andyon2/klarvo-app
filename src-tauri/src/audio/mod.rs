@@ -17,6 +17,7 @@
 //! the collected samples back.
 
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(desktop)]
@@ -51,6 +52,12 @@ pub enum AudioError {
 
     #[error("No recording in progress")]
     NotRecording,
+
+    #[error("Monitor is already running")]
+    AlreadyMonitoring,
+
+    #[error("No monitor running")]
+    NotMonitoring,
 
     #[error("WAV encoding failed: {0}")]
     WavEncoding(#[from] hound::Error),
@@ -115,6 +122,35 @@ struct RecordingResult {
 }
 
 // ---------------------------------------------------------------------------
+// Monitor session -- desktop only
+// ---------------------------------------------------------------------------
+
+/// Callback type for the monitor mode.
+///
+/// Receives raw f32 PCM chunks at the device's native sample rate and channel
+/// count. The consumer is responsible for any resampling / downmixing needed
+/// for downstream processing (e.g. VAD keyword detection).
+///
+/// Must be `Send + Sync` because cpal's stream callback requires `Send`.
+pub type MonitorCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
+
+#[cfg(desktop)]
+/// State for an active monitor session.
+///
+/// The monitor stream runs continuously on a background thread. It uses an
+/// `AtomicBool` pause flag so that normal recording can suppress sample
+/// delivery without tearing down and rebuilding the cpal stream (which would
+/// release and re-acquire the microphone device, potentially causing a
+/// perceptible glitch or permission prompt on some platforms).
+struct MonitorSession {
+    /// Set to `true` by `start_recording` to mute sample delivery during a
+    /// normal recording. Cleared by `stop_recording_with_gain`.
+    paused: Arc<AtomicBool>,
+    /// Sends `()` to tear down the monitor thread entirely.
+    stop_tx: std::sync::mpsc::SyncSender<()>,
+}
+
+// ---------------------------------------------------------------------------
 // Public recorder
 // ---------------------------------------------------------------------------
 
@@ -133,6 +169,10 @@ pub struct AudioRecorder {
     /// consumed by the recording thread, cleared by `clear_silence_callback`.
     #[cfg(desktop)]
     silence_config: Mutex<Option<SilenceConfig>>,
+    /// Active monitor session (desktop only). Separate from `session` so that
+    /// normal recording and monitoring can coexist without device conflicts.
+    #[cfg(desktop)]
+    monitor_session: Mutex<Option<MonitorSession>>,
 }
 
 #[cfg(desktop)]
@@ -159,6 +199,8 @@ impl AudioRecorder {
             })),
             #[cfg(desktop)]
             silence_config: Mutex::new(None),
+            #[cfg(desktop)]
+            monitor_session: Mutex::new(None),
         }
     }
 
@@ -223,11 +265,22 @@ impl AudioRecorder {
     }
 
     /// Opens an input device and begins capturing audio on a background thread.
+    ///
+    /// If a monitor session is active, it is paused for the duration of the
+    /// recording (samples are discarded but the stream stays open). The monitor
+    /// resumes automatically when `stop_recording_with_gain` is called.
     #[cfg(desktop)]
     pub fn start_recording(&self, device_name: Option<&str>) -> Result<(), AudioError> {
         let mut guard = self.session.lock().unwrap();
         if guard.is_some() {
             return Err(AudioError::AlreadyRecording);
+        }
+
+        // Pause the monitor so both streams don't fight over the same samples.
+        if let Ok(mon) = self.monitor_session.lock() {
+            if let Some(ref session) = *mon {
+                session.paused.store(true, Ordering::Relaxed);
+            }
         }
 
         let (stop_tx, stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
@@ -271,6 +324,9 @@ impl AudioRecorder {
     }
 
     /// Stops recording and applies a gain multiplier to the audio.
+    ///
+    /// If a monitor session was paused by `start_recording`, it is resumed here
+    /// so keyword detection continues between dictations.
     #[cfg(desktop)]
     pub fn stop_recording_with_gain(&self, gain: f32) -> Result<Vec<u8>, AudioError> {
         let mut guard = self.session.lock().unwrap();
@@ -279,6 +335,13 @@ impl AudioRecorder {
         let _ = session.stop_tx.send(());
 
         let result = session.result_rx.recv().map_err(|_| AudioError::ThreadError)?;
+
+        // Resume monitor now that the recording stream has been torn down.
+        if let Ok(mon) = self.monitor_session.lock() {
+            if let Some(ref session) = *mon {
+                session.paused.store(false, Ordering::Relaxed);
+            }
+        }
 
         encode_to_wav_with_gain(&result.samples, result.native_sample_rate, result.native_channels, gain)
     }
@@ -307,6 +370,71 @@ impl AudioRecorder {
     pub fn is_recording(&self) -> bool {
         #[cfg(desktop)]
         { self.session.lock().unwrap().is_some() }
+        #[cfg(mobile)]
+        { false }
+    }
+
+    // -----------------------------------------------------------------------
+    // Monitor mode (desktop only)
+    // -----------------------------------------------------------------------
+
+    /// Starts the monitor mode: opens the microphone and delivers every PCM
+    /// chunk to `callback` in real time.
+    ///
+    /// Unlike `start_recording`, this does NOT build a WAV buffer. The callback
+    /// receives raw f32 samples at the device's native sample rate and channel
+    /// count. Intended for always-on keyword detection (Voice Command Mode).
+    ///
+    /// If a normal recording is started while the monitor is active, sample
+    /// delivery is silently suppressed until `stop_recording` is called (the
+    /// cpal stream stays open so there is no mic re-acquisition delay).
+    ///
+    /// Returns `AlreadyMonitoring` if the monitor is already running.
+    #[cfg(desktop)]
+    pub fn start_monitor(
+        &self,
+        device_name: Option<&str>,
+        callback: MonitorCallback,
+    ) -> Result<(), AudioError> {
+        let mut guard = self.monitor_session.lock().unwrap();
+        if guard.is_some() {
+            return Err(AudioError::AlreadyMonitoring);
+        }
+
+        let paused = Arc::new(AtomicBool::new(false));
+        let paused_for_thread = Arc::clone(&paused);
+
+        let (stop_tx, stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
+
+        let device_name_owned = device_name.map(|s| s.to_string());
+
+        std::thread::spawn(move || {
+            if let Err(e) = monitor_thread(stop_rx, callback, paused_for_thread, device_name_owned.as_deref()) {
+                eprintln!("[audio] monitor thread error: {e}");
+            }
+        });
+
+        *guard = Some(MonitorSession { paused, stop_tx });
+        Ok(())
+    }
+
+    /// Stops the monitor mode and releases the microphone stream.
+    ///
+    /// Returns `NotMonitoring` if no monitor is currently running.
+    #[cfg(desktop)]
+    pub fn stop_monitor(&self) -> Result<(), AudioError> {
+        let mut guard = self.monitor_session.lock().unwrap();
+        let session = guard.take().ok_or(AudioError::NotMonitoring)?;
+        // Signal the monitor thread to exit. Ignore send errors (thread may
+        // have already exited due to a device disconnection).
+        let _ = session.stop_tx.send(());
+        Ok(())
+    }
+
+    /// Returns `true` if the monitor stream is currently running.
+    pub fn is_monitoring(&self) -> bool {
+        #[cfg(desktop)]
+        { self.monitor_session.lock().unwrap().is_some() }
         #[cfg(mobile)]
         { false }
     }
@@ -362,6 +490,102 @@ fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
     }
 
     host.default_input_device().ok_or(AudioError::NoInputDevice)
+}
+
+// ---------------------------------------------------------------------------
+// Monitor thread -- lightweight mic listener for Voice Command Mode
+// ---------------------------------------------------------------------------
+
+#[cfg(desktop)]
+/// Background thread that streams raw PCM from the microphone to a callback.
+///
+/// Unlike [`recording_thread`], this does NOT accumulate samples into a buffer
+/// or encode WAV. It simply opens the mic, converts all input to f32, and
+/// forwards chunks to `callback` — unless `paused` is set (during normal
+/// recording, to avoid two consumers fighting over the same device).
+///
+/// Exits cleanly when `stop_rx` receives a signal or the sender is dropped.
+fn monitor_thread(
+    stop_rx: std::sync::mpsc::Receiver<()>,
+    callback: MonitorCallback,
+    paused: Arc<AtomicBool>,
+    device_name: Option<&str>,
+) -> Result<(), AudioError> {
+    let device = find_input_device(device_name)?;
+
+    let config = device.default_input_config()?;
+    let sample_format = config.sample_format();
+    let stream_config: StreamConfig = config.into();
+
+    let paused_clone = Arc::clone(&paused);
+    let callback_clone = Arc::clone(&callback);
+
+    let build_cb = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+        if !paused_clone.load(Ordering::Relaxed) {
+            callback_clone(data);
+        }
+    };
+
+    let stream = match sample_format {
+        SampleFormat::F32 => {
+            device.build_input_stream(
+                &stream_config,
+                build_cb,
+                |err| eprintln!("[audio] monitor stream error: {err}"),
+                None,
+            )?
+        }
+        SampleFormat::I16 => {
+            let paused_i16 = Arc::clone(&paused);
+            let cb_i16 = Arc::clone(&callback);
+            device.build_input_stream(
+                &stream_config,
+                move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                    if !paused_i16.load(Ordering::Relaxed) {
+                        let converted: Vec<f32> =
+                            data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                        cb_i16(&converted);
+                    }
+                },
+                |err| eprintln!("[audio] monitor stream error: {err}"),
+                None,
+            )?
+        }
+        _ => {
+            // Fallback: treat as f32 (same as build_stream_with_level).
+            device.build_input_stream(
+                &stream_config,
+                build_cb,
+                |err| eprintln!("[audio] monitor stream error: {err}"),
+                None,
+            )?
+        }
+    };
+
+    stream.play()?;
+
+    // Block until stop signal. The cpal stream runs on its own audio thread;
+    // we just hold it alive here.
+    let _ = stop_rx.recv();
+
+    // Stream is dropped here, closing the mic.
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Device format query
+// ---------------------------------------------------------------------------
+
+/// Returns the native sample rate and channel count of the specified (or
+/// default) input device without opening a stream.
+///
+/// Used by the Voice Command monitor to initialise `VoiceCommandEngine` with
+/// the correct format so resampling/downmixing works correctly.
+#[cfg(desktop)]
+pub fn query_input_format(device_name: Option<&str>) -> Result<(u32, u16), AudioError> {
+    let device = find_input_device(device_name)?;
+    let config = device.default_input_config()?;
+    Ok((config.sample_rate().0, config.channels()))
 }
 
 // ---------------------------------------------------------------------------
