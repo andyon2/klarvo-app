@@ -9,8 +9,7 @@ Keine.
 
 ## Naechste Sessions (in Reihenfolge)
 
-1. **Live-Preview als Opt-In** → Whisper-Halluzinationen werden gefiltert (Blocklist steht).
-2. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen.
+1. **Launch-Vorbereitung** → Landingpage bauen (Briefing fertig), Social Preview hochladen.
 
 ## Bekannte Bugs
 
