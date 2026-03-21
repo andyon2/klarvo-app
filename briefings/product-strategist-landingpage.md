@@ -1,7 +1,7 @@
-# Briefing: Dikta-Landingpage
+# Briefing: Voxlit-Landingpage
 
 Erstellt: 2026-03-21, Product Strategist
-Zweck: Inhaltliches Komplett-Briefing fuer die Dikta-Produktseite. Kann direkt an den Web-Builder weitergegeben werden.
+Zweck: Inhaltliches Komplett-Briefing fuer die Voxlit-Produktseite. Kann direkt an den Web-Builder weitergegeben werden.
 
 ---
 
@@ -17,7 +17,7 @@ Nicht dieselbe wie die Berater-Website. Hier kaufen Leute ein Tool:
 
 Direkt, ehrlich, keine Marketing-Floskeln. Der Besucher ist tech-affin genug um Bullshit zu erkennen. Fakten statt Superlative. Kurze Saetze. Kein "revolutionaer", kein "nahtlos", kein "KI-gestuetzt" als Buzzword.
 
-Dikta ist ein Indie-Produkt von einem Entwickler -- das darf man merken. Das ist Staerke, nicht Schwaeche.
+Voxlit ist ein Indie-Produkt von einem Entwickler -- das darf man merken. Das ist Staerke, nicht Schwaeche.
 
 ## Seitenstruktur
 
@@ -31,7 +31,7 @@ Dikta ist ein Indie-Produkt von einem Entwickler -- das darf man merken. Das ist
 
 **CTA-Button:** "Kostenlos testen" (Free-Tier, kein Signup noetig)
 
-**Sekundaerer Link:** "Quellcode auf GitHub" → github.com/andyon2/dikta-public
+**Sekundaerer Link:** "Quellcode auf GitHub" → github.com/andyon2/voxlit-public
 
 **Optionales Element:** Kurzes Demo-GIF oder Screenshot (Hotkey druecken → Sprechen → bereinigter Text erscheint). Kein Video -- die Aufmerksamkeitsspanne ist kurz.
 
@@ -41,7 +41,7 @@ Dikta ist ein Indie-Produkt von einem Entwickler -- das darf man merken. Das ist
 
 Kurzer Block, 2-3 Saetze. Der Besucher soll nicken.
 
-> Du sprichst schneller als du tippst. Spracherkennung gibt's genug -- aber was rauskommt, sind Fuellwoerter, fehlende Satzzeichen und Rohtext, den du erst nachbearbeiten musst. Dikta erkennt deine Sprache und liefert fertigen Text.
+> Du sprichst schneller als du tippst. Spracherkennung gibt's genug -- aber was rauskommt, sind Fuellwoerter, fehlende Satzzeichen und Rohtext, den du erst nachbearbeiten musst. Voxlit erkennt deine Sprache und liefert fertigen Text.
 
 ---
 
@@ -49,7 +49,7 @@ Kurzer Block, 2-3 Saetze. Der Besucher soll nicken.
 
 Drei Schritte, visuell nebeneinander. Simpel halten.
 
-1. **Hotkey druecken** -- Dikta hoert zu (Windows: Tastenkombination, Android: Floating Bubble antippen)
+1. **Hotkey druecken** -- Voxlit hoert zu (Windows: Tastenkombination, Android: Floating Bubble antippen)
 2. **Sprechen** -- Rede wie du willst, mit Fuellwoertern, Pausen, Satzabbruechen
 3. **Fertiger Text** -- KI bereinigt automatisch: Grammatik, Interpunktion, Fuellwoerter raus. Text wird direkt eingefuegt.
 
@@ -72,7 +72,7 @@ Nicht als endlose Liste, sondern gruppiert nach Kaufgruenden.
 #### Online oder Offline
 - Online: Groq Whisper (schnell, guenstig) + DeepSeek Cleanup
 - Offline: Whisper lokal auf deinem Rechner -- keine Daten verlassen dein Geraet
-- Eigene API-Keys, kein Dikta-Account noetig (BYOK)
+- Eigene API-Keys, kein Voxlit-Account noetig (BYOK)
 
 #### Deine Daten, dein Rechner
 - Keine Cloud, kein Account, keine Telemetrie
@@ -110,7 +110,7 @@ Einfach, ein Preis, kein Verwirrung.
 
 #### Vergleich (optional, aber wirksam)
 
-| | Dikta | Wispr Flow |
+| | Voxlit | Wispr Flow |
 |---|---|---|
 | Preis | EUR 29 einmalig | $144/Jahr |
 | Nach 2 Jahren bezahlt | EUR 29 | $288 |
@@ -125,7 +125,7 @@ Kein Bashing, nur Fakten. Der Besucher zieht die Schluesse selbst.
 
 ### 6. Trust / Social Proof
 
-Hier ist Dikta noch duenn -- ehrlich damit umgehen, nicht fake.
+Hier ist Voxlit noch duenn -- ehrlich damit umgehen, nicht fake.
 
 - **"In Active Development"** -- Versionsnummer (v0.4.x), regelmaessige Updates, Auto-Updater
 - **Quellcode offen** -- GitHub-Link, Commit-History als Beweis fuer aktive Entwicklung
@@ -138,13 +138,13 @@ Hier ist Dikta noch duenn -- ehrlich damit umgehen, nicht fake.
 Kurz, nur die Fragen die wirklich kommen:
 
 **Brauche ich einen Account?**
-Nein. Dikta laeuft ohne Account. Fuer die Online-Funktionen brauchst du eigene API-Keys (Groq, DeepSeek -- beide haben kostenlose Tiers).
+Nein. Voxlit laeuft ohne Account. Fuer die Online-Funktionen brauchst du eigene API-Keys (Groq, DeepSeek -- beide haben kostenlose Tiers).
 
-**Funktioniert Dikta wirklich offline?**
+**Funktioniert Voxlit wirklich offline?**
 Ja. Mit dem lokalen Whisper-Modell laeuft Spracherkennung komplett auf deinem Rechner. Fuer den Text-Cleanup offline brauchst du aktuell noch eine API -- lokale LLMs kommen spaeter.
 
 **Was ist "source-available"?**
-Der komplette Quellcode ist auf GitHub einsehbar. Du kannst pruefen was Dikta tut. Redistribution und kommerzielle Nutzung sind nicht erlaubt (BSL 1.1 Lizenz). Private Nutzung und Modifikation fuer den Eigengebrauch: ja.
+Der komplette Quellcode ist auf GitHub einsehbar. Du kannst pruefen was Voxlit tut. Redistribution und kommerzielle Nutzung sind nicht erlaubt (BSL 1.1 Lizenz). Private Nutzung und Modifikation fuer den Eigengebrauch: ja.
 
 **Was passiert nach dem Kauf?**
 Du bekommst einen Lizenzschluessel. Einmal eingeben, fertig. Alle kuenftigen Updates in der aktuellen Hauptversion sind inklusive.
@@ -152,7 +152,7 @@ Du bekommst einen Lizenzschluessel. Einmal eingeben, fertig. Alle kuenftigen Upd
 **Welche Sprachen werden unterstuetzt?**
 Alles was Whisper kann -- 99 Sprachen. Deutsch und Englisch funktionieren am besten.
 
-**Laeuft Dikta auf macOS/Linux?**
+**Laeuft Voxlit auf macOS/Linux?**
 Aktuell nur Windows und Android. macOS ist auf der Roadmap, aber nicht kurzfristig.
 
 ---
@@ -176,13 +176,13 @@ Aktuell nur Windows und Android. macOS ist auf der Roadmap, aber nicht kurzfrist
 
 ## Verbindung zur Berater-Website
 
-Die Berater-Website verlinkt das GitHub-Repo in der Portfolio-Sektion. NICHT die Landingpage. Die Berater-Website verkauft Andy als Berater, nicht Dikta als Produkt. Wenn jemand vom Repo zur Landingpage findet -- gut. Aber kein aktives Cross-Selling.
+Die Berater-Website verlinkt das GitHub-Repo in der Portfolio-Sektion. NICHT die Landingpage. Die Berater-Website verkauft Andy als Berater, nicht Voxlit als Produkt. Wenn jemand vom Repo zur Landingpage findet -- gut. Aber kein aktives Cross-Selling.
 
-Die Landingpage erwaehnt nicht, dass Dikta von einem KI-Berater gebaut wird. Dikta steht fuer sich.
+Die Landingpage erwaehnt nicht, dass Voxlit von einem KI-Berater gebaut wird. Voxlit steht fuer sich.
 
 ## Offene Punkte
 
-- [ ] Domain klären (dikta.app? getdikta.de? Subdomain der Berater-Seite?)
+- [ ] Domain klären (voxlit.app? getvoxlit.de? Subdomain der Berater-Seite?)
 - [ ] Demo-GIF/Screenshot erstellen
 - [ ] Zahlungsabwicklung fuer License Keys (Gumroad? Paddle? LemonSqueezy?)
-- [ ] Timing: Landingpage live wenn License-Key-System in Dikta implementiert ist
+- [ ] Timing: Landingpage live wenn License-Key-System in Voxlit implementiert ist

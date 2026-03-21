@@ -3,33 +3,40 @@
 Positionierung, Zielgruppe, Monetarisierung und Differenzierung von Dikta.
 Diese Datei ist die Source of Truth fuer alle strategischen Produkt-Entscheidungen.
 
-Letzte Aktualisierung: 2026-03-21 (Namenskonflikt entdeckt, Umbenennung noetig)
+Letzte Aktualisierung: 2026-03-21 (Umbenennung: Dikta → Voxlit entschieden)
 
-## ⚠ Umbenennung erforderlich
+## Umbenennung: Dikta → Voxlit
 
-**Status:** Name "Dikta" ist nicht haltbar. Deep Research fuer neuen Namen laeuft.
+**Status:** Entschieden (2026-03-21). Neuer Produktname ist **Voxlit**.
 
-**Gruende (recherchiert 2026-03-21):**
+**Etymologie:** Vox (Lat. "Stimme") + lit (literary/polished). "Voice → polished text."
+
+**Gruende fuer Umbenennung:**
 - **dikta iOS App** (rohe technik OÜ / rohe.ai): AI Voice Keyboard im App Store, gleicher Markt
 - **dIKta.me**: Private AI Voice Dictation fuer Windows, $20 Einmalkauf, Source-Available -- praktisch unser Zwilling
 - **DIKTA INC SRL** (Rumaenien): EU-Bildmarke in Klasse 09 (Software), eingetragen bis 2032 (EUIPO #018737941)
+- Drei Produkte mit demselben Namen im selben Markt = nicht verteidigbar, nicht suchbar, nicht vermarktbar.
 
-Drei Produkte mit demselben Namen im selben Markt = nicht verteidigbar, nicht suchbar, nicht vermarktbar.
+**Markenstatus:**
+- DPMA Klasse 09: Frei (geprueft 2026-03-21)
+- Keine Software-Konflikte gefunden (Deep Research + manuelle Recherche)
+- Kunstwort -- geringe Gefahr dass jemand unabhaengig darauf kommt
 
-**Naechste Schritte:**
-- [ ] Deep Research: Namenskandidaten recherchieren (laeuft)
-- [ ] Shortlist bewerten (Product Strategist)
-- [ ] Entscheidung treffen (Andy)
-- [ ] Umbenennung durchfuehren: Codebase, Repo, README, Branding, Landingpage-Briefing
+**Domains:**
+- [x] **voxlit.app** -- gesichert (2026-03-21, Hostinger, laeuft bis 2027-03-21, auto-renew an)
+- voxlit.com: Geparkt bei GoDaddy, $4.995 -- nicht kaufen
+- Domain dikta.software: Reservierung bei Hostinger storniert (2026-03-21)
 
-**Anforderungen an neuen Namen:**
-- Englisch (international, aber auf Deutsch gut aussprechbar)
-- Kurz (2-3 Silben, max 7 Buchstaben ideal)
-- Domain verfuegbar (.app, .dev, .software, .io, .com, .de)
-- Kein Markenkonflikt Klasse 09 (DPMA + EUIPO)
-- Kein bestehender Wettbewerber im Voice/Dictation/STT-Markt
+**Markenanmeldung:**
+- Jetzt noch nicht (290 EUR DPMA). Spaetestens kurz bevor Landingpage live geht / erster Verkauf.
+- Grund: Trademark Squatting -- sobald das Produkt sichtbar wird, koennte jemand den Namen registrieren.
 
-**Domain dikta.software:** Reservierung bei Hostinger storniert (2026-03-21).
+**Umbenennung durchfuehren (wenn bereit):**
+- [ ] Codebase (Rust + React + Android)
+- [ ] GitHub-Repo (dikta-public → voxlit)
+- [ ] README, Branding, Icons
+- [ ] Landingpage-Briefing anpassen
+- [ ] Portfolio-Text auf Berater-Website anpassen (Website-Agent informieren)
 
 ## Positionierung
 
