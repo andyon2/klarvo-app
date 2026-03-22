@@ -52,6 +52,7 @@ pub struct HistoryEntry {
 }
 
 /// A single API usage entry for cost tracking.
+#[allow(dead_code)] // constructed in tests; kept for future usage-list Tauri command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageEntry {
@@ -190,6 +191,7 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
 /// - `uuid`: stable identifier for cross-device sync. If `None`, a new v4 UUID
 ///   is generated automatically.
 /// - `device_id`: ID of the originating device. Pass `None` for local entries.
+#[allow(clippy::too_many_arguments)]
 pub fn add_entry(
     conn: &Connection,
     text: &str,

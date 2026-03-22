@@ -88,12 +88,11 @@ pub fn save_snippets(
 /// window currently has focus.
 #[tauri::command]
 pub async fn paste_snippet(state: State<'_, AppState>, content: String) -> Result<(), String> {
-    let prev_hwnd = state
+    let prev_hwnd = *state
         .inner()
         .prev_foreground_hwnd
         .lock()
-        .map_err(|_| "Internal state lock poisoned".to_string())?
-        .clone();
+        .map_err(|_| "Internal state lock poisoned".to_string())?;
 
     // Capture current foreground window if we have no stored one from recording.
     let hwnd = prev_hwnd.or_else(capture_foreground_window);

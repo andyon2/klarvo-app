@@ -629,7 +629,7 @@ fn recording_thread(
     let samples_writer = Arc::clone(&samples);
 
     // Shared level callback wrapped in Arc for use in the stream callback.
-    let level_cb = level_cb.map(|cb| Arc::new(cb));
+    let level_cb = level_cb.map(Arc::new);
     let level_cb_clone = level_cb.clone();
 
     // Track samples for periodic RMS calculation (~15 Hz).
@@ -785,6 +785,7 @@ pub fn compute_rms(samples: &[f32]) -> f32 {
 /// When `samples_chunk_tx` is provided, sends the raw sample chunk to the
 /// recording thread for SileroVad inference. Previously the RMS alone was sent
 /// for RMS-based silence detection; now the raw samples go to the VAD instead.
+#[allow(clippy::too_many_arguments)]
 fn process_f32_data(
     data: &[f32],
     buffer: &SampleBuffer,
@@ -837,6 +838,7 @@ fn process_f32_data(
 /// `samples_chunk_tx`: if provided, the raw sample chunk is sent to the recording
 /// thread for SileroVad inference. Previously only `rms_tx` existed and its values
 /// were used for RMS-based silence detection; now raw samples go to the VAD.
+#[allow(clippy::too_many_arguments)]
 fn build_stream_with_level(
     device: &cpal::Device,
     config: &StreamConfig,

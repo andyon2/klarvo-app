@@ -11,11 +11,12 @@ Diese Datei wird bei jedem Sessionstart gelesen und waechst organisch.
 - Projektpfad Windows: `D:\Apps\voxlit\`
 - Projektpfad WSL: `~/claude-projects/voxlit/`
 
-## Build & Test -- Die 3 Wege
+## Build & Test -- Die 4 Wege
 
-1. **`cargo test`** — Automatisierte Unit-Tests (aktuell 239). Laeuft in WSL.
+1. **`cargo test`** — Automatisierte Unit-Tests (aktuell 424). Laeuft in WSL.
 2. **`tauri dev`** — Dev-Modus mit Hot-Reload. Fuer schnelles Frontend-Testen.
 3. **`voxlit.exe` direkt** — Andys primaerer Test-Weg. `sync-and-build.ps1` in PowerShell ausfuehren, dann `D:\Apps\voxlit\src-tauri\target\release\voxlit.exe` starten. Kein Installer noetig. Das ist die fertige App wie sie beim Nutzer laeuft.
+4. **`npm run preview`** — UI-Preview im Browser (http://localhost:1422/). Kein Tauri-Backend, alle Commands geben Mock-Daten zurueck. Ideal fuer Design-Iterationen: Farben, Layout, Styling. ThemeSwitcher-Panel (unten rechts) erlaubt live zwischen Farbvarianten zu wechseln. Nutzen bei allen UX/UI-Anpassungen bevor ein echter Build gemacht wird.
 
 **Wichtig:** Andy nutzt fast immer Weg 3. Wenn er fragt "kann ich testen?", meint er: Ist ein frischer Build moeglich? Die Antwort ist immer `sync-and-build.ps1` auf Windows, dann `voxlit.exe` starten.
 

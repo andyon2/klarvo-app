@@ -50,6 +50,7 @@ pub enum PasteError {
     Clipboard(String),
 
     #[error("Key simulation failed: {0}")]
+    #[allow(dead_code)] // reserved for SAPI command mode
     KeySimulation(String),
 
     #[error("Text is empty -- nothing to paste")]

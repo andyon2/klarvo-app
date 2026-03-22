@@ -20,7 +20,7 @@ Du aktualisierst den Projektstatus von Voxlit basierend auf dem, was in dieser S
 6. Schreibe die aktualisierte Datei zurueck (Edit, nie Write)
 
 ## Regeln
-- Halte die Datei unter 50 Zeilen
+- Halte die Datei unter 100 Zeilen
 - Keine Meinung, keine Bewertung -- nur Fakten
 - Prioritaeten: Bugs vor Features, Blocker zuerst
 - Modul-Referenzen, Changelogs, Code-Dokumentation gehoeren NICHT in project-status.md

@@ -73,10 +73,6 @@ use serde::{Deserialize, Serialize};
 use stt::SttProvider;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WindowEvent};
 
-#[cfg(desktop)]
-use tauri::menu::{Menu, MenuItem};
-#[cfg(desktop)]
-use tauri::tray::TrayIconEvent;
 
 // Re-export pipeline helpers so `commands/` modules can reach them.
 pub use pipeline::{resolve_cleanup_provider, resolve_stt_provider};
@@ -373,7 +369,7 @@ macro_rules! require_license {
             .license_status
             .lock()
             .map_err(|_| "license lock error".to_string())?;
-        if !crate::license::is_feature_allowed(&status, $feature) {
+        if !$crate::license::is_feature_allowed(&status, $feature) {
             return Err(format!("feature_requires_license:{:?}", $feature));
         }
     }};
@@ -411,7 +407,7 @@ pub fn mask_api_key(key: &str) -> String {
 /// app must not crash because the tray tooltip failed to update.
 #[cfg(desktop)]
 pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
-    use tauri::Manager;
+    
 
     let tooltip = match state {
         hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Voxlit",
@@ -518,6 +514,7 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 }
 
 #[cfg(desktop)]
+#[allow(dead_code)] // called from setup but only on first launch path
 /// Creates the floating bar window positioned above the taskbar.
 ///
 /// `saved_x` / `saved_y`: persisted logical position from the config. When
@@ -537,7 +534,7 @@ fn create_bar_window(
     let bar_height = 10.0_f64;
     let pill_height = 36.0_f64;
 
-    let mut builder = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         "bar",
         WebviewUrl::App("index.html".into()),
@@ -720,8 +717,8 @@ pub fn run() {
         commands::settings::apply_autostart(cfg.autostart);
 
         // Extract bar position before `cfg` is moved into AppState.
-        let saved_bar_x = cfg.bar_x;
-        let saved_bar_y = cfg.bar_y;
+        let _saved_bar_x = cfg.bar_x;
+        let _saved_bar_y = cfg.bar_y;
 
         // Build and register the application state.
         let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db, is_early_adopter);

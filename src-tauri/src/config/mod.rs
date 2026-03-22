@@ -328,18 +328,15 @@ pub struct AppProfile {
 /// Default is `Hold` -- this matches the Wispr Flow UX that users expect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum HotkeyMode {
     Toggle,
+    #[default]
     Hold,
     AutoStop,
     Auto,
 }
 
-impl Default for HotkeyMode {
-    fn default() -> Self {
-        HotkeyMode::Hold
-    }
-}
 
 impl std::str::FromStr for HotkeyMode {
     type Err = String;

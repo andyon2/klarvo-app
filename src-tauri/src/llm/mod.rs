@@ -346,7 +346,7 @@ pub trait CleanupProvider: Send + Sync {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
-struct ChatRequest<'a> {
+pub(crate) struct ChatRequest<'a> {
     model: &'a str,
     messages: Vec<ChatMessage<'a>>,
     temperature: f32,
@@ -354,7 +354,7 @@ struct ChatRequest<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct ChatMessage<'a> {
+pub(crate) struct ChatMessage<'a> {
     role: &'a str,
     content: String,
 }
@@ -381,8 +381,14 @@ struct ChatMessageResponse {
 pub struct ChatUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    // deserialized from API response, kept for future stats
+    #[allow(dead_code)]
     pub total_tokens: u32,
+    // deserialized from API response, kept for future stats
+    #[allow(dead_code)]
     pub prompt_cache_hit_tokens: Option<u32>,
+    // deserialized from API response, kept for future stats
+    #[allow(dead_code)]
     pub prompt_cache_miss_tokens: Option<u32>,
 }
 
@@ -696,6 +702,7 @@ impl DeepSeekCleanup {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -768,6 +775,7 @@ impl OpenAiCleanup {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -841,6 +849,7 @@ impl GroqCleanup {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -903,7 +912,7 @@ impl CleanupProvider for GroqCleanup {
 /// - Auth uses `x-api-key` header instead of `Authorization: Bearer`
 /// - Response `content` is an array of typed blocks, not a single string
 #[derive(Debug, Serialize)]
-struct AnthropicRequest<'a> {
+pub(crate) struct AnthropicRequest<'a> {
     model: &'a str,
     system: String,
     messages: Vec<AnthropicMessage>,
@@ -983,6 +992,7 @@ impl AnthropicCleanup {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self

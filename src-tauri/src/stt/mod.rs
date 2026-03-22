@@ -194,6 +194,7 @@ impl WhisperStt {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API, used by GroqWhisper/OpenAiWhisper wrappers
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
@@ -203,6 +204,7 @@ impl WhisperStt {
     ///
     /// 0.0 (the default) produces deterministic output; higher values increase
     /// randomness. Values outside `[0.0, 1.0]` are clamped by the Whisper API.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
@@ -330,12 +332,14 @@ impl GroqWhisper {
     }
 
     /// Override the Whisper model variant (e.g. `"whisper-large-v3"`).
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner = self.inner.with_model(model);
         self
     }
 
     /// Override the Whisper sampling temperature.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.inner = self.inner.with_temperature(temperature);
         self
@@ -404,12 +408,14 @@ impl OpenAiWhisper {
     }
 
     /// Override the model variant.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner = self.inner.with_model(model);
         self
     }
 
     /// Override the Whisper sampling temperature.
+    #[allow(dead_code)] // builder API for future use
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.inner = self.inner.with_temperature(temperature);
         self

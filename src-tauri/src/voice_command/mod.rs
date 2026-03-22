@@ -218,6 +218,7 @@ impl VoiceCommandEngine {
     /// Resets all internal state (buffer + VAD + resampler).
     ///
     /// Call this when the Voice Command Mode is disabled or re-enabled.
+    #[allow(dead_code)] // will be used when voice command mode is re-enabled
     pub fn reset(&mut self) {
         self.vad.reset();
         self.snippet_buf.clear();
@@ -361,7 +362,8 @@ fn find_command(text: &str) -> Option<VoiceCommand> {
 
     // Step 2: single-word keywords via whole-word boundary check.
     // Order still matters within each group (more specific before generic).
-    let checks: &[(&[&str], fn() -> VoiceCommand)] = &[
+    type CommandCheck = (&'static [&'static str], fn() -> VoiceCommand);
+    let checks: &[CommandCheck] = &[
         // StartToggle
         (&["toggle", "start", "dictate", "diktat", "diktieren"], || VoiceCommand::StartToggle),
         // StopDictation

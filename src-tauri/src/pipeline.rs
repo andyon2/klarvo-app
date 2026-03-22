@@ -6,7 +6,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -1177,15 +1177,12 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                             // Re-acquire state via the handle -- never hold
                             // the DB lock across an await point.
                             //
-                            // We acquire the lock, run the update, and
-                            // explicitly drop the guard before `st` is
-                            // dropped by collecting it into a local Result
-                            // and ignoring the value.
+                            // The MutexGuard is released at the end of the
+                            // map closure, before `mark_result` is read.
                             let st = handle_for_sync.state::<AppState>();
                             let mark_result = st.history_db.lock().ok().map(|db| {
-                                sync::mark_entries_synced(&db, &[uuid_for_mark.clone()])
+                                sync::mark_entries_synced(&db, std::slice::from_ref(&uuid_for_mark))
                             });
-                            drop(st);
                             if let Some(Err(e)) = mark_result {
                                 log::warn!("[sync] Failed to mark entry as synced: {e}");
                             }
@@ -1273,9 +1270,9 @@ pub async fn run_dictation_pipeline(handle: AppHandle) {
 /// Recording modes per slot:
 /// - `Toggle`:  Pressed fires [`run_dictation_pipeline`] (start or stop+process).
 /// - `Hold`:    Pressed fires [`start_recording_only`]; Released fires
-///              [`stop_and_process_pipeline`].
+///   [`stop_and_process_pipeline`].
 /// - `AutoStop`: Press once to start; silence stops automatically. Second press
-///               stops manually if still recording.
+///   stops manually if still recording.
 /// - `Auto`:    Like AutoStop but loops until the user presses again.
 #[cfg(desktop)]
 pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {

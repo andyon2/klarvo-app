@@ -229,6 +229,7 @@ pub struct SileroVad {
 
 impl SileroVad {
     /// Creates a new VAD instance with default parameters.
+    #[allow(dead_code)] // used via with_config(); kept as convenience constructor
     pub fn new() -> Result<Self, VadError> {
         Self::with_config(VadConfig::default())
     }

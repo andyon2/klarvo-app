@@ -114,6 +114,7 @@ pub fn apply_autostart(_enabled: bool) {}
 /// Passing an empty string for an API key disables that provider (requests
 /// will fail with an auth error from the API until a valid key is supplied).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn save_settings(
     handle: AppHandle,
     state: State<'_, AppState>,
@@ -131,9 +132,9 @@ pub async fn save_settings(
     openai_api_key: Option<String>,
     anthropic_api_key: Option<String>,
     // deprecated: ignored -- kept for backwards compatibility with older frontend versions
-    stt_priority: Option<Vec<String>>,
+    _stt_priority: Option<Vec<String>>,
     // deprecated: ignored -- kept for backwards compatibility with older frontend versions
-    llm_priority: Option<Vec<String>>,
+    _llm_priority: Option<Vec<String>>,
     output_language: Option<String>,
     webhook_url: Option<String>,
     turso_url: Option<String>,
@@ -366,13 +367,11 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
     // Fall back to the legacy flat fields for slot 0 in case the Vec is empty
     // (should not happen after migration, but be defensive).
     let slot0_hotkey = cfg
-        .hotkey_slots
-        .get(0)
+        .hotkey_slots.first()
         .map(|s| s.hotkey.clone())
         .unwrap_or_else(|| cfg.hotkey.clone());
     let slot0_mode = cfg
-        .hotkey_slots
-        .get(0)
+        .hotkey_slots.first()
         .map(|s| s.mode)
         .unwrap_or(cfg.hotkey_mode);
     let slot1_hotkey = cfg
@@ -412,7 +411,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_opacity: cfg.bubble_opacity,
         local_whisper_model: cfg.local_whisper_model,
         local_whisper_gpu: cfg.local_whisper_gpu,
-        insert_and_send_slot1: cfg.hotkey_slots.get(0).map(|s| s.insert_and_send).unwrap_or(false),
+        insert_and_send_slot1: cfg.hotkey_slots.first().map(|s| s.insert_and_send).unwrap_or(false),
         insert_and_send_slot2: cfg.hotkey_slots.get(1).map(|s| s.insert_and_send).unwrap_or(false),
         autostop_silence_secs: cfg.autostop_silence_secs,
         auto_mode_silence_secs: cfg.auto_mode_silence_secs,

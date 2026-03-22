@@ -30,6 +30,7 @@ import { FillerStatsChart, HighlightedText } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AdvancedSettingsPanel } from "./components/AdvancedSettingsPanel";
 import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
+import { ThemeSwitcher } from "./components/ThemeSwitcher";
 
 // Hooks
 import { useRecording } from "./hooks/useRecording";
@@ -877,6 +878,9 @@ export default function App() {
           </span>
         </div>
       )}
+
+      {/* ── Theme Switcher (preview only) ── */}
+      <ThemeSwitcher />
     </main>
   );
 }

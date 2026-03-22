@@ -106,6 +106,7 @@ pub fn remove_license(state: State<'_, AppState>) -> Result<(), String> {
 /// or after a sync that might have brought in a new key.
 ///
 /// This is not exposed as a Tauri command but is called internally at startup.
+#[allow(dead_code)] // reserved for startup sync and future external config reload
 pub fn refresh_license_status_from_config(state: &AppState) -> Result<(), String> {
     let (key, validated_at) = {
         let cfg = crate::lock!(state.config)?;
