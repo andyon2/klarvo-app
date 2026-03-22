@@ -19,7 +19,7 @@ Keine.
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
 - [ ] Onboarding: "Ich kenn mich aus" schliesst das Fenster, aber Onboarding erscheint bei jedem App-Start erneut. Persistenz-Bug.
 - [ ] Auto-Stop und Full-Auto: Silence-Detection loest nicht aus, Cleanup passiert nicht.
-- [ ] **[BLOCKER]** Android-Build: Kotlin-Versionskonflikt. Compiler 1.9.0, stdlib im Cache 2.2.0. Kotlin-Plugin in build.gradle.kts muss hochgezogen werden. Seit ~20. Maerz kaputt.
+- [x] ~~**[BLOCKER]** Android-Build: Kotlin-Versionskonflikt~~ → Fix: kotlin-gradle-plugin auf 2.2.0 gebumpt. android-build.sh patcht gen/ automatisch.
 
 ## Erledigt (diese Session)
 

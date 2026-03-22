@@ -195,3 +195,4 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - WSL2: `ADB_SERVER_SOCKET=tcp:$WSL_HOST:5037` fuer ADB-Zugriff
 - Build: `scripts/android-build.sh` (kopiert Kotlin, baut, signiert, deployt nach Dropbox)
 - Tauri Plugins desktop-only: opener, global-shortcut, updater, tray-icon (mit cfg-Guards!)
+- **Kotlin/AGP-Versionsmatrix (2026-03-22):** AGP 8.x und neuere AndroidX-Dependencies (z.B. activity-ktx 1.10+, kotlinx-coroutines 1.8+) ziehen `kotlin-stdlib:2.x` transitiv rein. Der Kotlin-Compiler 1.9.x kann 2.x-Metadata nicht lesen → Build-Fehler "unsupported metadata version". Fix: `kotlin-gradle-plugin` in `build.gradle.kts` muss >= 2.x sein (aktuell 2.2.0). `kotlinOptions { jvmTarget = "1.8" }` bleibt funktional in Kotlin 2.x; zusaetzlich `compileOptions` mit `JavaVersion.VERSION_1_8` ist empfohlen (Java-Bytecode-Kompatibilitaet unabhaengig vom Kotlin-Compiler sichern).

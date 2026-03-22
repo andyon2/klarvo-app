@@ -44,7 +44,7 @@ wsl bash ~/claude-projects/voxlit/scripts/sign-installer.sh
 
 # Copy installer to Dropbox for easy access
 $version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
-$dropboxDir = "D:\Dropbox\App Development\voxlit\releases\v$version"
+$dropboxDir = "D:\Dropbox\App Development\klarvo\releases\v$version"
 $nsisDir = "$dst\src-tauri\target\release\bundle\nsis"
 $installer = Get-ChildItem "$nsisDir\*.exe" -Exclude "*.exe.sig" | Select-Object -First 1
 
