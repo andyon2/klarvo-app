@@ -543,7 +543,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub profiles: Vec<AppProfile>,
 
-    /// Launch Voxlit automatically when the user logs in.
+    /// Launch Klarvo automatically when the user logs in.
     /// On Windows this writes/removes a `HKCU\...\Run` registry entry.
     #[serde(default)]
     pub autostart: bool,

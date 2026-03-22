@@ -310,7 +310,7 @@ fn process_snippet(
 
 /// Transcribes a short audio snippet via Groq Whisper API.
 ///
-/// Uses prompt conditioning so Groq recognizes "Voxlit" as a word.
+/// Uses prompt conditioning so Groq recognizes "Klarvo" as a word.
 /// Typically completes in 0.5-1.5 seconds.
 fn transcribe_with_groq(
     wav_bytes: &[u8],

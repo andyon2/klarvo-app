@@ -2,7 +2,7 @@
 
 export function StatusDot({ active }: { active: boolean }) {
   return (
-    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-emerald-500" : "bg-zinc-600"}`} />
+    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-voxlit-primary" : "bg-voxlit-dim"}`} />
   );
 }
 
@@ -10,12 +10,12 @@ export function DictionaryTag({ term, onRemove }: { term: string; onRemove: (t: 
   // Import isMobile here via dynamic check to keep ui.tsx dependency-free of platform.ts at module level.
   const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
   return (
-    <span className="inline-flex items-center gap-1 bg-[#111113] text-zinc-300 pl-2.5 pr-1.5 py-1 rounded-full text-xs border border-zinc-800/60">
+    <span className="inline-flex items-center gap-1 bg-voxlit-surface text-voxlit-muted pl-2.5 pr-1.5 py-1 rounded-full text-xs border border-voxlit-border/60">
       {term}
       <button
         onClick={() => onRemove(term)}
         className={[
-          "text-zinc-500 hover:text-red-400 rounded-full transition-colors",
+          "text-voxlit-dim hover:text-voxlit-danger rounded-full transition-colors",
           mobile ? "p-2 min-w-[32px] min-h-[32px] flex items-center justify-center" : "p-0.5",
         ].join(" ")}
       >
@@ -34,7 +34,7 @@ interface FillerEntry {
 
 export function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
   if (entries.length === 0) {
-    return <p className="text-xs text-zinc-500 italic">No filler words tracked yet.</p>;
+    return <p className="text-xs text-voxlit-dim italic">No filler words tracked yet.</p>;
   }
 
   const max = entries[0].count;
@@ -43,14 +43,14 @@ export function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
     <div className="flex flex-col gap-1.5">
       {entries.slice(0, 10).map(({ word, count }) => (
         <div key={word} className="flex items-center gap-2">
-          <span className="text-[11px] text-zinc-400 w-16 shrink-0 font-mono truncate">{word}</span>
-          <div className="flex-1 bg-zinc-800/60 rounded-full h-1.5 overflow-hidden">
+          <span className="text-[11px] text-voxlit-muted w-16 shrink-0 font-mono truncate">{word}</span>
+          <div className="flex-1 bg-voxlit-elevated/60 rounded-full h-1.5 overflow-hidden">
             <div
-              className="h-full bg-emerald-500/50 rounded-full transition-all duration-300"
+              className="h-full bg-voxlit-primary/50 rounded-full transition-all duration-300"
               style={{ width: `${Math.round((count / max) * 100)}%` }}
             />
           </div>
-          <span className="text-[11px] text-zinc-500 w-6 text-right shrink-0">{count}</span>
+          <span className="text-[11px] text-voxlit-dim w-6 text-right shrink-0">{count}</span>
         </div>
       ))}
     </div>
@@ -101,7 +101,7 @@ export function HighlightedText({ text, query, className }: { text: string; quer
     <p className={className}>
       {prefix}{parts.map((p, i) =>
         p.highlight
-          ? <mark key={i} className="bg-emerald-500/30 text-emerald-300 rounded-sm px-0.5">{p.text}</mark>
+          ? <mark key={i} className="bg-voxlit-primary/30 text-voxlit-accent rounded-sm px-0.5">{p.text}</mark>
           : <span key={i}>{p.text}</span>
       )}{suffix}
     </p>
@@ -110,25 +110,25 @@ export function HighlightedText({ text, query, className }: { text: string; quer
 
 export function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3">
-      <p className="text-[11px] text-zinc-500 uppercase tracking-wide">{label}</p>
-      <p className="text-lg font-semibold text-zinc-200 mt-0.5">
+    <div className="bg-voxlit-surface border border-voxlit-border/60 rounded-xl p-3">
+      <p className="text-[11px] text-voxlit-dim uppercase tracking-wide">{label}</p>
+      <p className="text-lg font-semibold text-voxlit-text mt-0.5">
         {value}
-        {sub && <span className="text-[11px] text-zinc-500 font-normal ml-1">{sub}</span>}
+        {sub && <span className="text-[11px] text-voxlit-dim font-normal ml-1">{sub}</span>}
       </p>
     </div>
   );
 }
 
 // Shared CSS class strings for form inputs, used across Settings panels.
-export const INPUT_CLS = "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors";
-export const LABEL_CLS = "text-xs text-zinc-300";
-export const SECTION_TITLE_CLS = "text-[11px] font-semibold text-zinc-400 uppercase tracking-widest";
+export const INPUT_CLS = "w-full bg-voxlit-surface border border-voxlit-border/60 rounded-lg px-3 py-2 text-xs text-voxlit-text placeholder:text-voxlit-dim focus:outline-none focus:border-voxlit-primary/40 transition-colors";
+export const LABEL_CLS = "text-xs text-voxlit-muted";
+export const SECTION_TITLE_CLS = "text-[11px] font-semibold text-voxlit-muted uppercase tracking-widest";
 
 // Mobile-aware variants -- one size larger on touch screens.
 const _mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 export const INPUT_CLS_M = _mobile
-  ? "w-full bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
+  ? "w-full bg-voxlit-surface border border-voxlit-border/60 rounded-lg px-3 py-2.5 text-sm text-voxlit-text placeholder:text-voxlit-dim focus:outline-none focus:border-voxlit-primary/40 transition-colors"
   : INPUT_CLS;
-export const LABEL_CLS_M = _mobile ? "text-sm text-zinc-300" : LABEL_CLS;
-export const SECTION_TITLE_CLS_M = _mobile ? "text-xs font-semibold text-zinc-400 uppercase tracking-widest" : SECTION_TITLE_CLS;
+export const LABEL_CLS_M = _mobile ? "text-sm text-voxlit-muted" : LABEL_CLS;
+export const SECTION_TITLE_CLS_M = _mobile ? "text-xs font-semibold text-voxlit-muted uppercase tracking-widest" : SECTION_TITLE_CLS;

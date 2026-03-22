@@ -68,7 +68,7 @@ const TIPS: TipDefinition[] = [
     id: "offline-mode",
     trigger: { dictations: 50 },
     title: "Offline-Modus",
-    text: "Voxlit kann auch ohne Internet funktionieren — mit einem lokalen Whisper-Modell.",
+    text: "Klarvo kann auch ohne Internet funktionieren — mit einem lokalen Whisper-Modell.",
     actionLabel: "Einrichten",
     panel: "settings",
   },

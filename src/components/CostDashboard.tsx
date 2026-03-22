@@ -35,26 +35,25 @@ interface StatTileProps {
   value: string;
   sub?: string;
   highlight?: boolean;
+  /** "primary" = teal (default), "warm" = orange */
+  color?: "primary" | "warm";
 }
 
-function StatTile({ label, value, sub, highlight }: StatTileProps) {
+function StatTile({ label, value, sub, highlight, color = "primary" }: StatTileProps) {
+  const borderCls = highlight
+    ? color === "warm" ? "border-voxlit-warm/30" : "border-voxlit-primary/30"
+    : "border-voxlit-border/60";
+  const valueCls = highlight
+    ? color === "warm" ? "text-voxlit-warm" : "text-voxlit-primary"
+    : "text-voxlit-text";
+
   return (
-    <div
-      className={[
-        "bg-[#111113] border rounded-xl p-3",
-        highlight ? "border-emerald-500/30" : "border-zinc-800/60",
-      ].join(" ")}
-    >
-      <p className="text-[11px] text-zinc-500 uppercase tracking-wide leading-tight">{label}</p>
-      <p
-        className={[
-          "text-base font-semibold mt-0.5",
-          highlight ? "text-emerald-400" : "text-zinc-200",
-        ].join(" ")}
-      >
+    <div className={`bg-voxlit-bg border rounded-xl p-3 ${borderCls}`}>
+      <p className="text-[11px] text-voxlit-dim uppercase tracking-wide leading-tight">{label}</p>
+      <p className={`text-base font-semibold mt-0.5 ${valueCls}`}>
         {value}
         {sub && (
-          <span className="text-[11px] text-zinc-500 font-normal ml-1">{sub}</span>
+          <span className="text-[11px] text-voxlit-dim font-normal ml-1">{sub}</span>
         )}
       </p>
     </div>
@@ -99,7 +98,7 @@ export function CostDashboard({ stats }: CostDashboardProps) {
 
       {/* Section: Usage statistics */}
       <div>
-        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+        <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-widest mb-2">
           Nutzung
         </p>
         <div className="grid grid-cols-2 gap-2">
@@ -113,63 +112,66 @@ export function CostDashboard({ stats }: CostDashboardProps) {
         </div>
       </div>
 
-      {/* Section: Cost breakdown */}
+      {/* Section: Cost breakdown — warm/orange accent for "money" */}
       <div>
-        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+        <p className="text-[11px] font-semibold text-voxlit-warm uppercase tracking-widest mb-2">
           Kosten
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <StatTile label="STT-Kosten" value={hasData ? formatCost(stats.totalSttCostUsd) : "$0.00"} sub="USD" />
-          <StatTile label="LLM-Kosten" value={hasData ? formatCost(stats.totalLlmCostUsd) : "$0.00"} sub="USD" />
+          <StatTile label="STT-Kosten" value={hasData ? formatCost(stats.totalSttCostUsd) : "$0.00"} sub="USD" highlight color="warm" />
+          <StatTile label="LLM-Kosten" value={hasData ? formatCost(stats.totalLlmCostUsd) : "$0.00"} sub="USD" highlight color="warm" />
           <StatTile
             label="Gesamt"
             value={hasData ? formatCost(stats.totalCostUsd) : "$0.00"}
             sub="USD"
             highlight
+            color="warm"
           />
           <StatTile
             label="Heute"
             value={hasData ? formatCost(stats.costTodayUsd) : "$0.00"}
             sub="USD"
+            highlight
+            color="warm"
           />
         </div>
       </div>
 
       {/* Savings banner */}
       {hasData ? (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex flex-col gap-1">
-          <p className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wide">
+        <div className="bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-xl p-4 flex flex-col gap-1">
+          <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-wide">
             Vergleich mit Wispr Flow
           </p>
           {savings > 0 ? (
             <>
-              <p className="text-sm font-semibold text-emerald-300">
+              <p className="text-sm font-semibold text-voxlit-accent">
                 Du sparst {formatCost(savings)}/Monat
               </p>
-              <p className="text-[11px] text-emerald-600 leading-snug">
+              <p className="text-[11px] text-voxlit-primary leading-snug">
                 Wispr Flow kostet ${WISPR_MONTHLY_USD.toFixed(2)}/Monat. Deine
-                Voxlit-Kosten: {formatCost(monthly)}/Monat.
+                Klarvo-Kosten: {formatCost(monthly)}/Monat.
               </p>
             </>
           ) : (
-            <p className="text-xs text-emerald-600">
+            <p className="text-xs text-voxlit-primary">
               Noch zu wenig Daten für einen Vergleich — diktiere mehr!
             </p>
           )}
         </div>
       ) : (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
-          <p className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wide mb-1">
+        <div className="bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-xl p-4">
+          <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-wide mb-1">
             Vergleich mit Wispr Flow
           </p>
-          <p className="text-xs text-emerald-600">
+          <p className="text-xs text-voxlit-primary">
             Noch keine Daten — starte dein erstes Diktat!
           </p>
         </div>
       )}
 
       {/* Footer note */}
-      <p className="text-[10px] text-zinc-600 text-center leading-snug">
+      <p className="text-[10px] text-voxlit-dim text-center leading-snug">
         Kostenbasiert auf Provider-Preisen (Groq STT: kostenlos, DeepSeek LLM: ~$0.00014/1k Token).
         Wispr Flow: ${WISPR_MONTHLY_USD.toFixed(2)}/Monat.
       </p>

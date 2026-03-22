@@ -36,7 +36,7 @@ pub fn apply_autostart(enabled: bool) {
     let key_path: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0"
         .encode_utf16()
         .collect();
-    let value_name: Vec<u16> = "Voxlit\0".encode_utf16().collect();
+    let value_name: Vec<u16> = "Klarvo\0".encode_utf16().collect();
 
     unsafe {
         let mut hkey = windows::Win32::System::Registry::HKEY::default();
@@ -665,7 +665,7 @@ pub fn is_first_run(state: State<'_, AppState>) -> bool {
     }
 }
 
-/// Returns the title of the last window that was active before Voxlit received
+/// Returns the title of the last window that was active before Klarvo received
 /// focus (captured at hotkey press time), or `None` when no title was captured.
 #[tauri::command]
 pub fn get_active_app(state: State<'_, AppState>) -> Option<String> {

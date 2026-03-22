@@ -53,12 +53,12 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
   }, [noteState, onRefresh]);
 
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Voice Notes</span>
+    <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
+        <span className="text-[10px] font-semibold text-voxlit-dim uppercase tracking-widest">Voice Notes</span>
         <button
           onClick={onClose}
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
         >
           <CloseIcon />
         </button>
@@ -72,10 +72,10 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
           className={[
             "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all duration-150",
             noteState === "recording"
-              ? "bg-red-500/15 border-red-500/30 text-red-400"
+              ? "bg-voxlit-danger/15 border-voxlit-danger/30 text-voxlit-danger"
               : noteState === "processing"
-              ? "bg-amber-500/10 border-amber-500/20 text-amber-400 opacity-60 cursor-not-allowed"
-              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15",
+              ? "bg-voxlit-warning/10 border-voxlit-warning/20 text-voxlit-warning opacity-60 cursor-not-allowed"
+              : "bg-voxlit-primary/10 border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15",
           ].join(" ")}
         >
           {noteState === "recording" ? (
@@ -86,28 +86,28 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
             <><MicIcon className="w-3.5 h-3.5" /> Record Note</>
           )}
         </button>
-        {noteError && <span className="text-[10px] text-red-400">{noteError}</span>}
-        <p className="text-[10px] text-zinc-500 ml-auto">Notes are saved, not pasted.</p>
+        {noteError && <span className="text-[10px] text-voxlit-danger">{noteError}</span>}
+        <p className="text-[10px] text-voxlit-dim ml-auto">Notes are saved, not pasted.</p>
       </div>
 
       {/* Notes list */}
       <div className="overflow-y-auto max-h-[300px] p-4 flex flex-col gap-2">
         {notes.length === 0 ? (
-          <p className="text-xs text-zinc-500 italic text-center py-4">No voice notes yet. Record your first one!</p>
+          <p className="text-xs text-voxlit-dim italic text-center py-4">No voice notes yet. Record your first one!</p>
         ) : (
           notes.map((note) => (
             <div
               key={note.id}
-              className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors"
+              className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 group hover:border-voxlit-border/60 transition-colors"
             >
-              <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-3">{note.text}</p>
+              <p className="text-xs text-voxlit-muted whitespace-pre-wrap line-clamp-3">{note.text}</p>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-[10px] text-zinc-500">
+                <span className="text-[10px] text-voxlit-dim">
                   {new Date(note.createdAt + "Z").toLocaleString()}
                 </span>
                 <button
                   onClick={() => navigator.clipboard.writeText(note.text).catch(console.error)}
-                  className="text-[10px] text-zinc-500 hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all"
+                  className="text-[10px] text-voxlit-dim hover:text-voxlit-primary opacity-0 group-hover:opacity-100 transition-all"
                 >
                   Copy
                 </button>

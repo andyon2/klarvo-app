@@ -1082,7 +1082,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         }
 
         // Return-to-Current: if the user switched to a different window while
-        // Voxlit was processing (STT + LLM cleanup takes seconds), bring them
+        // Klarvo was processing (STT + LLM cleanup takes seconds), bring them
         // back to where they were just before paste, not the recording-start
         // window.
         //

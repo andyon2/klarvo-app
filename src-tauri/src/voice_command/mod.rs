@@ -339,7 +339,7 @@ pub fn recognize_command(text: &str) -> Option<VoiceCommand> {
     // Step 4: search for command keywords in the post-trigger text.
     // We scan the whole post-trigger string (not just the next word) so that
     // filler words like "bitte" or "please" between trigger and command work:
-    // "Voxlit, bitte starten" → still matches "start".
+    // "Klarvo, bitte starten" → still matches "start".
     find_command(post_trigger)
 }
 

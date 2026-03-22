@@ -1,4 +1,4 @@
-//! Voxlit -- Tauri backend entry point.
+//! Klarvo -- Tauri backend entry point.
 //!
 //! Wires together the audio, STT, LLM, paste, hotkey, config and dictionary
 //! modules and exposes them to the React frontend via Tauri commands and events.
@@ -397,11 +397,11 @@ pub fn mask_api_key(key: &str) -> String {
 /// Updates the system tray icon tooltip to reflect the current pipeline state.
 ///
 /// Tooltip strings per state:
-/// - idle / done  → "Voxlit"
-/// - recording    → "Voxlit — Recording..."
-/// - transcribing → "Voxlit — Transcribing..."
-/// - cleaning     → "Voxlit — Processing..."
-/// - error        → "Voxlit — Error"
+/// - idle / done  → "Klarvo"
+/// - recording    → "Klarvo — Recording..."
+/// - transcribing → "Klarvo — Transcribing..."
+/// - cleaning     → "Klarvo — Processing..."
+/// - error        → "Klarvo — Error"
 ///
 /// If the tray icon cannot be found, the failure is logged and ignored -- the
 /// app must not crash because the tray tooltip failed to update.
@@ -410,11 +410,11 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
     
 
     let tooltip = match state {
-        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Voxlit",
-        hotkey::PipelineState::Recording => "Voxlit \u{2014} Recording...",
-        hotkey::PipelineState::Transcribing => "Voxlit \u{2014} Transcribing...",
-        hotkey::PipelineState::Cleaning => "Voxlit \u{2014} Processing...",
-        hotkey::PipelineState::Error => "Voxlit \u{2014} Error",
+        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Klarvo",
+        hotkey::PipelineState::Recording => "Klarvo \u{2014} Recording...",
+        hotkey::PipelineState::Transcribing => "Klarvo \u{2014} Transcribing...",
+        hotkey::PipelineState::Cleaning => "Klarvo \u{2014} Processing...",
+        hotkey::PipelineState::Error => "Klarvo \u{2014} Error",
     };
 
     match handle.tray_by_id("voxlit-tray") {
@@ -732,7 +732,7 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
-            let tray_tooltip = format!("Voxlit \u{2014} {hotkey_str}");
+            let tray_tooltip = format!("Klarvo \u{2014} {hotkey_str}");
             let _tray = tauri::tray::TrayIconBuilder::with_id("voxlit-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip(&tray_tooltip)

@@ -67,7 +67,7 @@ const RESET_CSS = `
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Voxlit brand logo: two interlocking circles (cyan + gold) on dark bg. */
+/** Klarvo brand logo: two interlocking circles (cyan + gold) on dark bg. */
 function VoxlitLogo() {
   return (
     <div
@@ -75,7 +75,7 @@ function VoxlitLogo() {
         width: 24,
         height: 24,
         borderRadius: "50%",
-        background: "#1a1a2e",
+        background: "#252525",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
@@ -88,24 +88,24 @@ function VoxlitLogo() {
         xmlns="http://www.w3.org/2000/svg"
         style={{ width: 18, height: 18 }}
       >
-        {/* Bottom-left cyan arc (opens right) with dot */}
+        {/* Bottom-left teal arc (opens right) with dot */}
         <path
           d="M55 58 A18 18 0 1 1 35 38"
-          stroke="#38BDF8"
+          stroke="#2AC3A8"
           strokeWidth="7"
           strokeLinecap="round"
           fill="none"
         />
-        <circle cx="35" cy="55" r="5" fill="#38BDF8" />
-        {/* Top-right gold arc (opens left) with dot */}
+        <circle cx="35" cy="55" r="5" fill="#2AC3A8" />
+        {/* Top-right orange arc (opens left) with dot */}
         <path
           d="M45 42 A18 18 0 1 1 65 62"
-          stroke="#FBBF24"
+          stroke="#FFA344"
           strokeWidth="7"
           strokeLinecap="round"
           fill="none"
         />
-        <circle cx="65" cy="45" r="5" fill="#FBBF24" />
+        <circle cx="65" cy="45" r="5" fill="#FFA344" />
       </svg>
     </div>
   );
@@ -134,7 +134,7 @@ function Waveform({ levels }: { levels: number[] }) {
             style={{
               flex: 1,
               borderRadius: 9999,
-              background: "rgba(147,197,253,0.85)",
+              background: "rgba(42,195,168,0.85)",
               height: heightPx,
               // No animation or transition: bars respond instantly to the
               // 15 Hz audio-level events from the Rust backend.
@@ -463,17 +463,17 @@ export default function FloatingBar() {
   // Render: expanded pill (recording / processing / done / error / collapsing)
   // ---------------------------------------------------------------------------
 
-  const accentColor = isRecording ? "#93c5fd"
-    : isProcessing ? "#fbbf24"
-    : (isDone && clipboardOnly) ? "#fbbf24"
-    : isDone ? "#34d399"
-    : "#f87171";
+  const accentColor = isRecording ? "#2AC3A8"
+    : isProcessing ? "#FFA344"
+    : (isDone && clipboardOnly) ? "#FFA344"
+    : isDone ? "#4ADE80"
+    : "#FF7369";
 
-  const borderColor = isRecording ? "rgba(147,197,253,0.25)"
-    : isProcessing ? "rgba(245,158,11,0.2)"
-    : (isDone && clipboardOnly) ? "rgba(251,191,36,0.25)"
-    : isDone ? "rgba(52,211,153,0.25)"
-    : "rgba(248,113,113,0.2)";
+  const borderColor = isRecording ? "rgba(42,195,168,0.25)"
+    : isProcessing ? "rgba(255,163,68,0.2)"
+    : (isDone && clipboardOnly) ? "rgba(255,163,68,0.25)"
+    : isDone ? "rgba(74,222,128,0.25)"
+    : "rgba(255,115,105,0.2)";
 
   const pillAnimation = collapsing
     ? "bar-collapse 180ms ease-in forwards"
@@ -488,7 +488,7 @@ export default function FloatingBar() {
           width: "100%",
           height: "100%",
           borderRadius: 9999,
-          background: "rgba(15,15,18,0.95)",
+          background: "rgba(25,25,25,0.96)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
           border: `1px solid ${borderColor}`,
@@ -505,7 +505,7 @@ export default function FloatingBar() {
         }}
       >
 
-        {/* Voxlit logo -- always visible as brand anchor */}
+        {/* Klarvo logo -- always visible as brand anchor */}
         <VoxlitLogo />
 
         {/* Recording: stop button + waveform or live preview + mode badge */}
@@ -516,7 +516,7 @@ export default function FloatingBar() {
             <span
               style={{
                 fontSize: 10,
-                color: "#71717a",
+                color: "#808385",
                 flexShrink: 0,
                 letterSpacing: "0.02em",
                 lineHeight: 1,
@@ -542,7 +542,7 @@ export default function FloatingBar() {
             <span
               style={{
                 fontSize: 11,
-                color: "#a1a1aa",
+                color: "#AAACAD",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -569,14 +569,14 @@ export default function FloatingBar() {
             {clipboardOnly ? (
               <>
                 <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1 }}>📋</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#fbbf24", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#FFA344", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
                   In Clipboard
                 </span>
               </>
             ) : (
               <>
                 <CheckIcon color={accentColor} />
-                <span style={{ fontSize: 11, color: "#34d399", letterSpacing: "0.01em" }}>Done</span>
+                <span style={{ fontSize: 11, color: "#4ADE80", letterSpacing: "0.01em" }}>Done</span>
               </>
             )}
           </div>
@@ -584,7 +584,7 @@ export default function FloatingBar() {
 
         {/* Error */}
         {isError && (
-          <span style={{ fontSize: 11, color: "#f87171", flex: 1, letterSpacing: "0.01em" }}>Error</span>
+          <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
         )}
 
       </div>

@@ -1,4 +1,4 @@
-//! License validation module for the Voxlit open-core monetization model.
+//! License validation module for the Klarvo open-core monetization model.
 //!
 //! ## Key format
 //!
@@ -167,7 +167,7 @@ pub enum LicensedFeature {
 /// Returns `Err` with a human-readable message for invalid or expired keys.
 ///
 /// This does NOT check the cache timestamp -- call `compute_status_from_cache`
-/// for that. This function only answers: "is this a genuine Voxlit key, and if
+/// for that. This function only answers: "is this a genuine Klarvo key, and if
 /// it is a trial key, has it expired?"
 pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
     if key.is_empty() {
@@ -402,7 +402,7 @@ fn unix_secs_to_date_string(secs: u64) -> String {
 // Test-only key generation
 // ---------------------------------------------------------------------------
 
-/// Generates a valid Voxlit license key from arbitrary payload bytes.
+/// Generates a valid Klarvo license key from arbitrary payload bytes.
 ///
 /// Only available in test builds. Uses the same HMAC secret as
 /// `validate_license_key` so the generated keys pass validation.

@@ -34,25 +34,25 @@ export function SnippetsPanel({ snippets, onUpdate, onClose }: SnippetsPanelProp
   };
 
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Text Snippets</span>
+    <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
+        <span className="text-[10px] font-semibold text-voxlit-dim uppercase tracking-widest">Text Snippets</span>
         <button
           onClick={onClose}
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
         >
           <CloseIcon />
         </button>
       </div>
 
       <div className="overflow-y-auto max-h-[400px] p-4 flex flex-col gap-2">
-        <p className="text-[10px] text-zinc-500">Click "Paste" to insert a snippet into the active window.</p>
+        <p className="text-[10px] text-voxlit-dim">Click "Paste" to insert a snippet into the active window.</p>
 
         {snippets.length === 0 ? (
-          <p className="text-xs text-zinc-500 italic text-center py-4">No snippets yet. Add your first one below.</p>
+          <p className="text-xs text-voxlit-dim italic text-center py-4">No snippets yet. Add your first one below.</p>
         ) : (
           snippets.map((s, i) => (
-            <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 group hover:border-zinc-700/60 transition-colors">
+            <div key={i} className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 group hover:border-voxlit-border/60 transition-colors">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <input
                   type="text"
@@ -67,7 +67,7 @@ export function SnippetsPanel({ snippets, onUpdate, onClose }: SnippetsPanelProp
                 />
                 <button
                   onClick={() => onUpdate(snippets.filter((_, j) => j !== i))}
-                  className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                  className="text-voxlit-dim hover:text-voxlit-danger transition-colors p-1"
                 >
                   <CloseIcon />
                 </button>
@@ -87,7 +87,7 @@ export function SnippetsPanel({ snippets, onUpdate, onClose }: SnippetsPanelProp
                 <button
                   onClick={() => handlePaste(s.content)}
                   disabled={!s.content.trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Paste
                 </button>
@@ -99,14 +99,14 @@ export function SnippetsPanel({ snippets, onUpdate, onClose }: SnippetsPanelProp
         <div className="flex gap-2 pt-1">
           <button
             onClick={() => onUpdate([...snippets, { name: "", content: "" }])}
-            className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 transition-colors"
           >
             + Add Snippet
           </button>
           {snippets.length > 0 && (
             <button
               onClick={handleSave}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-colors"
             >
               {saveMsg ?? "Save"}
             </button>

@@ -189,10 +189,10 @@ function StepDots({ current, total }: { current: number; total: number }) {
           className={[
             "rounded-full transition-all duration-300",
             i === current
-              ? "w-4 h-1.5 bg-emerald-400"
+              ? "w-4 h-1.5 bg-voxlit-primary"
               : i < current
-              ? "w-1.5 h-1.5 bg-emerald-500/40"
-              : "w-1.5 h-1.5 bg-zinc-700",
+              ? "w-1.5 h-1.5 bg-voxlit-primary/40"
+              : "w-1.5 h-1.5 bg-voxlit-elevated",
           ].join(" ")}
         />
       ))}
@@ -206,10 +206,10 @@ function StepDots({ current, total }: { current: number; total: number }) {
 
 const BTN_PRIMARY = [
   "w-full rounded-xl py-2.5 px-6 text-sm font-medium",
-  "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400",
-  "hover:bg-emerald-500/20 hover:border-emerald-500/40",
+  "bg-voxlit-primary/15 border border-voxlit-primary/30 text-voxlit-primary",
+  "hover:bg-voxlit-primary/20 hover:border-voxlit-primary/40",
   "disabled:opacity-40 disabled:cursor-not-allowed",
-  "transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40",
+  "transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-voxlit-primary/40",
 ].join(" ");
 
 // ---------------------------------------------------------------------------
@@ -248,12 +248,12 @@ function ApiKeyField({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-zinc-400 font-medium">{label}</label>
+        <label className="text-xs text-voxlit-muted font-medium">{label}</label>
         {magicLinkUrl && (
           <button
             type="button"
             onClick={() => openExternalUrl(magicLinkUrl).catch(console.error)}
-            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="flex items-center gap-1 text-xs text-voxlit-primary hover:text-voxlit-accent transition-colors"
           >
             {magicLinkLabel ?? "Key erstellen"}
             <ExternalLinkIcon />
@@ -269,15 +269,15 @@ function ApiKeyField({
           autoComplete="off"
           spellCheck={false}
           className={[
-            "flex-1 bg-[#111113] border rounded-lg px-3 py-2",
-            "text-sm text-zinc-200 font-mono placeholder:text-zinc-600",
-            "focus:outline-none focus:border-emerald-500/40 focus:ring-1 focus:ring-emerald-500/20",
+            "flex-1 bg-voxlit-bg border rounded-lg px-3 py-2",
+            "text-sm text-voxlit-text font-mono placeholder:text-voxlit-dim",
+            "focus:outline-none focus:border-voxlit-primary/40 focus:ring-1 focus:ring-voxlit-primary/20",
             "transition-colors duration-150",
             validationState === "valid"
-              ? "border-emerald-500/50"
+              ? "border-voxlit-primary/50"
               : validationState === "invalid"
-              ? "border-red-500/50"
-              : "border-zinc-800/60",
+              ? "border-voxlit-danger/50"
+              : "border-voxlit-border/60",
           ].join(" ")}
         />
         {value.trim().length > 0 && (
@@ -285,7 +285,7 @@ function ApiKeyField({
             type="button"
             onClick={onValidate}
             disabled={validationState === "loading"}
-            className="px-3 py-2 rounded-lg bg-zinc-800/80 border border-zinc-700/60 text-xs text-zinc-300 hover:text-zinc-100 hover:border-zinc-600 transition-all disabled:opacity-50 flex-shrink-0"
+            className="px-3 py-2 rounded-lg bg-voxlit-surface/80 border border-voxlit-border/60 text-xs text-voxlit-muted hover:text-voxlit-text hover:border-voxlit-border-active transition-all disabled:opacity-50 flex-shrink-0"
           >
             {validationState === "loading" ? (
               <SpinnerIcon className="w-4 h-4" />
@@ -296,19 +296,19 @@ function ApiKeyField({
         )}
       </div>
       {validationState === "valid" && (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+        <div className="flex items-center gap-1.5 text-xs text-voxlit-primary">
           <CheckCircleIcon className="w-3.5 h-3.5" />
           <span>Key funktioniert</span>
         </div>
       )}
       {validationState === "invalid" && (
-        <div className="flex items-center gap-1.5 text-xs text-red-400">
+        <div className="flex items-center gap-1.5 text-xs text-voxlit-danger">
           <XCircleIcon className="w-3.5 h-3.5" />
           <span>{validationError || `Ungültiger ${provider}-Key`}</span>
         </div>
       )}
       {costHint && validationState === "idle" && (
-        <p className="text-[11px] text-zinc-600">{costHint}</p>
+        <p className="text-[11px] text-voxlit-dim">{costHint}</p>
       )}
     </div>
   );
@@ -351,16 +351,16 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
       {/* Skip link */}
       <button
         onClick={onSkip}
-        className="self-end text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+        className="self-end text-xs text-voxlit-dim hover:text-voxlit-muted transition-colors"
       >
         Ich kenn mich aus →
       </button>
 
       {/* Animated mic with pulse ring */}
       <div className="relative flex items-center justify-center">
-        <span className="absolute w-24 h-24 rounded-full bg-emerald-500/10 animate-ping" style={{ animationDuration: "2s" }} />
-        <span className="absolute w-20 h-20 rounded-full bg-emerald-500/10 animate-ping" style={{ animationDuration: "2s", animationDelay: "0.5s" }} />
-        <div className="relative w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.18)]">
+        <span className="absolute w-24 h-24 rounded-full bg-voxlit-primary/10 animate-ping" style={{ animationDuration: "2s" }} />
+        <span className="absolute w-20 h-20 rounded-full bg-voxlit-primary/10 animate-ping" style={{ animationDuration: "2s", animationDelay: "0.5s" }} />
+        <div className="relative w-16 h-16 rounded-2xl bg-voxlit-primary/15 border border-voxlit-primary/30 flex items-center justify-center text-voxlit-primary shadow-[0_0_40px_rgba(42,195,168,0.18)]">
           <div className="w-8 h-8">
             <MicIconLarge />
           </div>
@@ -368,11 +368,11 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
       </div>
 
       <div className="flex flex-col gap-3">
-        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">
-          Sprich. Voxlit tippt.
+        <h1 className="text-3xl font-bold text-voxlit-text tracking-tight">
+          Sprich. Klarvo tippt.
         </h1>
-        <p className="text-sm text-zinc-400 leading-relaxed max-w-xs">
-          Freies Sprachdiktat mit KI-Bereinigung. Voxlit transkribiert und poliert deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
+        <p className="text-sm text-voxlit-muted leading-relaxed max-w-xs">
+          Freies Sprachdiktat mit KI-Bereinigung. Klarvo transkribiert und poliert deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
         </p>
       </div>
 
@@ -395,8 +395,8 @@ function StepMode({ selected, onSelect, onNext }: {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Wie willst du Voxlit nutzen?</h2>
-        <p className="text-sm text-zinc-400">Beide Varianten sind kostengünstig — du entscheidest.</p>
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Wie willst du Klarvo nutzen?</h2>
+        <p className="text-sm text-voxlit-muted">Beide Varianten sind kostengünstig — du entscheidest.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -407,28 +407,28 @@ function StepMode({ selected, onSelect, onNext }: {
           className={[
             "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-150",
             selected === "cloud"
-              ? "border-emerald-500/50 bg-emerald-500/8"
-              : "border-zinc-800/60 bg-[#111113] hover:border-zinc-700/60",
+              ? "border-voxlit-primary/50 bg-voxlit-primary/8"
+              : "border-voxlit-border/60 bg-voxlit-bg hover:border-voxlit-border/60",
           ].join(" ")}
         >
-          <div className={`flex items-center gap-2 ${selected === "cloud" ? "text-emerald-400" : "text-zinc-400"}`}>
+          <div className={`flex items-center gap-2 ${selected === "cloud" ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
             <CloudIcon className="w-5 h-5" />
-            <span className="text-sm font-semibold text-zinc-200">Cloud</span>
+            <span className="text-sm font-semibold text-voxlit-text">Cloud</span>
             {selected === "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-voxlit-primary bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
             {selected !== "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-zinc-500 bg-zinc-800/60 border border-zinc-700/40 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-voxlit-dim bg-voxlit-surface/60 border border-voxlit-border/40 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
           </div>
           <ul className="flex flex-col gap-1">
             {["Beste Qualität", "API-Key benötigt", "Groq kostenlos (mit Limit)"].map((b) => (
-              <li key={b} className="text-[11px] text-zinc-500 flex items-start gap-1.5">
-                <span className="text-emerald-500/60 mt-0.5">•</span>
+              <li key={b} className="text-[11px] text-voxlit-dim flex items-start gap-1.5">
+                <span className="text-voxlit-primary/60 mt-0.5">•</span>
                 {b}
               </li>
             ))}
@@ -443,35 +443,35 @@ function StepMode({ selected, onSelect, onNext }: {
             className={[
               "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-150",
               selected === "offline"
-                ? "border-emerald-500/50 bg-emerald-500/8"
-                : "border-zinc-800/60 bg-[#111113] hover:border-zinc-700/60",
+                ? "border-voxlit-primary/50 bg-voxlit-primary/8"
+                : "border-voxlit-border/60 bg-voxlit-bg hover:border-voxlit-border/60",
             ].join(" ")}
           >
-            <div className={`flex items-center gap-2 ${selected === "offline" ? "text-emerald-400" : "text-zinc-400"}`}>
+            <div className={`flex items-center gap-2 ${selected === "offline" ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
               <ShieldIcon className="w-5 h-5" />
-              <span className="text-sm font-semibold text-zinc-200">Offline</span>
+              <span className="text-sm font-semibold text-voxlit-text">Offline</span>
             </div>
             <ul className="flex flex-col gap-1">
               {["Läuft ohne Internet", "Privacy-First", "488 MB Download"].map((b) => (
-                <li key={b} className="text-[11px] text-zinc-500 flex items-start gap-1.5">
-                  <span className="text-zinc-600 mt-0.5">•</span>
+                <li key={b} className="text-[11px] text-voxlit-dim flex items-start gap-1.5">
+                  <span className="text-voxlit-dim mt-0.5">•</span>
                   {b}
                 </li>
               ))}
             </ul>
           </button>
         ) : (
-          <div className="flex flex-col gap-3 p-4 rounded-xl border border-zinc-800/40 bg-[#0e0e10] opacity-50 cursor-not-allowed">
-            <div className="flex items-center gap-2 text-zinc-600">
+          <div className="flex flex-col gap-3 p-4 rounded-xl border border-voxlit-border/40 bg-[#0e0e10] opacity-50 cursor-not-allowed">
+            <div className="flex items-center gap-2 text-voxlit-dim">
               <ShieldIcon className="w-5 h-5" />
-              <span className="text-sm font-semibold text-zinc-500">Offline</span>
+              <span className="text-sm font-semibold text-voxlit-dim">Offline</span>
             </div>
-            <p className="text-[11px] text-zinc-600">Nicht verfügbar auf Android</p>
+            <p className="text-[11px] text-voxlit-dim">Nicht verfügbar auf Android</p>
           </div>
         )}
       </div>
 
-      <p className="text-[11px] text-zinc-600 text-center">Du kannst jederzeit in den Einstellungen wechseln.</p>
+      <p className="text-[11px] text-voxlit-dim text-center">Du kannst jederzeit in den Einstellungen wechseln.</p>
 
       <button
         onClick={onNext}
@@ -500,17 +500,17 @@ function PermissionStep({ icon, title, description, settingsHint, onNext }: Perm
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center text-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-zinc-400">
+        <div className="w-14 h-14 rounded-2xl bg-voxlit-surface/80 border border-voxlit-border/60 flex items-center justify-center text-voxlit-muted">
           {icon}
         </div>
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
-          <p className="text-sm text-zinc-400 leading-relaxed max-w-xs">{description}</p>
+          <h2 className="text-xl font-semibold text-voxlit-text">{title}</h2>
+          <p className="text-sm text-voxlit-muted leading-relaxed max-w-xs">{description}</p>
         </div>
       </div>
 
-      <div className="rounded-xl bg-zinc-800/40 border border-zinc-700/40 px-4 py-3">
-        <p className="text-xs text-zinc-500 leading-relaxed">{settingsHint}</p>
+      <div className="rounded-xl bg-voxlit-surface/40 border border-voxlit-border/40 px-4 py-3">
+        <p className="text-xs text-voxlit-dim leading-relaxed">{settingsHint}</p>
       </div>
 
       <button onClick={onNext} className={BTN_PRIMARY}>
@@ -569,8 +569,8 @@ function StepLanguage({ language, onLanguageChange, onNext }: {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Welche Sprache sprichst du?</h2>
-        <p className="text-sm text-zinc-400">Du kannst das jederzeit in den Einstellungen ändern.</p>
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Welche Sprache sprichst du?</h2>
+        <p className="text-sm text-voxlit-muted">Du kannst das jederzeit in den Einstellungen ändern.</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -586,13 +586,13 @@ function StepLanguage({ language, onLanguageChange, onNext }: {
             className={[
               "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-150",
               language === opt.value
-                ? "border-emerald-500/50 bg-emerald-500/8 text-emerald-400"
-                : "border-zinc-800/60 bg-[#111113] text-zinc-400 hover:border-zinc-700/60 hover:text-zinc-300",
+                ? "border-voxlit-primary/50 bg-voxlit-primary/8 text-voxlit-primary"
+                : "border-voxlit-border/60 bg-voxlit-bg text-voxlit-muted hover:border-voxlit-border/60 hover:text-voxlit-muted",
             ].join(" ")}
           >
             {opt.label}
             {language === opt.value && (
-              <CheckCircleIcon className="w-4 h-4 text-emerald-400" />
+              <CheckCircleIcon className="w-4 h-4 text-voxlit-primary" />
             )}
           </button>
         ))}
@@ -617,18 +617,18 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Spracherkennung einrichten</h2>
-        <p className="text-sm text-zinc-400">Voxlit nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Spracherkennung einrichten</h2>
+        <p className="text-sm text-voxlit-muted">Klarvo nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
       </div>
 
       {/* Groq highlighted block */}
-      <div className="flex flex-col gap-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-4">
+      <div className="flex flex-col gap-4 rounded-xl bg-voxlit-primary/5 border border-voxlit-primary/20 p-4">
         <div className="flex items-center gap-2">
-          <span className="text-emerald-400">
+          <span className="text-voxlit-primary">
             <KeyIcon className="w-4 h-4" />
           </span>
-          <span className="text-sm font-semibold text-zinc-200">Groq</span>
-          <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+          <span className="text-sm font-semibold text-voxlit-text">Groq</span>
+          <span className="text-[10px] font-medium text-voxlit-primary bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-full px-2 py-0.5">
             empfohlen — kostenloses Free-Tier
           </span>
         </div>
@@ -652,7 +652,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
         <button
           type="button"
           onClick={() => setOthersOpen((v) => !v)}
-          className="flex items-center justify-between w-full py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none"
+          className="flex items-center justify-between w-full py-1 text-xs text-voxlit-dim hover:text-voxlit-muted transition-colors focus:outline-none"
         >
           <span>Andere Provider (OpenAI)</span>
           <svg
@@ -667,7 +667,7 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
           </svg>
         </button>
         {othersOpen && (
-          <div className="rounded-xl bg-[#111113] border border-zinc-800/60 p-4 text-xs text-zinc-500">
+          <div className="rounded-xl bg-voxlit-bg border border-voxlit-border/60 p-4 text-xs text-voxlit-dim">
             OpenAI-Validierung wird in einer kommenden Version unterstützt. Du kannst den Key in den Einstellungen hinterlegen.
           </div>
         )}
@@ -700,20 +700,20 @@ function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Text-Bereinigung (optional)</h2>
-        <p className="text-sm text-zinc-400 leading-relaxed">
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Text-Bereinigung (optional)</h2>
+        <p className="text-sm text-voxlit-muted leading-relaxed">
           Ein KI-Modell bereinigt rohen Transkript-Text. Optional — ohne Key wird der unbearbeitete Text eingefügt.
         </p>
       </div>
 
       {/* Tab switcher */}
-      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
         <button
           type="button"
           onClick={() => setUseOpenRouter(false)}
           className={[
             "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-            !useOpenRouter ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+            !useOpenRouter ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
           ].join(" ")}
         >
           DeepSeek
@@ -723,7 +723,7 @@ function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void;
           onClick={() => setUseOpenRouter(true)}
           className={[
             "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-            useOpenRouter ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+            useOpenRouter ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
           ].join(" ")}
         >
           OpenRouter
@@ -731,11 +731,11 @@ function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void;
       </div>
 
       {!useOpenRouter ? (
-        <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-4">
+        <div className="rounded-xl bg-voxlit-primary/5 border border-voxlit-primary/20 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-emerald-400"><KeyIcon className="w-4 h-4" /></span>
-            <span className="text-sm font-semibold text-zinc-200">DeepSeek</span>
-            <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">empfohlen</span>
+            <span className="text-voxlit-primary"><KeyIcon className="w-4 h-4" /></span>
+            <span className="text-sm font-semibold text-voxlit-text">DeepSeek</span>
+            <span className="text-[10px] font-medium text-voxlit-primary bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-full px-2 py-0.5">empfohlen</span>
           </div>
           <ApiKeyField
             label="DeepSeek API Key"
@@ -752,10 +752,10 @@ function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void;
           />
         </div>
       ) : (
-        <div className="rounded-xl bg-[#111113] border border-zinc-800/60 p-4">
+        <div className="rounded-xl bg-voxlit-bg border border-voxlit-border/60 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-zinc-400"><KeyIcon className="w-4 h-4" /></span>
-            <span className="text-sm font-semibold text-zinc-200">OpenRouter</span>
+            <span className="text-voxlit-muted"><KeyIcon className="w-4 h-4" /></span>
+            <span className="text-sm font-semibold text-voxlit-text">OpenRouter</span>
           </div>
           <ApiKeyField
             label="OpenRouter API Key"
@@ -783,7 +783,7 @@ function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void;
 
       <button
         onClick={onSkip}
-        className="text-sm text-zinc-500 hover:text-zinc-400 transition-colors text-center"
+        className="text-sm text-voxlit-dim hover:text-voxlit-muted transition-colors text-center"
       >
         Überspringen — rohen Text nutzen
       </button>
@@ -852,42 +852,42 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Offline-Modell herunterladen</h2>
-        <p className="text-sm text-zinc-400">Einmaliger Download — danach laeuft Voxlit ohne Internet.</p>
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Offline-Modell herunterladen</h2>
+        <p className="text-sm text-voxlit-muted">Einmaliger Download — danach laeuft Klarvo ohne Internet.</p>
       </div>
 
       {/* Model card */}
-      <div className="rounded-xl bg-[#111113] border border-zinc-800/60 p-4 flex flex-col gap-3">
+      <div className="rounded-xl bg-voxlit-bg border border-voxlit-border/60 p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-zinc-200">Whisper small</p>
-            <p className="text-xs text-zinc-500">488 MB — gute Qualität, schnell</p>
+            <p className="text-sm font-semibold text-voxlit-text">Whisper small</p>
+            <p className="text-xs text-voxlit-dim">488 MB — gute Qualität, schnell</p>
           </div>
           {downloadState === "done" && (
-            <CheckCircleIcon className="w-5 h-5 text-emerald-400" />
+            <CheckCircleIcon className="w-5 h-5 text-voxlit-primary" />
           )}
         </div>
 
         {downloadState === "downloading" && (
           <div className="flex flex-col gap-1.5">
-            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-voxlit-surface rounded-full overflow-hidden">
               <div
-                className="h-full bg-emerald-500/70 rounded-full transition-all duration-300"
+                className="h-full bg-voxlit-primary/70 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            <p className="text-[11px] text-zinc-500">{progressPct}%</p>
+            <p className="text-[11px] text-voxlit-dim">{progressPct}%</p>
           </div>
         )}
 
         {downloadState === "error" && (
-          <p className="text-xs text-red-400">{errorMsg}</p>
+          <p className="text-xs text-voxlit-danger">{errorMsg}</p>
         )}
 
         {downloadState === "idle" && (
           <button
             onClick={startDownload}
-            className="w-full rounded-lg py-2 text-sm font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+            className="w-full rounded-lg py-2 text-sm font-medium bg-voxlit-primary/15 border border-voxlit-primary/30 text-voxlit-primary hover:bg-voxlit-primary/20 transition-all"
           >
             Jetzt herunterladen
           </button>
@@ -895,7 +895,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
         {downloadState === "error" && (
           <button
             onClick={startDownload}
-            className="w-full rounded-lg py-2 text-sm font-medium bg-zinc-800/60 border border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 transition-all"
+            className="w-full rounded-lg py-2 text-sm font-medium bg-voxlit-surface/60 border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface transition-all"
           >
             Erneut versuchen
           </button>
@@ -905,7 +905,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
       {/* LLM key input while waiting */}
       {downloadState === "downloading" || downloadState === "done" ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Während du wartest: LLM-Cleanup (optional)</p>
+          <p className="text-xs font-semibold text-voxlit-dim uppercase tracking-wide">Während du wartest: LLM-Cleanup (optional)</p>
           <ApiKeyField
             label="DeepSeek API Key"
             value={llmKey}
@@ -1015,17 +1015,17 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Probiere es aus!</h2>
-          <p className="text-sm text-zinc-400">Das Diktat läuft über die schwebende Blase.</p>
+          <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Probiere es aus!</h2>
+          <p className="text-sm text-voxlit-muted">Das Diktat läuft über die schwebende Blase.</p>
         </div>
 
-        <div className="rounded-xl bg-[#111113] border border-zinc-800/60 p-5 flex flex-col items-center gap-4 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+        <div className="rounded-xl bg-voxlit-bg border border-voxlit-border/60 p-5 flex flex-col items-center gap-4 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-voxlit-primary/10 border border-voxlit-primary/20 flex items-center justify-center text-voxlit-primary">
             <MicIconSm className="w-7 h-7" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-semibold text-zinc-200">Tippe auf die schwebende Blase</p>
-            <p className="text-xs text-zinc-500 leading-relaxed max-w-[220px]">
+            <p className="text-sm font-semibold text-voxlit-text">Tippe auf die schwebende Blase</p>
+            <p className="text-xs text-voxlit-dim leading-relaxed max-w-[220px]">
               Die Blase erscheint über anderen Apps und startet das Diktat mit einem Tipp.
             </p>
           </div>
@@ -1034,7 +1034,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
         <button onClick={onNext} className={BTN_PRIMARY}>
           Weiter
         </button>
-        <button onClick={onNext} className="text-sm text-zinc-500 hover:text-zinc-400 transition-colors text-center">
+        <button onClick={onNext} className="text-sm text-voxlit-dim hover:text-voxlit-muted transition-colors text-center">
           Später ausprobieren
         </button>
       </div>
@@ -1044,8 +1044,8 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-zinc-100 tracking-tight">Probiere es aus!</h2>
-        <p className="text-sm text-zinc-400">Starte eine Aufnahme und sprich etwas.</p>
+        <h2 className="text-xl font-semibold text-voxlit-text tracking-tight">Probiere es aus!</h2>
+        <p className="text-sm text-voxlit-muted">Starte eine Aufnahme und sprich etwas.</p>
       </div>
 
       <div className="flex flex-col items-center gap-4">
@@ -1058,15 +1058,15 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
             "transition-all duration-200 focus:outline-none",
             "disabled:cursor-not-allowed disabled:opacity-60",
             isRecording
-              ? "bg-red-500/20 text-red-400 shadow-[0_0_40px_rgba(239,68,68,0.3)]"
+              ? "bg-voxlit-danger/20 text-voxlit-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
               : isBusy
-              ? "bg-amber-500/15 text-amber-400"
-              : "bg-emerald-500/15 text-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.2)] hover:bg-emerald-500/20",
+              ? "bg-voxlit-warning/15 text-voxlit-warning"
+              : "bg-voxlit-primary/15 text-voxlit-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:bg-voxlit-primary/20",
           ].join(" ")}
         >
           <span className={[
             "absolute inset-0 rounded-full border-2 transition-colors",
-            isRecording ? "border-red-500/40" : isBusy ? "border-amber-500/30" : "border-emerald-500/25",
+            isRecording ? "border-voxlit-danger/40" : isBusy ? "border-voxlit-warning/30" : "border-voxlit-primary/25",
           ].join(" ")} />
           {isRecording && (
             <span className="absolute inset-0 rounded-full border-2 border-red-400 opacity-40 animate-ping" />
@@ -1082,7 +1082,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
 
         <p className={[
           "text-xs font-medium text-center max-w-xs",
-          testState === "error" ? "text-red-400" : testState === "done" ? "text-emerald-400" : isBusy ? "text-amber-400" : "text-zinc-500",
+          testState === "error" ? "text-voxlit-danger" : testState === "done" ? "text-voxlit-primary" : isBusy ? "text-voxlit-warning" : "text-voxlit-dim",
         ].join(" ")}>
           {statusText[testState]}
         </p>
@@ -1092,15 +1092,15 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
             readOnly
             value={resultText}
             rows={3}
-            className="w-full bg-[#111113] border border-zinc-800/60 rounded-xl px-3.5 py-2.5 text-sm text-zinc-200 resize-none focus:outline-none"
+            className="w-full bg-voxlit-bg border border-voxlit-border/60 rounded-xl px-3.5 py-2.5 text-sm text-voxlit-text resize-none focus:outline-none"
           />
         )}
       </div>
 
       {isDesktop && (
-        <div className="rounded-xl bg-zinc-800/30 border border-zinc-700/30 px-4 py-3">
-          <p className="text-xs text-zinc-500">
-            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-700 border border-zinc-600 text-[11px] font-mono text-zinc-300">Ctrl+Shift+D</kbd> zum Diktieren — Voxlit fügt den Text direkt ein.
+        <div className="rounded-xl bg-voxlit-surface/30 border border-voxlit-border/30 px-4 py-3">
+          <p className="text-xs text-voxlit-dim">
+            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-voxlit-elevated border border-voxlit-border-active text-[11px] font-mono text-voxlit-muted">Ctrl+Shift+D</kbd> zum Diktieren — Klarvo fügt den Text direkt ein.
           </p>
         </div>
       )}
@@ -1108,7 +1108,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
       <button onClick={onNext} disabled={!hasDone} className={BTN_PRIMARY}>
         Weiter
       </button>
-      <button onClick={onNext} className="text-sm text-zinc-500 hover:text-zinc-400 transition-colors text-center">
+      <button onClick={onNext} className="text-sm text-voxlit-dim hover:text-voxlit-muted transition-colors text-center">
         Später ausprobieren
       </button>
     </div>
@@ -1129,19 +1129,19 @@ function StepDone({ mode, language, hasLlm, onFinish }: {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center text-center gap-5">
         {/* Animated checkmark */}
-        <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.18)]">
+        <div className="w-16 h-16 rounded-full bg-voxlit-primary/15 border border-voxlit-primary/30 flex items-center justify-center text-voxlit-primary shadow-[0_0_40px_rgba(42,195,168,0.18)]">
           <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 40, strokeDashoffset: 0 }}>
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-2xl font-bold text-zinc-100">Du bist startklar!</h2>
-          <p className="text-sm text-zinc-400">Alles eingerichtet. Zeit zu diktieren.</p>
+          <h2 className="text-2xl font-bold text-voxlit-text">Du bist startklar!</h2>
+          <p className="text-sm text-voxlit-muted">Alles eingerichtet. Zeit zu diktieren.</p>
         </div>
       </div>
 
       {/* Summary */}
-      <div className="rounded-xl bg-[#111113] border border-zinc-800/60 p-4 flex flex-col gap-2.5">
+      <div className="rounded-xl bg-voxlit-bg border border-voxlit-border/60 p-4 flex flex-col gap-2.5">
         <SummaryRow label="Modus" value={mode === "offline" ? "Offline (Whisper small)" : "Cloud (Groq Whisper)"} />
         <SummaryRow label="Sprache" value={language === "de" ? "Deutsch" : language === "en" ? "English" : "Auto-detect"} />
         <SummaryRow label="LLM-Cleanup" value={hasLlm ? "Aktiv" : "Inaktiv (roher Text)"} positive={hasLlm} />
@@ -1157,8 +1157,8 @@ function StepDone({ mode, language, hasLlm, onFinish }: {
 function SummaryRow({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-zinc-500">{label}</span>
-      <span className={`text-xs font-medium ${positive === false ? "text-zinc-600" : positive === true ? "text-emerald-400" : "text-zinc-300"}`}>
+      <span className="text-xs text-voxlit-dim">{label}</span>
+      <span className={`text-xs font-medium ${positive === false ? "text-voxlit-dim" : positive === true ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
         {value}
       </span>
     </div>
@@ -1360,7 +1360,7 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           {effectiveStepId !== "welcome" && effectiveStepId !== "done" && (
             <button
               onClick={handleSkip}
-              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              className="text-xs text-voxlit-dim hover:text-voxlit-muted transition-colors"
             >
               Überspringen
             </button>
@@ -1384,8 +1384,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<OverlayIcon />}
             title="Overlay-Berechtigung"
-            description="Voxlit braucht Overlay-Berechtigung um über anderen Apps zu erscheinen und den Diktat-Button anzuzeigen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Voxlit → Spezielle App-Zugriffe → Ueber anderen Apps anzeigen → Aktivieren"
+            description="Klarvo braucht Overlay-Berechtigung um über anderen Apps zu erscheinen und den Diktat-Button anzuzeigen."
+            settingsHint="Gehe zu: Einstellungen → Apps → Klarvo → Spezielle App-Zugriffe → Ueber anderen Apps anzeigen → Aktivieren"
             onNext={() => advance()}
           />
         )}
@@ -1394,8 +1394,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<MicIconSm className="w-7 h-7" />}
             title="Mikrofon-Berechtigung"
-            description="Voxlit braucht Zugriff auf dein Mikrofon um Sprache aufzunehmen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Voxlit → Berechtigungen → Mikrofon → Erlauben"
+            description="Klarvo braucht Zugriff auf dein Mikrofon um Sprache aufzunehmen."
+            settingsHint="Gehe zu: Einstellungen → Apps → Klarvo → Berechtigungen → Mikrofon → Erlauben"
             onNext={() => advance()}
           />
         )}
@@ -1404,8 +1404,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<AccessibilityIcon />}
             title="Bedienungshilfen"
-            description="Voxlit nutzt Bedienungshilfen um Text direkt in das aktive Textfeld einzufügen — ohne Zwischenablage."
-            settingsHint="Gehe zu: Einstellungen → Bedienungshilfen → Heruntergeladene Apps → Voxlit → Aktivieren"
+            description="Klarvo nutzt Bedienungshilfen um Text direkt in das aktive Textfeld einzufügen — ohne Zwischenablage."
+            settingsHint="Gehe zu: Einstellungen → Bedienungshilfen → Heruntergeladene Apps → Klarvo → Aktivieren"
             onNext={() => advance()}
           />
         )}
@@ -1414,8 +1414,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <PermissionStep
             icon={<BatteryIcon />}
             title="Akku-Optimierung"
-            description="Verhindert, dass Android Voxlit im Hintergrund stoppt und den Diktat-Button unsichtbar macht."
-            settingsHint="Gehe zu: Einstellungen → Akku → Akku-Optimierung → Voxlit → Nicht optimieren"
+            description="Verhindert, dass Android Klarvo im Hintergrund stoppt und den Diktat-Button unsichtbar macht."
+            settingsHint="Gehe zu: Einstellungen → Akku → Akku-Optimierung → Klarvo → Nicht optimieren"
             onNext={() => advance()}
           />
         )}

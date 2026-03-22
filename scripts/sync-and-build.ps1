@@ -1,4 +1,4 @@
-# Voxlit: Sync from WSL and build for Windows
+# Klarvo: Sync from WSL and build for Windows
 # Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\claude-projects\voxlit\scripts\sync-and-build.ps1
 
 $src = "\\wsl$\Ubuntu\home\andyon2\claude-projects\voxlit"
@@ -35,7 +35,7 @@ if (Test-Path "$dst\.env") {
 $env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
 Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
 
-Write-Host "Building Voxlit..." -ForegroundColor Cyan
+Write-Host "Building Klarvo..." -ForegroundColor Cyan
 npx tauri build 2>&1 | Write-Host
 
 # Sign the installer via WSL rsign (Tauri's signer hangs)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Signs Voxlit NSIS installer with rsign (workaround for Tauri signer hanging on Windows/WSL)
+# Signs Klarvo NSIS installer with rsign (workaround for Tauri signer hanging on Windows/WSL)
 # Usage: ./sign-installer.sh [version]
 # If version is omitted, reads from package.json
 
@@ -22,7 +22,7 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-EXE="$VOXLIT_WIN/src-tauri/target/release/bundle/nsis/Voxlit_${VERSION}_x64-setup.exe"
+EXE="$VOXLIT_WIN/src-tauri/target/release/bundle/nsis/Klarvo_${VERSION}_x64-setup.exe"
 
 if [ ! -f "$EXE" ]; then
     echo "ERROR: Installer not found: $EXE" >&2
@@ -37,8 +37,8 @@ fi
 # Decode the base64-wrapped key to rsign format
 base64 -d "$KEY_FILE" > "$DECODED_KEY"
 
-echo "Signing Voxlit v${VERSION}..."
-rsign sign -W -s "$DECODED_KEY" -t "Voxlit v${VERSION}" "$EXE"
+echo "Signing Klarvo v${VERSION}..."
+rsign sign -W -s "$DECODED_KEY" -t "Klarvo v${VERSION}" "$EXE"
 
 # Convert .minisig to Tauri's base64-encoded .sig format
 base64 -w0 "${EXE}.minisig" > "${EXE}.sig"

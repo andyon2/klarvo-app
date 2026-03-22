@@ -195,7 +195,7 @@ mod windows {
     /// Restores focus to the previously active window before pasting, and
     /// verifies the focus switch actually succeeded before sending Ctrl+V.
     pub struct WindowsPasteHandler {
-        /// The window that was focused before Voxlit started recording.
+        /// The window that was focused before Klarvo started recording.
         /// If set, focus is restored to this window before simulating Ctrl+V.
         prev_hwnd: Option<isize>,
     }
@@ -368,7 +368,7 @@ mod windows {
     }
 
     /// Captures the currently focused window handle (HWND) as a raw isize.
-    /// Call this when the hotkey fires, before Voxlit does any processing.
+    /// Call this when the hotkey fires, before Klarvo does any processing.
     pub fn get_foreground_window_handle() -> isize {
         unsafe { GetForegroundWindow().0 as isize }
     }
@@ -392,7 +392,7 @@ mod windows {
 
 /// Creates the platform-appropriate `PasteHandler`.
 ///
-/// `prev_hwnd` is the handle of the window that was focused before Voxlit
+/// `prev_hwnd` is the handle of the window that was focused before Klarvo
 /// started recording. On Windows this is used to restore focus before pasting.
 /// On other platforms it is ignored.
 pub fn create_paste_handler(prev_hwnd: Option<isize>) -> Box<dyn PasteHandler> {

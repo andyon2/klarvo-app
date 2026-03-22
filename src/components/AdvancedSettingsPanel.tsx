@@ -54,9 +54,9 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
     llmCustom: false,  // "Custom Cleanup Instructions" -- paid, default closed
   });
 
-  const hintCls = "text-[11px] text-zinc-500 leading-relaxed";
+  const hintCls = "text-[11px] text-voxlit-muted leading-relaxed";
   const numberInputCls = `${INPUT_CLS} w-28`;
-  const modelInputCls = "bg-[#111113] border border-zinc-800/60 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors w-44";
+  const modelInputCls = "bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-3 py-2 text-xs text-voxlit-text placeholder:text-voxlit-dim focus:outline-none focus:border-voxlit-primary/40 transition-colors w-44";
   // Larger section title text (text-sm instead of text-[11px]) for better readability.
   const sectionBtnCls = "flex items-center gap-2 w-full py-2 text-left";
 
@@ -113,8 +113,8 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
   if (!loaded) {
     return (
-      <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl p-6 text-center">
-        <SpinnerIcon className="w-5 h-5 text-zinc-500 mx-auto" />
+      <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl p-6 text-center">
+        <SpinnerIcon className="w-5 h-5 text-voxlit-dim mx-auto" />
       </div>
     );
   }
@@ -126,7 +126,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
       role="switch"
       aria-checked={checked}
       onClick={onChange}
-      className={["relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0", checked ? "bg-emerald-500/40" : "bg-zinc-700"].join(" ")}
+      className={["relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0", checked ? "bg-voxlit-primary/40" : "bg-voxlit-elevated"].join(" ")}
     >
       <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", checked ? "translate-x-4" : ""].join(" ")} />
     </button>
@@ -138,14 +138,14 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
   const scrollMaxH = isMobile ? "max-h-[calc(100vh-230px)]" : "max-h-[calc(100vh-150px)]";
 
   return (
-    <div className="w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl shadow-xl shadow-black/30 flex flex-col">
+    <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl shadow-xl shadow-black/30 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40">
-        <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Advanced Settings</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
+        <span className="text-[11px] font-semibold text-voxlit-muted uppercase tracking-widest">Advanced Settings</span>
         <button
           aria-label="Close advanced settings"
           onClick={onClose}
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
         >
           <CloseIcon />
         </button>
@@ -156,12 +156,12 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Speech-to-Text */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
             Speech-to-Text
-            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
           </span>
         </button>
         {openSections.stt && (
@@ -169,22 +169,22 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
             {/* Custom STT Prompts -- paid feature */}
             <div className={`flex flex-col gap-3${!isPaid ? " opacity-50" : ""}`}>
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Custom STT Prompts</span>
-                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                <span className="text-[11px] font-semibold text-voxlit-primary/85 uppercase tracking-widest">Custom STT Prompts</span>
+                {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (German)</span>
-                <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={isPaid ? (v) => set("sttPromptDe", v) : () => {}} placeholder={isPaid ? "Context prompt sent with German transcriptions" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (German)" hint="Injected as context when language is set to German." value={settings.sttPromptDe} onChange={isPaid ? (v) => set("sttPromptDe", v) : () => {}} placeholder={isPaid ? "Context prompt sent with German transcriptions" : "Requires Klarvo License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Injected as context when language is set to German.</span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (English)</span>
-                <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={isPaid ? (v) => set("sttPromptEn", v) : () => {}} placeholder={isPaid ? "Context prompt for English transcriptions" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (English)" hint="Injected as context when language is set to English." value={settings.sttPromptEn} onChange={isPaid ? (v) => set("sttPromptEn", v) : () => {}} placeholder={isPaid ? "Context prompt for English transcriptions" : "Requires Klarvo License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Injected as context when language is set to English.</span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (Auto-detect)</span>
-                <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Voxlit License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Klarvo License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                 <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
               </div>
               <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
@@ -200,10 +200,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Text Cleanup */}
         <button onClick={() => toggleSection("llm")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Text Cleanup</span>
+          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Text Cleanup</span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-1 pl-4 pb-3 pt-1">
@@ -214,15 +214,15 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
               className="flex items-center gap-1.5 w-full py-1.5 text-left"
             >
               <svg
-                className={`w-3 h-3 text-zinc-600 flex-shrink-0 transition-transform duration-150 ${openSubSections.llmParams ? "rotate-90" : ""}`}
+                className={`w-3 h-3 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSubSections.llmParams ? "rotate-90" : ""}`}
                 viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
               >
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Model & Parameters</span>
+              <span className="text-[11px] font-semibold text-voxlit-primary/85 uppercase tracking-widest">Model & Parameters</span>
             </button>
             {openSubSections.llmParams && (
-              <div className="flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-zinc-800/50 ml-1.5">
+              <div className="flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-voxlit-border/50 ml-1.5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
                   <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
@@ -264,40 +264,40 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
               className="flex items-center gap-1.5 w-full py-1.5 text-left mt-1"
             >
               <svg
-                className={`w-3 h-3 text-zinc-600 flex-shrink-0 transition-transform duration-150 ${openSubSections.llmCustom ? "rotate-90" : ""}`}
+                className={`w-3 h-3 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSubSections.llmCustom ? "rotate-90" : ""}`}
                 viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
               >
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-voxlit-primary/85 uppercase tracking-widest">
                 Custom Cleanup Instructions
-                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
               </span>
             </button>
             {openSubSections.llmCustom && (
-              <div className={`flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-zinc-800/50 ml-1.5${!isPaid ? " opacity-50" : ""}`}>
+              <div className={`flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-voxlit-border/50 ml-1.5${!isPaid ? " opacity-50" : ""}`}>
                 <p className={hintCls}>
                   Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
                 </p>
                 <div className={`flex flex-col gap-3${!isPaid ? " pointer-events-none" : ""}`}>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Polished</span>
-                    <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Verbatim mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>System Prompt: Chat</span>
-                    <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <span className={LABEL_CLS}>Command Mode Prompt</span>
-                    <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+                    <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
                     <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
                   </div>
                 </div>
@@ -309,10 +309,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Audio */}
         <button onClick={() => toggleSection("audio")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Audio</span>
+          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Audio</span>
         </button>
         {openSections.audio && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -337,10 +337,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Paste & Behavior */}
         <button onClick={() => toggleSection("paste")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Paste & Behavior</span>
+          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Paste & Behavior</span>
         </button>
         {openSections.paste && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -361,19 +361,19 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Webhook */}
         <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
             Webhook
-            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
           </span>
         </button>
         {openSections.webhook && (
           <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
             <div className={`flex flex-col gap-1.5${!isPaid ? " pointer-events-none" : ""}`}>
               <span className={LABEL_CLS}>Custom Headers (JSON)</span>
-              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={isPaid ? (v) => set("webhookHeaders", v) : () => {}} placeholder={isPaid ? '{"Authorization": "Bearer ..."}' : "Requires Voxlit License"} rows={3} className={`${INPUT_CLS} resize-none font-mono${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
+              <MobileTextarea label="Custom Headers (JSON)" hint="Additional HTTP headers sent with each webhook request." value={settings.webhookHeaders} onChange={isPaid ? (v) => set("webhookHeaders", v) : () => {}} placeholder={isPaid ? '{"Authorization": "Bearer ..."}' : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none font-mono${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
               <span className={hintCls}>Additional HTTP headers sent with each webhook request.</span>
             </div>
             <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
@@ -385,33 +385,33 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* Integrations -- paid feature */}
         <button onClick={() => toggleSection("integrations")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.integrations ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.integrations ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
             Integrations
-            {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+            {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
           </span>
         </button>
         {openSections.integrations && (
           <div className={`flex flex-col gap-3 pl-4 pb-3 pt-1${!isPaid ? " opacity-50" : ""}`}>
             {!isPaid && (
-              <p className={hintCls}>Requires Voxlit License. Integrations send your transcriptions to external services.</p>
+              <p className={hintCls}>Requires Klarvo License. Integrations send your transcriptions to external services.</p>
             )}
             <div className={`flex flex-col gap-2${!isPaid ? " pointer-events-none" : ""}`}>
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#111113] border border-zinc-800/60">
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-voxlit-bg border border-voxlit-border/60">
                 <div className="flex flex-col gap-0.5">
                   <span className={LABEL_CLS}>Notion</span>
                   <span className={hintCls}>Append transcriptions to a Notion page.</span>
                 </div>
-                <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Coming soon</span>
+                <span className="text-[10px] text-voxlit-dim uppercase tracking-wider">Coming soon</span>
               </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[#111113] border border-zinc-800/60">
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-voxlit-bg border border-voxlit-border/60">
                 <div className="flex flex-col gap-0.5">
                   <span className={LABEL_CLS}>Todoist</span>
                   <span className={hintCls}>Create tasks from voice commands.</span>
                 </div>
-                <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Coming soon</span>
+                <span className="text-[10px] text-voxlit-dim uppercase tracking-wider">Coming soon</span>
               </div>
             </div>
           </div>
@@ -419,16 +419,16 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
         {/* System */}
         <button onClick={() => toggleSection("system")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">System</span>
+          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">System</span>
         </button>
         {openSections.system && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
-              <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer">
+              <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-2 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer">
                 <option value="debug">debug</option>
                 <option value="info">info</option>
                 <option value="warn">warn</option>
@@ -442,10 +442,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
 
       {/* Footer: Save + Reset -- mobile-safe-bottom adds 56 px of bottom padding
           on Android to clear the system nav bar (env() is unreliable in WebView). */}
-      <div className={`px-4 py-3 border-t border-zinc-800/40 flex gap-2 ${isMobile ? "mobile-safe-bottom" : ""}`}>
+      <div className={`px-4 py-3 border-t border-voxlit-border/40 flex gap-2 ${isMobile ? "mobile-safe-bottom" : ""}`}>
         <button
           onClick={handleReset}
-          className="px-4 py-2.5 rounded-xl text-sm font-medium border bg-[#111113] border-zinc-700/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all duration-150 flex-shrink-0"
+          className="px-4 py-2.5 rounded-xl text-sm font-medium border bg-voxlit-bg border-voxlit-border/60 text-voxlit-muted hover:text-voxlit-text hover:border-voxlit-border-active transition-all duration-150 flex-shrink-0"
         >
           Reset to Defaults
         </button>
@@ -455,10 +455,10 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           className={[
             "flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
             saveMsg === "Saved"
-              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+              ? "bg-voxlit-primary/15 border-voxlit-primary/30 text-voxlit-primary"
               : saveMsg && saveMsg !== "Saved"
-              ? "bg-red-500/10 border-red-500/20 text-red-400"
-              : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/30",
+              ? "bg-voxlit-danger/10 border-voxlit-danger/20 text-voxlit-danger"
+              : "bg-voxlit-primary/10 border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 hover:border-voxlit-primary/30",
             "disabled:opacity-50 disabled:cursor-not-allowed",
           ].join(" ")}
         >

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Voxlit for Android.
+# Build Klarvo for Android.
 # Copies Kotlin source files from android/kotlin-src/ to gen/android/ before building,
 # because Tauri does not manage custom Kotlin files automatically.
 
@@ -39,7 +39,7 @@ APK_IN="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-univer
 APK_ALIGNED="/tmp/voxlit-aligned.apk"
 APK_DIR="/mnt/d/Dropbox/App Development/voxlit/releases/v${VERSION}"
 mkdir -p "$APK_DIR"
-APK_OUT="$APK_DIR/Voxlit-v${VERSION}.apk"
+APK_OUT="$APK_DIR/Klarvo-v${VERSION}.apk"
 
 echo "[sign] Aligning and signing APK..."
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED"

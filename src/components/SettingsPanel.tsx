@@ -184,10 +184,10 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
       onClick={() => setListening(true)}
       onBlur={cancel}
       className={[
-        "w-full bg-[#111113] border rounded-lg px-3 py-2 text-sm text-left font-mono",
+        "w-full bg-voxlit-bg border rounded-lg px-3 py-2 text-sm text-left font-mono",
         listening
-          ? "border-emerald-500/50 text-emerald-400 animate-pulse"
-          : "border-zinc-700/50 text-zinc-200 hover:border-zinc-600",
+          ? "border-voxlit-primary/50 text-voxlit-primary animate-pulse"
+          : "border-voxlit-border/50 text-voxlit-text hover:border-voxlit-border-active",
         "focus:outline-none transition-all duration-150",
       ].join(" ")}
     >
@@ -267,12 +267,12 @@ function UpdateChecker() {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Updates</span>
+      <span className="text-[11px] font-semibold text-voxlit-muted uppercase tracking-widest">Updates</span>
       <div className="flex items-center gap-2">
         {status === "available" ? (
           <button
             onClick={handleInstall}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-colors"
           >
             Install v{updateVersion}
           </button>
@@ -280,14 +280,14 @@ function UpdateChecker() {
           <button
             onClick={handleCheck}
             disabled={status === "checking" || status === "downloading"}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {status === "checking" ? "Checking..." : status === "downloading" ? "Downloading..." : status === "upToDate" ? "Up to date" : "Check for updates"}
           </button>
         )}
-        <span className="text-[11px] text-zinc-500">v{appVersion}</span>
+        <span className="text-[11px] text-voxlit-dim">v{appVersion}</span>
       </div>
-      {errorMsg && <p className="text-[11px] text-red-400">{errorMsg}</p>}
+      {errorMsg && <p className="text-[11px] text-voxlit-danger">{errorMsg}</p>}
     </div>
   );
 }
@@ -420,7 +420,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
           </span>
         )}
         {isUnlicensed && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-zinc-700 text-zinc-400">
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-voxlit-elevated text-voxlit-muted">
             Free Tier
           </span>
         )}
@@ -429,14 +429,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
       {/* Licensed state */}
       {isLicensed && (
         <>
-          <p className={isMobile ? "text-sm text-zinc-300" : "text-xs text-zinc-300"}>All features unlocked.</p>
+          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-xs text-voxlit-muted"}>All features unlocked.</p>
           <button
             onClick={handleRemoveClick}
             disabled={licenseLoading}
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-red-400 hover:text-red-300" : "text-zinc-500 hover:text-zinc-300",
+              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-dim hover:text-voxlit-muted",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -447,14 +447,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
       {/* Trial state */}
       {isTrial && (
         <>
-          <p className={isMobile ? "text-sm text-zinc-300" : "text-xs text-zinc-300"}>All features unlocked during trial.</p>
+          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-xs text-voxlit-muted"}>All features unlocked during trial.</p>
           <button
             onClick={handleRemoveClick}
             disabled={licenseLoading}
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-red-400 hover:text-red-300" : "text-zinc-500 hover:text-zinc-300",
+              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-dim hover:text-voxlit-muted",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -470,7 +470,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
               License expires on {formatGraceDate(licenseStatus.graceUntil)}
             </p>
           )}
-          <p className={isMobile ? "text-sm text-zinc-400" : "text-[11px] text-zinc-400"}>
+          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-[11px] text-voxlit-muted"}>
             Re-validate your license to continue using all features.
           </p>
           <LicenseKeyInput
@@ -495,7 +495,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
           />
           <div className="flex flex-wrap gap-1.5 mt-0.5">
             {LOCKED_FEATURES.map((f) => (
-              <span key={f} className="rounded-full px-2 py-0.5 text-[11px] font-medium bg-zinc-700 text-zinc-400">
+              <span key={f} className="rounded-full px-2 py-0.5 text-[11px] font-medium bg-voxlit-elevated text-voxlit-muted">
                 {f}
               </span>
             ))}
@@ -505,7 +505,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             className={[
               "self-start transition-colors",
               isMobile ? "text-sm" : "text-[11px]",
-              "text-zinc-400 hover:text-zinc-200 underline underline-offset-2",
+              "text-voxlit-muted hover:text-voxlit-text underline underline-offset-2",
             ].join(" ")}
           >
             Get a license at voxlit.app
@@ -546,8 +546,8 @@ function LicenseKeyInput({
           onClick={onActivate}
           disabled={loading || !value.trim()}
           className={[
-            "rounded-lg font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400",
-            "hover:bg-emerald-500/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+            "rounded-lg font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary",
+            "hover:bg-voxlit-primary/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
             isMobile ? "px-4 py-2.5 text-sm" : "px-3 py-2 text-xs",
           ].join(" ")}
         >
@@ -555,7 +555,7 @@ function LicenseKeyInput({
         </button>
       </div>
       {error && (
-        <p className={["text-red-400", isMobile ? "text-sm" : "text-xs"].join(" ")}>
+        <p className={["text-voxlit-danger", isMobile ? "text-sm" : "text-xs"].join(" ")}>
           {error}
         </p>
       )}
@@ -1005,14 +1005,14 @@ export function SettingsPanel({
   const panelMaxH = isMobile ? "max-h-[calc(100vh-168px)]" : "max-h-[calc(100vh-120px)]";
 
   return (
-    <div className={`w-full bg-[#0e0e11] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
+    <div className={`w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/40 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40 flex-shrink-0">
         <span className={SECTION_TITLE_CLS}>Settings</span>
         <button
           aria-label="Close settings"
           onClick={onClose}
-          className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-zinc-800/50"
+          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
         >
           <CloseIcon />
         </button>
@@ -1024,19 +1024,19 @@ export function SettingsPanel({
         {/* --- Voice & Recording --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("voiceRecording")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Voice & Recording</span>
+            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Voice & Recording</span>
           </button>
           {openSections.voiceRecording && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
 
               {/* Cloud / Offline toggle -- same visual style as StylePicker */}
               <div className="flex flex-col gap-2">
-                <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Speech Recognition</span>
+                <span className="text-xs font-semibold text-voxlit-muted uppercase tracking-wide">Speech Recognition</span>
                 <div className="flex flex-col gap-2 pl-0">
-                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 w-fit">
+                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 w-fit">
                   <button
                     type="button"
                     onClick={() => {
@@ -1047,8 +1047,8 @@ export function SettingsPanel({
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
                       localSttProvider !== "local"
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : "text-zinc-500 hover:text-zinc-300",
+                        ? "bg-voxlit-primary/15 text-voxlit-primary"
+                        : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Cloud
@@ -1059,8 +1059,8 @@ export function SettingsPanel({
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
                       localSttProvider === "local"
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : "text-zinc-500 hover:text-zinc-300",
+                        ? "bg-voxlit-primary/15 text-voxlit-primary"
+                        : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Offline
@@ -1084,7 +1084,7 @@ export function SettingsPanel({
                             setLocalSttProvider("groq");
                           }
                         }}
-                        className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                        className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                       >
                         {CLOUD_STT_MODELS.filter((m) => {
                           if (m.provider === "groq") return groqOk;
@@ -1103,11 +1103,11 @@ export function SettingsPanel({
                 {/* Offline mode: WhisperModelManager */}
                 {localSttProvider === "local" && isDesktop && (
                   <div className="flex flex-col gap-3 mt-1">
-                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
-                      <svg className="w-3.5 h-3.5 text-zinc-400 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-voxlit-surface/30 border border-voxlit-border/30">
+                      <svg className="w-3.5 h-3.5 text-voxlit-muted mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
                       </svg>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      <p className="text-[11px] text-voxlit-muted leading-relaxed">
                         Speech is transcribed locally. Text cleanup is skipped (no internet needed).
                       </p>
                     </div>
@@ -1126,14 +1126,14 @@ export function SettingsPanel({
               {/* Text Cleanup -- only in Cloud mode */}
               {localSttProvider !== "local" && (
                 <div className="flex flex-col gap-2.5">
-                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Text Cleanup</span>
+                  <span className="text-xs font-semibold text-voxlit-muted uppercase tracking-wide">Text Cleanup</span>
 
                   <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                     <span className={LABEL_CLS_M}>Provider</span>
                     <select
                       value={localLlmProvider}
                       onChange={(e) => setLocalLlmProvider(e.target.value)}
-                      className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                      className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                     >
                       <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
                       <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
@@ -1144,7 +1144,7 @@ export function SettingsPanel({
 
                   <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                     <span className={LABEL_CLS_M}>Style</span>
-                    <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                    <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
                       {STYLE_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
@@ -1153,8 +1153,8 @@ export function SettingsPanel({
                           className={[
                             isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
                             localStyle === opt.value
-                              ? "bg-emerald-500/15 text-emerald-400"
-                              : "text-zinc-500 hover:text-zinc-300",
+                              ? "bg-voxlit-primary/15 text-voxlit-primary"
+                              : "text-voxlit-dim hover:text-voxlit-muted",
                           ].join(" ")}
                         >
                           {opt.label}
@@ -1171,7 +1171,7 @@ export function SettingsPanel({
                 <select
                   value={localLang}
                   onChange={(e) => handleLangChange(e.target.value)}
-                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                  className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                 >
                   <option value="">Auto (DE + EN)</option>
                   <option value="de">Deutsch</option>
@@ -1185,7 +1185,7 @@ export function SettingsPanel({
                 <select
                   value={localOutputLanguage}
                   onChange={(e) => handleOutputLanguageChange(e.target.value)}
-                  className={`bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                  className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                 >
                   {OUTPUT_LANGUAGES.map((l) => (
                     <option key={l.code} value={l.code}>{l.label}</option>
@@ -1200,7 +1200,7 @@ export function SettingsPanel({
                   <select
                     value={localAudioDevice ?? ""}
                     onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-                    className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 max-w-[180px] truncate focus:outline-none focus:border-emerald-500/40 transition-colors cursor-pointer"
+                    className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text max-w-[180px] truncate focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer"
                   >
                     <option value="">System Default</option>
                     {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -1215,20 +1215,20 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("hotkey")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Hotkey</span>
+              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Hotkey</span>
             </button>
             {openSections.hotkey && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Tab bar */}
-                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 self-start">
+                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 self-start">
                   <button
                     onClick={() => setHotkeyTab(0)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      hotkeyTab === 0 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                      hotkeyTab === 0 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Hotkey 1
@@ -1237,7 +1237,7 @@ export function SettingsPanel({
                     onClick={() => setHotkeyTab(1)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      hotkeyTab === 1 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                      hotkeyTab === 1 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Hotkey 2
@@ -1248,13 +1248,13 @@ export function SettingsPanel({
                 {hotkeyTab === 0 && (
                   <>
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-xs text-zinc-300">Shortcut</span>
+                      <span className="text-xs text-voxlit-muted">Shortcut</span>
                       <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1276,8 +1276,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localHotkeyMode === value
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : "text-zinc-500 hover:text-zinc-300",
+                                ? "bg-voxlit-primary/15 text-voxlit-primary"
+                                : "text-voxlit-dim hover:text-voxlit-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1285,7 +1285,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-voxlit-muted">
                       {localHotkeyMode === "hold" && "Hold to record, release to process"}
                       {localHotkeyMode === "toggle" && "Press once to start, press again to stop"}
                       {localHotkeyMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1297,7 +1297,7 @@ export function SettingsPanel({
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <span className={LABEL_CLS}>Silence Duration</span>
-                            <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                            <span className="text-xs font-mono text-voxlit-primary">{localSilenceSecs.toFixed(1)}s</span>
                           </div>
                           <input
                             type="range"
@@ -1306,19 +1306,19 @@ export function SettingsPanel({
                             step={0.1}
                             value={localSilenceSecs}
                             onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                            className="w-full accent-emerald-500"
+                            className="w-full accent-voxlit-primary"
                           />
-                          <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                          <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
                         </div>
 
                       </>
                     )}
 
                     {/* Insert & Send -- per-slot option for Hotkey 1 */}
-                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-800/40">
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-voxlit-border/40">
                       <div className="flex flex-col gap-0.5">
                         <span className={LABEL_CLS}>Insert &amp; Send</span>
-                        <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
+                        <span className="text-[11px] text-voxlit-muted">Send Enter after pasting (useful for chat apps)</span>
                       </div>
                       <button
                         role="switch"
@@ -1326,7 +1326,7 @@ export function SettingsPanel({
                         onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
                         className={[
                           "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                          localInsertAndSendSlot1 ? "bg-emerald-500/40" : "bg-zinc-700",
+                          localInsertAndSendSlot1 ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
                         ].join(" ")}
                       >
                         <span
@@ -1345,12 +1345,12 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-zinc-300">Shortcut</span>
+                        <span className="text-xs text-voxlit-muted">Shortcut</span>
                         {localHotkeySlot2 && (
                           <button
                             type="button"
                             onClick={() => setLocalHotkeySlot2("")}
-                            className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                            className="text-[11px] text-voxlit-dim hover:text-voxlit-muted transition-colors"
                           >
                             Clear
                           </button>
@@ -1360,7 +1360,7 @@ export function SettingsPanel({
                         <ShortcutRecorder value={localHotkeySlot2} onChange={setLocalHotkeySlot2} />
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-zinc-600 italic">Not set</span>
+                          <span className="text-xs text-voxlit-dim italic">Not set</span>
                           <ShortcutRecorder value="" onChange={setLocalHotkeySlot2} />
                         </div>
                       )}
@@ -1369,7 +1369,7 @@ export function SettingsPanel({
                     {localHotkeySlot2 && (
                       <div className="flex flex-col gap-1.5">
                         <span className={LABEL_CLS}>Mode</span>
-                        <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                        <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
                           {([
                             { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                             { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1383,15 +1383,15 @@ export function SettingsPanel({
                               className={[
                                 "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                                 localHotkeyModeSlot2 === value
-                                  ? "bg-emerald-500/15 text-emerald-400"
-                                  : "text-zinc-500 hover:text-zinc-300",
+                                  ? "bg-voxlit-primary/15 text-voxlit-primary"
+                                  : "text-voxlit-dim hover:text-voxlit-muted",
                               ].join(" ")}
                             >
                               {label}
                             </button>
                           ))}
                         </div>
-                        <p className="text-[11px] text-zinc-500">
+                        <p className="text-[11px] text-voxlit-dim">
                           {localHotkeyModeSlot2 === "hold" && "Hold to record, release to process"}
                           {localHotkeyModeSlot2 === "toggle" && "Press once to start, press again to stop"}
                           {localHotkeyModeSlot2 === "autostop" && "Press to start, stops automatically on silence"}
@@ -1403,7 +1403,7 @@ export function SettingsPanel({
                             <div className="flex flex-col gap-1.5 mt-1">
                               <div className="flex items-center justify-between">
                                 <span className={LABEL_CLS}>Silence Duration</span>
-                                <span className="text-xs font-mono text-emerald-400">{localSilenceSecs.toFixed(1)}s</span>
+                                <span className="text-xs font-mono text-voxlit-primary">{localSilenceSecs.toFixed(1)}s</span>
                               </div>
                               <input
                                 type="range"
@@ -1412,9 +1412,9 @@ export function SettingsPanel({
                                 step={0.1}
                                 value={localSilenceSecs}
                                 onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                                className="w-full accent-emerald-500"
+                                className="w-full accent-voxlit-primary"
                               />
-                              <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                              <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
                             </div>
 
                           </>
@@ -1423,10 +1423,10 @@ export function SettingsPanel({
                     )}
 
                     {/* Insert & Send -- per-slot option for Hotkey 2 */}
-                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-zinc-800/40">
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-voxlit-border/40">
                       <div className="flex flex-col gap-0.5">
                         <span className={LABEL_CLS}>Insert &amp; Send</span>
-                        <span className="text-[11px] text-zinc-500">Send Enter after pasting (useful for chat apps)</span>
+                        <span className="text-[11px] text-voxlit-muted">Send Enter after pasting (useful for chat apps)</span>
                       </div>
                       <button
                         role="switch"
@@ -1434,7 +1434,7 @@ export function SettingsPanel({
                         onClick={() => setLocalInsertAndSendSlot2((v) => !v)}
                         className={[
                           "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                          localInsertAndSendSlot2 ? "bg-emerald-500/40" : "bg-zinc-700",
+                          localInsertAndSendSlot2 ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
                         ].join(" ")}
                       >
                         <span
@@ -1456,19 +1456,19 @@ export function SettingsPanel({
         {false && isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("voiceCommand")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
                 Voice Command Mode
-                {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
               </span>
             </button>
             {openSections.voiceCommand && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Voice command requires a Groq API key for real-time STT */}
                 {!groqOk && (
-                  <p className="text-[11px] text-amber-500/80">
+                  <p className="text-[11px] text-voxlit-warning/80">
                     Requires a Groq API key (Settings &rarr; API Keys)
                   </p>
                 )}
@@ -1478,9 +1478,9 @@ export function SettingsPanel({
                   <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-1.5">
                       <span className={LABEL_CLS}>Voice Command Mode</span>
-                      {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                      {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
                     </span>
-                    <span className="text-[11px] text-zinc-500">
+                    <span className="text-[11px] text-voxlit-dim">
                       Activate dictation by saying &ldquo;Klarvo toggle&rdquo; &mdash; no hotkey needed
                     </span>
                   </div>
@@ -1503,7 +1503,7 @@ export function SettingsPanel({
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
                       (!isPaid && !localVoiceCommandEnabled) ? "opacity-50 cursor-not-allowed" : "",
-                      localVoiceCommandEnabled ? "bg-emerald-500/40" : "bg-zinc-700",
+                      localVoiceCommandEnabled ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1517,7 +1517,7 @@ export function SettingsPanel({
 
                 {/* Running indicator */}
                 {localVoiceCommandEnabled && (
-                  <p className="text-[11px] text-emerald-400/80">
+                  <p className="text-[11px] text-voxlit-primary/80">
                     Listening for &ldquo;Klarvo&rdquo; commands&hellip;
                   </p>
                 )}
@@ -1530,20 +1530,20 @@ export function SettingsPanel({
         {!isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("bubble")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Bubble Controls</span>
+              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Bubble Controls</span>
             </button>
             {openSections.bubble && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Tab bar: Tap / Long Press */}
-                <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60 self-start">
+                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 self-start">
                   <button
                     onClick={() => setBubbleTab(0)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      bubbleTab === 0 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                      bubbleTab === 0 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Tap
@@ -1552,7 +1552,7 @@ export function SettingsPanel({
                     onClick={() => setBubbleTab(1)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      bubbleTab === 1 ? "bg-emerald-500/15 text-emerald-400" : "text-zinc-500 hover:text-zinc-300",
+                      bubbleTab === 1 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
                     ].join(" ")}
                   >
                     Long Press
@@ -1564,7 +1564,7 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1578,8 +1578,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localBubbleTapMode === value
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : "text-zinc-500 hover:text-zinc-300",
+                                ? "bg-voxlit-primary/15 text-voxlit-primary"
+                                : "text-voxlit-dim hover:text-voxlit-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1587,7 +1587,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-voxlit-dim">
                       {localBubbleTapMode === "hold" && "Hold to record, release to process"}
                       {localBubbleTapMode === "toggle" && "Press once to start, press again to stop"}
                       {localBubbleTapMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1598,7 +1598,7 @@ export function SettingsPanel({
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between">
                           <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-emerald-400">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                          <span className="text-xs font-mono text-voxlit-primary">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
                         </div>
                         <input
                           type="range"
@@ -1607,9 +1607,9 @@ export function SettingsPanel({
                           step={0.1}
                           value={localBubbleTapSilenceSecs}
                           onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-emerald-500"
+                          className="w-full accent-voxlit-primary"
                         />
-                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                        <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
                       </div>
                     )}
 
@@ -1622,7 +1622,7 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-zinc-800/60">
+                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1636,8 +1636,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localBubbleLongPressMode === value
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : "text-zinc-500 hover:text-zinc-300",
+                                ? "bg-voxlit-primary/15 text-voxlit-primary"
+                                : "text-voxlit-dim hover:text-voxlit-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1645,7 +1645,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-voxlit-dim">
                       {localBubbleLongPressMode === "hold" && "Hold to record, release to process"}
                       {localBubbleLongPressMode === "toggle" && "Press once to start, press again to stop"}
                       {localBubbleLongPressMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1656,7 +1656,7 @@ export function SettingsPanel({
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between">
                           <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-emerald-400">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                          <span className="text-xs font-mono text-voxlit-primary">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
                         </div>
                         <input
                           type="range"
@@ -1665,9 +1665,9 @@ export function SettingsPanel({
                           step={0.1}
                           value={localBubbleLongPressSilenceSecs}
                           onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-emerald-500"
+                          className="w-full accent-voxlit-primary"
                         />
-                        <p className="text-[11px] text-zinc-500">Seconds of silence before auto-stop</p>
+                        <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
                       </div>
                     )}
 
@@ -1682,12 +1682,12 @@ export function SettingsPanel({
         {/* --- Cleanup Instructions -- hidden when offline STT mode is active --- */}
         {localSttProvider !== "local" && <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("customPrompt")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
               Cleanup Instructions
-              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
           </button>
           {openSections.customPrompt && (
@@ -1697,14 +1697,14 @@ export function SettingsPanel({
                 hint="Appended to the system prompt during LLM cleanup."
                 value={localCustomPrompt}
                 onChange={isPaid ? setLocalCustomPrompt : () => {}}
-                placeholder={isPaid ? "Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'" : "Requires Voxlit License"}
+                placeholder={isPaid ? "Extra instructions for the LLM, e.g. 'Always use formal German' or 'Keep technical terms in English'" : "Requires Klarvo License"}
                 rows={3}
                 className={`${INPUT_CLS_M} resize-none${!isPaid ? " opacity-50 cursor-not-allowed" : ""}`}
                 disabled={!isPaid}
               />
               {/* Preset buttons -- one click replaces the entire custom prompt */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Presets:</span>
+                <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Presets:</span>
                 {([
                   { label: "Formal", prompt: "Always use formal language. Avoid colloquialisms and slang." },
                   { label: "Technical", prompt: "Keep technical terms in English. Use precise, professional language." },
@@ -1716,8 +1716,8 @@ export function SettingsPanel({
                     onClick={() => setLocalCustomPrompt(prompt)}
                     className={[
                       "border rounded-lg font-medium transition-colors",
-                      "bg-transparent border-zinc-700/60 text-zinc-400",
-                      "hover:border-zinc-500 hover:text-zinc-200",
+                      "bg-transparent border-voxlit-border/60 text-voxlit-muted",
+                      "hover:border-voxlit-border-active hover:text-voxlit-text",
                       isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
                     ].join(" ")}
                   >
@@ -1729,14 +1729,14 @@ export function SettingsPanel({
                   onClick={() => setLocalCustomPrompt("")}
                   className={[
                     "transition-colors",
-                    "text-zinc-600 hover:text-zinc-400",
+                    "text-voxlit-dim hover:text-voxlit-muted",
                     isMobile ? "px-3 min-h-[44px] text-sm" : "px-2 py-1.5 text-xs",
                   ].join(" ")}
                 >
                   Clear
                 </button>
               </div>
-              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Appended to the system prompt during LLM cleanup.</p>
+              <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Appended to the system prompt during LLM cleanup.</p>
             </div>
           )}
         </div>}
@@ -1745,10 +1745,10 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("general")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">General</span>
+              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">General</span>
             </button>
             {openSections.general && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1761,7 +1761,7 @@ export function SettingsPanel({
                     onClick={() => setLocalAutostart(!localAutostart)}
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200",
-                      localAutostart ? "bg-emerald-500/40" : "bg-zinc-700",
+                      localAutostart ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1777,9 +1777,9 @@ export function SettingsPanel({
                   <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-1.5">
                       <span className={LABEL_CLS_M}>Whisper mode</span>
-                      {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                      {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
                     </span>
-                    <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Amplifies mic input for quiet dictation</span>
+                    <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Amplifies mic input for quiet dictation</span>
                   </div>
                   <button
                     type="button"
@@ -1790,7 +1790,7 @@ export function SettingsPanel({
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
                       !isPaid ? "opacity-50 cursor-not-allowed" : "",
-                      localWhisperMode ? "bg-emerald-500/40" : "bg-zinc-700",
+                      localWhisperMode ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1804,7 +1804,7 @@ export function SettingsPanel({
 
                 <div className="flex flex-col gap-0.5">
                   <span className={LABEL_CLS_M}>Command mode</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
                 </div>
               </div>
             )}
@@ -1815,12 +1815,12 @@ export function SettingsPanel({
         {/* --- Sync --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("sync")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
               Cross-Device Sync
-              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
           </button>
           {openSections.sync && (
@@ -1828,11 +1828,11 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <span className="flex items-center gap-1.5">
                   <span className={LABEL_CLS_M}>Turso URL</span>
-                  {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+                  {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
                 </span>
                 <input
                   type="text"
-                  placeholder={isPaid ? "libsql://your-db.turso.io" : "Requires Voxlit License"}
+                  placeholder={isPaid ? "libsql://your-db.turso.io" : "Requires Klarvo License"}
                   value={localTursoUrl}
                   disabled={!isPaid}
                   onChange={(e) => setLocalTursoUrl(e.target.value)}
@@ -1844,7 +1844,7 @@ export function SettingsPanel({
                 <input
                   type="password"
                   autoComplete="off"
-                  placeholder={isPaid ? (loadedSettings?.tursoTokenMasked || "Auth token") : "Requires Voxlit License"}
+                  placeholder={isPaid ? (loadedSettings?.tursoTokenMasked || "Auth token") : "Requires Klarvo License"}
                   value={tursoToken}
                   disabled={!isPaid}
                   onChange={(e) => setTursoToken(e.target.value)}
@@ -1852,7 +1852,7 @@ export function SettingsPanel({
                 />
               </div>
               {loadedSettings?.deviceId && (
-                <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
+                <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
               )}
               <button
                 onClick={async () => {
@@ -1868,12 +1868,12 @@ export function SettingsPanel({
                   }
                 }}
                 disabled={syncing || !localTursoUrl || !isPaid}
-                className={`px-3 py-1.5 text-sm bg-zinc-700 text-white rounded hover:bg-zinc-600 disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}${!isPaid ? " cursor-not-allowed" : ""}`}
+                className={`px-3 py-1.5 text-sm bg-voxlit-elevated text-white rounded hover:bg-voxlit-border-active disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}${!isPaid ? " cursor-not-allowed" : ""}`}
               >
                 {syncing ? "Syncing..." : "Sync Now"}
               </button>
-              {syncMsg && <p className={isMobile ? "text-xs text-zinc-400" : "text-[11px] text-zinc-400"}>{syncMsg}</p>}
-              <p className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
+              {syncMsg && <p className={isMobile ? "text-xs text-voxlit-muted" : "text-[11px] text-voxlit-muted"}>{syncMsg}</p>}
+              <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
             </div>
           )}
         </div>
@@ -1881,17 +1881,17 @@ export function SettingsPanel({
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("apiKeys")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">API Keys</span>
+            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">API Keys</span>
           </button>
           {openSections.apiKeys && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Groq</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Speech + Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Speech + Cleanup)</span>
                   <StatusDot active={groqOk} />
                 </div>
                 <input
@@ -1908,7 +1908,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>DeepSeek</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
                   <StatusDot active={deepseekOk} />
                 </div>
                 <input
@@ -1925,7 +1925,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>OpenAI</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Speech + Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Speech + Cleanup)</span>
                   <StatusDot active={openaiOk} />
                 </div>
                 <input
@@ -1942,7 +1942,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Anthropic</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
                   <StatusDot active={anthropicOk} />
                 </div>
                 <input
@@ -1959,7 +1959,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>OpenRouter</span>
-                  <span className={isMobile ? "text-xs text-zinc-500" : "text-[11px] text-zinc-500"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
                   <StatusDot active={openrouterOk} />
                 </div>
                 <input
@@ -1979,12 +1979,12 @@ export function SettingsPanel({
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("dictionary")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
               Dictionary
-              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-amber-500/80" : "text-zinc-600"}`}>
+              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-voxlit-warning/80" : "text-voxlit-dim"}`}>
                 {!isPaid ? `${dictionary.length}/20` : `${dictionary.length}`}
               </span>
             </span>
@@ -2005,14 +2005,14 @@ export function SettingsPanel({
                   onClick={handleAddTerm}
                   disabled={!newTerm.trim() || (!isPaid && dictionary.length >= 20)}
                   title={(!isPaid && dictionary.length >= 20) ? "Free limit reached (20 terms). Upgrade for unlimited." : undefined}
-                  className={`px-3 rounded-lg font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
+                  className={`px-3 rounded-lg font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
                 >
                   Add
                 </button>
               </div>
 
               {!isPaid && dictionary.length >= 20 && (
-                <p className="text-[11px] text-amber-500/80">
+                <p className="text-[11px] text-voxlit-warning/80">
                   Free limit reached (20 terms). Upgrade for unlimited.
                 </p>
               )}
@@ -2022,7 +2022,7 @@ export function SettingsPanel({
                   {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
                 </div>
               ) : (
-                <p className="text-xs text-zinc-500 italic">No terms yet.</p>
+                <p className="text-xs text-voxlit-dim italic">No terms yet.</p>
               )}
             </div>
           )}
@@ -2032,10 +2032,10 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("updates")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Updates</span>
+              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Updates</span>
             </button>
             {openSections.updates && (
               <div className="pl-4 pb-3 pt-1">
@@ -2048,12 +2048,12 @@ export function SettingsPanel({
         {/* --- App Profiles (paid feature) --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("appProfiles")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
               App Profiles
-              {!isPaid && <LockIcon className="w-3 h-3 text-zinc-600" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
           </button>
           {openSections.appProfiles && (
@@ -2061,18 +2061,18 @@ export function SettingsPanel({
               {!isPaid ? (
                 // Free-tier paygate: show lock message, no profile editing allowed.
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-zinc-500">
-                    <LockIcon className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
-                    <p className="text-xs">App Profiles require a Voxlit license.</p>
+                  <div className="flex items-center gap-2 text-voxlit-dim">
+                    <LockIcon className="w-3.5 h-3.5 text-voxlit-dim flex-shrink-0" />
+                    <p className="text-xs">App Profiles require a Klarvo license.</p>
                   </div>
-                  <p className="text-[11px] text-zinc-600">Override style and language per app based on window title.</p>
+                  <p className="text-[11px] text-voxlit-dim">Override style and language per app based on window title.</p>
                 </div>
               ) : (
                 <>
-                  <p className="text-[11px] text-zinc-500">Override style/language per app. Matches window title substring.</p>
+                  <p className="text-[11px] text-voxlit-dim">Override style/language per app. Matches window title substring.</p>
 
                   {profiles.map((p, i) => (
-                    <div key={i} className="bg-[#111113] border border-zinc-800/60 rounded-xl p-3 flex flex-col gap-2">
+                    <div key={i} className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
                         <input
                           type="text"
@@ -2091,7 +2091,7 @@ export function SettingsPanel({
                             setProfiles(next);
                             saveProfiles(next).catch(console.error);
                           }}
-                          className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                          className="text-voxlit-dim hover:text-voxlit-danger transition-colors p-1"
                         >
                           <CloseIcon />
                         </button>
@@ -2115,7 +2115,7 @@ export function SettingsPanel({
                             next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
                             setProfiles(next);
                           }}
-                          className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                          className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 cursor-pointer"
                         >
                           {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </select>
@@ -2126,7 +2126,7 @@ export function SettingsPanel({
                             next[i] = { ...next[i], language: e.target.value };
                             setProfiles(next);
                           }}
-                          className="bg-[#111113] border border-zinc-800/60 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                          className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 cursor-pointer"
                         >
                           <option value="">Auto</option>
                           <option value="de">DE</option>
@@ -2150,14 +2150,14 @@ export function SettingsPanel({
                   <div className="flex gap-2">
                     <button
                       onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
-                      className="px-3 py-2 rounded-lg text-xs font-medium bg-[#111113] border border-zinc-800/60 text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+                      className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 transition-colors"
                     >
                       + Add Profile
                     </button>
                     {profiles.length > 0 && (
                       <button
                         onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
-                        className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                        className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-colors"
                       >
                         Save Profiles
                       </button>
@@ -2172,10 +2172,10 @@ export function SettingsPanel({
         {/* --- License --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("license")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">License</span>
+            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">License</span>
           </button>
           {openSections.license && (
             <LicenseSection
@@ -2199,32 +2199,32 @@ export function SettingsPanel({
         {/* --- About --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("about")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-zinc-500 flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">About</span>
+            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">About</span>
           </button>
           {openSections.about && (
             <div className="flex flex-col gap-2 pl-4 pb-3 pt-1">
-              <p className="text-xs font-medium text-zinc-300">
-                Voxlit{appVersion ? ` v${appVersion}` : ""}
+              <p className="text-xs font-medium text-voxlit-muted">
+                Klarvo{appVersion ? ` v${appVersion}` : ""}
               </p>
-              <p className="text-[11px] text-zinc-500">Voice dictation you own.</p>
-              <p className="text-[11px] text-zinc-500">by Andreas Nolte</p>
+              <p className="text-[11px] text-voxlit-dim">Voice dictation you own.</p>
+              <p className="text-[11px] text-voxlit-dim">by Andreas Nolte</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <button
                   onClick={() => openUrl("https://github.com/andyon2/voxlit")}
-                  className="text-[11px] text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors"
+                  className="text-[11px] text-voxlit-muted hover:text-voxlit-text underline underline-offset-2 transition-colors"
                 >
                   GitHub
                 </button>
-                <span className="text-[11px] text-zinc-600">·</span>
-                <span className="text-[11px] text-zinc-500">MIT License</span>
+                <span className="text-[11px] text-voxlit-dim">·</span>
+                <span className="text-[11px] text-voxlit-dim">MIT License</span>
               </div>
               {onRestartOnboarding && (
                 <button
                   onClick={onRestartOnboarding}
-                  className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors text-left"
+                  className="mt-2 text-[11px] text-voxlit-dim hover:text-voxlit-muted underline underline-offset-2 transition-colors text-left"
                 >
                   Setup assistant restart
                 </button>
@@ -2241,17 +2241,17 @@ export function SettingsPanel({
           Android WebView and returns 0). The parent panel max-h also accounts for
           the ~48 px nav bar so this footer is never clipped by the container. */}
       {(isDirty || saveMsg) && (
-        <div className={`px-4 py-3 border-t border-zinc-800/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
+        <div className={`px-4 py-3 border-t border-voxlit-border/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
           <button
             onClick={handleSave}
             disabled={saving}
             className={[
               "w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
               saveMsg === "Saved"
-                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                ? "bg-voxlit-primary/15 border-voxlit-primary/30 text-voxlit-primary"
                 : saveMsg && saveMsg !== "Saved"
-                ? "bg-red-500/10 border-red-500/20 text-red-400"
-                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/40 animate-pulse",
+                ? "bg-voxlit-danger/10 border-voxlit-danger/20 text-voxlit-danger"
+                : "bg-voxlit-primary/10 border-voxlit-primary/30 text-voxlit-primary hover:bg-voxlit-primary/15 hover:border-voxlit-primary/40 animate-pulse",
               "disabled:opacity-50 disabled:cursor-not-allowed",
             ].join(" ")}
           >
