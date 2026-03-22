@@ -72,6 +72,10 @@ use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WindowEvent};
+#[cfg(target_os = "windows")]
+use tauri::menu::{Menu, MenuItem};
+#[cfg(target_os = "windows")]
+use tauri::tray::TrayIconEvent;
 
 
 // Re-export pipeline helpers so `commands/` modules can reach them.
@@ -534,7 +538,8 @@ fn create_bar_window(
     let bar_height = 10.0_f64;
     let pill_height = 36.0_f64;
 
-    let builder = tauri::WebviewWindowBuilder::new(
+    #[allow(unused_mut)]
+    let mut builder = tauri::WebviewWindowBuilder::new(
         app,
         "bar",
         WebviewUrl::App("index.html".into()),
@@ -766,7 +771,7 @@ pub fn run() {
 
         // --- Floating bar window ---
         #[cfg(target_os = "windows")]
-        if let Err(e) = create_bar_window(app, saved_bar_x, saved_bar_y) {
+        if let Err(e) = create_bar_window(app, _saved_bar_x, _saved_bar_y) {
             log::warn!("[setup] Could not create floating bar: {e}");
         }
 
