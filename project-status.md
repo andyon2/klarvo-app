@@ -17,6 +17,8 @@ Keine.
 ## Bekannte Bugs
 
 - [ ] FloatingBar: Drag nur moeglich waehrend Recording/Processing (Bar im Idle hidden). Low-Prio.
+- [ ] Onboarding: "Ich kenn mich aus" schliesst das Fenster, aber Onboarding erscheint bei jedem App-Start erneut. Persistenz-Bug.
+- [ ] Auto-Stop und Full-Auto: Silence-Detection loest nicht aus, Cleanup passiert nicht.
 
 ## Erledigt (diese Session)
 
