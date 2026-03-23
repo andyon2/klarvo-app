@@ -268,10 +268,10 @@ class VoxlitOverlayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Voxlit Overlay",
+                "Klarvo Overlay",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the Voxlit voice bubble visible"
+                description = "Keeps the Klarvo voice bubble visible"
                 setShowBadge(false)
             }
             val nm = getSystemService(NotificationManager::class.java)
@@ -297,7 +297,7 @@ class VoxlitOverlayService : Service() {
             Notification.Builder(this)
         }
         builder
-            .setContentTitle("Voxlit")
+            .setContentTitle("Klarvo")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingToggle)
@@ -849,7 +849,7 @@ class VoxlitOverlayService : Service() {
 
         if (config == null || config.groqApiKey.isBlank()) {
             handler.post {
-                showToast("No API keys configured. Please open Voxlit and add your Groq key in Settings.")
+                showToast("No API keys configured. Please open Klarvo and add your Groq key in Settings.")
                 autoLoopActive = false
                 val prev = currentState
                 setState(RecordingState.IDLE)
@@ -1010,7 +1010,7 @@ class VoxlitOverlayService : Service() {
 
     private fun copyToClipboard(text: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip      = ClipData.newPlainText("Voxlit transcription", text)
+        val clip      = ClipData.newPlainText("Klarvo transcription", text)
         clipboard.setPrimaryClip(clip)
     }
 

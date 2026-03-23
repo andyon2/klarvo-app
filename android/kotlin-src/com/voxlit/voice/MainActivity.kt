@@ -98,9 +98,9 @@ class MainActivity : TauriActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Enable Accessibility Access")
                 .setMessage(
-                    "Voxlit uses the Accessibility Service to detect when the keyboard " +
+                    "Klarvo uses the Accessibility Service to detect when the keyboard " +
                     "opens in any app so the voice bubble appears automatically.\n\n" +
-                    "In the next screen, find \"Voxlit\" under Installed Services and " +
+                    "In the next screen, find \"Klarvo\" under Installed Services and " +
                     "switch it on."
                 )
                 .setPositiveButton("Open Accessibility Settings") { _, _ ->
@@ -137,9 +137,9 @@ class MainActivity : TauriActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Unrestricted Battery Usage")
                 .setMessage(
-                    "For reliable keyboard detection and background sync, set Voxlit's " +
+                    "For reliable keyboard detection and background sync, set Klarvo's " +
                     "battery usage to \"Unrestricted\" (or \"No restrictions\").\n\n" +
-                    "This prevents Android from putting the Voxlit bubble to sleep."
+                    "This prevents Android from putting the Klarvo bubble to sleep."
                 )
                 .setPositiveButton("Open Battery Settings") { _, _ ->
                     // Try the direct ignore-battery-optimizations request first.
