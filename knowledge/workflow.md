@@ -15,12 +15,12 @@ Diese Datei wird bei jedem Sessionstart gelesen und waechst organisch.
 
 1. **`cargo test`** — Automatisierte Unit-Tests (aktuell 424). Laeuft in WSL.
 2. **`tauri dev`** — Dev-Modus mit Hot-Reload. Fuer schnelles Frontend-Testen.
-3. **`voxlit.exe` direkt** — Andys primaerer Test-Weg. `sync-and-build.ps1` in PowerShell ausfuehren, dann `D:\Apps\voxlit\src-tauri\target\release\voxlit.exe` starten. Kein Installer noetig. Das ist die fertige App wie sie beim Nutzer laeuft.
+3. **`klarvo.exe` direkt** — Andys primaerer Test-Weg. `sync-and-build.ps1` in PowerShell ausfuehren, dann `D:\Apps\voxlit\src-tauri\target\release\klarvo.exe` starten. Kein Installer noetig. Das ist die fertige App wie sie beim Nutzer laeuft.
 4. **`npm run preview`** — UI-Preview im Browser (http://localhost:1422/). Kein Tauri-Backend, alle Commands geben Mock-Daten zurueck. Ideal fuer Design-Iterationen: Farben, Layout, Styling. ThemeSwitcher-Panel (unten rechts) erlaubt live zwischen Farbvarianten zu wechseln. Nutzen bei allen UX/UI-Anpassungen bevor ein echter Build gemacht wird.
 
-**Wichtig:** Andy nutzt fast immer Weg 3. Wenn er fragt "kann ich testen?", meint er: Ist ein frischer Build moeglich? Die Antwort ist immer `sync-and-build.ps1` auf Windows, dann `voxlit.exe` starten.
+**Wichtig:** Andy nutzt fast immer Weg 3. Wenn er fragt "kann ich testen?", meint er: Ist ein frischer Build moeglich? Die Antwort ist immer `sync-and-build.ps1` auf Windows, dann `klarvo.exe` starten.
 
-**Vor dem Build:** Immer zuerst `taskkill.exe /IM voxlit.exe /F` ausfuehren (geht aus WSL). Sonst schlaegt der Build fehl mit "Zugriff verweigert" weil die .exe noch laeuft. Der Befehl ist harmlos wenn die App nicht laeuft (gibt nur "nicht gefunden" Fehler).
+**Vor dem Build:** Immer zuerst `taskkill.exe /IM klarvo.exe /F` ausfuehren (geht aus WSL). Sonst schlaegt der Build fehl mit "Zugriff verweigert" weil die .exe noch laeuft. Der Befehl ist harmlos wenn die App nicht laeuft (gibt nur "nicht gefunden" Fehler).
 
 **Builds selbst ausfuehren, nie Andy fragen.** Der Windows-Build geht aus WSL:
 ```bash
@@ -31,7 +31,7 @@ Andy nur einbeziehen wenn etwas interaktive Eingabe auf Windows erfordert.
 
 ## Lektionen (was schon mal schiefging)
 
-- **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `voxlit.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
+- **2026-03-10:** Mehrfach nicht gewusst, dass Andy ueber `klarvo.exe` testet statt ueber `tauri dev` oder Installer. Fuehrte zu falschen Anweisungen ("du musst auf Windows bauen und installieren"). Merke: Die nackte .exe im Release-Ordner ist der Standard-Testweg.
 - **2026-03-11:** Release-Notes nur mit Aenderungen der aktuellen Session erstellt, statt den vollen Changelog seit dem letzten oeffentlichen Release zu pruefen. Merke: Immer `git log v<LETZTE_VERSION>..HEAD` nutzen, um ALLE Aenderungen zu sammeln. Im Release-Skill unter Schritt 8 dokumentiert.
 - **2026-03-11:** Dev-Tooling (UI Preview Mode) in Release-Notes aufgenommen. Gehoert nicht rein — Nutzer interessiert nur, was sich fuer sie aendert. Filter-Regel im Release-Skill ergaenzt.
 - **2026-03-12:** Bei erstem GitHub-Issue sofort Explore-Agent losgeschickt ohne Andy zu fragen. Zu viel Eigeninitiative. Merke: Bei neuen Issues/Feedback nur zusammenfassen und Andy fragen was passieren soll. Keine eigenmaechtigen Untersuchungen oder Agent-Delegationen.

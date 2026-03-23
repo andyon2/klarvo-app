@@ -389,6 +389,7 @@ macro_rules! require_license {
 /// Returns `"****{last4}"` for keys longer than 4 characters.
 /// Returns `"****"` for keys with 4 or fewer characters (avoids leaking short keys).
 pub fn mask_api_key(key: &str) -> String {
+    let key = key.trim();
     if key.is_empty() {
         return String::new();
     }
@@ -878,6 +879,7 @@ pub fn run() {
             commands::settings::get_onboarding_state,
             commands::settings::set_onboarding_state,
             commands::settings::validate_api_key,
+            commands::settings::clear_api_key,
             // Dictionary
             commands::dictionary::get_dictionary_terms,
             commands::dictionary::add_dictionary_term,

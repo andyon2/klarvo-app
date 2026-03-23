@@ -37,7 +37,7 @@ async function checkForUpdate(): Promise<{ version: string; downloadAndInstall: 
 }
 import type { AppSettings, CleanupStyle, HotkeyMode, AppProfile, ParsedLicenseStatus } from "../types";
 import { STYLE_OPTIONS } from "../types";
-import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode, getVoiceCommandActive } from "../tauri-commands";
+import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode, getVoiceCommandActive, validateApiKey, clearApiKey } from "../tauri-commands";
 import type { AdvancedSettings } from "../types";
 import { isDesktop, isMobile } from "../platform";
 import { CloseIcon, LockIcon } from "./icons";
@@ -436,7 +436,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-dim hover:text-voxlit-muted",
+              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -454,7 +454,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-dim hover:text-voxlit-muted",
+              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -636,6 +636,13 @@ export function SettingsPanel({
   const [openaiKey, setOpenaiKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
+  // API key validation errors: null = no error, string = error message.
+  const [apiKeyErrors, setApiKeyErrors] = useState<Record<string, string | null>>({});
+  // Which keys are currently being validated (spinner state).
+  const [apiKeyValidating, setApiKeyValidating] = useState<Record<string, boolean>>({});
+  // Confirm-remove state per provider. When truthy, shows "Remove?" confirmation.
+  const [apiKeyConfirmRemove, setApiKeyConfirmRemove] = useState<Record<string, boolean>>({});
+  const apiKeyConfirmTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [localSttProvider, setLocalSttProvider] = useState<string>(loadedSettings?.sttProvider ?? "groq");
   const [localLlmProvider, setLocalLlmProvider] = useState<string>(loadedSettings?.llmProvider ?? "deepseek");
   const [localOutputLanguage, setLocalOutputLanguage] = useState(outputLanguage);
@@ -781,6 +788,27 @@ export function SettingsPanel({
     }
   }, [loadedSettings]);
 
+  // Auto-switch STT provider when the currently selected provider has no API key
+  // but another cloud provider does. Prevents the user from accidentally saving
+  // a provider config that will produce a 401 on first use.
+  // Does NOT touch "local" provider -- that needs no cloud key.
+  useEffect(() => {
+    if (!loadedSettings) return;
+    if (localSttProvider === "local") return;
+
+    const groqAvailable = !!loadedSettings.groqApiKeyMasked;
+    const openaiAvailable = !!loadedSettings.openaiApiKeyMasked;
+
+    if (localSttProvider === "groq" && !groqAvailable && openaiAvailable) {
+      setLocalSttProvider("openai");
+      setLocalSttModel("whisper-1");
+    } else if (localSttProvider === "openai" && !openaiAvailable && groqAvailable) {
+      setLocalSttProvider("groq");
+      setLocalSttModel("whisper-large-v3-turbo");
+    }
+    // If neither provider has a key: leave state as-is -- both are equally broken.
+  }, [loadedSettings, localSttProvider, localSttModel]);
+
   // Track dirty state: compare local values against the last saved settings.
   // API key fields: any non-empty input counts as dirty (new key to save).
   // License activation is excluded -- it triggers auto-save and must not set dirty.
@@ -876,6 +904,42 @@ export function SettingsPanel({
   // Internal helper: calls onSave with all current values. Used by both the
   // explicit Save button and the auto-save after license activation.
   const saveCurrentSettings = useCallback(async (opts?: { silent?: boolean }) => {
+    // Validate any newly entered API keys before persisting.
+    // Keys that are empty (no change) are skipped.
+    const keysToValidate: Array<{ provider: string; key: string }> = [
+      { provider: "groq", key: groqKey.trim() },
+      { provider: "deepseek", key: deepseekKey.trim() },
+      { provider: "openai", key: openaiKey.trim() },
+      { provider: "anthropic", key: anthropicKey.trim() },
+      { provider: "openrouter", key: openrouterKey.trim() },
+    ].filter((e) => e.key !== "");
+
+    if (keysToValidate.length > 0) {
+      // Mark all pending keys as validating.
+      const validatingState: Record<string, boolean> = {};
+      keysToValidate.forEach(({ provider }) => { validatingState[provider] = true; });
+      setApiKeyValidating(validatingState);
+
+      const errors: Record<string, string | null> = {};
+      await Promise.all(
+        keysToValidate.map(async ({ provider, key }) => {
+          try {
+            const valid = await validateApiKey(provider, key);
+            errors[provider] = valid ? null : "Invalid API key";
+          } catch {
+            // Network error: treat as invalid so the user can retry.
+            errors[provider] = "Validation failed — check your network";
+          }
+        }),
+      );
+
+      setApiKeyValidating({});
+      setApiKeyErrors((prev) => ({ ...prev, ...errors }));
+
+      const hasErrors = Object.values(errors).some((e) => e !== null);
+      if (hasErrors) return; // Abort save — errors shown inline.
+    }
+
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
     try {
@@ -907,6 +971,8 @@ export function SettingsPanel({
       setOpenaiKey("");
       setAnthropicKey("");
       setTursoToken("");
+      // Clear validation errors after a successful save.
+      setApiKeyErrors({});
       if (!opts?.silent) {
         setSaveMsg("Saved");
         setTimeout(() => setSaveMsg(null), 2000);
@@ -925,12 +991,38 @@ export function SettingsPanel({
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     advancedSettings, localSilenceThreshold,
+    openrouterKey,
     onSave,
   ]);
 
   const handleSave = useCallback(async () => {
     await saveCurrentSettings();
   }, [saveCurrentSettings]);
+
+  // Handles the two-step confirm-then-remove flow for API keys.
+  // First click: shows "Remove?" confirmation for 4 s.
+  // Second click within 4 s: calls clearApiKey and reloads settings.
+  const handleApiKeyRemoveClick = useCallback((provider: string) => {
+    if (!apiKeyConfirmRemove[provider]) {
+      setApiKeyConfirmRemove((prev) => ({ ...prev, [provider]: true }));
+      apiKeyConfirmTimers.current[provider] = setTimeout(() => {
+        setApiKeyConfirmRemove((prev) => ({ ...prev, [provider]: false }));
+      }, 4000);
+      return;
+    }
+    // Second click: execute removal.
+    if (apiKeyConfirmTimers.current[provider]) clearTimeout(apiKeyConfirmTimers.current[provider]);
+    setApiKeyConfirmRemove((prev) => ({ ...prev, [provider]: false }));
+    clearApiKey(provider)
+      .then(() => saveCurrentSettings({ silent: true }))
+      .catch((err) => console.error("clearApiKey failed:", err));
+  }, [apiKeyConfirmRemove, saveCurrentSettings]);
+
+  // Clear confirm timers on unmount.
+  useEffect(() => {
+    const timers = apiKeyConfirmTimers.current;
+    return () => { Object.values(timers).forEach(clearTimeout); };
+  }, []);
 
   // Called from LicenseSection after successful activation: persist immediately
   // so the user never has to click Save Settings for license changes.
@@ -1900,9 +1992,16 @@ export function SettingsPanel({
                   spellCheck={false}
                   placeholder={groqOk ? loadedSettings!.groqApiKeyMasked : "gsk_..."}
                   value={groqKey}
-                  onChange={(e) => setGroqKey(e.target.value)}
+                  onChange={(e) => { setGroqKey(e.target.value); setApiKeyErrors((p) => ({ ...p, groq: null })); }}
                   className={INPUT_CLS_M}
                 />
+                {apiKeyValidating["groq"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
+                {apiKeyErrors["groq"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["groq"]}</span>}
+                {groqOk && (
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("groq")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["groq"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                    {apiKeyConfirmRemove["groq"] ? "Click again to confirm removal" : "Remove Key"}
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1917,9 +2016,16 @@ export function SettingsPanel({
                   spellCheck={false}
                   placeholder={deepseekOk ? loadedSettings!.deepseekApiKeyMasked : "sk-..."}
                   value={deepseekKey}
-                  onChange={(e) => setDeepseekKey(e.target.value)}
+                  onChange={(e) => { setDeepseekKey(e.target.value); setApiKeyErrors((p) => ({ ...p, deepseek: null })); }}
                   className={INPUT_CLS_M}
                 />
+                {apiKeyValidating["deepseek"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
+                {apiKeyErrors["deepseek"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["deepseek"]}</span>}
+                {deepseekOk && (
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("deepseek")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["deepseek"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                    {apiKeyConfirmRemove["deepseek"] ? "Click again to confirm removal" : "Remove Key"}
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1934,9 +2040,16 @@ export function SettingsPanel({
                   spellCheck={false}
                   placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
                   value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  onChange={(e) => { setOpenaiKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openai: null })); }}
                   className={INPUT_CLS_M}
                 />
+                {apiKeyValidating["openai"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
+                {apiKeyErrors["openai"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["openai"]}</span>}
+                {openaiOk && (
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("openai")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openai"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                    {apiKeyConfirmRemove["openai"] ? "Click again to confirm removal" : "Remove Key"}
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1951,9 +2064,16 @@ export function SettingsPanel({
                   spellCheck={false}
                   placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
                   value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
+                  onChange={(e) => { setAnthropicKey(e.target.value); setApiKeyErrors((p) => ({ ...p, anthropic: null })); }}
                   className={INPUT_CLS_M}
                 />
+                {apiKeyValidating["anthropic"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
+                {apiKeyErrors["anthropic"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["anthropic"]}</span>}
+                {anthropicOk && (
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("anthropic")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["anthropic"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                    {apiKeyConfirmRemove["anthropic"] ? "Click again to confirm removal" : "Remove Key"}
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1968,9 +2088,16 @@ export function SettingsPanel({
                   spellCheck={false}
                   placeholder={openrouterOk ? loadedSettings!.openrouterApiKeyMasked : "sk-or-..."}
                   value={openrouterKey}
-                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  onChange={(e) => { setOpenrouterKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openrouter: null })); }}
                   className={INPUT_CLS_M}
                 />
+                {apiKeyValidating["openrouter"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
+                {apiKeyErrors["openrouter"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["openrouter"]}</span>}
+                {openrouterOk && (
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("openrouter")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openrouter"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                    {apiKeyConfirmRemove["openrouter"] ? "Click again to confirm removal" : "Remove Key"}
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -784,7 +784,7 @@ export async function getOnboardingState(): Promise<OnboardingState> {
  */
 export async function setOnboardingState(state: OnboardingState): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
-  await invoke("set_onboarding_state", { state });
+  await invoke("set_onboarding_state", { onboardingState: state });
 }
 
 /**
@@ -797,6 +797,16 @@ export async function setOnboardingState(state: OnboardingState): Promise<void> 
 export async function validateApiKey(provider: string, key: string): Promise<boolean> {
   if (isPreviewMode) return mockAsync(key.length > 10, 600);
   return invoke<boolean>("validate_api_key", { provider, key });
+}
+
+/**
+ * Clears a saved API key for the given provider.
+ * After this call the masked key is gone and the provider shows as unconfigured.
+ * @param provider - "groq" | "deepseek" | "openai" | "anthropic" | "openrouter"
+ */
+export async function clearApiKey(provider: string): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  return invoke<void>("clear_api_key", { provider });
 }
 
 // --- Voice Command Mode ---

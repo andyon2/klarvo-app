@@ -175,6 +175,14 @@ pub async fn save_settings(
 ) -> Result<(), String> {
     let inner = state.inner();
 
+    // Trim whitespace from all API keys so that whitespace-only strings are
+    // treated the same as empty strings (preserves existing key).
+    let groq_api_key = groq_api_key.trim().to_string();
+    let deepseek_api_key = deepseek_api_key.trim().to_string();
+    let openai_api_key = openai_api_key.map(|k| k.trim().to_string());
+    let anthropic_api_key = anthropic_api_key.map(|k| k.trim().to_string());
+    let openrouter_api_key = openrouter_api_key.map(|k| k.trim().to_string());
+
     // License gate: Whisper Mode requires a paid license.
     if whisper_mode.unwrap_or(false) {
         require_license!(state, LicensedFeature::WhisperMode);
@@ -765,6 +773,66 @@ pub async fn validate_api_key(provider: String, key: String) -> Result<bool, Str
     }
 }
 
+/// Clears (deletes) the stored API key for a given provider.
+///
+/// After clearing, the key is set to an empty string in memory and on disk.
+/// If the cleared key was used by the active STT or LLM provider, the
+/// provider is hot-reloaded (typically falls back to another configured key
+/// or becomes unavailable).
+///
+/// Supported providers: `"groq"`, `"deepseek"`, `"openai"`, `"anthropic"`,
+/// `"openrouter"`.
+///
+/// Returns `Err` for unknown provider strings.
+#[tauri::command]
+pub async fn clear_api_key(
+    handle: AppHandle,
+    state: State<'_, AppState>,
+    provider: String,
+) -> Result<(), String> {
+    let inner = state.inner();
+
+    let mut cfg = crate::lock!(inner.config)?.clone();
+
+    match provider.as_str() {
+        "groq"        => cfg.groq_api_key        = String::new(),
+        "deepseek"    => cfg.deepseek_api_key     = String::new(),
+        "openai"      => cfg.openai_api_key       = String::new(),
+        "anthropic"   => cfg.anthropic_api_key    = String::new(),
+        "openrouter"  => cfg.openrouter_api_key   = String::new(),
+        other => {
+            return Err(format!(
+                "Unknown provider: {other:?}. Supported: groq, deepseek, openai, anthropic, openrouter"
+            ));
+        }
+    }
+
+    // Resolve new providers *before* persisting so we can surface any error
+    // to the caller early (though resolve_* is currently infallible).
+    let new_stt     = resolve_stt_provider(&cfg);
+    let new_cleanup = resolve_cleanup_provider(&cfg);
+
+    // Persist to disk.
+    save_config(&inner.app_data_dir, &cfg)
+        .map_err(|e| format!("Failed to persist config after clearing {provider} key: {e}"))?;
+
+    // Update in-memory config.
+    *crate::lock!(inner.config)? = cfg;
+
+    // Hot-reload providers.
+    *crate::write_lock!(inner.stt_provider)?     = new_stt;
+    *crate::write_lock!(inner.cleanup_provider)? = new_cleanup;
+
+    log::info!("[clear_api_key] Cleared {provider} API key; providers hot-reloaded");
+
+    // Silence the "unused variable" warning on non-desktop builds where the
+    // handle is only used for hotkey re-registration (which lives in desktop
+    // code paths).
+    let _ = &handle;
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -997,5 +1065,78 @@ mod tests {
             (loaded.auto_mode_silence_secs - 2.0).abs() < f32::EPSILON,
             "auto_mode_silence_secs should default to 2.0 when absent"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // mask_api_key: whitespace-only key produces empty string (not "****")
+    // -----------------------------------------------------------------------
+
+    /// Whitespace-only keys are treated as empty by `mask_api_key`.
+    #[test]
+    fn test_mask_api_key_whitespace_only_returns_empty() {
+        assert_eq!(
+            crate::mask_api_key("   "),
+            "",
+            "whitespace-only key must produce an empty mask, not \"****\""
+        );
+        assert_eq!(
+            crate::mask_api_key("\t\n"),
+            "",
+            "tab/newline key must produce an empty mask"
+        );
+    }
+
+    /// A real key is still masked correctly after the trim change.
+    #[test]
+    fn test_mask_api_key_trims_surrounding_whitespace() {
+        // The key itself has surrounding spaces -- after trim the last-4 is "5678"
+        let masked = crate::mask_api_key("  sk-12345678  ");
+        assert_eq!(masked, "****5678");
+    }
+
+    /// Empty string produces an empty mask (unchanged behaviour).
+    #[test]
+    fn test_mask_api_key_empty_produces_empty() {
+        assert_eq!(crate::mask_api_key(""), "");
+    }
+
+    // -----------------------------------------------------------------------
+    // clear_api_key: config-level key clearing via save_config / load_config
+    // -----------------------------------------------------------------------
+
+    /// Clearing a key via save_config → load_config produces an empty key field.
+    ///
+    /// This tests the config-layer half of `clear_api_key` (the Tauri command
+    /// itself requires a live AppState and is integration-tested manually).
+    #[test]
+    fn test_clear_api_key_persists_empty_string() {
+        let dir = temp_dir();
+
+        // Start with a config that has all five keys set.
+        let cfg_before = AppConfig {
+            groq_api_key: "gsk_testkey".to_string(),
+            deepseek_api_key: "dsk_testkey".to_string(),
+            openai_api_key: "oai_testkey".to_string(),
+            anthropic_api_key: "ant_testkey".to_string(),
+            openrouter_api_key: "or_testkey".to_string(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg_before).expect("initial save_config");
+
+        // Simulate clearing the groq key.
+        let mut cfg_after = load_config(dir.path());
+        cfg_after.groq_api_key = String::new();
+        save_config(dir.path(), &cfg_after).expect("save after clear");
+
+        let loaded = load_config(dir.path());
+        assert_eq!(
+            loaded.groq_api_key, "",
+            "groq_api_key must be empty after explicit clear"
+        );
+        // Other keys must remain untouched.
+        assert_eq!(loaded.deepseek_api_key, "dsk_testkey");
+        assert_eq!(loaded.openai_api_key, "oai_testkey");
+        assert_eq!(loaded.anthropic_api_key, "ant_testkey");
+        assert_eq!(loaded.openrouter_api_key, "or_testkey");
     }
 }

@@ -62,8 +62,11 @@ pub enum AudioError {
     #[error("WAV encoding failed: {0}")]
     WavEncoding(#[from] hound::Error),
 
-    #[error("Recording thread panicked or channel closed")]
-    ThreadError,
+    #[error("Recording thread error: {0}")]
+    ThreadError(String),
+
+    #[error("Audio device error: {0}")]
+    DeviceError(String),
 
     #[error("Not supported on this platform")]
     NotSupported,
@@ -110,8 +113,9 @@ struct SilenceConfig {
 struct RecordingSession {
     /// Sender: the main thread sends `()` to signal "stop recording".
     stop_tx: std::sync::mpsc::SyncSender<()>,
-    /// Receiver: the main thread waits for the collected samples.
-    result_rx: std::sync::mpsc::Receiver<RecordingResult>,
+    /// Receiver: the main thread waits for the collected samples (or an error).
+    /// `Err(msg)` is sent if the thread fails after the ready signal (e.g. VAD init).
+    result_rx: std::sync::mpsc::Receiver<Result<RecordingResult, String>>,
 }
 
 #[cfg(desktop)]
@@ -284,7 +288,8 @@ impl AudioRecorder {
         }
 
         let (stop_tx, stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
-        let (result_tx, result_rx) = std::sync::mpsc::channel::<RecordingResult>();
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<RecordingResult, String>>();
 
         let level_cb = self.level_callback.lock().unwrap().take();
 
@@ -299,10 +304,31 @@ impl AudioRecorder {
         let device_name_owned = device_name.map(|s| s.to_string());
 
         std::thread::spawn(move || {
-            if let Err(e) = recording_thread(stop_rx, result_tx, level_cb, silence_cfg, device_name_owned.as_deref(), live_buf) {
-                eprintln!("[audio] recording thread error: {e}");
+            // recording_thread handles all error propagation internally:
+            // - Device setup errors: sent via ready_tx before returning Err
+            // - Post-ready errors (e.g. VAD init): sent via result_tx before returning Err
+            // The return value is only Err if there is a logic bug (both channels
+            // have already been signalled), so we just log it here.
+            if let Err(e) = recording_thread(stop_rx, ready_tx, result_tx, level_cb, silence_cfg, device_name_owned.as_deref(), live_buf) {
+                eprintln!("[audio] recording thread error (unexpected): {e}");
             }
         });
+
+        // Wait for device initialisation to complete. The thread sends Ok(()) after
+        // stream.play() succeeds, or Err(msg) if setup fails. RecvError means the
+        // thread exited before sending (e.g. panic) -- treat as a thread error.
+        match ready_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(msg)) => {
+                // Device setup failed -- clear the session guard and return.
+                return Err(AudioError::DeviceError(msg));
+            }
+            Err(_) => {
+                return Err(AudioError::ThreadError(
+                    "recording thread exited before device was ready".into(),
+                ));
+            }
+        }
 
         *guard = Some(RecordingSession {
             stop_tx,
@@ -334,7 +360,15 @@ impl AudioRecorder {
 
         let _ = session.stop_tx.send(());
 
-        let result = session.result_rx.recv().map_err(|_| AudioError::ThreadError)?;
+        let result = match session.result_rx.recv() {
+            Ok(Ok(r)) => r,
+            Ok(Err(msg)) => return Err(AudioError::ThreadError(msg)),
+            Err(_) => {
+                return Err(AudioError::ThreadError(
+                    "recording thread exited without sending result".into(),
+                ))
+            }
+        };
 
         // Resume monitor now that the recording stream has been torn down.
         if let Ok(mon) = self.monitor_session.lock() {
@@ -605,15 +639,56 @@ pub fn query_input_format(device_name: Option<&str>) -> Result<(u32, u16), Audio
 /// sends a stop while waiting for silence, the thread exits normally.
 fn recording_thread(
     stop_rx: std::sync::mpsc::Receiver<()>,
-    result_tx: std::sync::mpsc::Sender<RecordingResult>,
+    ready_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
+    result_tx: std::sync::mpsc::Sender<Result<RecordingResult, String>>,
     level_cb: Option<AudioLevelCallback>,
     silence_cfg: Option<SilenceConfig>,
     device_name: Option<&str>,
     live_buffer: Arc<Mutex<LiveBuffer>>,
 ) -> Result<(), AudioError> {
-    let device = find_input_device(device_name)?;
+    // Device setup with optional fallback to system default.
+    //
+    // If a named device is configured but unavailable (e.g. webcam in sleep
+    // mode), we log a warning and fall back to the system default. Only if
+    // the default also fails do we propagate the error.
+    let (device, config) = match device_name {
+        Some(name) => {
+            match find_input_device(Some(name)).and_then(|d| {
+                let cfg = d.default_input_config()?;
+                Ok((d, cfg))
+            }) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    eprintln!("[audio] device \"{name}\" unavailable ({e}), falling back to system default");
+                    let fallback = find_input_device(None).map_err(|e2| {
+                        let msg = format!("device \"{name}\" unavailable and no default device found: {e2}");
+                        let _ = ready_tx.send(Err(msg.clone()));
+                        AudioError::DeviceError(msg)
+                    })?;
+                    let cfg = fallback.default_input_config().map_err(|e2| {
+                        let msg = format!("failed to query default device config after fallback: {e2}");
+                        let _ = ready_tx.send(Err(msg.clone()));
+                        AudioError::DeviceConfig(e2)
+                    })?;
+                    (fallback, cfg)
+                }
+            }
+        }
+        None => {
+            let d = find_input_device(None).map_err(|e| {
+                let msg = e.to_string();
+                let _ = ready_tx.send(Err(msg.clone()));
+                e
+            })?;
+            let cfg = d.default_input_config().map_err(|e| {
+                let msg = e.to_string();
+                let _ = ready_tx.send(Err(msg.clone()));
+                e
+            })?;
+            (d, cfg)
+        }
+    };
 
-    let config = device.default_input_config()?;
     let native_sample_rate = config.sample_rate().0;
     let native_channels = config.channels();
     let sample_format = config.sample_format();
@@ -653,9 +728,21 @@ fn recording_thread(
         &device, &stream_config, sample_format, samples_writer,
         level_cb_clone, level_chunk_writer, samples_per_tick, live_buffer,
         Some(rms_tx), Some(samples_chunk_tx),
-    )?;
+    ).map_err(|e| {
+        let msg = e.to_string();
+        let _ = ready_tx.send(Err(msg));
+        e
+    })?;
 
-    stream.play()?;
+    stream.play().map_err(|e| {
+        let msg = e.to_string();
+        let _ = ready_tx.send(Err(msg));
+        e
+    })?;
+
+    // Device is ready -- signal start_recording that setup succeeded.
+    // From this point on, any failure goes via result_tx.
+    let _ = ready_tx.send(Ok(()));
 
     if let Some(cfg) = silence_cfg {
         // Silence-aware wait loop using Silero VAD.
@@ -675,7 +762,12 @@ fn recording_thread(
             hangover_ms: hangover_ms.max(200), // minimum 200ms to bridge word gaps
             ..VadConfig::default()
         };
-        let mut vad = SileroVad::with_config(vad_config)?;
+        let mut vad = SileroVad::with_config(vad_config).map_err(|e| {
+            // VAD init failure happens after the ready signal -- route via result_tx.
+            let msg = format!("VAD initialisation failed: {e}");
+            let _ = result_tx.send(Err(msg));
+            e
+        })?;
         vad.reset(); // ensure clean state for this recording session
 
         let mut prev_state = SpeechState::Silence;
@@ -751,11 +843,11 @@ fn recording_thread(
 
     let captured = samples.lock().unwrap().clone();
 
-    let _ = result_tx.send(RecordingResult {
+    let _ = result_tx.send(Ok(RecordingResult {
         samples: captured,
         native_sample_rate,
         native_channels,
-    });
+    }));
 
     Ok(())
 }
