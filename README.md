@@ -1,4 +1,4 @@
-# Voxlit
+# Klarvo
 
 Freie Alternative zu Wispr Flow — Sprachdiktat mit KI-Text-Cleanup für Windows und Android.
 
@@ -7,7 +7,7 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 ## Inhalt
 
 - [Downloads](#downloads)
-- [Was Voxlit kann](#was-voxlit-kann)
+- [Was Klarvo kann](#was-klarvo-kann)
 - [Free vs. Paid](#free-vs-paid)
 - [Voraussetzungen](#voraussetzungen)
 - [Tech-Stack](#tech-stack)
@@ -22,9 +22,9 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 - **Android:** `.apk` herunterladen, "Aus unbekannten Quellen installieren" erlauben, installieren
 
 > **Windows zeigt eine SmartScreen-Warnung beim ersten Start. Das ist normal.**
-> Voxlit hat noch kein Code-Signing-Zertifikat — die kosten $180-300/Jahr. Da Voxlit source-available ist, kannst du den Code selbst prüfen bevor du die App startest. Klick auf "Weitere Informationen" → "Trotzdem ausführen". Zertifikat folgt sobald die ersten Verkäufe es finanzieren.
+> Klarvo hat noch kein Code-Signing-Zertifikat — die kosten $180-300/Jahr. Da Klarvo source-available ist, kannst du den Code selbst prüfen bevor du die App startest. Klick auf "Weitere Informationen" → "Trotzdem ausführen". Zertifikat folgt sobald die ersten Verkäufe es finanzieren.
 
-## Was Voxlit kann
+## Was Klarvo kann
 
 ### Kernfunktionen
 
@@ -40,7 +40,7 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 
 ### Windows
 
-- **Paste ins richtige Fenster:** Voxlit merkt sich das aktive Fenster vor der Aufnahme und fügt das Ergebnis dort ein — egal welches Fenster gerade im Vordergrund ist
+- **Paste ins richtige Fenster:** Klarvo merkt sich das aktive Fenster vor der Aufnahme und fügt das Ergebnis dort ein — egal welches Fenster gerade im Vordergrund ist
 - **Insert-and-Send:** Drückt optional Enter nach dem Einfügen, um den Text direkt abzuschicken (Slack, Teams, WhatsApp Web). Pro Hotkey-Slot konfigurierbar
 - **2 unabhängige Hotkey-Slots:** Jeder Slot hat eigenen Shortcut, eigenen Aufnahme-Modus und eigene Insert-and-Send-Einstellung. Slot 1 für Hold in Slack, Slot 2 für AutoStop im Dokument — kein Umkonfigurieren
 - **4 Aufnahme-Modi:** Hold (halten), Toggle (an/aus), AutoStop (stoppt bei Stille), Auto-Loop (diktiert fortlaufend)
@@ -61,7 +61,7 @@ Sprache in jedem Textfeld systemweit in bereinigten Text umwandeln. Kein Abo, ke
 
 ## Free vs. Paid
 
-Voxlit ist ohne Lizenzkey voll nutzbar — inklusive kostenlosem Groq-Key für STT und LLM. Mit Lizenzkey gibt es zusätzliche Power-Features. Einmalkauf, kein Abo.
+Klarvo ist ohne Lizenzkey voll nutzbar — inklusive kostenlosem Groq-Key für STT und LLM. Mit Lizenzkey gibt es zusätzliche Power-Features. Einmalkauf, kein Abo.
 
 | Feature | Free | Paid |
 |---------|------|------|
@@ -84,7 +84,7 @@ Voxlit ist ohne Lizenzkey voll nutzbar — inklusive kostenlosem Groq-Key für S
 
 ## Voraussetzungen
 
-Du brauchst einen **Groq API Key** (kostenlos) — damit funktioniert Voxlit komplett: Sprache-zu-Text (Whisper) und Text-Bereinigung (Llama).
+Du brauchst einen **Groq API Key** (kostenlos) — damit funktioniert Klarvo komplett: Sprache-zu-Text (Whisper) und Text-Bereinigung (Llama).
 
 Optional: **DeepSeek API Key** (sehr günstig) für bessere Text-Bereinigung. Groq reicht aber alleine.
 
@@ -106,7 +106,7 @@ API-Keys werden beim ersten Start über den Einrichtungs-Wizard eingegeben, oder
 
 ## Lizenz
 
-Voxlit ist source-available unter der [Business Source License 1.1](LICENSE). Der Quellcode ist einsehbar — du kannst prüfen was die App tut. Private Nutzung und Modifikation für den Eigengebrauch sind erlaubt. Redistribution und kommerzielle Nutzung sind nicht gestattet.
+Klarvo ist source-available unter der [Business Source License 1.1](LICENSE). Der Quellcode ist einsehbar — du kannst prüfen was die App tut. Private Nutzung und Modifikation für den Eigengebrauch sind erlaubt. Redistribution und kommerzielle Nutzung sind nicht gestattet.
 
 ## Feedback
 
