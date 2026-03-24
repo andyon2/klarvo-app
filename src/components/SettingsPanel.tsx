@@ -295,17 +295,20 @@ function UpdateChecker() {
 // --- License Section ---------------------------------------------------------
 
 // Auto-formats a license key input: uppercase, inserts dashes after every 4 chars
-// in the payload section (after "VOXLIT-").
+// in the payload section (after "KLARVO-").
 function formatLicenseKeyInput(raw: string): string {
   // Strip everything that is not alphanumeric.
   const stripped = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  // The key format is VOXLIT-XXXX-XXXX-XXXX-XXXX (or legacy DIKTA-XXXX-...).
+  // The key format is KLARVO-XXXX-XXXX-XXXX-XXXX (or legacy VOXLIT-/DIKTA-XXXX-...).
   if (stripped.length === 0) return "";
 
-  // Detect prefix: "VOXLIT" (6 chars) or legacy "DIKTA" (5 chars).
+  // Detect prefix: "KLARVO" (6 chars), legacy "VOXLIT" (6 chars) or legacy "DIKTA" (5 chars).
   let prefix = "";
   let prefixLen = 0;
-  if (stripped.startsWith("VOXLIT")) {
+  if (stripped.startsWith("KLARVO")) {
+    prefix = "KLARVO";
+    prefixLen = 6;
+  } else if (stripped.startsWith("VOXLIT")) {
     prefix = "VOXLIT";
     prefixLen = 6;
   } else if (stripped.startsWith("DIKTA")) {
@@ -501,14 +504,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             ))}
           </div>
           <button
-            onClick={() => openUrl("https://voxlit.app")}
+            onClick={() => openUrl("https://klarvo.app")}
             className={[
               "self-start transition-colors",
               isMobile ? "text-sm" : "text-[11px]",
               "text-voxlit-muted hover:text-voxlit-text underline underline-offset-2",
             ].join(" ")}
           >
-            Get a license at voxlit.app
+            Get a license at klarvo.app
           </button>
         </>
       )}
@@ -532,11 +535,11 @@ function LicenseKeyInput({
           type="text"
           spellCheck={false}
           autoComplete="off"
-          placeholder="VOXLIT-XXXX-XXXX-XXXX-XXXX"
+          placeholder="KLARVO-XXXX-XXXX-XXXX-XXXX"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !loading && onActivate()}
-          maxLength={26} // VOXLIT(6) + 4 dashes + 16 chars = 26
+          maxLength={26} // KLARVO(6) + 4 dashes + 16 chars = 26
           className={[
             "flex-1 font-mono tracking-widest",
             isMobile ? INPUT_CLS_M : INPUT_CLS,
@@ -1119,7 +1122,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Voice & Recording</span>
+            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Voice & Recording</span>
           </button>
           {openSections.voiceRecording && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1310,7 +1313,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Hotkey</span>
+              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Hotkey</span>
             </button>
             {openSections.hotkey && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1551,7 +1554,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
                 Voice Command Mode
                 {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
               </span>
@@ -1625,7 +1628,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Bubble Controls</span>
+              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Bubble Controls</span>
             </button>
             {openSections.bubble && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1777,7 +1780,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
               Cleanup Instructions
               {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
@@ -1840,7 +1843,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">General</span>
+              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">General</span>
             </button>
             {openSections.general && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1976,7 +1979,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">API Keys</span>
+            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">API Keys</span>
           </button>
           {openSections.apiKeys && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -2109,9 +2112,9 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
               Dictionary
-              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-voxlit-warning/80" : "text-voxlit-dim"}`}>
+              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-voxlit-warning/80" : "text-voxlit-primary"}`}>
                 {!isPaid ? `${dictionary.length}/20` : `${dictionary.length}`}
               </span>
             </span>
@@ -2162,7 +2165,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Updates</span>
+              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Updates</span>
             </button>
             {openSections.updates && (
               <div className="pl-4 pb-3 pt-1">
@@ -2302,7 +2305,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">License</span>
+            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">License</span>
           </button>
           {openSections.license && (
             <LicenseSection
@@ -2329,7 +2332,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">About</span>
+            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">About</span>
           </button>
           {openSections.about && (
             <div className="flex flex-col gap-2 pl-4 pb-3 pt-1">

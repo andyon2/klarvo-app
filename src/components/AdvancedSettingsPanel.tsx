@@ -203,7 +203,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Text Cleanup</span>
+          <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Text Cleanup</span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-1 pl-4 pb-3 pt-1">
@@ -312,7 +312,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.audio ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Audio</span>
+          <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Audio</span>
         </button>
         {openSections.audio && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -340,7 +340,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">Paste & Behavior</span>
+          <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Paste & Behavior</span>
         </button>
         {openSections.paste && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -422,7 +422,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.system ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-voxlit-muted uppercase tracking-wide">System</span>
+          <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">System</span>
         </button>
         {openSections.system && (
           <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">

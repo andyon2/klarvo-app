@@ -787,17 +787,34 @@ fn recording_thread(
             loop {
                 match samples_chunk_rx.try_recv() {
                     Ok(chunk) => {
-                        let vad_input = if native_sample_rate != 16_000 {
-                            let ratio = native_sample_rate as f32 / 16_000.0;
-                            let out_len = (chunk.len() as f32 / ratio) as usize;
-                            (0..out_len)
+                        // Downmix to mono if needed (stereo mics send interleaved L/R).
+                        // Treating multi-channel data as mono would double the effective
+                        // sample rate seen by the VAD, causing it to produce garbage output.
+                        let mono_chunk = if native_channels > 1 {
+                            let ch = native_channels as usize;
+                            (0..chunk.len() / ch)
                                 .map(|i| {
-                                    let src = (i as f32 * ratio) as usize;
-                                    chunk[src.min(chunk.len() - 1)]
+                                    let sum: f32 =
+                                        (0..ch).map(|c| chunk[i * ch + c]).sum();
+                                    sum / ch as f32
                                 })
                                 .collect::<Vec<f32>>()
                         } else {
                             chunk
+                        };
+
+                        // Resample to 16 kHz for Silero VAD.
+                        let vad_input = if native_sample_rate != 16_000 {
+                            let ratio = native_sample_rate as f32 / 16_000.0;
+                            let out_len = (mono_chunk.len() as f32 / ratio) as usize;
+                            (0..out_len)
+                                .map(|i| {
+                                    let src = (i as f32 * ratio) as usize;
+                                    mono_chunk[src.min(mono_chunk.len() - 1)]
+                                })
+                                .collect::<Vec<f32>>()
+                        } else {
+                            mono_chunk
                         };
                         let new_state = vad.feed(&vad_input);
 

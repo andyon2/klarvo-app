@@ -2,7 +2,7 @@
 //!
 //! ## Key format
 //!
-//! `VOXLIT-XXXX-XXXX-XXXX-XXXX`
+//! `KLARVO-XXXX-XXXX-XXXX-XXXX`
 //!
 //! The payload is Base32-encoded (RFC 4648, no padding) with groups of 4
 //! characters separated by hyphens.  Decoded it is 10 bytes:
@@ -174,8 +174,8 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
         return Err("License key is empty".to_string());
     }
 
-    // Expected format: VOXLIT-XXXX-XXXX-XXXX-XXXX
-    // 5 segments separated by '-', first is "VOXLIT", rest are 4-char Base32 groups.
+    // Expected format: KLARVO-XXXX-XXXX-XXXX-XXXX
+    // 5 segments separated by '-', first is the prefix, rest are 4-char Base32 groups.
     let parts: Vec<&str> = key.split('-').collect();
     if parts.len() != 5 {
         return Err(format!(
@@ -184,10 +184,12 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
         ));
     }
 
-    // Accept both "VOXLIT" and legacy "DIKTA" prefixes so keys issued
-    // before the rename continue to work.
-    if parts[0] != "VOXLIT" && parts[0] != "DIKTA" {
-        return Err("Invalid key format: must start with 'VOXLIT' or 'DIKTA'".to_string());
+    // Accept "KLARVO" (current), "VOXLIT" (previous name), and legacy "DIKTA"
+    // prefixes so keys issued before earlier renames continue to work.
+    if parts[0] != "KLARVO" && parts[0] != "VOXLIT" && parts[0] != "DIKTA" {
+        return Err(
+            "Invalid key format: must start with 'KLARVO', 'VOXLIT', or 'DIKTA'".to_string(),
+        );
     }
 
     for (i, group) in parts[1..].iter().enumerate() {
@@ -225,8 +227,9 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
 
     // Verify HMAC. Try the current secret first; if the key has a legacy
     // "DIKTA" prefix, also try the legacy secret so old keys keep working.
-    let is_legacy = parts[0] == "DIKTA";
-    let secrets_to_try: Vec<Vec<u8>> = if is_legacy {
+    // "KLARVO" and "VOXLIT" keys both use the same (current) secret.
+    let is_dikta_legacy = parts[0] == "DIKTA";
+    let secrets_to_try: Vec<Vec<u8>> = if is_dikta_legacy {
         vec![build_legacy_secret(), build_secret()]
     } else {
         vec![build_secret()]
@@ -423,14 +426,14 @@ pub fn generate_license_key(payload: &[u8; 6]) -> String {
     // Encode to Base32 (no padding).
     let b32 = base32::encode(base32::Alphabet::RFC4648 { padding: false }, &raw);
 
-    // Split into 4-char groups and prepend "VOXLIT-".
+    // Split into 4-char groups and prepend "KLARVO-".
     let groups: Vec<&str> = b32
         .as_bytes()
         .chunks(4)
         .map(|c| std::str::from_utf8(c).expect("Base32 output is always valid UTF-8"))
         .collect();
 
-    format!("VOXLIT-{}", groups.join("-"))
+    format!("KLARVO-{}", groups.join("-"))
 }
 
 /// Generates a trial license key with an embedded expiry date.
@@ -533,7 +536,46 @@ mod tests {
     fn test_wrong_prefix_is_rejected() {
         let result = validate_license_key("WRONG-AAAA-BBBB-CCCC-DDDD");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("VOXLIT"));
+        assert!(result.unwrap_err().contains("KLARVO"));
+    }
+
+    #[test]
+    fn test_klarvo_key_is_generated_and_accepted() {
+        // generate_license_key now produces KLARVO- prefixed keys.
+        let key = generate_license_key(&[0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        assert!(
+            key.starts_with("KLARVO-"),
+            "Generated key must have KLARVO- prefix, got: {key}"
+        );
+        let result = validate_license_key(&key);
+        assert!(result.is_ok(), "KLARVO key must be accepted: {result:?}");
+        assert_eq!(result.unwrap(), LicenseStatus::Licensed);
+    }
+
+    #[test]
+    fn test_voxlit_key_is_still_accepted() {
+        // Keys with VOXLIT- prefix (old name) must continue to validate.
+        // Build one manually using the same HMAC secret.
+        let payload: [u8; 6] = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
+        let secret = build_secret();
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&secret).expect("HMAC init must succeed in tests");
+        mac.update(&payload);
+        let digest = mac.finalize().into_bytes();
+        let mut raw = [0u8; 10];
+        raw[..6].copy_from_slice(&payload);
+        raw[6..10].copy_from_slice(&digest[..4]);
+        let b32 = base32::encode(base32::Alphabet::RFC4648 { padding: false }, &raw);
+        let groups: Vec<&str> = b32
+            .as_bytes()
+            .chunks(4)
+            .map(|c| std::str::from_utf8(c).expect("valid UTF-8"))
+            .collect();
+        let key = format!("VOXLIT-{}", groups.join("-"));
+
+        let result = validate_license_key(&key);
+        assert!(result.is_ok(), "VOXLIT key must still be accepted: {result:?}");
+        assert_eq!(result.unwrap(), LicenseStatus::Licensed);
     }
 
     #[test]

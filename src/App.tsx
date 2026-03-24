@@ -618,9 +618,11 @@ export default function App() {
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[11px] text-voxlit-dim">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
-                        {entry.style !== "polished" && ` · ${entry.style}`}
+                        {entry.style !== "polished" && (
+                          <span className="text-voxlit-primary"> · {entry.style}</span>
+                        )}
                         {entry.appName && (
-                          <span className="ml-1 px-1.5 py-0.5 bg-voxlit-surface/60 rounded text-[9px] text-voxlit-muted">{entry.appName}</span>
+                          <span className="ml-1 px-1.5 py-0.5 bg-voxlit-warm/10 rounded text-[9px] text-voxlit-warm">{entry.appName}</span>
                         )}
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -341,7 +341,7 @@ export async function setHotkey(shortcut: string, mode: HotkeyMode): Promise<voi
  * Returns all custom dictionary terms.
  */
 export async function getDictionaryTerms(): Promise<string[]> {
-  if (isPreviewMode) return mockAsync(["Voxlit", "Tauri", "Whisper"]);
+  if (isPreviewMode) return mockAsync(["Klarvo", "Tauri", "Whisper"]);
   return invoke<string[]>("get_dictionary_terms");
 }
 
@@ -712,7 +712,7 @@ export function onModelDownloadError(
 /**
  * Validates a license key. Returns the raw status string from the backend:
  * "licensed" | "grace_period:{timestamp}" | error string
- * @param key - License key in VOXLIT-XXXX-XXXX-XXXX-XXXX format
+ * @param key - License key in KLARVO-XXXX-XXXX-XXXX-XXXX format
  */
 export async function validateLicense(_key: string): Promise<string> {
   if (isPreviewMode) return mockAsync("licensed");
