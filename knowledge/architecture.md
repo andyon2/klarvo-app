@@ -168,11 +168,17 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - **Warum nicht Closed Source:** "Quellcode einsehbar" ist ein Differenzierungsmerkmal. Nutzer koennen pruefen was die App tut -- kein Tracking, kein Lock-in, kein Vertrauensvorschuss noetig.
 - **WICHTIG:** In user-facing Texten NIE "Open Source", "MIT", "GPL" verwenden. Korrekt: "source-available" oder "Quellcode einsehbar".
 
-**License-Key-Format (2026-03-24)**
-- Generierung: `KLARVO-XXXX-XXXX-XXXX-XXXX` (vorher VOXLIT-, davor DIKTA-)
-- Validierung akzeptiert alle drei Prefixe: KLARVO-, VOXLIT-, DIKTA-
-- HMAC-Secrets (`voxlit-license-v1`, `dikta-license-v1`) NIEMALS aendern — bricht alle existierenden Keys
-- Domain: `klarvo.app` (in-app referenziert, Landingpage noch nicht gebaut)
+**License-Key-System: Dual (2026-03-25)**
+- **Zwei Validierungspfade:**
+  1. HMAC (lokal): Manuell generierte KLARVO-Keys fuer Freunde/Tester. Offline, kein API-Call.
+  2. Lemon Squeezy: Gekaufte Keys ueber LS License API. Einmalige Online-Aktivierung, dann lokaler Cache.
+- **Aktivierung (LS):** App → LS License API (Machine-ID als Instance-Identifier) → lokal cachen → kein Phone-Home danach.
+- **Deaktivierung:** In-App Button → LS API → Slot wird frei. Pflicht fuer v1.0.
+- **Geraete-Limit:** 3 Slots pro Key (LS verwaltet). Realistisch: 1-2 Desktop + 1 Mobile.
+- **Key-Format:** `KLARVO-XXXX-XXXX-XXXX-XXXX`. Generierung nur noch KLARVO-Prefix.
+- **Backward-Compat:** VOXLIT- und DIKTA-Prefixe werden weiterhin akzeptiert (HMAC-Pfad), aber nicht mehr generiert.
+- **HMAC-Secrets:** `voxlit-license-v1`, `dikta-license-v1` NIEMALS aendern — bricht bestehende Keys.
+- **Domain:** `klarvo.app` (in-app referenziert, Landingpage noch nicht gebaut)
 
 **Binary-Name (2026-03-24)**
 - Windows-Binary heisst `klarvo.exe` (via `[[bin]] name = "klarvo"` in Cargo.toml)
