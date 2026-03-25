@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>Klarvo Social Preview v2</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at 50% 50%, #1a2332 0%, #111921 50%, #0d1117 100%);
+    position: relative;
+  }
+
+  /* Subtle radial glow behind content */
+  body::before {
+    content: '';
+    position: absolute;
+    width: 800px;
+    height: 500px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse, rgba(30, 58, 90, 0.4) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .icon {
+    width: 110px;
+    height: 110px;
+    background: #1e293b;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.4);
+  }
+
+  .title {
+    font-size: 88px;
+    font-weight: 700;
+    color: #e2e8f0;
+    letter-spacing: -1px;
+  }
+
+  .subtitle {
+    font-size: 28px;
+    color: #94a3b8;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .badges {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .badge {
+    padding: 10px 28px;
+    border-radius: 24px;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-outline {
+    border: 1.5px solid #475569;
+    color: #94a3b8;
+    background: transparent;
+  }
+
+  .badge-teal {
+    border: 1.5px solid #2dd4bf;
+    color: #2dd4bf;
+    background: rgba(45, 212, 191, 0.08);
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon">
+        <img src="../src-tauri/icons/icon.png" style="width:80px;height:80px;object-fit:contain;" />
+      </div>
+      <span class="title">Klarvo</span>
+    </div>
+    <div class="subtitle">
+      Sprachdiktat mit KI-Text-Cleanup.<br>
+      Frei. Lokal. Dein Text.
+    </div>
+    <div class="badges">
+      <span class="badge badge-outline">Windows</span>
+      <span class="badge badge-outline">Android</span>
+      <span class="badge badge-teal">Source-Available</span>
+    </div>
+  </div>
+</body>
+</html>
