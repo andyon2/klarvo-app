@@ -124,6 +124,7 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Paid: Whisper medium + large-v3 Modelle, unbegrenztes Dictionary, Snippets, Command Mode, Cross-Device Sync, Webhooks, Integrations, erweiterte Stats, Voice Notes, Whisper Mode
 - Offline-Gate ist ein Modell-Gate, kein Feature-Gate: small ist free, medium/large-v3 sind paid. Kein harter "Offline gesperrt"-Moment.
 - tiny und base entfernt — Qualitaet zu niedrig fuer ein Produkt.
+- UI-Regel: Section-Headers dynamisch gefaerbt. Free-Sektionen immer Teal. Paid-Sektionen: `isPaid ? teal : muted` + Lock-Icon wenn nicht lizenziert.
 
 **LLM Cleanup: Drei Stile**
 - Polished: Fuellwoerter bereinigen, Grammatik, professionell formatieren
@@ -155,6 +156,17 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - **Warum BSL statt MIT:** Voxlit soll als Produkt vermarktet werden (EUR 29 Einmalkauf). MIT wuerde erlauben dass jemand forkt, License-Checks entfernt und weiterverteilt. BSL schuetzt die Monetarisierung rechtlich, waehrend der Code einsehbar bleibt (Transparenz-Argument vs. Wispr Flow Black Box).
 - **Warum nicht Closed Source:** "Quellcode einsehbar" ist ein Differenzierungsmerkmal. Nutzer koennen pruefen was die App tut -- kein Tracking, kein Lock-in, kein Vertrauensvorschuss noetig.
 - **WICHTIG:** In user-facing Texten NIE "Open Source", "MIT", "GPL" verwenden. Korrekt: "source-available" oder "Quellcode einsehbar".
+
+**License-Key-Format (2026-03-24)**
+- Generierung: `KLARVO-XXXX-XXXX-XXXX-XXXX` (vorher VOXLIT-, davor DIKTA-)
+- Validierung akzeptiert alle drei Prefixe: KLARVO-, VOXLIT-, DIKTA-
+- HMAC-Secrets (`voxlit-license-v1`, `dikta-license-v1`) NIEMALS aendern — bricht alle existierenden Keys
+- Domain: `klarvo.app` (in-app referenziert, Landingpage noch nicht gebaut)
+
+**Binary-Name (2026-03-24)**
+- Windows-Binary heisst `klarvo.exe` (via `[[bin]] name = "klarvo"` in Cargo.toml)
+- Crate-Name bleibt `voxlit` / Library `voxlit_lib` — kein Code-Refactoring noetig
+- Oeffentliches GitHub-Repo umbenannt zu `klarvo` (Agent-Repo bleibt `voxlit`)
 
 ## Repository-Architektur
 

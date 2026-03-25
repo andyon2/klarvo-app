@@ -1554,7 +1554,7 @@ export function SettingsPanel({
               <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
+              <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
                 Voice Command Mode
                 {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
               </span>
@@ -1780,7 +1780,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
               Cleanup Instructions
               {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
@@ -1913,7 +1913,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
               Cross-Device Sync
               {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
@@ -2181,7 +2181,7 @@ export function SettingsPanel({
             <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-muted uppercase tracking-wide">
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
               App Profiles
               {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
             </span>
