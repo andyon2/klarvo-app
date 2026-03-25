@@ -1,11 +1,11 @@
 # Competitor Analysis
 
-Letzte Aktualisierung: 2026-03-09
+Letzte Aktualisierung: 2026-03-25
 
 ## Wispr Flow
 
 - **URL:** https://wisprflow.ai
-- **Plattform:** macOS, Windows, **Android (seit Feb 2026)**
+- **Plattform:** macOS, Windows, **Android (seit Feb 2026)**, **iOS (seit Mitte 2025, Custom Keyboard Extension)**
 - **Preis:** Free (2000 Woerter/Woche), Pro $12/mo ($144/Jahr), Enterprise $24/user/mo
 - **Student/Non-Profit:** $8/mo
 - **Kernfeature:** Cloud-basierte Voice-to-Text mit proprietaerem Modell
@@ -20,11 +20,19 @@ Letzte Aktualisierung: 2026-03-09
 - Hinglish-Support (Hindi+Englisch Mix)
 - Quelle: TechCrunch, 9to5Google, HotHardware
 
+### iOS-Ansatz (recherchiert 2026-03-25)
+- Custom Keyboard Extension (Apples offizieller Weg fuer Third-Party-Keyboards)
+- Installiert sich als zusaetzliche Tastatur neben der Apple-Tastatur
+- "Start Flow" oeffnet kurz die Haupt-App fuer Mikrofon-Zugang, springt dann zurueck
+- Flow Sessions mit konfigurierbarer Dauer (5 min, 15 min, 1h, unbegrenzt)
+- **Relevanz fuer Klarvo:** Beweis dass Voice Dictation via iOS Keyboard Extension im App Store akzeptiert wird. Praezedenzfall fuer Klarvos iOS-Roadmap (v2.0).
+
 ### Staerken
 - Ausgereifteste UX im Markt
 - Enterprise-Features (SSO/SAML, Admin-Dashboard, Compliance)
 - Proprietaeres Modell (nicht auf 3rd-Party-API angewiesen)
 - Jetzt auch Android (erster grosser Player auf der Plattform)
+- iOS via Custom Keyboard Extension (alle 4 grossen Plattformen abgedeckt)
 
 ### Schwaechen aus Voxlit-Sicht
 - Abo-Modell ($144/Jahr) -- Subscription Fatigue
@@ -168,15 +176,16 @@ Voxlit positioniert sich mit EUR 29 deutlich darunter -- aggressiverer Einstieg.
 
 ## Markt-Uebersicht (Stand Maerz 2026)
 
-| Tool | Preis | Plattform | Offline | Open Source |
-|------|-------|-----------|---------|-------------|
-| **Voxlit** | EUR 29 einmalig (geplant) | Windows, Android | Ja (geplant) | Ja |
-| Wispr Flow | $12/mo ($144/Jahr) | macOS, Windows, **Android** | Nein | Nein |
-| Amical | Gratis (MIT) | macOS, Windows, Android (Beta) | Ja | Ja |
-| Voice Type | $19.99 einmalig | nur macOS | Ja | Nein |
-| OpenWhispr | Gratis (MIT) | macOS, Windows, Linux | Ja | Ja |
-| Voicy | $8.49/mo oder $220 Lifetime | macOS, Windows, Browser | Nein | Nein |
-| Dragon | $14.99/mo oder $700 | Windows, macOS | Ja | Nein |
+| Tool | Preis | Plattform | Offline | Source-Available | Shipped |
+|------|-------|-----------|---------|-----------------|---------|
+| **Klarvo** | EUR 29 Early Bird / EUR 39 (geplant) | Windows, Android | Ja (geplant) | Ja (BSL 1.1) | **Ja** (v0.5.0) |
+| Wispr Flow | $12/mo ($144/Jahr) | macOS, Windows, Android, iOS | Nein | Nein | Ja |
+| Amical | Gratis (MIT) | macOS, Windows, Android (Beta) | Ja | Ja (MIT) | Ja (Desktop) |
+| dikta.me | $20-25 einmalig | nur Windows | Ja | Ja (unklar) | **Nein** (Waitlist) |
+| Voice Type | $19.99 einmalig | nur macOS | Ja | Nein | Ja |
+| OpenWhispr | Gratis (MIT) | macOS, Windows, Linux | Ja | Ja (MIT) | Ja |
+| Voicy | $8.49/mo oder $220 Lifetime | macOS, Windows, Browser | Nein | Nein | Ja |
+| Dragon | $14.99/mo oder $700 | Windows, macOS | Ja | Nein | Ja |
 
 ## Beobachtungsliste
 
@@ -184,6 +193,7 @@ Regelmaessig pruefen (alle 4-6 Wochen):
 - [ ] **Amical Android-Beta:** Wird sie public? Feature-Umfang? Monetarisierung?
 - [ ] **Wispr Flow Android Pricing:** Aktuell Free Promo -- wann kommt das Abo?
 - [ ] **OpenWhispr Mobile:** Anzeichen fuer Android-Support?
+- [ ] **dikta.me Launch-Status:** Noch Waitlist? Wann shipped? Feature-Umfang bei Release?
 - [ ] **Neue Wettbewerber:** Handy (Tauri-basiert, kein Android), NotelyVoice (Compose Multiplatform, kein Windows)
 
 ---
@@ -201,56 +211,92 @@ Regelmaessig pruefen (alle 4-6 Wochen):
 
 ---
 
-## dIKta.me -- Namenskonflikt + direkter Wettbewerber
+## dIKta.me -- direkter Wettbewerber (ehemals Namenskonflikt, durch Umbenennung zu Klarvo geloest)
 
 - **URL:** dikta.me
 - **GitHub:** github.com/geckogtmx/diktame
-- **Plattform:** nur Windows (10 2004+, 11)
-- **Preis:** $20 Einmalkauf (Power Version), Free Trial mit Credits
+- **Plattform:** nur Windows (10 2004+, 11); macOS/iOS/Android auf Roadmap ("Soon")
+- **Preis:** $20 Early Bird / $25 Regular (Power Version), Free Trial mit Cloud-Credits
 - **Lizenz:** "Source-Available" auf Website, aber kein Lizenzfile im Repo (rechtlich unklar)
 - **Tech-Stack:** C# / .NET 8, WinUI 3 (Fluent Design), SQLite
 - **Entwickler:** Solo-Entwickler, 246 Commits. Vorheriges Projekt war Python + Electron, dann nativer Rewrite.
-- **Recherche-Datum:** 2026-03-21
+- **Status:** Noch im Waitlist-Stadium (Stand 2026-03-25). "Download"-Button fuehrt zu /waitlist, kein oeffentlicher Installer.
+- **Recherche-Datum:** 2026-03-25 (Landingpage-Analyse)
 
-### Features (detailliert)
-- 7 Workflow-Modi: Dictate, Refine, Ask, Translate, Oops, Note, Read Selection
-- Cloud STT (Deepgram, Gemini) + lokal (Whisper.net mit Vulkan GPU)
-- TTS: Read Selection mit Kokoro-ONNX Fallback
-- LLM: Gemini, Anthropic, OpenAI, Ollama (eingebettetes Management)
+### Pricing-Struktur (3 Tiers)
+1. **Free Trial** ($0): Cloud-Credits (Deepgram STT + Gemini Flash LLM), kein Offline
+2. **Power Version** ($20 Early Bird / $25 Regular): Alles lokal, alle Modi, unbegrenzt
+3. **Build It Yourself** (kostenlos): Source Code + Build Guide
+
+### Features (48+ beworben)
+- 7 Workflow-Modi: Dictate, Refine, Ask, Translate, Oops, Note, Read Selection (TTS)
+- Cloud STT (Deepgram, Gemini) + lokal (Whisper V3 Turbo mit Vulkan GPU)
+- TTS: Read Selection mit Kokoro-ONNX lokal
+- LLM: Gemini, Anthropic, OpenAI, Ollama (eingebettetes Management), lokale Small Models (Gemma 3, Llama 3)
 - Dual-Profile-System mit 16 Custom Prompts
-- Voice Snippets (Trigger-basierte Makro-Expansion)
+- Voice Macros (Trigger-basierte Makro-Expansion)
 - Quick Chat (Floating LLM-Overlay)
+- Pay-As-You-Go Cloud Wallet ($5 ≈ 65.000 Woerter)
 - 90-Tage SQLite-Historie
-- Sicherheit: DPAPI-Secrets, PII-Scrubber, API-Key-Validierung
-- ~173MB unkomprimiert, ~70MB komprimiert
+- Sicherheit: DPAPI-Secrets (AES-256), PII-Scrubber, API-Key-Validierung, Zero Telemetry
+- ~150MB portable .exe (Self-Contained Binary inkl. Python Runtime + Ollama)
+- Startup <3 Sekunden, Memory ~60 MB
 
 ### Qualitaet
-- 950 Tests (479 in CI), 74% Line-Coverage, 52% Branch-Coverage
+- 1,014 Tests (Stand Landingpage, vorher 950 beim GitHub-Audit)
 - 0 Fehler, 0 Warnungen im Release-Build
 - CI/CD Pipeline (Lint → Build → Test → Publish)
 
+### Landingpage-Analyse (2026-03-25)
+
+**Was sie gut machen:**
+- Starke Hero-Rotation ("STOP TYPING. START TALKING/THINKING/WORKING/WINNING")
+- Vergleichstabelle "vs The Cloud" direkt auf der Seite
+- "Use it with..." Logo-Carousel (Terminal, Cursor, VS Code, Slack, Excel, Discord)
+- Privacy als Hero-Story ("100% Air-Gapped by Default", "Works in a Bunker")
+- Technische Metriken als Trust (1,014 Tests, ~60 MB Memory, <3 sec Startup)
+- Early Bird Badge auf Pricing-Card
+- Drei-Tier-Pricing mit "Build It Yourself" als Transparenz-Signal
+
+**Wo sie schwach sind:**
+- Noch nicht shipped (Waitlist!) -- keine echten Nutzer, kein Installer
+- Feature-Overload (48+ Features aufgelistet, ueberwaeltigend)
+- Kein Social Proof (null Testimonials, null Reviews, null Download-Zahlen)
+- "Zero Censorship" als Selling Point (zieht falsche Zielgruppe an)
+- Technischer Jargon dominiert ("Vulkan GPU", "ONNX Runtime")
+- Kein Android/iOS/macOS -- alles nur "Soon" auf Roadmap
+
 ### Staerken
-- Professionelle Codequalitaet (Tests, Coverage, CI/CD)
+- Professionelle Codequalitaet (1,014 Tests, CI/CD)
 - Natives Windows-UI (WinUI 3, kein Electron)
-- 7 Modi vs. unsere 3-4
-- TTS (Read Selection) -- Feature das wir nicht haben
+- 7 Modi + TTS (Feature-Tiefe auf Windows)
 - Ollama eingebettet mit Health-Checks und Model-Library
+- Lokale LLMs out-of-the-box (Gemma 3, Llama 3)
+- Gut designte Landingpage mit klarem Messaging
 
 ### Schwaechen aus unserer Sicht
-- **Nur Windows** -- kein Android, kein Mobile
-- **Distribution noch nicht fertig** -- Installer steht aus, kein Auto-Updater
+- **Nicht shipped** -- Waitlist, kein oeffentlicher Download (Stand 03/2026)
+- **Nur Windows** -- kein Android, kein Mobile (alles "Soon")
+- **Keine Distribution** -- Portable .exe, kein Installer, kein Auto-Updater
 - **Kein Lizenzfile im Repo** -- "Source-Available" ohne rechtliche Grundlage
-- **.NET 8** -- schwergewichtiger als Tauri/Rust
-- **Credit/Wallet-System geplant** -- geht Richtung Mikrotransaktionen, weg vom klaren Einmalkauf
+- **.NET 8 + eingebettete Python Runtime** -- schwergewichtiger als Tauri/Rust
+- **Credit/Wallet-System** -- geht Richtung Mikrotransaktionen, weg vom klaren Einmalkauf
+- **Kein Social Proof** -- keine Nutzer, keine Reviews
 
 ### Strategische Einordnung
-Naechster direkter Wettbewerber nach Amical. Validiert unser Geschaeftsmodell (Einmalkauf + Source-Available + Voice Dictation). Aber: nur Windows, Distribution nicht shipped, kein Mobile. Unser Vorsprung: Android shipped + Auto-Updater + signierte Builds + echte Tester. Namenskonflikt macht Umbenennung zwingend.
+Naechster direkter Wettbewerber nach Amical. Validiert unser Geschaeftsmodell (Einmalkauf + Source-Available + Voice Dictation) und unser Early Bird Pricing. Aber: **nicht shipped** -- das ist der entscheidende Unterschied. Klarvo hat echte Tester, signierte Builds, Auto-Updater, Android. dikta.me hat eine schoene Landingpage.
 
-## Fazit
+Klarvo-Kern-USP gegenueber dikta.me: "Das Produkt das dikta.me verspricht -- aber tatsaechlich liefert."
 
-Der Markt hat sich seit Anfang 2026 bewegt: Wispr Flow ist auf Android, Amical naehert sich
-mit Mobile-Beta. Diktats Differenzierung laeuft nicht mehr ueber "einziger auf Android",
-sondern ueber drei Achsen:
-1. **Einmalkauf** (EUR 29) vs. Abo (Wispr Flow) oder kein Modell (Amical/OpenWhispr)
-2. **Shipped Android** vs. Beta (Amical) oder Cloud-only (Wispr Flow)
-3. **Offline + Open Source + Bezahlprodukt** = nachhaltig UND transparent
+## Fazit (aktualisiert 2026-03-25)
+
+Der Markt hat sich seit Anfang 2026 bewegt: Wispr Flow ist auf Android und iOS, Amical naehert sich
+mit Mobile-Beta, dikta.me baut eine schoene Landingpage aber hat noch nicht shipped.
+
+Klarvos Differenzierung laeuft ueber drei Achsen:
+1. **Einmalkauf** (EUR 29 Early Bird / EUR 39) vs. Abo (Wispr Flow) oder kein Modell (Amical/OpenWhispr)
+2. **Shipped auf 2 Plattformen** vs. Waitlist (dikta.me), Beta (Amical), oder Cloud-only (Wispr Flow)
+3. **Source-Available + Bezahlprodukt** = nachhaltig UND transparent
+
+Neuer Differenziator gegenueber dikta.me: **Shipped vs. Versprochen.** dikta.me validiert unser
+Geschaeftsmodell und Early Bird Pricing, ist aber noch nicht als Produkt erhaeltlich. Klarvo liefert.
