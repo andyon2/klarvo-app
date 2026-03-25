@@ -23,6 +23,8 @@ Keine.
 
 ## Erledigt (diese Session)
 
+- [x] Audio Device Fallback: 3-Stufen-Kette (Konfiguriert → Default → Alle enumerieren). Webcam-Sleep (WASAPI 0x88890008) loest jetzt korrekten Fallback auf Laptop-Mikro aus. Auch wenn Webcam = System-Default.
+
 - [x] Audio Error-Handling: Ready-Channel fuer sofortige Device-Fehlererkennung, echte Fehlermeldungen statt "thread panicked", Device-Fallback auf System-Default bei unavailable Device.
 - [x] STT Provider Auto-Switch: Wenn konfigurierter Cloud-Provider keinen Key hat aber anderer schon → automatisch umschalten.
 - [x] API Key Management: Remove-Button (orange, 2-Klick-Bestaetigung) pro Provider, Key-Validierung beim Speichern, Whitespace-Trimming, neuer `clear_api_key` Tauri-Command.

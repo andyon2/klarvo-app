@@ -646,99 +646,224 @@ fn recording_thread(
     device_name: Option<&str>,
     live_buffer: Arc<Mutex<LiveBuffer>>,
 ) -> Result<(), AudioError> {
-    // Device setup with optional fallback to system default.
+    // Device setup with full fallback to system default.
     //
-    // If a named device is configured but unavailable (e.g. webcam in sleep
-    // mode), we log a warning and fall back to the system default. Only if
-    // the default also fails do we propagate the error.
-    let (device, config) = match device_name {
-        Some(name) => {
-            match find_input_device(Some(name)).and_then(|d| {
-                let cfg = d.default_input_config()?;
-                Ok((d, cfg))
-            }) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    eprintln!("[audio] device \"{name}\" unavailable ({e}), falling back to system default");
-                    let fallback = find_input_device(None).map_err(|e2| {
-                        let msg = format!("device \"{name}\" unavailable and no default device found: {e2}");
-                        let _ = ready_tx.send(Err(msg.clone()));
-                        AudioError::DeviceError(msg)
-                    })?;
-                    let cfg = fallback.default_input_config().map_err(|e2| {
-                        let msg = format!("failed to query default device config after fallback: {e2}");
-                        let _ = ready_tx.send(Err(msg.clone()));
-                        AudioError::DeviceConfig(e2)
-                    })?;
-                    (fallback, cfg)
+    // The fallback triggers on ANY error during the open-and-start sequence:
+    // - Device not found in enumeration
+    // - default_input_config() fails
+    // - build_input_stream() fails (e.g. format mismatch)
+    // - stream.play() fails (e.g. AUDCLNT_E_DEVICE_INVALIDATED / 0x88890008 when
+    //   a WASAPI device like a webcam mic has gone into software sleep mode)
+    //
+    // Previously the fallback only covered the device-lookup + config phase.
+    // WASAPI reports DEVICE_INVALIDATED only at play() time, so sleep-mode
+    // webcams slipped through the old check and surfaced as a hard error.
+
+    let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+    let level_cb = level_cb.map(Arc::new);
+
+    /// Opens a device, builds the cpal stream, and calls play().
+    ///
+    /// Returns the live stream plus the format info needed by the rest of the
+    /// thread. All three steps (open / build / play) are attempted together so
+    /// that a WASAPI DEVICE_INVALIDATED at play-time is caught here rather than
+    /// later.
+    fn try_open_and_start(
+        device: Device,
+        samples: Arc<Mutex<Vec<f32>>>,
+        level_cb: Option<Arc<AudioLevelCallback>>,
+        live_buffer: Arc<Mutex<LiveBuffer>>,
+    ) -> Result<(cpal::Stream, u32, u16, std::sync::mpsc::Receiver<f32>, std::sync::mpsc::Receiver<Vec<f32>>), AudioError> {
+        let config = device.default_input_config()?;
+        let native_sample_rate = config.sample_rate().0;
+        let native_channels = config.channels();
+        let sample_format = config.sample_format();
+        let stream_config: StreamConfig = config.into();
+
+        if let Ok(mut lb) = live_buffer.lock() {
+            lb.native_sample_rate = native_sample_rate;
+            lb.native_channels = native_channels;
+        }
+
+        let samples_writer = Arc::clone(&samples);
+        let level_chunk: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+        let level_chunk_writer = Arc::clone(&level_chunk);
+        let samples_per_tick = (native_sample_rate / 15) as usize;
+
+        let (rms_tx, rms_rx) = std::sync::mpsc::channel::<f32>();
+        let (samples_chunk_tx, samples_chunk_rx) = std::sync::mpsc::channel::<Vec<f32>>();
+
+        let stream = build_stream_with_level(
+            &device, &stream_config, sample_format, samples_writer,
+            level_cb, level_chunk_writer, samples_per_tick, live_buffer,
+            Some(rms_tx), Some(samples_chunk_tx),
+        )?;
+
+        stream.play()?;
+
+        Ok((stream, native_sample_rate, native_channels, rms_rx, samples_chunk_rx))
+    }
+
+    // Attempt 1: configured device (or system default if no name given).
+    let host = cpal::default_host();
+    let (stream, native_sample_rate, native_channels, rms_rx, samples_chunk_rx) = {
+        let primary_result = (|| -> Result<_, AudioError> {
+            let device = match device_name {
+                Some(name) => {
+                    // find_input_device already has a name-lookup fallback to
+                    // default, but we bypass that here so we can distinguish
+                    // "configured device found but failed to open" from
+                    // "configured device not found".  We want the fallback to
+                    // trigger in both cases, so we attempt an exact match only.
+                    let host_inner = cpal::default_host();
+                    let found = host_inner
+                        .input_devices()
+                        .ok()
+                        .and_then(|mut iter| iter.find(|d| d.name().ok().as_deref() == Some(name)));
+                    match found {
+                        Some(d) => d,
+                        None => {
+                            return Err(AudioError::DeviceError(format!(
+                                "device \"{name}\" not found in enumeration"
+                            )));
+                        }
+                    }
+                }
+                None => host.default_input_device().ok_or(AudioError::NoInputDevice)?,
+            };
+            try_open_and_start(device, Arc::clone(&samples), level_cb.clone(), Arc::clone(&live_buffer))
+        })();
+
+        match primary_result {
+            Ok(result) => result,
+            Err(primary_err) => {
+                // Attempt 2: system default device.
+                //
+                // Only runs when a *named* device was the primary target -- if
+                // device_name is None the primary attempt already tried the
+                // default, so we skip straight to full-enumeration below.
+                let default_result = if device_name.is_some() {
+                    let name = device_name.unwrap_or("<unknown>");
+                    eprintln!(
+                        "[audio] device \"{name}\" failed to start ({primary_err}), \
+                         falling back to system default"
+                    );
+                    match host.default_input_device() {
+                        Some(d) => {
+                            match try_open_and_start(
+                                d,
+                                Arc::clone(&samples),
+                                level_cb.clone(),
+                                Arc::clone(&live_buffer),
+                            ) {
+                                Ok(result) => {
+                                    eprintln!("[audio] system default device works, using it");
+                                    Some(result)
+                                }
+                                Err(default_err) => {
+                                    eprintln!(
+                                        "[audio] system default device also failed ({default_err}), \
+                                         will enumerate all input devices"
+                                    );
+                                    None
+                                }
+                            }
+                        }
+                        None => {
+                            eprintln!(
+                                "[audio] no system default input device found, \
+                                 will enumerate all input devices"
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    eprintln!(
+                        "[audio] system default device failed ({primary_err}), \
+                         will enumerate all input devices"
+                    );
+                    None
+                };
+
+                // Return immediately if attempt 2 succeeded.
+                if let Some(result) = default_result {
+                    result
+                } else {
+                    // Attempt 3: enumerate ALL input devices and try each one.
+                    //
+                    // This handles the case where both the configured device and the
+                    // system default are unavailable (e.g. webcam mic asleep under
+                    // WASAPI, and Windows has set that same webcam as the default).
+                    // A working device such as the built-in laptop microphone will be
+                    // found here.
+
+                    // Collect the names we have already tried so we can skip them.
+                    let mut already_tried: Vec<String> = Vec::new();
+                    if let Some(n) = device_name {
+                        already_tried.push(n.to_string());
+                    }
+                    if let Some(d) = host.default_input_device() {
+                        if let Ok(n) = d.name() {
+                            already_tried.push(n);
+                        }
+                    }
+
+                    let all_devices: Vec<Device> = host
+                        .input_devices()
+                        .map(|iter| iter.collect())
+                        .unwrap_or_default();
+
+                    let mut last_err: Option<String> = None;
+                    let mut found_result = None;
+
+                    for candidate in all_devices {
+                        let candidate_name =
+                            candidate.name().unwrap_or_else(|_| "<unnamed>".into());
+
+                        if already_tried.iter().any(|n| n == &candidate_name) {
+                            eprintln!(
+                                "[audio] skipping \"{candidate_name}\" (already tried)"
+                            );
+                            continue;
+                        }
+
+                        match try_open_and_start(
+                            candidate,
+                            Arc::clone(&samples),
+                            level_cb.clone(),
+                            Arc::clone(&live_buffer),
+                        ) {
+                            Ok(result) => {
+                                eprintln!(
+                                    "[audio] using fallback device \"{candidate_name}\""
+                                );
+                                found_result = Some(result);
+                                break;
+                            }
+                            Err(e) => {
+                                eprintln!("[audio] skipping \"{candidate_name}\": {e}");
+                                last_err = Some(e.to_string());
+                            }
+                        }
+                    }
+
+                    match found_result {
+                        Some(result) => result,
+                        None => {
+                            let detail = last_err
+                                .unwrap_or_else(|| "no input devices available".into());
+                            let msg = format!(
+                                "primary device failed ({primary_err}) and no working \
+                                 fallback input device found (last error: {detail})"
+                            );
+                            let _ = ready_tx.send(Err(msg.clone()));
+                            return Err(AudioError::DeviceError(msg));
+                        }
+                    }
                 }
             }
         }
-        None => {
-            let d = find_input_device(None).map_err(|e| {
-                let msg = e.to_string();
-                let _ = ready_tx.send(Err(msg.clone()));
-                e
-            })?;
-            let cfg = d.default_input_config().map_err(|e| {
-                let msg = e.to_string();
-                let _ = ready_tx.send(Err(msg.clone()));
-                e
-            })?;
-            (d, cfg)
-        }
     };
-
-    let native_sample_rate = config.sample_rate().0;
-    let native_channels = config.channels();
-    let sample_format = config.sample_format();
-    let stream_config: StreamConfig = config.into();
-
-    // Initialize the live buffer with the correct format info.
-    if let Ok(mut lb) = live_buffer.lock() {
-        lb.native_sample_rate = native_sample_rate;
-        lb.native_channels = native_channels;
-    }
-
-    let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let samples_writer = Arc::clone(&samples);
-
-    // Shared level callback wrapped in Arc for use in the stream callback.
-    let level_cb = level_cb.map(Arc::new);
-    let level_cb_clone = level_cb.clone();
-
-    // Track samples for periodic RMS calculation (~15 Hz).
-    let level_chunk: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let level_chunk_writer = Arc::clone(&level_chunk);
-    let samples_per_tick = (native_sample_rate / 15) as usize; // ~66ms chunks
-
-    // RMS channel: stream callback → this thread.
-    // Still used for the audio-level waveform display (voxlit://audio-level events).
-    // Previously also used for RMS-based silence detection -- that role is now
-    // handled by SileroVad below.
-    let (rms_tx, rms_rx) = std::sync::mpsc::channel::<f32>();
-
-    // VAD sample channel: stream callback → this thread.
-    // The stream callback sends raw ~66ms sample chunks so the recording thread
-    // can feed them to SileroVad without touching the stream callback directly
-    // (cpal callbacks must remain lock-free and time-critical).
-    let (samples_chunk_tx, samples_chunk_rx) = std::sync::mpsc::channel::<Vec<f32>>();
-
-    let stream = build_stream_with_level(
-        &device, &stream_config, sample_format, samples_writer,
-        level_cb_clone, level_chunk_writer, samples_per_tick, live_buffer,
-        Some(rms_tx), Some(samples_chunk_tx),
-    ).map_err(|e| {
-        let msg = e.to_string();
-        let _ = ready_tx.send(Err(msg));
-        e
-    })?;
-
-    stream.play().map_err(|e| {
-        let msg = e.to_string();
-        let _ = ready_tx.send(Err(msg));
-        e
-    })?;
 
     // Device is ready -- signal start_recording that setup succeeded.
     // From this point on, any failure goes via result_tx.

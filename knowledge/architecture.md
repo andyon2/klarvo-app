@@ -109,6 +109,17 @@ Bubble-Tap → AudioRecord (Kotlin) → WAV → STT (Kotlin HTTP) → Raw Text �
 - Desktop: cpal mit dediziertem OS-Thread (Stream nicht Send)
 - Android: AudioRecord API, PCM sammeln, bei Stop zu WAV konvertieren
 
+**Audio Device Resilience (2026-03-25)**
+- Kern-Use-Case: Externe Webcam (mit Mikrofon) schlaeft nach Inaktivitaet ein → WASAPI meldet `AUDCLNT_E_DEVICE_INVALIDATED` (0x88890008) beim naechsten Recording-Start.
+- Muss abgefangen werden: Wenn konfiguriertes Device nicht verfuegbar → automatisch auf System-Default-Input wechseln, nicht crashen.
+- Drei Szenarien die funktionieren muessen:
+  1. Webcam physisch abgesteckt → Fallback auf Default
+  2. Webcam eingeschlafen (Software-Standby) → Fallback auf Default
+  3. Webcam wieder aufgewacht → optional zurueckwechseln (nice-to-have, nicht MVP)
+- Fallback-Kette (3 Stufen): Konfiguriertes Device → System-Default → Alle Devices enumerieren. Bereits versuchte Devices werden per Name uebersprungen. Erst wenn KEIN Device funktioniert → Fehler an User.
+- Wichtig: Webcam kann System-Default sein → "Fallback auf Default" hilft dann nicht, deshalb die dritte Stufe (Enumeration).
+- Status: Alle 3 Szenarien (abgesteckt, eingeschlafen, Default=kaputt) funktionieren seit v0.5.0+.
+
 **Sync: Turso HTTP API**
 - Lokale SQLite bleibt, Turso fuer Push/Pull
 - UUID als Primary Key remote (kein AUTOINCREMENT)
