@@ -129,7 +129,7 @@ export function useQuickTip({ isIdle, onboardingCompleted }: UseQuickTipOptions)
             // days-trigger only fires after the app has been open long enough.
             // In practice this means the cost-dashboard tip fires after 7 days
             // of the App being installed (tracked via localStorage).
-            const installKey = "voxlit_install_day";
+            const installKey = "klarvo_install_day";
             let installDay = parseFloat(localStorage.getItem(installKey) ?? "0");
             if (!installDay) {
               installDay = nowDays;

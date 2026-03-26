@@ -63,16 +63,16 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
         "disabled:cursor-not-allowed disabled:opacity-60",
         isRecording
-          ? "bg-voxlit-danger/20 text-voxlit-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
+          ? "bg-klarvo-danger/20 text-klarvo-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
           : isBusy
-          ? "bg-voxlit-warning/15 text-voxlit-warning shadow-[0_0_30px_rgba(255,163,68,0.2)]"
-          : "bg-voxlit-primary/15 text-voxlit-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:shadow-[0_0_50px_rgba(42,195,168,0.3)] hover:bg-voxlit-primary/20",
+          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(255,163,68,0.2)]"
+          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:shadow-[0_0_50px_rgba(42,195,168,0.3)] hover:bg-klarvo-primary/20",
       ].join(" ")}
     >
       <span
         className={[
           "absolute inset-0 rounded-full border-2 transition-colors duration-200",
-          isRecording ? "border-voxlit-danger/40" : isBusy ? "border-voxlit-warning/30" : "border-voxlit-primary/25",
+          isRecording ? "border-klarvo-danger/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
         ].join(" ")}
       />
       {isRecording && (
@@ -91,7 +91,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
 
 function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onChange: (s: CleanupStyle) => void; disabled: boolean }) {
   return (
-    <div className={`flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 ${isMobile ? "w-full" : "w-fit"}`}>
+    <div className={`flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 ${isMobile ? "w-full" : "w-fit"}`}>
       {STYLE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -104,8 +104,8 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
               : "px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
             "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
-              ? "bg-voxlit-primary/15 text-voxlit-primary"
-              : "text-voxlit-dim hover:text-voxlit-muted",
+              ? "bg-klarvo-primary/15 text-klarvo-primary"
+              : "text-klarvo-dim hover:text-klarvo-muted",
           ].join(" ")}
         >
           {opt.label}
@@ -160,7 +160,7 @@ function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps)
         <button
           onClick={handleReset}
           title="Reset to original"
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border bg-voxlit-surface/60 border-voxlit-border/60 text-voxlit-muted hover:text-voxlit-text transition-all duration-100"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border bg-klarvo-surface/60 border-klarvo-border/60 text-klarvo-muted hover:text-klarvo-text transition-all duration-100"
         >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
@@ -179,8 +179,8 @@ function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps)
             "flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border",
             "transition-all duration-100 disabled:opacity-50 disabled:cursor-not-allowed",
             loading === id
-              ? "bg-voxlit-warning/10 border-voxlit-warning/20 text-voxlit-warning"
-              : "bg-voxlit-bg border-voxlit-border/60 text-voxlit-muted hover:text-voxlit-text hover:border-voxlit-border/60",
+              ? "bg-klarvo-warning/10 border-klarvo-warning/20 text-klarvo-warning"
+              : "bg-klarvo-bg border-klarvo-border/60 text-klarvo-muted hover:text-klarvo-text hover:border-klarvo-border/60",
           ].join(" ")}
         >
           {loading === id ? (
@@ -363,7 +363,7 @@ export default function App() {
 
   return (
     <main
-      className="h-screen bg-voxlit-bg text-voxlit-text flex flex-col select-none overflow-y-auto"
+      className="h-screen bg-klarvo-bg text-klarvo-text flex flex-col select-none overflow-y-auto"
       style={{
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         ...(isMobile ? {
@@ -377,10 +377,10 @@ export default function App() {
            (only visible on the home/recording view, hidden when a panel is open). */}
       <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2 flex-shrink-0">
         {/* Logo */}
-        <div className="w-7 h-7 rounded-lg bg-voxlit-primary/10 border border-voxlit-primary/20 flex items-center justify-center">
-          <MicIcon className="w-3.5 h-3.5 text-voxlit-primary" />
+        <div className="w-7 h-7 rounded-lg bg-klarvo-primary/10 border border-klarvo-primary/20 flex items-center justify-center">
+          <MicIcon className="w-3.5 h-3.5 text-klarvo-primary" />
         </div>
-        <span className="text-sm font-semibold text-voxlit-muted tracking-wide">Klarvo</span>
+        <span className="text-sm font-semibold text-klarvo-muted tracking-wide">Klarvo</span>
 
         {/* Settings toggle */}
         <button
@@ -390,8 +390,8 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showSettings
-              ? "text-voxlit-primary bg-voxlit-primary/10"
-              : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+              ? "text-klarvo-primary bg-klarvo-primary/10"
+              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
           <GearIcon />
@@ -405,8 +405,8 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showHistory
-              ? "text-voxlit-primary bg-voxlit-primary/10"
-              : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+              ? "text-klarvo-primary bg-klarvo-primary/10"
+              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
@@ -422,8 +422,8 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showStats
-              ? "text-voxlit-primary bg-voxlit-primary/10"
-              : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+              ? "text-klarvo-primary bg-klarvo-primary/10"
+              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
@@ -439,8 +439,8 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showNotes
-              ? "text-voxlit-primary bg-voxlit-primary/10"
-              : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+              ? "text-klarvo-primary bg-klarvo-primary/10"
+              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
           <NoteIcon className="w-4 h-4" />
@@ -455,8 +455,8 @@ export default function App() {
             className={[
               `${headerBtnPad} rounded-lg transition-all duration-150`,
               panels.showIntegrations
-                ? "text-voxlit-primary bg-voxlit-primary/10"
-                : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+                ? "text-klarvo-primary bg-klarvo-primary/10"
+                : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
             ].join(" ")}
           >
             {/* Plug/integration icon */}
@@ -475,8 +475,8 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showAdvanced
-              ? "text-voxlit-primary bg-voxlit-primary/10"
-              : "text-voxlit-dim hover:text-voxlit-muted hover:bg-voxlit-surface/50",
+              ? "text-klarvo-primary bg-klarvo-primary/10"
+              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -550,12 +550,12 @@ export default function App() {
         ].join(" ")}
       >
         {panels.showHistory && (
-          <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
-              <span className="text-[11px] font-semibold text-voxlit-dim uppercase tracking-widest">History</span>
+          <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
+              <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">History</span>
               <button
                 onClick={() => panels.close("history")}
-                className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
+                className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
               >
                 <CloseIcon />
               </button>
@@ -567,27 +567,27 @@ export default function App() {
                 placeholder="Search text..."
                 value={historySearch}
                 onChange={(e) => handleHistorySearch(e.target.value, historyAppSearch)}
-                className="flex-1 bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-3 py-2 text-xs text-voxlit-text placeholder:text-voxlit-dim focus:outline-none focus:border-voxlit-primary/40 transition-colors"
+                className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors"
               />
               <input
                 type="text"
                 placeholder="App..."
                 value={historyAppSearch}
                 onChange={(e) => handleHistorySearch(historySearch, e.target.value)}
-                className="w-24 bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-3 py-2 text-xs text-voxlit-text placeholder:text-voxlit-dim focus:outline-none focus:border-voxlit-primary/40 transition-colors"
+                className="w-24 bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors"
               />
             </div>
 
             <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2">
               {historyEntries.length === 0 ? (
-                <p className="text-xs text-voxlit-dim italic text-center py-4">No dictations yet.</p>
+                <p className="text-xs text-klarvo-dim italic text-center py-4">No dictations yet.</p>
               ) : (
                 historyEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 group hover:border-voxlit-border/60 transition-colors"
+                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 group hover:border-klarvo-border/60 transition-colors"
                   >
-                    <HighlightedText text={entry.text} query={historySearch} className="text-xs text-voxlit-muted whitespace-pre-wrap" />
+                    <HighlightedText text={entry.text} query={historySearch} className="text-xs text-klarvo-muted whitespace-pre-wrap" />
                     {entry.rawText && entry.rawText !== entry.text && (
                       <div className="mt-1.5">
                         <button
@@ -596,18 +596,18 @@ export default function App() {
                             next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id);
                             return next;
                           })}
-                          className="text-[11px] text-voxlit-dim hover:text-voxlit-muted transition-colors"
+                          className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
                         >
                           {expandedHistoryRaw.has(entry.id) ? "Hide original" : "Show original"}
                         </button>
                         {expandedHistoryRaw.has(entry.id) && (
                           <div className="mt-1 relative group/raw">
-                            <p className="text-[11px] text-voxlit-dim whitespace-pre-wrap bg-[#0c0c0e] rounded-lg px-2.5 py-1.5 border border-voxlit-border/40">
+                            <p className="text-[11px] text-klarvo-dim whitespace-pre-wrap bg-[#0c0c0e] rounded-lg px-2.5 py-1.5 border border-klarvo-border/40">
                               {entry.rawText}
                             </p>
                             <button
                               onClick={() => navigator.clipboard.writeText(entry.rawText!)}
-                              className="absolute top-1 right-1 text-[11px] text-voxlit-dim hover:text-voxlit-muted opacity-0 group-hover/raw:opacity-100 transition-opacity"
+                              className="absolute top-1 right-1 text-[11px] text-klarvo-dim hover:text-klarvo-muted opacity-0 group-hover/raw:opacity-100 transition-opacity"
                             >
                               Copy
                             </button>
@@ -616,25 +616,25 @@ export default function App() {
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-[11px] text-voxlit-dim">
+                      <span className="text-[11px] text-klarvo-dim">
                         {new Date(entry.createdAt + "Z").toLocaleString()}
                         {entry.style !== "polished" && (
-                          <span className="text-voxlit-primary"> · {entry.style}</span>
+                          <span className="text-klarvo-primary"> · {entry.style}</span>
                         )}
                         {entry.appName && (
-                          <span className="ml-1 px-1.5 py-0.5 bg-voxlit-warm/10 rounded text-[9px] text-voxlit-warm">{entry.appName}</span>
+                          <span className="ml-1 px-1.5 py-0.5 bg-klarvo-warm/10 rounded text-[9px] text-klarvo-warm">{entry.appName}</span>
                         )}
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => navigator.clipboard.writeText(entry.text).catch(console.error)}
-                          className="text-[11px] text-voxlit-dim hover:text-voxlit-primary transition-colors"
+                          className="text-[11px] text-klarvo-dim hover:text-klarvo-primary transition-colors"
                         >
                           Copy
                         </button>
                         <button
                           onClick={() => handleDeleteHistoryEntry(entry.id)}
-                          className="text-[11px] text-voxlit-dim hover:text-voxlit-danger transition-colors"
+                          className="text-[11px] text-klarvo-dim hover:text-klarvo-danger transition-colors"
                         >
                           Delete
                         </button>
@@ -656,12 +656,12 @@ export default function App() {
         ].join(" ")}
       >
         {panels.showStats && (
-          <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
-              <span className="text-[11px] font-semibold text-voxlit-dim uppercase tracking-widest">Statistics & Costs</span>
+          <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
+              <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">Statistics & Costs</span>
               <button
                 onClick={() => panels.close("stats")}
-                className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
+                className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
               >
                 <CloseIcon />
               </button>
@@ -676,15 +676,15 @@ export default function App() {
 
                 {/* Filler word analysis */}
                 {!isPaid ? (
-                  <div className="px-4 pb-4 flex items-center gap-2 border-t border-voxlit-border/40 pt-3">
-                    <LockIcon className="w-3.5 h-3.5 text-voxlit-dim flex-shrink-0" />
-                    <p className="text-xs text-voxlit-dim">Filler word analysis requires a Klarvo license.</p>
+                  <div className="px-4 pb-4 flex items-center gap-2 border-t border-klarvo-border/40 pt-3">
+                    <LockIcon className="w-3.5 h-3.5 text-klarvo-dim flex-shrink-0" />
+                    <p className="text-xs text-klarvo-dim">Filler word analysis requires a Klarvo license.</p>
                   </div>
                 ) : fillerStats.length > 0 ? (
-                  <div className="px-4 pb-4 border-t border-voxlit-border/40 pt-3">
+                  <div className="px-4 pb-4 border-t border-klarvo-border/40 pt-3">
                     <button
                       onClick={() => setShowFillerStats((v) => !v)}
-                      className="flex items-center gap-1.5 text-[11px] font-semibold text-voxlit-dim uppercase tracking-widest hover:text-voxlit-muted transition-colors w-full text-left"
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest hover:text-klarvo-muted transition-colors w-full text-left"
                     >
                       <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
                       Top Filler Words
@@ -727,12 +727,12 @@ export default function App() {
           ].join(" ")}
         >
           {panels.showIntegrations && (
-            <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
-                <span className="text-[11px] font-semibold text-voxlit-dim uppercase tracking-widest">Integrations</span>
+            <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
+                <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">Integrations</span>
                 <button
                   onClick={() => panels.close("integrations")}
-                  className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
+                  className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
                 >
                   <CloseIcon />
                 </button>
@@ -740,17 +740,17 @@ export default function App() {
               <div className="px-4 py-8 flex flex-col items-center gap-3 text-center">
                 {!isPaid ? (
                   <>
-                    <LockIcon className="w-5 h-5 text-voxlit-dim" />
-                    <p className="text-sm font-medium text-voxlit-muted">Integrations require a Klarvo license</p>
-                    <p className="text-xs text-voxlit-dim max-w-[240px]">Connect Klarvo with Notion, Todoist, and more with a license key.</p>
+                    <LockIcon className="w-5 h-5 text-klarvo-dim" />
+                    <p className="text-sm font-medium text-klarvo-muted">Integrations require a Klarvo license</p>
+                    <p className="text-xs text-klarvo-dim max-w-[240px]">Connect Klarvo with Notion, Todoist, and more with a license key.</p>
                   </>
                 ) : (
                   <>
-                    <svg className="w-8 h-8 text-voxlit-dim mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg className="w-8 h-8 text-klarvo-dim mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
                     </svg>
-                    <p className="text-sm font-medium text-voxlit-muted">Integrations</p>
-                    <p className="text-xs text-voxlit-dim max-w-[220px]">Coming soon -- connect Klarvo with Notion, Todoist, and more.</p>
+                    <p className="text-sm font-medium text-klarvo-muted">Integrations</p>
+                    <p className="text-xs text-klarvo-dim max-w-[220px]">Coming soon -- connect Klarvo with Notion, Todoist, and more.</p>
                   </>
                 )}
               </div>
@@ -789,11 +789,11 @@ export default function App() {
         <div className="text-center">
           <p className={[
             "text-xs font-medium",
-            recording.recordingState === "error" ? "text-voxlit-danger"
-              : recording.recordingState === "recording" ? "text-voxlit-danger"
-              : recording.recordingState === "done" ? "text-voxlit-primary"
-              : isBusy ? "text-voxlit-warning"
-              : "text-voxlit-dim",
+            recording.recordingState === "error" ? "text-klarvo-danger"
+              : recording.recordingState === "recording" ? "text-klarvo-danger"
+              : recording.recordingState === "done" ? "text-klarvo-primary"
+              : isBusy ? "text-klarvo-warning"
+              : "text-klarvo-dim",
           ].join(" ")}>
             {recording.errorMessage && recording.recordingState === "error"
               ? recording.errorMessage
@@ -808,7 +808,7 @@ export default function App() {
               readOnly
               value={recording.resultText}
               rows={3}
-              className="w-full bg-voxlit-bg border border-voxlit-border/60 rounded-xl px-3.5 py-2.5 text-sm text-voxlit-text resize-none focus:outline-none focus:border-voxlit-primary/30 transition-colors"
+              className="w-full bg-klarvo-bg border border-klarvo-border/60 rounded-xl px-3.5 py-2.5 text-sm text-klarvo-text resize-none focus:outline-none focus:border-klarvo-primary/30 transition-colors"
             />
             {recording.recordingState === "done" && (
               <ReformatButtons
@@ -821,7 +821,7 @@ export default function App() {
               <div>
                 <button
                   onClick={() => recording.setShowRawText((v) => !v)}
-                  className="text-[11px] text-voxlit-dim hover:text-voxlit-muted transition-colors"
+                  className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
                 >
                   {recording.showRawText ? "Hide original" : "Show original"}
                 </button>
@@ -831,11 +831,11 @@ export default function App() {
                       readOnly
                       value={recording.rawText}
                       rows={2}
-                      className="w-full bg-[#0c0c0e] border border-voxlit-border/40 rounded-lg px-3 py-2 text-xs text-voxlit-muted resize-none focus:outline-none"
+                      className="w-full bg-[#0c0c0e] border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
                     />
                     <button
                       onClick={() => navigator.clipboard.writeText(recording.rawText!)}
-                      className="absolute top-1.5 right-1.5 text-[11px] text-voxlit-dim hover:text-voxlit-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1.5 right-1.5 text-[11px] text-klarvo-dim hover:text-klarvo-muted opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Copy
                     </button>
@@ -851,7 +851,7 @@ export default function App() {
       {/* ── Footer (desktop only) ── */}
       {isDesktop && (
         <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
-          <span className="text-[11px] font-mono text-voxlit-dim">{hotkeyDisplay}</span>
+          <span className="text-[11px] font-mono text-klarvo-dim">{hotkeyDisplay}</span>
         </div>
       )}
 
@@ -875,7 +875,7 @@ export default function App() {
           className="fixed bottom-3 right-3 z-50 pointer-events-none"
           aria-hidden="true"
         >
-          <span className="px-2 py-1 rounded-md text-[10px] font-mono font-semibold tracking-wide bg-voxlit-bg/80 border border-voxlit-border/50 text-voxlit-dim backdrop-blur-sm">
+          <span className="px-2 py-1 rounded-md text-[10px] font-mono font-semibold tracking-wide bg-klarvo-bg/80 border border-klarvo-border/50 text-klarvo-dim backdrop-blur-sm">
             Preview Mode
           </span>
         </div>

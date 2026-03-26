@@ -71,7 +71,7 @@ interface ThemeVariant {
 // - Linear: LCH-generated blue-gray, indigo accent #5E6AD2
 //   Muted blue tint in backgrounds, restrained accent usage
 // - Wispr Flow: #4D65FF indigo accent, #FFFFEB cream text, soft neutrals
-// - Voxlit Social Preview: deep navy gradient, amber+teal logo accents
+// - Klarvo Social Preview: deep navy gradient, amber+teal logo accents
 //
 // Color role principles (see briefings/color-palette-system.md):
 //   Action ≠ Success — the record button and the "done" state use different colors
@@ -109,7 +109,7 @@ const THEMES: ThemeVariant[] = [
   },
 
   // ── Obsidian ──────────────────────────────────────────────────────────────
-  // Inspired by Voxlit brand: Cyan from the FloatingBar logo as primary action.
+  // Inspired by Klarvo brand: Cyan from the FloatingBar logo as primary action.
   // Teal as Success (done-state), Amber as Activity, Indigo as Info.
   // Deepest background of all variants — maximum depth with the gradient.
   {
@@ -512,20 +512,20 @@ function applyTheme(theme: ThemeVariant): void {
   const root = document.documentElement;
 
   // Custom properties used by @theme-aware components
-  root.style.setProperty("--color-voxlit-bg", theme.bg);
-  root.style.setProperty("--color-voxlit-surface", theme.surface);
-  root.style.setProperty("--color-voxlit-border", theme.border);
-  root.style.setProperty("--color-voxlit-muted", theme.muted);
-  root.style.setProperty("--color-voxlit-text", theme.text);
-  root.style.setProperty("--color-voxlit-primary", theme.primary);
-  root.style.setProperty("--color-voxlit-danger", theme.danger);
-  root.style.setProperty("--color-voxlit-warning", theme.warning);
-  root.style.setProperty("--color-voxlit-accent", theme.accent);
+  root.style.setProperty("--color-klarvo-bg", theme.bg);
+  root.style.setProperty("--color-klarvo-surface", theme.surface);
+  root.style.setProperty("--color-klarvo-border", theme.border);
+  root.style.setProperty("--color-klarvo-muted", theme.muted);
+  root.style.setProperty("--color-klarvo-text", theme.text);
+  root.style.setProperty("--color-klarvo-primary", theme.primary);
+  root.style.setProperty("--color-klarvo-danger", theme.danger);
+  root.style.setProperty("--color-klarvo-warning", theme.warning);
+  root.style.setProperty("--color-klarvo-accent", theme.accent);
   // New color role properties
-  root.style.setProperty("--color-voxlit-activity", theme.activity);
-  root.style.setProperty("--color-voxlit-success", theme.success);
-  root.style.setProperty("--color-voxlit-info", theme.info);
-  root.style.setProperty("--color-voxlit-warm", theme.warm);
+  root.style.setProperty("--color-klarvo-activity", theme.activity);
+  root.style.setProperty("--color-klarvo-success", theme.success);
+  root.style.setProperty("--color-klarvo-info", theme.info);
+  root.style.setProperty("--color-klarvo-warm", theme.warm);
 
   // Inject/update a <style> tag that overrides hardcoded Tailwind utility
   // classes. These cannot be changed via CSS variables alone because Tailwind
@@ -547,7 +547,7 @@ function applyTheme(theme: ThemeVariant): void {
   const dm = theme.dim ?? theme.muted;
   const ba = theme.borderActive ?? theme.border;
   const act = theme.activity;   // Activity (processing/spinner)
-  // success is set as a CSS custom property (--color-voxlit-success) above
+  // success is set as a CSS custom property (--color-klarvo-success) above
   // and available to components that opt into it; Tailwind classes for done-
   // states are covered by the text-emerald-300 → accent mapping.
   const inf = theme.info;       // Info (links/badges)
@@ -676,7 +676,7 @@ function applyTheme(theme: ThemeVariant): void {
        primary in all non-current themes */
     /* Note: text-emerald-300 is already mapped to ${a} above (accent/hover).
        In themes where success === accent this is intentional.
-       The CSS custom property --color-voxlit-success is available for
+       The CSS custom property --color-klarvo-success is available for
        components that want to opt into the explicit success color. */
 
     /* All emerald borders → primary color family (prevents brown/blue clash) */

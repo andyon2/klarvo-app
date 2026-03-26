@@ -58,7 +58,7 @@ const DEFAULT_MONITOR_CHANNELS: u16 = 1;
 const DEBOUNCE_DURATION: Duration = Duration::from_secs(2);
 
 /// Tauri event emitted when the Voice Command Mode is toggled.
-pub const EVENT_VOICE_COMMAND_STATE: &str = "voxlit://voice-command-state-changed";
+pub const EVENT_VOICE_COMMAND_STATE: &str = "klarvo://voice-command-state-changed";
 
 // ---------------------------------------------------------------------------
 // Public API

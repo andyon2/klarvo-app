@@ -34,7 +34,7 @@ export function QuickTip({ title, text, actionLabel, onAction, onDismiss }: Quic
         // Position: fixed, above the bottom nav bar.
         "fixed bottom-20 left-4 right-4 md:left-auto md:right-6 md:w-80 z-50",
         // Card styling.
-        "bg-voxlit-surface border border-voxlit-border/60 rounded-2xl shadow-xl shadow-black/40 p-4",
+        "bg-klarvo-surface border border-klarvo-border/60 rounded-2xl shadow-xl shadow-black/40 p-4",
         // Slide-up + fade animation via Tailwind transform/opacity.
         "transition-all duration-300 ease-out",
         visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4",
@@ -44,22 +44,22 @@ export function QuickTip({ title, text, actionLabel, onAction, onDismiss }: Quic
       <button
         onClick={onDismiss}
         aria-label="Tip schließen"
-        className="absolute top-3 right-3 text-voxlit-dim hover:text-voxlit-muted transition-colors p-0.5 rounded"
+        className="absolute top-3 right-3 text-klarvo-dim hover:text-klarvo-muted transition-colors p-0.5 rounded"
       >
         <CloseIcon />
       </button>
 
       {/* Content */}
       <div className="pr-6">
-        <p className="text-xs font-semibold text-voxlit-text leading-tight mb-1">{title}</p>
-        <p className="text-[11px] text-voxlit-muted leading-snug">{text}</p>
+        <p className="text-xs font-semibold text-klarvo-text leading-tight mb-1">{title}</p>
+        <p className="text-[11px] text-klarvo-muted leading-snug">{text}</p>
       </div>
 
       {/* Action button (optional) */}
       {actionLabel && onAction && (
         <button
           onClick={onAction}
-          className="mt-3 w-full py-1.5 rounded-lg bg-voxlit-primary/15 text-voxlit-primary text-xs font-medium hover:bg-voxlit-primary/25 transition-colors"
+          className="mt-3 w-full py-1.5 rounded-lg bg-klarvo-primary/15 text-klarvo-primary text-xs font-medium hover:bg-klarvo-primary/25 transition-colors"
         >
           {actionLabel}
         </button>

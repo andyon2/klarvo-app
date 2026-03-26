@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 import android.content.Context
 import android.media.AudioFormat
@@ -15,7 +15,7 @@ import kotlin.math.sqrt
  * Manages audio capture from the microphone.
  *
  * Usage:
- *   val recorder = VoxlitAudioRecorder(context) { amplitude -> updateWaveform(amplitude) }
+ *   val recorder = KlarvoAudioRecorder(context) { amplitude -> updateWaveform(amplitude) }
  *   recorder.start()
  *   ...
  *   val wavBytes = recorder.stop()  // returns WAV-encoded bytes, ready for STT API
@@ -33,7 +33,7 @@ import kotlin.math.sqrt
  * The RMS energy gate is kept as a pre-filter: frames below SILENCE_THRESHOLD are
  * treated as silence without even calling the VAD model, saving CPU.
  */
-class VoxlitAudioRecorder(
+class KlarvoAudioRecorder(
     private val context: Context,
     private val onAmplitude: (Float) -> Unit,
     /**
@@ -44,7 +44,7 @@ class VoxlitAudioRecorder(
 ) {
 
     companion object {
-        private const val TAG = "VoxlitAudioRecorder"
+        private const val TAG = "KlarvoAudioRecorder"
 
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
@@ -77,7 +77,7 @@ class VoxlitAudioRecorder(
 
     /**
      * Optional callback fired once when sustained silence is detected after speech.
-     * Set by VoxlitOverlayService for AUTOSTOP / AUTO modes.
+     * Set by KlarvoOverlayService for AUTOSTOP / AUTO modes.
      * Fires on the recording thread -- caller must post to main thread.
      */
     var onSilenceDetected: (() -> Unit)? = null
@@ -118,7 +118,7 @@ class VoxlitAudioRecorder(
      * Starts capturing audio from the microphone.
      *
      * Throws [IllegalStateException] if the microphone is unavailable or permissions
-     * are missing. The caller (VoxlitOverlayService) handles the error and shows a toast.
+     * are missing. The caller (KlarvoOverlayService) handles the error and shows a toast.
      */
     fun start() {
         val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)

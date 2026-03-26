@@ -1,5 +1,5 @@
 [package]
-name = "voxlit"
+name = "klarvo"
 version = "0.5.0"
 description = "Free voice dictation with AI text cleanup"
 authors = ["Andy"]
@@ -10,7 +10,7 @@ name = "klarvo"
 path = "src/main.rs"
 
 [lib]
-name = "voxlit_lib"
+name = "klarvo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

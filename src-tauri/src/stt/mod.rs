@@ -502,7 +502,7 @@ mod tests {
     fn test_build_form_with_prompt() {
         let stt = GroqWhisper::new("key");
         let dummy_audio = vec![0u8; 128];
-        let form = stt.build_form(dummy_audio, "de", Some("Kubernetes, TypeScript, Voxlit"));
+        let form = stt.build_form(dummy_audio, "de", Some("Kubernetes, TypeScript, Klarvo"));
         assert!(form.is_ok(), "build_form should succeed with a prompt");
     }
 
@@ -638,9 +638,9 @@ mod tests {
 
     #[test]
     fn test_build_stt_prompt_auto_detect_with_terms() {
-        let result = build_stt_prompt(Some("Voxlit"), "");
+        let result = build_stt_prompt(Some("Klarvo"), "");
         let prompt = result.expect("should produce a prompt");
-        assert!(prompt.contains("Voxlit"), "should contain dictionary terms");
+        assert!(prompt.contains("Klarvo"), "should contain dictionary terms");
         assert!(prompt.contains("Multilingual"), "should have multilingual hint");
     }
 

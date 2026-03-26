@@ -367,14 +367,14 @@ export async function removeDictionaryTerm(_term: string): Promise<void> {
  * Subscribes to backend pipeline state changes triggered by the global hotkey.
  * Returns a promise that resolves to an unlisten function -- call it on cleanup.
  *
- * The backend emits "voxlit://state-changed" at every pipeline step:
+ * The backend emits "klarvo://state-changed" at every pipeline step:
  * recording -> transcribing -> cleaning -> done | error
  */
 export function onStateChanged(
   _callback: (payload: StateChangedPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<StateChangedPayload>("voxlit://state-changed", (event) => {
+  return listen<StateChangedPayload>("klarvo://state-changed", (event) => {
     _callback(event.payload);
   });
 }
@@ -651,7 +651,7 @@ export async function getWhisperModels(): Promise<WhisperModelWithStatus[]> {
 
 /**
  * Starts downloading a whisper model in the background.
- * Progress is reported via voxlit://model-download-progress events.
+ * Progress is reported via klarvo://model-download-progress events.
  * @param modelId - Model identifier, e.g. "base"
  */
 export async function downloadWhisperModel(_modelId: string): Promise<void> {
@@ -676,7 +676,7 @@ export function onModelDownloadProgress(
   _callback: (payload: ModelDownloadProgressPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadProgressPayload>("voxlit://model-download-progress", (e) => {
+  return listen<ModelDownloadProgressPayload>("klarvo://model-download-progress", (e) => {
     _callback(e.payload);
   });
 }
@@ -689,7 +689,7 @@ export function onModelDownloadComplete(
   _callback: (payload: ModelDownloadCompletePayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadCompletePayload>("voxlit://model-download-complete", (e) => {
+  return listen<ModelDownloadCompletePayload>("klarvo://model-download-complete", (e) => {
     _callback(e.payload);
   });
 }
@@ -702,7 +702,7 @@ export function onModelDownloadError(
   _callback: (payload: ModelDownloadErrorPayload) => void
 ): Promise<() => void> {
   if (isPreviewMode) return mockListen();
-  return listen<ModelDownloadErrorPayload>("voxlit://model-download-error", (e) => {
+  return listen<ModelDownloadErrorPayload>("klarvo://model-download-error", (e) => {
     _callback(e.payload);
   });
 }

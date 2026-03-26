@@ -12,7 +12,7 @@
 //! ```
 //!
 //! All state changes are communicated to the frontend via a single Tauri event
-//! `voxlit://state-changed` with a [`PipelineEvent`] payload.
+//! `klarvo://state-changed` with a [`PipelineEvent`] payload.
 
 use serde::Serialize;
 
@@ -20,7 +20,7 @@ use serde::Serialize;
 // Event payload
 // ---------------------------------------------------------------------------
 
-/// Pipeline state values sent to the frontend via `voxlit://state-changed`.
+/// Pipeline state values sent to the frontend via `klarvo://state-changed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PipelineState {
@@ -38,7 +38,7 @@ pub enum PipelineState {
     Error,
 }
 
-/// Payload for the `voxlit://state-changed` Tauri event.
+/// Payload for the `klarvo://state-changed` Tauri event.
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineEvent {
     /// Current pipeline state.
@@ -140,7 +140,7 @@ impl PipelineEvent {
 }
 
 /// Event name emitted on the Tauri event bus.
-pub const EVENT_STATE_CHANGED: &str = "voxlit://state-changed";
+pub const EVENT_STATE_CHANGED: &str = "klarvo://state-changed";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -243,6 +243,6 @@ mod tests {
     /// EVENT_STATE_CHANGED has the correct event name.
     #[test]
     fn test_event_name_constant() {
-        assert_eq!(EVENT_STATE_CHANGED, "voxlit://state-changed");
+        assert_eq!(EVENT_STATE_CHANGED, "klarvo://state-changed");
     }
 }

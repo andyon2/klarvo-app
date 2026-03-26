@@ -68,7 +68,7 @@ const RESET_CSS = `
 // ---------------------------------------------------------------------------
 
 /** Klarvo brand logo: two interlocking circles (cyan + gold) on dark bg. */
-function VoxlitLogo() {
+function KlarvoLogo() {
   return (
     <div
       style={{
@@ -287,7 +287,7 @@ export default function FloatingBar() {
   // reflects the correct mode when Hotkey 2 fires (which may differ from
   // Hotkey 1's mode loaded above).
   useEffect(() => {
-    const unlisten = listen<HotkeyMode>("voxlit://active-mode", (event) => {
+    const unlisten = listen<HotkeyMode>("klarvo://active-mode", (event) => {
       setHotkeyMode(event.payload);
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -369,7 +369,7 @@ export default function FloatingBar() {
 
   // --- Real-time audio level ring buffer ---
   useEffect(() => {
-    const unlisten = listen<AudioLevelPayload>("voxlit://audio-level", (event) => {
+    const unlisten = listen<AudioLevelPayload>("klarvo://audio-level", (event) => {
       // Scale RMS to visual range. Typical speech RMS is 0.01–0.1.
       // Multiplier of 10 maps 0.1 RMS to full scale (1.0).
       // Power of 0.4 compresses the range so quiet speech is still visible.
@@ -506,7 +506,7 @@ export default function FloatingBar() {
       >
 
         {/* Klarvo logo -- always visible as brand anchor */}
-        <VoxlitLogo />
+        <KlarvoLogo />
 
         {/* Recording: stop button + waveform or live preview + mode badge */}
         {isRecording && (

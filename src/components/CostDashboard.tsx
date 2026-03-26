@@ -41,19 +41,19 @@ interface StatTileProps {
 
 function StatTile({ label, value, sub, highlight, color = "primary" }: StatTileProps) {
   const borderCls = highlight
-    ? color === "warm" ? "border-voxlit-warm/30" : "border-voxlit-primary/30"
-    : "border-voxlit-border/60";
+    ? color === "warm" ? "border-klarvo-warm/30" : "border-klarvo-primary/30"
+    : "border-klarvo-border/60";
   const valueCls = highlight
-    ? color === "warm" ? "text-voxlit-warm" : "text-voxlit-primary"
-    : "text-voxlit-text";
+    ? color === "warm" ? "text-klarvo-warm" : "text-klarvo-primary"
+    : "text-klarvo-text";
 
   return (
-    <div className={`bg-voxlit-bg border rounded-xl p-3 ${borderCls}`}>
-      <p className="text-[11px] text-voxlit-dim uppercase tracking-wide leading-tight">{label}</p>
+    <div className={`bg-klarvo-bg border rounded-xl p-3 ${borderCls}`}>
+      <p className="text-[11px] text-klarvo-dim uppercase tracking-wide leading-tight">{label}</p>
       <p className={`text-base font-semibold mt-0.5 ${valueCls}`}>
         {value}
         {sub && (
-          <span className="text-[11px] text-voxlit-dim font-normal ml-1">{sub}</span>
+          <span className="text-[11px] text-klarvo-dim font-normal ml-1">{sub}</span>
         )}
       </p>
     </div>
@@ -67,7 +67,7 @@ function StatTile({ label, value, sub, highlight, color = "primary" }: StatTileP
 const WISPR_MONTHLY_USD = 12.0;
 
 /**
- * Estimates monthly Voxlit cost and computes savings vs Wispr Flow.
+ * Estimates monthly Klarvo cost and computes savings vs Wispr Flow.
  *
  * We cannot know the first-dictation date from UsageSummary alone (the backend
  * does not expose it yet), so we conservatively assume 1 month of usage.
@@ -98,7 +98,7 @@ export function CostDashboard({ stats }: CostDashboardProps) {
 
       {/* Section: Usage statistics */}
       <div>
-        <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-widest mb-2">
+        <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-widest mb-2">
           Nutzung
         </p>
         <div className="grid grid-cols-2 gap-2">
@@ -114,7 +114,7 @@ export function CostDashboard({ stats }: CostDashboardProps) {
 
       {/* Section: Cost breakdown — warm/orange accent for "money" */}
       <div>
-        <p className="text-[11px] font-semibold text-voxlit-warm uppercase tracking-widest mb-2">
+        <p className="text-[11px] font-semibold text-klarvo-warm uppercase tracking-widest mb-2">
           Kosten
         </p>
         <div className="grid grid-cols-2 gap-2">
@@ -139,39 +139,39 @@ export function CostDashboard({ stats }: CostDashboardProps) {
 
       {/* Savings banner */}
       {hasData ? (
-        <div className="bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-xl p-4 flex flex-col gap-1">
-          <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-wide">
+        <div className="bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-xl p-4 flex flex-col gap-1">
+          <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-wide">
             Vergleich mit Wispr Flow
           </p>
           {savings > 0 ? (
             <>
-              <p className="text-sm font-semibold text-voxlit-accent">
+              <p className="text-sm font-semibold text-klarvo-accent">
                 Du sparst {formatCost(savings)}/Monat
               </p>
-              <p className="text-[11px] text-voxlit-primary leading-snug">
+              <p className="text-[11px] text-klarvo-primary leading-snug">
                 Wispr Flow kostet ${WISPR_MONTHLY_USD.toFixed(2)}/Monat. Deine
                 Klarvo-Kosten: {formatCost(monthly)}/Monat.
               </p>
             </>
           ) : (
-            <p className="text-xs text-voxlit-primary">
+            <p className="text-xs text-klarvo-primary">
               Noch zu wenig Daten für einen Vergleich — diktiere mehr!
             </p>
           )}
         </div>
       ) : (
-        <div className="bg-voxlit-primary/10 border border-voxlit-primary/20 rounded-xl p-4">
-          <p className="text-[11px] font-semibold text-voxlit-primary uppercase tracking-wide mb-1">
+        <div className="bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-xl p-4">
+          <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-wide mb-1">
             Vergleich mit Wispr Flow
           </p>
-          <p className="text-xs text-voxlit-primary">
+          <p className="text-xs text-klarvo-primary">
             Noch keine Daten — starte dein erstes Diktat!
           </p>
         </div>
       )}
 
       {/* Footer note */}
-      <p className="text-[10px] text-voxlit-dim text-center leading-snug">
+      <p className="text-[10px] text-klarvo-dim text-center leading-snug">
         Kostenbasiert auf Provider-Preisen (Groq STT: kostenlos, DeepSeek LLM: ~$0.00014/1k Token).
         Wispr Flow: ${WISPR_MONTHLY_USD.toFixed(2)}/Monat.
       </p>

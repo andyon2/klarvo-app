@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -19,7 +19,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Entry point for the Voxlit app on Android.
+ * Entry point for the Klarvo app on Android.
  *
  * Runs a sequential permission/setup chain on every onResume():
  *
@@ -30,7 +30,7 @@ import androidx.core.content.ContextCompat
  *                               shown as AlertDialog with direct settings link
  *   5. Battery Optimization  -- prevent Doze from killing the overlay service
  *                               shown as AlertDialog with direct settings link
- *   6. Start VoxlitOverlayService
+ *   6. Start KlarvoOverlayService
  *
  * Each step returns early after prompting the user. onResume() is called again
  * when the user returns from a system settings screen, which advances the chain.
@@ -196,7 +196,7 @@ class MainActivity : TauriActivity() {
     }
 
     /**
-     * Returns true when VoxlitAccessibilityService is active.
+     * Returns true when KlarvoAccessibilityService is active.
      *
      * Uses two methods to handle OEM variations (Xiaomi, Samsung use non-standard
      * separator formats or component name casing in ENABLED_ACCESSIBILITY_SERVICES):
@@ -228,7 +228,7 @@ class MainActivity : TauriActivity() {
         // OEMs that store entries in a different case or with extra whitespace.
         val expectedComponent = ComponentName(
             this,
-            VoxlitAccessibilityService::class.java
+            KlarvoAccessibilityService::class.java
         ).flattenToString()
         val enabledString = Settings.Secure.getString(
             contentResolver,
@@ -244,7 +244,7 @@ class MainActivity : TauriActivity() {
     }
 
     private fun startOverlayService() {
-        val intent = Intent(this, VoxlitOverlayService::class.java)
+        val intent = Intent(this, KlarvoOverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {

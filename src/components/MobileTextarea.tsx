@@ -55,14 +55,14 @@ function MobileEditOverlay({
       style={{ WebkitOverflowScrolling: "touch" }}
     >
       {/* Header -- pt-9 clears Android status bar (env(safe-area-inset-top) returns 0 in WebView) */}
-      <div className="flex items-center justify-between px-4 pt-9 pb-3 border-b border-voxlit-border/60 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 pt-9 pb-3 border-b border-klarvo-border/60 flex-shrink-0">
         <div className="flex flex-col gap-0.5 min-w-0 pr-4">
-          <span className="text-sm font-semibold text-voxlit-text truncate">{label}</span>
-          {hint && <span className="text-xs text-voxlit-muted leading-relaxed line-clamp-2">{hint}</span>}
+          <span className="text-sm font-semibold text-klarvo-text truncate">{label}</span>
+          {hint && <span className="text-xs text-klarvo-muted leading-relaxed line-clamp-2">{hint}</span>}
         </div>
         <button
           onClick={handleDone}
-          className="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-voxlit-primary/15 border border-voxlit-primary/30 text-voxlit-primary hover:bg-voxlit-primary/25 hover:border-voxlit-primary/50 transition-all duration-150 active:scale-95"
+          className="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary hover:bg-klarvo-primary/25 hover:border-klarvo-primary/50 transition-all duration-150 active:scale-95"
         >
           Done
         </button>
@@ -76,7 +76,7 @@ function MobileEditOverlay({
         placeholder={placeholder}
         className={[
           "flex-1 w-full bg-transparent resize-none px-4 py-4",
-          "text-sm text-voxlit-text placeholder:text-voxlit-dim",
+          "text-sm text-klarvo-text placeholder:text-klarvo-dim",
           "focus:outline-none",
           "mobile-safe-bottom",
           className ?? "",
@@ -142,12 +142,12 @@ export function MobileTextarea({
         }}
         className={[
           // Match INPUT_CLS_M appearance so it looks like the surrounding inputs.
-          "w-full bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-3 py-2.5 cursor-pointer",
+          "w-full bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2.5 cursor-pointer",
           "text-sm leading-relaxed",
           // Two-line clamp so long values show enough context.
           "line-clamp-2",
-          isEmpty ? "text-voxlit-dim" : "text-voxlit-text",
-          "transition-colors active:border-voxlit-border-active",
+          isEmpty ? "text-klarvo-dim" : "text-klarvo-text",
+          "transition-colors active:border-klarvo-border-active",
           className ?? "",
         ]
           .filter(Boolean)

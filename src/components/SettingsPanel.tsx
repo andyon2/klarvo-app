@@ -184,10 +184,10 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
       onClick={() => setListening(true)}
       onBlur={cancel}
       className={[
-        "w-full bg-voxlit-bg border rounded-lg px-3 py-2 text-sm text-left font-mono",
+        "w-full bg-klarvo-bg border rounded-lg px-3 py-2 text-sm text-left font-mono",
         listening
-          ? "border-voxlit-primary/50 text-voxlit-primary animate-pulse"
-          : "border-voxlit-border/50 text-voxlit-text hover:border-voxlit-border-active",
+          ? "border-klarvo-primary/50 text-klarvo-primary animate-pulse"
+          : "border-klarvo-border/50 text-klarvo-text hover:border-klarvo-border-active",
         "focus:outline-none transition-all duration-150",
       ].join(" ")}
     >
@@ -267,12 +267,12 @@ function UpdateChecker() {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[11px] font-semibold text-voxlit-muted uppercase tracking-widest">Updates</span>
+      <span className="text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest">Updates</span>
       <div className="flex items-center gap-2">
         {status === "available" ? (
           <button
             onClick={handleInstall}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15 transition-colors"
           >
             Install v{updateVersion}
           </button>
@@ -280,14 +280,14 @@ function UpdateChecker() {
           <button
             onClick={handleCheck}
             disabled={status === "checking" || status === "downloading"}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {status === "checking" ? "Checking..." : status === "downloading" ? "Downloading..." : status === "upToDate" ? "Up to date" : "Check for updates"}
           </button>
         )}
-        <span className="text-[11px] text-voxlit-dim">v{appVersion}</span>
+        <span className="text-[11px] text-klarvo-dim">v{appVersion}</span>
       </div>
-      {errorMsg && <p className="text-[11px] text-voxlit-danger">{errorMsg}</p>}
+      {errorMsg && <p className="text-[11px] text-klarvo-danger">{errorMsg}</p>}
     </div>
   );
 }
@@ -423,7 +423,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
           </span>
         )}
         {isUnlicensed && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-voxlit-elevated text-voxlit-muted">
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-elevated text-klarvo-muted">
             Free Tier
           </span>
         )}
@@ -432,14 +432,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
       {/* Licensed state */}
       {isLicensed && (
         <>
-          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-xs text-voxlit-muted"}>All features unlocked.</p>
+          <p className={isMobile ? "text-sm text-klarvo-muted" : "text-xs text-klarvo-muted"}>All features unlocked.</p>
           <button
             onClick={handleRemoveClick}
             disabled={licenseLoading}
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning",
+              confirmRemove ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -450,14 +450,14 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
       {/* Trial state */}
       {isTrial && (
         <>
-          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-xs text-voxlit-muted"}>All features unlocked during trial.</p>
+          <p className={isMobile ? "text-sm text-klarvo-muted" : "text-xs text-klarvo-muted"}>All features unlocked during trial.</p>
           <button
             onClick={handleRemoveClick}
             disabled={licenseLoading}
             className={[
               "self-start transition-colors disabled:opacity-40",
               isMobile ? "text-sm" : "text-[11px]",
-              confirmRemove ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning",
+              confirmRemove ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning",
             ].join(" ")}
           >
             {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -473,7 +473,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
               License expires on {formatGraceDate(licenseStatus.graceUntil)}
             </p>
           )}
-          <p className={isMobile ? "text-sm text-voxlit-muted" : "text-[11px] text-voxlit-muted"}>
+          <p className={isMobile ? "text-sm text-klarvo-muted" : "text-[11px] text-klarvo-muted"}>
             Re-validate your license to continue using all features.
           </p>
           <LicenseKeyInput
@@ -498,7 +498,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
           />
           <div className="flex flex-wrap gap-1.5 mt-0.5">
             {LOCKED_FEATURES.map((f) => (
-              <span key={f} className="rounded-full px-2 py-0.5 text-[11px] font-medium bg-voxlit-elevated text-voxlit-muted">
+              <span key={f} className="rounded-full px-2 py-0.5 text-[11px] font-medium bg-klarvo-elevated text-klarvo-muted">
                 {f}
               </span>
             ))}
@@ -508,7 +508,7 @@ function LicenseSection({ licenseStatus, onValidate, onRemove, licenseLoading }:
             className={[
               "self-start transition-colors",
               isMobile ? "text-sm" : "text-[11px]",
-              "text-voxlit-muted hover:text-voxlit-text underline underline-offset-2",
+              "text-klarvo-muted hover:text-klarvo-text underline underline-offset-2",
             ].join(" ")}
           >
             Get a license at klarvo.app
@@ -549,8 +549,8 @@ function LicenseKeyInput({
           onClick={onActivate}
           disabled={loading || !value.trim()}
           className={[
-            "rounded-lg font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary",
-            "hover:bg-voxlit-primary/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+            "rounded-lg font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary",
+            "hover:bg-klarvo-primary/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
             isMobile ? "px-4 py-2.5 text-sm" : "px-3 py-2 text-xs",
           ].join(" ")}
         >
@@ -558,7 +558,7 @@ function LicenseKeyInput({
         </button>
       </div>
       {error && (
-        <p className={["text-voxlit-danger", isMobile ? "text-sm" : "text-xs"].join(" ")}>
+        <p className={["text-klarvo-danger", isMobile ? "text-sm" : "text-xs"].join(" ")}>
           {error}
         </p>
       )}
@@ -715,7 +715,7 @@ export function SettingsPanel({
   }, []);
 
   // Sync Voice Command toggle with the actual backend runtime state on mount,
-  // and keep it in sync via events (e.g. when monitor stops itself via "Voxlit off").
+  // and keep it in sync via events (e.g. when monitor stops itself via "Klarvo off").
   useEffect(() => {
     if (!isDesktop) return;
 
@@ -725,7 +725,7 @@ export function SettingsPanel({
 
     let unlisten: (() => void) | undefined;
     import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<{ active: boolean }>("voxlit://voice-command-state-changed", (event) => {
+      listen<{ active: boolean }>("klarvo://voice-command-state-changed", (event) => {
         setLocalVoiceCommandEnabled(event.payload.active);
       }).then((fn) => { unlisten = fn; }).catch(console.error);
     });
@@ -1100,14 +1100,14 @@ export function SettingsPanel({
   const panelMaxH = isMobile ? "max-h-[calc(100vh-168px)]" : "max-h-[calc(100vh-120px)]";
 
   return (
-    <div className={`w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
+    <div className={`w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40 flex-shrink-0">
         <span className={SECTION_TITLE_CLS}>Settings</span>
         <button
           aria-label="Close settings"
           onClick={onClose}
-          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
+          className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
         >
           <CloseIcon />
         </button>
@@ -1119,19 +1119,19 @@ export function SettingsPanel({
         {/* --- Voice & Recording --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("voiceRecording")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceRecording ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Voice & Recording</span>
+            <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Voice & Recording</span>
           </button>
           {openSections.voiceRecording && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
 
               {/* Cloud / Offline toggle -- same visual style as StylePicker */}
               <div className="flex flex-col gap-2">
-                <span className="text-xs font-semibold text-voxlit-muted uppercase tracking-wide">Speech Recognition</span>
+                <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Speech Recognition</span>
                 <div className="flex flex-col gap-2 pl-0">
-                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 w-fit">
+                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 w-fit">
                   <button
                     type="button"
                     onClick={() => {
@@ -1142,8 +1142,8 @@ export function SettingsPanel({
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
                       localSttProvider !== "local"
-                        ? "bg-voxlit-primary/15 text-voxlit-primary"
-                        : "text-voxlit-dim hover:text-voxlit-muted",
+                        ? "bg-klarvo-primary/15 text-klarvo-primary"
+                        : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Cloud
@@ -1154,8 +1154,8 @@ export function SettingsPanel({
                     className={[
                       "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
                       localSttProvider === "local"
-                        ? "bg-voxlit-primary/15 text-voxlit-primary"
-                        : "text-voxlit-dim hover:text-voxlit-muted",
+                        ? "bg-klarvo-primary/15 text-klarvo-primary"
+                        : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Offline
@@ -1179,7 +1179,7 @@ export function SettingsPanel({
                             setLocalSttProvider("groq");
                           }
                         }}
-                        className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                        className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                       >
                         {CLOUD_STT_MODELS.filter((m) => {
                           if (m.provider === "groq") return groqOk;
@@ -1198,11 +1198,11 @@ export function SettingsPanel({
                 {/* Offline mode: WhisperModelManager */}
                 {localSttProvider === "local" && isDesktop && (
                   <div className="flex flex-col gap-3 mt-1">
-                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-voxlit-surface/30 border border-voxlit-border/30">
-                      <svg className="w-3.5 h-3.5 text-voxlit-muted mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-klarvo-surface/30 border border-klarvo-border/30">
+                      <svg className="w-3.5 h-3.5 text-klarvo-muted mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
                       </svg>
-                      <p className="text-[11px] text-voxlit-muted leading-relaxed">
+                      <p className="text-[11px] text-klarvo-muted leading-relaxed">
                         Speech is transcribed locally. Text cleanup is skipped (no internet needed).
                       </p>
                     </div>
@@ -1221,14 +1221,14 @@ export function SettingsPanel({
               {/* Text Cleanup -- only in Cloud mode */}
               {localSttProvider !== "local" && (
                 <div className="flex flex-col gap-2.5">
-                  <span className="text-xs font-semibold text-voxlit-muted uppercase tracking-wide">Text Cleanup</span>
+                  <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Text Cleanup</span>
 
                   <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                     <span className={LABEL_CLS_M}>Provider</span>
                     <select
                       value={localLlmProvider}
                       onChange={(e) => setLocalLlmProvider(e.target.value)}
-                      className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                      className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                     >
                       <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
                       <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
@@ -1239,7 +1239,7 @@ export function SettingsPanel({
 
                   <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
                     <span className={LABEL_CLS_M}>Style</span>
-                    <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
+                    <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
                       {STYLE_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
@@ -1248,8 +1248,8 @@ export function SettingsPanel({
                           className={[
                             isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
                             localStyle === opt.value
-                              ? "bg-voxlit-primary/15 text-voxlit-primary"
-                              : "text-voxlit-dim hover:text-voxlit-muted",
+                              ? "bg-klarvo-primary/15 text-klarvo-primary"
+                              : "text-klarvo-dim hover:text-klarvo-muted",
                           ].join(" ")}
                         >
                           {opt.label}
@@ -1266,7 +1266,7 @@ export function SettingsPanel({
                 <select
                   value={localLang}
                   onChange={(e) => handleLangChange(e.target.value)}
-                  className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                  className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                 >
                   <option value="">Auto (DE + EN)</option>
                   <option value="de">Deutsch</option>
@@ -1280,7 +1280,7 @@ export function SettingsPanel({
                 <select
                   value={localOutputLanguage}
                   onChange={(e) => handleOutputLanguageChange(e.target.value)}
-                  className={`bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
+                  className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
                 >
                   {OUTPUT_LANGUAGES.map((l) => (
                     <option key={l.code} value={l.code}>{l.label}</option>
@@ -1295,7 +1295,7 @@ export function SettingsPanel({
                   <select
                     value={localAudioDevice ?? ""}
                     onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-                    className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text max-w-[180px] truncate focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer"
+                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text max-w-[180px] truncate focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer"
                   >
                     <option value="">System Default</option>
                     {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -1310,20 +1310,20 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("hotkey")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.hotkey ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Hotkey</span>
+              <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Hotkey</span>
             </button>
             {openSections.hotkey && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Tab bar */}
-                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 self-start">
+                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 self-start">
                   <button
                     onClick={() => setHotkeyTab(0)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      hotkeyTab === 0 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
+                      hotkeyTab === 0 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Hotkey 1
@@ -1332,7 +1332,7 @@ export function SettingsPanel({
                     onClick={() => setHotkeyTab(1)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      hotkeyTab === 1 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
+                      hotkeyTab === 1 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Hotkey 2
@@ -1343,13 +1343,13 @@ export function SettingsPanel({
                 {hotkeyTab === 0 && (
                   <>
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-xs text-voxlit-muted">Shortcut</span>
+                      <span className="text-xs text-klarvo-muted">Shortcut</span>
                       <ShortcutRecorder value={localHotkey} onChange={handleHotkeyChange} />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
+                      <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1371,8 +1371,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localHotkeyMode === value
-                                ? "bg-voxlit-primary/15 text-voxlit-primary"
-                                : "text-voxlit-dim hover:text-voxlit-muted",
+                                ? "bg-klarvo-primary/15 text-klarvo-primary"
+                                : "text-klarvo-dim hover:text-klarvo-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1380,7 +1380,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-voxlit-muted">
+                    <p className="text-[11px] text-klarvo-muted">
                       {localHotkeyMode === "hold" && "Hold to record, release to process"}
                       {localHotkeyMode === "toggle" && "Press once to start, press again to stop"}
                       {localHotkeyMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1392,7 +1392,7 @@ export function SettingsPanel({
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <span className={LABEL_CLS}>Silence Duration</span>
-                            <span className="text-xs font-mono text-voxlit-primary">{localSilenceSecs.toFixed(1)}s</span>
+                            <span className="text-xs font-mono text-klarvo-primary">{localSilenceSecs.toFixed(1)}s</span>
                           </div>
                           <input
                             type="range"
@@ -1401,19 +1401,19 @@ export function SettingsPanel({
                             step={0.1}
                             value={localSilenceSecs}
                             onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                            className="w-full accent-voxlit-primary"
+                            className="w-full accent-klarvo-primary"
                           />
-                          <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
+                          <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                         </div>
 
                       </>
                     )}
 
                     {/* Insert & Send -- per-slot option for Hotkey 1 */}
-                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-voxlit-border/40">
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-klarvo-border/40">
                       <div className="flex flex-col gap-0.5">
                         <span className={LABEL_CLS}>Insert &amp; Send</span>
-                        <span className="text-[11px] text-voxlit-muted">Send Enter after pasting (useful for chat apps)</span>
+                        <span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span>
                       </div>
                       <button
                         role="switch"
@@ -1421,7 +1421,7 @@ export function SettingsPanel({
                         onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
                         className={[
                           "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                          localInsertAndSendSlot1 ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+                          localInsertAndSendSlot1 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
                         ].join(" ")}
                       >
                         <span
@@ -1440,12 +1440,12 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-voxlit-muted">Shortcut</span>
+                        <span className="text-xs text-klarvo-muted">Shortcut</span>
                         {localHotkeySlot2 && (
                           <button
                             type="button"
                             onClick={() => setLocalHotkeySlot2("")}
-                            className="text-[11px] text-voxlit-dim hover:text-voxlit-muted transition-colors"
+                            className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
                           >
                             Clear
                           </button>
@@ -1455,7 +1455,7 @@ export function SettingsPanel({
                         <ShortcutRecorder value={localHotkeySlot2} onChange={setLocalHotkeySlot2} />
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-voxlit-dim italic">Not set</span>
+                          <span className="text-xs text-klarvo-dim italic">Not set</span>
                           <ShortcutRecorder value="" onChange={setLocalHotkeySlot2} />
                         </div>
                       )}
@@ -1464,7 +1464,7 @@ export function SettingsPanel({
                     {localHotkeySlot2 && (
                       <div className="flex flex-col gap-1.5">
                         <span className={LABEL_CLS}>Mode</span>
-                        <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
+                        <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
                           {([
                             { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                             { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1478,15 +1478,15 @@ export function SettingsPanel({
                               className={[
                                 "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                                 localHotkeyModeSlot2 === value
-                                  ? "bg-voxlit-primary/15 text-voxlit-primary"
-                                  : "text-voxlit-dim hover:text-voxlit-muted",
+                                  ? "bg-klarvo-primary/15 text-klarvo-primary"
+                                  : "text-klarvo-dim hover:text-klarvo-muted",
                               ].join(" ")}
                             >
                               {label}
                             </button>
                           ))}
                         </div>
-                        <p className="text-[11px] text-voxlit-dim">
+                        <p className="text-[11px] text-klarvo-dim">
                           {localHotkeyModeSlot2 === "hold" && "Hold to record, release to process"}
                           {localHotkeyModeSlot2 === "toggle" && "Press once to start, press again to stop"}
                           {localHotkeyModeSlot2 === "autostop" && "Press to start, stops automatically on silence"}
@@ -1498,7 +1498,7 @@ export function SettingsPanel({
                             <div className="flex flex-col gap-1.5 mt-1">
                               <div className="flex items-center justify-between">
                                 <span className={LABEL_CLS}>Silence Duration</span>
-                                <span className="text-xs font-mono text-voxlit-primary">{localSilenceSecs.toFixed(1)}s</span>
+                                <span className="text-xs font-mono text-klarvo-primary">{localSilenceSecs.toFixed(1)}s</span>
                               </div>
                               <input
                                 type="range"
@@ -1507,9 +1507,9 @@ export function SettingsPanel({
                                 step={0.1}
                                 value={localSilenceSecs}
                                 onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                                className="w-full accent-voxlit-primary"
+                                className="w-full accent-klarvo-primary"
                               />
-                              <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
+                              <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                             </div>
 
                           </>
@@ -1518,10 +1518,10 @@ export function SettingsPanel({
                     )}
 
                     {/* Insert & Send -- per-slot option for Hotkey 2 */}
-                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-voxlit-border/40">
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-klarvo-border/40">
                       <div className="flex flex-col gap-0.5">
                         <span className={LABEL_CLS}>Insert &amp; Send</span>
-                        <span className="text-[11px] text-voxlit-muted">Send Enter after pasting (useful for chat apps)</span>
+                        <span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span>
                       </div>
                       <button
                         role="switch"
@@ -1529,7 +1529,7 @@ export function SettingsPanel({
                         onClick={() => setLocalInsertAndSendSlot2((v) => !v)}
                         className={[
                           "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                          localInsertAndSendSlot2 ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+                          localInsertAndSendSlot2 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
                         ].join(" ")}
                       >
                         <span
@@ -1551,19 +1551,19 @@ export function SettingsPanel({
         {false && isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("voiceCommand")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.voiceCommand ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
+              <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
                 Voice Command Mode
-                {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+                {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
               </span>
             </button>
             {openSections.voiceCommand && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Voice command requires a Groq API key for real-time STT */}
                 {!groqOk && (
-                  <p className="text-[11px] text-voxlit-warning/80">
+                  <p className="text-[11px] text-klarvo-warning/80">
                     Requires a Groq API key (Settings &rarr; API Keys)
                   </p>
                 )}
@@ -1573,9 +1573,9 @@ export function SettingsPanel({
                   <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-1.5">
                       <span className={LABEL_CLS}>Voice Command Mode</span>
-                      {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+                      {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
                     </span>
-                    <span className="text-[11px] text-voxlit-dim">
+                    <span className="text-[11px] text-klarvo-dim">
                       Activate dictation by saying &ldquo;Klarvo toggle&rdquo; &mdash; no hotkey needed
                     </span>
                   </div>
@@ -1598,7 +1598,7 @@ export function SettingsPanel({
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
                       (!isPaid && !localVoiceCommandEnabled) ? "opacity-50 cursor-not-allowed" : "",
-                      localVoiceCommandEnabled ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+                      localVoiceCommandEnabled ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1612,7 +1612,7 @@ export function SettingsPanel({
 
                 {/* Running indicator */}
                 {localVoiceCommandEnabled && (
-                  <p className="text-[11px] text-voxlit-primary/80">
+                  <p className="text-[11px] text-klarvo-primary/80">
                     Listening for &ldquo;Klarvo&rdquo; commands&hellip;
                   </p>
                 )}
@@ -1625,20 +1625,20 @@ export function SettingsPanel({
         {!isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("bubble")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.bubble ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Bubble Controls</span>
+              <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Bubble Controls</span>
             </button>
             {openSections.bubble && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
                 {/* Tab bar: Tap / Long Press */}
-                <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60 self-start">
+                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 self-start">
                   <button
                     onClick={() => setBubbleTab(0)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      bubbleTab === 0 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
+                      bubbleTab === 0 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Tap
@@ -1647,7 +1647,7 @@ export function SettingsPanel({
                     onClick={() => setBubbleTab(1)}
                     className={[
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      bubbleTab === 1 ? "bg-voxlit-primary/15 text-voxlit-primary" : "text-voxlit-dim hover:text-voxlit-muted",
+                      bubbleTab === 1 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     Long Press
@@ -1659,7 +1659,7 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
+                      <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1673,8 +1673,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localBubbleTapMode === value
-                                ? "bg-voxlit-primary/15 text-voxlit-primary"
-                                : "text-voxlit-dim hover:text-voxlit-muted",
+                                ? "bg-klarvo-primary/15 text-klarvo-primary"
+                                : "text-klarvo-dim hover:text-klarvo-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1682,7 +1682,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-voxlit-dim">
+                    <p className="text-[11px] text-klarvo-dim">
                       {localBubbleTapMode === "hold" && "Hold to record, release to process"}
                       {localBubbleTapMode === "toggle" && "Press once to start, press again to stop"}
                       {localBubbleTapMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1693,7 +1693,7 @@ export function SettingsPanel({
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between">
                           <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-voxlit-primary">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                          <span className="text-xs font-mono text-klarvo-primary">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
                         </div>
                         <input
                           type="range"
@@ -1702,9 +1702,9 @@ export function SettingsPanel({
                           step={0.1}
                           value={localBubbleTapSilenceSecs}
                           onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-voxlit-primary"
+                          className="w-full accent-klarvo-primary"
                         />
-                        <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
+                        <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                       </div>
                     )}
 
@@ -1717,7 +1717,7 @@ export function SettingsPanel({
                   <>
                     <div className="flex flex-col gap-1.5">
                       <span className={LABEL_CLS}>Mode</span>
-                      <div className="flex gap-0.5 bg-voxlit-bg rounded-lg p-0.5 border border-voxlit-border/60">
+                      <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
                         {([
                           { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
                           { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
@@ -1731,8 +1731,8 @@ export function SettingsPanel({
                             className={[
                               "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
                               localBubbleLongPressMode === value
-                                ? "bg-voxlit-primary/15 text-voxlit-primary"
-                                : "text-voxlit-dim hover:text-voxlit-muted",
+                                ? "bg-klarvo-primary/15 text-klarvo-primary"
+                                : "text-klarvo-dim hover:text-klarvo-muted",
                             ].join(" ")}
                           >
                             {label}
@@ -1740,7 +1740,7 @@ export function SettingsPanel({
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-voxlit-dim">
+                    <p className="text-[11px] text-klarvo-dim">
                       {localBubbleLongPressMode === "hold" && "Hold to record, release to process"}
                       {localBubbleLongPressMode === "toggle" && "Press once to start, press again to stop"}
                       {localBubbleLongPressMode === "autostop" && "Press to start, stops automatically on silence"}
@@ -1751,7 +1751,7 @@ export function SettingsPanel({
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between">
                           <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-voxlit-primary">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                          <span className="text-xs font-mono text-klarvo-primary">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
                         </div>
                         <input
                           type="range"
@@ -1760,9 +1760,9 @@ export function SettingsPanel({
                           step={0.1}
                           value={localBubbleLongPressSilenceSecs}
                           onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-voxlit-primary"
+                          className="w-full accent-klarvo-primary"
                         />
-                        <p className="text-[11px] text-voxlit-muted">Seconds of silence before auto-stop</p>
+                        <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                       </div>
                     )}
 
@@ -1777,12 +1777,12 @@ export function SettingsPanel({
         {/* --- Cleanup Instructions -- hidden when offline STT mode is active --- */}
         {localSttProvider !== "local" && <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("customPrompt")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.customPrompt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               Cleanup Instructions
-              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
             </span>
           </button>
           {openSections.customPrompt && (
@@ -1799,7 +1799,7 @@ export function SettingsPanel({
               />
               {/* Preset buttons -- one click replaces the entire custom prompt */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Presets:</span>
+                <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Presets:</span>
                 {([
                   { label: "Formal", prompt: "Always use formal language. Avoid colloquialisms and slang." },
                   { label: "Technical", prompt: "Keep technical terms in English. Use precise, professional language." },
@@ -1811,8 +1811,8 @@ export function SettingsPanel({
                     onClick={() => setLocalCustomPrompt(prompt)}
                     className={[
                       "border rounded-lg font-medium transition-colors",
-                      "bg-transparent border-voxlit-border/60 text-voxlit-muted",
-                      "hover:border-voxlit-border-active hover:text-voxlit-text",
+                      "bg-transparent border-klarvo-border/60 text-klarvo-muted",
+                      "hover:border-klarvo-border-active hover:text-klarvo-text",
                       isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
                     ].join(" ")}
                   >
@@ -1824,14 +1824,14 @@ export function SettingsPanel({
                   onClick={() => setLocalCustomPrompt("")}
                   className={[
                     "transition-colors",
-                    "text-voxlit-dim hover:text-voxlit-muted",
+                    "text-klarvo-dim hover:text-klarvo-muted",
                     isMobile ? "px-3 min-h-[44px] text-sm" : "px-2 py-1.5 text-xs",
                   ].join(" ")}
                 >
                   Clear
                 </button>
               </div>
-              <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Appended to the system prompt during LLM cleanup.</p>
+              <p className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Appended to the system prompt during LLM cleanup.</p>
             </div>
           )}
         </div>}
@@ -1840,10 +1840,10 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("general")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.general ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">General</span>
+              <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">General</span>
             </button>
             {openSections.general && (
               <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -1856,7 +1856,7 @@ export function SettingsPanel({
                     onClick={() => setLocalAutostart(!localAutostart)}
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200",
-                      localAutostart ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+                      localAutostart ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1872,9 +1872,9 @@ export function SettingsPanel({
                   <div className={`flex flex-col gap-0.5 ${!isPaid ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-1.5">
                       <span className={LABEL_CLS_M}>Whisper mode</span>
-                      {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+                      {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
                     </span>
-                    <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Amplifies mic input for quiet dictation</span>
+                    <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Amplifies mic input for quiet dictation</span>
                   </div>
                   <button
                     type="button"
@@ -1885,7 +1885,7 @@ export function SettingsPanel({
                     className={[
                       "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
                       !isPaid ? "opacity-50 cursor-not-allowed" : "",
-                      localWhisperMode ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+                      localWhisperMode ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
                     ].join(" ")}
                   >
                     <span
@@ -1899,7 +1899,7 @@ export function SettingsPanel({
 
                 <div className="flex flex-col gap-0.5">
                   <span className={LABEL_CLS_M}>Command mode</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Select text, hold Ctrl+Shift+E, speak your edit. The selected text will be rewritten.</span>
                 </div>
               </div>
             )}
@@ -1910,12 +1910,12 @@ export function SettingsPanel({
         {/* --- Sync --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("sync")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.sync ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               Cross-Device Sync
-              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
             </span>
           </button>
           {openSections.sync && (
@@ -1923,7 +1923,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <span className="flex items-center gap-1.5">
                   <span className={LABEL_CLS_M}>Turso URL</span>
-                  {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+                  {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
                 </span>
                 <input
                   type="text"
@@ -1947,7 +1947,7 @@ export function SettingsPanel({
                 />
               </div>
               {loadedSettings?.deviceId && (
-                <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
+                <p className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Device: {loadedSettings.deviceId.slice(0, 8)}...</p>
               )}
               <button
                 onClick={async () => {
@@ -1963,12 +1963,12 @@ export function SettingsPanel({
                   }
                 }}
                 disabled={syncing || !localTursoUrl || !isPaid}
-                className={`px-3 py-1.5 text-sm bg-voxlit-elevated text-white rounded hover:bg-voxlit-border-active disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}${!isPaid ? " cursor-not-allowed" : ""}`}
+                className={`px-3 py-1.5 text-sm bg-klarvo-elevated text-white rounded hover:bg-klarvo-border-active disabled:opacity-40 transition-colors ${isMobile ? "py-2.5 text-base" : ""}${!isPaid ? " cursor-not-allowed" : ""}`}
               >
                 {syncing ? "Syncing..." : "Sync Now"}
               </button>
-              {syncMsg && <p className={isMobile ? "text-xs text-voxlit-muted" : "text-[11px] text-voxlit-muted"}>{syncMsg}</p>}
-              <p className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
+              {syncMsg && <p className={isMobile ? "text-xs text-klarvo-muted" : "text-[11px] text-klarvo-muted"}>{syncMsg}</p>}
+              <p className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>Sync dictation history across devices via Turso. Leave empty to disable.</p>
             </div>
           )}
         </div>
@@ -1976,17 +1976,17 @@ export function SettingsPanel({
         {/* --- API Keys --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("apiKeys")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.apiKeys ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">API Keys</span>
+            <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">API Keys</span>
           </button>
           {openSections.apiKeys && (
             <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Groq</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Speech + Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>(Speech + Cleanup)</span>
                   <StatusDot active={groqOk} />
                 </div>
                 <input
@@ -1998,10 +1998,10 @@ export function SettingsPanel({
                   onChange={(e) => { setGroqKey(e.target.value); setApiKeyErrors((p) => ({ ...p, groq: null })); }}
                   className={INPUT_CLS_M}
                 />
-                {apiKeyValidating["groq"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
-                {apiKeyErrors["groq"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["groq"]}</span>}
+                {apiKeyValidating["groq"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
+                {apiKeyErrors["groq"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["groq"]}</span>}
                 {groqOk && (
-                  <button type="button" onClick={() => handleApiKeyRemoveClick("groq")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["groq"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("groq")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["groq"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
                     {apiKeyConfirmRemove["groq"] ? "Click again to confirm removal" : "Remove Key"}
                   </button>
                 )}
@@ -2010,7 +2010,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>DeepSeek</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>(Cleanup)</span>
                   <StatusDot active={deepseekOk} />
                 </div>
                 <input
@@ -2022,10 +2022,10 @@ export function SettingsPanel({
                   onChange={(e) => { setDeepseekKey(e.target.value); setApiKeyErrors((p) => ({ ...p, deepseek: null })); }}
                   className={INPUT_CLS_M}
                 />
-                {apiKeyValidating["deepseek"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
-                {apiKeyErrors["deepseek"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["deepseek"]}</span>}
+                {apiKeyValidating["deepseek"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
+                {apiKeyErrors["deepseek"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["deepseek"]}</span>}
                 {deepseekOk && (
-                  <button type="button" onClick={() => handleApiKeyRemoveClick("deepseek")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["deepseek"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("deepseek")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["deepseek"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
                     {apiKeyConfirmRemove["deepseek"] ? "Click again to confirm removal" : "Remove Key"}
                   </button>
                 )}
@@ -2034,7 +2034,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>OpenAI</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Speech + Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>(Speech + Cleanup)</span>
                   <StatusDot active={openaiOk} />
                 </div>
                 <input
@@ -2046,10 +2046,10 @@ export function SettingsPanel({
                   onChange={(e) => { setOpenaiKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openai: null })); }}
                   className={INPUT_CLS_M}
                 />
-                {apiKeyValidating["openai"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
-                {apiKeyErrors["openai"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["openai"]}</span>}
+                {apiKeyValidating["openai"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
+                {apiKeyErrors["openai"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["openai"]}</span>}
                 {openaiOk && (
-                  <button type="button" onClick={() => handleApiKeyRemoveClick("openai")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openai"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("openai")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openai"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
                     {apiKeyConfirmRemove["openai"] ? "Click again to confirm removal" : "Remove Key"}
                   </button>
                 )}
@@ -2058,7 +2058,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>Anthropic</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>(Cleanup)</span>
                   <StatusDot active={anthropicOk} />
                 </div>
                 <input
@@ -2070,10 +2070,10 @@ export function SettingsPanel({
                   onChange={(e) => { setAnthropicKey(e.target.value); setApiKeyErrors((p) => ({ ...p, anthropic: null })); }}
                   className={INPUT_CLS_M}
                 />
-                {apiKeyValidating["anthropic"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
-                {apiKeyErrors["anthropic"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["anthropic"]}</span>}
+                {apiKeyValidating["anthropic"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
+                {apiKeyErrors["anthropic"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["anthropic"]}</span>}
                 {anthropicOk && (
-                  <button type="button" onClick={() => handleApiKeyRemoveClick("anthropic")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["anthropic"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("anthropic")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["anthropic"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
                     {apiKeyConfirmRemove["anthropic"] ? "Click again to confirm removal" : "Remove Key"}
                   </button>
                 )}
@@ -2082,7 +2082,7 @@ export function SettingsPanel({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className={LABEL_CLS_M}>OpenRouter</span>
-                  <span className={isMobile ? "text-xs text-voxlit-dim" : "text-[11px] text-voxlit-dim"}>(Cleanup)</span>
+                  <span className={isMobile ? "text-xs text-klarvo-dim" : "text-[11px] text-klarvo-dim"}>(Cleanup)</span>
                   <StatusDot active={openrouterOk} />
                 </div>
                 <input
@@ -2094,10 +2094,10 @@ export function SettingsPanel({
                   onChange={(e) => { setOpenrouterKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openrouter: null })); }}
                   className={INPUT_CLS_M}
                 />
-                {apiKeyValidating["openrouter"] && <span className="text-[11px] text-voxlit-muted">Validating...</span>}
-                {apiKeyErrors["openrouter"] && <span className="text-[11px] text-voxlit-warning">{apiKeyErrors["openrouter"]}</span>}
+                {apiKeyValidating["openrouter"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
+                {apiKeyErrors["openrouter"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["openrouter"]}</span>}
                 {openrouterOk && (
-                  <button type="button" onClick={() => handleApiKeyRemoveClick("openrouter")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openrouter"] ? "text-voxlit-danger hover:text-red-300" : "text-voxlit-warning/80 hover:text-voxlit-warning"}`}>
+                  <button type="button" onClick={() => handleApiKeyRemoveClick("openrouter")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openrouter"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
                     {apiKeyConfirmRemove["openrouter"] ? "Click again to confirm removal" : "Remove Key"}
                   </button>
                 )}
@@ -2109,12 +2109,12 @@ export function SettingsPanel({
         {/* --- Dictionary --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("dictionary")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.dictionary ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="flex items-center gap-1.5 text-sm font-semibold text-voxlit-primary uppercase tracking-wide">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-klarvo-primary uppercase tracking-wide">
               Dictionary
-              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-voxlit-warning/80" : "text-voxlit-primary"}`}>
+              <span className={`text-[10px] font-normal normal-case tracking-normal ${!isPaid && dictionary.length >= 20 ? "text-klarvo-warning/80" : "text-klarvo-primary"}`}>
                 {!isPaid ? `${dictionary.length}/20` : `${dictionary.length}`}
               </span>
             </span>
@@ -2135,14 +2135,14 @@ export function SettingsPanel({
                   onClick={handleAddTerm}
                   disabled={!newTerm.trim() || (!isPaid && dictionary.length >= 20)}
                   title={(!isPaid && dictionary.length >= 20) ? "Free limit reached (20 terms). Upgrade for unlimited." : undefined}
-                  className={`px-3 rounded-lg font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
+                  className={`px-3 rounded-lg font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${isMobile ? "py-2.5 text-sm min-w-[56px]" : "py-2 text-xs"}`}
                 >
                   Add
                 </button>
               </div>
 
               {!isPaid && dictionary.length >= 20 && (
-                <p className="text-[11px] text-voxlit-warning/80">
+                <p className="text-[11px] text-klarvo-warning/80">
                   Free limit reached (20 terms). Upgrade for unlimited.
                 </p>
               )}
@@ -2152,7 +2152,7 @@ export function SettingsPanel({
                   {dictionary.map((t) => <DictionaryTag key={t} term={t} onRemove={onRemoveTerm} />)}
                 </div>
               ) : (
-                <p className="text-xs text-voxlit-dim italic">No terms yet.</p>
+                <p className="text-xs text-klarvo-dim italic">No terms yet.</p>
               )}
             </div>
           )}
@@ -2162,10 +2162,10 @@ export function SettingsPanel({
         {isDesktop && (
           <div className="flex flex-col gap-1">
             <button onClick={() => toggleSection("updates")} className={sectionBtnCls}>
-              <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.updates ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">Updates</span>
+              <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Updates</span>
             </button>
             {openSections.updates && (
               <div className="pl-4 pb-3 pt-1">
@@ -2178,12 +2178,12 @@ export function SettingsPanel({
         {/* --- App Profiles (paid feature) --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("appProfiles")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.appProfiles ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-voxlit-primary" : "text-voxlit-muted"}`}>
+            <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               App Profiles
-              {!isPaid && <LockIcon className="w-3 h-3 text-voxlit-dim" />}
+              {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
             </span>
           </button>
           {openSections.appProfiles && (
@@ -2191,18 +2191,18 @@ export function SettingsPanel({
               {!isPaid ? (
                 // Free-tier paygate: show lock message, no profile editing allowed.
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-voxlit-dim">
-                    <LockIcon className="w-3.5 h-3.5 text-voxlit-dim flex-shrink-0" />
+                  <div className="flex items-center gap-2 text-klarvo-dim">
+                    <LockIcon className="w-3.5 h-3.5 text-klarvo-dim flex-shrink-0" />
                     <p className="text-xs">App Profiles require a Klarvo license.</p>
                   </div>
-                  <p className="text-[11px] text-voxlit-dim">Override style and language per app based on window title.</p>
+                  <p className="text-[11px] text-klarvo-dim">Override style and language per app based on window title.</p>
                 </div>
               ) : (
                 <>
-                  <p className="text-[11px] text-voxlit-dim">Override style/language per app. Matches window title substring.</p>
+                  <p className="text-[11px] text-klarvo-dim">Override style/language per app. Matches window title substring.</p>
 
                   {profiles.map((p, i) => (
-                    <div key={i} className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 flex flex-col gap-2">
+                    <div key={i} className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
                         <input
                           type="text"
@@ -2221,7 +2221,7 @@ export function SettingsPanel({
                             setProfiles(next);
                             saveProfiles(next).catch(console.error);
                           }}
-                          className="text-voxlit-dim hover:text-voxlit-danger transition-colors p-1"
+                          className="text-klarvo-dim hover:text-klarvo-danger transition-colors p-1"
                         >
                           <CloseIcon />
                         </button>
@@ -2245,7 +2245,7 @@ export function SettingsPanel({
                             next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
                             setProfiles(next);
                           }}
-                          className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 cursor-pointer"
+                          className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 cursor-pointer"
                         >
                           {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </select>
@@ -2256,7 +2256,7 @@ export function SettingsPanel({
                             next[i] = { ...next[i], language: e.target.value };
                             setProfiles(next);
                           }}
-                          className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 cursor-pointer"
+                          className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 cursor-pointer"
                         >
                           <option value="">Auto</option>
                           <option value="de">DE</option>
@@ -2280,14 +2280,14 @@ export function SettingsPanel({
                   <div className="flex gap-2">
                     <button
                       onClick={() => setProfiles([...profiles, { name: "", appPattern: "", cleanupStyle: "polished", language: "", customPrompt: "" }])}
-                      className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 transition-colors"
+                      className="px-3 py-2 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 transition-colors"
                     >
                       + Add Profile
                     </button>
                     {profiles.length > 0 && (
                       <button
                         onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
-                        className="px-3 py-2 rounded-lg text-xs font-medium bg-voxlit-primary/10 border border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15 transition-colors"
+                        className="px-3 py-2 rounded-lg text-xs font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15 transition-colors"
                       >
                         Save Profiles
                       </button>
@@ -2302,10 +2302,10 @@ export function SettingsPanel({
         {/* --- License --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("license")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.license ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">License</span>
+            <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">License</span>
           </button>
           {openSections.license && (
             <LicenseSection
@@ -2329,32 +2329,32 @@ export function SettingsPanel({
         {/* --- About --- */}
         <div className="flex flex-col gap-1">
           <button onClick={() => toggleSection("about")} className={sectionBtnCls}>
-            <svg className={`w-4 h-4 text-voxlit-dim flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.about ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
             </svg>
-            <span className="text-sm font-semibold text-voxlit-primary uppercase tracking-wide">About</span>
+            <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">About</span>
           </button>
           {openSections.about && (
             <div className="flex flex-col gap-2 pl-4 pb-3 pt-1">
-              <p className="text-xs font-medium text-voxlit-muted">
+              <p className="text-xs font-medium text-klarvo-muted">
                 Klarvo{appVersion ? ` v${appVersion}` : ""}
               </p>
-              <p className="text-[11px] text-voxlit-dim">Voice dictation you own.</p>
-              <p className="text-[11px] text-voxlit-dim">by Andreas Nolte</p>
+              <p className="text-[11px] text-klarvo-dim">Voice dictation you own.</p>
+              <p className="text-[11px] text-klarvo-dim">by Andreas Nolte</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <button
-                  onClick={() => openUrl("https://github.com/andyon2/voxlit")}
-                  className="text-[11px] text-voxlit-muted hover:text-voxlit-text underline underline-offset-2 transition-colors"
+                  onClick={() => openUrl("https://github.com/andyon2/klarvo")}
+                  className="text-[11px] text-klarvo-muted hover:text-klarvo-text underline underline-offset-2 transition-colors"
                 >
                   GitHub
                 </button>
-                <span className="text-[11px] text-voxlit-dim">·</span>
-                <span className="text-[11px] text-voxlit-dim">MIT License</span>
+                <span className="text-[11px] text-klarvo-dim">·</span>
+                <span className="text-[11px] text-klarvo-dim">MIT License</span>
               </div>
               {onRestartOnboarding && (
                 <button
                   onClick={onRestartOnboarding}
-                  className="mt-2 text-[11px] text-voxlit-dim hover:text-voxlit-muted underline underline-offset-2 transition-colors text-left"
+                  className="mt-2 text-[11px] text-klarvo-dim hover:text-klarvo-muted underline underline-offset-2 transition-colors text-left"
                 >
                   Setup assistant restart
                 </button>
@@ -2371,17 +2371,17 @@ export function SettingsPanel({
           Android WebView and returns 0). The parent panel max-h also accounts for
           the ~48 px nav bar so this footer is never clipped by the container. */}
       {(isDirty || saveMsg) && (
-        <div className={`px-4 py-3 border-t border-voxlit-border/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
+        <div className={`px-4 py-3 border-t border-klarvo-border/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
           <button
             onClick={handleSave}
             disabled={saving}
             className={[
               "w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
               saveMsg === "Saved"
-                ? "bg-voxlit-primary/15 border-voxlit-primary/30 text-voxlit-primary"
+                ? "bg-klarvo-primary/15 border-klarvo-primary/30 text-klarvo-primary"
                 : saveMsg && saveMsg !== "Saved"
-                ? "bg-voxlit-danger/10 border-voxlit-danger/20 text-voxlit-danger"
-                : "bg-voxlit-primary/10 border-voxlit-primary/30 text-voxlit-primary hover:bg-voxlit-primary/15 hover:border-voxlit-primary/40 animate-pulse",
+                ? "bg-klarvo-danger/10 border-klarvo-danger/20 text-klarvo-danger"
+                : "bg-klarvo-primary/10 border-klarvo-primary/30 text-klarvo-primary hover:bg-klarvo-primary/15 hover:border-klarvo-primary/40 animate-pulse",
               "disabled:opacity-50 disabled:cursor-not-allowed",
             ].join(" ")}
           >

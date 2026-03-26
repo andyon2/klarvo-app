@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -10,7 +10,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * Accessibility service that detects when the soft keyboard is visible
- * and notifies VoxlitOverlayService to show/hide the floating bubble.
+ * and notifies KlarvoOverlayService to show/hide the floating bubble.
  *
  * Detection strategy:
  *   Listen for TYPE_WINDOWS_CHANGED events, then walk the window list looking
@@ -25,15 +25,15 @@ import android.view.accessibility.AccessibilityWindowInfo
  *     MainActivity guides the user there if the service is not yet active.
  *
  * Fallback:
- *   If this service is not active, VoxlitOverlayService falls back to
+ *   If this service is not active, KlarvoOverlayService falls back to
  *   InputMethodManager.getInputMethodWindowVisibleHeight() reflection polling.
  */
-class VoxlitAccessibilityService : AccessibilityService() {
+class KlarvoAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "VoxlitAccess"
+        private const val TAG = "KlarvoAccess"
         /** Live reference to the running service; null when the service is not connected. */
-        var instance: VoxlitAccessibilityService? = null
+        var instance: KlarvoAccessibilityService? = null
     }
 
     override fun onServiceConnected() {
@@ -72,10 +72,10 @@ class VoxlitAccessibilityService : AccessibilityService() {
 
     /**
      * Inspects the current window list for a window of type TYPE_INPUT_METHOD.
-     * Calls VoxlitOverlayService.onKeyboardVisibilityChanged() with the result.
+     * Calls KlarvoOverlayService.onKeyboardVisibilityChanged() with the result.
      *
      * Must be called from the accessibility thread (which onAccessibilityEvent uses);
-     * VoxlitOverlayService.onKeyboardVisibilityChanged() posts to the main handler
+     * KlarvoOverlayService.onKeyboardVisibilityChanged() posts to the main handler
      * internally, so cross-thread calls are safe.
      */
     private fun notifyKeyboardState() {
@@ -85,12 +85,12 @@ class VoxlitAccessibilityService : AccessibilityService() {
             Log.w(TAG, "windows list unavailable", e)
             return
         }
-        VoxlitOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
+        KlarvoOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
     }
 
     /**
      * Performs a paste action on the currently focused editable node.
-     * Called by VoxlitOverlayService after the transcription result is on the clipboard.
+     * Called by KlarvoOverlayService after the transcription result is on the clipboard.
      */
     fun pasteIntoFocusedField() {
         val rootNode = rootInActiveWindow ?: return
@@ -102,7 +102,7 @@ class VoxlitAccessibilityService : AccessibilityService() {
 
     /**
      * Sends an Enter / Send action to the currently focused editable node.
-     * Called by VoxlitOverlayService when auto-send is enabled for the active gesture.
+     * Called by KlarvoOverlayService when auto-send is enabled for the active gesture.
      *
      * Implementation strategy:
      *   Primary: ACTION_IME_ENTER -- maps to the IME's action button (Send, Go, Search, etc.).

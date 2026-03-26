@@ -35,7 +35,7 @@
 //! ## Hotkey pipeline
 //!
 //! When the global shortcut fires (default: Ctrl+Shift+D), the backend runs
-//! the full pipeline automatically and emits `voxlit://state-changed` events
+//! the full pipeline automatically and emits `klarvo://state-changed` events
 //! so the frontend can update the UI without being in the loop.
 
 mod audio;
@@ -422,14 +422,14 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
         hotkey::PipelineState::Error => "Klarvo \u{2014} Error",
     };
 
-    match handle.tray_by_id("voxlit-tray") {
+    match handle.tray_by_id("klarvo-tray") {
         Some(tray) => {
             if let Err(e) = tray.set_tooltip(Some(tooltip)) {
                 log::warn!("[tray] Failed to set tooltip to {tooltip:?}: {e}");
             }
         }
         None => {
-            log::debug!("[tray] Tray icon 'voxlit-tray' not found, skipping tooltip update");
+            log::debug!("[tray] Tray icon 'klarvo-tray' not found, skipping tooltip update");
         }
     }
 }
@@ -475,7 +475,7 @@ const DEFAULT_HOTKEY: &str = "ctrl+shift+d";
 // ---------------------------------------------------------------------------
 
 /// Event name for real-time audio level updates sent to the floating bar.
-const EVENT_AUDIO_LEVEL: &str = "voxlit://audio-level";
+const EVENT_AUDIO_LEVEL: &str = "klarvo://audio-level";
 
 /// Sets the window region to an ellipse (circle when w==h) using Win32 API.
 /// This clips the window shape at the OS level, hiding any WebView2 artifacts.
@@ -678,7 +678,7 @@ pub fn run() {
     }
 
     let mut builder = builder.setup(|app| {
-        // Resolve the app-data directory (e.g. %APPDATA%\com.voxlit.voice on Windows).
+        // Resolve the app-data directory (e.g. %APPDATA%\com.klarvo.voice on Windows).
         let app_data_dir = app
             .path()
             .app_data_dir()
@@ -739,7 +739,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
             let tray_tooltip = format!("Klarvo \u{2014} {hotkey_str}");
-            let _tray = tauri::tray::TrayIconBuilder::with_id("voxlit-tray")
+            let _tray = tauri::tray::TrayIconBuilder::with_id("klarvo-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip(&tray_tooltip)
                 .menu(&menu)

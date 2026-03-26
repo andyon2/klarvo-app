@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 // This file is intentionally empty.
 // Bubble size and opacity settings have been migrated to config.json

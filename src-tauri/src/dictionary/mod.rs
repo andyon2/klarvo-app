@@ -73,7 +73,7 @@ impl Dictionary {
     /// Returns the terms as a comma-separated string suitable for the Groq
     /// Whisper `prompt` parameter.
     ///
-    /// Example output: `"Kubernetes, TypeScript, Voxlit"`
+    /// Example output: `"Kubernetes, TypeScript, Klarvo"`
     ///
     /// Returns an empty string if the dictionary is empty.
     pub fn terms_as_prompt(&self) -> String {
@@ -217,16 +217,16 @@ mod tests {
     #[test]
     fn test_remove_term_removes_exact_match() {
         let mut dict = Dictionary::new();
-        dict.add_term("Voxlit".to_string());
+        dict.add_term("Klarvo".to_string());
         dict.add_term("TypeScript".to_string());
-        dict.remove_term("Voxlit");
+        dict.remove_term("Klarvo");
         assert_eq!(dict.terms(), &["TypeScript"]);
     }
 
     #[test]
     fn test_remove_term_noop_if_not_found() {
         let mut dict = Dictionary::new();
-        dict.add_term("Voxlit".to_string());
+        dict.add_term("Klarvo".to_string());
         dict.remove_term("NonExistent");
         assert_eq!(dict.len(), 1);
     }
@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn test_remove_term_is_case_sensitive() {
         let mut dict = Dictionary::new();
-        dict.add_term("Voxlit".to_string());
-        dict.remove_term("voxlit"); // different case -- should NOT match
+        dict.add_term("Klarvo".to_string());
+        dict.remove_term("klarvo"); // different case -- should NOT match
         assert_eq!(dict.len(), 1, "remove_term is case-sensitive");
     }
 
@@ -257,8 +257,8 @@ mod tests {
         let mut dict = Dictionary::new();
         dict.add_term("Kubernetes".to_string());
         dict.add_term("TypeScript".to_string());
-        dict.add_term("Voxlit".to_string());
-        assert_eq!(dict.terms_as_prompt(), "Kubernetes, TypeScript, Voxlit");
+        dict.add_term("Klarvo".to_string());
+        assert_eq!(dict.terms_as_prompt(), "Kubernetes, TypeScript, Klarvo");
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let mut original = Dictionary::new();
         original.add_term("Kubernetes".to_string());
         original.add_term("TypeScript".to_string());
-        original.add_term("Voxlit".to_string());
+        original.add_term("Klarvo".to_string());
 
         save_dictionary(dir.path(), &original).expect("save should succeed");
 

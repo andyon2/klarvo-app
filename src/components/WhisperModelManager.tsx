@@ -11,7 +11,7 @@ import {
 import { LockIcon } from "./icons";
 
 // Static metadata for all supported models.
-// tiny/base removed — quality too low to represent Voxlit.
+// tiny/base removed — quality too low to represent Klarvo.
 const MODEL_LABELS: Record<string, string> = {
   small: "small (488 MB) — Recommended",
   medium: "medium (1.5 GB)",
@@ -166,13 +166,13 @@ export function WhisperModelManager({
     return mb >= 1 ? `${mb.toFixed(0)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
   }
 
-  const hintCls = "text-[11px] text-voxlit-muted leading-relaxed";
-  const LABEL_CLS = "text-[11px] font-medium text-voxlit-muted uppercase tracking-widest";
+  const hintCls = "text-[11px] text-klarvo-muted leading-relaxed";
+  const LABEL_CLS = "text-[11px] font-medium text-klarvo-muted uppercase tracking-widest";
 
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-2">
-        <svg className="w-4 h-4 text-voxlit-dim animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <svg className="w-4 h-4 text-klarvo-dim animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
         </svg>
         <span className={hintCls}>Loading models...</span>
@@ -183,10 +183,10 @@ export function WhisperModelManager({
   if (loadError) {
     return (
       <div className="flex flex-col gap-1.5">
-        <p className="text-xs text-voxlit-danger">{loadError}</p>
+        <p className="text-xs text-klarvo-danger">{loadError}</p>
         <button
           onClick={fetchModels}
-          className="self-start px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 text-voxlit-muted hover:bg-voxlit-surface/60 transition-colors"
+          className="self-start px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 transition-colors"
         >
           Retry
         </button>
@@ -206,7 +206,7 @@ export function WhisperModelManager({
             if (!isPaid && PAID_MODELS.has(id)) return;
             onModelChange(id);
           }}
-          className="bg-voxlit-bg border border-voxlit-border/60 rounded-lg px-2.5 py-1.5 text-xs text-voxlit-text focus:outline-none focus:border-voxlit-primary/40 transition-colors cursor-pointer max-w-[220px]"
+          className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer max-w-[220px]"
         >
           {Object.entries(MODEL_LABELS).map(([id, label]) => {
             const locked = !isPaid && PAID_MODELS.has(id);
@@ -239,7 +239,7 @@ export function WhisperModelManager({
             <div className="flex items-center gap-2 flex-wrap">
               {isReady && !isDownloading && (
                 <>
-                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-voxlit-primary/15 text-voxlit-primary">
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-primary/15 text-klarvo-primary">
                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20 6L9 17l-5-5" />
                     </svg>
@@ -250,8 +250,8 @@ export function WhisperModelManager({
                     className={[
                       "text-[11px] transition-colors",
                       confirmDelete === model.id
-                        ? "text-voxlit-danger hover:text-red-300"
-                        : "text-voxlit-dim hover:text-voxlit-muted",
+                        ? "text-klarvo-danger hover:text-red-300"
+                        : "text-klarvo-dim hover:text-klarvo-muted",
                     ].join(" ")}
                   >
                     {confirmDelete === model.id ? "Confirm delete?" : "Delete"}
@@ -265,10 +265,10 @@ export function WhisperModelManager({
                   disabled={!isPaid && PAID_MODELS.has(model.id)}
                   title={!isPaid && PAID_MODELS.has(model.id) ? "Requires Klarvo License" : undefined}
                   className={[
-                    "px-3 py-1.5 rounded-lg text-xs font-medium bg-voxlit-bg border border-voxlit-border/60 transition-colors",
+                    "px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 transition-colors",
                     !isPaid && PAID_MODELS.has(model.id)
-                      ? "text-voxlit-dim cursor-not-allowed opacity-50"
-                      : "text-voxlit-muted hover:bg-voxlit-surface/60",
+                      ? "text-klarvo-dim cursor-not-allowed opacity-50"
+                      : "text-klarvo-muted hover:bg-klarvo-surface/60",
                   ].join(" ")}
                 >
                   {!isPaid && PAID_MODELS.has(model.id) ? (
@@ -287,9 +287,9 @@ export function WhisperModelManager({
             {/* Progress bar */}
             {isDownloading && (
               <div className="flex flex-col gap-1.5">
-                <div className="w-full h-1.5 bg-voxlit-surface rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-klarvo-surface rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-voxlit-primary/60 rounded-full transition-all duration-300"
+                    className="h-full bg-klarvo-primary/60 rounded-full transition-all duration-300"
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
@@ -303,7 +303,7 @@ export function WhisperModelManager({
 
             {/* Error */}
             {hasError && (
-              <p className="text-xs text-voxlit-danger">{downloadErrors[model.id]}</p>
+              <p className="text-xs text-klarvo-danger">{downloadErrors[model.id]}</p>
             )}
           </div>
         );
@@ -322,7 +322,7 @@ export function WhisperModelManager({
           onClick={() => onGpuChange(!gpuEnabled)}
           className={[
             "relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
-            gpuEnabled ? "bg-voxlit-primary/40" : "bg-voxlit-elevated",
+            gpuEnabled ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
           ].join(" ")}
         >
           <span

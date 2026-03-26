@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 import android.animation.ValueAnimator
 import android.content.Context
@@ -14,7 +14,7 @@ import androidx.core.content.ContextCompat
  * All rendering via Canvas -- no asset files needed.
  *
  * States:
- *   IDLE          -- white circle + Voxlit app launcher icon
+ *   IDLE          -- white circle + Klarvo app launcher icon
  *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark]
  *                    Used for tap-to-record where the user needs cancel/confirm buttons.
  *   RECORDING_PTT -- circular bubble, scaled up + red, waveform inside.
@@ -30,7 +30,7 @@ import androidx.core.content.ContextCompat
  *   - Left ~25% of width  -> cancel zone  (X button)
  *   - Right ~25% of width -> confirm zone (checkmark button)
  *   - Middle               -> waveform (no action)
- *   VoxlitOverlayService reads isTouchInCancelZone() / isTouchInConfirmZone() to route taps.
+ *   KlarvoOverlayService reads isTouchInCancelZone() / isTouchInConfirmZone() to route taps.
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
@@ -195,7 +195,7 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     /**
      * Changes the bubble size at runtime.
-     * Caller (VoxlitOverlayService) is responsible for updating WindowManager LayoutParams
+     * Caller (KlarvoOverlayService) is responsible for updating WindowManager LayoutParams
      * and calling windowManager.updateViewLayout() after this.
      */
     fun setBubbleSize(sizeDp: Int) {
@@ -217,7 +217,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         setMeasuredDimension(widthPx, heightPx)
     }
 
-    // --- Touch zone helpers (used by VoxlitOverlayService) ---
+    // --- Touch zone helpers (used by KlarvoOverlayService) ---
 
     /**
      * Returns true if [touchX] (relative to this view's left edge) falls inside
@@ -293,7 +293,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
     }
 
-    // --- IDLE: Voxlit app launcher icon, centered in the bubble ---
+    // --- IDLE: Klarvo app launcher icon, centered in the bubble ---
 
     private fun drawIdleIcon(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
         val icon = appIconDrawable

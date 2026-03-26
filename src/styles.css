@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-voxlit-bg: #191919;
-  --color-voxlit-surface: #252525;
-  --color-voxlit-elevated: #2F3438;
-  --color-voxlit-border: #373C3F;
-  --color-voxlit-border-active: #3F4448;
-  --color-voxlit-text: #FFFFFFEB;
-  --color-voxlit-muted: #AAACAD;
-  --color-voxlit-dim: #8E9093;
-  --color-voxlit-primary: #2AC3A8;
-  --color-voxlit-accent: #52D4C4;
-  --color-voxlit-secondary: #FFA344;
-  --color-voxlit-warning: #FFA344;
-  --color-voxlit-danger: #FF7369;
-  --color-voxlit-success: #4ADE80;
-  --color-voxlit-info: #52D4C4;
-  --color-voxlit-warm: #FFA344;
-  --color-voxlit-activity: #FFA344;
+  --color-klarvo-bg: #191919;
+  --color-klarvo-surface: #252525;
+  --color-klarvo-elevated: #2F3438;
+  --color-klarvo-border: #373C3F;
+  --color-klarvo-border-active: #3F4448;
+  --color-klarvo-text: #FFFFFFEB;
+  --color-klarvo-muted: #AAACAD;
+  --color-klarvo-dim: #8E9093;
+  --color-klarvo-primary: #2AC3A8;
+  --color-klarvo-accent: #52D4C4;
+  --color-klarvo-secondary: #FFA344;
+  --color-klarvo-warning: #FFA344;
+  --color-klarvo-danger: #FF7369;
+  --color-klarvo-success: #4ADE80;
+  --color-klarvo-info: #52D4C4;
+  --color-klarvo-warm: #FFA344;
+  --color-klarvo-activity: #FFA344;
 }
 
 /* Smooth scrollbar for settings */

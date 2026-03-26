@@ -1014,7 +1014,7 @@ pub fn compute_rms(samples: &[f32]) -> f32 {
 /// Helper: appends f32 data to the sample buffer and periodically fires the level callback.
 ///
 /// When `rms_tx` is provided, sends the computed RMS to the recording thread
-/// for the waveform audio-level display (voxlit://audio-level events).
+/// for the waveform audio-level display (klarvo://audio-level events).
 ///
 /// When `samples_chunk_tx` is provided, sends the raw sample chunk to the
 /// recording thread for SileroVad inference. Previously the RMS alone was sent

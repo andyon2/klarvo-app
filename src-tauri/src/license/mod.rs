@@ -44,16 +44,20 @@ use sha2::Sha256;
 // HMAC secret -- split across two constants so `strings` won't find it whole
 // ---------------------------------------------------------------------------
 
-/// First half of the embedded HMAC secret.
-const SECRET_PART_A: &[u8] = b"voxlit-license-v1";
-/// Second half of the embedded HMAC secret.
+/// First half of the current HMAC secret (Klarvo era).
+const SECRET_PART_A: &[u8] = b"klarvo-license-v1";
+/// Second half of the HMAC secret (shared across all eras).
 const SECRET_PART_B: &[u8] = b"-2025-open-core!";
 
-/// Legacy HMAC secret from before the Dikta → Voxlit rename.
-/// Keys issued under the old name use this secret for HMAC verification.
-const LEGACY_SECRET_PART_A: &[u8] = b"dikta-license-v1";
+/// First half of the legacy HMAC secret from the Voxlit era.
+/// Keys issued under the "VOXLIT-" prefix use this secret.
+const LEGACY_VOXLIT_PART_A: &[u8] = b"voxlit-license-v1";
 
-/// Combines the two secret parts into a single key used for HMAC operations.
+/// First half of the legacy HMAC secret from the Dikta era.
+/// Keys issued under the "DIKTA-" prefix use this secret.
+const LEGACY_DIKTA_PART_A: &[u8] = b"dikta-license-v1";
+
+/// Builds the current HMAC secret (Klarvo era).
 /// The result is dropped after use -- not stored as a static.
 fn build_secret() -> Vec<u8> {
     let mut s = Vec::with_capacity(SECRET_PART_A.len() + SECRET_PART_B.len());
@@ -62,10 +66,18 @@ fn build_secret() -> Vec<u8> {
     s
 }
 
+/// Builds the legacy HMAC secret for Voxlit-era keys.
+fn build_legacy_voxlit_secret() -> Vec<u8> {
+    let mut s = Vec::with_capacity(LEGACY_VOXLIT_PART_A.len() + SECRET_PART_B.len());
+    s.extend_from_slice(LEGACY_VOXLIT_PART_A);
+    s.extend_from_slice(SECRET_PART_B);
+    s
+}
+
 /// Builds the legacy HMAC secret for Dikta-era keys.
-fn build_legacy_secret() -> Vec<u8> {
-    let mut s = Vec::with_capacity(LEGACY_SECRET_PART_A.len() + SECRET_PART_B.len());
-    s.extend_from_slice(LEGACY_SECRET_PART_A);
+fn build_legacy_dikta_secret() -> Vec<u8> {
+    let mut s = Vec::with_capacity(LEGACY_DIKTA_PART_A.len() + SECRET_PART_B.len());
+    s.extend_from_slice(LEGACY_DIKTA_PART_A);
     s.extend_from_slice(SECRET_PART_B);
     s
 }
@@ -191,6 +203,8 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
             "Invalid key format: must start with 'KLARVO', 'VOXLIT', or 'DIKTA'".to_string(),
         );
     }
+    // Note: key generation always uses the current secret (klarvo-license-v1)
+    // regardless of prefix. Validation tries all secrets for backward compat.
 
     for (i, group) in parts[1..].iter().enumerate() {
         if group.len() != 4 {
@@ -225,14 +239,17 @@ pub fn validate_license_key(key: &str) -> Result<LicenseStatus, String> {
     let payload = &decoded[0..6];
     let stored_hmac = &decoded[6..10];
 
-    // Verify HMAC. Try the current secret first; if the key has a legacy
-    // "DIKTA" prefix, also try the legacy secret so old keys keep working.
-    // "KLARVO" and "VOXLIT" keys both use the same (current) secret.
-    let is_dikta_legacy = parts[0] == "DIKTA";
-    let secrets_to_try: Vec<Vec<u8>> = if is_dikta_legacy {
-        vec![build_legacy_secret(), build_secret()]
-    } else {
-        vec![build_secret()]
+    // Verify HMAC. Try the matching secret for each prefix first, then fall
+    // back to the others so backward compat is preserved across renames:
+    //   KLARVO keys  → klarvo-license-v1 (current)
+    //   VOXLIT keys  → voxlit-license-v1 (legacy Voxlit era)
+    //   DIKTA  keys  → dikta-license-v1  (legacy Dikta era)
+    // Each fallback is included so a key issued under any prior name keeps
+    // working regardless of which prefix it was originally given.
+    let secrets_to_try: Vec<Vec<u8>> = match parts[0] {
+        "KLARVO" => vec![build_secret(), build_legacy_voxlit_secret(), build_legacy_dikta_secret()],
+        "VOXLIT" => vec![build_legacy_voxlit_secret(), build_secret(), build_legacy_dikta_secret()],
+        _        => vec![build_legacy_dikta_secret(), build_secret(), build_legacy_voxlit_secret()],
     };
 
     let mut hmac_ok = false;
@@ -497,7 +514,7 @@ mod tests {
 
     /// Generates a legacy DIKTA-prefixed key using the old HMAC secret.
     fn generate_legacy_dikta_key(payload: &[u8; 6]) -> String {
-        let secret = build_legacy_secret();
+        let secret = build_legacy_dikta_secret();
         let mut mac = Hmac::<Sha256>::new_from_slice(&secret)
             .expect("HMAC init must succeed in tests");
         mac.update(payload);

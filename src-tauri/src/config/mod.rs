@@ -1781,12 +1781,12 @@ mod tests {
     fn test_webhook_url_roundtrip() {
         let dir = temp_dir();
         let cfg = AppConfig {
-            webhook_url: "https://hooks.example.com/voxlit".to_string(),
+            webhook_url: "https://hooks.example.com/klarvo".to_string(),
             ..AppConfig::default()
         };
         save_config(dir.path(), &cfg).unwrap();
         let loaded = load_config(dir.path());
-        assert_eq!(loaded.webhook_url, "https://hooks.example.com/voxlit");
+        assert_eq!(loaded.webhook_url, "https://hooks.example.com/klarvo");
     }
 
     /// Partial JSON without webhook_url defaults to empty string.

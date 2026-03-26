@@ -1,4 +1,4 @@
-package com.voxlit.voice
+package com.klarvo.voice
 
 import android.app.*
 import android.content.*
@@ -16,7 +16,7 @@ import kotlin.math.abs
  * Foreground Service that manages the floating bubble overlay.
  *
  * Keyboard detection -- two-tier approach:
- *   PRIMARY:  VoxlitAccessibilityService calls onKeyboardVisibilityChanged() whenever
+ *   PRIMARY:  KlarvoAccessibilityService calls onKeyboardVisibilityChanged() whenever
  *             it detects a TYPE_INPUT_METHOD window appearing/disappearing system-wide.
  *             This is the most reliable mechanism and works in all apps.
  *   FALLBACK: If the accessibility service is not active, we fall back to polling
@@ -37,14 +37,14 @@ import kotlin.math.abs
  *   Tap right zone (✓ button)  -> confirm: stop recording, start STT + cleanup pipeline
  *   Drag                       -> moves the bar (drag threshold still applies)
  */
-class VoxlitOverlayService : Service() {
+class KlarvoOverlayService : Service() {
 
     companion object {
-        private const val TAG = "VoxlitOverlayService"
+        private const val TAG = "KlarvoOverlayService"
 
-        private const val CHANNEL_ID    = "voxlit_overlay"
+        private const val CHANNEL_ID    = "klarvo_overlay"
         private const val NOTIFICATION_ID = 1
-        private const val PREFS_NAME    = "voxlit_bubble_prefs"
+        private const val PREFS_NAME    = "klarvo_bubble_prefs"
         private const val PREF_X        = "bubble_x"
         private const val PREF_Y        = "bubble_y"
 
@@ -52,7 +52,7 @@ class VoxlitOverlayService : Service() {
         const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
 
         /** BroadcastReceiver actions. */
-        const val ACTION_TOGGLE_BUBBLE = "com.voxlit.voice.TOGGLE_BUBBLE"
+        const val ACTION_TOGGLE_BUBBLE = "com.klarvo.voice.TOGGLE_BUBBLE"
 
         // Keyboard detection: poll InputMethodManager at this interval (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
@@ -63,13 +63,13 @@ class VoxlitOverlayService : Service() {
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
-        /** Live reference used by VoxlitAccessibilityService for paste. */
-        var instance: VoxlitOverlayService? = null
+        /** Live reference used by KlarvoAccessibilityService for paste. */
+        var instance: KlarvoOverlayService? = null
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
     // Avoids redundant disk reads within a single dictation cycle.
-    private var cachedConfig: VoxlitApi.Config? = null
+    private var cachedConfig: KlarvoApi.Config? = null
 
     enum class RecordingMode(val label: String, val badge: String) {
         HOLD("Hold", "H"),
@@ -122,7 +122,7 @@ class VoxlitOverlayService : Service() {
     private var accessibilityServiceActive = false
 
     // Audio
-    private var audioRecorder: VoxlitAudioRecorder? = null
+    private var audioRecorder: KlarvoAudioRecorder? = null
 
     // Touch handling
     private var dragTouchStartX = 0f
@@ -330,7 +330,7 @@ class VoxlitOverlayService : Service() {
      * Replaces the old single-mode loadRecordingMode().
      */
     private fun loadBubbleControls() {
-        val config = VoxlitApi.readConfig(this)
+        val config = KlarvoApi.readConfig(this)
         cachedConfig = config  // cache for processAudio() to avoid redundant disk read
         if (config != null) {
             tapMode = RecordingMode.fromString(config.bubbleTapMode)
@@ -443,7 +443,7 @@ class VoxlitOverlayService : Service() {
 
         // Load bubble size and opacity from config.json (written by the Tauri/React settings UI).
         // Falls back to defaults if the config is not yet available (first launch).
-        val config = VoxlitApi.readConfig(this)
+        val config = KlarvoApi.readConfig(this)
         val sizeScale = config?.bubbleSize ?: 1.0f
         bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
@@ -715,7 +715,7 @@ class VoxlitOverlayService : Service() {
             else        -> tapSilenceSecs
         }
 
-        val recorder = VoxlitAudioRecorder(
+        val recorder = KlarvoAudioRecorder(
             context = this,
             onAmplitude = { amplitude -> handler.post { bubbleView.amplitude = amplitude } },
             silenceSecs = activeSilenceSecs
@@ -843,7 +843,7 @@ class VoxlitOverlayService : Service() {
 
         // Use cached config from loadBubbleControls() (called moments ago by handleTap/longPress).
         // Fall back to a fresh read if the cache is somehow stale (e.g. auto-loop restart path).
-        val config = cachedConfig ?: VoxlitApi.readConfig(this)
+        val config = cachedConfig ?: KlarvoApi.readConfig(this)
         val tConfig = System.currentTimeMillis()
         Log.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
 
@@ -860,7 +860,7 @@ class VoxlitOverlayService : Service() {
 
         try {
             // Step 1: STT via Groq Whisper
-            val transcript = VoxlitApi.transcribe(wavBytes, config.groqApiKey, config.language)
+            val transcript = KlarvoApi.transcribe(wavBytes, config.groqApiKey, config.language)
             val tStt = System.currentTimeMillis()
             Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio)")
 
@@ -876,10 +876,10 @@ class VoxlitOverlayService : Service() {
             }
 
             // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
-            val llmProvider = VoxlitApi.resolveLlmProvider(config)
+            val llmProvider = KlarvoApi.resolveLlmProvider(config)
             val finalText = if (llmProvider != null) {
                 try {
-                    val result = VoxlitApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
+                    val result = KlarvoApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
                     Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                     result
@@ -894,7 +894,7 @@ class VoxlitOverlayService : Service() {
 
             // Step 3: Save to history DB
             val tBeforeHistory = System.currentTimeMillis()
-            VoxlitApi.saveToHistory(
+            KlarvoApi.saveToHistory(
                 context  = this,
                 finalText = finalText,
                 rawText  = transcript,
@@ -910,7 +910,7 @@ class VoxlitOverlayService : Service() {
             if (config.tursoUrl.isNotBlank() && config.tursoToken.isNotBlank()) {
                 Thread {
                     try {
-                        VoxlitApi.pushToTurso(this@VoxlitOverlayService, config.tursoUrl, config.tursoToken)
+                        KlarvoApi.pushToTurso(this@KlarvoOverlayService, config.tursoUrl, config.tursoToken)
                     } catch (e: Exception) {
                         Log.w(TAG, "Turso sync failed (non-blocking)", e)
                     }
@@ -925,8 +925,8 @@ class VoxlitOverlayService : Service() {
             handler.post {
                 copyToClipboard(finalText)
 
-                val pasted = VoxlitAccessibilityService.instance != null
-                VoxlitAccessibilityService.instance?.pasteIntoFocusedField()
+                val pasted = KlarvoAccessibilityService.instance != null
+                KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
                 if (pasted) showToast("Inserted: $preview") else showToast("Copied: $preview")
@@ -944,7 +944,7 @@ class VoxlitOverlayService : Service() {
                 if (shouldAutoSend && pasted) {
                     // Short delay so the pasted text is committed before Enter fires.
                     handler.postDelayed({
-                        VoxlitAccessibilityService.instance?.performEnter()
+                        KlarvoAccessibilityService.instance?.performEnter()
                     }, 150)
                 }
 
@@ -998,7 +998,7 @@ class VoxlitOverlayService : Service() {
      * Called on every return to IDLE so Settings changes take effect after the next dictation.
      */
     private fun reloadBubbleAppearance() {
-        val config = VoxlitApi.readConfig(this) ?: return
+        val config = KlarvoApi.readConfig(this) ?: return
         val newSizeDp = (BASE_BUBBLE_SIZE_DP * config.bubbleSize).toInt().coerceAtLeast(24)
         bubbleOpacity = config.bubbleOpacity
         bubbleView.setBubbleSize(newSizeDp)

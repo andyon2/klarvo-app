@@ -53,12 +53,12 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
   }, [noteState, onRefresh]);
 
   return (
-    <div className="w-full bg-voxlit-surface border border-voxlit-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-voxlit-border/40">
-        <span className="text-[10px] font-semibold text-voxlit-dim uppercase tracking-widest">Voice Notes</span>
+    <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
+        <span className="text-[10px] font-semibold text-klarvo-dim uppercase tracking-widest">Voice Notes</span>
         <button
           onClick={onClose}
-          className="text-voxlit-dim hover:text-voxlit-text transition-colors p-1 rounded-lg hover:bg-voxlit-surface/50"
+          className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
         >
           <CloseIcon />
         </button>
@@ -72,10 +72,10 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
           className={[
             "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all duration-150",
             noteState === "recording"
-              ? "bg-voxlit-danger/15 border-voxlit-danger/30 text-voxlit-danger"
+              ? "bg-klarvo-danger/15 border-klarvo-danger/30 text-klarvo-danger"
               : noteState === "processing"
-              ? "bg-voxlit-warning/10 border-voxlit-warning/20 text-voxlit-warning opacity-60 cursor-not-allowed"
-              : "bg-voxlit-primary/10 border-voxlit-primary/20 text-voxlit-primary hover:bg-voxlit-primary/15",
+              ? "bg-klarvo-warning/10 border-klarvo-warning/20 text-klarvo-warning opacity-60 cursor-not-allowed"
+              : "bg-klarvo-primary/10 border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15",
           ].join(" ")}
         >
           {noteState === "recording" ? (
@@ -86,28 +86,28 @@ export function VoiceNotesPanel({ notes, onRefresh, onClose }: VoiceNotesPanelPr
             <><MicIcon className="w-3.5 h-3.5" /> Record Note</>
           )}
         </button>
-        {noteError && <span className="text-[10px] text-voxlit-danger">{noteError}</span>}
-        <p className="text-[10px] text-voxlit-dim ml-auto">Notes are saved, not pasted.</p>
+        {noteError && <span className="text-[10px] text-klarvo-danger">{noteError}</span>}
+        <p className="text-[10px] text-klarvo-dim ml-auto">Notes are saved, not pasted.</p>
       </div>
 
       {/* Notes list */}
       <div className="overflow-y-auto max-h-[300px] p-4 flex flex-col gap-2">
         {notes.length === 0 ? (
-          <p className="text-xs text-voxlit-dim italic text-center py-4">No voice notes yet. Record your first one!</p>
+          <p className="text-xs text-klarvo-dim italic text-center py-4">No voice notes yet. Record your first one!</p>
         ) : (
           notes.map((note) => (
             <div
               key={note.id}
-              className="bg-voxlit-bg border border-voxlit-border/60 rounded-xl p-3 group hover:border-voxlit-border/60 transition-colors"
+              className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 group hover:border-klarvo-border/60 transition-colors"
             >
-              <p className="text-xs text-voxlit-muted whitespace-pre-wrap line-clamp-3">{note.text}</p>
+              <p className="text-xs text-klarvo-muted whitespace-pre-wrap line-clamp-3">{note.text}</p>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-[10px] text-voxlit-dim">
+                <span className="text-[10px] text-klarvo-dim">
                   {new Date(note.createdAt + "Z").toLocaleString()}
                 </span>
                 <button
                   onClick={() => navigator.clipboard.writeText(note.text).catch(console.error)}
-                  className="text-[10px] text-voxlit-dim hover:text-voxlit-primary opacity-0 group-hover:opacity-100 transition-all"
+                  className="text-[10px] text-klarvo-dim hover:text-klarvo-primary opacity-0 group-hover:opacity-100 transition-all"
                 >
                   Copy
                 </button>

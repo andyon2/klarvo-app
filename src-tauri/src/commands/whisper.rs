@@ -13,9 +13,9 @@
 //!
 //! | Event | Payload |
 //! |-------|---------|
-//! | `voxlit://model-download-progress` | `{ modelId, bytesReceived, totalBytes }` |
-//! | `voxlit://model-download-complete` | `{ modelId }` |
-//! | `voxlit://model-download-error`    | `{ modelId, error }` |
+//! | `klarvo://model-download-progress` | `{ modelId, bytesReceived, totalBytes }` |
+//! | `klarvo://model-download-complete` | `{ modelId }` |
+//! | `klarvo://model-download-error`    | `{ modelId, error }` |
 
 #[cfg(target_os = "windows")]
 pub mod windows {
@@ -32,9 +32,9 @@ pub mod windows {
     // Event names
     // -----------------------------------------------------------------------
 
-    const EVENT_PROGRESS: &str = "voxlit://model-download-progress";
-    const EVENT_COMPLETE: &str = "voxlit://model-download-complete";
-    const EVENT_ERROR: &str = "voxlit://model-download-error";
+    const EVENT_PROGRESS: &str = "klarvo://model-download-progress";
+    const EVENT_COMPLETE: &str = "klarvo://model-download-complete";
+    const EVENT_ERROR: &str = "klarvo://model-download-error";
 
     // -----------------------------------------------------------------------
     // Event payloads
@@ -85,9 +85,9 @@ pub mod windows {
     /// Starts a background download for the given model.
     ///
     /// Returns immediately (non-blocking). Download progress is reported via
-    /// `voxlit://model-download-progress` events. On completion
-    /// `voxlit://model-download-complete` is emitted; on failure
-    /// `voxlit://model-download-error` is emitted.
+    /// `klarvo://model-download-progress` events. On completion
+    /// `klarvo://model-download-complete` is emitted; on failure
+    /// `klarvo://model-download-error` is emitted.
     ///
     /// `app_data_dir` comes from the `AppHandle`, not `AppState`, to avoid
     /// holding the state lock across async boundaries.

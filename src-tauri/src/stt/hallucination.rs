@@ -133,7 +133,7 @@ pub const HALLUCINATION_BLOCKLIST: &[&str] = &[
 /// # Examples
 ///
 /// ```ignore
-/// use voxlit_lib::stt::hallucination::is_hallucination;
+/// use klarvo_lib::stt::hallucination::is_hallucination;
 ///
 /// assert!(is_hallucination(""));                      // empty
 /// assert!(is_hallucination("Thank you for watching")); // blocklist hit
