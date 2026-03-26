@@ -2301,6 +2301,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "klarvo"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "async-trait",
+ "base32",
+ "chrono",
+ "cpal",
+ "futures",
+ "hmac",
+ "hound",
+ "insta",
+ "log",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "voice_activity_detector",
+ "whisper-rs",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "kuchikiki"
 version = "0.8.8-speedreader"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5510,40 +5544,6 @@ dependencies = [
  "pin-project",
  "thiserror 2.0.18",
  "typed-builder",
-]
-
-[[package]]
-name = "voxlit"
-version = "0.5.0"
-dependencies = [
- "anyhow",
- "arboard",
- "async-trait",
- "base32",
- "chrono",
- "cpal",
- "futures",
- "hmac",
- "hound",
- "insta",
- "log",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
- "voice_activity_detector",
- "whisper-rs",
- "windows 0.61.3",
 ]
 
 [[package]]

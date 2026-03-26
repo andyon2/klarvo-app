@@ -40,7 +40,7 @@ import { STYLE_OPTIONS } from "../types";
 import { getProfiles, saveProfiles, syncHistory, getAdvancedSettings, saveAdvancedSettings, toggleVoiceCommandMode, getVoiceCommandActive, validateApiKey, clearApiKey } from "../tauri-commands";
 import type { AdvancedSettings } from "../types";
 import { isDesktop, isMobile } from "../platform";
-import { CloseIcon, LockIcon } from "./icons";
+import { CloseIcon, LockIcon, UnlockIcon } from "./icons";
 import { StatusDot, DictionaryTag, INPUT_CLS, LABEL_CLS, SECTION_TITLE_CLS, INPUT_CLS_M, LABEL_CLS_M } from "./ui";
 import { MobileTextarea } from "./MobileTextarea";
 import { WhisperModelManager } from "./WhisperModelManager";
@@ -1094,6 +1094,8 @@ export function SettingsPanel({
       licenseStatus.graceUntil !== undefined &&
       licenseStatus.graceUntil > Date.now() / 1000);
 
+  const isTrial = licenseStatus.type === "trial";
+
   // On Android the system nav bar (~48 px) overlaps the WebView bottom edge.
   // env(safe-area-inset-bottom) is unreliable in Android WebView so we use a
   // fixed 48 px deduction on mobile to keep the sticky Save footer visible.
@@ -1783,6 +1785,7 @@ export function SettingsPanel({
             <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               Cleanup Instructions
               {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+              {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
             </span>
           </button>
           {openSections.customPrompt && (
@@ -1916,6 +1919,7 @@ export function SettingsPanel({
             <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               Cross-Device Sync
               {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+              {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
             </span>
           </button>
           {openSections.sync && (
@@ -2184,6 +2188,7 @@ export function SettingsPanel({
             <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
               App Profiles
               {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+              {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
             </span>
           </button>
           {openSections.appProfiles && (

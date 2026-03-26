@@ -213,6 +213,8 @@ export default function App() {
       license.licenseStatus.graceUntil !== undefined &&
       license.licenseStatus.graceUntil > Date.now() / 1000);
 
+  const isTrial = license.licenseStatus.type === "trial";
+
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -773,6 +775,7 @@ export default function App() {
           <AdvancedSettingsPanel
             onClose={() => panels.close("advanced")}
             isPaid={isPaid}
+            isTrial={isTrial}
           />
         )}
       </div>

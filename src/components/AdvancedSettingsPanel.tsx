@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AdvancedSettings } from "../types";
 import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
-import { CloseIcon, SpinnerIcon, LockIcon } from "./icons";
+import { CloseIcon, SpinnerIcon, LockIcon, UnlockIcon } from "./icons";
 import { INPUT_CLS, LABEL_CLS } from "./ui";
 import { isMobile } from "../platform";
 import { MobileTextarea } from "./MobileTextarea";
@@ -39,9 +39,10 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
 interface AdvancedSettingsPanelProps {
   onClose: () => void;
   isPaid: boolean;
+  isTrial?: boolean;
 }
 
-export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanelProps) {
+export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSettingsPanelProps) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -162,6 +163,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Speech-to-Text
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
           </span>
         </button>
         {openSections.stt && (
@@ -171,6 +173,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">Custom STT Prompts</span>
                 {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+                {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (German)</span>
@@ -272,6 +275,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
               <span className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">
                 Custom Cleanup Instructions
                 {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+                {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
               </span>
             </button>
             {openSubSections.llmCustom && (
@@ -367,6 +371,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Webhook
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
           </span>
         </button>
         {openSections.webhook && (
@@ -391,6 +396,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid }: AdvancedSettingsPanel
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Integrations
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
           </span>
         </button>
         {openSections.integrations && (
