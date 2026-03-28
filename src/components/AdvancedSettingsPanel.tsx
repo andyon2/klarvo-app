@@ -124,19 +124,6 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
     );
   }
 
-  // Toggle switch helper (local to this panel).
-  const Toggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onChange}
-      className={["relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0", checked ? "bg-klarvo-primary/40" : "bg-klarvo-elevated"].join(" ")}
-    >
-      <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", checked ? "translate-x-4" : ""].join(" ")} />
-    </button>
-  );
-
   const TrialBadge = () => (
     <span className="text-[10px] font-semibold uppercase tracking-wider bg-klarvo-primary/15 text-klarvo-primary px-1.5 py-0.5 rounded border border-klarvo-primary/25">
       Trial
@@ -216,7 +203,11 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.llm ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18l6-6-6-6" />
           </svg>
-          <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Text Cleanup</span>
+          <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
+            {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
+            {isPaid && isTrial && <TrialBadge />}
+            Text Cleanup
+          </span>
         </button>
         {openSections.llm && (
           <div className="flex flex-col gap-1 pl-4 pb-3 pt-1">
@@ -349,30 +340,6 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           </div>
         )}
 
-        {/* Paste & Behavior */}
-        <button onClick={() => toggleSection("paste")} className={sectionBtnCls}>
-          <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.paste ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-          <span className="text-sm font-semibold text-klarvo-primary uppercase tracking-wide">Paste & Behavior</span>
-        </button>
-        {openSections.paste && (
-          <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Paste</span><span className={hintCls}>Automatically paste result into active window.</span></div>
-              <Toggle checked={settings.autoPaste} onChange={() => set("autoPaste", !settings.autoPaste)} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className={hintCls}>Wait time before sending paste keystroke.</span></div>
-              <input type="number" min={0} max={2000} step={10} value={settings.pasteDelayMs} onChange={(e) => set("pasteDelayMs", parseInt(e.target.value, 10) || 0)} className={numberInputCls} />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className={hintCls}>Capitalize first letter of every result.</span></div>
-              <Toggle checked={settings.autoCapitalize} onChange={() => set("autoCapitalize", !settings.autoCapitalize)} />
-            </div>
-          </div>
-        )}
-
         {/* Webhook */}
         <button onClick={() => toggleSection("webhook")} className={sectionBtnCls}>
           <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.webhook ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -404,9 +371,9 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
             <path d="M9 18l6-6-6-6" />
           </svg>
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
-            Integrations
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-
+            {isPaid && isTrial && <TrialBadge />}
+            Integrations
           </span>
         </button>
         {openSections.integrations && (

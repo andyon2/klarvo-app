@@ -203,6 +203,13 @@ export interface ShortcutsContentProps {
   onHotkeyChange: (h: string) => void;
   onHotkeyModeChange: (m: HotkeyMode) => void;
   isPaid: boolean;
+  // Paste & Behavior (from AdvancedSettings, displayed here)
+  localAutoPaste: boolean;
+  setLocalAutoPaste: (v: boolean) => void;
+  localPasteDelayMs: number;
+  setLocalPasteDelayMs: (v: number) => void;
+  localAutoCapitalize: boolean;
+  setLocalAutoCapitalize: (v: boolean) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -220,6 +227,7 @@ export function ShortcutsContent({
   localBubbleLongPressMode, setLocalBubbleLongPressMode,
   localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs,
   loadedSettings, onHotkeyChange, onHotkeyModeChange,
+  localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -607,6 +615,42 @@ export function ShortcutsContent({
           )}
         </div>
       )}
+      {/* --- Paste & Behavior --- */}
+      <div className="flex flex-col gap-3 pl-4 pb-3 pt-3 border-t border-klarvo-border/30 mt-1">
+        <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Paste & Behavior</span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Paste</span><span className="text-[11px] text-klarvo-muted">Automatically paste result into active window.</span></div>
+          <button
+            role="switch"
+            aria-checked={localAutoPaste}
+            onClick={() => setLocalAutoPaste(!localAutoPaste)}
+            className={[
+              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+              localAutoPaste ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+            ].join(" ")}
+          >
+            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoPaste ? "translate-x-4" : ""].join(" ")} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
+          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} className="w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40" />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className="text-[11px] text-klarvo-muted">Capitalize first letter of every result.</span></div>
+          <button
+            role="switch"
+            aria-checked={localAutoCapitalize}
+            onClick={() => setLocalAutoCapitalize(!localAutoCapitalize)}
+            className={[
+              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+              localAutoCapitalize ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+            ].join(" ")}
+          >
+            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoCapitalize ? "translate-x-4" : ""].join(" ")} />
+          </button>
+        </div>
+      </div>
     </>
   );
 }

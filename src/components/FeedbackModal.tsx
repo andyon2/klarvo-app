@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { sendFeedback } from "../tauri-commands";
 import { CloseIcon, SpinnerIcon } from "./icons";
 import { isMobile } from "../platform";
@@ -36,7 +36,6 @@ export function FeedbackModal({ isOpen, onClose, defaultArea }: FeedbackModalPro
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const overlayRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset form state when modal opens.
@@ -56,23 +55,6 @@ export function FeedbackModal({ isOpen, onClose, defaultArea }: FeedbackModalPro
       }
     };
   }, [isOpen]);
-
-  // Escape key closes modal.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [isOpen, onClose]);
-
-  const handleOverlayClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target === overlayRef.current) onClose();
-    },
-    [onClose],
-  );
 
   const handleSubmit = async () => {
     if (message.trim().length < 3 || loading) return;
@@ -102,15 +84,7 @@ export function FeedbackModal({ isOpen, onClose, defaultArea }: FeedbackModalPro
   const canSubmit = message.trim().length >= 3 && !loading && !success;
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-[2px] overflow-y-auto"
-      onClick={handleOverlayClick}
-      aria-modal="true"
-      role="dialog"
-      aria-label="Send feedback"
-    >
-      <div className="w-full max-w-sm mx-4 mb-4 sm:mb-0 bg-klarvo-surface border border-klarvo-border/60 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl shadow-xl shadow-black/30 overflow-hidden max-h-[70vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-orange-500/20">
           <span className="text-[11px] font-semibold text-orange-400/80 uppercase tracking-widest">
@@ -217,6 +191,5 @@ export function FeedbackModal({ isOpen, onClose, defaultArea }: FeedbackModalPro
           </button>
         </div>
       </div>
-    </div>
   );
 }

@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react";
 
-export type PanelName = "settings" | "history" | "stats" | "notes";
+export type PanelName = "settings" | "history" | "stats" | "notes" | "feedback";
 
 interface PanelsState {
   showSettings: boolean;
   showHistory: boolean;
   showStats: boolean;
   showNotes: boolean;
+  showFeedback: boolean;
 }
 
 // Callbacks invoked when a specific panel is first opened (for lazy data loading).
@@ -22,6 +23,7 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
     showHistory: false,
     showStats: false,
     showNotes: false,
+    showFeedback: false,
   });
 
   // Close all panels. Returns true if any panel was open.
@@ -34,6 +36,7 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
         showHistory: false,
         showStats: false,
         showNotes: false,
+        showFeedback: false,
       };
     });
     return wasOpen;
@@ -56,6 +59,7 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
         showHistory: panel === "history" ? !prev.showHistory : false,
         showStats: panel === "stats" ? !prev.showStats : false,
         showNotes: panel === "notes" ? !prev.showNotes : false,
+        showFeedback: panel === "feedback" ? !prev.showFeedback : false,
       };
     });
   }, [callbacks]);

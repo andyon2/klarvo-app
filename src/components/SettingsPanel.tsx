@@ -82,6 +82,8 @@ export interface SettingsPanelProps {
   onOutputLanguageChange: (lang: string) => void;
   /** Called when user clicks "Setup-Assistent erneut starten". */
   onRestartOnboarding?: () => void;
+  /** Register a back-handler: returns true if Settings handled the back (sub-page → home). */
+  onRegisterBack?: (fn: (() => boolean) | null) => void;
 }
 
 // === COMPONENT ===============================================================
@@ -95,10 +97,23 @@ export function SettingsPanel({
   onSave, onLanguageChange, onStyleChange, onHotkeyChange, onHotkeyModeChange,
   onAudioDeviceChange, onAddTerm, onRemoveTerm, onOutputLanguageChange,
   onRestartOnboarding,
+  onRegisterBack,
 }: SettingsPanelProps) {
 
   // --- Drill-down navigation state ---
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>("home");
+
+  // Register back-handler so App.tsx can ask: "should I navigate sub-page → home?"
+  useEffect(() => {
+    onRegisterBack?.(() => {
+      if (activeCategory !== "home") {
+        setActiveCategory("home");
+        return true;
+      }
+      return false;
+    });
+    return () => onRegisterBack?.(null);
+  }, [activeCategory, onRegisterBack]);
 
   // --- All useState declarations ---
   const [groqKey, setGroqKey] = useState("");
@@ -154,6 +169,9 @@ export function SettingsPanel({
   const [localVoiceCommandEnabled, setLocalVoiceCommandEnabled] = useState(loadedSettings?.voiceCommandEnabled ?? false);
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
+  const [localAutoPaste, setLocalAutoPaste] = useState(true);
+  const [localPasteDelayMs, setLocalPasteDelayMs] = useState(80);
+  const [localAutoCapitalize, setLocalAutoCapitalize] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -177,6 +195,9 @@ export function SettingsPanel({
       .then((adv) => {
         setAdvancedSettings(adv);
         setLocalSilenceThreshold(adv.silenceThreshold);
+        setLocalAutoPaste(adv.autoPaste);
+        setLocalPasteDelayMs(adv.pasteDelayMs);
+        setLocalAutoCapitalize(adv.autoCapitalize);
       })
       .catch(console.error);
   }, []);
@@ -321,7 +342,11 @@ export function SettingsPanel({
         localBubbleLongPressMode !== (loadedSettings.bubbleLongPressMode ?? "hold") ||
         localBubbleLongPressAutoSend !== (loadedSettings.bubbleLongPressAutoSend ?? false) ||
         localBubbleLongPressSilenceSecs !== (loadedSettings.bubbleLongPressSilenceSecs ?? 2.0)
-      ));
+      ))
+    || (advancedSettings !== null && advancedSettings.silenceThreshold !== localSilenceThreshold)
+    || (advancedSettings !== null && advancedSettings.autoPaste !== localAutoPaste)
+    || (advancedSettings !== null && advancedSettings.pasteDelayMs !== localPasteDelayMs)
+    || (advancedSettings !== null && advancedSettings.autoCapitalize !== localAutoCapitalize);
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -332,6 +357,7 @@ export function SettingsPanel({
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
+    advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
   ]);
 
   // --- useCallback handlers ---
@@ -425,9 +451,20 @@ export function SettingsPanel({
         localBubbleTapSilenceSecs, localBubbleLongPressMode,
         localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
       );
-      // Save silence threshold into AdvancedSettings when it has changed.
-      if (advancedSettings !== null && advancedSettings.silenceThreshold !== localSilenceThreshold) {
-        const updatedAdv: AdvancedSettings = { ...advancedSettings, silenceThreshold: localSilenceThreshold };
+      // Save AdvancedSettings fields when any have changed.
+      if (advancedSettings !== null && (
+        advancedSettings.silenceThreshold !== localSilenceThreshold ||
+        advancedSettings.autoPaste !== localAutoPaste ||
+        advancedSettings.pasteDelayMs !== localPasteDelayMs ||
+        advancedSettings.autoCapitalize !== localAutoCapitalize
+      )) {
+        const updatedAdv: AdvancedSettings = {
+          ...advancedSettings,
+          silenceThreshold: localSilenceThreshold,
+          autoPaste: localAutoPaste,
+          pasteDelayMs: localPasteDelayMs,
+          autoCapitalize: localAutoCapitalize,
+        };
         await saveAdvancedSettings(updatedAdv);
         setAdvancedSettings(updatedAdv);
       }
@@ -613,6 +650,12 @@ export function SettingsPanel({
                 onHotkeyChange={onHotkeyChange}
                 onHotkeyModeChange={onHotkeyModeChange}
                 isPaid={isPaid}
+                localAutoPaste={localAutoPaste}
+                setLocalAutoPaste={setLocalAutoPaste}
+                localPasteDelayMs={localPasteDelayMs}
+                setLocalPasteDelayMs={setLocalPasteDelayMs}
+                localAutoCapitalize={localAutoCapitalize}
+                setLocalAutoCapitalize={setLocalAutoCapitalize}
               />
             )}
             {activeCategory === "license" && (

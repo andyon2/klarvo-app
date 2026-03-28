@@ -172,9 +172,10 @@ npx tauri android build --target aarch64
 # ---------------------------------------------------------------------------
 APK_IN="$GEN_ANDROID/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
 APK_ALIGNED="/tmp/klarvo-aligned.apk"
+TIMESTAMP=$(date +%Y%m%d-%H%M)
 APK_DIR="/mnt/d/Dropbox/App Development/klarvo/releases/v${VERSION}"
 mkdir -p "$APK_DIR"
-APK_OUT="$APK_DIR/Klarvo-v${VERSION}.apk"
+APK_OUT="$APK_DIR/Klarvo-v${VERSION}-${TIMESTAMP}.apk"
 
 echo "[sign] Aligning and signing APK..."
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED"

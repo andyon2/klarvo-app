@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import "./styles.css";
 import type { CleanupStyle, HistoryEntry, UsageSummary } from "./types";
 import { STATUS_LABELS, STYLE_OPTIONS } from "./types";
@@ -235,8 +235,7 @@ export default function App() {
   // Trial-expired notification: shown once after a trial ends and user is now unlicensed.
   const [showTrialExpired, setShowTrialExpired] = useState(false);
 
-  // Feedback modal + tooltip
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Feedback tooltip
   const [showFeedbackTooltip, setShowFeedbackTooltip] = useState(
     () => localStorage.getItem("klarvo_feedback_tooltip_dismissed") !== "true"
   );
@@ -320,6 +319,9 @@ export default function App() {
   }, []);
 
   // Android back button: close open panel instead of leaving the app
+  // Ref for settings sub-page back handler
+  const settingsBackRef = useRef<(() => boolean) | null>(null);
+
   useEffect(() => {
     if (!isMobile) return;
     if (panels.anyOpen) {
@@ -329,7 +331,15 @@ export default function App() {
 
   useEffect(() => {
     if (!isMobile) return;
-    const handler = () => { panels.closeAll(); };
+    const handler = () => {
+      // Let settings sub-page handle back first (sub-page → home)
+      if (settingsBackRef.current?.()) {
+        // Re-push panel state so next back closes the panel
+        window.history.pushState({ panel: true }, "");
+        return;
+      }
+      panels.closeAll();
+    };
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, [panels.closeAll]);
@@ -340,15 +350,11 @@ export default function App() {
   const headerBtnPad = isMobile ? "p-2.5" : "p-1.5";
   const hotkeyDisplay = formatHotkeyDisplay(settings.loadedSettings?.hotkey ?? "ctrl+shift+d");
 
-  // Derive the feedback area from the currently open panel.
-  const feedbackArea = panels.showSettings
-    ? "settings"
-    : panels.showHistory
-    ? "history"
-    : panels.showStats
-    ? "statistics"
-    : panels.showNotes
-    ? "notes"
+  // Derive the feedback area from the most recently open panel.
+  const feedbackArea = panels.showSettings ? "settings"
+    : panels.showHistory ? "history"
+    : panels.showStats ? "statistics"
+    : panels.showNotes ? "notes"
     : "home";
 
   // --- History handlers ---
@@ -566,6 +572,7 @@ export default function App() {
             onRemoveLicense={license.removeLicense}
             onDeactivateLicense={license.deactivateLicense}
             onRestartOnboarding={handleRestartOnboarding}
+            onRegisterBack={(fn) => { settingsBackRef.current = fn; }}
           />
         )}
       </div>
@@ -746,6 +753,22 @@ export default function App() {
         )}
       </div>
 
+      {/* ── Feedback Panel ── */}
+      <div
+        className={[
+          "px-4 overflow-hidden transition-all duration-100 ease-out flex-shrink-0",
+          panels.showFeedback ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
+        ].join(" ")}
+      >
+        {panels.showFeedback && (
+          <FeedbackModal
+            isOpen={panels.showFeedback}
+            onClose={() => panels.close("feedback")}
+            defaultArea={feedbackArea}
+          />
+        )}
+      </div>
+
       {/* ── Center: Record Button (hidden when any panel is open) ── */}
       {!panels.anyOpen && (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 min-h-0">
@@ -854,9 +877,9 @@ export default function App() {
       <ThemeSwitcher />
 
       {/* ── Feedback FAB (floating, always visible) ── */}
-      <div className="fixed right-5 z-[9990] flex flex-col items-end gap-2" style={{ bottom: isMobile ? '96px' : '1.25rem' }}>
+      <div className="fixed right-5 z-[9990] flex flex-col items-end gap-2" style={{ bottom: isMobile ? '128px' : '1.25rem' }}>
         {/* Tooltip — shown every start until permanently dismissed */}
-        {showFeedbackTooltip && !feedbackOpen && (
+        {showFeedbackTooltip && !panels.showFeedback && (
           <div className="bg-klarvo-surface border border-klarvo-border/60 rounded-xl shadow-xl shadow-black/40 px-3.5 py-2.5 max-w-[220px] animate-in fade-in">
             <p className="text-xs text-klarvo-text font-medium leading-snug">
               Spotted something? Tap here to send feedback anytime!
@@ -880,19 +903,13 @@ export default function App() {
         <button
           title="Send Feedback"
           aria-label="Send feedback"
-          onClick={() => { setFeedbackOpen(true); setShowFeedbackTooltip(false); }}
+          onClick={() => { panels.toggle("feedback"); setShowFeedbackTooltip(false); }}
           className="w-14 h-14 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-400 shadow-lg shadow-black/30 hover:bg-orange-500/30 hover:scale-105 transition-all duration-150 flex items-center justify-center"
         >
           <FeedbackIcon className="w-6 h-6" />
         </button>
       </div>
 
-      {/* ── Feedback Modal ── */}
-      <FeedbackModal
-        isOpen={feedbackOpen}
-        onClose={() => setFeedbackOpen(false)}
-        defaultArea={feedbackArea}
-      />
     </main>
   );
 }
