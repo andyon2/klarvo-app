@@ -34,6 +34,8 @@
 //! `compute_status_from_cache` recalculates the status on every app start
 //! without network access.
 
+pub mod ls_client;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
@@ -92,8 +94,9 @@ const LICENSED_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
 /// After 30 days, a 48-hour grace period is granted before downgrading.
 const GRACE_PERIOD_SECS: u64 = 48 * 60 * 60;
 
-/// Early-adopter migration: existing users get a 60-day grace period.
-pub const EARLY_ADOPTER_GRACE_SECS: u64 = 60 * 24 * 60 * 60;
+/// Trial duration from first install.
+// TODO(launch): Reset to 14 days before public launch
+const TRIAL_DURATION_SECS: u64 = 60 * 24 * 60 * 60; // 60 days for Early Access
 
 /// Unix timestamp of the trial epoch: 2025-01-01T00:00:00Z.
 ///
@@ -366,6 +369,114 @@ pub fn status_to_string(status: &LicenseStatus) -> String {
         LicenseStatus::Trial { until } => format!("trial:{until}"),
         LicenseStatus::GracePeriod { until } => format!("grace_period:{until}"),
         LicenseStatus::Unlicensed => "unlicensed".to_string(),
+    }
+}
+
+/// Computes the trial status from the first-install timestamp.
+///
+/// Returns `Trial { until }` if the 14-day window is still open,
+/// or `Unlicensed` if it has expired (or `first_install_at` is 0).
+pub fn compute_trial_status(first_install_at: u64) -> LicenseStatus {
+    if first_install_at == 0 {
+        return LicenseStatus::Unlicensed;
+    }
+    let trial_end = first_install_at + TRIAL_DURATION_SECS;
+    let now = current_unix_timestamp();
+    if now < trial_end {
+        LicenseStatus::Trial { until: trial_end }
+    } else {
+        LicenseStatus::Unlicensed
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dual-path validation
+// ---------------------------------------------------------------------------
+
+/// Result of a dual-path key validation attempt.
+#[derive(Debug, Clone)]
+pub enum ValidateResult {
+    /// Key was validated locally via HMAC.
+    Hmac(LicenseStatus),
+    /// Key was validated online via Lemon Squeezy License API.
+    LemonSqueezy {
+        status: LicenseStatus,
+        /// Instance UUID returned by LS — must be persisted in config.
+        instance_id: String,
+    },
+}
+
+/// Validates a license key using both paths:
+/// 1. Try HMAC validation first (offline, instant).
+/// 2. If HMAC fails, try Lemon Squeezy API activation (online).
+///
+/// Returns `ValidateResult::Hmac` or `ValidateResult::LemonSqueezy` on success.
+/// Returns `Err` if both paths fail.
+///
+/// Error messages are user-friendly (German, matching the app locale).
+pub async fn validate_key_dual_path(
+    key: &str,
+    instance_name: &str,
+) -> Result<ValidateResult, String> {
+    // --- Path 1: HMAC (offline, instant) ---
+    match validate_license_key(key) {
+        Ok(status) => return Ok(ValidateResult::Hmac(status)),
+        Err(_) => {
+            // Key is not a valid HMAC key — fall through to Lemon Squeezy.
+        }
+    }
+
+    // --- Path 2: Lemon Squeezy activation (online) ---
+    match ls_client::activate(key, instance_name).await {
+        Ok(result) => Ok(ValidateResult::LemonSqueezy {
+            status: LicenseStatus::Licensed,
+            instance_id: result.instance_id,
+        }),
+        Err(ls_client::LsApiError::Network(_)) => Err(
+            "Keine Internetverbindung. Für die erste Aktivierung wird eine Verbindung benötigt."
+                .to_string(),
+        ),
+        Err(ls_client::LsApiError::Api(msg)) => {
+            // Map LS error messages to user-friendly German strings.
+            if msg.to_lowercase().contains("activation limit") {
+                Err("Aktivierungslimit erreicht (3 von 3 Geräten aktiv). \
+                     Deaktiviere ein Gerät in den Einstellungen."
+                    .to_string())
+            } else {
+                Err("Ungültiger Lizenzschlüssel.".to_string())
+            }
+        }
+    }
+}
+
+/// Computes license status for a Lemon Squeezy key from local cache.
+///
+/// Unlike HMAC keys, LS keys cannot be re-validated locally. The status
+/// is determined purely from the cached activation state:
+/// - If `ls_instance_id` is empty → Unlicensed (never activated)
+/// - If cache is fresh (within 30 days of `ls_last_validated_at`) → Licensed
+/// - If within 30 days + 48h → GracePeriod
+/// - Otherwise → Unlicensed (needs re-validation)
+///
+/// The re-validation itself happens in the command layer, not here.
+pub fn compute_status_from_cache_ls(
+    ls_instance_id: &str,
+    ls_last_validated_at: u64,
+) -> LicenseStatus {
+    if ls_instance_id.is_empty() || ls_last_validated_at == 0 {
+        return LicenseStatus::Unlicensed;
+    }
+
+    let now = current_unix_timestamp();
+    let elapsed = now.saturating_sub(ls_last_validated_at);
+
+    if elapsed <= LICENSED_DURATION_SECS {
+        LicenseStatus::Licensed
+    } else if elapsed <= LICENSED_DURATION_SECS + GRACE_PERIOD_SECS {
+        let until = ls_last_validated_at + LICENSED_DURATION_SECS + GRACE_PERIOD_SECS;
+        LicenseStatus::GracePeriod { until }
+    } else {
+        LicenseStatus::Unlicensed
     }
 }
 
@@ -949,5 +1060,86 @@ mod tests {
         // 2026-03-11 00:00:00 UTC = 1773187200
         // Verified with: date -d "2026-03-11 00:00:00 UTC" +%s
         assert_eq!(unix_secs_to_date_string(1_773_187_200), "2026-03-11");
+    }
+
+    // --- validate_key_dual_path (HMAC path only — LS path requires network) ---
+
+    /// A valid HMAC key must be resolved locally without any network call.
+    #[tokio::test]
+    async fn test_dual_path_hmac_key() {
+        // Payload 0x02... → permanent key (byte 0 != 0x01).
+        let key = generate_license_key(&[0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        let result = validate_key_dual_path(&key, "test-instance")
+            .await
+            .expect("Valid HMAC key must succeed");
+
+        match result {
+            ValidateResult::Hmac(LicenseStatus::Licensed) => {}
+            other => panic!("Expected Hmac(Licensed), got {other:?}"),
+        }
+    }
+
+    /// A key with correct KLARVO format but wrong HMAC must fail the HMAC path.
+    /// (The LS path is not tested here because it requires a live network.)
+    #[test]
+    fn test_dual_path_non_hmac_key_format_check() {
+        // "KLARVO-AAAA-AAAA-AAAA-AAAA" has correct format but invalid HMAC.
+        let result = validate_license_key("KLARVO-AAAA-AAAA-AAAA-AAAA");
+        assert!(
+            result.is_err(),
+            "HMAC must fail for a syntactically-valid but tampered key"
+        );
+        assert!(
+            result.unwrap_err().contains("HMAC"),
+            "Error message must mention HMAC"
+        );
+    }
+
+    // --- compute_status_from_cache_ls ---
+
+    #[test]
+    fn test_cache_ls_fresh() {
+        let now = current_unix_timestamp();
+        // Validated 1 day ago — well within the 30-day window.
+        let validated_at = now - (24 * 60 * 60);
+        let status = compute_status_from_cache_ls("some-uuid-1234", validated_at);
+        assert_eq!(status, LicenseStatus::Licensed, "Fresh LS cache must yield Licensed");
+    }
+
+    #[test]
+    fn test_cache_ls_grace() {
+        let now = current_unix_timestamp();
+        // Validated 31 days ago — past 30 days but within 48h grace.
+        let validated_at = now - (31 * 24 * 60 * 60);
+        let status = compute_status_from_cache_ls("some-uuid-1234", validated_at);
+        assert!(
+            matches!(status, LicenseStatus::GracePeriod { .. }),
+            "31-day-old LS cache must yield GracePeriod, got {status:?}"
+        );
+    }
+
+    #[test]
+    fn test_cache_ls_expired() {
+        let now = current_unix_timestamp();
+        // Validated 33 days ago — past both the 30-day and 48h grace windows.
+        let validated_at = now - (33 * 24 * 60 * 60);
+        let status = compute_status_from_cache_ls("some-uuid-1234", validated_at);
+        assert_eq!(
+            status,
+            LicenseStatus::Unlicensed,
+            "33-day-old LS cache must yield Unlicensed"
+        );
+    }
+
+    #[test]
+    fn test_cache_ls_empty_instance() {
+        let now = current_unix_timestamp();
+        // Empty instance_id means the key was never activated.
+        let status = compute_status_from_cache_ls("", now);
+        assert_eq!(
+            status,
+            LicenseStatus::Unlicensed,
+            "Empty instance_id must yield Unlicensed"
+        );
     }
 }

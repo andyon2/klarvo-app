@@ -24,13 +24,13 @@ import Onboarding from "./Onboarding";
 // Components
 import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
-  MailIcon, ListIcon, SummaryIcon, NoteIcon, LockIcon,
+  MailIcon, ListIcon, SummaryIcon, NoteIcon, LockIcon, FeedbackIcon,
 } from "./components/icons";
 import { FillerStatsChart, HighlightedText } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { AdvancedSettingsPanel } from "./components/AdvancedSettingsPanel";
 import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { FeedbackModal } from "./components/FeedbackModal";
 
 // Hooks
 import { useRecording } from "./hooks/useRecording";
@@ -213,8 +213,6 @@ export default function App() {
       license.licenseStatus.graceUntil !== undefined &&
       license.licenseStatus.graceUntil > Date.now() / 1000);
 
-  const isTrial = license.licenseStatus.type === "trial";
-
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -233,6 +231,42 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingInitialState, setOnboardingInitialState] = useState<import("./types").OnboardingState | undefined>(undefined);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+
+  // Trial-expired notification: shown once after a trial ends and user is now unlicensed.
+  const [showTrialExpired, setShowTrialExpired] = useState(false);
+
+  // Feedback modal + tooltip
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [showFeedbackTooltip, setShowFeedbackTooltip] = useState(
+    () => localStorage.getItem("klarvo_feedback_tooltip_dismissed") !== "true"
+  );
+
+  const dismissFeedbackTooltip = useCallback((permanently: boolean) => {
+    if (permanently) {
+      localStorage.setItem("klarvo_feedback_tooltip_dismissed", "true");
+    }
+    setShowFeedbackTooltip(false);
+  }, []);
+
+  useEffect(() => {
+    if (license.licenseStatus.type === "trial") {
+      localStorage.setItem("klarvo_was_in_trial", "true");
+    }
+    const wasInTrial = localStorage.getItem("klarvo_was_in_trial") === "true";
+    const trialExpiredSeen = localStorage.getItem("klarvo_trial_expired_seen") === "true";
+    if (wasInTrial && license.licenseStatus.type === "unlicensed" && !trialExpiredSeen) {
+      setShowTrialExpired(true);
+    } else if (license.licenseStatus.type !== "unlicensed") {
+      // Dismiss banner if status updated (e.g., initial "unlicensed" default
+      // was replaced by actual status from backend).
+      setShowTrialExpired(false);
+    }
+  }, [license.licenseStatus.type]);
+
+  const dismissTrialExpired = useCallback(() => {
+    localStorage.setItem("klarvo_trial_expired_seen", "true");
+    setShowTrialExpired(false);
+  }, []);
 
   // Quick-tip system
   const isIdle = recording.recordingState === "idle" || recording.recordingState === "done" || recording.recordingState === "error";
@@ -305,6 +339,17 @@ export default function App() {
   const isRecording = recording.recordingState === "recording";
   const headerBtnPad = isMobile ? "p-2.5" : "p-1.5";
   const hotkeyDisplay = formatHotkeyDisplay(settings.loadedSettings?.hotkey ?? "ctrl+shift+d");
+
+  // Derive the feedback area from the currently open panel.
+  const feedbackArea = panels.showSettings
+    ? "settings"
+    : panels.showHistory
+    ? "history"
+    : panels.showStats
+    ? "statistics"
+    : panels.showNotes
+    ? "notes"
+    : "home";
 
   // --- History handlers ---
   const handleHistorySearch = useCallback(async (textQ: string, appQ: string) => {
@@ -383,6 +428,7 @@ export default function App() {
           <MicIcon className="w-3.5 h-3.5 text-klarvo-primary" />
         </div>
         <span className="text-sm font-semibold text-klarvo-muted tracking-wide">Klarvo</span>
+        <span className="text-[9px] font-medium text-klarvo-dim/70 uppercase tracking-widest ml-1">Early Access</span>
 
         {/* Settings toggle */}
         <button
@@ -448,44 +494,22 @@ export default function App() {
           <NoteIcon className="w-4 h-4" />
         </button>
 
-        {/* Integrations toggle -- desktop only */}
-        {isDesktop && (
-          <button
-            aria-label="Toggle integrations"
-            aria-expanded={panels.showIntegrations}
-            onClick={() => panels.toggle("integrations")}
-            className={[
-              `${headerBtnPad} rounded-lg transition-all duration-150`,
-              panels.showIntegrations
-                ? "text-klarvo-primary bg-klarvo-primary/10"
-                : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
-            ].join(" ")}
-          >
-            {/* Plug/integration icon */}
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
-            </svg>
-          </button>
-        )}
-
-        {/* Advanced settings toggle */}
-        <button
-          title="Advanced settings"
-          aria-label="Toggle advanced settings"
-          aria-expanded={panels.showAdvanced}
-          onClick={() => panels.toggle("advanced")}
-          className={[
-            `${headerBtnPad} rounded-lg transition-all duration-150`,
-            panels.showAdvanced
-              ? "text-klarvo-primary bg-klarvo-primary/10"
-              : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
-          ].join(" ")}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-          </svg>
-        </button>
       </div>
+
+      {/* ── Trial-expired banner ── */}
+      {showTrialExpired && (
+        <div className="bg-klarvo-surface/95 border border-klarvo-border rounded-lg mx-4 mt-3 p-4 flex items-start gap-3 flex-shrink-0">
+          <div className="flex-1">
+            <p className="text-sm text-klarvo-text font-medium">Your 14-day trial has ended</p>
+            <p className="text-xs text-klarvo-muted mt-1">
+              Klarvo still works — some features are now locked. Unlock everything for €29.
+            </p>
+          </div>
+          <button onClick={dismissTrialExpired} className="text-xs text-klarvo-muted hover:text-klarvo-text px-2 py-1 shrink-0">
+            Got it
+          </button>
+        </div>
+      )}
 
       {/* ── Mode picker row ──
            Shown only on the home/recording view (no panel open). Always fully
@@ -503,7 +527,7 @@ export default function App() {
       {/* ── Settings Panel ── */}
       <div
         className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          "px-4 overflow-hidden transition-all duration-100 ease-out flex-shrink-0",
           // On Android the nav bar (~48 px) overlaps the bottom of the WebView, so we
           // subtract an extra 48 px from the available height. Without this the sticky
           // Save-button footer in SettingsPanel ends up behind the nav bar.
@@ -536,9 +560,11 @@ export default function App() {
             outputLanguage={settings.outputLanguage}
             onOutputLanguageChange={settings.handleOutputLanguageChange}
             licenseStatus={license.licenseStatus}
+            licenseSource={license.licenseSource}
             licenseLoading={license.licenseLoading}
             onValidateLicense={license.validateLicense}
             onRemoveLicense={license.removeLicense}
+            onDeactivateLicense={license.deactivateLicense}
             onRestartOnboarding={handleRestartOnboarding}
           />
         )}
@@ -547,7 +573,7 @@ export default function App() {
       {/* ── History Panel ── */}
       <div
         className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          "px-4 overflow-hidden transition-all duration-100 ease-out flex-shrink-0",
           panels.showHistory ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
@@ -653,7 +679,7 @@ export default function App() {
       {/* ── Stats Panel ── */}
       <div
         className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          "px-4 overflow-hidden transition-all duration-100 ease-out flex-shrink-0",
           panels.showStats ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
@@ -707,7 +733,7 @@ export default function App() {
       {/* ── Voice Notes Panel ── */}
       <div
         className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
+          "px-4 overflow-hidden transition-all duration-100 ease-out flex-shrink-0",
           panels.showNotes ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
         ].join(" ")}
       >
@@ -716,66 +742,6 @@ export default function App() {
             notes={notes}
             onRefresh={() => getNotes(50).then(setNotes).catch(console.error)}
             onClose={() => panels.close("notes")}
-          />
-        )}
-      </div>
-
-      {/* ── Integrations Panel (desktop only) ── */}
-      {isDesktop && (
-        <div
-          className={[
-            "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-            panels.showIntegrations ? "max-h-[600px] opacity-100 py-2" : "max-h-0 opacity-0 py-0",
-          ].join(" ")}
-        >
-          {panels.showIntegrations && (
-            <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
-                <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">Integrations</span>
-                <button
-                  onClick={() => panels.close("integrations")}
-                  className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-              <div className="px-4 py-8 flex flex-col items-center gap-3 text-center">
-                {!isPaid ? (
-                  <>
-                    <LockIcon className="w-5 h-5 text-klarvo-dim" />
-                    <p className="text-sm font-medium text-klarvo-muted">Integrations require a Klarvo license</p>
-                    <p className="text-xs text-klarvo-dim max-w-[240px]">Connect Klarvo with Notion, Todoist, and more with a license key.</p>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-8 h-8 text-klarvo-dim mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
-                    </svg>
-                    <p className="text-sm font-medium text-klarvo-muted">Integrations</p>
-                    <p className="text-xs text-klarvo-dim max-w-[220px]">Coming soon -- connect Klarvo with Notion, Todoist, and more.</p>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Advanced Settings Panel ── */}
-      <div
-        className={[
-          "px-4 overflow-hidden transition-all duration-250 ease-in-out flex-shrink-0",
-          // Same 48 px nav-bar adjustment as the Settings panel above.
-          panels.showAdvanced
-            ? (isMobile ? "max-h-[calc(100vh-128px)] opacity-100 py-2" : "max-h-[calc(100vh-80px)] opacity-100 py-2")
-            : "max-h-0 opacity-0 py-0",
-        ].join(" ")}
-      >
-        {panels.showAdvanced && (
-          <AdvancedSettingsPanel
-            onClose={() => panels.close("advanced")}
-            isPaid={isPaid}
-            isTrial={isTrial}
           />
         )}
       </div>
@@ -886,6 +852,47 @@ export default function App() {
 
       {/* ── Theme Switcher (preview only) ── */}
       <ThemeSwitcher />
+
+      {/* ── Feedback FAB (floating, always visible) ── */}
+      <div className="fixed right-5 z-[9990] flex flex-col items-end gap-2" style={{ bottom: isMobile ? '96px' : '1.25rem' }}>
+        {/* Tooltip — shown every start until permanently dismissed */}
+        {showFeedbackTooltip && !feedbackOpen && (
+          <div className="bg-klarvo-surface border border-klarvo-border/60 rounded-xl shadow-xl shadow-black/40 px-3.5 py-2.5 max-w-[220px] animate-in fade-in">
+            <p className="text-xs text-klarvo-text font-medium leading-snug">
+              Spotted something? Tap here to send feedback anytime!
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-2">
+              <button
+                onClick={() => dismissFeedbackTooltip(true)}
+                className="text-[10px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
+              >
+                Don&apos;t show again
+              </button>
+              <button
+                onClick={() => dismissFeedbackTooltip(false)}
+                className="text-[10px] text-klarvo-muted hover:text-klarvo-text transition-colors font-medium"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+        )}
+        <button
+          title="Send Feedback"
+          aria-label="Send feedback"
+          onClick={() => { setFeedbackOpen(true); setShowFeedbackTooltip(false); }}
+          className="w-14 h-14 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-400 shadow-lg shadow-black/30 hover:bg-orange-500/30 hover:scale-105 transition-all duration-150 flex items-center justify-center"
+        >
+          <FeedbackIcon className="w-6 h-6" />
+        </button>
+      </div>
+
+      {/* ── Feedback Modal ── */}
+      <FeedbackModal
+        isOpen={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        defaultArea={feedbackArea}
+      />
     </main>
   );
 }

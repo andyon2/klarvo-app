@@ -1,14 +1,12 @@
 import { useState, useCallback } from "react";
 
-export type PanelName = "settings" | "history" | "stats" | "notes" | "integrations" | "advanced";
+export type PanelName = "settings" | "history" | "stats" | "notes";
 
 interface PanelsState {
   showSettings: boolean;
   showHistory: boolean;
   showStats: boolean;
   showNotes: boolean;
-  showIntegrations: boolean;
-  showAdvanced: boolean;
 }
 
 // Callbacks invoked when a specific panel is first opened (for lazy data loading).
@@ -16,7 +14,6 @@ interface PanelOpenCallbacks {
   onOpenHistory?: () => void;
   onOpenStats?: () => void;
   onOpenNotes?: () => void;
-  onOpenIntegrations?: () => void;
 }
 
 export function usePanels(callbacks: PanelOpenCallbacks = {}) {
@@ -25,8 +22,6 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
     showHistory: false,
     showStats: false,
     showNotes: false,
-    showIntegrations: false,
-    showAdvanced: false,
   });
 
   // Close all panels. Returns true if any panel was open.
@@ -39,8 +34,6 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
         showHistory: false,
         showStats: false,
         showNotes: false,
-        showIntegrations: false,
-        showAdvanced: false,
       };
     });
     return wasOpen;
@@ -56,7 +49,6 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
         if (panel === "history") callbacks.onOpenHistory?.();
         if (panel === "stats") callbacks.onOpenStats?.();
         if (panel === "notes") callbacks.onOpenNotes?.();
-        if (panel === "integrations") callbacks.onOpenIntegrations?.();
       }
 
       return {
@@ -64,8 +56,6 @@ export function usePanels(callbacks: PanelOpenCallbacks = {}) {
         showHistory: panel === "history" ? !prev.showHistory : false,
         showStats: panel === "stats" ? !prev.showStats : false,
         showNotes: panel === "notes" ? !prev.showNotes : false,
-        showIntegrations: panel === "integrations" ? !prev.showIntegrations : false,
-        showAdvanced: panel === "advanced" ? !prev.showAdvanced : false,
       };
     });
   }, [callbacks]);

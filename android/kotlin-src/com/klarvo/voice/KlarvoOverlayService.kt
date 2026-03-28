@@ -1,7 +1,9 @@
 package com.klarvo.voice
 
+import android.Manifest
 import android.app.*
 import android.content.*
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.*
@@ -9,6 +11,7 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.*
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import java.io.IOException
 import kotlin.math.abs
 
@@ -703,6 +706,15 @@ class KlarvoOverlayService : Service() {
     // --- Audio recording ---
 
     private fun startRecording() {
+        // Check runtime permission before starting audio capture.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "RECORD_AUDIO permission not granted at recording time")
+            showToast("Microphone permission required. Please grant in app settings.")
+            return
+        }
+
         // Determine which mode governs this recording session.
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -730,6 +742,10 @@ class KlarvoOverlayService : Service() {
 
         try {
             recorder.start()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied when starting audio recording", e)
+            showToast("Microphone permission denied. Please grant in app settings.")
+            return
         } catch (e: IllegalStateException) {
             Log.w(TAG, "Failed to start audio recording", e)
             showToast("Cannot start recording: ${e.message}")

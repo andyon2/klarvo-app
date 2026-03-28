@@ -4,6 +4,7 @@
 //! be registered in the `invoke_handler` in `lib.rs`.
 
 pub mod dictionary;
+pub mod feedback;
 pub mod history;
 pub mod license;
 pub mod misc;

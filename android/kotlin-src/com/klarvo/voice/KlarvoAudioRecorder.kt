@@ -1,10 +1,13 @@
 package com.klarvo.voice
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.konovalov.vad.silero.VadSilero
 import com.konovalov.vad.silero.config.FrameSize
 import com.konovalov.vad.silero.config.Mode
@@ -121,6 +124,13 @@ class KlarvoAudioRecorder(
      * are missing. The caller (KlarvoOverlayService) handles the error and shows a toast.
      */
     fun start() {
+        // Verify runtime permission before accessing the microphone.
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            throw SecurityException("RECORD_AUDIO permission not granted")
+        }
+
         val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         if (minBufSize == AudioRecord.ERROR || minBufSize == AudioRecord.ERROR_BAD_VALUE) {
             throw IllegalStateException("AudioRecord.getMinBufferSize returned error: $minBufSize")

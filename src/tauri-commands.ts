@@ -737,6 +737,25 @@ export async function removeLicense(): Promise<void> {
   await invoke("remove_license");
 }
 
+/**
+ * Deactivates the current Lemon Squeezy license by calling the LS API to free
+ * the device activation slot, then clears all local license state.
+ * For HMAC keys this behaves identically to removeLicense (no API call).
+ */
+export async function deactivateLicense(): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("deactivate_license");
+}
+
+/**
+ * Returns the license source stored in config: "lemon_squeezy", "hmac", or "".
+ * Used to decide whether to show the "Deactivate (free slot)" button.
+ */
+export async function getLicenseSource(): Promise<string> {
+  if (isPreviewMode) return mockAsync("hmac");
+  return invoke<string>("get_license_source");
+}
+
 // --- Bar position ---
 
 /**
@@ -828,6 +847,29 @@ export async function toggleVoiceCommandMode(): Promise<boolean> {
 export async function getVoiceCommandActive(): Promise<boolean> {
   if (isPreviewMode) return mockAsync(false);
   return invoke<boolean>("get_voice_command_active");
+}
+
+// --- Feedback ---
+
+/**
+ * Sends in-app feedback to the backend for collection/forwarding.
+ * @param category    - "problem" | "idea" | "question" | "praise"
+ * @param message     - Free-text feedback body (min 3 chars)
+ * @param email       - Optional contact email for follow-up
+ * @param contextArea - Area of the app where feedback was triggered (auto-detected)
+ * @param area        - Optional user-selected feature area (e.g. "Audio", "UI")
+ */
+export async function sendFeedback(
+  category: "problem" | "idea" | "question" | "praise",
+  message: string,
+  email: string | undefined,
+  contextArea: string,
+  area: string | undefined,
+): Promise<void> {
+  if (isPreviewMode) {
+    return mockAsync(undefined, 800);
+  }
+  return invoke("send_feedback", { category, message, email, contextArea, area });
 }
 
 // --- Tips ---

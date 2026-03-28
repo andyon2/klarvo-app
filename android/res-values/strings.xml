@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Voxlit</string>
-    <string name="main_activity_title">Voxlit</string>
-    <string name="accessibility_service_description">Voxlit uses accessibility to detect text fields and insert dictated text automatically.</string>
+    <string name="app_name">Klarvo</string>
+    <string name="main_activity_title">Klarvo</string>
+    <string name="accessibility_service_description">Klarvo uses accessibility to detect text fields and insert dictated text automatically.</string>
 </resources>

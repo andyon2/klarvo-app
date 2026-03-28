@@ -313,6 +313,9 @@ pub async fn save_settings(
         local_whisper_gpu: local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
         license_key: existing.license_key,
         license_validated_at: existing.license_validated_at,
+        license_source: existing.license_source,
+        ls_instance_id: existing.ls_instance_id,
+        ls_last_validated_at: existing.ls_last_validated_at,
         bar_x: existing.bar_x,
         bar_y: existing.bar_y,
         insert_and_send: insert_and_send.unwrap_or(existing.insert_and_send),
@@ -330,6 +333,8 @@ pub async fn save_settings(
             .unwrap_or(existing.bubble_long_press_silence_secs),
         onboarding: existing.onboarding,
         voice_command_enabled: existing.voice_command_enabled,
+        first_install_at: existing.first_install_at,
+        feedback_webhook_url: existing.feedback_webhook_url,
     };
 
     // Resolve providers from the new config before persisting.
@@ -433,6 +438,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_long_press_auto_send: cfg.bubble_long_press_auto_send,
         bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
         voice_command_enabled: cfg.voice_command_enabled,
+        feedback_webhook_url: cfg.feedback_webhook_url,
     })
 }
 

@@ -56,7 +56,12 @@ object KlarvoApi {
         // LLM provider selection: "deepseek" (default), "groq", "openai", or "openrouter"
         val llmProvider: String = "deepseek",
         val openaiApiKey: String = "",
-        val openrouterApiKey: String = ""
+        val openrouterApiKey: String = "",
+        // License metadata written by Tauri/Rust after activation. Read-only on Android.
+        val licenseKey: String = "",         // KLARVO-XXXX-... key string (HMAC or LS)
+        val licenseSource: String = "",      // "hmac" | "lemon_squeezy"
+        val lsInstanceId: String = "",       // UUID from Lemon Squeezy activation
+        val lsLastValidatedAt: Long = 0L     // Unix timestamp (seconds)
     )
 
     /**
@@ -128,6 +133,23 @@ object KlarvoApi {
     }
 
     /**
+     * Checks whether the current config represents a licensed (paid) user.
+     *
+     * For LS keys: licenseSource == "lemon_squeezy" && lsInstanceId is not empty.
+     * For HMAC keys: licenseSource == "hmac" && licenseKey is not empty.
+     *
+     * This is a local-only check (no API call). The actual validation happened
+     * on the desktop app via Tauri/Rust -- Android reads the cached result from config.json.
+     */
+    fun isLicensed(config: Config): Boolean {
+        return when (config.licenseSource) {
+            "lemon_squeezy" -> config.lsInstanceId.isNotBlank()
+            "hmac"          -> config.licenseKey.isNotBlank()
+            else            -> false
+        }
+    }
+
+    /**
      * Returns the app's data directory path.
      * Tauri writes config.json to app_data_dir() which maps to activity.dataDir
      * (i.e. /data/data/<package>/), NOT to context.filesDir.
@@ -173,6 +195,12 @@ object KlarvoApi {
             val llmProvider = json.optString("llmProvider", "deepseek")
             val openaiApiKey = json.optString("openaiApiKey", "")
             val openrouterApiKey = json.optString("openrouterApiKey", "")
+            // License fields written by Tauri/Rust after activation. Optional -- older config.json
+            // files won't have them. Android reads these but never writes them.
+            val licenseKey = json.optString("licenseKey", "")
+            val licenseSource = json.optString("licenseSource", "")
+            val lsInstanceId = json.optString("lsInstanceId", "")
+            val lsLastValidatedAt = json.optLong("lsLastValidatedAt", 0L)
             Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             // Require at least a Groq key for STT; LLM key is optional (cleanup is skipped if absent).
@@ -182,7 +210,8 @@ object KlarvoApi {
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
-                llmProvider, openaiApiKey, openrouterApiKey
+                llmProvider, openaiApiKey, openrouterApiKey,
+                licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt
             )
         } catch (e: Exception) {
             null

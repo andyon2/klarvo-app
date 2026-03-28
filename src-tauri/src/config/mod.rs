@@ -651,6 +651,22 @@ pub struct AppConfig {
     #[serde(default)]
     pub license_validated_at: u64,
 
+    /// Which validation path was used: `"hmac"` or `"lemon_squeezy"`.
+    /// Empty string = not yet validated.
+    #[serde(default)]
+    pub license_source: String,
+
+    /// Instance ID (UUID) returned by Lemon Squeezy on activation.
+    /// Needed for deactivation and re-validation.
+    /// Empty string = not activated via Lemon Squeezy.
+    #[serde(default)]
+    pub ls_instance_id: String,
+
+    /// Unix timestamp (seconds) when the Lemon Squeezy license was last
+    /// validated online. 0 = never re-validated after initial activation.
+    #[serde(default)]
+    pub ls_last_validated_at: u64,
+
     // --- Floating bar position ---
 
     /// Deprecated: superseded by `HotkeySlot::insert_and_send`.
@@ -757,6 +773,25 @@ pub struct AppConfig {
     /// Default: `false` (opt-in feature).
     #[serde(default)]
     pub voice_command_enabled: bool,
+
+    /// Unix timestamp (seconds) of the very first app launch.
+    ///
+    /// Written once on first run and never overwritten. Used to compute the
+    /// 14-day trial window. 0 = not yet recorded (pre-trial builds or corrupt
+    /// config); treated as Unlicensed.
+    #[serde(default, rename = "firstInstallAt")]
+    pub first_install_at: u64,
+
+    /// Webhook URL for in-app feedback submissions.
+    ///
+    /// When non-empty, the `send_feedback` command POSTs a JSON payload to
+    /// this URL. Empty string = feedback feature disabled (default).
+    ///
+    /// This is an operator-controlled field: it is set in `config.json` by
+    /// whoever deploys/distributes Klarvo. End users do not see or change it
+    /// through the Settings UI.
+    #[serde(default, rename = "feedbackWebhookUrl")]
+    pub feedback_webhook_url: String,
 }
 
 fn default_stt_provider() -> String {
@@ -883,6 +918,9 @@ impl Default for AppConfig {
             local_whisper_gpu: default_local_whisper_gpu(),
             license_key: String::new(),
             license_validated_at: 0,
+            license_source: String::new(),
+            ls_instance_id: String::new(),
+            ls_last_validated_at: 0,
             insert_and_send: false,
             autostop_silence_secs: default_autostop_silence_secs(),
             auto_mode_silence_secs: default_auto_mode_silence_secs(),
@@ -897,6 +935,8 @@ impl Default for AppConfig {
             bubble_long_press_silence_secs: default_bubble_silence_secs(),
             onboarding: OnboardingState::default(),
             voice_command_enabled: false,
+            first_install_at: 0,
+            feedback_webhook_url: String::new(),
         }
     }
 }
@@ -1184,27 +1224,6 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
     config
 }
 
-/// Returns `true` if the on-disk config.json contains a `licenseKey` field.
-///
-/// This is used for the early-adopter migration: existing users whose config
-/// predates the license system will not have that field, and we grant them
-/// a 60-day grace period automatically.
-///
-/// Returns `false` if the file does not exist, cannot be read, or lacks the
-/// field.
-pub fn config_file_has_license_field(app_data_dir: &Path) -> bool {
-    let path = app_data_dir.join(CONFIG_FILE);
-    match std::fs::read_to_string(&path) {
-        Ok(contents) => {
-            match serde_json::from_str::<serde_json::Value>(&contents) {
-                Ok(v) => v.get("licenseKey").is_some(),
-                Err(_) => false,
-            }
-        }
-        Err(_) => false,
-    }
-}
-
 /// Saves the configuration to `{app_data_dir}/config.json`.
 ///
 /// Creates the directory if it does not exist.
@@ -1352,6 +1371,9 @@ mod tests {
             local_whisper_gpu: false,
             license_key: String::new(),
             license_validated_at: 0,
+            license_source: String::new(),
+            ls_instance_id: String::new(),
+            ls_last_validated_at: 0,
             insert_and_send: true,
             autostop_silence_secs: 1.5,
             auto_mode_silence_secs: 3.0,
@@ -1367,6 +1389,8 @@ mod tests {
             openrouter_api_key: "sk-or-test-key".to_string(),
             onboarding: OnboardingState::default(),
             voice_command_enabled: false,
+            first_install_at: 0,
+            feedback_webhook_url: "https://example.com/feedback".to_string(),
         };
 
         save_config(dir.path(), &original).expect("save should succeed");

@@ -67,46 +67,26 @@ const RESET_CSS = `
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Klarvo brand logo: two interlocking circles (cyan + gold) on dark bg. */
+/** Klarvo brand logo: teal K on dark circle. */
 function KlarvoLogo() {
   return (
     <div
       style={{
         width: 24,
         height: 24,
-        borderRadius: "50%",
-        background: "#252525",
+        borderRadius: 6,
+        background: "#14B8A6",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        fontWeight: 700,
+        fontSize: 14,
+        color: "#fff",
+        lineHeight: 1,
       }}
     >
-      <svg
-        viewBox="0 0 100 100"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ width: 18, height: 18 }}
-      >
-        {/* Bottom-left teal arc (opens right) with dot */}
-        <path
-          d="M55 58 A18 18 0 1 1 35 38"
-          stroke="#2AC3A8"
-          strokeWidth="7"
-          strokeLinecap="round"
-          fill="none"
-        />
-        <circle cx="35" cy="55" r="5" fill="#2AC3A8" />
-        {/* Top-right orange arc (opens left) with dot */}
-        <path
-          d="M45 42 A18 18 0 1 1 65 62"
-          stroke="#FFA344"
-          strokeWidth="7"
-          strokeLinecap="round"
-          fill="none"
-        />
-        <circle cx="65" cy="45" r="5" fill="#FFA344" />
-      </svg>
+      K
     </div>
   );
 }

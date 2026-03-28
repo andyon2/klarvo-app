@@ -65,9 +65,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::AtomicBool;
 
 use audio::AudioRecorder;
-use config::{config_file_has_license_field, load_config, save_config, AppConfig, HotkeyMode};
+use config::{load_config, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
-use license::{compute_status_from_cache, LicenseStatus, EARLY_ADOPTER_GRACE_SECS};
+use license::{compute_status_from_cache, compute_status_from_cache_ls, compute_trial_status, LicenseStatus};
 use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
@@ -192,6 +192,9 @@ pub struct SettingsView {
     pub bubble_long_press_silence_secs: f32,
     /// Whether Voice Command Mode is enabled (persisted user preference).
     pub voice_command_enabled: bool,
+    /// Webhook URL for in-app feedback submissions (plain, not a secret).
+    /// Empty string = feedback feature disabled.
+    pub feedback_webhook_url: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -276,23 +279,19 @@ impl AppState {
         dictionary: Dictionary,
         app_data_dir: PathBuf,
         history_db: rusqlite::Connection,
-        is_early_adopter: bool,
     ) -> Self {
         let stt = resolve_stt_provider(&cfg);
         let cleanup = resolve_cleanup_provider(&cfg);
 
         // Compute the initial license status from the cached key + timestamp.
-        let initial_license_status = if is_early_adopter {
-            // Existing user who predates the license system: grant 60-day grace period.
-            let until = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
-                + EARLY_ADOPTER_GRACE_SECS;
-            log::info!("[license] Early-adopter migration: 60-day grace period until {until}");
-            LicenseStatus::GracePeriod { until }
+        let initial_license_status = if !cfg.license_key.is_empty() {
+            if cfg.license_source == "lemon_squeezy" {
+                compute_status_from_cache_ls(&cfg.ls_instance_id, cfg.ls_last_validated_at)
+            } else {
+                compute_status_from_cache(&cfg.license_key, cfg.license_validated_at)
+            }
         } else {
-            compute_status_from_cache(&cfg.license_key, cfg.license_validated_at)
+            compute_trial_status(cfg.first_install_at)
         };
 
         log::info!("[license] Initial status: {initial_license_status:?}");
@@ -415,11 +414,11 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
     
 
     let tooltip = match state {
-        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Klarvo",
-        hotkey::PipelineState::Recording => "Klarvo \u{2014} Recording...",
-        hotkey::PipelineState::Transcribing => "Klarvo \u{2014} Transcribing...",
-        hotkey::PipelineState::Cleaning => "Klarvo \u{2014} Processing...",
-        hotkey::PipelineState::Error => "Klarvo \u{2014} Error",
+        hotkey::PipelineState::Idle | hotkey::PipelineState::Done => "Klarvo \u{00b7} Early Access",
+        hotkey::PipelineState::Recording => "Klarvo \u{00b7} Early Access \u{2014} Recording...",
+        hotkey::PipelineState::Transcribing => "Klarvo \u{00b7} Early Access \u{2014} Transcribing...",
+        hotkey::PipelineState::Cleaning => "Klarvo \u{00b7} Early Access \u{2014} Processing...",
+        hotkey::PipelineState::Error => "Klarvo \u{00b7} Early Access \u{2014} Error",
     };
 
     match handle.tray_by_id("klarvo-tray") {
@@ -689,10 +688,18 @@ pub fn run() {
 
         // Check for early-adopter migration BEFORE loading config (we need to
         // know whether the license_key field was absent in the on-disk file).
-        let is_early_adopter = !config_file_has_license_field(&app_data_dir);
-
         // Load persisted config (falls back to defaults + env vars on first run).
-        let cfg = load_config(&app_data_dir);
+        let mut cfg = load_config(&app_data_dir);
+
+        // Record first install timestamp on the very first launch.
+        if cfg.first_install_at == 0 {
+            cfg.first_install_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = save_config(&app_data_dir, &cfg);
+            log::info!("[trial] First install detected, set first_install_at = {}", cfg.first_install_at);
+        }
 
         // Restore the hotkey from config (or fall back to the compile-time default).
         let hotkey_str = if cfg.hotkey.is_empty() {
@@ -727,7 +734,7 @@ pub fn run() {
         let _saved_bar_y = cfg.bar_y;
 
         // Build and register the application state.
-        let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db, is_early_adopter);
+        let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
         app.manage(app_state);
 
         // --- System tray (Windows only -- WSL2/Linux lacks proper tray support) ---
@@ -738,7 +745,7 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_settings, &quit])?;
 
-            let tray_tooltip = format!("Klarvo \u{2014} {hotkey_str}");
+            let tray_tooltip = format!("Klarvo \u{00b7} Early Access \u{2014} {hotkey_str}");
             let _tray = tauri::tray::TrayIconBuilder::with_id("klarvo-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip(&tray_tooltip)
@@ -896,6 +903,8 @@ pub fn run() {
             commands::history::save_note,
             commands::history::is_tip_shown,
             commands::history::mark_tip_shown,
+            // Feedback
+            commands::feedback::send_feedback,
             // Misc: profiles, snippets, sync, paste, UI helpers
             commands::misc::get_profiles,
             commands::misc::save_profiles,
@@ -911,6 +920,8 @@ pub fn run() {
             commands::license::validate_license,
             commands::license::get_license_status,
             commands::license::remove_license,
+            commands::license::deactivate_license,
+            commands::license::get_license_source,
             // Whisper model manager (Windows only)
             #[cfg(target_os = "windows")]
             commands::whisper::windows::get_whisper_models,
@@ -1035,6 +1046,7 @@ mod tests {
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
+            feedback_webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1091,6 +1103,7 @@ mod tests {
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
+            feedback_webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1141,6 +1154,7 @@ mod tests {
             bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
+            feedback_webhook_url: String::new(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1171,7 +1185,7 @@ mod tests {
         };
         let db = rusqlite::Connection::open_in_memory()
             .expect("in-memory SQLite must always open successfully");
-        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db, false);
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
         let locked = state.config.lock().unwrap();
         assert!(!locked.groq_api_key.is_empty());
         assert!(!locked.deepseek_api_key.is_empty());
@@ -1261,5 +1275,62 @@ mod tests {
     fn test_default_hotkey_is_valid_string() {
         assert!(!DEFAULT_HOTKEY.is_empty());
         assert_eq!(DEFAULT_HOTKEY, "ctrl+shift+d");
+    }
+
+    // --- Trial license logic ---
+
+    #[test]
+    fn test_trial_active() {
+        let five_days_ago = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .saturating_sub(5 * 24 * 60 * 60);
+        let dir = temp_dir();
+        let cfg = AppConfig { first_install_at: five_days_ago, ..AppConfig::default() };
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
+        let status = state.license_status.lock().unwrap().clone();
+        assert!(matches!(status, license::LicenseStatus::Trial { .. }), "expected Trial, got {status:?}");
+    }
+
+    #[test]
+    fn test_trial_expired() {
+        // 61 days ago — beyond the 60-day EA trial window
+        let past_trial = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .saturating_sub(61 * 24 * 60 * 60);
+        let dir = temp_dir();
+        let cfg = AppConfig { first_install_at: past_trial, ..AppConfig::default() };
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
+        let status = state.license_status.lock().unwrap().clone();
+        assert!(matches!(status, license::LicenseStatus::Unlicensed), "expected Unlicensed, got {status:?}");
+    }
+
+    #[test]
+    fn test_licensed_user_ignores_trial() {
+        let five_days_ago = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .saturating_sub(5 * 24 * 60 * 60);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let dir = temp_dir();
+        let cfg = AppConfig {
+            license_key: "test-key".to_string(),
+            license_validated_at: now,
+            first_install_at: five_days_ago,
+            ..AppConfig::default()
+        };
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let state = AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db);
+        let status = state.license_status.lock().unwrap().clone();
+        assert!(!matches!(status, license::LicenseStatus::Trial { .. }), "licensed user got Trial: {status:?}");
     }
 }

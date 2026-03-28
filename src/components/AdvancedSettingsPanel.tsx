@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AdvancedSettings } from "../types";
 import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
-import { CloseIcon, SpinnerIcon, LockIcon, UnlockIcon } from "./icons";
+import { CloseIcon, SpinnerIcon, LockIcon } from "./icons";
 import { INPUT_CLS, LABEL_CLS } from "./ui";
 import { isMobile } from "../platform";
 import { MobileTextarea } from "./MobileTextarea";
@@ -37,12 +37,15 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
 };
 
 interface AdvancedSettingsPanelProps {
-  onClose: () => void;
+  onClose?: () => void;
   isPaid: boolean;
   isTrial?: boolean;
+  /** When true: no outer container/shadow and no header are rendered.
+   *  Use this when embedding inside another panel (e.g. SettingsPanel). */
+  embedded?: boolean;
 }
 
-export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSettingsPanelProps) {
+export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedded = false }: AdvancedSettingsPanelProps) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -82,12 +85,13 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
       });
   }, []);
 
-  // Close on Escape.
+  // Close on Escape -- only when not embedded (standalone mode has its own close button).
   useEffect(() => {
+    if (embedded || !onClose) return;
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   const set = useCallback(<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -114,7 +118,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
 
   if (!loaded) {
     return (
-      <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl p-6 text-center">
+      <div className={embedded ? "p-4 text-center" : "w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl p-6 text-center"}>
         <SpinnerIcon className="w-5 h-5 text-klarvo-dim mx-auto" />
       </div>
     );
@@ -133,28 +137,34 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
     </button>
   );
 
+  const TrialBadge = () => (
+    <span className="text-[10px] font-semibold uppercase tracking-wider bg-klarvo-primary/15 text-klarvo-primary px-1.5 py-0.5 rounded border border-klarvo-primary/25">
+      Trial
+    </span>
+  );
+
   // On Android the system nav bar (~48 px) overlaps the WebView bottom edge.
   // The panel needs flex-col so the footer stays below the scroll area, and the
   // scroll area must leave enough room for the footer + nav bar clearance.
   const scrollMaxH = isMobile ? "max-h-[calc(100vh-230px)]" : "max-h-[calc(100vh-150px)]";
 
+  const outerCls = embedded
+    ? "flex flex-col"
+    : `w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${isMobile ? "max-h-[calc(100vh-168px)]" : "max-h-[calc(100vh-120px)]"}`;
+
   return (
-    <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl shadow-xl shadow-black/30 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
-        <span className="text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest">Advanced Settings</span>
-        <button
-          aria-label="Close advanced settings"
-          onClick={onClose}
-          className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
-        >
-          <CloseIcon />
-        </button>
-      </div>
+    <div className={outerCls}>
+      {/* Header — only in standalone mode */}
+      {!embedded && onClose && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40 flex-shrink-0">
+          <span className="text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest">Advanced Settings</span>
+          <button aria-label="Close" onClick={onClose} className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50">
+            <CloseIcon />
+          </button>
+        </div>
+      )}
 
-      {/* Content -- scrollable, constrained so footer stays in view */}
-      <div className={`overflow-y-auto ${scrollMaxH} p-4 flex flex-col gap-1`}>
-
+      <div className={`overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-5 ${embedded ? "" : scrollMaxH}`}>
         {/* Speech-to-Text */}
         <button onClick={() => toggleSection("stt")} className={sectionBtnCls}>
           <svg className={`w-4 h-4 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSections.stt ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -163,7 +173,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Speech-to-Text
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
+            {isPaid && isTrial && <TrialBadge />}
           </span>
         </button>
         {openSections.stt && (
@@ -173,7 +183,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">Custom STT Prompts</span>
                 {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-                {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
+                {isPaid && isTrial && <TrialBadge />}
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>STT Prompt (German)</span>
@@ -275,7 +285,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
               <span className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">
                 Custom Cleanup Instructions
                 {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-                {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
+                {isPaid && isTrial && <TrialBadge />}
               </span>
             </button>
             {openSubSections.llmCustom && (
@@ -371,7 +381,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Webhook
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
+            {isPaid && isTrial && <TrialBadge />}
           </span>
         </button>
         {openSections.webhook && (
@@ -396,7 +406,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial }: AdvancedSett
           <span className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${isPaid ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
             Integrations
             {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-            {isPaid && isTrial && <UnlockIcon className="w-3 h-3 text-green-400" />}
+
           </span>
         </button>
         {openSections.integrations && (
