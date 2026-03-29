@@ -19,11 +19,12 @@
 //!
 //! ## Platform guard
 //!
-//! This module is gated behind `target_os = "windows"` because local whisper
-//! is Windows-only in the current build. The Tauri commands that call into
-//! this module are similarly guarded.
+//! This module is enabled on Windows and Android. The Tauri path resolution
+//! (`app_data_dir()`) returns the correct platform-specific directory on both
+//! platforms, so no path-level changes are needed. The Tauri commands that
+//! call into this module are guarded by the same cfg predicate.
 
-#![cfg(target_os = "windows")]
+#![cfg(any(target_os = "windows", target_os = "android"))]
 
 use std::path::{Path, PathBuf};
 

@@ -34,6 +34,7 @@ uuid = { version = "1", features = ["v4"] }
 hmac = "0.12"
 sha2 = "0.10"
 base32 = "0.4"
+base64 = "0.22"
 
 # Desktop-only dependencies (not available on Android/iOS)
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -56,11 +57,23 @@ windows = { version = "0.61", features = [
 ] }
 
 # whisper-rs: offline STT fallback (CPU-only by default; CUDA support is an
-# optional feature flag for later). Windows-only because:
-# - Android: cloud STT is used exclusively (GGML aarch64 build needs extra cmake)
+# optional feature flag for later). Enabled on Windows and Android:
+# - Windows: primary offline STT path via the hotkey pipeline
+# - Android: KlarvoApi.kt calls the transcribe_local Tauri command instead of Groq HTTP
 # - Linux/macOS: not yet supported in production, cmake may not be available
-[target.'cfg(windows)'.dependencies.whisper-rs]
+[target.'cfg(any(windows, target_os = "android"))'.dependencies.whisper-rs]
 version = "0.15.1"
+
+# Local LLM inference (offline cleanup fallback via llama.cpp).
+# Windows-only (same reason as whisper-rs: bindgen needs libclang + CMake).
+# dynamic-link: builds as DLL to avoid ggml symbol conflicts with whisper-rs-sys
+# (both crates bundle their own ggml; static linking causes LNK2005 duplicates).
+[target.'cfg(windows)'.dependencies.llama-cpp-2]
+version = "0.1.140"
+features = ["dynamic-link"]
+
+[target.'cfg(windows)'.dependencies.encoding_rs]
+version = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

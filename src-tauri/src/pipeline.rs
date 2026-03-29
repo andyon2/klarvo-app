@@ -41,11 +41,11 @@ use crate::setup_audio_level_emitter;
 pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     match cfg.stt_provider.as_str() {
         "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "android"))]
         "local" => build_local_whisper_provider(cfg),
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "android")))]
         "local" => {
-            log::warn!("[pipeline] local STT provider is only supported on Windows; falling back to groq");
+            log::warn!("[pipeline] local STT provider is only supported on Windows and Android; falling back to groq");
             Arc::new(stt::GroqWhisper::new(&cfg.groq_api_key).with_model(cfg.stt_model.clone()))
         }
         // "groq" and any unrecognised value
@@ -53,20 +53,33 @@ pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     }
 }
 
-/// Builds a `LocalWhisperProvider` with the model path derived from `%APPDATA%`.
+/// Builds a `LocalWhisperProvider` with the platform-appropriate model path.
 ///
-/// Path convention: `%APPDATA%\com.klarvo.voice\models\ggml-{model_name}.bin`
+/// ## Path convention by platform
 ///
-/// We derive the path from `APPDATA` rather than `AppState.app_data_dir`
-/// because `resolve_stt_provider` takes only `&AppConfig`. If `APPDATA` is
-/// not set (unlikely on Windows), falls back to `.\models\`.
-#[cfg(target_os = "windows")]
+/// - **Windows:** `%APPDATA%\com.klarvo.voice\models\ggml-{model}.bin`
+///   Derived from the `APPDATA` env var (falls back to `.\models\` if unset).
+/// - **Android:** path is constructed at command-call time in `transcribe_local`
+///   using the Tauri `AppHandle` to resolve `app_data_dir`. This function is
+///   not called on Android via the pipeline because Android STT goes through
+///   `KlarvoApi.kt` → `transcribe_local` Tauri command directly.
+///
+/// We derive the path from `APPDATA` (Windows) rather than `AppState.app_data_dir`
+/// because `resolve_stt_provider` takes only `&AppConfig`.
+#[cfg(any(target_os = "windows", target_os = "android"))]
 fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
     use stt::LocalWhisperProvider;
 
+    #[cfg(target_os = "windows")]
     let model_dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d).join("com.klarvo.voice").join("models"))
         .unwrap_or_else(|_| std::path::PathBuf::from("models"));
+
+    // On Android the pipeline path is a fallback only; the primary path is
+    // via the transcribe_local Tauri command. We use a hard-coded base because
+    // AppConfig doesn't carry app_data_dir.
+    #[cfg(target_os = "android")]
+    let model_dir = std::path::PathBuf::from("/data/data/com.klarvo.voice/files/models");
 
     let model_file = format!("ggml-{}.bin", cfg.local_whisper_model);
     let model_path = model_dir.join(&model_file);
@@ -100,6 +113,18 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
         )),
+        #[cfg(target_os = "windows")]
+        "local" => {
+            let model_dir = std::env::var("APPDATA")
+                .map(|d| std::path::PathBuf::from(d).join("com.klarvo.voice").join("models"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("models"));
+            let model_path = model_dir.join("qwen2.5-1.5b-instruct-q4_k_m.gguf");
+            log::info!(
+                "[pipeline] Local LLM cleanup provider: model={}",
+                model_path.display()
+            );
+            Arc::new(llm::local::LocalLlmCleanup::new(model_path))
+        }
         // "deepseek" and any unrecognised value
         _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
     }
@@ -810,10 +835,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             _ => "Multilingual voice dictation. German and English with proper punctuation.".to_string(),
         });
 
-        // Offline mode: if stt_provider is "local", the user has explicitly
-        // chosen to stay offline. In this case we skip the LLM cleanup step
-        // entirely -- no network call, raw text goes straight to paste.
-        let offline = cfg.stt_provider == "local";
+        // Offline mode: if stt_provider is "local" AND the LLM provider is
+        // not "local", skip the cleanup step (no network call, raw text
+        // goes straight to paste). When llm_provider is "local", cleanup
+        // runs offline via llama.cpp — no internet needed.
+        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
 
         (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline, hint_for_check)
     };
@@ -1508,20 +1534,34 @@ mod tests {
     use super::*;
     use crate::config::AppConfig;
 
-    /// When `stt_provider` is `"local"`, the offline flag must be `true` so
-    /// the pipeline skips the LLM cleanup step.
+    /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
+    /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
     ///
     /// This test verifies the extraction logic in `stop_and_process_pipeline`
     /// by replicating it directly -- the full pipeline cannot be unit-tested
     /// without a Tauri `AppHandle`.
     #[test]
-    fn test_offline_flag_derived_from_stt_provider_local() {
+    fn test_offline_flag_true_when_stt_local_and_llm_cloud() {
         let cfg = AppConfig {
             stt_provider: "local".to_string(),
+            llm_provider: "deepseek".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local";
-        assert!(offline, "offline flag should be true when stt_provider == 'local'");
+        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        assert!(offline, "offline flag should be true when stt=local but llm!=local");
+    }
+
+    /// When both `stt_provider` and `llm_provider` are `"local"`, the offline
+    /// flag must be `false` so the pipeline runs local LLM cleanup.
+    #[test]
+    fn test_offline_flag_false_when_both_local() {
+        let cfg = AppConfig {
+            stt_provider: "local".to_string(),
+            llm_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        assert!(!offline, "offline flag should be false when both stt and llm are local");
     }
 
     /// When `stt_provider` is a cloud provider, the offline flag must be `false`.
@@ -1532,7 +1572,7 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local";
+        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
         assert!(!offline, "offline flag should be false when stt_provider != 'local'");
     }
 

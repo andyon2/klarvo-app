@@ -6,6 +6,7 @@
 //! - `OpenAiCleanup`: OpenAI Chat API (OpenAI-compatible, `gpt-4o-mini`)
 //! - `GroqCleanup`: Groq Chat API (OpenAI-compatible, `llama-3.3-70b-versatile`)
 //! - `AnthropicCleanup`: Anthropic Messages API (different format, `claude-haiku-4-5-20251001`)
+//! - `LocalLlmCleanup`: Offline inference via llama.cpp (desktop-only, GGUF models)
 //!
 //! DeepSeek, OpenAI and Groq all share the generic `OpenAiCompatibleCleanup`
 //! struct. Anthropic requires its own implementation because the API format
@@ -20,6 +21,9 @@
 //! - OpenAI: <https://platform.openai.com/docs/api-reference/chat/create>
 //! - Groq: <https://console.groq.com/docs/openai>
 //! - Anthropic: <https://docs.anthropic.com/en/api/messages>
+
+#[cfg(target_os = "windows")]
+pub mod local;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -45,6 +49,12 @@ pub enum LlmError {
 
     #[error("Output was truncated: max_tokens limit reached")]
     OutputTruncated,
+
+    #[error("Local model not found: {0}")]
+    ModelNotFound(String),
+
+    #[error("Local inference failed: {0}")]
+    InferenceError(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -408,7 +418,7 @@ struct ApiErrorDetail {
 // ---------------------------------------------------------------------------
 
 /// Returns a system prompt for reformatting text into a specific output format.
-fn reformat_system_prompt(format: &str) -> &'static str {
+pub(super) fn reformat_system_prompt(format: &str) -> &'static str {
     match format {
         "email" => "\
 You are a text reformatter. Reformat the following text as a professional email.\n\

@@ -707,6 +707,89 @@ export function onModelDownloadError(
   });
 }
 
+// --- LLM Model Management (Desktop only) ---
+
+export interface LlmModelStatus {
+  downloaded: boolean;
+  sizeBytes: number | null;
+  path: string;
+}
+
+export interface LlmModelDownloadProgressPayload {
+  bytesReceived: number;
+  totalBytes: number;
+}
+
+export interface LlmModelDownloadErrorPayload {
+  error: string;
+}
+
+/**
+ * Returns the download status of the local LLM model (Qwen2.5-1.5B).
+ */
+export async function getLlmModelStatus(): Promise<LlmModelStatus> {
+  if (isPreviewMode) {
+    return mockAsync({ downloaded: false, sizeBytes: null, path: "" });
+  }
+  return invoke<LlmModelStatus>("get_llm_model_status");
+}
+
+/**
+ * Starts downloading the local LLM model in the background.
+ * Progress is reported via klarvo://llm-model-download-progress events.
+ */
+export async function downloadLlmModel(): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("download_llm_model");
+}
+
+/**
+ * Deletes the downloaded local LLM model from disk.
+ */
+export async function deleteLlmModel(): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("delete_llm_model");
+}
+
+/**
+ * Subscribes to LLM model download progress events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onLlmModelDownloadProgress(
+  _callback: (payload: LlmModelDownloadProgressPayload) => void
+): Promise<() => void> {
+  if (isPreviewMode) return mockListen();
+  return listen<LlmModelDownloadProgressPayload>("klarvo://llm-model-download-progress", (e) => {
+    _callback(e.payload);
+  });
+}
+
+/**
+ * Subscribes to LLM model download complete events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onLlmModelDownloadComplete(
+  _callback: () => void
+): Promise<() => void> {
+  if (isPreviewMode) return mockListen();
+  return listen<void>("klarvo://llm-model-download-complete", () => {
+    _callback();
+  });
+}
+
+/**
+ * Subscribes to LLM model download error events.
+ * Returns an unlisten function -- call it on cleanup.
+ */
+export function onLlmModelDownloadError(
+  _callback: (payload: LlmModelDownloadErrorPayload) => void
+): Promise<() => void> {
+  if (isPreviewMode) return mockListen();
+  return listen<LlmModelDownloadErrorPayload>("klarvo://llm-model-download-error", (e) => {
+    _callback(e.payload);
+  });
+}
+
 // --- License ---
 
 /**

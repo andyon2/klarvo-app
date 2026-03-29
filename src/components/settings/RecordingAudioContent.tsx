@@ -3,6 +3,7 @@ import { STYLE_OPTIONS } from "../../types";
 import { isDesktop, isMobile } from "../../platform";
 import { LABEL_CLS_M } from "../ui";
 import { WhisperModelManager } from "../WhisperModelManager";
+import { LlmModelManager } from "../LlmModelManager";
 
 // --- Cloud STT models ---------------------------------------------------------
 
@@ -55,10 +56,11 @@ export function RecordingAudioContent({
   return (
     <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
 
-      {/* Cloud / Offline toggle -- same visual style as StylePicker */}
+      {/* Cloud / Offline toggle -- desktop only (Android has no offline STT) */}
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Speech Recognition</span>
         <div className="flex flex-col gap-2 pl-0">
+        {isDesktop && (
         <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 w-fit">
           <button
             type="button"
@@ -89,9 +91,10 @@ export function RecordingAudioContent({
             Offline
           </button>
         </div>
+        )}
 
-        {/* Cloud mode: model picker */}
-        {localSttProvider !== "local" && (
+        {/* Cloud mode: model picker (always visible on mobile since offline STT is desktop-only) */}
+        {(isMobile || localSttProvider !== "local") && (
           <div className="flex flex-col gap-2 mt-1">
             <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
               <span className={LABEL_CLS_M}>Model</span>
@@ -123,7 +126,7 @@ export function RecordingAudioContent({
           </div>
         )}
 
-        {/* Offline mode: WhisperModelManager */}
+        {/* Offline mode: WhisperModelManager + optional local LLM cleanup */}
         {localSttProvider === "local" && isDesktop && (
           <div className="flex flex-col gap-3 mt-1">
             <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-klarvo-surface/30 border border-klarvo-border/30">
@@ -131,7 +134,7 @@ export function RecordingAudioContent({
                 <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
               </svg>
               <p className="text-[11px] text-klarvo-muted leading-relaxed">
-                Speech is transcribed locally. Text cleanup is skipped (no internet needed).
+                Speech is transcribed locally.
               </p>
             </div>
             <WhisperModelManager
@@ -146,8 +149,16 @@ export function RecordingAudioContent({
         </div>
       </div>
 
-      {/* Text Cleanup -- only in Cloud mode */}
-      {localSttProvider !== "local" && (
+      {/* Text Cleanup -- Offline mode: always local, no toggle needed */}
+      {localSttProvider === "local" && isDesktop && (
+        <div className="flex flex-col gap-2.5">
+          <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Text Cleanup</span>
+          <LlmModelManager />
+        </div>
+      )}
+
+      {/* Text Cleanup -- Cloud mode (always visible on mobile) */}
+      {(isMobile || localSttProvider !== "local") && (
         <div className="flex flex-col gap-2.5">
           <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Text Cleanup</span>
 
@@ -162,8 +173,14 @@ export function RecordingAudioContent({
               <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
               <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
               <option value="openrouter" disabled={!openrouterOk}>OpenRouter{!openrouterOk ? " (no key)" : ""}</option>
+              <option value="local">Local (Offline)</option>
             </select>
           </div>
+
+          {/* Local LLM model manager -- shown when local provider is selected */}
+          {localLlmProvider === "local" && (
+            <LlmModelManager />
+          )}
 
           <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
             <span className={LABEL_CLS_M}>Style</span>

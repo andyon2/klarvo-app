@@ -476,6 +476,47 @@ object KlarvoApi {
      * @return Cleaned text
      * @throws IOException on network or API errors
      */
+
+    /**
+     * Cleans up dictation text using the local MNN LLM model (offline).
+     * Uses the same system prompts as the cloud cleanup methods.
+     *
+     * @param context  Android context (for resolving model path)
+     * @param text     Raw transcription text to clean up
+     * @param style    Cleanup style: "polished", "verbatim", or "chat"
+     * @return Cleaned text
+     */
+    fun cleanupLocal(context: android.content.Context, text: String, style: String): String {
+        // Ensure model is loaded
+        if (!LocalLlmInference.isModelLoaded()) {
+            val modelDir = java.io.File(context.filesDir, "models/qwen2.5-1.5b-mnn")
+            val configPath = java.io.File(modelDir, "config.json").absolutePath
+            if (!LocalLlmInference.load(configPath)) {
+                Log.w(CLEANUP_TAG, "[cleanupLocal] Failed to load local model, returning raw text")
+                return text
+            }
+        }
+
+        // Reuse the system prompt from the cloud cleanup method.
+        // We call buildSystemPrompt which mirrors the when(style) block in cleanup().
+        val systemPrompt = buildSystemPrompt(style)
+        val prompt = "<|im_start|>system\n$systemPrompt<|im_end|>\n<|im_start|>user\n$text<|im_end|>\n<|im_start|>assistant\n"
+
+        val result = LocalLlmInference.cleanup(prompt)
+        Log.i(CLEANUP_TAG, "[cleanupLocal] input=${text.length} chars, output=${result.length} chars")
+        return result.ifBlank { text }
+    }
+
+    /**
+     * Returns the system prompt for a given cleanup style.
+     * Used by both cloud cleanup and local (MNN) cleanup.
+     */
+    private fun buildSystemPrompt(style: String): String = when (style) {
+        "verbatim" -> "You are a minimal text cleanup assistant. The user gives you raw speech-to-text output. Apply ONLY these changes:\n- Remove filler words\n- Remove stutters and repeated words\n- Add punctuation and fix capitalization\n- Fix obvious transcription errors\n- Output ONLY the cleaned text, no explanations"
+        "chat" -> "You are a text cleanup assistant. Make the text chat-ready:\n- Remove all filler words and stutters\n- Make it concise for messaging apps\n- Keep it casual and natural\n- Emojis allowed where natural\n- Output ONLY the cleaned text, no explanations"
+        else -> "You are a text cleanup assistant. Clean up raw speech-to-text output:\n- Remove filler words and stutters\n- Fix grammar, punctuation, and capitalization\n- Smooth sentence flow\n- Keep the speaker's voice\n- Output ONLY the cleaned text, no explanations"
+    }
+
     fun cleanup(text: String, provider: LlmProviderInfo, style: String): String {
         val systemPrompt = when (style) {
             "verbatim" -> """You are a minimal text cleanup assistant. The user gives you raw speech-to-text output. Apply ONLY these changes:

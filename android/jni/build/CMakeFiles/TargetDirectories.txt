@@ -1,0 +1,3 @@
+/home/andyon2/workspace/products/klarvo/android/jni/build/CMakeFiles/klarvo_mnn.dir
+/home/andyon2/workspace/products/klarvo/android/jni/build/CMakeFiles/edit_cache.dir
+/home/andyon2/workspace/products/klarvo/android/jni/build/CMakeFiles/rebuild_cache.dir

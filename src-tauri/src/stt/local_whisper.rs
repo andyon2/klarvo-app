@@ -3,10 +3,17 @@
 //! ## Design
 //!
 //! `LocalWhisperProvider` implements the `SttProvider` trait and is available
-//! on Windows only. On Android we use cloud STT exclusively because the GGML
-//! build for aarch64 requires extra cmake configuration and is not needed for
-//! the MVP. On macOS/Linux the feature could be enabled later; for now only
-//! the Windows production build path matters.
+//! on Windows and Android. On macOS/Linux the feature could be enabled later.
+//!
+//! ## Platform usage
+//!
+//! - **Windows:** used by the hotkey pipeline (`pipeline.rs`) when
+//!   `stt_provider = "local"`.
+//! - **Android:** invoked directly via the `transcribe_local` Tauri command
+//!   from `KlarvoApi.kt` instead of Groq HTTP, enabling offline dictation.
+//!
+//! On macOS/Linux the feature could be enabled later; for now only Windows and
+//! Android production build paths are supported.
 //!
 //! The `WhisperContext` (model weights) is expensive to load (~100-200ms +
 //! RAM allocation). We therefore keep a single cached instance wrapped in
@@ -20,7 +27,7 @@
 //! accepts raw WAV bytes (as produced by the `audio` module) and converts
 //! them internally using `hound` for WAV decoding.
 
-#![cfg(target_os = "windows")]
+#![cfg(any(target_os = "windows", target_os = "android"))]
 
 use std::sync::{Arc, Mutex};
 

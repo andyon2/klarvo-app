@@ -1,3 +1,10 @@
+# FORCE:MULTIPLE resolves duplicate ggml symbols between whisper-rs-sys
+# (statically linked ggml) and llama-cpp-sys-2 (dynamic-link ggml).
+# Both crates bundle their own ggml copy. The symbols are from compatible
+# versions, so the linker can safely pick either one.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-args=/FORCE:MULTIPLE"]
+
 [target.aarch64-linux-android]
 linker = "/home/andyon2/android-sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
 

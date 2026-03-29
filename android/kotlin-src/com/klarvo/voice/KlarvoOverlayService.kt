@@ -892,20 +892,33 @@ class KlarvoOverlayService : Service() {
             }
 
             // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
-            val llmProvider = KlarvoApi.resolveLlmProvider(config)
-            val finalText = if (llmProvider != null) {
+            val finalText = if (config.llmProvider == "local") {
+                // Offline cleanup via MNN (local inference, no internet needed)
                 try {
-                    val result = KlarvoApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
+                    val result = KlarvoApi.cleanupLocal(this, transcript, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
-                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
+                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (local/mnn)")
                     result
-                } catch (e: IOException) {
-                    Log.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Local cleanup failed -- using raw transcript", e)
                     transcript
                 }
             } else {
-                Log.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
-                transcript
+                val llmProvider = KlarvoApi.resolveLlmProvider(config)
+                if (llmProvider != null) {
+                    try {
+                        val result = KlarvoApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
+                        val tCleanup = System.currentTimeMillis()
+                        Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
+                        result
+                    } catch (e: IOException) {
+                        Log.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                        transcript
+                    }
+                } else {
+                    Log.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
+                    transcript
+                }
             }
 
             // Step 3: Save to history DB

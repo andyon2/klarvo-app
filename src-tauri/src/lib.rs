@@ -922,13 +922,36 @@ pub fn run() {
             commands::license::remove_license,
             commands::license::deactivate_license,
             commands::license::get_license_source,
-            // Whisper model manager (Windows only)
+            // Whisper model manager (Windows)
             #[cfg(target_os = "windows")]
             commands::whisper::windows::get_whisper_models,
             #[cfg(target_os = "windows")]
             commands::whisper::windows::download_whisper_model,
             #[cfg(target_os = "windows")]
             commands::whisper::windows::delete_whisper_model,
+            // Whisper model manager + offline transcription (Android)
+            #[cfg(target_os = "android")]
+            commands::whisper::android::get_whisper_models,
+            #[cfg(target_os = "android")]
+            commands::whisper::android::download_whisper_model,
+            #[cfg(target_os = "android")]
+            commands::whisper::android::delete_whisper_model,
+            #[cfg(target_os = "android")]
+            commands::whisper::android::transcribe_local,
+            // LLM model manager (Windows: GGUF for llama.cpp)
+            #[cfg(target_os = "windows")]
+            commands::llm_model::windows::get_llm_model_status,
+            #[cfg(target_os = "windows")]
+            commands::llm_model::windows::download_llm_model,
+            #[cfg(target_os = "windows")]
+            commands::llm_model::windows::delete_llm_model,
+            // LLM model manager (Android: MNN model bundle)
+            #[cfg(target_os = "android")]
+            commands::llm_model::android::get_llm_model_status,
+            #[cfg(target_os = "android")]
+            commands::llm_model::android::download_llm_model,
+            #[cfg(target_os = "android")]
+            commands::llm_model::android::delete_llm_model,
             // Voice Command Mode (desktop only)
             #[cfg(desktop)]
             commands::voice_command::toggle_voice_command_mode,

@@ -30,7 +30,7 @@ pub mod hallucination;
 pub use hallucination::is_hallucination;
 
 pub mod local_whisper;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "android"))]
 pub use local_whisper::LocalWhisperProvider;
 
 pub mod model_manager;

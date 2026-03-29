@@ -7,6 +7,7 @@ pub mod dictionary;
 pub mod feedback;
 pub mod history;
 pub mod license;
+pub mod llm_model;
 pub mod misc;
 pub mod recording;
 pub mod settings;

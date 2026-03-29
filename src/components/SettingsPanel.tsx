@@ -392,6 +392,28 @@ export function SettingsPanel({
     onAudioDeviceChange(d);
   }, [onAudioDeviceChange]);
 
+  // When switching to offline STT, auto-select local LLM cleanup.
+  // When switching back to cloud STT, restore the first available cloud provider.
+  const handleSttProviderChange = useCallback((provider: string) => {
+    setLocalSttProvider(provider);
+    if (provider === "local") {
+      setLocalLlmProvider("local");
+    } else {
+      // Restore to first available cloud provider, or deepseek as default.
+      const hasDeepseek = !!loadedSettings?.deepseekApiKeyMasked;
+      const hasOpenai = !!loadedSettings?.openaiApiKeyMasked;
+      const hasGroq = !!loadedSettings?.groqApiKeyMasked;
+      const hasOpenrouter = !!loadedSettings?.openrouterApiKeyMasked;
+      const fallback =
+        (hasDeepseek && "deepseek") ||
+        (hasOpenai && "openai") ||
+        (hasGroq && "groq") ||
+        (hasOpenrouter && "openrouter") ||
+        "deepseek";
+      setLocalLlmProvider(fallback);
+    }
+  }, [loadedSettings]);
+
   // Internal helper: calls onSave with all current values. Used by both the
   // explicit Save button and the auto-save after license activation.
   const saveCurrentSettings = useCallback(async (opts?: { silent?: boolean }) => {
@@ -595,7 +617,7 @@ export function SettingsPanel({
           <div className="overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-5">
             {activeCategory === "recording-audio" && (
               <RecordingAudioContent
-                localSttProvider={localSttProvider} setLocalSttProvider={setLocalSttProvider}
+                localSttProvider={localSttProvider} setLocalSttProvider={handleSttProviderChange}
                 localSttModel={localSttModel} setLocalSttModel={setLocalSttModel}
                 localLlmProvider={localLlmProvider} setLocalLlmProvider={setLocalLlmProvider}
                 localStyle={localStyle} handleStyleChange={handleStyleChange}
