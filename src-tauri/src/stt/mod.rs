@@ -35,6 +35,9 @@ pub use local_whisper::LocalWhisperProvider;
 
 pub mod model_manager;
 
+#[cfg(target_os = "android")]
+pub mod jni_bridge;
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------

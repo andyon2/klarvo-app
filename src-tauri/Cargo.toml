@@ -56,6 +56,12 @@ windows = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
+# Android-only: JNI bridge for the overlay service (LocalWhisperInference Kotlin class).
+# once_cell provides the global model cache; jni exposes Rust functions to the JVM.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+once_cell = "1"
+
 # whisper-rs: offline STT fallback (CPU-only by default; CUDA support is an
 # optional feature flag for later). Enabled on Windows and Android:
 # - Windows: primary offline STT path via the hotkey pipeline

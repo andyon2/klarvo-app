@@ -61,7 +61,13 @@ object KlarvoApi {
         val licenseKey: String = "",         // KLARVO-XXXX-... key string (HMAC or LS)
         val licenseSource: String = "",      // "hmac" | "lemon_squeezy"
         val lsInstanceId: String = "",       // UUID from Lemon Squeezy activation
-        val lsLastValidatedAt: Long = 0L     // Unix timestamp (seconds)
+        val lsLastValidatedAt: Long = 0L,    // Unix timestamp (seconds)
+        // STT provider: "groq" (default), "openai", or "local" (offline whisper.cpp via JNI).
+        val sttProvider: String = "groq",
+        // Optional custom LLM cleanup prompt (empty = use built-in default).
+        val customPrompt: String = "",
+        // Comma-separated domain-specific terms for STT/cleanup hinting (e.g. "Klarvo,Tauri").
+        val dictionaryTerms: String = ""
     )
 
     /**
@@ -201,17 +207,21 @@ object KlarvoApi {
             val licenseSource = json.optString("licenseSource", "")
             val lsInstanceId = json.optString("lsInstanceId", "")
             val lsLastValidatedAt = json.optLong("lsLastValidatedAt", 0L)
-            Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
+            val sttProvider = json.optString("sttProvider", "groq")
+            val customPrompt = json.optString("customPrompt", "")
+            val dictionaryTerms = json.optString("dictionaryTerms", "")
+            Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
-            // Require at least a Groq key for STT; LLM key is optional (cleanup is skipped if absent).
-            if (groqKey.isBlank()) null
+            // Require a Groq key for cloud STT, but allow "local" sttProvider without any key.
+            if (sttProvider != "local" && groqKey.isBlank()) null
             else Config(
                 groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
                 llmProvider, openaiApiKey, openrouterApiKey,
-                licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt
+                licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
+                sttProvider, customPrompt, dictionaryTerms
             )
         } catch (e: Exception) {
             null
@@ -439,31 +449,29 @@ object KlarvoApi {
         val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
         val conn = url.openConnection() as HttpURLConnection
 
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            conn.setRequestProperty("Authorization", "Bearer $apiKey")
-            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
 
-            val body = buildMultipartBody(boundary, wavBytes, language)
-            conn.setRequestProperty("Content-Length", body.size.toString())
+        val body = buildMultipartBody(boundary, wavBytes, language)
+        conn.setRequestProperty("Content-Length", body.size.toString())
 
-            conn.outputStream.use { it.write(body) }
+        conn.outputStream.use { it.write(body) }
 
-            val responseCode = conn.responseCode
-            if (responseCode != 200) {
-                val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
-                throw IOException("Groq STT failed: HTTP $responseCode -- $errorBody")
-            }
-
-            val responseText = conn.inputStream.bufferedReader().readText()
-            val json = JSONObject(responseText)
-            return json.getString("text").trim()
+        val responseCode = conn.responseCode
+        if (responseCode != 200) {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
+            throw IOException("Groq STT failed: HTTP $responseCode -- $errorBody")
         }
+
+        val responseText = conn.inputStream.bufferedReader().readText()
+        val json = JSONObject(responseText)
         // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
         // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
+        return json.getString("text").trim()
     }
 
     /**
@@ -640,53 +648,51 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val url = URL(provider.url)
         val conn = url.openConnection() as HttpURLConnection
 
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            conn.setRequestProperty("Authorization", "Bearer ${provider.apiKey}")
-            conn.setRequestProperty("Content-Type", "application/json")
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.setRequestProperty("Authorization", "Bearer ${provider.apiKey}")
+        conn.setRequestProperty("Content-Type", "application/json")
 
-            val messages = JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", systemPrompt)
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", text)
-                })
-            }
-
-            val requestBody = JSONObject().apply {
-                put("model", provider.model)
-                put("messages", messages)
-                put("temperature", 0.3)
-                put("max_tokens", 2048)
-            }.toString().toByteArray(Charsets.UTF_8)
-
-            conn.setRequestProperty("Content-Length", requestBody.size.toString())
-            conn.outputStream.use { it.write(requestBody) }
-
-            val responseCode = conn.responseCode
-            if (responseCode != 200) {
-                val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
-                throw IOException("LLM cleanup failed (${provider.model}): HTTP $responseCode -- $errorBody")
-            }
-
-            val responseText = conn.inputStream.bufferedReader().readText()
-            val json = JSONObject(responseText)
-            return json
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
+        val messages = JSONArray().apply {
+            put(JSONObject().apply {
+                put("role", "system")
+                put("content", systemPrompt)
+            })
+            put(JSONObject().apply {
+                put("role", "user")
+                put("content", text)
+            })
         }
+
+        val requestBody = JSONObject().apply {
+            put("model", provider.model)
+            put("messages", messages)
+            put("temperature", 0.3)
+            put("max_tokens", 2048)
+        }.toString().toByteArray(Charsets.UTF_8)
+
+        conn.setRequestProperty("Content-Length", requestBody.size.toString())
+        conn.outputStream.use { it.write(requestBody) }
+
+        val responseCode = conn.responseCode
+        if (responseCode != 200) {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
+            throw IOException("LLM cleanup failed (${provider.model}): HTTP $responseCode -- $errorBody")
+        }
+
+        val responseText = conn.inputStream.bufferedReader().readText()
+        val json = JSONObject(responseText)
         // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
         // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
         // Calling disconnect() forces a new TCP+TLS handshake on every request (+200-500ms).
+        return json
+            .getJSONArray("choices")
+            .getJSONObject(0)
+            .getJSONObject("message")
+            .getString("content")
+            .trim()
     }
 
     // --- Chunked cleanup ---

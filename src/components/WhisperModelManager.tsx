@@ -37,6 +37,11 @@ interface WhisperModelManagerProps {
   onGpuChange: (enabled: boolean) => void;
   /** Whether user has a paid license */
   isPaid: boolean;
+  /**
+   * Whether to show the GPU acceleration toggle.
+   * Defaults to true. Pass false on platforms without GPU support (Android).
+   */
+  showGpuToggle?: boolean;
 }
 
 export function WhisperModelManager({
@@ -45,6 +50,7 @@ export function WhisperModelManager({
   onModelChange,
   onGpuChange,
   isPaid,
+  showGpuToggle = true,
 }: WhisperModelManagerProps) {
   const [models, setModels] = useState<WhisperModelWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -309,8 +315,8 @@ export function WhisperModelManager({
         );
       })}
 
-      {/* GPU toggle */}
-      <div className="flex items-center justify-between gap-3">
+      {/* GPU toggle -- desktop only (Android has no CUDA) */}
+      {showGpuToggle && <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           <span className={LABEL_CLS}>GPU Acceleration (CUDA)</span>
           <span className={hintCls}>Requires NVIDIA GPU + CUDA Toolkit</span>
@@ -332,7 +338,7 @@ export function WhisperModelManager({
             ].join(" ")}
           />
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

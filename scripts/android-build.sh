@@ -159,6 +159,26 @@ export ANDROID_HOME="/home/andyon2/workspace/tools/android-sdk"
 export NDK_HOME="/home/andyon2/workspace/tools/android-sdk/ndk/27.0.12077973"
 export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
 export AR_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+# bindgen (used by whisper-rs-sys) requires a host libclang; use the one bundled in NDK
+export LIBCLANG_PATH="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/musl/lib"
+# cmake + ninja are required by whisper-rs-sys; use the ones from the Android SDK
+export PATH="/home/andyon2/workspace/tools/android-sdk/cmake/3.22.1/bin:$PATH"
+# cmake Android platform module requires ANDROID_NDK_ROOT to locate the toolchain
+export ANDROID_NDK_ROOT="$NDK_HOME"
+# whisper-rs-sys uses the cmake Rust crate, which reads CMAKE_TOOLCHAIN_FILE_<target>
+# to pass the NDK toolchain to cmake (required for Android cross-compilation).
+# We use a wrapper toolchain that forces ANDROID_ABI=arm64-v8a (otherwise cmake
+# defaults to armeabi-v7a, producing 32-bit objects incompatible with the aarch64 linker).
+WRAPPER_TOOLCHAIN="/tmp/android-aarch64-toolchain.cmake"
+cat > "$WRAPPER_TOOLCHAIN" << 'TOOLCHAIN_EOF'
+set(ANDROID_ABI "arm64-v8a" CACHE STRING "" FORCE)
+set(ANDROID_PLATFORM "android-24" CACHE STRING "" FORCE)
+TOOLCHAIN_EOF
+# shellcheck disable=SC2016
+echo 'include("$ENV{NDK_HOME}/build/cmake/android.toolchain.cmake")' >> "$WRAPPER_TOOLCHAIN"
+export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$WRAPPER_TOOLCHAIN"
+# Also set the generator so cmake uses ninja (bundled in SDK cmake bin)
+export CMAKE_GENERATOR_aarch64_linux_android="Ninja"
 
 # ---------------------------------------------------------------------------
 # 9. Build

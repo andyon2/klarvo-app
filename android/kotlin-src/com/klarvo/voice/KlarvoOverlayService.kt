@@ -863,7 +863,7 @@ class KlarvoOverlayService : Service() {
         val tConfig = System.currentTimeMillis()
         Log.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
 
-        if (config == null || config.groqApiKey.isBlank()) {
+        if (config == null || (config.sttProvider != "local" && config.groqApiKey.isBlank())) {
             handler.post {
                 showToast("No API keys configured. Please open Klarvo and add your Groq key in Settings.")
                 autoLoopActive = false
@@ -875,10 +875,67 @@ class KlarvoOverlayService : Service() {
         }
 
         try {
-            // Step 1: STT via Groq Whisper
-            val transcript = KlarvoApi.transcribe(wavBytes, config.groqApiKey, config.language)
+            // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
+            val transcript = if (config.sttProvider == "local") {
+                val tLocalStart = System.currentTimeMillis()
+
+                // Resolve model file path: dataDir/models/ggml-small.bin
+                val modelDir = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    dataDir
+                } else {
+                    java.io.File(applicationInfo.dataDir)
+                }.resolve("models")
+                val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
+
+                if (!modelFile.exists()) {
+                    Log.e(TAG, "Whisper model not found: $modelFile")
+                    handler.post {
+                        showToast("Whisper model not downloaded. Please download in Settings.")
+                        autoLoopActive = false
+                        val prev = currentState
+                        setState(RecordingState.IDLE)
+                        adjustLayoutForState(RecordingState.IDLE, prev)
+                    }
+                    return
+                }
+
+                if (!LocalWhisperInference.isModelLoaded()) {
+                    val loadOk = LocalWhisperInference.load(modelFile.absolutePath)
+                    if (!loadOk) {
+                        Log.e(TAG, "Failed to load whisper model: $modelFile")
+                        handler.post {
+                            showToast("Failed to load Whisper model")
+                            autoLoopActive = false
+                            val prev = currentState
+                            setState(RecordingState.IDLE)
+                            adjustLayoutForState(RecordingState.IDLE, prev)
+                        }
+                        return
+                    }
+                }
+
+                val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+                val result = LocalWhisperInference.transcribeAudio(wavBase64, config.language)
+                val tLocalEnd = System.currentTimeMillis()
+                Log.d(TAG, "[pipeline] local STT: ${tLocalEnd - tLocalStart}ms (${wavBytes.size / 1024}KB audio)")
+
+                if (result.isBlank()) {
+                    Log.e(TAG, "Local transcription returned empty result")
+                    handler.post {
+                        showToast("Transcription failed")
+                        autoLoopActive = false
+                        val prev = currentState
+                        setState(RecordingState.IDLE)
+                        adjustLayoutForState(RecordingState.IDLE, prev)
+                    }
+                    return
+                }
+                result
+            } else {
+                KlarvoApi.transcribe(wavBytes, config.groqApiKey, config.language)
+            }
             val tStt = System.currentTimeMillis()
-            Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio)")
+            Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
 
             if (transcript.isBlank()) {
                 handler.post {
@@ -907,7 +964,13 @@ class KlarvoOverlayService : Service() {
                 val llmProvider = KlarvoApi.resolveLlmProvider(config)
                 if (llmProvider != null) {
                     try {
-                        val result = KlarvoApi.cleanupChunked(transcript, llmProvider, config.cleanupStyle)
+                        val result = KlarvoApi.cleanupChunked(
+                            text = transcript,
+                            provider = llmProvider,
+                            style = config.cleanupStyle,
+                            dictionaryTerms = config.dictionaryTerms.takeIf { it.isNotBlank() },
+                            customInstructions = config.customPrompt.takeIf { it.isNotBlank() }
+                        )
                         val tCleanup = System.currentTimeMillis()
                         Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result

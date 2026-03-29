@@ -80,9 +80,16 @@ pub enum LocalWhisperError {
 /// all `transcribe` calls. Thread-safe via `Arc<Mutex<_>>`.
 pub struct LocalWhisperProvider {
     /// Full filesystem path to the GGML model file (e.g. `.../models/ggml-base.bin`).
-    model_path: String,
+    ///
+    /// `pub(crate)` so the JNI bridge (`stt::jni_bridge`) can pass it to
+    /// `transcribe_blocking` as a diagnostic label without cloning the whole
+    /// provider.
+    pub(crate) model_path: String,
     /// Cached whisper context. `None` = not yet loaded.
-    ctx: Arc<Mutex<Option<whisper_rs::WhisperContext>>>,
+    ///
+    /// `pub(crate)` so the JNI bridge can call `transcribe_blocking` directly
+    /// (which requires the `Arc`) without going through the async trait path.
+    pub(crate) ctx: Arc<Mutex<Option<whisper_rs::WhisperContext>>>,
 }
 
 impl LocalWhisperProvider {
@@ -248,9 +255,10 @@ impl SttProvider for LocalWhisperProvider {
 
 /// Runs the whisper.cpp inference on the current thread (blocking).
 ///
-/// Called from within `spawn_blocking`; must not hold any async-friendly
-/// locks (all locking here is sync `std::sync::Mutex`).
-fn transcribe_blocking(
+/// Called from within `spawn_blocking` (normal path) or directly from JNI
+/// (Android overlay service path). Must not hold any async-friendly locks;
+/// all locking here is `std::sync::Mutex`.
+pub(crate) fn transcribe_blocking(
     ctx_arc: &Arc<Mutex<Option<whisper_rs::WhisperContext>>>,
     wav_bytes: &[u8],
     language: &str,
