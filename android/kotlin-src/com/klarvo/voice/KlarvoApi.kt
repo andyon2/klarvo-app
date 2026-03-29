@@ -461,21 +461,10 @@ object KlarvoApi {
             val responseText = conn.inputStream.bufferedReader().readText()
             val json = JSONObject(responseText)
             return json.getString("text").trim()
-        } finally {
-            conn.disconnect()
         }
+        // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
+        // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
     }
-
-    /**
-     * Cleans up dictation text using an OpenAI-compatible chat completions API.
-     * Supports DeepSeek, Groq, and OpenAI -- all use the same request format.
-     *
-     * @param text     Raw transcription text to clean up
-     * @param provider Resolved LLM provider (URL, model, API key)
-     * @param style    Cleanup style: "polished", "verbatim", or "chat"
-     * @return Cleaned text
-     * @throws IOException on network or API errors
-     */
 
     /**
      * Cleans up dictation text using the local MNN LLM model (offline).
@@ -517,8 +506,50 @@ object KlarvoApi {
         else -> "You are a text cleanup assistant. Clean up raw speech-to-text output:\n- Remove filler words and stutters\n- Fix grammar, punctuation, and capitalization\n- Smooth sentence flow\n- Keep the speaker's voice\n- Output ONLY the cleaned text, no explanations"
     }
 
-    fun cleanup(text: String, provider: LlmProviderInfo, style: String): String {
-        val systemPrompt = when (style) {
+    /**
+     * Appends dictionary terms and custom instructions to a system prompt.
+     * Mirrors the behavior of CleanupStyle::system_prompt() in Rust (llm/mod.rs).
+     *
+     * @param base             Base system prompt text
+     * @param dictionaryTerms  Comma-separated list of custom dictionary terms (or null/blank)
+     * @param customInstructions  Additional user instructions (or null/blank)
+     * @return Prompt with optional dictionary + custom sections appended
+     */
+    private fun appendPromptExtensions(
+        base: String,
+        dictionaryTerms: String?,
+        customInstructions: String?
+    ): String {
+        val sb = StringBuilder(base)
+        if (!dictionaryTerms.isNullOrBlank()) {
+            sb.append("\n\nThe user's custom dictionary terms (preserve these exactly): $dictionaryTerms")
+        }
+        if (!customInstructions.isNullOrBlank()) {
+            sb.append("\n\nAdditional user instructions: ${customInstructions.trim()}")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Cleans up dictation text using an OpenAI-compatible chat completions API.
+     * Supports DeepSeek, Groq, and OpenAI -- all use the same request format.
+     *
+     * @param text                Raw transcription text to clean up
+     * @param provider            Resolved LLM provider (URL, model, API key)
+     * @param style               Cleanup style: "polished", "verbatim", or "chat"
+     * @param dictionaryTerms     Comma-separated dictionary terms the LLM must preserve (optional)
+     * @param customInstructions  Additional user instructions appended to system prompt (optional)
+     * @return Cleaned text
+     * @throws IOException on network or API errors
+     */
+    fun cleanup(
+        text: String,
+        provider: LlmProviderInfo,
+        style: String,
+        dictionaryTerms: String? = null,
+        customInstructions: String? = null
+    ): String {
+        val basePrompt = when (style) {
             "verbatim" -> """You are a minimal text cleanup assistant. The user gives you raw speech-to-text output. Apply ONLY these changes:
 - Remove filler words (um, uh, like, you know / äh, ähm, also, halt, sozusagen, quasi)
 - Remove stutters and repeated words (e.g. "the the" → "the")
@@ -604,6 +635,8 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
 - "Anführungszeichen zu" or "close quote" → """"
         }
 
+        val systemPrompt = appendPromptExtensions(basePrompt, dictionaryTerms, customInstructions)
+
         val url = URL(provider.url)
         val conn = url.openConnection() as HttpURLConnection
 
@@ -630,6 +663,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
                 put("model", provider.model)
                 put("messages", messages)
                 put("temperature", 0.3)
+                put("max_tokens", 2048)
             }.toString().toByteArray(Charsets.UTF_8)
 
             conn.setRequestProperty("Content-Length", requestBody.size.toString())
@@ -649,15 +683,16 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
                 .getJSONObject("message")
                 .getString("content")
                 .trim()
-        } finally {
-            conn.disconnect()
         }
+        // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
+        // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
+        // Calling disconnect() forces a new TCP+TLS handshake on every request (+200-500ms).
     }
 
     // --- Chunked cleanup ---
 
-    private const val CHUNK_THRESHOLD = 800
-    private const val CHUNK_TARGET_SIZE = 600
+    private const val CHUNK_THRESHOLD = 400
+    private const val CHUNK_TARGET_SIZE = 350
     private const val CLEANUP_TAG = "KlarvoApi"
 
     /**
@@ -721,20 +756,28 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
      *   Results are joined with "\n\n".
      *   If any chunk fails, falls back to a single [cleanup] call on the full text.
      *
-     * @param text     Raw transcription text to clean up
-     * @param provider Resolved LLM provider (URL, model, API key)
-     * @param style    Cleanup style: "polished", "verbatim", or "chat"
+     * @param text                Raw transcription text to clean up
+     * @param provider            Resolved LLM provider (URL, model, API key)
+     * @param style               Cleanup style: "polished", "verbatim", or "chat"
+     * @param dictionaryTerms     Comma-separated dictionary terms the LLM must preserve (optional)
+     * @param customInstructions  Additional user instructions appended to system prompt (optional)
      * @return Cleaned text
      * @throws IOException if both chunked and fallback calls fail
      */
-    fun cleanupChunked(text: String, provider: LlmProviderInfo, style: String): String {
+    fun cleanupChunked(
+        text: String,
+        provider: LlmProviderInfo,
+        style: String,
+        dictionaryTerms: String? = null,
+        customInstructions: String? = null
+    ): String {
         if (text.length <= CHUNK_THRESHOLD) {
-            return cleanup(text, provider, style)
+            return cleanup(text, provider, style, dictionaryTerms, customInstructions)
         }
 
         val chunks = splitIntoChunks(text)
         if (chunks.size <= 1) {
-            return cleanup(text, provider, style)
+            return cleanup(text, provider, style, dictionaryTerms, customInstructions)
         }
 
         Log.i(CLEANUP_TAG, "[cleanupChunked] splitting ${text.length} chars into ${chunks.size} chunks (${provider.model})")
@@ -742,7 +785,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val executor = Executors.newFixedThreadPool(4)
         try {
             val futures = chunks.map { chunk ->
-                executor.submit(Callable { cleanup(chunk, provider, style) })
+                executor.submit(Callable { cleanup(chunk, provider, style, dictionaryTerms, customInstructions) })
             }
 
             // Collect results -- if any Future throws, we fall through to the catch block.
@@ -750,7 +793,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
                 futures.map { it.get() }
             } catch (e: Exception) {
                 Log.w(CLEANUP_TAG, "[cleanupChunked] a chunk failed, falling back to single call", e)
-                return cleanup(text, provider, style)
+                return cleanup(text, provider, style, dictionaryTerms, customInstructions)
             }
 
             return results.joinToString("\n\n")

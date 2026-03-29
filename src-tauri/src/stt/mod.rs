@@ -186,7 +186,11 @@ impl WhisperStt {
     ) -> Self {
         WhisperStt {
             api_key: api_key.into(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url: base_url.into(),
             model: model.into(),
             temperature: 0.0,

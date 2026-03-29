@@ -847,6 +847,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Transcribe ---
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
 
+    let stt_start = std::time::Instant::now();
     let raw_text = match stt_provider
         .transcribe(wav_bytes, &language, dict_prompt.as_deref())
         .await
@@ -860,6 +861,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             return;
         }
     };
+    let stt_ms = stt_start.elapsed().as_millis();
+    log::info!("[pipeline] STT took {}ms", stt_ms);
 
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
 
@@ -949,9 +952,10 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         }
     } else {
         // Normal dictation: cleanup raw transcription
-        let (style, custom_prompt) = {
+        let (style, custom_prompt, llm_provider_name) = {
             match state.config.lock() {
                 Ok(g) => {
+                    let provider_name = g.llm_provider.clone();
                     let prev_title = state.prev_window_title.lock().ok().and_then(|t| t.clone());
                     let matched = prev_title.as_deref().and_then(|title| {
                         let title_lower = title.to_lowercase();
@@ -968,15 +972,15 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                         } else {
                             Some(profile.custom_prompt.clone())
                         };
-                        (profile.cleanup_style, prompt)
+                        (profile.cleanup_style, prompt, provider_name)
                     } else {
                         (g.cleanup_style, {
                             let p = g.custom_prompt.clone();
                             if p.is_empty() { None } else { Some(p) }
-                        })
+                        }, provider_name)
                     }
                 }
-                Err(_) => (CleanupStyle::Polished, None),
+                Err(_) => (CleanupStyle::Polished, None, "unknown".to_string()),
             }
         };
 
@@ -1000,6 +1004,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Some(output_lang.as_str())
         };
 
+        let cleanup_start = std::time::Instant::now();
         match chunked_cleanup(
             cleanup_provider.as_ref(),
             &raw_text,
@@ -1010,7 +1015,17 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         )
         .await
         {
-            Ok(r) => r,
+            Ok(r) => {
+                let cleanup_ms = cleanup_start.elapsed().as_millis();
+                log::info!(
+                    "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
+                    cleanup_ms,
+                    llm_provider_name,
+                    style,
+                    raw_text.len()
+                );
+                r
+            }
             Err(e) => {
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,

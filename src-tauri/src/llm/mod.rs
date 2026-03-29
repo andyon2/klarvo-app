@@ -471,7 +471,11 @@ impl OpenAiCompatibleCleanup {
     ) -> Self {
         OpenAiCompatibleCleanup {
             api_key: api_key.into(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url: base_url.into(),
             model: model.into(),
             temperature: Self::DEFAULT_TEMPERATURE,
@@ -994,7 +998,11 @@ impl AnthropicCleanup {
     pub fn new(api_key: impl Into<String>) -> Self {
         AnthropicCleanup {
             api_key: api_key.into(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             model: Self::DEFAULT_MODEL.to_string(),
             temperature: Self::DEFAULT_TEMPERATURE,
             max_tokens: Self::DEFAULT_MAX_TOKENS,
