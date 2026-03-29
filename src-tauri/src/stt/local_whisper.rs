@@ -117,7 +117,7 @@ impl LocalWhisperProvider {
     ///
     /// If the context is already loaded this is a cheap mutex lock + clone.
     /// If not, the model is loaded from disk (~100-200 ms first time).
-    fn ensure_context(&self) -> Result<Arc<Mutex<Option<whisper_rs::WhisperContext>>>, SttError> {
+    pub(crate) fn ensure_context(&self) -> Result<Arc<Mutex<Option<whisper_rs::WhisperContext>>>, SttError> {
         let mut guard = self.ctx.lock().map_err(|_| {
             SttError::LocalWhisper(LocalWhisperError::LockPoisoned.to_string())
         })?;

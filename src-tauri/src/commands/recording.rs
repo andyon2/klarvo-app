@@ -86,37 +86,25 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingInfo,
     Ok(RecordingInfo { duration_ms })
 }
 
-/// Returns the ID of the active STT provider based on the priority list and available keys.
+/// Returns the ID of the active STT provider from `stt_provider` config field.
 ///
-/// Walks `stt_priority` and returns the ID of the first provider with a non-empty key.
-/// `"local"` is treated as always-available (no API key required).
-/// Returns `"groq"` as fallback (matching `resolve_stt_provider` behaviour).
+/// Returns `"groq"` as fallback if the config lock fails.
 fn active_stt_provider_id(state: &AppState) -> String {
-    let cfg = match state.config.lock() {
-        Ok(g) => g,
-        Err(_) => return "groq".to_string(),
-    };
-    for id in &cfg.stt_priority {
-        match id.as_str() {
-            "groq" if !cfg.groq_api_key.is_empty() => return "groq".to_string(),
-            "openai" if !cfg.openai_api_key.is_empty() => return "openai".to_string(),
-            // "local" requires no API key -- always considered available.
-            "local" => return "local".to_string(),
-            _ => continue,
-        }
-    }
-    "groq".to_string()
+    state
+        .config
+        .lock()
+        .ok()
+        .map(|c| c.stt_provider.clone())
+        .unwrap_or_else(|| "groq".to_string())
 }
 
-/// Returns `true` if the user is in offline mode, i.e. the first entry in
-/// `stt_priority` is `"local"`.
+/// Returns `true` if the user is in offline mode, i.e. `stt_provider` is `"local"`.
 fn is_offline_mode(state: &AppState) -> bool {
     state
         .config
         .lock()
         .ok()
-        .and_then(|c| c.stt_priority.first().cloned())
-        .map(|id| id == "local")
+        .map(|c| c.stt_provider == "local")
         .unwrap_or(false)
 }
 

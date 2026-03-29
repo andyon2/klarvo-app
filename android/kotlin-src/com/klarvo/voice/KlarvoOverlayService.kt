@@ -879,12 +879,24 @@ class KlarvoOverlayService : Service() {
             val transcript = if (config.sttProvider == "local") {
                 val tLocalStart = System.currentTimeMillis()
 
-                // Resolve model file path: dataDir/models/ggml-small.bin
-                val modelDir = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    dataDir
+                // Resolve model file path.
+                // Tauri's app_data_dir() maps to filesDir on Android,
+                // so downloaded models land in filesDir/models/.
+                // Fallback: also check dataDir/models/ in case of older builds.
+                val filesDirModels = java.io.File(filesDir, "models")
+                val dataDirModels = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    java.io.File(dataDir, "models")
                 } else {
-                    java.io.File(applicationInfo.dataDir)
-                }.resolve("models")
+                    java.io.File(applicationInfo.dataDir, "models")
+                }
+                Log.d(TAG, "[local-stt] filesDir/models: $filesDirModels exists=${filesDirModels.exists()}")
+                Log.d(TAG, "[local-stt] dataDir/models: $dataDirModels exists=${dataDirModels.exists()}")
+
+                val modelDir = when {
+                    filesDirModels.exists() -> filesDirModels
+                    dataDirModels.exists() -> dataDirModels
+                    else -> filesDirModels  // default to filesDir (matches Tauri download path)
+                }
                 val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
 
                 Log.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")

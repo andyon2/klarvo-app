@@ -338,7 +338,7 @@ pub async fn save_settings(
     };
 
     // Resolve providers from the new config before persisting.
-    let new_stt = resolve_stt_provider(&new_cfg);
+    let new_stt = resolve_stt_provider(&new_cfg, &inner.app_data_dir);
     let new_cleanup = resolve_cleanup_provider(&new_cfg);
 
     // Persist to disk.
@@ -815,7 +815,7 @@ pub async fn clear_api_key(
 
     // Resolve new providers *before* persisting so we can surface any error
     // to the caller early (though resolve_* is currently infallible).
-    let new_stt     = resolve_stt_provider(&cfg);
+    let new_stt     = resolve_stt_provider(&cfg, &inner.app_data_dir);
     let new_cleanup = resolve_cleanup_provider(&cfg);
 
     // Persist to disk.

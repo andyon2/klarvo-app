@@ -38,11 +38,11 @@ use crate::setup_audio_level_emitter;
 ///
 /// Falls back to a Groq instance (which will fail at call-time with an auth
 /// error) if the provider string is unrecognised, so startup always succeeds.
-pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
+pub fn resolve_stt_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> Arc<dyn SttProvider> {
     match cfg.stt_provider.as_str() {
         "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
         #[cfg(any(target_os = "windows", target_os = "android"))]
-        "local" => build_local_whisper_provider(cfg),
+        "local" => build_local_whisper_provider(cfg, app_data_dir),
         #[cfg(not(any(target_os = "windows", target_os = "android")))]
         "local" => {
             log::warn!("[pipeline] local STT provider is only supported on Windows and Android; falling back to groq");
@@ -67,7 +67,7 @@ pub fn resolve_stt_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
 /// We derive the path from `APPDATA` (Windows) rather than `AppState.app_data_dir`
 /// because `resolve_stt_provider` takes only `&AppConfig`.
 #[cfg(any(target_os = "windows", target_os = "android"))]
-fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
+fn build_local_whisper_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> Arc<dyn SttProvider> {
     use stt::LocalWhisperProvider;
 
     #[cfg(target_os = "windows")]
@@ -75,11 +75,12 @@ fn build_local_whisper_provider(cfg: &AppConfig) -> Arc<dyn SttProvider> {
         .map(|d| std::path::PathBuf::from(d).join("com.klarvo.voice").join("models"))
         .unwrap_or_else(|_| std::path::PathBuf::from("models"));
 
-    // On Android the pipeline path is a fallback only; the primary path is
-    // via the transcribe_local Tauri command. We use a hard-coded base because
-    // AppConfig doesn't carry app_data_dir.
+    // On Android, use the same app_data_dir that Tauri's download command uses.
     #[cfg(target_os = "android")]
-    let model_dir = std::path::PathBuf::from("/data/data/com.klarvo.voice/files/models");
+    let model_dir = app_data_dir.join("models");
+
+    #[cfg(target_os = "windows")]
+    let _ = app_data_dir; // suppress unused warning on Windows
 
     let model_file = format!("ggml-{}.bin", cfg.local_whisper_model);
     let model_path = model_dir.join(&model_file);
@@ -1621,7 +1622,7 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_stt_provider(&cfg);
+        let _provider = resolve_stt_provider(&cfg, std::path::Path::new("/tmp/test"));
         // If we reach here, construction did not panic.
     }
 
@@ -1633,7 +1634,7 @@ mod tests {
             openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_stt_provider(&cfg);
+        let _provider = resolve_stt_provider(&cfg, std::path::Path::new("/tmp/test"));
     }
 
     /// `resolve_stt_provider` for an unknown value falls back to Groq (no panic).
@@ -1643,7 +1644,7 @@ mod tests {
             stt_provider: "unknown_provider".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_stt_provider(&cfg);
+        let _provider = resolve_stt_provider(&cfg, std::path::Path::new("/tmp/test"));
     }
 
     /// `resolve_cleanup_provider` for "deepseek" does not panic.

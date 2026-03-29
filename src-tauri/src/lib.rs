@@ -280,7 +280,7 @@ impl AppState {
         app_data_dir: PathBuf,
         history_db: rusqlite::Connection,
     ) -> Self {
-        let stt = resolve_stt_provider(&cfg);
+        let stt = resolve_stt_provider(&cfg, &app_data_dir);
         let cleanup = resolve_cleanup_provider(&cfg);
 
         // Compute the initial license status from the cached key + timestamp.

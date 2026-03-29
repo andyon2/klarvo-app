@@ -64,6 +64,7 @@ MANIFEST="$GEN_ANDROID/app/src/main/AndroidManifest.xml"
 # Permissions
 for PERM in \
     "android.permission.RECORD_AUDIO" \
+    "android.permission.MODIFY_AUDIO_SETTINGS" \
     "android.permission.SYSTEM_ALERT_WINDOW" \
     "android.permission.POST_NOTIFICATIONS" \
     "android.permission.FOREGROUND_SERVICE" \
@@ -177,6 +178,11 @@ TOOLCHAIN_EOF
 # shellcheck disable=SC2016
 echo 'include("$ENV{NDK_HOME}/build/cmake/android.toolchain.cmake")' >> "$WRAPPER_TOOLCHAIN"
 export CMAKE_TOOLCHAIN_FILE_aarch64_linux_android="$WRAPPER_TOOLCHAIN"
+# whisper-rs-sys forwards all CMAKE_* env vars as cmake -D defines.
+# Force ARM NEON + dotprod for ggml/whisper.cpp. Without this, ggml
+# cross-compiles without SIMD and runs 10-50x slower on ARM64.
+export CMAKE_C_FLAGS="-DANDROID -ffunction-sections -fdata-sections -fPIC -w -march=armv8.2-a+dotprod+fp16"
+export CMAKE_CXX_FLAGS="-DANDROID -ffunction-sections -fdata-sections -fPIC -w -march=armv8.2-a+dotprod+fp16"
 # Also set the generator so cmake uses ninja (bundled in SDK cmake bin)
 export CMAKE_GENERATOR_aarch64_linux_android="Ninja"
 

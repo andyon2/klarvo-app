@@ -85,21 +85,18 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_loadModel(
 
     let provider = LocalWhisperProvider::new(&path);
 
-    // Eagerly load the context so we detect a bad path at loadModel time,
-    // not at the first transcribe call. We do this by calling ensure_context
-    // indirectly: create a tiny non-empty dummy and let the provider try to
-    // load. If the file doesn't exist the error bubbles up here.
-    //
-    // Implementation detail: `LocalWhisperProvider` loads lazily inside
-    // `transcribe`. We trigger the load by peeking at the internal
-    // `ensure_context` -- but since that is private we do it the clean way:
-    // store the provider first, then accept that the model is actually loaded
-    // on the first `transcribe` call (lazy). `loadModel` still provides a
-    // useful signal to Kotlin that the path was accepted.
+    // Eagerly load the WhisperContext so we detect a bad path at loadModel
+    // time and so that `transcribe_blocking` finds a loaded context.
+    // Without this, `ctx` stays `None` and every transcribe call fails.
+    if let Err(e) = provider.ensure_context() {
+        log::error!("[jni_bridge] loadModel: failed to load model: {e}");
+        return jni::sys::JNI_FALSE;
+    }
+
     match PROVIDER.lock() {
         Ok(mut guard) => {
             *guard = Some(provider);
-            log::info!("[jni_bridge] loadModel: provider stored");
+            log::info!("[jni_bridge] loadModel: provider stored with loaded context");
             jni::sys::JNI_TRUE
         }
         Err(e) => {
