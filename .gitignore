@@ -22,6 +22,7 @@ src-tauri/gen/
 android/.gradle/
 android/build/
 android/app/build/
+android/jni/build/
 *.apk
 *.aab
 
