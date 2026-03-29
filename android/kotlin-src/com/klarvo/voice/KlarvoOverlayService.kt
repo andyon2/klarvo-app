@@ -887,8 +887,10 @@ class KlarvoOverlayService : Service() {
                 }.resolve("models")
                 val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
 
+                Log.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")
+
                 if (!modelFile.exists()) {
-                    Log.e(TAG, "Whisper model not found: $modelFile")
+                    Log.e(TAG, "[local-stt] Whisper model not found: $modelFile")
                     handler.post {
                         showToast("Whisper model not downloaded. Please download in Settings.")
                         autoLoopActive = false
@@ -899,10 +901,14 @@ class KlarvoOverlayService : Service() {
                     return
                 }
 
+                Log.d(TAG, "[local-stt] nativeAvailable=${LocalWhisperInference.isNativeAvailable()}, isModelLoaded=${LocalWhisperInference.isModelLoaded()}")
+
                 if (!LocalWhisperInference.isModelLoaded()) {
+                    Log.d(TAG, "[local-stt] loading model: ${modelFile.absolutePath}")
                     val loadOk = LocalWhisperInference.load(modelFile.absolutePath)
+                    Log.d(TAG, "[local-stt] load result: $loadOk")
                     if (!loadOk) {
-                        Log.e(TAG, "Failed to load whisper model: $modelFile")
+                        Log.e(TAG, "[local-stt] Failed to load whisper model: $modelFile")
                         handler.post {
                             showToast("Failed to load Whisper model")
                             autoLoopActive = false
@@ -915,7 +921,9 @@ class KlarvoOverlayService : Service() {
                 }
 
                 val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+                Log.d(TAG, "[local-stt] calling transcribeAudio, base64 len=${wavBase64.length}, lang=${config.language}")
                 val result = LocalWhisperInference.transcribeAudio(wavBase64, config.language)
+                Log.d(TAG, "[local-stt] transcribeAudio result: '${result.take(100)}' (len=${result.length})")
                 val tLocalEnd = System.currentTimeMillis()
                 Log.d(TAG, "[pipeline] local STT: ${tLocalEnd - tLocalStart}ms (${wavBytes.size / 1024}KB audio)")
 

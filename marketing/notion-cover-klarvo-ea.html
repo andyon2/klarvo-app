@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1500">
+<title>Klarvo Early Access – Notion Cover</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { background: #0d1117; }
+
+  body {
+    width: 1500px;
+    height: 600px;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at 50% 50%, #1a2332 0%, #111921 50%, #0d1117 100%);
+    position: relative;
+  }
+
+  /* Subtle radial glow behind content */
+  body::before {
+    content: '';
+    position: absolute;
+    width: 900px;
+    height: 400px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse, rgba(30, 58, 90, 0.4) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Main row: icon + title + EA badge */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+  }
+
+  .icon {
+    width: 80px;
+    height: 80px;
+    background: #1e293b;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
+
+  .icon img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+  }
+
+  .title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .title {
+    font-size: 64px;
+    font-weight: 700;
+    color: #e2e8f0;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .ea-badge {
+    padding: 5px 12px;
+    border: 1.5px solid #475569;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    background: rgba(71, 85, 105, 0.15);
+  }
+
+  .subtitle {
+    font-size: 20px;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+
+  /* Platform badges */
+  .badges {
+    display: flex;
+    gap: 12px;
+  }
+
+  .badge {
+    padding: 6px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-outline {
+    border: 1.5px solid #475569;
+    color: #94a3b8;
+    background: transparent;
+  }
+
+  .badge-teal {
+    border: 1.5px solid #2dd4bf;
+    color: #2dd4bf;
+    background: rgba(45, 212, 191, 0.08);
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon">
+        <img src="../src-tauri/icons/icon.png" />
+      </div>
+      <div class="title-group">
+        <div class="title-row">
+          <span class="title">Klarvo</span>
+          <span class="ea-badge">Early Access</span>
+        </div>
+        <div class="subtitle">Sprachdiktat mit KI-Textbereinigung</div>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="badge badge-outline">Windows</span>
+      <span class="badge badge-outline">Android</span>
+      <span class="badge badge-teal">Source-Available</span>
+    </div>
+  </div>
+</body>
+</html>

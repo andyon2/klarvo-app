@@ -32,11 +32,16 @@ object LocalWhisperInference {
     init {
         try {
             // The Tauri Rust library already contains whisper-rs + JNI exports.
+            // If Tauri already loaded it, this is a no-op (Java spec).
             System.loadLibrary("klarvo_lib")
             nativeAvailable = true
             Log.i(TAG, "Native library libklarvo_lib loaded for whisper")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Failed to load native library libklarvo_lib: ${e.message}")
+        } catch (e: Throwable) {
+            // Catch Throwable (not just UnsatisfiedLinkError) to handle:
+            // - UnsatisfiedLinkError (library not found)
+            // - ExceptionInInitializerError (wrapped init failures)
+            // - SecurityException (classloader issues)
+            Log.e(TAG, "Failed to load native library libklarvo_lib: ${e.javaClass.simpleName}: ${e.message}")
             // nativeAvailable stays false -- every public method will return a safe default.
         }
     }
@@ -111,4 +116,10 @@ object LocalWhisperInference {
      */
     @Synchronized
     fun isModelLoaded(): Boolean = nativeAvailable && loaded && isLoaded()
+
+    /**
+     * Returns true if the native library was loaded successfully.
+     * Useful for diagnostics.
+     */
+    fun isNativeAvailable(): Boolean = nativeAvailable
 }
