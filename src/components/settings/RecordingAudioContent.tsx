@@ -56,11 +56,10 @@ export function RecordingAudioContent({
   return (
     <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
 
-      {/* Cloud / Offline toggle -- desktop only (Android has no offline STT) */}
+      {/* Cloud / Offline toggle -- shown on all platforms */}
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Speech Recognition</span>
         <div className="flex flex-col gap-2 pl-0">
-        {isDesktop && (
         <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 w-fit">
           <button
             type="button"
@@ -91,10 +90,9 @@ export function RecordingAudioContent({
             Offline
           </button>
         </div>
-        )}
 
-        {/* Cloud mode: model picker (always visible on mobile since offline STT is desktop-only) */}
-        {(isMobile || localSttProvider !== "local") && (
+        {/* Cloud mode: model picker */}
+        {localSttProvider !== "local" && (
           <div className="flex flex-col gap-2 mt-1">
             <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
               <span className={LABEL_CLS_M}>Model</span>
@@ -126,15 +124,15 @@ export function RecordingAudioContent({
           </div>
         )}
 
-        {/* Offline mode: WhisperModelManager + optional local LLM cleanup */}
-        {localSttProvider === "local" && isDesktop && (
+        {/* Offline mode: WhisperModelManager */}
+        {localSttProvider === "local" && (
           <div className="flex flex-col gap-3 mt-1">
             <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-klarvo-surface/30 border border-klarvo-border/30">
               <svg className="w-3.5 h-3.5 text-klarvo-muted mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
               </svg>
               <p className="text-[11px] text-klarvo-muted leading-relaxed">
-                Speech is transcribed locally.
+                Speech is transcribed locally on your device.
               </p>
             </div>
             <WhisperModelManager
@@ -143,6 +141,7 @@ export function RecordingAudioContent({
               onModelChange={setLocalWhisperModel}
               onGpuChange={setLocalWhisperGpu}
               isPaid={isPaid}
+              showGpuToggle={isDesktop}
             />
           </div>
         )}
@@ -150,15 +149,15 @@ export function RecordingAudioContent({
       </div>
 
       {/* Text Cleanup -- Offline mode: always local, no toggle needed */}
-      {localSttProvider === "local" && isDesktop && (
+      {localSttProvider === "local" && (
         <div className="flex flex-col gap-2.5">
           <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Text Cleanup</span>
           <LlmModelManager />
         </div>
       )}
 
-      {/* Text Cleanup -- Cloud mode (always visible on mobile) */}
-      {(isMobile || localSttProvider !== "local") && (
+      {/* Text Cleanup -- Cloud mode */}
+      {localSttProvider !== "local" && (
         <div className="flex flex-col gap-2.5">
           <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Text Cleanup</span>
 

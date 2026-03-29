@@ -124,6 +124,11 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_loadModel(
 ///
 /// Returns the transcribed text as a Java `String`, or an empty string on
 /// any error.
+/// Helper: create an empty Java string, falling back to null on JNI failure.
+fn empty_jstring(env: &mut JNIEnv) -> jstring {
+    env.new_string("").map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscribe(
     mut env: JNIEnv,
@@ -131,17 +136,12 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
     wav_base64: JString,
     language: JString,
 ) -> jstring {
-    // Helper: return an empty Java string on error without unwrapping.
-    let empty_jstring = || -> jstring {
-        env.new_string("").map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
-    };
-
     // Decode the Base64 string argument.
     let b64_str: String = match env.get_string(&wav_base64) {
         Ok(s) => s.into(),
         Err(e) => {
             log::error!("[jni_bridge] transcribe: failed to read wav_base64: {e}");
-            return empty_jstring();
+            return empty_jstring(&mut env);
         }
     };
 
@@ -150,7 +150,7 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
         Ok(s) => s.into(),
         Err(e) => {
             log::error!("[jni_bridge] transcribe: failed to read language: {e}");
-            return empty_jstring();
+            return empty_jstring(&mut env);
         }
     };
 
@@ -160,13 +160,13 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("[jni_bridge] transcribe: Base64 decode failed: {e}");
-            return empty_jstring();
+            return empty_jstring(&mut env);
         }
     };
 
     if wav_bytes.is_empty() {
         log::warn!("[jni_bridge] transcribe: decoded WAV bytes are empty");
-        return empty_jstring();
+        return empty_jstring(&mut env);
     }
 
     // Acquire the provider lock.
@@ -174,7 +174,7 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
         Ok(g) => g,
         Err(e) => {
             log::error!("[jni_bridge] transcribe: mutex poisoned: {e}");
-            return empty_jstring();
+            return empty_jstring(&mut env);
         }
     };
 
@@ -182,7 +182,7 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
         Some(p) => p,
         None => {
             log::error!("[jni_bridge] transcribe: no model loaded -- call loadModel first");
-            return empty_jstring();
+            return empty_jstring(&mut env);
         }
     };
 
@@ -204,13 +204,13 @@ pub extern "system" fn Java_com_klarvo_voice_LocalWhisperInference_nativeTranscr
                 Ok(s) => s.into_raw(),
                 Err(e) => {
                     log::error!("[jni_bridge] transcribe: failed to create return string: {e}");
-                    empty_jstring()
+                    empty_jstring(&mut env)
                 }
             }
         }
         Err(e) => {
             log::error!("[jni_bridge] transcribe: inference error: {e}");
-            empty_jstring()
+            empty_jstring(&mut env)
         }
     }
 }
