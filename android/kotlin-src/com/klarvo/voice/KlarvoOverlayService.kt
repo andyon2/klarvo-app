@@ -985,12 +985,17 @@ class KlarvoOverlayService : Service() {
                 return
             }
 
+            // Tracks LLM cleanup latency for feedback metrics.
+            // Remains null when cleanup is skipped or fails (no key, exception).
+            var llmLatencyMs: Long? = null
+
             // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
             val finalText = if (config.llmProvider == "local") {
                 // Offline cleanup via MNN (local inference, no internet needed)
                 try {
                     val result = KlarvoApi.cleanupLocal(this, transcript, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
+                    llmLatencyMs = tCleanup - tStt
                     Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (local/mnn)")
                     result
                 } catch (e: Exception) {
@@ -1009,10 +1014,14 @@ class KlarvoOverlayService : Service() {
                             customInstructions = config.customPrompt.takeIf { it.isNotBlank() }
                         )
                         val tCleanup = System.currentTimeMillis()
+                        llmLatencyMs = tCleanup - tStt
                         Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result
                     } catch (e: IOException) {
                         Log.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                        KlarvoApi.updateFeedbackMetrics(this) { m ->
+                            m.copy(llmErrorCount = m.llmErrorCount + 1)
+                        }
                         transcript
                     }
                 } else {
@@ -1056,6 +1065,13 @@ class KlarvoOverlayService : Service() {
             // Step 4: Copy to clipboard and paste
             // Capture activeGesture before posting to main thread (it may change on next gesture).
             val gesture = activeGesture
+            // Capture pipeline timing values for metrics (captured in lambda closure).
+            val capturedT0          = t0
+            val capturedTConfig     = tConfig
+            val capturedTStt        = tStt
+            val capturedLlmLatency  = llmLatencyMs
+            val capturedTranscript  = transcript
+            val capturedFinalText   = finalText
             handler.post {
                 copyToClipboard(finalText)
 
@@ -1064,6 +1080,22 @@ class KlarvoOverlayService : Service() {
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
                 if (pasted) showToast("Inserted: $preview") else showToast("Copied: $preview")
+
+                // Write feedback metrics (fire-and-forget, off main thread).
+                Thread {
+                    KlarvoApi.updateFeedbackMetrics(this@KlarvoOverlayService) { m ->
+                        m.copy(
+                            lastSttLatencyMs   = capturedTStt - capturedTConfig,
+                            lastLlmLatencyMs   = capturedLlmLatency,
+                            lastTotalLatencyMs = System.currentTimeMillis() - capturedT0,
+                            lastTargetApp      = null,   // Android has no foreground-window tracking
+                            lastDictationAt    = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()),
+                            lastRawText        = capturedTranscript,
+                            lastCleanedText    = capturedFinalText
+                            // Error counts left unchanged -- copy() retains them.
+                        )
+                    }
+                }.start()
 
                 val prev = currentState
                 setState(RecordingState.IDLE)
@@ -1094,6 +1126,11 @@ class KlarvoOverlayService : Service() {
 
         } catch (e: IOException) {
             Log.w(TAG, "STT/API pipeline failed", e)
+            // Increment STT error counter (this catch covers STT failures;
+            // LLM IOException is caught earlier and increments llmErrorCount there).
+            KlarvoApi.updateFeedbackMetrics(this) { m ->
+                m.copy(sttErrorCount = m.sttErrorCount + 1)
+            }
             handler.post {
                 showToast("Error: ${e.message?.take(80)}")
                 autoLoopActive = false

@@ -848,6 +848,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Transcribe ---
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
 
+    let pipeline_start = std::time::Instant::now();
     let stt_start = std::time::Instant::now();
     let raw_text = match stt_provider
         .transcribe(wav_bytes, &language, dict_prompt.as_deref())
@@ -855,6 +856,10 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     {
         Ok(t) => t,
         Err(e) => {
+            // Increment STT error counter before returning.
+            if let Ok(mut m) = state.feedback_metrics.lock() {
+                m.stt_error_count = m.stt_error_count.saturating_add(1);
+            }
             let _ = handle.emit(
                 EVENT_STATE_CHANGED,
                 PipelineEvent::error(friendly_error("Transcription failed", &e.to_string())),
@@ -862,7 +867,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             return;
         }
     };
-    let stt_ms = stt_start.elapsed().as_millis();
+    let stt_ms = stt_start.elapsed().as_millis() as u64;
     log::info!("[pipeline] STT took {}ms", stt_ms);
 
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
@@ -929,6 +934,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
     }
 
+    let mut llm_ms: Option<u64> = None;
     let cleanup_result = if offline_mode && selected_text.is_none() {
         // Offline dictation: return raw transcript without any LLM call.
         log::info!("[pipeline] Offline mode: skipping LLM cleanup");
@@ -941,9 +947,16 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         // Command Mode: rewrite selected text using the voice command
         log::info!("[pipeline] command mode: rewriting with voice command");
 
+        let cmd_start = std::time::Instant::now();
         match cleanup_provider.rewrite(sel_text, &raw_text).await {
-            Ok(r) => r,
+            Ok(r) => {
+                llm_ms = Some(cmd_start.elapsed().as_millis() as u64);
+                r
+            }
             Err(e) => {
+                if let Ok(mut m) = state.feedback_metrics.lock() {
+                    m.llm_error_count = m.llm_error_count.saturating_add(1);
+                }
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
                     PipelineEvent::error(format!("Command mode failed: {e}")),
@@ -1017,7 +1030,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         .await
         {
             Ok(r) => {
-                let cleanup_ms = cleanup_start.elapsed().as_millis();
+                let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+                llm_ms = Some(cleanup_ms);
                 log::info!(
                     "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
                     cleanup_ms,
@@ -1028,6 +1042,9 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 r
             }
             Err(e) => {
+                if let Ok(mut m) = state.feedback_metrics.lock() {
+                    m.llm_error_count = m.llm_error_count.saturating_add(1);
+                }
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
                     PipelineEvent::error(friendly_error("Text cleanup failed", &e.to_string())),
@@ -1092,6 +1109,9 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         Ok(result) => result,
         Err(e) => {
             log::warn!("[pipeline] paste failed: {e}. Text is still available.");
+            if let Ok(mut m) = state.feedback_metrics.lock() {
+                m.paste_error_count = m.paste_error_count.saturating_add(1);
+            }
             // A hard error (e.g. clipboard unavailable) is treated as
             // clipboard-only -- the user gets an indication but the pipeline
             // continues so the done event is still emitted.
@@ -1272,6 +1292,23 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                     log::warn!("[webhook] POST to {url} failed: {e}");
                 }
             });
+        }
+    }
+
+    // --- Update feedback metrics ---
+    // Write latency, target app, timestamp, and last dictation text so the
+    // feedback form can include fresh telemetry when opened.
+    {
+        let total_ms = pipeline_start.elapsed().as_millis() as u64;
+        let target_app = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+        if let Ok(mut m) = state.feedback_metrics.lock() {
+            m.last_stt_latency_ms = Some(stt_ms);
+            m.last_llm_latency_ms = llm_ms;
+            m.last_total_latency_ms = Some(total_ms);
+            m.last_target_app = target_app;
+            m.last_dictation_at = Some(chrono::Utc::now().to_rfc3339());
+            m.last_raw_text = Some(raw_text.clone());
+            m.last_cleaned_text = Some(cleaned_text.clone());
         }
     }
 

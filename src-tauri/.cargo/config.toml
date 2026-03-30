@@ -2,6 +2,11 @@
 # (statically linked ggml) and llama-cpp-sys-2 (dynamic-link ggml).
 # Both crates bundle their own ggml copy. The symbols are from compatible
 # versions, so the linker can safely pick either one.
+#
+# NOTE: +crt-static is NOT possible here — whisper-rs-sys builds with /MT
+# (static CRT) while ort-sys/ONNX builds with /MD (dynamic CRT). Mixing
+# causes LNK2038. End users need the VC++ Redistributable installed.
+# TODO(launch): Bundle vc_redist.x64.exe in the NSIS installer.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "link-args=/FORCE:MULTIPLE"]
 

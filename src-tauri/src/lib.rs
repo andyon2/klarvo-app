@@ -45,7 +45,7 @@ mod dictionary;
 mod history;
 mod hotkey;
 mod license;
-mod llm;
+pub mod llm;
 mod paste;
 mod pipeline;
 mod stt;
@@ -263,6 +263,12 @@ pub struct AppState {
     /// Set to `true` by `start_voice_command_monitor`, cleared by
     /// `stop_voice_command_monitor`. Used as a guard to prevent double-start.
     pub voice_command_active: AtomicBool,
+    /// Diagnostic metrics accumulated during normal use.
+    ///
+    /// Written at the end of each successful pipeline run and on every
+    /// STT / LLM / paste error. Read by `get_feedback_metrics` when the user
+    /// opens the feedback dialog so the payload carries fresh telemetry.
+    pub feedback_metrics: Mutex<commands::feedback::FeedbackMetrics>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -315,6 +321,7 @@ impl AppState {
             auto_loop_active: AtomicBool::new(false),
             active_insert_and_send: AtomicBool::new(false),
             voice_command_active: AtomicBool::new(false),
+            feedback_metrics: Mutex::new(commands::feedback::FeedbackMetrics::default()),
         }
     }
 }
@@ -905,6 +912,7 @@ pub fn run() {
             commands::history::mark_tip_shown,
             // Feedback
             commands::feedback::send_feedback,
+            commands::feedback::get_feedback_metrics,
             // Misc: profiles, snippets, sync, paste, UI helpers
             commands::misc::get_profiles,
             commands::misc::save_profiles,

@@ -1314,7 +1314,7 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
         null,
         null,
         mode === "offline" ? "local" : "groq",
-        collectedDeepseekKey ? "deepseek" : null,
+        collectedDeepseekKey ? "deepseek" : "groq", // fall back to groq if no deepseek key
       );
       await setOnboardingState({
         completed: true,
@@ -1336,6 +1336,42 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
   const clampedIndex = Math.min(stepIndex, newStepList.length - 1);
   const effectiveStepList = newStepList;
   const effectiveStepId = effectiveStepList[clampedIndex] as StepId;
+
+  // Save collected API keys to the backend before the test step runs,
+  // so the pipeline has valid credentials when the user tries a dictation.
+  // Parameters 5+ are optional and default to null (= keep existing value).
+  useEffect(() => {
+    if (effectiveStepId !== "test-dictation") return;
+    if (!collectedGroqKey && !collectedDeepseekKey) return;
+    saveSettings(
+      collectedGroqKey,                          // 1: groqApiKey
+      collectedDeepseekKey,                      // 2: deepseekApiKey
+      language || "de",                          // 3: language
+      "polished",                                // 4: cleanupStyle
+      "ctrl+shift+d",                            // 5: hotkey (safe default)
+      "hold",                                    // 6: hotkeyMode
+      null,                                      // 7: audioDevice
+      null,                                      // 8: sttModel
+      null,                                      // 9: customPrompt
+      null,                                      // 10: autostart
+      null,                                      // 11: whisperMode
+      null,                                      // 12: openaiApiKey
+      null,                                      // 13: anthropicApiKey
+      null,                                      // 14: openrouterApiKey
+      null,                                      // 15: sttPriority (deprecated)
+      null,                                      // 16: llmPriority (deprecated)
+      null,                                      // 17: outputLanguage
+      null,                                      // 18: webhookUrl
+      null,                                      // 19: tursoUrl
+      null,                                      // 20: tursoToken
+      null,                                      // 21: bubbleSize
+      null,                                      // 22: bubbleOpacity
+      null,                                      // 23: localWhisperModel
+      null,                                      // 24: localWhisperGpu
+      mode === "offline" ? "local" : "groq",     // 25: sttProvider
+      collectedDeepseekKey ? "deepseek" : "groq", // 26: llmProvider — fall back to groq if no deepseek key
+    ).catch((err) => console.error("[onboarding] Failed to pre-save keys for test:", err));
+  }, [effectiveStepId, collectedGroqKey, collectedDeepseekKey, language, mode]);
 
   const totalSteps = effectiveStepList.length;
 

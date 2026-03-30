@@ -934,25 +934,60 @@ export async function getVoiceCommandActive(): Promise<boolean> {
 
 // --- Feedback ---
 
+/** Diagnostic metrics collected during dictation, returned by get_feedback_metrics. */
+export interface FeedbackMetrics {
+  lastSttLatencyMs: number | null;
+  lastLlmLatencyMs: number | null;
+  lastTotalLatencyMs: number | null;
+  lastTargetApp: string | null;
+  lastDictationAt: string | null;
+  lastRawText: string | null;
+  lastCleanedText: string | null;
+  sttErrorCount: number;
+  llmErrorCount: number;
+  pasteErrorCount: number;
+}
+
+/** Returns the current feedback metrics snapshot (latency, errors, last dictation). */
+export async function getFeedbackMetrics(): Promise<FeedbackMetrics> {
+  if (isPreviewMode) {
+    return mockAsync({
+      lastSttLatencyMs: 420,
+      lastLlmLatencyMs: 890,
+      lastTotalLatencyMs: 1350,
+      lastTargetApp: "Notepad",
+      lastDictationAt: new Date().toISOString(),
+      lastRawText: "hello world this is a test",
+      lastCleanedText: "Hello world, this is a test.",
+      sttErrorCount: 0,
+      llmErrorCount: 0,
+      pasteErrorCount: 0,
+    });
+  }
+  return invoke<FeedbackMetrics>("get_feedback_metrics");
+}
+
 /**
  * Sends in-app feedback to the backend for collection/forwarding.
- * @param category    - "problem" | "idea" | "question" | "praise"
- * @param message     - Free-text feedback body (min 3 chars)
- * @param email       - Optional contact email for follow-up
- * @param contextArea - Area of the app where feedback was triggered (auto-detected)
- * @param area        - Optional user-selected feature area (e.g. "Audio", "UI")
+ * @param category          - Feedback category
+ * @param message           - Free-text feedback body (min 3 chars)
+ * @param email             - Optional contact email for follow-up
+ * @param contextArea       - Area of the app where feedback was triggered (auto-detected)
+ * @param area              - Optional user-selected feature area (e.g. "Audio", "UI")
+ * @param includeDictation  - When true, attaches last raw + cleaned text to the payload
  */
 export async function sendFeedback(
-  category: "problem" | "idea" | "question" | "praise",
+  category: string,
   message: string,
   email: string | undefined,
   contextArea: string,
   area: string | undefined,
+  includeDictation: boolean = false,
 ): Promise<void> {
   if (isPreviewMode) {
     return mockAsync(undefined, 800);
   }
-  return invoke("send_feedback", { category, message, email, contextArea, area });
+  return invoke("send_feedback", { category, message, email, contextArea, area, includeDictation });
 }
 
 // --- Tips ---

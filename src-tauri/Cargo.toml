@@ -72,11 +72,10 @@ version = "0.15.1"
 
 # Local LLM inference (offline cleanup fallback via llama.cpp).
 # Windows-only (same reason as whisper-rs: bindgen needs libclang + CMake).
-# dynamic-link: builds as DLL to avoid ggml symbol conflicts with whisper-rs-sys
-# (both crates bundle their own ggml; static linking causes LNK2005 duplicates).
+# Static linking -- ggml symbol duplicates with whisper-rs-sys are resolved
+# by /FORCE:MULTIPLE in .cargo/config.toml.
 [target.'cfg(windows)'.dependencies.llama-cpp-2]
 version = "0.1.140"
-features = ["dynamic-link"]
 
 [target.'cfg(windows)'.dependencies.encoding_rs]
 version = "0.8"
@@ -84,3 +83,4 @@ version = "0.8"
 [dev-dependencies]
 tempfile = "3"
 insta = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

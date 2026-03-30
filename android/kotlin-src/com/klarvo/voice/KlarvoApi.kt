@@ -847,6 +847,71 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
 
         return out.toByteArray()
     }
+
+    // --- Feedback Metrics ---
+
+    data class FeedbackMetrics(
+        val lastSttLatencyMs: Long? = null,
+        val lastLlmLatencyMs: Long? = null,
+        val lastTotalLatencyMs: Long? = null,
+        val lastTargetApp: String? = null,
+        val lastDictationAt: String? = null,
+        val lastRawText: String? = null,
+        val lastCleanedText: String? = null,
+        val sttErrorCount: Int = 0,
+        val llmErrorCount: Int = 0,
+        val pasteErrorCount: Int = 0
+    )
+
+    private const val FEEDBACK_METRICS_FILE = "feedback_metrics.json"
+
+    fun readFeedbackMetrics(context: Context): FeedbackMetrics {
+        val file = java.io.File(context.dataDir, FEEDBACK_METRICS_FILE)
+        if (!file.exists()) return FeedbackMetrics()
+        return try {
+            val json = JSONObject(file.readText())
+            FeedbackMetrics(
+                lastSttLatencyMs  = json.optLong("lastSttLatencyMs", -1).takeIf { it >= 0 },
+                lastLlmLatencyMs  = json.optLong("lastLlmLatencyMs", -1).takeIf { it >= 0 },
+                lastTotalLatencyMs = json.optLong("lastTotalLatencyMs", -1).takeIf { it >= 0 },
+                lastTargetApp     = json.optString("lastTargetApp", "").takeIf { it.isNotEmpty() },
+                lastDictationAt   = json.optString("lastDictationAt", "").takeIf { it.isNotEmpty() },
+                lastRawText       = json.optString("lastRawText", "").takeIf { it.isNotEmpty() },
+                lastCleanedText   = json.optString("lastCleanedText", "").takeIf { it.isNotEmpty() },
+                sttErrorCount     = json.optInt("sttErrorCount", 0),
+                llmErrorCount     = json.optInt("llmErrorCount", 0),
+                pasteErrorCount   = json.optInt("pasteErrorCount", 0)
+            )
+        } catch (e: Exception) {
+            Log.w("KlarvoApi", "Failed to read feedback metrics", e)
+            FeedbackMetrics()
+        }
+    }
+
+    fun writeFeedbackMetrics(context: Context, metrics: FeedbackMetrics) {
+        val json = JSONObject().apply {
+            metrics.lastSttLatencyMs?.let  { put("lastSttLatencyMs", it) }  ?: put("lastSttLatencyMs", JSONObject.NULL)
+            metrics.lastLlmLatencyMs?.let  { put("lastLlmLatencyMs", it) }  ?: put("lastLlmLatencyMs", JSONObject.NULL)
+            metrics.lastTotalLatencyMs?.let { put("lastTotalLatencyMs", it) } ?: put("lastTotalLatencyMs", JSONObject.NULL)
+            metrics.lastTargetApp?.let     { put("lastTargetApp", it) }     ?: put("lastTargetApp", JSONObject.NULL)
+            metrics.lastDictationAt?.let   { put("lastDictationAt", it) }   ?: put("lastDictationAt", JSONObject.NULL)
+            metrics.lastRawText?.let       { put("lastRawText", it) }       ?: put("lastRawText", JSONObject.NULL)
+            metrics.lastCleanedText?.let   { put("lastCleanedText", it) }   ?: put("lastCleanedText", JSONObject.NULL)
+            put("sttErrorCount",   metrics.sttErrorCount)
+            put("llmErrorCount",   metrics.llmErrorCount)
+            put("pasteErrorCount", metrics.pasteErrorCount)
+        }
+        try {
+            java.io.File(context.dataDir, FEEDBACK_METRICS_FILE).writeText(json.toString())
+        } catch (e: Exception) {
+            Log.w("KlarvoApi", "Failed to write feedback metrics", e)
+        }
+    }
+
+    /** Read-modify-write helper for atomic metric updates. */
+    fun updateFeedbackMetrics(context: Context, update: (FeedbackMetrics) -> FeedbackMetrics) {
+        writeFeedbackMetrics(context, update(readFeedbackMetrics(context)))
+    }
 }
 
 /**
