@@ -1,5 +1,4 @@
-import type { CleanupStyle, AppSettings } from "../../types";
-import { STYLE_OPTIONS } from "../../types";
+import type { AppSettings } from "../../types";
 import { isDesktop, isMobile } from "../../platform";
 import { LABEL_CLS_M } from "../ui";
 import { WhisperModelManager } from "../WhisperModelManager";
@@ -22,8 +21,6 @@ export interface RecordingAudioContentProps {
   setLocalSttModel: (v: string) => void;
   localLlmProvider: string;
   setLocalLlmProvider: (v: string) => void;
-  localStyle: CleanupStyle;
-  handleStyleChange: (style: CleanupStyle) => void;
   localAudioDevice: string | null;
   handleAudioDeviceChange: (d: string | null) => void;
   audioDevices: string[];
@@ -45,7 +42,6 @@ export function RecordingAudioContent({
   localSttProvider, setLocalSttProvider,
   localSttModel, setLocalSttModel,
   localLlmProvider, setLocalLlmProvider,
-  localStyle, handleStyleChange,
   localAudioDevice, handleAudioDeviceChange,
   audioDevices,
   localWhisperModel, setLocalWhisperModel,
@@ -116,7 +112,7 @@ export function RecordingAudioContent({
                   return true;
                 }).map((m) => (
                   <option key={m.value} value={m.value}>
-                    {m.label} ({m.price})
+                    {m.label}
                   </option>
                 ))}
               </select>
@@ -180,27 +176,6 @@ export function RecordingAudioContent({
           {localLlmProvider === "local" && (
             <LlmModelManager />
           )}
-
-          <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-            <span className={LABEL_CLS_M}>Style</span>
-            <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-              {STYLE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleStyleChange(opt.value)}
-                  title={opt.description}
-                  className={[
-                    isMobile ? "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-100" : "px-2 py-1 rounded-md text-xs font-medium transition-all duration-100",
-                    localStyle === opt.value
-                      ? "bg-klarvo-primary/15 text-klarvo-primary"
-                      : "text-klarvo-dim hover:text-klarvo-muted",
-                  ].join(" ")}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 

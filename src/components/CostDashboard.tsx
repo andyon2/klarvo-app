@@ -11,11 +11,6 @@ import type { UsageSummary } from "../types";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`;
   const mins = Math.floor(seconds / 60);
@@ -64,23 +59,6 @@ function StatTile({ label, value, sub, highlight, color = "primary" }: StatTileP
 // Savings calculation
 // ---------------------------------------------------------------------------
 
-const WISPR_MONTHLY_USD = 12.0;
-
-/**
- * Estimates monthly Klarvo cost and computes savings vs Wispr Flow.
- *
- * We cannot know the first-dictation date from UsageSummary alone (the backend
- * does not expose it yet), so we conservatively assume 1 month of usage.
- * This gives a lower bound on savings rather than over-selling the number.
- */
-function computeSavings(stats: UsageSummary): { monthly: number; savings: number } {
-  // Denominator: assume at least 1 month so we never divide by zero.
-  const months = 1;
-  const monthly = stats.totalCostUsd / months;
-  const savings = Math.max(0, WISPR_MONTHLY_USD - monthly);
-  return { monthly, savings };
-}
-
 // ---------------------------------------------------------------------------
 // Public component
 // ---------------------------------------------------------------------------
@@ -91,7 +69,6 @@ interface CostDashboardProps {
 
 export function CostDashboard({ stats }: CostDashboardProps) {
   const hasData = stats.totalDictations > 0;
-  const { monthly, savings } = computeSavings(stats);
 
   return (
     <div className="flex flex-col gap-4">
@@ -112,69 +89,18 @@ export function CostDashboard({ stats }: CostDashboardProps) {
         </div>
       </div>
 
-      {/* Section: Cost breakdown — warm/orange accent for "money" */}
-      <div>
-        <p className="text-[11px] font-semibold text-klarvo-warm uppercase tracking-widest mb-2">
-          Kosten
+      {/* Wispr Flow comparison banner */}
+      <div className="bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-xl p-4 flex flex-col gap-1">
+        <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-wide">
+          Vergleich mit Wispr Flow
         </p>
-        <div className="grid grid-cols-2 gap-2">
-          <StatTile label="STT-Kosten" value={hasData ? formatCost(stats.totalSttCostUsd) : "$0.00"} sub="USD" highlight color="warm" />
-          <StatTile label="LLM-Kosten" value={hasData ? formatCost(stats.totalLlmCostUsd) : "$0.00"} sub="USD" highlight color="warm" />
-          <StatTile
-            label="Gesamt"
-            value={hasData ? formatCost(stats.totalCostUsd) : "$0.00"}
-            sub="USD"
-            highlight
-            color="warm"
-          />
-          <StatTile
-            label="Heute"
-            value={hasData ? formatCost(stats.costTodayUsd) : "$0.00"}
-            sub="USD"
-            highlight
-            color="warm"
-          />
-        </div>
+        <p className="text-sm font-semibold text-klarvo-accent">
+          Wispr Flow kostet $12/Monat ($144/Jahr).
+        </p>
+        <p className="text-[11px] text-klarvo-primary leading-snug">
+          Mit Klarvo: Groq STT ist kostenlos, DeepSeek Cleanup kostet Cents pro Tag.
+        </p>
       </div>
-
-      {/* Savings banner */}
-      {hasData ? (
-        <div className="bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-xl p-4 flex flex-col gap-1">
-          <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-wide">
-            Vergleich mit Wispr Flow
-          </p>
-          {savings > 0 ? (
-            <>
-              <p className="text-sm font-semibold text-klarvo-accent">
-                Du sparst {formatCost(savings)}/Monat
-              </p>
-              <p className="text-[11px] text-klarvo-primary leading-snug">
-                Wispr Flow kostet ${WISPR_MONTHLY_USD.toFixed(2)}/Monat. Deine
-                Klarvo-Kosten: {formatCost(monthly)}/Monat.
-              </p>
-            </>
-          ) : (
-            <p className="text-xs text-klarvo-primary">
-              Noch zu wenig Daten für einen Vergleich — diktiere mehr!
-            </p>
-          )}
-        </div>
-      ) : (
-        <div className="bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-xl p-4">
-          <p className="text-[11px] font-semibold text-klarvo-primary uppercase tracking-wide mb-1">
-            Vergleich mit Wispr Flow
-          </p>
-          <p className="text-xs text-klarvo-primary">
-            Noch keine Daten — starte dein erstes Diktat!
-          </p>
-        </div>
-      )}
-
-      {/* Footer note */}
-      <p className="text-[10px] text-klarvo-dim text-center leading-snug">
-        Kostenbasiert auf Provider-Preisen (Groq STT: kostenlos, DeepSeek LLM: ~$0.00014/1k Token).
-        Wispr Flow: ${WISPR_MONTHLY_USD.toFixed(2)}/Monat.
-      </p>
     </div>
   );
 }

@@ -9,7 +9,6 @@ import {
   getUsageStats,
   getFillerStats,
   getNotes,
-  reformatText,
   isFirstRun,
   isPreviewMode,
   getOnboardingState,
@@ -24,7 +23,7 @@ import Onboarding from "./Onboarding";
 // Components
 import {
   MicIcon, StopIcon, SpinnerIcon, GearIcon, CloseIcon,
-  MailIcon, ListIcon, SummaryIcon, NoteIcon, LockIcon, FeedbackIcon,
+  LockIcon, FeedbackIcon,
 } from "./components/icons";
 import { FillerStatsChart, HighlightedText } from "./components/ui";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -116,84 +115,6 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
 }
 
 // OutputLanguagePicker removed from header -- available in Settings only.
-
-// --- Reformat Buttons --------------------------------------------------------
-
-interface ReformatButtonsProps {
-  text: string;
-  originalText: string;
-  onResult: (text: string) => void;
-}
-
-function ReformatButtons({ text, originalText, onResult }: ReformatButtonsProps) {
-  const [loading, setLoading] = useState<string | null>(null);
-  const isReformatted = text !== originalText;
-
-  const FORMATS = [
-    { id: "email", label: "Email", Icon: MailIcon },
-    { id: "bullets", label: "Bullets", Icon: ListIcon },
-    { id: "summary", label: "Summary", Icon: SummaryIcon },
-  ] as const;
-
-  const handleReformat = async (format: string) => {
-    if (loading) return;
-    setLoading(format);
-    try {
-      const result = await reformatText(originalText, format);
-      onResult(result);
-      navigator.clipboard.writeText(result).catch(console.error);
-    } catch (err) {
-      console.error("reformat_text failed:", err);
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const handleReset = () => {
-    onResult(originalText);
-    navigator.clipboard.writeText(originalText).catch(console.error);
-  };
-
-  return (
-    <div className="flex items-center gap-1.5">
-      {isReformatted && (
-        <button
-          onClick={handleReset}
-          title="Reset to original"
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border bg-klarvo-surface/60 border-klarvo-border/60 text-klarvo-muted hover:text-klarvo-text transition-all duration-100"
-        >
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-            <path d="M3 3v5h5" />
-          </svg>
-          Reset
-        </button>
-      )}
-      {FORMATS.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          onClick={() => handleReformat(id)}
-          disabled={loading !== null}
-          title={`Reformat as ${label}`}
-          className={[
-            "flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border",
-            "transition-all duration-100 disabled:opacity-50 disabled:cursor-not-allowed",
-            loading === id
-              ? "bg-klarvo-warning/10 border-klarvo-warning/20 text-klarvo-warning"
-              : "bg-klarvo-bg border-klarvo-border/60 text-klarvo-muted hover:text-klarvo-text hover:border-klarvo-border/60",
-          ].join(" ")}
-        >
-          {loading === id ? (
-            <SpinnerIcon className="w-3 h-3" />
-          ) : (
-            <Icon className="w-3 h-3" />
-          )}
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 // --- Main App ----------------------------------------------------------------
 
@@ -448,7 +369,7 @@ export default function App() {
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
-          <GearIcon />
+          <GearIcon className={isMobile ? "w-4 h-4" : "w-5 h-5"} />
         </button>
 
         {/* History toggle */}
@@ -463,7 +384,7 @@ export default function App() {
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <svg className={isMobile ? "w-4 h-4" : "w-5 h-5"} viewBox="0 0 24 24" fill="currentColor">
             <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
           </svg>
         </button>
@@ -480,13 +401,13 @@ export default function App() {
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <svg className={isMobile ? "w-4 h-4" : "w-5 h-5"} viewBox="0 0 24 24" fill="currentColor">
             <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
           </svg>
         </button>
 
-        {/* Notes toggle */}
-        <button
+        {/* Notes toggle -- hidden for Early Access (feature incomplete) */}
+        {/* <button
           aria-label="Toggle voice notes"
           aria-expanded={panels.showNotes}
           onClick={() => panels.toggle("notes")}
@@ -497,8 +418,8 @@ export default function App() {
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
-          <NoteIcon className="w-4 h-4" />
-        </button>
+          <NoteIcon className={isMobile ? "w-4 h-4" : "w-5 h-5"} />
+        </button> */}
 
       </div>
 
@@ -625,16 +546,26 @@ export default function App() {
                     <HighlightedText text={entry.text} query={historySearch} className="text-xs text-klarvo-muted whitespace-pre-wrap" />
                     {entry.rawText && entry.rawText !== entry.text && (
                       <div className="mt-1.5">
-                        <button
-                          onClick={() => setExpandedHistoryRaw((prev) => {
-                            const next = new Set(prev);
-                            next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id);
-                            return next;
-                          })}
-                          className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
-                        >
-                          {expandedHistoryRaw.has(entry.id) ? "Hide original" : "Show original"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setExpandedHistoryRaw((prev) => {
+                              const next = new Set(prev);
+                              next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id);
+                              return next;
+                            })}
+                            className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
+                          >
+                            {expandedHistoryRaw.has(entry.id) ? "Hide original" : "Show original"}
+                          </button>
+                          {expandedHistoryRaw.has(entry.id) && (
+                            <button
+                              onClick={() => navigator.clipboard.writeText(entry.rawText!)}
+                              className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
+                            >
+                              Copy Original
+                            </button>
+                          )}
+                        </div>
                         {expandedHistoryRaw.has(entry.id) && (
                           <div className="mt-1 relative group/raw">
                             <p className="text-[11px] text-klarvo-dim whitespace-pre-wrap bg-[#0c0c0e] rounded-lg px-2.5 py-1.5 border border-klarvo-border/40">
@@ -663,13 +594,13 @@ export default function App() {
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => navigator.clipboard.writeText(entry.text).catch(console.error)}
-                          className="text-[11px] text-klarvo-dim hover:text-klarvo-primary transition-colors"
+                          className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
                         >
                           Copy
                         </button>
                         <button
                           onClick={() => handleDeleteHistoryEntry(entry.id)}
-                          className="text-[11px] text-klarvo-dim hover:text-klarvo-danger transition-colors"
+                          className="text-[11px] text-orange-400 hover:text-orange-300 transition-colors"
                         >
                           Delete
                         </button>
@@ -693,7 +624,7 @@ export default function App() {
         {panels.showStats && (
           <div className="w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30">
             <div className="flex items-center justify-between px-4 py-3 border-b border-klarvo-border/40">
-              <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">Statistics & Costs</span>
+              <span className="text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest">Statistics</span>
               <button
                 onClick={() => panels.close("stats")}
                 className="text-klarvo-dim hover:text-klarvo-text transition-colors p-1 rounded-lg hover:bg-klarvo-surface/50"
@@ -802,21 +733,24 @@ export default function App() {
               rows={3}
               className="w-full bg-klarvo-bg border border-klarvo-border/60 rounded-xl px-3.5 py-2.5 text-sm text-klarvo-text resize-none focus:outline-none focus:border-klarvo-primary/30 transition-colors"
             />
-            {recording.recordingState === "done" && (
-              <ReformatButtons
-                text={recording.resultText}
-                originalText={recording.originalResultText ?? recording.resultText}
-                onResult={(t) => recording.setResultText(t)}
-              />
-            )}
             {recording.rawText && recording.rawText !== recording.resultText && (
               <div>
-                <button
-                  onClick={() => recording.setShowRawText((v) => !v)}
-                  className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
-                >
-                  {recording.showRawText ? "Hide original" : "Show original"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => recording.setShowRawText((v) => !v)}
+                    className="text-[11px] text-klarvo-dim hover:text-klarvo-muted transition-colors"
+                  >
+                    {recording.showRawText ? "Hide original" : "Show original"}
+                  </button>
+                  {recording.showRawText && (
+                    <button
+                      onClick={() => navigator.clipboard.writeText(recording.rawText!)}
+                      className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
+                    >
+                      Copy Original
+                    </button>
+                  )}
+                </div>
                 {recording.showRawText && (
                   <div className="mt-1 relative group">
                     <textarea
@@ -880,8 +814,8 @@ export default function App() {
       <div className="fixed right-5 z-[9990] flex flex-col items-end gap-2" style={{ bottom: isMobile ? '128px' : '1.25rem' }}>
         {/* Tooltip — shown every start until permanently dismissed */}
         {showFeedbackTooltip && !panels.showFeedback && (
-          <div className="bg-klarvo-surface border border-klarvo-border/60 rounded-xl shadow-xl shadow-black/40 px-3.5 py-2.5 max-w-[220px] animate-in fade-in">
-            <p className="text-xs text-klarvo-text font-medium leading-snug">
+          <div className={`bg-klarvo-surface border border-klarvo-border/60 rounded-xl shadow-xl shadow-black/40 px-4 py-3 ${isMobile ? "max-w-[280px]" : "max-w-[260px]"} animate-in fade-in`}>
+            <p className="text-sm text-klarvo-text font-medium leading-snug">
               Spotted something? Tap here to send feedback anytime!
             </p>
             <div className="flex items-center justify-end gap-2 mt-2">
@@ -904,9 +838,9 @@ export default function App() {
           title="Send Feedback"
           aria-label="Send feedback"
           onClick={() => { panels.toggle("feedback"); setShowFeedbackTooltip(false); }}
-          className="w-14 h-14 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-400 shadow-lg shadow-black/30 hover:bg-orange-500/30 hover:scale-105 transition-all duration-150 flex items-center justify-center"
+          className={`${isMobile ? "w-20 h-20" : "w-16 h-16"} rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-400 shadow-lg shadow-black/30 hover:bg-orange-500/30 hover:scale-105 transition-all duration-150 flex items-center justify-center`}
         >
-          <FeedbackIcon className="w-6 h-6" />
+          <FeedbackIcon className={isMobile ? "w-9 h-9" : "w-7 h-7"} />
         </button>
       </div>
 

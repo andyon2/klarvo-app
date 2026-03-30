@@ -94,7 +94,7 @@ export function SettingsPanel({
   audioDevice, audioDevices, dictionary, outputLanguage,
   licenseStatus, licenseSource, licenseLoading,
   onValidateLicense, onRemoveLicense, onDeactivateLicense,
-  onSave, onLanguageChange, onStyleChange, onHotkeyChange, onHotkeyModeChange,
+  onSave, onLanguageChange, onStyleChange: _onStyleChange, onHotkeyChange, onHotkeyModeChange,
   onAudioDeviceChange, onAddTerm, onRemoveTerm, onOutputLanguageChange,
   onRestartOnboarding,
   onRegisterBack,
@@ -372,10 +372,8 @@ export function SettingsPanel({
     onOutputLanguageChange(lang);
   }, [onOutputLanguageChange]);
 
-  const handleStyleChange = useCallback((style: CleanupStyle) => {
-    setLocalStyle(style);
-    onStyleChange(style);
-  }, [onStyleChange]);
+  // handleStyleChange removed — style picker moved to main screen only.
+  // localStyle + onStyleChange are still used in save/dirty logic.
 
   const handleHotkeyChange = useCallback((h: string) => {
     setLocalHotkey(h);
@@ -620,7 +618,6 @@ export function SettingsPanel({
                 localSttProvider={localSttProvider} setLocalSttProvider={handleSttProviderChange}
                 localSttModel={localSttModel} setLocalSttModel={setLocalSttModel}
                 localLlmProvider={localLlmProvider} setLocalLlmProvider={setLocalLlmProvider}
-                localStyle={localStyle} handleStyleChange={handleStyleChange}
                 localAudioDevice={localAudioDevice} handleAudioDeviceChange={handleAudioDeviceChange}
                 audioDevices={audioDevices}
                 localWhisperModel={localWhisperModel} setLocalWhisperModel={setLocalWhisperModel}

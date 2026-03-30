@@ -715,6 +715,23 @@ class KlarvoOverlayService : Service() {
             return
         }
 
+        // Pre-check: verify that a valid config with API keys exists before we start recording.
+        // Without this check, the pipeline would silently fail after the user has already
+        // recorded audio -- which is confusing. Failing fast here gives immediate feedback.
+        val preCheckConfig = cachedConfig ?: KlarvoApi.readConfig(this)
+        if (preCheckConfig == null) {
+            // config.json missing entirely -- app was never configured via the desktop UI.
+            Log.w(TAG, "startRecording: config.json not found or incomplete -- aborting")
+            showToast("No configuration found. Open Klarvo on your desktop and configure the app first.")
+            return
+        }
+        if (preCheckConfig.sttProvider != "local" && preCheckConfig.groqApiKey.isBlank()) {
+            // Cloud STT selected but no Groq key present.
+            Log.w(TAG, "startRecording: Groq API key missing -- aborting")
+            showToast("No API key configured. Open Klarvo Settings and add your Groq key.")
+            return
+        }
+
         // Determine which mode governs this recording session.
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -1000,6 +1017,11 @@ class KlarvoOverlayService : Service() {
                     }
                 } else {
                     Log.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
+                    // Notify the user that cleanup was skipped so they understand
+                    // why the pasted text may still contain filler words or errors.
+                    handler.post {
+                        showToast("Text pasted without cleanup (no LLM key configured).")
+                    }
                     transcript
                 }
             }

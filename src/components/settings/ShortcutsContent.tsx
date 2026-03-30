@@ -219,7 +219,7 @@ export function ShortcutsContent({
   localHotkeySlot2, setLocalHotkeySlot2, localHotkeyModeSlot2, setLocalHotkeyModeSlot2,
   localSilenceSecs, setLocalSilenceSecs,
   localInsertAndSendSlot1, setLocalInsertAndSendSlot1,
-  localInsertAndSendSlot2, setLocalInsertAndSendSlot2,
+  localInsertAndSendSlot2: _localInsertAndSendSlot2, setLocalInsertAndSendSlot2: _setLocalInsertAndSendSlot2,
   hotkeyTab, setHotkeyTab,
   bubbleTab, setBubbleTab,
   localBubbleTapMode, setLocalBubbleTapMode,
@@ -337,29 +337,6 @@ export function ShortcutsContent({
                 </>
               )}
 
-              {/* Insert & Send -- per-slot option for Hotkey 1 */}
-              <div className="flex items-center justify-between gap-3 pt-1 border-t border-klarvo-border/40">
-                <div className="flex flex-col gap-0.5">
-                  <span className={LABEL_CLS}>Insert &amp; Send</span>
-                  <span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={localInsertAndSendSlot1}
-                  onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
-                  className={[
-                    "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                    localInsertAndSendSlot1 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-                  ].join(" ")}
-                >
-                  <span
-                    className={[
-                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                      localInsertAndSendSlot1 ? "translate-x-4" : "",
-                    ].join(" ")}
-                  />
-                </button>
-              </div>
             </>
           )}
 
@@ -445,29 +422,6 @@ export function ShortcutsContent({
                 </div>
               )}
 
-              {/* Insert & Send -- per-slot option for Hotkey 2 */}
-              <div className="flex items-center justify-between gap-3 pt-1 border-t border-klarvo-border/40">
-                <div className="flex flex-col gap-0.5">
-                  <span className={LABEL_CLS}>Insert &amp; Send</span>
-                  <span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={localInsertAndSendSlot2}
-                  onClick={() => setLocalInsertAndSendSlot2((v) => !v)}
-                  className={[
-                    "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                    localInsertAndSendSlot2 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-                  ].join(" ")}
-                >
-                  <span
-                    className={[
-                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200",
-                      localInsertAndSendSlot2 ? "translate-x-4" : "",
-                    ].join(" ")}
-                  />
-                </button>
-              </div>
             </>
           )}
         </div>
@@ -633,8 +587,18 @@ export function ShortcutsContent({
           </button>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
-          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} className="w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40" />
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Send</span><span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span></div>
+          <button
+            role="switch"
+            aria-checked={localInsertAndSendSlot1}
+            onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
+            className={[
+              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+              localInsertAndSendSlot1 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+            ].join(" ")}
+          >
+            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localInsertAndSendSlot1 ? "translate-x-4" : ""].join(" ")} />
+          </button>
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className="text-[11px] text-klarvo-muted">Capitalize first letter of every result.</span></div>
@@ -649,6 +613,10 @@ export function ShortcutsContent({
           >
             <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoCapitalize ? "translate-x-4" : ""].join(" ")} />
           </button>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
+          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} className="w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40" />
         </div>
       </div>
     </>
