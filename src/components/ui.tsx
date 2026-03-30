@@ -46,7 +46,7 @@ export function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
           <span className="text-[11px] text-klarvo-muted w-16 shrink-0 font-mono truncate">{word}</span>
           <div className="flex-1 bg-klarvo-elevated/60 rounded-full h-1.5 overflow-hidden">
             <div
-              className="h-full bg-klarvo-primary/50 rounded-full transition-all duration-300"
+              className="h-full bg-orange-500/50 rounded-full transition-all duration-300"
               style={{ width: `${Math.round((count / max) * 100)}%` }}
             />
           </div>

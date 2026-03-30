@@ -640,23 +640,25 @@ export default function App() {
                   <CostDashboard stats={usageStats} />
                 </div>
 
-                {/* Filler word analysis */}
+                {/* Filler word analysis — orange accent to restore Teal→Orange→Teal color rhythm */}
                 {!isPaid ? (
-                  <div className="px-4 pb-4 flex items-center gap-2 border-t border-klarvo-border/40 pt-3">
-                    <LockIcon className="w-3.5 h-3.5 text-klarvo-dim flex-shrink-0" />
-                    <p className="text-xs text-klarvo-dim">Filler word analysis requires a Klarvo license.</p>
+                  <div className="px-4 pb-4 pt-3">
+                    <div className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-4 flex items-center gap-2">
+                      <LockIcon className="w-3.5 h-3.5 text-orange-400/60 flex-shrink-0" />
+                      <p className="text-xs text-orange-400/70">Filler word analysis requires a Klarvo license.</p>
+                    </div>
                   </div>
                 ) : fillerStats.length > 0 ? (
-                  <div className="px-4 pb-4 border-t border-klarvo-border/40 pt-3">
+                  <div className="px-4 pb-4 pt-3">
                     <button
                       onClick={() => setShowFillerStats((v) => !v)}
-                      className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-dim uppercase tracking-widest hover:text-klarvo-muted transition-colors w-full text-left"
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-warm uppercase tracking-widest hover:text-orange-300 transition-colors w-full text-left"
                     >
                       <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
                       Top Filler Words
                     </button>
                     {showFillerStats && (
-                      <div className="mt-2">
+                      <div className="mt-3 bg-orange-500/5 border border-orange-500/20 rounded-xl p-4">
                         <FillerStatsChart entries={fillerStats} />
                       </div>
                     )}
