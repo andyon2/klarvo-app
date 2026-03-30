@@ -643,7 +643,7 @@ export default function App() {
                 {/* Filler word analysis — orange accent to restore Teal→Orange→Teal color rhythm */}
                 {!isPaid ? (
                   <div className="px-4 pb-4 pt-3">
-                    <div className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-4 flex items-center gap-2">
+                    <div className="bg-klarvo-bg border border-klarvo-warm/30 rounded-xl p-4 flex items-center gap-2">
                       <LockIcon className="w-3.5 h-3.5 text-orange-400/60 flex-shrink-0" />
                       <p className="text-xs text-orange-400/70">Filler word analysis requires a Klarvo license.</p>
                     </div>
@@ -658,7 +658,7 @@ export default function App() {
                       Top Filler Words
                     </button>
                     {showFillerStats && (
-                      <div className="mt-3 bg-orange-500/5 border border-orange-500/20 rounded-xl p-4">
+                      <div className="mt-3 bg-klarvo-bg border border-klarvo-warm/30 rounded-xl p-4">
                         <FillerStatsChart entries={fillerStats} />
                       </div>
                     )}
