@@ -586,12 +586,13 @@ export function ShortcutsContent({
             <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoPaste ? "translate-x-4" : ""].join(" ")} />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-3">
+        <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Send</span><span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span></div>
           <button
             role="switch"
             aria-checked={localInsertAndSendSlot1}
             onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
+            disabled={!localAutoPaste}
             className={[
               "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
               localInsertAndSendSlot1 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
@@ -614,9 +615,9 @@ export function ShortcutsContent({
             <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoCapitalize ? "translate-x-4" : ""].join(" ")} />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-3">
+        <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
-          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} className="w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40" />
+          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} disabled={!localAutoPaste} className={`w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40${!localAutoPaste ? " cursor-not-allowed" : ""}`} />
         </div>
       </div>
     </>
