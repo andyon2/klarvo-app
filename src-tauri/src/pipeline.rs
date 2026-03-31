@@ -1055,7 +1055,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     };
 
     let is_command = selected_text.is_some();
-    let cleaned_text = cleanup_result.text;
+    let cleaned_text = sanitize_llm_output(&cleanup_result.text);
     log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
 
     // --- Record usage ---
@@ -1580,6 +1580,68 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
 
 // ---------------------------------------------------------------------------
 // Tests
+// ---------------------------------------------------------------------------
+// Output sanitization — strip dangerous characters from LLM output before paste
+// ---------------------------------------------------------------------------
+
+/// Sanitizes LLM output before it is pasted into the active window.
+///
+/// Removes characters that could exploit the target application or terminal:
+/// - ANSI escape sequences (terminal control)
+/// - Unicode bidirectional override/embedding characters (text spoofing)
+/// - Null bytes (string truncation in C-based apps)
+/// - Zero-width characters (invisible text / steganography)
+///
+/// Normal text (including emoji, CJK, accented characters) passes through unchanged.
+pub fn sanitize_llm_output(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            // Strip ANSI escape: ESC followed by '[' and then parameter bytes + final byte
+            '\x1b' => {
+                if chars.peek() == Some(&'[') {
+                    chars.next(); // consume '['
+                    // consume until a letter (the final byte of the CSI sequence)
+                    while let Some(&c) = chars.peek() {
+                        chars.next();
+                        if c.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                // else: lone ESC, just skip it
+            }
+            // Null byte
+            '\0' => {}
+            // Unicode bidirectional overrides and embeddings
+            '\u{202A}' // LRE
+            | '\u{202B}' // RLE
+            | '\u{202C}' // PDF
+            | '\u{202D}' // LRO
+            | '\u{202E}' // RLO
+            | '\u{2066}' // LRI
+            | '\u{2067}' // RLI
+            | '\u{2068}' // FSI
+            | '\u{2069}' // PDI
+            | '\u{200F}' // RTL mark
+            | '\u{200E}' // LTR mark
+            => {}
+            // Zero-width characters (invisible text / steganography)
+            '\u{200B}' // ZWSP
+            | '\u{200C}' // ZWNJ
+            | '\u{200D}' // ZWJ
+            | '\u{FEFF}' // BOM / ZWNBSP
+            => {}
+            // Everything else passes through
+            _ => out.push(ch),
+        }
+    }
+
+    out
+}
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -2228,4 +2290,65 @@ mod tests {
 
     // Note: hallucination blocklist tests live in src/stt/hallucination.rs,
     // co-located with the implementation. See `stt::hallucination` module.
+
+    // --- sanitize_llm_output tests ---
+
+    #[test]
+    fn sanitize_preserves_normal_text() {
+        assert_eq!(
+            sanitize_llm_output("Hello, world! Wie geht's?"),
+            "Hello, world! Wie geht's?"
+        );
+    }
+
+    #[test]
+    fn sanitize_preserves_emoji_and_cjk() {
+        assert_eq!(sanitize_llm_output("Hallo 🎉 こんにちは"), "Hallo 🎉 こんにちは");
+    }
+
+    #[test]
+    fn sanitize_strips_ansi_escape_sequences() {
+        assert_eq!(
+            sanitize_llm_output("\x1b[31mRed\x1b[0m normal"),
+            "Red normal"
+        );
+        assert_eq!(
+            sanitize_llm_output("\x1b[2J\x1b[HMALICIOUS"),
+            "MALICIOUS"
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_null_bytes() {
+        assert_eq!(
+            sanitize_llm_output("before\0after"),
+            "beforeafter"
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_bidi_overrides() {
+        assert_eq!(
+            sanitize_llm_output("Hello \u{202E}dlrow\u{202C} test"),
+            "Hello dlrow test"
+        );
+    }
+
+    #[test]
+    fn sanitize_strips_zero_width_chars() {
+        assert_eq!(
+            sanitize_llm_output("a\u{200B}b\u{FEFF}c"),
+            "abc"
+        );
+    }
+
+    #[test]
+    fn sanitize_handles_empty_string() {
+        assert_eq!(sanitize_llm_output(""), "");
+    }
+
+    #[test]
+    fn sanitize_strips_lone_esc() {
+        assert_eq!(sanitize_llm_output("before\x1bafter"), "beforeafter");
+    }
 }
