@@ -433,6 +433,10 @@ pub struct OnboardingState {
     /// Chosen input language. ISO-639-1 code (e.g. `"de"`, `"en"`).
     /// Empty string = not chosen yet.
     pub language: String,
+    /// Chosen onboarding track for the STT key setup.
+    /// One of `"expert"`, `"beginner"`, or `""` (not chosen yet).
+    #[serde(default)]
+    pub track: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1179,29 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
             config.llm_provider
         );
         config.llm_provider = default_llm_provider();
+    }
+
+    // ---------------------------------------------------------------------------
+    // Groq-Llama Default: when STT provider is Groq and the user has a Groq key
+    // but no DeepSeek key, auto-select Groq as LLM provider too.
+    //
+    // This lets users complete onboarding with a single API key.  Only triggers
+    // when llm_provider is still on the default "deepseek" — never overrides an
+    // explicit user choice that already has a working key.
+    //
+    // This block MUST run before the general auto-fallback below, otherwise the
+    // fallback would pick up the same Groq key via a different code path and the
+    // targeted log message would never appear.
+    // ---------------------------------------------------------------------------
+    if config.stt_provider == "groq"
+        && config.llm_provider == "deepseek"
+        && config.deepseek_api_key.is_empty()
+        && !config.groq_api_key.is_empty()
+    {
+        config.llm_provider = "groq".to_string();
+        log::info!(
+            "[config] STT provider is Groq with API key present, auto-selecting Groq LLM (no DeepSeek key configured)"
+        );
     }
 
     // ---------------------------------------------------------------------------
@@ -2364,6 +2391,109 @@ mod tests {
         assert_eq!(
             cfg.llm_provider, "deepseek",
             "should stay at default when every provider key is empty"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Groq-Llama Default tests
+    // -------------------------------------------------------------------------
+
+    /// Main case: STT is Groq with a key, LLM is still on the default "deepseek"
+    /// and no DeepSeek key is configured → llm_provider is auto-switched to "groq".
+    #[test]
+    fn test_groq_llama_default_auto_switch() {
+        let dir = temp_dir();
+        let json = r#"{"sttProvider": "groq", "groqApiKey": "gsk_test_key"}"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.stt_provider, "groq");
+        assert_eq!(
+            cfg.llm_provider, "groq",
+            "Groq-Llama Default: STT=groq with key, no DeepSeek key → llm_provider must become groq"
+        );
+    }
+
+    /// Guard: when a DeepSeek key IS present the user has intentionally configured
+    /// DeepSeek — the auto-switch must NOT fire.
+    #[test]
+    fn test_groq_llama_default_no_override_with_deepseek_key() {
+        let dir = temp_dir();
+        let json = r#"{
+            "sttProvider": "groq",
+            "groqApiKey": "gsk_test_key",
+            "deepseekApiKey": "ds_test_key"
+        }"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.llm_provider, "deepseek",
+            "DeepSeek key present → must stay deepseek, Groq-Llama Default must not fire"
+        );
+    }
+
+    /// Guard: when the user has explicitly chosen a different LLM provider (e.g.
+    /// "openai") the auto-switch must NOT fire, regardless of key state.
+    #[test]
+    fn test_groq_llama_default_no_override_explicit_provider() {
+        let dir = temp_dir();
+        let json = r#"{
+            "sttProvider": "groq",
+            "llmProvider": "openai",
+            "groqApiKey": "gsk_test_key",
+            "openaiApiKey": "sk_openai_key"
+        }"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(
+            cfg.llm_provider, "openai",
+            "Explicit llmProvider=openai with key present → must not be overridden"
+        );
+    }
+
+    /// Guard: STT provider is not Groq (e.g. "openai") → no switch, even if a
+    /// Groq key is present and DeepSeek key is absent.
+    #[test]
+    fn test_groq_llama_default_no_switch_non_groq_stt() {
+        let dir = temp_dir();
+        let json = r#"{
+            "sttProvider": "openai",
+            "openaiApiKey": "sk_openai_key",
+            "groqApiKey": "gsk_test_key"
+        }"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        // The general auto-fallback may still switch llm_provider if deepseek key
+        // is empty and another key exists.  What matters here is that the switch
+        // (if it happens) is NOT caused by the Groq-Llama Default path.
+        // The STT provider is "openai", so the Groq-Llama Default condition
+        // (stt_provider == "groq") is false and the block is skipped entirely.
+        assert_eq!(
+            cfg.stt_provider, "openai",
+            "stt_provider should remain openai"
+        );
+        // llm_provider will be switched by the general auto-fallback to groq
+        // (deepseek has no key, groq does) — that is correct behaviour and does
+        // NOT indicate the Groq-Llama Default fired.
+        assert_ne!(
+            cfg.llm_provider, "deepseek",
+            "general auto-fallback should switch away from keyless deepseek"
+        );
+    }
+
+    /// Guard: Groq key is also empty → switching would produce a 401 anyway,
+    /// so the auto-switch must NOT fire.
+    #[test]
+    fn test_groq_llama_default_no_switch_no_groq_key() {
+        let dir = temp_dir();
+        // stt_provider = groq (default), llm_provider = deepseek (default),
+        // but both keys are absent.
+        let json = r#"{"language": "de"}"#;
+        std::fs::write(dir.path().join("config.json"), json.as_bytes()).unwrap();
+        let cfg = load_config(dir.path());
+        assert_eq!(cfg.stt_provider, "groq");
+        assert_eq!(
+            cfg.llm_provider, "deepseek",
+            "No keys at all → Groq-Llama Default must not fire, llm_provider stays deepseek"
         );
     }
 }

@@ -124,6 +124,7 @@ export interface OnboardingState {
   currentStep: number;   // 0 = not started
   mode: string;          // "cloud" | "offline" | ""
   language: string;      // ISO-639-1, e.g. "de", "" = not set
+  track: string;         // "expert" | "beginner" | ""
 }
 
 // App-level state shape.

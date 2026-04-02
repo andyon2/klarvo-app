@@ -4,18 +4,21 @@
  * Full state-machine wizard that guides new users through setup.
  * Persists progress via setOnboardingState() after every step transition.
  *
- * Flow (desktop cloud):
- *   0 Welcome → 1 Mode → 2 Language → 3 STT Key → 4 LLM Key → 5 Test → 6 Done
+ * Flow (desktop cloud, expert):
+ *   0 Welcome → 1 Mode+Gate → 2 STT Key Expert → 3 Language → 4 Test → 5 Done
+ *
+ * Flow (desktop cloud, beginner):
+ *   0 Welcome → 1 Mode+Gate → 2a-c Beginner Steps → 3 Language → 4 Test → 5 Done
  *
  * Flow (desktop offline):
- *   0 Welcome → 1 Mode → 2 Language → 3 Model Download → 4 LLM Key → 5 Test → 6 Done
+ *   0 Welcome → 1 Mode → 2 Model Download → 3 Language → 4 Test → 5 Done
  *
  * Flow (android cloud):
- *   0 Welcome → 1 Mode → 1a Overlay Perm → 1b Mic Perm → 1c Accessibility Perm
- *   → 1d Battery Perm → 2 Language → 3 STT Key → 4 LLM Key → 5 Test → 6 Done
+ *   0 Welcome → 1 Mode+Gate → 1a perm-all → 2 STT Key → 3 Language → 4 Test → 5 Done
  */
-import { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { isMobile, isDesktop } from "./platform";
+import { isPreviewMode } from "./tauri-commands";
 import type { OnboardingState } from "./types";
 import {
   setOnboardingState,
@@ -53,35 +56,43 @@ async function openExternalUrl(url: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 type WizardMode = "cloud" | "offline" | "";
+type SttTrack = "expert" | "beginner" | "";
 
 // We compute a flat ordered list of step IDs at runtime based on mode + platform.
 type StepId =
   | "welcome"
   | "mode"
-  | "perm-overlay"
-  | "perm-mic"
-  | "perm-accessibility"
-  | "perm-battery"
-  | "language"
-  | "stt-key"
+  | "perm-all"
+  | "stt-key-expert"
+  | "stt-key-beginner-1"
+  | "stt-key-beginner-2"
   | "model-download"
-  | "llm-key"
   | "test-dictation"
+  | "language"
   | "done";
 
-function buildStepList(mode: WizardMode): StepId[] {
+function buildStepList(mode: WizardMode, track: SttTrack): StepId[] {
   const base: StepId[] = ["welcome", "mode"];
-  if (isMobile) {
-    base.push("perm-overlay", "perm-mic", "perm-accessibility", "perm-battery");
+
+  if (mode === "offline") {
+    // Offline: no gate, no key
+    if (isMobile) base.push("perm-all");
+    if (isDesktop) base.push("model-download");
+    base.push("language", "test-dictation", "done");
+    return base;
   }
-  base.push("language");
-  if (mode === "offline" && isDesktop) {
-    base.push("model-download", "llm-key");
-  } else {
-    // cloud or not yet chosen — we always show cloud steps
-    base.push("stt-key", "llm-key");
+
+  // Cloud path
+  if (isMobile) base.push("perm-all");
+
+  if (track === "expert") {
+    base.push("stt-key-expert");
+  } else if (track === "beginner") {
+    base.push("stt-key-beginner-1", "stt-key-beginner-2");
   }
-  base.push("test-dictation", "done");
+  // else: track="" = gate not answered yet, no stt-steps
+
+  base.push("language", "test-dictation", "done");
   return base;
 }
 
@@ -121,14 +132,6 @@ function ShieldIcon({ className }: { className?: string }) {
   );
 }
 
-function KeyIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className ?? "w-4 h-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="15" r="4" />
-      <path d="m21 3-9.4 9.4M15 9l2 2" />
-    </svg>
-  );
-}
 
 function ExternalLinkIcon() {
   return (
@@ -201,6 +204,15 @@ function StepDots({ current, total }: { current: number; total: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Preview mode: override disabled state so all steps are clickable
+// ---------------------------------------------------------------------------
+
+/** In preview mode, buttons are never disabled — allows clicking through all steps. */
+function previewOr(disabled: boolean): boolean {
+  return isPreviewMode ? false : disabled;
+}
+
+// ---------------------------------------------------------------------------
 // Shared button styles
 // ---------------------------------------------------------------------------
 
@@ -253,7 +265,7 @@ function ApiKeyField({
           <button
             type="button"
             onClick={() => openExternalUrl(magicLinkUrl).catch(console.error)}
-            className="flex items-center gap-1 text-xs text-klarvo-primary hover:text-klarvo-accent transition-colors"
+            className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors"
           >
             {magicLinkLabel ?? "Key erstellen"}
             <ExternalLinkIcon />
@@ -325,7 +337,7 @@ function useKeyValidation(provider: string, key: string) {
     try {
       const ok = await validateApiKey(provider, key.trim());
       setState(ok ? "valid" : "invalid");
-      if (!ok) setError(`Key abgelehnt — ungültig oder abgelaufen`);
+      if (!ok) setError("Key nicht akzeptiert — bitte prüfen ob er vollständig kopiert wurde.");
     } catch (err) {
       setState("invalid");
       setError(err instanceof Error ? err.message : "Netzwerkfehler");
@@ -337,6 +349,19 @@ function useKeyValidation(provider: string, key: string) {
     setState("idle");
     setError("");
   }, [key]);
+
+  // Auto-validate 800ms after the user stops typing (only if key is non-empty)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!key.trim()) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      validate();
+    }, 800);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { state, error, validate };
 }
@@ -372,7 +397,7 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
           Sprich. Klarvo tippt.
         </h1>
         <p className="text-sm text-klarvo-muted leading-relaxed max-w-xs">
-          Freies Sprachdiktat mit KI-Bereinigung. Klarvo transkribiert und poliert deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
+          Freies Sprachdiktat mit KI-Bereinigung. Klarvo transkribiert und bereinigt deinen Text — und fügt ihn direkt ein, wo du gerade schreibst.
         </p>
       </div>
 
@@ -384,14 +409,18 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Cloud / Offline mode selection
+// Step 1: Cloud / Offline mode selection + Gate (cloud path)
 // ---------------------------------------------------------------------------
 
-function StepMode({ selected, onSelect, onNext }: {
+function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
   selected: WizardMode;
   onSelect: (m: WizardMode) => void;
+  track: SttTrack;
+  onTrackSelect: (t: SttTrack) => void;
   onNext: () => void;
 }) {
+  const isNextDisabled = !selected || (selected === "cloud" && track === "");
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -415,12 +444,12 @@ function StepMode({ selected, onSelect, onNext }: {
             <CloudIcon className="w-5 h-5" />
             <span className="text-sm font-semibold text-klarvo-text">Cloud</span>
             {selected === "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-klarvo-primary bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
             {selected !== "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-klarvo-dim bg-klarvo-surface/60 border border-klarvo-border/40 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-amber-400/60 bg-amber-400/5 border border-amber-400/20 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
@@ -439,7 +468,7 @@ function StepMode({ selected, onSelect, onNext }: {
         {isDesktop ? (
           <button
             type="button"
-            onClick={() => onSelect("offline")}
+            onClick={() => { onSelect("offline"); onTrackSelect(""); }}
             className={[
               "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-150",
               selected === "offline"
@@ -471,11 +500,51 @@ function StepMode({ selected, onSelect, onNext }: {
         )}
       </div>
 
+      {/* Gate block — only visible when cloud selected */}
+      {selected === "cloud" && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-klarvo-muted mb-1">Klarvo braucht einen Spracherkennungs-Dienst. Wir empfehlen Groq — kostenlos und schnell.</p>
+          <button
+            type="button"
+            onClick={() => onTrackSelect("expert")}
+            className={[
+              "flex items-center px-4 py-3 rounded-xl border text-sm font-medium text-left transition-all duration-150",
+              track === "expert"
+                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/80 hover:text-klarvo-text",
+            ].join(" ")}
+          >
+            Ich habe schon einen Schlüssel
+          </button>
+          <button
+            type="button"
+            onClick={() => onTrackSelect("beginner")}
+            className={[
+              "flex items-center px-4 py-3 rounded-xl border text-sm font-medium text-left transition-all duration-150",
+              track === "beginner"
+                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/80 hover:text-klarvo-text",
+            ].join(" ")}
+          >
+            Einrichten — dauert 2 Minuten
+          </button>
+          {isDesktop && (
+            <button
+              type="button"
+              onClick={() => { onSelect("offline"); onTrackSelect(""); }}
+              className="flex items-center px-4 py-3 rounded-xl border border-klarvo-border/60 bg-klarvo-bg text-sm font-medium text-klarvo-muted hover:border-klarvo-border/80 hover:text-klarvo-text text-left transition-all duration-150"
+            >
+              Ohne Internet nutzen
+            </button>
+          )}
+        </div>
+      )}
+
       <p className="text-[11px] text-klarvo-dim text-center">Du kannst jederzeit in den Einstellungen wechseln.</p>
 
       <button
         onClick={onNext}
-        disabled={!selected}
+        disabled={previewOr(isNextDisabled)}
         className={BTN_PRIMARY}
       >
         Weiter
@@ -485,40 +554,8 @@ function StepMode({ selected, onSelect, onNext }: {
 }
 
 // ---------------------------------------------------------------------------
-// Android permission steps (info cards)
+// Android permission step icons
 // ---------------------------------------------------------------------------
-
-interface PermissionStepProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  settingsHint: string;
-  onNext: () => void;
-}
-
-function PermissionStep({ icon, title, description, settingsHint, onNext }: PermissionStepProps) {
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col items-center text-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-klarvo-surface/80 border border-klarvo-border/60 flex items-center justify-center text-klarvo-muted">
-          {icon}
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <h2 className="text-xl font-semibold text-klarvo-text">{title}</h2>
-          <p className="text-sm text-klarvo-muted leading-relaxed max-w-xs">{description}</p>
-        </div>
-      </div>
-
-      <div className="rounded-xl bg-klarvo-surface/40 border border-klarvo-border/40 px-4 py-3">
-        <p className="text-xs text-klarvo-dim leading-relaxed">{settingsHint}</p>
-      </div>
-
-      <button onClick={onNext} className={BTN_PRIMARY}>
-        Ich habe es erteilt — Weiter
-      </button>
-    </div>
-  );
-}
 
 function OverlayIcon() {
   return (
@@ -549,54 +586,71 @@ function BatteryIcon() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2: Language selection
+// Android permission step (consolidated info card)
 // ---------------------------------------------------------------------------
 
-function StepLanguage({ language, onLanguageChange, onNext }: {
-  language: string;
-  onLanguageChange: (l: string) => void;
-  onNext: () => void;
-}) {
-  // Detect system locale on mount if no language chosen yet
-  useEffect(() => {
-    if (!language) {
-      const locale = navigator.language?.split("-")[0]?.toLowerCase() ?? "de";
-      const supported = ["de", "en"];
-      onLanguageChange(supported.includes(locale) ? locale : "de");
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+interface PermItem {
+  Icon: () => React.ReactElement;
+  label: string;
+  detail: string;
+}
 
+const PERM_ITEMS: PermItem[] = [
+  {
+    Icon: OverlayIcon,
+    label: "Overlay-Berechtigung",
+    detail: "Diktat-Button über anderen Apps anzeigen",
+  },
+  {
+    Icon: () => <MicIconSm className="w-6 h-6" />,
+    label: "Mikrofon",
+    detail: "Sprache aufnehmen",
+  },
+  {
+    Icon: AccessibilityIcon,
+    label: "Bedienungshilfen",
+    detail: "Text direkt ins Textfeld einfügen",
+  },
+  {
+    Icon: BatteryIcon,
+    label: "Akku-Optimierung",
+    detail: "Klarvo im Hintergrund aktiv halten",
+  },
+];
+
+function PermAllStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Welche Sprache sprichst du?</h2>
-        <p className="text-sm text-klarvo-muted">Du kannst das jederzeit in den Einstellungen ändern.</p>
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">
+          Berechtigungen einrichten
+        </h2>
+        <p className="text-sm text-klarvo-muted leading-relaxed">
+          Klarvo braucht ein paar Android-Berechtigungen. Die meisten hast du gerade schon erteilt.
+        </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {[
-          { value: "de", label: "Deutsch" },
-          { value: "en", label: "English" },
-          { value: "", label: "Auto-detect" },
-        ].map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onLanguageChange(opt.value)}
+      <div className="rounded-xl border border-klarvo-border/50 bg-klarvo-surface/40 overflow-hidden">
+        {PERM_ITEMS.map(({ Icon, label, detail }, i) => (
+          <div
+            key={label}
             className={[
-              "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-150",
-              language === opt.value
-                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
-                : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/60 hover:text-klarvo-muted",
+              "flex items-start gap-3 px-4 py-3",
+              i < PERM_ITEMS.length - 1 ? "border-b border-klarvo-border/40" : "",
             ].join(" ")}
           >
-            {opt.label}
-            {language === opt.value && (
-              <CheckCircleIcon className="w-4 h-4 text-klarvo-primary" />
-            )}
-          </button>
+            <span className="text-klarvo-muted mt-0.5 shrink-0"><Icon /></span>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-klarvo-text">{label}</span>
+              <span className="text-xs text-klarvo-dim">{detail}</span>
+            </div>
+          </div>
         ))}
       </div>
+
+      <p className="text-xs text-klarvo-dim text-center leading-relaxed">
+        Falls eine Berechtigung fehlt, fragt Android beim nächsten Start.
+      </p>
 
       <button onClick={onNext} className={BTN_PRIMARY}>
         Weiter
@@ -606,46 +660,37 @@ function StepLanguage({ language, onLanguageChange, onNext }: {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3a: STT key (cloud path)
+// Expert track: single key insertion step
 // ---------------------------------------------------------------------------
 
-function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
+function StepSttKeyExpert({ onNext }: { onNext: (key: string) => void }) {
   const [groqKey, setGroqKey] = useState("");
+  const validation = useKeyValidation("groq", groqKey);
   const [othersOpen, setOthersOpen] = useState(false);
-  const groqValidation = useKeyValidation("groq", groqKey);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Spracherkennung einrichten</h2>
-        <p className="text-sm text-klarvo-muted">Klarvo nutzt Groq Whisper zum Transkribieren — schnell, mit kostenlosem Free-Tier.</p>
+        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">
+          Schlüssel einfügen
+        </h2>
+        <p className="text-sm text-klarvo-muted">
+          Füge deinen Groq API-Key hier ein.
+        </p>
       </div>
 
-      {/* Groq highlighted block */}
-      <div className="flex flex-col gap-4 rounded-xl bg-klarvo-primary/5 border border-klarvo-primary/20 p-4">
-        <div className="flex items-center gap-2">
-          <span className="text-klarvo-primary">
-            <KeyIcon className="w-4 h-4" />
-          </span>
-          <span className="text-sm font-semibold text-klarvo-text">Groq</span>
-          <span className="text-[10px] font-medium text-klarvo-primary bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-full px-2 py-0.5">
-            empfohlen — kostenloses Free-Tier
-          </span>
-        </div>
-        <ApiKeyField
-          label="Groq API Key"
-          value={groqKey}
-          onChange={setGroqKey}
-          placeholder="gsk_..."
-          provider="groq"
-          costHint="Groq Whisper ist kostenlos nutzbar. Bei intensiver Nutzung kann ein kurzes Limit greifen."
-          magicLinkUrl="https://console.groq.com"
-          magicLinkLabel="Kostenlosen Key holen"
-          validationState={groqValidation.state}
-          validationError={groqValidation.error}
-          onValidate={groqValidation.validate}
-        />
-      </div>
+      <ApiKeyField
+        label="Groq API Key"
+        value={groqKey}
+        onChange={setGroqKey}
+        placeholder="gsk_..."
+        provider="groq"
+        magicLinkUrl="https://console.groq.com/keys"
+        magicLinkLabel="Neuen Key erstellen"
+        validationState={validation.state}
+        validationError={validation.error}
+        onValidate={validation.validate}
+      />
 
       {/* Collapsible other providers */}
       <div className="flex flex-col gap-2">
@@ -655,152 +700,152 @@ function StepSttKey({ onNext }: { onNext: (groqKey: string) => void }) {
           className="flex items-center justify-between w-full py-1 text-xs text-klarvo-dim hover:text-klarvo-muted transition-colors focus:outline-none"
         >
           <span>Andere Provider (OpenAI)</span>
-          <svg
-            className={`w-3.5 h-3.5 transition-transform duration-200 ${othersOpen ? "rotate-180" : ""}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
+          <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${othersOpen ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
         {othersOpen && (
           <div className="rounded-xl bg-klarvo-bg border border-klarvo-border/60 p-4 text-xs text-klarvo-dim">
-            OpenAI-Validierung wird in einer kommenden Version unterstützt. Du kannst den Key in den Einstellungen hinterlegen.
+            OpenAI und andere Provider kannst du nach dem Setup in den Einstellungen konfigurieren.
           </div>
         )}
       </div>
 
       <button
         onClick={() => onNext(groqKey.trim())}
-        disabled={!groqKey.trim()}
+        disabled={previewOr(validation.state !== "valid")}
         className={BTN_PRIMARY}
       >
         Weiter
       </button>
+      {groqKey.trim().length > 0 && validation.state !== "valid" && (
+        <p className="text-[11px] text-klarvo-dim text-center">
+          {validation.state === "loading" ? "Key wird geprüft..." : "Bitte warten, Key wird geprüft"}
+        </p>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Step 4a: LLM key (both paths)
+// Beginner track: 2 steps (account + key creation combined, then key insertion)
 // ---------------------------------------------------------------------------
 
-function StepLlmKey({ onNext, onSkip }: { onNext: (deepseekKey: string) => void; onSkip: () => void }) {
-  const [deepseekKey, setDeepseekKey] = useState("");
-  const [openrouterKey, setOpenrouterKey] = useState("");
-  const [useOpenRouter, setUseOpenRouter] = useState(false);
-  const dsValidation = useKeyValidation("deepseek", deepseekKey);
-  const orValidation = useKeyValidation("openrouter", openrouterKey);
-
-  const activeKey = useOpenRouter ? openrouterKey.trim() : deepseekKey.trim();
+function StepSttKeyBeginner1({ onNext }: { onNext: () => void }) {
+  const [linkClicked, setLinkClicked] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Text-Bereinigung (optional)</h2>
+        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">
+          Groq einrichten
+        </h2>
         <p className="text-sm text-klarvo-muted leading-relaxed">
-          Ein KI-Modell bereinigt rohen Transkript-Text. Optional — ohne Key wird der unbearbeitete Text eingefügt.
+          Erstelle ein kostenloses Groq-Konto und hole deinen Schlüssel. Dauert etwa 2 Minuten.
         </p>
       </div>
 
-      {/* Tab switcher */}
-      <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-        <button
-          type="button"
-          onClick={() => setUseOpenRouter(false)}
-          className={[
-            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-            !useOpenRouter ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-          ].join(" ")}
-        >
-          DeepSeek
-        </button>
-        <button
-          type="button"
-          onClick={() => setUseOpenRouter(true)}
-          className={[
-            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-            useOpenRouter ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-          ].join(" ")}
-        >
-          OpenRouter
-        </button>
+      {/* Numbered steps */}
+      <div className="rounded-xl border border-klarvo-border/50 bg-klarvo-surface/30 overflow-hidden">
+        <div className="flex flex-col divide-y divide-klarvo-border/40">
+          <div className="flex items-start gap-3 px-4 py-3">
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">1</span>
+            <p className="text-sm text-klarvo-text">Öffne die Groq-Seite und melde dich an (Google oder GitHub)</p>
+          </div>
+          <div className="flex items-start gap-3 px-4 py-3">
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">2</span>
+            <p className="text-sm text-klarvo-text">Klicke auf <strong>API Keys</strong> → <strong>Create API Key</strong></p>
+          </div>
+          <div className="flex items-start gap-3 px-4 py-3">
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">3</span>
+            <p className="text-sm text-klarvo-text">Kopiere den Schlüssel (beginnt mit <code className="text-xs bg-klarvo-surface/60 px-1 py-0.5 rounded font-mono">gsk_</code>)</p>
+          </div>
+        </div>
       </div>
 
-      {!useOpenRouter ? (
-        <div className="rounded-xl bg-klarvo-primary/5 border border-klarvo-primary/20 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-klarvo-primary"><KeyIcon className="w-4 h-4" /></span>
-            <span className="text-sm font-semibold text-klarvo-text">DeepSeek</span>
-            <span className="text-[10px] font-medium text-klarvo-primary bg-klarvo-primary/10 border border-klarvo-primary/20 rounded-full px-2 py-0.5">empfohlen</span>
-          </div>
-          <ApiKeyField
-            label="DeepSeek API Key"
-            value={deepseekKey}
-            onChange={setDeepseekKey}
-            placeholder="sk-..."
-            provider="deepseek"
-            costHint="~$0.0001–0.0003 pro Diktat. Sehr günstig."
-            magicLinkUrl="https://platform.deepseek.com/api_keys"
-            magicLinkLabel="Key erstellen"
-            validationState={dsValidation.state}
-            validationError={dsValidation.error}
-            onValidate={dsValidation.validate}
-          />
-        </div>
-      ) : (
-        <div className="rounded-xl bg-klarvo-bg border border-klarvo-border/60 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-klarvo-muted"><KeyIcon className="w-4 h-4" /></span>
-            <span className="text-sm font-semibold text-klarvo-text">OpenRouter</span>
-          </div>
-          <ApiKeyField
-            label="OpenRouter API Key"
-            value={openrouterKey}
-            onChange={setOpenrouterKey}
-            placeholder="sk-or-..."
-            provider="openrouter"
-            costHint="Zugang zu vielen LLM-Modellen über einen einzigen Key."
-            magicLinkUrl="https://openrouter.ai/keys"
-            magicLinkLabel="Key erstellen"
-            validationState={orValidation.state}
-            validationError={orValidation.error}
-            onValidate={orValidation.validate}
-          />
-        </div>
+      <button
+        onClick={() => {
+          setLinkClicked(true);
+          openExternalUrl("https://console.groq.com").catch(console.error);
+        }}
+        className="w-full rounded-xl py-2.5 px-6 text-sm font-medium bg-klarvo-surface/60 border border-klarvo-border/60 text-klarvo-text hover:bg-klarvo-surface/80 transition-all flex items-center justify-center gap-2"
+      >
+        {linkClicked ? (
+          <>
+            <CheckCircleIcon className="w-4 h-4 text-klarvo-primary" />
+            <span>Groq-Seite geöffnet</span>
+          </>
+        ) : (
+          "Groq-Seite öffnen"
+        )}
+      </button>
+
+      <button onClick={onNext} disabled={previewOr(!linkClicked)} className={BTN_PRIMARY}>
+        Schlüssel kopiert — weiter
+      </button>
+
+      {!linkClicked && (
+        <button
+          onClick={onNext}
+          className="text-xs text-amber-400/70 hover:text-amber-400 transition-colors text-center"
+        >
+          Schon erledigt? Weiter →
+        </button>
       )}
+    </div>
+  );
+}
+
+function StepSttKeyBeginner2({ onNext }: { onNext: (key: string) => void }) {
+  const [groqKey, setGroqKey] = useState("");
+  const validation = useKeyValidation("groq", groqKey);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">
+          Schlüssel einfügen
+        </h2>
+        <p className="text-sm text-klarvo-muted">
+          Füge den kopierten Schlüssel hier ein.
+        </p>
+      </div>
+
+      <ApiKeyField
+        label="Groq API Key"
+        value={groqKey}
+        onChange={setGroqKey}
+        placeholder="gsk_..."
+        provider="groq"
+        validationState={validation.state}
+        validationError={validation.error}
+        onValidate={validation.validate}
+      />
 
       <button
-        onClick={() => onNext(activeKey)}
-        disabled={!activeKey}
+        onClick={() => onNext(groqKey.trim())}
+        disabled={previewOr(validation.state !== "valid")}
         className={BTN_PRIMARY}
       >
         Weiter
       </button>
-
-      <button
-        onClick={onSkip}
-        className="text-sm text-klarvo-dim hover:text-klarvo-muted transition-colors text-center"
-      >
-        Überspringen — rohen Text nutzen
-      </button>
+      {groqKey.trim().length > 0 && validation.state !== "valid" && (
+        <p className="text-[11px] text-klarvo-dim text-center">
+          {validation.state === "loading" ? "Key wird geprüft..." : "Bitte warten, Key wird geprüft"}
+        </p>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Step 3b: Whisper model download (offline desktop path)
+// Whisper model download (offline desktop path)
 // ---------------------------------------------------------------------------
 
 function StepModelDownload({ onNext }: { onNext: () => void }) {
   const [downloadState, setDownloadState] = useState<"idle" | "downloading" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0); // 0–1
   const [errorMsg, setErrorMsg] = useState("");
-  const [llmKey, setLlmKey] = useState("");
-  const llmValidation = useKeyValidation("deepseek", llmKey);
   const unlistenRefs = useRef<(() => void)[]>([]);
 
   // Check if model already downloaded
@@ -853,7 +898,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Offline-Modell herunterladen</h2>
-        <p className="text-sm text-klarvo-muted">Einmaliger Download — danach laeuft Klarvo ohne Internet.</p>
+        <p className="text-sm text-klarvo-muted">Einmaliger Download — danach läuft Klarvo ohne Internet.</p>
       </div>
 
       {/* Model card */}
@@ -902,29 +947,9 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
         )}
       </div>
 
-      {/* LLM key input while waiting */}
-      {downloadState === "downloading" || downloadState === "done" ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold text-klarvo-dim uppercase tracking-wide">Während du wartest: LLM-Cleanup (optional)</p>
-          <ApiKeyField
-            label="DeepSeek API Key"
-            value={llmKey}
-            onChange={setLlmKey}
-            placeholder="sk-..."
-            provider="deepseek"
-            costHint="~$0.0001–0.0003 pro Diktat"
-            magicLinkUrl="https://platform.deepseek.com/api_keys"
-            magicLinkLabel="Key erstellen"
-            validationState={llmValidation.state}
-            validationError={llmValidation.error}
-            onValidate={llmValidation.validate}
-          />
-        </div>
-      ) : null}
-
       <button
         onClick={onNext}
-        disabled={downloadState !== "done"}
+        disabled={previewOr(downloadState !== "done")}
         className={BTN_PRIMARY}
       >
         Weiter
@@ -934,7 +959,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 5: Test dictation
+// Test dictation step
 // ---------------------------------------------------------------------------
 
 type TestState = "idle" | "recording" | "transcribing" | "cleaning" | "done" | "error";
@@ -1003,7 +1028,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
 
   const statusText: Record<TestState, string> = {
     idle: "Drücke den Button um dein erstes Diktat zu starten",
-    recording: "Aufnahme laeuft... Drücke erneut um zu stoppen",
+    recording: "Aufnahme läuft... Drücke erneut um zu stoppen",
     transcribing: "Transkribiere...",
     cleaning: "Bereinige Text...",
     done: "Fertig! So wird dein Text eingefügt.",
@@ -1015,8 +1040,8 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Probiere es aus!</h2>
-          <p className="text-sm text-klarvo-muted">Das Diktat läuft über die schwebende Blase.</p>
+          <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">So funktioniert das Diktat</h2>
+          <p className="text-sm text-klarvo-muted">Tippe auf die schwebende Blase über deinem Bildschirm um ein Diktat zu starten.</p>
         </div>
 
         <div className="rounded-xl bg-klarvo-bg border border-klarvo-border/60 p-5 flex flex-col items-center gap-4 text-center">
@@ -1105,7 +1130,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
         </div>
       )}
 
-      <button onClick={onNext} disabled={!hasDone} className={BTN_PRIMARY}>
+      <button onClick={onNext} disabled={previewOr(!hasDone)} className={BTN_PRIMARY}>
         Weiter
       </button>
       <button onClick={onNext} className="text-sm text-klarvo-dim hover:text-klarvo-muted transition-colors text-center">
@@ -1116,15 +1141,87 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
 }
 
 // ---------------------------------------------------------------------------
-// Step 6: Done
+// Language selection step
 // ---------------------------------------------------------------------------
 
-function StepDone({ mode, language, hasLlm, onFinish }: {
+function StepLanguage({ language, onLanguageChange, onNext }: {
+  language: string;
+  onLanguageChange: (l: string) => void;
+  onNext: () => void;
+}) {
+  // Detect system locale on mount if no language chosen yet
+  useEffect(() => {
+    if (!language) {
+      const locale = navigator.language?.split("-")[0]?.toLowerCase() ?? "de";
+      const supported = ["de", "en"];
+      onLanguageChange(supported.includes(locale) ? locale : "de");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Welche Sprache sprichst du?</h2>
+        <p className="text-sm text-klarvo-muted">Du kannst das jederzeit in den Einstellungen ändern.</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {[
+          { value: "de", label: "Deutsch" },
+          { value: "en", label: "English" },
+          { value: "", label: "Automatisch erkennen" },
+        ].map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onLanguageChange(opt.value)}
+            className={[
+              "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-150",
+              language === opt.value
+                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/60 hover:text-klarvo-muted",
+            ].join(" ")}
+          >
+            {opt.label}
+            {language === opt.value && (
+              <CheckCircleIcon className="w-4 h-4 text-klarvo-primary" />
+            )}
+          </button>
+        ))}
+        {language === "" && (
+          <p className="text-[11px] text-klarvo-dim">Empfohlen wenn du in mehreren Sprachen diktierst.</p>
+        )}
+      </div>
+
+      <button onClick={onNext} className={BTN_PRIMARY}>
+        Weiter
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Done step
+// ---------------------------------------------------------------------------
+
+function SummaryRow({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-klarvo-dim">{label}</span>
+      <span className={`text-xs font-medium ${positive === false ? "text-klarvo-dim" : positive === true ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function StepDone({ mode, language, onFinish }: {
   mode: WizardMode;
   language: string;
-  hasLlm: boolean;
   onFinish: () => void;
 }) {
+  // Cloud always has LLM active — Groq-Llama default kicks in on the backend
+  const isCloud = mode !== "offline";
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center text-center gap-5">
@@ -1143,24 +1240,11 @@ function StepDone({ mode, language, hasLlm, onFinish }: {
       {/* Summary */}
       <div className="rounded-xl bg-klarvo-bg border border-klarvo-border/60 p-4 flex flex-col gap-2.5">
         <SummaryRow label="Modus" value={mode === "offline" ? "Offline (Whisper small)" : "Cloud (Groq Whisper)"} />
-        <SummaryRow label="Sprache" value={language === "de" ? "Deutsch" : language === "en" ? "English" : "Auto-detect"} />
-        <SummaryRow label="LLM-Cleanup" value={hasLlm ? "Aktiv" : "Inaktiv (roher Text)"} positive={hasLlm} />
+        <SummaryRow label="Sprache" value={language === "de" ? "Deutsch" : language === "en" ? "English" : language || "Automatisch erkennen"} />
+        {isCloud && <SummaryRow label="Text-Cleanup" value="Aktiv (KI-Textbereinigung)" positive={true} />}
       </div>
 
-      <button onClick={onFinish} className={BTN_PRIMARY}>
-        Los geht's
-      </button>
-    </div>
-  );
-}
-
-function SummaryRow({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-klarvo-dim">{label}</span>
-      <span className={`text-xs font-medium ${positive === false ? "text-klarvo-dim" : positive === true ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
-        {value}
-      </span>
+      <button onClick={onFinish} className={BTN_PRIMARY}>Los geht's</button>
     </div>
   );
 }
@@ -1177,12 +1261,11 @@ export interface OnboardingProps {
 export default function Onboarding({ onComplete, initialState }: OnboardingProps) {
   const [mode, setMode] = useState<WizardMode>((initialState?.mode as WizardMode) ?? "");
   const [language, setLanguage] = useState(initialState?.language ?? "");
+  const [track, setTrack] = useState<SttTrack>((initialState?.track as SttTrack) ?? "");
   const [collectedGroqKey, setCollectedGroqKey] = useState("");
-  const [collectedDeepseekKey, setCollectedDeepseekKey] = useState("");
-  const [hasLlm, setHasLlm] = useState(false);
 
   // Visible step index in the *current* step list
-  const stepList = buildStepList(mode);
+  const stepList = buildStepList(mode, track);
   const [stepIndex, setStepIndex] = useState(() => {
     if (!initialState?.currentStep) return 0;
     // Try to find the matching step index; fallback to 0
@@ -1201,11 +1284,12 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
         currentStep: stepIndex,
         mode,
         language,
+        track,
         ...overrides,
       };
       await setOnboardingState(state).catch(console.error);
     },
-    [stepIndex, mode, language],
+    [stepIndex, mode, language, track],
   );
 
   const advance = useCallback(
@@ -1223,6 +1307,18 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
     [persist],
   );
 
+  const goBack = useCallback(() => {
+    setVisible(false);
+    setTimeout(() => {
+      setStepIndex((i) => {
+        const prev = Math.max(0, i - 1);
+        persist({ currentStep: prev }).catch(console.error);
+        return prev;
+      });
+      setVisible(true);
+    }, 120);
+  }, [persist]);
+
   const handleSkip = useCallback(async () => {
     // Persist the skip decision first -- must not silently fail or the wizard
     // will reappear on next launch.
@@ -1233,6 +1329,7 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
         currentStep: stepIndex,
         mode,
         language,
+        track,
       });
     } catch (err) {
       console.error("[onboarding] Failed to persist skip state:", err);
@@ -1246,12 +1343,20 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
     } catch {
       onComplete({} as AppSettings);
     }
-  }, [stepIndex, mode, language, onComplete]);
+  }, [stepIndex, mode, language, track, onComplete]);
 
   const handleModeSelect = useCallback(
     (m: WizardMode) => {
       setMode(m);
       persist({ mode: m }).catch(console.error);
+    },
+    [persist],
+  );
+
+  const handleTrackSelect = useCallback(
+    (t: SttTrack) => {
+      setTrack(t);
+      persist({ track: t }).catch(console.error);
     },
     [persist],
   );
@@ -1272,49 +1377,18 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
     [advance],
   );
 
-  const handleLlmKeyNext = useCallback(
-    (key: string) => {
-      setCollectedDeepseekKey(key);
-      setHasLlm(!!key);
-      advance();
-    },
-    [advance],
-  );
-
-  const handleLlmKeySkip = useCallback(() => {
-    setHasLlm(false);
-    advance();
-  }, [advance]);
-
   const handleFinish = useCallback(async () => {
     try {
       await saveSettings(
         collectedGroqKey,
-        collectedDeepseekKey,
+        "",                    // deepseekApiKey — empty (Groq-Llama default kicks in on backend)
         language || "de",
         "polished",
         "ctrl+shift+d",
         "hold",
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        mode === "offline" ? "local" : "groq",
-        collectedDeepseekKey ? "deepseek" : "groq", // fall back to groq if no deepseek key
+        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+        mode === "offline" ? "local" : "groq",     // sttProvider
+        "groq",                                     // llmProvider — always groq (Groq-Llama default)
       );
       await setOnboardingState({
         completed: true,
@@ -1322,6 +1396,7 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
         currentStep: stepList.length - 1,
         mode,
         language,
+        track,
       });
       const updated = await getSettings();
       onComplete(updated);
@@ -1329,10 +1404,10 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
       console.error("Failed to save onboarding settings:", err);
       onComplete({} as AppSettings);
     }
-  }, [collectedGroqKey, collectedDeepseekKey, language, mode, onComplete, stepList.length]);
+  }, [collectedGroqKey, language, mode, track, onComplete, stepList.length]);
 
-  // Rebuild step list when mode changes (so index stays valid)
-  const newStepList = buildStepList(mode);
+  // Rebuild step list when mode or track changes (so index stays valid)
+  const newStepList = buildStepList(mode, track);
   const clampedIndex = Math.min(stepIndex, newStepList.length - 1);
   const effectiveStepList = newStepList;
   const effectiveStepId = effectiveStepList[clampedIndex] as StepId;
@@ -1342,36 +1417,36 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
   // Parameters 5+ are optional and default to null (= keep existing value).
   useEffect(() => {
     if (effectiveStepId !== "test-dictation") return;
-    if (!collectedGroqKey && !collectedDeepseekKey) return;
+    if (!collectedGroqKey) return;
     saveSettings(
-      collectedGroqKey,                          // 1: groqApiKey
-      collectedDeepseekKey,                      // 2: deepseekApiKey
-      language || "de",                          // 3: language
-      "polished",                                // 4: cleanupStyle
-      "ctrl+shift+d",                            // 5: hotkey (safe default)
-      "hold",                                    // 6: hotkeyMode
-      null,                                      // 7: audioDevice
-      null,                                      // 8: sttModel
-      null,                                      // 9: customPrompt
-      null,                                      // 10: autostart
-      null,                                      // 11: whisperMode
-      null,                                      // 12: openaiApiKey
-      null,                                      // 13: anthropicApiKey
-      null,                                      // 14: openrouterApiKey
-      null,                                      // 15: sttPriority (deprecated)
-      null,                                      // 16: llmPriority (deprecated)
-      null,                                      // 17: outputLanguage
-      null,                                      // 18: webhookUrl
-      null,                                      // 19: tursoUrl
-      null,                                      // 20: tursoToken
-      null,                                      // 21: bubbleSize
-      null,                                      // 22: bubbleOpacity
-      null,                                      // 23: localWhisperModel
-      null,                                      // 24: localWhisperGpu
-      mode === "offline" ? "local" : "groq",     // 25: sttProvider
-      collectedDeepseekKey ? "deepseek" : "groq", // 26: llmProvider — fall back to groq if no deepseek key
+      collectedGroqKey,                            // 1: groqApiKey
+      "",                                          // 2: deepseekApiKey empty
+      language || "de",                            // 3: language
+      "polished",                                  // 4: cleanupStyle
+      "ctrl+shift+d",                              // 5: hotkey (safe default)
+      "hold",                                      // 6: hotkeyMode
+      null,                                        // 7: audioDevice
+      null,                                        // 8: sttModel
+      null,                                        // 9: customPrompt
+      null,                                        // 10: autostart
+      null,                                        // 11: whisperMode
+      null,                                        // 12: openaiApiKey
+      null,                                        // 13: anthropicApiKey
+      null,                                        // 14: openrouterApiKey
+      null,                                        // 15: sttPriority (deprecated)
+      null,                                        // 16: llmPriority (deprecated)
+      null,                                        // 17: outputLanguage
+      null,                                        // 18: webhookUrl
+      null,                                        // 19: tursoUrl
+      null,                                        // 20: tursoToken
+      null,                                        // 21: bubbleSize
+      null,                                        // 22: bubbleOpacity
+      null,                                        // 23: localWhisperModel
+      null,                                        // 24: localWhisperGpu
+      mode === "offline" ? "local" : "groq",       // 25: sttProvider
+      "groq",                                      // 26: llmProvider always groq
     ).catch((err) => console.error("[onboarding] Failed to pre-save keys for test:", err));
-  }, [effectiveStepId, collectedGroqKey, collectedDeepseekKey, language, mode]);
+  }, [effectiveStepId, collectedGroqKey, language, mode]);
 
   const totalSteps = effectiveStepList.length;
 
@@ -1390,13 +1465,35 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1",
         ].join(" ")}
       >
-        {/* Header row: step dots + skip */}
+        {/* Header row: back + step dots + skip */}
         <div className="flex items-center justify-between">
-          <StepDots current={clampedIndex} total={totalSteps} />
+          <div className="flex items-center gap-2">
+            {effectiveStepId !== "welcome" && effectiveStepId !== "done" && (
+              <button
+                onClick={goBack}
+                className="text-xs text-klarvo-dim hover:text-klarvo-muted transition-colors flex items-center gap-1"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Zurück
+              </button>
+            )}
+            {!effectiveStepId.startsWith("stt-key-beginner") && (
+              <StepDots current={clampedIndex} total={totalSteps} />
+            )}
+            {effectiveStepId.startsWith("stt-key-beginner") && (
+              <p className="text-xs text-klarvo-dim">
+                Schritt{" "}
+                {effectiveStepId === "stt-key-beginner-1" ? "1" : "2"}{" "}
+                von 2
+              </p>
+            )}
+          </div>
           {effectiveStepId !== "welcome" && effectiveStepId !== "done" && (
             <button
               onClick={handleSkip}
-              className="text-xs text-klarvo-dim hover:text-klarvo-muted transition-colors"
+              className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors"
             >
               Überspringen
             </button>
@@ -1412,46 +1509,36 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           <StepMode
             selected={mode}
             onSelect={handleModeSelect}
+            track={track}
+            onTrackSelect={handleTrackSelect}
             onNext={() => advance()}
           />
         )}
 
-        {effectiveStepId === "perm-overlay" && (
-          <PermissionStep
-            icon={<OverlayIcon />}
-            title="Overlay-Berechtigung"
-            description="Klarvo braucht Overlay-Berechtigung um über anderen Apps zu erscheinen und den Diktat-Button anzuzeigen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Klarvo → Spezielle App-Zugriffe → Ueber anderen Apps anzeigen → Aktivieren"
-            onNext={() => advance()}
-          />
+        {effectiveStepId === "perm-all" && (
+          <PermAllStep onNext={() => advance()} />
         )}
 
-        {effectiveStepId === "perm-mic" && (
-          <PermissionStep
-            icon={<MicIconSm className="w-7 h-7" />}
-            title="Mikrofon-Berechtigung"
-            description="Klarvo braucht Zugriff auf dein Mikrofon um Sprache aufzunehmen."
-            settingsHint="Gehe zu: Einstellungen → Apps → Klarvo → Berechtigungen → Mikrofon → Erlauben"
-            onNext={() => advance()}
-          />
+        {effectiveStepId === "stt-key-expert" && (
+          <StepSttKeyExpert onNext={handleSttKeyNext} />
         )}
 
-        {effectiveStepId === "perm-accessibility" && (
-          <PermissionStep
-            icon={<AccessibilityIcon />}
-            title="Bedienungshilfen"
-            description="Klarvo nutzt Bedienungshilfen um Text direkt in das aktive Textfeld einzufügen — ohne Zwischenablage."
-            settingsHint="Gehe zu: Einstellungen → Bedienungshilfen → Heruntergeladene Apps → Klarvo → Aktivieren"
-            onNext={() => advance()}
-          />
+        {effectiveStepId === "stt-key-beginner-1" && (
+          <StepSttKeyBeginner1 onNext={() => advance()} />
         )}
 
-        {effectiveStepId === "perm-battery" && (
-          <PermissionStep
-            icon={<BatteryIcon />}
-            title="Akku-Optimierung"
-            description="Verhindert, dass Android Klarvo im Hintergrund stoppt und den Diktat-Button unsichtbar macht."
-            settingsHint="Gehe zu: Einstellungen → Akku → Akku-Optimierung → Klarvo → Nicht optimieren"
+        {effectiveStepId === "stt-key-beginner-2" && (
+          <StepSttKeyBeginner2 onNext={handleSttKeyNext} />
+        )}
+
+        {effectiveStepId === "model-download" && (
+          <StepModelDownload onNext={() => advance()} />
+        )}
+
+        {effectiveStepId === "test-dictation" && (
+          <StepTestDictation
+            language={language || "de"}
+            cleanupStyle="polished"
             onNext={() => advance()}
           />
         )}
@@ -1464,31 +1551,10 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           />
         )}
 
-        {effectiveStepId === "stt-key" && (
-          <StepSttKey onNext={handleSttKeyNext} />
-        )}
-
-        {effectiveStepId === "model-download" && (
-          <StepModelDownload onNext={() => advance()} />
-        )}
-
-        {effectiveStepId === "llm-key" && (
-          <StepLlmKey onNext={handleLlmKeyNext} onSkip={handleLlmKeySkip} />
-        )}
-
-        {effectiveStepId === "test-dictation" && (
-          <StepTestDictation
-            language={language || "de"}
-            cleanupStyle={hasLlm ? "polished" : "verbatim"}
-            onNext={() => advance()}
-          />
-        )}
-
         {effectiveStepId === "done" && (
           <StepDone
             mode={mode || "cloud"}
             language={language}
-            hasLlm={hasLlm}
             onFinish={handleFinish}
           />
         )}

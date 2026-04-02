@@ -30,6 +30,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { VoiceNotesPanel } from "./components/VoiceNotesPanel";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { FeedbackModal } from "./components/FeedbackModal";
+import { PreviewComments } from "./components/PreviewComments";
 
 // Hooks
 import { useRecording } from "./hooks/useRecording";
@@ -322,6 +323,7 @@ export default function App() {
       currentStep: 0,
       mode: "",
       language: "",
+      track: "",
     };
     await setOnboardingState(freshState).catch(console.error);
     setOnboardingInitialState(freshState);
@@ -332,7 +334,12 @@ export default function App() {
   // Output language change is handled in SettingsPanel only.
 
   if (showOnboarding) {
-    return <Onboarding onComplete={handleOnboardingComplete} initialState={onboardingInitialState} />;
+    return (
+      <>
+        <Onboarding onComplete={handleOnboardingComplete} initialState={onboardingInitialState} />
+        {isPreviewMode && <PreviewComments />}
+      </>
+    );
   }
 
   return (
@@ -845,6 +852,9 @@ export default function App() {
           <FeedbackIcon className={isMobile ? "w-9 h-9" : "w-7 h-7"} />
         </button>
       </div>
+
+      {/* ── Preview Comments overlay ── */}
+      {isPreviewMode && <PreviewComments />}
 
     </main>
   );

@@ -210,7 +210,22 @@ object KlarvoApi {
             val sttProvider = json.optString("sttProvider", "groq")
             val customPrompt = json.optString("customPrompt", "")
             val dictionaryTerms = json.optString("dictionaryTerms", "")
-            Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$llmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
+
+            // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
+            // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.
+            val resolvedLlmProvider = if (
+                sttProvider == "groq" &&
+                llmProvider == "deepseek" &&
+                deepseekKey.isBlank() &&
+                groqKey.isNotBlank()
+            ) {
+                Log.i("KlarvoApi", "[config] STT provider is Groq with API key present, auto-selecting Groq LLM (no DeepSeek key configured)")
+                "groq"
+            } else {
+                llmProvider
+            }
+
+            Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$resolvedLlmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             // Require a Groq key for cloud STT, but allow "local" sttProvider without any key.
             if (sttProvider != "local" && groqKey.isBlank()) null
@@ -219,7 +234,7 @@ object KlarvoApi {
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
-                llmProvider, openaiApiKey, openrouterApiKey,
+                resolvedLlmProvider, openaiApiKey, openrouterApiKey,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
                 sttProvider, customPrompt, dictionaryTerms
             )

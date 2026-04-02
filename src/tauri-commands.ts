@@ -43,8 +43,8 @@ function listen<T>(
 // ---------------------------------------------------------------------------
 
 const MOCK_SETTINGS: AppSettings = {
-  groqApiKeyMasked: "****demo",
-  deepseekApiKeyMasked: "****demo",
+  groqApiKeyMasked: "",
+  deepseekApiKeyMasked: "",
   language: "de",
   cleanupStyle: "polished",
   hotkey: "ctrl+shift+d",
@@ -869,6 +869,7 @@ const MOCK_ONBOARDING_STATE: OnboardingState = {
   currentStep: 0,
   mode: "",
   language: "",
+  track: "",
 };
 
 /**
