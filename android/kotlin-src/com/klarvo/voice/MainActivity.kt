@@ -188,9 +188,17 @@ class MainActivity : TauriActivity() {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     // Re-run the permission chain to proceed to accessibility step.
                     checkPermissionsAndStart()
+                } else {
+                    // User denied microphone access. Klarvo cannot function without it.
+                    // Distinguish between a regular deny and "Don't ask again":
+                    //   shouldShowRationale == true  -> regular deny, user can be asked again via Settings
+                    //   shouldShowRationale == false -> "Don't ask again" selected, system dialog won't appear again
+                    val permanentlyDenied = !ActivityCompat.shouldShowRequestPermissionRationale(
+                        this, Manifest.permission.RECORD_AUDIO
+                    )
+                    KlarvoLogger.w(TAG, "RECORD_AUDIO denied (permanentlyDenied=$permanentlyDenied)")
+                    showMicDeniedDialog(permanentlyDenied)
                 }
-                // If denied: do nothing. User can re-open the app to try again.
-                // Without RECORD_AUDIO the dictation feature simply won't work.
             }
         }
     }
@@ -241,6 +249,44 @@ class MainActivity : TauriActivity() {
             KlarvoLogger.d("MainActivity", "Accessibility service confirmed via Settings.Secure fallback")
         }
         return found
+    }
+
+    /**
+     * Shown when the user denies RECORD_AUDIO. Klarvo cannot function without the microphone,
+     * so we offer two paths: open the app's system settings page to grant it manually, or
+     * close the app.
+     *
+     * @param permanentlyDenied true when the user chose "Don't ask again" (or the system has
+     *   stopped showing the permission dialog). In that case the standard runtime-permission
+     *   request will never fire again, so the message explicitly tells the user to go to Settings.
+     */
+    private fun showMicDeniedDialog(permanentlyDenied: Boolean) {
+        val message = if (permanentlyDenied) {
+            "Klarvo needs microphone access to transcribe your voice.\n\n" +
+            "You selected \"Don't ask again\", so the permission can no longer be granted " +
+            "from within the app. Please open Settings, find \"Permissions\", and enable " +
+            "\"Microphone\" for Klarvo."
+        } else {
+            "Klarvo needs microphone access to transcribe your voice.\n\n" +
+            "Please open Settings and enable \"Microphone\" under Permissions for Klarvo."
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Microphone Access Required")
+            .setMessage(message)
+            .setPositiveButton("Open Settings") { _, _ ->
+                startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            .setNegativeButton("Close App") { _, _ ->
+                finish()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun startOverlayService() {

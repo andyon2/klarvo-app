@@ -10,6 +10,7 @@ import {
   saveBarPosition,
   getBarPosition,
   getSettings,
+  ensureBarWindow,
 } from "./tauri-commands";
 
 // ---------------------------------------------------------------------------
@@ -280,13 +281,27 @@ export default function FloatingBar() {
     const win = getCurrentWebviewWindow();
     (async () => {
       if (isPillVisible) {
-        // Resize first so the window has correct dimensions before showing.
+        // Resize and shape first so the window has correct dimensions before
+        // showing (guards against the "white line" bug where the window appears
+        // before its shape mask is applied).
+        console.log(`[bar] showing pill: ${pillWidth}x${PILL_HEIGHT}`);
         await win.setSize(new LogicalSize(pillWidth, PILL_HEIGHT));
         await setBarShape("pill").catch((e) => console.error("[bar] setBarShape failed:", e));
         if (barX.current != null && barY.current != null) {
           await win.setPosition(new LogicalPosition(barX.current, barY.current));
         }
-        await win.show();
+        try {
+          await win.show();
+          console.log("[bar] show: success");
+        } catch (e) {
+          console.error("[bar] show failed, attempting recovery:", e);
+          try {
+            const recreated = await ensureBarWindow();
+            if (recreated) console.log("[bar] window recreated via recovery");
+          } catch (re) {
+            console.error("[bar] recovery also failed:", re);
+          }
+        }
       }
       // Hiding is handled by the collapse animation handler below.
     })();
@@ -309,7 +324,10 @@ export default function FloatingBar() {
         try {
           const win = getCurrentWebviewWindow();
           await win.hide();
-        } catch { /* non-critical */ }
+          console.log("[bar] hide: success");
+        } catch (e) {
+          console.error("[bar] hide failed:", e);
+        }
       }, 200);
     }
   });
@@ -319,6 +337,12 @@ export default function FloatingBar() {
     const unlisten = onStateChanged((payload) => {
       const newState = payload.state as RecordingState;
       setState(newState);
+
+      if (newState === "recording") {
+        // Safety net: ensure the bar window is healthy before the user sees
+        // recording feedback. Runs fire-and-forget so it never blocks the UI.
+        ensureBarWindow().catch((e) => console.error("[bar] pre-recording recovery failed:", e));
+      }
 
       if (newState === "done") {
         const isClipboardOnly = !!payload.clipboardOnly;

@@ -1012,3 +1012,16 @@ export async function markTipShown(tipId: string): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("mark_tip_shown", { tipId });
 }
+
+// --- Bar window recovery ---
+
+/**
+ * Ensures the floating bar window exists and is in a valid state.
+ * Called as a recovery mechanism when show() fails or before recording starts.
+ * Returns true when the window was recreated, false when it was already healthy.
+ * Desktop-only: returns false on Android/preview.
+ */
+export async function ensureBarWindow(): Promise<boolean> {
+  if (isPreviewMode) return false;
+  return invoke<boolean>("ensure_bar_window");
+}

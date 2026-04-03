@@ -124,6 +124,9 @@ class KlarvoOverlayService : Service() {
      */
     private var accessibilityServiceActive = false
 
+    /** True while a banking/security app is in the foreground. Blocks bubble show. */
+    private var bankingAppActive = false
+
     // Audio
     private var audioRecorder: KlarvoAudioRecorder? = null
 
@@ -368,6 +371,31 @@ class KlarvoOverlayService : Service() {
         }
     }
 
+    /**
+     * Called by KlarvoAccessibilityService when a banking/security app enters or
+     * leaves the foreground. When active, the bubble is forcefully hidden regardless
+     * of keyboard state or alwaysVisible setting. This is a security feature and
+     * cannot be disabled.
+     */
+    fun onBankingAppStateChanged(active: Boolean, packageName: String) {
+        handler.post {
+            if (active == bankingAppActive) return@post
+            bankingAppActive = active
+
+            if (active) {
+                KlarvoLogger.i(TAG, "Banking app detected: $packageName — hiding bubble")
+                hideBubble()
+                Toast.makeText(this, "Klarvo paused (banking app detected)", Toast.LENGTH_SHORT).show()
+            } else {
+                KlarvoLogger.i(TAG, "Banking app left foreground: $packageName — restoring bubble")
+                // Re-apply normal visibility rules: show if keyboard is open or alwaysVisible.
+                if (alwaysVisible || keyboardVisible) {
+                    showBubble()
+                }
+            }
+        }
+    }
+
     private fun applyKeyboardState(isOpen: Boolean) {
         if (alwaysVisible) return
         if (isOpen == keyboardVisible) return
@@ -417,6 +445,7 @@ class KlarvoOverlayService : Service() {
     }
 
     private fun showBubble() {
+        if (bankingAppActive) return  // Never show while banking app is active
         if (!isBubbleVisible && ::bubbleView.isInitialized) {
             try {
                 reloadBubbleAppearance()

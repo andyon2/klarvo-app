@@ -525,7 +525,6 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 }
 
 #[cfg(desktop)]
-#[allow(dead_code)] // called from setup but only on first launch path
 /// Creates the floating bar window positioned above the taskbar.
 ///
 /// `saved_x` / `saved_y`: persisted logical position from the config. When
@@ -533,8 +532,12 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 /// first launch (both `None`) the position is derived from the Win32
 /// `SPI_GETWORKAREA` work area on Windows, or from the monitor bounds on
 /// other platforms.
-fn create_bar_window(
-    app: &tauri::App,
+///
+/// Accepts any `Manager<R>` implementor (`App`, `AppHandle`, etc.) so this
+/// function can be called from both the `setup` closure and from commands
+/// that only have access to an `AppHandle`.
+pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
+    app: &M,
     saved_x: Option<f64>,
     saved_y: Option<f64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -935,6 +938,8 @@ pub fn run() {
             commands::misc::set_bar_shape,
             commands::misc::save_bar_position,
             commands::misc::get_bar_position,
+            #[cfg(desktop)]
+            commands::misc::ensure_bar_window,
             commands::misc::get_log_dir_path,
             commands::misc::read_recent_logs,
             // License

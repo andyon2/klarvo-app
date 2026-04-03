@@ -378,7 +378,7 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
         onClick={onSkip}
         className="self-end text-xs text-klarvo-dim hover:text-klarvo-muted transition-colors"
       >
-        Ich kenn mich aus →
+        Setup überspringen →
       </button>
 
       {/* Animated mic with pulse ring */}
@@ -425,7 +425,7 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold text-klarvo-text tracking-tight">Wie willst du Klarvo nutzen?</h2>
-        <p className="text-sm text-klarvo-muted">Beide Varianten sind kostengünstig — du entscheidest.</p>
+        <p className="text-sm text-klarvo-muted">Cloud: kostenlos mit Groq-Konto. Offline: einmaliger Download, dann ohne Internet.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -626,7 +626,7 @@ function PermAllStep({ onNext }: { onNext: () => void }) {
           Berechtigungen einrichten
         </h2>
         <p className="text-sm text-klarvo-muted leading-relaxed">
-          Klarvo braucht ein paar Android-Berechtigungen. Die meisten hast du gerade schon erteilt.
+          Klarvo braucht diese Android-Berechtigungen. Die meisten wurden beim Start bereits eingerichtet.
         </p>
       </div>
 
@@ -649,8 +649,15 @@ function PermAllStep({ onNext }: { onNext: () => void }) {
       </div>
 
       <p className="text-xs text-klarvo-dim text-center leading-relaxed">
-        Falls eine Berechtigung fehlt, fragt Android beim nächsten Start.
+        Fehlt etwas? Android fragt automatisch beim nächsten Start.
       </p>
+
+      <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 px-4 py-3 flex flex-col gap-1">
+        <p className="text-xs font-medium text-amber-400/80">Xiaomi, OnePlus, OPPO, Vivo</p>
+        <p className="text-xs text-klarvo-dim leading-relaxed">
+          Aktiviere „Autostart" für Klarvo in den Geräte-Einstellungen, damit der Diktat-Button zuverlässig im Hintergrund läuft.
+        </p>
+      </div>
 
       <button onClick={onNext} className={BTN_PRIMARY}>
         Weiter
@@ -1059,7 +1066,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
         <button onClick={onNext} className={BTN_PRIMARY}>
           Weiter
         </button>
-        <button onClick={onNext} className="text-sm text-klarvo-dim hover:text-klarvo-muted transition-colors text-center">
+        <button onClick={onNext} className="text-sm text-klarvo-muted hover:text-klarvo-text border border-klarvo-border/50 rounded-lg px-4 py-2 transition-colors text-center">
           Später ausprobieren
         </button>
       </div>
@@ -1133,7 +1140,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
       <button onClick={onNext} disabled={previewOr(!hasDone)} className={BTN_PRIMARY}>
         Weiter
       </button>
-      <button onClick={onNext} className="text-sm text-klarvo-dim hover:text-klarvo-muted transition-colors text-center">
+      <button onClick={onNext} className="text-sm text-klarvo-muted hover:text-klarvo-text border border-klarvo-border/50 rounded-lg px-4 py-2 transition-colors text-center">
         Später ausprobieren
       </button>
     </div>
@@ -1243,6 +1250,14 @@ function StepDone({ mode, language, onFinish }: {
         <SummaryRow label="Sprache" value={language === "de" ? "Deutsch" : language === "en" ? "English" : language || "Automatisch erkennen"} />
         {isCloud && <SummaryRow label="Text-Cleanup" value="Aktiv (KI-Textbereinigung)" positive={true} />}
       </div>
+
+      {isMobile && (
+        <div className="rounded-xl bg-klarvo-surface/30 border border-klarvo-border/30 px-4 py-3">
+          <p className="text-xs text-klarvo-dim">
+            Tippe auf die schwebende Blase um ein Diktat zu starten. Lange drücken für Push-to-Talk.
+          </p>
+        </div>
+      )}
 
       <button onClick={onFinish} className={BTN_PRIMARY}>Los geht's</button>
     </div>
@@ -1492,10 +1507,10 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           </div>
           {effectiveStepId !== "welcome" && effectiveStepId !== "done" && (
             <button
-              onClick={handleSkip}
+              onClick={effectiveStepId.startsWith("stt-key") ? () => advance() : handleSkip}
               className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors"
             >
-              Überspringen
+              {effectiveStepId.startsWith("stt-key") ? "Key später eintragen" : "Überspringen"}
             </button>
           )}
         </div>

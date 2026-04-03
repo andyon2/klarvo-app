@@ -204,6 +204,54 @@ pub fn get_bar_position(state: State<'_, AppState>) -> Result<Option<(f64, f64)>
 // Window / UI helpers
 // ---------------------------------------------------------------------------
 
+/// Ensures the floating bar window exists and is responsive.
+///
+/// Returns `true` if the window had to be recreated, `false` if it was already
+/// alive and responding. The frontend should call this command before starting
+/// a recording session to recover from the rare case where the bar window
+/// silently vanished after hours in the background.
+///
+/// Desktop-only: on mobile the bar concept does not apply.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn ensure_bar_window(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    // Check if the bar window handle exists and responds to is_visible().
+    if let Some(bar) = app.get_webview_window("bar") {
+        match bar.is_visible() {
+            Ok(_) => {
+                log::debug!("[bar] ensure_bar_window: window exists and responds");
+                return Ok(false); // No recreation needed
+            }
+            Err(e) => {
+                log::warn!("[bar] ensure_bar_window: window exists but not responding: {e}");
+                // Fall through to recreation
+            }
+        }
+    } else {
+        log::warn!("[bar] ensure_bar_window: window not found, recreating");
+    }
+
+    // Read the saved position from config before recreating.
+    let (saved_x, saved_y) = {
+        let cfg = crate::lock!(state.inner().config)?;
+        (cfg.bar_x, cfg.bar_y)
+    };
+
+    match crate::create_bar_window(&app, saved_x, saved_y) {
+        Ok(_) => {
+            log::info!("[bar] ensure_bar_window: successfully recreated bar window");
+            Ok(true)
+        }
+        Err(e) => {
+            log::error!("[bar] ensure_bar_window: failed to recreate: {e}");
+            Err(format!("Failed to recreate bar window: {e}"))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------

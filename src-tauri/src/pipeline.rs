@@ -398,6 +398,25 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
     } = Some(std::time::Instant::now());
 
+    // Ensure the floating bar window exists before telling the frontend to show it.
+    // Recovers from the rare case where the bar silently vanished after hours idle.
+    #[cfg(desktop)]
+    {
+        if let Some(bar) = handle.get_webview_window("bar") {
+            if bar.is_visible().unwrap_or(false) == false {
+                log::info!("[bar] recording started but bar not visible, showing");
+                let _ = bar.show();
+            }
+        } else {
+            log::warn!("[bar] recording started but bar window missing, recreating");
+            let saved = state.config.lock().ok().map(|c| (c.bar_x, c.bar_y));
+            let (sx, sy) = saved.unwrap_or((None, None));
+            if let Err(e) = crate::create_bar_window(&handle, sx, sy) {
+                log::error!("[bar] failed to recreate bar window: {e}");
+            }
+        }
+    }
+
     crate::emit_pipeline_state(&handle, PipelineEvent::recording());
 }
 

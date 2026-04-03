@@ -60,6 +60,16 @@ class KlarvoAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            // Check if the newly focused app is a banking/security app.
+            // Exclude our own package to avoid accidentally blocking the Klarvo settings screen.
+            val pkg = event.packageName?.toString()
+            if (pkg != null && pkg != packageName) {
+                val blocked = BankingAppBlocklist.isBlocked(pkg, this)
+                KlarvoOverlayService.instance?.onBankingAppStateChanged(blocked, pkg)
+            }
+        }
+
         // Only re-check keyboard state on window-change events.
         // Checking on every event (e.g. TYPE_VIEW_FOCUSED spam) would be wasteful.
         if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
