@@ -260,7 +260,7 @@ export default function FloatingBar() {
   useEffect(() => {
     getSettings()
       .then((s) => setHotkeyMode(s.hotkeyMode))
-      .catch(() => { /* non-critical, default "hold" stays */ });
+      .catch((e) => console.warn("[bar] getSettings failed (non-critical):", e));
   }, []);
 
   // Listen for active-mode events from the hotkey handler so the badge
@@ -282,7 +282,7 @@ export default function FloatingBar() {
       if (isPillVisible) {
         // Resize first so the window has correct dimensions before showing.
         await win.setSize(new LogicalSize(pillWidth, PILL_HEIGHT));
-        await setBarShape("pill").catch(() => {});
+        await setBarShape("pill").catch((e) => console.error("[bar] setBarShape failed:", e));
         if (barX.current != null && barY.current != null) {
           await win.setPosition(new LogicalPosition(barX.current, barY.current));
         }
@@ -396,7 +396,7 @@ export default function FloatingBar() {
         winX: pos.x / scale,
         winY: pos.y / scale,
       };
-    }).catch(() => {});
+    }).catch((e) => console.error("[bar] drag init failed:", e));
   }
 
   useEffect(() => {
@@ -406,7 +406,7 @@ export default function FloatingBar() {
       const dx = e.screenX - d.startX;
       const dy = e.screenY - d.startY;
       const win = getCurrentWebviewWindow();
-      win.setPosition(new LogicalPosition(d.winX + dx, d.winY + dy)).catch(() => {});
+      win.setPosition(new LogicalPosition(d.winX + dx, d.winY + dy)).catch((e) => console.warn("[bar] setPosition during drag:", e));
     }
     function onMouseUp() {
       const d = dragRef.current;
@@ -420,8 +420,8 @@ export default function FloatingBar() {
         const ly = pos.y / scale;
         barX.current = lx;
         barY.current = ly;
-        saveBarPosition(lx, ly).catch(() => {});
-      }).catch(() => {});
+        saveBarPosition(lx, ly).catch((e) => console.error("[bar] saveBarPosition failed:", e));
+      }).catch((e) => console.error("[bar] outerPosition failed:", e));
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -491,7 +491,7 @@ export default function FloatingBar() {
         {/* Recording: stop button + waveform or live preview + mode badge */}
         {isRecording && (
           <>
-            <StopButton onClick={() => { cancelRecording().catch(() => {}); }} />
+            <StopButton onClick={() => { cancelRecording().catch((e) => console.error("[bar] cancelRecording failed:", e)); }} />
             <Waveform levels={levels} />
             <span
               style={{

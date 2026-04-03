@@ -675,6 +675,17 @@ fn create_bar_window(
 pub fn run() {
     let mut builder = tauri::Builder::default();
 
+    // Structured logging: stdout/logcat + rotating log file in {app_log_dir}/klarvo.log
+    // Defaults: 40KB max / KeepOne / UTC — we override for real-world debugging.
+    builder = builder.plugin(
+        tauri_plugin_log::Builder::new()
+            .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+            .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+            .max_file_size(2_000_000) // 2MB per file
+            .level(log::LevelFilter::Info)
+            .build(),
+    );
+
     #[cfg(desktop)]
     {
         builder = builder
@@ -796,7 +807,7 @@ pub fn run() {
             let handle = app.handle().clone();
             setup_audio_level_emitter(&handle);
 
-            println!("[setup] Registering hotkey slots from config");
+            log::info!("[setup] Registering hotkey slots from config");
             match register_hotkey(&handle) {
                 Ok(()) => log::info!("[hotkey] Hotkey slots registered"),
                 Err(e) => log::warn!(
@@ -810,7 +821,7 @@ pub fn run() {
             if false {
                 let state = app.state::<AppState>();
                 let vc_enabled = state.config.lock().map(|c| c.voice_command_enabled).unwrap_or(false);
-                eprintln!("[setup] vc_enabled={vc_enabled}");
+                log::debug!("[setup] vc_enabled={vc_enabled}");
                 if vc_enabled {
                     log::info!("[setup] voice_command_enabled=true -- starting monitor");
                     if let Err(e) = voice_command::start_voice_command_monitor(&handle) {
@@ -924,6 +935,8 @@ pub fn run() {
             commands::misc::set_bar_shape,
             commands::misc::save_bar_position,
             commands::misc::get_bar_position,
+            commands::misc::get_log_dir_path,
+            commands::misc::read_recent_logs,
             // License
             commands::license::validate_license,
             commands::license::get_license_status,

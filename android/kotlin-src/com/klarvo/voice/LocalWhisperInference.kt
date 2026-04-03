@@ -1,6 +1,6 @@
 package com.klarvo.voice
 
-import android.util.Log
+import com.klarvo.voice.KlarvoLogger
 
 /**
  * Local Whisper STT inference via whisper-rs JNI bridge (offline transcription).
@@ -35,13 +35,13 @@ object LocalWhisperInference {
             // If Tauri already loaded it, this is a no-op (Java spec).
             System.loadLibrary("klarvo_lib")
             nativeAvailable = true
-            Log.i(TAG, "Native library libklarvo_lib loaded for whisper")
+            KlarvoLogger.i(TAG, "Native library libklarvo_lib loaded for whisper")
         } catch (e: Throwable) {
             // Catch Throwable (not just UnsatisfiedLinkError) to handle:
             // - UnsatisfiedLinkError (library not found)
             // - ExceptionInInitializerError (wrapped init failures)
             // - SecurityException (classloader issues)
-            Log.e(TAG, "Failed to load native library libklarvo_lib: ${e.javaClass.simpleName}: ${e.message}")
+            KlarvoLogger.e(TAG, "Failed to load native library libklarvo_lib: ${e.javaClass.simpleName}: ${e.message}")
             // nativeAvailable stays false -- every public method will return a safe default.
         }
     }
@@ -63,18 +63,18 @@ object LocalWhisperInference {
     @Synchronized
     fun load(modelPath: String): Boolean {
         if (!nativeAvailable) {
-            Log.w(TAG, "load: native library not available")
+            KlarvoLogger.w(TAG, "load: native library not available")
             return false
         }
         if (loaded) {
-            Log.d(TAG, "load: model already loaded, skipping")
+            KlarvoLogger.d(TAG, "load: model already loaded, skipping")
             return true
         }
         loaded = loadModel(modelPath)
         if (loaded) {
-            Log.i(TAG, "Model loaded from: $modelPath")
+            KlarvoLogger.i(TAG, "Model loaded from: $modelPath")
         } else {
-            Log.e(TAG, "Failed to load model from: $modelPath")
+            KlarvoLogger.e(TAG, "Failed to load model from: $modelPath")
         }
         return loaded
     }
@@ -89,11 +89,11 @@ object LocalWhisperInference {
     @Synchronized
     fun transcribeAudio(wavBase64: String, language: String): String {
         if (!nativeAvailable) {
-            Log.w(TAG, "transcribeAudio: native library not available")
+            KlarvoLogger.w(TAG, "transcribeAudio: native library not available")
             return ""
         }
         if (!loaded) {
-            Log.w(TAG, "transcribeAudio: model not loaded")
+            KlarvoLogger.w(TAG, "transcribeAudio: model not loaded")
             return ""
         }
         return nativeTranscribe(wavBase64, language)
@@ -108,7 +108,7 @@ object LocalWhisperInference {
         if (!nativeAvailable) return
         releaseModel()
         loaded = false
-        Log.i(TAG, "Model released")
+        KlarvoLogger.i(TAG, "Model released")
     }
 
     /**

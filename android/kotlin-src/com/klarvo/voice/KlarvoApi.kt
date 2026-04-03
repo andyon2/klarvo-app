@@ -3,7 +3,7 @@ package com.klarvo.voice
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.os.Build
-import android.util.Log
+import com.klarvo.voice.KlarvoLogger
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.*
@@ -29,6 +29,8 @@ data class LlmProviderInfo(
  * All methods throw IOException on failure -- caller handles errors.
  */
 object KlarvoApi {
+
+    private const val TAG = "KlarvoApi"
 
     // Set to true after the first successful ensureRemoteTable() call.
     // Avoids an extra HTTP roundtrip on every subsequent Turso push.
@@ -133,7 +135,7 @@ object KlarvoApi {
             ))
         )
         return fallbacks.firstOrNull { it.second.isNotBlank() }?.let {
-            Log.i("KlarvoApi", "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
+            KlarvoLogger.i(TAG, "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
             it.third
         }
     }
@@ -219,13 +221,13 @@ object KlarvoApi {
                 deepseekKey.isBlank() &&
                 groqKey.isNotBlank()
             ) {
-                Log.i("KlarvoApi", "[config] STT provider is Groq with API key present, auto-selecting Groq LLM (no DeepSeek key configured)")
+                KlarvoLogger.i(TAG, "[config] STT provider is Groq with API key present, auto-selecting Groq LLM (no DeepSeek key configured)")
                 "groq"
             } else {
                 llmProvider
             }
 
-            Log.d("KlarvoApi", "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$resolvedLlmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
+            KlarvoLogger.d(TAG, "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$resolvedLlmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
             // Require a Groq key for cloud STT, but allow "local" sttProvider without any key.
             if (sttProvider != "local" && groqKey.isBlank()) null
@@ -504,7 +506,7 @@ object KlarvoApi {
             val modelDir = java.io.File(context.filesDir, "models/qwen2.5-1.5b-mnn")
             val configPath = java.io.File(modelDir, "config.json").absolutePath
             if (!LocalLlmInference.load(configPath)) {
-                Log.w(CLEANUP_TAG, "[cleanupLocal] Failed to load local model, returning raw text")
+                KlarvoLogger.w(CLEANUP_TAG, "[cleanupLocal] Failed to load local model, returning raw text")
                 return text
             }
         }
@@ -515,7 +517,7 @@ object KlarvoApi {
         val prompt = "<|im_start|>system\n$systemPrompt<|im_end|>\n<|im_start|>user\n$text<|im_end|>\n<|im_start|>assistant\n"
 
         val result = LocalLlmInference.cleanup(prompt)
-        Log.i(CLEANUP_TAG, "[cleanupLocal] input=${text.length} chars, output=${result.length} chars")
+        KlarvoLogger.i(CLEANUP_TAG, "[cleanupLocal] input=${text.length} chars, output=${result.length} chars")
         return sanitizeLlmOutput(result.ifBlank { text })
     }
 
@@ -846,7 +848,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
             return cleanup(text, provider, style, dictionaryTerms, customInstructions)
         }
 
-        Log.i(CLEANUP_TAG, "[cleanupChunked] splitting ${text.length} chars into ${chunks.size} chunks (${provider.model})")
+        KlarvoLogger.i(CLEANUP_TAG, "[cleanupChunked] splitting ${text.length} chars into ${chunks.size} chunks (${provider.model})")
 
         val executor = Executors.newFixedThreadPool(4)
         try {
@@ -858,7 +860,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
             val results = try {
                 futures.map { it.get() }
             } catch (e: Exception) {
-                Log.w(CLEANUP_TAG, "[cleanupChunked] a chunk failed, falling back to single call", e)
+                KlarvoLogger.w(CLEANUP_TAG, "[cleanupChunked] a chunk failed, falling back to single call", e)
                 return cleanup(text, provider, style, dictionaryTerms, customInstructions)
             }
 
@@ -943,7 +945,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
                 pasteErrorCount   = json.optInt("pasteErrorCount", 0)
             )
         } catch (e: Exception) {
-            Log.w("KlarvoApi", "Failed to read feedback metrics", e)
+            KlarvoLogger.w("KlarvoApi", "Failed to read feedback metrics", e)
             FeedbackMetrics()
         }
     }
@@ -964,7 +966,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         try {
             java.io.File(context.dataDir, FEEDBACK_METRICS_FILE).writeText(json.toString())
         } catch (e: Exception) {
-            Log.w("KlarvoApi", "Failed to write feedback metrics", e)
+            KlarvoLogger.w("KlarvoApi", "Failed to write feedback metrics", e)
         }
     }
 

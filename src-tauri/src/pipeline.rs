@@ -416,7 +416,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
     let state = handle.state::<AppState>();
 
     if state.recorder.is_recording() {
-        eprintln!("[autostop] Already recording, skipping");
+        log::debug!("[autostop] Already recording, skipping");
         return;
     }
 
@@ -429,7 +429,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
         .map(|c| (c.autostop_silence_secs, c.advanced.silence_threshold))
         .unwrap_or((2.0, 0.005));
 
-    eprintln!("[autostop] Installing silence callback: silence_secs={silence_secs}, threshold={silence_threshold}");
+    log::debug!("[autostop] Installing silence callback: silence_secs={silence_secs}, threshold={silence_threshold}");
 
     // Install the silence callback. It must be set BEFORE start_recording so
     // the recording thread picks it up via `.take()` inside start_recording.
@@ -438,7 +438,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
         silence_secs,
         silence_threshold,
         Box::new(move || {
-            eprintln!("[autostop] Silence callback fired! Stopping pipeline...");
+            log::info!("[autostop] Silence callback fired! Stopping pipeline...");
             // This closure runs on the cpal OS-thread (non-async context).
             // Spawn an async task to run the pipeline on the Tauri runtime.
             let h = handle_for_cb.clone();
@@ -450,7 +450,7 @@ pub async fn start_autostop_recording(handle: AppHandle) {
 
     // Check callback is installed before we move handle into start_recording_only.
     let cb_installed = state.recorder.has_silence_callback();
-    eprintln!("[autostop] Silence callback installed before recording: {cb_installed}");
+    log::debug!("[autostop] Silence callback installed before recording: {cb_installed}");
 
     // Start the actual recording (re-uses all the foreground-window capture
     // and audio-level emitter setup from start_recording_only).
@@ -1376,7 +1376,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
         .map(|c| c.command_hotkey.clone())
         .unwrap_or_else(|| "ctrl+shift+e".to_string());
 
-    println!("[hotkey] Re-registering hotkeys: {} slot(s)", slots.len());
+    log::info!("[hotkey] Re-registering hotkeys: {} slot(s)", slots.len());
 
     handle
         .global_shortcut()
@@ -1403,7 +1403,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
 
     for slot in &slots {
         if !slot.is_enabled() {
-            println!("[hotkey] Slot {:?} disabled (empty hotkey), skipping", slot.mode);
+            log::debug!("[hotkey] Slot {:?} disabled (empty hotkey), skipping", slot.mode);
             continue;
         }
 
@@ -1429,7 +1429,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
             continue;
         }
 
-        println!(
+        log::debug!(
             "[hotkey] Queuing slot: {:?} id={} mode={:?} insert_and_send={}",
             slot.hotkey, shortcut.id(), slot.mode, slot.insert_and_send
         );
@@ -1442,7 +1442,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
         handle
             .global_shortcut()
             .on_shortcuts(shortcut_objects, move |_app, shortcut, event| {
-                println!("[hotkey] Event: shortcut_id={} {event:?}", shortcut.id());
+                log::debug!("[hotkey] Event: shortcut_id={} {event:?}", shortcut.id());
 
                 // While the ShortcutRecorder is active, swallow all hotkey
                 // events so the user can press the current shortcut without
@@ -1452,7 +1452,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                     .hotkey_paused
                     .load(Ordering::SeqCst)
                 {
-                    println!("[hotkey] paused (ShortcutRecorder active), ignoring");
+                    log::debug!("[hotkey] paused (ShortcutRecorder active), ignoring");
                     return;
                 }
 
@@ -1468,7 +1468,7 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                     };
 
                 let h = handle_clone.clone();
-                println!("[hotkey] mode={mode:?} state={:?}", event.state);
+                log::info!("[hotkey] mode={mode:?} state={:?}", event.state);
 
                 // Tell the FloatingBar which mode is active so it shows the
                 // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).

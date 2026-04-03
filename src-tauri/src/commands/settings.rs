@@ -191,13 +191,13 @@ pub async fn save_settings(
     // Validate hotkey strings before writing anything to disk (desktop only).
     // Slot 0 (`hotkey` param) is always validated. Slot 1 (`hotkey_slot2`) is
     // only validated when non-empty -- empty string means "disable the slot".
-    println!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
+    log::info!("[save_settings] hotkey={hotkey:?} mode={hotkey_mode:?}");
     #[cfg(desktop)]
     {
         hotkey
             .parse::<tauri_plugin_global_shortcut::Shortcut>()
             .map_err(|e| {
-                println!("[save_settings] Invalid shortcut: {e}");
+                log::warn!("[save_settings] Invalid shortcut: {e}");
                 format!("Invalid shortcut string: {e}")
             })?;
 
@@ -205,7 +205,7 @@ pub async fn save_settings(
             if !h2.is_empty() {
                 h2.parse::<tauri_plugin_global_shortcut::Shortcut>()
                     .map_err(|e| {
-                        println!("[save_settings] Invalid slot-2 shortcut: {e}");
+                        log::warn!("[save_settings] Invalid slot-2 shortcut: {e}");
                         format!("Invalid slot-2 shortcut string: {e}")
                     })?;
             }

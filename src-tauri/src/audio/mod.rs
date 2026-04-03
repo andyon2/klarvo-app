@@ -310,7 +310,7 @@ impl AudioRecorder {
             // The return value is only Err if there is a logic bug (both channels
             // have already been signalled), so we just log it here.
             if let Err(e) = recording_thread(stop_rx, ready_tx, result_tx, level_cb, silence_cfg, device_name_owned.as_deref(), live_buf) {
-                eprintln!("[audio] recording thread error (unexpected): {e}");
+                log::error!("[audio] recording thread error (unexpected): {e}");
             }
         });
 
@@ -444,7 +444,7 @@ impl AudioRecorder {
 
         std::thread::spawn(move || {
             if let Err(e) = monitor_thread(stop_rx, callback, paused_for_thread, device_name_owned.as_deref()) {
-                eprintln!("[audio] monitor thread error: {e}");
+                log::error!("[audio] monitor thread error: {e}");
             }
         });
 
@@ -520,7 +520,7 @@ fn find_input_device(name: Option<&str>) -> Result<Device, AudioError> {
                 }
             }
         }
-        eprintln!("[audio] Device {name:?} not found, falling back to default");
+        log::warn!("[audio] Device {name:?} not found, falling back to default");
     }
 
     host.default_input_device().ok_or(AudioError::NoInputDevice)
@@ -565,7 +565,7 @@ fn monitor_thread(
             device.build_input_stream(
                 &stream_config,
                 build_cb,
-                |err| eprintln!("[audio] monitor stream error: {err}"),
+                |err| log::error!("[audio] monitor stream error: {err}"),
                 None,
             )?
         }
@@ -581,7 +581,7 @@ fn monitor_thread(
                         cb_i16(&converted);
                     }
                 },
-                |err| eprintln!("[audio] monitor stream error: {err}"),
+                |err| log::error!("[audio] monitor stream error: {err}"),
                 None,
             )?
         }
@@ -590,7 +590,7 @@ fn monitor_thread(
             device.build_input_stream(
                 &stream_config,
                 build_cb,
-                |err| eprintln!("[audio] monitor stream error: {err}"),
+                |err| log::error!("[audio] monitor stream error: {err}"),
                 None,
             )?
         }
@@ -744,7 +744,7 @@ fn recording_thread(
                 // default, so we skip straight to full-enumeration below.
                 let default_result = if device_name.is_some() {
                     let name = device_name.unwrap_or("<unknown>");
-                    eprintln!(
+                    log::warn!(
                         "[audio] device \"{name}\" failed to start ({primary_err}), \
                          falling back to system default"
                     );
@@ -757,11 +757,11 @@ fn recording_thread(
                                 Arc::clone(&live_buffer),
                             ) {
                                 Ok(result) => {
-                                    eprintln!("[audio] system default device works, using it");
+                                    log::info!("[audio] system default device works, using it");
                                     Some(result)
                                 }
                                 Err(default_err) => {
-                                    eprintln!(
+                                    log::warn!(
                                         "[audio] system default device also failed ({default_err}), \
                                          will enumerate all input devices"
                                     );
@@ -770,7 +770,7 @@ fn recording_thread(
                             }
                         }
                         None => {
-                            eprintln!(
+                            log::warn!(
                                 "[audio] no system default input device found, \
                                  will enumerate all input devices"
                             );
@@ -778,7 +778,7 @@ fn recording_thread(
                         }
                     }
                 } else {
-                    eprintln!(
+                    log::warn!(
                         "[audio] system default device failed ({primary_err}), \
                          will enumerate all input devices"
                     );
@@ -821,7 +821,7 @@ fn recording_thread(
                             candidate.name().unwrap_or_else(|_| "<unnamed>".into());
 
                         if already_tried.iter().any(|n| n == &candidate_name) {
-                            eprintln!(
+                            log::debug!(
                                 "[audio] skipping \"{candidate_name}\" (already tried)"
                             );
                             continue;
@@ -834,14 +834,14 @@ fn recording_thread(
                             Arc::clone(&live_buffer),
                         ) {
                             Ok(result) => {
-                                eprintln!(
+                                log::info!(
                                     "[audio] using fallback device \"{candidate_name}\""
                                 );
                                 found_result = Some(result);
                                 break;
                             }
                             Err(e) => {
-                                eprintln!("[audio] skipping \"{candidate_name}\": {e}");
+                                log::warn!("[audio] skipping \"{candidate_name}\": {e}");
                                 last_err = Some(e.to_string());
                             }
                         }
@@ -1092,7 +1092,7 @@ fn build_stream_with_level(
                 move |data: &[f32], _| {
                     process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx, &samples_chunk_tx);
                 },
-                |err| eprintln!("[audio] stream error: {err}"),
+                |err| log::error!("[audio] stream error: {err}"),
                 None,
             )?;
             Ok(stream)
@@ -1104,7 +1104,7 @@ fn build_stream_with_level(
                     let converted: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
                     process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx, &samples_chunk_tx);
                 },
-                |err| eprintln!("[audio] stream error: {err}"),
+                |err| log::error!("[audio] stream error: {err}"),
                 None,
             )?;
             Ok(stream)
@@ -1116,7 +1116,7 @@ fn build_stream_with_level(
                     let converted: Vec<f32> = data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0).collect();
                     process_f32_data(&converted, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx, &samples_chunk_tx);
                 },
-                |err| eprintln!("[audio] stream error: {err}"),
+                |err| log::error!("[audio] stream error: {err}"),
                 None,
             )?;
             Ok(stream)
@@ -1127,7 +1127,7 @@ fn build_stream_with_level(
                 move |data: &[f32], _| {
                     process_f32_data(data, &buffer, &level_cb, &level_chunk, samples_per_tick, &live_buf, &rms_tx, &samples_chunk_tx);
                 },
-                |err| eprintln!("[audio] stream error: {err}"),
+                |err| log::error!("[audio] stream error: {err}"),
                 None,
             )?;
             Ok(stream)

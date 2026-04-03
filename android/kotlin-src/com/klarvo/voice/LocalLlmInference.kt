@@ -1,6 +1,6 @@
 package com.klarvo.voice
 
-import android.util.Log
+import com.klarvo.voice.KlarvoLogger
 
 /**
  * Local LLM inference via MNN (offline text cleanup).
@@ -27,9 +27,9 @@ object LocalLlmInference {
         try {
             System.loadLibrary("klarvo_mnn")
             nativeAvailable = true
-            Log.i(TAG, "Native library libklarvo_mnn loaded")
+            KlarvoLogger.i(TAG, "Native library libklarvo_mnn loaded")
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Failed to load native library libklarvo_mnn: ${e.message}")
+            KlarvoLogger.e(TAG, "Failed to load native library libklarvo_mnn: ${e.message}")
             // nativeAvailable stays false -- every public method will return a safe default.
         }
     }
@@ -50,18 +50,18 @@ object LocalLlmInference {
     @Synchronized
     fun load(configPath: String): Boolean {
         if (!nativeAvailable) {
-            Log.w(TAG, "load: native library not available")
+            KlarvoLogger.w(TAG, "load: native library not available")
             return false
         }
         if (loaded) {
-            Log.d(TAG, "load: model already loaded, skipping")
+            KlarvoLogger.d(TAG, "load: model already loaded, skipping")
             return true
         }
         loaded = loadModel(configPath)
         if (loaded) {
-            Log.i(TAG, "Model loaded from: $configPath")
+            KlarvoLogger.i(TAG, "Model loaded from: $configPath")
         } else {
-            Log.e(TAG, "Failed to load model from: $configPath")
+            KlarvoLogger.e(TAG, "Failed to load model from: $configPath")
         }
         return loaded
     }
@@ -82,11 +82,11 @@ object LocalLlmInference {
     @Synchronized
     fun cleanup(prompt: String): String {
         if (!nativeAvailable) {
-            Log.w(TAG, "cleanup: native library not available")
+            KlarvoLogger.w(TAG, "cleanup: native library not available")
             return ""
         }
         if (!loaded) {
-            Log.w(TAG, "cleanup: model not loaded")
+            KlarvoLogger.w(TAG, "cleanup: model not loaded")
             return ""
         }
         return generate(prompt)
@@ -101,7 +101,7 @@ object LocalLlmInference {
         if (!nativeAvailable) return
         releaseModel()
         loaded = false
-        Log.i(TAG, "Model released")
+        KlarvoLogger.i(TAG, "Model released")
     }
 
     /**

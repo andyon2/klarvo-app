@@ -116,6 +116,7 @@ if ! grep -q 'jitpack.io' "$GRADLE_ROOT" 2>/dev/null; then
     echo "[patch] Added JitPack repository to build.gradle.kts"
 fi
 
+
 # ---------------------------------------------------------------------------
 # 6. app/build.gradle.kts -- compileOptions + dependencies
 # ---------------------------------------------------------------------------

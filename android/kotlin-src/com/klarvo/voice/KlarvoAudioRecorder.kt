@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.util.Log
 import androidx.core.content.ContextCompat
 import com.konovalov.vad.silero.VadSilero
 import com.konovalov.vad.silero.config.FrameSize
@@ -203,7 +202,7 @@ class KlarvoAudioRecorder(
             }
         }.also { it.start() }
 
-        Log.d(TAG, "Recording started (bufferSize=$bufferSize, sampleRate=$SAMPLE_RATE, VAD=Silero)")
+        KlarvoLogger.d(TAG,"Recording started (bufferSize=$bufferSize, sampleRate=$SAMPLE_RATE, VAD=Silero)")
     }
 
     /**
@@ -267,7 +266,7 @@ class KlarvoAudioRecorder(
                 if (onsetFrames >= VAD_ONSET_FRAMES) {
                     speechDetected = true
                     silentFrames = 0
-                    Log.d(TAG, "VAD: speech onset confirmed (onsetFrames=$onsetFrames)")
+                    KlarvoLogger.d(TAG,"VAD: speech onset confirmed (onsetFrames=$onsetFrames)")
                 }
             } else {
                 // Any non-speech frame resets the onset counter.
@@ -281,7 +280,7 @@ class KlarvoAudioRecorder(
                 silentFrames++
                 if (silentFrames >= requiredSilentFrames) {
                     silenceCallbackFired = true
-                    Log.d(TAG, "VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
+                    KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
                     onSilenceDetected?.invoke()
                 }
             }
@@ -303,7 +302,7 @@ class KlarvoAudioRecorder(
         try {
             recordingThread?.join(500)
         } catch (e: InterruptedException) {
-            Log.w(TAG, "Interrupted while waiting for recording thread to finish", e)
+            KlarvoLogger.w(TAG,"Interrupted while waiting for recording thread to finish", e)
             Thread.currentThread().interrupt()
         }
         recordingThread = null
@@ -313,26 +312,26 @@ class KlarvoAudioRecorder(
         try {
             recorder?.stop()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to stop AudioRecord cleanly", e)
+            KlarvoLogger.w(TAG,"Failed to stop AudioRecord cleanly", e)
         }
         try {
             recorder?.release()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to release AudioRecord", e)
+            KlarvoLogger.w(TAG,"Failed to release AudioRecord", e)
         }
 
         // Release VAD resources (closes the ONNX runtime session).
         try {
             vad?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to close VadSilero", e)
+            KlarvoLogger.w(TAG,"Failed to close VadSilero", e)
         }
         vad = null
 
         val pcmData = pcmBuffer.toShortArray()
         pcmBuffer.clear()
 
-        Log.d(TAG, "Recording stopped (${pcmData.size} samples captured)")
+        KlarvoLogger.d(TAG,"Recording stopped (${pcmData.size} samples captured)")
 
         if (pcmData.isEmpty()) return ByteArray(0)
 
@@ -350,18 +349,18 @@ class KlarvoAudioRecorder(
         try {
             audioRecord?.stop()
         } catch (e: Exception) {
-            Log.w(TAG, "releaseImmediately: failed to stop AudioRecord", e)
+            KlarvoLogger.w(TAG,"releaseImmediately: failed to stop AudioRecord", e)
         }
         try {
             audioRecord?.release()
         } catch (e: Exception) {
-            Log.w(TAG, "releaseImmediately: failed to release AudioRecord", e)
+            KlarvoLogger.w(TAG,"releaseImmediately: failed to release AudioRecord", e)
         }
         audioRecord = null
         try {
             vad?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "releaseImmediately: failed to close VadSilero", e)
+            KlarvoLogger.w(TAG,"releaseImmediately: failed to close VadSilero", e)
         }
         vad = null
         pcmBuffer.clear()

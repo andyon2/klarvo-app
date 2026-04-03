@@ -8,10 +8,10 @@ import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.*
 import android.util.DisplayMetrics
-import android.util.Log
 import android.view.*
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import java.io.File
 import java.io.IOException
 import kotlin.math.abs
 
@@ -206,6 +206,7 @@ class KlarvoOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        KlarvoLogger.init(this)
         dragThresholdPx = 10f * resources.displayMetrics.density
 
         overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -215,6 +216,7 @@ class KlarvoOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+        cleanupStalePendingWavFiles()
         loadBubbleControls()
         createNotificationChannel()
         startForegroundWithNotification()
@@ -248,7 +250,7 @@ class KlarvoOverlayService : Service() {
         try {
             unregisterReceiver(notificationActionReceiver)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to unregister notificationActionReceiver (already unregistered?)", e)
+            KlarvoLogger.w(TAG, "Failed to unregister notificationActionReceiver (already unregistered?)", e)
         }
         audioRecorder?.releaseImmediately()
         audioRecorder = null
@@ -257,7 +259,7 @@ class KlarvoOverlayService : Service() {
             try {
                 windowManager.removeView(bubbleView)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to remove bubbleView on destroy", e)
+                KlarvoLogger.w(TAG, "Failed to remove bubbleView on destroy", e)
             }
             isBubbleVisible = false
         }
@@ -343,9 +345,9 @@ class KlarvoOverlayService : Service() {
             longPressAutoSend = false
             tapSilenceSecs = config.bubbleTapSilenceSecs
             longPressSilenceSecs = config.bubbleLongPressSilenceSecs
-            Log.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend")
+            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend")
         } else {
-            Log.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
+            KlarvoLogger.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
         }
     }
 
@@ -387,7 +389,7 @@ class KlarvoOverlayService : Service() {
             val height = method.invoke(imm) as Int
             applyKeyboardState(height > 0)
         } catch (e: Exception) {
-            Log.d(TAG, "getInputMethodWindowVisibleHeight reflection failed", e)
+            KlarvoLogger.w(TAG, "getInputMethodWindowVisibleHeight reflection failed: ${e.message}")
         }
     }
 
@@ -422,7 +424,7 @@ class KlarvoOverlayService : Service() {
                 isBubbleVisible = true
                 updateNotification()
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to add bubbleView to WindowManager", e)
+                KlarvoLogger.w(TAG, "Failed to add bubbleView to WindowManager", e)
             }
         }
     }
@@ -434,7 +436,7 @@ class KlarvoOverlayService : Service() {
                 isBubbleVisible = false
                 updateNotification()
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to remove bubbleView from WindowManager", e)
+                KlarvoLogger.w(TAG, "Failed to remove bubbleView from WindowManager", e)
             }
         }
     }
@@ -505,7 +507,7 @@ class KlarvoOverlayService : Service() {
         try {
             windowManager.updateViewLayout(bubbleView, bubbleParams)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to update bubble layout", e)
+            KlarvoLogger.w(TAG, "Failed to update bubble layout", e)
         }
     }
 
@@ -586,7 +588,7 @@ class KlarvoOverlayService : Service() {
                     try {
                         windowManager.updateViewLayout(bubbleView, bubbleParams)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to update bubble position during drag", e)
+                        KlarvoLogger.w(TAG, "Failed to update bubble position during drag", e)
                     }
                 }
                 return true
@@ -697,7 +699,7 @@ class KlarvoOverlayService : Service() {
                 // Stop auto-loop so the cycle doesn't repeat after this processing finishes.
                 if (autoLoopActive) {
                     autoLoopActive = false
-                    Log.d(TAG, "Auto-loop deactivated by tap during processing")
+                    KlarvoLogger.d(TAG, "Auto-loop deactivated by tap during processing")
                 }
             }
         }
@@ -710,7 +712,7 @@ class KlarvoOverlayService : Service() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted at recording time")
+            KlarvoLogger.e(TAG, "RECORD_AUDIO permission not granted at recording time")
             showToast("Microphone permission required. Please grant in app settings.")
             return
         }
@@ -721,13 +723,13 @@ class KlarvoOverlayService : Service() {
         val preCheckConfig = cachedConfig ?: KlarvoApi.readConfig(this)
         if (preCheckConfig == null) {
             // config.json missing entirely -- app was never configured via the desktop UI.
-            Log.w(TAG, "startRecording: config.json not found or incomplete -- aborting")
+            KlarvoLogger.w(TAG, "startRecording: config.json not found or incomplete -- aborting")
             showToast("No configuration found. Open Klarvo on your desktop and configure the app first.")
             return
         }
         if (preCheckConfig.sttProvider != "local" && preCheckConfig.groqApiKey.isBlank()) {
             // Cloud STT selected but no Groq key present.
-            Log.w(TAG, "startRecording: Groq API key missing -- aborting")
+            KlarvoLogger.w(TAG, "startRecording: Groq API key missing -- aborting")
             showToast("No API key configured. Open Klarvo Settings and add your Groq key.")
             return
         }
@@ -760,11 +762,11 @@ class KlarvoOverlayService : Service() {
         try {
             recorder.start()
         } catch (e: SecurityException) {
-            Log.e(TAG, "Permission denied when starting audio recording", e)
+            KlarvoLogger.e(TAG, "Permission denied when starting audio recording", e)
             showToast("Microphone permission denied. Please grant in app settings.")
             return
         } catch (e: IllegalStateException) {
-            Log.w(TAG, "Failed to start audio recording", e)
+            KlarvoLogger.w(TAG, "Failed to start audio recording", e)
             showToast("Cannot start recording: ${e.message}")
             return
         }
@@ -874,11 +876,15 @@ class KlarvoOverlayService : Service() {
             return
         }
 
+        // Persist WAV to disk before any network call so audio survives an app kill or
+        // transient network failure.  The file is cleaned up after a successful STT call.
+        val pendingWavFile = savePendingWav(wavBytes)
+
         // Use cached config from loadBubbleControls() (called moments ago by handleTap/longPress).
         // Fall back to a fresh read if the cache is somehow stale (e.g. auto-loop restart path).
         val config = cachedConfig ?: KlarvoApi.readConfig(this)
         val tConfig = System.currentTimeMillis()
-        Log.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
+        KlarvoLogger.d(TAG, "[pipeline] config read: ${tConfig - t0}ms")
 
         if (config == null || (config.sttProvider != "local" && config.groqApiKey.isBlank())) {
             handler.post {
@@ -906,8 +912,8 @@ class KlarvoOverlayService : Service() {
                 } else {
                     java.io.File(applicationInfo.dataDir, "models")
                 }
-                Log.d(TAG, "[local-stt] filesDir/models: $filesDirModels exists=${filesDirModels.exists()}")
-                Log.d(TAG, "[local-stt] dataDir/models: $dataDirModels exists=${dataDirModels.exists()}")
+                KlarvoLogger.d(TAG, "[local-stt] filesDir/models: $filesDirModels exists=${filesDirModels.exists()}")
+                KlarvoLogger.d(TAG, "[local-stt] dataDir/models: $dataDirModels exists=${dataDirModels.exists()}")
 
                 val modelDir = when {
                     filesDirModels.exists() -> filesDirModels
@@ -916,10 +922,10 @@ class KlarvoOverlayService : Service() {
                 }
                 val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
 
-                Log.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")
+                KlarvoLogger.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")
 
                 if (!modelFile.exists()) {
-                    Log.e(TAG, "[local-stt] Whisper model not found: $modelFile")
+                    KlarvoLogger.e(TAG, "[local-stt] Whisper model not found: $modelFile")
                     handler.post {
                         showToast("Whisper model not downloaded. Please download in Settings.")
                         autoLoopActive = false
@@ -930,14 +936,14 @@ class KlarvoOverlayService : Service() {
                     return
                 }
 
-                Log.d(TAG, "[local-stt] nativeAvailable=${LocalWhisperInference.isNativeAvailable()}, isModelLoaded=${LocalWhisperInference.isModelLoaded()}")
+                KlarvoLogger.d(TAG, "[local-stt] nativeAvailable=${LocalWhisperInference.isNativeAvailable()}, isModelLoaded=${LocalWhisperInference.isModelLoaded()}")
 
                 if (!LocalWhisperInference.isModelLoaded()) {
-                    Log.d(TAG, "[local-stt] loading model: ${modelFile.absolutePath}")
+                    KlarvoLogger.d(TAG, "[local-stt] loading model: ${modelFile.absolutePath}")
                     val loadOk = LocalWhisperInference.load(modelFile.absolutePath)
-                    Log.d(TAG, "[local-stt] load result: $loadOk")
+                    KlarvoLogger.d(TAG, "[local-stt] load result: $loadOk")
                     if (!loadOk) {
-                        Log.e(TAG, "[local-stt] Failed to load whisper model: $modelFile")
+                        KlarvoLogger.e(TAG, "[local-stt] Failed to load whisper model: $modelFile")
                         handler.post {
                             showToast("Failed to load Whisper model")
                             autoLoopActive = false
@@ -950,14 +956,14 @@ class KlarvoOverlayService : Service() {
                 }
 
                 val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
-                Log.d(TAG, "[local-stt] calling transcribeAudio, base64 len=${wavBase64.length}, lang=${config.language}")
+                KlarvoLogger.d(TAG, "[local-stt] calling transcribeAudio, base64 len=${wavBase64.length}, lang=${config.language}")
                 val result = LocalWhisperInference.transcribeAudio(wavBase64, config.language)
-                Log.d(TAG, "[local-stt] transcribeAudio result: '${result.take(100)}' (len=${result.length})")
+                KlarvoLogger.d(TAG, "[local-stt] transcribeAudio result: '${result.take(100)}' (len=${result.length})")
                 val tLocalEnd = System.currentTimeMillis()
-                Log.d(TAG, "[pipeline] local STT: ${tLocalEnd - tLocalStart}ms (${wavBytes.size / 1024}KB audio)")
+                KlarvoLogger.d(TAG, "[pipeline] local STT: ${tLocalEnd - tLocalStart}ms (${wavBytes.size / 1024}KB audio)")
 
                 if (result.isBlank()) {
-                    Log.e(TAG, "Local transcription returned empty result")
+                    KlarvoLogger.e(TAG, "Local transcription returned empty result")
                     handler.post {
                         showToast("Transcription failed")
                         autoLoopActive = false
@@ -969,10 +975,13 @@ class KlarvoOverlayService : Service() {
                 }
                 result
             } else {
-                KlarvoApi.transcribe(wavBytes, config.groqApiKey, config.language)
+                transcribeWithRetry(wavBytes, config.groqApiKey, config.language, pendingWavFile)
             }
             val tStt = System.currentTimeMillis()
-            Log.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
+            KlarvoLogger.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
+
+            // STT succeeded -- safe to remove the pending WAV backup.
+            pendingWavFile?.delete()
 
             if (transcript.isBlank()) {
                 handler.post {
@@ -996,10 +1005,10 @@ class KlarvoOverlayService : Service() {
                     val result = KlarvoApi.cleanupLocal(this, transcript, config.cleanupStyle)
                     val tCleanup = System.currentTimeMillis()
                     llmLatencyMs = tCleanup - tStt
-                    Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (local/mnn)")
+                    KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (local/mnn)")
                     result
                 } catch (e: Exception) {
-                    Log.w(TAG, "Local cleanup failed -- using raw transcript", e)
+                    KlarvoLogger.w(TAG, "Local cleanup failed -- using raw transcript", e)
                     transcript
                 }
             } else {
@@ -1015,17 +1024,17 @@ class KlarvoOverlayService : Service() {
                         )
                         val tCleanup = System.currentTimeMillis()
                         llmLatencyMs = tCleanup - tStt
-                        Log.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
+                        KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result
                     } catch (e: IOException) {
-                        Log.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                        KlarvoLogger.w(TAG, "Text cleanup failed -- using raw transcript", e)
                         KlarvoApi.updateFeedbackMetrics(this) { m ->
                             m.copy(llmErrorCount = m.llmErrorCount + 1)
                         }
                         transcript
                     }
                 } else {
-                    Log.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
+                    KlarvoLogger.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
                     // Notify the user that cleanup was skipped so they understand
                     // why the pasted text may still contain filler words or errors.
                     handler.post {
@@ -1046,8 +1055,8 @@ class KlarvoOverlayService : Service() {
                 deviceId = config.deviceId
             )
             val tHistory = System.currentTimeMillis()
-            Log.d(TAG, "[pipeline] history save: ${tHistory - tBeforeHistory}ms")
-            Log.d(TAG, "[pipeline] total so far (after history): ${tHistory - t0}ms")
+            KlarvoLogger.d(TAG, "[pipeline] history save: ${tHistory - tBeforeHistory}ms")
+            KlarvoLogger.d(TAG, "[pipeline] total so far (after history): ${tHistory - t0}ms")
 
             // Step 3b: Push unsynced entries to Turso (fire-and-forget -- must not block paste)
             if (config.tursoUrl.isNotBlank() && config.tursoToken.isNotBlank()) {
@@ -1055,12 +1064,12 @@ class KlarvoOverlayService : Service() {
                     try {
                         KlarvoApi.pushToTurso(this@KlarvoOverlayService, config.tursoUrl, config.tursoToken)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Turso sync failed (non-blocking)", e)
+                        KlarvoLogger.w(TAG, "Turso sync failed (non-blocking)", e)
                     }
                 }.start()
             }
 
-            Log.d(TAG, "[pipeline] total before paste: ${System.currentTimeMillis() - t0}ms")
+            KlarvoLogger.d(TAG, "[pipeline] total before paste: ${System.currentTimeMillis() - t0}ms")
 
             // Step 4: Copy to clipboard and paste
             // Capture activeGesture before posting to main thread (it may change on next gesture).
@@ -1125,14 +1134,17 @@ class KlarvoOverlayService : Service() {
             }
 
         } catch (e: IOException) {
-            Log.w(TAG, "STT/API pipeline failed", e)
+            KlarvoLogger.w(TAG, "STT/API pipeline failed", e)
             // Increment STT error counter (this catch covers STT failures;
             // LLM IOException is caught earlier and increments llmErrorCount there).
             KlarvoApi.updateFeedbackMetrics(this) { m ->
                 m.copy(sttErrorCount = m.sttErrorCount + 1)
             }
+            // If a pending WAV still exists (retries exhausted) let the user know it was
+            // preserved so no audio is silently lost.
+            val savedMsg = if (pendingWavFile?.exists() == true) " Recording saved." else ""
             handler.post {
-                showToast("Error: ${e.message?.take(80)}")
+                showToast("Error: ${e.message?.take(80)}$savedMsg")
                 autoLoopActive = false
                 val prev = currentState
                 setState(RecordingState.IDLE)
@@ -1187,5 +1199,87 @@ class KlarvoOverlayService : Service() {
 
     private fun showToast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    // ---- Data-loss prevention helpers ----
+
+    /**
+     * Writes the WAV bytes to {dataDir}/pending/<timestamp>.wav before any network call.
+     * Returns the File, or null if the write fails (non-fatal -- pipeline continues).
+     */
+    private fun savePendingWav(wavBytes: ByteArray): File? {
+        return try {
+            val pendingDir = File(dataDir, "pending")
+            pendingDir.mkdirs()
+            val f = File(pendingDir, "${System.currentTimeMillis()}.wav")
+            f.writeBytes(wavBytes)
+            KlarvoLogger.d(TAG, "[pending-wav] saved ${wavBytes.size / 1024}KB to ${f.name}")
+            f
+        } catch (e: IOException) {
+            KlarvoLogger.w(TAG, "[pending-wav] failed to save backup WAV", e)
+            null
+        }
+    }
+
+    /**
+     * Calls KlarvoApi.transcribe() with up to 2 retries (delays: 2 s, 5 s) for network errors.
+     * 4xx HTTP errors are NOT retried (bad request / auth failure -- retrying won't help).
+     * If all attempts fail the IOException propagates and the pending WAV is kept on disk.
+     */
+    private fun transcribeWithRetry(
+        wavBytes: ByteArray,
+        apiKey: String,
+        language: String,
+        pendingWavFile: File?
+    ): String {
+        val retryDelaysMs = listOf(2_000L, 5_000L)
+        var lastException: IOException? = null
+
+        for (attempt in 0..retryDelaysMs.size) {
+            try {
+                return KlarvoApi.transcribe(wavBytes, apiKey, language)
+            } catch (e: IOException) {
+                // Do not retry client errors (4xx) -- they signal a bad request or invalid key.
+                val msg = e.message ?: ""
+                val is4xx = Regex("HTTP (4\\d\\d)").containsMatchIn(msg)
+                if (is4xx) {
+                    KlarvoLogger.w(TAG, "[stt-retry] 4xx error -- not retrying: $msg")
+                    throw e
+                }
+                lastException = e
+                if (attempt < retryDelaysMs.size) {
+                    val delay = retryDelaysMs[attempt]
+                    KlarvoLogger.w(TAG, "[stt-retry] attempt $attempt failed ($msg), retrying in ${delay}ms")
+                    Thread.sleep(delay)
+                } else {
+                    KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted, pending WAV kept: ${pendingWavFile?.name}", e)
+                }
+            }
+        }
+        throw lastException!!
+    }
+
+    /**
+     * Deletes pending WAV files older than 7 days.
+     * Called once at service startup to keep the pending directory clean.
+     */
+    private fun cleanupStalePendingWavFiles() {
+        try {
+            val pendingDir = File(dataDir, "pending")
+            if (!pendingDir.exists()) return
+            val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+            var deleted = 0
+            pendingDir.listFiles()?.forEach { f ->
+                if (f.isFile && f.lastModified() < cutoff) {
+                    f.delete()
+                    deleted++
+                }
+            }
+            if (deleted > 0) {
+                KlarvoLogger.i(TAG, "[pending-wav] cleaned up $deleted stale WAV file(s)")
+            }
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[pending-wav] cleanup failed", e)
+        }
     }
 }

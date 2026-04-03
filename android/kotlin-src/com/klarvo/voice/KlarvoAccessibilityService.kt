@@ -3,7 +3,6 @@ package com.klarvo.voice
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Build
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -39,7 +38,7 @@ class KlarvoAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        Log.i(TAG, "AccessibilityService connected")
+        KlarvoLogger.i(TAG,"AccessibilityService connected")
 
         // Reconfigure the service to monitor ALL apps (not just our own package).
         val info = serviceInfo ?: AccessibilityServiceInfo()
@@ -55,7 +54,7 @@ class KlarvoAccessibilityService : AccessibilityService() {
         info.packageNames = null
         info.notificationTimeout = 100
         serviceInfo = info
-        Log.i(TAG, "Configured for system-wide keyboard detection")
+        KlarvoLogger.i(TAG,"Configured for system-wide keyboard detection")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -82,7 +81,7 @@ class KlarvoAccessibilityService : AccessibilityService() {
         val imeVisible = try {
             windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
         } catch (e: Exception) {
-            Log.w(TAG, "windows list unavailable", e)
+            KlarvoLogger.w(TAG,"windows list unavailable", e)
             return
         }
         KlarvoOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
@@ -117,7 +116,7 @@ class KlarvoAccessibilityService : AccessibilityService() {
      */
     fun performEnter() {
         val rootNode = rootInActiveWindow ?: run {
-            Log.w(TAG, "performEnter: rootInActiveWindow is null")
+            KlarvoLogger.w(TAG,"performEnter: rootInActiveWindow is null")
             return
         }
         val focusedNode = findFocusedEditable(rootNode)
@@ -128,14 +127,14 @@ class KlarvoAccessibilityService : AccessibilityService() {
                     AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
                 )
                 if (!performed) {
-                    Log.d(TAG, "performEnter: ACTION_IME_ENTER returned false (app may not support it)")
+                    KlarvoLogger.d(TAG,"performEnter: ACTION_IME_ENTER returned false (app may not support it)")
                 }
             } else {
-                Log.d(TAG, "performEnter: ACTION_IME_ENTER requires API 30+, skipping")
+                KlarvoLogger.d(TAG,"performEnter: ACTION_IME_ENTER requires API 30+, skipping")
             }
             focusedNode.recycle()
         } else {
-            Log.d(TAG, "performEnter: no focused editable node found")
+            KlarvoLogger.d(TAG,"performEnter: no focused editable node found")
         }
         rootNode.recycle()
     }

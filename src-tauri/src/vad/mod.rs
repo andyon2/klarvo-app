@@ -692,8 +692,8 @@ mod tests {
             .filter(|(_, &p)| p >= 0.5)
             .map(|(i, &p)| (i, p))
             .collect();
-        eprintln!("\n[Probe] speech_like 1s: {} frames, above 0.5: {:?}", probs.len(), above_05);
-        eprintln!("[Probe] all probs: {:?}", &probs);
+        log::debug!("[vad] Probe speech_like 1s: {} frames, above 0.5: {:?}", probs.len(), above_05);
+        log::debug!("[vad] Probe all probs: {:?}", &probs);
         // No assertion -- diagnostic only
     }
 

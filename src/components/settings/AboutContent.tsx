@@ -104,6 +104,88 @@ function UpdateChecker() {
   );
 }
 
+// --- Logs Section ------------------------------------------------------------
+
+function LogsSection() {
+  const [status, setStatus] = useState<"idle" | "opening" | "sharing" | "done" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleOpenLogFolder = useCallback(async () => {
+    setStatus("opening");
+    setErrorMsg(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const logDir: string = await invoke("get_log_dir_path");
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(logDir);
+      setStatus("idle");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setStatus("error");
+    }
+  }, []);
+
+  const handleSendLogs = useCallback(async () => {
+    setStatus("sharing");
+    setErrorMsg(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const content: string = await invoke("read_recent_logs");
+
+      if (!content || content === "No log directories found." || content === "No log files found.") {
+        setErrorMsg("No logs to send yet. Use the app first.");
+        setStatus("error");
+        return;
+      }
+
+      // Send via the feedback webhook (N8N).
+      await invoke("send_feedback", {
+        category: "log-report",
+        message: content,
+        email: null,
+        contextArea: "settings/about",
+        area: "Logs",
+        includeDictation: false,
+      });
+      setStatus("done");
+      setTimeout(() => setStatus("idle"), 3000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setStatus("error");
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest">Logs</span>
+      <div className="flex items-center gap-2">
+        {isDesktop && (
+          <button
+            onClick={handleOpenLogFolder}
+            disabled={status === "opening"}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {status === "opening" ? "Opening..." : "Open log folder"}
+          </button>
+        )}
+        <button
+          onClick={handleSendLogs}
+          disabled={status === "sharing"}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-border/60 text-klarvo-muted hover:bg-klarvo-surface/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {status === "sharing" ? "Sending..." : status === "done" ? "Sent!" : "Send logs"}
+        </button>
+      </div>
+      <p className="text-[10px] text-klarvo-dim">
+        {isDesktop
+          ? "Open the folder to share manually, or send directly."
+          : "Sends logs to the developer for debugging."}
+      </p>
+      {errorMsg && <p className="text-[11px] text-klarvo-danger">{errorMsg}</p>}
+    </div>
+  );
+}
+
 // --- About Content -----------------------------------------------------------
 
 interface AboutContentProps {
@@ -116,6 +198,9 @@ export function AboutContent({ appVersion, onRestartOnboarding }: AboutContentPr
     <div className="flex flex-col gap-5">
       {/* Updates — desktop only */}
       {isDesktop && <UpdateChecker />}
+
+      {/* Logs — both platforms */}
+      {!isPreviewMode && <LogsSection />}
 
       {/* About */}
       <div className="flex flex-col gap-2">

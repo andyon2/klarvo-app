@@ -136,10 +136,10 @@ pub fn start_voice_command_monitor(handle: &AppHandle) -> Result<(), String> {
 
     // Log device format only after the Groq-key check passes -- avoids
     // misleading output when the monitor fails early due to a missing key.
-    eprintln!("[voice_command] Device format: {sample_rate} Hz, {channels} ch");
+    log::info!("[voice_command] Device format: {sample_rate} Hz, {channels} ch");
 
     let groq_provider = Arc::new(crate::stt::GroqWhisper::new(&groq_key));
-    eprintln!("[voice_command] Using Groq Whisper for command recognition");
+    log::info!("[voice_command] Using Groq Whisper for command recognition");
 
     // Clone AppHandle for the callback closure.
     let handle_for_cb = handle.clone();
@@ -168,7 +168,7 @@ pub fn start_voice_command_monitor(handle: &AppHandle) -> Result<(), String> {
             };
 
             if let Some(crate::voice_command::VoiceCommandEvent::SnippetReady(samples)) = event {
-                eprintln!("[voice_command] SnippetReady: {} samples ({:.1}s)", samples.len(), samples.len() as f64 / 16_000.0);
+                log::debug!("[voice_command] SnippetReady: {} samples ({:.1}s)", samples.len(), samples.len() as f64 / 16_000.0);
                 let handle = handle_for_cb.clone();
                 let last_dispatch = Arc::clone(&last_dispatch);
                 let provider = Arc::clone(&provider);
@@ -249,7 +249,7 @@ fn process_snippet(
     provider: Arc<crate::stt::GroqWhisper>,
     language: &str,
 ) {
-    eprintln!(
+    log::debug!(
         "[voice_command] Processing snippet: {} samples ({:.1}s at 16kHz)",
         samples.len(),
         samples.len() as f64 / 16_000.0
@@ -258,7 +258,7 @@ fn process_snippet(
     let wav_bytes = match audio::encode_to_wav(&samples, 16_000, 1) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("[voice_command] WAV encode failed: {e}");
+            log::error!("[voice_command] WAV encode failed: {e}");
             return;
         }
     };
@@ -268,23 +268,23 @@ fn process_snippet(
     let text = match text {
         Some(t) if !t.trim().is_empty() => t,
         _ => {
-            eprintln!("[voice_command] Snippet produced no text (silence or model missing)");
+            log::debug!("[voice_command] Snippet produced no text (silence or model missing)");
             return;
         }
     };
 
-    eprintln!("[voice_command] Whisper text: {text:?}");
+    log::debug!("[voice_command] Whisper text: {text:?}");
 
     // Match against known commands.
     let cmd = match recognize_command(&text) {
         Some(c) => c,
         None => {
-            eprintln!("[voice_command] No command recognised in: {text:?}");
+            log::debug!("[voice_command] No command recognised in: {text:?}");
             return;
         }
     };
 
-    eprintln!("[voice_command] Recognised command: {cmd:?}");
+    log::info!("[voice_command] Recognised command: {cmd:?}");
 
     // Debounce: ignore commands that arrive within DEBOUNCE_DURATION of the last.
     {
@@ -327,7 +327,7 @@ fn transcribe_with_groq(
     {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("[voice_command] Tokio runtime error: {e}");
+            log::error!("[voice_command] Tokio runtime error: {e}");
             return None;
         }
     };
@@ -337,7 +337,7 @@ fn transcribe_with_groq(
     let prompt = Some("Klarvo toggle, Klarvo start, Klarvo auto-stop, Klarvo autostop, Klarvo full auto, Klarvo stop, Klarvo stopp, Klarvo cancel, Klarvo abbrechen, Klarvo off, Klarvo aus");
     let result = rt.block_on(provider.transcribe(wav, language, prompt));
 
-    eprintln!(
+    log::debug!(
         "[voice_command] Groq completed in {:.1}s",
         start.elapsed().as_secs_f32()
     );
@@ -345,7 +345,7 @@ fn transcribe_with_groq(
     match result {
         Ok(text) => Some(text),
         Err(e) => {
-            eprintln!("[voice_command] Groq error: {e}");
+            log::error!("[voice_command] Groq error: {e}");
             None
         }
     }

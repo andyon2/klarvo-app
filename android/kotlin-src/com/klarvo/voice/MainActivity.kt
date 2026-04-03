@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
@@ -38,6 +37,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : TauriActivity() {
 
     companion object {
+        private const val TAG = "KlarvoMainActivity"
         private const val REQUEST_RECORD_AUDIO = 1001
         private const val REQUEST_POST_NOTIFICATIONS = 1002
     }
@@ -217,7 +217,7 @@ class MainActivity : TauriActivity() {
             )
             for (info in runningServices) {
                 if (info.resolveInfo.serviceInfo.packageName == packageName) {
-                    Log.d("MainActivity", "Accessibility service confirmed via AccessibilityManager")
+                    KlarvoLogger.d("MainActivity", "Accessibility service confirmed via AccessibilityManager")
                     return true
                 }
             }
@@ -238,7 +238,7 @@ class MainActivity : TauriActivity() {
             it.trim().equals(expectedComponent, ignoreCase = true)
         }
         if (found) {
-            Log.d("MainActivity", "Accessibility service confirmed via Settings.Secure fallback")
+            KlarvoLogger.d("MainActivity", "Accessibility service confirmed via Settings.Secure fallback")
         }
         return found
     }

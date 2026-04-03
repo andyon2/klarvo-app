@@ -1,7 +1,7 @@
 //! Tauri commands that don't fit neatly into a single category:
 //! profiles, snippets, sync, paste and window-management helpers.
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::config::{save_config, AppProfile, TextSnippet};
 use crate::license::LicensedFeature;
@@ -198,6 +198,104 @@ pub fn get_bar_position(state: State<'_, AppState>) -> Result<Option<(f64, f64)>
         (Some(x), Some(y)) => Some((x, y)),
         _ => None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Window / UI helpers
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Logs
+// ---------------------------------------------------------------------------
+
+/// Returns the absolute path to the app log directory.
+///
+/// Used by the frontend to open the folder (desktop) or display the path.
+#[tauri::command]
+pub fn get_log_dir_path(handle: AppHandle) -> Result<String, String> {
+    let log_dir = handle
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Failed to resolve log dir: {e}"))?;
+    Ok(log_dir.to_string_lossy().to_string())
+}
+
+/// Reads the most recent log file content (up to ~200 KB).
+///
+/// Collects all `*.log` files from both the Tauri app log directory
+/// (tauri-plugin-log / Rust logs) and the app data directory's `logs/`
+/// subfolder (KlarvoLogger / Kotlin logs on Android). Returns their
+/// concatenated content, sorted by name.
+#[tauri::command]
+pub fn read_recent_logs(handle: AppHandle) -> Result<String, String> {
+    let mut dirs_to_scan: Vec<std::path::PathBuf> = Vec::new();
+
+    // 1. Tauri app log dir (tauri-plugin-log writes here)
+    if let Ok(log_dir) = handle.path().app_log_dir() {
+        if log_dir.exists() {
+            dirs_to_scan.push(log_dir);
+        }
+    }
+
+    // 2. {app_data_dir}/logs/ (KlarvoLogger on Android writes here)
+    if let Ok(data_dir) = handle.path().app_data_dir() {
+        let kotlin_log_dir = data_dir.join("logs");
+        // Avoid scanning the same dir twice
+        if kotlin_log_dir.exists() && !dirs_to_scan.contains(&kotlin_log_dir) {
+            dirs_to_scan.push(kotlin_log_dir);
+        }
+    }
+
+    if dirs_to_scan.is_empty() {
+        return Ok("No log directories found.".into());
+    }
+
+    let mut files: Vec<_> = Vec::new();
+    for dir in &dirs_to_scan {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            files.extend(
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.path()
+                            .extension()
+                            .map_or(false, |ext| ext == "log")
+                    }),
+            );
+        }
+    }
+    files.sort_by_key(|e| e.file_name());
+
+    let mut content = String::new();
+    let max_bytes: usize = 200_000; // ~200 KB cap
+
+    for entry in files {
+        if content.len() >= max_bytes {
+            break;
+        }
+        if let Ok(text) = std::fs::read_to_string(entry.path()) {
+            if !content.is_empty() {
+                content.push_str("\n\n");
+            }
+            content.push_str(&format!(
+                "=== {} ===\n",
+                entry.file_name().to_string_lossy()
+            ));
+            let remaining = max_bytes.saturating_sub(content.len());
+            if text.len() > remaining {
+                content.push_str(&text[text.len() - remaining..]);
+                content.push_str("\n[... truncated ...]");
+            } else {
+                content.push_str(&text);
+            }
+        }
+    }
+
+    if content.is_empty() {
+        Ok("No log files found.".into())
+    } else {
+        Ok(content)
+    }
 }
 
 // ---------------------------------------------------------------------------
