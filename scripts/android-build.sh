@@ -128,6 +128,15 @@ if ! grep -q 'compileOptions' "$APP_GRADLE" 2>/dev/null; then
     echo "[patch] Added compileOptions to app/build.gradle.kts"
 fi
 
+# buildFeatures { buildConfig = true } -- required for BuildConfig.VERSION_NAME etc.
+if ! grep -q 'buildFeatures' "$APP_GRADLE" 2>/dev/null; then
+    sed -i '/kotlinOptions {/{
+        n
+        /jvmTarget/a\    }\n    buildFeatures {\n        buildConfig = true
+    }' "$APP_GRADLE"
+    echo "[patch] Added buildFeatures { buildConfig = true } to app/build.gradle.kts"
+fi
+
 # Coroutines dependency
 if ! grep -q 'kotlinx-coroutines-android' "$APP_GRADLE" 2>/dev/null; then
     sed -i '/implementation("com.google.android.material/a\    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")' "$APP_GRADLE"
