@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { AdvancedSettings } from "../types";
 import { getAdvancedSettings, saveAdvancedSettings } from "../tauri-commands";
 import { CloseIcon, SpinnerIcon, LockIcon } from "./icons";
+import { applyUiScale } from "../hooks/useUiScale";
 import { INPUT_CLS, LABEL_CLS } from "./ui";
 import { isMobile } from "../platform";
 import { MobileTextarea } from "./MobileTextarea";
@@ -445,19 +446,51 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
     </div>
   );
 
-  const renderSystemContent = () => (
-    <div className="flex flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
-        <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-2 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer">
-          <option value="debug">debug</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-        </select>
+  const renderSystemContent = () => {
+    const scaleOptions: { value: string; label: string }[] = [
+      { value: "small", label: "S" },
+      { value: "medium", label: "M" },
+      { value: "large", label: "L" },
+    ];
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        {/* UI Scale */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className={LABEL_CLS}>UI Scale</span>
+            <span className={hintCls}>Controls the overall size of text and UI elements.</span>
+          </div>
+          <div className="flex gap-0.5 bg-klarvo-bg border border-klarvo-border/60 rounded-lg p-0.5">
+            {scaleOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { set("uiScale", opt.value); applyUiScale(opt.value); }}
+                className={[
+                  "w-8 h-7 rounded-md text-xs font-semibold transition-all duration-100",
+                  settings.uiScale === opt.value
+                    ? "bg-klarvo-primary/15 text-klarvo-primary"
+                    : "text-klarvo-dim hover:text-klarvo-muted",
+                ].join(" ")}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Log Level */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Log Level</span><span className={hintCls}>Use "debug" when troubleshooting.</span></div>
+          <select value={settings.logLevel} onChange={(e) => set("logLevel", e.target.value)} className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-2 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer">
+            <option value="debug">debug</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+          </select>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderSectionContent = () => {
     switch (activeSection) {

@@ -63,6 +63,10 @@ class KlarvoOverlayService : Service() {
         // Long-press threshold -- after this delay a held touch becomes push-to-talk
         private const val LONG_PRESS_TIMEOUT_MS = 500L
 
+        // Debounce delay before showing the bubble. Gives checkForegroundBankingApp()
+        // time to detect and block, preventing the brief "flash" that banking apps catch.
+        private const val SHOW_DEBOUNCE_MS = 150L
+
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
@@ -379,13 +383,14 @@ class KlarvoOverlayService : Service() {
      */
     fun onBankingAppStateChanged(active: Boolean, packageName: String) {
         handler.post {
+            KlarvoLogger.d(TAG, "Banking state change: active=$active (was=$bankingAppActive), pkg=$packageName")
             if (active == bankingAppActive) return@post
             bankingAppActive = active
 
             if (active) {
                 KlarvoLogger.i(TAG, "Banking app detected: $packageName — hiding bubble")
                 hideBubble()
-                Toast.makeText(this, "Klarvo paused (banking app detected)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Klarvo paused — you can dismiss any remaining security warning from your banking app.", Toast.LENGTH_LONG).show()
             } else {
                 KlarvoLogger.i(TAG, "Banking app left foreground: $packageName — restoring bubble")
                 // Re-apply normal visibility rules: show if keyboard is open or alwaysVisible.
@@ -444,21 +449,40 @@ class KlarvoOverlayService : Service() {
         }
     }
 
+    /**
+     * Pending show runnable for debounced bubble display. When showBubble() is called,
+     * the actual WindowManager.addView is delayed by SHOW_DEBOUNCE_MS to give
+     * checkForegroundBankingApp() time to detect and block. This prevents the brief
+     * "flash" that banking apps like N26 catch as an active overlay.
+     */
+    private var pendingShowRunnable: Runnable? = null
+
     private fun showBubble() {
         if (bankingAppActive) return  // Never show while banking app is active
-        if (!isBubbleVisible && ::bubbleView.isInitialized) {
-            try {
-                reloadBubbleAppearance()
-                windowManager.addView(bubbleView, bubbleParams)
-                isBubbleVisible = true
-                updateNotification()
-            } catch (e: Exception) {
-                KlarvoLogger.w(TAG, "Failed to add bubbleView to WindowManager", e)
+        // Cancel any previous pending show to avoid duplicates
+        pendingShowRunnable?.let { handler.removeCallbacks(it) }
+        val runnable = Runnable {
+            pendingShowRunnable = null
+            if (bankingAppActive) return@Runnable  // Re-check after delay
+            if (!isBubbleVisible && ::bubbleView.isInitialized) {
+                try {
+                    reloadBubbleAppearance()
+                    windowManager.addView(bubbleView, bubbleParams)
+                    isBubbleVisible = true
+                    updateNotification()
+                } catch (e: Exception) {
+                    KlarvoLogger.w(TAG, "Failed to add bubbleView to WindowManager", e)
+                }
             }
         }
+        pendingShowRunnable = runnable
+        handler.postDelayed(runnable, SHOW_DEBOUNCE_MS)
     }
 
     private fun hideBubble() {
+        // Cancel any pending show — banking detection may arrive before the debounce fires
+        pendingShowRunnable?.let { handler.removeCallbacks(it) }
+        pendingShowRunnable = null
         if (isBubbleVisible && ::bubbleView.isInitialized) {
             try {
                 windowManager.removeView(bubbleView)

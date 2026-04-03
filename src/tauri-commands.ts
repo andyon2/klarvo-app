@@ -110,7 +110,7 @@ const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
   webhookHeaders: "{}",
   webhookTimeoutSecs: 10,
   logLevel: "info",
-  uiScale: "normal",
+  uiScale: "medium",
 };
 
 const MOCK_HISTORY: HistoryEntry[] = [

@@ -38,6 +38,7 @@ import { useRecording } from "./hooks/useRecording";
 import { useSettings } from "./hooks/useSettings";
 import { usePanels } from "./hooks/usePanels";
 import { useLicense } from "./hooks/useLicense";
+import { useUiScale } from "./hooks/useUiScale";
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -122,6 +123,7 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
 
 export default function App() {
   // --- Hooks ---
+  useUiScale(); // Apply persisted font-size scale to <html> on startup
   const settings = useSettings();
   const recording = useRecording(settings.cleanupStyle, settings.language);
   const license = useLicense();
