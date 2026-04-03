@@ -223,9 +223,9 @@ export function AboutContent({ appVersion, onRestartOnboarding }: AboutContentPr
         {onRestartOnboarding && (
           <button
             onClick={onRestartOnboarding}
-            className="mt-2 text-[11px] text-klarvo-dim hover:text-klarvo-muted underline underline-offset-2 transition-colors text-left"
+            className="mt-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10 hover:text-amber-400 transition-colors text-left"
           >
-            Setup assistant restart
+            Onboarding wiederholen
           </button>
         )}
       </div>

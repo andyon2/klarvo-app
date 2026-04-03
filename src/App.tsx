@@ -13,6 +13,7 @@ import {
   isPreviewMode,
   getOnboardingState,
   setOnboardingState,
+  clearApiKey,
 } from "./tauri-commands";
 import { CostDashboard } from "./components/CostDashboard";
 import { QuickTip } from "./components/QuickTip";
@@ -316,7 +317,23 @@ export default function App() {
   }, [settings]);
 
   // Called by SettingsPanel "Setup-Assistent erneut starten"
+  // Shows a confirmation dialog warning that API keys will be cleared,
+  // then resets onboarding state and removes all provider keys so the
+  // onboarding flow is realistic (user must re-enter keys).
   const handleRestartOnboarding = useCallback(async () => {
+    const confirmed = window.confirm(
+      "Onboarding neu starten?\n\n" +
+      "Alle API-Keys (Groq, DeepSeek, etc.) werden entfernt, " +
+      "damit das Onboarding realistisch durchlaufen werden kann.\n\n" +
+      "Du kannst sie danach im Onboarding oder in den Einstellungen neu eingeben."
+    );
+    if (!confirmed) return;
+
+    // Clear all provider API keys
+    for (const provider of ["groq", "deepseek", "openai", "openrouter"]) {
+      await clearApiKey(provider).catch(console.error);
+    }
+
     const freshState: import("./types").OnboardingState = {
       completed: false,
       skipped: false,
