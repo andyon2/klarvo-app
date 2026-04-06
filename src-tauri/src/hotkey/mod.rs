@@ -36,6 +36,10 @@ pub enum PipelineState {
     Done,
     /// An error occurred at some stage of the pipeline.
     Error,
+    /// A non-fatal issue occurred; the pipeline still produced output.
+    /// The frontend should surface this as a warning (e.g. yellow toast)
+    /// rather than a hard error.  Text was still pasted.
+    Warning,
 }
 
 /// Payload for the `klarvo://state-changed` Tauri event.
@@ -53,6 +57,10 @@ pub struct PipelineEvent {
     /// Human-readable error message (only present when `state == Error`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Human-readable warning message (only present when `state == Warning`).
+    /// Unlike `error`, the pipeline completed successfully — text was pasted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
     /// True when the text was written to the clipboard but Ctrl+V was NOT sent
     /// (focus verification failed). The frontend should show a "Text in clipboard"
     /// indicator so the user knows to paste manually.
@@ -70,6 +78,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            warning: None,
             clipboard_only: None,
         }
     }
@@ -80,6 +89,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            warning: None,
             clipboard_only: None,
         }
     }
@@ -90,6 +100,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            warning: None,
             clipboard_only: None,
         }
     }
@@ -100,6 +111,7 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: None,
+            warning: None,
             clipboard_only: None,
         }
     }
@@ -111,6 +123,7 @@ impl PipelineEvent {
             text: Some(text),
             raw_text: Some(raw_text),
             error: None,
+            warning: None,
             clipboard_only: None,
         }
     }
@@ -124,6 +137,7 @@ impl PipelineEvent {
             text: Some(text),
             raw_text: Some(raw_text),
             error: None,
+            warning: None,
             clipboard_only: Some(true),
         }
     }
@@ -134,6 +148,25 @@ impl PipelineEvent {
             text: None,
             raw_text: None,
             error: Some(msg.into()),
+            warning: None,
+            clipboard_only: None,
+        }
+    }
+
+    /// Non-fatal warning: the pipeline completed and text was pasted, but
+    /// something went wrong along the way (e.g. LLM cleanup failed and raw
+    /// text was used as fallback).  The frontend should surface this as a
+    /// yellow / amber indicator rather than a hard error.
+    ///
+    /// Note: this event is emitted *before* the done event so the frontend
+    /// can briefly show the warning before transitioning to done state.
+    pub fn warn(msg: impl Into<String>) -> Self {
+        PipelineEvent {
+            state: PipelineState::Warning,
+            text: None,
+            raw_text: None,
+            error: None,
+            warning: Some(msg.into()),
             clipboard_only: None,
         }
     }

@@ -336,6 +336,8 @@ export default function FloatingBar() {
   useEffect(() => {
     const unlisten = onStateChanged((payload) => {
       const newState = payload.state as RecordingState;
+      // Warning is transient — don't change bar state, pipeline continues to "done".
+      if (newState === "warning") return;
       setState(newState);
 
       if (newState === "recording") {

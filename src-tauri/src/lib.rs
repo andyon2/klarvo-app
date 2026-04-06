@@ -426,6 +426,7 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
         hotkey::PipelineState::Transcribing => "Klarvo \u{00b7} Early Access \u{2014} Transcribing...",
         hotkey::PipelineState::Cleaning => "Klarvo \u{00b7} Early Access \u{2014} Processing...",
         hotkey::PipelineState::Error => "Klarvo \u{00b7} Early Access \u{2014} Error",
+        hotkey::PipelineState::Warning => "Klarvo \u{00b7} Early Access",
     };
 
     match handle.tray_by_id("klarvo-tray") {

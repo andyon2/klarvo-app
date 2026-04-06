@@ -119,6 +119,9 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             let model_dir = std::env::var("APPDATA")
                 .map(|d| std::path::PathBuf::from(d).join("com.klarvo.voice").join("models"))
                 .unwrap_or_else(|_| std::path::PathBuf::from("models"));
+            // TODO(multi-model): Replace hardcoded filename with cfg.local_llm_model (a new
+            // Settings field). The filename drives prompt-format detection in LocalLlmCleanup::new,
+            // so changing it here is sufficient — no other pipeline changes needed.
             let model_path = model_dir.join("qwen2.5-1.5b-instruct-q4_k_m.gguf");
             log::info!(
                 "[pipeline] Local LLM cleanup provider: model={}",
@@ -129,6 +132,60 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
         // "deepseek" and any unrecognised value
         _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
     }
+}
+
+/// Returns `true` for transient, retryable LLM errors (rate limit or server error).
+///
+/// - 429 Too Many Requests (rate limit)
+/// - 5xx Server Error (temporary provider outage)
+///
+/// All other errors (400 Bad Request, 401 Unauthorized, 403 Forbidden, …) are
+/// considered permanent and are NOT retried.
+pub fn is_retryable_llm_error(err: &llm::LlmError) -> bool {
+    matches!(err, llm::LlmError::ApiError { status, .. } if *status == 429 || *status >= 500)
+}
+
+/// Selects an alternative LLM cleanup provider, excluding `primary_provider`.
+///
+/// Iterates the fixed fallback order (DeepSeek → Groq → OpenAI → OpenRouter)
+/// and returns the first provider whose API key is non-empty, skipping the
+/// one whose name matches `primary_provider`.
+///
+/// Returns `None` when no suitable alternative exists (all keys empty or
+/// only the primary provider has a key).
+///
+/// "local" is never used as a fallback here because network errors are the
+/// trigger for fallback and local inference does not require a network call.
+pub fn resolve_fallback_provider(
+    cfg: &AppConfig,
+    primary_provider: &str,
+) -> Option<(Arc<dyn CleanupProvider>, &'static str)> {
+    // Ordered candidate list: (provider name, api key)
+    let candidates: &[(&str, &str)] = &[
+        ("deepseek", &cfg.deepseek_api_key),
+        ("groq", &cfg.groq_api_key),
+        ("openai", &cfg.openai_api_key),
+        ("openrouter", &cfg.openrouter_api_key),
+    ];
+
+    for (name, key) in candidates {
+        if *name == primary_provider || key.is_empty() {
+            continue;
+        }
+        let provider: Arc<dyn CleanupProvider> = match *name {
+            "groq" => Arc::new(llm::GroqCleanup::new(*key)),
+            "openai" => Arc::new(llm::OpenAiCleanup::new(*key)),
+            "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
+                *key,
+                "https://openrouter.ai/api/v1/chat/completions",
+                "deepseek/deepseek-chat",
+            )),
+            // "deepseek" and any unrecognised value
+            _ => Arc::new(llm::DeepSeekCleanup::new(*key)),
+        };
+        return Some((provider, name));
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,7 +1095,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         };
 
         let cleanup_start = std::time::Instant::now();
-        match chunked_cleanup(
+        let primary_result = chunked_cleanup(
             cleanup_provider.as_ref(),
             &raw_text,
             style,
@@ -1046,8 +1103,34 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             custom_prompt.as_deref(),
             output_lang_opt,
         )
-        .await
-        {
+        .await;
+
+        // Helper: degrade to raw text when LLM cleanup fails.
+        // Increments error counter, emits a warning event, and returns raw text.
+        let degrade_to_raw = |err: &dyn std::fmt::Display| {
+            if let Ok(mut m) = state.feedback_metrics.lock() {
+                m.llm_error_count = m.llm_error_count.saturating_add(1);
+            }
+            let short_reason = friendly_error("", &err.to_string());
+            let _ = handle.emit(
+                EVENT_STATE_CHANGED,
+                PipelineEvent::warn(format!(
+                    "Cleanup failed — raw text inserted.{}",
+                    if short_reason.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {short_reason}")
+                    }
+                )),
+            );
+            llm::CleanupResult {
+                text: raw_text.clone(),
+                prompt_tokens: None,
+                completion_tokens: None,
+            }
+        };
+
+        match primary_result {
             Ok(r) => {
                 let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                 llm_ms = Some(cleanup_ms);
@@ -1060,15 +1143,57 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 );
                 r
             }
-            Err(e) => {
-                if let Ok(mut m) = state.feedback_metrics.lock() {
-                    m.llm_error_count = m.llm_error_count.saturating_add(1);
+            Err(ref primary_err) if is_retryable_llm_error(primary_err) => {
+                // 429 or 5xx: try a fallback provider before giving up.
+                let cfg_snapshot = state.config.lock().ok().map(|g| g.clone());
+                let fallback = cfg_snapshot
+                    .as_ref()
+                    .and_then(|c| resolve_fallback_provider(c, &llm_provider_name));
+
+                if let Some((fallback_provider, fallback_name)) = fallback {
+                    log::info!(
+                        "[pipeline] Primary LLM provider {} failed ({primary_err}), trying fallback: {fallback_name}",
+                        llm_provider_name
+                    );
+                    match chunked_cleanup(
+                        fallback_provider.as_ref(),
+                        &raw_text,
+                        style,
+                        dict_list.as_deref(),
+                        custom_prompt.as_deref(),
+                        output_lang_opt,
+                    )
+                    .await
+                    {
+                        Ok(r) => {
+                            let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+                            llm_ms = Some(cleanup_ms);
+                            log::info!(
+                                "[pipeline] Primary LLM provider failed ({}), fallback to {} succeeded ({}ms)",
+                                primary_err,
+                                fallback_name,
+                                cleanup_ms
+                            );
+                            r
+                        }
+                        Err(ref fallback_err) => {
+                            log::warn!(
+                                "[pipeline] Primary ({primary_err}) and fallback ({fallback_err}) both failed, using raw text"
+                            );
+                            degrade_to_raw(fallback_err)
+                        }
+                    }
+                } else {
+                    log::warn!(
+                        "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
+                    );
+                    degrade_to_raw(primary_err)
                 }
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error(friendly_error("Text cleanup failed", &e.to_string())),
-                );
-                return;
+            }
+            Err(ref e) => {
+                // Non-retryable error (400, 401, 403, …): degrade immediately.
+                log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
+                degrade_to_raw(e)
             }
         }
     };
@@ -1828,6 +1953,124 @@ mod tests {
             ..AppConfig::default()
         };
         let _provider = resolve_cleanup_provider(&cfg);
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_fallback_provider tests
+    // -----------------------------------------------------------------------
+
+    /// When primary is "deepseek" and groq key is available, groq is the fallback.
+    #[test]
+    fn test_resolve_fallback_provider_deepseek_primary_groq_fallback() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            ..AppConfig::default()
+        };
+        let result = resolve_fallback_provider(&cfg, "deepseek");
+        assert!(result.is_some(), "should find groq as fallback");
+        let (_, name) = result.unwrap();
+        assert_eq!(name, "groq");
+    }
+
+    /// When primary is "groq", deepseek is preferred as first candidate.
+    #[test]
+    fn test_resolve_fallback_provider_groq_primary_deepseek_fallback() {
+        let cfg = AppConfig {
+            llm_provider: "groq".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            ..AppConfig::default()
+        };
+        let result = resolve_fallback_provider(&cfg, "groq");
+        assert!(result.is_some(), "should find deepseek as fallback");
+        let (_, name) = result.unwrap();
+        assert_eq!(name, "deepseek");
+    }
+
+    /// When primary is "deepseek" and no other key is set, returns None.
+    #[test]
+    fn test_resolve_fallback_provider_no_fallback_available() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            groq_api_key: String::new(),
+            openai_api_key: String::new(),
+            openrouter_api_key: String::new(),
+            ..AppConfig::default()
+        };
+        let result = resolve_fallback_provider(&cfg, "deepseek");
+        assert!(result.is_none(), "should return None when no other key is configured");
+    }
+
+    /// When all keys are empty, returns None regardless of primary.
+    #[test]
+    fn test_resolve_fallback_provider_all_keys_empty() {
+        let cfg = AppConfig::default();
+        let result = resolve_fallback_provider(&cfg, "deepseek");
+        assert!(result.is_none(), "should return None when all keys are empty");
+    }
+
+    /// Primary provider is excluded even when its key is set.
+    #[test]
+    fn test_resolve_fallback_provider_skips_primary() {
+        let cfg = AppConfig {
+            llm_provider: "openai".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            openrouter_api_key: "sk-or".to_string(),
+            ..AppConfig::default()
+        };
+        let result = resolve_fallback_provider(&cfg, "openai");
+        assert!(result.is_some(), "should find openrouter as fallback");
+        let (_, name) = result.unwrap();
+        assert_eq!(name, "openrouter");
+    }
+
+    // -----------------------------------------------------------------------
+    // is_retryable_llm_error tests
+    // -----------------------------------------------------------------------
+
+    /// 429 is retryable.
+    #[test]
+    fn test_is_retryable_llm_error_429() {
+        let err = llm::LlmError::ApiError { status: 429, message: "rate limit".to_string() };
+        assert!(is_retryable_llm_error(&err));
+    }
+
+    /// 500 is retryable.
+    #[test]
+    fn test_is_retryable_llm_error_500() {
+        let err = llm::LlmError::ApiError { status: 500, message: "internal server error".to_string() };
+        assert!(is_retryable_llm_error(&err));
+    }
+
+    /// 503 is retryable.
+    #[test]
+    fn test_is_retryable_llm_error_503() {
+        let err = llm::LlmError::ApiError { status: 503, message: "service unavailable".to_string() };
+        assert!(is_retryable_llm_error(&err));
+    }
+
+    /// 401 is NOT retryable (auth error).
+    #[test]
+    fn test_is_retryable_llm_error_401_not_retryable() {
+        let err = llm::LlmError::ApiError { status: 401, message: "unauthorized".to_string() };
+        assert!(!is_retryable_llm_error(&err));
+    }
+
+    /// 400 is NOT retryable (bad request).
+    #[test]
+    fn test_is_retryable_llm_error_400_not_retryable() {
+        let err = llm::LlmError::ApiError { status: 400, message: "bad request".to_string() };
+        assert!(!is_retryable_llm_error(&err));
+    }
+
+    /// EmptyInput is NOT retryable (not an ApiError).
+    #[test]
+    fn test_is_retryable_llm_error_non_api_error() {
+        let err = llm::LlmError::EmptyInput;
+        assert!(!is_retryable_llm_error(&err));
     }
 
     /// When `insert_and_send` is `true` in config, the flag is correctly read.

@@ -19,10 +19,17 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
   const [rawText, setRawText] = useState<string | null>(null);
   const [showRawText, setShowRawText] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
   // Subscribe to backend pipeline events (hotkey-triggered recording on desktop).
   useEffect(() => {
     const unlisten = onStateChanged((p) => {
+      // Warning is transient: store the message but don't update recordingState
+      // (the pipeline continues and will send "done" next).
+      if (p.state === "warning") {
+        if (p.warning) setWarningMessage(p.warning);
+        return;
+      }
       setRecordingState(p.state as RecordingState);
       if (p.text !== undefined) { setResultText(p.text); setOriginalResultText(p.text); }
       if (p.rawText !== undefined) setRawText(p.rawText);
@@ -35,6 +42,7 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
     if (recordingState === "done" || recordingState === "error") {
       setRecordingState("idle");
       setErrorMessage(null);
+      setWarningMessage(null);
       return;
     }
 
@@ -69,6 +77,7 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
       setRawText(null);
       setShowRawText(false);
       setErrorMessage(null);
+      setWarningMessage(null);
       try {
         if (isMobile) {
           await startBrowserRecording();
@@ -92,6 +101,7 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
     showRawText,
     setShowRawText,
     errorMessage,
+    warningMessage,
     handleRecordToggle,
   };
 }

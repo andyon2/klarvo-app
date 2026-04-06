@@ -10,15 +10,16 @@ export type HotkeyMode = "toggle" | "hold" | "autostop" | "auto";
 
 // Payload emitted by the backend on every state transition of the hotkey pipeline.
 export interface StateChangedPayload {
-  state: "recording" | "transcribing" | "cleaning" | "done" | "idle" | "error";
+  state: "recording" | "transcribing" | "cleaning" | "done" | "idle" | "error" | "warning";
   text?: string;           // present when state === "done": cleaned result text
   rawText?: string;        // present when state === "done": raw transcript before cleanup
   error?: string;          // present when state === "error": human-readable message
+  warning?: string;        // present when state === "warning": non-fatal issue, pipeline continued
   clipboardOnly?: boolean; // present when state === "done": true when focus-restore failed and only clipboard was written
 }
 
 // Recording state machine states.
-export type RecordingState = "idle" | "recording" | "transcribing" | "cleaning" | "done" | "error";
+export type RecordingState = "idle" | "recording" | "transcribing" | "cleaning" | "done" | "error" | "warning";
 
 // Result returned from stop_recording Tauri command.
 export interface StopRecordingResult {
@@ -143,6 +144,7 @@ export const STATUS_LABELS: Record<RecordingState, string> = {
   cleaning: "Cleaning up...",
   done: "Done",
   error: "Error",
+  warning: "Warning",
 };
 
 // Fine-grained advanced settings for power users.
