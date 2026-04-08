@@ -10,15 +10,8 @@ import {
 } from "../tauri-commands";
 import { LockIcon } from "./icons";
 
-// Static metadata for all supported models.
-// tiny/base removed — quality too low to represent Klarvo.
-const MODEL_LABELS: Record<string, string> = {
-  small: "small (488 MB) — Recommended",
-  medium: "medium (1.5 GB)",
-  "large-v3": "large-v3 (3.1 GB)",
-};
-
-// Only small is free. medium and large-v3 require a paid license.
+// medium and large-v3 require a paid license.
+// The German-optimized model (tiny-german-1224-q8_0) is free.
 const PAID_MODELS = new Set(["medium", "large-v3"]);
 
 interface DownloadState {
@@ -212,13 +205,14 @@ export function WhisperModelManager({
             if (!isPaid && PAID_MODELS.has(id)) return;
             onModelChange(id);
           }}
-          className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer max-w-[220px]"
+          className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer max-w-[320px]"
         >
-          {Object.entries(MODEL_LABELS).map(([id, label]) => {
-            const locked = !isPaid && PAID_MODELS.has(id);
+          {models.map((model) => {
+            const locked = !isPaid && PAID_MODELS.has(model.id);
+            const label = `${model.description} (${formatBytes(model.sizeBytes)})`;
             return (
-              <option key={id} value={id} disabled={locked}>
-                {locked ? `${label} (Paid)` : label}
+              <option key={model.id} value={model.id} disabled={locked}>
+                {locked ? `${label} — Paid` : label}
               </option>
             );
           })}

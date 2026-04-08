@@ -28,6 +28,31 @@ const DEFAULT_CONTEXT_SIZE: u32 = 4096;
 const DEFAULT_TEMPERATURE: f32 = 0.3;
 
 // ---------------------------------------------------------------------------
+// Prompt format detection
+// ---------------------------------------------------------------------------
+
+/// Chat prompt format variants supported by the local LLM provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptFormat {
+    /// ChatML format — used by Qwen, Mistral, LLaMA-3, Phi-3, etc.
+    ChatMl,
+    /// Gemma format — used by Gemma 3 and Gemma 4 (no dedicated system role).
+    Gemma,
+}
+
+impl PromptFormat {
+    /// Detects the prompt format from a GGUF model filename (case-insensitive).
+    pub fn from_filename(filename: &str) -> Self {
+        let lower = filename.to_lowercase();
+        if lower.contains("gemma") {
+            Self::Gemma
+        } else {
+            Self::ChatMl
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Loaded model state
 // ---------------------------------------------------------------------------
 
@@ -60,6 +85,7 @@ unsafe impl Sync for LoadedModel {}
 /// reference across the async boundary.
 pub struct LocalLlmCleanup {
     model_path: PathBuf,
+    prompt_format: PromptFormat,
     // Arc so we can clone a handle into spawn_blocking without borrowing &self.
     state: Arc<Mutex<Option<LoadedModel>>>,
 }
@@ -69,8 +95,15 @@ impl LocalLlmCleanup {
     ///
     /// The model is NOT loaded yet — that happens on the first `cleanup()` call.
     pub fn new(model_path: PathBuf) -> Self {
+        let prompt_format = model_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(PromptFormat::from_filename)
+            .unwrap_or(PromptFormat::ChatMl);
+
         Self {
             model_path,
+            prompt_format,
             state: Arc::new(Mutex::new(None)),
         }
     }
@@ -208,13 +241,19 @@ impl LocalLlmCleanup {
         Ok(output.trim().to_string())
     }
 
-    /// Builds a chat-formatted prompt for Qwen2.5-Instruct (ChatML format).
-    fn build_prompt(system: &str, user: &str) -> String {
-        format!(
-            "<|im_start|>system\n{system}<|im_end|>\n\
-             <|im_start|>user\n{user}<|im_end|>\n\
-             <|im_start|>assistant\n"
-        )
+    /// Builds a chat-formatted prompt using the format detected from the model filename.
+    fn build_prompt(&self, system: &str, user: &str) -> String {
+        match self.prompt_format {
+            PromptFormat::ChatMl => format!(
+                "<|im_start|>system\n{system}<|im_end|>\n\
+                 <|im_start|>user\n{user}<|im_end|>\n\
+                 <|im_start|>assistant\n"
+            ),
+            PromptFormat::Gemma => format!(
+                "<start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n\
+                 <start_of_turn>model\n"
+            ),
+        }
     }
 
     /// Spawns a blocking inference task and returns the result.
@@ -249,7 +288,7 @@ impl CleanupProvider for LocalLlmCleanup {
         }
 
         let system = style.system_prompt(dictionary_terms, custom_prompt);
-        let prompt = Self::build_prompt(&system, raw_text);
+        let prompt = self.build_prompt(&system, raw_text);
 
         let text = self.run_inference(prompt).await?;
         Ok(CleanupResult {
@@ -273,7 +312,7 @@ impl CleanupProvider for LocalLlmCleanup {
 
         let system =
             style.system_prompt_with_translation(dictionary_terms, custom_prompt, output_language);
-        let prompt = Self::build_prompt(&system, raw_text);
+        let prompt = self.build_prompt(&system, raw_text);
 
         let text = self.run_inference(prompt).await?;
         Ok(CleanupResult {
@@ -290,7 +329,7 @@ impl CleanupProvider for LocalLlmCleanup {
     ) -> Result<CleanupResult, LlmError> {
         let system = CleanupStyle::command_mode_system_prompt();
         let user = format!("Selected text:\n{selected_text}\n\nCommand: {voice_command}");
-        let prompt = Self::build_prompt(system, &user);
+        let prompt = self.build_prompt(system, &user);
 
         let text = self.run_inference(prompt).await?;
         Ok(CleanupResult {
@@ -302,7 +341,7 @@ impl CleanupProvider for LocalLlmCleanup {
 
     async fn reformat(&self, text: &str, format: &str) -> Result<CleanupResult, LlmError> {
         let system = super::reformat_system_prompt(format);
-        let prompt = Self::build_prompt(system, text);
+        let prompt = self.build_prompt(system, text);
 
         let result_text = self.run_inference(prompt).await?;
         Ok(CleanupResult {
@@ -322,11 +361,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_prompt_format() {
-        let prompt = LocalLlmCleanup::build_prompt("You are helpful.", "Hello");
+    fn build_prompt_chatml() {
+        let p = LocalLlmCleanup::new(PathBuf::from("/models/qwen.gguf"));
+        let prompt = p.build_prompt("You are helpful.", "Hello");
         assert!(prompt.contains("<|im_start|>system\nYou are helpful.<|im_end|>"));
         assert!(prompt.contains("<|im_start|>user\nHello<|im_end|>"));
         assert!(prompt.ends_with("<|im_start|>assistant\n"));
+    }
+
+    #[test]
+    fn build_prompt_gemma() {
+        let p = LocalLlmCleanup::new(PathBuf::from("/models/gemma-4-e2b.gguf"));
+        let prompt = p.build_prompt("System.", "User input.");
+        assert!(prompt.starts_with("<start_of_turn>user\nSystem.\n\nUser input.<end_of_turn>"));
+        assert!(prompt.ends_with("<start_of_turn>model\n"));
+        assert!(!prompt.contains("<|im_start|>"));
+    }
+
+    #[test]
+    fn prompt_format_detection() {
+        assert_eq!(PromptFormat::from_filename("qwen2.5-instruct.gguf"), PromptFormat::ChatMl);
+        assert_eq!(PromptFormat::from_filename("gemma-4-e2b-it.gguf"), PromptFormat::Gemma);
+        assert_eq!(PromptFormat::from_filename("Gemma-4-E4B.gguf"), PromptFormat::Gemma);
     }
 
     #[test]

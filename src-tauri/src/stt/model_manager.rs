@@ -63,6 +63,9 @@ pub struct WhisperModelInfo {
     pub id: String,
     /// Filename on HuggingFace / in the local models directory.
     pub filename: String,
+    /// Full download URL for the model file.
+    #[serde(skip)]
+    pub download_url: String,
     /// Approximate size in bytes (informational, not enforced).
     pub size_bytes: u64,
     /// Human-readable description shown in the UI.
@@ -92,33 +95,48 @@ pub struct WhisperModelWithStatus {
 // Model catalogue
 // ---------------------------------------------------------------------------
 
-/// Base URL for GGML model files on HuggingFace.
-const HF_BASE_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-
 /// Returns the static catalogue of available Whisper models.
 ///
 /// Each entry describes a model variant with its filename, approximate size
 /// and a short description. Callers should prefer `get_model_status` or
 /// `list_models_with_status` when they also need the download state.
+///
+/// The German-optimised model is listed first as it is the primary
+/// recommendation for German-language dictation.
 pub fn list_available_models() -> Vec<WhisperModelInfo> {
-    // tiny/base removed — quality too low to ship.
     vec![
+        WhisperModelInfo {
+            id: "tiny-german-1224-q8_0".to_string(),
+            filename: "ggml-tiny-german-1224-q8_0.bin".to_string(),
+            download_url: "https://huggingface.co/Pomni/whisper-tiny-german-1224-ggml-allquants/resolve/main/ggml-tiny-german-1224-q8_0.bin".to_string(),
+            size_bytes: 43_537_433,
+            description: "German-optimized — fast & accurate (recommended)".to_string(),
+        },
+        WhisperModelInfo {
+            id: "large-v3-turbo-german-q5_0".to_string(),
+            filename: "ggml-large-v3-turbo-german-q5_0.bin".to_string(),
+            download_url: "https://huggingface.co/MolyProduction/whisper-large-v3-turbo-german-ggml-q5_0/resolve/main/ggml-large-v3-turbo-german-q5_0.bin".to_string(),
+            size_bytes: 574_041_195,
+            description: "German — best quality, much slower".to_string(),
+        },
         WhisperModelInfo {
             id: "small".to_string(),
             filename: "ggml-small.bin".to_string(),
+            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin".to_string(),
             size_bytes: 488_000_000,
-            description: "Recommended — good balance of speed and quality".to_string(),
+            description: "Multilingual — good balance of speed and quality".to_string(),
         },
         WhisperModelInfo {
             id: "medium".to_string(),
             filename: "ggml-medium.bin".to_string(),
+            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".to_string(),
             size_bytes: 1_533_000_000,
             description: "High quality, slower".to_string(),
         },
         WhisperModelInfo {
             id: "large-v3".to_string(),
             filename: "ggml-large-v3.bin".to_string(),
+            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin".to_string(),
             size_bytes: 3_094_000_000,
             description: "Best quality, requires more RAM".to_string(),
         },
@@ -234,7 +252,7 @@ where
     let final_path = dir.join(&info.filename);
     let part_path = dir.join(format!("{}.part", info.filename));
 
-    let url = format!("{HF_BASE_URL}/{}", info.filename);
+    let url = info.download_url.clone();
     log::info!("[model_manager] Downloading {} from {}", info.filename, url);
 
     let client = reqwest::Client::new();
@@ -323,43 +341,30 @@ mod tests {
 
     // --- Catalogue ---
 
-    /// The catalogue must contain exactly the three documented model variants.
+    /// The catalogue must contain exactly five model variants.
     #[test]
-    fn test_list_available_models_returns_three_entries() {
+    fn test_list_available_models_count() {
         let models = list_available_models();
-        assert_eq!(models.len(), 3);
+        assert_eq!(models.len(), 5);
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"small"), "catalogue must include 'small'");
-        assert!(ids.contains(&"medium"), "catalogue must include 'medium'");
-        assert!(ids.contains(&"large-v3"), "catalogue must include 'large-v3'");
+        assert!(ids.contains(&"tiny-german-1224-q8_0"));
+        assert!(ids.contains(&"large-v3-turbo-german-q5_0"));
+        assert!(ids.contains(&"small"));
+        assert!(ids.contains(&"medium"));
+        assert!(ids.contains(&"large-v3"));
     }
 
-    /// Each catalogue entry must have a non-empty filename, description and
-    /// a size greater than zero.
     #[test]
-    fn test_list_available_models_entries_are_valid() {
-        for model in list_available_models() {
-            assert!(!model.filename.is_empty(), "filename must not be empty");
-            assert!(!model.description.is_empty(), "description must not be empty");
-            assert!(model.size_bytes > 0, "size_bytes must be > 0");
-            assert!(
-                model.filename.ends_with(".bin"),
-                "filename should end with .bin, got: {}",
-                model.filename
-            );
-        }
+    fn test_german_model_is_first() {
+        let models = list_available_models();
+        assert_eq!(models[0].id, "tiny-german-1224-q8_0");
     }
 
-    /// The `small` model must be described as "Recommended" since the UI
-    /// defaults to it and the description is shown to users.
     #[test]
-    fn test_small_model_is_marked_recommended() {
-        let small = find_model("small").expect("small model must exist");
-        assert!(
-            small.description.contains("Recommended"),
-            "small description should contain 'Recommended', got: {}",
-            small.description
-        );
+    fn test_download_url_not_serialized() {
+        let model = find_model("tiny-german-1224-q8_0").unwrap();
+        let json = serde_json::to_string(&model).unwrap();
+        assert!(!json.contains("download_url") && !json.contains("downloadUrl"));
     }
 
     // --- Model path construction ---

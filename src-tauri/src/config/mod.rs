@@ -843,7 +843,7 @@ fn default_device_id() -> String {
 }
 
 fn default_local_whisper_model() -> String {
-    "small".to_string()
+    "tiny-german-1224-q8_0".to_string()
 }
 
 fn default_local_whisper_gpu() -> bool {
@@ -1987,11 +1987,11 @@ mod tests {
 
     // --- local_whisper field tests ---
 
-    /// Default `local_whisper_model` is `"small"`.
+    /// Default `local_whisper_model` is the German-optimized model.
     #[test]
-    fn test_default_local_whisper_model_is_small() {
+    fn test_default_local_whisper_model_is_german() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.local_whisper_model, "small");
+        assert_eq!(cfg.local_whisper_model, "tiny-german-1224-q8_0");
     }
 
     /// Default `local_whisper_gpu` is `true`.
@@ -2024,8 +2024,8 @@ mod tests {
         std::fs::write(dir.path().join("config.json"), partial.as_bytes()).unwrap();
         let cfg = load_config(dir.path());
         assert_eq!(
-            cfg.local_whisper_model, "small",
-            "missing localWhisperModel should default to 'small'"
+            cfg.local_whisper_model, "tiny-german-1224-q8_0",
+            "missing localWhisperModel should default to German model"
         );
         assert!(
             cfg.local_whisper_gpu,
