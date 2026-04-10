@@ -14,7 +14,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel, Special};
+use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
 use super::{CleanupProvider, CleanupResult, CleanupStyle, LlmError};
@@ -223,7 +223,7 @@ impl LocalLlmCleanup {
             // Decode token to text using the non-deprecated token_to_piece API.
             let piece = loaded
                 .model
-                .token_to_piece(new_token, &mut decoder, Special::Tokenize == Special::Tokenize, None)
+                .token_to_piece(new_token, &mut decoder, true, None)
                 .map_err(|e| LlmError::InferenceError(format!("Token decode failed: {e}")))?;
             output.push_str(&piece);
 

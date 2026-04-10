@@ -172,6 +172,34 @@ object KlarvoApi {
     }
 
     /**
+     * Reads dictionary terms from dictionary.json in the app's data directory.
+     *
+     * The Rust backend persists the user's custom word list to dictionary.json
+     * (NOT to config.json), so we must read it separately.
+     *
+     * Format: {"terms": ["Kubernetes", "TypeScript", "Klarvo"]}
+     * Returns a comma-separated string matching terms_as_list() in Rust,
+     * e.g. "Kubernetes, TypeScript, Klarvo".
+     * Returns an empty string if the file does not exist or contains no terms.
+     * Never throws -- all failures produce an empty string (graceful degradation).
+     */
+    private fun loadDictionaryTerms(context: Context): String {
+        return try {
+            val dictFile = File(getDataDir(context), "dictionary.json")
+            if (!dictFile.exists()) return ""
+            val json = JSONObject(dictFile.readText())
+            val termsArray = json.optJSONArray("terms") ?: return ""
+            val terms = (0 until termsArray.length())
+                .map { termsArray.getString(it) }
+                .filter { it.isNotBlank() }
+            terms.joinToString(", ")
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[loadDictionaryTerms] failed to read dictionary.json: ${e.message}")
+            ""
+        }
+    }
+
+    /**
      * Reads config.json from the app's data directory.
      * Tauri's app_data_dir() resolves to dataDir, not filesDir.
      * Returns null if the file doesn't exist or keys are missing.
@@ -211,7 +239,10 @@ object KlarvoApi {
             val lsLastValidatedAt = json.optLong("lsLastValidatedAt", 0L)
             val sttProvider = json.optString("sttProvider", "groq")
             val customPrompt = json.optString("customPrompt", "")
-            val dictionaryTerms = json.optString("dictionaryTerms", "")
+            // Dictionary terms live in dictionary.json, NOT in config.json.
+            // config.json never contains a dictionaryTerms key -- the Rust backend
+            // manages them in a separate file. We read that file directly here.
+            val dictionaryTerms = loadDictionaryTerms(context)
 
             // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
             // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.

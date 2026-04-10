@@ -764,10 +764,12 @@ pub async fn start_command_mode(handle: AppHandle) {
 /// hint) and the LLM step (as `dictionary_terms` in the system prompt).
 pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let state = handle.state::<AppState>();
+    log::info!("[pipeline] stop_and_process_pipeline called (is_recording={})", state.recorder.is_recording());
 
     if !state.recorder.is_recording() {
         // Not recording -- key released without a corresponding press (race condition or
         // hold mode released before recording started). Safe to ignore.
+        log::warn!("[pipeline] stop_and_process called but is_recording()=false — skipping (state desync?)");
         return;
     }
 
@@ -847,10 +849,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let (language, stt_provider, cleanup_provider, dict_prompt, offline_mode, stt_hint_text) = {
         let cfg = match state.config.lock() {
             Ok(g) => g.clone(),
-            Err(_) => {
+            Err(e) => {
+                log::error!("[pipeline] config lock poisoned: {e}");
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
+                    PipelineEvent::error("State lock poisoned (config)"),
                 );
                 return;
             }
@@ -858,10 +861,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
         let stt_prov = match state.stt_provider.read() {
             Ok(g) => g.clone(),
-            Err(_) => {
+            Err(e) => {
+                log::error!("[pipeline] stt_provider lock poisoned: {e}");
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
+                    PipelineEvent::error("State lock poisoned (stt_provider)"),
                 );
                 return;
             }
@@ -869,10 +873,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
         let cleanup_prov = match state.cleanup_provider.read() {
             Ok(g) => g.clone(),
-            Err(_) => {
+            Err(e) => {
+                log::error!("[pipeline] cleanup_provider lock poisoned: {e}");
                 let _ = handle.emit(
                     EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned"),
+                    PipelineEvent::error("State lock poisoned (cleanup_provider)"),
                 );
                 return;
             }
