@@ -1,9 +1,10 @@
 # Environment
 .env
 
-# Rust
+# Rust (v2 workspace + v1 src-tauri)
 target/
 src-tauri/target/
+**/target/
 
 # Node
 node_modules/
@@ -50,3 +51,6 @@ models/
 voxlit-debug.keystore
 .dev-keys/
 src-tauri/null
+
+# BMad framework installation (re-installable, not project artifact)
+_bmad/

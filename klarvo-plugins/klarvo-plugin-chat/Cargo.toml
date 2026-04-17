@@ -1,0 +1,9 @@
+[package]
+name = "klarvo-plugin-chat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+klarvo-core = { path = "../../klarvo-core" }
