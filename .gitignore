@@ -54,3 +54,6 @@ src-tauri/null
 
 # BMad framework installation (re-installable, not project artifact)
 _bmad/
+
+# Claude Code session state (memory, settings, not project artifact)
+.claude/
