@@ -1,5 +1,8 @@
 ---
-stepsCompleted: [1, 2, 3, 4, 5]
+stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
+lastStep: 8
+status: 'complete'
+completedAt: '2026-04-18'
 inputDocuments:
   - output/planning-artifacts/product-brief-klarvo.md
   - output/planning-artifacts/product-brief-klarvo-distillate.md
@@ -264,6 +267,21 @@ Turso-Sync-Strategie (#2.6) · Offline-LLM-Auswahl (#6.2) · Code-Signing-Upgrad
 | **Secret-Handling im Build** | Dev: `.env`-File (gitignored); Prod: API-Keys durch Nutzer via UI eingegeben, niemals hardcoded | v1-Sünde „Test-Lizenzen in Prod" + „Hardcoded Secrets in config.json" |
 | **Telemetrie (Revidiert)** | **Keine Remote-Telemetry.** Tracing-Stack (`tracing` + `tracing-subscriber`) → Rolling-File in User-Data-Dir (max 10MB, 5 Rotations). Settings-Panel „Debug-Export" erzeugt Zip (Logs + redacted Config + Sys-Info) für User-triggered-Upload. Panic-Hook schreibt Stack-Traces in denselben Stream als `level=ERROR` | Opt-in Sentry widerspricht BYOK-Narrativ aus Brief („your data stays yours"); lokale Logs + User-Export alignen mit Positionierung |
 
+#### 4a. Release-Hardening (Validation-Patch G2)
+
+**Problem:** „Test-Lizenzen in Prod" war eine v1-Original-Sünde. Ohne expliziten CI-Enforcement bleibt die Regel Wunschdenken — ein Agent aktiviert `dev-*`-Feature zur Debug-Zeit, vergisst das Abschalten, Release-Build geht durch.
+
+**Entscheidung:** `cargo xtask verify-release` als Pflicht-Gate VOR jedem Release-Build. `.github/workflows/release.yml` ruft es als ersten Step. Fail = Release-Build wird gar nicht gestartet.
+
+**Prüfpunkte (verpflichtend):**
+- `test-license`-Feature ist NICHT aktiv
+- `dev-plain-keystore` + alle `dev-*`-Features sind NICHT aktiv
+- `obfstr`-Obfuscation-Key ist NICHT der Default-Placeholder (Compile-Time-Constant-Check)
+- `tracing`-Subscriber-Config emittiert kein `DEBUG`- oder `TRACE`-Level im Release-Build — PII-Protection: Debug-Export-Zip könnte sonst sensible Request-Payloads enthalten
+- Keine `#[cfg(debug_assertions)]`-Code-Paths in `--release`-Build (redundant mit Rust-Default, expliziter Check dokumentiert Intent)
+
+**Enforcement-Direction:** `cargo xtask verify-release` ist authoritative; `release.yml` ruft es verpflichtend. Lokaler pre-push-Hook wäre quality-of-life, CI bleibt der eigentliche Gate (vgl. Step 5 Bindings-Drift-Pattern).
+
 ### 5. Frontend-Architektur (React / Tauri-WebView)
 
 | Zelle | Entscheidung | Rationale |
@@ -405,6 +423,8 @@ Diese Defaults folgen etablierten Standards und sind **ohne Diskussion** verbind
 - Namespace matched Frontend-Feature-Ordner: `settings.*` → `features/settings/`, `history.*` → `features/history/`
 - Shared/Generic Keys unter `common.*`-Präfix: `common.cancel`, `common.save`, `common.retry`, `common.error`
 - **`user_message`-Field in `AppError` hält i18n-Key, NICHT übersetzten String** — Frontend resolved zum Display-Zeitpunkt. Konkret: `user_message: Some("history.delete_failed".into())`, nicht `Some("Löschen fehlgeschlagen".into())`
+- **`klarvo-core` hat KEINE user-facing Strings** (Validation-Patch G3) — weder hardcoded in `.rs`-Konstanten, noch in Panic-Messages die ein User sehen könnte. Core emittiert ausschließlich i18n-Keys (via `AppError.user_message`, Event-Payloads) oder englische Developer-Messages (Panic-Kontext, Log-Felder — nicht für User-Anzeige gedacht). Übersetzung ist Shell-Aufgabe. Regel verhindert dass Phase-0-Agent eine deutsche Error-Message in Core hardcoded und das i18n-System später um Sonderbehandlung erweitert werden muss.
+- **Translation-Assets-Location (Placeholder):** `shells/<platform>/locales/<lang>.<ext>`. Jede Shell hostet ihre Übersetzungen lokal. Extension (`.json` / `.ftl` / `.yml`) + Library-Wahl bleiben P1-ADR. Phase-0-Placeholder: leeres `shells/windows/src/locales/de.json` anlegen, damit spätere Library-Migration trivial ist. Android-äquivalent via `res/values/strings.xml` oder Library-spezifisch.
 - **Library-Choice: P1-ADR.** React-i18next vs. Lingui vs. Custom-Loader wird entschieden wenn zweite UI-Language (jenseits Deutsch) konkret ansteht. MVP-Keys werden bereits strukturiert angelegt, damit jede Library sie konsumieren kann. Naming-Anker jetzt genügt, Tooling-Commitment später.
 
 ### Naming Patterns
@@ -751,7 +771,8 @@ Erlaubt „zeige alte History während neue lädt". **Bevor jemand React-Query e
 | Migration-Checksum-Integrity | Runtime-Startup-Check im Core | Ja (Hard Fail) |
 | Rust-Naming | `clippy::style` + Rust-API-Guidelines-Lints | Teilweise |
 | SQL-Naming | Code-Review + Architektur-Doc | Nein (human-enforced) |
-| Event-Naming | tauri-specta + `specta::Event` macht Drift unmöglich | Ja (Type-System-Gate) |
+| Event-Wire-Names | `cargo xtask lint-events` prüft auf jedem `specta::Event` das `#[specta(rename)]`-Attribut + dot-notation-Pattern (Validation-Patch G1) | Ja (CI-Gate) |
+| Release-Hardening | `cargo xtask verify-release` — Test-Licenses, dev-Features, obfstr-Default-Key, DEBUG/TRACE-Subscriber off (Validation-Patch G2, siehe Step 4 §4a) | Ja (CI-Gate vor Release-Build) |
 | i18n-Key-Konvention | Code-Review (bis P1-Library-Choice) | Nein (human-enforced) |
 
 **Pattern-Update-Prozess:**
@@ -863,4 +884,633 @@ Err(AppError {
     ..
 })
 ```
+
+## Project Structure & Boundaries
+
+### Step-4-Revision: VAD-Split
+
+**Ergänzung zu Step 4 §1 (Plugin-System & Trait-Design):**
+
+Die in Step 4 §1 formulierte Regel „VAD bleibt Core-intern" wird präzisiert zum Split:
+
+- **Basis-VAD (RMS-based, Signal-Processing, keine ML-Deps): Core-intern** in `klarvo-core::audio::vad::rms`. Always-available Safety-Net — garantiert dass der Recording-Flow auch ohne jedes aktive Plugin funktioniert.
+- **ML-basierte VAD-Impls (Silero ONNX, zukünftige Candle-Modelle): Plugins** via dediziertem `VadProvider`-Trait.
+
+**Trait-Count aktualisiert:** 8 first-class Phase-0-Traits + 1 Stub — `SttProvider`, `LlmProvider`, `CleanupStyle`, `TextFilter`, `OutputTarget`, `AudioFilter`, `VadProvider` (neu), `PluginMigration`, plus `VoiceCommandHandler` als Stub.
+
+**Rationale `VadProvider` dediziert statt `AudioFilter`-Extension:** Semantik-Mismatch — `AudioFilter` transformiert Samples (`samples_in → samples_out`), VAD emittiert Gate-Events (`is_speech: bool`, `speech_start_ms: u64`). Shoehorning pollutet `AudioFilter` für alle zukünftigen Filter-Impls. Trait-Signatur-Details werden im Phase-0-JNI-Spike-Zeitfenster finalisiert; leichte Präferenz liegt bei dediziertem Trait.
+
+### Complete Project Directory Structure
+
+```
+klarvo/
+├── Cargo.toml                        # [workspace] root, resolver v3, members list
+├── Cargo.lock                        # Committed (SemVer safety: whisper-rs-sys, llama-cpp-2)
+├── rust-toolchain.toml               # Pin Rust 2024 Edition channel + components
+├── .cargo/config.toml                # Target-specific rustflags, xtask alias
+├── .gitignore
+├── .gitattributes                    # Git LFS rules für test-assets/audio/*.wav > 1MB
+├── README.md
+├── LICENSE                           # PolyForm Noncommercial 1.0.0
+├── pipeline-manifest.toml            # Embedded-Default-Source: klarvo-core bindet via
+│                                     # include_str!() zur Compile-Zeit ein. NICHT runtime-
+│                                     # geladen. User-Override läuft als separater Loader-Pfad
+│                                     # über User-Data-Dir (siehe Step 4 §1 + File Org unten).
+├── justfile                          # Optional dev shortcuts (wraps xtask)
+│
+├── .github/workflows/
+│   ├── ci-core.yml                   # Core + plugin unit tests (Linux)
+│   ├── ci-windows.yml                # Tauri build + E2E (Windows runner)
+│   ├── ci-android.yml                # Gradle build + unit tests (Linux runner + NDK)
+│   ├── ci-bindings-drift.yml         # tauri-specta drift gate (authoritativ)
+│   ├── ci-feature-lint.yml           # cargo xtask lint-features
+│   ├── ci-event-lint.yml             # cargo xtask lint-events (Validation-Patch G1)
+│   └── release.yml                   # Tauri-Updater + Play-Store-Upload; ruft
+│                                     # cargo xtask verify-release VOR Build (Validation-Patch G2)
+│
+├── klarvo-core/                      # Shared Rust core (headless, testbar)
+│   ├── Cargo.toml
+│   ├── migrations/
+│   │   ├── 001_schema_migrations.sql
+│   │   ├── 002_settings_table.sql
+│   │   ├── 003_histories_table.sql
+│   │   └── 004_license_cache.sql
+│   └── src/
+│       ├── lib.rs                    # Public API surface (Core-API aus Step 4 §3)
+│       ├── registry.rs               # PluginRegistry + bootstrap()
+│       ├── manifest.rs               # Pipeline-Manifest: embed_default() via include_str!()
+│       │                             # + load_user_override(path) für optionales User-TOML
+│       ├── error.rs                  # PluginError, AppError, From-Impls (zentrales Mapping)
+│       ├── migrations.rs             # Migration-Orchestrator + schema_migrations-Table
+│       ├── traits/
+│       │   ├── mod.rs
+│       │   ├── stt.rs                # SttProvider
+│       │   ├── llm.rs                # LlmProvider
+│       │   ├── cleanup.rs            # CleanupStyle
+│       │   ├── text_filter.rs       # TextFilter
+│       │   ├── output.rs             # OutputTarget
+│       │   ├── audio_filter.rs       # AudioFilter (sample-level transforms)
+│       │   ├── vad.rs                # VadProvider (dediziert, Gate-Events)
+│       │   ├── migration.rs          # PluginMigration
+│       │   └── voice_command.rs      # VoiceCommandHandler (Stub, keine Impl Phase 0)
+│       ├── pipeline/
+│       │   ├── mod.rs
+│       │   ├── state_machine.rs      # Idle→Recording→Processing→Output
+│       │   └── orchestrator.rs       # Stage-Orchestration per Manifest
+│       ├── audio/
+│       │   ├── mod.rs
+│       │   ├── source.rs             # AudioSource-Trait (Shell-Impls)
+│       │   ├── events.rs             # AudioEvent enum (broadcast-Channel-Types)
+│       │   ├── buffer.rs             # f32-Sample-Buffer-Primitives
+│       │   ├── wav.rs                # hound-based WAV-Encoding
+│       │   └── vad/
+│       │       ├── mod.rs
+│       │       └── rms.rs            # RMS-VAD (Safety-Net, ohne ML-Deps)
+│       ├── recording/
+│       │   ├── mod.rs
+│       │   ├── modes.rs              # Hold, Toggle, AutoStop (Win) + 5 Android-Modes
+│       │   └── state.rs              # Per-Session-Recording-State
+│       ├── transcription/
+│       │   ├── mod.rs
+│       │   ├── priority.rs           # STT-Priority-List + Provider-Selection
+│       │   └── fallback.rs           # Fallback-Chain-Execution
+│       ├── cleanup/
+│       │   └── mod.rs                # CleanupStyle-Orchestrator (nicht die Impls)
+│       ├── history/
+│       │   ├── mod.rs
+│       │   ├── schema.rs
+│       │   ├── queries.rs
+│       │   └── retention.rs
+│       ├── dictionary/
+│       │   ├── mod.rs
+│       │   └── schema.rs
+│       ├── settings/
+│       │   ├── mod.rs
+│       │   ├── accessor.rs           # Typed Accessor-Layer (ui_language(), etc.)
+│       │   ├── system.rs             # TOML-System-Settings (~5 Felder)
+│       │   └── hybrid.rs             # System-vs-User-Resolution
+│       ├── keystore/
+│       │   ├── mod.rs
+│       │   ├── trait_def.rs          # KeyStore-Trait
+│       │   ├── plain_sqlite.rs       # #[cfg(feature = "dev-plain-keystore")]
+│       │   └── os/
+│       │       ├── mod.rs
+│       │       ├── windows.rs        # #[cfg(target_os = "windows")], windows-rs
+│       │       └── android.rs        # #[cfg(target_os = "android")], jni-crate
+│       │                             # → ruft Android-Platform-APIs (siehe JNI-Dep-Einschub
+│       │                             # in Component-Boundaries unten)
+│       ├── license/
+│       │   ├── mod.rs
+│       │   ├── validator.rs          # HMAC-Validation
+│       │   ├── cache.rs              # 30-Tage-Cache + 48h-Grace
+│       │   └── obfuscation.rs        # obfstr-based Key-Obfuscation
+│       ├── hotkey/
+│       │   └── mod.rs                # Slot-Abstraktion + Pause/Resume + ShortcutRecorder +
+│       │                             # Active-Mode-Badge. Phase-0-Agent-Call: bei >300 LOC
+│       │                             # in mod.rs + slots.rs + registration.rs splitten.
+│       ├── sync/                     # Turso-Sync P1-Stub (deferred-Crate-Kandidat)
+│       │   ├── mod.rs
+│       │   └── noop.rs               # MVP-NoOp-Impl
+│       ├── ipc/                      # Shared IPC-DTOs (camelCase-Serde-Tags)
+│       │   ├── mod.rs
+│       │   ├── commands.rs
+│       │   └── events.rs
+│       ├── telemetry/
+│       │   ├── mod.rs
+│       │   ├── logging.rs            # tracing-subscriber + rolling file appender
+│       │   └── export.rs             # User-triggered Debug-Zip
+│       └── v1_import/
+│           ├── mod.rs
+│           ├── config.rs             # Plain-JSON → typed Settings
+│           ├── keys.rs               # Plain-JSON Keys → OS-Keystore direkt
+│           ├── history.rs            # v1-SQLite → v2-Schema
+│           └── dictionary.rs
+│
+├── klarvo-plugins/                   # Alle Plugin-Crates folgen dem Skeleton aus Step 5
+│   ├── klarvo-plugin-groq/           # STT-Provider (Groq Whisper)
+│   ├── klarvo-plugin-deepseek/       # LLM-Provider (Cleanup-Backend)
+│   ├── klarvo-plugin-verbatim/       # CleanupStyle (Default)
+│   ├── klarvo-plugin-chat/           # CleanupStyle
+│   ├── klarvo-plugin-polished/       # CleanupStyle (neu für v2)
+│   ├── klarvo-plugin-clipboard/      # OutputTarget: Clipboard
+│   ├── klarvo-plugin-keystroke/      # OutputTarget: Direct Keystroke Injection
+│   └── klarvo-plugin-vad-silero/     # VadProvider: Silero ONNX
+│
+├── klarvo-bridge-jni/                # JNI-Bridge: Core-API → Kotlin-Shell
+│   │                                 # (Linux-CI-buildable, NDK nur beim Final-Link)
+│   ├── Cargo.toml
+│   ├── build.rs                      # uniffi-bindgen
+│   ├── uniffi.toml                   # uniffi-Config (Control-Plane-Scope)
+│   └── src/
+│       ├── lib.rs                    # uniffi-Scaffolding
+│       ├── commands.rs               # Control-Plane (uniffi)
+│       └── streams.rs                # Data-Plane (raw-jni + Callbacks)
+│
+├── klarvo-test-fixtures/             # Dev-Crate (publish = false)
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs
+│       ├── audio.rs                  # fn speech_de_short() -> Vec<f32>
+│       └── mocks/
+│           ├── mod.rs
+│           ├── stt.rs
+│           ├── llm.rs
+│           ├── output.rs
+│           └── vad.rs
+│
+├── shells/
+│   ├── windows/                      # Tauri v2 + React
+│   │   ├── src-tauri/
+│   │   │   ├── Cargo.toml
+│   │   │   ├── tauri.conf.json       # identifier: "de.klarvo.windows", CSP strikt
+│   │   │   ├── build.rs
+│   │   │   ├── capabilities/default.json
+│   │   │   ├── icons/
+│   │   │   └── src/
+│   │   │       ├── main.rs           # Tauri-Entry, klarvo-core::bootstrap()
+│   │   │       ├── commands.rs       # #[tauri::command]-Wrapper (KEIN Bridge-Crate —
+│   │   │       │                     # asymmetric vs JNI by design; siehe Boundaries)
+│   │   │       ├── events.rs         # Tauri-Channel-Emitters
+│   │   │       ├── hotkey.rs         # Windows global-shortcut integration
+│   │   │       ├── overlay/
+│   │   │       │   ├── mod.rs
+│   │   │       │   ├── pill_bar.rs   # Native PillBar (nicht React!)
+│   │   │       │   └── tray.rs
+│   │   │       ├── audio_source.rs   # cpal-based AudioSource-Impl
+│   │   │       └── bindings.rs       # tauri-specta Type-Collection-Entry
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── vite.config.ts
+│   │   ├── tailwind.config.ts
+│   │   ├── index.html
+│   │   └── src/                      # React-Frontend (feature-based, Step 5)
+│   │       ├── main.tsx
+│   │       ├── App.tsx
+│   │       ├── features/
+│   │       │   ├── settings/
+│   │       │   ├── history/
+│   │       │   ├── onboarding/
+│   │       │   ├── transcription/    # WebView-Seite only; PillBar ist native
+│   │       │   └── hotkeys/
+│   │       ├── components/ui/
+│   │       ├── lib/
+│   │       │   ├── i18n.ts           # i18n-Key-Resolver (Library P1-ADR)
+│   │       │   ├── format.ts
+│   │       │   └── errors.ts
+│   │       ├── stores/
+│   │       │   ├── app.ts
+│   │       │   └── theme.ts
+│   │       └── bindings/             # tauri-specta-generated, committed
+│   │           ├── commands.ts
+│   │           ├── events.ts
+│   │           └── types.ts
+│   │
+│   └── android/                      # Kotlin + Jetpack Compose
+│       ├── app/
+│       │   ├── build.gradle.kts      # namespace = "de.klarvo.android"
+│       │   └── src/main/
+│       │       ├── AndroidManifest.xml
+│       │       ├── kotlin/de/klarvo/android/
+│       │       │   ├── KlarvoApplication.kt
+│       │       │   ├── bridge/
+│       │       │   │   ├── Core.kt               # uniffi-generated Wrapper
+│       │       │   │   ├── Events.kt             # callbackFlow-Adapter
+│       │       │   │   └── StreamListener.kt     # raw-jni-Callbacks
+│       │       │   ├── features/
+│       │       │   │   ├── bubble/               # Floating-Overlay (17 Features)
+│       │       │   │   ├── settings/
+│       │       │   │   ├── history/
+│       │       │   │   └── onboarding/
+│       │       │   ├── service/
+│       │       │   │   ├── AccessibilityService.kt
+│       │       │   │   └── InputMethodService.kt
+│       │       │   ├── audio/
+│       │       │   │   └── AndroidAudioSource.kt # AudioRecord-based
+│       │       │   └── ui/theme/
+│       │       └── res/
+│       ├── build.gradle.kts
+│       ├── settings.gradle.kts
+│       ├── gradle.properties
+│       └── keystore/                 # gitignored (Signing-Keys)
+│
+├── xtask/                            # Build-Orchestration
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── commands/
+│       │   ├── mod.rs
+│       │   ├── build_all.rs
+│       │   ├── test_core.rs
+│       │   ├── ci.rs
+│       │   ├── generate_bindings.rs  # tauri-specta Regen + Drift-Check
+│       │   ├── new_plugin.rs         # Plugin-Skeleton-Generator (Phase-0 nice-to-have)
+│       │   ├── lint_features.rs      # Cargo-Feature-Naming-Convention-Enforcer
+│       │   ├── lint_events.rs        # Specta-Event-Rename-Convention-Enforcer (G1)
+│       │   └── verify_release.rs     # Release-Hardening-Gate (G2, ruft gegen alle Checks aus §4a)
+│       └── templates/
+│           └── plugin_skeleton/
+│
+├── test-assets/                      # Shared Binary-Test-Assets (Git LFS > 1MB)
+│   ├── audio/
+│   │   ├── speech-de-short.wav
+│   │   ├── speech-en-short.wav
+│   │   ├── silence-2s.wav
+│   │   ├── noise-only.wav
+│   │   └── README.md
+│   ├── cleanup-golden/
+│   │   ├── verbatim-case-01.json
+│   │   └── polished-case-01.json
+│   └── dictionary/
+│       └── sample-dictionary.json
+│
+├── docs/                             # Project-Documentation (v1-brownfield + v2-ADRs)
+│   ├── index.md                      # v1-Entry-Point, Links auf v1-snapshot
+│   ├── v1-architecture-snapshot.md   # v1-Brownfield-Referenz (umbenannt 2026-04-17)
+│   ├── component-inventory.md        # v1-Scan-Output
+│   ├── development-guide.md          # v1; wird in Phase-0 v2-rewritten
+│   ├── rebuild-discussion.md         # Shared-State zwischen parallelen Sessions
+│   ├── project-overview.md           # v1-Scan-Output
+│   ├── source-tree-analysis.md       # v1-Scan-Output
+│   ├── project-scan-report.json      # Frozen v1-Scan-Manifest
+│   ├── adr/                          # Architecture Decision Records (neu, Phase 0+)
+│   │   └── README.md
+│   └── phase-0-checklist.md          # Generated nach Step 8
+│
+└── output/
+    ├── planning-artifacts/            # BMad-Workflow-Outputs (tracked)
+    │   ├── product-brief-klarvo.md
+    │   ├── product-brief-klarvo-distillate.md
+    │   └── architecture.md           # Single-Source v2-Architecture (dieses Doc)
+    └── implementation-artifacts/     # Phase-1+, Sub-Path-Policy beim ersten Commit
+```
+
+### Architectural Boundaries
+
+**IPC Boundaries:**
+- **Tauri (Rust↔React):** Commands + Channels (v2). Alle Boundary-Types leben in `klarvo-core/src/ipc/`, TS-Bindings via tauri-specta auto-generiert → `shells/windows/src/bindings/`. Drift-Check in CI als authoritative Gate.
+- **JNI (Rust↔Kotlin):** Dual-Surface (Step 4 §3). Control-Plane via uniffi in `klarvo-bridge-jni/src/commands.rs`. Data-Plane via raw-jni in `klarvo-bridge-jni/src/streams.rs`. Kotlin-Side in `shells/android/.../bridge/` mit `callbackFlow`-Adaptern.
+- **Asymmetrie Tauri ↔ JNI ist Absicht:** kein `klarvo-bridge-tauri`-Crate. Tauri-Commands sind triviale Wrapper in `shells/windows/src-tauri/src/commands.rs` direkt. JNI braucht eine Abstraktionsschicht, Tauri nicht. Agents verletzen diese Asymmetrie nicht aus Symmetrie-Gefühl.
+- **Plugin-Registration:** compile-time via `klarvo-core::registry::bootstrap()` + feature-gated `#[cfg]`-Module. Kein dynamisches Loading.
+
+**Component Boundaries (Dependency-Direction):**
+- `klarvo-core` ← `klarvo-plugins/*` (Plugins depend on Core)
+- `klarvo-core` ← `klarvo-bridge-jni` ← `shells/android`
+- `klarvo-core` ← `shells/windows/src-tauri`
+- **`klarvo-core` importiert NIE aus `shells/*`, `klarvo-bridge-jni`, oder `klarvo-plugins/*`** (nur Trait-Objekte über `PluginRegistry`)
+- `klarvo-test-fixtures` ← Core + Plugins (dev-dependency, nur in Tests)
+- Frontend No-Horizontal-Imports zwischen Features (enforced via `eslint-plugin-boundaries` ab Phase 1)
+- Android-Compose-Features mirror die gleiche Regel
+
+**Einschub — JNI-Deps in `klarvo-core` (zwei Rollen, nicht verwechseln):**
+
+`klarvo-core` hat die `jni`-Crate als **conditional-dependency** (`#[cfg(target_os = "android")]`-gated). Das ist KEIN Widerspruch zur „Core importiert nie aus `klarvo-bridge-jni`"-Regel — die beiden Nutzungen sind orthogonal:
+
+| Rolle | Location | Richtung | Zweck |
+|-------|----------|----------|-------|
+| **Bridge-Crate** (`klarvo-bridge-jni`) | separates Crate | **Core-API → Kotlin** (inbound für Kotlin-Shell) | Kotlin-Shell spricht Core via uniffi/raw-jni an |
+| **Platform-API-Access** (`klarvo-core/src/keystore/os/android.rs`) | Core intern, conditional-dep | **Core → Android-OS** (outbound zu OS) | Core ruft Android-Keystore-System-API direkt |
+
+Beide nutzen `jni`, spielen aber unterschiedliche Rollen. „Core hat kein JNI" ist falsch und führt zu kaputter Keystore-Impl. „Core importiert nicht aus `klarvo-bridge-jni`" bleibt richtig.
+
+Vergleichbar auf Windows-Seite: `klarvo-core/src/keystore/os/windows.rs` nutzt `windows-rs` (`#[cfg(target_os = "windows")]`-gated) für Windows-Credential-Manager-Zugriff. Selbes Muster, andere Platform.
+
+**Data Boundaries:**
+- SQLite-DB wird nur über `klarvo-core` geöffnet; Shells haben KEINEN direkten DB-Zugriff
+- Plugin-Migrations plugin-owned, aber zentrale `schema_migrations`-Tracking-Table in Core (Composite-PK `(plugin_id, version)`)
+- OS-Keystore-Zugriff ausschließlich via `KeyStore`-Trait — raw-OS-Credential-APIs nie von Plugins oder Shells gerufen
+- Turso-Sync (P1): whitelist-gesteuert (histories, ausgewählte settings) via `klarvo-core::sync`
+
+### Requirements to Structure Mapping
+
+**FR-Cluster aus Step 2 → File-Level:**
+
+| # | Cluster | Primary Location | Shell-Impls / Sekundär |
+|---|---------|------------------|------------------------|
+| 1 | Core Pipeline | `klarvo-core/src/{pipeline,traits,transcription,cleanup}/` | — |
+| 2 | Recording Modes | `klarvo-core/src/recording/` | `shells/windows/src-tauri/src/hotkey.rs`, `shells/android/.../service/AccessibilityService.kt` |
+| 3 | Hotkey System | `klarvo-core/src/hotkey/mod.rs` | `shells/windows/src-tauri/src/hotkey.rs` (global-shortcut), `shells/android/.../service/AccessibilityService.kt` |
+| 4 | Text Processing | `klarvo-plugins/klarvo-plugin-{verbatim,chat,polished}/` | `klarvo-core/src/cleanup/mod.rs` (Orchestrator) |
+| 5 | Audio | `klarvo-core/src/audio/` + `klarvo-plugins/klarvo-plugin-vad-silero/` | `shells/windows/src-tauri/src/audio_source.rs` (cpal), `shells/android/.../audio/AndroidAudioSource.kt` (AudioRecord) |
+| 6 | Providers | `klarvo-plugins/klarvo-plugin-{groq,deepseek,...}/` | `klarvo-core/src/transcription/{priority,fallback}.rs` |
+| 7 | UI | `shells/windows/src/features/*`, `shells/windows/src-tauri/src/overlay/` (native PillBar), `shells/android/.../features/*`, `shells/android/.../features/bubble/`, `shells/android/.../service/` | — |
+| 8 | History & Stats | `klarvo-core/src/history/` | `shells/*/features/history/` |
+| 9 | Dictionary | `klarvo-core/src/dictionary/` | `shells/*/features/settings/` (Edit-UI) |
+| 10 | Lizenz-System | `klarvo-core/src/license/` | `shells/*/features/{settings,onboarding}/` |
+
+**Cross-Cutting Concerns (Step 2, 15 Concerns) → File-Level:**
+
+| # | Concern | Primary Location |
+|---|---------|------------------|
+| 1 | Plugin-Registry & Lifecycle | `klarvo-core/src/registry.rs` |
+| 2 | Pipeline-Manifest | `klarvo-core/src/manifest.rs`, `pipeline-manifest.toml` (embedded-default via `include_str!`) |
+| 3 | Plugin-Migrations | `klarvo-core/src/migrations.rs`, `klarvo-core/src/traits/migration.rs`, `<crate>/migrations/` |
+| 4 | Konfigurations-Hybrid | `klarvo-core/src/settings/{system,hybrid,accessor}.rs` |
+| 5 | API-Key-Storage-Evolution | `klarvo-core/src/keystore/` (Trait + Plain + OS-Impls) |
+| 6 | Error-Handling & Fallback | `klarvo-core/src/error.rs`, `klarvo-core/src/transcription/fallback.rs` |
+| 7 | Cross-Platform Audio | `klarvo-core/src/audio/` + Shell-AudioSource-Impls |
+| 8 | Cross-Platform Hotkey | `klarvo-core/src/hotkey/` + Shell-Impls |
+| 9 | Observability | `klarvo-core/src/telemetry/` (Logging + Export) |
+| 10 | Licensing-Integration | `klarvo-core/src/license/` + Cargo-Feature-Gating |
+| 11 | Security Baseline | `shells/windows/src-tauri/tauri.conf.json` (CSP), `klarvo-core/src/keystore/`, CI-Checks |
+| 12 | Testability | `klarvo-test-fixtures/`, `test-assets/`, `xtask::test_core` |
+| 13 | v1 → v2 Migration | `klarvo-core/src/v1_import/` + Sub-Task v1-Identifier-Check (Step 5 Platform-IDs) |
+| 14 | Update/Release | Tauri-Updater (Win), Play-Store (Android), `.github/workflows/release.yml` |
+| 15 | i18n (drei Achsen) | `klarvo-core/src/settings/` (Sprach-Settings), `shells/*/lib/i18n.*` (UI-Resolver), Plugin-Configs (Output-Language) |
+
+### Integration Points
+
+**Internal Communication (Rust-intern):**
+- `tokio::sync::broadcast` für Events (multi-consumer)
+- `tokio::sync::mpsc` für Command-Queues
+- Direkte Funktionsaufrufe über Trait-Objekte im `PluginRegistry`
+- Serialisierung passiert ausschließlich an IPC-Boundary (Tauri-Commands, JNI-Bridge) — nicht intern
+
+**External Integrations:**
+- **Cloud-AI-Provider:** Groq, DeepSeek, OpenAI, Anthropic, OpenRouter via HTTPS (BYOK, Keys aus OS-Keystore); jeder Provider in eigenem Plugin-Crate
+- **Windows:** `global-shortcut`-Crate (Hotkeys), Windows Credential Manager via `windows-rs` (Keystore), Tauri Updater API
+- **Android:** Android-Keystore via JNI (conditional-dep in `klarvo-core`), AccessibilityService-API, InputMethodService, Play-Core-Update-API (falls Play-Release)
+- **Turso (P1):** `libsql`-Client für Cloud-Sync
+- **Local-AI (P1/P2):** `whisper-rs` (Offline-STT), `mistral.rs`/`llama-cpp-2` TBD (Offline-LLM)
+
+**Data Flow:**
+`AudioSource (Shell) → broadcast::Channel → VadProvider::gate → AudioFilter-Chain → SttProvider → CleanupStyle → OutputTarget → History-Persistence → IPC-Event-Emission`
+
+Pipeline-Orchestrator (`klarvo-core/src/pipeline/orchestrator.rs`) liest Manifest (embedded oder User-Override) und dispatched Stages über Plugin-Registry.
+
+### File Organization Patterns
+
+**Configuration:**
+- **TOML im Workspace-Root** (nicht runtime-modifizierbar, compile-time-kritisch): `Cargo.toml`, `rust-toolchain.toml`, `pipeline-manifest.toml` (letzteres wird von `klarvo-core::manifest` via `include_str!()` zur Compile-Zeit eingebettet; siehe Manifest-Kontrakt unten)
+- **Tauri-Config:** `shells/windows/src-tauri/tauri.conf.json`
+- **Per-Plugin-Configs:** `src/config.rs` im Plugin-Crate (Schema), User-Values in Settings-KV-Tabelle
+- **User-Settings:** SQLite-KV + System-TOML (~5 Felder), Hybrid-Resolution via `klarvo-core::settings::hybrid`
+
+**Manifest-Kontrakt (explizit dokumentiert, nicht Agent-Ermessen):**
+- `pipeline-manifest.toml` am Workspace-Root ist die **Embedded-Default-Quelle**
+- Core bindet sie via `include_str!("../../pipeline-manifest.toml")` zur **Compile-Zeit** ein — der Inhalt ist Teil des Binaries, nicht runtime-geladen
+- User-Override (optional, Pro-Feature-Gate möglich) lebt im User-Data-Dir (`%APPDATA%\de.klarvo.windows\pipeline.toml` / Android-Equivalent) und wird zusätzlich zur Laufzeit geladen wenn vorhanden
+- **Kein „read-from-working-dir"-Fallback**: Agents dürfen den Loader NICHT auf „wenn keine Datei, suche in cwd" umbauen — das bricht den Deterministik-Kontrakt und erzeugt Prod-Bugs die in Dev nie auftauchen
+- Validation läuft in beiden Fällen (Embedded + User-Override) durch denselben Parser in `klarvo-core::manifest::validate()`
+
+**Source Code:**
+- Crate-per-Concern in `klarvo-core` (Sub-Module unter `src/`)
+- Ein Crate pro Plugin
+- Shell-Code physisch separiert unter `shells/<platform>/`
+- Utility-Crates auf Root-Level (`klarvo-bridge-jni`, `klarvo-test-fixtures`, `xtask`)
+
+**Test Code:**
+- Unit: `#[cfg(test)]` co-located mit Source
+- Integration: `<crate>/tests/*.rs`
+- Shared Rust-Fixtures: `klarvo-test-fixtures` (Code) + `test-assets/` (Binaries)
+- Snapshot-Tests (`insta`): `.snap`-Files vom Crate gemanaged, nicht in `test-assets/`
+
+**Asset Organization:**
+- Test-Assets: `test-assets/` (Root, cross-crate)
+- Runtime-Shell-Assets: `shells/<platform>/assets/` oder plattform-übliche Locations (`src-tauri/icons/`, Android `res/`)
+- Audio > 1MB via Git LFS (`.gitattributes`)
+
+### Development Workflow Integration
+
+**Development Server:**
+- Windows-Shell: `cd shells/windows && npm run tauri dev`
+- Android-Shell: Android Studio `app`-Module-Run oder `./gradlew :app:installDebug`
+- Core-Unit-Tests headless: `cargo test -p klarvo-core` oder `cargo xtask test-core`
+- Plugin-Integration-Tests (hinter Feature-Gate): `cargo test -p klarvo-plugin-groq --features integration-tests`
+
+**Build Process:**
+- `cargo xtask build-all` orchestriert Core + Plugins + Windows-Shell + Android-Shell
+- `cargo xtask ci` fährt lokal die CI-Matrix (Core-Tests + Lint + Feature-Lint + Bindings-Drift)
+- `cargo xtask generate-bindings` regeneriert tauri-specta-TS-Types
+- `cargo xtask new-plugin <name>` generiert Plugin-Skeleton (Phase-0-Utility)
+- `cargo xtask lint-events` prüft Specta-Event-Wire-Names gegen dot-notation-Konvention (G1-Gate)
+- `cargo xtask verify-release` Release-Hardening-Gate, wird von `release.yml` vor Build gerufen (G2)
+
+**Deployment:**
+- Windows-Installer: `cargo tauri build` (via xtask) → MSI/EXE, signed mit Cert (MVP self-signed)
+- Android-Bundle: `./gradlew :app:bundleRelease` → AAB für Play-Store (Primär) oder APK (Fallback)
+- Release-Pipeline: `.github/workflows/release.yml` orchestriert beide Targets + Tauri-Updater-Upload + Play-Console-Upload (wenn API konfiguriert)
+
+### Repo-Preparation (bereits in dieser Session ausgeführt)
+
+- `docs/architecture.md` (v1-Brownfield-Scan) → `docs/v1-architecture-snapshot.md` umbenannt (2026-04-17)
+- 4 Cross-Refs aktualisiert (`docs/index.md`, `docs/project-overview.md`, 2× Frontmatter in `output/planning-artifacts/`)
+- `docs/` + `output/planning-artifacts/` erstmalig git-tracked (Commit `cbf9138`, 11 Files, 2641 Insertions)
+- **Offen als Phase-0-Prep:** v1-Windows-Tauri-Identifier in v1-Repo gegenchecken (Migration-Pfad-Findung für Einmal-Import; Sub-Task Concern #13). Memory: `project_phase0_action_items.md`.
+
+## Architecture Validation Results
+
+### Coherence Validation ✅
+
+**Decision Compatibility:**
+- Rust 2024 Edition × Tauri v2.10.x × tokio × rusqlite × whisper-rs × cpal × windows-rs × `jni` × `uniffi` × tauri-specta/specta 2.x — alle auf dem April-2026-Stand kompatibel. Versionen pinned in Cargo.lock (commited).
+- `jni`-Crate in zwei orthogonalen Rollen (`klarvo-bridge-jni` exposes Core-API zu Kotlin; `klarvo-core/keystore/os/android.rs` ruft Android-OS-APIs) — in Step 6 Component-Boundaries klargestellt.
+- `chrono::DateTime<Utc>` × Serde × i64-Millis-Wire — Standard-Pattern via `chrono/serde`-Feature.
+
+**Pattern Consistency:**
+- **Initial detectierter Widerspruch:** Event-Naming-Konvention (`recording.started`, dot-notation) vs. Specta-Events-Default-Wire-Name (Type-Name). Specta hat explizite `#[specta(rename)]`-Attribute, aber kein Compile-Error bei Vergessen → Drift-Vektor.
+- **Auflösung:** `cargo xtask lint-events` als CI-Gate (Validation-Patch G1). Prüft dass jede `specta::Event`-Struct das `#[specta(rename = "<dot-notation>")]`-Attribut trägt und dem `<domain>.<event>`-Pattern folgt. Inkonsistenz strukturell eliminiert.
+
+**Structure Alignment:**
+- Project-Tree (Step 6) mappt alle FR-Cluster und Cross-Cutting-Concerns auf konkrete File-Locations.
+- Dependency-Direction-Regeln (Core importiert nie aus Shells/Bridge/Plugins) sind mit `jni`-Dual-Rolle-Klarstellung konsistent.
+- Feature-basiertes Frontend + No-Horizontal-Feature-Imports spiegelt sich in Plugin-Crate-Skeleton (eigener Namespace pro Plugin).
+
+### Requirements Coverage Validation ✅
+
+**FR-Cluster-Coverage (Step 2 → Step 6 Mapping):**
+- Alle **10 FR-Cluster** haben Primary-Location + Shell-Impls dokumentiert.
+- Keine Cluster ohne architektonische Unterstützung.
+
+**NFR-Coverage (11 NFRs):**
+
+| NFR | Status | Anmerkung |
+|-----|--------|-----------|
+| Plattform-Parität (0 LOC Duplikat) | ✅ | Shared-Core + Plugin-Architektur erzwingt strukturell |
+| Testbarkeit (headless Core) | ✅ | `klarvo-test-fixtures` + `xtask test-core` |
+| Latenz (kein IPC im Diktat-Flow) | ✅ | Compile-time Plugins, gleicher Prozess |
+| Modularität (Provider ohne Shell-Change) | ✅ | Plugin-Skeleton + Cargo-Feature-Gate |
+| Sicherheit (keine v1-Sünden portiert) | ✅ | Release-Hardening-Gate (§4a, G2-Patch) erzwingt |
+| Privacy/Sovereignty (BYOK, keine Telemetry) | ✅ | OS-Keystore, Local-Logs, User-triggered-Export |
+| Multi-Language (3 unabhängige Achsen) | ✅ | Settings-Separation + Core-ohne-User-Strings-Regel (G3-Patch) |
+| Lizenzierung (Free/Paid via Cargo-Features) | ✅ | license-Modul + Feature-Gating |
+| Onboarding (<2min first-success) | ✅* | Architektur enabled; UX-Benchmark ist Phase-0-QA-Messung (nicht Architektur-Gap) |
+| Migration (v1 → v2 Einmal-Import) | ✅ | `klarvo-core/src/v1_import/` + Identifier-Sub-Task (#13) |
+| Regressions-Disziplin | ✅ | Headless-Core + CI-Matrix + Pattern-Enforcement + Release-Hardening-Gate |
+
+**Cross-Cutting-Concerns:** 15/15 mit Primary-Location gemappt (Step 6 Tabelle).
+
+### Implementation Readiness Validation ✅
+
+**Decision Completeness:**
+- Kritische Entscheidungen dokumentiert mit Versionen (Rust 2024, Tauri v2, whisper-rs 0.16, Specta 2.x)
+- Offene Entscheidungen explizit als „Open Decisions" oder „Deferred auf P1/P2" markiert (Offline-LLM, exakte Trait-Signatur für VadProvider im JNI-Spike)
+- Open-Verification-Todos im Doc (llama-cpp-2-Version, whisper-rs-SemVer-Pinning)
+
+**Structure Completeness:**
+- File-Level-Tree in Step 6 (keine „`...`"-Platzhalter an wichtigen Stellen)
+- Alle Crate-Grenzen + Shell-Grenzen benannt
+- Integration-Points (IPC, Component, Data) explizit
+
+**Pattern Completeness:**
+- Reference-Block für Defaults
+- Strittige Cluster (A/B/C) in Step 5 mit Rationale
+- Enforcement-Matrix inkl. G1/G2-Gates
+- Good-Examples + Anti-Patterns vorhanden
+
+### Gap Analysis Results
+
+**Important Gaps (alle 3 in dieser Validierung gepatcht):**
+
+| # | Gap | Patch | Location |
+|---|-----|-------|----------|
+| G1 | Specta-Event-Rename-Drift-Gate fehlt | `cargo xtask lint-events` Subcommand + CI-Job | Step 5 Enforcement-Matrix, Step 6 xtask/workflows |
+| G2 | Release-Hardening-Enforcement fehlt | `cargo xtask verify-release` Subcommand + release.yml-Integration | Step 4 §4a (neu), Step 5 Enforcement-Matrix, Step 6 xtask/workflows |
+| G3 | i18n-Core-no-user-strings + Asset-Path | Reference-Block-Ergänzung + Placeholder-Pfad | Step 5 Reference-Block i18n |
+
+**Minor Gaps (Phase-0-Agent-Calls, nicht blocking):**
+
+| # | Gap | Handhabung |
+|---|-----|------------|
+| G4 | ADR-Template-Format in `docs/adr/` | Standard-ADR-Template (Status / Context / Decision / Consequences / Date / Number) als Phase-0-Agent-Call; `docs/adr/_template.md` wird beim ersten ADR erstellt |
+| G5 | Workspace-Feature-Propagation-Beispiel | Wird bei erster Multi-Plugin-Aktivierung in Phase 0 konkretisiert |
+| G6 | Cargo.lock-Update-Policy | Solo-Dev-Kontext → kein akuter Formalismus nötig |
+
+**Keine Critical Gaps.** Phase-0 ist startfähig.
+
+### Validation Issues Addressed
+
+Alle Important-Gaps (G1/G2/G3) wurden **inline in die betroffenen Steps gepatcht** — Korrekturen stehen in den authoritativen Sektionen (Step 4 §4a, Step 5 Reference-Block, Step 5 Enforcement-Matrix, Step 6 xtask/workflows), nicht als externer Fix-Block. Zukünftige Agents lesen damit die korrekte Version ohne zwischen Original und Correction springen zu müssen.
+
+Minor-Gaps sind hier dokumentiert + werden in `project_phase0_action_items.md` als Agent-Calls gepflegt.
+
+### Architecture Completeness Checklist
+
+**✅ Requirements Analysis**
+- [x] Project-Kontext analysiert (10 FR-Cluster, 11 NFRs, 15 Cross-Cutting-Concerns)
+- [x] Scale/Complexity: High (Multi-Plattform-nativ + Plugin-System + BYOK + Lizenz-System)
+- [x] Technical Constraints: Rust-Workspace, compile-time Plugins, Hybrid-UI, PolyForm-NC, Dual-Surface-JNI
+- [x] Cross-Cutting Concerns: alle 15 mit File-Level-Mapping
+
+**✅ Architectural Decisions**
+- [x] 8 Decision-Kategorien in Step 4 als Tabellen
+- [x] Tech-Stack vollständig spezifiziert (Rust 2024, Tauri v2, React 19, TS 5.8, Tailwind 4, Kotlin 2.x, Compose)
+- [x] Integration-Patterns: Dual-Surface-JNI (uniffi + raw-jni) + Tauri direkt
+- [x] Performance: compile-time Plugins, broadcast-Channels, i64-Millis
+- [x] Security-Baseline mit Release-Hardening-Gate (§4a)
+- [x] Vier Andy-Revisionen als Beschlüsse (JNI Dual-Surface, OS-Keystore ab MVP, keine Remote-Telemetry, Play-Store Phase-3-Blocker)
+- [x] VAD-Split (Step-4-Revision in Step 6): Basis-RMS in Core, ML-VAD als Plugin
+
+**✅ Implementation Patterns**
+- [x] Reference-Block für Defaults (Rust/SQL/TS/Kotlin/TOML/Cargo/Tests/Errors/Logging/i18n)
+- [x] Naming-Patterns: Events (dot-notation), Settings-Keys (namespaced), Platform-IDs (symmetric)
+- [x] Struktur-Patterns: Frontend feature-based, Plugin-Skeleton, tauri-specta-Bindings committed
+- [x] Format-Patterns: JSON camelCase via Serde, Date/Time i64 Millis UTC, AppError flat-kind + `From<PluginError>`
+- [x] Communication-Patterns: IPC-Commands + Events + State-Updates
+- [x] Process-Patterns: drei Migration-Arten, 4-state Loading-States
+- [x] Enforcement-Matrix inkl. lint-events + verify-release
+- [x] Good-Examples + Anti-Patterns
+
+**✅ Project Structure**
+- [x] Complete File-Level-Tree (Step 6)
+- [x] Dependency-Direction dokumentiert (Core ← Plugins ← Bridge ← Shells)
+- [x] JNI-Dual-Rolle klargestellt (Bridge vs. Platform-API-Access)
+- [x] FR-Cluster → File Mapping (10/10)
+- [x] Concern → File Mapping (15/15)
+- [x] Integration-Points: Tauri, JNI, DB-Ownership, OS-APIs
+- [x] Manifest-Kontrakt: embedded-default via include_str! + optional User-Override
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** **High** — alle 15 Cross-Cutting-Concerns mit File-Level-Mapping, alle NFRs abgedeckt, alle Important-Gaps gepatcht, keine Critical-Gaps.
+
+**Key Strengths:**
+- Clean-Slate-Architektur adressiert v1-Architektur-Schulden strukturell: Android-Tauri-Bypass → Shared-Core + Dual-Surface-JNI · Plain-Key-Storage → OS-Keystore ab MVP · CSP-off → strict CSP · Test-Licenses → Release-Hardening-Gate
+- Plugin-Architektur + Cargo-Feature-Gating macht Free/Paid/Nischen-Builds zur Build-Zeit-Entscheidung
+- Dual-Surface-JNI (uniffi Control-Plane + raw-jni Data-Plane) — pragmatisch, testbar auf Linux-CI, respektiert uniffi-Stream-Limitationen
+- Comprehensive Patterns-Block (Step 5) mit Reference-Defaults verhindert Agent-Drift bei Solo-Dev-Multi-Session-Arbeit
+- Three-Way-Migration-System (Schema + Settings-Key-Rename + Settings-Value-Semantic) fängt alle realistischen Schema-Evolution-Fälle ab
+- CI-Enforcement-Matrix (Bindings-Drift, Feature-Lint, Event-Lint, Verify-Release) macht kritische Invarianten unumgehbar
+
+**Areas for Future Enhancement:**
+- WASM-Plugin-Loader für Third-Party-Plugins (v2.x)
+- Offline-LLM-Entscheidung `mistral.rs` vs `llama-cpp-2` (P1/P2)
+- Turso-Sync-Implementierung (P1-Feature, Stub vorhanden)
+- i18n-Library-Wahl + exakte File-Extension bei zweiter UI-Sprache (P1-ADR)
+- VadProvider-Trait-Signatur-Finalisierung im Phase-0-JNI-Spike-Zeitfenster
+- `klarvo-macros` + `klarvo-sync` als separate Crates wenn Trigger-Bedingungen erfüllt (Auto-Settings-Accessor-Macros, heavy Turso-Deps)
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+- Architektur-Entscheidungen aus Steps 1–6 + Validation-Patches aus Step 7 sind **verbindlich** — keine Freestyle-Variation
+- Reference-Block (Step 5) ist Pflichtlektüre vor erstem Code-Commit
+- Plugin-Crates mechanisch via `cargo xtask new-plugin <name>` erzeugen (wenn verfügbar) — manuelle Kopie nur in Ausnahme
+- Bei Unsicherheit: ADR in `docs/adr/` schreiben statt ad-hoc entscheiden
+- Memory-Referenzen nutzen: `project_phase0_action_items.md` für Phase-0-Start-Checkliste
+- Neue Event-Structs: `#[specta(rename = "<domain>.<event>")]` setzen, lokaler `cargo xtask lint-events`-Run vor Commit
+- Release-Hardening: `cargo xtask verify-release` manuell vor jedem Release-PR fahren (CI erzwingt auch, aber lokale Feedback-Loop ist schneller)
+
+**First Implementation Priority (Phase 0, synthetisiert aus Step 3 + Step 6 + Validation-Patches):**
+1. Cargo-Workspace + `klarvo-core` + `xtask`-Crate-Skelett
+2. Core-Traits (8 + VoiceCommand-Stub) + `PluginRegistry::bootstrap()`
+3. `KeyStore`-Trait + beide Impls (Plain-SQLite hinter `dev-plain-keystore`-Feature, OS-Keystore für Release)
+4. Migration-Tooling (Orchestrator + `schema_migrations`-Tabelle + Plugin-Migration-Trait)
+5. `AudioSource`-Trait + Core-interne Pipeline-State-Machine + RMS-VAD
+6. **JNI-Spike (1 Tag Gate):** Audio-Level-Meter end-to-end; entscheidet uniffi-Commit + VadProvider-Trait-Signatur
+7. Pipeline-Manifest-TOML-Parser + Embedded-Default via `include_str!()` + User-Override-Loader
+8. Erste Plugin-Crate-Skelette: `klarvo-plugin-groq`, `klarvo-plugin-verbatim`
+9. xtask-Subcommands: `new-plugin`, `lint-features`, `lint-events`, `verify-release`, `generate-bindings`, `test-core`, `ci`
+10. Headless-Test-Harness + `klarvo-test-fixtures` + erste Mock-Impls
+11. v1-Windows-Tauri-Identifier-Check (für v1→v2-Migration-Pfad)
+12. tauri-specta-Integration + erste Bindings-Generation (Drift-Gate aktiv)
+13. CI-Pipelines (`ci-core.yml`, `ci-feature-lint.yml`, `ci-event-lint.yml`, `ci-bindings-drift.yml`)
+
+**Phase-0-Gates (müssen erfüllt sein bevor Phase 1 beginnt):**
+- JNI-Spike-Ergebnis committed (uniffi vs. raw-jni-only final)
+- Release-Hardening-Gate grün (verify-release passt für ersten Release-Build)
+- Bindings-Drift-Gate aktiv in CI
+- v1→v2-Migration-Pfad dokumentiert + Integration-Test grün
+- Mindestens 1 Plugin (z. B. `groq`) end-to-end lauffähig via headless Core-Test
 
