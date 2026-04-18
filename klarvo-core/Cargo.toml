@@ -9,3 +9,6 @@ publish.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
