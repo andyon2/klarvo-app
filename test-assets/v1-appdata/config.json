@@ -1,0 +1,24 @@
+{
+  "groqApiKey": "gsk_test_FIXTURE_NOT_REAL_0000000000",
+  "deepseekApiKey": "sk_test_FIXTURE_NOT_REAL_1111111111",
+  "openaiApiKey": "",
+  "anthropicApiKey": "",
+  "openrouterApiKey": "or_test_FIXTURE_NOT_REAL_2222222222",
+  "language": "de",
+  "outputLanguage": "de",
+  "cleanupStyle": "polished",
+  "sttProvider": "groq",
+  "llmProvider": "deepseek",
+  "sttModel": "whisper-large-v3-turbo",
+  "hotkey": "ctrl+shift+d",
+  "hotkeyMode": "hold",
+  "hotkeySlots": [
+    {"hotkey": "ctrl+shift+d", "mode": "hold", "insertAndSend": false},
+    {"hotkey": "", "mode": "hold", "insertAndSend": false}
+  ],
+  "appProfiles": [],
+  "textSnippets": [],
+  "deviceId": "fixture-device-001",
+  "autoPaste": true,
+  "pasteDelayMs": 50
+}

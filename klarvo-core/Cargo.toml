@@ -17,3 +17,4 @@ secrecy.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 klarvo-plugin-verbatim = { path = "../klarvo-plugins/klarvo-plugin-verbatim" }
+klarvo-test-fixtures = { path = "../klarvo-test-fixtures" }
