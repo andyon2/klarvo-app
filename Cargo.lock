@@ -1833,9 +1833,11 @@ name = "klarvo-core"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "klarvo-plugin-verbatim",
  "serde",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -1891,7 +1893,9 @@ dependencies = [
 name = "klarvo-plugin-verbatim"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "klarvo-core",
+ "tokio",
 ]
 
 [[package]]
