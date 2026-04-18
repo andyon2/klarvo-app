@@ -6,3 +6,6 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+walkdir = "2"
