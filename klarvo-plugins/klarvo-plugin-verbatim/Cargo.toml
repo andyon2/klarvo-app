@@ -7,3 +7,7 @@ publish.workspace = true
 
 [dependencies]
 klarvo-core = { path = "../../klarvo-core" }
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
