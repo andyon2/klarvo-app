@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 mod generate_bindings;
 mod lint_events;
+mod verify_release;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -14,6 +15,7 @@ fn main() -> ExitCode {
         }
         Some("generate-bindings") => generate_bindings::run(),
         Some("lint-events") => lint_events::run(),
+        Some("verify-release") => verify_release::run(),
         Some(cmd) => {
             eprintln!("xtask: subcommand '{cmd}' not implemented yet");
             ExitCode::from(2)
@@ -27,10 +29,10 @@ fn print_help() {
     println!("Subcommands:");
     println!("  generate-bindings   tauri-specta TS regen (shells/windows/src/bindings/index.ts)");
     println!("  lint-events         Validation-Patch G1 — enforce #[tauri_specta(event_name)] dot-notation");
+    println!("  verify-release      Validation-Patch G2 — release-hardening gate (forbidden features, tracing-subscriber sentinel)");
     println!();
     println!("Planned (stubs):");
     println!("  lint-features       Cargo-feature naming convention enforcer");
-    println!("  verify-release      Validation-Patch G2 — release hardening gate");
     println!("  new-plugin <name>   Plugin skeleton generator");
     println!("  build-all           Build core + plugins + shells");
     println!("  test-core           Headless core tests (Linux)");
