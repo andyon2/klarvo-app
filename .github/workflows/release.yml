@@ -1,0 +1,60 @@
+name: release-hardening (G2)
+
+# Scope: Phase-0 skeleton. `verify-release` is the authoritative gate
+# (spec: architecture.md §4a). The build job runs only after the gate
+# passes — failure at the gate prevents any release build from starting.
+#
+# Trigger is manual only (`workflow_dispatch`). Tag-push triggers and the
+# full platform matrix (Windows shell, Android AAB, updater artifacts,
+# signing) are out of scope here and will arrive with the real release
+# pipeline in a later phase. The core build on Linux is headless and
+# serves as a placeholder that keeps this workflow exercised.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-release:
+    name: xtask verify-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # rust-toolchain.toml in the repo pins the channel; this action honors it.
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: xtask-verify-release
+
+      - name: Run xtask verify-release
+        run: cargo run -q -p xtask -- verify-release
+
+  build-core-stub:
+    name: cargo build --release -p klarvo-core
+    runs-on: ubuntu-latest
+    needs: verify-release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: release-build-core
+
+      - name: Build klarvo-core (release, Linux-headless placeholder)
+        run: cargo build --release -p klarvo-core
