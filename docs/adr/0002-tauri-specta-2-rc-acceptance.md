@@ -53,3 +53,20 @@ Einordnung im Phase-0-Flow: nach Cargo-Workspace-Init und Core-Traits, bevor ers
 ## Next Action
 
 Beim Scaffold in Phase 0 gegen `2.0.0-rc.24` pinnen. Bei stable-2.0-Release: separates Upgrade-ADR, nicht silent mergen.
+
+## Amendment 1 — 2026-04-18: rc.24 event-attribute syntax correction
+
+**Finding:** `#[specta(rename)]` removed on event containers in rc.24.
+
+**Correct:** `#[tauri_specta(event_name = "app.ready")]`.
+
+**Default without attribute:** `struct_name.to_kebab_case()` (NOT dot-notation).
+
+**Policy unchanged:** every event must carry explicit dot-notation name.
+
+**G1-Lint target updated accordingly:** scan `#[derive(..., tauri_specta::Event, ...)]` structs, require `#[tauri_specta(event_name = "…")]` with `.` in value.
+
+**Source of finding:** Smoke-Test compile error in `tauri-specta-macros-2.0.0-rc.24`; confirmed in macro source `tauri-specta-macros/src/lib.rs:41-44` (fallback `ident.to_string().to_kebab_case()` when `event_name` attribute absent).
+
+**Updated Smoke-Test-Plan Schritt 2 (supersedes original §Smoke-Test-Plan):**
+> 1 Event-Type mit `#[tauri_specta(event_name = "recording.test")]` (or similar dot-notation) registrieren. `#[serde(rename)]` erfüllt die Anforderung NICHT — betrifft nur Payload-Feld-Keys, nicht die Event-NAME-Konstante.
