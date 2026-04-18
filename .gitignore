@@ -16,8 +16,9 @@ dist-ssr/
 *.log
 npm-debug.log*
 
-# Tauri
+# Tauri (auto-generated per-build schemas)
 src-tauri/gen/
+**/src-tauri/gen/
 
 # Android
 android/.gradle/
