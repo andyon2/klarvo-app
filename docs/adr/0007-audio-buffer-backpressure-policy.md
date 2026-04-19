@@ -1,6 +1,6 @@
 # ADR-0007: Audio-Buffer-Backpressure-Policy (Broadcast-Channel Lag-Tolerance)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-19
 
 ## Context
@@ -135,3 +135,37 @@ Rejected: Memory-Growth-Risk bei Slow-Consumer-Szenarien (Groq-Endpoint-Hang üb
 - `memory/project_event_ts_ms_convention` (ts_ms-Semantik bleibt unberührt)
 - `memory/project_no_remote_telemetry` (Lag-Telemetry ist lokal-only, kein Remote-Sink)
 - `memory/feedback_architecture_doc_authoritative` (Korollar: (a) ist Conformance — das ADR dokumentiert Sub-Decisions, nicht Architektur-Abweichung)
+
+## Amendment 1 — 2026-04-19: Open Questions resolved (Status → Accepted)
+
+**Finding:** Original ADR hat Q1 (Capacity-Surface — Konstante vs Constructor-Arg) und Q2 (Lag-Event-Aggregation-Scope — `tracing` only vs dediziertes `SessionStats`) als „for Andy-review" offen gelassen. Amendment resolved beide und flipt Status Proposed → Accepted.
+
+**Resolution Q1 — Capacity-Surface: Beide (Konstante + Constructor-Arg).**
+
+```rust
+// In klarvo-core/src/audio/mod.rs:
+pub const DEFAULT_AUDIOEVENT_CAPACITY: usize = 256;
+```
+
+AudioSource-Constructor (oder der Shell-Caller, der den `broadcast::channel` anlegt) nimmt `capacity: usize` Parameter (keine Keyword-Args in Rust). Caller picked entweder die Konstante oder eigenen Wert. **Tests referenzieren die Konstante** statt Magic-256, damit zukünftige Capacity-Tuning in einem einzigen Resolve-Punkt landet:
+
+```rust
+let (tx, _rx) = tokio::sync::broadcast::channel::<AudioEvent>(
+    klarvo_core::audio::DEFAULT_AUDIOEVENT_CAPACITY,
+);
+```
+
+**Resolution Q2 — Lag-Event-Aggregation: `tracing`-only in Phase 1.**
+
+Phase-1-Scope beschränkt Observability von Backpressure-Lag-Events auf den `klarvo.audio.backpressure`-tracing-Target. Keine strukturierten Session-End-Summaries, keine dedizierte `SessionStats`-Struct.
+
+**Forward-Ref:** SessionStats-Aggregation-Layer ist **Epic-6-Scope** (Observability), baut auf `klarvo.audio.backpressure`-tracing-target als Upstream-Input-Stream auf. Phase-1-Stories emittieren nur das Tracing-Event; Epic 6 kann es ohne Schema-Change in aggregierte Metriken überführen.
+
+**Policy unchanged:** Broadcast-Channel-Choice (a), 256-Slot-Default, Log-and-Continue-Handler-Pattern, Event-Type-Mischung im Channel, NFR2-Producer-Guarantee bleiben wie im Original-Decision-Block. Amendment fixiert nur Konstanten-Location (Q1) und Telemetry-Aggregation-Boundary (Q2).
+
+**Consequences for downstream:**
+- Story 2.2 (STT-Aggregator + Pipeline-Entry): Consumer-Code verwendet `DEFAULT_AUDIOEVENT_CAPACITY` statt Magic-256; Log-and-Continue-Handler-Pattern wie im Decision-Block.
+- Story 2.4 (E2E Headless Flow): Integration-Test kann Capacity-Override via Constructor-Arg prüfen — z. B. Slow-Consumer-Sim mit niedriger Capacity simuliert Lag-Events deterministisch reproduzierbar.
+- Epic 6 (Observability) konsumiert `klarvo.audio.backpressure`-Target als Input-Stream für SessionStats-Metric-Aggregation — kein Phase-1-Scope, aber Amendment macht den Forward-Reference explizit.
+
+**Source of finding:** Andy-Review 2026-04-19 (post-Opus-Delegate-Session, mid-Epic-2-Pre-Flight-Resolution).
