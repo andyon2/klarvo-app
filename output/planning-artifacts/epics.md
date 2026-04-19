@@ -1706,9 +1706,268 @@ Story-2.4-Commit-Message kann optionalen Halbsatz enthalten.
 
 #### Story 2.5: cpal-Real-AudioSource-Impl (Platform-Gated Windows)
 
-*Titles-approved 2026-04-19. Full ACs pending.*
+**As a** Core-Developer delivering the Phase-1 Hardware-Walking-Skeleton,
+**I want** `CpalAudioSource` in einem neuen `klarvo-audio-cpal/` workspace-root Crate — WASAPI-Default-Input-Device, `CaptureHandle`-RAII-gebundener `cpal::Stream`, rubato-basierter Resampler auf 16 kHz, I16/F32-SampleFormat-Handling, `broadcast::Sender<AudioEvent>`-Ownership per ADR-0006 —
+**So that** (a) `run_capture_session` (Story 2.2) mit echter Mikrofon-Hardware verbunden werden kann, (b) Sample-Rate-Conversion- und RAII-Drop-Behavior in headless Unit-Tests auf Linux-CI verifizierbar sind ohne Audio-Device, und (c) Epic 3 (`shells/windows/`) `CpalAudioSource` als reine Crate-Dep importiert ohne Shell-interne Audio-Implementierung.
 
-**Outcome:** `klarvo-plugin-cpal`-Crate (oder `klarvo-audio-cpal` per Audio-Domain-Naming) mit WASAPI-Default-Input-Device-Enumeration; `CaptureHandle`-RAII bindet `cpal::Stream`; ADR-0006-konforme `broadcast::Sender<AudioEvent>`-Ownership; Platform-Gate via Cargo-Feature `platform-windows`; Sample-Rate-Convert-Pfad auf `AUDIO_SAMPLE_RATE` (16 kHz) — cpal liefert häufig 44.1/48 kHz, Konversion Impl-intern. Tests: Hardware-Integration-Test `cfg(feature="platform-windows")` is Phase-1-out-of-scope (CI ohne Audio-Devices); Unit-Tests für Sample-Rate-Convert-Logik + RAII-Drop-Behavior.
+**FRs covered:** FR13 (Windows-Microphone-Input-Capture)
+
+**Dependencies:** Story 2.1 (`AudioSource`-Trait, `CaptureConfig`, `CaptureHandle`, `AudioEvent`, `AudioError`, `DEFAULT_AUDIOEVENT_CAPACITY`, `AUDIO_SAMPLE_RATE`); ADR-0006 Amendment 2 (`klarvo-audio-cpal/` Location, `CpalAudioSource` Struct-Name, `cfg(target_os)`-at-Consumer); ADR-0007 (Broadcast-Backpressure-Policy)
+
+---
+
+**Given** `klarvo-audio-cpal/` als neues Workspace-Root-Crate angelegt wird,
+**When** `Cargo.toml` des Crates definiert wird,
+**Then** gilt:
+```toml
+[package]
+name    = "klarvo-audio-cpal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+klarvo-core   = { workspace = true }
+cpal          = { workspace = true }
+rubato        = { workspace = true }
+tokio         = { workspace = true, features = ["sync"] }
+async-trait   = { workspace = true }
+tracing       = { workspace = true }
+thiserror     = { workspace = true }
+
+[dev-dependencies]
+tokio         = { workspace = true, features = ["rt", "macros"] }
+approx        = "0.5"
+```
+**And** `klarvo-audio-cpal` ist in `Cargo.toml` (Workspace-Root) als `members`-Entry eingetragen, **And** `rubato` und `cpal` sind als Workspace-Dependencies deklariert (Pinning: `cpal = "0.15"`, `rubato = "0.16"`; Implementer prüft neueste Patchversion bei Commit-Time), **And** kein `cfg(target_os)`-Gate im Crate selbst — Crate baut auf allen Plattformen inkl. Linux-CI (per ADR-0006 Amendment 2).
+
+---
+
+**Given** `klarvo-audio-cpal/src/lib.rs` angelegt wird,
+**When** das Modul-Layout definiert wird,
+**Then** gilt:
+```rust
+pub mod resampler;
+pub mod source;
+
+pub use source::CpalAudioSource;
+```
+**And** kein weiteres `pub`-Symbol im Crate-Root außer `CpalAudioSource` und den zwei `pub mod`-Deklarationen.
+
+---
+
+**Given** `klarvo-audio-cpal/src/resampler.rs` angelegt wird,
+**When** der Resampler-Modul implementiert wird,
+**Then** exportiert er eine crate-interne `Resampler`-Struct mit exakt dieser API:
+```rust
+pub(crate) struct Resampler { /* rubato::FftFixedIn<f32> intern */ }
+
+impl Resampler {
+    /// Constructs a resampler from `input_rate` Hz to `output_rate` Hz.
+    /// `chunk_size` ist die erwartete Input-Sample-Count pro `process()`-Call.
+    pub(crate) fn new(input_rate: u32, output_rate: u32, chunk_size: usize)
+        -> Result<Self, AudioError>;
+
+    /// Resamplet einen Input-Chunk zu Output-Samples.
+    /// Input muss exakt `chunk_size` Samples haben (padding zu 0.0 wenn kürzer).
+    pub(crate) fn process(&mut self, input: &[f32]) -> Result<Vec<f32>, AudioError>;
+}
+```
+**And** rubato-API-Nutzung: `rubato::FftFixedIn::<f32>::new(input_rate as usize, output_rate as usize, chunk_size, 2, 1)`. Fehler aus `rubato::ResampleError` werden zu `AudioError::ResampleFailed` gemappt, **And** `input_rate == output_rate` Shortcut: `process()` returnt `input.to_vec()` direkt ohne rubato-Call.
+
+---
+
+**Given** `klarvo-audio-cpal/src/source.rs` angelegt wird,
+**When** `CpalAudioSource` und `impl AudioSource for CpalAudioSource` implementiert werden,
+**Then** gilt für Struct-Definition und Rustdoc:
+```rust
+/// cpal-based `AudioSource` implementation for use with the default system
+/// audio input device.
+///
+/// # Platform behaviour
+/// Instantiates the cpal default host (WASAPI on Windows, ALSA on Linux,
+/// CoreAudio on macOS). Device-enumeration returns `AudioError::DeviceUnavailable`
+/// if no default input device is present. The crate itself is unconditionally
+/// compiled on all platforms — `cfg(target_os)` selection happens at the
+/// Shell-Consumer level (ref ADR-0006 Amendment 2).
+///
+/// # Shell-integration scope
+/// Direct use in production code is Epic-3-scope (`shells/windows/` imports this
+/// crate and constructs `CpalAudioSource` at startup). Phase-1 unit-tests exercise
+/// the resampler and RAII-Drop path without real audio hardware.
+pub struct CpalAudioSource;
+```
+**And** `CpalAudioSource` ist ein Unit-Struct — alle Konfiguration kommt per `CaptureConfig` in `start()` rein.
+
+---
+
+**Given** `impl AudioSource for CpalAudioSource` implementiert wird,
+**When** `start(&mut self, config: CaptureConfig) -> Result<CaptureHandle, AudioError>` ausgeführt wird,
+**Then** läuft folgende Sequenz:
+1. `cpal::default_host()` → `host.default_input_device()` → `None` → `return Err(AudioError::DeviceUnavailable)`.
+2. `device.default_input_config()` → extrahiert `sample_rate` + `channels` + `sample_format`. Fehler → `return Err(AudioError::DeviceConfigError { source: e.to_string() })`.
+3. SampleFormat-Dispatch (siehe SampleFormat-AC unten).
+4. `Resampler::new(native_sample_rate, AUDIO_SAMPLE_RATE, chunk_size)` konstruiert (chunk_size Impl-intern, typisch 1024). Fehler → `return Err(AudioError::ResampleFailed { source: e.to_string() })`.
+5. Session-`Instant::now()` capturen — einmalig, für `ts_ms`-Berechnung in Callbacks.
+6. `Arc<Mutex<Option<Sender<AudioEvent>>>>` konstruiert mit `Some(config.events)` — wird von Input-Callback, Error-Callback **und** `CaptureHandle` geteilt (drei Arc-Clones; ein Sender-Instance). Siehe Sender-Sharing-AC.
+7. `device.build_input_stream(...)` mit Input-Callback + Error-Callback, beide per `Arc::clone` auf den Shared-Sender.
+8. `stream.play()`.
+9. `CaptureHandle { _stream: stream, _tx: Arc::clone(&shared_tx) }` returnen.
+
+**And** `CaptureHandle`-Drop:
+```rust
+impl Drop for CaptureHandle {
+    fn drop(&mut self) {
+        // Close channel first (consumers see RecvError::Closed immediately),
+        // then stream auto-drops and halts callbacks.
+        *self._tx.lock().unwrap() = None;
+    }
+}
+```
+Drop des `_stream`-Fields besorgt anschließend `cpal::Stream::drop()` → Stream-Stop. Kein expliziter `pause()`-Call nötig.
+
+---
+
+**Given** Sender-Sharing zwischen Input-Callback, Error-Callback und CaptureHandle spezifiziert wird,
+**When** `start()` die drei Arc-Clones anlegt,
+**Then** gilt: Input-Callback und Error-Callback teilen sich denselben `Arc<Mutex<Option<Sender<AudioEvent>>>>` — kein separater Sender-Clone. Nur ein `Sender`-Instance existiert (in `Some(config.events)`). Erst wenn alle drei Arc-Referenzen (Input-Callback, Error-Callback, CaptureHandle) gedroppt werden, droppt der einzige Sender. **Channel schließt deterministisch** wenn einer der drei Pfade `*guard = None` setzt:
+
+```rust
+// Input-Callback (illustrative; cpal callbacks are FnMut() -> (), no ? operator):
+let tx_input = Arc::clone(&shared_tx);
+move |data: &[T], _: &InputCallbackInfo| {
+    let guard = tx_input.lock().unwrap();
+    if let Some(s) = guard.as_ref() {
+        let ts_ms = session_start.elapsed().as_millis() as u64;  // chunk-start FIRST
+        let mono = downmix_to_mono(data, channels);
+        if let Ok(resampled) = resampler_ref.lock().unwrap().process(&mono) {
+            let _ = s.send(AudioEvent::Samples {
+                data: Arc::from(resampled.as_slice()),
+                ts_ms,
+            });
+            let _ = s.send(AudioEvent::Level {
+                rms: compute_rms(&mono),
+                ts_ms,
+            });
+        }
+    }
+}
+
+// Error-Callback:
+let tx_error = Arc::clone(&shared_tx);
+move |e: StreamError| {
+    tracing::warn!(target: "klarvo.audio.device", error = %e, "cpal stream error — closing channel");
+    *tx_error.lock().unwrap() = None;
+}
+```
+
+**Mutex-Lock-Latency** im Audio-Callback ist bei 10–50 Calls/Sekunde vernachlässigbar (<1 µs). Der Lock ist notwendig damit der Error-Callback-Drop deterministisch die Channel schließt, ohne dass ein gleichzeitiger Input-Callback-Send nach dem Drop durchgeht.
+
+**ts_ms-Reihenfolge:** `session_start.elapsed()` wird als **erstes Statement** im Callback-Body capturt (vor downmix, vor resample) — damit ist `ts_ms` Chunk-Start per ADR-0006 Amendment 1 Resolution Q1.
+
+**Note:** Das Pseudo-Code-Sample oben ist illustrativ. cpal-Callbacks sind `FnMut(&[T], &InputCallbackInfo) -> ()` — kein Result-Return, kein `?`-Operator. Fehler aus `resampler.process()` werden via `if let Ok(...)` behandelt; ResampleFailed in einem Callback ist Log-and-Skip (kein Panic, kein Channel-Close).
+
+---
+
+**Given** SampleFormat-Dispatch implementiert wird,
+**When** `device.default_input_config()` das Format zurückgibt,
+**Then** gilt:
+- **`SampleFormat::F32`**: `build_input_stream::<f32, _, _>(...)` — `data: &[f32]` direkt in Downmix-Pfad.
+- **`SampleFormat::I16`**: `build_input_stream::<i16, _, _>(...)` — in-callback Konversion: `data.iter().map(|&s| s as f32 / 32768.0).collect::<Vec<f32>>()`.
+- **`SampleFormat::U16`** und alle weiteren Varianten: `return Err(AudioError::UnsupportedFormat)`.
+
+**And** Downmix-Logik: Multi-Channel (z.B. stereo: 2 ch) → Mono via Channel-Averaging: `interleaved.chunks(channels).map(|ch| ch.iter().sum::<f32>() / ch.len() as f32).collect()`. Mono-Input (1 ch): Passthrough.
+
+---
+
+**Given** `AudioError` in `klarvo-core/src/audio/source.rs` (Story 2.1 — variants waren „deferred to impl-story") erweitert wird,
+**When** Story 2.5 die cpal-Impl implementiert,
+**Then** werden folgende Variants additiv hinzugefügt (kein bestehender Variant geändert):
+```rust
+/// No default input device available on the current host.
+DeviceUnavailable,
+/// cpal stream encountered an error mid-capture; session was terminated.
+CaptureInterrupted { source: String },
+/// Resampler initialisation or processing failed.
+ResampleFailed { source: String },
+/// cpal device configuration query failed.
+DeviceConfigError { source: String },
+```
+**And** `#[non_exhaustive]`-Attribute bleibt erhalten, **And** Enum-Level-Rustdoc ergänzt folgenden Einzeiler: *"The `source: String` fields on these variants are for debugging/telemetry only. Shell-side mapping to `AppError` must preserve only variant shape for user-facing messages (i18n-keys); source-text is log-target-bound."*, **And** kein neuer i18n-Key — User-facing-Message-Keys sind Epic-3-Mapping-Responsibility.
+
+---
+
+**Given** Unit-Tests in `klarvo-audio-cpal/src/resampler.rs` (`#[cfg(test)]`) laufen,
+**When** `cargo test -p klarvo-audio-cpal` ausgeführt wird,
+**Then** existieren folgende 4 Tests:
+
+**`resampler_sample_count_correct`:**
+- `Resampler::new(48_000, 16_000, 1024)` konstruiert.
+- Input: `vec![0.0f32; 1024]`.
+- Output-Sample-Count ≈ `1024 * 16_000 / 48_000 = 341` (±1). Assert: `(output.len() as i64 - 341).abs() <= 1`.
+
+**`resampler_sine_preserves_energy`:**
+- Input: 1024-Sample 440-Hz-Sinus bei 48 kHz.
+- RMS des Outputs ≈ RMS des Inputs. Assert: `approx::assert_relative_eq!(output_rms, input_rms, epsilon = 0.15)`.
+
+**`resampler_passthrough_when_rates_equal`:**
+- `Resampler::new(16_000, 16_000, 512)`.
+- `process()` → Output ist `input.to_vec()` exakt (Passthrough-Shortcut, kein rubato-Call).
+
+**`i16_conversion_math`:**
+- Input: `[i16::MAX, 0_i16, i16::MIN]`.
+- Erwartet als f32: `[≈1.0, 0.0, ≈-1.0]`. Assert: `approx::assert_relative_eq!(v, expected, epsilon = 0.001)` für alle 3 Samples.
+
+---
+
+**Given** RAII/Channel-Invariant getestet wird,
+**When** `klarvo-audio-cpal/tests/raii_drop.rs` läuft,
+**Then** existiert folgender Test:
+
+**`broadcast_sender_drop_closes_receivers`:**
+```rust
+#[tokio::test]
+async fn broadcast_sender_drop_closes_receivers() {
+    // Verifies the channel-closure invariant that CaptureHandle-Drop relies on:
+    // dropping the last Sender instance closes the channel for all receivers.
+    // Full RAII integration (real cpal stream) requires Windows hardware —
+    // manual Dogfooding smoke-test after Epic-3-wire-up.
+    let (tx, mut rx) = tokio::sync::broadcast::channel::<klarvo_core::audio::AudioEvent>(
+        klarvo_core::audio::DEFAULT_AUDIOEVENT_CAPACITY,
+    );
+    drop(tx);
+    assert!(matches!(
+        rx.recv().await,
+        Err(tokio::sync::broadcast::error::RecvError::Closed)
+    ));
+}
+```
+
+---
+
+**Given** alle obigen Definitionen vorliegen,
+**When** `cargo test -p klarvo-audio-cpal` auf Linux-CI läuft,
+**Then** gilt: alle 5 Tests grün, kein Audio-Device benötigt, unter 10 Sekunden total. `cargo check -p klarvo-audio-cpal` grün auf Linux-CI.
+
+---
+
+**Scope-Fence (Non-Goals Story 2.5):**
+- Shell-Integration (Tauri-Startup, Hotkey → `CpalAudioSource::start()`): Epic-3-scope
+- `cfg(target_os = "windows")`-Gate beim Consumer: Epic-3-scope (`shells/windows/`)
+- Echter Hardware-Integration-Test (real Mikrofon): Phase-1-out-of-scope; manueller Dogfooding-Smoke-Test nach Epic-3-Wire-Up
+- Android-Impl (`AndroidAudioSource`, API-choice TBD): Phase-3-scope (`shells/android/`)
+- Configurable resampler quality (SincFixedIn vs FftFixedIn): Phase-2+ Tuning
+- Multiple input device selection (non-default): Epic-4 / Settings-Scope
+
+**Cross-References:**
+- ADR-0006 Amendment 2 (`klarvo-audio-cpal/` Location, `CpalAudioSource` Struct-Name, `cfg(target_os)` at Consumer, `AndroidAudioSource` Phase-3-Placeholder)
+- ADR-0006 Amendment 1 (`ts_ms` Chunk-Start, Chunk-Size Impl-internal)
+- ADR-0007 (Broadcast-Backpressure: `let _ = s.send(...)` non-blocking, Consumer-Side Log-and-Continue)
+- Story 2.1 (`AudioSource`-Trait, `CaptureConfig`, `CaptureHandle`, `AudioEvent`, `AudioError`, `DEFAULT_AUDIOEVENT_CAPACITY`, `AUDIO_SAMPLE_RATE`)
+- Story 2.2 (`run_capture_session` Closed-mid-Speech-Path — Channel-Closure-Invariant consumer)
+- `memory/project_event_ts_ms_convention` (`ts_ms` Chunk-Start-Semantik)
+- `memory/feedback_scaffold_fail_soft_pattern` (`DeviceUnavailable` returnt `Err(AudioError)`, kein `todo!()`)
+- `memory/feedback_test_raii_cleanup_pattern` (Drop-basierter RAII-Guard)
+- `memory/feedback_premature_abstraction_guard` (Resampler bleibt crate-local bis zweiter Konsument)
 
 ---
 
