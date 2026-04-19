@@ -1036,6 +1036,141 @@ User (Andy) kann den kanonischen Hold-to-Talk-Workflow ausführen — Audio-Capt
 
 ---
 
+#### Story 2.1: AudioSource-Trait + Core-Capture-Command-Surface (Contract-Layer)
+
+**As a** Core-Developer wiring the dictation-pipeline,
+**I want** einen Phase-1-stabilen `AudioSource`-Trait in `klarvo-core::audio` mit `CaptureConfig`-Injection, opaquem `CaptureHandle`-RAII-Drop und einer `AudioEvent`-Enum-Broadcast-Contract,
+**So that** Shell-Implementierungen (Epic 3 Windows-cpal, Phase-3 Android-AudioRecord) gegen eine stabile Core-Abstraction programmieren können, Core-Tests via `MockAudioSource` (aus `klarvo-test-fixtures`) headless laufen, und die `ts_ms`-Invariante (NFR3 session-relative monotone Caller-Clock) in der Trait-Rustdoc verankert ist — bevor eine einzige Zeile cpal-Code die Shell betritt.
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core/src/audio/events.rs` neu angelegt wird (per architecture.md §Directory-Structure: `audio/events.rs` ist separate Datei für Broadcast-Channel-Types),
+**When** die Datei definiert wird,
+**Then** enthält sie exakt:
+```rust
+#[derive(Debug, Clone)]
+pub enum AudioEvent {
+    Samples { data: std::sync::Arc<[f32]>, ts_ms: u64 },
+    Level   { rms: f32,                    ts_ms: u64 },
+}
+```
+**And** Rustdoc auf `AudioEvent::Samples.ts_ms` trägt exakten Text: *"Timestamp of chunk START, caller-monotone ms since session-start (ref ADR-0001, memory/project_event_ts_ms_convention). AudioSource-impls hold one `Instant` captured in `start()` and derive `ts_ms = instant.elapsed().as_millis() as u64` for each emitted chunk."*, **And** `klarvo-core/src/audio/mod.rs` deklariert `pub mod events;` und re-exportiert `pub use events::AudioEvent;`, **And** `klarvo_core::audio::AudioEvent` ist als Public-API-Surface erreichbar, **And** `cargo check -p klarvo-core` kompiliert grün.
+
+**Given** `klarvo-core/src/audio/source.rs` neu angelegt wird und `AudioError` dort co-located mit dem Trait definiert wird (analog `vad/provider.rs`-Pattern),
+**When** `AudioError` definiert wird,
+**Then** hat `AudioError` genau zwei Varianten, ist `#[non_exhaustive]` und nutzt `thiserror::Error`:
+```rust
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum AudioError {
+    #[error("audio device unavailable")]
+    DeviceUnavailable,
+    #[error("unsupported audio format")]
+    UnsupportedFormat,
+}
+```
+**And** Rustdoc auf dem Enum trägt exakten Text: *"`#[non_exhaustive]` — Epic 3 cpal-impl and Phase-3 Android-impl will extend this enum with hardware-specific variants (e.g. `PermissionDenied`, `CaptureInterrupted`). The `#[non_exhaustive]` attribute prevents match-exhaustiveness-breaks at consumer call-sites when variants are added."*, **And** Compile-Test verifiziert `AudioError: Send + Sync + 'static` (inline `fn _assert<T: Send + Sync + 'static>() {} _assert::<AudioError>();`).
+
+**Given** `klarvo-core/src/audio/keys.rs` neu angelegt wird (parallel zum `keystore/keys.rs`-Muster aus Story 1C.1),
+**When** die i18n-Key-Konstanten definiert werden,
+**Then** enthält die Datei:
+```rust
+pub const DEVICE_UNAVAILABLE: &str = "error.audio.device_unavailable";
+pub const UNSUPPORTED_FORMAT: &str  = "error.audio.unsupported_format";
+```
+**And** `klarvo-core/src/audio/mod.rs` deklariert `pub mod keys;` sodass `klarvo_core::audio::keys::{DEVICE_UNAVAILABLE, UNSUPPORTED_FORMAT}` öffentlich erreichbar sind, **And** beide Strings entsprechen der `error.<domain>.<reason>` dot-notation-Konvention per `memory/project_i18n_core_contract`, **And** Rustdoc auf `DEVICE_UNAVAILABLE` trägt: *"Used by Epic 3 cpal-impl (`WindowsCpalAudioSource::start`) when the OS-audio-device is unavailable. Phase-1 `MockAudioSource` never emits this key — defined here to co-locate the error-contract with the Trait-definition (precedent: `memory/project_keystore_trait_surface` 1C.1-pattern)."*, **And** Rustdoc auf `UNSUPPORTED_FORMAT` trägt: *"Emitted when the impl cannot resample/downmix to the advisory 16 kHz mono f32 format. Explicitly named in ADR-0006-Rustdoc as the concrete error-path from `CaptureConfig.sample_rate` advisory-miss."*, **And** ein Key-Format-Unit-Test prüft: `assert!(DEVICE_UNAVAILABLE.starts_with("error.audio.")); assert!(UNSUPPORTED_FORMAT.starts_with("error.audio."));`.
+
+**Given** `CaptureConfig` und `CaptureHandle` in `klarvo-core/src/audio/source.rs` definiert werden,
+**When** diese Typen angelegt werden,
+**Then** hat `CaptureConfig` genau:
+```rust
+pub struct CaptureConfig {
+    /// Advisory sample-rate. Impls resample to 16 kHz if possible.
+    pub sample_rate: u32,
+    /// Advisory channel-count. Impls downmix to mono if possible.
+    pub channels: u16,
+    /// Broadcast-sender; AudioSource publishes AudioEvent variants here.
+    pub events: tokio::sync::broadcast::Sender<AudioEvent>,
+}
+```
+**And** `CaptureHandle` ist ein **opaker** Struct ohne öffentliche Felder oder Methoden (exakter internal-Shape ist Impl-internal; ein `tokio::sync::oneshot::Sender<()>` oder äquivalentes Shutdown-Signal ist ein valides private-Field-Muster), **And** Rustdoc auf `CaptureHandle` trägt exakten Text: *"Drop-guard that stops the capture-session and releases OS resources. Hold this value for the lifetime of the capture session; dropping it signals the capture-thread to terminate. Downstream consumers observe `RecvError::Closed` on their broadcast-receivers after the handle is dropped. Panic-safe: `Drop` fires unconditionally on scope-exit, including via panic-unwind (ref `memory/feedback_test_raii_cleanup_pattern`)."*, **And** Rustdoc auf `CaptureConfig.events` trägt: *"Caller constructs the channel via `tokio::sync::broadcast::channel(klarvo_core::audio::DEFAULT_AUDIOEVENT_CAPACITY)` and holds the corresponding `Receiver` for downstream consumption. AudioSource implementations publish `AudioEvent` variants autonomously during an active capture-session."*, **And** Compile-Tests verifizieren `CaptureConfig: Send + 'static` und `CaptureHandle: Send + 'static`.
+
+**Given** `AudioSource`-Trait in `klarvo-core/src/audio/source.rs` definiert wird,
+**When** der Trait angelegt wird,
+**Then** hat er die exakte Signatur:
+```rust
+#[async_trait::async_trait]
+pub trait AudioSource: Send + 'static {
+    async fn start(
+        &mut self,
+        config: CaptureConfig,
+    ) -> Result<CaptureHandle, AudioError>;
+}
+```
+**And** der Trait erscheint **nicht** als `PluginRegistry`-Slot (`register_audio_source` oder ähnliches existiert nicht in `registry.rs`) — AudioSource ist Infrastructure-Category, nicht Plugin-Contract (per ADR-0006-Sub-Decision-6, per `memory/project_phase1_trait_narrowing`), **And** `klarvo-core/src/traits/mod.rs` re-exportiert `pub use crate::audio::source::AudioSource;` sodass `klarvo_core::traits::AudioSource` erreichbar ist (per ADR-0006 Trait-Location-Statement), **And** das Module-Level-Rustdoc auf dem Trait enthält alle folgenden Clauses (exakter Text):
+- **(a) Infrastructure-Scope:** *"Infrastructure-Trait (per ADR-0006, Accepted 2026-04-19). Not part of the 4-Trait-Data-Flow-Stability-Ring (`PipelineStage` / `SttProvider` / `CleanupStyle` / `VadProvider`). `AudioSource` is Infrastructure-Category, analogous to `KeyStore` (Epic 1C): one Shell-Binary-scoped impl per platform — never registry-looked-up. Impls live in `shells/windows-tauri/` (Epic 3 cpal) and `shells/android/` (Phase 3 AudioRecord). Core holds only the Trait."*
+- **(b) ts_ms-Obligation:** *"Implementations MUST set `ts_ms` on emitted `AudioEvent::Samples` to the chunk-START timestamp, derived from a single `Instant` captured at the start of `start()`, as session-relative monotone milliseconds (ref ADR-0001, `memory/project_event_ts_ms_convention`). Downstream consumers can compute chunk-end as `ts_ms + (data.len() as u64 * 1000 / 16_000)`."*
+- **(c) Sample-Format:** *"Implementations SHOULD resample and downmix to 16 kHz mono f32 before emitting `AudioEvent::Samples` (Whisper-standard per ADR-0006-Sub-Decision-2). If the hardware cannot satisfy the advisory `CaptureConfig.sample_rate` / `.channels`, return `AudioError::UnsupportedFormat`. Emitted chunk-size is implementation-internal (example: ~1024 samples = 64 ms @ 16 kHz, subject to OS-audio-driver granularity per ADR-0006-Amendment-Q2)."*
+- **(d) `&mut self` rationale:** *"`&mut self` prevents parallel-invocation of `start()` on a single `AudioSource` instance, making the borrow-checker a compile-time guard against overlapping capture-sessions. Multi-session requires multiple `AudioSource` instances (per ADR-0006-Sub-Decision-5, analogous to ADR-0001 §Resolved-Q5 for `VadProvider`)."*
+- **(e) Forward-Refs:** *"Windows-cpal-Impl (`WindowsCpalAudioSource`) is Epic 3 scope (`shells/windows-tauri/`). Android-AudioRecord-Impl is Phase-3 scope. Phase-1 Core-tests use `klarvo_test_fixtures::MockAudioSource`. `AudioBuffer` (aggregate-type for `StageData::Audio`) and `audio/buffer.rs` are Story 2.2 scope; `AudioEvent::Samples` chunks are the raw stream that Story 2.2 aggregates."*
+
+**Given** `klarvo-core/src/audio/mod.rs` aktualisiert wird,
+**When** das Modul die neuen Submodule aufnimmt,
+**Then** enthält `mod.rs`:
+```rust
+pub mod events;
+pub mod keys;
+pub mod source;
+pub mod vad; // existing, unchanged
+
+pub use events::AudioEvent;
+pub use source::{AudioError, AudioSource, CaptureConfig, CaptureHandle};
+
+pub const DEFAULT_AUDIOEVENT_CAPACITY: usize = 256;
+```
+**And** `klarvo_core::audio::DEFAULT_AUDIOEVENT_CAPACITY` ist als `256_usize` erreichbar (ADR-0007-Amendment-Q1), **And** Rustdoc auf `DEFAULT_AUDIOEVENT_CAPACITY` trägt: *"Default `tokio::sync::broadcast` channel capacity for `AudioEvent` streams. At ~1024 samples per chunk (64 ms @ 16 kHz), 256 slots ≈ 16 s of audio-backlog before a consumer lags. Pass to `broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY)` or override for testing (e.g., capacity-1 for deterministic lag-simulation in ADR-0007 backpressure tests). Ref ADR-0007-Amendment-Q1."*, **And** `klarvo-core/src/lib.rs` re-exportiert `pub mod audio;` (sofern noch nicht vorhanden — prüfen gegen bestehende `lib.rs`-Deklaration und hinzufügen falls fehlend).
+
+**Given** `klarvo-test-fixtures` um `MockAudioSource` erweitert wird (Minimal-Synthetic-Chunk-Emitter per U3-Resolution + `memory/feedback_premature_abstraction_guard`),
+**When** `MockAudioSource::with_synthetic_chunks(count, samples_per_chunk, chunk_interval_ms)` konstruiert und `start(config)` aufgerufen wird,
+**Then** gilt:
+```rust
+impl MockAudioSource {
+    pub fn with_synthetic_chunks(
+        count: usize,
+        samples_per_chunk: usize,
+        chunk_interval_ms: u64,
+    ) -> Self;
+}
+#[async_trait::async_trait]
+impl AudioSource for MockAudioSource { ... }
+```
+**And** `start(config)` spawned einen `tokio::task`, der `count` mal `AudioEvent::Samples { data: Arc::from(vec![0.0_f32; samples_per_chunk]), ts_ms: i as u64 * chunk_interval_ms }` (i = 0-basierter Index) auf `config.events` sendet, dann den internen `Sender`-Clone droppt (→ Downstream `RecvError::Closed`), **And** `chunk_interval_ms = 0` ist ein valider Wert (schnellstmögliche Emission ohne `tokio::time::sleep` — für Unit-Tests die keine Realtime-Simulation brauchen), **And** `CaptureHandle::drop()` vor Count-Erschöpfung stopt die Emission vorzeitig (via Shutdown-Signal-Coordination), **And** `MockAudioSource` emittiert **niemals** `AudioError` (returnt immer `Ok(handle)`) — kein OS-State, kein Failure-Path, **And** Rustdoc trägt: *"Test fixture implementing `AudioSource`. Emits synthetic zero-filled chunks at the specified rate. `chunk_interval_ms = 0` for fastest-possible emission (unit-tests); nonzero for backpressure-simulation (ADR-0007 lag-tests). WAV-file-playback variant is Story 2.4 scope. Factor-out deferred until Story 2.4 proves the need (ref `memory/feedback_premature_abstraction_guard`)."*, **And** `MockAudioSource` lebt in `klarvo-test-fixtures/src/audio_source.rs`, re-exportiert als `klarvo_test_fixtures::MockAudioSource`.
+
+**Given** alle obigen Definitionen vorliegen,
+**When** `cargo test -p klarvo-core -p klarvo-test-fixtures` läuft,
+**Then** passt ein `#[cfg(test)]`-Block in `klarvo-core/src/audio/source.rs` folgende Compile-Tests:
+- `audio_error_send_sync_static`: `fn _assert<T: Send + Sync + 'static>() {} _assert::<AudioError>(); _assert::<CaptureConfig>(); _assert::<CaptureHandle>();` — kein Laufzeit-Assert nötig
+- `audio_key_format`: `assert!(klarvo_core::audio::keys::DEVICE_UNAVAILABLE.starts_with("error.audio.")); assert!(klarvo_core::audio::keys::UNSUPPORTED_FORMAT.starts_with("error.audio."));`
+
+**And** ein Integration-Test in `klarvo-test-fixtures/tests/mock_audio_source.rs`:
+- **`mock_emits_exact_chunk_count`**: `MockAudioSource::with_synthetic_chunks(3, 1024, 64)` → Consumer empfängt genau 3 `AudioEvent::Samples`-Events mit `data.len() == 1024` und `ts_ms ∈ {0, 64, 128}`, danach `RecvError::Closed`.
+- **`mock_early_drop_stops_emission`**: Consumer droppt `CaptureHandle` nach dem ersten empfangenen Chunk → Consumer empfängt `RecvError::Closed` bevor alle 3 Chunks eintreffen.
+
+**And** kein `PluginRegistry`-Slot für `AudioSource` existiert (kein `register_audio_source` in `registry.rs`).
+
+**Cross-References:**
+- ADR-0006 (AudioSource-Trait-Signatur, CaptureConfig/Handle-Shape, alle Sub-Decisions) — **autoritative**
+- ADR-0007-Amendment-Q1 (`DEFAULT_AUDIOEVENT_CAPACITY = 256`)
+- `memory/project_event_ts_ms_convention` (ts_ms chunk-start-Semantik)
+- `memory/project_phase1_trait_narrowing` (AudioSource = Infrastructure-Category, nicht Ring-Member)
+- `memory/project_executor_stage_data_shape` (AudioBuffer-Forward-Ref: `StageData::Audio(AudioBuffer)` — Buffer-Definition Story 2.2)
+- `memory/project_i18n_core_contract` (Core emittiert Keys, Shell resolved)
+- `memory/feedback_premature_abstraction_guard` (MockAudioSource minimal-first, WAV-deferred)
+- `memory/feedback_test_raii_cleanup_pattern` (CaptureHandle-Drop-Panic-Safety)
+- `memory/project_keystore_trait_surface` (1C.1-Precedent für i18n-key-co-location-in-Contract-Story)
+
+---
+
 ### Epic 3: Windows Shell Integration
 
 Andy triggert Dictation auf Windows via Global-Hotkey und sieht das Ergebnis im aktiven Window eingefügt. Phase-1-Persona-complete UX (Tray + Auto-Paste).
