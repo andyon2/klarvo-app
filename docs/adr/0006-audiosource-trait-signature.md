@@ -1,6 +1,6 @@
 # ADR-0006: AudioSource-Trait-Signatur (Push-via-Broadcast-Publish)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-19
 
 ## Context
@@ -148,3 +148,34 @@ Rejected: Single-Consumer by construction, kein Multi-Fan-out ohne manuelles Cal
 - `memory/project_event_ts_ms_convention` (ts_ms-Semantik Core-weit)
 - `memory/project_executor_stage_data_shape` (Pipeline-Entry-Signature `run_pipeline(..., StageData)`)
 - `memory/project_keystore_trait_surface` (Infrastructure-Trait-Precedent — AudioSource analog)
+
+## Amendment 1 — 2026-04-19: Open Questions resolved (Status → Accepted)
+
+**Finding:** Original ADR hat Q1 (`ts_ms` chunk-start vs chunk-end) und Q2 (Default-Chunk-Size-Location) explizit als „for Andy-review" offen gelassen. Amendment resolved beide und flipt Status Proposed → Accepted.
+
+**Resolution Q1 — `ts_ms` auf `AudioEvent::Samples` = Chunk-START.**
+
+Präzedenz JNI-Spike (`klarvo-bridge-jni/src/commands.rs:66,70`, ref ADR-0003 + `memory/project_event_ts_ms_convention`) ist konsistent: AudioLevel-Producer emittiert `ts_ms` als Event-Emission-Zeitpunkt = Chunk-Start. Downstream-Consumer kann Chunk-End trivial via `start + (data.len() as u64 * 1000 / 16000)` rechnen.
+
+Rustdoc-Line-Mandate für `AudioEvent::Samples.ts_ms` (zu setzen in Story 2.1 Impl):
+
+> „timestamp of chunk START, caller-monotone ms since session-start (ref ADR-0001, memory/project_event_ts_ms_convention)"
+
+**Resolution Q2 — Default-Chunk-Size = Impl-internal, NICHT im Trait-Surface.**
+
+Windows-cpal kann Buffer-Size nicht frei konfigurieren (OS-Audio-Driver-Constraint); Android-AudioRecord hat etwas mehr Freiheit. Chunk-Size im Trait zu forcen würde Consumer zur Rate-Adaptation zwingen — Anti-Pattern konsistent zu Sub-Decision #2 (Sample-Format-Fixed, nicht configurable).
+
+Pro-Impl-Rustdoc dokumentiert konkreten Wert. Beispiel-Clause für Story 2.1 (cpal-Impl):
+
+> „emits chunks of ~1024 samples = 64 ms @ 16 kHz, subject to OS-audio-driver granularity"
+
+Consumer (Story 2.2 STT-Aggregator) buffern via broadcast-Recv-Loop zu Pipeline-Input-Buffer beliebiger Größe.
+
+**Policy unchanged:** Trait-Signatur, `CaptureConfig`-Shape, `CaptureHandle`-RAII, `Arc<[f32]>`-Sample-Payload, 16-kHz-mono-f32-Fixed-Emit-Format bleiben wie im Original-Decision-Block. Amendment fixiert nur `ts_ms`-Event-Level-Präzision (Q1) und Chunk-Size-Layering-Boundary (Q2).
+
+**Consequences for downstream:**
+- Story 2.1 (cpal-Impl Windows-Shell) Rustdoc verpflichtend mit obigen Clauses auf `AudioEvent::Samples.ts_ms` + Impl-Chunk-Size-Doc.
+- Story 2.2 (STT-Aggregator + Pipeline-Entry) konsumiert Chunks in beliebiger OS-Granularity via `broadcast`-Recv-Loop; aggregiert selbst zu `AudioBuffer` für `run_pipeline`-Initial-Input.
+- ADR-0007 256-Slot-Capacity bleibt gültig — basiert auf ~1024-Sample-Chunks (~64 ms @ 16 kHz), konsistent mit beiden Resolutionen.
+
+**Source of finding:** Andy-Review 2026-04-19 (post-Opus-Delegate-Session, mid-Epic-2-Pre-Flight-Resolution).
