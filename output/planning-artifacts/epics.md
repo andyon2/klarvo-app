@@ -1411,6 +1411,30 @@ Unit-Test in `klarvo-core/src/audio/buffer.rs` (`#[cfg(test)]`): `AudioBuffer`-F
 
 ---
 
+#### Story 2.4: `OutputTarget`-Trait + Clipboard-Sink (FR16 + FR17)
+
+*Titles-approved 2026-04-19. Full ACs pending.*
+
+**Outcome:** `OutputTarget`-Trait (`async fn deliver(&self, text: &str) -> Result<(), AppError>`) in `klarvo-core` (ADR-0008 Plugin-Contract-Registry-slot, nicht Ring-Member); `klarvo-plugin-clipboard`-Crate mit `arboard`-basierter Impl; Integration ins Pipeline-Ende (Post-Verbatim-Sink-Call); `e2e_dictation_session.rs` Happy-Path erweitert um Clipboard-Content-Assert via `TestClipboardSink`-Impl oder `arboard`-test-backend. Clipboard-only Phase 1; Keystroke-Plugin Phase-2 per architecture.md:1036.
+
+---
+
+#### Story 2.5: cpal-Real-AudioSource-Impl (Platform-Gated Windows)
+
+*Titles-approved 2026-04-19. Full ACs pending.*
+
+**Outcome:** `klarvo-plugin-cpal`-Crate (oder `klarvo-audio-cpal` per Audio-Domain-Naming) mit WASAPI-Default-Input-Device-Enumeration; `CaptureHandle`-RAII bindet `cpal::Stream`; ADR-0006-konforme `broadcast::Sender<AudioEvent>`-Ownership; Platform-Gate via Cargo-Feature `platform-windows`; Sample-Rate-Convert-Pfad auf `AUDIO_SAMPLE_RATE` (16 kHz) — cpal liefert häufig 44.1/48 kHz, Konversion Impl-intern. Tests: Hardware-Integration-Test `cfg(feature="platform-windows")` is Phase-1-out-of-scope (CI ohne Audio-Devices); Unit-Tests für Sample-Rate-Convert-Logik + RAII-Drop-Behavior.
+
+---
+
+#### Story 2.6: FR29 Groq-Failure-Recovery + Retry-Surface (Hotkey-Retrigger-Pfad)
+
+*Titles-approved 2026-04-19. Full ACs pending.*
+
+**Outcome:** Transient-Error-Klassifikation in `klarvo-plugin-groq`: retryable (429, 5xx, Network-Timeout) vs. non-retryable (401/403/400); exponential-backoff-Retry-Policy (Phase-1-minimal: fixed 3-count, 100 ms / 500 ms / 2 s); nach erschöpften Retries → `UpstreamUnavailable` wie bisher; NFR11-Analog: Hotkey-Retrigger startet saubere neue Session ohne App-Neustart. Unit-Tests gegen wiremock mit `respond_sequentially([503, 503, 200])` (eventual-success) + `respond_sequentially([401])` (non-retryable-short-circuit).
+
+---
+
 ### Epic 3: Windows Shell Integration
 
 Andy triggert Dictation auf Windows via Global-Hotkey und sieht das Ergebnis im aktiven Window eingefügt. Phase-1-Persona-complete UX (Tray + Auto-Paste).
