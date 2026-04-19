@@ -764,6 +764,69 @@ Plugin-Developer (z. B. Groq-Plugin-Author) konsumiert API-Keys via Trait-API �
 
 ---
 
+#### Story 1C.1: `KeyStore`-Trait + i18n-Keys + `InMemoryKeyStore`-Fixture (Contract-Layer)
+
+**As a** Core-Developer or Plugin-Developer building BYOK-Cloud-Provider-Integrations,
+**I want** einen Phase-1-stabilen `KeyStore`-Trait in `klarvo-core::keystore` mit async `get`/`set`/`delete`-API, `SecretString`-typed Values und `AppError::kind::KeyMissing`-Semantik wired an i18n-keyed User-Messages,
+**So that** STT/LLM-Plugin-Authors (Groq, DeepSeek, OpenAI, Anthropic, OpenRouter, …) gegen eine stabile Abstraction-Layer für API-Key-Retrieval programmieren — unabhängig davon welches Backend (Phase-1 Plain-SQLite-dev-only via 1C.2, Phase-4 OS-Keystore-release-default via 1C.3 + Phase-4-Feature-Flip) am Ende compiled wird — und die Trait-Signature ist **unabhängig** vom 4-Trait-Stability-Ring (PipelineStage / SttProvider / CleanupStyle / VadProvider) stabilisiert (separate Concern-Category: Secret-Lifecycle, nicht Data-Flow).
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core`'s new `keystore`-Module (`klarvo-core/src/keystore/mod.rs` + `klarvo-core/src/keystore/trait_def.rs` + `klarvo-core/src/keystore/keys.rs`, Re-Export via `klarvo_core::keystore::{KeyStore, keys}` aus `lib.rs`),
+**When** der `KeyStore`-Trait in `trait_def.rs` definiert wird,
+**Then** hat der Trait die exakte Signature:
+```rust
+#[async_trait]
+pub trait KeyStore: Send + Sync + 'static {
+    async fn get(&self, key: &str) -> Result<SecretString, AppError>;
+    async fn set(&self, key: &str, value: SecretString) -> Result<(), AppError>;
+    async fn delete(&self, key: &str) -> Result<(), AppError>;
+}
+```
+**And** verwendet `#[async_trait::async_trait]` als Object-Safety-Layer (analog zum Epic-1A-Trait-Pattern, `Arc<dyn KeyStore>` use-site-kompatibel via `Send + Sync + 'static`-Bounds für Registry-Einbettung), **And** `klarvo-core/Cargo.toml` konsumiert `secrecy = { workspace = true }` (bereits workspace-gepinnt via ADR-0004 `v1_import`-Scope) und `async-trait = { workspace = true }` (bereits workspace-gepinnt via Epic-1A-Trait-Pattern; **keine** Version-String-Literale im Crate-Cargo.toml), **And** `cargo check -p klarvo-core` kompiliert grün, **And** das `delete`-Method-Rustdoc trägt einen Contract-Clause (exakter Text): *„`delete` is idempotent: returns `Ok(())` whether the key existed before the call or not. Use `get` to verify pre-existence if a caller needs that semantic."*
+
+**Given** ADR-0004 `SecretString`-Precedent + `project_api_key_os_keystore_mvp`-Policy (no-plain-String-leak-across-Trait-Boundary) + Andy-Verify-Flag-2 aus Epic-1C-Pre-Flight,
+**When** Caller-Code den Trait konsumiert,
+**Then** akzeptiert `set(&self, key: &str, value: SecretString)` den Secret ausschließlich als `SecretString`, und `get(&self, key: &str) -> Result<SecretString, AppError>` returnt den Secret ausschließlich als `SecretString`, **And** `SecretString::expose_secret()` wird **nie** innerhalb der Trait-Signature, in Default-Impl-Bodies oder in Rustdoc-Example-Code-der-Trait-Docs aufgerufen — Exposure ist ausschließlich Consumer-Call-Site-Concern (siehe 1B.4 Groq-`transcribe` Bearer-Header-Konstruktion als etablierten Precedent), **And** der Trait-Level-Rustdoc dokumentiert explizit (exakter Text): *„Callers must invoke `SecretString::expose_secret()` only at their immediate use-site (e.g., HTTP Bearer-header construction, platform-API-call). Never log, persist, forward, or clone the exposed value. Keep exposure scope as narrow as syntactically possible."*
+
+**Given** 1A.2's `ErrorKind`-Enum (bereits in epics.md:352 mit initialen Variants inkl. **`KeyMissing`** deklariert — **kein** 1A.2-Amendment nötig, siehe Epic-1C-Pre-Flight-Flag-1-Resolution) + FR30 (Keystore-Miss surfaced als `AppError::kind::KeyMissing` mit `user_message`-Key und Plugin-Identifier in Cause-Chain),
+**When** eine `KeyStore`-Trait-Impl einen Missing-Key oder Backend-Unavailability signalisiert,
+**Then** definiert 1C.1 im Submodule `klarvo_core::keystore::keys` (File `keystore/keys.rs`) zwei **neue** i18n-Keys — `"error.keystore.not_found"` (Semantik: der angefragte `key`-Identifier existiert nicht im Backend) und `"error.keystore.backend_unavailable"` (Semantik: das KeyStore-Backend ist nicht verfügbar; primär konsumiert von 1C.3 OS-Keystore-Android-Scaffold-Stub und 1C.2 Plain-SQLite-Init-Fails) — beide exposed als `pub const KEY_NOT_FOUND: &str = "error.keystore.not_found";` und `pub const BACKEND_UNAVAILABLE: &str = "error.keystore.backend_unavailable";`, **And** Impls konstruieren Errors via `AppError::new(ErrorKind::KeyMissing).with_message(keys::KEY_NOT_FOUND).with_source(source)` (analog für `BACKEND_UNAVAILABLE`) mit dem angefragten `key`-String als Display-Context — Plugin-Identifier-Cause-Chain-Enrichment (per FR30) ist **Caller-Responsibility**, da die KeyStore-Impl den Plugin-Caller nicht kennt; der Key-String selbst kann Plugin-Identity per Naming-Prefix-Konvention encodieren (z. B. `"groq_api_key"`, `"deepseek_api_key"`), **And** die Keys sind durch 1A.4's `klarvo_core::i18n::assert_is_key`-Runtime-Assert als valid erkannt und werden durch FR34 `cargo xtask lint-events` (Epic 5) statisch in die Key-Inventory-Liste aufgenommen, **And** der `keys`-Submodule-Rustdoc trägt eine Forward-Reference-Note (exakter Text): *„Phase-2+ may extend with `PERMISSION_DENIED` (OS-Keystore user-ACL-dialog-denied, distinct from backend-unavailable) and `INIT_FAILED` (backend-initialization-failure distinct from runtime-unavailability). These are deliberately deferred in Phase 1 to keep the key-inventory minimal."*
+
+**Given** das 4-Trait-Stability-Ring-Constraint (per `memory/project_epic_breakdown_phase1`-Addendum-#1: nur `PipelineStage`, `SttProvider`, `CleanupStyle`, `VadProvider` sind Phase-1-Stability-Anker) + Andy-Verify-Flag-3 aus Epic-1C-Pre-Flight,
+**When** das `keystore`-Module dokumentiert wird,
+**Then** enthält das Module-Level-Rustdoc in `klarvo-core/src/keystore/mod.rs` eine Separation-Note (exakter Text): *„`KeyStore` is a secret-lifecycle abstraction, architecturally separate from the 4 Phase-1-stability Data-Flow-Traits (`PipelineStage`, `SttProvider`, `CleanupStyle`, `VadProvider`). Stability guarantees for `KeyStore` are independently scoped: the Trait-Signature is locked in Phase 1, but backend-impl-swap (Phase-1 Plain-SQLite dev-only → Phase-4 OS-Keystore release-default per FR46) does not constitute a Trait-Signature change."*, **And** eine Non-Goals-Liste (exakter Text): *„Non-Goals for Phase 1: (a) `list()` / `keys()` for enumerating all stored keys — deferred to Phase 2+ when Settings-UI needs key-enumeration. (b) `exists(key)` / `contains(key)` — Phase-1 callers use `get(key).is_ok()`. (c) Batch-operations (`set_many`, `delete_many`) — deferred until usage-patterns emerge in Phase 2+."*, **And** keine Positionierung des Traits als „5th Pipeline-Stability-Trait" wird irgendwo im Module-Rustdoc, Trait-Rustdoc, Method-Rustdoc oder Module-Layout suggeriert.
+
+**Given** FR36 (Rustdoc-Contract-Documentation) + Epic-1B-etablierte Intent/Contract/Example-Triple-Convention,
+**When** `KeyStore`-Trait, `get`/`set`/`delete`-Methods, `keys`-Submodule und Submodule-Konstanten dokumentiert werden,
+**Then** hat jedes Public-Item Rustdoc mit (a) **Intent**-Zeile (z. B. für `get`: *„Retrieve an API-key-secret from the configured backend by identifier."*), (b) **Contract-Condition** (z. B. für `get`: *„Returns `AppError::kind::KeyMissing` with `user_message = keys::KEY_NOT_FOUND` when no entry exists for `key`. Returns `AppError::kind::KeyMissing` with `user_message = keys::BACKEND_UNAVAILABLE` when the backend is unreachable or not compiled-in (e.g. OS-Keystore-Android-Scaffold-Stub pre-Phase-3)."*), (c) **Example** (Rust-Code-Snippet-Block zeigt Consumer-Usage-Pattern mit `expose_secret()` **inline** im unmittelbaren Header-Setter-Call, **ohne** Intermediate-Variable) — verbatim:
+```rust
+let api_key = store.get("groq_api_key").await?;
+let response = client
+    .post(endpoint)
+    .header("Authorization", format!("Bearer {}", api_key.expose_secret()))
+    .send()
+    .await?;
+```
+
+**Given** 1A.1 `klarvo-test-fixtures`-Pattern + 1B.4's intra-crate KeyStore-Mock-Precedent (ad-hoc test-double, nicht shared-fixture),
+**When** 1C.1 shippt,
+**Then** erweitert 1C.1 `klarvo-test-fixtures` um einen `InMemoryKeyStore`-Struct in `klarvo-test-fixtures/src/keystore.rs`:
+```rust
+pub struct InMemoryKeyStore { store: tokio::sync::Mutex<HashMap<String, SecretString>> }
+
+impl InMemoryKeyStore {
+    pub fn empty() -> Self;
+    pub fn with_pairs(pairs: impl IntoIterator<Item = (&'static str, SecretString)>) -> Self;
+}
+
+#[async_trait]
+impl KeyStore for InMemoryKeyStore { /* get/set/delete, Missing-Key → AppError::KeyMissing + KEY_NOT_FOUND */ }
+```
+exposed via `klarvo_test_fixtures::InMemoryKeyStore`, **And** 1B.4's intra-crate Mock bleibt unverändert (kein Retroactive-Amendment an Epic 1B — Scope-Fence); der shared `InMemoryKeyStore` wird ab Epic 2 (Groq-Real-Wire-Up) als canonical-Test-Pattern konsumiert und ersetzt in jener Story optional 1B.4's intra-crate-Mock wenn Andy das dort separat anstößt.
+
+---
+
 ### Epic 2: End-to-End Dictation Pipeline (Headless Canonical Flow)
 
 User (Andy) kann den kanonischen Hold-to-Talk-Workflow ausführen — Audio-Capture → VAD → STT → Cleanup → Delivery — verifizierbar als headless Integration-Test, bevor Shell-Integration passiert (PRD Journey 1 + Journey 3).
