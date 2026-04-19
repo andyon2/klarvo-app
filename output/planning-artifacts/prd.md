@@ -725,7 +725,7 @@ Dieses Kapitel ist **THE CAPABILITY CONTRACT** für Phase 1. UX-Designer, Archit
 ### I. Security & Key Management
 
 - **FR44:** `klarvo-core` exposes a `KeyStore`-Abstraction-Trait für API-Key-Retrieval und -Storage, konsumiert von allen STT/LLM-Plugins at Init-Time.
-- **FR45:** Phase-1-Default-Implementation ist `PlainSqliteKeyStore`, gated behind `dev-keystore`-Cargo-Feature; nicht enabled in Release-Builds.
+- **FR45:** Phase-1-Default-Implementation ist `PlainSqliteKeyStore`, gated behind `dev-plain-keystore`-Cargo-Feature; nicht enabled in Release-Builds.
 - **FR46:** OS-Keystore-Implementations (Windows-Credential-Manager, macOS-Keychain, Linux-Secret-Service) sind als Scaffolds prepared für Phase-4-Release-Default-Swap, ohne `KeyStore`-Trait-Signature-Änderungen.
 
 ## Non-Functional Requirements
