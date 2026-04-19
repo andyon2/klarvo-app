@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories-epic-1A', 'step-03-create-stories-epic-1B']
+stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories-epic-1A', 'step-03-create-stories-epic-1B', 'step-03-create-stories-epic-1C']
 scopePhase: 'phase-1'
 uxSpec: 'none'
 uxSpecRationale: 'Phase-1 dogfooding-prototype; acceptedFriction: Kein Onboarding, config.toml-only Konfiguration, toleriert Rough-Edges. Minimal-UI-Elemente der Windows-Shell (Tray-Icon, Notifications) erhalten ACs direkt aus PRD-FRs in Shell-Adapter-Stories. Ref personaTiering.phase1Target in prd.md.'
@@ -890,6 +890,133 @@ CREATE TABLE IF NOT EXISTS api_keys (
 **Given** FR36 (Rustdoc-Contract-Documentation) + 1C.1-etablierte Intent/Contract/Example-Triple-Convention,
 **When** `PlainSqliteKeyStore`, `open`, `in_memory`, `impl KeyStore for PlainSqliteKeyStore` dokumentiert werden,
 **Then** hat jedes Public-Item Rustdoc mit (a) **Intent**-Zeile, (b) **Contract-Condition** (für `open`/`in_memory` explizit: *„Returns `AppError::kind::KeyMissing` with `user_message = keys::BACKEND_UNAVAILABLE` when SQLite-connection-init or table-CREATE fails."*), (c) **Example**-Snippet (zeigt `open(path)`-Flow + direkte `Arc<dyn KeyStore>`-Verwendung — Example hält sich an 1C.1-AC-5-Pattern `expose_secret()`-narrow bei etwaigem Secret-Handling), **And** `open`/`in_memory`-Rustdoc referenziert das Module-Level-NFR4-Disclosure als Disclaimer: *„See module-level documentation for the NFR4 security-disclosure. Use only in `dev-plain-keystore`-gated builds."*
+
+---
+
+#### Story 1C.3: OS-Keystore-Impl für Windows + Android-Scaffold (Phase-3-Deferred)
+
+**As a** Core-Developer preparing den Phase-4-Release-Default-KeyStore-Backend,
+**I want** eine `WindowsKeystore`-Implementierung (Windows-Credential-Manager via `windows-rs`) + eine `AndroidKeystore`-Scaffold-Stub-Impl (fail-soft via `AppError::kind::KeyMissing` + `error.keystore.backend_unavailable`, **kein** `todo!()`/panic per `feedback_scaffold_fail_soft_pattern`) — beide Platform-cfg-gated und den 1C.1-`KeyStore`-Trait implementierend ohne Trait-Signature-Änderung,
+**So that** Phase-4-Release-Default-Swap (Toggle von `dev-plain-keystore` OFF → Platform-Native-Impl wird Boot-Default) reine Feature-Flag-Umschaltung bleibt ohne Caller-Code-Änderungen, und Phase-3 Android-Implementation einen stabilen Swap-Point hat ohne dass Phase-1-Android-Cross-Compile oder Runtime-Calls mit `todo!()`-Panics brechen.
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core/src/keystore/` (aus 1C.1 + 1C.2 bestehend) + Gate-1-Narrowing (macOS/Linux out of Phase-1-scope),
+**When** die OS-Keystore-Submodule angelegt werden,
+**Then** existiert die Module-Struktur:
+```
+klarvo-core/src/keystore/os/
+├── mod.rs      # module-declaration + Platform-cfg-dispatch
+├── windows.rs  # #[cfg(target_os = "windows")]-gated; real impl
+└── android.rs  # #[cfg(target_os = "android")]-gated; scaffold-stub impl
+```
+**And** `keystore/os/mod.rs` deklariert Platform-cfg-dispatched Re-Exports:
+```rust
+#[cfg(target_os = "windows")]
+pub mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::WindowsKeystore;
+
+#[cfg(target_os = "android")]
+pub mod android;
+#[cfg(target_os = "android")]
+pub use android::AndroidKeystore;
+```
+**And** `keystore/mod.rs` re-exportiert das Submodule: `pub mod os;`, **And** **keine** macOS- oder Linux-Stubs (explizit out-of-Phase-1-scope per Gate-1; Phase-5+ als eigene Story + ggf. ADR-0006 dann), **And** **keine** neuen Cargo-Features für die Platform-Impls — Platform-cfg alleine reicht; Phase-4-Release-Default-Swap erfolgt per `dev-plain-keystore`-Toggle-OFF (`PlainSqliteKeyStore` dropped aus Compile → Platform-Native-Impl bleibt einziger KeyStore-Provider), **nicht** per zusätzlichem `os-keystore`-Feature-Toggle-ON, **And** `cargo check -p klarvo-core` auf Linux-Host kompiliert grün (keines der Platform-Module wird aktiviert — Consumer sieht kein KeyStore-Impl, nur den 1C.1-Trait).
+
+**Given** Windows-Credential-Manager-API + `windows-rs`-Crate (workspace-gepinnt per architecture.md:1270),
+**When** `windows.rs` implementiert wird,
+**Then** ist die Public-API:
+```rust
+#[cfg(target_os = "windows")]
+pub struct WindowsKeystore {
+    app_id: String,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsKeystore {
+    pub fn new(app_id: impl Into<String>) -> Self;
+}
+
+#[cfg(target_os = "windows")]
+#[async_trait]
+impl KeyStore for WindowsKeystore { /* get/set/delete per Signature 1C.1 */ }
+```
+(`app_id` dient als TargetName-Prefix; Phase-1-Default-Caller passt `"klarvo"`. Empty-or-whitespace `app_id` triggert `debug_assert!` im Constructor-Body — kein Result-return, infallible Constructor), **And** TargetName-Konvention: `format!("{}/{}", self.app_id, key)` (Slash-Separator; Windows-Credential-Manager-UI zeigt hierarchisch), **And** `get` ruft `CredReadW` mit `CRED_TYPE_GENERIC`: `ERROR_NOT_FOUND (1168)` → `AppError::new(KeyMissing).with_message(keys::KEY_NOT_FOUND).with_source(e)`, anderer Error → `BACKEND_UNAVAILABLE`, Success → UTF-8-decoded `CredentialBlob`-Bytes als `SecretString`, **And** `set` ruft `CredWriteW` mit `CRED_PERSIST_LOCAL_MACHINE` (Phase-1-Choice: machine-local, not-roaming, not-session-only) + `value.expose_secret()`-Bytes (UTF-8-encoded) inline im Params-Binding, **And** `delete` ruft `CredDeleteW`; Rückgabe **immer** `Ok(())` bei erfolgreichem Delete ODER bei `ERROR_NOT_FOUND` (Idempotenz-Contract aus 1C.1), anderer Error → `BACKEND_UNAVAILABLE`.
+
+**Given** Gate-4 Scaffold-Fail-Soft-Pattern (`memory/feedback_scaffold_fail_soft_pattern`) + Phase-3-Blocker-Forward-Reference (`memory/project_play_store_phase3_blocker`),
+**When** `android.rs` implementiert wird,
+**Then** ist die Public-API:
+```rust
+#[cfg(target_os = "android")]
+pub struct AndroidKeystore { app_id: String }
+
+#[cfg(target_os = "android")]
+impl AndroidKeystore {
+    pub fn new(app_id: impl Into<String>) -> Self;
+
+    fn phase3_scaffold_error() -> AppError {
+        AppError::new(ErrorKind::KeyMissing)
+            .with_message(keys::BACKEND_UNAVAILABLE)
+            .with_source(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "KeyStore not available on Android in Phase 1 — \
+                 Phase-3 scope (AccessibilityService-Policy-Audit blocker, \
+                 ref project_play_store_phase3_blocker)",
+            ))
+    }
+}
+
+#[cfg(target_os = "android")]
+#[async_trait]
+impl KeyStore for AndroidKeystore {
+    async fn get(&self, _key: &str) -> Result<SecretString, AppError> { Err(Self::phase3_scaffold_error()) }
+    async fn set(&self, _key: &str, _value: SecretString) -> Result<(), AppError> { Err(Self::phase3_scaffold_error()) }
+    async fn delete(&self, _key: &str) -> Result<(), AppError> { Err(Self::phase3_scaffold_error()) }
+}
+```
+**And** **keine** JNI-Calls, **keine** `jni`-Crate-Imports, **keine** Android-OS-API-Zugriffe — das Modul ist pure-Rust und kompiliert auf Android-Target **ohne NDK** (NDK ist erst in Phase-3-Real-Impl-Story erforderlich), **And** alle drei Trait-Methods returnen uniform `phase3_scaffold_error()` (intentionale Uniformität, nicht Code-Duplication — Trait-Signature bleibt stabil; Phase-3-Real-Impl ersetzt nur Method-Bodies pro Method durch echte JNI-Logik), **And** die Cause-Chain-Text-Konvention (Phase-3-scope + AccessibilityService-Policy-Audit + memory-Ref) ist load-bearing für FR30-Konformität und FR36-Rustdoc-Cross-Reference.
+
+**Given** Phase-4-Release-Default-Swap-Invariante (per FR46 + `memory/project_api_key_os_keystore_mvp`) + Trait-Signature-Stability-Discipline aus 1C.1-AC-4,
+**When** das `os`-Module dokumentiert wird,
+**Then** enthält `os/mod.rs` ein Module-Level-Rustdoc mit Swap-Semantics-Dokumentation (exakter Text): *„Platform-native `KeyStore` implementations. Phase-1 provides `WindowsKeystore` (real, via `windows-rs` Credential-Manager) and `AndroidKeystore` (Phase-3-deferred scaffold-stub; all methods return `AppError::kind::KeyMissing` with `keys::BACKEND_UNAVAILABLE`). Phase-4-Release-Default-Swap: disabling the `dev-plain-keystore` Cargo-feature removes `PlainSqliteKeyStore` from the compile, leaving the platform-native impl as the only `KeyStore`-provider on-target. No `KeyStore`-Trait-Signature change is required — the swap is purely a compile-feature-flag toggle. macOS and Linux are explicitly out-of-scope for Phase 1; adding them is a Phase-5+ story with its own ADR."*, **And** `windows.rs` Module-Level-Rustdoc: *„Windows Credential Manager-backed `KeyStore` implementation. `TargetName` convention is `<app_id>/<key>`. Persistence-mode is `CRED_PERSIST_LOCAL_MACHINE` (machine-local, not roaming, not session-only)."*, **And** `android.rs` Module-Level-Rustdoc trägt zwei Text-Blöcke. **Block 1 — Scaffold-Status** (exakter Text): *„Android-Keystore scaffold-stub. All trait-methods return `AppError::kind::KeyMissing` with `keys::BACKEND_UNAVAILABLE` and a cause-chain explaining the Phase-3-Deferral. Real Android-Keystore integration (JNI + Android-Keystore-System-API per `memory/project_jni_dual_surface`) is Phase-3-scope, gated by AccessibilityService-Policy-Audit (ref `memory/project_play_store_phase3_blocker`). Trait-signature is stable across the Phase-3-swap — only method-bodies are replaced."* **Block 2 — Error-Type-Revisit-Note** (exakter Text): *„Phase-1-Scaffold uses `io::Error` as a lightweight source-wrapper. Phase-3-real-impl may introduce a dedicated `KeystoreBackendError`-type if Android-specific error-paths prove diverse enough to warrant dedicated taxonomy."*
+
+**Given** Integration-Test-Pattern (1B.4-`external_contract` + 1C.2-`plain_sqlite_keystore`) + Cross-Platform-Cross-Compile-Verification + RAII-Test-Cleanup-Pattern (`memory/feedback_test_raii_cleanup_pattern`),
+**When** 1C.3 shippt,
+**Then** existiert ein Integration-Test-File `klarvo-core/tests/windows_keystore.rs` mit File-Top-Gate `#![cfg(target_os = "windows")]` — verifiziert Windows-Impl-Contract-Roundtrip-Semantik über **6 Cases** (analog zu 1C.2 ohne Init-Error-Case, da `WindowsKeystore::new` infallible ist):
+- set/get roundtrip (Value-Equality via `expose_secret()`-Compare)
+- get auf missing-key → `KEY_NOT_FOUND`
+- delete auf existing-key → `Ok(())`, subsequent get → `KEY_NOT_FOUND`
+- delete auf non-existing-key → `Ok(())` (Idempotenz)
+- set auf existing-key (upsert) → `Ok(())`, subsequent get returnt neuen Wert
+- TargetName-Prefix-Konvention verified: test erstellt Key, liest via raw `CredReadW` mit konstruktem `"{app_id}/{key}"`-TargetName, erwartet Success
+
+**And** der Test nutzt einen test-unique `app_id` wie `"klarvo-test-{uuid::Uuid::new_v4()}"` **plus** ein RAII-Guard-Cleanup-Scope-Struct (test-local in `tests/windows_keystore.rs`; general Pattern per `memory/feedback_test_raii_cleanup_pattern`):
+```rust
+struct TestKeystoreScope {
+    app_id: String,
+    created_keys: Vec<String>,
+}
+
+impl Drop for TestKeystoreScope {
+    fn drop(&mut self) {
+        for key in &self.created_keys {
+            let _ = /* CredDeleteW(format!("{}/{}", self.app_id, key)) */; // ignore-errors, never panic
+        }
+    }
+}
+```
+Test-Code registriert Keys via `scope.register(key)` bei jedem `set`-Call; Drop-Impl garantiert Cleanup auch bei Panic mid-test. **Doppel-Isolation:** unique-UUID-Namespace (keine Kollision mit User/CI) + guaranteed-Cleanup (kein Leak in realen Windows-Credential-Manager-Store). **Explicit-Teardown-Loops am Test-Ende sind verboten** (panic-fragil, Privacy-Concern).
+
+**And** existiert ein Integration-Test-File `klarvo-core/tests/android_keystore_scaffold.rs` mit File-Top-Gate `#![cfg(target_os = "android")]` — verifiziert Scaffold-Fail-Soft-Semantik über **2 Cases**:
+- `AndroidKeystore::new("klarvo")` returnt Self (infallible)
+- jede der drei KeyStore-Methods (`get`/`set`/`delete`) returnt `Err(AppError)` mit `kind == ErrorKind::KeyMissing` + `user_message == keys::BACKEND_UNAVAILABLE` + `source`-Chain-`Display` enthält Substrings `"Phase-3 scope"` UND `"AccessibilityService-Policy-Audit blocker"`
+
+**And** `cargo check --target aarch64-linux-android -p klarvo-core` (Android-Cross-Compile-Verify auf Linux-Host, **ohne** NDK — das Scaffold ist pure-Rust) kompiliert grün — der Check setzt den `aarch64-linux-android`-rustup-Target voraus (`rustup target add aarch64-linux-android`, one-time-setup; für Phase-1-Win+Android-MVP-Scope per `memory/project_klarvo_v2_rebuild` legitimes Table-Stakes; CI-Integration dieses Cross-Compile-Checks landet in Epic 5 Developer-Gate-Infrastructure; Android-NDK ist **nicht** erforderlich), **And** `cargo check -p klarvo-core` (Linux-Host-default-target) kompiliert grün ohne eine der OS-Impls aktiviert zu haben.
+
+**Given** FR36 + 1C.1/1C.2-etablierte Intent/Contract/Example-Triple-Convention,
+**When** `WindowsKeystore`, `AndroidKeystore`, ihre `new`-Konstruktoren und die KeyStore-Trait-Impls dokumentiert werden,
+**Then** hat jedes Public-Item Rustdoc mit (a) **Intent**-Zeile, (b) **Contract-Condition** (Windows: explizite Error-Mapping-Tabelle `ERROR_NOT_FOUND → KEY_NOT_FOUND`, other → `BACKEND_UNAVAILABLE`; Android: *„All methods unconditionally return `AppError::kind::KeyMissing` with `user_message = keys::BACKEND_UNAVAILABLE`. No successful get/set/delete path exists in the Phase-1-scaffold; full impl lands in Phase-3."*), (c) **Example**-Snippet (Windows: `let store = WindowsKeystore::new("klarvo"); let key = store.get("groq_api_key").await?;` + inline-`expose_secret()`-Pattern aus 1C.1-AC-5; Android: fail-soft-Pattern `match store.get(...).await { Err(e) if matches!(e.kind, ErrorKind::KeyMissing) => /* Phase-3-fallback */ , _ => unreachable!("Android scaffold returns KeyMissing uniformly") }`), **And** beide Impls referenzieren das `os/mod.rs`-Swap-Semantics-Rustdoc als Cross-Reference: *„See module-level documentation for Phase-4-Release-Default-Swap semantics."*
 
 ---
 
