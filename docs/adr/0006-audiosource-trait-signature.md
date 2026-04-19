@@ -179,3 +179,46 @@ Consumer (Story 2.2 STT-Aggregator) buffern via broadcast-Recv-Loop zu Pipeline-
 - ADR-0007 256-Slot-Capacity bleibt gültig — basiert auf ~1024-Sample-Chunks (~64 ms @ 16 kHz), konsistent mit beiden Resolutionen.
 
 **Source of finding:** Andy-Review 2026-04-19 (post-Opus-Delegate-Session, mid-Epic-2-Pre-Flight-Resolution).
+
+## Amendment 2 — 2026-04-20: cpal-Impl location clarified (klarvo-audio-cpal/ workspace-root crate)
+
+**Finding:** Sub-Decision 6 stated "Impls live in `shells/windows-tauri/` (Epic 3 cpal)" and Story 2.1 spec (epics.md) Rustdoc clause (e) read *"Windows-cpal-Impl (`WindowsCpalAudioSource`) is Epic 3 scope (`shells/windows-tauri/`)"*.
+
+Story 2.5 Pre-Flight-Scope-Lock (2026-04-20) surfaced two problems with this:
+1. `shells/windows/` (actual dir name) does not exist as a compilable Rust crate yet — it is Epic-3-scope. Placing Story 2.5 implementation there would be scope-creep.
+2. `cpal` is a cross-platform library (WASAPI / ALSA / CoreAudio host-dispatch at runtime). `CpalAudioSource` has no inherent shell-coupling — it only depends on `cpal`, `tokio::sync::broadcast`, and `klarvo-core::audio`. Library-extraction to a standalone workspace crate is cleanly possible.
+
+**Resolution — Sub-Decision 6: impl location updated.**
+
+> **Windows-cpal-Impl (`CpalAudioSource`) lives in `klarvo-audio-cpal/` workspace-root crate — library-style, cross-platform-compilable (`cpal` handles host-dispatch to WASAPI/ALSA/CoreAudio at runtime). Shell-Consumer (Epic 3 `shells/windows/`) imports `klarvo-audio-cpal::CpalAudioSource` via normal crate-dep and instantiates under `#[cfg(target_os = "windows")]`.**
+>
+> **`klarvo-audio-cpal/` itself contains no `cfg(target_os)`-gates. The crate builds on Linux-CI: cpal is cross-platform-compilable; device-enumeration returns `None` on non-WASAPI hosts, which is expected in unit-test contexts. Unit-tests cover Sample-Rate-Math and RAII-Drop-Behavior without real hardware.**
+>
+> **Android-AudioRecord-Impl remains shell-coupled (`shells/android/`): JNI-Lifetimes bind it to the Android Shell binary, making library-extraction non-viable. This asymmetry is intentional — cpal is library-pattern, JNI is shell-pattern.**
+
+**Crate-naming rationale:** `klarvo-audio-cpal/` not `klarvo-plugins/klarvo-plugin-cpal/` — the `klarvo-plugin-` prefix is Registry-Member-Convention (`SttProvider` / `CleanupStyle` / `OutputTarget`). `AudioSource` is Infrastructure-Category per Sub-Decision 6; a mismatched `plugin-` prefix would blur the category boundary for future readers.
+
+**`cfg(target_os)` placement:** Selection stays at Shell-Consumer level (Epic 3), not inside `klarvo-audio-cpal/`. Shell-wiring pattern (Epic 3):
+```rust
+#[cfg(target_os = "windows")]
+use klarvo_audio_cpal::CpalAudioSource;
+```
+No `cargo-feature platform-windows` — `cfg(target_os)` is automatic and sufficient per original Sub-Decision 6 intent.
+
+**Struct rename: `WindowsCpalAudioSource` → `CpalAudioSource`.** `cpal` is cross-platform; the `Windows` prefix was premature and derived from the now-revised shell-location assumption. `CpalAudioSource` names the backend, not the platform.
+
+**Story 2.1 Rustdoc clause (e) — corrigendum** (applied to `epics.md` spec in this commit):
+
+- Original: *"Windows-cpal-Impl (`WindowsCpalAudioSource`) is Epic 3 scope (`shells/windows-tauri/`). Android-AudioRecord-Impl is Phase-3 scope."*
+- Corrected: *"`CpalAudioSource` is Story-2.5-scope (`klarvo-audio-cpal/` workspace-root crate); Shell-integration (instantiation in `shells/windows/`) is Epic-3-scope. Android-AudioRecord-Impl is Phase-3 scope (`shells/android/`)."*
+
+Since Story 2.1 code is not yet implemented (spec-only commits as of 2026-04-20), no source-file rustdoc edit is needed — the correction is in the epics.md spec that Implementers read during Story 2.1 execution.
+
+**Policy unchanged:** Push-via-Broadcast-Publish decision, `CaptureHandle`-RAII, `Arc<[f32]>` payload, 16-kHz-mono-f32-Fixed-Emit-Format, Infrastructure-Category classification, non-PluginRegistry-membership, `&mut self`, `#[async_trait]` — all unchanged from original Decision-Block and Amendment 1.
+
+**Consequences for downstream:**
+- Story 2.5: implements `CpalAudioSource` in new `klarvo-audio-cpal/` workspace-root crate. `cargo test -p klarvo-audio-cpal` runs on Linux-CI (unit-tests for Sample-Rate-Math + RAII-Drop-Behavior, no audio devices needed).
+- Epic 3 (`shells/windows/`): imports `klarvo-audio-cpal` as a crate-dep; instantiates `CpalAudioSource` under `#[cfg(target_os = "windows")]`. Shell-wiring is the only Epic-3-scope addition.
+- Phase 3 (`shells/android/`): `AndroidAudioSource` (concrete API-choice TBD Phase 3) remains shell-coupled as before.
+
+**Source of finding:** Story 2.5 Pre-Flight-Scope-Lock 2026-04-20 (Andy-Resolution + Sonnet-Scope-Analysis).
