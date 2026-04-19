@@ -485,6 +485,8 @@ Dictation-Tools operieren entweder mit fixen Pipelines (Dragon) oder laufzeit-ko
 - **Risk:** Compile-Time-Safety verstärkt Plugin-Dev-Friction (Compile-Zyklus statt Hot-Reload). **Mitigation:** Phase-1-Persona `dogfooding-prototype` toleriert das explizit (`personaTiering.phase1Target.acceptedFriction`). WASM-Runtime-Plugins später geplant (`memory/project_plugin_architecture.md` „WASM später") — dann Runtime-Contract mit Schema-Validation am Load-Time, nicht Hot-Patchable.
 - **Risk:** Manifest-Schema-Drift zwischen Releases bricht User-Manifests. **Mitigation:** Manifest-Schema-Versionierung im TOML-Header, Core validiert Version vor Resolution.
 
+Amendment (Step 9 accuracy correction, 2026-04-19): Die ursprüngliche Formulierung „beim cargo build hart gegen Rust-Types der Plugin-Traits aufgelöst" bzw. „unknown stage-type in Manifest → cargo build erroriert" war mechanism-level imprecise. Präzisierung: Die Compile-Time-Safety-Claim bezieht sich auf die Stage-Registry-Menge — diese wird zur Compile-Zeit durch Cargo-Features + #[serde(tag = "type")]-Enum-Varianten festgelegt. Der Manifest-Inhalt (pipeline.toml) wird zur Boot-Zeit via serde geparst; Hard-Fail triggert zur Boot-Zeit auf unbekannte Stage-Types oder Type-Mismatches, nicht zur Compile-Zeit. Der Innovation-Claim „Pipeline-DSL mit Compile-Time-Safety, kein Runtime-Plugin-Registry" bleibt intakt — die Safety ist auf Stage-Registry-Ebene mechanisch erzwungen. Ref memory/project_manifest_boot_time_parse.md, FR6.
+
 ### Innovation Axis B: Headless-Core-Contract
 
 **Detected Innovation:**
