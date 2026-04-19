@@ -1171,6 +1171,158 @@ impl AudioSource for MockAudioSource { ... }
 
 ---
 
+#### Story 2.2: VAD-Gate + Pipeline-Entry-Aggregation
+
+**As a** Core-Developer wiring the end-to-end dictation-flow,
+**I want** eine `run_capture_session`-Funktion in `klarvo-core::pipeline::orchestrator` die einen `AudioEvent`-Broadcast-Receiver konsumiert, pro-Chunk `VadProvider::process()` aufruft, Samples während Speech-State akkumuliert, und bei `SpeechEnd` (oder Closed-mid-Speech) einen `AudioBuffer` finalisiert und `run_pipeline` triggert,
+**So that** der End-to-End-Dictation-Pfad (Audio-Capture → VAD-Gate → STT → Cleanup) als headless Integration-Test verifizierbar ist — bevor Shell-Hotkey (Epic 3) und OutputTarget-Delivery (Story 2.5) die Pipeline umschließen.
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core/src/audio/buffer.rs` neu angelegt wird,
+**When** `AudioBuffer` definiert wird,
+**Then** hat der Struct exakt folgende Shape:
+```rust
+#[derive(Debug, Clone)]
+pub struct AudioBuffer {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+    pub ts_ms_start: u64,
+    pub ts_ms_end: u64,
+}
+```
+**And** `ts_ms_start` und `ts_ms_end` sind aus den `VadDecision`-Carrier-Fields direkt übernommen: `ts_ms_start = VadDecision::SpeechStart.ts_ms`, `ts_ms_end = VadDecision::SpeechEnd.ts_ms` (keine Approximation), **And** Rustdoc auf dem Struct trägt exakten Text: *"Aggregated audio-buffer for pipeline-entry. `ts_ms_start`/`ts_ms_end` are session-relative monotone milliseconds sourced from `VadDecision::SpeechStart.ts_ms` and `VadDecision::SpeechEnd.ts_ms` respectively (ref ADR-0001, `memory/project_event_ts_ms_convention`). These bounds are load-bearing for Epic-6 Observability (latency-measurement: ts_ms_start → STT-result ts_ms). `sample_rate` is always 16_000 in Phase-1 — carried as field for SttProvider-WAV-encoding-convenience and for future Phase-2+ variable-rate-extension. Current value sourced from `klarvo_core::audio::AUDIO_SAMPLE_RATE` const; ADR-0006-Sub-Decision-2 mandates 16 kHz mono fixed emission. `channels` is omitted — format is fixed mono f32 per ADR-0006-Sub-Decision-2."*, **And** `klarvo-core/src/audio/mod.rs` deklariert `pub mod buffer;` und re-exportiert `pub use buffer::AudioBuffer;` sodass `klarvo_core::audio::AudioBuffer` öffentlich erreichbar ist, **And** `cargo check -p klarvo-core` kompiliert grün.
+
+**Given** `klarvo-core/src/audio/mod.rs` bereits `DEFAULT_AUDIOEVENT_CAPACITY` exportiert (Story 2.1),
+**When** die Audio-Rate-Konstante hinzugefügt wird,
+**Then** enthält `mod.rs`:
+```rust
+pub const AUDIO_SAMPLE_RATE: u32 = 16_000;
+```
+**And** Rustdoc auf `AUDIO_SAMPLE_RATE` trägt: *"Fixed audio sample-rate emitted by all `AudioSource` impls (ADR-0006-Sub-Decision-2: 16 kHz mono f32 Whisper-standard). Consumed by `run_capture_session` for `AudioBuffer`-construction. Phase-2+ variable-rate would require ADR-0006-Amendment and `AudioBuffer`-contract-revision."*, **And** `klarvo_core::audio::AUDIO_SAMPLE_RATE` ist öffentlich erreichbar.
+
+**Given** `klarvo-core/src/pipeline/orchestrator.rs` die neue `run_capture_session`-Funktion bekommt (architecture.md-Slot bereits vorgesehen),
+**When** die Funktion definiert wird,
+**Then** hat sie exakt folgende Signatur:
+```rust
+pub async fn run_capture_session(
+    receiver: tokio::sync::broadcast::Receiver<AudioEvent>,
+    vad: &mut dyn VadProvider,
+    manifest: &PipelineManifest,
+    registry: &PluginRegistry,
+) -> Result<Option<StageData>, AppError>
+```
+**And** `klarvo-core/src/pipeline/mod.rs` re-exportiert `pub use orchestrator::run_capture_session;` sodass `klarvo_core::pipeline::run_capture_session` öffentlich erreichbar ist, **And** kein `DictationSession`-Struct oder äquivalenter State-Wrapper wird eingeführt — per `memory/feedback_premature_abstraction_guard` kein State-Wrapper bis Multi-Consumer-Need empirisch belegt, **And** `&mut dyn VadProvider` (nicht `impl VadProvider`) erlaubt Phase-2+-Runtime-VAD-Hot-Swap ohne Generic-Propagation auf alle Caller.
+
+**Given** `run_capture_session` aufgerufen wird,
+**When** die Funktion die Recv-Loop ausführt,
+**Then** gilt das folgende State-Machine-Protokoll:
+1. **Entry:** `vad.reset()` am Funktionsstart (jede Session beginnt mit frischem VAD-Zustand).
+2. **Loop:** `match receiver.recv().await`:
+   - `Ok(AudioEvent::Samples { data, ts_ms })`: extrahiert `data.as_ref()` als `&[f32]`, ruft `vad.process(samples, ts_ms).await` und dispatcht auf `VadDecision`:
+     - `VadDecision::SpeechStart { ts_ms }`: setzt `ts_ms_start = ts_ms`, beginnt Sample-Akkumulation (initialisiert internen `Vec<f32>`), speichert das aktuelle Chunk als ersten akkumulierten Block.
+     - `VadDecision::Speech`: hängt aktuellen Chunk an akkumulierten Sample-Buffer an.
+     - `VadDecision::SpeechEnd { ts_ms, .. }`: setzt `ts_ms_end = ts_ms`, finalisiert `AudioBuffer` (aggregierte Samples + `sample_rate: AUDIO_SAMPLE_RATE`), ruft `run_pipeline(manifest, registry, StageData::Audio(buffer)).await?`, returnt `Ok(Some(result))`.
+     - `VadDecision::Silence`: kein Buffering, kein Zustandswechsel. Loop fortsetzen.
+   - `Ok(AudioEvent::Level { .. })`: ignoriert (kein VAD-Bedarf). Loop fortsetzen.
+   - `Err(RecvError::Lagged(n))`: per ADR-0007 Sub-Decision-2: `tracing::warn!(target: "klarvo.audio.backpressure", skipped = n, consumer = "capture_session", "audio event consumer lagged; skipped events");` → Loop fortsetzen (**kein** Err-Propagation).
+   - `Err(RecvError::Closed)`: Closed-Path-Handling (nächstes AC).
+
+**Given** `RecvError::Closed` während der Recv-Loop eintritt,
+**When** `run_capture_session` den Closed-Pfad behandelt,
+**Then** gilt:
+- **Closed-mid-Speech** (Samples bereits akkumuliert, `SpeechStart` gesehen): behandelt als `SpeechEnd`-Äquivalent. `ts_ms_end` = `ts_ms` des letzten akkumulierten Chunks + implizite Chunk-Dauer (`data.len() as u64 * 1000 / klarvo_core::audio::AUDIO_SAMPLE_RATE as u64`). `AudioBuffer` finalisiert mit allen akkumulierten Samples + `sample_rate: AUDIO_SAMPLE_RATE`. `run_pipeline` aufgerufen. Return `Ok(Some(result))`. Rustdoc-Rationale: *"Hotkey-Release-mid-Speech is a normal user-action. Treating Closed-mid-Speech as SpeechEnd-equivalent delivers the partial transcription rather than silently discarding buffered audio."*
+- **Closed-before-SpeechStart** (keine Samples akkumuliert, kein `SpeechStart` gesehen): Return `Ok(None)`. Rustdoc-Rationale: *"Accidental hotkey-trigger (release before any speech detected) is a normal-path, not an error. Caller swallows `Ok(None)` silently — no paste-action, no user-error-dialog."*
+- **Multi-SpeechEnd in einer Session:** out-of-scope. Nach dem ersten `SpeechEnd` kehrt `run_capture_session` zurück. Multi-Utterance-per-Hold ist Phase-2+ Scope.
+
+**Given** `run_capture_session` vollständig definiert ist,
+**When** das Module-Level-Rustdoc auf der Funktion verfasst wird,
+**Then** enthält es alle folgenden Clauses:
+- **(a) Phase-1-Limitation:** *"Phase-1 limitation: buffering begins on `VadDecision::SpeechStart` — no pre-buffer before first speech-onset. The first syllable may be clipped, particularly with high-threshold RMS-VAD. Revisit-Trigger: Silero-VAD-Plugin-Introduction in Phase 2+, which has inherent decision-lag requiring pre-buffer design (see ADR-0001 VadProvider-Trait for phase-2 extension-points)."*
+- **(b) Return semantics:** *"Returns `Ok(Some(StageData))` when a speech segment was detected, VAD-gated, and passed through `run_pipeline`. Returns `Ok(None)` when the broadcast-channel closed before any speech was detected (accidental hotkey-trigger — caller swallows silently). Returns `Err(AppError)` only on pipeline-stage-failures (STT-timeout, cleanup-error, plugin-not-found) or `VadProvider`-impl-errors. `RecvError::Lagged` is NOT propagated as error — Log-and-Continue per ADR-0007."*
+- **(c) VAD-internality:** *"`VadProvider` is Core-internal (ref architecture.md §Plugin-System: 'VAD bleibt Core-intern'). It is NOT registered in `PluginRegistry` — passed as `&mut dyn VadProvider` parameter. Caller constructs the concrete impl (e.g. `RmsVadProvider` in production, `MockVadProvider` in tests) and owns its lifecycle."*
+- **(d) Multi-utterance:** *"This function handles exactly one SpeechStart→SpeechEnd cycle per call. Multi-utterance-per-hold is Phase-2+ scope. Caller re-invokes for each hold-to-talk activation."*
+- **(e) Forward-Ref OutputTarget:** *"OutputTarget-Delivery (`output.deliver(text)`) is Story 2.5 + Story 2.4 (E2E Headless Flow) scope — not included here. Callers extract `StageData::Text(text)` from the `Ok(Some(...))` result and dispatch to the registered `OutputTarget` plugin."*
+
+**Given** `klarvo-test-fixtures` um test-support für Story 2.2 erweitert wird,
+**When** `MockVadProvider` und `MockSttProvider` angelegt werden,
+**Then** gilt:
+
+`MockVadProvider` in `klarvo-test-fixtures/src/vad_provider.rs`:
+```rust
+pub struct MockVadProvider {
+    decisions: std::collections::VecDeque<VadDecision>,
+}
+
+impl MockVadProvider {
+    /// Returns decisions[i] for the i-th process() call.
+    /// After exhaustion, always returns VadDecision::Silence.
+    pub fn with_decisions(decisions: Vec<VadDecision>) -> Self;
+}
+
+#[async_trait::async_trait]
+impl VadProvider for MockVadProvider {
+    async fn process(&mut self, _samples: &[f32], _ts_ms: u64) -> Result<VadDecision, PluginError>;
+    fn reset(&mut self);
+}
+```
+**And** `reset()` macht die `decisions`-Queue nicht leer — Reset resettiert VadProvider-internen-Zustand, nicht die Test-Sequenz; Caller erstellt neue Instanz wenn Sequenz neu starten soll, **And** Rustdoc: *"Test fixture implementing `VadProvider`. Returns pre-programmed `VadDecision` values in sequence. After exhaustion returns `Silence`. Use to test `run_capture_session` without depending on RMS-threshold behavior."*
+
+`MockSttProvider` in `klarvo-test-fixtures/src/stt_provider.rs`:
+```rust
+pub struct MockSttProvider {
+    response: String,
+}
+
+impl MockSttProvider {
+    pub fn returning(text: impl Into<String>) -> Self;
+}
+
+#[async_trait::async_trait]
+impl SttProvider for MockSttProvider {
+    async fn transcribe(&self, _audio: AudioBuffer) -> Result<String, PluginError>;
+}
+```
+**And** `transcribe()` returnt `self.response.clone()` unabhängig vom AudioBuffer-Inhalt, **And** Rustdoc: *"Test fixture implementing `SttProvider`. Returns a fixed transcription string regardless of audio content. Use for pipeline-wiring tests where STT-accuracy is not under test."*, **And** beide Fixtures in `klarvo-test-fixtures/src/lib.rs` re-exportiert: `pub use vad_provider::MockVadProvider; pub use stt_provider::MockSttProvider;`.
+
+**Given** alle obigen Definitionen vorliegen,
+**When** `cargo test -p klarvo-core -p klarvo-test-fixtures` läuft,
+**Then** decken folgende Tests die Pfade ab:
+
+Integration-Tests in `klarvo-test-fixtures/tests/capture_session.rs`:
+
+**`capture_session_happy_path`:**
+- `MockVadProvider::with_decisions([Silence, SpeechStart { ts_ms: 64 }, Speech, SpeechEnd { ts_ms: 256, duration_ms: 192 }, Silence])`.
+- `MockAudioSource::with_synthetic_chunks(5, 1024, 64)` → Broadcast-Receiver an `run_capture_session`.
+- PluginRegistry mit `MockSttProvider::returning("hello")` als STT + `klarvo-plugin-verbatim` als Cleanup.
+- `run_capture_session(receiver, &mut vad, &manifest, &registry).await` → asserts `Ok(Some(StageData::Text(s)))` mit `s == "hello"`.
+- Asserts: `AudioBuffer.ts_ms_start == 64`, `AudioBuffer.ts_ms_end == 256`.
+
+**`capture_session_closed_before_speech`:**
+- Sender sofort gedroppt (kein `AudioEvent` gesendet). Receiver sieht `RecvError::Closed`.
+- `run_capture_session(receiver, &mut vad, &manifest, &registry).await` → asserts `Ok(None)`.
+
+**`capture_session_closed_mid_speech`:**
+- `MockVadProvider::with_decisions([SpeechStart { ts_ms: 0 }, Speech])` (kein SpeechEnd).
+- `MockAudioSource::with_synthetic_chunks(2, 1024, 64)` → 2 Chunks dann Sender-Drop.
+- `run_capture_session(receiver, &mut vad, &manifest, &registry).await` → asserts `Ok(Some(StageData::Text(_)))`.
+
+Unit-Test in `klarvo-core/src/audio/buffer.rs` (`#[cfg(test)]`): `AudioBuffer`-Feldzugriff + `Clone`-derive compile-level.
+
+**And** kein `PluginRegistry`-Slot für `VadProvider` existiert.
+
+**Cross-References:**
+- ADR-0001 (VadProvider-Trait + VadDecision-Carrier-Fields: `SpeechStart.ts_ms`, `SpeechEnd.ts_ms + duration_ms`)
+- ADR-0007-Sub-Decision-2 (Log-and-Continue bei `RecvError::Lagged`, tracing-target `klarvo.audio.backpressure`)
+- ADR-0006 (Sub-Decision-2: 16 kHz mono fixed — consumed via `AUDIO_SAMPLE_RATE` const)
+- `memory/project_executor_stage_data_shape` (StageData-Enum + `run_pipeline`-Signatur — run_capture_session dispatched dorthin)
+- `memory/project_event_ts_ms_convention` (ts_ms_start/end in AudioBuffer als session-relative monotone)
+- `memory/feedback_premature_abstraction_guard` (kein DictationSession-Struct, kein wav.rs-factor-out)
+- `memory/project_phase1_trait_narrowing` (VadProvider = Infrastructure-Category, kein PluginRegistry-Slot)
+- architecture.md §Plugin-System Zeile 234 ("VAD bleibt Core-intern"), §Audio-Pipeline-Abstraktion Zeile 319-320, §Directory-Structure `pipeline/orchestrator.rs`
+
+---
+
 ### Epic 3: Windows Shell Integration
 
 Andy triggert Dictation auf Windows via Global-Hotkey und sieht das Ergebnis im aktiven Window eingefügt. Phase-1-Persona-complete UX (Tray + Auto-Paste).
