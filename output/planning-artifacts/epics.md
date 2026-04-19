@@ -1323,6 +1323,94 @@ Unit-Test in `klarvo-core/src/audio/buffer.rs` (`#[cfg(test)]`): `AudioBuffer`-F
 
 ---
 
+#### Story 2.3: Groq-Plugin KeyStore-Real-Wire-Up
+
+**As a** Plugin-Developer wiring Cloud-STT in die Dictation-Pipeline,
+**I want** `klarvo-plugin-groq` von `api_key: SecretString` (1B.4-direct-Construct) auf `key_store: Arc<dyn KeyStore>` (Epic-1C-stable-Trait) umzustellen — mit lazy-key-fetch per `transcribe()`-Call, `UpstreamUnavailable`-Error-Surface für fehlende Keys, und Integration-Test der vollen Session-Kette (`run_capture_session` → MockVadProvider → Groq[wiremock] → Verbatim),
+**So that** (a) der erste reale End-to-End-Dictation-Fluss (MockAudioSource → VAD-Gate → Groq-Plugin-mocked-HTTP → Cleanup → `StageData::Text`) headless verifizierbar ist, (b) das 1C-established `Arc<dyn KeyStore>`-Consumer-Pattern am primären Phase-1-Konsumenten verankert ist, und (c) `PluginRegistry::register_stt("groq", Arc::new(Groq::new(key_store)))` ohne `bootstrap()`-Touch einsetzbar ist (Epic-3-Scope: Shell-owned KeyStore-Resolution bleibt ausgeschlossen).
+
+**FRs covered:** FR15 (KeyStore-Half), FR29 (Error-Surface: `UpstreamUnavailable` für Key-Missing)
+
+**Dependencies:** Epic 1C Story 1C.1 (`KeyStore`-Trait + `InMemoryKeyStore`-Fixture), Story 1B.4 (Groq-Struct baseline, 7 Error-Keys, `GroqMockServer`-Fixture), Story 2.2 (`run_capture_session`-Signature + `MockVadProvider`/`MockAudioSource`-Fixtures)
+
+**Acceptance Criteria:**
+
+**Given** der 1B.4-geschlossene `klarvo-plugin-groq`-Crate mit `Groq { client: reqwest::Client, api_key: SecretString, endpoint: String, model: String }` (Fields privat), Primary-Constructor `pub fn new(api_key: SecretString) -> Self` und Secondary-Constructor `pub fn new_with_client(api_key: SecretString, client: reqwest::Client) -> Self`,
+**When** Story 2.3 die KeyStore-Wire-Up am Struct durchführt,
+**Then** gilt:
+- **Field-Swap:** `api_key: SecretString` wird durch `key_store: Arc<dyn KeyStore>` ersetzt; alle anderen Fields (`client`, `endpoint`, `model`) unverändert. Fields weiterhin privat.
+- **Primary-Constructor:** `pub fn new(key_store: Arc<dyn KeyStore>) -> Self` (non-async, kein `Result`-Return — per U1-Resolution). Default-Endpoint `"https://api.groq.com/openai/v1/audio/transcriptions"`, Default-Model `"whisper-large-v3"`, Default-Client-Timeout `Duration::from_secs(30)` bleiben unverändert von 1B.4.
+- **Secondary-Constructor:** `pub fn new_with_client(key_store: Arc<dyn KeyStore>, endpoint: impl Into<String>, client: reqwest::Client) -> Self` — updated für Test-Injection: `endpoint`-Parameter ersetzt den hardcoded Default (ermöglicht wiremock-URI-Inject); 1B.4's `api_key: SecretString`-param entfällt vollständig. Production-Code nutzt `new()`.
+- **`pub const GROQ_API_KEY_ID: &str = "groq_api_key";`** im Crate-Root deklariert — Naming-Prefix-Convention per `memory/project_keystore_trait_surface` §Error-Mapping-Convention (`groq_`-Prefix encodiert Plugin-Identity, namespaced von anderen Plugins). Multi-Account-via-injected-key-id ist Phase-2+ Config-Scope; kein speculative ctor-arg in 2.3.
+- `cargo check -p klarvo-plugin-groq` kompiliert grün nach Refactor.
+
+**Given** `Groq::transcribe(&self, audio: AudioBuffer)` nach dem Refactor die API-Key lazy aus `self.key_store` fetcht statt sie direkt aus einem Struct-Field zu lesen,
+**When** `transcribe` aufgerufen wird,
+**Then** gilt:
+- `let api_key: SecretString = self.key_store.get(GROQ_API_KEY_ID).await.map_err(|e| ...)?;` ist das **erste Statement** in `transcribe` — vor WAV-Encoding, vor HTTP-Request, vor Client-Call.
+- Ein `AppError::kind::KeyMissing`-Error aus dem KeyStore wird an dieser Stelle **umgemappt** (nicht direkt propagiert): `AppError::new(ErrorKind::UpstreamUnavailable).with_message(KEY_NOT_CONFIGURED).with_source(e)`. Caller sieht `UpstreamUnavailable`, nicht `KeyMissing` — per U1-Resolution (Pipeline-Perspektive: STT-Stage ist "nicht verfügbar" wenn API-Key fehlt; matches FR29-Error-Surface-Semantic für downstream Retry-Orchestration in 2.6).
+- **`pub const KEY_NOT_CONFIGURED: &str = "error.stt.key_not_configured";`** im Crate-Root deklariert — 8. Error-Key im Groq-Plugin (additiv zu den 7 1B.4-Error-Keys; kein bestehender Key geändert oder entfernt).
+- `SecretString::expose_secret()` bleibt **ausschließlich** inline am Bearer-Header-Konstruktions-Call-Site innerhalb `transcribe` — `api_key` ist jetzt lokale Variable, kein Struct-Field mehr; kein Intermediate-Variable außerhalb des Header-Setter-Kontexts (1B.4-Pattern: Precedent unverändert).
+- Alle 7 HTTP-Status-zu-Error-Key-Mappings aus 1B.4 (network, timeout, upstream_5xx, rate_limited, auth_failed, invalid_audio, upstream_4xx) bleiben exakt unverändert.
+
+**Given** `klarvo-plugin-groq/tests/external_contract.rs` (1B.4-Test-Suite, 7 Test-Cases) mit `Groq::new_with_client(mock_key: SecretString, client: reqwest::Client)`-Konstruktion,
+**When** Story 2.3 die Konstruktor-Signaturen ändert,
+**Then** werden alle 7 bestehenden Test-Cases in `external_contract.rs` auf die neue Konstruktor-Form migriert:
+- Test-Setup in jedem Case: `let key_store = Arc::new(InMemoryKeyStore::with_pairs([(GROQ_API_KEY_ID, SecretString::new("test-api-key".into()))]))`.
+- `Groq::new_with_client(Arc::clone(&key_store), mock_server.uri(), <test-client>)` ersetzt `Groq::new_with_client(mock_key, <test-client>)`.
+- Die 7 Test-Case-Payloads (Success, 5xx, 429, 401-Auth, 400, Timeout, Network) bleiben inhaltlich unverändert — nur Konstruktions-Site aktualisiert. Auth-Leak-Assertion in Test-Case-4 bleibt valide: `SecretString` in `key_store` kann nicht durch `Debug`/`Display` leaken, da `expose_secret()` weiterhin nur intern in `transcribe` aufgerufen wird.
+- **`GroqMockServer`-Extension:** `klarvo-test-fixtures::GroqMockServer` erhält additive Methode `pub fn uri(&self) -> String` die `self.server.uri()` delegiert — expose wiremock-Server-URI für `new_with_client`-Endpoint-Inject. Kein neuer Fixture-Type (per U4-Scope: "keine neue Fixture-Type").
+- **`MockKeyStore`-Removal:** Der 1B.4-Placeholder `klarvo-test-fixtures::MockKeyStore` (pre-1C-Stub ohne echte `KeyStore`-Trait-Impl; nur `pub fn get(&self, key: &str) -> Option<SecretString>`) wird aus `klarvo-test-fixtures/src/` entfernt und aus `lib.rs`-Re-Exports gestrichen. `InMemoryKeyStore` (1C.1) ersetzt ihn vollständig; kein weiterer Konsument existiert post-2.3-Migration (per `memory/feedback_premature_abstraction_guard`: Structs ohne zweiten Konsumenten nicht weiter-maintainen).
+- `cargo test -p klarvo-plugin-groq --test external_contract` läuft grün nach Migration.
+
+**Given** Story 2.3 den ersten E2E-Dictation-Fluss mit echtem Groq-Plugin (mocked HTTP) und `run_capture_session` (2.2) testen soll,
+**When** `klarvo-plugin-groq/tests/e2e_dictation_session.rs` neu angelegt wird,
+**Then** gilt für Setup und Cargo.toml:
+- **Cargo.toml-Ergänzung:** `klarvo-plugin-verbatim` wird als `[dev-dependencies]`-Entry in `klarvo-plugin-groq/Cargo.toml` hinzugefügt (nur für diesen Test benötigt; Production-Code importiert Verbatim nicht).
+- **Test-Manifest:** Die Tests verwenden ein inline-TOML via `PipelineManifest::from_str`-Deserialisierung (oder equivalent direkter Struct-Konstruktion) mit Stages `[Stt { plugin_id: "groq" }, Cleanup { plugin_id: "verbatim" }]`. Kein neuer `klarvo-test-fixtures`-Manifest-Helper eingeführt (per U4: keine neue Fixture-Type).
+- **Audio-Setup Pattern:** `MockAudioSource::with_synthetic_chunks(3, 1024, 0)` gestartet via `start(config)`-Aufruf, Broadcast-Receiver extrahiert und an `run_capture_session` übergeben — analog 2.2-Test-Pattern (per U4: Pattern-Reuse).
+
+**And** enthält die Test-Datei **3 Test-Cases** (alle `#[tokio::test]`):
+
+**`e2e_groq_happy_path`:**
+- `MockVadProvider::with_decisions([VadDecision::SpeechStart { ts_ms: 0 }, VadDecision::Speech, VadDecision::SpeechEnd { ts_ms: 1000, duration_ms: 1000 }])`.
+- `InMemoryKeyStore::with_pairs([(GROQ_API_KEY_ID, SecretString::new("test-key".into()))])`.
+- wiremock-MockServer mit `with_success_response("{\"text\":\"hello world\"}")` konfiguriert.
+- `PluginRegistry` mit `register_stt("groq", Arc::new(Groq::new_with_client(Arc::clone(&ks), mock_server.uri(), reqwest::Client::new())))` + `register_cleanup("verbatim", Arc::new(Verbatim::new()))`.
+- `run_capture_session(receiver, &mut vad, &manifest, &registry).await` → asserts `Ok(Some(StageData::Text(s)))` mit `s == "hello world"`.
+
+**`e2e_groq_upstream_5xx_propagates`:**
+- Gleicher Setup wie `e2e_groq_happy_path`, aber wiremock antwortet `with_status(503, "Service Unavailable")` statt Success.
+- `run_capture_session(...).await` → asserts `Err(AppError)` mit `kind == ErrorKind::UpstreamUnavailable` + `user_message == Some("error.stt.upstream_5xx")`.
+
+**`e2e_groq_key_not_configured_propagates`:**
+- Gleicher Audio/VAD-Setup wie `e2e_groq_happy_path`. `InMemoryKeyStore` ist **leer** (`InMemoryKeyStore::default()` oder `with_pairs([])`). wiremock-Server angelegt, aber **keine Expectation** konfiguriert (kein HTTP-Call erwartet — `transcribe` failt vor HTTP-Request).
+- `run_capture_session(...).await` → asserts `Err(AppError)` mit `kind == ErrorKind::UpstreamUnavailable` + `user_message == Some("error.stt.key_not_configured")`.
+
+**And** `cargo test -p klarvo-plugin-groq --test e2e_dictation_session` läuft headless ohne Audio-Device/GUI, unter 15 Sekunden total.
+
+**And** Rustdoc-Level-Comment auf der Test-Datei (exakter Text): *„E2E integration-test for Groq-Plugin consumed via `run_capture_session`. Layers: MockAudioSource + MockVadProvider + InMemoryKeyStore (from `klarvo-test-fixtures`) + wiremock mock-HTTP-server. First test-layer where the full dictation-path (Audio-Capture → VAD-Gate → STT → Cleanup → StageData::Text) runs end-to-end in a single async test. Bootstrap-Wire-Up (real WindowsKeystore + real AudioSource) is Epic 3 scope. OutputTarget-Delivery is Story 2.5 scope."*
+
+**Given** FR36 Rustdoc-Contract + geänderte Konstruktor-Semantik + neue Public-Consts `GROQ_API_KEY_ID` und `KEY_NOT_CONFIGURED`,
+**When** die Rustdocs in `klarvo-plugin-groq/src/lib.rs` aktualisiert werden,
+**Then** werden die 1B.4-Rustdocs wie folgt amendiert (additive Clarifications, bestehende Sections nicht abgerissen):
+- **`Groq::new`:** *„`key_store` is held as `Arc<dyn KeyStore>` — key is fetched lazily at `transcribe()`-call-time via `GROQ_API_KEY_ID`. Constructor never fails with a key-error; `UpstreamUnavailable` surfaces only at `transcribe()` if the key is absent. Production: construct via `bootstrap()` in Epic 3 (Shell owns KeyStore-Resolution, not Core-bootstrap)."*
+- **`Groq::new_with_client`:** *„Test-only constructor. `endpoint` overrides the default Groq-API-URL — pass wiremock-server URI for integration-tests. `client` allows short-timeout-injection for timeout-test-scenarios (see `tests/external_contract.rs` Test-Case 6)."*
+- **`GROQ_API_KEY_ID`:** *„Identifier for the Groq API-key in the `KeyStore`. Naming-prefix-convention: `groq_` prefix namespaces this key from other plugins (e.g. `deepseek_api_key`). Multi-Account support (multiple Groq API-keys per user) is Phase-2+ scope — would require `key_id: &str` injection rather than this hardcoded const."*
+- **`KEY_NOT_CONFIGURED`:** *„i18n-key surfaced when `KeyStore::get(GROQ_API_KEY_ID)` returns `KeyMissing`. Re-mapped from `KeyMissing` to `UpstreamUnavailable` at `transcribe()` call-site: from pipeline-perspective, Groq-STT is 'unavailable' when the API-key is not configured. Shell-layer translates this key to a user-facing message prompting key-setup (Epic 4 / Config-Layer)."*
+
+**Cross-References:**
+- Story 1B.4 (Groq-Struct baseline, HTTPS-Stack, 7 bestehende Error-Keys, `GroqMockServer`-Fixture, `external_contract.rs`-Test-Suite)
+- Story 1C.1 (`KeyStore`-Trait, `InMemoryKeyStore`-Fixture + `with_pairs`-API)
+- Story 2.2 (`run_capture_session`-Signature, `MockVadProvider`, `MockAudioSource`, Broadcast-Receiver-Pattern)
+- ADR-0005 (HTTPS-Stack: reqwest + rustls-native-roots + wiremock — unverändert; 2.3 fügt keine neuen Deps hinzu)
+- `memory/project_keystore_trait_surface` (Naming-Prefix-Convention §Error-Mapping-Convention, Cross-Epic-Consumer-Notes §Epic-2)
+- `memory/project_adr0005_https_stack` (Per-Plugin-Instance-Client-Lifetime — unverändert in 2.3)
+- `memory/feedback_premature_abstraction_guard` (`MockKeyStore`-Removal-Rationale: kein zweiter Konsument)
+- `memory/feedback_scaffold_fail_soft_pattern` (kein `todo!()`/`unimplemented!()` in 2.3-scope)
+
+---
+
 ### Epic 3: Windows Shell Integration
 
 Andy triggert Dictation auf Windows via Global-Hotkey und sieht das Ergebnis im aktiven Window eingefügt. Phase-1-Persona-complete UX (Tray + Auto-Paste).
