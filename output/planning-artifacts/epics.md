@@ -827,6 +827,72 @@ exposed via `klarvo_test_fixtures::InMemoryKeyStore`, **And** 1B.4's intra-crate
 
 ---
 
+#### Story 1C.2: `PlainSqliteKeyStore` Dev-Impl hinter `dev-plain-keystore`-Feature + NFR4-Disclosure
+
+**As a** Core-Developer building den Phase-1-dogfooding-prototype,
+**I want** eine `PlainSqliteKeyStore`-Implementierung des 1C.1-`KeyStore`-Traits, die API-Keys plain in einer lokalen SQLite-Datei speichert — konditional-compiled hinter dem `dev-plain-keystore`-Cargo-Feature und dokumentiert als NFR4-Security-Theater,
+**So that** Andy + Phase-1-Sanity-Tester einen funktionalen KeyStore-Backend für BYOK-Workflows haben (Groq-Integration kann ab Epic 2 realen Wire-Up gegen `Arc<dyn KeyStore>` bauen), **ohne** dass der Plain-Storage-Codepfad je in Release-Builds landet — und die Security-Theater-Disclosure (NFR4) explizit im Dev-User-Rustdoc und in Phase-1-README verankert ist.
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core`'s bestehendes `keystore`-Module (aus 1C.1) + Cargo-Feature-Policy (per PRD-FR45 post-Amendment-Commit b21b771 + `memory/project_api_key_os_keystore_mvp`) + Andy-Pre-Flight-Flag-4 (Feature-Flag-Location),
+**When** `klarvo-core/src/keystore/plain_sqlite.rs` angelegt und Cargo-Feature deklariert wird,
+**Then** lebt der `dev-plain-keystore`-Cargo-Feature-Flag in **`klarvo-core/Cargo.toml`** unter `[features]` als `dev-plain-keystore = ["rusqlite"]` (Cargo-idiomatic optional-dep-Feature-Pattern), **And** `rusqlite = { workspace = true, optional = true }` wird in `[dependencies]` deklariert (workspace-gepinnt; **keine** Version-String-Literale im Crate-Cargo.toml), **And** `plain_sqlite.rs` ist in seiner Gesamtheit `#[cfg(feature = "dev-plain-keystore")]`-gated (Module-Level-Gate, nicht per-Item), **And** `klarvo-core/src/keystore/mod.rs` re-exportiert den Typ konditional: `#[cfg(feature = "dev-plain-keystore")] pub use plain_sqlite::PlainSqliteKeyStore;`, **And** Consumer-Crates (z. B. `klarvo-plugin-groq`, Test-Harnesses) propagieren das Feature via `[features] dev-plain-keystore = ["klarvo-core/dev-plain-keystore"]` wenn sie den konkreten Typ konsumieren wollen (Consumer-Propagation ist Consumer-Story-Scope, **nicht** 1C.2-Scope — 1C.2 etabliert nur die Feature-Quelle).
+
+**Given** `PlainSqliteKeyStore`-Struct + Init-Semantics + Mutex-Wrapping für `Send + Sync + 'static`-Compliance des 1C.1-Trait-Bounds,
+**When** der Struct + Konstruktoren definiert werden,
+**Then** ist die Public-API:
+```rust
+pub struct PlainSqliteKeyStore {
+    conn: tokio::sync::Mutex<rusqlite::Connection>,
+}
+
+impl PlainSqliteKeyStore {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, AppError>;
+    pub fn in_memory() -> Result<Self, AppError>;
+}
+```
+(`tokio::sync::Mutex` für async-friendly Locking über await-Boundaries; `rusqlite::Connection` ist sync — rusqlite-Calls laufen inline innerhalb der async-Trait-Methods, **kein** `spawn_blocking`-Overhead für Phase-1-dev-only-Scope), **And** beide Konstruktoren führen Schema-Init aus:
+```sql
+CREATE TABLE IF NOT EXISTS api_keys (
+    name TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+)
+```
+(Init-Fail → `AppError::new(ErrorKind::KeyMissing).with_message(keys::BACKEND_UNAVAILABLE).with_source(rusqlite_error)`), **And** `open` akzeptiert den Ziel-DB-Pfad explizit (nicht hardcoded; Caller steuert `keystore.db`-Location per PRD line 378; Tests nutzen `:memory:` via `in_memory()` — `:memory:` ist kein valider Filesystem-Path, daher separater Method-Weg statt Magic-String-Parameter), **And** **kein** `rusqlite_migration` wird verwendet (Single-Table-Schema Phase-1-stable; architecture.md:244-Migration-Engine gilt für Plugin-Migrations, nicht Core-KeyStore-Schema).
+
+**Given** `KeyStore`-Trait-Impl + Error-Taxonomy-Mapping (1C.1-`keys`-Submodule) + `delete`-Idempotenz-Contract,
+**When** `impl KeyStore for PlainSqliteKeyStore` implementiert wird,
+**Then** mappt die Impl rusqlite-Errors auf `AppError` wie folgt:
+- `get(&self, key) -> Result<SecretString, AppError>`: `SELECT value FROM api_keys WHERE name = ?1`. `rusqlite::Error::QueryReturnedNoRows` → `AppError::new(ErrorKind::KeyMissing).with_message(keys::KEY_NOT_FOUND).with_source(e)` mit dem angefragten Key-String als Display-Context im Cause-Chain (per 1C.1-AC-3-Caller-Convention). Anderer `rusqlite::Error` → `.with_message(keys::BACKEND_UNAVAILABLE).with_source(e)`. Success → `Ok(SecretString::new(row.get::<_, String>(0)?))`.
+- `set(&self, key, value) -> Result<(), AppError>`: `INSERT OR REPLACE INTO api_keys (name, value) VALUES (?1, ?2)` (Upsert-Semantik — konsistent zu HashMap::insert-last-write-wins-Pattern + 1C.1-Idempotent-Delete-Spirit). `value.expose_secret()` inline im rusqlite-Params-Binding (**kein** Intermediate-`String`-Bind — narrow-expose per 1C.1-AC-2-Policy). Fail → `BACKEND_UNAVAILABLE`.
+- `delete(&self, key) -> Result<(), AppError>`: `DELETE FROM api_keys WHERE name = ?1`. Rückgabe **immer** `Ok(())` bei erfolgreichem SQL-Execute — unabhängig vom `rows_affected`-Count (1C.1-Idempotenz-Contract). Fail → `BACKEND_UNAVAILABLE`.
+
+**And** alle drei Methods locken `self.conn.lock().await` unmittelbar vor dem rusqlite-Call und halten den Lock bis zum Call-Ende (sequenzielle DB-Access, keine Race-Conditions; Phase-1-dev-only-Scope rechtfertigt keinen Connection-Pool).
+
+**Given** NFR4 (Security-Theater-Disclosure) + PRD line 377-378 `README-phase1.md`-Zip-Bundle-Kontext + `memory/project_api_key_os_keystore_mvp`-Policy + Phase-2-Revisit-Forward-Reference für 1C.3-OS-Keystore-Implementations,
+**When** 1C.2 shippt,
+**Then** trägt das Module-Level-Rustdoc in `plain_sqlite.rs` zwei Text-Blöcke. **Block 1 — NFR4-Security-Disclosure** (exakter Text): *„`PlainSqliteKeyStore` stores API-keys in plaintext within a local SQLite file. This is **Security-Theater** (NFR4): a Windows-ACL-restriction on current-user read/write mitigates casual-access by other OS-users, but does **not** protect against privileged-process-read, disk-backup-extraction, or malware running as the same user. This implementation exists **only** behind the `dev-plain-keystore` Cargo-feature and is **never** compiled into release-builds. Real API-key-protection comes via the OS-Keystore-Impl (Phase-4 release-default per FR46, ref `memory/project_api_key_os_keystore_mvp`)."* **Block 2 — Phase-2+-Revisit-Note** (exakter Text): *„`rusqlite` calls are inline-blocking inside async-methods — acceptable for Phase-1-dev-only-scope. Phase-2+ OS-Keystore implementations (1C.3) may have non-trivial I/O latency (Windows Credential Manager roundtrips, Android IPC) and should evaluate `tokio::task::spawn_blocking` wrapping at that time."* **And** `docs/phase-1/README.md` (Source-File im Repo-Tree unter `docs/phase-1/` analog zu `docs/adr/` und `docs/migration/`-Struktur; 1C.2 appended oder created falls nicht vorhanden; PRD line 377-378 meint Zip-Bundle-Distribution-Root und ist für Source-Tree-Location neutral — Zip-Bundle-Copy-Step ist Scope einer späteren Release-Story) enthält eine Section `## Security: Plain-SQLite API-Key Storage` mit einer leserlichen Variante derselben NFR4-Disclosure + zusätzlichem Hinweis *„Phase-1-Builds are dogfooding-prototype only — do not treat local API-keys as production-secure. Rotate keys frequently if testing in shared environments."*
+
+**Given** Feature-Gate-Correctness-Attestation + Integration-Test-Harness + Pattern-Parität zu 1B.4-`tests/external_contract.rs`,
+**When** 1C.2 shippt,
+**Then** verifiziert ein Integration-Test-File `klarvo-core/tests/plain_sqlite_keystore.rs` (strict Integration-Test-Scope, **nicht** Unit-Test-Module; File-Top-Gate `#![cfg(feature = "dev-plain-keystore")]` damit das ganze File ohne Feature compiler-invisible ist) die Contract-Roundtrip-Semantik über **7 Test-Cases**:
+- set/get roundtrip — Value-Equality via `expose_secret()`-Compare
+- get auf missing-key → `AppError::kind::KeyMissing` + `user_message == keys::KEY_NOT_FOUND`
+- delete auf existing-key → `Ok(())`, subsequent get → `KEY_NOT_FOUND`
+- delete auf non-existing-key → `Ok(())` (Idempotenz-Contract-Check)
+- set auf existing-key (upsert) → `Ok(())`, subsequent get returnt neuen Wert
+- `PlainSqliteKeyStore::in_memory()` als Test-Harness-Basis — keine File-I/O, keine Cleanup-Ritual
+- `PlainSqliteKeyStore::open` auf einem Pfad mit **non-existent-parent-dir** (z. B. `/tmp/klarvo-test-nonexistent-xyz/keystore.db`) → `Err(AppError)` mit `kind == ErrorKind::KeyMissing` + `user_message == keys::BACKEND_UNAVAILABLE` + `source` wrapping den rusqlite/IO-Error (Init-Error-Mapping-Lock für Schema-Init-Fail-Pfad aus AC-2)
+
+**And** `cargo check -p klarvo-core --features dev-plain-keystore` kompiliert grün, **And** `cargo check -p klarvo-core` (ohne Feature) kompiliert grün und `PlainSqliteKeyStore`-Symbol ist nicht reachable, **And** `cargo test -p klarvo-core --features dev-plain-keystore --test plain_sqlite_keystore` läuft alle 7 Cases grün, **And** `cargo test -p klarvo-core --test plain_sqlite_keystore` (ohne Feature) compiles-zu-leer (0 tests; File-Top-Gate greift), **And** Concurrent-Access-Stress / Read-Only-Path / PoisonError sind explizit out-of-scope für Phase-1-dev-only-Scope (tokio-Mutex poisoniert nicht; Phase-2+-Harden nur wenn Real-Use-Pattern Race-Conditions aufdeckt).
+
+**Given** FR36 (Rustdoc-Contract-Documentation) + 1C.1-etablierte Intent/Contract/Example-Triple-Convention,
+**When** `PlainSqliteKeyStore`, `open`, `in_memory`, `impl KeyStore for PlainSqliteKeyStore` dokumentiert werden,
+**Then** hat jedes Public-Item Rustdoc mit (a) **Intent**-Zeile, (b) **Contract-Condition** (für `open`/`in_memory` explizit: *„Returns `AppError::kind::KeyMissing` with `user_message = keys::BACKEND_UNAVAILABLE` when SQLite-connection-init or table-CREATE fails."*), (c) **Example**-Snippet (zeigt `open(path)`-Flow + direkte `Arc<dyn KeyStore>`-Verwendung — Example hält sich an 1C.1-AC-5-Pattern `expose_secret()`-narrow bei etwaigem Secret-Handling), **And** `open`/`in_memory`-Rustdoc referenziert das Module-Level-NFR4-Disclosure als Disclaimer: *„See module-level documentation for the NFR4 security-disclosure. Use only in `dev-plain-keystore`-gated builds."*
+
+---
+
 ### Epic 2: End-to-End Dictation Pipeline (Headless Canonical Flow)
 
 User (Andy) kann den kanonischen Hold-to-Talk-Workflow ausführen — Audio-Capture → VAD → STT → Cleanup → Delivery — verifizierbar als headless Integration-Test, bevor Shell-Integration passiert (PRD Journey 1 + Journey 3).
