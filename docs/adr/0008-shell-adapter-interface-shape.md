@@ -1,6 +1,6 @@
 # ADR-0008: Shell-Delivery-Interface-Shape (OutputTarget-Trait, architecture-reconvergent)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-19
 
 ## Context
@@ -154,3 +154,39 @@ Rejected: Würde `memory/project_executor_stage_data_shape` Stage-Type-Enum-Vari
 - `memory/feedback_architecture_doc_authoritative` (Korollar — Option (a) ist architecture-reconvergent, kein Abweichungs-ADR; Option (b)/(c) wären aktive Divergenzen)
 - `memory/feedback_premature_abstraction_guard` (keine dedizierte Trait-Erfindung ohne proven Duplication)
 - ADR-0004 (SecretString-Precedent für Q1-Review)
+- `memory/project_phase1_trait_narrowing` (dokumentiert 7 Phase-0-Traits vs 5 Phase-1-Impls explizit persistent; macht Phase-1-Scope-Narrowing-Diagnose aus dem Decision-Context auffindbar — added in Amendment 1)
+
+## Amendment 1 — 2026-04-19: Open Questions resolved (Status → Accepted)
+
+**Finding:** Original ADR hat Q1 (text-Type — `&str` vs `SecretString`), Q2 (OutputTarget-Init-Failure-Policy), Q3 (i18n-Key-Konvention `"error.output.<reason>"`) als „for Andy-review" offen gelassen. Amendment resolved alle drei und flipt Status Proposed → Accepted.
+
+**Resolution Q1 — `text: &str` bleibt.**
+
+`SecretString` ist für Credentials (API-Keys, Passwords), NICHT für User-generated-Content. PII-Log-Discipline ist **PRD-NFR-Level** (NFR5 — kein Audio/Text im Rolling-File-Log) und gilt architektur-weit unabhängig von Type-Signature. Ein `SecretString`-Wrap auf Cleanup-Output wäre Type-Coupling ohne funktionalen Benefit: Core hält den Text nur millisekunden-lang (Pipeline-Exit → OutputTarget-Dispatch), Shell hält ihn bis Clipboard-Set + Paste.
+
+**Revisit-Trigger (Phase 2+):** concrete empirical PII-Leak-Finding aus Dogfooding-Logs **oder** Legal-Review. NICHT speculative Phase-2-Change — Type-Coupling kommt nur wenn empirisch motiviert.
+
+**Resolution Q2 — OutputTarget-Init-Failure: Startup-fatal in Phase 1, NFR10-konform.**
+
+Plugin-Init-Failures zum Startup-Zeitpunkt sind per NFR10 (PRD Zeile 756) „fatale Errors, die zu kontrolliertem App-Beenden mit spezifischem Exit-Code führen (kein silent-crash)". Clipboard-System-Unavailable-at-Startup (z. B. Server-Windows-Core ohne Clipboard-Service) fällt in dieselbe Kategorie — Shell-Startup-Halt mit klarem Error-Log ist konsistent und User-observable.
+
+**Forward-Ref (Phase 3):** Android-Accessibility-Service-Permission-Revoke ist **user-revokable Runtime-State**, NICHT Startup-Init — semantisch getrennt. Separat zu adressieren wenn Phase-3-Android-Shell-Impl ansteht. Kein Phase-1-Scope.
+
+**Resolution Q3 — i18n-Key-Konvention `"error.output.<reason>"`: Ja, analog zu `"error.keystore.<reason>"` aus Epic 1C.**
+
+Story 2.5 AC definiert die initial-Keys:
+- `"error.output.clipboard_unavailable"` — Clipboard-Backend-Unavailable (OS-Level, z. B. Server-Windows-Core ohne Clipboard-Service)
+- `"error.output.target_not_found"` — PluginRegistry-Lookup-Miss (Shell-Config referenziert unknown OutputTarget-ID)
+
+Zusätzliche Keys werden per Impl-Story additiv registriert (z. B. Epic 3 FR21 könnte `"error.output.paste_injection_blocked"` brauchen, wenn SendInput-API-Level-Restrictions auftauchen). Precedent-Pattern: Epic 1C `keystore::keys`-Submodule (ref `memory/project_keystore_trait_surface`).
+
+**Policy unchanged:** Trait-Signatur `async fn deliver(&self, text: &str) -> Result<(), AppError>`, PluginRegistry-Extension `output: HashMap<String, Arc<dyn OutputTarget>>`, Non-Stage-Dispatch (Shell-Orchestrated-Post-Pipeline-Delivery), Reference-Impl `klarvo-plugin-clipboard`, 4-Trait-Ring-Separation (OutputTarget ist Plugin-Contract-Terminal-Sink, nicht Data-Flow-Ring-Member) bleiben wie im Original-Decision-Block. Amendment fixiert nur Text-Type (Q1), Init-Failure-Policy (Q2), i18n-Key-Konvention (Q3).
+
+**Consequences for downstream:**
+- Story 2.5 (Clipboard-Reference-Impl) AC enthält (a) initial-i18n-Keys-Registration (`"error.output.clipboard_unavailable"`, `"error.output.target_not_found"`) in `klarvo_core::output::keys`-Submodule + (b) Startup-fatal-Init-Failure-Pattern gemäß NFR10.
+- Story 2.4 (E2E Headless Flow) Integration-Test mit Test-OutputTarget-Mock in `klarvo-test-fixtures`: Mock-Impl kann `AppError::kind::Fatal` oder ähnlich in `deliver()` simulieren für Error-Path-Testing.
+- Epic 3 FR21 (Windows-Auto-Paste) erbt i18n-Key-Konvention; neue Keys werden dort additiv registriert — keine Schema-Change am Output-Key-Submodule nötig.
+
+**Additional Cross-Reference (added in this Amendment):** `memory/project_phase1_trait_narrowing` — macht die Phase-1-Scope-Narrowing-Diagnose (7 Phase-0-Traits vs. 5 Phase-1-Impls) explizit persistent auffindbar, statt nur im ADR-Kontext tacit zu bleiben.
+
+**Source of finding:** Andy-Review 2026-04-19 (post-Opus-Delegate-Session, mid-Epic-2-Pre-Flight-Resolution).
