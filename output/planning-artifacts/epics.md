@@ -1413,9 +1413,294 @@ Unit-Test in `klarvo-core/src/audio/buffer.rs` (`#[cfg(test)]`): `AudioBuffer`-F
 
 #### Story 2.4: `OutputTarget`-Trait + Clipboard-Sink (FR16 + FR17)
 
-*Titles-approved 2026-04-19. Full ACs pending.*
+**As a** Core-Developer + Plugin-Developer,
+**I want** den `OutputTarget`-Trait (ADR-0008-konformer Plugin-Contract-Terminal-Sink) in
+`klarvo-core` vollständig, eine `arboard`-basierte `ClipboardOutputTarget`-Reference-Impl in
+`klarvo-plugin-clipboard`, einen `InMemoryOutputTarget`-Test-Fixture in `klarvo-test-fixtures`
+und die `PluginRegistry` um den `output`-Slot erweitert,
+**So that** (a) FR17 (Shell-Adapter-Delivery) strukturell geschlossen wird — Pipeline produziert
+`String`, Caller/Shell dispatcht an `OutputTarget` — (b) der Headless-Beweis via
+`e2e_dictation_with_output_target` CI-fähig ohne OS-Clipboard-Service erbracht wird und (c)
+Phase-2/3-OutputTarget-Extensions (Keystroke, Android-Accessibility) per neuem Plugin-Crate ohne
+Trait-Change addierbar sind.
 
-**Outcome:** `OutputTarget`-Trait (`async fn deliver(&self, text: &str) -> Result<(), AppError>`) in `klarvo-core` (ADR-0008 Plugin-Contract-Registry-slot, nicht Ring-Member); `klarvo-plugin-clipboard`-Crate mit `arboard`-basierter Impl; Integration ins Pipeline-Ende (Post-Verbatim-Sink-Call); `e2e_dictation_session.rs` Happy-Path erweitert um Clipboard-Content-Assert via `TestClipboardSink`-Impl oder `arboard`-test-backend. Clipboard-only Phase 1; Keystroke-Plugin Phase-2 per architecture.md:1036.
+**FRs:** FR16 (CleanupStyle-Plugin-Dispatch, durch E2E-Coverage geschlossen),
+FR17 (Cleanup-Output → Shell-Adapter-Delivery, strukturell eingeführt)
+
+**Dependencies:** Stories 2.1 (`AudioSource`-Trait, `MockAudioSource`), 2.2
+(`run_capture_session`, `MockVadProvider`, `AudioBuffer`, `StageData`), 2.3
+(Groq-Wire-Up, `e2e_dictation_session.rs`-Base, `GroqMockServer`, `InMemoryKeyStore`);
+Stories 1A.2 (`AppError`/`ErrorKind`-Builder, `ErrorKind::Io` + `ErrorKind::Configuration`
+Variants), 1B.5 (PluginRegistry-Pattern), 1C.1 (`InMemoryKeyStore`-Fixture-Pattern);
+ADR-0008 (Accepted + Amendment-1, alle Open-Questions resolved).
+
+---
+
+**Acceptance Criteria:**
+
+**Given** `klarvo-core/src/traits/output.rs` enthält unvollständigen Stub
+(`pub trait OutputTarget: Send + Sync {}`) und `traits/mod.rs` re-exportiert `OutputTarget`
+bereits,
+**When** Story 2.4 das `output`-Modul nach dem Keystore-Pattern (1C.1) anlegt:
+- `klarvo-core/src/output/mod.rs` — neues Modul-Root mit `pub mod keys;` und
+  `pub use crate::traits::output::OutputTarget;` (Thin-Re-Export für
+  `klarvo_core::output::OutputTarget`-Zugriffspfad)
+- `klarvo-core/src/output/keys.rs` — i18n-Key-Konstanten
+- `klarvo-core/src/traits/output.rs` — Trait-Definition bleibt hier (Stub wird an Ort und
+  Stelle vervollständigt; `output/mod.rs` re-exportiert via
+  `pub use crate::traits::output::OutputTarget`)
+- `klarvo-core/src/lib.rs` erhält `pub mod output;`
+
+**Then** hat `OutputTarget` die exakte Signatur (ADR-0008 Sub-Decision 1):
+```rust
+#[async_trait]
+pub trait OutputTarget: Send + Sync + 'static {
+    async fn deliver(&self, text: &str) -> Result<(), AppError>;
+}
+```
+**And** `'static`-Bound explizit (nötig für `Arc<dyn OutputTarget>`-Kompatibilität in
+PluginRegistry), **And** `text: &str` — nicht `String`, nicht `SecretString`
+(ADR-0008-Amendment-1-Q1: Cleanup-Output ist nicht-credential-sensitive in Phase 1), **And**
+`&self` nicht `&mut self` (Thread-Safety-Invariante per ADR-0008 Sub-Decision 1), **And**
+`async_trait` workspace-gepinnt (kein neuer Dep), **And** `cargo check -p klarvo-core` grün.
+
+**And** Trait-Level-Rustdoc (`traits/output.rs`) enthält (exakter Text):
+*„`OutputTarget` is the Terminal-Sink-Trait for the dictation pipeline. It is architecturally
+distinct from the 4 Phase-1 Data-Flow-Stability-Traits (`PipelineStage`, `SttProvider`,
+`CleanupStyle`, `VadProvider`) — the Ring remains '4'. `OutputTarget` is a Plugin-Contract
+(multiple concurrent implementations, Registry-dispatched) not an Infrastructure-Trait
+(cf. `KeyStore`). Trait-Signature is locked in Phase 1; new targets extend via new plugin-crates
+without Trait-change. Phase-1 Reference-Impl: `klarvo-plugin-clipboard`.
+Phase-2 extension: `klarvo-plugin-keystroke` (architecture.md:1036)."*
+
+**And** `deliver`-Method-Rustdoc enthält (a) **Intent**: *„Deliver the final cleanup-output text
+to the configured target (clipboard, keystroke-injection, file, network endpoint, etc.)."*,
+(b) **Contract**: *„Returns `Ok(())` on success. On failure returns `AppError` with
+`user_message` set to an i18n-key (Core emits keys, Shell resolves per i18n-contract,
+`memory/project_i18n_core_contract`). Production implementations MUST NOT log or persist `text`
+beyond the immediate delivery operation (PII-Log-Discipline per NFR5). Test fixtures (e.g.,
+`InMemoryOutputTarget`) persist for assertion access and are a narrow, documented exception."*,
+(c) **Example**:
+```rust
+let text: String = /* extracted from run_capture_session result */;
+registry.output("clipboard")
+    .ok_or_else(|| AppError::new(ErrorKind::Configuration)
+        .with_message(klarvo_core::output::keys::TARGET_NOT_FOUND))?
+    .deliver(&text)
+    .await?;
+```
+
+---
+
+**Given** `klarvo-core/src/output/keys.rs` neu angelegt (Gate 1 oben),
+**When** die i18n-Key-Konstanten für Output-Errors definiert werden,
+**Then** enthält `keys.rs` exakt:
+```rust
+pub const TARGET_NOT_FOUND: &str      = "error.output.target_not_found";
+pub const CLIPBOARD_UNAVAILABLE: &str = "error.output.clipboard_unavailable";
+```
+**And** beide Keys: dot-notation `"error.<domain>.<reason>"` (FR8/G3-konform, kein User-facing
+String), **And** `cargo xtask lint-events` (G3) erkennt beide als gültige i18n-Keys, **And**
+`keys.rs`-Rustdoc enthält Forward-Ref (exakter Text): *„Phase-2+ may extend with additional
+error keys as new `OutputTarget` implementations are introduced (e.g.,
+`error.output.paste_injection_blocked` for Epic-3 Win32-SendInput failures). Keys are additive;
+no existing key changes meaning once introduced."*
+
+**And** `klarvo-core/src/output/mod.rs` enthält Module-Level-Rustdoc (exakter Text):
+*„`OutputTarget` is the Terminal-Sink abstraction for the dictation pipeline.
+Shell-Layer-Integration-Patterns (Startup-Probes, Config-Binding) sind Epic-3-Shell-Adapter-Scope."*
+
+---
+
+**Given** `klarvo-core/src/registry.rs` nach Story 1B.5 mit `stt`/`cleanup`-Slots in
+`PluginRegistry`,
+**When** Story 2.4 den `output`-Slot additiv ergänzt,
+**Then** erhält `PluginRegistry` das neue Feld `output: HashMap<String, Arc<dyn OutputTarget>>`
+und exakt zwei neue Methoden:
+```rust
+pub fn register_output(&mut self, id: impl Into<String>, plugin: Arc<dyn OutputTarget>) {
+    let id = id.into();
+    if self.output.contains_key(&id) {
+        panic!("duplicate output plugin id: {id}");
+    }
+    self.output.insert(id, plugin);
+}
+
+pub fn output(&self, id: &str) -> Option<Arc<dyn OutputTarget>> {
+    self.output.get(id).cloned()
+}
+```
+**And** `PluginRegistry::new()` Signatur unverändert — `output`-Field default-initialized via
+`HashMap::new()` (additive-Extension-Invariante, kein retroaktives Amendment an 1B.5-Callsites),
+**And** Duplicate-ID-`register_output` panics mit exaktem Message-String
+`"duplicate output plugin id: {id}"` (analog `"duplicate cleanup plugin id"` aus 1B.5), **And**
+`output(id)` returns `None` für unbekannte ID (kein Panic, kein Error), **And** alle
+bestehenden `registry.rs`-Tests aus 1B.5 kompilieren und passen grün durch, **And**
+`cargo test -p klarvo-core` grün.
+
+---
+
+**Given** ADR-0008 Amendment-1 (explizit: Test-Fixture nach `klarvo-test-fixtures`, analog
+`InMemoryKeyStore`) + U2-Resolution (ADR-Explizit schlägt Premature-Abstraction-Guard;
+near-certain second-consumer: Story 2.6 FR29-Retry-Path + Epic-3 Shell-Integration-Tests),
+**When** Story 2.4 `klarvo-test-fixtures/src/output.rs` anlegt,
+**Then** existiert `InMemoryOutputTarget` mit exakter Shape:
+```rust
+use std::sync::Mutex;
+use async_trait::async_trait;
+use klarvo_core::{AppError, output::OutputTarget};
+
+#[derive(Default)]
+pub struct InMemoryOutputTarget {
+    delivered: Mutex<Vec<String>>,
+}
+
+impl InMemoryOutputTarget {
+    pub fn new() -> Self { Self::default() }
+
+    /// Returns the most recently delivered text, or `None` if deliver() was never called.
+    pub fn last_delivered(&self) -> Option<String> {
+        self.delivered.lock().unwrap().last().cloned()
+    }
+
+    /// Returns all delivered texts in call order.
+    pub fn all_delivered(&self) -> Vec<String> {
+        self.delivered.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl OutputTarget for InMemoryOutputTarget {
+    async fn deliver(&self, text: &str) -> Result<(), AppError> {
+        self.delivered.lock().unwrap().push(text.to_owned());
+        Ok(())
+    }
+}
+```
+**And** `klarvo-test-fixtures/src/lib.rs` erhält `pub mod output;` +
+`pub use output::InMemoryOutputTarget;`, **And** `InMemoryOutputTarget::deliver()` ist
+always-`Ok(())` — Tests dürfen `.unwrap()` ohne Match-Arm-Overhead, **And** Name ist
+`InMemoryOutputTarget` (nicht `TestClipboardSink` — Fixture ist OutputTarget-generisch), **And**
+Struct-Rustdoc enthält (exakter Text): *„Placed in `klarvo-test-fixtures` per ADR-0008
+Amendment-1 explicit instruction. Factor-in justified by near-certain second-consumer:
+Story 2.6 FR29-Retry-Path (OutputTarget-delivery-after-retry), Epic-3 Shell-Integration-Tests.
+See `memory/feedback_premature_abstraction_guard` for guard policy. Persistence of delivered
+texts for assertion access is a narrow, documented exception to the PII-log-discipline rule
+(cf. `OutputTarget::deliver` Contract-Clause)."*, **And**
+`cargo check -p klarvo-test-fixtures` grün.
+
+---
+
+**Given** `klarvo-plugins/klarvo-plugin-clipboard/src/lib.rs` ist no-op-Scaffold,
+**When** Story 2.4 `ClipboardOutputTarget` implementiert,
+**Then** gilt für `klarvo-plugin-clipboard/Cargo.toml`:
+- `arboard = "3"` als `[dependencies]`-Entry (Implementer-Entscheid zu platform-feature-flags
+  basierend auf CI-OS-Matrix; plain `arboard = "3"` ohne extra Features ist Phase-1-Baseline)
+- `klarvo-core` als `[dependencies]`
+- `async-trait = { workspace = true }`
+
+**And** `ClipboardOutputTarget` ist Unit-Struct (kein stored State — arboard-Clipboard-Instanz
+per `deliver()`-Call frisch angelegt, Phase-1-akzeptabel für thin-wrapper):
+```rust
+pub struct ClipboardOutputTarget;
+
+#[async_trait]
+impl OutputTarget for ClipboardOutputTarget {
+    async fn deliver(&self, text: &str) -> Result<(), AppError> {
+        arboard::Clipboard::new()
+            .and_then(|mut cb| cb.set_text(text.to_owned()))
+            .map_err(|e| {
+                AppError::new(ErrorKind::Io)
+                    .with_message(klarvo_core::output::keys::CLIPBOARD_UNAVAILABLE)
+                    .with_source(e)
+            })
+    }
+}
+```
+**And** `register()` ist echt implementiert:
+```rust
+pub fn register(registry: &mut PluginRegistry) {
+    registry.register_output("clipboard", Arc::new(ClipboardOutputTarget));
+}
+```
+**And** Plugin-ID `"clipboard"` ist kanonisch — Shell-Config und E2E-Tests referenzieren
+diesen exakten String, **And** keine Unit-Test-Suite für `klarvo-plugin-clipboard` in Story 2.4
+(U3-Resolution: CI-Coverage via `InMemoryOutputTarget`-E2E; arboard-Real-Validation ist
+Manual-Smoke im Dogfooding-Hotkey-Flow), **And** `ClipboardOutputTarget`-Struct-Rustdoc enthält
+(exakter Text): *„Test coverage: CI-coverage for `OutputTarget`-delivery semantics is provided
+by `InMemoryOutputTarget` integration tests in `klarvo-plugin-groq`. Real-arboard
+smoke-validation is done manually via the Phase-1 dogfooding hotkey flow (arboard requires a
+running OS clipboard service, unavailable in headless CI). Note: `arboard::Clipboard::new()` and
+`set_text()` are synchronous; calling them inside `async fn deliver()` is Phase-1-acceptable
+(sub-millisecond OS-call); `tokio::task::spawn_blocking` wrapping is a Phase-2-refinement if
+benchmarks indicate contention. Phase-2 extension: `klarvo-plugin-keystroke`
+(architecture.md:1036) implements `OutputTarget` via Win32-SendInput-Direct-Keystroke-Injection,
+bypassing the clipboard."*, **And** `cargo build -p klarvo-plugin-clipboard` grün.
+
+---
+
+**Given** `klarvo-plugin-groq/tests/e2e_dictation_session.rs` existiert nach Story 2.3 mit
+`e2e_dictation_session_happy_path`,
+**When** Story 2.4 eine neue Testfunktion `e2e_dictation_with_output_target` hinzufügt,
+**Then** gilt für die neue Funktion (U5-Resolution: eigene Testfunktion, kein Extend der
+2.3-Funktion):
+```rust
+#[tokio::test]
+async fn e2e_dictation_with_output_target() {
+    // Setup analog Story 2.3 happy_path
+    let mock_server = GroqMockServer::start().await;
+    mock_server.expect_transcription("Hello world.").mount().await;
+
+    let audio_src = MockAudioSource::with_deterministic_chunks(/* per Story 2.1/2.2 pattern */);
+    let vad = MockVadProvider::pass_through();
+    let key_store = InMemoryKeyStore::with_pairs([("groq_api_key", SecretString::new("test-key"))]);
+
+    // Arc-Split: sink als Arc<InMemoryOutputTarget> für Assertion-Access post-delivery
+    let sink = Arc::new(InMemoryOutputTarget::new());
+    let mut registry = PluginRegistry::new();
+    registry.register_cleanup("verbatim", Arc::new(VerbatimCleanup::new()));
+    registry.register_stt("groq", Arc::new(GroqSttProvider::new(mock_server.url(), Arc::new(key_store))));
+    registry.register_output("clipboard", Arc::clone(&sink) as Arc<dyn OutputTarget>);
+
+    // Caller-Orchestrated Dispatch (U1-Resolution: Option B — run_capture_session unverändert)
+    let manifest = PipelineManifest::default_verbatim_groq();
+    let result = run_capture_session(&manifest, &registry, audio_src, vad).await
+        .expect("pipeline must succeed");
+    let StageData::Text(text) = result.expect("VAD pass-through must yield Some") else {
+        panic!("expected StageData::Text from pipeline");
+    };
+
+    let output = registry.output("clipboard")
+        .expect("clipboard output must be registered");
+    output.deliver(&text).await
+        .expect("InMemoryOutputTarget::deliver() is always Ok");
+
+    assert_eq!(sink.last_delivered(), Some("Hello world.".to_owned()));
+}
+```
+**And** `klarvo_plugin_clipboard::ClipboardOutputTarget` wird **nicht** verwendet
+(U3-Resolution: CI-Coverage via `InMemoryOutputTarget`; kein real-arboard in headless CI), **And**
+`cargo test -p klarvo-plugin-groq --test e2e_dictation_session` läuft headless ohne
+Audio-Device/GUI/OS-Clipboard-Service, unter 15 Sekunden total (analog 2.3-Constraint), **And**
+`e2e_dictation_session_happy_path` und `e2e_dictation_with_output_target` sind parallel-safe
+(kein shared mutable state), **And** Setup-Duplikation mit `happy_path` ist in Story 2.4
+akzeptiert; intra-file-local `setup_dictation_fixtures()`-Helper bleibt Implementer-Option wenn
+≥3 Testfunktionen dieselbe Sequenz duplizieren (premature-abstraction-guard-konform da
+intra-file).
+
+**And** ADR-0008 Index-Drift-Note: ADR-0008-Amendment-1 referenziert „Story 2.5
+(Clipboard-Reference-Impl)" — per epics.md-Commit 9616403 ist das jetzt Story 2.4. Kein
+ADR-Amendment-2 nötig (Forward-Ref-Typo ist nicht load-bearing per ADR-Amendment-Konvention).
+Story-2.4-Commit-Message kann optionalen Halbsatz enthalten.
+
+---
+
+**Scope-Fence (Non-Goals Story 2.4):**
+- `klarvo-plugin-keystroke` (architecture.md:1036): Phase-2 scope
+- Windows-Shell-Startup-Probe für OutputTarget (NFR10): Epic-3-Shell-Adapter-Scope
+- Unit-Tests für `klarvo-plugin-clipboard` mit real-arboard: Phase-3-Platform-Targeted-Tests
+- Config-driven OutputTarget-Selection: Epic-4-Settings-Scope
+- ADR-Amendment-2 für Index-Drift: nicht erforderlich (U4-Resolution)
 
 ---
 
