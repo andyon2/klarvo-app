@@ -29,3 +29,10 @@ secrecy.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 klarvo-plugin-verbatim = { path = "../klarvo-plugins/klarvo-plugin-verbatim" }
 klarvo-test-fixtures = { path = "../klarvo-test-fixtures" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
+windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

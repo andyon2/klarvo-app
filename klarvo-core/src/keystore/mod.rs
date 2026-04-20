@@ -16,6 +16,7 @@
 //! emerge in Phase 2+.
 
 pub mod keys;
+pub mod os;
 #[cfg(feature = "dev-plain-keystore")]
 mod plain_sqlite;
 mod trait_def;
