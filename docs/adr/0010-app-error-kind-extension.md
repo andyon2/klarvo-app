@@ -1,6 +1,6 @@
 # ADR-0010: AppErrorKind-Extension (4 PRD-FR-Alignment Variants + Unavailable→UpstreamUnavailable Rename)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-20
 
 ## Context
