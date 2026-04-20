@@ -9,11 +9,11 @@ pub mod vad;
 pub mod voice_command;
 
 pub use audio_filter::AudioFilter;
-pub use cleanup::CleanupStyle;
+pub use cleanup::{CleanupContext, CleanupInput, CleanupStyle};
 pub use llm::LlmProvider;
 pub use migration::PluginMigration;
 pub use output::OutputTarget;
-pub use stt::SttProvider;
+pub use stt::{AudioBuffer, SttProvider};
 pub use text_filter::TextFilter;
 pub use vad::{VadDecision, VadProvider};
 pub use voice_command::VoiceCommandHandler;

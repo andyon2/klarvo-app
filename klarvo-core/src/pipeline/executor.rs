@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppErrorKind};
 use crate::manifest::{Manifest, Stage};
 use crate::registry::PluginRegistry;
+use crate::traits::CleanupInput;
 
 pub async fn run(
     manifest: &Manifest,
@@ -17,7 +18,8 @@ pub async fn run(
                     user_message: None,
                     retryable: false,
                 })?;
-                text = impl_.apply(&text).await?;
+                let cleanup_input = CleanupInput::from_raw(text.clone());
+                text = impl_.apply(cleanup_input).await?;
             }
         }
     }

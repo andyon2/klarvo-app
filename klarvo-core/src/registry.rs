@@ -33,17 +33,29 @@ pub fn bootstrap() -> PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::PluginError;
     use async_trait::async_trait;
+    use crate::error::AppError;
+    use crate::pipeline::PipelineStage;
+    use crate::traits::{CleanupInput, CleanupStyle};
 
     struct FakeCleanup;
 
     #[async_trait]
-    impl CleanupStyle for FakeCleanup {
-        async fn apply(&self, input: &str) -> Result<String, PluginError> {
-            Ok(input.to_string())
+    impl PipelineStage for FakeCleanup {
+        type Input = CleanupInput;
+        type Output = String;
+
+        async fn process(&self, input: CleanupInput) -> Result<String, AppError> {
+            Ok(input.raw)
+        }
+
+        fn stage_type(&self) -> &'static str {
+            "cleanup"
         }
     }
+
+    #[async_trait]
+    impl CleanupStyle for FakeCleanup {}
 
     #[test]
     fn register_and_lookup_by_id() {
