@@ -1973,9 +1973,231 @@ async fn broadcast_sender_drop_closes_receivers() {
 
 #### Story 2.6: FR29 Groq-Failure-Recovery + Retry-Surface (Hotkey-Retrigger-Pfad)
 
-*Titles-approved 2026-04-19. Full ACs pending.*
+*Titles-approved 2026-04-19. Full ACs appended 2026-04-20 (Review-approved).*
 
-**Outcome:** Transient-Error-Klassifikation in `klarvo-plugin-groq`: retryable (429, 5xx, Network-Timeout) vs. non-retryable (401/403/400); exponential-backoff-Retry-Policy (Phase-1-minimal: fixed 3-count, 100 ms / 500 ms / 2 s); nach erschöpften Retries → `UpstreamUnavailable` wie bisher; NFR11-Analog: Hotkey-Retrigger startet saubere neue Session ohne App-Neustart. Unit-Tests gegen wiremock mit `respond_sequentially([503, 503, 200])` (eventual-success) + `respond_sequentially([401])` (non-retryable-short-circuit).
+**Outcome:** Transient-Error-Klassifikation in `klarvo-plugin-groq`: retryable (429, 5xx, Network-Timeout) vs. non-retryable (401/403/400); 4 total attempts (initial + 3 retries) mit Delays `[100 ms, 500 ms, 2 s]` zwischen den Attempts; nach erschöpften Retries → `UpstreamUnavailable` mit letztem Fehler-Key; NFR11-Analog: Hotkey-Retrigger startet saubere neue Session ohne App-Neustart. E2E-Tests gegen wiremock: sequentiell [503, 503, 200] (eventual-success nach 2 Retries) + 401 (non-retryable-short-circuit nach 1 Request).
+
+**As a** Plugin-Developer,
+**I want** `Groq::transcribe` to retry transient failures (HTTP 429, 5xx, network-timeout, connect-error) up to 3 times with fixed delays `[100 ms, 500 ms, 2 s]` between attempts, and to short-circuit immediately on non-retryable failures (4xx auth/config errors),
+**So that** (a) transient Groq-API-outages recover automatically within the `transcribe()`-call boundary without Shell-side retry-orchestration, (b) auth/config errors surface immediately without wasted retry-delay, and (c) NFR11 is satisfied: `Groq::transcribe` is stateless between calls, so a Hotkey-Retrigger after failure starts a clean new session without any App-state-teardown.
+
+**FRs covered:** FR29 (Groq-API-Failure-Recovery), NFR11 (Hotkey-Retrigger-Graceful-Recovery)
+
+**Dependencies:** Story 1A.2 (`AppError`-Shape mit `pub retryable: bool`), Story 1B.4 (8 Error-Keys + HTTPS-Wire-Up), Story 2.3 (Groq-KeyStore-Wire-Up + `e2e_dictation_session.rs`-Baseline), ADR-0005 §6 (per-Request-Timeout 30 s Start-Wert), ADR-0007 (tracing-Target-Dot-Separator-Konvention)
+
+**Acceptance Criteria:**
+
+---
+
+**Given** `klarvo-plugin-groq/src/lib.rs` nach Story 2.3 mit `Groq::transcribe()`,
+**When** Story 2.6 die Retry-Infrastruktur hinzufügt,
+**Then** existiert am Modul-Level (außerhalb aller Funktionen) die Konstante:
+
+```rust
+const RETRY_DELAYS_MS: [u64; 3] = [100, 500, 2_000];
+```
+
+**And** es existiert **keine** separate `MAX_ATTEMPTS`- oder `MAX_RETRIES`-Konstante — der Loop-Bound ist ausschließlich `RETRY_DELAYS_MS.len()` (verhindert Sync-Drift zwischen Array-Größe und Limit), **And** `cargo check -p klarvo-plugin-groq` grün.
+
+---
+
+**Given** die 8 `AppError`-Konstruktionen in `Groq::transcribe()` aus Stories 1B.4 + 2.3 (7 HTTP-Status-Keys + `error.stt.key_not_configured`),
+**When** Story 2.6 den Retry-Loop implementiert und `app_error.retryable` als Gate nutzt,
+**Then** müssen die Fehler-Konstruktionen `retryable` explizit setzen. Klassifikation:
+
+| i18n-Key | Quelle | retryable |
+|---|---|---|
+| `error.stt.upstream_5xx` | HTTP 500/502/503/504 | `true` |
+| `error.stt.rate_limited` | HTTP 429 | `true` |
+| `error.stt.network` | `is_connect()` / allgem. Transport-Fehler | `true` |
+| `error.stt.timeout` | `is_timeout()` | `true` |
+| `error.stt.auth_failed` | HTTP 401/403 | `false` |
+| `error.stt.invalid_audio` | HTTP 400 | `false` |
+| `error.stt.upstream_4xx` | 402/404/andere 4xx | `false` |
+| `error.stt.key_not_configured` | KeyStore-Miss (2.3) | `false` |
+
+**And** die Builder-Chain (z.B. `AppError::new(ErrorKind::UpstreamUnavailable).with_message(KEY).with_source(e)`) erhält entweder via `.retryable(bool)`-Builder-Method oder via direktem Struct-Field-Set (`..` Update-Syntax) das korrekte Flag — Impl-Shape ist Developer-Choice, Field muss gesetzt sein.
+
+*(Note: U1-Resolution verwendete `error.stt.network_connect_failed`; Story-1B.4-AC definiert `error.stt.network` für diesen Fehler-Pfad. Dieser AC ist 1B.4-konform. Umbenennung wäre separater 1B.4-Amendment.)*
+
+---
+
+**Given** den HTTP-Request-Builder in `transcribe()` (ADR-0005 §6: Timeout defer auf Epic 4, 30 s Start-Wert explizit genannt),
+**When** Story 2.6 den per-Request-Timeout hinzufügt,
+**Then** ist `.timeout(Duration::from_secs(30))` in der Request-Builder-Chain mit dem exakten Inline-Kommentar:
+
+```rust
+.timeout(Duration::from_secs(30)) // Phase-1-hardcode; replaced by configurable Epic-4-value
+```
+
+**And** `std::time::Duration` ist importiert (via `use std::time::Duration;` oder vollqualifiziert), **And** der Timeout wird am **Request-Builder** gesetzt (nicht am `reqwest::Client` — Client-weiter Timeout bleibt `reqwest`-Default per ADR-0005 §6), **And** `cargo check -p klarvo-plugin-groq` grün.
+
+---
+
+**Given** die Retry-Konstante, die `retryable`-Klassifikation und den per-Request-Timeout,
+**When** `Groq::transcribe(audio: AudioBuffer)` ausgeführt wird,
+**Then** gilt für die Impl-Struktur (Pseudo-Code, Namen variierbar):
+
+```
+transcribe(audio):
+  ① api_key = key_store.get(GROQ_API_KEY_ID).await?   // erstes Statement, unverändert aus 2.3
+  ② wav_bytes: Vec<u8> = encode_wav(&audio)             // einmalig vor dem Loop
+  ③ let mut last_error: Option<AppError> = None;        // Fix 2: Option statt uninit
+     for attempt in 0..=RETRY_DELAYS_MS.len() {         // Fix 1: inclusive range → 4 Iterations (0,1,2,3)
+         let form = build_multipart_form(&wav_bytes);   // Form ist consumed by send() → jede Iteration neu
+         let result = client
+             .post(&self.endpoint)
+             .timeout(Duration::from_secs(30))          // Phase-1-hardcode
+             .bearer_auth(api_key.expose_secret())      // ausschließlich hier, kein Intermediate-Store
+             .multipart(form)
+             .send()
+             .await;
+         match map_to_app_error(result) {               // 8-Key-Klassifikation aus 1B.4
+             Ok(text)                => return Ok(text),
+             Err(e) if !e.retryable => return Err(e),   // non-retryable: sofortiger Short-Circuit
+             Err(e) => {
+                 last_error = Some(e);
+                 if let Some(&delay_ms) = RETRY_DELAYS_MS.get(attempt) {  // kein Sleep nach letztem Attempt (=3)
+                     tracing::info!(target: "klarvo.stt.retry", attempt, next_backoff_ms = delay_ms, ...);
+                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                 }
+                 // attempt == RETRY_DELAYS_MS.len() (= 3): kein Sleep, fall-through zu Post-Loop
+             }
+         }
+     }
+     tracing::warn!(target: "klarvo.stt.retry", attempts = RETRY_DELAYS_MS.len() + 1, ...);  // 4 total
+     Err(last_error.expect("retryable arm assigned last_error"))  // Fix 2: .expect() dokumentiert Invariante
+```
+
+**And** `api_key.expose_secret()` bleibt ausschließlich am Bearer-Header-Call-Site — kein Intermediate-Variable außerhalb des Header-Setter-Kontexts (2.3-Pattern unverändert), **And** `last_error` wird als `Option<AppError>` initialisiert; `.expect()` mit der Message `"retryable arm assigned last_error"` dokumentiert die Invariante (Compiler ist satisfied, Reader ebenfalls), **And** Invarianten-Argument: Post-Loop-Pfad ist nur erreichbar wenn alle Iterations den `Err(e)`-Arm nahmen und `last_error = Some(e)` gesetzt haben — Loop läuft ≥ 1-mal, `last_error` ist danach immer `Some`.
+
+---
+
+**Given** ein retryable Fehler bei Attempt N und `RETRY_DELAYS_MS.get(attempt).is_some()` (Attempts 0, 1, 2 — nicht Attempt 3),
+**When** das `tracing::info!`-Event im retryable-Arm feuert,
+**Then**:
+
+```rust
+tracing::info!(
+    target: "klarvo.stt.retry",
+    attempt,
+    next_backoff_ms = delay_ms,   // aus RETRY_DELAYS_MS.get(attempt).unwrap()
+    error_key = last_error.user_message.as_deref().unwrap_or("unknown"),
+    "STT transient failure, scheduling retry"
+);
+```
+
+**And** kein `tracing::info!` beim letzten Attempt (= `RETRY_DELAYS_MS.len()` = 3): der `if let Some(&delay_ms)` Guard schlägt fehl, kein Event.
+
+**Given** alle 4 Attempts retryable-failed (Exhaustion, Post-Loop),
+**When** das `tracing::warn!`-Event feuert,
+**Then**:
+
+```rust
+tracing::warn!(
+    target: "klarvo.stt.retry",
+    attempts = RETRY_DELAYS_MS.len() + 1,   // 4 total (1 initial + 3 retries)
+    error_key = last_error.user_message.as_deref().unwrap_or("unknown"),
+    "STT retries exhausted"
+);
+```
+
+**And** Target-String ist `"klarvo.stt.retry"` (Punkte-Separator per ADR-0007-Präzedenz `klarvo.audio.backpressure`), **And** kein `tracing`-Event für den initialen Attempt vor dem ersten Fehler — Events feuern ausschließlich **nach** einem retryable Fehler.
+
+---
+
+**Given** alle 4 Attempts retryable-failed,
+**When** der Post-Loop-Pfad `Err(last_error.expect(...))` propagiert,
+**Then** trägt `last_error` den `AppError` des finalen Attempts — inklusive Original-`user_message`-i18n-Key (U1-Resolution: kein neuer `error.stt.retries_exhausted`-Key), **And** Caller sieht dieselbe `AppError::kind::UpstreamUnavailable`-Shape wie bei Single-Attempt-Failure — konsistente FR29-Error-Surface für die Shell.
+
+---
+
+**Given** `Groq::transcribe` ist stateless zwischen Calls,
+**When** Story 2.6 Rustdoc auf der `transcribe`-Method ergänzt oder aktualisiert,
+**Then** enthält das Method-Level-Rustdoc eine NFR11-Note (Wortlaut variierbar, Inhalt bindend):
+
+> "Stateless between calls (NFR11): each invocation begins a fresh retry sequence with no residual state from prior calls. A Hotkey-Retrigger after a failed invocation starts clean — no App-state teardown required."
+
+---
+
+**Given** `tokio::time::sleep` in der non-test Impl-Path (Retry-Loop ist Produktionscode),
+**When** Story 2.6 `klarvo-plugin-groq/Cargo.toml` aktualisiert,
+**Then** ist `tokio` in `[dependencies]` (nicht nur `[dev-dependencies]`) mit mindestens `features = ["time"]` — Developer darf `"rt-multi-thread"` oder `"rt"` zusätzlich wählen, `"time"` ist Minimum-Requirement für `tokio::time::sleep`:
+
+```toml
+[dependencies]
+tokio = { workspace = true, features = ["time"] }   # minimum; rt-feature nach Plugin-Lifecycle-Bedarf
+```
+
+**And** `cargo check -p klarvo-plugin-groq` grün.
+
+---
+
+**Given** `klarvo-plugin-groq/tests/e2e_dictation_session.rs` nach Story 2.3 (enthält: `e2e_groq_happy_path`, `e2e_groq_5xx_propagates`, `e2e_groq_key_not_configured`),
+**When** Story 2.6 den Test `e2e_groq_transient_5xx_recovers` hinzufügt,
+**Then**:
+
+```rust
+#[tokio::test]
+async fn e2e_groq_transient_5xx_recovers() { ... }
+```
+
+Behavior:
+- Mock-Server antwortet sequentiell: **Request 1 → HTTP 503**, **Request 2 → HTTP 503**, **Request 3 → HTTP 200** mit gültigem Groq-JSON-Response-Body (analog Happy-Path-Fixture aus `e2e_groq_happy_path`).
+- `groq_instance.transcribe(mock_audio_buffer)` wird aufgerufen.
+- Result ist `Ok(transcription_text)` und `transcription_text` stimmt mit dem im 200-Response-Body gesetzten Transkriptionstext überein.
+- Test benötigt keinen echten API-Key und kein Netzwerk außer dem wiremock-Localhost-Server.
+
+**And** die sequentielle-503/200-Mock-Konfiguration nutzt welchen wiremock-0.6-Mechanismus der Developer wählt (`.up_to_n_times(1)` mit absteigender Priority, custom `Respond`-Trait-Impl, oder anderes) — AC spezifiziert **Behavior** (recovered nach 2 × 503, liefert Success), nicht wiremock-Mechanik, **And** `cargo test -p klarvo-plugin-groq --test e2e_dictation_session e2e_groq_transient_5xx_recovers` grün.
+
+---
+
+**Given** dieselbe Test-Datei,
+**When** Story 2.6 den Test `e2e_groq_auth_failure_short_circuits` hinzufügt,
+**Then**:
+
+```rust
+#[tokio::test]
+async fn e2e_groq_auth_failure_short_circuits() { ... }
+```
+
+Behavior:
+- Mock-Server antwortet mit **HTTP 401** auf alle Requests.
+- `groq_instance.transcribe(mock_audio_buffer)` wird aufgerufen.
+- Result ist `Err(app_error)` mit:
+  - `app_error.user_message == Some("error.stt.auth_failed".to_owned())`
+  - `app_error.retryable == false`
+- Mock-Server hat **exakt 1 Request** empfangen — kein Retry bei non-retryable Error.
+
+**And** die Request-Count-Assertion nutzt `MockServer::received_requests()` (oder equivalent wiremock-API) um `len() == 1` zu verifizieren, **And** `cargo test -p klarvo-plugin-groq --test e2e_dictation_session e2e_groq_auth_failure_short_circuits` grün.
+
+---
+
+**Given** die bestehenden Tests in `e2e_dictation_session.rs` + `external_contract.rs` aus Stories 2.3 + 1B.4,
+**When** Story 2.6 implementiert ist,
+**Then** bleiben alle bestehenden Tests **unverändert** und laufen grün, **And** `cargo test -p klarvo-plugin-groq` grün auf Linux-CI.
+
+---
+
+**Scope-Fence (Non-Goals Story 2.6):**
+- Generische `retry_with_backoff`-Utility-Extraktion → Phase-2+ (ein Konsument: `Groq::transcribe`; Premature-Abstraction-Guard)
+- Jitter in Retry-Delays → Phase-2+-Tuning
+- Neuer `error.stt.retries_exhausted`-i18n-Key → Phase-2+ (kein Phase-1-Konsument)
+- Retry-Config-Surface via `config.toml` (max_attempts, delays) → Epic-4-Scope
+- `reqwest-middleware`-Adoption → ADR-0005 §6 forward-referenced, nicht Phase-1
+- `is_timeout()`-E2E-Test → CI-prohibitiv (30 s echter Timeout); Timeout-Classifier-Branch existiert in Impl, kein Phase-1-Testfall
+- Per-Retry-`tracing::span!` → Phase-2-Observability (Epic-6-Scope)
+- Android/macOS-plattformspezifische Retry-Divergenz → keine nötig (pure Rust, kein `cfg`-Gating)
+
+**Cross-References:**
+- FR29 (Groq-API-Failure-Recovery) + NFR11 (Hotkey-Retrigger-Graceful-Recovery)
+- Story 1A.2 (`AppError`-Shape, `pub retryable: bool` in `klarvo-core/src/error.rs`)
+- Story 1B.4 (8 Error-Keys + HTTPS-Wire-Up + `external_contract.rs`-Test-Suite)
+- Story 2.3 (Groq-KeyStore-Wire-Up, `e2e_dictation_session.rs`-Baseline-Tests)
+- ADR-0005 §6 (Request-Timeout-Deferral, 30 s Start-Wert)
+- ADR-0007 (tracing-Target-Dot-Separator: `klarvo.audio.backpressure`-Präzedenz)
+- `memory/feedback_premature_abstraction_guard` (Retry-Logik bleibt `transcribe`-lokal)
+- `memory/feedback_scaffold_fail_soft_pattern` (kein Retry-Pfad panict)
 
 ---
 
