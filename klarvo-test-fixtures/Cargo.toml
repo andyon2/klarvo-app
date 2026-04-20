@@ -15,6 +15,11 @@ stage-cleanup = ["klarvo-core/stage-cleanup"]
 klarvo-core = { path = "../klarvo-core" }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["time"] }
+# wiremock is a regular dep (not dev-dep) because GroqMockServer is part of the
+# public test-fixture API consumed by external crates' integration tests.
+wiremock = "0.6"
+secrecy = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 klarvo-plugin-verbatim = { path = "../klarvo-plugins/klarvo-plugin-verbatim" }
