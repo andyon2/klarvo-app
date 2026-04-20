@@ -29,7 +29,8 @@ impl GroqMockServer {
         }
     }
 
-    /// Returns the transcription endpoint URL.
+    /// Returns the full transcription endpoint URL
+    /// (`http://127.0.0.1:<port>/openai/v1/audio/transcriptions`).
     ///
     /// After [`Self::with_network_failure`] is called, returns the dead-port URL instead of the
     /// live server URL.
@@ -40,6 +41,17 @@ impl GroqMockServer {
             .as_ref()
             .cloned()
             .unwrap_or_else(|| self.live_url.clone())
+    }
+
+    /// Returns the full transcription endpoint URL — alias for [`Self::endpoint`].
+    ///
+    /// Use this with `Groq::new_with_client(key_store, mock_server.uri(), client)` in
+    /// E2E-tests and migrated `external_contract` tests. The name mirrors wiremock's
+    /// `MockServer::uri()` convention; in `GroqMockServer` context it returns the full
+    /// transcription URL (not just the base), because `Groq::new_with_client`'s
+    /// `endpoint` param expects the complete request target URL.
+    pub fn uri(&self) -> String {
+        self.endpoint()
     }
 
     /// Mount a mock that returns HTTP 200 with `{"text": "<text>"}`.

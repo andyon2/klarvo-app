@@ -2014,6 +2014,7 @@ dependencies = [
  "async-trait",
  "hound",
  "klarvo-core",
+ "klarvo-plugin-verbatim",
  "klarvo-test-fixtures",
  "reqwest 0.12.28",
  "secrecy",

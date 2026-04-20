@@ -3,29 +3,32 @@
 //! All tests are headless (no audio device, no real network). The wiremock server runs on
 //! loopback. Total expected runtime: under 10 seconds.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use klarvo_core::audio::AudioBuffer;
 use klarvo_core::error::AppErrorKind;
+use klarvo_core::keystore::KeyStore;
 use klarvo_core::traits::SttProvider;
-use klarvo_plugin_groq::{Groq, keys};
-use klarvo_test_fixtures::GroqMockServer;
+use klarvo_plugin_groq::{Groq, GROQ_API_KEY_ID, keys};
+use klarvo_test_fixtures::{GroqMockServer, InMemoryKeyStore};
 use secrecy::SecretString;
 
 fn dummy_audio() -> AudioBuffer {
     AudioBuffer { samples: vec![0.0_f32; 16_000], sample_rate: 16_000, ts_ms_start: 0, ts_ms_end: 1000 }
 }
 
-fn mock_key() -> SecretString {
-    // secrecy 0.10: SecretString = SecretBox<str>, new() takes Box<str>
-    SecretString::new("mock_key".into())
+fn test_key_store() -> Arc<dyn KeyStore> {
+    Arc::new(InMemoryKeyStore::with_pairs([
+        (GROQ_API_KEY_ID, SecretString::new("test-api-key".into())),
+    ]))
 }
 
 #[tokio::test]
 async fn success_case_returns_transcription_text() {
     let server = GroqMockServer::start().await;
     server.with_success_response("hello").await;
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), reqwest::Client::new());
     let result = groq.transcribe(dummy_audio()).await;
     assert_eq!(result.unwrap(), "hello");
 }
@@ -34,7 +37,7 @@ async fn success_case_returns_transcription_text() {
 async fn upstream_5xx_maps_to_upstream_5xx_key() {
     let server = GroqMockServer::start().await;
     server.with_status(503, "").await;
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), reqwest::Client::new());
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
     assert!(matches!(err.kind, AppErrorKind::UpstreamUnavailable));
     assert_eq!(err.user_message, Some(keys::UPSTREAM_5XX.to_string()));
@@ -44,7 +47,7 @@ async fn upstream_5xx_maps_to_upstream_5xx_key() {
 async fn rate_limited_429_maps_to_rate_limited_key() {
     let server = GroqMockServer::start().await;
     server.with_status(429, "").await;
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), reqwest::Client::new());
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
     assert_eq!(err.user_message, Some(keys::RATE_LIMITED.to_string()));
 }
@@ -53,7 +56,7 @@ async fn rate_limited_429_maps_to_rate_limited_key() {
 async fn auth_failed_401_maps_to_auth_failed_key_no_key_leak() {
     let server = GroqMockServer::start().await;
     server.with_status(401, "").await;
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), reqwest::Client::new());
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
 
     assert_eq!(err.user_message, Some(keys::AUTH_FAILED.to_string()));
@@ -61,9 +64,9 @@ async fn auth_failed_401_maps_to_auth_failed_key_no_key_leak() {
     let debug_str = format!("{:?}", err);
     let display_str = format!("{}", err);
 
-    assert!(!debug_str.contains("mock_key"), "debug must not contain raw api key");
+    assert!(!debug_str.contains("test-api-key"), "debug must not contain raw api key");
     assert!(!debug_str.contains("Bearer "), "debug must not contain Bearer prefix");
-    assert!(!display_str.contains("mock_key"), "display must not contain raw api key");
+    assert!(!display_str.contains("test-api-key"), "display must not contain raw api key");
     assert!(!display_str.contains("Bearer "), "display must not contain Bearer prefix");
 
     // Traverse source() chain (AppError::source() returns None — no source field in Phase-1
@@ -77,7 +80,7 @@ async fn auth_failed_401_maps_to_auth_failed_key_no_key_leak() {
         current = e.source();
     }
     let chain_str = source_parts.join(" | ");
-    assert!(!chain_str.contains("mock_key"), "source chain must not contain raw api key");
+    assert!(!chain_str.contains("test-api-key"), "source chain must not contain raw api key");
     assert!(!chain_str.contains("Bearer "), "source chain must not contain Bearer prefix");
 }
 
@@ -85,7 +88,7 @@ async fn auth_failed_401_maps_to_auth_failed_key_no_key_leak() {
 async fn invalid_audio_400_maps_to_invalid_audio_key() {
     let server = GroqMockServer::start().await;
     server.with_status(400, "").await;
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), reqwest::Client::new());
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
     assert_eq!(err.user_message, Some(keys::INVALID_AUDIO.to_string()));
 }
@@ -97,7 +100,7 @@ async fn timeout_case_maps_to_timeout_key_under_300ms() {
 
     let short_timeout_client =
         reqwest::Client::builder().timeout(Duration::from_millis(100)).build().unwrap();
-    let groq = Groq::new_with_client(mock_key(), short_timeout_client, server.endpoint());
+    let groq = Groq::new_with_client(test_key_store(), server.uri(), short_timeout_client);
 
     let start = Instant::now();
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
@@ -111,10 +114,10 @@ async fn timeout_case_maps_to_timeout_key_under_300ms() {
 async fn network_failure_maps_to_network_key() {
     let server = GroqMockServer::start().await;
     server.with_network_failure().await;
-    // endpoint() returns the dead-port URL after with_network_failure()
-    let endpoint = server.endpoint();
+    // uri() returns the dead-port URL after with_network_failure()
+    let endpoint = server.uri();
 
-    let groq = Groq::new_with_client(mock_key(), reqwest::Client::new(), endpoint);
+    let groq = Groq::new_with_client(test_key_store(), endpoint, reqwest::Client::new());
     let err = groq.transcribe(dummy_audio()).await.unwrap_err();
     assert_eq!(err.user_message, Some(keys::NETWORK.to_string()));
 }

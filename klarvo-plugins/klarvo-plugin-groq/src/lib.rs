@@ -8,10 +8,10 @@
 //! identity-passthrough. Together, these two plugins exercise both ends of the
 //! `PipelineStage`-contract-surface.
 //!
-//! Registry-registration and Manifest-driven instantiation are Epic 1C scope
-//! (KeyStore-backed construction). 1B.5 E2E-Executor-Test uses Verbatim-based pipelines only.
-//! Pipeline-level retry orchestration for `UpstreamUnavailable` errors is Epic 2 FR29 (not
-//! 1B.4). Config-driven endpoint/model/timeout-override is Phase-2+ scope.
+//! Registry-registration and Manifest-driven instantiation are Epic 3 scope
+//! (Shell-owned KeyStore-Resolution). 1B.5 E2E-Executor-Test uses Verbatim-based pipelines
+//! only. Pipeline-level retry orchestration for `UpstreamUnavailable` errors is Epic 2 FR29
+//! (not 1B.4). Config-driven endpoint/model/timeout-override is Phase-2+ scope.
 //!
 //! Phase-1 prefers accuracy over latency — `whisper-large-v3` is the default;
 //! `whisper-large-v3-turbo` and config-driven model-override are Phase-2+ scope.
@@ -20,14 +20,16 @@
 //! until Phase-2+ Cloud-STT-Plugins (OpenAI Whisper, DeepSeek) prove duplication — then as
 //! dedicated micro-refactor story, not as premature-abstraction in Phase 1.
 //!
-//! The `api_key: SecretString` constructor-param is held in `Groq`-struct via `secrecy`-crate —
-//! Debug/Display are redacted, source() of AppErrors never leaks the raw key. Bearer-header
-//! construction uses `expose_secret()` only inside the `transcribe` HTTPS-call-site. The
-//! Auth-Leak-Test in `tests/external_contract.rs` locks this invariant against code-changes;
-//! factor-out to an `assert_no_secret_leak!` macro in `klarvo-test-fixtures` is a Phase-2+
-//! pattern-signal once additional API-Key-bearing plugins exist.
+//! The `key_store: Arc<dyn KeyStore>` field holds the API-key handle. The key is fetched lazily
+//! at `transcribe()`-call-time via `GROQ_API_KEY_ID`. `Debug`/`Display` on `AppError` never
+//! leaks the raw key; Bearer-header construction uses `expose_secret()` only inside the
+//! `transcribe` HTTPS-call-site. The Auth-Leak-Test in `tests/external_contract.rs` locks this
+//! invariant against code-changes; factor-out to an `assert_no_secret_leak!` macro in
+//! `klarvo-test-fixtures` is a Phase-2+ pattern-signal once additional API-Key-bearing plugins
+//! exist.
 
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -37,6 +39,7 @@ use serde::Deserialize;
 use klarvo_core::audio::AudioBuffer;
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::i18n;
+use klarvo_core::keystore::KeyStore;
 use klarvo_core::pipeline::PipelineStage;
 use klarvo_core::traits::SttProvider;
 
@@ -52,10 +55,23 @@ pub mod keys {
     pub const AUTH_FAILED: &str = "error.stt.auth_failed";
     pub const INVALID_AUDIO: &str = "error.stt.invalid_audio";
     pub const UPSTREAM_4XX: &str = "error.stt.upstream_4xx";
+    /// i18n-key surfaced when `KeyStore::get(GROQ_API_KEY_ID)` returns `KeyMissing`.
+    /// Re-mapped from `KeyMissing` to `UpstreamUnavailable` at `transcribe()` call-site:
+    /// from pipeline-perspective, Groq-STT is 'unavailable' when the API-key is not
+    /// configured. Shell-layer translates this key to a user-facing message prompting
+    /// key-setup (Epic 4 / Config-Layer).
+    pub const KEY_NOT_CONFIGURED: &str = "error.stt.key_not_configured";
 }
 
 /// Plugin identifier — matches `plugin_id: "groq"` in pipeline manifests.
 pub const ID: &str = "groq";
+
+/// Identifier for the Groq API-key in the `KeyStore`.
+/// Naming-prefix-convention: `groq_` prefix namespaces this key from other plugins
+/// (e.g. `deepseek_api_key`). Multi-Account support (multiple Groq API-keys per user)
+/// is Phase-2+ scope — would require `key_id: &str` injection rather than this
+/// hardcoded const.
+pub const GROQ_API_KEY_ID: &str = "groq_api_key";
 
 const DEFAULT_ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const DEFAULT_MODEL: &str = "whisper-large-v3";
@@ -63,7 +79,7 @@ const DEFAULT_MODEL: &str = "whisper-large-v3";
 /// Groq Whisper HTTPS-backed `SttProvider`. See module-level doc for scope and safety notes.
 pub struct Groq {
     client: reqwest::Client,
-    api_key: SecretString,
+    key_store: Arc<dyn KeyStore>,
     endpoint: String,
     model: String,
 }
@@ -75,38 +91,36 @@ struct GroqTranscriptionResponse {
 
 impl Groq {
     /// Primary constructor. Uses default 30s-timeout client, production endpoint, whisper-large-v3.
-    pub fn new(api_key: SecretString) -> Self {
+    ///
+    /// `key_store` is held as `Arc<dyn KeyStore>` — key is fetched lazily at
+    /// `transcribe()`-call-time via `GROQ_API_KEY_ID`. Constructor never fails with a
+    /// key-error; `UpstreamUnavailable` surfaces only at `transcribe()` if the key is
+    /// absent. Production: construct via `bootstrap()` in Epic 3 (Shell owns
+    /// KeyStore-Resolution, not Core-bootstrap).
+    pub fn new(key_store: Arc<dyn KeyStore>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .expect("reqwest ClientBuilder default build");
         Self {
             client,
-            api_key,
+            key_store,
             endpoint: DEFAULT_ENDPOINT.to_string(),
             model: DEFAULT_MODEL.to_string(),
         }
     }
 
-    /// Secondary constructor for test injection: injects a pre-configured `reqwest::Client`
-    /// (e.g. with a short timeout) and an explicit endpoint (required to redirect to a
-    /// wiremock server in integration tests).
-    ///
-    /// Production code always uses [`Self::new`].
-    ///
-    /// # AC Deviation
-    ///
-    /// AC-1 specifies a 2-param signature `(api_key, client)`. A 3rd `endpoint` param is
-    /// necessary because tests must redirect requests to the wiremock server; the AC omits
-    /// it as an oversight. Deviation is minimal and scoped to this test-injection constructor.
+    /// Test-only constructor. `endpoint` overrides the default Groq-API-URL — pass
+    /// wiremock-server URI for integration-tests. `client` allows short-timeout-injection
+    /// for timeout-test-scenarios (see `tests/external_contract.rs` Test-Case 6).
     pub fn new_with_client(
-        api_key: SecretString,
-        client: reqwest::Client,
+        key_store: Arc<dyn KeyStore>,
         endpoint: impl Into<String>,
+        client: reqwest::Client,
     ) -> Self {
         Self {
             client,
-            api_key,
+            key_store,
             endpoint: endpoint.into(),
             model: DEFAULT_MODEL.to_string(),
         }
@@ -119,6 +133,20 @@ impl PipelineStage for Groq {
     type Output = String;
 
     async fn process(&self, audio: AudioBuffer) -> Result<String, AppError> {
+        let api_key: SecretString = self
+            .key_store
+            .get(GROQ_API_KEY_ID)
+            .await
+            .map_err(|e| {
+                debug_assert!(i18n::is_key(keys::KEY_NOT_CONFIGURED));
+                AppError {
+                    kind: AppErrorKind::UpstreamUnavailable,
+                    message: format!("groq: API key not configured: {}", e.message),
+                    user_message: Some(keys::KEY_NOT_CONFIGURED.to_string()),
+                    retryable: false,
+                }
+            })?;
+
         let wav_bytes = encode_wav(&audio)?;
 
         let part = reqwest::multipart::Part::bytes(wav_bytes)
@@ -139,7 +167,7 @@ impl PipelineStage for Groq {
         let resp = self
             .client
             .post(&self.endpoint)
-            .bearer_auth(self.api_key.expose_secret())
+            .bearer_auth(api_key.expose_secret())
             .multipart(form)
             .send()
             .await
