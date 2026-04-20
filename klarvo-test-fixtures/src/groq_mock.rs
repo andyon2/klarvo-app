@@ -68,6 +68,24 @@ impl GroqMockServer {
         }
     }
 
+    /// Mount a mock that returns `code` with `body`, expiring after `n` matches.
+    ///
+    /// Used for sequential-failure tests: mount a fallback success first, then call this to
+    /// install a transient-error mock that exhausts after `n` attempts, falling back to the
+    /// previously-mounted success mock. Wiremock matches later-mounted mocks first within the
+    /// same priority level.
+    pub async fn with_status_up_to_n_times(&self, code: u16, body: &str, n: u64) {
+        let guard = self.inner.lock().await;
+        if let Some(server) = guard.as_ref() {
+            Mock::given(method("POST"))
+                .and(path("/openai/v1/audio/transcriptions"))
+                .respond_with(ResponseTemplate::new(code).set_body_string(body.to_owned()))
+                .up_to_n_times(n)
+                .mount(server)
+                .await;
+        }
+    }
+
     /// Mount a mock that returns `code` with `body` as response body.
     pub async fn with_status(&self, code: u16, body: &str) {
         let guard = self.inner.lock().await;
@@ -93,6 +111,18 @@ impl GroqMockServer {
                 )
                 .mount(server)
                 .await;
+        }
+    }
+
+    /// Returns the number of requests received by the mock server.
+    ///
+    /// Used in Story 2.6 short-circuit tests to assert exactly 1 request on non-retryable errors.
+    pub async fn received_requests_count(&self) -> usize {
+        let guard = self.inner.lock().await;
+        if let Some(server) = guard.as_ref() {
+            server.received_requests().await.map(|v| v.len()).unwrap_or(0)
+        } else {
+            0
         }
     }
 

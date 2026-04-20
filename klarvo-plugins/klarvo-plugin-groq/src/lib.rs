@@ -35,6 +35,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use tokio::time::sleep;
 
 use klarvo_core::audio::AudioBuffer;
 use klarvo_core::error::{AppError, AppErrorKind};
@@ -76,6 +77,10 @@ pub const GROQ_API_KEY_ID: &str = "groq_api_key";
 const DEFAULT_ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const DEFAULT_MODEL: &str = "whisper-large-v3";
 
+/// Retry delay schedule between attempts (ms). 4 total attempts: initial + 3 retries.
+/// Loop bound is `RETRY_DELAYS_MS.len()` — no separate MAX_RETRIES const to avoid sync-drift.
+const RETRY_DELAYS_MS: [u64; 3] = [100, 500, 2_000];
+
 /// Groq Whisper HTTPS-backed `SttProvider`. See module-level doc for scope and safety notes.
 pub struct Groq {
     client: reqwest::Client,
@@ -90,7 +95,9 @@ struct GroqTranscriptionResponse {
 }
 
 impl Groq {
-    /// Primary constructor. Uses default 30s-timeout client, production endpoint, whisper-large-v3.
+    /// Primary constructor. Uses default reqwest client (no client-level timeout — per-request
+    /// 30s timeout is set at the request-builder per ADR-0005 §6), production endpoint,
+    /// whisper-large-v3.
     ///
     /// `key_store` is held as `Arc<dyn KeyStore>` — key is fetched lazily at
     /// `transcribe()`-call-time via `GROQ_API_KEY_ID`. Constructor never fails with a
@@ -98,12 +105,8 @@ impl Groq {
     /// absent. Production: construct via `bootstrap()` in Epic 3 (Shell owns
     /// KeyStore-Resolution, not Core-bootstrap).
     pub fn new(key_store: Arc<dyn KeyStore>) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("reqwest ClientBuilder default build");
         Self {
-            client,
+            client: reqwest::Client::new(),
             key_store,
             endpoint: DEFAULT_ENDPOINT.to_string(),
             model: DEFAULT_MODEL.to_string(),
@@ -132,6 +135,11 @@ impl PipelineStage for Groq {
     type Input = AudioBuffer;
     type Output = String;
 
+    /// Transcribe `audio` to text via the Groq Whisper API with retry on transient failures.
+    ///
+    /// Stateless between calls (NFR11): each invocation begins a fresh retry sequence with no
+    /// residual state from prior calls. A Hotkey-Retrigger after a failed invocation starts
+    /// clean — no App-state teardown required.
     async fn process(&self, audio: AudioBuffer) -> Result<String, AppError> {
         let api_key: SecretString = self
             .key_store
@@ -149,48 +157,62 @@ impl PipelineStage for Groq {
 
         let wav_bytes = encode_wav(&audio)?;
 
-        let part = reqwest::multipart::Part::bytes(wav_bytes)
-            .file_name("audio.wav")
-            .mime_str("audio/wav")
-            .map_err(|e| AppError {
-                kind: AppErrorKind::Internal,
-                message: format!("groq transcribe: mime type error: {e}"),
-                user_message: None,
-                retryable: false,
-            })?;
-        let form = reqwest::multipart::Form::new()
-            .part("file", part)
-            .text("model", self.model.clone())
-            .text("response_format", "json");
+        let mut last_error: Option<AppError> = None;
 
-        // expose_secret() is used exclusively here — never in intermediate variables or errors.
-        let resp = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(api_key.expose_secret())
-            .multipart(form)
-            .send()
-            .await
-            .map_err(map_reqwest_error)?;
+        for attempt in 0..=RETRY_DELAYS_MS.len() {
+            let part = reqwest::multipart::Part::bytes(wav_bytes.clone())
+                .file_name("audio.wav")
+                .mime_str("audio/wav")
+                .map_err(|e| AppError {
+                    kind: AppErrorKind::Internal,
+                    message: format!("groq transcribe: mime type error: {e}"),
+                    user_message: None,
+                    retryable: false,
+                })?;
+            let form = reqwest::multipart::Form::new()
+                .part("file", part)
+                .text("model", self.model.clone())
+                .text("response_format", "json");
 
-        let status = resp.status();
-        if !status.is_success() {
-            let body_excerpt: String =
-                resp.text().await.unwrap_or_default().chars().take(200).collect();
-            return Err(classify_http_error(status, &body_excerpt));
+            // expose_secret() is used exclusively here — never in intermediate variables or errors.
+            let send_result = self
+                .client
+                .post(&self.endpoint)
+                .timeout(Duration::from_secs(30)) // Phase-1-hardcode; replaced by configurable Epic-4-value
+                .bearer_auth(api_key.expose_secret())
+                .multipart(form)
+                .send()
+                .await;
+
+            match map_send_result(send_result).await {
+                Ok(text) => return Ok(text),
+                Err(e) if !e.retryable => return Err(e),
+                Err(e) => {
+                    let error_key_for_log = e.user_message.clone();
+                    last_error = Some(e);
+                    if let Some(&delay_ms) = RETRY_DELAYS_MS.get(attempt) {
+                        let error_key = error_key_for_log.as_deref().unwrap_or("unknown");
+                        tracing::info!(
+                            target: "klarvo.stt.retry",
+                            attempt,
+                            next_backoff_ms = delay_ms,
+                            error_key,
+                            "STT transient failure, scheduling retry"
+                        );
+                        sleep(Duration::from_millis(delay_ms)).await;
+                    }
+                    // attempt == RETRY_DELAYS_MS.len() (= 3): no sleep, fall-through to post-loop
+                }
+            }
         }
 
-        let groq_resp = resp
-            .json::<GroqTranscriptionResponse>()
-            .await
-            .map_err(|e| AppError {
-                kind: AppErrorKind::UpstreamUnavailable,
-                message: format!("groq transcribe: response parse error: {e}"),
-                user_message: Some(keys::UPSTREAM_5XX.to_string()),
-                retryable: false,
-            })?;
-
-        Ok(groq_resp.text)
+        tracing::warn!(
+            target: "klarvo.stt.retry",
+            attempts = RETRY_DELAYS_MS.len() + 1,
+            error_key = last_error.as_ref().and_then(|e| e.user_message.as_deref()).unwrap_or("unknown"),
+            "STT retries exhausted"
+        );
+        Err(last_error.expect("retryable arm assigned last_error"))
     }
 
     fn stage_type(&self) -> &'static str {
@@ -200,6 +222,32 @@ impl PipelineStage for Groq {
 
 #[async_trait]
 impl SttProvider for Groq {}
+
+/// Maps the send+status-check result to `Ok(text)` or an `AppError`.
+async fn map_send_result(
+    send_result: Result<reqwest::Response, reqwest::Error>,
+) -> Result<String, AppError> {
+    let resp = send_result.map_err(map_reqwest_error)?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body_excerpt: String =
+            resp.text().await.unwrap_or_default().chars().take(200).collect();
+        return Err(classify_http_error(status, &body_excerpt));
+    }
+
+    let groq_resp = resp
+        .json::<GroqTranscriptionResponse>()
+        .await
+        .map_err(|e| AppError {
+            kind: AppErrorKind::UpstreamUnavailable,
+            message: format!("groq transcribe: response parse error: {e}"),
+            user_message: Some(keys::UPSTREAM_5XX.to_string()),
+            retryable: false, // post-200 parse-failure is non-transient (AC-Interpretation)
+        })?;
+
+    Ok(groq_resp.text)
+}
 
 fn encode_wav(audio: &AudioBuffer) -> Result<Vec<u8>, AppError> {
     let mut cursor = Cursor::new(Vec::<u8>::new());
@@ -237,35 +285,35 @@ fn encode_wav(audio: &AudioBuffer) -> Result<Vec<u8>, AppError> {
 }
 
 fn map_reqwest_error(e: reqwest::Error) -> AppError {
-    let key = if e.is_timeout() {
-        keys::TIMEOUT
+    let (key, retryable) = if e.is_timeout() {
+        (keys::TIMEOUT, true)
     } else {
         // Covers: is_connect() (DNS/TCP/TLS), is_request() without status, other transport errors.
-        keys::NETWORK
+        (keys::NETWORK, true)
     };
     debug_assert!(i18n::is_key(key));
     AppError {
         kind: AppErrorKind::UpstreamUnavailable,
         message: format!("groq transcribe: {e}"),
         user_message: Some(key.to_string()),
-        retryable: false,
+        retryable,
     }
 }
 
 fn classify_http_error(status: reqwest::StatusCode, body_excerpt: &str) -> AppError {
-    let key = match status.as_u16() {
-        401 | 403 => keys::AUTH_FAILED,
-        400 => keys::INVALID_AUDIO,
-        429 => keys::RATE_LIMITED,
-        500 | 502 | 503 | 504 => keys::UPSTREAM_5XX,
-        c if (400..500).contains(&c) => keys::UPSTREAM_4XX,
-        _ => keys::UPSTREAM_5XX,
+    let (key, retryable) = match status.as_u16() {
+        401 | 403 => (keys::AUTH_FAILED, false),
+        400 => (keys::INVALID_AUDIO, false),
+        429 => (keys::RATE_LIMITED, true),
+        500 | 502 | 503 | 504 => (keys::UPSTREAM_5XX, true),
+        c if (400..500).contains(&c) => (keys::UPSTREAM_4XX, false),
+        _ => (keys::UPSTREAM_5XX, true),
     };
     debug_assert!(i18n::is_key(key));
     AppError {
         kind: AppErrorKind::UpstreamUnavailable,
         message: format!("groq transcribe: status={status}; body={body_excerpt}"),
         user_message: Some(key.to_string()),
-        retryable: false,
+        retryable,
     }
 }

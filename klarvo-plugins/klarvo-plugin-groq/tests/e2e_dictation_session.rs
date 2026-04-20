@@ -181,3 +181,77 @@ async fn e2e_dictation_with_output_target() {
 
     assert_eq!(sink.last_delivered(), Some("hello world".to_owned()));
 }
+
+#[tokio::test]
+async fn e2e_groq_transient_5xx_recovers() {
+    let server = GroqMockServer::start().await;
+    // Mount success fallback first (lower priority — matched when 503 mock is exhausted).
+    server.with_success_response("hello world").await;
+    // Mount 503 second (higher priority — later-mounted wins); exhausts after 2 matches.
+    server.with_status_up_to_n_times(503, "", 2).await;
+
+    let ks: Arc<dyn klarvo_core::keystore::KeyStore> = Arc::new(InMemoryKeyStore::with_pairs([
+        (GROQ_API_KEY_ID, SecretString::new("test-key".into())),
+    ]));
+
+    let mut registry = PluginRegistry::new();
+    registry.register_stt(
+        "groq",
+        Arc::new(Groq::new_with_client(Arc::clone(&ks), server.uri(), reqwest::Client::new())),
+    );
+    registry.register_cleanup("verbatim", Arc::new(klarvo_plugin_verbatim::Verbatim::new()));
+
+    let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
+
+    let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
+    let _handle = source.start(config).await.unwrap();
+
+    let mut vad = vad_one_utterance();
+
+    let result = run_capture_session(rx, &mut vad, &manifest, &registry)
+        .await
+        .expect("run_capture_session must succeed after 2 transient 503s");
+
+    let StageData::Text(text) = result.expect("must return Some(StageData)") else {
+        panic!("expected StageData::Text");
+    };
+    assert_eq!(text, "hello world");
+}
+
+#[tokio::test]
+async fn e2e_groq_auth_failure_short_circuits() {
+    let server = GroqMockServer::start().await;
+    server.with_status(401, "").await;
+
+    let ks: Arc<dyn klarvo_core::keystore::KeyStore> = Arc::new(InMemoryKeyStore::with_pairs([
+        (GROQ_API_KEY_ID, SecretString::new("test-key".into())),
+    ]));
+
+    let mut registry = PluginRegistry::new();
+    registry.register_stt(
+        "groq",
+        Arc::new(Groq::new_with_client(Arc::clone(&ks), server.uri(), reqwest::Client::new())),
+    );
+    registry.register_cleanup("verbatim", Arc::new(klarvo_plugin_verbatim::Verbatim::new()));
+
+    let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
+
+    let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
+    let _handle = source.start(config).await.unwrap();
+
+    let mut vad = vad_one_utterance();
+
+    let err = run_capture_session(rx, &mut vad, &manifest, &registry)
+        .await
+        .expect_err("must fail immediately on non-retryable 401");
+
+    assert_eq!(err.user_message, Some(keys::AUTH_FAILED.to_string()));
+    assert!(!err.retryable, "auth failure must not be retryable");
+
+    // Non-retryable: exactly 1 request sent, no retry attempts.
+    assert_eq!(server.received_requests_count().await, 1);
+}
