@@ -3,6 +3,7 @@ pub mod error;
 pub mod i18n;
 pub mod keystore;
 pub mod manifest;
+pub mod output;
 pub mod pipeline;
 pub mod registry;
 pub mod traits;

@@ -7,3 +7,5 @@ publish.workspace = true
 
 [dependencies]
 klarvo-core = { path = "../../klarvo-core" }
+arboard = "3"
+async-trait = { workspace = true }

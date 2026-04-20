@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::traits::{CleanupStyle, SttProvider};
+use crate::traits::{CleanupStyle, OutputTarget, SttProvider};
 
 /// Registry of plugin instances keyed by their string IDs.
 ///
@@ -17,6 +17,7 @@ use crate::traits::{CleanupStyle, SttProvider};
 pub struct PluginRegistry {
     stt: HashMap<String, Arc<dyn SttProvider>>,
     cleanup: HashMap<String, Arc<dyn CleanupStyle>>,
+    output: HashMap<String, Arc<dyn OutputTarget>>,
 }
 
 impl PluginRegistry {
@@ -50,6 +51,20 @@ impl PluginRegistry {
     /// Look up a registered [`CleanupStyle`] by `id`. Returns `None` if not registered.
     pub fn cleanup(&self, id: &str) -> Option<Arc<dyn CleanupStyle>> {
         self.cleanup.get(id).cloned()
+    }
+
+    /// Register an [`OutputTarget`] under `id`. Panics on duplicate ID.
+    pub fn register_output(&mut self, id: impl Into<String>, plugin: Arc<dyn OutputTarget>) {
+        let id = id.into();
+        if self.output.contains_key(&id) {
+            panic!("duplicate output plugin id: {id}");
+        }
+        self.output.insert(id, plugin);
+    }
+
+    /// Look up a registered [`OutputTarget`] by `id`. Returns `None` if not registered.
+    pub fn output(&self, id: &str) -> Option<Arc<dyn OutputTarget>> {
+        self.output.get(id).cloned()
     }
 }
 
@@ -143,5 +158,35 @@ mod tests {
         let mut reg = PluginRegistry::new();
         reg.register_stt("fake-stt", Arc::new(FakeStt));
         reg.register_stt("fake-stt", Arc::new(FakeStt));
+    }
+
+    struct FakeOutput;
+
+    #[async_trait]
+    impl OutputTarget for FakeOutput {
+        async fn deliver(&self, _text: &str) -> Result<(), AppError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn register_and_lookup_output_by_id() {
+        let mut reg = PluginRegistry::new();
+        reg.register_output("fake-out", Arc::new(FakeOutput));
+        assert!(reg.output("fake-out").is_some());
+    }
+
+    #[test]
+    fn lookup_unknown_output_id_returns_none() {
+        let reg = PluginRegistry::new();
+        assert!(reg.output("nonexistent").is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate output plugin id")]
+    fn duplicate_output_register_panics() {
+        let mut reg = PluginRegistry::new();
+        reg.register_output("fake-out", Arc::new(FakeOutput));
+        reg.register_output("fake-out", Arc::new(FakeOutput));
     }
 }

@@ -44,6 +44,10 @@ pub enum AppErrorKind {
     Internal,
     /// Upstream provider unavailable (5xx, timeout, connection-reset). Typical retryable=true.
     UpstreamUnavailable,
+    /// OS configuration error (e.g., output target not found in registry). Typical retryable=false.
+    Configuration,
+    /// OS-level I/O error (e.g., clipboard write, file access). Typical retryable=false.
+    Io,
     /// OS-level permission denied (e.g., microphone, accessibility-service).
     /// Typical retryable=false — requires user-action at OS-level.
     PermissionDenied,
