@@ -642,7 +642,10 @@ pub enum AppErrorKind {
     Validation,
     RateLimit,
     Internal,
-    Unavailable,
+    UpstreamUnavailable,
+    PermissionDenied,
+    PipelineValidation,
+    KeyMissing,
 }
 ```
 
@@ -662,9 +665,12 @@ Plugin-Boundary (`PluginError`, Step 4 §1) → Tauri-Boundary (`AppError`) Mapp
 | `Auth(_)` | `Auth` | `false` |
 | `RateLimit { retry_after_ms }` | `RateLimit` | `true` (+ `retry_after_ms` in Detail-Feld später) |
 | `Fatal(_)` | `Internal` | `false` |
-| `Unavailable(_)` | `Unavailable` | `true` |
+| `UpstreamUnavailable(_)` | `UpstreamUnavailable` | `true` |
+| `KeyMissing { plugin_id }` | `KeyMissing` | `false` (+ `user_message: "error.keystore.key_missing"` gesetzt im From-Impl; plugin_id landet in `message`) |
 
 `impl From<PluginError> for AppError` lebt in `klarvo-core` (nicht in Shells) — zentraler Mapping-Punkt, Shells konsumieren `AppError` ohne `PluginError` zu kennen.
+
+**Asymmetrische Variants:** `PermissionDenied` + `PipelineValidation` emergieren außerhalb der Plugin-Boundary (Shell bzw. Core-Executor-Boot-Time) und haben keine `PluginError`-Counterpart. Ref ADR-0010.
 
 ### Communication Patterns
 
@@ -820,7 +826,7 @@ async fn transcribe(text: String, state: State<'_, AppState>) -> Result<String, 
 **Good — User-facing Error mit i18n-Key:**
 ```rust
 Err(AppError {
-    kind: AppErrorKind::Unavailable,
+    kind: AppErrorKind::UpstreamUnavailable,
     message: format!("Groq API returned 503: {}", body),
     user_message: Some("transcription.service_unavailable".into()),  // i18n-Key
     retryable: true,
