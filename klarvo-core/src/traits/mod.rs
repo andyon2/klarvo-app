@@ -17,3 +17,5 @@ pub use stt::SttProvider;
 pub use text_filter::TextFilter;
 pub use vad::{VadDecision, VadProvider};
 pub use voice_command::VoiceCommandHandler;
+
+pub use crate::audio::source::AudioSource;
