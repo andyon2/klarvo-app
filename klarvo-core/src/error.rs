@@ -12,11 +12,13 @@ pub enum PluginError {
     RateLimit { retry_after_ms: u64 },
     #[error("fatal: {0}")]
     Fatal(String),
-    #[error("unavailable: {0}")]
-    Unavailable(String),
+    #[error("upstream unavailable: {0}")]
+    UpstreamUnavailable(String),
+    #[error("key missing for plugin: {plugin_id}")]
+    KeyMissing { plugin_id: String },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppError {
     pub kind: AppErrorKind,
@@ -25,16 +27,32 @@ pub struct AppError {
     pub retryable: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum AppErrorKind {
+    /// Network-layer failure (TCP, DNS, TLS). Typical retryable=true.
     Network,
+    /// Authentication/authorization rejection (401, 403). Typical retryable=false.
     Auth,
+    /// Client-input validation failure. Distinct from `PipelineValidation`
+    /// (boot-time manifest-strict-error). Typical retryable=false.
     Validation,
+    /// Upstream rate-limit signal (429 + retry_after_ms). Typical retryable=true.
     RateLimit,
+    /// Programmer-error, logic-bug, invariant-violation. Typical retryable=false.
     Internal,
-    Unavailable,
+    /// Upstream provider unavailable (5xx, timeout, connection-reset). Typical retryable=true.
+    UpstreamUnavailable,
+    /// OS-level permission denied (e.g., microphone, accessibility-service).
+    /// Typical retryable=false — requires user-action at OS-level.
+    PermissionDenied,
+    /// Manifest strict-validation error at boot-time (unknown stage-type, type-mismatch).
+    /// Distinct from `Validation` (runtime client-input). Typical retryable=false.
+    PipelineValidation,
+    /// KeyStore-lookup miss during plugin-init. Plugin-identifier lands in `AppError.message`.
+    /// Typical retryable=false.
+    KeyMissing,
 }
 
 impl std::fmt::Display for AppError {
@@ -72,11 +90,17 @@ impl From<PluginError> for AppError {
                 user_message: None,
                 retryable: false,
             },
-            PluginError::Unavailable(msg) => AppError {
-                kind: AppErrorKind::Unavailable,
+            PluginError::UpstreamUnavailable(msg) => AppError {
+                kind: AppErrorKind::UpstreamUnavailable,
                 message: msg,
                 user_message: None,
                 retryable: true,
+            },
+            PluginError::KeyMissing { plugin_id } => AppError {
+                kind: AppErrorKind::KeyMissing,
+                message: format!("key missing for plugin: {plugin_id}"),
+                user_message: Some("error.keystore.key_missing".into()),
+                retryable: false,
             },
         }
     }
