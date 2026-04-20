@@ -3,6 +3,7 @@
 pub mod audio_source;
 pub mod cleanup;
 pub mod groq_mock;
+pub mod keystore;
 pub mod keystore_mock;
 pub mod manifest;
 pub mod pipeline_stage;
@@ -15,6 +16,7 @@ pub mod vad_provider;
 pub use audio_source::MockAudioSource;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};
 pub use groq_mock::GroqMockServer;
+pub use keystore::InMemoryKeyStore;
 pub use keystore_mock::MockKeyStore;
 pub use manifest::{
     manifest_with_unknown_stage_toml, manifest_with_wrong_schema_version_toml,
