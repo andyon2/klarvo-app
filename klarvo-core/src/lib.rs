@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod error;
+pub mod i18n;
 pub mod manifest;
 pub mod pipeline;
 pub mod registry;
