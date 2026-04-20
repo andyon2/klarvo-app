@@ -37,6 +37,23 @@ type = "passthrough"
     )
 }
 
+/// Returns a manifest TOML with `schema_version = 1`, a passthrough stage, and a
+/// `cleanup{plugin_id="verbatim"}` stage — used by 1B.5 Executor E2E happy-path test.
+///
+/// Requires `stage-passthrough` and `stage-cleanup` features (both enabled by default).
+pub fn valid_passthrough_verbatim_manifest_toml() -> String {
+    r#"schema_version = 1
+
+[[pipeline.stages]]
+type = "passthrough"
+
+[[pipeline.stages]]
+type = "cleanup"
+plugin_id = "verbatim"
+"#
+    .to_string()
+}
+
 /// Assert that `parse_from_str` fails with the given `AppErrorKind` pattern.
 ///
 /// Fails the test with a diagnostic if the parse unexpectedly succeeds or returns a
@@ -97,5 +114,13 @@ mod tests {
             &manifest_with_wrong_schema_version_toml(2),
             klarvo_core::error::AppErrorKind::PipelineValidation
         );
+    }
+
+    #[test]
+    fn valid_passthrough_verbatim_parses_successfully() {
+        let result = parse_from_str(&valid_passthrough_verbatim_manifest_toml());
+        assert!(result.is_ok(), "valid passthrough+verbatim manifest must parse: {:?}", result);
+        let m = result.unwrap();
+        assert_eq!(m.pipeline.stages.len(), 2, "must have exactly 2 stages");
     }
 }
