@@ -2,20 +2,23 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
+use klarvo_core::audio::AudioBuffer;
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::pipeline::PipelineStage;
-use klarvo_core::traits::{AudioBuffer, SttProvider};
+use klarvo_core::traits::SttProvider;
 
 /// Test fixture implementing [`SttProvider`] with a sequential canned-transcription queue.
 ///
 /// Each `transcribe` call returns the next element from `canned_transcriptions` in order.
 /// An exhausted queue returns an `Internal` error. Use with [`assert_stt_call_count`].
-pub struct MockSttProvider {
+///
+/// For simple single-response fixtures use `klarvo_test_fixtures::MockSttProvider::returning()`.
+pub struct QueuedMockSttProvider {
     canned_transcriptions: Vec<String>,
     call_count: Arc<AtomicUsize>,
 }
 
-impl MockSttProvider {
+impl QueuedMockSttProvider {
     /// Construct with a fixed sequence of transcriptions returned in order.
     pub fn with_transcriptions(canned_transcriptions: Vec<String>) -> Self {
         Self {
@@ -31,7 +34,7 @@ impl MockSttProvider {
 }
 
 #[async_trait]
-impl PipelineStage for MockSttProvider {
+impl PipelineStage for QueuedMockSttProvider {
     type Input = AudioBuffer;
     type Output = String;
 
@@ -39,7 +42,7 @@ impl PipelineStage for MockSttProvider {
         let idx = self.call_count.fetch_add(1, Ordering::SeqCst);
         self.canned_transcriptions.get(idx).cloned().ok_or_else(|| AppError {
             kind: AppErrorKind::Internal,
-            message: format!("MockSttProvider canned queue exhausted at call {idx}"),
+            message: format!("QueuedMockSttProvider canned queue exhausted at call {idx}"),
             user_message: None,
             retryable: false,
         })
@@ -51,18 +54,18 @@ impl PipelineStage for MockSttProvider {
 }
 
 #[async_trait]
-impl SttProvider for MockSttProvider {}
+impl SttProvider for QueuedMockSttProvider {}
 
 // Object-safety compile-test: Box<dyn SttProvider> must compile.
 #[allow(dead_code)]
 fn _obj_safe_stt(_x: Box<dyn SttProvider>) {}
 
 /// Assert that `mock` was called exactly `expected` times.
-pub fn assert_stt_call_count(mock: &MockSttProvider, expected: usize) {
+pub fn assert_stt_call_count(mock: &QueuedMockSttProvider, expected: usize) {
     assert_eq!(
         mock.call_count(),
         expected,
-        "MockSttProvider: call count {actual} != expected {expected}",
+        "QueuedMockSttProvider: call count {actual} != expected {expected}",
         actual = mock.call_count()
     );
 }
@@ -72,12 +75,12 @@ mod tests {
     use super::*;
 
     fn buf() -> AudioBuffer {
-        AudioBuffer { samples: vec![0.0; 16], sample_rate: 16_000, channels: 1 }
+        AudioBuffer { samples: vec![0.0; 16], sample_rate: 16_000, ts_ms_start: 0, ts_ms_end: 1 }
     }
 
     #[tokio::test]
     async fn returns_canned_values_in_order() {
-        let mock = MockSttProvider::with_transcriptions(vec![
+        let mock = QueuedMockSttProvider::with_transcriptions(vec![
             "hello".to_string(),
             "world".to_string(),
         ]);
@@ -87,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn call_count_increments() {
-        let mock = MockSttProvider::with_transcriptions(vec!["a".to_string(), "b".to_string()]);
+        let mock = QueuedMockSttProvider::with_transcriptions(vec!["a".to_string(), "b".to_string()]);
         let _ = mock.transcribe(buf()).await;
         assert_stt_call_count(&mock, 1);
         let _ = mock.transcribe(buf()).await;
@@ -96,7 +99,7 @@ mod tests {
 
     #[tokio::test]
     async fn exhausted_queue_returns_error() {
-        let mock = MockSttProvider::with_transcriptions(vec!["only".to_string()]);
+        let mock = QueuedMockSttProvider::with_transcriptions(vec!["only".to_string()]);
         let _ = mock.transcribe(buf()).await.unwrap();
         assert!(mock.transcribe(buf()).await.is_err());
     }

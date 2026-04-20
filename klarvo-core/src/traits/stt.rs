@@ -1,22 +1,8 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 
+use crate::audio::AudioBuffer;
 use crate::error::AppError;
 use crate::pipeline::PipelineStage;
-
-/// Full-utterance audio buffer passed to STT providers.
-///
-/// Distinct from `AudioFrame` (10–30ms VAD window, Story 1A.7): `AudioBuffer` represents
-/// a complete utterance captured after VAD silence detection, ready for transcription.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AudioBuffer {
-    /// Raw f32 PCM samples in interleaved channel order.
-    pub samples: Vec<f32>,
-    /// Samples per second (e.g., 16_000 for Whisper-compatible input).
-    pub sample_rate: u32,
-    /// Number of interleaved channels (1 = mono, 2 = stereo).
-    pub channels: u8,
-}
 
 /// STT provider: transcribes a complete utterance [`AudioBuffer`] to a UTF-8 `String`.
 ///
@@ -64,22 +50,5 @@ pub trait SttProvider: PipelineStage<Input = AudioBuffer, Output = String> {
     /// standard [`PipelineStage`] contract for Executor dispatch.
     async fn transcribe(&self, audio: AudioBuffer) -> Result<String, AppError> {
         self.process(audio).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn audio_buffer_serde_roundtrip() {
-        let buf = AudioBuffer {
-            samples: vec![0.0, 0.5, -0.5],
-            sample_rate: 16_000,
-            channels: 1,
-        };
-        let json = serde_json::to_string(&buf).unwrap();
-        let back: AudioBuffer = serde_json::from_str(&json).unwrap();
-        assert_eq!(buf, back);
     }
 }

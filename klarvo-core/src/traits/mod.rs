@@ -8,12 +8,13 @@ pub mod text_filter;
 pub mod vad;
 pub mod voice_command;
 
+pub use crate::audio::AudioBuffer;
 pub use audio_filter::AudioFilter;
 pub use cleanup::{CleanupContext, CleanupInput, CleanupStyle};
 pub use llm::LlmProvider;
 pub use migration::PluginMigration;
 pub use output::OutputTarget;
-pub use stt::{AudioBuffer, SttProvider};
+pub use stt::SttProvider;
 pub use text_filter::TextFilter;
 pub use vad::{VadDecision, VadProvider};
 pub use voice_command::VoiceCommandHandler;

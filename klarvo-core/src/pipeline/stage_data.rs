@@ -1,4 +1,4 @@
-use crate::traits::AudioBuffer;
+use crate::audio::AudioBuffer;
 
 /// Phase-1 inter-stage data carrier.
 ///

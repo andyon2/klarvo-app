@@ -15,3 +15,7 @@ stage-cleanup = ["klarvo-core/stage-cleanup"]
 klarvo-core = { path = "../klarvo-core" }
 async-trait.workspace = true
 tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+klarvo-plugin-verbatim = { path = "../klarvo-plugins/klarvo-plugin-verbatim" }
+tokio = { workspace = true, features = ["macros", "rt"] }

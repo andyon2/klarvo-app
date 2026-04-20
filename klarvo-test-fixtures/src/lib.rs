@@ -6,7 +6,9 @@ pub mod manifest;
 pub mod pipeline_stage;
 pub mod stage_type;
 pub mod stt;
+pub mod stt_provider;
 pub mod v1_appdata;
+pub mod vad_provider;
 
 pub use audio_source::MockAudioSource;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};
@@ -16,4 +18,6 @@ pub use manifest::{
 };
 pub use pipeline_stage::{MockPipelineStage, harness_run_stage};
 pub use stage_type::*;
-pub use stt::{MockSttProvider, assert_stt_call_count};
+pub use stt::{QueuedMockSttProvider, assert_stt_call_count};
+pub use stt_provider::MockSttProvider;
+pub use vad_provider::MockVadProvider;
