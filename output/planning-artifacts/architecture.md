@@ -672,6 +672,8 @@ Plugin-Boundary (`PluginError`, Step 4 §1) → Tauri-Boundary (`AppError`) Mapp
 
 **Asymmetrische Variants:** `PermissionDenied` + `PipelineValidation` emergieren außerhalb der Plugin-Boundary (Shell bzw. Core-Executor-Boot-Time) und haben keine `PluginError`-Counterpart. Ref ADR-0010.
 
+**Async-Error-Bridge:** Async-Errors (emergent außerhalb von Command-Invocation-Contexten — z. B. cpal-Audio-Callback-Errors, Pipeline-Mid-Session-Errors, Pipeline-Boot-Validation-Errors) werden via dedicated `tauri_specta::Event` `app.error` mit `AppError`-Payload an das Frontend propagiert. Emit-Site ist der Shell-Orchestrator oder Core-`ErrorEmitter`-Trait-Impl (narrow-scoped für OS-Thread-Callback-Contexts wie `CpalAudioSource`). Ref ADR-0009.
+
 ### Communication Patterns
 
 #### IPC-Commands (Rust↔React via Tauri)
