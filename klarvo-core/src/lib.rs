@@ -7,6 +7,7 @@ pub mod output;
 pub mod pipeline;
 pub mod registry;
 pub mod traits;
+#[cfg(feature = "v1-import")]
 pub mod v1_import;
 
 pub use error::{AppError, AppErrorKind, PluginError};

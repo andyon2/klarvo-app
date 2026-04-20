@@ -16,6 +16,10 @@
 //! emerge in Phase 2+.
 
 pub mod keys;
+#[cfg(feature = "dev-plain-keystore")]
+mod plain_sqlite;
 mod trait_def;
 
+#[cfg(feature = "dev-plain-keystore")]
+pub use plain_sqlite::PlainSqliteKeyStore;
 pub use trait_def::KeyStore;

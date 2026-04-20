@@ -1,3 +1,4 @@
+#![cfg(feature = "v1-import")]
 //! v1 → v2 Einmal-Import (Parse-Only-Bundle).
 //!
 //! Reads Klarvo v1 AppData on Windows (`%APPDATA%\com.klarvo.voice\`) and
