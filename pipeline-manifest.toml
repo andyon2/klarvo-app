@@ -1,6 +1,4 @@
-manifest_version = "1"
+schema_version = 1
 
-[pipeline]
-stages = [
-    { type = "cleanup", plugin = "verbatim" },
-]
+[[pipeline.stages]]
+type = "passthrough"
