@@ -212,12 +212,42 @@ async fn e2e_stray_release_is_noop() {
 ```rust
 #[tokio::test]
 async fn e2e_pipeline_fail_in_cycle1_does_not_prevent_cycle2() {
-    // MockSttProvider: first call returns Err(UpstreamUnavailable), second returns Ok("hello")
-    let (orch, output_target, paste_backend, error_emitter) =
-        make_test_orchestrator_with_queued_stt([
-            Err(AppError { kind: AppErrorKind::UpstreamUnavailable, ... }),
+    // Local test helper: SequencedResultStt drains a queue of Result<String, AppError>.
+    // Not in klarvo-test-fixtures: single consumer, premature-abstraction-guard applies.
+    struct SequencedResultStt {
+        queue: tokio::sync::Mutex<std::collections::VecDeque<Result<String, AppError>>>,
+    }
+    #[async_trait::async_trait]
+    impl klarvo_core::pipeline::PipelineStage for SequencedResultStt {
+        type Input = klarvo_core::audio::AudioBuffer;
+        type Output = String;
+        async fn process(&self, _: Self::Input) -> Result<String, AppError> {
+            self.queue.lock().await.pop_front().unwrap_or_else(|| Err(AppError {
+                kind: AppErrorKind::Internal,
+                message: "SequencedResultStt queue exhausted".to_string(),
+                user_message: None,
+                retryable: false,
+            }))
+        }
+        fn stage_type(&self) -> &'static str { "stt" }
+    }
+    #[async_trait::async_trait]
+    impl klarvo_core::traits::SttProvider for SequencedResultStt {}
+
+    let stt = Arc::new(SequencedResultStt {
+        queue: tokio::sync::Mutex::new(std::collections::VecDeque::from([
+            Err(AppError {
+                kind: AppErrorKind::UpstreamUnavailable,
+                message: "cycle-1 simulated failure".to_string(),
+                user_message: Some("error.stt.upstream_unavailable".to_string()),
+                retryable: true,
+            }),
             Ok("hello".to_string()),
-        ]);
+        ])),
+    });
+
+    let (orch, output_target, paste_backend, error_emitter) =
+        make_test_orchestrator_with_custom_stt(stt);
 
     // Cycle 1 — will fail
     orch.on_press().await;
@@ -237,10 +267,8 @@ async fn e2e_pipeline_fail_in_cycle1_does_not_prevent_cycle2() {
 }
 ```
 
-`QueuedMockSttProvider` oder eine Variante von `MockSttProvider` die sequentielle Responses
-aus einer Queue liefert (analog `klarvo_test_fixtures::QueuedMockSttProvider` in
-`klarvo-test-fixtures/src/stt.rs`). Delegate verifiziert API-Shape und nutzt den existenten
-`QueuedMockSttProvider` wenn kompatibel.
+`SequencedResultStt` ist ausschließlich in `tests/e2e_test.rs` definiert — kein Eintrag in
+`klarvo-test-fixtures`. Begründung in Technical Notes.
 
 ### AC-H — Test-Conventions + Timeout-Guards
 
@@ -301,6 +329,20 @@ die echte Signalverarbeitung. `RmsVad` mit synthetic-loud-Audio testet den reale
 triggert, liegt das an einem echten Bug im VAD-Verhalten — ein `MockVadProvider` würde
 denselben Bug verstecken.
 
+### Warum `SequencedResultStt` lokal statt `klarvo-test-fixtures`-Erweiterung
+
+Der existierende `QueuedMockSttProvider` (`klarvo-test-fixtures/src/stt.rs:23`) akzeptiert nur
+`Vec<String>` — keine Result-Queue. Scenario-5 braucht eine Err-in-Cycle-1 / Ok-in-Cycle-2-Sequenz
+am selben Orchestrator. Zwei Optionen:
+
+- **(a)** `QueuedMockSttProvider` in `klarvo-test-fixtures` um `with_results(Vec<Result<String, AppError>>)`
+  erweitern.
+- **(b)** Lokaler `SequencedResultStt` in `tests/e2e_test.rs` (gewählt).
+
+Option (b) respektiert Story-3.11 AC-I Scope-Fence (nur `tests/e2e_test.rs` + `Cargo.toml`-Additions)
+und `feedback_premature_abstraction_guard` (Second-Consumer für „Queue of Results" nicht etabliert).
+Wenn Phase-2-Tests dasselbe Pattern brauchen, ist Option (a) der konsolidierende Refactor.
+
 ### Warum separates `tests/e2e_test.rs` statt Erweiterung von Story-3.3-Tests
 
 Story-3.3-Unit-Tests haben vollständig gemockte Pipelines (`MockSttProvider` + `MockCleanupStyle`).
@@ -322,13 +364,16 @@ fn make_test_orchestrator_real_pipeline_with_handles() -> (
 ) { ... }
 ```
 
-Für Scenario-5 (AC-G) braucht es eine Variante die `QueuedMockSttProvider` akzeptiert:
+Für Scenario-5 (AC-G) braucht es eine Variante die jede `SttProvider`-Implementierung akzeptiert:
 ```rust
-fn make_test_orchestrator_with_queued_stt(
-    responses: impl IntoIterator<Item = Result<String, AppError>>
+fn make_test_orchestrator_with_custom_stt(
+    stt: Arc<dyn klarvo_core::traits::SttProvider>,
 ) -> (SessionOrchestrator, Arc<InMemoryOutputTarget>, Arc<MockPasteBackend>, Arc<MockErrorEmitter>)
 { ... }
 ```
+
+Rationale: „Accepts any SttProvider (e.g., the local `SequencedResultStt` from Scenario-5).
+Generischer als `with_queued_stt`, keine Result-Queue-Annahme im Helper-API."
 
 Beide Helpers sind lokal in `tests/e2e_test.rs` definiert (nicht in `klarvo-test-fixtures` —
 kein zweiter Consumer, `feedback_premature_abstraction_guard`).
@@ -348,7 +393,7 @@ Diese Extensions sind Phase-2-Story-Kandidaten wenn entsprechende Test-Infrastru
   müssen implementiert sein damit der Orchestrator korrekt konstruierbar ist)
 - Story 3.3 — `SessionOrchestrator` in `klarvo-shell-orchestrator/src/` (Impl)
 - `klarvo-plugin-verbatim` — `register()` + `Verbatim`-Impl
-- `klarvo-test-fixtures` — `MockAudioSource`, `MockSttProvider`, `QueuedMockSttProvider`,
+- `klarvo-test-fixtures` — `MockAudioSource`, `MockSttProvider`,
   `InMemoryOutputTarget`, `MockPasteBackend` (Story-3.3/3.4-Scope), `MockErrorEmitter`, `FakeClock`
 - ADR-0012 §SD-5 — Testability-Contract (headless, Mock-Dependencies)
 - `memory/project_shell_session_lifecycle` — 7-Step-Topology (Test-Scenarios spiegeln Steps)
