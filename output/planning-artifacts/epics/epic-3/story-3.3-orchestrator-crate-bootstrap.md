@@ -233,6 +233,21 @@ Registry. Der Orchestrator hält alle diese Deps als Constructor-Args.
 Bootstrap-Integration) konstruiert. Die Struct ist `pub` aus `klarvo-shell-orchestrator`
 re-exported.
 
+### Pipeline-Task-Shutdown
+
+`pipeline_task: tokio::task::JoinHandle<()>` im `SessionState::Recording`-Variant trägt
+folgenden Rustdoc-Kommentar in der Impl:
+
+```rust
+/// Phase-2 Toggle-Mode revisit: graceful await/abort on App-Exit
+/// (ADR-0012 Open-Questions §Orchestrator-Shutdown-bei-App-Exit).
+```
+
+Phase-1-Drop-on-State-Transition-Semantik ist ausreichend: tokio-Runtime-Drop cancelt
+pending Tasks safely (tokio-shutdown-contract). Bei Phase-1-Hold-to-Talk ist kein
+laufender Task außerhalb des 7-Step-Cycles zu erwarten. Long-Lived-Toggle-Sessions
+(Phase-2-Backlog) würden den Cleanup-Pfad revisiten — daher der Marker.
+
 ### i18n-Key `error.audio.start_failed`
 
 Neuer Key in `locales/en.json` + `locales/de.json`. Der Orchestrator-Scope registriert Keys

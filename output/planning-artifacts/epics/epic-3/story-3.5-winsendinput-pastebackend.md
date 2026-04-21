@@ -53,10 +53,11 @@ KeyStore (Story 1C)
   3. `VK_V` Key-Up (`KEYEVENTF_KEYUP`)
   4. `VK_CONTROL` Key-Up (`KEYEVENTF_KEYUP`)
 - Der `unsafe`-Block ruft `SendInput(&inputs)` auf (windows-crate-API)
-- `async fn paste` wrапpt den sync-Call via `tokio::task::spawn_blocking` **oder** als
-  direkten sync-Call im async-Kontext — Delegate-Choice; spawn_blocking ist korrekteres
-  async-Verhalten bei blocking-OS-Calls, aber SendInput ist typischerweise
-  sub-millisecond; Wahl mit Rationale im Rustdoc
+- `async fn paste` ruft die interne sync-Funktion direkt im async-Task auf (kein
+  `spawn_blocking`). Rationale: `SendInput` für 4 INPUT-Events ist <100μs;
+  `spawn_blocking`-Thread-Pool-Context-Switch-Overhead (10–50μs) übersteigt den Gain.
+  Phase-1-Philosophy: simplest-that-works. Rustdoc am `paste()`-Body verankert die
+  Entscheidung + Phase-2-Revisit-Anchor falls Perceivable-Block auftritt.
 
 ### AC-C — Error-Mapping: SendInput Return-Value
 
@@ -172,12 +173,16 @@ bereits in Story 3.4 AC-C als Forward-Reference im PasteBackend-Rustdoc veranker
 Key-Events in den OS-Keyboard-Input-Buffer — sie ist nicht garantiert synchron mit der
 Empfangsseite, aber Sub-Millisecond in der Praxis für 4 Events.
 
-### `spawn_blocking` vs. Direktaufruf
+### `spawn_blocking` vs. Direktaufruf (Committed: Direct-Call)
 
-`SendInput` ist ein blocking-Syscall (kurz, aber nonetheless OS-call). Korrekte async-Praxis
-wäre `tokio::task::spawn_blocking(|| send_ctrl_v())`. Da `SendInput` <1ms dauert, ist
-ein direkter Call in einem tokio-Task vertretbar für Phase-1. Delegate dokumentiert die
-Entscheidung im Rustdoc.
+Direct-Call committed: `async fn paste` ruft `send_ctrl_v()` direkt, ohne `spawn_blocking`.
+Rationale: `SendInput` für 4 KEY-Events ist <100μs; `spawn_blocking`-Overhead (Thread-Pool
+Context-Switch, 10–50μs) übersteigt den Gain für diesen Sub-Millisecond-Call.
+Phase-1-Philosophy: simplest-that-works.
+
+Rustdoc am `paste()`-Body verankert die Entscheidung und enthält einen Phase-2-Revisit-Anchor:
+`// Phase-2 revisit: if paste() causes perceivable blocking (measured >500μs), migrate to
+// spawn_blocking. SendInput for 4 events is consistently <100μs on WASAPI-idle desktop.`
 
 ## Dependencies
 

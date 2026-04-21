@@ -165,11 +165,12 @@ der `hotkeyy = "..."` (Typo) in die Config schreibt, soll sofort einen klaren Er
 nicht schweigend den Default-Wert verwenden. Verhindert Drift zwischen Config-Spec und
 tatsächlicher Nutzung.
 
-### Locale-Whitelist vs. Serde-Enum
+### Locale: `String` mit Whitelist-Check
 
-Ein sauberes Design wäre `enum Locale { En, De }` mit `#[serde(rename_all = "lowercase")]`.
-Das ist Delegate-Choice — der Enum-Ansatz ist besser typisiert, der String-Ansatz ist einfacher
-erweiterbar. Bei Enum: `From<Locale> for String` für i18n-Lookup-Kompatibilität definieren.
+Phase-1 hat genau 2 Locales (`en`/`de`). Enum-Machinery (rename-all, `From<Locale> for String`)
+für 2 Varianten ist premature-abstraction (`feedback_premature_abstraction_guard`). Whitelist-Check
+in AC-C deckt die Type-Safety-Lücke ausreichend ab. Phase-2 Post-MVP-P2-Backlog enthält
+„weitere UI-Languages" — dann natürlicher Enum-Upgrade-Moment, nicht vorher.
 
 ### `ShellConfig` in Tauri-managed-State
 
