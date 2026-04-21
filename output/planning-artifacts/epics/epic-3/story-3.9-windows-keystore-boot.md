@@ -162,7 +162,7 @@ wird
   #[tokio::test]
   async fn verify_keystore_ready_io_failure_maps_to_apperror_io() {
       let ks = klarvo_test_fixtures::FailingKeyStore::with_error(AppError {
-          kind: AppErrorKind::KeyMissing,
+          kind: AppErrorKind::Io,
           message: "backend unreachable".to_string(),
           user_message: Some(klarvo_core::keystore::keys::BACKEND_UNAVAILABLE.to_string()),
           retryable: false,
