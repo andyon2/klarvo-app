@@ -1,12 +1,11 @@
 use async_trait::async_trait;
-use tokio::sync::oneshot;
 
 use crate::audio::AudioEvent;
 
-/// `#[non_exhaustive]` — Epic 3 cpal-impl and Phase-3 Android-impl will
-/// extend this enum with hardware-specific variants (e.g. `PermissionDenied`,
-/// `CaptureInterrupted`). The `#[non_exhaustive]` attribute prevents
-/// match-exhaustiveness-breaks at consumer call-sites when variants are added.
+/// Errors from `AudioSource::start` and the capture session.
+///
+/// `#[non_exhaustive]` — Phase-3 Android-impl will add `PermissionDenied`;
+/// match arms must use `_ =>` to stay forward-compatible.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AudioError {
@@ -14,6 +13,14 @@ pub enum AudioError {
     DeviceUnavailable,
     #[error("unsupported audio format")]
     UnsupportedFormat,
+    // `msg` avoids thiserror 2.x auto-source-detection on fields named `source`
+    // (String doesn't implement std::error::Error so thiserror would reject `source: String`).
+    #[error("capture interrupted: {msg}")]
+    CaptureInterrupted { msg: String },
+    #[error("resample failed: {msg}")]
+    ResampleFailed { msg: String },
+    #[error("device configuration error: {msg}")]
+    DeviceConfigError { msg: String },
 }
 
 pub struct CaptureConfig {
@@ -37,15 +44,25 @@ pub struct CaptureConfig {
 /// `RecvError::Closed` on their broadcast-receivers after the handle is
 /// dropped. Panic-safe: `Drop` fires unconditionally on scope-exit, including
 /// via panic-unwind (ref `memory/feedback_test_raii_cleanup_pattern`).
+///
+/// Internally an opaque `Box<dyn Any + Send>` so that impl-crates
+/// (`klarvo-audio-cpal`, Phase-3 Android) can store platform-specific guards
+/// without pulling cpal/JNI into `klarvo-core`. The `Any + Send` vtable
+/// dispatches `Drop` correctly for any concrete guard type.
 pub struct CaptureHandle {
-    _shutdown: oneshot::Sender<()>,
+    _guard: Box<dyn std::any::Any + Send>,
 }
 
 impl CaptureHandle {
-    pub fn new(shutdown: oneshot::Sender<()>) -> Self {
-        Self { _shutdown: shutdown }
+    pub fn new<G: Send + 'static>(guard: G) -> Self {
+        Self { _guard: Box::new(guard) }
     }
 }
+
+// Safety: CaptureHandle has no &self methods; _guard is only accessed at Drop
+// time by the owning thread. Implementing Sync is sound because there is no
+// way to observe shared mutable state through &CaptureHandle.
+unsafe impl Sync for CaptureHandle {}
 
 /// Infrastructure-Trait (per ADR-0006, Accepted 2026-04-19). Not part of the
 /// 4-Trait-Data-Flow-Stability-Ring (`PipelineStage` / `SttProvider` /
