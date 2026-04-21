@@ -196,8 +196,9 @@ Beide sind im Phase-Plan explizit verankert. Die Trait-Einführung ist gerechtfe
 ### `MockPasteBackend` Result-Typ
 
 `result`-Field im Mock ist `Result<(), AppError>`. Da `AppError` kein `Copy` ist, muss das
-Field beim `paste()`-Call geklont werden: `self.result.clone()`. `AppError` deriviert `Clone`
-per ADR-0010 Target-State (`#[derive(Debug, Clone, Serialize, specta::Type)]`).
+Field beim `paste()`-Call geklont werden: `self.result.clone()`. `AppError` deriviert bereits
+`Clone` in `klarvo-core/src/error.rs:21` (commit 178fdd8 ADR-0010 Impl-Commit) — keine
+Prerequisite-Arbeit in Story 3.4.
 
 ### i18n-Key-Policy
 

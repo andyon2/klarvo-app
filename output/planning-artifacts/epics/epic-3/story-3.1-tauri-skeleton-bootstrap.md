@@ -27,9 +27,28 @@ und einen funktionsfähigen i18n-Translation-Tables-Loader.
   - `tauri-plugin-global-shortcut` v2 (aktueller stable v2-Release, Version pinned analog ADR-0002),
   - `tauri-specta` (Version-Pin aus ADR-0002),
   - `klarvo-core` als Workspace-Path-Dep
-- `cargo tauri dev` aus dem `shells/windows/`-Verzeichnis startet ohne Compile-Error und ohne
-  Runtime-Panic
+- `cargo build -p <crate-name>` erfolgt ohne Compile-Error und ohne Warning. Runtime-Start-Verification ist AC-G (Smoke-Test) vorbehalten.
 - Die Crate ist im Workspace-`Cargo.toml` unter `members` eingetragen
+
+### AC-A.1 — `tauri.conf.json`-Spec
+
+**Given** das Crate existiert per AC-A  
+**When** `shells/windows/src-tauri/tauri.conf.json` erstellt wird  
+**Then**
+
+- `identifier` = `"com.klarvo.v2"` (distinct gegenüber v1 = `com.klarvo.voice` per
+  `memory/reference_klarvo_v1_tauri_identifier`; falls Delegate einen abweichenden Identifier
+  wählt, wird das im Kommentar am Konfig-Block begründet)
+- `productName` = `"Klarvo"`
+- `version` ist manuell synchron mit `Cargo.toml`-`package.version` zu halten; Rustdoc-Note
+  in `main.rs` oder `tauri.conf.json`-Kommentar: `// Phase-2: xtask-Subcommand synchronisiert
+  Version automatisch`
+- `app.windows[0]`: `title = "Klarvo"`, `width = 800`, `height = 600`, `resizable = true`,
+  `fullscreen = false`
+- `bundle.targets` = `[]` (oder `"none"`); falls Tauri-CLI bei leerem Array einen Fehler
+  produziert, darf `bundle.active = false` alternativ gesetzt werden — Delegate-Choice
+- `$schema`-Header wird gesetzt wenn Tauri-CLI ihn beim `init`-Scaffold generiert; sonst
+  weglassen (nicht zwingend für Phase-1)
 
 ### AC-B — Minimales `main.rs` + `.setup()`-Shape
 
@@ -63,9 +82,9 @@ und einen funktionsfähigen i18n-Translation-Tables-Loader.
 **When** die App bootet und der i18n-Loader initialisiert  
 **Then**
 
-- `shells/windows/src-tauri/src/i18n.rs` (oder äquivalentes Modul) lädt beide Locale-Files.
-  Implementierung darf `include_str!()` (compile-time) oder Runtime-Load (aus App-Ressource-Dir)
-  verwenden — Delegate-Choice
+- `shells/windows/src-tauri/src/i18n.rs` (oder äquivalentes Modul) lädt beide Locale-Files via
+  `include_str!()` (compile-time-embedded). Runtime-Load aus App-Ressource-Dir ist Phase-2-Option
+  (User-Locale-Override via Settings-Panel) und ausdrücklich nicht Story-3.1-Scope.
 - Default-Locale ist `en`; der Loader returniert `en`-Tabelle wenn keine explizite Locale
   konfiguriert ist
 - Der Loader exposed seinen Zustand als `Arc<I18nTable>` (wobei `I18nTable` ein Newtype oder
