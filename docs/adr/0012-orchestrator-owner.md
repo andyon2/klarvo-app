@@ -1,6 +1,6 @@
 # ADR-0012: Orchestrator-Owner für 7-Step Push-to-Talk-Cycle
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-21
 
 ## Context

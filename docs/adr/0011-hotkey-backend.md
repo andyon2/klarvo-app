@@ -1,6 +1,6 @@
 # ADR-0011: Hotkey-Backend für Windows-Shell (Push-to-Talk)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-21
 
 ## Context
