@@ -321,6 +321,66 @@ Turso-Sync-Strategie (#2.6) · Offline-LLM-Auswahl (#6.2) · Code-Signing-Upgrad
 | **Puffer-Format** | f32-Samples intern, Konvertierung am Rand | Audio-Standard |
 | **WAV-Encoding** | Im Core via `hound` | v1-Pattern, funktioniert |
 
+#### 8a. CaptureHandle — Opaque-Box Pattern
+
+`AudioSource::start(..)` liefert einen `CaptureHandle`-RAII-Guard (ref ADR-0006 SubDec-4). Die konkrete Platform-Resource (cpal-Stream, zukünftiger Android-AudioRecord) soll jedoch nicht in `klarvo-core` durchschlagen — Core bleibt Platform-agnostisch. Das wird über einen Opaque-`Box<dyn Any + Send>` gelöst:
+
+```rust
+// klarvo-core/src/audio/source.rs
+pub struct CaptureHandle {
+    _guard: Box<dyn std::any::Any + Send>,
+}
+
+impl CaptureHandle {
+    pub fn new<G: Send + 'static>(guard: G) -> Self {
+        Self { _guard: Box::new(guard) }
+    }
+}
+
+// Safety: CaptureHandle has no &self methods; _guard is only accessed at
+// Drop time by the owning thread. Implementing Sync is sound because there
+// is no way to observe shared mutable state through &CaptureHandle.
+unsafe impl Sync for CaptureHandle {}
+```
+
+**Rationale.** Cross-crate Platform-Abstraktion ohne Generics auf der `AudioSource`-Trait-Signatur. Erlaubt `klarvo-audio-cpal`, `klarvo-test-fixtures` (MockAudioSource) und zukünftigem `klarvo-audio-android` je eigene konkrete Guard-Typen zu liefern, ohne dass `klarvo-core` cpal/JNI/AudioRecord als Dependency bekommt. Der `Any + Send`-vtable dispatched `Drop` für beliebige konkrete Guards korrekt — Drop-semantische Cleanup bleibt per-Impl definierbar.
+
+**Live Consumer-Shapes.**
+- `klarvo-audio-cpal::CpalGuard { _stream: cpal::Stream, tx_slot: Arc<Mutex<Option<broadcast::Sender<AudioEvent>>>> }` — Stream-Handle + Channel-Close-Slot.
+- `klarvo-test-fixtures::MockAudioSource` — Oneshot-Sender-/Task-Handle für deterministisches Test-Teardown.
+
+**`Sync`-Marker.** `Box<dyn Any + Send>` ist `Send` aber nicht automatisch `Sync`. Da der Guard nur beim Drop (Owning-Thread) berührt wird und es keine `&self`-Method auf `CaptureHandle` gibt, ist `unsafe impl Sync for CaptureHandle {}` sound — der Safety-Comment in `source.rs` dokumentiert das.
+
+**Live-Code-Ref:** `klarvo-core/src/audio/source.rs:52-65`.
+
+#### 8b. AudioError — Enum Shape & Abgrenzung zu PluginError
+
+`AudioSource::start(..)` + Stream-interne Fehler werden als `AudioError` (Core-internes Enum, `#[non_exhaustive]`) modelliert:
+
+```rust
+// klarvo-core/src/audio/source.rs
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum AudioError {
+    #[error("audio device unavailable")]
+    DeviceUnavailable,
+    #[error("unsupported audio format")]
+    UnsupportedFormat,
+    #[error("capture interrupted: {msg}")]
+    CaptureInterrupted { msg: String },
+    #[error("resample failed: {msg}")]
+    ResampleFailed { msg: String },
+    #[error("device configuration error: {msg}")]
+    DeviceConfigError { msg: String },
+}
+```
+
+**Feldname-Rationale (`msg` statt `source`).** `thiserror` 2.x führt Auto-Source-Detection für Felder namens `source` durch und erwartet dort einen `dyn std::error::Error`-konformen Typ. `String` impl nicht `Error`, und eine Variante `CaptureInterrupted { source: String }` würde Compile-Errors produzieren. `msg` bypasst die Detection.
+
+**Abgrenzung zu `PluginError`.** `AudioError` ist **Core-interne Fehlerart** — emergiert in `klarvo-core` + Platform-Impl-Crates (`klarvo-audio-cpal`, zukünftig `klarvo-audio-android`), deckt Device-Enumeration, Sample-Format-Probleme, Resampling-Failures und mid-session Capture-Interruption ab. `PluginError` (ref §1 Plugin-Error-Kontrakt) ist **Plugin-Boundary-Contract** — abstract Network/Auth/RateLimit/UpstreamUnavailable/KeyMissing aus externen Services. Beide mappen nach `AppError` via `From`-Impls; `AudioError` hat derzeit keinen `From`-Impl, weil Audio-Errors in Phase-1 ausschließlich über die `AudioSource::start(..)`-Result-Chain bzw. die `ErrorEmitter`-Brücke (ref ADR-0009) an die Shell propagieren und dort zum `AppError` konstruiert werden.
+
+**Live-Code-Ref:** `klarvo-core/src/audio/source.rs:9-24`.
+
 ### Decision Impact Analysis
 
 **Implementation-Sequence (Phase 0):**
