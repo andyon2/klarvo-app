@@ -306,3 +306,62 @@ Die Original-Decision bleibt für die Hybrid-C-Architektur-Invariante gültig (s
 - Story 3.3 AC-E — Orchestrator-Error-Emission-Sites
 - Story 3.8 — `TauriErrorEmitter`-Impl
 - `memory/project_i18n_core_contract` — Key-Only-Payload-Policy
+
+---
+
+## Amendment 2 — 2026-04-21: Primary-Consumer-Correction (Orchestrator, nicht CpalAudioSource)
+
+**Status:** Accepted
+
+### Context
+
+Sub-Decision 3 im Original-Decision-Block (L81) behauptet:
+
+> „Phase-1-Primary-Consumer ist ausschließlich die `CpalAudioSource`-Capture-Callback-Context"
+
+und L198:
+
+> „Story 3.4 (Audio-Capture-Integration): `CpalAudioSource`-Constructor nimmt `Arc<dyn ErrorEmitter>`"
+
+Die Phase-1-Implementation in `klarvo-audio-cpal/src/source.rs` (commit `37b57c1`) ist jedoch ein Unit-Struct ohne ErrorEmitter-Injection:
+
+```rust
+pub struct CpalAudioSource;
+```
+
+Stream-Errors werden via `tracing::warn!` geloggt und triggern den Channel-Close-Flow (`*tx_slot.lock().unwrap() = None`), wodurch downstream `run_capture_session` einen `RecvError::Closed` empfängt und terminiert. Kein Cross-Thread-Error-Propagation via `ErrorEmitter` für cpal-Callback-Errors.
+
+### Amended Decision
+
+Phase-1-Primary-Consumer des `ErrorEmitter`-Traits ist der `SessionOrchestrator` (Story 3.3), nicht `CpalAudioSource`. Konkret:
+
+- Orchestrator ruft `error_emitter.emit_error(...)` für:
+  - `AudioSource::start`-Failure (Device unavailable, Config-Error)
+  - `run_pipeline`-Result-Fail (STT-Error, Cleanup-Error)
+  - `OutputTarget::deliver`-Fail
+  - `PasteBackend::paste`-Fail
+  - Output-Target-Registry-Lookup-Miss
+- `CpalAudioSource` handhabt OS-Thread-Callback-Errors intern via `tracing::warn!` + Channel-Close. Kein ErrorEmitter-Detour; Phase-1-bewusste Design-Entscheidung aus der `klarvo-audio-cpal`-Impl-Phase.
+
+### Rationale
+
+- **Simplicity:** `CpalAudioSource` ohne DI-Dep hat minimale Konstruktor-Surface (Unit-Struct). Err-Surfacing via Channel-Close ist idempotent-sicher.
+- **Downstream-Visibility:** Channel-Close propagiert natürlich als `RecvError::Closed` an `run_capture_session`, das seinerseits terminiert; der Orchestrator hält den Pipeline-Task-Handle und sieht die Termination.
+- **Tracing-Sufficiency:** cpal-Stream-Errors sind Log-Audience-Ereignisse (Dev-Debug via Rolling-File + `project_no_remote_telemetry`). Kein User-facing Toast-Need für transient Stream-Drops (User merkt „keine Transkription" bereits).
+
+### Phase-2+-Option (nicht aktiviert)
+
+Wenn Phase-2 User-visible Stream-Error-UX verlangt (z. B. „Mikrofon-Verbindung verloren" Toast), kann `CpalAudioSource` um einen `Arc<dyn ErrorEmitter>`-DI-Field retrofit werden (additive Constructor-Change). Impl-Template würde dann in `Stream::build_input_stream` den Error-Callback um `emitter.emit_error("error.audio.stream_dropped", now).await` ergänzen. Das ist eine explizite Phase-2-Option, nicht Phase-1-Debt.
+
+### Impact
+
+- **Story 3.7 (CpalAudioSource-Wire-Up):** Factory-Signatur ist zero-arg `make_audio_source() -> Arc<Mutex<Box<dyn AudioSource>>>`. Kein `emitter`/`clock`-Parameter.
+- **Story 3.3 (Orchestrator):** `ErrorEmitter`-Emit-Sites sind vollständig im Orchestrator (`on_press`/`on_release`-Flows + Pipeline-Task-Body).
+- **Original L198 „Story 3.4":** zu lesen als „Story 3.7 — CpalAudioSource Wire-Up"; die konkrete Behauptung „`CpalAudioSource`-Constructor nimmt `Arc<dyn ErrorEmitter>`" ist supersedet durch diese Amendment.
+
+### Cross-References
+
+- `klarvo-audio-cpal/src/source.rs` — authoritative `CpalAudioSource`-Impl (commit `37b57c1`)
+- Story 3.3 AC-E — Orchestrator-Error-Emission-Sites
+- Story 3.7 Technical Notes §CpalAudioSource-Error-Model — Anchor dieser Amendment
+- `memory/project_no_remote_telemetry` — tracing-Log-Audience-Policy
