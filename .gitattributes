@@ -1,3 +1,11 @@
+# Root-level patterns (Story 1A.1 AC L334): any audio binary anywhere in the
+# repo is tracked via Git LFS, regardless of subdirectory depth.
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.ogg filter=lfs diff=lfs merge=lfs -text
+
+# Explicit subdir patterns kept for clarity (redundant with root but documents
+# the primary fixture location).
 test-assets/audio/*.wav filter=lfs diff=lfs merge=lfs -text
 test-assets/audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
 test-assets/audio/*.ogg filter=lfs diff=lfs merge=lfs -text

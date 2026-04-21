@@ -1,6 +1,9 @@
 // Shared test fixtures: typed WAV accessors + trait mocks + v1 AppData snapshot.
 
 pub mod audio_source;
+pub mod clock;
+pub mod env;
+pub mod network;
 pub mod output;
 pub mod cleanup;
 pub mod groq_mock;
@@ -14,6 +17,9 @@ pub mod v1_appdata;
 pub mod vad_provider;
 
 pub use audio_source::MockAudioSource;
+pub use clock::FakeClock;
+pub use env::HeadlessTestEnv;
+pub use network::NoNetworkGuard;
 pub use output::InMemoryOutputTarget;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};
 pub use groq_mock::GroqMockServer;
