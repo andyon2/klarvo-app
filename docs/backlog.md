@@ -29,7 +29,7 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 ### Audio-Cpal Precision & Correctness Hardening
 
 - **Source**: Phase-1-Review Axis #2 (2026-04-21), `project_phase1_complete` §Carry-Over
-- **Description**: Zwei Precision-Items aus Story 2.5 (`klarvo-audio-cpal`), die Phase-1 pragmatisch als akzeptabel eingeordnet wurden. (1) `ts_ms`-Stamping-at-First-Sample: aktuell approximiert im flush_chunks-Loop; exakte Sample-Count-basierte Timestamp-Derivation ist Phase-2-Tightening. (2) Resampler-Multi-Call-Steady-State-Test: `resampler_sample_count_correct`-Test wurde auf Range `[1, 342]` relaxed statt fixer Gleichheit; Multi-Call-Steady-State-Assertion ist nachzuholen.
+- **Description**: **Drei** Items aus Story 2.5 / Phase-1-Closure-Review (`klarvo-audio-cpal`), die Phase-1 pragmatisch als akzeptabel eingeordnet wurden. (1) `ts_ms`-Stamping-at-First-Sample: aktuell approximiert im flush_chunks-Loop; exakte Sample-Count-basierte Timestamp-Derivation ist Phase-2-Tightening. (2) Resampler-Multi-Call-Steady-State-Test: `resampler_sample_count_correct`-Test wurde auf Range `[1, 342]` relaxed statt fixer Gleichheit; Multi-Call-Steady-State-Assertion ist nachzuholen. (3) Safety-Comment-Accuracy-Fix: Der existierende Comment in `klarvo-audio-cpal/src/source.rs:45-47` behauptet fälschlich „cpal::Stream is Send on all supported platforms" — cpal 0.15 markiert Stream via NotSendSyncAcrossAllPlatforms (PhantomData<*mut ()>) universell als !Send + !Sync; das unsafe impl Send/Sync ist load-bearing. Korrekter Safety-Reason: „CpalGuard wird nur beim Construction-Zeitpunkt in einen anderen Thread bewegt und nur vom Owning-Thread gedropped; Stream wird nie durch &-Reference mutiert" (Reviewer-Self-Finding aus Phase-1-Closure-Review 2026-04-21).
 - **Dependencies**: Keine (kann parallel zu anderen Phase-2-Items laufen)
 - **Status**: Ready-for-Story-Writing
 
@@ -95,13 +95,6 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Description**: Working-Name `klarvo-plugin-deepgram` (oder anderer STT-Provider). Validiert `SttProvider`-Trait-Stability experimentell.
 - **Dependencies**: Provider-Auswahl + BYOK-Key-Flow
 - **Status**: Planned
-
-### OS-Keystore als Release-Default
-
-- **Source**: PRD L159 (`explicitlyOutOfScope`: "OS-Keystore as release default (Phase 4)" — Anmerkung: Brief sagt Phase 2; PRD sagt Phase 4. Widerspruch aufzulösen beim Phase-2-Start), Architecture §2 :247 "MVP-Release ist nicht vollständig ohne OsKeystoreImpl (Phase 4 Lock-in)"
-- **Description**: Plain-SQLite-KeyStore (`dev-plain-keystore`-Feature, Phase 1) wird als Release-Default durch WindowsCredentialManager-Impl + Android-Keystore-Impl ersetzt. OS-Keystore-Impl existiert seit Phase-0-Gate-Closure; Swap ist Feature-Gate-Toggle + Migration-Runner.
-- **Dependencies**: Widerspruch PRD vs. Brief-Phase-Placement klären (Andy-Call); Migration-Tooling
-- **Status**: Blocked-by-Phase-Placement-Decision
 
 ### Windows-Toast-Notifications
 
@@ -211,6 +204,13 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Source**: PRD L160 (`explicitlyOutOfScope`: "License system HMAC/Trial/Grace (Phase 4)"), Product-Brief §Scope MVP-enthalten License System
 - **Description**: HMAC-Validation + Permanent + Trial + 30-Tage-Cache + 48h-Grace. Hardcoded + Obfuscated HMAC-Key im Binary (via `obfstr`-Crate). Lizenz-Cache in SQLite-Settings-Tabelle mit HMAC-Signature.
 - **Dependencies**: Keine (Cross-Platform funktionierend)
+- **Status**: Planned
+
+### OS-Keystore als Release-Default
+
+- **Source**: PRD L159 (`explicitlyOutOfScope`: "OS-Keystore as release default (Phase 4)"), Architecture §2 :247. Phase-Placement-Widerspruch 2026-04-21 zugunsten PRD aufgelöst (Andy-Call).
+- **Description**: Plain-SQLite-KeyStore (`dev-plain-keystore`-Feature, Phase 1) wird als Release-Default durch WindowsCredentialManager-Impl + Android-Keystore-Impl ersetzt. OS-Keystore-Impl existiert seit Phase-0-Gate-Closure; Swap ist Feature-Gate-Toggle + Migration-Runner.
+- **Dependencies**: Migration-Tooling
 - **Status**: Planned
 
 ### Polished-Cleanup-Plugin (neu-gebaut, nicht v1-Port)
@@ -461,3 +461,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 ## Revision-Log
 
 - **2026-04-21:** Bootstrap aus Phase-1-Closure-Review. Consolidation aus PRD-Frontmatter `explicitlyOutOfScope` (13 Items), Product-Brief Prose (P1/P2/DEFER-Listen), Distillate Phase-Definitionen, Architecture "Deferred"-Vermerke. Plus drei Review-Addenda: Audio-Cpal Precision & Correctness Hardening, Tray-Icon Extensions, Floating Pill Bar (UX-Spec-TODO).
+- **2026-04-21 (Post-Review-Follow-up):** OS-Keystore Phase-Placement zugunsten PRD Phase 4 aufgelöst (Andy-Call). Audio-Cpal-Item ergänzt um AC-3 Safety-Comment-Accuracy-Fix (Reviewer-Self-Finding).
