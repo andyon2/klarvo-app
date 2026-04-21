@@ -3,6 +3,7 @@
 pub mod audio_source;
 pub mod clock;
 pub mod env;
+pub mod event_bus_harness;
 pub mod network;
 pub mod output;
 pub mod cleanup;
@@ -19,6 +20,7 @@ pub mod vad_provider;
 pub use audio_source::MockAudioSource;
 pub use clock::FakeClock;
 pub use env::HeadlessTestEnv;
+pub use event_bus_harness::{MockErrorEmitter, assert_contains_variant, collect_emitted};
 pub use network::NoNetworkGuard;
 pub use output::InMemoryOutputTarget;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};

@@ -36,6 +36,14 @@ impl Default for FakeClock {
     }
 }
 
+/// Resolves Story 1A.1 D1 deferral: additive `Clock`-trait impl once the trait
+/// landed in `klarvo-core::time` (Story 1A.3).
+impl klarvo_core::time::Clock for FakeClock {
+    fn now_ms(&self) -> u64 {
+        self.inner.load(Ordering::Relaxed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
