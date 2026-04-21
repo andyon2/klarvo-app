@@ -33,6 +33,13 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Keine (kann parallel zu anderen Phase-2-Items laufen)
 - **Status**: Ready-for-Story-Writing
 
+### Audio-Capture-Config-Overrides via ShellConfig
+
+- **Source**: `output/planning-artifacts/epics/epic-3/story-3.7-cpal-audiosource-wireup.md` Technical Notes §Phase-2-Expansion
+- **Description**: User-konfigurierbare Audio-Settings (Sample-Rate, Channel-Count, Device-Selection) via `ShellConfig`. Phase-1 `CpalAudioSource` nutzt OS-determined defaults (`default_host().default_input_device().default_input_config()`); User-konfigurierbare Overrides sind legitimer Phase-2-Power-User-Feature. Settings-UI (Phase-2 separat) würde ShellConfig-Audio-Section editierbar machen.
+- **Dependencies**: Story 3.2 ShellConfig-Shape-Extension (neue Felder: `audio.sample_rate`, `audio.channels`, optional `audio.device_id`); `klarvo-audio-cpal/src/source.rs` CaptureConfig-Param-Threading (aktuell hardcoded via `default_input_config()`). `CpalAudioSource` als Unit-Struct muss ggf. zu `pub struct CpalAudioSource { config: AudioConfig }` erweitert werden; impliziter Test-Suite-Update (Phase-2-Story-Scope).
+- **Status**: Proposed
+
 ### Tray-Icon Extensions
 
 - **Source**: Phase-1-Review Axis #4 Tray-Scope-Discussion (2026-04-21)
@@ -462,3 +469,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 
 - **2026-04-21:** Bootstrap aus Phase-1-Closure-Review. Consolidation aus PRD-Frontmatter `explicitlyOutOfScope` (13 Items), Product-Brief Prose (P1/P2/DEFER-Listen), Distillate Phase-Definitionen, Architecture "Deferred"-Vermerke. Plus drei Review-Addenda: Audio-Cpal Precision & Correctness Hardening, Tray-Icon Extensions, Floating Pill Bar (UX-Spec-TODO).
 - **2026-04-21 (Post-Review-Follow-up):** OS-Keystore Phase-Placement zugunsten PRD Phase 4 aufgelöst (Andy-Call). Audio-Cpal-Item ergänzt um AC-3 Safety-Comment-Accuracy-Fix (Reviewer-Self-Finding).
+- **2026-04-21:** Audio-Capture-Config-Overrides added (Phase 2) — Source: Story 3.7 Technical-Notes. Welle-3-Review-Decision (Reviewer-approval).
