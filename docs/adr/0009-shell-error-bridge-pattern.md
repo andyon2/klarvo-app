@@ -243,3 +243,66 @@ Fair: Simpelste Implementation, keine Frontend-Beteiligung nötig. Rejected-Risk
 3. Memory-file `project_shell_error_bridge_pattern.md` nach ADR-Closure (outside-commit).
 4. Story-3.1-Pre-Flight: SD-4-Boot-Error-UX-Option wählen.
 5. Story-3.2: Implementation des ADR-0009-Patterns.
+
+---
+
+## Amendment 1 — 2026-04-21: ErrorEmitter-Signature formalized
+
+**Status:** Accepted
+
+### Context
+
+Sub-Decision 3 im Original-Decision-Block skizzierte `fn emit(&self, error: AppError)` als synchrone Trait-Signatur mit Full-AppError-Payload. Die Phase-1-Implementation in `klarvo-core/src/event/emitter.rs` (commit `213052d`, Story 1A.3) hat stattdessen:
+
+```rust
+#[async_trait]
+pub trait ErrorEmitter: Send + Sync + 'static {
+    async fn emit_error(&self, key: &str, ts_ms: u64);
+}
+```
+
+Weitere Abweichung vom Entwurf: **Modul-Lokation.** Das Original-Decision-Dokument schlug `klarvo-core/src/error_emitter.rs` als eigenes Modul vor. Die Impl platzierte den Trait unter `klarvo-core/src/event/emitter.rs` (re-exported als `klarvo_core::event::ErrorEmitter`) — konsistent mit dem Event-Modul-Layout (ADR-0006/0007/0008-Pattern) und dem `klarvo_test_fixtures::MockErrorEmitter`-Gegenstück.
+
+**Divergenz-Treiber (aus Impl-Erfahrung):**
+
+- **`async` statt `sync`:** Frontend-Emit via `tauri::AppHandle::emit` ist `.await`-returning. Sync-Signatur würde `block_on` erzwingen → Deadlock-Risk in tokio-managed Runtime.
+- **`key + ts_ms` statt `AppError`:** Core-Caller emittieren i18n-Keys (ref `memory/project_i18n_core_contract`); Full-`AppError`-Serialisierung wäre doppelter Payload (`message`-Field ist Log-Audience, nicht Frontend-Audience).
+- **No Return-Value:** Advisory fire-and-forget per Rustdoc-Kontrakt — Emit-Failure darf Pipeline-Run nicht abbrechen.
+
+### Amended Decision
+
+Canonical Trait-Signatur (Phase 1 und vorwärts):
+
+```rust
+#[async_trait]
+pub trait ErrorEmitter: Send + Sync + 'static {
+    async fn emit_error(&self, key: &str, ts_ms: u64);
+}
+```
+
+`app.error`-Frontend-Wire-Payload:
+
+```json
+{ "key": "error.<domain>.<variant>", "ts_ms": 12345 }
+```
+
+Frontend-i18n-Resolve erfolgt via Key-Lookup gegen die eigene i18n-Tabelle (per SD-2). `ts_ms` ist session-relative monotone Milliseconds vom Caller-Clock (ref ADR-0001/0003 Convention).
+
+Die Original-Decision bleibt für die Hybrid-C-Architektur-Invariante gültig (sync-Results + async-`app.error`-Event); nur die Trait-Signatur wird konkretisiert.
+
+**Modul-Lokation (Corrigendum):** Authoritativer Pfad: `klarvo-core/src/event/emitter.rs`. Import: `use klarvo_core::event::ErrorEmitter`. Original-Text referenzierte `klarvo-core/src/error_emitter.rs` — das ist nicht der Impl-Pfad.
+
+### Impact
+
+- `TauriErrorEmitter` (Story 3.8) implementiert diese Signatur; sein Event-Payload-Struct ist `AppErrorEventPayload { key: String, ts_ms: u64 }`.
+- Core-Callsites (z.B. Orchestrator-Error-Paths in `on_release`) rufen `.emit_error(&e.user_message.unwrap_or_default(), clock.now_ms()).await`.
+- Existing Rustdoc-Kontrakt auf `emit_error` (fire-and-forget, non-blocking) steht.
+- `klarvo_test_fixtures::MockErrorEmitter` ist bereits konform: implementiert `async fn emit_error(&self, key: &str, ts_ms: u64)` und recorded `Vec<(String, u64)>`.
+
+### Cross-References
+
+- `klarvo-core/src/event/emitter.rs` — authoritative Trait-Definition (commit `213052d`)
+- `klarvo-test-fixtures/src/event_bus_harness.rs` — `MockErrorEmitter`-Impl (konform)
+- Story 3.3 AC-E — Orchestrator-Error-Emission-Sites
+- Story 3.8 — `TauriErrorEmitter`-Impl
+- `memory/project_i18n_core_contract` — Key-Only-Payload-Policy
