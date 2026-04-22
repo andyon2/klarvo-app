@@ -2338,6 +2338,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "klarvo-shell-orchestrator"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "klarvo-core",
+ "klarvo-test-fixtures",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "klarvo-test-fixtures"
 version = "0.0.1"
 dependencies = [

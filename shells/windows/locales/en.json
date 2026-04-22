@@ -1,5 +1,7 @@
 {
   "error.config.missing": "Configuration file not found. Please create config.toml.",
   "error.config.unknown_field": "Unknown field in config.toml. Please remove unrecognized keys.",
-  "error.config.invalid_locale": "Unsupported locale. Supported values: en, de."
+  "error.config.invalid_locale": "Unsupported locale. Supported values: en, de.",
+  "error.audio.start_failed": "Failed to start audio capture. Check your microphone settings.",
+  "error.config.output_target_not_found": "Output target not found. Check the output_target_id in config.toml."
 }
