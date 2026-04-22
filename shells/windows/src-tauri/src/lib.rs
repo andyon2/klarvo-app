@@ -1,9 +1,11 @@
-//! Klarvo Windows shell — Phase-0 specta smoke surface.
+//! Klarvo Windows shell — Phase-0 specta smoke surface + Story-3.1 skeleton.
 //!
 //! Exposes a single command and a single event registered via `tauri-specta`
 //! so that `xtask generate-bindings` has a real payload to emit and
 //! `xtask lint-events` has a real event type to enforce the dot-notation
 //! rename convention against (G1 Validation-Patch).
+
+pub mod i18n;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
