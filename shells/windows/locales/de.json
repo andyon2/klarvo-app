@@ -1,1 +1,5 @@
-{}
+{
+  "error.config.missing": "TODO(de): Configuration file not found. Please create config.toml.",
+  "error.config.unknown_field": "TODO(de): Unknown field in config.toml. Please remove unrecognized keys.",
+  "error.config.invalid_locale": "TODO(de): Unsupported locale. Supported values: en, de."
+}

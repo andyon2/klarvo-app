@@ -1,1 +1,5 @@
-{}
+{
+  "error.config.missing": "Configuration file not found. Please create config.toml.",
+  "error.config.unknown_field": "Unknown field in config.toml. Please remove unrecognized keys.",
+  "error.config.invalid_locale": "Unsupported locale. Supported values: en, de."
+}
