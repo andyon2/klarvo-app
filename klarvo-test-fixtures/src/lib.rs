@@ -10,6 +10,7 @@ pub mod cleanup;
 pub mod groq_mock;
 pub mod keystore;
 pub mod manifest;
+pub mod paste;
 pub mod pipeline_stage;
 pub mod stage_type;
 pub mod stt;
@@ -26,6 +27,7 @@ pub use output::InMemoryOutputTarget;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};
 pub use groq_mock::GroqMockServer;
 pub use keystore::InMemoryKeyStore;
+pub use paste::MockPasteBackend;
 pub use manifest::{
     manifest_with_unknown_stage_toml, manifest_with_wrong_schema_version_toml,
     valid_minimal_manifest_toml, valid_passthrough_verbatim_manifest_toml,
