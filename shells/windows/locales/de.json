@@ -3,5 +3,6 @@
   "error.config.unknown_field": "TODO(de): Unknown field in config.toml. Please remove unrecognized keys.",
   "error.config.invalid_locale": "TODO(de): Unsupported locale. Supported values: en, de.",
   "error.audio.start_failed": "TODO(de): Failed to start audio capture. Check your microphone settings.",
-  "error.config.output_target_not_found": "TODO(de): Output target not found. Check the output_target_id in config.toml."
+  "error.config.output_target_not_found": "TODO(de): Output target not found. Check the output_target_id in config.toml.",
+  "error.paste.send_input_failed": "TODO(de): Paste failed. The clipboard content could not be injected into the active window."
 }

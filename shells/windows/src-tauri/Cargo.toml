@@ -30,4 +30,8 @@ specta-typescript = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+async-trait = { workspace = true }
 klarvo-core = { path = "../../../klarvo-core" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_Foundation"] }

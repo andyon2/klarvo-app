@@ -7,6 +7,8 @@
 
 pub mod config;
 pub mod i18n;
+#[cfg(target_os = "windows")]
+pub mod paste;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;

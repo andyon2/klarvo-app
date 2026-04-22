@@ -2366,6 +2366,7 @@ dependencies = [
 name = "klarvo-windows-shell"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "klarvo-core",
  "serde",
  "serde_json",
@@ -2376,6 +2377,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-specta",
  "toml 0.9.12+spec-1.1.0",
+ "windows 0.61.3",
 ]
 
 [[package]]
