@@ -25,7 +25,7 @@ dev-plain-keystore = ["klarvo-core/dev-plain-keystore"]
 tauri-build = { workspace = true }
 
 [dependencies]
-tauri = { workspace = true }
+tauri = { workspace = true, features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = { workspace = true }
 tauri-specta = { workspace = true }
 specta = { workspace = true }
@@ -38,6 +38,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 klarvo-core = { path = "../../../klarvo-core" }
 klarvo-shell-orchestrator = { path = "../../../klarvo-shell-orchestrator" }
+klarvo-plugin-verbatim = { path = "../../../klarvo-plugins/klarvo-plugin-verbatim" }
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }

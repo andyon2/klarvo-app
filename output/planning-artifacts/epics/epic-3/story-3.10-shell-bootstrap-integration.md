@@ -2,7 +2,7 @@
 name: Story 3.10 — Shell-Bootstrap-Integration + Tray-Icon Basic
 epic: 3
 story_number: "3.10"
-status: Draft
+status: Done
 dependencies:
   - "3.1"
   - "3.2"

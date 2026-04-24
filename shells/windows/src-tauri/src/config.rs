@@ -38,6 +38,16 @@ impl ShellConfig {
     }
 }
 
+impl Default for ShellConfig {
+    fn default() -> Self {
+        Self {
+            hotkey: ShellConfig::default_hotkey(),
+            output_target_id: ShellConfig::default_output_target(),
+            locale: ShellConfig::default_locale(),
+        }
+    }
+}
+
 /// Resolve `%APPDATA%\Klarvo\config.toml` from the environment.
 ///
 /// Pure resolver — does not create the directory or open the file.
