@@ -26,7 +26,7 @@ pub use network::NoNetworkGuard;
 pub use output::InMemoryOutputTarget;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};
 pub use groq_mock::GroqMockServer;
-pub use keystore::InMemoryKeyStore;
+pub use keystore::{FailingKeyStore, InMemoryKeyStore};
 pub use paste::MockPasteBackend;
 pub use manifest::{
     manifest_with_unknown_stage_toml, manifest_with_wrong_schema_version_toml,

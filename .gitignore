@@ -43,6 +43,9 @@ android/jni/build/
 .DS_Store
 Thumbs.db
 
+# Dev-mode keystore artifact (created by PlainSqliteKeyStore APPDATA-fallback in WSL)
+keystore.db
+
 # Generated assets
 social-preview.png
 

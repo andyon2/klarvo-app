@@ -264,3 +264,58 @@ ist der einzige Recover-Path.
 - ADR-0012 §SD-4 — Error-Path-Integration (Orchestrator nutzt `ErrorEmitter` für Keystore-Boot-Fail)
 - `docs/shell-error-mapping.md` — `Io`-Kind → Toast-Treatment
 - `memory/project_keystore_trait_surface` — Epic-1C-Scope (Feature-Gate, Trait-Surface)
+
+## Tasks/Subtasks
+
+- [x] Task 1 — `FailingKeyStore`-Fixture in `klarvo-test-fixtures` anlegen
+  - [x] 1.1 `FailingKeyStore` struct + `KeyStore`-Impl in `klarvo-test-fixtures/src/keystore.rs`
+  - [x] 1.2 Re-Export in `klarvo-test-fixtures/src/lib.rs`
+- [x] Task 2 — `shells/windows/src-tauri/src/keystore.rs` erstellen
+  - [x] 2.1 `default_keystore_path()` Helper (cfg-gated `dev-plain-keystore`)
+  - [x] 2.2 `make_keystore()` mit dualem Feature-Gate (AC-A)
+  - [x] 2.3 `verify_keystore_ready()` async Boot-Check (AC-B, AC-C, AC-D, AC-E)
+  - [x] 2.4 Unit-Tests: Test 1 (compile-check), Test 2 (happy-path), Test 3 (IO-fail) (AC-F)
+- [x] Task 3 — `lib.rs` und `Cargo.toml` der Windows-Shell updaten
+  - [x] 3.1 `pub mod keystore;` in `lib.rs`
+  - [x] 3.2 `[features] dev-plain-keystore` + `klarvo-test-fixtures` dev-dep in `Cargo.toml`
+- [x] Task 4 — i18n-Keys in Locale-Files eintragen (AC-G)
+  - [x] 4.1 `error.keystore.read_failed`, `error.keystore.not_found`, `error.keystore.backend_unavailable` in `locales/en.json`
+  - [x] 4.2 Gleiche Keys (TODO(de)-Marker) in `locales/de.json`
+
+## Dev Agent Record
+
+### Implementation Plan
+
+1. `FailingKeyStore` in `klarvo-test-fixtures/src/keystore.rs` ergänzt — `AppError` hat `#[derive(Clone)]` (verifiziert), daher Option (a) direkt umsetzbar.
+2. `PlainSqliteKeyStore::open_or_create()` existiert nicht — Constructor ist `open(path)`. Factory angepasst (`open(default_keystore_path())`).
+3. `default_keystore_path()` nutzt `APPDATA`-env-var analog `config.rs::resolve_config_path()`, mit Fallback auf `"keystore.db"` für CI-Umgebungen ohne APPDATA.
+4. Test 1 (`make_keystore_returns_arc_dyn_keystore`) mit `#[cfg(any(feature = "dev-plain-keystore", target_os = "windows"))]` gegated — auf Linux ohne Feature-Gate existiert kein kompilierbarer `make_keystore`-Branch.
+5. `cargo test -p klarvo-windows-shell --features dev-plain-keystore --lib` läuft auf WSL (Linux) erfolgreich — main.rs hat `compile_error!` für non-Windows, daher `--lib` flag nötig.
+
+### Completion Notes
+
+- AC-A ✅ — Factory mit dualem cfg-Gate; Rustdoc + Forward-Reference auf Story 3.10.
+- AC-B ✅ — `verify_keystore_ready` mit KEY_NOT_FOUND-Happy-Path-Match.
+- AC-C ✅ — Scope-Fence-Rustdoc auf `verify_keystore_ready`.
+- AC-D ✅ — Forward-Reference-Snippet im Rustdoc von `make_keystore`.
+- AC-E ✅ — `AppErrorKind::Io` + `"error.keystore.read_failed"` im Error-Return.
+- AC-F ✅ — 3 Tests grün: `make_keystore_returns_arc_dyn_keystore`, `verify_keystore_ready_happy_path_probe_key_absent`, `verify_keystore_ready_io_failure_maps_to_apperror_io`.
+- AC-G ✅ — 3 Keystore-Keys in `en.json` + `de.json` (inkl. `not_found` + `backend_unavailable` Nachträge).
+
+## File List
+
+- `klarvo-test-fixtures/src/keystore.rs` — `FailingKeyStore` struct + impl hinzugefügt
+- `klarvo-test-fixtures/src/lib.rs` — `pub use keystore::FailingKeyStore` re-export ergänzt
+- `shells/windows/src-tauri/src/keystore.rs` — NEU: factory + boot-check + tests
+- `shells/windows/src-tauri/src/lib.rs` — `pub mod keystore` hinzugefügt
+- `shells/windows/src-tauri/Cargo.toml` — `[features] dev-plain-keystore` + `klarvo-test-fixtures` dev-dep
+- `shells/windows/locales/en.json` — 3 Keystore-Error-Keys ergänzt
+- `shells/windows/locales/de.json` — 3 Keystore-Error-Keys (TODO(de)) ergänzt
+
+## Change Log
+
+- 2026-04-22: Story 3.9 implementiert — Windows-Keystore-Factory + Boot-Readiness-Check; `FailingKeyStore`-Fixture; 3 Unit-Tests grün; 3 i18n-Keys in beiden Locale-Files.
+
+## Status
+
+review

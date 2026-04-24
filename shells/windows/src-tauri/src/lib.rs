@@ -8,6 +8,7 @@
 pub mod bridge;
 pub mod config;
 pub mod i18n;
+pub mod keystore;
 #[cfg(target_os = "windows")]
 pub mod audio;
 #[cfg(target_os = "windows")]

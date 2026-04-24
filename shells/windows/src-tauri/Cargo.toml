@@ -18,6 +18,9 @@ path = "src/main.rs"
 name = "export-bindings"
 path = "src/bin/export_bindings.rs"
 
+[features]
+dev-plain-keystore = ["klarvo-core/dev-plain-keystore"]
+
 [build-dependencies]
 tauri-build = { workspace = true }
 
@@ -37,6 +40,7 @@ klarvo-core = { path = "../../../klarvo-core" }
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
+klarvo-test-fixtures = { path = "../../../klarvo-test-fixtures" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_Foundation"] }

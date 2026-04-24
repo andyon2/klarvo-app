@@ -55,6 +55,32 @@ impl KeyStore for InMemoryKeyStore {
     }
 }
 
+/// Fixture that always returns a predetermined `AppError` for every `KeyStore` operation.
+///
+/// Use in unit-tests to exercise error-handling branches without an OS Credential Manager.
+pub struct FailingKeyStore {
+    error: AppError,
+}
+
+impl FailingKeyStore {
+    pub fn with_error(error: AppError) -> Self {
+        Self { error }
+    }
+}
+
+#[async_trait]
+impl KeyStore for FailingKeyStore {
+    async fn get(&self, _key: &str) -> Result<SecretString, AppError> {
+        Err(self.error.clone())
+    }
+    async fn set(&self, _k: &str, _v: SecretString) -> Result<(), AppError> {
+        Err(self.error.clone())
+    }
+    async fn delete(&self, _key: &str) -> Result<(), AppError> {
+        Err(self.error.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use secrecy::ExposeSecret;
