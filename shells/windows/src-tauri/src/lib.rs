@@ -5,6 +5,7 @@
 //! `xtask lint-events` has a real event type to enforce the dot-notation
 //! rename convention against (G1 Validation-Patch).
 
+pub mod bridge;
 pub mod config;
 pub mod i18n;
 #[cfg(target_os = "windows")]

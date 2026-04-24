@@ -2377,7 +2377,9 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tauri-specta",
+ "tokio",
  "toml 0.9.12+spec-1.1.0",
+ "tracing",
  "windows 0.61.3",
 ]
 

@@ -2,7 +2,7 @@
 name: Story 3.8 — Event-Bridge-Wiring (TauriErrorEmitter + EventMirror)
 epic: 3
 story_number: "3.8"
-status: Draft
+status: review
 dependencies:
   - "3.1"
 ---
@@ -205,3 +205,69 @@ Delegate recherchiert den aktuellen Stand für den gepinnten tauri-RC aus ADR-00
 - `reference_tauri_specta_rc24_event_name` — Dot-Notation-Convention
 - `memory/project_i18n_core_contract` — Core emittiert Keys, Shell resolved
 - `memory/project_shell_runtime_model` — Single tokio-Runtime (kein zweiter Runtime für Mirror)
+
+## Tasks / Subtasks
+
+- [x] Task 1: `bridge.rs` anlegen mit `TauriErrorEmitter<R>` + `AppErrorEventPayload` + `EventMirror<R>` + Payload-Structs (AC-A, AC-B, AC-C, AC-D, AC-E, AC-G)
+  - [x] `pub struct TauriErrorEmitter<R: tauri::Runtime>` mit `new()` (AC-A)
+  - [x] `impl<R: tauri::Runtime> ErrorEmitter for TauriErrorEmitter<R>` mit korrekter async-Signatur (AC-B)
+  - [x] `AppErrorEventPayload { key, ts_ms }` als lokaler Serialize-Struct (AC-B)
+  - [x] Rustdoc mit `"app.error"`-Anker + i18n-Key-Forwarding-Hinweis (AC-C, AC-G)
+  - [x] `pub struct EventMirror<R: tauri::Runtime>` mit `new()` + `start()` + `mirror_event()` (AC-D)
+  - [x] Alle 5 Event-Variant-Dispatch-Arme mit korrekten Wire-Names (AC-E)
+  - [x] Payload-Structs für alle Variants (AC-E)
+  - [x] `tracing::warn!` für EventMirror emit-Failures (AC-E)
+- [x] Task 2: `lib.rs` — `pub mod bridge;` hinzufügen
+- [x] Task 3: `Cargo.toml` — `tokio` + `tracing` + `[dev-dependencies] tauri test-feature` (AC-F)
+- [x] Task 4: Compile-Check + `#[ignore]`-MockRuntime-Test (AC-F)
+  - [x] `_assert_error_emitter_send_sync::<TauriErrorEmitter<tauri::Wry>>()` als compile-time bound check
+  - [x] `#[tokio::test] #[ignore]` MockRuntime-Test mit Rationale-Kommentar
+
+## File List
+
+- `shells/windows/src-tauri/src/bridge.rs` (neu)
+- `shells/windows/src-tauri/src/lib.rs` (geändert: `pub mod bridge;` hinzugefügt)
+- `shells/windows/src-tauri/Cargo.toml` (geändert: `tokio`, `tracing`, `[dev-dependencies] tauri test`)
+
+## Dev Agent Record
+
+### Implementation Notes
+
+**Generic-over-Runtime Design (AC-F-Konsequenz):**  
+`TauriErrorEmitter<R: tauri::Runtime>` und `EventMirror<R: tauri::Runtime>` sind generisch über
+die Tauri-Runtime, weil `tauri::test::mock_app()` einen `AppHandle<MockRuntime>` liefert,
+nicht `AppHandle<Wry>`. Das ist idiomatisches Tauri-v2-Pattern für testbare Shell-Typen.
+Produktionscode verwendet weiterhin `TauriErrorEmitter<tauri::Wry>`.
+
+**Raw `app_handle.emit()` statt tauri-specta-Event-Macro:**  
+`AppErrorEventPayload` und die Mirror-Payloads nutzen raw `app_handle.emit("wire.name", ...)`.
+Keine `#[tauri_specta(event_name)]`-Annotation. Begründung: Diese Payloads sind interne
+Forwarding-Shapes, keine TypeScript-Bindings-generierten Typen. Specta-Codegen würde
+nichts hinzufügen außer Boilerplate.
+
+**`tauri::async_runtime::spawn` für EventMirror:**  
+Per `memory/project_shell_runtime_model` gibt es nur eine managed tokio-Runtime im Shell-Scope.
+`tauri::async_runtime::spawn` bindet den Task an diese Runtime (statt `tokio::spawn` einen
+zweiten Runtime potenziell zu öffnen).
+
+**`#[ignore]`-Test-Rationale:**  
+`tauri::test::mock_app()` kompiliert und linkt mit `features = ["test"]`. Der Test-Body ist
+nicht-leer. `#[ignore]` bleibt als CI-Sicherheitsnetz: Mock-Runtime kann auf manchen
+Headless-Runnern einen Display-Kontext benötigen.
+
+**ADR-0009-Amendment-Frage (Reviewer-Item):**  
+ADR-0009 §SD-3 dokumentiert `fn emit(&self, error: AppError)`. Der implementierte Trait hat
+`async fn emit_error(&self, key: &str, ts_ms: u64)`. Impl ist authoritative; das Story-Note
+flaggt dieses als Open Question für den Reviewer (dokumentarisches ADR-Amendment).
+
+### Completion Notes
+
+- Alle ACs (A–G) implementiert und verifiziert
+- `cargo test -p klarvo-windows-shell --lib`: 5 passed, 1 ignored (MockRuntime), 0 failed
+- `cargo test --workspace --exclude klarvo-bridge-jni --lib`: 115 passed, 1 ignored, 0 failed
+- Generic-over-Runtime ist die korrekte idiomatische Lösung für Tauri v2; macht beide Structs in Tests instantiierbar ohne Windows-Runtime
+- Keine neuen i18n-Keys registriert (AC-G-konform)
+
+## Change Log
+
+- 2026-04-24: Story 3.8 implementiert — `bridge.rs` mit `TauriErrorEmitter<R>` + `EventMirror<R>`, alle ACs A–G, 0 Regressions
