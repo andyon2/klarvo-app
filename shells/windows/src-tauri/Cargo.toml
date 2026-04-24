@@ -37,6 +37,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 klarvo-core = { path = "../../../klarvo-core" }
+klarvo-shell-orchestrator = { path = "../../../klarvo-shell-orchestrator" }
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }

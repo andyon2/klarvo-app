@@ -2369,6 +2369,7 @@ dependencies = [
  "async-trait",
  "klarvo-audio-cpal",
  "klarvo-core",
+ "klarvo-shell-orchestrator",
  "klarvo-test-fixtures",
  "serde",
  "serde_json",

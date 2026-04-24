@@ -1,5 +1,4 @@
-// tauri-plugin-global-shortcut is declared as dep here but registered in Story 3.6.
-// ADR-0011 SD-4: registration happens in .setup(..), not in a Command-Handler.
+// ADR-0011 SD-4: hotkey registration in .setup(..), not in a Command-Handler.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // AC-E: Non-Windows builds fail immediately with an actionable message rather than
@@ -16,11 +15,13 @@ fn main() {
     let i18n_table = klarvo_windows_shell::i18n::load_default();
 
     tauri::Builder::default()
+        // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4).
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
-            // Story 3.6 registers tauri-plugin-global-shortcut here
-            // (on_shortcut → orchestrator.on_press/on_release).
-            // Story 3.3 constructs SessionOrchestrator and inserts it into tauri::State here.
+            // Story 3.10 (Bootstrap-Integration) calls:
+            //   hotkey::register_hotkey(app, &config);
+            // after ShellConfig and SessionOrchestrator are inserted into tauri::State.
             app.manage(i18n_table);
             specta_builder.mount_events(app);
             Ok(())

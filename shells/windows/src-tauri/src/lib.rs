@@ -13,6 +13,8 @@ pub mod keystore;
 #[cfg(target_os = "windows")]
 pub mod audio;
 #[cfg(target_os = "windows")]
+pub mod hotkey;
+#[cfg(target_os = "windows")]
 pub mod paste;
 
 use serde::{Deserialize, Serialize};

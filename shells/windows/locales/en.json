@@ -7,5 +7,7 @@
   "error.paste.send_input_failed": "Paste failed. The clipboard content could not be injected into the active window.",
   "error.keystore.read_failed": "Secure key storage is unavailable. Please restart the application.",
   "error.keystore.not_found": "API key not found. Please set your API key in the application settings.",
-  "error.keystore.backend_unavailable": "Secure key storage backend is unavailable. Please restart the application."
+  "error.keystore.backend_unavailable": "Secure key storage backend is unavailable. Please restart the application.",
+  "error.hotkey.parse_failed": "Hotkey configuration is invalid. Please check config.toml.",
+  "error.hotkey.registration_failed": "Hotkey could not be registered. Another application may already be using it."
 }
