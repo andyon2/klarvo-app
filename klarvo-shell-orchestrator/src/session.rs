@@ -3,6 +3,7 @@ use std::sync::Arc;
 use klarvo_core::audio::{AudioEvent, AudioSource, CaptureConfig, CaptureHandle,
     DEFAULT_AUDIOEVENT_CAPACITY};
 use klarvo_core::audio::vad::VadProvider;
+use klarvo_core::event::{Event, EventBus};
 use klarvo_core::event::emitter::ErrorEmitter;
 use klarvo_core::manifest::PipelineManifest;
 use klarvo_core::output::PasteBackend;
@@ -46,6 +47,7 @@ pub struct SessionOrchestrator {
     /// Mutex-wrapped so `run_capture_session` (which takes `&mut dyn VadProvider`) can be
     /// called from a shared reference.
     vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
+    event_bus: Arc<EventBus>,
     session_state: Arc<tokio::sync::Mutex<SessionState>>,
 }
 
@@ -60,6 +62,7 @@ impl SessionOrchestrator {
         error_emitter: Arc<dyn ErrorEmitter>,
         clock: Arc<dyn Clock>,
         vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
+        event_bus: Arc<EventBus>,
     ) -> Self {
         Self {
             registry,
@@ -70,6 +73,7 @@ impl SessionOrchestrator {
             error_emitter,
             clock,
             vad,
+            event_bus,
             session_state: Arc::new(tokio::sync::Mutex::new(SessionState::Idle)),
         }
     }
@@ -107,6 +111,8 @@ impl SessionOrchestrator {
                 return;
             }
         };
+
+        self.event_bus.emit(Event::RecordingStarted { ts_ms: self.clock.now_ms() });
 
         // Clone Arcs for the pipeline task.
         let registry = Arc::clone(&self.registry);
@@ -193,6 +199,7 @@ impl SessionOrchestrator {
                 tracing::debug!("on_release called while idle; discarding (stray-release)");
             }
             SessionState::Recording { capture_handle, pipeline_task } => {
+                self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
                 // Step 4: drop CaptureHandle → broadcast sender closes →
                 // run_capture_session's receiver gets RecvError::Closed.
                 drop(capture_handle);

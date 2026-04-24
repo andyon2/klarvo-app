@@ -59,6 +59,7 @@ fn main() {
             // Step 7:  MonotonicClock (Phase-1 default Clock impl)
             // Step 8:  RmsVad (Phase-1-Default VadProvider)
             // Step 9:  parse_embedded manifest + build_plugin_registry (fatal on error)
+            //          EventBus::new (between 9 and 10 — injected into SessionOrchestrator)
             // Step 10: SessionOrchestrator::new (fatal on error)
             // Step 11: app.manage (State-insertion)
             // Step 12: Hotkey-registration (fail-soft → emit error + continue)
@@ -131,6 +132,10 @@ fn main() {
             })?);
             let registry = Arc::new(build_plugin_registry(Arc::clone(&keystore)));
 
+            // EventBus constructed here (before Step 10) so SessionOrchestrator can emit
+            // RecordingStarted/Stopped. Managed as State in Step 11 to keep sender alive.
+            let event_bus = Arc::new(EventBus::new(64));
+
             // Step 10: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
             // AC-B; type-shape mismatches are programmer errors caught at compile time)
             let orch = Arc::new(SessionOrchestrator::new(
@@ -142,6 +147,7 @@ fn main() {
                 Arc::clone(&emitter),
                 clock,
                 vad,
+                Arc::clone(&event_bus),
             ));
 
             // Step 11: State management — all slots must be registered before Step 12
@@ -163,10 +169,8 @@ fn main() {
 
             // Step 13: Tray-Icon + EventMirror spawn
             //
-            // EventBus managed as State so the broadcast sender lives for the app lifetime.
-            // Phase-1: SessionOrchestrator does not yet emit to this bus; tray/mirror tasks
-            // idle cleanly. Phase-2 wires SessionOrchestrator to emit RecordingStarted/Stopped.
-            let event_bus = Arc::new(EventBus::new(64));
+            // EventBus already constructed before Step 10 and injected into SessionOrchestrator.
+            // Managed as State so the broadcast sender lives for the app lifetime.
             let event_bus_rx_tray = event_bus.subscribe();
             let event_bus_rx_mirror = event_bus.subscribe();
             debug_assert!(app.manage(Arc::clone(&event_bus)));

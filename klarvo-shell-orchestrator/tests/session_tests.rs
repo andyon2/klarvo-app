@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use klarvo_core::audio::vad::VadDecision;
+use klarvo_core::event::{Event, EventBus};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_test_fixtures::{
     FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
@@ -26,7 +27,7 @@ plugin_id = "mock-cleanup"
 }
 
 /// Shared setup: builds a SessionOrchestrator with controllable mocks.
-/// Returns (orchestrator, output_target, paste_backend, error_emitter).
+/// Returns (orchestrator, output_target, paste_backend, error_emitter, event_bus).
 fn make_orchestrator(
     stt: Arc<dyn klarvo_core::traits::SttProvider>,
 ) -> (
@@ -34,6 +35,7 @@ fn make_orchestrator(
     Arc<InMemoryOutputTarget>,
     Arc<MockPasteBackend>,
     Arc<MockErrorEmitter>,
+    Arc<EventBus>,
 ) {
     let manifest = Arc::new(parse_manifest(test_manifest_toml()).expect("test manifest must parse"));
 
@@ -60,6 +62,7 @@ fn make_orchestrator(
     let paste_backend = Arc::new(MockPasteBackend::new());
     let error_emitter = Arc::new(MockErrorEmitter::new());
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
+    let event_bus = Arc::new(EventBus::new(64));
 
     let orch = SessionOrchestrator::new(
         registry,
@@ -70,9 +73,10 @@ fn make_orchestrator(
         Arc::clone(&error_emitter) as Arc<dyn klarvo_core::event::emitter::ErrorEmitter>,
         clock as Arc<dyn klarvo_core::time::Clock>,
         vad,
+        Arc::clone(&event_bus),
     );
 
-    (orch, output_target, paste_backend, error_emitter)
+    (orch, output_target, paste_backend, error_emitter, event_bus)
 }
 
 /// Poll until `InMemoryOutputTarget` has at least one delivery, or timeout.
@@ -106,7 +110,8 @@ async fn wait_for_error(emitter: &MockErrorEmitter) {
 #[tokio::test]
 async fn test1_happy_path_press_release_delivers_and_pastes() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, output_target, paste_backend, error_emitter) = make_orchestrator(stt);
+    let (orch, output_target, paste_backend, error_emitter, event_bus) = make_orchestrator(stt);
+    let mut rx = event_bus.subscribe();
 
     orch.on_press().await;
     wait_for_delivery(&output_target).await;
@@ -115,12 +120,18 @@ async fn test1_happy_path_press_release_delivers_and_pastes() {
     assert_eq!(output_target.last_delivered().as_deref(), Some("hello"));
     assert!(paste_backend.was_called(), "paste must be called after delivery");
     assert!(error_emitter.recorded().is_empty(), "no errors expected");
+
+    // Verify recording-state events are emitted on the EventBus.
+    let first = rx.try_recv().expect("RecordingStarted must be in bus");
+    assert!(matches!(first, Event::RecordingStarted { .. }), "first event must be RecordingStarted");
+    let second = rx.try_recv().expect("RecordingStopped must be in bus");
+    assert!(matches!(second, Event::RecordingStopped { .. }), "second event must be RecordingStopped");
 }
 
 #[tokio::test]
 async fn test2_idempotent_press_key_repeat_guard() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, output_target, _paste_backend, error_emitter) = make_orchestrator(stt);
+    let (orch, output_target, _paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
 
     orch.on_press().await;
     orch.on_press().await; // second press — must be discarded by key-repeat guard
@@ -137,7 +148,7 @@ async fn test2_idempotent_press_key_repeat_guard() {
 #[tokio::test]
 async fn test3_stray_release_is_noop() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, _output, paste_backend, error_emitter) = make_orchestrator(stt);
+    let (orch, _output, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
 
     // Release without prior press — must be a silent no-op.
     orch.on_release().await;
@@ -150,7 +161,7 @@ async fn test3_stray_release_is_noop() {
 async fn test4_pipeline_failure_emits_error_state_recovers() {
     // Empty queue → QueuedMockSttProvider returns Internal error on first call.
     let stt = Arc::new(QueuedMockSttProvider::with_transcriptions(vec![]));
-    let (orch, _, paste_backend, error_emitter) = make_orchestrator(stt);
+    let (orch, _, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
 
     orch.on_press().await;
     wait_for_error(&error_emitter).await;
