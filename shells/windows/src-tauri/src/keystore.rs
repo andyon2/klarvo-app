@@ -72,10 +72,7 @@ pub async fn verify_keystore_ready(keystore: &dyn KeyStore) -> Result<(), AppErr
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use klarvo_core::error::{AppError, AppErrorKind};
-    use klarvo_core::keystore::KeyStore;
 
     use super::*;
 
@@ -84,6 +81,8 @@ mod tests {
     #[cfg(any(feature = "dev-plain-keystore", target_os = "windows"))]
     #[test]
     fn make_keystore_returns_arc_dyn_keystore() {
+        use std::sync::Arc;
+        use klarvo_core::keystore::KeyStore;
         let _ks: Arc<dyn KeyStore> = make_keystore();
     }
 
