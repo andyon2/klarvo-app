@@ -2,7 +2,7 @@
 name: Story 3.7 — CpalAudioSource → Orchestrator Wire-Up
 epic: 3
 story_number: "3.7"
-status: Draft
+status: review
 dependencies:
   - "3.3"
 ---
@@ -166,3 +166,35 @@ einzige öffentliche Methode (via `AudioSource`-Trait).
 - ADR-0012 §SD-2 — `SessionOrchestrator`-API-Surface (Feld-Types)
 - ADR-0006 — `AudioSource`-Trait + `CaptureHandle` (Compile-Contract)
 - `memory/project_shell_runtime_model` — Single tokio-Runtime (tokio::sync::Mutex ok)
+
+## Tasks/Subtasks
+
+- [x] AC-A: Factory-Signatur `pub fn make_audio_source() -> Arc<tokio::sync::Mutex<Box<dyn AudioSource>>>` implementiert
+- [x] AC-B: `CpalAudioSource`-Wrapping + Phase-2-Forward-Reference-Kommentar
+- [x] AC-C: `#[cfg(target_os = "windows")]` mod-Gate in lib.rs + `klarvo-audio-cpal` als Windows-Target-Dep in Cargo.toml
+- [x] AC-D: Rustdoc mit Mutex-/Arc-Rationale, Story-3.10-Forward-Ref, Error-Model-Hinweis
+- [x] AC-E: Compile-Test `audio_source_factory_produces_orchestrator_compatible_type` in `#[cfg(test)]` + `#[cfg(target_os = "windows")]`
+- [x] AC-F: Scope-Fence — kein SessionOrchestrator::new(), kein AudioSource::start(), keine i18n-Keys
+- [x] AC-G: Keine neuen i18n-Keys
+
+## Dev Agent Record
+
+### Completion Notes
+
+Implementiert 2026-04-24. Alle 7 ACs erfüllt.
+
+- `make_audio_source()` delegiert direkt an `Arc::new(tokio::sync::Mutex::new(Box::new(CpalAudioSource)))` — kein Zwischenschritt, kein Config-Parameter (Phase-1-Simplicity).
+- `klarvo-audio-cpal` wurde als `[target.'cfg(target_os = "windows")'.dependencies]` ergänzt (war noch nicht vorhanden).
+- `pub mod audio` in lib.rs via `#[cfg(target_os = "windows")]` gegated — library-target kompiliert sauber auf WSL (`cargo check --lib` grün).
+- Compile-Test ist doppelt gegated (`#[cfg(test)]` + `#[cfg(target_os = "windows")]`) — läuft nur auf Windows-Target, kein false-negative in WSL-CI.
+- Audio-Config Phase-2-Forward-Reference-Kommentar direkt an der Factory-Signatur.
+
+## File List
+
+- `shells/windows/src-tauri/src/audio.rs` — neu
+- `shells/windows/src-tauri/src/lib.rs` — `#[cfg(target_os = "windows")] pub mod audio;` ergänzt
+- `shells/windows/src-tauri/Cargo.toml` — `klarvo-audio-cpal` als Windows-Target-Dep ergänzt
+
+## Change Log
+
+- 2026-04-24: Story 3.7 implementiert — `make_audio_source()` Factory + Compile-Test, `klarvo-audio-cpal`-Dep ergänzt

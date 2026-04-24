@@ -2367,6 +2367,7 @@ name = "klarvo-windows-shell"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "klarvo-audio-cpal",
  "klarvo-core",
  "serde",
  "serde_json",
