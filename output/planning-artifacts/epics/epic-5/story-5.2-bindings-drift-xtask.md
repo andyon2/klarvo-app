@@ -280,7 +280,23 @@ Two unit tests: `artificial_drift_detected` (RAII `tempfile::NamedTempFile`), `i
 
 ### Story-Spec-Abweichungen
 
-None.
+**AC-A — `render()` ist nicht "reine Funktion ohne Datei-I/O" (Amendment 2026-04-26)**
+
+AC-A textual: *"`pub fn render() -> Result<String, ...>`, die den TS-Output ohne Datei-I/O als String zurückgibt."*
+
+Tatsächliche Implementation: `render()` ruft `cargo run --bin export-bindings` als Child-Process auf, der `shells/windows/src/bindings/index.ts` direkt überschreibt (vom `tauri-specta`-Binary vorgegeben, kein konfigurierbarer Output-Pfad — Technical Notes Lines 174-186 sind hier korrekt). `render()` liest die Datei dann zurück und liefert den Inhalt als String.
+
+**Kompensation:** `bindings_drift::run()` snapshotet den committed-Inhalt vor dem `render()`-Aufruf und schreibt ihn nach Drift-Detection (oder Render-Failure) zurück (`write_to_disk(&committed)`). Aus Konsumenten-Sicht ist das Verhalten "no permanent side effects" — die transiente I/O ist invisible außer in race-conditions mit concurrent xtask-Invocations (deferred F17).
+
+**Amended AC-A wording:** *"`render()` gibt den TS-Output als String zurück. Etwaige Datei-I/O des darunterliegenden `export-bindings`-Binaries wird via Snapshot-Restore in `bindings_drift::run()` kompensiert, sodass der committed-Pfad nach jedem `bindings-drift`-Lauf unverändert bleibt."*
+
+**Auslöser:** Code-Review 2026-04-26, Decision D1 (Variante 1 — Amendment statt Refactor).
+
+---
+
+**B1-Patch (Forcing-Sentinel-Tests, Code-Review 2026-04-26)**
+
+`artificial_drift_detected` und `in_sync_returns_no_drift` waren ursprünglich tautologisch (Test-eigene String-Literale ohne Production-Logic-Aufruf). B1-Patch extrahiert `check_drift(committed, generated, path) -> bool` aus `run()`; Tests rufen jetzt direkt `check_drift` auf. Wenn `committed == generated` invertiert würde, regredieren beide Tests — Forcing-Sentinel-Doktrin (`feedback_ci_gate_philosophy`) wieder erfüllt. AC-G unverändert; nur Test-Implementation aktualisiert.
 
 ## File List
 

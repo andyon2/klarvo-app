@@ -406,6 +406,36 @@ error caught before first commit; fix applied immediately.
 `upstream_5xx`/`upstream_4xx` vs `upstream_unavailable` discrepancy pre-documented in Story 4.4 Dev Agent
 Record. G3 Sub-Lint A/B follows code as source-of-truth; no manual adjustment needed.
 
+---
+
+**AC-B — `in_keys_mod`-Restriction als rationale Filter-Heuristik (Amendment 2026-04-26)**
+
+AC-B textual fordert die Sammlung *"alle gefundenen i18n-Keys"* als Code-Quelle für den G3-B Forward-Drift-Check. Die Implementation beschränkt die Const-Sammlung auf Konstanten innerhalb von `mod keys { … }`-Blöcken (inline-modules) — nicht jede `pub const … : &str = "…"` im Code wird gesammelt.
+
+**Begründung:**
+- KEY_REGEX `^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$` matched auch nicht-i18n-Konstanten wie `"com.klarvo.voice"` (Tauri-App-Identifier), `"config.json"` (Filename), `"shells.windows.locales"` (Path-Fragmente). Ohne Restriction würden diese als false-positives in `code_keys` landen und G3-B Forward-Drift-Violations für Pfade auslösen, die keine i18n-Keys sind.
+- Die `mod keys { … }`-Convention ist in `klarvo-core` und `klarvo-plugins/*` etabliert (Precedent: `memory/project_keystore_trait_surface` 1C.1-pattern).
+
+**Amended AC-B wording:** Die Const-Sammlung folgt der `mod keys { … }`-Convention. Konstanten außerhalb von `keys`-Modulen werden nicht erfasst, auch wenn sie `KEY_REGEX` matchen — diese Heuristik vermeidet false-positives auf Plugin-Identifier, Filenames und Path-Fragmente, die strukturell wie i18n-Keys aussehen.
+
+**Folge-Patch P6 (Filename-Heuristik):** Initial wurde die Restriction ausschließlich über `visit_item_mod` mit `node.ident == "keys"` durchgesetzt. Das erfasste **nur inline** `mod keys { ... }`-Blöcke, nicht aber file-basierte `pub mod keys;`-Deklarationen, deren Inhalt in einer separaten `keys.rs` liegt. Klarvo nutzt 4 solcher Module in `klarvo-core/src/{audio,output,keystore,v1_import}/keys.rs`. P6 schließt die Lücke via Filename-Heuristik: Wenn die geparste Datei `keys.rs` heißt, wird `in_keys_mod` zu Beginn auf `true` gesetzt. Verifiziert über `g3a_file_based_keys_module_collected`-Test.
+
+**Auslöser:** Code-Review 2026-04-26, Decision D2 (Variante 3 — Restriction behalten + Filename-Heuristik für file-basierte Module).
+
+---
+
+**AC-B Position 2 — `#[default = "..."]`-Attribute Implementation (D3I, 2026-04-26)**
+
+AC-B listet drei positive-case-Positionen für G3-A; Position 2 (`#[default = "..."]` auf Struct-Fields/Enum-Variants) war initial nicht implementiert. D3I-Patch ergänzt `visit_field` + `visit_variant` in `UserStringVisitor` mit `extract_default_attribute_string`-Helper. Behandlung analog zu `user_message`-Position: `is_key`-Match → `code_keys`-Insert, sonst Violation. Verifiziert über vier neue Tests (`g3a_default_attr_*`).
+
+**Auslöser:** Code-Review 2026-04-26, Decision D3 (Variante 2 — Implementation statt Spec-Streichung).
+
+---
+
+**P7 — File/Line-Origin in G3-B Violation-Messages (2026-04-26)**
+
+AC-D Beispiel-Output zeigt file:line in der Violation-Message. Initial wurde nur der Key + en.json-Absence gelogged. P7 ergänzt die Origin-Info: `code_keys` ist jetzt `BTreeMap<String, (PathBuf, line)>`, G3-B Violation-Message zeigt `key "..." emitted in <repo-relative-path>:<line> but absent from en.json`. AC-D Wording bleibt unverändert.
+
 ## File List
 
 - `xtask/src/lint_events.rs` — rewritten: added G3-A, G3-B, G3-C sub-lints; `in_keys_mod` false-positive fix; 14 tests
