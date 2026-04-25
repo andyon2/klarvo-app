@@ -8,6 +8,12 @@ use klarvo_core::{AppError, AppErrorKind};
 /// All fields have sensible defaults so an empty `config.toml` is valid.
 /// `#[serde(deny_unknown_fields)]` rejects unrecognised keys immediately with a
 /// clear error (ref `feedback_manifest_compile_contract`).
+///
+/// Story 4.1 replaced the single `locale` field with three independent i18n axes
+/// (`ui_language`/`dictionary_language`/`output_language`) per FR26 and
+/// `memory/project_i18n_three_axes`. v1→v2 config-migration is Epic 7 scope;
+/// Phase-1 has no live testers (ref `memory/project_ea_withdrawn`), so a hard
+/// replace without a `#[serde(alias = "locale")]` shim is acceptable.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ShellConfig {
@@ -19,9 +25,22 @@ pub struct ShellConfig {
     #[serde(default = "ShellConfig::default_output_target")]
     pub output_target_id: String,
 
-    /// UI locale; supported values: `en`, `de`.
-    #[serde(default = "ShellConfig::default_locale")]
-    pub locale: String,
+    /// UI-language axis (Shell-rendered strings). Supported values: `en`, `de`.
+    /// Consumed by Story 4.2 for locale-aware i18n-table loading.
+    #[serde(default = "ShellConfig::default_ui_language")]
+    pub ui_language: String,
+
+    /// Dictionary-language axis (Plugin-Dictionary-Lookups). Supported values: `en`, `de`.
+    /// Phase-1: not consumed by any plugin. Phase-2+ will route this into
+    /// dictionary-aware STT/cleanup plugins (PRD FR26 axis 2).
+    #[serde(default = "ShellConfig::default_dictionary_language")]
+    pub dictionary_language: String,
+
+    /// Output-language axis (Cleanup-Stage target language). Supported values: `en`, `de`.
+    /// Phase-1: not consumed by any plugin. Phase-2+ will route this into
+    /// cleanup/translation plugins (PRD FR26 axis 3).
+    #[serde(default = "ShellConfig::default_output_language")]
+    pub output_language: String,
 }
 
 impl ShellConfig {
@@ -33,7 +52,15 @@ impl ShellConfig {
         "clipboard".to_string()
     }
 
-    fn default_locale() -> String {
+    fn default_ui_language() -> String {
+        "en".to_string()
+    }
+
+    fn default_dictionary_language() -> String {
+        "en".to_string()
+    }
+
+    fn default_output_language() -> String {
         "en".to_string()
     }
 }
@@ -43,7 +70,9 @@ impl Default for ShellConfig {
         Self {
             hotkey: ShellConfig::default_hotkey(),
             output_target_id: ShellConfig::default_output_target(),
-            locale: ShellConfig::default_locale(),
+            ui_language: ShellConfig::default_ui_language(),
+            dictionary_language: ShellConfig::default_dictionary_language(),
+            output_language: ShellConfig::default_output_language(),
         }
     }
 }
@@ -86,13 +115,19 @@ fn parse_from_str(raw: &str) -> Result<ShellConfig, AppError> {
         }
     })?;
 
-    if !matches!(config.locale.as_str(), "en" | "de") {
-        return Err(AppError {
-            kind: AppErrorKind::Configuration,
-            message: format!("unsupported locale: {}", config.locale),
-            user_message: Some("error.config.invalid_locale".to_string()),
-            retryable: false,
-        });
+    for (field_name, value) in [
+        ("ui_language", &config.ui_language),
+        ("dictionary_language", &config.dictionary_language),
+        ("output_language", &config.output_language),
+    ] {
+        if !matches!(value.as_str(), "en" | "de") {
+            return Err(AppError {
+                kind: AppErrorKind::Configuration,
+                message: format!("unsupported {field_name}: {value}"),
+                user_message: Some("error.config.invalid_language".to_string()),
+                retryable: false,
+            });
+        }
     }
 
     Ok(config)
@@ -136,7 +171,9 @@ mod tests {
         let cfg = parse_from_str("").unwrap();
         assert_eq!(cfg.hotkey, "CommandOrControl+Shift+Space");
         assert_eq!(cfg.output_target_id, "clipboard");
-        assert_eq!(cfg.locale, "en");
+        assert_eq!(cfg.ui_language, "en");
+        assert_eq!(cfg.dictionary_language, "en");
+        assert_eq!(cfg.output_language, "en");
     }
 
     #[test]
@@ -144,12 +181,16 @@ mod tests {
         let cfg = parse_from_str(
             "hotkey = \"CommandOrControl+Shift+Space\"\n\
              output_target_id = \"clipboard\"\n\
-             locale = \"en\"",
+             ui_language = \"de\"\n\
+             dictionary_language = \"en\"\n\
+             output_language = \"de\"",
         )
         .unwrap();
         assert_eq!(cfg.hotkey, "CommandOrControl+Shift+Space");
         assert_eq!(cfg.output_target_id, "clipboard");
-        assert_eq!(cfg.locale, "en");
+        assert_eq!(cfg.ui_language, "de");
+        assert_eq!(cfg.dictionary_language, "en");
+        assert_eq!(cfg.output_language, "de");
     }
 
     #[test]
@@ -159,11 +200,52 @@ mod tests {
         assert_eq!(err.user_message.as_deref(), Some("error.config.unknown_field"));
     }
 
+    /// After Story 4.1 hard-replace, the legacy `locale` field is itself an unknown field —
+    /// so providing it (regardless of value) trips `deny_unknown_fields`, not the
+    /// per-axis validation. v1→v2 config-migration is Epic 7 scope; Phase-1 has no
+    /// live testers (`memory/project_ea_withdrawn`).
     #[test]
-    fn invalid_locale_rejected() {
+    fn legacy_locale_field_rejected_as_unknown_field() {
         let err = parse_from_str("locale = \"fr\"").unwrap_err();
         assert!(matches!(err.kind, AppErrorKind::Configuration));
-        assert_eq!(err.user_message.as_deref(), Some("error.config.invalid_locale"));
+        assert_eq!(err.user_message.as_deref(), Some("error.config.unknown_field"));
+    }
+
+    #[test]
+    fn invalid_ui_language_rejected() {
+        let err = parse_from_str("ui_language = \"fr\"").unwrap_err();
+        assert!(matches!(err.kind, AppErrorKind::Configuration));
+        assert_eq!(err.user_message.as_deref(), Some("error.config.invalid_language"));
+        assert!(err.message.contains("ui_language"), "message should identify failing axis: {}", err.message);
+    }
+
+    #[test]
+    fn invalid_dictionary_language_rejected() {
+        let err = parse_from_str("dictionary_language = \"es\"").unwrap_err();
+        assert!(matches!(err.kind, AppErrorKind::Configuration));
+        assert_eq!(err.user_message.as_deref(), Some("error.config.invalid_language"));
+        assert!(err.message.contains("dictionary_language"), "message should identify failing axis: {}", err.message);
+    }
+
+    #[test]
+    fn invalid_output_language_rejected() {
+        let err = parse_from_str("output_language = \"it\"").unwrap_err();
+        assert!(matches!(err.kind, AppErrorKind::Configuration));
+        assert_eq!(err.user_message.as_deref(), Some("error.config.invalid_language"));
+        assert!(err.message.contains("output_language"), "message should identify failing axis: {}", err.message);
+    }
+
+    #[test]
+    fn mixed_languages_independent_axes() {
+        let cfg = parse_from_str(
+            "ui_language = \"de\"\n\
+             dictionary_language = \"en\"\n\
+             output_language = \"de\"",
+        )
+        .unwrap();
+        assert_eq!(cfg.ui_language, "de");
+        assert_eq!(cfg.dictionary_language, "en");
+        assert_eq!(cfg.output_language, "de");
     }
 
     #[test]
