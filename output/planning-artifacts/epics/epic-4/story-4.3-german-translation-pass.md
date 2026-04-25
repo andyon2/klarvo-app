@@ -2,7 +2,7 @@
 name: Story 4.3 — Deutsche Übersetzungen Pass
 epic: 4
 story_number: "4.3"
-status: Draft
+status: review
 dependencies:
   - "3.1"
 ---
@@ -160,3 +160,26 @@ selbst nur den Übersetzungs-String spiegeln würde.
   Teil des Bestands; sonst nachzuziehen)
 - `memory/feedback_skip_with_rationale` — Phase-2-Polish ist Skippable, „nicht peinlich"
   ist Phase-1-Goal
+
+## Tasks/Subtasks
+
+- [x] Task 1 — Alle TODO(de)-Marker in `de.json` durch echte deutsche Strings ersetzen (AC-A, AC-B, AC-C)
+  - [x] 1.1 13 Keys ohne `TODO(de):`-Prefix formuliert, Stil-Guideline AC-B eingehalten
+  - [x] 1.2 JSON-Validität bestätigt (`cargo build -p klarvo-windows-shell --lib` grün)
+
+## Dev Agent Record
+
+### Completion Notes
+
+- AC-A ✅ — alle 13 Keys übersetzt, kein `TODO(de):` mehr vorhanden.
+- AC-B ✅ — formelles „Sie", technische Bezeichner (`config.toml`, `output_target_id`, `Hotkey`, `API`) englisch belassen.
+- AC-C ✅ — JSON valide, `cargo build -p klarvo-windows-shell --lib` grün (Boot-Validation in i18n::load() sauber).
+- AC-E (Smoke) — manuell, außerhalb des Commit-Scopes.
+
+## File List
+
+- `shells/windows/locales/de.json` — alle 13 Keys von TODO-Markern auf echte deutsche Strings umgestellt.
+
+## Change Log
+
+- 2026-04-25: Story 4.3 implementiert — deutsche Übersetzungen für alle 13 Bestand-Keys in `de.json`; kein Code-Touch; Build grün.
