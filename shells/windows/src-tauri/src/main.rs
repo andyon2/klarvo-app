@@ -21,6 +21,7 @@ fn main() {
     use tauri::image::Image;
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
+    use tauri::Manager;
 
     use klarvo_windows_shell::audio::make_audio_source;
     use klarvo_windows_shell::bridge::{EventMirror, TauriErrorEmitter};

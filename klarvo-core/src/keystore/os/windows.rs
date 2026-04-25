@@ -115,7 +115,7 @@ impl KeyStore for WindowsKeystore {
         let target_wide = to_wide(&target);
         let mut cred_ptr: *mut CREDENTIALW = std::ptr::null_mut();
 
-        match unsafe { CredReadW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, 0, &mut cred_ptr) } {
+        match unsafe { CredReadW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, Some(0), &mut cred_ptr) } {
             Err(e) if is_not_found(&e) => Err(key_not_found_err(key)),
             Err(e) => Err(backend_unavailable_err(e)),
             Ok(()) => {
@@ -166,7 +166,7 @@ impl KeyStore for WindowsKeystore {
         let target = self.target_name(key);
         let target_wide = to_wide(&target);
 
-        match unsafe { CredDeleteW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, 0) } {
+        match unsafe { CredDeleteW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, Some(0)) } {
             Ok(()) => Ok(()),
             Err(e) if is_not_found(&e) => Ok(()), // idempotent — key already absent
             Err(e) => Err(backend_unavailable_err(e)),
