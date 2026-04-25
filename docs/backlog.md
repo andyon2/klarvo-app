@@ -138,6 +138,13 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Plugin-Author-Persona aktiv (Phase-2-Timing)
 - **Status**: Planned
 
+### i18n-Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen
+
+- **Source**: Story 4.4 AC-G (2026-04-25)
+- **Description**: Story 4.4 manueller Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen, sobald G3 ausgerollt ist. `REQUIRED_KEYS` in `shells/windows/src-tauri/src/i18n.rs::tests` ist manuell gewartet; neue `error.*`-Konstanten in Core oder Plugins müssen manuell ergänzt werden. FR34 / Epic 5 G3 Lint-Gate (`cargo xtask lint-events`) soll das via AST-Parse automatisch extrahieren.
+- **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass), G3-Gate-Rollout
+- **Status**: Planned
+
 ### Windows-Compile-CI-Gate für klarvo-core windows-cfg + klarvo-windows-shell
 
 - **Source**: Epic-3-Code-Review-Pass-Followup (2026-04-25, commit `0b5306e`)

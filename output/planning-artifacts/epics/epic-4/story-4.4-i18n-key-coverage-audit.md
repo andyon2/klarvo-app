@@ -2,7 +2,7 @@
 name: Story 4.4 — i18n-Key-Coverage-Audit (FR28/FR30/FR31)
 epic: 4
 story_number: "4.4"
-status: Draft
+status: review
 dependencies:
   - "4.1"
 ---
@@ -283,3 +283,59 @@ Test-Lokation in der Shell macht G3-Boundary-Compliance natürlich.
   Stub für G3-Lint-Gate)
 - `memory/feedback_commit_hygiene` — Audit-Artefakt unter `_bmad-output/implementation-artifacts/`
 - Epic 5 FR34 (forward-ref) — G3 Lint-Gate ersetzt manuelle `REQUIRED_KEYS`-Liste in Phase-1+
+
+## Tasks/Subtasks
+
+- [x] Task 1 — Audit-Doc erstellen (AC-A)
+  - [x] 1.1 `user_message`-Emit-Sites greppen in `klarvo-core/`, `klarvo-plugins/`, `shells/windows/src-tauri/src/`
+  - [x] 1.2 Inventar + Delta vs. `en.json` in `_bmad-output/implementation-artifacts/i18n-coverage-audit-2026-04-25.md`
+- [x] Task 2 — `error.keystore.key_missing` hinzufügen (AC-B)
+  - [x] 2.1 `en.json` + `de.json` ergänzt
+- [x] Task 3 — Pipeline-Fehler-Keys registrieren (AC-C)
+  - [x] 3.1 5 Keys in `en.json` + `de.json`
+- [x] Task 4 — Audio + Output + STT-Plugin-Keys registrieren (AC-D)
+  - [x] 4.1 Audio: `error.audio.device_unavailable`, `error.audio.unsupported_format`
+  - [x] 4.2 Output: `error.output.target_not_found`, `error.output.clipboard_unavailable`
+  - [x] 4.3 STT: 8 Keys (`network/timeout/rate_limited/auth_failed/invalid_audio/key_not_configured/upstream_5xx/upstream_4xx`)
+- [x] Task 5 — `error.config.invalid_locale` entfernen (AC-E)
+  - [x] 5.1 Aus `en.json` und `de.json` gelöscht
+- [x] Task 6 — Coverage-Test einführen (AC-F)
+  - [x] 6.1 REQUIRED_KEYS-Konstante (30 Keys) + 4 Tests in `i18n::tests`
+  - [x] 6.2 Spec-Abweichung dokumentiert: `upstream_5xx`+`upstream_4xx` statt `upstream_unavailable`
+- [x] Task 7 — AC-G + Backlog-Eintrag (AC-G)
+  - [x] 7.1 Backlog-Eintrag in `docs/backlog.md` eingefügt
+- [x] Task 8 — Build + Tests verifizieren
+  - [x] 8.1 `cargo test -p klarvo-windows-shell --lib` 17/17 grün (9 config + 8 i18n), 1 ignored
+
+## Dev Agent Record
+
+### Completion Notes
+
+- AC-A ✅ — Audit-Doc erstellt: vollständiges Key-Inventar + Delta + Story-Spec-Delta-Note.
+- AC-B ✅ — `error.keystore.key_missing` in `en.json` + `de.json`.
+- AC-C ✅ — 5 Pipeline-Keys in beiden Locale-Files.
+- AC-D ✅ — 10 Audio/Output/STT-Keys in beiden Locale-Files. DE-Strings ohne TODO-Marker.
+- AC-E ✅ — `error.config.invalid_locale` aus beiden Locale-Files entfernt.
+- AC-F ✅ — 4 Coverage-Tests + REQUIRED_KEYS (30 Einträge) in `i18n::tests`; 17/17 Tests grün.
+- AC-G ✅ — Backlog-Eintrag + Audit-Doc-Notiz zur manuellen REQUIRED_KEYS-Wartung.
+- AC-H ✅ — Neue DE-Keys ohne TODO-Marker; Merge mit 4.3-Translations für Bestand-Keys.
+
+### Story-Spec-Abweichung
+
+Story-Spec AC-F/AC-D listet `error.stt.upstream_unavailable`; tatsächlicher Code in
+`klarvo-plugin-groq/src/lib.rs:54,58` verwendet `error.stt.upstream_5xx` (UPSTREAM_5XX) und
+`error.stt.upstream_4xx` (UPSTREAM_4XX). `upstream_unavailable` taucht nur in einem
+Test-Fixture auf (`klarvo-shell-orchestrator/tests/e2e_test.rs:247`), ist kein Production-Emit.
+REQUIRED_KEYS folgt dem Code als Source-of-Truth → 30 Keys statt 29.
+
+## File List
+
+- `shells/windows/locales/en.json` — 18 neue Keys, `error.config.invalid_locale` entfernt (30 Keys total)
+- `shells/windows/locales/de.json` — 18 neue Keys (finale DE-Strings), `error.config.invalid_locale` entfernt; Bestand-Keys mit 4.3-Übersetzungen (Merge)
+- `shells/windows/src-tauri/src/i18n.rs` — REQUIRED_KEYS (30 Einträge) + 4 Coverage-Tests in `tests`-Modul
+- `docs/backlog.md` — neuer Backlog-Eintrag für Epic-5-FR34-Ablösung
+- `_bmad-output/implementation-artifacts/i18n-coverage-audit-2026-04-25.md` — Audit-Doc
+
+## Change Log
+
+- 2026-04-25: Story 4.4 implementiert — 18 neue i18n-Keys, 1 Orphan entfernt, 4-Test-Coverage-Gate; 17/17 Tests grün; Spec-Abweichung upstream_5xx/4xx dokumentiert.

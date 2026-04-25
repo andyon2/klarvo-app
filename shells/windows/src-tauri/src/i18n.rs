@@ -46,6 +46,106 @@ pub fn load(ui_language: &str) -> Arc<I18nTable> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    // Manually maintained until Epic 5 FR34 (cargo xtask lint-events) replaces this list with
+    // AST-based extraction. New error.* constants in core or plugins MUST be added here in the
+    // same PR — PR reviewer should ask for the locale-file diff alongside any new constant.
+    //
+    // Audit source: _bmad-output/implementation-artifacts/i18n-coverage-audit-2026-04-25.md
+    // Spec delta: story AC-F listed `error.stt.upstream_unavailable`; actual Groq plugin emits
+    // `error.stt.upstream_5xx` + `error.stt.upstream_4xx` (klarvo-plugin-groq/src/lib.rs:54,58).
+    const REQUIRED_KEYS: &[&str] = &[
+        "error.config.missing",
+        "error.config.unknown_field",
+        "error.config.invalid_language",
+        "error.config.output_target_not_found",
+        "error.audio.start_failed",
+        "error.audio.device_unavailable",
+        "error.audio.unsupported_format",
+        "error.paste.send_input_failed",
+        "error.keystore.read_failed",
+        "error.keystore.not_found",
+        "error.keystore.backend_unavailable",
+        "error.keystore.key_missing",
+        "error.hotkey.parse_failed",
+        "error.hotkey.registration_failed",
+        "error.pipeline.toml_parse_failure",
+        "error.pipeline.schema_version_unsupported",
+        "error.pipeline.unknown_stage_type",
+        "error.pipeline.plugin_not_found",
+        "error.pipeline.stage_type_mismatch",
+        "error.output.target_not_found",
+        "error.output.clipboard_unavailable",
+        "error.stt.network",
+        "error.stt.timeout",
+        "error.stt.rate_limited",
+        "error.stt.auth_failed",
+        "error.stt.invalid_audio",
+        "error.stt.key_not_configured",
+        "error.stt.upstream_5xx",
+        "error.stt.upstream_4xx",
+        "tray.menu.exit",
+    ];
+
+    #[test]
+    fn en_json_covers_all_required_keys() {
+        let table: I18nTable = serde_json::from_str(EN_JSON).expect("en.json must be valid JSON");
+        let mut missing = Vec::new();
+        for &key in REQUIRED_KEYS {
+            if !table.contains_key(key) {
+                missing.push(key);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "en.json is missing required keys: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn de_json_covers_same_key_set() {
+        let en: I18nTable = serde_json::from_str(EN_JSON).expect("en.json must be valid JSON");
+        let de: I18nTable = serde_json::from_str(DE_JSON).expect("de.json must be valid JSON");
+        let en_keys: BTreeSet<&str> = en.keys().map(String::as_str).collect();
+        let de_keys: BTreeSet<&str> = de.keys().map(String::as_str).collect();
+        let en_only: Vec<&&str> = en_keys.difference(&de_keys).collect();
+        let de_only: Vec<&&str> = de_keys.difference(&en_keys).collect();
+        assert!(
+            en_only.is_empty() && de_only.is_empty(),
+            "Key-set mismatch — en-only: {en_only:?}, de-only: {de_only:?}"
+        );
+    }
+
+    #[test]
+    fn no_orphan_keys_in_en_json() {
+        let table: I18nTable = serde_json::from_str(EN_JSON).expect("en.json must be valid JSON");
+        let allowed: BTreeSet<&str> = REQUIRED_KEYS.iter().copied().collect();
+        let orphans: Vec<&str> = table
+            .keys()
+            .map(String::as_str)
+            .filter(|k| !allowed.contains(k))
+            .collect();
+        assert!(
+            orphans.is_empty(),
+            "en.json contains orphan keys not in REQUIRED_KEYS: {orphans:?}. \
+             Add to REQUIRED_KEYS if the emit site exists, or remove from en.json."
+        );
+    }
+
+    #[test]
+    fn no_todo_markers_in_en_json() {
+        let table: I18nTable = serde_json::from_str(EN_JSON).expect("en.json must be valid JSON");
+        let todo_keys: Vec<(&str, &str)> = table
+            .iter()
+            .filter(|(_, v)| v.starts_with("TODO"))
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert!(
+            todo_keys.is_empty(),
+            "en.json has TODO markers (en is the authoritative master): {todo_keys:?}"
+        );
+    }
 
     #[test]
     fn load_en_returns_en_table() {
