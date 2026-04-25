@@ -2,7 +2,7 @@
 name: Story 5.4 — `xtask verify-release` Hardening (FR35)
 epic: 5
 story_number: "5.4"
-status: review
+status: done
 dependencies:
   - "phase-0-complete"
 ---

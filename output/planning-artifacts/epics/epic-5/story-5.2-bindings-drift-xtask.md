@@ -2,7 +2,7 @@
 name: Story 5.2 — `cargo xtask bindings-drift` (FR33)
 epic: 5
 story_number: "5.2"
-status: review
+status: done
 dependencies:
   - "3.1"
 ---

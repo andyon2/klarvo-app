@@ -2,7 +2,7 @@
 name: Story 5.3 — `cargo xtask lint-events` G3-Erweiterung (FR34)
 epic: 5
 story_number: "5.3"
-status: review
+status: done
 dependencies:
   - "4.4"
   - "1A.4"

@@ -2,7 +2,7 @@
 name: Story 5.1 — `cargo xtask manifest-strict` Gate (FR32)
 epic: 5
 story_number: "5.1"
-status: review
+status: done
 dependencies: []
 ---
 
