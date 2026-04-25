@@ -1,0 +1,15 @@
+{
+  "error.config.missing": "Konfigurationsdatei nicht gefunden. Bitte legen Sie config.toml an.",
+  "error.config.unknown_field": "Unbekanntes Feld in config.toml. Bitte entfernen Sie nicht erkannte Schlüssel.",
+  "error.config.invalid_locale": "Nicht unterstützte Sprache. Erlaubte Werte: en, de.",
+  "error.config.invalid_language": "Nicht unterstützte Sprache. Erlaubte Werte: en, de.",
+  "error.audio.start_failed": "Audioaufnahme konnte nicht gestartet werden. Bitte prüfen Sie Ihre Mikrofon-Einstellungen.",
+  "error.config.output_target_not_found": "Ausgabeziel nicht gefunden. Bitte prüfen Sie output_target_id in config.toml.",
+  "error.paste.send_input_failed": "Einfügen fehlgeschlagen. Der Zwischenablage-Inhalt konnte nicht in das aktive Fenster eingefügt werden.",
+  "error.keystore.read_failed": "Sicherer Schlüsselspeicher nicht verfügbar. Bitte starten Sie die Anwendung neu.",
+  "error.keystore.not_found": "API-Schlüssel nicht gefunden. Bitte hinterlegen Sie den Schlüssel in den Einstellungen.",
+  "error.keystore.backend_unavailable": "Schlüsselspeicher-Backend nicht verfügbar. Bitte starten Sie die Anwendung neu.",
+  "error.hotkey.parse_failed": "Hotkey-Konfiguration ungültig. Bitte prüfen Sie config.toml.",
+  "error.hotkey.registration_failed": "Hotkey konnte nicht registriert werden. Möglicherweise verwendet ihn eine andere Anwendung.",
+  "tray.menu.exit": "Beenden"
+}
