@@ -268,3 +268,78 @@ Paste) werden von ihren jeweiligen Stories registriert.
 - `memory/project_shell_session_lifecycle` — 7-Step-Topology authoritativ
 - `memory/project_shell_runtime_model` — Single tokio-Runtime, broadcast non-blocking
 - `feedback_scaffold_fail_soft_pattern` — structured AppError statt `todo!()`/panic
+
+## Amendment 2026-04-25 — EventBus Injection + 3-State Recording Lifecycle
+
+After this story shipped (commit `70bf362`), `SessionOrchestrator` was extended
+with an `EventBus` dependency so subscribers (Tray-Indicator per Story 3.10
+AC-F, EventMirror per Story 3.8 AC-D) can observe recording-lifecycle
+transitions without coupling to the orchestrator. A subsequent amendment
+(commit `95a96e1`) added a third variant to complete the lifecycle.
+
+### Constructor — additional dependency
+
+`SessionOrchestrator::new(...)` takes a 9th argument:
+
+- `event_bus: Arc<EventBus>` — `Arc<klarvo_core::event::EventBus>`
+  (broadcast-channel per ADR-0007). Cloned into the spawned pipeline-task so
+  emissions outlive the caller.
+
+### 3-State Recording Lifecycle
+
+The `Event` enum (`klarvo-core::event::bus::Event`) exposes three variants that
+together cover one push-to-talk cycle:
+
+| Variant | When emitted | Meaning |
+|---|---|---|
+| `RecordingStarted { ts_ms }` | `on_press`, after `audio_source.start()` succeeds | audio capture has begun |
+| `RecordingStopped { ts_ms }` | `on_release`, before `drop(capture_handle)` | recording phase ended (audio capture is winding down) — **not** system-idle |
+| `RecordingCompleted { ts_ms }` | end of pipeline-task, all exit paths | one PTT cycle is fully complete (delivery, error, or accidental-trigger no-op) |
+
+Semantic distinction: `Stopped` ≠ system-idle. Between `Stopped` and `Completed`
+the pipeline task is still draining (STT, cleanup, output, paste). Subscribers
+that need "system back to idle" semantics must wait for `Completed`, not
+`Stopped`. This is why Story 3.10 AC-F drives a 3-state tray indicator (see
+Story 3.10 Spec-Amendment 2026-04-25).
+
+### Emission ordering
+
+Within `on_press`:
+1. `audio_source.start()` succeeds (else `error.audio.start_failed`, no event)
+2. `event_bus.emit(RecordingStarted { ts_ms })`
+3. spawn pipeline-task
+
+Within the pipeline-task (spawned in `on_press`):
+1. `run_capture_session(...)` returns
+2. result-handling (delivery, paste, or error-emission)
+3. `event_bus.emit(RecordingCompleted { ts_ms })` — **all exit paths**, including
+   accidental-trigger (`Ok(None)`) and `Err`-paths
+
+Within `on_release`:
+1. extract `Recording { capture_handle, pipeline_task }` from state, replace with `Idle`
+2. `event_bus.emit(RecordingStopped { ts_ms })`
+3. `drop(capture_handle)` (signals audio task to close the broadcast channel)
+4. `drop(pipeline_task)` (detaches; task continues asynchronously)
+
+`Stopped` and `Completed` race against each other: `Stopped` fires from the
+caller of `on_release` (hotkey-callback or test-task); `Completed` fires from
+the detached pipeline-task. The order between them is non-deterministic. What
+is guaranteed: `Started` is the first event of the cycle, and exactly one of
+each variant fires per cycle.
+
+### Scope
+
+This amendment supersedes the `RecordingStarted`/`RecordingStopped`-only mention
+implicit in AC-E. AC-B's struct-shape gains an `event_bus: Arc<EventBus>` field;
+AC-E's pipeline-task pseudocode gains the three emission sites above; AC-F's
+Test 1 (Happy-Path) asserts the Started-first invariant plus presence of both
+`Stopped` and `Completed` via a race-tolerant `try_recv` polling drain.
+
+Cross-refs:
+- Code: `klarvo-core/src/event/bus.rs` (variant definitions + per-variant rustdoc),
+  `klarvo-shell-orchestrator/src/session.rs` (emission sites),
+  `klarvo-shell-orchestrator/tests/session_tests.rs::test1_happy_path_press_release_delivers_and_pastes`
+  (race-tolerant assertion).
+- Memory: `project_event_ts_ms_convention` (session-relative ts_ms),
+  `project_shell_runtime_model` (broadcast non-blocking).
+- ADR: ADR-0007 (broadcast-bus), ADR-0009 §SD-1 (subscribe-emit pattern).

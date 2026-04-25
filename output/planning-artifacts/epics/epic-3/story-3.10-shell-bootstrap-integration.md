@@ -250,7 +250,15 @@ und EventMirror-Spawn. App startet im Idle-State; erste Hotkey-Press triggert de
               CoreEvent::RecordingStarted { .. } => {
                   let _ = tray_handle.set_icon(Some(recording_icon.clone()));
               }
+              // Spec-Amendment 2026-04-25: 3-state indicator — Stopped retains
+              // recording icon as "processing" placeholder until pipeline drains;
+              // tray returns to idle on RecordingCompleted, not RecordingStopped
+              // (see Story 3.3 Amendment 2026-04-25 for lifecycle semantics).
+              // Phase-2-Branding ships a distinct processing icon (e.g. spinner overlay).
               CoreEvent::RecordingStopped { .. } => {
+                  let _ = tray_handle.set_icon(Some(recording_icon.clone()));
+              }
+              CoreEvent::RecordingCompleted { .. } => {
                   let _ = tray_handle.set_icon(Some(idle_icon.clone()));
               }
               _ => {}
