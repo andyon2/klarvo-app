@@ -35,6 +35,15 @@ impl Event {
     }
 }
 
+/// Default broadcast capacity for the [`EventBus`].
+///
+/// Sized for typical Phase-1 burst: hotkey-press + RecordingStarted +
+/// per-stage start/complete events + RecordingStopped within a single
+/// PTT cycle. Subscribers that lag past this watermark observe
+/// `RecvError::Lagged`; tray and EventMirror tasks are expected to drain
+/// well below it.
+pub const DEFAULT_EVENT_BUS_CAPACITY: usize = 64;
+
 /// Non-blocking broadcast bus for [`Event`] values.
 ///
 /// Backed by `tokio::sync::broadcast`; `emit` ignores `SendError::Receivers`

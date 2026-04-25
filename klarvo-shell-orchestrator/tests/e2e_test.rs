@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use klarvo_core::audio::vad::VadDecision;
 use klarvo_core::error::{AppError, AppErrorKind};
-use klarvo_core::event::EventBus;
+use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_core::time::MonotonicClock;
 use klarvo_test_fixtures::{
@@ -75,7 +75,7 @@ fn make_test_orchestrator_with_custom_stt(
     let paste_backend = Arc::new(MockPasteBackend::new());
     let error_emitter = Arc::new(MockErrorEmitter::new());
     let clock: Arc<dyn klarvo_core::time::Clock> = Arc::new(MonotonicClock::new());
-    let event_bus = Arc::new(EventBus::new(64));
+    let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
     let orch = SessionOrchestrator::new(
         registry,

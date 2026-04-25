@@ -14,7 +14,7 @@ fn main() {
     use std::sync::Arc;
 
     use klarvo_core::audio::vad::RmsVad;
-    use klarvo_core::event::EventBus;
+    use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
     use klarvo_core::keystore::KeyStore;
     use klarvo_core::time::MonotonicClock;
     use klarvo_shell_orchestrator::SessionOrchestrator;
@@ -132,7 +132,7 @@ fn main() {
 
             // EventBus constructed here (before Step 10) so SessionOrchestrator can emit
             // RecordingStarted/Stopped. Managed as State in Step 11 to keep sender alive.
-            let event_bus = Arc::new(EventBus::new(64));
+            let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
             // Step 10: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
             // AC-B; type-shape mismatches are programmer errors caught at compile time)

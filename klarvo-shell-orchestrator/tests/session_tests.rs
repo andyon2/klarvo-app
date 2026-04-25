@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use klarvo_core::audio::vad::VadDecision;
-use klarvo_core::event::{Event, EventBus};
+use klarvo_core::event::{Event, EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_test_fixtures::{
     FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
@@ -62,7 +62,7 @@ fn make_orchestrator(
     let paste_backend = Arc::new(MockPasteBackend::new());
     let error_emitter = Arc::new(MockErrorEmitter::new());
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
-    let event_bus = Arc::new(EventBus::new(64));
+    let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
     let orch = SessionOrchestrator::new(
         registry,
