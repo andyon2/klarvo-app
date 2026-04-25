@@ -11,10 +11,34 @@ use crate::i18n;
 ///
 /// `ts_ms` is session-relative monotone milliseconds per ADR-0001 and
 /// `memory/project_event_ts_ms_convention`.
+///
+/// # Recording lifecycle
+///
+/// A push-to-talk cycle emits a fixed three-event sequence:
+///
+/// 1. [`Event::RecordingStarted`] — audio capture began (`AudioSource::start`
+///    returned `Ok`). Subscribers reflect "user is recording" state.
+/// 2. [`Event::RecordingStopped`] — audio capture ended on hotkey-release
+///    (`CaptureHandle` dropped → broadcast sender closed). Pipeline processing
+///    may still be running; subscribers should NOT treat this as "system idle".
+/// 3. [`Event::RecordingCompleted`] — pipeline task finished, regardless of
+///    outcome (delivered, no-speech, or error). Subscribers reflecting end-to-end
+///    completion (tray idle, "Klarvo ready" UI) consume this event.
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// Audio capture has started after a successful `AudioSource::start`.
+    /// Emitted synchronously inside `on_press` before the pipeline task spawns.
     RecordingStarted { ts_ms: u64 },
+    /// Audio capture has stopped on hotkey-release. The `CaptureHandle` has
+    /// been dropped, signalling the audio task to exit. Pipeline processing
+    /// may still be running asynchronously; for end-to-end completion listen
+    /// for [`Event::RecordingCompleted`] instead.
     RecordingStopped { ts_ms: u64 },
+    /// Pipeline processing has finished. Emitted from the detached pipeline
+    /// task after delivery / no-speech-discard / error-emit, regardless of
+    /// outcome. Subscribers reflecting "system idle" UI consume this event.
+    /// `ts_ms` reflects pipeline-completion time, not hotkey-release time.
+    RecordingCompleted { ts_ms: u64 },
     PipelineStageStarted { stage_type: String, ts_ms: u64 },
     PipelineStageCompleted { stage_type: String, ts_ms: u64 },
     /// `error_key` MUST be a valid i18n key (validated via `Event::error_emitted`

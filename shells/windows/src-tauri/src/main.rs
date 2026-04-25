@@ -133,7 +133,8 @@ fn main() {
             let registry = Arc::new(build_plugin_registry());
 
             // EventBus constructed here (before Step 10) so SessionOrchestrator can emit
-            // RecordingStarted/Stopped. Managed as State in Step 11 to keep sender alive.
+            // recording-lifecycle events (Started/Stopped/Completed). Managed as State
+            // in Step 11 to keep sender alive.
             let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
             // Step 10: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
@@ -200,7 +201,13 @@ fn main() {
                 })
                 .build(app)?;
 
-            // Recording-state indicator: switch tray icon on RecordingStarted/RecordingStopped.
+            // Recording-state indicator: 3-state switch following the recording lifecycle
+            // (see `Event` doc-comment in klarvo-core/src/event/bus.rs).
+            //   Started   → recording icon (red).
+            //   Stopped   → recording icon (placeholder for "processing" — pipeline is
+            //               still draining; audio capture has ended). TODO Phase-2-Branding:
+            //               distinct processing icon (e.g. red mic + spinner overlay).
+            //   Completed → idle icon (gray) — pipeline task has fully exited.
             // Subscribes independently from EventMirror (Step 13b) per AC-G separation requirement.
             let tray_handle = tray.clone();
             let idle_icon_tray = idle_icon.clone();
@@ -214,6 +221,12 @@ fn main() {
                             let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
                         }
                         Event::RecordingStopped { .. } => {
+                            // Processing placeholder — same red icon until Phase-2 ships
+                            // a distinct processing icon. Tray returns to idle on
+                            // RecordingCompleted, not on RecordingStopped.
+                            let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
+                        }
+                        Event::RecordingCompleted { .. } => {
                             let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
                         }
                         _ => {}

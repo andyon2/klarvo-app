@@ -121,11 +121,43 @@ async fn test1_happy_path_press_release_delivers_and_pastes() {
     assert!(paste_backend.was_called(), "paste must be called after delivery");
     assert!(error_emitter.recorded().is_empty(), "no errors expected");
 
-    // Verify recording-state events are emitted on the EventBus.
-    let first = rx.try_recv().expect("RecordingStarted must be in bus");
-    assert!(matches!(first, Event::RecordingStarted { .. }), "first event must be RecordingStarted");
-    let second = rx.try_recv().expect("RecordingStopped must be in bus");
-    assert!(matches!(second, Event::RecordingStopped { .. }), "second event must be RecordingStopped");
+    // Recording-lifecycle contract (klarvo-core/src/event/bus.rs `Event` doc):
+    //   Started → fires synchronously inside on_press (deterministic-first).
+    //   Stopped → fires synchronously inside on_release.
+    //   Completed → fires from the detached pipeline task once it exits.
+    // Stopped and Completed race each other (one is in the test task, the other
+    // in the spawned pipeline task), so order between them is non-deterministic.
+    // We assert Started-first + presence of both Stopped and Completed.
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match rx.try_recv() {
+            Ok(e) => events.push(e),
+            Err(_) => {
+                let saw_stopped = events.iter().any(|e| matches!(e, Event::RecordingStopped { .. }));
+                let saw_completed = events.iter().any(|e| matches!(e, Event::RecordingCompleted { .. }));
+                if events.first().is_some() && saw_stopped && saw_completed {
+                    break;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    panic!("expected Started/Stopped/Completed within 2s; got {events:?}");
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+    }
+    assert!(
+        matches!(events.first(), Some(Event::RecordingStarted { .. })),
+        "first event must be RecordingStarted; got {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e, Event::RecordingStopped { .. })),
+        "RecordingStopped must be emitted on hotkey-release; got {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e, Event::RecordingCompleted { .. })),
+        "RecordingCompleted must be emitted after pipeline task exits; got {events:?}"
+    );
 }
 
 #[tokio::test]

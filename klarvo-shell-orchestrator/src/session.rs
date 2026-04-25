@@ -122,6 +122,7 @@ impl SessionOrchestrator {
         let paste_backend = Arc::clone(&self.paste_backend);
         let error_emitter = Arc::clone(&self.error_emitter);
         let clock = Arc::clone(&self.clock);
+        let event_bus = Arc::clone(&self.event_bus);
 
         let pipeline_task = tokio::spawn(async move {
             let mut vad_guard = vad.lock().await;
@@ -134,7 +135,10 @@ impl SessionOrchestrator {
                     let text = match stage_data {
                         StageData::Text(t) => t,
                         // Audio variant not expected at pipeline output — swallow silently.
-                        _ => return,
+                        _ => {
+                            event_bus.emit(Event::RecordingCompleted { ts_ms: clock.now_ms() });
+                            return;
+                        }
                     };
                     match registry.output(&output_target_id) {
                         Some(target) => {
@@ -175,6 +179,12 @@ impl SessionOrchestrator {
                         .await;
                 }
             }
+
+            // Pipeline processing finished — emit RecordingCompleted regardless of
+            // outcome so "system idle" subscribers (tray, Phase-2 progress UI) can
+            // return to idle state. Distinct from RecordingStopped (audio-capture
+            // termination) per the recording-lifecycle contract on `Event`.
+            event_bus.emit(Event::RecordingCompleted { ts_ms: clock.now_ms() });
         });
 
         // Re-acquire state lock to transition to Recording.

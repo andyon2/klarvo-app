@@ -51,6 +51,11 @@ struct RecordingStoppedPayload {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct RecordingCompletedPayload {
+    ts_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct PipelineStageStartedPayload {
     stage_type: String,
     ts_ms: u64,
@@ -147,6 +152,9 @@ impl<R: tauri::Runtime> EventMirror<R> {
             Event::RecordingStopped { ts_ms } => self
                 .app_handle
                 .emit("recording.stopped", &RecordingStoppedPayload { ts_ms }),
+            Event::RecordingCompleted { ts_ms } => self
+                .app_handle
+                .emit("recording.completed", &RecordingCompletedPayload { ts_ms }),
             Event::PipelineStageStarted { stage_type, ts_ms } => self.app_handle.emit(
                 "pipeline.stage_started",
                 &PipelineStageStartedPayload { stage_type, ts_ms },
