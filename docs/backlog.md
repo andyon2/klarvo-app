@@ -138,11 +138,32 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Plugin-Author-Persona aktiv (Phase-2-Timing)
 - **Status**: Planned
 
-### i18n-Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen
+### i18n-Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen [CLOSED 5.3]
 
 - **Source**: Story 4.4 AC-G (2026-04-25)
 - **Description**: Story 4.4 manueller Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen, sobald G3 ausgerollt ist. `REQUIRED_KEYS` in `shells/windows/src-tauri/src/i18n.rs::tests` ist manuell gewartet; neue `error.*`-Konstanten in Core oder Plugins müssen manuell ergänzt werden. FR34 / Epic 5 G3 Lint-Gate (`cargo xtask lint-events`) soll das via AST-Parse automatisch extrahieren.
 - **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass), G3-Gate-Rollout
+- **Status**: CLOSED 5.3 — G3-Sub-Lint B übernimmt seit Story 5.3 die mechanische Key-Drift-Prüfung
+
+### [Phase-2-Cleanup] REQUIRED_KEYS-Konstante und manuellen i18n-Coverage-Test entfernen
+
+- **Source**: Story 5.3 AC-G (2026-04-25)
+- **Description**: `REQUIRED_KEYS`-Konstante und die zugehörigen Tests (`en_json_covers_all_required_keys`, `no_orphan_keys_in_en_json`) aus `shells/windows/src-tauri/src/i18n.rs` entfernen; durch G3-Sub-Lint-B-Ausgabe (`cargo xtask lint-events`) ersetzt (Story 5.3). Entfernung erst nach Verifikation, dass G3-Sub-Lint alle Shell-Emit-Sites mitabdeckt oder ein Shell-G3-Pass eingeführt ist.
+- **Dependencies**: G3-Sub-Lint B stabil + Verifikation Shell-Emit-Site-Coverage
+- **Status**: Ready-for-Story-Writing
+
+### `bindings-drift --fix`: Auto-Rewrite des committed File
+
+- **Source**: Story 5.2 AC-F (2026-04-25)
+- **Description**: `cargo xtask bindings-drift --fix` soll automatisch `generate-bindings` aufrufen und das committed File überschreiben. Aktuell ist `bindings-drift` ein Read-Only-Check (Exit 1 + Handlungsaufforderung). `--fix` würde Developer-Ergonomics verbessern.
+- **Dependencies**: Story 5.2 implementiert (Basis vorhanden)
+- **Status**: Planned
+
+### verify-release: Tauri-Bundle-Profile-spezifische Feature-Detection
+
+- **Source**: Story 5.4 Technical Notes (2026-04-25)
+- **Description**: `cargo xtask verify-release` prüft aktuell Default-Feature-Resolution via `cargo metadata`. Tauri-Bundle aktiviert intern spezifische Feature-Flags beim Release-Build (Profile-spezifisch). Eine `--profile release`-vs-Development-Profile-Prüfung würde die Feature-Detection schärfen und Profile-spezifische `dev-*`-Aktivierungen zuverlässiger fangen.
+- **Dependencies**: Tauri-Bundle-Verhalten analysieren (unter welchen Umständen aktiviert Bundle dev-*-Features?); Phase-1-Baseline ist ausreichend für aktuelle Feature-Surface
 - **Status**: Planned
 
 ### PluginError-Variant-zu-i18n-Key-Mapping
@@ -520,3 +541,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **2026-04-21 (Post-Review-Follow-up):** OS-Keystore Phase-Placement zugunsten PRD Phase 4 aufgelöst (Andy-Call). Audio-Cpal-Item ergänzt um AC-3 Safety-Comment-Accuracy-Fix (Reviewer-Self-Finding).
 - **2026-04-21:** Audio-Capture-Config-Overrides added (Phase 2) — Source: Story 3.7 Technical-Notes. Welle-3-Review-Decision (Reviewer-approval).
 - **2026-04-25:** Epic-4-Code-Review-Followup: zwei neue Phase-2-Items — (a) PluginError-Variant-zu-i18n-Key-Mapping (P1-Wurzel: 5/6 Varianten setzen `user_message: None`); (b) Audit-Grep-Erweiterung für `unwrap_or`-Fallback-Keys (Method-Lücke aus Story-4.4-Coverage-Audit). Drei Defer-Items (F11 TOML-Type-Mismatch-UX, F12 eager-Validation-Regression-Test, F13 symmetric TODO-Marker-Test für DE) in `_bmad-output/implementation-artifacts/deferred-work.md`.
+- **2026-04-25 (Epic-5):** Story 5.2 AC-F: `bindings-drift --fix` Phase-2-Planned. Story 5.3 AC-G: Story-4.4-Eintrag als `[CLOSED 5.3]` markiert; Phase-2-Cleanup-Story für REQUIRED_KEYS-Entfernung angelegt. Story 5.4 Technical Notes: Tauri-Bundle-Profile-Detection als Phase-2-Planned eingetragen.

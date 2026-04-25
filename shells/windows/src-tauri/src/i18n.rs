@@ -48,9 +48,14 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    // Manually maintained until Epic 5 FR34 (cargo xtask lint-events) replaces this list with
-    // AST-based extraction. New error.* constants in core or plugins MUST be added here in the
-    // same PR — PR reviewer should ask for the locale-file diff alongside any new constant.
+    // NOTE(5.3): G3-Sub-Lint B (cargo xtask lint-events) prüft seit Story 5.3
+    // mechanisch, ob Code-Emit-Sites in klarvo-core + klarvo-plugins in en.json
+    // registriert sind. Diese Konstante und die zugehörigen Tests sind eine
+    // überlappende manuelle Absicherung; Entfernung in einer Phase-2-Cleanup-Story.
+    //
+    // Manually maintained until the Phase-2-Cleanup-Story removes this list.
+    // New error.* constants in core or plugins MUST be added here in the same PR
+    // — PR reviewer should ask for the locale-file diff alongside any new constant.
     //
     // Audit source: _bmad-output/implementation-artifacts/i18n-coverage-audit-2026-04-25.md
     // Spec delta: story AC-F listed `error.stt.upstream_unavailable`; actual Groq plugin emits
