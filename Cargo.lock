@@ -2343,6 +2343,7 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "klarvo-core",
+ "klarvo-plugin-verbatim",
  "klarvo-test-fixtures",
  "thiserror 2.0.18",
  "tokio",

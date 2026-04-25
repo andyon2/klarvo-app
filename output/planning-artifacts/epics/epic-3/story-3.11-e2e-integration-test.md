@@ -2,7 +2,7 @@
 name: Story 3.11 — E2E-Integration-Test (Headless)
 epic: 3
 story_number: "3.11"
-status: Draft
+status: Done
 dependencies:
   - "3.10"
 ---
