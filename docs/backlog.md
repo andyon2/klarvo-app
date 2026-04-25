@@ -166,6 +166,27 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Trait-Surface-Stability-Pass (Phase 2), WASM-Host-Choice (wasmtime, wasmer, etc.)
 - **Status**: Planned (explorativ, könnte auch Phase 3+ werden)
 
+### Live-Locale-Switch (Hot-Reload)
+
+- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25); Story 4.2 AC-E
+- **Description**: `ui_language` (und ggf. die anderen Sprach-Achsen) beim laufenden Betrieb wechseln ohne App-Neustart. Phase-1-Constraint: Locale wird einmalig beim Boot aus `ShellConfig` geladen (`shells/windows/src-tauri/src/i18n.rs`); ein Hot-Reload-Pfad fehlt. Tray-Menu-Labels würden bei Locale-Wechsel live aktualisiert. Abhängig von Settings-Panel (UI-Trigger) oder Datei-Watcher auf `config.toml`.
+- **Dependencies**: Minimales Settings-Panel (Phase-2) oder File-Watcher-Integration
+- **Status**: Planned
+
+### Signierter Installer / MSI-Distribution
+
+- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25)
+- **Description**: Phase-1 hat keinen signierten Installer — Tester bekommen eine rohe `klarvo.exe` oder bauen selbst. Für Sanity-Tester ohne Rust-Toolchain ist das eine Hürde. Phase-2-Deliverable: signiertes MSI oder NSIS-Installer-Bundle (Tauri `tauri build --bundles msi` / `nsis`). Code-Signing-Zertifikat ist separater Dependency.
+- **Dependencies**: Code-Signing-Zertifikat, Windows-Build-Pipeline (CI-Gate G6 oder lokal)
+- **Status**: Planned
+
+### Hotkey-Konflikt-Erkennung
+
+- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25)
+- **Description**: Phase-1 emittiert bei Hotkey-Kollision `error.hotkey.registration_failed` als Toast — User muss den Konflikt selbst lösen und `config.toml` manuell anpassen. Phase-2-UX: (a) Beim Boot-Fehler direkt den konfliktierenden Prozess nennen (Windows `RegisterHotKey` liefert keinen Eigentümer — Workaround via `GetForegroundWindow` / Accessibility-API oder User-Hint im Toast); (b) Settings-Panel mit „Hotkey ändern"-Dialog, der sofort auf Registrierungsfehler reagiert.
+- **Dependencies**: Minimales Settings-Panel (Phase-2)
+- **Status**: Planned
+
 ---
 
 ## Phase 3 — Android daily usable

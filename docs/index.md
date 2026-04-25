@@ -24,6 +24,10 @@ Generiert: 2026-04-13 | Version: 0.5.0 | Scan: Deep
 - **Entry Point Backend:** `src-tauri/src/lib.rs`
 - **Entry Point Android:** `android/kotlin-src/.../MainActivity.kt`
 
+## Onboarding
+
+- [Sanity-Tester Onboarding](./sanity-tester-onboarding.md) — Erste Schritte für nicht-Developer-Tester (deutsch): Cold-Start-Pfad, Smoke-Checklist, bekannte Phase-1-Einschränkungen
+
 ## Generierte Dokumentation
 
 - [Projektuebersicht](./project-overview.md) — Zusammenfassung, Features, Tech-Stack, Status

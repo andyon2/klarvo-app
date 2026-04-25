@@ -2,13 +2,30 @@
 name: Story 4.5 — Sanity-Tester Cold-Start Doku (PRD Journey 4)
 epic: 4
 story_number: "4.5"
-status: Draft
+status: Done
 dependencies:
   - "4.1"
   - "4.2"
   - "4.3"
   - "4.4"
 ---
+
+## Implementation Notes
+
+Deliverables committed:
+- `docs/sanity-tester-onboarding.md` (neu, deutsch, AC-A/B/C/D/E/F erfüllt)
+- `docs/index.md` — Onboarding-Sektion mit Verweis auf obiges Doc (AC-E)
+- `docs/backlog.md` — 3 neue Phase-2-Items: Live-Locale-Switch, Signierter Installer, Hotkey-Konflikt-Erkennung (AC-D/F)
+
+Kein Code-Touch — `git diff --stat -- '*.rs'` ist leer (AC-F).
+
+**AC-G (Manual-Smoke-Run) — ausstehend:**
+Phase-1-Pipeline ist passthrough-only (kein STT verdrahtet) — der Diktat-Zyklus erzeugt
+noch keinen Text in der Zwischenablage. Mindestens folgende AC-G-Pflicht-Items müssen
+manuell auf Windows verifiziert werden bevor Story als vollständig geschlossen gilt:
+1. First-Start ohne Config → englischer Default-State + Tray-Icon „Exit"
+2. Config mit `ui_language = "de"` → Tray-Menu „Beenden"
+3. Config mit Tippfehler-Schlüssel → deutscher Error-Toast `error.config.unknown_field`
 
 # Story 4.5: Sanity-Tester Cold-Start Doku
 
