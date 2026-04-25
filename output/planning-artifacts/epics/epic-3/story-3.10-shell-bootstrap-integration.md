@@ -42,7 +42,7 @@ und EventMirror-Spawn. App startet im Idle-State; erste Hotkey-Press triggert de
   /// Step 4: TauriErrorEmitter::new
   /// Step 5: make_audio_source
   /// Step 6: WinSendInputPasteBackend
-  /// Step 7: SystemClock
+  /// Step 7: MonotonicClock (Phase-1 default Clock impl)
   /// Step 8: RmsVad (Phase-1-Default VadProvider)
   /// Step 9: parse_embedded manifest + build_plugin_registry (fatal on error)
   /// Step 10: SessionOrchestrator::new (fatal on error)
@@ -106,8 +106,11 @@ und EventMirror-Spawn. App startet im Idle-State; erste Hotkey-Press triggert de
   (Story 3.7 — zero-arg; `CpalAudioSource` ist Unit-Struct per Amendment-2 ADR-0009)
 - **Step 6:** `let paste: Arc<dyn PasteBackend> = Arc::new(WinSendInputPasteBackend);`
   (Story 3.5 — Unit-Struct; Story 3.4 definiert das Trait in `klarvo-core`)
-- **Step 7:** `let clock: Arc<dyn Clock> = Arc::new(SystemClock::default());`
-  (Phase-0-Default aus `klarvo-core::clock`)
+- **Step 7:** `let clock: Arc<dyn Clock> = Arc::new(MonotonicClock::new());`
+  (Phase-1-Default aus `klarvo-core::time`; ADR-0001 / ADR-0003 +
+  `memory/project_event_ts_ms_convention` — session-relative monotone ms.
+  *Spec-Amendment 2026-04-25:* ursprünglich `SystemClock::default()` — der Type
+  existiert nicht in `klarvo-core`; korrekt ist `MonotonicClock`.)
 - **Step 8:** `let vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>> = Arc::new(tokio::sync::Mutex::new(Box::new(klarvo_core::audio::vad::RmsVad::new())));`
   Phase-1-Default-VadProvider ist `RmsVad` (einzige konkrete Impl in `klarvo-core::audio::vad`).
   Rustdoc: `// Phase-1 default VAD: RmsVad (energy threshold). Phase-2+ may substitute SileroVad.`
@@ -308,7 +311,7 @@ und EventMirror-Spawn. App startet im Idle-State; erste Hotkey-Press triggert de
       // This test only needs to compile — no assertions.
       fn _assert_types_compile() {
           use klarvo_shell_orchestrator::SessionOrchestrator;
-          use klarvo_core::clock::SystemClock;
+          use klarvo_core::time::MonotonicClock;
           use klarvo_core::audio::vad::RmsVad;
           // Type-annotation ensures these types are importable and compatible.
           let _: fn(

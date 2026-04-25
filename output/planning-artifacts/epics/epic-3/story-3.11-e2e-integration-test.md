@@ -52,7 +52,7 @@ Multi-Cycle-Independence, Key-Repeat-Guard, Stray-Release und Pipeline-Mid-Fail-
   | `PluginRegistry` + `klarvo-plugin-verbatim` | **Real** | Exerciseert echte Cleanup-Stage (passthrough-semantics validiert) |
   | `PipelineManifest` (STT+Cleanup, minimal) | **Real** | `parse_from_str` mit valider TOML |
   | `RmsVad` | **Real** | Phase-1-Default; `MockVadProvider` würde nur unsere Mock-Logic testen |
-  | `SystemClock` | **Real** | ts_ms-Derivation nicht Mock-abhängig machen |
+  | `MonotonicClock` | **Real** | Phase-1-Default-Clock (ADR-0001/0003 + `memory/project_event_ts_ms_convention`); ts_ms-Derivation nicht Mock-abhängig machen. *Spec-Amendment 2026-04-25:* ursprünglich `SystemClock` — Type existiert nicht in klarvo-core; korrekt ist `MonotonicClock`. |
   | `MockAudioSource` | **Mock** | liefert synthetic Audio-Chunks (kein echtes Mikrofon) |
   | `MockSttProvider` | **Mock** | returniert fixierten Text; echtes STT = Cloud-Call = teuer + flaky |
   | `InMemoryOutputTarget` | **Real Fixture** | verifizierbar ohne Side-Effects |
@@ -89,7 +89,7 @@ Multi-Cycle-Independence, Key-Repeat-Guard, Stray-Release und Pipeline-Mid-Fail-
   ```
   /// Constructs SessionOrchestrator with real pipeline (verbatim plugin) and mocked
   /// OS boundaries (Audio, STT, Paste, ErrorEmitter). Real VAD (RmsVad) and Clock
-  /// (SystemClock) validate production-path behavior.
+  /// (MonotonicClock) validate production-path behavior.
   ```
 
 ### AC-C — Scenario-1: Happy-Path End-to-End
