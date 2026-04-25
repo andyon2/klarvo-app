@@ -31,14 +31,12 @@ fn main() {
 
     /// Construct the `PluginRegistry` with all Phase-1 plugins registered.
     ///
-    /// `_keystore` parameter is reserved for Phase-2 Groq-plugin registration.
-    /// Groq-plugin stubs are commented below for Epic-2 (Story 2.1/2.2) reference.
-    fn build_plugin_registry(_keystore: Arc<dyn KeyStore>) -> klarvo_core::registry::PluginRegistry {
+    /// Epic-2 (Story 2.1/2.2) will re-introduce a `keystore: Arc<dyn KeyStore>`
+    /// parameter for Groq-plugin registration:
+    ///   `klarvo_plugin_groq::register_stt(&mut registry, keystore.clone());`
+    fn build_plugin_registry() -> klarvo_core::registry::PluginRegistry {
         let mut registry = klarvo_core::registry::bootstrap();
         klarvo_plugin_verbatim::register(&mut registry);
-        // Epic-2 registers GroqStt + GroqCleanup here (Story 2.1/2.2):
-        // klarvo_plugin_groq::register_stt(&mut registry, _keystore.clone());
-        // klarvo_plugin_groq::register_cleanup(&mut registry, _keystore.clone());
         registry
     }
 
@@ -130,7 +128,7 @@ fn main() {
                 tracing::error!(error = %e, "manifest parse failed");
                 e
             })?);
-            let registry = Arc::new(build_plugin_registry(Arc::clone(&keystore)));
+            let registry = Arc::new(build_plugin_registry());
 
             // EventBus constructed here (before Step 10) so SessionOrchestrator can emit
             // RecordingStarted/Stopped. Managed as State in Step 11 to keep sender alive.

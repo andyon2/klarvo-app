@@ -106,7 +106,7 @@ fn make_test_orchestrator_with_handles() -> (
 async fn wait_for_delivery(target: &InMemoryOutputTarget) {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if target.all_delivered().len() > 0 {
+            if !target.all_delivered().is_empty() {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
