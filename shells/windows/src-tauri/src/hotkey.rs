@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use klarvo_core::event::ErrorEmitter;
-use klarvo_core::time::MonotonicClock;
+use klarvo_core::time::Clock;
 use klarvo_shell_orchestrator::SessionOrchestrator;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -27,11 +27,13 @@ use crate::config::ShellConfig;
 /// without a hotkey (ADR-0009 SD-4, ADR-0011 SD-4).
 pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellConfig) {
     let handle = app.handle().clone();
-    let clock = MonotonicClock::new();
-    // Pull the shared error-emitter from the managed-state slot established in
-    // the bootstrap closure (main.rs Step 11). Single source-of-truth per ADR-0009 SD-1
-    // — keeps Phase-2 emitter-side concerns (rate-limit / dedup) in one place.
+    // Pull the shared error-emitter and clock from the managed-state slots
+    // established in the bootstrap closure (main.rs Step 11).
+    // - Emitter: single ADR-0009-SD-1 source-of-truth (rate-limit / dedup land here in Phase-2).
+    // - Clock: shared session-baseline so hotkey-error `ts_ms` stays comparable
+    //   with orchestrator-emitted Recording* events (project_event_ts_ms_convention).
     let emitter: Arc<dyn ErrorEmitter> = app.state::<Arc<dyn ErrorEmitter>>().inner().clone();
+    let clock: Arc<dyn Clock> = app.state::<Arc<dyn Clock>>().inner().clone();
 
     // AC-B: parse hotkey string → Shortcut.
     let shortcut = match Shortcut::from_str(&config.hotkey) {

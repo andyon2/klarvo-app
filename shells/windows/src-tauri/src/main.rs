@@ -146,7 +146,7 @@ fn main() {
                 config.output_target_id.clone(),
                 paste,
                 Arc::clone(&emitter),
-                clock,
+                Arc::clone(&clock),
                 vad,
                 Arc::clone(&event_bus),
             ));
@@ -157,10 +157,13 @@ fn main() {
             // app.manage(config)   → consumed by future Settings-Read-Commands (Phase-2)
             // app.manage(keystore) → consumed by future xtask set-key Command (Phase-2)
             // app.manage(emitter)  → consumed by error-emit call-sites in commands (Phase-2)
+            // app.manage(clock)    → consumed by hotkey-callback for shared session-baseline ts_ms
+            //                        (project_event_ts_ms_convention — single MonotonicClock origin)
             debug_assert!(app.manage(Arc::clone(&orch)));
             debug_assert!(app.manage(Arc::new(config.clone())));
             debug_assert!(app.manage(Arc::clone(&keystore)));
             debug_assert!(app.manage(Arc::clone(&emitter)));
+            debug_assert!(app.manage(Arc::clone(&clock)));
             let exit_label = i18n_table
                 .get("tray.menu.exit")
                 .cloned()
