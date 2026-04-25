@@ -94,15 +94,31 @@ fn main() {
             };
 
             // Step 3: Keystore (fail-soft — Credential Manager boot-race is ephemeral;
-            // per-plugin key errors surface lazily in Plugin-Init, not at boot)
+            // per-plugin key errors surface lazily in Plugin-Init, not at boot).
+            //
+            // Synchronous readiness probe via block_on so the result is observable
+            // before Step 10+ wire-up rather than racing with downstream plugin-init.
+            // 2 s defensive timeout guards against pathologically hanging
+            // Credential-Manager hardware; both timeout and probe-error are fail-soft.
             let keystore: Arc<dyn KeyStore> = make_keystore();
             {
                 let ks = Arc::clone(&keystore);
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = verify_keystore_ready(ks.as_ref()).await {
+                let probe = tauri::async_runtime::block_on(async move {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        verify_keystore_ready(ks.as_ref()),
+                    )
+                    .await
+                });
+                match probe {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
                         tracing::error!(error = %e, "keystore boot-readiness check failed; continuing");
                     }
-                });
+                    Err(_elapsed) => {
+                        tracing::error!("keystore boot-readiness check timed out after 2s; continuing");
+                    }
+                }
             }
 
             // Step 4: Error emitter
