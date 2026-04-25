@@ -9,5 +9,6 @@
   "error.keystore.not_found": "TODO(de): API key not found. Please set your API key in the application settings.",
   "error.keystore.backend_unavailable": "TODO(de): Secure key storage backend is unavailable. Please restart the application.",
   "error.hotkey.parse_failed": "TODO(de): Hotkey configuration is invalid. Please check config.toml.",
-  "error.hotkey.registration_failed": "TODO(de): Hotkey could not be registered. Another application may already be using it."
+  "error.hotkey.registration_failed": "TODO(de): Hotkey could not be registered. Another application may already be using it.",
+  "tray.menu.exit": "TODO(de): Exit"
 }

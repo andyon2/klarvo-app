@@ -158,6 +158,10 @@ fn main() {
             debug_assert!(app.manage(Arc::new(config.clone())));
             debug_assert!(app.manage(Arc::clone(&keystore)));
             debug_assert!(app.manage(Arc::clone(&emitter)));
+            let exit_label = i18n_table
+                .get("tray.menu.exit")
+                .cloned()
+                .unwrap_or_else(|| "Exit".to_string());
             app.manage(i18n_table);
             specta_builder.mount_events(app);
 
@@ -182,7 +186,7 @@ fn main() {
 
             let menu = MenuBuilder::new(app)
                 .item(&MenuItemBuilder::with_id("info", "Klarvo").enabled(false).build(app)?)
-                .item(&MenuItemBuilder::with_id("quit", "Exit").build(app)?)
+                .item(&MenuItemBuilder::with_id("quit", &exit_label).build(app)?)
                 .build()?;
 
             let tray = TrayIconBuilder::with_id("klarvo-tray")
