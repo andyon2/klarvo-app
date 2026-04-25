@@ -1,0 +1,11 @@
+[package]
+name = "klarvo-plugin-clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+klarvo-core = { path = "../../klarvo-core" }
+arboard = "3"
+async-trait = { workspace = true }

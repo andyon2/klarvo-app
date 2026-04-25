@@ -1,0 +1,24 @@
+[package]
+name = "klarvo-plugin-groq"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+klarvo-core = { path = "../../klarvo-core" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "multipart"] }
+tokio = { workspace = true, features = ["time"] }   # minimum; rt-feature nach Plugin-Lifecycle-Bedarf
+# workspace pins 0.10 via ADR-0004 v1_import; AC-text says "0.8" — workspace wins per
+# feedback_architecture_doc_authoritative. Deviation documented in commit body.
+secrecy = { workspace = true }
+hound = "3.5"
+async-trait = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true, features = ["macros", "test-util"] }
+klarvo-test-fixtures = { path = "../../klarvo-test-fixtures" }
+klarvo-plugin-verbatim = { path = "../klarvo-plugin-verbatim" }
