@@ -2,7 +2,7 @@
 name: Story 4.2 — Locale-Aware i18n-Table-Loading
 epic: 4
 story_number: "4.2"
-status: Draft
+status: review
 dependencies:
   - "4.1"
   - "3.10"
@@ -182,3 +182,43 @@ ist bereits in `main.rs` korrekt; Story 4.2 fügt nur Step 2b ein.
 - Story 3.1 (i18n-Modul-Skeleton, en+de.json existieren)
 - ADR-0009 §SD-2 — Shell resolves Keys, kein Core-User-String
 - `memory/feedback_premature_abstraction_guard` — kein Multi-Locale-State, kein Live-Switch
+
+## Tasks/Subtasks
+
+- [x] Task 1 — `i18n.rs`: `load_default()` → `load(ui_language)` (AC-A, AC-E)
+  - [x] 1.1 Neue Signatur `pub fn load(ui_language: &str) -> Arc<I18nTable>`
+  - [x] 1.2 Eager-Validation beider Locale-Files (de + en) unabhängig vom aktiven Locale
+  - [x] 1.3 Match-Arm: `"de"` → de-table, `_` → en-table (defensiver Fallback)
+  - [x] 1.4 `load_default()` gelöscht (Hard-Replace analog 4.1-Pattern)
+  - [x] 1.5 Phase-2-defer-Comment auf Modul-Ebene
+- [x] Task 2 — `main.rs`: Bootstrap-Reorder Step 2b (AC-B, AC-C)
+  - [x] 2.1 `load_default()`-Aufruf vor `tauri::Builder::default()` entfernt
+  - [x] 2.2 Step-2b-Block nach Config-Load eingefügt: `i18n::load(&config.ui_language)`
+  - [x] 2.3 Bootstrap-Step-Comment um Step 2b ergänzt
+- [x] Task 3 — i18n-Tests (AC-D)
+  - [x] 3.1 Test: `load_en_returns_en_table` — kein TODO-Marker, enthält `config.toml`
+  - [x] 3.2 Test: `load_de_returns_de_table` — Wert ≠ EN-Wert
+  - [x] 3.3 Test: `load_unknown_locale_falls_back_to_en` — `xx` → identisch zu `en`
+  - [x] 3.4 Test: `both_locale_files_valid_json_even_when_en_active` — de-Validation auch bei `load("en")`
+- [x] Task 4 — Build + Tests (AC-D, AC-G)
+  - [x] 4.1 `cargo test -p klarvo-windows-shell --lib`: 13/13 grün, 1 ignored
+
+## Dev Agent Record
+
+### Completion Notes
+
+- AC-A ✅ — `load(ui_language)` mit Eager-Validation + Match-Arm; `load_default()` gelöscht.
+- AC-B ✅ — Step-2b nach Config-Load in `.setup()`-Closure; `load_default()`-Aufruf vor Builder entfernt.
+- AC-C ✅ — Bootstrap-Comment um `// Step 2b: i18n::load(ui_language)` ergänzt.
+- AC-D ✅ — 4 i18n-Tests + 9 config-Tests = 13/13 grün, 1 ignored (bridge-smoke).
+- AC-E ✅ — Phase-2-defer-Comment auf Modul- und Funktions-Ebene.
+- AC-F ✅ — `shells/windows/src/locales/` (Frontend) nicht angefasst.
+
+## File List
+
+- `shells/windows/src-tauri/src/i18n.rs` — `load_default()` → `load(ui_language)`, Eager-Validation, Match-Arm, 4 Unit-Tests.
+- `shells/windows/src-tauri/src/main.rs` — Step-2b-Block nach Config-Load, `load_default()`-Aufruf entfernt, Bootstrap-Comment erweitert.
+
+## Change Log
+
+- 2026-04-25: Story 4.2 implementiert — `i18n::load(ui_language)` ersetzt `load_default()`; Bootstrap-Step-2b eingefügt; 13/13 Tests grün.

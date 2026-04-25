@@ -42,7 +42,6 @@ fn main() {
     }
 
     let specta_builder = klarvo_windows_shell::specta_builder();
-    let i18n_table = klarvo_windows_shell::i18n::load_default();
 
     tauri::Builder::default()
         // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4); Story-3.6
@@ -50,9 +49,10 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
-            // Bootstrap sequence (Story 3.10):
+            // Bootstrap sequence (Story 3.10 + Story 4.2):
             // Step 1:  resolve_config_path
             // Step 2:  load_config (fail-soft → ShellConfig::default on error)
+            // Step 2b: i18n::load(ui_language) — locale-aware table; depends on config (Step 2)
             // Step 3:  make_keystore + verify_keystore_ready (fail-soft → continue on error)
             // Step 4:  TauriErrorEmitter::new
             // Step 5:  make_audio_source
@@ -93,6 +93,11 @@ fn main() {
                     ShellConfig::default()
                 }
             };
+
+            // Step 2b: i18n table for the resolved ui_language axis (FR26/FR27, Story 4.2).
+            // Eagerly loaded after config so the active locale matches user choice; load() validates
+            // both locale files at boot to surface JSON corruption regardless of selection.
+            let i18n_table = klarvo_windows_shell::i18n::load(&config.ui_language);
 
             // Step 3: Keystore (fail-soft — Credential Manager boot-race is ephemeral;
             // per-plugin key errors surface lazily in Plugin-Init, not at boot).
