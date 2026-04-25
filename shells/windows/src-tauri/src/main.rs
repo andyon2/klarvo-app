@@ -83,12 +83,12 @@ fn main() {
                 Ok(path) => match config::load_config(&path) {
                     Ok(c) => c,
                     Err(e) => {
-                        tracing::error!(error = %e.message, "ShellConfig load failed; using defaults");
+                        tracing::error!(error = %e, "ShellConfig load failed; using defaults");
                         ShellConfig::default()
                     }
                 },
                 Err(e) => {
-                    tracing::error!(error = %e.message, "config path resolution failed; using defaults");
+                    tracing::error!(error = %e, "config path resolution failed; using defaults");
                     ShellConfig::default()
                 }
             };
@@ -100,7 +100,7 @@ fn main() {
                 let ks = Arc::clone(&keystore);
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = verify_keystore_ready(ks.as_ref()).await {
-                        tracing::error!(error = %e.message, "keystore boot-readiness check failed; continuing");
+                        tracing::error!(error = %e, "keystore boot-readiness check failed; continuing");
                     }
                 });
             }
@@ -127,7 +127,7 @@ fn main() {
             // Step 9: Manifest + Registry (fatal — without valid manifest + registry the app
             // has no pipeline and no meaningful voice-transcription function)
             let manifest = Arc::new(klarvo_core::manifest::parse_embedded().map_err(|e| {
-                tracing::error!(error = %e.message, "manifest parse failed");
+                tracing::error!(error = %e, "manifest parse failed");
                 e
             })?);
             let registry = Arc::new(build_plugin_registry(Arc::clone(&keystore)));
@@ -190,10 +190,9 @@ fn main() {
             let tray = TrayIconBuilder::with_id("klarvo-tray")
                 .icon(idle_icon.clone())
                 .menu(&menu)
-                .on_menu_event(|app, event| {
-                    if event.id.as_ref() == "quit" {
-                        app.exit(0);
-                    }
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => app.exit(0),
+                    other => tracing::warn!(menu_id = other, "unhandled tray menu event"),
                 })
                 .build(app)?;
 
