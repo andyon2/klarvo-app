@@ -138,6 +138,13 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Plugin-Author-Persona aktiv (Phase-2-Timing)
 - **Status**: Planned
 
+### Windows-Compile-CI-Gate für klarvo-core windows-cfg + klarvo-windows-shell
+
+- **Source**: Epic-3-Code-Review-Pass-Followup (2026-04-25, commit `0b5306e`)
+- **Description**: Auf WSL/Linux überspringt cargo den Windows-cfg-Code in `klarvo-core/src/keystore/os/windows.rs` und `klarvo-windows-shell` ist hard `compile_error!`-gated für non-Windows. Konsequenz: 4 Compile-Errors blieben 4 Tage unentdeckt (2× pre-existing aus Story 1C.3 / Story 3.5, 2× Batch-B-Code-Review-Patches die nur Linux-verifiziert wurden). Phase-2-Item: CI-Gate G6 oder GitHub-Actions-Windows-Job, der `cargo check -p klarvo-windows-shell` auf jedem Push gegen master laufen lässt. Alternativ lokales `cargo xtask check-windows`-Subcommand das via cargo.exe + WSL-Interop oder remote Windows-Runner ausführt.
+- **Dependencies**: GitHub-Actions-Setup (oder anderer CI-Provider mit Windows-Runner-Support); evtl. `CARGO_TARGET_DIR` auf Windows-Path-Pinning für WSL-Interop-Pfad
+- **Status**: Planned
+
 ### Plugin-Author-Guide + externe Doc-Site
 
 - **Source**: PRD §Deferred-to-Later-Phases Phase-2 "Plugin-Author-Guide, Pipeline-Authoring-Walkthrough, externe Doc-Site"
