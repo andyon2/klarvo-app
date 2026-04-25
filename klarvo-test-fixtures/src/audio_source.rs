@@ -5,24 +5,39 @@ use tokio::sync::oneshot;
 
 use klarvo_core::audio::{AudioError, AudioEvent, AudioSource, CaptureConfig, CaptureHandle};
 
-/// Test fixture implementing `AudioSource`. Emits synthetic zero-filled chunks
-/// at the specified rate. `chunk_interval_ms = 0` for fastest-possible emission
-/// (unit-tests); nonzero for backpressure-simulation (ADR-0007 lag-tests).
+/// Test fixture implementing `AudioSource`. Emits synthetic constant-amplitude
+/// chunks at the specified rate. `chunk_interval_ms = 0` for fastest-possible
+/// emission (unit-tests); nonzero for backpressure-simulation (ADR-0007 lag-tests).
 /// WAV-file-playback variant is Story 2.4 scope. Factor-out deferred until
 /// Story 2.4 proves the need (ref `memory/feedback_premature_abstraction_guard`).
 pub struct MockAudioSource {
     count: usize,
     samples_per_chunk: usize,
     chunk_interval_ms: u64,
+    amplitude: f32,
 }
 
 impl MockAudioSource {
+    /// Emit `count` zero-filled (silence) chunks. Use with `MockVadProvider` whose
+    /// pre-programmed decisions are independent of sample content.
     pub fn with_synthetic_chunks(
         count: usize,
         samples_per_chunk: usize,
         chunk_interval_ms: u64,
     ) -> Self {
-        Self { count, samples_per_chunk, chunk_interval_ms }
+        Self { count, samples_per_chunk, chunk_interval_ms, amplitude: 0.0 }
+    }
+
+    /// Emit `count` chunks at constant `amplitude`. Use with real `VadProvider`
+    /// implementations that decide based on sample energy — e.g. `RmsVad`
+    /// (threshold 0.01) needs `amplitude >= 0.02` to fire `SpeechStart`.
+    pub fn with_loud_chunks(
+        count: usize,
+        samples_per_chunk: usize,
+        chunk_interval_ms: u64,
+        amplitude: f32,
+    ) -> Self {
+        Self { count, samples_per_chunk, chunk_interval_ms, amplitude }
     }
 }
 
@@ -36,11 +51,12 @@ impl AudioSource for MockAudioSource {
         let count = self.count;
         let samples_per_chunk = self.samples_per_chunk;
         let chunk_interval_ms = self.chunk_interval_ms;
+        let amplitude = self.amplitude;
         let sender = config.events;
 
         tokio::spawn(async move {
             for i in 0..count {
-                let data: Arc<[f32]> = Arc::from(vec![0.0_f32; samples_per_chunk]);
+                let data: Arc<[f32]> = Arc::from(vec![amplitude; samples_per_chunk]);
                 let ts_ms = i as u64 * chunk_interval_ms;
                 let _ = sender.send(AudioEvent::Samples { data, ts_ms });
 

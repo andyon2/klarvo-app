@@ -2,14 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use klarvo_core::audio::vad::VadDecision;
+use klarvo_core::audio::vad::RmsVad;
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_core::time::MonotonicClock;
 use klarvo_test_fixtures::{
     InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
-    MockSttProvider, MockVadProvider,
+    MockSttProvider,
 };
 
 use klarvo_shell_orchestrator::SessionOrchestrator;
@@ -29,11 +29,14 @@ plugin_id = "verbatim"
 "#
 }
 
-/// Constructs `SessionOrchestrator` with real pipeline (verbatim plugin) and mocked
-/// OS boundaries (Audio, STT, Paste, ErrorEmitter). MockVadProvider simulates
-/// speech detection; real verbatim passthrough validates the plugin integration path.
-/// Returns handles for output inspection alongside the orchestrator and event bus.
-fn make_test_orchestrator_with_custom_stt(
+/// Constructs `SessionOrchestrator` with real pipeline (verbatim plugin) and real
+/// `RmsVad` driven by synthetic loud audio. Mocks remain for the pure OS boundaries
+/// (STT, Paste, ErrorEmitter) and for `OutputTarget` inspection.
+///
+/// Per Story-3.11 AC-B + Technical-Notes-§"Warum RmsVad": exercising the real
+/// VAD signal-path is the whole point of the headless E2E suite — substituting
+/// `MockVadProvider` would re-test mock logic, not the integration.
+fn make_test_orchestrator_real_pipeline(
     stt: Arc<dyn klarvo_core::traits::SttProvider>,
 ) -> (
     SessionOrchestrator,
@@ -55,21 +58,19 @@ fn make_test_orchestrator_with_custom_stt(
     );
     let registry = Arc::new(registry);
 
-    // Two SpeechStart decisions: enough for 2-cycle tests.
-    // MockVadProvider.reset() is a no-op — decisions are consumed across cycles from the
-    // same queue; providing 2 ensures both cycles can trigger the Closed-mid-Speech path.
+    // Real `RmsVad` (Phase-1 default). `run_capture_session` calls `vad.reset()`
+    // on entry, so cycle-2 starts with a fresh `is_speaking=false` regardless of
+    // how cycle-1 ended (SpeechEnd vs. Closed-mid-Speech).
     let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
-        Arc::new(tokio::sync::Mutex::new(Box::new(MockVadProvider::with_decisions(vec![
-            VadDecision::SpeechStart { ts_ms: 0 },
-            VadDecision::SpeechStart { ts_ms: 0 },
-        ]))));
+        Arc::new(tokio::sync::Mutex::new(Box::new(RmsVad::new())));
 
-    // 10 zero-filled chunks. Chunk 0 → SpeechStart (above); chunks 1-9 → Silence (queue
-    // exhausted). Audio task exits after all chunks → broadcast Closed → Closed-mid-Speech
-    // in run_capture_session → run_pipeline fires with accumulated chunk 0 data.
+    // 10 chunks at amplitude 0.5 — well above the RMS threshold (0.01).
+    // First chunk fires `VadDecision::SpeechStart`, subsequent chunks emit
+    // `Speech`; on hotkey-release the broadcast channel closes and
+    // `run_capture_session` triggers the pipeline via the Closed-mid-Speech path.
     let audio_source: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::AudioSource>>> =
-        Arc::new(tokio::sync::Mutex::new(Box::new(MockAudioSource::with_synthetic_chunks(
-            10, 160, 0,
+        Arc::new(tokio::sync::Mutex::new(Box::new(MockAudioSource::with_loud_chunks(
+            10, 160, 0, 0.5,
         ))));
 
     let paste_backend = Arc::new(MockPasteBackend::new());
@@ -90,17 +91,6 @@ fn make_test_orchestrator_with_custom_stt(
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus)
-}
-
-fn make_test_orchestrator_with_handles() -> (
-    SessionOrchestrator,
-    Arc<InMemoryOutputTarget>,
-    Arc<MockPasteBackend>,
-    Arc<MockErrorEmitter>,
-    Arc<EventBus>,
-) {
-    let stt = Arc::new(MockSttProvider::returning("hello world"));
-    make_test_orchestrator_with_custom_stt(stt)
 }
 
 async fn wait_for_delivery(target: &InMemoryOutputTarget) {
@@ -146,8 +136,9 @@ async fn wait_for_error_or_timeout(emitter: &MockErrorEmitter, timeout: Duration
 
 #[tokio::test]
 async fn e2e_happy_path_delivers_and_pastes() {
+    let stt = Arc::new(MockSttProvider::returning("hello world"));
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
-        make_test_orchestrator_with_handles();
+        make_test_orchestrator_real_pipeline(stt);
 
     orch.on_press().await;
     wait_for_delivery(&output_target).await;
@@ -162,8 +153,9 @@ async fn e2e_happy_path_delivers_and_pastes() {
 
 #[tokio::test]
 async fn e2e_two_cycles_are_independent() {
+    let stt = Arc::new(MockSttProvider::returning("hello world"));
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
-        make_test_orchestrator_with_handles();
+        make_test_orchestrator_real_pipeline(stt);
 
     // Cycle 1
     orch.on_press().await;
@@ -184,8 +176,9 @@ async fn e2e_two_cycles_are_independent() {
 
 #[tokio::test]
 async fn e2e_key_repeat_guard_prevents_double_start() {
+    let stt = Arc::new(MockSttProvider::returning("hello world"));
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
-        make_test_orchestrator_with_handles();
+        make_test_orchestrator_real_pipeline(stt);
 
     orch.on_press().await;
     orch.on_press().await; // second press while Recording — must be discarded
@@ -201,8 +194,9 @@ async fn e2e_key_repeat_guard_prevents_double_start() {
 
 #[tokio::test]
 async fn e2e_stray_release_is_noop() {
+    let stt = Arc::new(MockSttProvider::returning("hello world"));
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
-        make_test_orchestrator_with_handles();
+        make_test_orchestrator_real_pipeline(stt);
 
     orch.on_release().await; // release without prior press
 
@@ -258,7 +252,7 @@ async fn e2e_pipeline_fail_in_cycle1_does_not_prevent_cycle2() {
     });
 
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
-        make_test_orchestrator_with_custom_stt(stt);
+        make_test_orchestrator_real_pipeline(stt);
 
     // Cycle 1 — will fail at STT
     orch.on_press().await;
