@@ -1,0 +1,5 @@
+schema_version = 1
+
+[[pipeline.stages]]
+type = "cleanup"
+plugin_id = "verbatim"

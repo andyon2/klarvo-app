@@ -1,0 +1,27 @@
+# Erwartungs-Tabelle für manifest-strict Harness-Fixtures.
+# Format: [[fixture-name]] mit outcome = "ok" | "err", error_kind, user_message_key.
+# Neue Fixtures: Datei anlegen + hier Eintrag hinzufügen — kein Harness-Quellcode-Edit nötig.
+
+[valid]
+outcome = "ok"
+
+[bad-unknown-stage]
+outcome = "err"
+error_kind = "PipelineValidation"
+user_message_key = "error.pipeline.unknown_stage_type"
+
+[bad-missing-schema-version]
+outcome = "err"
+error_kind = "PipelineValidation"
+# user_message_key ist Delegate-Choice: toml_parse_failure (serde-Fail bei fehlendem Pflicht-Key)
+user_message_key = "error.pipeline.toml_parse_failure"
+
+[bad-unsupported-schema-version]
+outcome = "err"
+error_kind = "PipelineValidation"
+user_message_key = "error.pipeline.schema_version_unsupported"
+
+[bad-type-mismatch]
+outcome = "err"
+error_kind = "PipelineValidation"
+user_message_key = "error.pipeline.stage_type_mismatch"
