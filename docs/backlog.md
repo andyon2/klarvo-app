@@ -145,6 +145,20 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass), G3-Gate-Rollout
 - **Status**: Planned
 
+### PluginError-Variant-zu-i18n-Key-Mapping
+
+- **Source**: Epic-4-Code-Review-Followup (2026-04-25), `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md` §P1
+- **Description**: `From<PluginError> for AppError` in `klarvo-core/src/error.rs:73-101` setzt für 5 von 6 PluginError-Varianten (`Network`, `Auth`, `RateLimit`, `Fatal`, `UpstreamUnavailable`) `user_message: None`. Konsequenz: Diese Errors triggern in `klarvo-shell-orchestrator/src/session.rs:148,155,176` den `unwrap_or("error.internal")`-Fallback und Frontend zeigt einen generischen Internal-Error-Toast statt eines provider-/grund-spezifischen Strings. Phase-1-Workaround: `error.internal` ist als Locale-Key registriert (Epic-4-Review-Patch P1). Phase-2-Cleanup: Pro PluginError-Variant einen passenden i18n-Key setzen (`error.plugin.network`/`error.plugin.auth`/`error.plugin.rate_limited`/`error.plugin.fatal`/`error.plugin.upstream_unavailable` oder Provider-spezifisch je nach Plugin-Owner-Convention) — entweder in `From<PluginError>` global oder per-Plugin durch explicit `user_message: Some(...)` an jedem Emit-Site (analog Groq lib.rs:153,245,298,316).
+- **Dependencies**: Keine (rein klarvo-core + Plugin-Refactor)
+- **Status**: Planned
+
+### Audit-Grep-Erweiterung für unwrap_or-Fallback-Keys
+
+- **Source**: Epic-4-Code-Review-Followup (2026-04-25), `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md` §P1
+- **Description**: Story-4.4-Coverage-Audit-Method greppte nur `user_message: Some(...)`-Emit-Sites und `pub const *: &str = "error.*"`-Konstanten — der `unwrap_or("error.internal")`-Pattern in `session.rs` rutschte durch und blieb 4 Tage unentdeckt. Beim Phase-2-Refactor des `cargo xtask lint-events`-Lint-Gate (FR34) muss der AST-Walk auch `unwrap_or(<&str literal>)`-Patterns auf `Option<String>`-Feldern erfassen, sowie `unwrap_or_else(|| "...".to_string())`-Varianten. Andernfalls schlüpfen Phase-2-Plugin-Authoren analoge Fallback-Keys ohne Coverage-Test. Greppen sollte zudem `format!("error.x.{}")`-Dynamic-Keys flaggen (heute erlauben sie Drift, weil REQUIRED_KEYS kein Glob/Pattern-Match erlaubt).
+- **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass)
+- **Status**: Planned
+
 ### Windows-Compile-CI-Gate für klarvo-core windows-cfg + klarvo-windows-shell
 
 - **Source**: Epic-3-Code-Review-Pass-Followup (2026-04-25, commit `0b5306e`)
@@ -505,3 +519,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **2026-04-21:** Bootstrap aus Phase-1-Closure-Review. Consolidation aus PRD-Frontmatter `explicitlyOutOfScope` (13 Items), Product-Brief Prose (P1/P2/DEFER-Listen), Distillate Phase-Definitionen, Architecture "Deferred"-Vermerke. Plus drei Review-Addenda: Audio-Cpal Precision & Correctness Hardening, Tray-Icon Extensions, Floating Pill Bar (UX-Spec-TODO).
 - **2026-04-21 (Post-Review-Follow-up):** OS-Keystore Phase-Placement zugunsten PRD Phase 4 aufgelöst (Andy-Call). Audio-Cpal-Item ergänzt um AC-3 Safety-Comment-Accuracy-Fix (Reviewer-Self-Finding).
 - **2026-04-21:** Audio-Capture-Config-Overrides added (Phase 2) — Source: Story 3.7 Technical-Notes. Welle-3-Review-Decision (Reviewer-approval).
+- **2026-04-25:** Epic-4-Code-Review-Followup: zwei neue Phase-2-Items — (a) PluginError-Variant-zu-i18n-Key-Mapping (P1-Wurzel: 5/6 Varianten setzen `user_message: None`); (b) Audit-Grep-Erweiterung für `unwrap_or`-Fallback-Keys (Method-Lücke aus Story-4.4-Coverage-Audit). Drei Defer-Items (F11 TOML-Type-Mismatch-UX, F12 eager-Validation-Regression-Test, F13 symmetric TODO-Marker-Test für DE) in `_bmad-output/implementation-artifacts/deferred-work.md`.

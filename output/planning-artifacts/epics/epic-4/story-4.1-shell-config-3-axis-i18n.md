@@ -283,6 +283,13 @@ Schema-Add von Schema-Cleanup.
 
 - 2026-04-25: Story 4.1 implementiert — `ShellConfig` mit drei unabhängigen i18n-Achsen (`ui_language`/`dictionary_language`/`output_language`); Hard-Replace ohne Compat-Alias; `error.config.invalid_language` in beiden Locale-Files; 9 Unit-Tests grün; `main.rs`-Bootstrap unverändert.
 
+## Review Findings (2026-04-25)
+
+Konsolidierter Report: `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md`
+
+- [x] [Review][Patch] Stale Rustdoc-Tabelle in `load_config` referenziert `error.config.invalid_locale` — Code emittiert `error.config.invalid_language` [shells/windows/src-tauri/src/config.rs:150] — fixed 2026-04-25
+- [x] [Review][Defer] TOML-Type-Mismatch (`ui_language = 42` etc.) wird auf `error.config.missing` aliased — semantisch falsche User-Message [shells/windows/src-tauri/src/config.rs:103-116] — pre-existing aus Story 3.2-Branch-Logic, Phase-2-Settings-UI deckt das natürlich ab
+
 ## Status
 
 review

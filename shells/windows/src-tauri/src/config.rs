@@ -147,7 +147,7 @@ fn parse_from_str(raw: &str) -> Result<ShellConfig, AppError> {
 /// | File not found | `Configuration` | `error.config.missing` |
 /// | Unknown field in TOML | `Configuration` | `error.config.unknown_field` |
 /// | Corrupt / unparseable TOML | `Configuration` | `error.config.missing` |
-/// | Unsupported locale value | `Configuration` | `error.config.invalid_locale` |
+/// | Unsupported language axis (ui/dictionary/output) | `Configuration` | `error.config.invalid_language` |
 ///
 /// // Phase-2: Settings-UI creates config.toml on first-run via xtask or settings-save.
 /// // Phase-1: user creates config.toml manually. Missing file is not auto-generated.

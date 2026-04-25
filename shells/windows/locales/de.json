@@ -28,5 +28,6 @@
   "error.stt.key_not_configured": "API-Schlüssel nicht konfiguriert. Bitte hinterlegen Sie Ihren Schlüssel in den Einstellungen.",
   "error.stt.upstream_5xx": "Spracherkennungsdienst nicht verfügbar. Bitte versuchen Sie es später erneut.",
   "error.stt.upstream_4xx": "Anfrage vom Spracherkennungsdienst abgelehnt. Bitte prüfen Sie Ihre Einstellungen.",
+  "error.internal": "Ein interner Fehler ist aufgetreten. Bitte starten Sie die Anwendung neu; bei wiederholtem Auftreten exportieren Sie das Diagnose-Log.",
   "tray.menu.exit": "Beenden"
 }

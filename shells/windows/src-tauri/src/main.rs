@@ -72,6 +72,11 @@ fn main() {
             // functional or degraded but launchable. Fatal (return Err) for Steps 9-10:
             // without a valid manifest + orchestrator, the App has no meaningful function.
             //
+            // Step 2b is currently a Panic-Path (Phase-1 stub): JSON-corruption in the
+            // embedded locale files surfaces as a panic before .setup() returns. Phase-2
+            // fail-soft (empty-table fallback + tracing::error!) is tracked under
+            // ADR-0009 SD-4 (Boot-Error-UX); see also `i18n.rs::load` doc-comment.
+            //
             // No new i18n-keys in Story 3.10. Error-emit-sites use keys from:
             //   - Story 3.2: error.config.*, error.keystore.read_failed
             //   - Story 3.3: error.audio.start_failed, error.config.output_target_not_found

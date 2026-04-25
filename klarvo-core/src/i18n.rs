@@ -14,7 +14,7 @@
 //! - First character must be `[a-z]` (no leading digit or underscore).
 //! - Each segment after a dot must be non-empty.
 //!
-//! Examples of valid keys: `"recording.started"`, `"error.pipeline.unknown_stage"`, `"app.ready"`.
+//! Examples of valid keys: `"recording.started"`, `"error.pipeline.unknown_stage_type"`, `"app.ready"`.
 //!
 //! # snake_case vs kebab-case
 //!
@@ -29,7 +29,7 @@
 //! use klarvo_core::i18n::assert_is_key;
 //!
 //! // At an emission site — panics in debug + release if the key is malformed:
-//! assert_is_key("error.pipeline.unknown_stage");
+//! assert_is_key("error.pipeline.unknown_stage_type");
 //! ```
 //!
 //! Use [`is_key`] for non-panicking validation (e.g., in tests or conditional logic).
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn valid_keys_pass() {
-        assert!(is_key("error.pipeline.unknown_stage"));
+        assert!(is_key("error.pipeline.unknown_stage_type"));
         assert!(is_key("recording.started"));
         assert!(is_key("app.ready"));
     }

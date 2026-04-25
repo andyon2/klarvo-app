@@ -222,3 +222,10 @@ ist bereits in `main.rs` korrekt; Story 4.2 fügt nur Step 2b ein.
 ## Change Log
 
 - 2026-04-25: Story 4.2 implementiert — `i18n::load(ui_language)` ersetzt `load_default()`; Bootstrap-Step-2b eingefügt; 13/13 Tests grün.
+
+## Review Findings (2026-04-25)
+
+Konsolidierter Report: `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md`
+
+- [x] [Review][Patch] Bootstrap-Policy-Block-Comment listet Step 2b nicht — Step 2b ist Panic-Path (i18n::load), aber Block-Comment kategorisiert nur Steps 1-8 (fail-soft) und 9-10 (fatal) [shells/windows/src-tauri/src/main.rs:69-74] — fixed 2026-04-25 (Step-2b-Note ergänzt mit ADR-0009 SD-4 Forward-Ref)
+- [x] [Review][Defer] `both_locale_files_valid_json_even_when_en_active` testet Happy-Path statt Regression (corrupt-DE → panic auch bei load("en")) [shells/windows/src-tauri/src/i18n.rs:189-197] — `DE_JSON` ist `include_str!`-statisch; echter Test bräuchte `load_from_strs`-Extraktion, eigene Story-Verantwortung

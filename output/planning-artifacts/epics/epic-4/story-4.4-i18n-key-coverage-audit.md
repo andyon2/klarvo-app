@@ -339,3 +339,11 @@ REQUIRED_KEYS folgt dem Code als Source-of-Truth → 30 Keys statt 29.
 ## Change Log
 
 - 2026-04-25: Story 4.4 implementiert — 18 neue i18n-Keys, 1 Orphan entfernt, 4-Test-Coverage-Gate; 17/17 Tests grün; Spec-Abweichung upstream_5xx/4xx dokumentiert.
+
+## Review Findings (2026-04-25)
+
+Konsolidierter Report: `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md`
+
+- [x] [Review][Patch] AC-A Coverage-Audit-Method-Lücke: `error.internal` ist Production-Emit-Key in `klarvo-shell-orchestrator/src/session.rs:148,155,176` (`unwrap_or("error.internal")`-Fallback), aber NICHT in `REQUIRED_KEYS` und NICHT in beiden Locale-Files. Audit-Grep-Pattern erfasste nur `user_message: Some(...)`-Emit-Sites; der `unwrap_or`-Fallback rutschte durch. 5 von 6 PluginError-Varianten in `klarvo-core/src/error.rs:73-101` setzen `user_message: None` und treffen den Fallback. Frontend zeigt rohen Key. — fixed 2026-04-25 (minimal-scoped: Key in REQUIRED_KEYS + EN/DE-Locales; PluginError-Mapping-Refactor + Audit-Grep-Erweiterung als Phase-2-Backlog).
+- [x] [Review][Patch] Doc-Beispiel in `klarvo-core/src/i18n.rs:17,32` nutzt nicht-existenten Key `error.pipeline.unknown_stage` — Production-Key heisst `error.pipeline.unknown_stage_type` [klarvo-core/src/i18n.rs:17,32] — fixed 2026-04-25
+- [x] [Review][Defer] Symmetric TODO-Marker-Test für `de.json` fehlt [shells/windows/src-tauri/src/i18n.rs::tests] — Re-Introduction-Risiko niedrig (EN-Master + Key-Set-Symmetrie-Test schützen indirekt); Phase-2-Settings-UI macht's natürlicher

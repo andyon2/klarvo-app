@@ -55,6 +55,12 @@ mod tests {
     // Audit source: _bmad-output/implementation-artifacts/i18n-coverage-audit-2026-04-25.md
     // Spec delta: story AC-F listed `error.stt.upstream_unavailable`; actual Groq plugin emits
     // `error.stt.upstream_5xx` + `error.stt.upstream_4xx` (klarvo-plugin-groq/src/lib.rs:54,58).
+    //
+    // Epic-4 review follow-up (2026-04-25): `error.internal` is the unwrap_or-Fallback emitted by
+    // klarvo-shell-orchestrator/src/session.rs:148,155,176 when an AppError carries
+    // user_message: None (5/6 PluginError variants in klarvo-core/src/error.rs:73-101). The audit
+    // grep targeted user_message: Some(...) and missed the unwrap_or pattern; fix is to register
+    // the key here without a PluginError refactor (deferred to Phase-2 backlog).
     const REQUIRED_KEYS: &[&str] = &[
         "error.config.missing",
         "error.config.unknown_field",
@@ -85,6 +91,7 @@ mod tests {
         "error.stt.key_not_configured",
         "error.stt.upstream_5xx",
         "error.stt.upstream_4xx",
+        "error.internal",
         "tray.menu.exit",
     ];
 

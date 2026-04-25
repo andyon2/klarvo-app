@@ -109,3 +109,24 @@ fixture (klarvo-shell-orchestrator/tests/e2e_test.rs:247) as a mock — not a pr
 
 Story 4.4 adds 18 new keys to both locale files, removes 1 orphan (`error.config.invalid_locale`),
 and introduces a 4-test coverage gate in `i18n::tests` (30 REQUIRED_KEYS). Gate is now green.
+
+---
+
+## Post-Audit Patch (Epic-4 Code-Review Follow-up, 2026-04-25)
+
+The audit method (grep on `user_message: Some(...)` and `pub const *: &str = "error.*"`) missed
+the `unwrap_or("error.internal")`-Fallback in `klarvo-shell-orchestrator/src/session.rs:148, 155, 176`.
+`From<PluginError>` in `klarvo-core/src/error.rs:73-101` returns `user_message: None` for 5 of 6
+variants, so this fallback is reached in production whenever the Groq plugin (or any future
+plugin) propagates one of those errors without an explicit override.
+
+**Closure:**
+- `error.internal` added to `REQUIRED_KEYS` in `shells/windows/src-tauri/src/i18n.rs` (now 31 keys)
+- EN string in `locales/en.json`
+- DE string in `locales/de.json`
+- Two Phase-2 backlog entries added (`docs/backlog.md`):
+  1. PluginError-Variant-zu-i18n-Key-Mapping (root cause)
+  2. Audit-Grep-Erweiterung für unwrap_or-Fallback-Keys (method gap for FR34 lint-gate)
+
+Coverage gate is again green; Phase-1 surfaces a real (if generic) German/English string
+instead of a raw key when those PluginError paths fire.
