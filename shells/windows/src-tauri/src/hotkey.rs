@@ -8,31 +8,37 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use klarvo_core::event::ErrorEmitter;
 use klarvo_core::time::MonotonicClock;
 use klarvo_shell_orchestrator::SessionOrchestrator;
+use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use crate::bridge::TauriErrorEmitter;
 use crate::config::ShellConfig;
 
 /// Register the global push-to-talk hotkey from `config.hotkey`.
 ///
 /// Called from the Tauri `.setup()` hook (Story 3.10) after `SessionOrchestrator`
-/// has been inserted into `tauri::State` via `app.manage(Arc<SessionOrchestrator>)`.
+/// **and** `Arc<dyn ErrorEmitter>` have been inserted into `tauri::State`
+/// via `app.manage(...)`.
 ///
 /// Degraded-mode on failure: parse or registration errors are forwarded to the
-/// frontend via `TauriErrorEmitter`; the app continues without a hotkey
-/// (ADR-0009 SD-4, ADR-0011 SD-4).
+/// frontend via the managed `Arc<dyn ErrorEmitter>` slot; the app continues
+/// without a hotkey (ADR-0009 SD-4, ADR-0011 SD-4).
 pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellConfig) {
     let handle = app.handle().clone();
     let clock = MonotonicClock::new();
+    // Pull the shared error-emitter from the managed-state slot established in
+    // the bootstrap closure (main.rs Step 11). Single source-of-truth per ADR-0009 SD-1
+    // — keeps Phase-2 emitter-side concerns (rate-limit / dedup) in one place.
+    let emitter: Arc<dyn ErrorEmitter> = app.state::<Arc<dyn ErrorEmitter>>().inner().clone();
 
     // AC-B: parse hotkey string → Shortcut.
     let shortcut = match Shortcut::from_str(&config.hotkey) {
         Ok(s) => s,
         Err(_) => {
-            let emitter = TauriErrorEmitter::new(handle);
             let ts_ms = clock.now_ms();
+            let emitter = Arc::clone(&emitter);
             tauri::async_runtime::spawn(async move {
                 emitter.emit_error("error.hotkey.parse_failed", ts_ms).await;
             });
@@ -55,7 +61,6 @@ pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellCon
         }
     }) {
         // AC-D: registration failure path.
-        let emitter = TauriErrorEmitter::new(handle);
         let ts_ms = clock.now_ms();
         tauri::async_runtime::spawn(async move {
             emitter.emit_error("error.hotkey.registration_failed", ts_ms).await;
