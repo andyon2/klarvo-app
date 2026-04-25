@@ -37,6 +37,19 @@ struct FixtureExpected {
     outcome: String,
     error_kind: Option<String>,
     user_message_key: Option<String>,
+    /// "parse" (default) — validate via `parse_from_str` only (Compile-Time-Layer).
+    /// "boot" — drive full Executor boot-path (Runtime-Layer Type-Chaining-Check).
+    /// Data-driven branching avoids magic-string coupling between fixture name and harness.
+    #[serde(default)]
+    mode: FixtureMode,
+}
+
+#[derive(Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum FixtureMode {
+    #[default]
+    Parse,
+    Boot,
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -63,6 +76,16 @@ pub fn run() -> ExitCode {
         }
     };
 
+    // Validate "err"-outcome fixtures have at least one expected field — prevents silent wildcard pass.
+    for (name, exp) in &expected {
+        if exp.outcome == "err" && exp.error_kind.is_none() && exp.user_message_key.is_none() {
+            eprintln!(
+                "manifest-strict: invalid expected.toml — fixture '{name}' has outcome='err' but no error_kind or user_message_key"
+            );
+            return ExitCode::from(2);
+        }
+    }
+
     let mut keys: Vec<&String> = expected.keys().collect();
     keys.sort(); // deterministic output
     let total = keys.len();
@@ -78,7 +101,7 @@ pub fn run() -> ExitCode {
             }
         };
 
-        let result = run_fixture(name, &content);
+        let result = run_fixture(&expected[*name].mode, &content);
         if check_result(name, &result, &expected[*name]) {
             passed += 1;
         }
@@ -92,32 +115,35 @@ pub fn run() -> ExitCode {
     }
 }
 
-fn run_fixture(name: &str, content: &str) -> Result<(), klarvo_core::AppError> {
-    if name == "bad-type-mismatch" {
-        // Type-Chaining is Runtime-Layer, not Parse-Layer (project_type_chaining_runtime_layer.md).
-        // parse_from_str succeeds for a syntactically valid manifest with a known stage type.
-        // We must run the full Executor boot-path to trigger the mismatch check.
-        // Boot-Check-Ordering: Type-Chaining (Check-1) runs BEFORE Plugin-Lookup (Check-2),
-        // so an empty PluginRegistry is sufficient — the mismatch fires before any lookup.
-        let manifest = parse_from_str(content)?;
-        let registry = PluginRegistry::new();
-        // Cleanup-as-first-stage + Audio input triggers: "expected text, got audio".
-        let audio_input = StageData::Audio(AudioBuffer {
-            samples: vec![],
-            sample_rate: 16_000,
-            ts_ms_start: 0,
-            ts_ms_end: 0,
-        });
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("tokio current-thread runtime builds")
-            .block_on(run_pipeline(&manifest, &registry, audio_input))
-            .map(|_| ())
-    } else {
-        // Forcing sentinel: valid.toml MUST call parse_from_str for real.
-        // A hardcoded ExitCode::SUCCESS bypass would fail here because parse_from_str
-        // must actually return Ok for valid.toml — proving real execution occurred.
-        parse_from_str(content).map(|_| ())
+fn run_fixture(mode: &FixtureMode, content: &str) -> Result<(), klarvo_core::AppError> {
+    match mode {
+        FixtureMode::Boot => {
+            // Type-Chaining is Runtime-Layer, not Parse-Layer (project_type_chaining_runtime_layer.md).
+            // parse_from_str succeeds for a syntactically valid manifest with a known stage type.
+            // We must run the full Executor boot-path to trigger the mismatch check.
+            // Boot-Check-Ordering: Type-Chaining (Check-1) runs BEFORE Plugin-Lookup (Check-2),
+            // so an empty PluginRegistry is sufficient — the mismatch fires before any lookup.
+            let manifest = parse_from_str(content)?;
+            let registry = PluginRegistry::new();
+            // Cleanup-as-first-stage + Audio input triggers: "expected text, got audio".
+            let audio_input = StageData::Audio(AudioBuffer {
+                samples: vec![],
+                sample_rate: 16_000,
+                ts_ms_start: 0,
+                ts_ms_end: 0,
+            });
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("tokio current-thread runtime builds")
+                .block_on(run_pipeline(&manifest, &registry, audio_input))
+                .map(|_| ())
+        }
+        FixtureMode::Parse => {
+            // Forcing sentinel: valid.toml MUST call parse_from_str for real.
+            // A hardcoded ExitCode::SUCCESS bypass would fail here because parse_from_str
+            // must actually return Ok for valid.toml — proving real execution occurred.
+            parse_from_str(content).map(|_| ())
+        }
     }
 }
 
@@ -185,6 +211,10 @@ fn check_result(
 }
 
 fn kind_str(kind: &AppErrorKind) -> &'static str {
+    // AppErrorKind is `#[non_exhaustive]` from xtask's perspective, so the wildcard arm
+    // is mandatory — but a silent "Unknown" fallback would degrade this Forcing-Sentinel
+    // harness on new variants (cf. `feedback_ci_gate_philosophy`). Panic forces a loud
+    // signal: extend this match before the new variant ships.
     match kind {
         AppErrorKind::PipelineValidation => "PipelineValidation",
         AppErrorKind::Network => "Network",
@@ -197,6 +227,8 @@ fn kind_str(kind: &AppErrorKind) -> &'static str {
         AppErrorKind::Io => "Io",
         AppErrorKind::PermissionDenied => "PermissionDenied",
         AppErrorKind::KeyMissing => "KeyMissing",
-        _ => "Unknown",
+        other => panic!(
+            "kind_str: unhandled AppErrorKind variant {other:?} — extend xtask/manifest_strict.rs::kind_str to match the new variant"
+        ),
     }
 }

@@ -1,6 +1,11 @@
 # Erwartungs-Tabelle für manifest-strict Harness-Fixtures.
-# Format: [[fixture-name]] mit outcome = "ok" | "err", error_kind, user_message_key.
+# Format: [[fixture-name]] mit outcome = "ok" | "err", error_kind, user_message_key, mode.
 # Neue Fixtures: Datei anlegen + hier Eintrag hinzufügen — kein Harness-Quellcode-Edit nötig.
+#
+# `mode` (default = "parse"):
+#   - "parse" — fixture wird gegen `parse_from_str` validiert (Compile-Time-Layer).
+#   - "boot"  — fixture wird durch den vollen Executor-Boot-Path geschickt
+#               (Runtime-Layer Type-Chaining-Check). Erforderlich für Type-Mismatch-Tests.
 
 [valid]
 outcome = "ok"
@@ -25,3 +30,4 @@ user_message_key = "error.pipeline.schema_version_unsupported"
 outcome = "err"
 error_kind = "PipelineValidation"
 user_message_key = "error.pipeline.stage_type_mismatch"
+mode = "boot"  # Type-Chaining ist Runtime-Layer (project_type_chaining_runtime_layer.md)

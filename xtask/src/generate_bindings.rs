@@ -65,16 +65,10 @@ pub fn render() -> Result<String, Box<dyn std::error::Error>> {
 
 /// Write `content` to `shells/windows/src/bindings/index.ts`.
 ///
-/// Used as an explicit write step when callers have already obtained the content via `render()`
-/// but need to restore or overwrite the committed file (e.g., after a drift check).
-pub(crate) fn write_to_disk(content: &str) -> ExitCode {
-    match std::fs::write(bindings_path(), content) {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("xtask generate-bindings: write_to_disk failed: {e}");
-            ExitCode::from(1)
-        }
-    }
+/// Returns the underlying I/O error so callers can decide whether to log+continue (drift-restore)
+/// or abort. Used by `bindings_drift::run()` to restore the committed snapshot after a check.
+pub(crate) fn write_to_disk(content: &str) -> std::io::Result<()> {
+    std::fs::write(bindings_path(), content)
 }
 
 pub fn run() -> ExitCode {

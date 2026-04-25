@@ -10,27 +10,55 @@ mod verify_release;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let skip_cross_compile = args.contains(&"--skip-cross-compile".to_string());
 
     match args.first().map(String::as_str) {
         None | Some("--help") | Some("-h") => {
             print_help();
             ExitCode::SUCCESS
         }
-        Some("generate-bindings") => generate_bindings::run(),
-        Some("lint-events") => lint_events::run(),
-        Some("verify-release") => verify_release::run(skip_cross_compile),
-        Some("manifest-strict") => manifest_strict::run(),
-        Some("bindings-drift") => bindings_drift::run(),
+        Some("generate-bindings") => reject_unexpected_flags("generate-bindings", &args[1..])
+            .unwrap_or_else(generate_bindings::run),
+        Some("lint-events") => {
+            reject_unexpected_flags("lint-events", &args[1..]).unwrap_or_else(lint_events::run)
+        }
+        Some("verify-release") => {
+            // `--skip-cross-compile` is the only verify-release flag; reject anything else.
+            let mut skip_cross_compile = false;
+            for arg in &args[1..] {
+                match arg.as_str() {
+                    "--skip-cross-compile" => skip_cross_compile = true,
+                    other => {
+                        eprintln!("xtask verify-release: unknown flag '{other}'");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            verify_release::run(skip_cross_compile)
+        }
+        Some("manifest-strict") => reject_unexpected_flags("manifest-strict", &args[1..])
+            .unwrap_or_else(manifest_strict::run),
+        Some("bindings-drift") => reject_unexpected_flags("bindings-drift", &args[1..])
+            .unwrap_or_else(bindings_drift::run),
         Some(cmd) if cmd.starts_with("--") => {
-            // Flags without a subcommand — fall through to help.
-            print_help();
-            ExitCode::SUCCESS
+            // Unknown flag without a subcommand — exit non-zero so CI tooling notices typos.
+            eprintln!("xtask: unknown flag '{cmd}'");
+            ExitCode::from(2)
         }
         Some(cmd) => {
             eprintln!("xtask: unknown subcommand '{cmd}'");
             ExitCode::from(2)
         }
+    }
+}
+
+/// Returns `Some(non-zero ExitCode)` if `args` contains any flag — i.e. the subcommand
+/// takes no flags but received one. Returns `None` when args are clean.
+fn reject_unexpected_flags(subcommand: &str, args: &[String]) -> Option<ExitCode> {
+    if let Some(flag) = args.iter().find(|a| a.starts_with("--")) {
+        eprintln!("xtask {subcommand}: unknown flag '{flag}'");
+        Some(ExitCode::from(2))
+    } else {
+        None
     }
 }
 

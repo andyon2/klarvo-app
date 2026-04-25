@@ -32,12 +32,20 @@ use std::{
 };
 
 use syn::{
+    spanned::Spanned,
     visit::{self, Visit},
     Attribute, Expr, ExprStruct, ExprMatch, Item, Lit, Meta, Pat, punctuated::Punctuated,
 };
 use walkdir::WalkDir;
 
 use klarvo_core::i18n::is_key;
+
+/// Origin of a collected i18n key: (file path, 1-based line number).
+type KeyOrigin = (PathBuf, usize);
+
+/// Map of code-emitted i18n keys → first-seen origin. Used by G3-B to attach a
+/// file:line-Annotation to forward-drift violations (Story 5.3 AC-D Beispiel-Output).
+type CodeKeys = BTreeMap<String, KeyOrigin>;
 
 pub fn run() -> ExitCode {
     let workspace_root = match locate_workspace_root() {
@@ -207,9 +215,9 @@ fn extract_event_name(attrs: &[Attribute]) -> Option<String> {
 /// Covers `klarvo-core/src/` and `klarvo-plugins/*/src/` — the G3-Kontrakt scope
 /// (`memory/project_i18n_core_contract.md`). `shells/` is excluded (G1 is owner there).
 /// Test modules (`#[cfg(test)]`) are excluded.
-fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, BTreeSet<String>) {
+fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, CodeKeys) {
     let mut violations = Vec::new();
-    let mut code_keys: BTreeSet<String> = BTreeSet::new();
+    let mut code_keys: CodeKeys = BTreeMap::new();
 
     let scan_roots = [
         workspace_root.join("klarvo-core").join("src"),
@@ -245,12 +253,22 @@ fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, BTreeSet<St
                 Err(_) => continue,
             };
 
+            // File-based `mod keys;` modules: when the parsed file *is* the `keys` module
+            // (file named `keys.rs` declared via `pub mod keys;` in a parent), there is no
+            // `ItemMod` AST node to flip `in_keys_mod`. Detect via filename so const-Items
+            // at the top level get collected. Affected paths: klarvo-core/src/{audio,output,
+            // keystore,v1_import}/keys.rs.
+            let initial_in_keys = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                == Some("keys.rs");
+
             let mut visitor = UserStringVisitor {
                 violations: &mut violations,
                 code_keys: &mut code_keys,
                 file_path: path.to_path_buf(),
                 in_test_mod: false,
-                in_keys_mod: false,
+                in_keys_mod: initial_in_keys,
             };
             visitor.visit_file(&file);
         }
@@ -261,11 +279,17 @@ fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, BTreeSet<St
 
 struct UserStringVisitor<'a> {
     violations: &'a mut Vec<String>,
-    code_keys: &'a mut BTreeSet<String>,
+    code_keys: &'a mut CodeKeys,
     file_path: PathBuf,
     in_test_mod: bool,
     /// True when we are inside a `mod keys { … }` block — the conventional location for
-    /// i18n key constants in klarvo-core and klarvo-plugins.
+    /// i18n key constants in klarvo-core and klarvo-plugins. Also seeded `true` at file
+    /// scope when the parsed file is `keys.rs` (file-based module declaration).
+    ///
+    /// Rationale (Story 5.3 D2-Amendment): scope-narrowing avoids false positives from other
+    /// `&'static str` constants that happen to match `KEY_REGEX` (e.g. `"com.klarvo.voice"`,
+    /// `"config.json"`). The convention is established in klarvo-core/src/{audio,output,
+    /// keystore,v1_import}/keys.rs and in inline `mod keys` blocks in plugins.
     in_keys_mod: bool,
 }
 
@@ -290,11 +314,12 @@ impl<'ast, 'a> Visit<'ast> for UserStringVisitor<'a> {
                 if let syn::Member::Named(ident) = &field.member {
                     if ident == "user_message" {
                         if let Some(lit) = extract_some_string_literal(&field.expr) {
+                            let line = field.expr.span().start().line;
                             if is_key(&lit) {
-                                self.code_keys.insert(lit);
+                                self.record_key(lit, line);
                             } else {
                                 self.violations.push(format!(
-                                    "VIOLATION [user-string]: non-key literal {:?} in user_message position at {}",
+                                    "VIOLATION [user-string]: non-key literal {:?} in user_message position at {}:{line}",
                                     lit,
                                     self.file_path.display()
                                 ));
@@ -308,22 +333,79 @@ impl<'ast, 'a> Visit<'ast> for UserStringVisitor<'a> {
     }
 
     fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
-        // Collect i18n key constants only from `mod keys { … }` blocks.
-        // This avoids false positives from other &str constants (file names, identifiers)
-        // that happen to match the key regex (e.g., "com.klarvo.voice", "config.json").
-        // The `mod keys` convention is established in klarvo-core and klarvo-plugins.
+        // Collect i18n key constants only from `mod keys { … }` blocks (or file-based
+        // `keys.rs` modules; see `in_keys_mod` doc-comment for rationale).
         if !self.in_test_mod && self.in_keys_mod {
             if let Expr::Lit(el) = node.expr.as_ref() {
                 if let Lit::Str(s) = &el.lit {
                     let val = s.value();
                     if is_key(&val) {
-                        self.code_keys.insert(val);
+                        let line = node.span().start().line;
+                        self.record_key(val, line);
                     }
                 }
             }
         }
         visit::visit_item_const(self, node);
     }
+
+    fn visit_field(&mut self, node: &'ast syn::Field) {
+        // Story 5.3 AC-B Position 2: `#[default = "..."]`-Attribute auf Struct-Fields.
+        // Pattern aus z.B. `derive_more`/`smart-default`-Macros oder Custom-Derives, die
+        // String-Literals als Default-Werte erlauben. Behandelt analog zu user_message:
+        // is_key → code_keys, sonst Violation.
+        if !self.in_test_mod {
+            self.scan_default_attrs(&node.attrs);
+        }
+        visit::visit_field(self, node);
+    }
+
+    fn visit_variant(&mut self, node: &'ast syn::Variant) {
+        // Story 5.3 AC-B Position 2: same as visit_field but for enum-variant-attributes.
+        if !self.in_test_mod {
+            self.scan_default_attrs(&node.attrs);
+        }
+        visit::visit_variant(self, node);
+    }
+}
+
+impl<'a> UserStringVisitor<'a> {
+    /// Insert a key into `code_keys`, keeping the first-seen origin per key.
+    fn record_key(&mut self, key: String, line: usize) {
+        self.code_keys
+            .entry(key)
+            .or_insert_with(|| (self.file_path.clone(), line));
+    }
+
+    /// Scan a list of attributes for `#[default = "<literal>"]` patterns.
+    fn scan_default_attrs(&mut self, attrs: &[Attribute]) {
+        for attr in attrs {
+            if let Some(lit) = extract_default_attribute_string(attr) {
+                let line = attr.span().start().line;
+                if is_key(&lit) {
+                    self.record_key(lit, line);
+                } else {
+                    self.violations.push(format!(
+                        "VIOLATION [user-string]: non-key literal {:?} in #[default = ...] at {}:{line}",
+                        lit,
+                        self.file_path.display()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Extract the string literal value from `#[default = "..."]`. Returns `None` for any other
+/// attribute shape (incl. `#[default]` without value, `#[default = 42]`, `#[default(...)]`).
+fn extract_default_attribute_string(attr: &Attribute) -> Option<String> {
+    if !attr.path().is_ident("default") {
+        return None;
+    }
+    let Meta::NameValue(nv) = &attr.meta else { return None };
+    let Expr::Lit(el) = &nv.value else { return None };
+    let Lit::Str(s) = &el.lit else { return None };
+    Some(s.value())
 }
 
 /// Extract a string literal from a `Some(<expr>)` call, handling `.into()` / `.to_string()`.
@@ -376,7 +458,7 @@ fn extract_string_literal_from_expr(expr: &Expr) -> Option<String> {
 /// This gap is documented in Technical Notes (Story 5.3) and the backlog.
 fn run_g3b_locale_cross_check(
     workspace_root: &Path,
-    code_keys: &BTreeSet<String>,
+    code_keys: &CodeKeys,
 ) -> Vec<String> {
     let mut violations = Vec::new();
 
@@ -407,10 +489,15 @@ fn run_g3b_locale_cross_check(
     };
 
     // Step 1: Forward-drift check — every code-emitted key must be in en.json.
-    for key in code_keys {
+    for (key, (path, line)) in code_keys {
         if !en_table.contains_key(key.as_str()) {
+            // Show repo-relative path for readability when running inside the workspace.
+            let display_path = path
+                .strip_prefix(workspace_root)
+                .unwrap_or(path)
+                .display();
             violations.push(format!(
-                "VIOLATION [locale-drift]: key {key:?} emitted in code but absent from en.json"
+                "VIOLATION [locale-drift]: key {key:?} emitted in {display_path}:{line} but absent from en.json"
             ));
         }
     }
@@ -703,16 +790,20 @@ mod tests {
 
     // ── G3-A tests ───────────────────────────────────────────────────────
 
-    fn scan_g3a(src: &str) -> (Vec<String>, BTreeSet<String>) {
+    fn scan_g3a(src: &str) -> (Vec<String>, CodeKeys) {
+        scan_g3a_with(src, false)
+    }
+
+    fn scan_g3a_with(src: &str, initial_in_keys: bool) -> (Vec<String>, CodeKeys) {
         let file = syn::parse_file(src).unwrap();
         let mut violations = Vec::new();
-        let mut code_keys = BTreeSet::new();
+        let mut code_keys: CodeKeys = BTreeMap::new();
         let mut visitor = UserStringVisitor {
             violations: &mut violations,
             code_keys: &mut code_keys,
             file_path: PathBuf::from("test.rs"),
             in_test_mod: false,
-            in_keys_mod: false,
+            in_keys_mod: initial_in_keys,
         };
         visitor.visit_file(&file);
         (violations, code_keys)
@@ -752,7 +843,7 @@ mod tests {
         "#;
         let (violations, keys) = scan_g3a(src);
         assert!(violations.is_empty(), "unexpected violations: {violations:?}");
-        assert!(keys.contains("error.stt.network"), "key should be collected: {keys:?}");
+        assert!(keys.contains_key("error.stt.network"), "key should be collected: {keys:?}");
     }
 
     #[test]
@@ -770,6 +861,122 @@ mod tests {
         "#;
         let (violations, _) = scan_g3a(src);
         assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+    }
+
+    // ── G3-A P6: file-based `mod keys;` (keys.rs) ────────────────────────────
+
+    #[test]
+    fn g3a_file_based_keys_module_collected() {
+        // Forcing sentinel for P6: a file named `keys.rs` (declared as `pub mod keys;` in
+        // a parent) must collect const keys at file scope. Without P6's filename heuristic,
+        // these keys silently escape G3-B forward-drift coverage.
+        let src = r#"
+            pub const DEVICE_UNAVAILABLE: &str = "error.audio.device_unavailable";
+            pub const UNSUPPORTED_FORMAT: &str = "error.audio.unsupported_format";
+        "#;
+        let (violations, keys) = scan_g3a_with(src, /* initial_in_keys = */ true);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(keys.contains_key("error.audio.device_unavailable"), "{keys:?}");
+        assert!(keys.contains_key("error.audio.unsupported_format"), "{keys:?}");
+    }
+
+    #[test]
+    fn g3a_top_level_consts_outside_keys_mod_not_collected() {
+        // Negative: identical const at file scope without keys.rs context must NOT collect
+        // (avoids false positives on plugin-identifiers / config-paths).
+        let src = r#"
+            pub const SOME_OTHER: &str = "error.audio.device_unavailable";
+        "#;
+        let (violations, keys) = scan_g3a_with(src, /* initial_in_keys = */ false);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(keys.is_empty(), "must not collect outside mod keys: {keys:?}");
+    }
+
+    // ── G3-A D3I: `#[default = "..."]`-Attribute ─────────────────────────────
+
+    #[test]
+    fn g3a_default_attr_plaintext_flagged() {
+        // Positive fixture for AC-B Position 2: plain-text in `#[default = "..."]` → violation.
+        let src = r#"
+            #[derive(SmartDefault)]
+            struct Cfg {
+                #[default = "Network error"]
+                msg: String,
+            }
+        "#;
+        let (violations, _) = scan_g3a(src);
+        assert_eq!(violations.len(), 1, "expected one violation: {violations:?}");
+        assert!(violations[0].contains("user-string"), "{}", violations[0]);
+        assert!(violations[0].contains("#[default"), "{}", violations[0]);
+        assert!(violations[0].contains("Network error"), "{}", violations[0]);
+    }
+
+    #[test]
+    fn g3a_default_attr_valid_key_collected() {
+        // Negative fixture for AC-B Position 2: valid i18n key in `#[default = "..."]` → collect, no violation.
+        let src = r#"
+            #[derive(SmartDefault)]
+            struct Cfg {
+                #[default = "error.config.invalid_locale"]
+                fallback: String,
+            }
+        "#;
+        let (violations, keys) = scan_g3a(src);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(keys.contains_key("error.config.invalid_locale"), "{keys:?}");
+    }
+
+    #[test]
+    fn g3a_default_attr_on_enum_variant_works() {
+        // Variant-level `#[default = "..."]` covered by visit_variant.
+        let src = r#"
+            #[derive(SmartDefault)]
+            enum Mode {
+                #[default = "plain text"]
+                Foo,
+                Bar,
+            }
+        "#;
+        let (violations, _) = scan_g3a(src);
+        assert_eq!(violations.len(), 1, "expected one violation: {violations:?}");
+        assert!(violations[0].contains("plain text"), "{}", violations[0]);
+    }
+
+    #[test]
+    fn g3a_default_attr_without_value_ignored() {
+        // Bare `#[default]` (Rust 1.62 enum-default) has no value — must not be flagged.
+        let src = r#"
+            #[derive(Default)]
+            enum Mode {
+                #[default]
+                Foo,
+                Bar,
+            }
+        "#;
+        let (violations, _) = scan_g3a(src);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+    }
+
+    // ── G3-A P7: file/line origin in code_keys ───────────────────────────────
+
+    #[test]
+    fn g3a_records_origin_for_collected_keys() {
+        let src = r#"
+fn f() {
+    let _ = AppError {
+        user_message: Some("error.stt.network".into()),
+        kind: AppErrorKind::Network,
+        message: String::new(),
+        retryable: false,
+    };
+}
+        "#;
+        let (_, keys) = scan_g3a(src);
+        let origin = keys
+            .get("error.stt.network")
+            .expect("key recorded");
+        assert_eq!(origin.0, PathBuf::from("test.rs"));
+        assert!(origin.1 >= 1, "line number must be 1-based, got {}", origin.1);
     }
 
     // ── G3-B test ────────────────────────────────────────────────────────
