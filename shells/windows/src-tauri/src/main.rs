@@ -44,6 +44,8 @@ fn main() {
     let i18n_table = klarvo_windows_shell::i18n::load_default();
 
     tauri::Builder::default()
+        // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4); Story-3.6
+        // `register_hotkey` consumes the plugin handle inside the .setup() closure.
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
@@ -117,8 +119,8 @@ fn main() {
             // Phase-2: revisit if wall-clock timestamps are required for cross-session correlation.
             let clock: Arc<dyn klarvo_core::time::Clock> = Arc::new(MonotonicClock::new());
 
-            // Step 8: VAD (Phase-1 default: RmsVad energy threshold)
-            // Phase-2 default VAD: RmsVad (energy threshold). Phase-2+ may substitute SileroVad.
+            // Step 8: VAD (Phase-1 default: RmsVad energy threshold).
+            // Phase-2+ may substitute SileroVad behind the same VadProvider trait.
             let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
                 Arc::new(tokio::sync::Mutex::new(Box::new(RmsVad::new())));
 

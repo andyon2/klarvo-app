@@ -40,8 +40,8 @@ pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellCon
         }
     };
 
-    // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4).
-    // AC-C: register shortcut + dispatch.
+    // AC-C: register shortcut + dispatch (plugin activated in main.rs Builder chain
+    // per ADR-0011 SD-4).
     // Key-repeat filtering lives in SessionOrchestrator (ADR-0011 SD-3).
     if let Err(_) = handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, event| {
         let orch = app.state::<Arc<SessionOrchestrator>>().inner().clone();
