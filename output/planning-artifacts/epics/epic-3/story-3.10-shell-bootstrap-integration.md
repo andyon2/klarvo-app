@@ -236,8 +236,13 @@ und EventMirror-Spawn. App startet im Idle-State; erste Hotkey-Press triggert de
   ```
   Delegate verifiziert die exakte `TrayIconBuilder`-API-Shape gegen die tauri v2 Docs / Changelog
   (insbesondere `.icon()` akzeptiert `tauri::image::Image` oder `Icon` je nach RC-Version).
-  Falls `build(app)?` `?` nicht im `.setup()`-Closure unterstützt, ist `.expect(...)` hier
-  akzeptabel (Tray-Build-Fail ist fatal-level; keine Tray-App ohne Tray).
+  *Spec-Amendment 2026-04-25:* Tray-Build-Fail ist **fail-soft**, nicht fatal — PNG-Decode-Errors
+  oder OS-Tray-API-Reject loggen via `tracing::error!` und skippen Step 13a; EventMirror (Step 13b),
+  Hotkey/Pipeline-Flow und alle übrigen Bootstrap-Steps bleiben unbeeinflusst, App startet ohne
+  Tray-Icon. Aligned mit Phase-1-Fail-Soft-Pattern (`feedback_scaffold_fail_soft_pattern`) und
+  parallel zu Hotkey-Fail-Soft in Story 3.6 — Tray ist non-essential UI, kein Boot-Blocker.
+  Implementation: Tray-Setup-Block in Closure-IIFE mit `tauri::Result<_>`-Return; `match` auf
+  das Result, `Err`-Arm loggt + überspringt Indicator-Spawn (commit `7e072a4`).
   Context-Menu hat mindestens `"Klarvo"` (Info-Label, disabled) und `"Exit"`.
 
 - **Recording-State-Indicator:**
