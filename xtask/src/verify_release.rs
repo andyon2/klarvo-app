@@ -13,6 +13,8 @@
 //!      to active feature resolution (not declaration) so future `dev-*`
 //!      feature introductions fail the release build unless explicitly
 //!      disabled. Spec §4a + memory `project_api_key_os_keystore_mvp.md`.
+//!      Explicitly covers `dev-plain-keystore` (Security-Theater-Gate, Story 5.4,
+//!      memory `project_keystore_trait_surface.md` + `project_api_key_os_keystore_mvp.md`).
 //!
 //!   2. Sentinel: `tracing-subscriber` must NOT be a resolved dependency yet.
 //!      Rationale: the real check is "DEBUG/TRACE subscribers are not
@@ -22,6 +24,17 @@
 //!      Phase-1 session that wires up `tracing-subscriber` is forced to
 //!      also implement the real check here and delete the sentinel.
 //!
+//!   3. `dev-plain-keystore` Feature-Off-in-Release (Story 5.4):
+//!      Already covered by check #1 (`name.starts_with("dev-")`). This entry
+//!      documents the explicit Security-Theater-Gate: a plain-SQLite KeyStore in a
+//!      release binary is unacceptable (ref: `project_api_key_os_keystore_mvp.md`).
+//!      Verified by the dedicated Forcing-Sentinel-Test `dev_plain_keystore_is_caught_by_forbidden_check`.
+//!
+//!   4. `aarch64-linux-android` cross-compile check for `klarvo-core` + pure-Rust plugins
+//!      (Story 5.4): Win+Android parallel Phase-1-scope
+//!      (memory `project_klarvo_v2_rebuild.md`). Skippable locally via
+//!      `--skip-cross-compile`; MUST NOT be skipped in CI release pipelines.
+//!
 //! Deferred (TODO — present as comments in this file, NOT as silent stubs):
 //!   - `obfstr`-key default-placeholder check. Prerequisite: `obfstr` crate
 //!     in workspace + compile-time-constant Licensing-HMAC-Key. See §4 +
@@ -30,6 +43,13 @@
 //!     rustc already strips debug-only code under `--release`. An AST-based
 //!     scan (see `lint_events.rs`) would only add value if a concrete
 //!     divergence is observed. §4a calls this "redundant with Rust default".
+//!   - TODO(phase-3): AccessibilityService-Manifest-Audit für Play Store.
+//!     Prerequisite: Policy-Audit abgeschlossen. Spec: memory `project_play_store_phase3_blocker.md`.
+//!
+//! # `--skip-cross-compile` Flag
+//!
+//! Pass `--skip-cross-compile` to skip check #4 in local-dev environments where the Android
+//! NDK / target is not installed. This flag MUST NOT be set in CI release pipelines.
 
 use std::{
     path::{Path, PathBuf},
@@ -60,7 +80,14 @@ struct Node {
     features: Vec<String>,
 }
 
-pub fn run() -> ExitCode {
+const ANDROID_CHECK_CRATES: &[&str] = &[
+    "klarvo-core",
+    "klarvo-plugin-groq",
+    // Erweiterung: neue pure-Rust-Plugins (ohne build.rs / links-Field) hier eintragen.
+    // NDK-spezifische Plugins sind Plugin-Author-Verantwortung und werden separat geregelt.
+];
+
+pub fn run(skip_cross_compile: bool) -> ExitCode {
     let metadata = match load_metadata() {
         Ok(m) => m,
         Err(e) => {
@@ -74,6 +101,7 @@ pub fn run() -> ExitCode {
     if let Err(msg) = check_tracing_subscriber_sentinel(&metadata) {
         failures.push(msg);
     }
+    failures.extend(check_android_cross_compile(skip_cross_compile));
 
     // TODO(phase-4): obfstr key != default-placeholder (compile-time-constant).
     //   Spec: architecture.md §4 (HMAC) + §4a. Memory:
@@ -84,6 +112,8 @@ pub fn run() -> ExitCode {
     //   is ever observed, implement a `syn`-based AST scan modeled after
     //   `lint_events.rs` (distinguish `cfg(debug_assertions)` from
     //   `cfg(not(debug_assertions))`).
+    // TODO(phase-3): AccessibilityService-Manifest-Audit für Play Store.
+    //   Prerequisite: Policy-Audit abgeschlossen. Spec: memory project_play_store_phase3_blocker.md.
 
     if failures.is_empty() {
         println!(
@@ -105,7 +135,6 @@ pub fn run() -> ExitCode {
 }
 
 fn locate_workspace_root() -> Option<PathBuf> {
-    // xtask/Cargo.toml → workspace root is the parent of CARGO_MANIFEST_DIR.
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest.parent().map(Path::to_path_buf)
 }
@@ -150,10 +179,6 @@ fn is_forbidden_feature(name: &str) -> bool {
 }
 
 fn package_name_from_id(id: &str) -> &str {
-    // cargo metadata package-id format: "<name> <version> (<source>)" or
-    // the new PackageIdSpec "<scheme>+<url>#<name>@<version>". We only need
-    // a human-readable name for error messages — take the first whitespace
-    // token and, if it contains a '#', keep what follows it up to '@'.
     let head = id.split_whitespace().next().unwrap_or(id);
     if let Some((_, after_hash)) = head.split_once('#') {
         after_hash.split('@').next().unwrap_or(after_hash)
@@ -178,6 +203,74 @@ fn check_tracing_subscriber_sentinel(metadata: &Metadata) -> Result<(), String> 
         )
     } else {
         Ok(())
+    }
+}
+
+/// Check `aarch64-linux-android` cross-compile for `klarvo-core` + pure-Rust plugins.
+///
+/// Phase-1 scope: Win+Android parallel (memory `project_klarvo_v2_rebuild.md`).
+/// Fails with actionable message if the target is not installed (unless skipped).
+/// Play-Store-specific hardening (AccessibilityService audit) is Phase-3 scope.
+fn check_android_cross_compile(skip: bool) -> Vec<String> {
+    if skip {
+        eprintln!(
+            "xtask verify-release: WARNING — cross-compile check skipped via --skip-cross-compile.\n  \
+             This flag must NOT be set in CI release pipelines."
+        );
+        return Vec::new();
+    }
+
+    // Pre-check: is the target installed? Avoids slow cargo check with cryptic error.
+    let installed = is_android_target_installed();
+    if !installed {
+        return vec![
+            "xtask verify-release: FAIL — aarch64-linux-android target not installed.\n  \
+             Run: rustup target add aarch64-linux-android\n  \
+             Note: pass --skip-cross-compile to skip this check in local-dev environments."
+                .to_string(),
+        ];
+    }
+
+    let mut failures = Vec::new();
+    for crate_name in ANDROID_CHECK_CRATES {
+        let status = Command::new("cargo")
+            .args([
+                "check",
+                "--target",
+                "aarch64-linux-android",
+                "-p",
+                crate_name,
+                "--quiet",
+            ])
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                failures.push(format!(
+                    "`cargo check --target aarch64-linux-android -p {crate_name}` failed (exit {})",
+                    s.code().unwrap_or(-1)
+                ));
+            }
+            Err(e) => {
+                failures.push(format!(
+                    "could not spawn `cargo check --target aarch64-linux-android -p {crate_name}`: {e}"
+                ));
+            }
+        }
+    }
+    failures
+}
+
+fn is_android_target_installed() -> bool {
+    let output = Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().any(|l| l.trim() == "aarch64-linux-android")
+        }
+        _ => false,
     }
 }
 
@@ -310,5 +403,22 @@ mod tests {
         let v = check_forbidden_features(&m);
         assert_eq!(v.len(), 1);
         assert!(v[0].contains("test-license"));
+    }
+
+    /// Forcing sentinel (Story 5.4 AC-B): explicitly verifies that `dev-plain-keystore`
+    /// is caught by the forbidden-features check (Security-Theater-Gate).
+    ///
+    /// If `dev-plain-keystore` is ever renamed, this test MUST be updated AND
+    /// `memory/project_keystore_trait_surface.md` must be updated.
+    #[test]
+    fn dev_plain_keystore_is_caught_by_forbidden_check() {
+        let m = fixture(
+            &[],
+            vec![node("klarvo-keystore 0.0.1", &["default", "dev-plain-keystore"])],
+        );
+        let v = check_forbidden_features(&m);
+        assert_eq!(v.len(), 1, "expected exactly one violation: {v:?}");
+        assert!(v[0].contains("dev-plain-keystore"), "{}", v[0]);
+        assert!(v[0].contains("klarvo-keystore"), "{}", v[0]);
     }
 }
