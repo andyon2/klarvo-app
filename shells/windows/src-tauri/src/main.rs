@@ -199,62 +199,70 @@ fn main() {
             let event_bus_rx_mirror = event_bus.subscribe();
             debug_assert!(app.manage(Arc::clone(&event_bus)));
 
-            // Step 13a: Tray icon with recording-state indicator
+            // Step 13a: Tray icon with recording-state indicator (fail-soft per AC-F —
+            // asset decode or builder errors log and skip; the app continues without
+            // a system-tray icon rather than refusing to boot).
             // TODO Phase-2-Branding: replace placeholder icons with finalized assets
-            let idle_icon = Image::from_bytes(include_bytes!("../icons/tray-idle.png"))
-                .expect("tray-idle.png must be a valid PNG");
-            let recording_icon = Image::from_bytes(include_bytes!("../icons/tray-recording.png"))
-                .expect("tray-recording.png must be a valid PNG");
+            let tray_setup = (|| -> tauri::Result<_> {
+                let idle_icon = Image::from_bytes(include_bytes!("../icons/tray-idle.png"))?;
+                let recording_icon = Image::from_bytes(include_bytes!("../icons/tray-recording.png"))?;
+                let menu = MenuBuilder::new(app)
+                    .item(&MenuItemBuilder::with_id("info", "Klarvo").enabled(false).build(app)?)
+                    .item(&MenuItemBuilder::with_id("quit", &exit_label).build(app)?)
+                    .build()?;
+                let tray = TrayIconBuilder::with_id("klarvo-tray")
+                    .icon(idle_icon.clone())
+                    .menu(&menu)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "quit" => app.exit(0),
+                        other => tracing::warn!(menu_id = other, "unhandled tray menu event"),
+                    })
+                    .build(app)?;
+                Ok((tray, idle_icon, recording_icon))
+            })();
 
-            let menu = MenuBuilder::new(app)
-                .item(&MenuItemBuilder::with_id("info", "Klarvo").enabled(false).build(app)?)
-                .item(&MenuItemBuilder::with_id("quit", &exit_label).build(app)?)
-                .build()?;
-
-            let tray = TrayIconBuilder::with_id("klarvo-tray")
-                .icon(idle_icon.clone())
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
-                    other => tracing::warn!(menu_id = other, "unhandled tray menu event"),
-                })
-                .build(app)?;
-
-            // Recording-state indicator: 3-state switch following the recording lifecycle
-            // (see `Event` doc-comment in klarvo-core/src/event/bus.rs).
-            //   Started   → recording icon (red).
-            //   Stopped   → recording icon (placeholder for "processing" — pipeline is
-            //               still draining; audio capture has ended). TODO Phase-2-Branding:
-            //               distinct processing icon (e.g. red mic + spinner overlay).
-            //   Completed → idle icon (gray) — pipeline task has fully exited.
-            // Subscribes independently from EventMirror (Step 13b) per AC-G separation requirement.
-            let tray_handle = tray.clone();
-            let idle_icon_tray = idle_icon.clone();
-            let recording_icon_tray = recording_icon.clone();
-            let mut tray_rx = event_bus_rx_tray;
-            tauri::async_runtime::spawn(async move {
-                use klarvo_core::event::Event;
-                while let Ok(event) = tray_rx.recv().await {
-                    match event {
-                        Event::RecordingStarted { .. } => {
-                            let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
+            match tray_setup {
+                Ok((tray, idle_icon, recording_icon)) => {
+                    // Recording-state indicator: 3-state switch following the recording lifecycle
+                    // (see `Event` doc-comment in klarvo-core/src/event/bus.rs).
+                    //   Started   → recording icon (red).
+                    //   Stopped   → recording icon (placeholder for "processing" — pipeline is
+                    //               still draining; audio capture has ended). TODO Phase-2-Branding:
+                    //               distinct processing icon (e.g. red mic + spinner overlay).
+                    //   Completed → idle icon (gray) — pipeline task has fully exited.
+                    // Subscribes independently from EventMirror (Step 13b) per AC-G separation requirement.
+                    let tray_handle = tray.clone();
+                    let idle_icon_tray = idle_icon.clone();
+                    let recording_icon_tray = recording_icon.clone();
+                    let mut tray_rx = event_bus_rx_tray;
+                    tauri::async_runtime::spawn(async move {
+                        use klarvo_core::event::Event;
+                        while let Ok(event) = tray_rx.recv().await {
+                            match event {
+                                Event::RecordingStarted { .. } => {
+                                    let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
+                                }
+                                Event::RecordingStopped { .. } => {
+                                    // Processing placeholder — same red icon until Phase-2 ships
+                                    // a distinct processing icon. Tray returns to idle on
+                                    // RecordingCompleted, not on RecordingStopped.
+                                    let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
+                                }
+                                Event::RecordingCompleted { .. } => {
+                                    let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
+                                }
+                                _ => {}
+                            }
                         }
-                        Event::RecordingStopped { .. } => {
-                            // Processing placeholder — same red icon until Phase-2 ships
-                            // a distinct processing icon. Tray returns to idle on
-                            // RecordingCompleted, not on RecordingStopped.
-                            let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
-                        }
-                        Event::RecordingCompleted { .. } => {
-                            let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
-                        }
-                        _ => {}
-                    }
+                    });
                 }
-            });
+                Err(e) => {
+                    tracing::error!(error = %e, "tray setup failed; continuing without tray");
+                }
+            }
 
-            // Step 13b: EventMirror — ref Story 3.8 AC-D.
-            // Subscribes independently from the tray state task (separate broadcast::Receiver).
+            // Step 13b: EventMirror — ref Story 3.8 AC-D. Always wired, independent of
+            // tray outcome (separate broadcast::Receiver per AC-G).
             EventMirror::new(app.handle().clone()).start(event_bus_rx_mirror);
 
             Ok(())
