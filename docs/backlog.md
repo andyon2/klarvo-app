@@ -24,7 +24,9 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 ## Phase 2 — Windows daily usable
 
-**Phase-Goal** (ref Product-Brief §Phasenplan, PRD Phase 1 Growth Features): Windows-Shell vollständig, alle Recording-Modi, zweite Hotkey-Slot, komplette Pill Bar, minimales Settings-Panel, zweiter STT-Plugin (Trait-Stability-Test), OS-Keystore als Release-Default.
+**Phase-Goal** (ref Product-Brief §Phasenplan, PRD Phase 1 Growth Features): Windows-Shell vollständig, alle Recording-Modi, zweite Hotkey-Slot, komplette Pill Bar, minimales Settings-Panel, zweiter STT-Plugin (Trait-Stability-Test).
+
+> **2026-04-26:** "OS-Keystore als Release-Default" aus dieser Goal-Line entfernt. Phase-Placement ist Phase 4 (PRD L159 + Andy-Call 2026-04-21, siehe Phase-4-Eintrag unten). Authoritative Phase-2-Scope-Snapshot: `output/planning-artifacts/phase-2-scope-lock.md`.
 
 ### Audio-Cpal Precision & Correctness Hardening
 
@@ -542,3 +544,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **2026-04-21:** Audio-Capture-Config-Overrides added (Phase 2) — Source: Story 3.7 Technical-Notes. Welle-3-Review-Decision (Reviewer-approval).
 - **2026-04-25:** Epic-4-Code-Review-Followup: zwei neue Phase-2-Items — (a) PluginError-Variant-zu-i18n-Key-Mapping (P1-Wurzel: 5/6 Varianten setzen `user_message: None`); (b) Audit-Grep-Erweiterung für `unwrap_or`-Fallback-Keys (Method-Lücke aus Story-4.4-Coverage-Audit). Drei Defer-Items (F11 TOML-Type-Mismatch-UX, F12 eager-Validation-Regression-Test, F13 symmetric TODO-Marker-Test für DE) in `_bmad-output/implementation-artifacts/deferred-work.md`.
 - **2026-04-25 (Epic-5):** Story 5.2 AC-F: `bindings-drift --fix` Phase-2-Planned. Story 5.3 AC-G: Story-4.4-Eintrag als `[CLOSED 5.3]` markiert; Phase-2-Cleanup-Story für REQUIRED_KEYS-Entfernung angelegt. Story 5.4 Technical Notes: Tauri-Bundle-Profile-Detection als Phase-2-Planned eingetragen.
+- **2026-04-26 (Phase-2-Scope-Lock):** Phase-2-Goal-Line oben korrigiert — "OS-Keystore als Release-Default" entfernt (Phase-4 per Andy-Call 2026-04-21, F1-Resolution im Phase-2-Scoping-Brief). Authoritative Phase-2-Scope-Snapshot ist `output/planning-artifacts/phase-2-scope-lock.md` (Phase-2-A/B-Wellen-Split, Skip-Section, Open-Items für Pre-Story-Decisions). Backlog bleibt Single-Source-of-Truth für Item-Inventur; Scope-Lock ist Phase-Boundary-Snapshot.
