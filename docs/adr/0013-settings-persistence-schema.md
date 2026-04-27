@@ -1,7 +1,8 @@
 # ADR-0013: Settings-Persistence-Schema für Phase-2-Settings-Panel
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-26
+**Accepted:** 2026-04-27 (Open-Questions-Resolution Q1–Q5, see Amendment 1 + §Resolved Questions)
 
 ## Context
 
@@ -40,7 +41,7 @@ Dieser ADR konkretisiert die Architektur-Mandate auf Phase-2-Story-Granularität
 
 ## Decision
 
-**Status: Proposed.** Sub-Decisions sind als Vorschlag formuliert; finale Form nach User-Decision auf Open Questions.
+**Accepted 2026-04-27.** Alle 5 Sub-Decisions sind final; Q1–Q5-Resolutions stehen inline in §Resolved Questions, Trace-Summary in §Amendment 1. Story-2.A.4 unblocked.
 
 ### Sub-Decision 1: Layer-Split — System-TOML + User-SQLite (architecture.md-bestätigt)
 
@@ -62,15 +63,15 @@ System-TOML-Phase-2-Surface (final): `db_path`, `ui_language_default`, `dev_mode
 
 `hotkey.slot1.combo` ist Phase-1-Solo-Field (kein Triple). Phase-2-A ergänzt `hotkey.slot1.mode` (Toggle/AutoStop/Hold via A1) — wird zum Triple, sobald `hotkey.slot1.active` (boolean enable/disable) hinzukommt. Phase-2-B Story A2 (Second-Hotkey-Slot) verdoppelt das auf 6 Felder (slot1 + slot2).
 
-**Decision (Vorschlag):**
+**Decision: flat `settings(key, value, type)` für Phase-2-A und Phase-2-B; Composite-Promote als spätere Phase-2-B-Story-Decision falls A2-Slot-Anzahl auf 4–5 skaliert.**
 
 - **Phase-2-A** Settings-Panel implementiert flat `settings(key, value, type)` mit dot-namespaced Keys. Hotkey ist `hotkey.slot1.combo` + `hotkey.slot1.mode` (zwei Felder, kein Triple → flat reicht).
-- **Phase-2-B** A2 Second-Hotkey-Slot triggert Composite-Promote zu dedizierter `hotkey_slots(slot_id, combo, mode, active)`-Tabelle als eigene Mini-Migration-Story (oder bewusste Beibehaltung von flat-Keys, falls Slot-Anzahl auf 2 capped).
-- **Trigger für Promote:** entweder A2-Story (wenn Slot-Anzahl auf 4–5 skaliert wird, siehe Brief Open Question) oder Phase-3-Android-Surface (wenn Bubble-State-Triple `bubble.position` + `bubble.size` + `bubble.opacity` analoge Promote-Trigger ist).
+- **Phase-2-B** A2 Second-Hotkey-Slot bleibt initial flat (`hotkey.slot2.combo` + `hotkey.slot2.mode`). Composite-Promote zu dedizierter `hotkey_slots(slot_id, combo, mode, active)`-Tabelle ist eigene Mini-Migration-Story und wird *nur* dann eröffnet, wenn die Slot-Anzahl auf 4–5 skaliert (siehe Brief §Open Question Hotkey-Slot-Skalierungs-Trigger) ODER wenn Phase-3-Android-Bubble-State-Triple (`bubble.position` + `bubble.size` + `bubble.opacity`) den Promote-Schwellenwert erreicht.
+- **Bewusst akzeptiert:** flat-Keys mit Slot-Index im Key-Pfad sind redundant gegenüber dedizierter Slots-Tabelle, aber bei MVP-Slot-Cap = 2 ist die Redundanz minimal und der Migration-Schritt zu Composite ist später additiv (kein Schema-Break, nur Daten-Move + Read-Path-Wechsel).
 
 ### Sub-Decision 3: Migration-Path Phase-1-TOML → Phase-2-SQLite
 
-**Vorschlag: Hard-Cut + One-Shot-Migration on First-Phase-2-Boot.**
+**Decision: Hard-Cut + One-Shot-Migration on First-Phase-2-Boot.**
 
 Beim ersten Boot eines Phase-2-Builds:
 1. Detect: `settings`-Tabelle leer + `config.toml` existiert.
@@ -85,7 +86,7 @@ Beim ersten Boot eines Phase-2-Builds:
 
 ### Sub-Decision 4: Settings-Mutation-API-Surface
 
-**Vorschlag: typed Tauri-Commands pro Settings-Group + Generic-Fallback.**
+**Decision: typed Tauri-Commands pro Core-Namespace + Generic-Fallback für `plugins.<id>.*`.**
 
 ```rust
 // shells/windows/src-tauri/src/commands/settings.rs (Skizze, Story-2.A.4-Scope)
@@ -107,7 +108,7 @@ Typed-Commands für Core-Namespaces (`hotkey.*`, `ui.*`, `audio.*`, `app.*`); ge
 
 ### Sub-Decision 5: Live-Mutation-Notify-Mechanismus (für C3 Live-Locale-Switch)
 
-**Vorschlag: tauri-emit-Event `settings-changed` mit Key-Prefix-Filter.**
+**Decision: tauri-emit Push-Event `settings-changed` mit Key-Prefix-Filter.**
 
 ```rust
 // On settings.set("ui.language", "de")
@@ -170,6 +171,7 @@ Rejected:
 - **Migration-Step-Friction:** Phase-1→Phase-2-Upgrade triggert one-shot-Migration. Wenn die fehlschlägt, ist User-Daten-State unklar. Mitigation: Migration ist idempotent + transaktional + write-only (TOML wird nicht gelöscht, sondern für System-Layer-Felder weitergenutzt).
 - **Composite-Promote-Future-Work:** Phase-2-B A2 (Second-Hotkey-Slot) MUSS Promote-Decision treffen — nicht nachgeholt, nicht ignoriert. ADR-Update beim Trigger.
 - **Typed-Accessor-Boilerplate:** Pro Phase-2-Setting wird ein `Settings::ui_language()` / `Settings::set_ui_language(...)` benötigt. Mitigation: macro-based Code-Gen ist Phase-2+-Polish, nicht Phase-2-A-Blocker.
+- **Format-Mutability-Window bis Phase-4 (Q5-Resolution-Schuld):** Phase-2-Schema ist *nicht* als v1-Import-Target stabilisiert. Zwischen Phase-2-Acceptance (2026-04-27) und Phase-4-v1-Import-Story darf das Schema-Format weiter mutieren — Key-Renames, Type-Promotions, Composite-Promotes (siehe Sub-Decision 2) sind erlaubt ohne v1-Compat-Break-Sorge. Konsequenz: ADR-0004 (v1→v2-Migration, Phase 4) wird einen eigenen Transformations-Layer brauchen, der v1-`config.json`-Schema in das *zu-Phase-4-stabilisierte* Phase-2-Schema mappt, nicht in das *2026-04-27-Schema*. Mitigation: Phase-4-Story-Eröffnung muss explizit das aktuelle Schema (zu Phase-4-Zeitpunkt) als Mapping-Target lesen, nicht ein gefrorenes Snapshot. Risiko: wenn zwischen Phase-2 und Phase-4 viele Mutations laufen (>5 Schema-Migrations), wird der v1-Import-Mapper komplexer als heute angenommen — diese Schuld wird bewusst akzeptiert, weil v1-User-Anzahl (`memory/project_ea_withdrawn`) klein ist und Phase-2-Iteration-Speed vor Phase-4-Mapping-Simplicity priorisiert wird.
 
 **Story-Impacts (Phase-2-A):**
 
@@ -184,29 +186,39 @@ Rejected:
 - **Story A1 (Recording-Modi):** Schreibt `hotkey.slot1.mode` über Settings-API.
 - **Story B2 (Audio-Capture-Config-Overrides):** `audio.sample_rate`, `audio.channels`, `audio.device_id` über Settings-API.
 
-## Open Questions
+## Resolved Questions
 
-Diese MUSS Andy beantworten, bevor `Status: Proposed` → `Status: Accepted` wechselt und Story-A4 beginnen kann.
+Alle 5 Open-Questions des Proposed-State (2026-04-26) wurden 2026-04-27 von Andy entschieden. Hier die Q-zu-A-Trace; Sub-Decision-Body ist entsprechend de-hedged.
 
-### Q1 — Composite-Threshold-Trigger-Form
+### Q1 — Composite-Threshold-Trigger-Form (→ Sub-Decision 2)
 
-Sub-Decision 2 Vorschlag: flat-Keys in Phase-2-A, Composite-Promote bei A2 (Second-Hotkey-Slot). Alternative: bereits in Phase-2-A `hotkey_slots`-Tabelle anlegen (Future-Proof). **Frage:** Phase-2-A flat oder pre-emptiv `hotkey_slots`-Tabelle?
+- **Frage:** Phase-2-A flat oder pre-emptiv `hotkey_slots`-Tabelle?
+- **Resolution (2026-04-27):** **flat.** Phase-2-A bleibt bei flat-Keys mit dot-namespacing. Phase-2-B-A2 erweitert flat um `hotkey.slot2.*` ohne Composite-Promote. Promote-Trigger ist Slot-Skalierung auf 4–5 oder Phase-3-Bubble-Triple — eigene Mini-Migration-Story zu dem Zeitpunkt.
+- **Begründung der Wahl:** Pre-emptiver Composite ist Premature-Abstraction (`memory/feedback_premature_abstraction_guard`) — bei MVP-Slot-Cap = 2 ist die flat-Redundanz minimal, Migration zu Composite ist später additiv (kein Schema-Break, nur Daten-Move).
 
-### Q2 — Migration-Path Aggressivität
+### Q2 — Migration-Path Aggressivität (→ Sub-Decision 3)
 
-Sub-Decision 3 Vorschlag: Hard-Cut + One-Shot-Migration (TOML User-Felder → SQLite, TOML bleibt System-Layer-only nach Migration). **Frage:** Hard-Cut OK, oder wollen wir Dual-Read-Period (z.B. ersten Phase-2-Boot beide Layers lesen, danach Hard-Switch)?
+- **Frage:** Hard-Cut + One-Shot-Migration, oder Dual-Read-Period?
+- **Resolution (2026-04-27):** **Hard-Cut.** Erster Phase-2-Boot detected leere `settings`-Tabelle + existierende `config.toml`, schreibt User-Layer-Felder in SQLite, danach ist TOML System-Layer-only. Idempotent + transaktional.
+- **Begründung der Wahl:** Phase-1 hat keine aktiven Tester (`memory/project_ea_withdrawn`); Dual-Read-Period erhöht Komplexität ohne Nutzwert. Hard-Cut ist legitim und reduziert Read-Path-Drift in Phase-2-Code.
 
-### Q3 — Settings-Save-API-Surface-Granularität
+### Q3 — Settings-Save-API-Surface-Granularität (→ Sub-Decision 4)
 
-Sub-Decision 4 Vorschlag: typed-Commands pro Core-Namespace + generic für `plugins.*`. Alternative: generic-only (`set_setting(key, value, type)`) — Frontend-Type-Safety geht verloren, dafür weniger tauri-specta-Bindings-Drift. **Frage:** Typed pro Namespace, oder generic-only?
+- **Frage:** Typed pro Namespace, oder generic-only?
+- **Resolution (2026-04-27):** **typed-pro-Namespace + generic-Fallback** für `plugins.<id>.*`. Core-Namespaces (`hotkey.*`, `ui.*`, `audio.*`, `app.*`) bekommen typed Tauri-Commands; Plugin-Namespaces nutzen generischen `set_plugin_setting(plugin_id, key, value)`.
+- **Begründung der Wahl:** Frontend-Type-Safety via tauri-specta-Bindings für Core-Settings; Generic-Fallback vermeidet pro-Plugin-Command-Bloat und respektiert Plugin-Author-API-Contract (Plugins kennen ihren eigenen Namespace, Frontend muss generic dispatchen).
 
-### Q4 — Notify-Mechanismus-Wahl
+### Q4 — Notify-Mechanismus-Wahl (→ Sub-Decision 5)
 
-Sub-Decision 5 Vorschlag: tauri-emit `settings-changed`-Event. Alternative: Pull-based via `tauri::State<Arc<RwLock<Settings>>>` (Frontend pollt bei Re-Render). **Frage:** Push-Event oder Pull-State?
+- **Frage:** Push-Event oder Pull-State?
+- **Resolution (2026-04-27):** **Push-Event** via `tauri::AppHandle::emit("settings-changed", ...)`. Frontend listent + reagiert reaktiv; Tray-Language-Switcher (A8-Sub) listent ebenfalls.
+- **Begründung der Wahl:** Pull-State braucht Frontend-Polling oder Tauri-Subscribe-Layer; Push-Event ist Tauri-idiomatic, hat Phase-1-Präzedenz (ADR-0009 `app.error`-Event), und macht C3 Live-Locale-Switch ohne zusätzliche Infrastruktur möglich.
 
-### Q5 — Phase-4-v1-Import-Schema-Stability-Erwartung
+### Q5 — Phase-4-v1-Import-Schema-Stability-Erwartung (→ Consequences §Negativ)
 
-ADR-0004 (v1→v2-Migration) ist Phase-4. Wenn dieses ADR-0013-Schema in Phase-2 stabilisiert wird, kann v1-Import-Story (Phase 4) direkt darauf zielen — ODER muss das v1-Import-Schema-Mapping eigene Transformations-Layer einführen, weil Phase-2-Schema sich noch ändert? **Frage:** Soll Phase-2-Schema explizit als v1-Import-Target stabilisiert werden (Format-Lock), oder bleibt Format-Mutability-Window bis Phase-4 offen?
+- **Frage:** Phase-2-Schema als v1-Import-Target stabilisieren (Format-Lock), oder Format-Mutability bis Phase 4 offen?
+- **Resolution (2026-04-27):** **Format-Mutability bis Phase 4 offen.** Schema darf zwischen Phase-2-Acceptance und Phase-4-v1-Import-Story weiter mutieren (Key-Renames, Type-Promotions, Composite-Promotes). Phase-4-v1-Import-Story muss das *zu-Phase-4-Zeitpunkt-aktuelle* Schema als Mapping-Target lesen, nicht ein 2026-04-27-Snapshot.
+- **Begründung der Wahl:** v1-User-Anzahl ist klein (`memory/project_ea_withdrawn`); Phase-2-Iteration-Speed wird über Phase-4-Mapping-Simplicity priorisiert. Schuld explizit dokumentiert in §Consequences §Negativ als "Format-Mutability-Window bis Phase-4".
 
 ## Cross-References
 
@@ -217,13 +229,40 @@ ADR-0004 (v1→v2-Migration) ist Phase-4. Wenn dieses ADR-0013-Schema in Phase-2
 - `docs/adr/0012-orchestrator-owner.md` (Orchestrator-Owner, konsumiert Settings-API in Phase 2-B A1)
 - `shells/windows/src-tauri/src/config.rs` (Phase-1-`ShellConfig`-Ist-Stand, Migration-Source)
 - `docs/backlog.md` "Minimales Settings-Panel" + "Live-Locale-Switch" + "Hotkey-Konflikt-Erkennung" (Phase-2-A-Items)
-- `memory/feedback_premature_abstraction_guard` (Begründung für Mini-Pass statt Inline-Decision)
+- `memory/feedback_premature_abstraction_guard` (Begründung für Mini-Pass statt Inline-Decision; auch Q1-flat-Resolution)
+- `memory/feedback_adr_amendment_convention` (Acceptance-Commit-Hygiene: separater Commit, Decision-Block-Preservation, Memory-Update extern)
 - `memory/project_phase1_complete` (Phase-1-Closure-Snapshot, Audit-Matrix-Stories abgeschlossen)
 - `memory/project_klarvo_v2_rebuild` (Phasenplan-Memory, Phase-2-Scope-Konsistenz)
+- `memory/project_ea_withdrawn` (Q2-Hard-Cut + Q5-Format-Mutability-Begründung: kleine v1-User-Anzahl)
 
 ## Next Actions
 
-1. Andy review + accept → 5 Open Questions beantworten.
-2. ADR-Status `Proposed` → `Accepted` mit eingebauten Decisions.
+1. ✅ Andy → Q1–Q5 beantwortet 2026-04-27 (siehe §Resolved Questions + Amendment 1).
+2. ✅ ADR-Status `Proposed` → `Accepted` mit eingebauten Decisions.
 3. Story-2.A.4 (Settings-Panel) eröffnen — ADR-0013-Decisions sind dort load-bearing.
-4. Bei Phase-2-B A2-Story (Second-Hotkey-Slot): Composite-Promote-Decision-Re-Visit → ADR-Update oder Beibehaltung Begründung.
+4. Bei Phase-2-B A2-Story (Second-Hotkey-Slot): Q1-flat-Resolution beibehalten *außer* Slot-Skalierung-Trigger feuert; dann Composite-Promote als eigene Mini-Migration-Story.
+5. Bei Phase-4-v1-Import-Story (ADR-0004): Schema-Mapping-Target = zu-Phase-4-Zeitpunkt-aktuelles Schema (nicht 2026-04-27-Snapshot) — Q5-Schuld lesen + adressieren.
+
+---
+
+## Amendment 1 — 2026-04-27 — Open-Questions-Resolution + Acceptance
+
+**Trigger:** Andy beantwortet alle 5 Open Questions des Proposed-State (2026-04-26).
+
+**Geändert:**
+
+- Header: `Status: Proposed` → `Accepted`; `Accepted: 2026-04-27` ergänzt.
+- §Decision-Intro: Status-Block-Sentence umformuliert (Proposed-Vorschlag-Hedging → Accepted-Final).
+- Sub-Decision 2: `Decision (Vorschlag)` → `Decision`; flat-Keys explizit als Resolution dokumentiert; Composite-Promote-Trigger-Bedingung präzisiert.
+- Sub-Decisions 3, 4, 5: Header-Hedging `Vorschlag:` → `Decision:` entfernt; Body-Inhalt unverändert (Q-Resolutions deckungsgleich mit Vorschlägen).
+- §Consequences §Negativ: neue Bullet "Format-Mutability-Window bis Phase-4 (Q5-Resolution-Schuld)" — explizite akzeptierte Schuld mit Mitigation + Risiko-Anker für Phase-4-v1-Import-Story.
+- §Open Questions → §Resolved Questions: Q1–Q5 mit Inline-Resolution + Begründung der Wahl umgeschrieben.
+- §Cross-References: `feedback_adr_amendment_convention` + `project_ea_withdrawn` ergänzt.
+- §Next Actions: Q1–Q5-Pendings abgehakt; neuer Action-Item für ADR-0004-Phase-4-Story (Q5-Schuld-Adressierung).
+
+**Nicht geändert (per `feedback_adr_amendment_convention` Decision-Block-Preservation):**
+
+- Sub-Decision-Bodies (außer Hedging-Header) und Alternatives-Considered-Sections — der ursprüngliche Decision-Pfad samt verworfener Alternativen bleibt traceable.
+- Context-Section + Decision-Drivers + Scope-Fence — die ursprüngliche Problemformulierung (2026-04-26) bleibt unverändert.
+
+**Memory-Update (außerhalb dieses Commits):** `memory/project_phase2_scope_lock` aktualisieren, sodass ADR-0013-Status auf Accepted gewechselt ist und A4 unblocked.
