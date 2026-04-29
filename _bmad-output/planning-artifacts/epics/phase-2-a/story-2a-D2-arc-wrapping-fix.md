@@ -75,5 +75,7 @@ Kein Behavior-Change. Kein API-Change in `klarvo-core`.
 - Falls `SessionOrchestrator` nicht direkt managebar ist (wegen `app.manage` + Hotkey-Callback-Clone):
   Hotkey-Callback auf `app.handle().state::<SessionOrchestrator>()` umstellen statt `Arc::clone`.
 - Scope-Discrepancy-Note: Dispatch-Plan nennt "klarvo-core Audio-Pipeline-Pfad" als Touch-Boundary;
-  tatsächliche Stelle ist Shell-Code. Falls in klarvo-core ein separates double-Arc gefunden wird:
-  als Bonus-Fix mit eigenem Commit, kein Scope-Creep.
+  primäre Stelle ist Shell-Code. **klarvo-core-Scan ist Teil dieser Story:** Agent soll
+  `klarvo-core/src/` (insb. `audio/`, `pipeline/`, `registry.rs`) gezielt nach redundantem
+  `Arc`-Wrapping suchen (z. B. `Arc<Box<dyn T>>` wo `Arc<dyn T>` reicht, oder `Arc::new(Arc::clone(...))`-Pattern).
+  Jeder Fund → eigener Commit; kein Fund → Note im PR-Body "klarvo-core scan: no redundant Arc found".
