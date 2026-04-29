@@ -52,7 +52,7 @@ pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellCon
     // per ADR-0011 SD-4).
     // Key-repeat filtering lives in SessionOrchestrator (ADR-0011 SD-3).
     if let Err(_) = handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, event| {
-        let orch = app.state::<Arc<SessionOrchestrator>>().inner().clone();
+        let orch = app.state::<SessionOrchestrator>().inner().clone();
         match event.state() {
             ShortcutState::Pressed => {
                 tauri::async_runtime::spawn(async move { orch.on_press().await });
@@ -74,16 +74,16 @@ pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellCon
 mod tests {
     use super::*;
 
-    /// Compile-check: `Arc<SessionOrchestrator>` satisfies `Send + Sync + 'static`,
-    /// the bounds required by `tauri::State<Arc<SessionOrchestrator>>`.
+    /// Compile-check: `SessionOrchestrator` satisfies `Send + Sync + 'static`,
+    /// the bounds required by `tauri::State<SessionOrchestrator>`.
     ///
     /// Passes by compiling. No runtime or constructor calls needed.
     #[allow(dead_code)]
     fn _assert_state_bounds<T: Send + Sync + 'static>() {}
 
     #[test]
-    fn arc_session_orchestrator_satisfies_tauri_state_bounds() {
-        _assert_state_bounds::<Arc<SessionOrchestrator>>();
+    fn session_orchestrator_satisfies_tauri_state_bounds() {
+        _assert_state_bounds::<SessionOrchestrator>();
     }
 
     /// MANUAL TEST: Start app, press CommandOrControl+Shift+Space, observe recording.

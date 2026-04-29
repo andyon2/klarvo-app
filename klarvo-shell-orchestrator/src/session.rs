@@ -33,7 +33,10 @@ enum SessionState {
 /// All dependencies are injected via `Arc`-wrapped trait objects for DI-mockability
 /// in unit tests (ADR-0012 §SD-5).
 ///
-/// `SessionOrchestrator` is `Send + Sync` — all fields are `Arc<…>`.
+/// `SessionOrchestrator` is `Send + Sync + Clone` — all fields are `Arc<…>`.
+/// `Clone` produces a shallow copy sharing all internal state (Mutex-guarded session_state
+/// is intentionally shared so hotkey callbacks and Tauri State access the same session).
+#[derive(Clone)]
 pub struct SessionOrchestrator {
     registry: Arc<PluginRegistry>,
     manifest: Arc<PipelineManifest>,

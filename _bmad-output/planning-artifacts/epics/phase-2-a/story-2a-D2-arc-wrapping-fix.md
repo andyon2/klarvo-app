@@ -3,7 +3,7 @@ name: Story 2.A.D2 — Arc-Wrapping-Duplikat-Fix
 phase: 2
 wave: A
 story_id: "2.A.D2"
-status: ready
+status: review
 dependencies: []
 adr_refs: []
 source_ref: "deferred-work.md F3 / Epic-3-Code-Review"
@@ -67,6 +67,44 @@ Kein Behavior-Change. Kein API-Change in `klarvo-core`.
 - `settings-changed`-Events werden weiterhin korrekt emittiert.
 
 ---
+
+## Tasks/Subtasks
+
+- [x] T1: `SessionOrchestrator` erhält `#[derive(Clone)]` — shallow Clone via Arc-Felder
+- [x] T2: `settings.rs` — `use Arc` entfernen, alle 8 `State<'_, Arc<Settings>>` → `State<'_, Settings>`
+- [x] T3: `main.rs` — Settings-Konstruktion ohne `Arc::new()`, `app.manage(settings)` statt `Arc::clone`
+- [x] T4: `main.rs` — `let orch = SessionOrchestrator::new(...)` (kein `Arc::new`), `app.manage(orch)` direkt
+- [x] T5: `hotkey.rs` — `app.state::<SessionOrchestrator>()` statt `Arc<SessionOrchestrator>`, Test/Kommentar aktualisieren
+- [x] T6: `i18n.rs` — 3 fehlende REQUIRED_KEYS aus A4-Arbeit nachgepflegt (pre-existing, blockiert AC-2)
+- [x] T7: Regressionstest `cargo test -p klarvo-core -p klarvo-shell-orchestrator -p klarvo-windows-shell --lib` → alle grün
+
+## Dev Agent Record
+
+### Implementation Notes
+
+**Settings-Fix:**
+`Settings` hat `Mutex<Connection>` + `Arc<dyn SettingsEmitter>` → erfüllt `Send + Sync + 'static` für direktes `app.manage()`. `Arc::new()` in der Konstruktionslogik entfernt, `app.manage(settings)` konsumiert den Wert. Alle 8 Command-Signaturen auf `State<'_, Settings>` umgestellt.
+
+**SessionOrchestrator-Fix:**
+`SessionOrchestrator` hat ausschließlich `Arc<_>`-Felder → `#[derive(Clone)]` ist cheap (nur Arc-Pointer-Copy). Der Hotkey-Callback ruft `app.state::<SessionOrchestrator>().inner().clone()` auf — liefert nun direkt `SessionOrchestrator` (shallow clone) statt `Arc<SessionOrchestrator>`. Keine `app.manage(Arc::clone(...))` mehr für beide Typen.
+
+**klarvo-core-Scan:**
+Gezielter Scan von `audio/`, `pipeline/`, `registry.rs` auf `Arc<Box<dyn T>>`, `Arc::new(Arc::clone(...))`, `Arc<Arc<_>>`. **Kein Fund** — alle Arc-Verwendungen in klarvo-core sind korrekt und nicht redundant.
+
+**REQUIRED_KEYS-Fix (AC-2):**
+`en.json` enthielt seit A4-Arbeit 3 Keys ohne REQUIRED_KEYS-Eintrag: `error.config.parse_failed`, `error.settings.in_memory_fallback`, `error.settings.validation`. Emit-Sites existieren in `main.rs`. Fix: Keys in `REQUIRED_KEYS` aufgenommen.
+
+### File List
+
+- `klarvo-shell-orchestrator/src/session.rs` — `#[derive(Clone)]` auf `SessionOrchestrator`
+- `shells/windows/src-tauri/src/commands/settings.rs` — `use Arc` entfernt, 8 `State<Arc<Settings>>` → `State<Settings>`
+- `shells/windows/src-tauri/src/main.rs` — Settings + Orch ohne doppeltes Arc, `app.manage(orch/settings)` direkt
+- `shells/windows/src-tauri/src/hotkey.rs` — State-Zugriff + Test auf `SessionOrchestrator` (ohne Arc)
+- `shells/windows/src-tauri/src/i18n.rs` — 3 REQUIRED_KEYS nachgepflegt
+
+### Change Log
+
+- 2026-04-29: Arc-Duplikat-Fix für Settings + SessionOrchestrator; klarvo-core-Scan: kein Fund; i18n REQUIRED_KEYS-Patch (A4-Nachpflege)
 
 ## Technical Notes
 

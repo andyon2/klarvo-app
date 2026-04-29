@@ -16,6 +16,7 @@ fn main() {
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
     use klarvo_core::keystore::KeyStore;
+    use klarvo_core::settings::{NoopSettingsEmitter, Settings, TomlMigrationSource};
     use klarvo_core::time::MonotonicClock;
     use klarvo_shell_orchestrator::SessionOrchestrator;
     use tauri::image::Image;
@@ -25,6 +26,7 @@ fn main() {
 
     use klarvo_windows_shell::audio::make_audio_source;
     use klarvo_windows_shell::bridge::{EventMirror, TauriErrorEmitter};
+    use klarvo_windows_shell::commands::settings::TauriSettingsEmitter;
     use klarvo_windows_shell::config::{self, ShellConfig};
     use klarvo_windows_shell::hotkey::register_hotkey;
     use klarvo_windows_shell::keystore::{make_keystore, verify_keystore_ready};
@@ -85,11 +87,31 @@ fn main() {
 
             // Steps 1-2: Config (fail-soft — Config-Miss means app starts with default hotkey +
             // default output-target; better than no app-start; user can create config after start)
+            //
+            // `toml_loaded_ok` tracks whether the user's config.toml parsed cleanly.
+            // It is the sole input to AC-2's TOML→SQLite migration decision (Step 2d):
+            // a malformed file falls back to defaults at boot AND skips migration so that
+            // partial/garbled values never silently overwrite the SQLite settings layer.
+            // The user is notified via app.error (toast in the Settings-Panel — D1 from
+            // code-review 2026-04-29).
+            use tauri::Emitter as _;
+
+            let mut toml_loaded_ok = false;
             let config = match config::resolve_config_path() {
                 Ok(path) => match config::load_config(&path) {
-                    Ok(c) => c,
+                    Ok(c) => {
+                        toml_loaded_ok = true;
+                        c
+                    }
                     Err(e) => {
-                        tracing::error!(error = %e, "ShellConfig load failed; using defaults");
+                        tracing::error!(error = %e, "ShellConfig load failed; using defaults; settings migration skipped");
+                        let _ = app.handle().emit(
+                            "app.error",
+                            serde_json::json!({
+                                "key": "error.config.parse_failed",
+                                "ts_ms": 0u64,
+                            }),
+                        );
                         ShellConfig::default()
                     }
                 },
@@ -103,6 +125,88 @@ fn main() {
             // Eagerly loaded after config so the active locale matches user choice; load() validates
             // both locale files at boot to surface JSON corruption regardless of selection.
             let i18n_table = klarvo_windows_shell::i18n::load(&config.ui_language);
+
+            // Step 2c: Settings service (fail-soft — opens settings.db, applies schema migrations).
+            // Path is resolved through Tauri's `app_data_dir` rather than the raw APPDATA env
+            // so it follows the user's actual `tauri.conf.json` identifier and works under
+            // alternative shells / sanitised environments. The parent directory is created
+            // up-front to avoid a first-boot ENOENT on `Connection::open`.
+            //
+            // Fallback chain: file-backed → in-memory. If both fail, surface app.error to the
+            // user instead of panicking (per `feedback_scaffold_fail_soft_pattern`); the
+            // settings layer enters a no-op-Arc state where reads return defaults and writes
+            // fail loudly with a Validation-shaped error.
+            let settings_db_path = match app.path().app_data_dir() {
+                Ok(dir) => {
+                    if let Err(e) = std::fs::create_dir_all(&dir) {
+                        tracing::error!(error = %e, dir = %dir.display(), "failed to create app_data_dir; using fallback path");
+                    }
+                    dir.join("settings.db")
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "app_data_dir unavailable; falling back to in-memory settings");
+                    std::path::PathBuf::new() // sentinel — open() will fail and trigger in-memory fallback
+                }
+            };
+
+            let settings_emitter: Arc<dyn klarvo_core::settings::SettingsEmitter> =
+                Arc::new(TauriSettingsEmitter::new(app.handle().clone()));
+
+            let settings: Settings = if settings_db_path.as_os_str().is_empty() {
+                tracing::warn!("opening in-memory settings (app_data_dir unavailable)");
+                let _ = app.handle().emit(
+                    "app.error",
+                    serde_json::json!({ "key": "error.settings.in_memory_fallback", "ts_ms": 0u64 }),
+                );
+                Settings::in_memory(Arc::clone(&settings_emitter))
+                    .unwrap_or_else(|e| {
+                        tracing::error!(error = %e, "in-memory settings init failed; using NoopSettings stub");
+                        // Last-resort: a Settings constructed via in_memory always succeeds
+                        // unless SQLite itself is broken; if that happens we still avoid panic.
+                        Settings::in_memory(Arc::new(NoopSettingsEmitter))
+                            .expect("rusqlite in-memory open is infallible on healthy SQLite build")
+                    })
+            } else {
+                match Settings::open(&settings_db_path, Arc::clone(&settings_emitter)) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(error = %e, path = %settings_db_path.display(), "settings db open failed; falling back to in-memory");
+                        let _ = app.handle().emit(
+                            "app.error",
+                            serde_json::json!({ "key": "error.settings.in_memory_fallback", "ts_ms": 0u64 }),
+                        );
+                        Settings::in_memory(Arc::clone(&settings_emitter))
+                            .unwrap_or_else(|e2| {
+                                tracing::error!(error = %e2, "in-memory settings init failed; using NoopSettings stub");
+                                Settings::in_memory(Arc::new(NoopSettingsEmitter))
+                                    .expect("rusqlite in-memory open is infallible on healthy SQLite build")
+                            })
+                    }
+                }
+            };
+
+            // Step 2d: One-shot TOML→SQLite migration (D2 from code-review 2026-04-29:
+            // strict-parse via `load_config`, no struct-level fallback). The validated `config`
+            // from Steps 1-2 is the sole migration source: if `toml_loaded_ok == false` we
+            // already surfaced `app.error` and skip migration to avoid persisting defaults
+            // over potentially-recoverable user state.
+            {
+                let toml_src = if toml_loaded_ok {
+                    Some(TomlMigrationSource {
+                        hotkey_slot1_combo: config.hotkey.clone(),
+                        output_target_id: config.output_target_id.clone(),
+                        ui_language: config.ui_language.clone(),
+                        dictionary_language: config.dictionary_language.clone(),
+                        output_language: config.output_language.clone(),
+                    })
+                } else {
+                    None
+                };
+
+                if let Err(e) = settings.migrate_from_toml_if_needed(toml_src.as_ref()) {
+                    tracing::warn!(error = %e, "TOML→SQLite migration failed; continuing with empty settings");
+                }
+            }
 
             // Step 3: Keystore (fail-soft — Credential Manager boot-race is ephemeral;
             // per-plugin key errors surface lazily in Plugin-Init, not at boot).
@@ -166,7 +270,7 @@ fn main() {
 
             // Step 10: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
             // AC-B; type-shape mismatches are programmer errors caught at compile time)
-            let orch = Arc::new(SessionOrchestrator::new(
+            let orch = SessionOrchestrator::new(
                 Arc::clone(&registry),
                 Arc::clone(&manifest),
                 audio,
@@ -176,21 +280,23 @@ fn main() {
                 Arc::clone(&clock),
                 vad,
                 Arc::clone(&event_bus),
-            ));
+            );
 
             // Step 11: State management — all slots must be registered before Step 12
-            // (hotkey callback accesses Arc<SessionOrchestrator> via tauri::State)
-            // app.manage(orch)     → consumed by hotkey-callback (Step 12) + tray-subscription (Step 13)
-            // app.manage(config)   → consumed by future Settings-Read-Commands (Phase-2)
-            // app.manage(keystore) → consumed by future xtask set-key Command (Phase-2)
-            // app.manage(emitter)  → consumed by error-emit call-sites in commands (Phase-2)
-            // app.manage(clock)    → consumed by hotkey-callback for shared session-baseline ts_ms
-            //                        (project_event_ts_ms_convention — single MonotonicClock origin)
-            debug_assert!(app.manage(Arc::clone(&orch)));
+            // (hotkey callback accesses SessionOrchestrator via tauri::State)
+            // app.manage(orch)      → consumed by hotkey-callback (Step 12) + tray-subscription (Step 13)
+            // app.manage(config)    → consumed by legacy read paths (Phase-2)
+            // app.manage(keystore)  → consumed by future xtask set-key Command (Phase-2)
+            // app.manage(emitter)   → consumed by error-emit call-sites in commands (Phase-2)
+            // app.manage(clock)     → consumed by hotkey-callback for shared session-baseline ts_ms
+            //                         (project_event_ts_ms_convention — single MonotonicClock origin)
+            // app.manage(settings)  → consumed by Settings Tauri-Commands (Story 2.A.A4)
+            debug_assert!(app.manage(orch));
             debug_assert!(app.manage(Arc::new(config.clone())));
             debug_assert!(app.manage(Arc::clone(&keystore)));
             debug_assert!(app.manage(Arc::clone(&emitter)));
             debug_assert!(app.manage(Arc::clone(&clock)));
+            debug_assert!(app.manage(settings));
             let exit_label = i18n_table
                 .get("tray.menu.exit")
                 .cloned()
@@ -321,7 +427,7 @@ mod smoke {
             ) = |_, _| {};
             let _ = MonotonicClock::new();
             let _ = RmsVad::new();
-            let _: fn() -> Arc<SessionOrchestrator>;
+            let _: fn() -> SessionOrchestrator;
         }
     }
 }
