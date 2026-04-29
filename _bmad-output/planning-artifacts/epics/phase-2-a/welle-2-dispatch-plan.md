@@ -2,7 +2,7 @@
 title: Phase-2-A Welle-2 Parallel-Dispatch-Plan
 phase: 2
 wave: A
-status: Ready (nach A4-Implementierung)
+status: In-Progress (Story-Files vollständig, Impl-Dispatch ausstehend)
 created: 2026-04-28
 ---
 
@@ -203,16 +203,19 @@ wenn Policy-Klärung positiv oder geklärter Workaround vorliegt
 
 | Story | File | Status |
 |-------|------|--------|
-| A4 | `story-2a-A4-settings-panel-foundation.md` | ✅ Geschrieben |
-| A8-Sub | — | AC-Writing-Session nach A4-Merge |
-| C2 | — | AC-Writing-Session nach A4-Merge |
-| C3 | — | AC-Writing-Session nach A4-Merge |
-| D2 | `story-2a-D2-arc-wrapping-fix.md` | Schreiben vor Dispatch |
-| D3 | `story-2a-D3-graceful-shutdown.md` | Schreiben vor Dispatch |
-| E1 | `story-2a-E1-windows-compile-ci.md` | Schreiben vor Dispatch |
-| F2 | `story-2a-F2-jni-regression-triage.md` | Schreiben vor Dispatch |
-| C1 | `story-2a-C1-signed-msi-installer.md` | Schreiben vor Dispatch |
-| F1 | (kein Story-File) | docs/phase3-android-policy-audit.md + Backlog |
+| A4 | `story-2a-A4-settings-panel-foundation.md` | ✅ done |
+| A8-Sub | `story-2a-A8-sub-tray-language-switcher.md` | ✅ Geschrieben (2026-04-29) |
+| C2 | `story-2a-C2-hotkey-konflikt-erkennung.md` | ✅ Geschrieben (2026-04-29) |
+| C3 | `story-2a-C3-live-locale-switch.md` | ✅ Geschrieben (2026-04-29) |
+| D2 | `story-2a-D2-arc-wrapping-fix.md` | ✅ Geschrieben (2026-04-29) |
+| D3 | `story-2a-D3-graceful-shutdown.md` | ✅ Geschrieben (2026-04-29) |
+| E1 | `story-2a-E1-windows-compile-ci.md` | ✅ Geschrieben (2026-04-29) |
+| F2 | `story-2a-F2-jni-regression-triage.md` | ✅ Geschrieben (2026-04-29) |
+| C1 | `story-2a-C1-signed-msi-installer.md` | ✅ Geschrieben (2026-04-29) |
+| F1 | (kein Story-File) | ✅ `docs/phase3-android-policy-audit.md` + Backlog updated (2026-04-29) |
 
-**Nächster Schritt:** Stream-B-Story-Files (D2/D3/E1/F2/C1) schreiben;
-dann A4-Implementation-Dispatch starten.
+**Status (2026-04-29):** Alle Welle-2-Story-Files geschrieben. Nächster Schritt: Impl-Dispatch.
+- **Stream-B** (D2/D3/E1): sofort dispatchbar (dependency-frei, klarer Scope)
+- **Stream-B** (F2): Triage-Story, separate JDK-Umgebung erforderlich
+- **Stream-B** (C1): MSI-Build, Windows-CI-Setup erforderlich (nach E1)
+- **Stream-A** (A8-Sub/C2/C3): A4-abhängig ✅, ready for Impl-Dispatch
