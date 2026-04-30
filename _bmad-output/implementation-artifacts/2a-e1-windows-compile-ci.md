@@ -3,7 +3,7 @@ name: Story 2.A.E1 — Windows-Compile-CI-Gate (G6)
 phase: 2
 wave: A
 story_id: "2.A.E1"
-status: ready-for-dev
+status: review
 dependencies: []
 adr_refs: []
 source_ref: "Backlog Windows-Compile-CI-Gate; Epic-3-Followup; memory/project_jni_spike_scope"
@@ -88,3 +88,43 @@ Kein `cargo test` in diesem Gate (Test-Gate ist bestehende CI aus Epic-5).
   nur Rust-Build-Dependencies. Tauri-Bundle-Step ist C1-Scope.
 - Falls `cargo check` statt `cargo build` ausreicht: bevorzuge `cargo check` für Speed.
   `cargo build` wenn compile-time-macros und proc-macros (wie specta) vollständig durchlaufen müssen.
+
+## Dev Agent Record
+
+### Implementation Plan
+
+Single-file delivery: `.github/workflows/windows-ci.yml`. Pattern aus `ci-event-lint.yml` und
+`ci-bindings-drift.yml` übernommen (Trigger, Permissions, Concurrency, Toolchain-Action,
+Swatinem-Cache). Build-Step nutzt `cargo check --workspace --exclude klarvo-bridge-jni` —
+das deckt klarvo-windows-shell + alle workspace-Crates ab (incl. `windows = "0.61"` und
+`klarvo-audio-cpal` aus `[target.'cfg(target_os = "windows")']`-Block) und folgt der
+Story-Empfehlung `cargo check` für Speed.
+
+`klarvo-bridge-jni` excluded via Inline-Kommentar mit Story-2.A.F2 + ADR-0003-Referenz.
+`--locked` weggelassen für Konsistenz mit bestehenden Workflows.
+
+### Completion Notes
+
+- AC-1 ✅ Workflow triggert auf push(master,main) + pull_request, runs-on: windows-latest,
+  concurrency-group + cancel-in-progress.
+- AC-2 ✅ `cargo check --workspace --exclude klarvo-bridge-jni` deckt klarvo-windows-shell
+  und Platform-spezifische Crates ab. Toolchain via `dtolnay/rust-toolchain@stable`
+  (honoring `rust-toolchain.toml` channel = 1.94.0).
+- AC-3 ✅ Inline-Kommentar mit Story-Ref (2.A.F2) und ADR-Ref (ADR-0003); JNI-Rate-Test-
+  Regression-Rationale dokumentiert.
+- AC-4 ✅ Build-Fail blockiert PR via Default-GitHub-Check-Behavior (Branch-Protection ist
+  repo-Config, explizit out-of-scope per Story-Text).
+
+Lokale Validierung: `python3 -c yaml.safe_load(...)` → OK. `cargo check` lokal auf Linux
+schlägt erwartungsgemäß am `compile_error!("shells/windows requires Windows target")` Guard
+in `shells/windows/src-tauri/src/main.rs:7` fehl — genau die Lücke, die dieser Gate schließt.
+
+### File List
+
+- `.github/workflows/windows-ci.yml` (new)
+- `_bmad-output/implementation-artifacts/2a-e1-windows-compile-ci.md` (status, Dev Agent Record)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (status: ready-for-dev → review)
+
+### Change Log
+
+- 2026-04-30: Initial implementation, Status → review (Dev Agent: Andy via Opus 4.7 1M).
