@@ -4,6 +4,7 @@ phase: 2
 wave: A
 status: In-Progress (Story-Files vollständig, Impl-Dispatch ausstehend)
 created: 2026-04-28
+last_updated: 2026-04-30 (Story-Files nach implementation-artifacts/ verschoben — BMAD-Canon)
 ---
 
 # Phase-2-A Welle-2 — Parallel-Dispatch-Plan
@@ -98,7 +99,7 @@ Implementation-Dispatch mit den unten stehenden Story-Files.
 
 ### 2.A.D2 — Arc-Wrapping-Duplikat-Fix (Carry-Over F3)
 
-→ Story-File: `story-2a-D2-arc-wrapping-fix.md` (schreiben + committen vor Dispatch)
+→ Story-File: `_bmad-output/implementation-artifacts/2a-d2-arc-wrapping-fix.md`
 
 **Source:** `_bmad-output/implementation-artifacts/deferred-work.md` F3 / Epic-3-Code-Review  
 **Scope:** Entferne doppeltes `Arc<_>`-Wrapping in `klarvo-core` Audio-Pipeline-Pfad.
@@ -110,7 +111,7 @@ muss grün bleiben.
 
 ### 2.A.D3 — Graceful-Shutdown `pipeline_task.abort()` (Carry-Over F4)
 
-→ Story-File: `story-2a-D3-graceful-shutdown.md`
+→ Story-File: `_bmad-output/implementation-artifacts/2a-d3-graceful-shutdown.md`
 
 **Source:** `_bmad-output/implementation-artifacts/deferred-work.md` F4 / Epic-3-Review,
 `memory/project_shell_session_lifecycle` (7-Step-Topology, Step-7-Drop)  
@@ -123,7 +124,7 @@ muss grün bleiben.
 
 ### 2.A.E1 — Windows-Compile-CI-Gate (G6)
 
-→ Story-File: `story-2a-E1-windows-compile-ci.md`
+→ Story-File: `_bmad-output/implementation-artifacts/2a-e1-windows-compile-ci.md`
 
 **Source:** Backlog `"Windows-Compile-CI-Gate"` / Epic-3-Followup  
 **Scope:** GitHub-Actions-Workflow `.github/workflows/windows-ci.yml`. Kompiliert
@@ -139,7 +140,7 @@ F2-Closure-Commit entfernt das Flag.
 
 ### 2.A.F2 — JNI-Rate-Test-Regression-Triage
 
-→ Story-File: `story-2a-F2-jni-regression-triage.md`
+→ Story-File: `_bmad-output/implementation-artifacts/2a-f2-jni-regression-triage.md`
 
 **Source:** `memory/project_jni_spike_scope` (2026-04-20-Regression),
 `docs/adr/0003-jni-spike.md`, `klarvo-bridge-jni`-Crate  
@@ -162,7 +163,7 @@ per ADR-0003).
 
 ### 2.A.C1 — Signierter MSI-Installer
 
-→ Story-File: `story-2a-C1-signed-msi-installer.md`
+→ Story-File: `_bmad-output/implementation-artifacts/2a-c1-signed-msi-installer.md`
 
 **Source:** Backlog `"Signierter Installer / MSI-Distribution"`  
 **Scope:** MSI-Build-Integration in CI (NSIS oder WiX-Toolset, je nach Tauri-v2-Default).
@@ -201,17 +202,19 @@ wenn Policy-Klärung positiv oder geklärter Workaround vorliegt
 
 ## Story-Files-Status
 
+Story-Files leben unter `_bmad-output/implementation-artifacts/` (BMAD-Canon).
+
 | Story | File | Status |
 |-------|------|--------|
-| A4 | `story-2a-A4-settings-panel-foundation.md` | ✅ done |
-| A8-Sub | `story-2a-A8-sub-tray-language-switcher.md` | ✅ Geschrieben (2026-04-29) |
-| C2 | `story-2a-C2-hotkey-konflikt-erkennung.md` | ✅ Geschrieben (2026-04-29) |
-| C3 | `story-2a-C3-live-locale-switch.md` | ✅ Geschrieben (2026-04-29) |
-| D2 | `story-2a-D2-arc-wrapping-fix.md` | ✅ Geschrieben (2026-04-29) |
-| D3 | `story-2a-D3-graceful-shutdown.md` | ✅ Geschrieben (2026-04-29) |
-| E1 | `story-2a-E1-windows-compile-ci.md` | ✅ Geschrieben (2026-04-29) |
-| F2 | `story-2a-F2-jni-regression-triage.md` | ✅ Geschrieben (2026-04-29) |
-| C1 | `story-2a-C1-signed-msi-installer.md` | ✅ Geschrieben (2026-04-29) |
+| A4 | `2a-a4-settings-panel-foundation.md` | ✅ done |
+| A8-Sub | `2a-a8-sub-tray-language-switcher.md` | ✅ Geschrieben (2026-04-29) |
+| C2 | `2a-c2-hotkey-konflikt-erkennung.md` | ✅ Geschrieben (2026-04-29) |
+| C3 | `2a-c3-live-locale-switch.md` | ✅ Geschrieben (2026-04-29) |
+| D2 | `2a-d2-arc-wrapping-fix.md` | ✅ Implementiert (e25c308, 2026-04-29) — review |
+| D3 | `2a-d3-graceful-shutdown.md` | ✅ Geschrieben (2026-04-29) |
+| E1 | `2a-e1-windows-compile-ci.md` | ✅ Geschrieben (2026-04-29) |
+| F2 | `2a-f2-jni-regression-triage.md` | ✅ Geschrieben (2026-04-29) |
+| C1 | `2a-c1-signed-msi-installer.md` | ✅ Geschrieben (2026-04-29) |
 | F1 | (kein Story-File) | ✅ `docs/phase3-android-policy-audit.md` + Backlog updated (2026-04-29) |
 
 **Status (2026-04-29):** Alle Welle-2-Story-Files geschrieben. Nächster Schritt: Impl-Dispatch.
