@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-04-30 (BMAD-Canon-Konsolidierung: Story-Files in implementation-artifacts/ verschoben; 3 Keys an Filenames angepasst (C2/D3/E1))
+# last_updated: 2026-04-30 (D2 Code-Review-Closure: review→done; 0 patches/0 decisions, 10 defer (8 A4-Pass-3-Kandidaten + 2 D2-Out-of-Scope), 9 dismiss)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -171,7 +171,7 @@ development_status:
   2a-c1-signed-msi-installer: backlog
   2a-c2-hotkey-konflikt-erkennung: backlog
   2a-c3-live-locale-switch: backlog
-  2a-d2-arc-wrapping-fix: review
+  2a-d2-arc-wrapping-fix: done
   2a-d3-graceful-shutdown: backlog
   2a-e1-windows-compile-ci: backlog
   2a-f1-play-store-policy-audit: backlog
