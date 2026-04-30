@@ -110,7 +110,7 @@ Backlog-Phase-3-Update. `--exclude`-Flag in E1 bleibt dokumentiert. Keine weiter
 - [x] T2: AC-2 — Root-Cause-Analyse (Bisect + Shared-Static-Race identifizieren)
 - [x] T3: AC-3 — Fix: TEST_MUTEX in audio_level_callback.rs + `cargo test -p klarvo-bridge-jni` grün
 - [x] T4: ADR-0003 Amendment-2 mit Root-Cause + Fix-Summary + Messwerten
-- [ ] T5: E1 windows-ci.yml `--exclude klarvo-bridge-jni` entfernen (separater Commit)
+- [x] T5: E1 windows-ci.yml `--exclude klarvo-bridge-jni` entfernen (separater Commit)
 
 ## Dev Agent Record
 

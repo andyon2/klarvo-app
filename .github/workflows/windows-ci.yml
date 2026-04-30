@@ -4,10 +4,6 @@ name: windows-compile (G6)
 # Verifies that the Tauri shell (klarvo-windows-shell) and the rest of the
 # workspace compile on windows-latest. No tests run here — test gates are
 # covered by the existing Epic-5 CI on Linux.
-#
-# klarvo-bridge-jni is excluded until Story 2.A.F2 closes the JNI rate-test
-# regression (see memory/project_jni_spike_scope and ADR-0003). Drop the
-# --exclude flag once F2 lands.
 
 on:
   push:
@@ -38,7 +34,5 @@ jobs:
           workspaces: ". -> target"
           shared-key: windows-compile-g6
 
-      - name: cargo check --workspace --all-targets --exclude klarvo-bridge-jni
-        # JNI rate-test regression open (Story 2.A.F2; ADR-0003).
-        # Remove --exclude once F2 closes.
-        run: cargo check --workspace --all-targets --exclude klarvo-bridge-jni
+      - name: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets
