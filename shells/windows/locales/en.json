@@ -14,6 +14,7 @@
   "error.keystore.key_missing": "API key missing for plugin. Please configure the key in application settings.",
   "error.hotkey.parse_failed": "Hotkey configuration is invalid. Please check config.toml.",
   "error.hotkey.registration_failed": "Hotkey could not be registered. Another application may already be using it.",
+  "error.hotkey.conflict": "This keyboard shortcut is already in use by another application.",
   "error.pipeline.toml_parse_failure": "Pipeline configuration is invalid. Please check pipeline-manifest.toml.",
   "error.pipeline.schema_version_unsupported": "Pipeline schema version is not supported by this build.",
   "error.pipeline.unknown_stage_type": "Pipeline references an unknown stage type. Please check pipeline-manifest.toml.",

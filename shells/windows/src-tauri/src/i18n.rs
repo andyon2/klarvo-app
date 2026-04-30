@@ -85,6 +85,7 @@ mod tests {
         "error.keystore.key_missing",
         "error.hotkey.parse_failed",
         "error.hotkey.registration_failed",
+        "error.hotkey.conflict",
         "error.pipeline.toml_parse_failure",
         "error.pipeline.schema_version_unsupported",
         "error.pipeline.unknown_stage_type",

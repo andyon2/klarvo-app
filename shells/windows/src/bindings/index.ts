@@ -6,6 +6,19 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	ping: (name: string) => __TAURI_INVOKE<string>("ping", { name }),
+	/**
+	 *  Set hotkey slot-1 combo with Win32 conflict pre-validation (Story 2.A.C2 + Code-Review patches).
+	 * 
+	 *  Flow:
+	 *    1. Read old combo (P5: explicit match — surfaces DB read errors instead of silent "").
+	 *    2. Skip-if-equal fast-path (P10/D1) — idempotent re-save returns Ok without probing.
+	 *    3. Win32 grammar gate + unregister-old + probe + recovery via
+	 *       `validate_hotkey_not_conflicting` (P10/P11).
+	 *    4. Settings-Write + `settings.changed` event via emitter.
+	 *    5. Register new shortcut + recovery to old on failure via `reregister_hotkey` (P12).
+	 * 
+	 *  Steps 3 and 5 are Windows-only; on other targets the combo is written directly.
+	 */
 	setHotkeySlot1: (combo: string) => typedError<null, AppError>(__TAURI_INVOKE("set_hotkey_slot1", { combo })),
 	setUiLanguage: (lang: string) => typedError<null, AppError>(__TAURI_INVOKE("set_ui_language", { lang })),
 	setOutputTarget: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("set_output_target", { id })),
@@ -66,7 +79,12 @@ export type AppErrorKind =
  *  KeyStore-lookup miss during plugin-init. Plugin-identifier lands in `AppError.message`.
  *  Typical retryable=false.
  */
-"key_missing";
+"key_missing" | 
+/**
+ *  Win32 `RegisterHotKey` rejected the combo — already claimed by another app.
+ *  Typical retryable=false — user must choose a different combo.
+ */
+"hotkey_conflict";
 
 export type AppReady = {
 	session_id: string,

@@ -57,6 +57,9 @@ pub enum AppErrorKind {
     /// KeyStore-lookup miss during plugin-init. Plugin-identifier lands in `AppError.message`.
     /// Typical retryable=false.
     KeyMissing,
+    /// Win32 `RegisterHotKey` rejected the combo — already claimed by another app.
+    /// Typical retryable=false — user must choose a different combo.
+    HotkeyConflict,
 }
 
 impl std::fmt::Display for AppError {

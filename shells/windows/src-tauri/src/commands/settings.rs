@@ -80,13 +80,53 @@ impl<R: tauri::Runtime> klarvo_core::settings::SettingsEmitter for TauriSettings
 
 // --- Core-Set (5 commands) ---
 
+/// Set hotkey slot-1 combo with Win32 conflict pre-validation (Story 2.A.C2 + Code-Review patches).
+///
+/// Flow:
+///   1. Read old combo (P5: explicit match — surfaces DB read errors instead of silent "").
+///   2. Skip-if-equal fast-path (P10/D1) — idempotent re-save returns Ok without probing.
+///   3. Win32 grammar gate + unregister-old + probe + recovery via
+///      `validate_hotkey_not_conflicting` (P10/P11).
+///   4. Settings-Write + `settings.changed` event via emitter.
+///   5. Register new shortcut + recovery to old on failure via `reregister_hotkey` (P12).
+///
+/// Steps 3 and 5 are Windows-only; on other targets the combo is written directly.
 #[tauri::command]
 #[specta::specta]
-pub fn set_hotkey_slot1(
+pub async fn set_hotkey_slot1(
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+    app: tauri::AppHandle,
     combo: String,
     settings: tauri::State<'_, Settings>,
 ) -> Result<(), AppError> {
-    settings.set_hotkey_slot1_combo(&combo)
+    // P5: explicit match — DB read errors should surface in logs, not coerce to "" silently
+    // (which previously caused unregister(old) to no-op and leak the old registration).
+    let old_combo = match settings.hotkey_slot1_combo() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "set_hotkey_slot1: failed to read old combo; treating as empty");
+            String::new()
+        }
+    };
+
+    // P10/D1: skip-if-equal fast-path — Win32 conflict-detection is process-wide,
+    // so re-saving the currently-active combo would otherwise self-conflict.
+    if combo == old_combo {
+        return Ok(());
+    }
+
+    // AC-1 + P10/P11: grammar gate + unregister-old + Win32 probe + recovery.
+    #[cfg(target_os = "windows")]
+    crate::hotkey::validate_hotkey_not_conflicting(&app, &old_combo, &combo).await?;
+
+    // Settings-Write + fires settings.changed event via TauriSettingsEmitter.
+    settings.set_hotkey_slot1_combo(&combo)?;
+
+    // AC-2 + P12: register new shortcut, with re-register-old recovery on failure.
+    #[cfg(target_os = "windows")]
+    crate::hotkey::reregister_hotkey(&app, &old_combo, &combo);
+
+    Ok(())
 }
 
 #[tauri::command]
