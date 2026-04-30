@@ -266,3 +266,23 @@ Alle 5 Open-Questions des Proposed-State (2026-04-26) wurden 2026-04-27 von Andy
 - Context-Section + Decision-Drivers + Scope-Fence — die ursprüngliche Problemformulierung (2026-04-26) bleibt unverändert.
 
 **Memory-Update (außerhalb dieses Commits):** `memory/project_phase2_scope_lock` aktualisieren, sodass ADR-0013-Status auf Accepted gewechselt ist und A4 unblocked.
+
+---
+
+## Amendment 2 — 2026-04-30 — Event-Name Dot-Notation (SD-5 Naming-Korrektur)
+
+**Trigger:** Code-Review Pass-2 von Story 2.A.A4 (2026-04-30) flaggt Diskrepanz zwischen ADR-Wortlaut und Implementation.
+
+**Geändert (SD-5 / Sub-Decision 5 — Settings-Change-Notification):**
+
+- Event-Name in allen Code-Bezugnahmen von kebab-case `"settings-changed"` auf dot-notation `"settings.changed"`.
+- Sub-Decision-5-Body Codeblock: `app.emit("settings-changed", ...)` → `app.emit("settings.changed", ...)`.
+- Listener-Beschreibung: `listen<SettingsChangedEvent>("settings-changed", ...)` → `listen<SettingsChangedEvent>("settings.changed", ...)`.
+- Cross-References Story-A8-Sub + Story-C3: `settings-changed` → `settings.changed`.
+- Resolved-Questions Q5-Resolution-Block: gleicher Rename.
+
+**Begründung:** `reference_tauri_specta_rc24_event_name`-Konvention + G1-Lint-Standard (FR34, Story 5.3) mandaten Dot-Notation für Cross-Layer-Event-Identifier (vgl. `app.error`, `app.ready`). Kebab-Case im ursprünglichen ADR war ungeprüfter Wortlaut-Drift zwischen ADR-Authoring (2026-04-27) und etablierter Naming-Convention. Code (`commands/settings.rs` + `bindings/index.ts`) folgt seit Initial-Implementation der Dot-Notation; ADR zieht jetzt nach.
+
+**Nicht geändert:** Payload-Schema `SettingsChangedEvent { key, new_value }` (Form unverändert), Subscription-Mechanik, Filter-Empfehlungen, Concurrency-Modell. Funktional ist die Korrektur rein deklarativ (Event-Identifier-String).
+
+**Cross-Refs:** Story 2.A.A4 §Spec-Deviations „Event-Name `settings.changed` (Dot-Notation) statt `settings-changed`"; Code-Review Pass-2 Patch P2-P16.

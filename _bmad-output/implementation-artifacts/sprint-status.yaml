@@ -1,0 +1,194 @@
+# generated: 2026-04-29
+# last_updated: 2026-04-30 (code-review pass-2 closure: 2a-a4 stays done; 4 skipped patches scoped as follow-up stories in deferred-work.md)
+# project: klarvo
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# KLARVO-SPECIFIC NOTES:
+# ======================
+# - Phase-1 epics (1A/1B/1C/2/3/4/5) sind abgeschlossen (vgl. memory/project_phase1_complete,
+#   memory/project_epic3_complete, memory/project_epic4_complete, memory/project_epic5_complete).
+# - Phase-1-Stories für 1A/1B/1C/2 stehen inline in epics.md (kein per-Story-File);
+#   Status ist hier explizit auf `done` gesetzt, da Auto-Detection per Story-File-Path nicht greift.
+# - Phase-2 ist in zwei Wellen organisiert (A/B) statt als klassisches Epic — vgl.
+#   _bmad-output/planning-artifacts/phase-2-scope-lock.md und epics/phase-2-a/welle-2-dispatch-plan.md.
+#   Story-IDs folgen `2{a|b}-{LetterID}-{title-kebab}` (z. B. `2a-a4-settings-panel-foundation`).
+# - Epic 6 (Observability, FR37-FR40) und Epic 7 (V1→V2 Migration, FR41-FR43) waren in
+#   epics.md als Phase-1-Epics geplant, wurden aber in Phase-1-Closure nicht implementiert —
+#   Phase-1-FR-Scope endete bei FR35 (vgl. memory/project_epic5_complete: "Phase-1 (FR1-FR35)
+#   feature-vollständig"). FR37-FR43 sind aktuell offen ohne explizite Phase-Zuordnung
+#   (weder in phase-2-scope-lock.md noch in welle-2-dispatch-plan.md referenziert);
+#   Re-Scoping in Phase-2-B oder Phase-3 pending.
+
+generated: 2026-04-29
+last_updated: 2026-04-30
+project: klarvo
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ============================================================
+  # Epic 1A: Plugin-Contract Surface (Phase-1, abgeschlossen)
+  # ============================================================
+  epic-1a: done
+  1a-1-klarvo-test-fixtures-crate-scaffold: done
+  1a-2-app-error-struct-with-kind-enum: done
+  1a-3-event-bus-api-tauri-specta-event-struct: done
+  1a-4-i18n-key-only-contract: done
+  1a-5-pipeline-stage-base-trait: done
+  1a-6-stt-provider-cleanup-style-trait: done
+  1a-7-vad-provider-trait: done
+  epic-1a-retrospective: optional
+
+  # ============================================================
+  # Epic 1B: Pipeline-Composition Runtime (Phase-1, abgeschlossen)
+  # ============================================================
+  epic-1b: done
+  1b-1-pipeline-stage-type-enum-extension: done
+  1b-2-pipeline-manifest-parser-schema-version: done
+  1b-3-klarvo-plugin-verbatim-cleanup-style: done
+  1b-4-klarvo-plugin-groq-stt-provider: done
+  1b-5-pipeline-executor-boot-registry-runtime-dispatch: done
+  epic-1b-retrospective: optional
+
+  # ============================================================
+  # Epic 1C: KeyStore Abstraction (Phase-1, abgeschlossen)
+  # ============================================================
+  epic-1c: done
+  1c-1-keystore-trait-i18n-keys-inmemory-fixture: done
+  1c-2-plain-sqlite-keystore-dev-impl: done
+  1c-3-os-keystore-windows-android-scaffold: done
+  epic-1c-retrospective: optional
+
+  # ============================================================
+  # Epic 2: End-to-End Dictation Pipeline (Phase-1, abgeschlossen)
+  # ============================================================
+  epic-2: done
+  2-1-audiosource-trait-core-capture-command: done
+  2-2-vad-gate-pipeline-entry-aggregation: done
+  2-3-groq-plugin-keystore-real-wireup: done
+  2-4-output-target-trait-clipboard-sink: done
+  2-5-cpal-real-audiosource-impl: done
+  2-6-fr29-groq-failure-recovery-retry: done
+  epic-2-retrospective: optional
+
+  # ============================================================
+  # Epic 3: Windows Shell Integration (Phase-1, abgeschlossen 2026-04-25)
+  # ============================================================
+  epic-3: done
+  3-1-tauri-skeleton-bootstrap: done
+  3-2-shell-config-parsing: done
+  3-3-orchestrator-crate-bootstrap: done
+  3-4-paste-backend-trait: done
+  3-5-winsendinput-pastebackend: done
+  3-6-hotkey-wire-up: done
+  3-7-cpal-audiosource-wireup: done
+  3-8-event-bridge-wiring: done
+  3-9-windows-keystore-boot: done
+  3-10-shell-bootstrap-integration: done
+  3-11-e2e-integration-test: done
+  epic-3-retrospective: optional
+
+  # ============================================================
+  # Epic 4: Configuration & Localized Error Surface (Phase-1, abgeschlossen 2026-04-25)
+  # ============================================================
+  epic-4: done
+  4-1-shell-config-3-axis-i18n: done
+  4-2-locale-aware-i18n-loading: done
+  4-3-german-translation-pass: done
+  4-4-i18n-key-coverage-audit: done
+  4-5-sanity-tester-cold-start-doc: done
+  epic-4-retrospective: optional
+
+  # ============================================================
+  # Epic 5: Developer-Gate Infrastructure (Phase-1, abgeschlossen 2026-04-26)
+  # ============================================================
+  epic-5: done
+  5-1-manifest-strict-xtask: done
+  5-2-bindings-drift-xtask: done
+  5-3-lint-events-g3-extension: done
+  5-4-verify-release-hardening: done
+  epic-5-retrospective: optional
+
+  # ============================================================
+  # Epic 6: Observability & Privacy-Respecting Diagnostics (FR37-FR40)
+  # Phase-1-Epic geplant, in Phase-1-Closure nicht implementiert (Phase-1-FR-Scope endete
+  # bei FR35). Aktuell ohne Phase-Zuordnung — Re-Scoping pending. Stories noch nicht
+  # ausgeschrieben (Epic-Stub in epics.md L2248).
+  # ============================================================
+  epic-6: backlog
+  epic-6-retrospective: optional
+
+  # ============================================================
+  # Epic 7: V1→V2 Data Migration Path (FR41-FR43)
+  # Phase-1-Epic geplant, in Phase-1-Closure nicht implementiert (Phase-1-FR-Scope endete
+  # bei FR35). Aktuell ohne Phase-Zuordnung — Re-Scoping pending. Stories noch nicht
+  # ausgeschrieben (Epic-Stub in epics.md L2263).
+  # ============================================================
+  epic-7: backlog
+  epic-7-retrospective: optional
+
+  # ============================================================
+  # Phase-2-A: Foundation + External-Validation + Phase-3-De-Risking
+  # Source: phase-2-scope-lock.md + epics/phase-2-a/welle-2-dispatch-plan.md
+  # Welle-1 = A4 (in review). Welle-2 = Stream A (A8-Sub/C2/C3) + Stream B (D2/D3/E1/F2/C1).
+  # F1 = extern (kein Story-File, backlog für Tracking-Zwecke).
+  # ============================================================
+  epic-phase-2-a: in-progress
+  2a-a4-settings-panel-foundation: done
+  2a-a8-sub-tray-language-switcher: backlog
+  2a-c1-signed-msi-installer: backlog
+  2a-c2-hotkey-conflict-detection: backlog
+  2a-c3-live-locale-switch: backlog
+  2a-d2-arc-wrapping-fix: backlog
+  2a-d3-graceful-shutdown-pipeline-abort: backlog
+  2a-e1-windows-compile-ci-gate: backlog
+  2a-f1-play-store-policy-audit: backlog
+  2a-f2-jni-rate-test-regression-triage: backlog
+  epic-phase-2-a-retrospective: optional
+
+  # ============================================================
+  # Phase-2-B: User-Value-Wave (Recording-Modi + Pill-Bar + 2nd-STT)
+  # Source: phase-2-scope-lock.md (Pre-Story-Decisions: Pill-Bar UX-Mini-Pass + 2nd-STT-Choice).
+  # ============================================================
+  epic-phase-2-b: backlog
+  2b-a1-toggle-autostop-wait-and-type-modes: backlog
+  2b-a2-second-hotkey-slot: backlog
+  2b-a3-floating-pill-bar: backlog
+  2b-a5-return-focus: backlog
+  2b-a6-history-panel: backlog
+  2b-a9-windows-toast-notifications: backlog
+  2b-b1-second-stt-plugin: backlog
+  2b-b2-audio-capture-config-overrides: backlog
+  epic-phase-2-b-retrospective: optional
