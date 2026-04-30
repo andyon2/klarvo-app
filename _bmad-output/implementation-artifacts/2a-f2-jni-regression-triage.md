@@ -3,7 +3,7 @@ name: Story 2.A.F2 — JNI Rate-Test Regression Triage
 phase: 2
 wave: A
 story_id: "2.A.F2"
-status: ready-for-dev
+status: in-progress
 dependencies: []
 adr_refs:
   - docs/adr/0003-jni-spike-outcome.md
@@ -103,3 +103,44 @@ Backlog-Phase-3-Update. `--exclude`-Flag in E1 bleibt dokumentiert. Keine weiter
 - JNI exclusion in `--exclude klarvo-bridge-jni` ist in `cargo test --workspace` nötig,
   da JNI-Tests JDK voraussetzen (nicht überall verfügbar). Fix-Outcome entfernt das Flag nur
   im E1-Workflow (CI), nicht zwingend im lokalen `cargo test --workspace`.
+
+## Tasks/Subtasks
+
+- [x] T1: AC-1 — Reproduktion auf HEAD dokumentieren
+- [x] T2: AC-2 — Root-Cause-Analyse (Bisect + Shared-Static-Race identifizieren)
+- [x] T3: AC-3 — Fix: TEST_MUTEX in audio_level_callback.rs + `cargo test -p klarvo-bridge-jni` grün
+- [x] T4: ADR-0003 Amendment-2 mit Root-Cause + Fix-Summary + Messwerten
+- [ ] T5: E1 windows-ci.yml `--exclude klarvo-bridge-jni` entfernen (separater Commit)
+
+## Dev Agent Record
+
+### Debug Log
+
+**AC-1 Ergebnis (2026-05-01):** `cargo test -p klarvo-bridge-jni` → FAILED.
+- `listener_receives_events_smoke`: FAILED (0 events in 500ms)
+- `twenty_hz_over_ten_seconds_no_drops`: PASSED (210 events in 10s, innerhalb 190–210-Toleranz)
+
+**Isolierter Lauf:** Beide Tests einzeln grün (smoke: OK; 20Hz: 200 events exakt).
+
+**AC-2 Root-Cause:** Kein Breaking-Commit zwischen Spike (482c6c9) und HEAD — nur 2 Commits berühren JNI-Crate. Problem war seit Spike latent, aber nicht aufgefallen weil ADR-0003 den Spike mit `--test-threads=1` durchführte.
+
+**Mechanismus:** Beide Tests teilen `LISTENER: Mutex<Option<Global<JObject<'static>>>>` und `RUNTIME: OnceLock<Runtime>`. Rust-Default-Testausführung ist multi-threaded. Wenn beide Tests parallel starten:
+1. Test-A ruft `register_listener(L_A)` auf
+2. Test-B ruft `register_listener(L_B)` auf → überschreibt `LISTENER` mit L_B
+3. Beide Sessions senden Events an L_B
+4. Test-A liest L_A.count → 0 (L_A hat nie Events bekommen)
+5. Test-B liest L_B.count → ~210 (Events beider Sessions, liegt knapp in 190–210-Toleranz)
+
+**Fix-Kategorie:** Test-Isolation-Bug, kein Production-Code-Bug. Fix: static `TEST_MUTEX: Mutex<()>` in Test-File serialisiert Tests die LISTENER teilen. Keine neue Crate-Dependency nötig.
+
+### Completion Notes
+
+(wird nach Fix ausgefüllt)
+
+## File List
+
+(wird nach Implementierung ergänzt)
+
+## Change Log
+
+(wird nach Implementierung ergänzt)

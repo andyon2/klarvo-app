@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use jni::objects::{JObject, JValueOwned};
@@ -32,6 +32,10 @@ public class TestListener {
 "#;
 
 static JVM: OnceLock<JavaVM> = OnceLock::new();
+// Serialises tests that share the LISTENER static. Both tests register a
+// listener into the same global slot; parallel execution causes one test's
+// listener to be overwritten before it can receive any events.
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 fn shared_jvm() -> &'static JavaVM {
     JVM.get_or_init(|| {
@@ -87,6 +91,7 @@ fn read_count(env: &mut Env, listener: &JObject) -> i32 {
 
 #[test]
 fn listener_receives_events_smoke() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let jvm = shared_jvm();
     jvm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
         let listener = create_listener_and_register(env);
@@ -111,6 +116,7 @@ fn listener_receives_events_smoke() {
 
 #[test]
 fn twenty_hz_over_ten_seconds_no_drops() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let jvm = shared_jvm();
     jvm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
         let listener = create_listener_and_register(env);

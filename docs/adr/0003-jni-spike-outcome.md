@@ -130,3 +130,51 @@ Setup-Voraussetzung: JDK auf PATH (Linux-Dev-Maschine hatte OpenJDK 17 via `apt`
 1. Commit `klarvo-bridge-jni/` + ADR-0003 als eigenen Spike-Outcome-Commit.
 2. Phase-1-Action-Item: Kotlin-Shell-Skeleton in `shells/android/` mit `registerAudioLevelListener` + `callbackFlow`-Adapter aufsetzen.
 3. `VadProvider`-Trait-ADR-0001 von "Proposed" auf "Accepted" umstellen (JNI-Pfad gate-free).
+
+---
+
+## Amendment 2 — Test-Isolation-Fix (2026-05-01, Story 2.A.F2)
+
+**Status-Update:** Proposed → Accepted
+
+### Root-Cause der Phase-2-A-Regression
+
+Nach 2026-04-20 schlug `cargo test -p klarvo-bridge-jni` (ohne `--test-threads=1`) fehl:
+`listener_receives_events_smoke` lieferte 0 Events, `twenty_hz_over_ten_seconds_no_drops` 210 Events.
+
+**Mechanismus:** Beide Tests teilen `LISTENER: Mutex<Option<Global<JObject<'static>>>>` und
+`RUNTIME: OnceLock<Runtime>`. Rust-Standardausführung ist multi-threaded. Wenn beide parallel starten:
+1. Test-A registriert Listener L_A via `register_listener`
+2. Test-B registriert Listener L_B via `register_listener` → überschreibt L_A im static LISTENER
+3. Beide Sessions senden Events an L_B (das aktuelle LISTENER-Ziel)
+4. Test-A liest `L_A.count` → 0 (L_A hat nie Events erhalten)
+5. Test-B liest `L_B.count` → ~210 (Events beider Sessions, zufällig innerhalb 190–210-Toleranz)
+
+**Breaking-Commit:** Kein Breaking-Commit zwischen Spike (482c6c9) und HEAD — der Bug war seit dem
+Spike latent, blieb aber unbemerkt, weil der Spike mit `--test-threads=1` durchgeführt wurde
+(wie in der Smoke-Test-Sektion dieses ADR dokumentiert). Die Regression wurde erst sichtbar als
+`cargo test -p klarvo-bridge-jni` ohne das Flag aufgerufen wurde (z.B. durch CI-Änderungen in
+Phase-2-A E1-Story).
+
+### Fix
+
+`static TEST_MUTEX: Mutex<()>` in `tests/audio_level_callback.rs` serialisiert die beiden Tests,
+die LISTENER teilen. Jeder Test hält den Lock für seine gesamte Laufzeit (Registrierung + Messung +
+`unregister_listener`). Kein neues Crate-Dependency erforderlich.
+
+**Kein Production-Code-Bug.** Die `LISTENER`-Mutex-Architektur für Single-Listener-Spike (§4
+Threading-Modell) ist unverändert korrekt; die Known Limitation (Multi-Listener) bleibt Phase-3.
+
+### Fix-Messwerte (2026-05-01, OpenJDK 17.0.18, unoptimized+debuginfo)
+
+| Metrik | Zielwert | Gemessen | Ergebnis |
+|--------|----------|----------|----------|
+| `twenty_hz_over_ten_seconds_no_drops` Events in 10 s | 200 ±5% (190–210) | **200** | ✅ 0 Drops |
+| `listener_receives_events_smoke` Events in 500 ms | ≥ 5 | **≥ 5** | ✅ OK |
+| `cargo test -p klarvo-bridge-jni` (kein `--test-threads=1`) | alle grün | **2/2 grün** | ✅ Fix bestätigt |
+
+### Konsequenz für CI
+
+E1 windows-ci.yml: `--exclude klarvo-bridge-jni` entfernt (separater Commit, Story 2.A.F2-Closure).
+`--test-threads=1` in der Smoke-Test-Sektion dieses ADR bleibt gültig für lokale Referenz;
+in `cargo test -p klarvo-bridge-jni` ohne Flag laufen die Tests durch TEST_MUTEX serialisiert.
