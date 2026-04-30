@@ -3,7 +3,7 @@ name: Story 2.A.F2 — JNI Rate-Test Regression Triage
 phase: 2
 wave: A
 story_id: "2.A.F2"
-status: review
+status: done
 dependencies: []
 adr_refs:
   - docs/adr/0003-jni-spike-outcome.md
@@ -112,6 +112,21 @@ Backlog-Phase-3-Update. `--exclude`-Flag in E1 bleibt dokumentiert. Keine weiter
 - [x] T4: ADR-0003 Amendment-2 mit Root-Cause + Fix-Summary + Messwerten
 - [x] T5: E1 windows-ci.yml `--exclude klarvo-bridge-jni` entfernen (separater Commit)
 
+### Review Findings
+
+- [x] [Review][Defer] **TEST_MUTEX-Pattern silently violable** — deferred — Phase-3 JNI-Rewrite redesignt die Listener-Architektur (Multi-Listener-Hardening + RAII-API); Wrapper jetzt einzubauen wäre scope-creep über die F2-Scope-Fence "Nicht-in-Scope: JNI-Bridge-Rewrite" hinaus. Mini-Comment im Test-File-Top als Defense-against-future-self ist Teil der P-Patches. Quelle: blind+edge.
+- [x] [Review][Defer] **Linux-CI exkludiert `klarvo-bridge-jni` weiterhin** — deferred — F2-Scope-Fence T5 ist explizit Windows-CI-Only (`E1 windows-ci.yml ... entfernen`). Linux-Epic-5-CI-Exclude (per `project_jni_spike_scope`-Memo) zu entfernen ist eine eigene CI-Hardening-Story; F2-Closure beweist nur Windows-Compile, JNI-Tests bleiben dev-machine-verifiziert bis Phase-3. Eintrag in `deferred-work.md` als F2-W5. Quelle: blind+edge.
+- [x] [Review][Defer] **Production `register_listener` silently overwrites Listener** — deferred — Story-Outcome explizit "Test-Isolation-Bug, kein Production-Code-Bug"; `tracing::warn!`-Patch wäre Production-Code-Touch außerhalb der Scope-Fence. Multi-Listener-Hardening kommt mit Phase-3-JNI-Rewrite. ADR-Amendment-Sprache wird via P3/P4 nachgeschärft. Eintrag in `deferred-work.md` als F2-W6. Quelle: edge.
+- [x] [Review][Patch] **Mutex-Poisoning maskiert echte Test-Failures** [klarvo-bridge-jni/tests/audio_level_callback.rs:94, 119] — Fixed: `.lock().unwrap_or_else(|p| p.into_inner())`. Quelle: blind+edge.
+- [x] [Review][Patch] **`unregister_listener` wird auf Assert-Failure übersprungen** [klarvo-bridge-jni/tests/audio_level_callback.rs] — Fixed: `ListenerGuard`-Struct mit `Drop`-Impl in beide Tests integriert; explizite `unregister_listener()`-Aufrufe entfernt (RAII-Pattern per Memory `feedback_test_raii_cleanup_pattern`). Quelle: edge.
+- [x] [Review][Patch] **ADR-Messwert-Tabelle „≥5 / ≥5" ist nicht-quantitativ** [docs/adr/0003-jni-spike-outcome.md] — Fixed: Smoke-Test-Eintrag mit `eprintln!`-Capture ergänzt, Re-Run gemessen → Smoke = 10 events / 500 ms; Tabellen-Zelle auf **10** aktualisiert. Quelle: blind.
+- [x] [Review][Patch] **ADR-Widerspruch: `--test-threads=1` „bleibt gültig" vs. „nicht erforderlich"** [docs/adr/0003-jni-spike-outcome.md] — Fixed: Smoke-Test-Sektion mit `> Hinweis (post-Amendment 2)`-Box; Amendment-2-Konsequenz-Sektion eindeutig formuliert (Flag obsolet, ersatzlos entfernbar). Quelle: blind+edge.
+- [x] [Review][Patch] **ADR-Header-Status-Line wurde nicht von „Proposed" auf „Accepted" geflippt** [docs/adr/0003-jni-spike-outcome.md:3] — Fixed: Header-Line `**Status:** Accepted (siehe Amendment 2 — 2026-05-01)`. Quelle: auditor.
+- [x] [Review][Defer] **JDK auf windows-latest nur implicit verfügbar** [.github/workflows/windows-ci.yml:34-38] — deferred, pre-existing — kein expliziter `actions/setup-java`-Step; bei Runner-Image-Wechsel ohne JDK bricht CI silent. Aktuell kein Bug.
+- [x] [Review][Defer] **`JavaVM::singleton()` + multiple integration-test binaries** [klarvo-bridge-jni/tests/audio_level_callback.rs:40-57] — deferred, pre-existing — moot bei aktuell einer Test-Datei; Edge bei Future-Refactoring.
+- [x] [Review][Defer] **Background-Tasks nicht durch TEST_MUTEX serialisiert** [klarvo-bridge-jni/src/commands.rs:97-106] — deferred, pre-existing — `tokio::JoinHandle::abort()` ist non-blocking; Test-N's Bridge-Task kann noch in JNI-Call sein, wenn Test-(N+1) startet. Mutex serialisiert nur Test-Bodies, nicht Hintergrundtasks. Workaround `sleep(50ms/100ms)` ist best-effort.
+- [x] [Review][Defer] **`stop_meter` abort vs. drain race** [klarvo-bridge-jni/src/commands.rs:97-106] — deferred, pre-existing — broadcast-Channel-Receiver kann nach `abort()` noch `recv().await`-Wakeup bekommen; nicht von F2 verursacht.
+
 ## Dev Agent Record
 
 ### Debug Log
@@ -154,3 +169,6 @@ Fix-Outcome gewählt. Root-Cause: Test-Isolation-Race in statischem `LISTENER`. 
 
 - 2026-05-01: Fix implementiert (cf07309) — TEST_MUTEX + ADR-0003-Amendment-2
 - 2026-05-01: E1-Flag-Entfernung (3fda8a2) — windows-ci ohne --exclude
+- 2026-05-01: Code-Review-Closure — 5 Patches (P1 Mutex-Poisoning-Fix, P2 RAII ListenerGuard,
+  P3 ADR-Smoke-Count 10 absolute erfasst, P4 `--test-threads=1`-Widerspruch aufgelöst,
+  P5 ADR-Header Proposed→Accepted), 6 Defers in `deferred-work.md` (F2-W1..W6); Status review→done.

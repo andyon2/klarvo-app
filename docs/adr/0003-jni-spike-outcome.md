@@ -1,6 +1,6 @@
 # ADR-0003: JNI-Spike Outcome — Dual-Surface bestätigt, separater Listener-Kontrakt
 
-**Status:** Proposed
+**Status:** Accepted (siehe Amendment 2 — 2026-05-01)
 **Date:** 2026-04-18
 
 ## Context
@@ -115,6 +115,11 @@ Agents, die Android-JNI-Tutorials (typisch 0.21-basiert) referenzieren: bitte ge
 
 ## Smoke-Test & Reproducibility
 
+> **Hinweis (post-Amendment 2):** `--test-threads=1` ist seit der TEST_MUTEX-Fix
+> obsolet — der Mutex serialisiert die Tests intern. Das Flag bleibt unten als
+> historisches Spike-Reproduzierbarkeits-Kommando dokumentiert; kanonischer
+> Smoke-Befehl ist heute `cargo test -p klarvo-bridge-jni` (ohne Flag).
+
 ```bash
 cargo test -p klarvo-bridge-jni -- --test-threads=1 --nocapture
 # expected:
@@ -170,11 +175,18 @@ Threading-Modell) ist unverändert korrekt; die Known Limitation (Multi-Listener
 | Metrik | Zielwert | Gemessen | Ergebnis |
 |--------|----------|----------|----------|
 | `twenty_hz_over_ten_seconds_no_drops` Events in 10 s | 200 ±5% (190–210) | **200** | ✅ 0 Drops |
-| `listener_receives_events_smoke` Events in 500 ms | ≥ 5 | **≥ 5** | ✅ OK |
+| `listener_receives_events_smoke` Events in 500 ms | ≥ 5 | **10** | ✅ OK |
 | `cargo test -p klarvo-bridge-jni` (kein `--test-threads=1`) | alle grün | **2/2 grün** | ✅ Fix bestätigt |
 
 ### Konsequenz für CI
 
 E1 windows-ci.yml: `--exclude klarvo-bridge-jni` entfernt (separater Commit, Story 2.A.F2-Closure).
-`--test-threads=1` in der Smoke-Test-Sektion dieses ADR bleibt gültig für lokale Referenz;
-in `cargo test -p klarvo-bridge-jni` ohne Flag laufen die Tests durch TEST_MUTEX serialisiert.
+`--test-threads=1` ist post-Amendment-2 obsolet und kann ersatzlos entfernt werden — TEST_MUTEX
+serialisiert die Tests, die das `LISTENER`-Static teilen. Das Flag bleibt in der historischen
+Smoke-Test-Sektion dieses ADR als Spike-Reproduzierbarkeits-Kontext dokumentiert (siehe
+`> Hinweis`-Box dort).
+
+Nicht in F2-Scope (siehe `deferred-work.md`):
+- Linux-Epic-5-CI exkludiert `klarvo-bridge-jni` weiterhin (F2-W5) — separate CI-Hardening-Story.
+- Production `register_listener` überschreibt Listener still bei doppeltem Aufruf (F2-W6) —
+  Multi-Listener-Hardening kommt mit Phase-3-JNI-Rewrite (§4 Threading-Modell-Limitation oben).

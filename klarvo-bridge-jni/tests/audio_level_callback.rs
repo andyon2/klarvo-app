@@ -1,6 +1,14 @@
 //! Integration-test: spawn a real JVM on Linux (via `jni` invocation feature),
 //! register a listener, run `Session::start_meter` for N seconds, verify events
 //! reached the listener with expected rate + no exceptions.
+//!
+//! TEST_ISOLATION CONTRACT — every `#[test]` in this file MUST hold `TEST_MUTEX`
+//! for its full body. Both tests share the production `LISTENER` static
+//! (`klarvo-bridge-jni/src/streams.rs`); parallel execution overwrites one
+//! listener with the other before any events are received (see ADR-0003
+//! Amendment 2). If you add a third test, do the same — there is no
+//! compile-time enforcement. A multi-listener-aware registry is deferred to
+//! the Phase-3 JNI rewrite (see `deferred-work.md` F2-W6).
 
 use std::path::Path;
 use std::process::Command;
@@ -36,6 +44,17 @@ static JVM: OnceLock<JavaVM> = OnceLock::new();
 // listener into the same global slot; parallel execution causes one test's
 // listener to be overwritten before it can receive any events.
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+/// RAII guard that calls `unregister_listener()` on drop, ensuring the
+/// production `LISTENER` static is cleared even if the test body panics
+/// (e.g. assertion failure) — otherwise a stale `Global<JObject>` would
+/// leak into the next test through the shared static.
+struct ListenerGuard;
+impl Drop for ListenerGuard {
+    fn drop(&mut self) {
+        unregister_listener();
+    }
+}
 
 fn shared_jvm() -> &'static JavaVM {
     JVM.get_or_init(|| {
@@ -91,10 +110,11 @@ fn read_count(env: &mut Env, listener: &JObject) -> i32 {
 
 #[test]
 fn listener_receives_events_smoke() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
     let jvm = shared_jvm();
     jvm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
         let listener = create_listener_and_register(env);
+        let _listener_guard = ListenerGuard;
 
         let session = Session::new();
         session.start_meter();
@@ -106,9 +126,9 @@ fn listener_receives_events_smoke() {
         std::thread::sleep(Duration::from_millis(50));
 
         let count = read_count(env, &listener);
+        eprintln!("[listener_receives_events_smoke] final count = {count}");
         assert!(count >= 5, "expected ≥5 events in 500ms, got {count}");
 
-        unregister_listener();
         Ok(())
     })
     .expect("smoke test body");
@@ -116,10 +136,11 @@ fn listener_receives_events_smoke() {
 
 #[test]
 fn twenty_hz_over_ten_seconds_no_drops() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
     let jvm = shared_jvm();
     jvm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
         let listener = create_listener_and_register(env);
+        let _listener_guard = ListenerGuard;
 
         let session = Session::new();
         session.start_meter();
@@ -138,7 +159,6 @@ fn twenty_hz_over_ten_seconds_no_drops() {
             "expected ~200 events (±5%) in 10s, got {count}"
         );
 
-        unregister_listener();
         Ok(())
     })
     .expect("20Hz test body");
