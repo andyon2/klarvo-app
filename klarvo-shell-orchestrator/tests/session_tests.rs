@@ -123,20 +123,29 @@ async fn wait_for_error(emitter: &MockErrorEmitter) {
     .expect("error must be emitted within 5 seconds");
 }
 
-/// Poll until a RecordingCompleted event is received, or timeout.
-async fn wait_for_completed(rx: &mut tokio::sync::broadcast::Receiver<Event>) {
+/// Collect every event received until `RecordingCompleted` arrives, then return
+/// the full sequence. Used to assert lifecycle ordering (Started→Stopped→Completed).
+async fn collect_events_until_completed(
+    rx: &mut tokio::sync::broadcast::Receiver<Event>,
+) -> Vec<Event> {
+    let mut events = Vec::new();
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            match rx.try_recv() {
-                Ok(Event::RecordingCompleted { .. }) => break,
-                Ok(_) | Err(_) => {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
+            match rx.recv().await {
+                Ok(evt) => {
+                    let is_completed = matches!(evt, Event::RecordingCompleted { .. });
+                    events.push(evt);
+                    if is_completed {
+                        break;
+                    }
                 }
+                Err(_) => break,
             }
         }
     })
     .await
     .expect("RecordingCompleted must arrive within 5 seconds");
+    events
 }
 
 #[tokio::test]
@@ -313,13 +322,37 @@ async fn autostop_transitions_to_idle_after_vad() {
     orch.on_press().await;
     // VAD fires SpeechEnd automatically via MockVadProvider → pipeline runs → cleanup → Idle.
     wait_for_delivery(&output_target).await;
-    wait_for_completed(&mut rx).await;
+    let events = collect_events_until_completed(&mut rx).await;
 
     assert_eq!(output_target.last_delivered().as_deref(), Some("autostop text"));
     assert!(paste_backend.was_called(), "paste must be called in AutoStop mode");
     // AC-5: cleanup branch must transition state back to Idle so the next press
     // is not blocked by a stale Recording state.
     assert!(orch.is_idle().await, "orchestrator must be Idle after AutoStop cleanup");
+
+    // Re-D1 (Re-Review-Closure): AutoStop must emit the full 3-state lifecycle
+    // (Started → Stopped → Completed) like Hold/Toggle. A regression that drops
+    // the Stopped emit would desync tray / Pill-Bar state-pull subscribers.
+    assert!(
+        matches!(events.first(), Some(Event::RecordingStarted { .. })),
+        "first event must be RecordingStarted; got {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e, Event::RecordingStopped { .. })),
+        "AutoStop must emit RecordingStopped after audio capture ends (Re-D1); got {events:?}"
+    );
+    let stopped_idx = events
+        .iter()
+        .position(|e| matches!(e, Event::RecordingStopped { .. }))
+        .expect("RecordingStopped present (asserted above)");
+    let completed_idx = events
+        .iter()
+        .position(|e| matches!(e, Event::RecordingCompleted { .. }))
+        .expect("RecordingCompleted present (collect_events_until_completed terminator)");
+    assert!(
+        stopped_idx < completed_idx,
+        "RecordingStopped must precede RecordingCompleted; got {events:?}"
+    );
 }
 
 #[tokio::test]

@@ -211,6 +211,17 @@ impl SessionOrchestrator {
                 pipeline.await
             };
 
+            // Re-D1 (Re-Review-Closure 4f0e0f7): Hold/Toggle/WaitAndType emit
+            // `RecordingStopped` from `on_release` / Toggle-inline-stop — the
+            // user-driven termination. AutoStop's audio capture ends here at
+            // `pipeline.await` resolution (whether VAD SpeechEnd or hard-cap
+            // timeout), so emit `Stopped` here to keep the 3-state lifecycle
+            // (Started → Stopped → Completed) uniform across modes. Subscribers
+            // (tray state-pull, A3 Pill-Bar) can rely on the contract.
+            if press_mode == RecordingMode::AutoStop {
+                event_bus.emit(Event::RecordingStopped { ts_ms: clock.now_ms() });
+            }
+
             // Extract delivery text, if any. Non-Text variants and empty results
             // skip delivery; errors emit a toast.
             let text_to_deliver = match result {

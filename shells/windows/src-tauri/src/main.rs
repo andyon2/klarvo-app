@@ -322,6 +322,11 @@ fn main() {
 
             // Step 11b: settings.changed listener — keeps recording_mode_arc in sync when
             // set_recording_mode_slot1 Command writes a new mode (AC-7 live-update).
+            //
+            // Diagnostics: parse-failures on `RecordingMode::from_str` leave a
+            // `tracing::warn!` breadcrumb (Re-Review Re-P1) so DB writes that bypass
+            // the validating Tauri command (e.g. raw `set_raw` writes from a future
+            // migration) don't silently desync `mode_arc` from persisted state.
             {
                 use std::str::FromStr;
                 let mode_arc_listener = Arc::clone(&recording_mode_arc);
@@ -329,11 +334,19 @@ fn main() {
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                         if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot1.mode") {
                             if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
-                                if let Ok(mode) = RecordingMode::from_str(new_value) {
-                                    let arc = Arc::clone(&mode_arc_listener);
-                                    tauri::async_runtime::spawn(async move {
-                                        *arc.write().await = mode;
-                                    });
+                                match RecordingMode::from_str(new_value) {
+                                    Ok(mode) => {
+                                        let arc = Arc::clone(&mode_arc_listener);
+                                        tauri::async_runtime::spawn(async move {
+                                            *arc.write().await = mode;
+                                        });
+                                    }
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            value = new_value,
+                                            "settings.changed hotkey.slot1.mode value not parseable as RecordingMode"
+                                        );
+                                    }
                                 }
                             }
                         }

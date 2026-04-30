@@ -558,6 +558,8 @@ claude-sonnet-4-6
 | Date | Change |
 |------|--------|
 | 2026-04-30 | Initial implementation: T1–T8 all complete; all tests green; bindings in sync |
+| 2026-04-30 | Code-Review-Closure (commit `4f0e0f7`): D1-D5 Resolutions + 11 Patches applied + 13 Defers persisted; Story-Status `review→done` |
+| 2026-04-30 | Re-Review-Closure: Re-D1 (`RecordingStopped`-Emit für AutoStop) + Re-D3 (ADR-0012 Amendment 2) + Re-P1 (`tracing::warn!` Step-11b-Listener) applied; Re-D2 als false-positive dismissed (verified `vad.reset()` exists + called in `pipeline/orchestrator.rs:60`); 5 Defers (A1-Re-F1..F5); 10/10 session_tests grün |
 
 ### Review Findings
 
@@ -609,3 +611,44 @@ _Code-Review 2026-04-30 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, p
 - AC-12 `cargo xtask verify-release` + `cargo check --target x86_64-pc-windows-msvc` lokal geskippt — Repo-Konvention (CI-Gate G2/G6 fängt; vgl. Story 2.A.E1-Closure).
 - Mode-Read-Inconsistency in `pipeline_task` (Closure-Capture vs. self.mode) — Mode wird per Closure-Capture festgehalten, kein Re-Read; flagged von Edge-Case-Hunter aber irrelevant in aktueller Code-Form (separates Decision für press-time vs fresh siehe oben).
 - Toggle-Stop-Press während Pipeline mid-execution — `drop(capture_handle)` schließt Channel, Pipeline completed natural; `drop(pipeline_task)` detacht JoinHandle. Pre-existing Pattern.
+
+### Re-Review Findings (2026-04-30 — Closure-Audit auf `4f0e0f7`)
+
+_Re-Code-Review 2026-04-30 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, parallel auf commit `4f0e0f7` Closure-of-Closure). Acceptance-Auditor-Verdict: substanzielle Closure korrekt umgesetzt — alle D1-D5 Resolution-Claims im Code, Tests, Locales, Bindings + Spec verifiziert; 3 echte Open-Items + 1 Quick-Win-Patch + 5 Defers identifiziert._
+
+_Resolution 2026-04-30 (Re-Review-Closure-Commit): Re-D1 + Re-D3 + Re-P1 applied; Re-D2 dismissed-as-false-positive nach Code-Audit; alle 5 Defers in `deferred-work.md` als A1-Re-F1..F5 persistiert._
+
+#### Decision Needed (Re-Review — alle resolved 2026-04-30)
+
+- [x] [Re-Review][Decision] **Re-D1 — AutoStop natural completion + hard-cap timeout: kein `RecordingStopped`-Event** [`klarvo-shell-orchestrator/src/session.rs`] — *Resolved Option A:* `RecordingStopped` wird jetzt in `pipeline_task` zwischen `pipeline.await`-Resolution und Cleanup-Block emittiert, conditioned on `press_mode == RecordingMode::AutoStop`. Deckt beide Pfade ab (VAD-SpeechEnd + Hard-Cap-Timeout). Test-Coverage in `autostop_transitions_to_idle_after_vad` via neuem `collect_events_until_completed`-Helper; assertet sowohl Presence als auch Reihenfolge (Started < Stopped < Completed).
+
+- [x] [Re-Review][Decision] **Re-D2 — VAD-State-Pollution-Risk auf Hard-Cap-Timeout-Cancel** [`klarvo-shell-orchestrator/src/session.rs:175-209`] — *Dismissed (false-positive nach Code-Audit):* `VadProvider`-Trait hat bereits eine `reset()`-Method (`klarvo-core/src/audio/vad/provider.rs:13`), und `run_capture_session` ruft `vad.reset()` als ersten Schritt jeder Session auf (`klarvo-core/src/pipeline/orchestrator.rs:60`). Damit ist der nach Cancel-Drop residuelle VAD-State irrelevant — die nächste Session beginnt mit reset. Trait-Contract ist im ADR-0012 Amendment 2 (A2-3) explizit dokumentiert: `reset()` muss jeden internen State invalidieren; aktuelle `RmsVad`-Impl erfüllt das trivial (energy-only); künftige stateful-Impls (Silero etc.) müssen Idempotenz garantieren.
+
+- [x] [Re-Review][Decision] **Re-D3 — ADR-0012 Amendment 2 für D1/D4/D5 fehlt** [`docs/adr/0012-orchestrator-owner.md`] — *Resolved Option A:* Amendment 2 hinzugefügt mit vier Sub-Sections: A2-1 Single-Writer-Pattern (D1 + Korrektur zu Amendment-1-Bootstrap-Beispiel: `app.manage(mode_arc)` ist entfernt), A2-2 `press_mode`-Snapshot (D4), A2-3 Hard-Cap-Timeout (D5 + VAD-Cancel-Safety-Klärung), A2-4 AutoStop emittiert `RecordingStopped` (Re-D1 — neue Klausel zum 3-State-Lifecycle-Contract).
+
+#### Patch (Re-Review — applied 2026-04-30)
+
+- [x] [Re-Review][Patch] **Re-P1 — `RecordingMode::from_str` Parse-Error im `settings.changed`-Listener silent geschluckt** [`shells/windows/src-tauri/src/main.rs:325-342`] — *Applied:* Listener nutzt jetzt explicit `match RecordingMode::from_str(new_value) { Ok(mode) => spawn write, Err(_) => tracing::warn!(...) }`. Symmetrisch zum Step-11c-i18n-Listener-Pattern. Schützt gegen DB-Writes, die den validierenden Tauri-Command bypassen (z. B. künftige Migrations via `set_raw`).
+
+#### Deferred (Re-Review)
+
+- [x] [Re-Review][Defer] **A1-Re-F1 — Rapid Toggle-Stop+Restart während noch laufender Pipeline: VAD-Lock-Contention** [`klarvo-shell-orchestrator/src/session.rs`] — User triple-tappt Toggle (start/stop/start) innerhalb ~1s. Erstes Pipeline-Task hält noch VAD-Lock für STT-Cleanup; neue Recording-Session emittiert `RecordingStarted` aber blockiert beim VAD-Acquire bis erstes Pipeline-Task fertig — silent-recording-Window (Tray/Pill-Bar zeigt Recording, aber VAD verarbeitet keine Frames). Fix-Pfad: Session-ID + Abort-Old-Pipeline-on-New-Press, oder VAD-pro-Session statt Shared-Mutex. Hoher Impact, aber großer Architecture-Refactor — Phase-2-B-A3-Pill-Bar-Design-Window passt.
+- [x] [Re-Review][Defer] **A1-Re-F2 — Test-Coverage-Lücken** — Vier fehlende Tests: (a) AutoStop-Hard-Cap-Timeout-Branch nie executed (kein Test verifiziert `error.recording.timeout`-Toast oder `Ok(None)`-Cleanup-Pfad); (b) `is_idle()` nur in `autostop_transitions_to_idle_after_vad` asserted — Toggle-Stop und Hold-Release haben keinen State-Pull-Check; (c) Mode-Change-Mid-Session-Snapshot (D4-Resolution) durch keinen Test gedeckt — ein "Simplification"-Refactor der re-reads würde silent regressieren; (d) Triple-Tap-Toggle (siehe Re-F1) — Race-Window ungetestet. Phase-2-B-Test-Hardening-Story.
+- [x] [Re-Review][Defer] **A1-Re-F3 — Hard-Cap-Timeout-Toast-Emit blockiert Cleanup** [`klarvo-shell-orchestrator/src/session.rs:203-208`] — Sequenz: `tokio::time::timeout` → `Err(_)` → `error_emitter.emit_error(...).await` (kann bei IPC-Lag mehrere ms blocken) → erst dann fällt der Cleanup-Block. Audio-Capture stays offen länger als 60s nominal. Minor (IPC-Lag in Praxis < 50ms), aber widerspricht "Hard-Cap"-Semantik. Fix: Cleanup vor Emit oder Emit fire-and-forget via spawn.
+- [x] [Re-Review][Defer] **A1-Re-F4 — BYOK-API-Cost-Transparency auf Hard-Cap-Drop** — Wenn Hard-Cap firet während STT-Plugin gerade mid-HTTP-Request ist (z. B. Groq), wird `reqwest`-Future via Cancel-Drop unterbrochen. Server-seitig kann der Request schon partial gestreamt sein → User zahlt für orphaned API-Call ohne Output. Geringes praktisches Volumen, aber relevant für BYOK-Narrativ. Phase-2-B-Hardening: Tracing/Metric "stt.cancelled-on-hardcap" + Doc-Note in Settings-UI.
+- [x] [Re-Review][Defer] **A1-Re-F5 — `DEFAULT_RECORDING_MODE_SLOT1`-Const-Typo surfacelt nur runtime** [`klarvo-core/src/settings/mod.rs:301-307`] — Falls jemand den const-String typed (`"toogle"` statt `"toggle"`), schlägt `RecordingMode::from_str` erst beim ersten `recording_mode_slot1()`-Read im Production-Run fehl. Compile-Time-Schutz wäre `RecordingMode::default()`-Const oder `phf_map!`-basiertes Lookup. Niedrige Priorität — Test-Coverage greift heute. Phase-2-Cleanup.
+
+#### Closure-Audit-Drift (Informational)
+
+- 🔍 **D1-Provenance-Split**: Auditor: `app.manage(recording_mode_arc)`-Removal (zentral für D1-Single-Writer-Resolution) ist tatsächlich in Commit `7803eda` (Story 2.A.A8-Sub) materialisiert, NICHT in `4f0e0f7` (2.B.A1-Closure). Das Closure-Spec attribuiert die Removal an `4f0e0f7`, aber `4f0e0f7`-Diff hat 0 Lines in `main.rs`. Net-Effekt im Tree: korrekt. Provenance: split — bei isoliertem `git revert 4f0e0f7` würde D1 nicht voll zurückgerollt werden.
+- 🔍 **Commit-Message-Discrepancies in `4f0e0f7`**: (a) "13 defer entries" — actual count is 14 (F1-F10 + D2/D5/D5b/D7); (b) "fires `RecordingCompleted` on timeout" — code returns `Ok(None)` und exited das spawn-block ohne explicit `RecordingCompleted`-Emit (siehe Re-D1). Beide post-commit nicht korrigierbar; nur informationell.
+
+#### Dismissed (Re-Review — Noise / by-design / out-of-scope)
+
+- AutoStop Hard-Cap nicht symmetrisch für Toggle/WaitAndType — bereits A1-D5b deferred.
+- `set_recording_mode_slot1` sync vs. async — Tauri-Command-Pool handled das; Tauri-Konvention.
+- `RecordingMode::FromStr::Err` From-AppError-Conversion-Visibility — würde compile-fail wenn fehlend; CI-greift.
+- `text_to_deliver`-Clone-Hygiene — minor cosmetic, Lifetimes erfordern Clone für Event-Payload.
+- `is_idle`-Lock-Surface bei high-frequency Tray-Pull — Tray nutzt 1Hz-State-Pull (Story 3.8); FIFO-Fairness verhindert Starvation.
+- on_release emittiert RecordingStopped vor `drop(capture_handle)` — cosmetic ordering, cpal-stop ist non-blocking.
+- Settings-Listener kein Replay/Initial-State-Sync — pre-existing Pattern aus Phase-1, nicht durch 4f0e0f7 eingeführt.

@@ -280,3 +280,70 @@ app.listen("settings.changed", |event| {
     }
 });
 ```
+
+---
+
+## Amendment 2 — Phase-2-B Closure-Hardening (Story 2.B.A1 Re-Review-Closure, 2026-04-30)
+
+**Status:** Accepted
+
+Closure-Patches zu Amendment 1, materialisiert in Commits `4f0e0f7` (2.B.A1-Code-Review-Closure), `7803eda` (Story 2.A.A8-Sub) und Folge-Commit (Re-Review-Closure: Re-D1+Re-D3+Re-P1). Drei load-bearing Architecture-Refinements + ein Lifecycle-Fix.
+
+### A2-1: Single-Writer-Pattern für `mode_arc` (D1-Resolution)
+
+Der `set_recording_mode_slot1`-Tauri-Command schreibt **nicht** mehr direkt in `mode_arc` — er ruft nur `Settings::set_recording_mode_slot1`, das sein `settings.changed`-Event emittiert. Der Step-11b-Listener im Shell-Bootstrap ist der **alleinige Writer** des `mode_arc`. Damit existiert per Konstruktion kein Double-Write-Race und der Settings-Wert ist die Source-of-Truth (Listener spiegelt von DB → Arc, nicht andersrum).
+
+**Korrektur zu Amendment-1-Bootstrap** (oben Zeile 266-273): `app.manage(Arc::clone(&recording_mode_arc))` ist **entfernt**. Der Arc ist orchestrator-internal und braucht keinen `tauri::State`-Zugriff mehr — der Command nimmt nur `tauri::State<Settings>`. Die Step-11b-Closure cloned den Arc beim Setup, der Arc lebt damit für die App-Lifetime im Listener-Closure.
+
+```rust
+// Bootstrap (korrigiert):
+let recording_mode_arc = Arc::new(tokio::sync::RwLock::new(
+    settings.recording_mode_slot1().unwrap_or(DEFAULT_RECORDING_MODE_SLOT1)
+));
+// → SessionOrchestrator::new(..., Arc::clone(&recording_mode_arc))
+// (kein app.manage(...) mehr)
+
+// Step 11b Listener (alleiniger Writer):
+let mode_arc_listener = Arc::clone(&recording_mode_arc);
+app.listen("settings.changed", move |event| {
+    if payload.key == "hotkey.slot1.mode" {
+        match RecordingMode::from_str(&payload.newValue) {
+            Ok(mode) => spawn(async move { *mode_arc_listener.write().await = mode; }),
+            Err(_) => tracing::warn!(...),  // Re-P1: Diagnose-Breadcrumb
+        }
+    }
+});
+```
+
+### A2-2: `press_mode`-Snapshot in `SessionState::Recording` (D4-Resolution)
+
+`SessionState::Recording` trägt jetzt ein `press_mode: RecordingMode`-Field, das beim `on_press` aus `self.mode.read().await` festgehalten wird. `on_release` und der Toggle-Inline-Stop in `on_press` dispatchen auf **diesen Snapshot**, nicht auf einen frischen `mode`-Read. Effekt: Settings-driven Mode-Change während laufender Session schlägt erst beim **nächsten** Press durch — Press-Time und Release-Time sehen denselben Modus, kein Split-Brain (Hold-Press → Toggle-Mode-Switch → Release käme sonst in Toggle's no-op-on-release-Branch und würde die Session bis zum nächsten Press blockieren).
+
+`RecordingMode` ist daher `#[derive(Copy)]` (in `klarvo-core/src/recording/mod.rs`) — nötig für das `if let SessionState::Recording { press_mode, .. } = *state`-Pattern unter `Mutex<SessionState>`-Lock.
+
+### A2-3: AutoStop Hard-Cap-Timeout (D5-Resolution)
+
+AutoStop's `pipeline.await` ist in `tokio::time::timeout(60s, ...)` gewrapped. Bei Ablauf (VAD findet keinen SpeechEnd → continuous noise / mic-issue):
+1. `error.recording.timeout`-Toast via `ErrorEmitter` emittieren.
+2. `Ok(None)` zurückgeben → fällt in den unbedingten Cleanup-Block (Amendment 1, Zeile 234-244).
+3. Cleanup ersetzt `Recording → Idle` und droppt `capture_handle`.
+
+`MAX_RECORDING_DURATION_SECS = 60` ist heute hardcoded; User-konfigurierbarer Threshold ist als A1-D5-Followup deferred. Hard-Cap gilt nur für AutoStop — Toggle/WaitAndType haben User-driven Termination (siehe A1-D5b für Symmetrie-Diskussion).
+
+**VAD-Cancel-Safety**: `tokio::time::timeout` cancelt das Pipeline-Future durch Drop. Der `MutexGuard<VadProvider>` wird via Drop sauber freigegeben. Mid-utterance VAD-Internal-State wird **NICHT** explizit zurückgesetzt — das ist akzeptabel, weil `run_capture_session` (in `klarvo-core/src/pipeline/orchestrator.rs:60`) auf jedem Session-Start `vad.reset()` aufruft. Der `VadProvider`-Trait-Contract verlangt damit implizit, dass `reset()` *jeden* internen State invalidiert (gilt für aktuelle `RmsVad`-Impl trivial — energy-only, stateless; künftige stateful Impls (Silero etc.) müssen `reset()`-Idempotenz garantieren).
+
+### A2-4: AutoStop emittiert `RecordingStopped` (Re-D1-Resolution)
+
+Hold/Toggle/WaitAndType emittieren `RecordingStopped` von `on_release` bzw. Toggle-Inline-Stop. AutoStop's Audio-Capture endet nicht User-driven, sondern intern an `pipeline.await`-Resolution (VAD-SpeechEnd ODER Hard-Cap-Timeout). Damit alle vier Modi denselben 3-State-Lifecycle-Contract erfüllen (Started → Stopped → Completed), emittiert AutoStop in `pipeline_task` zwischen `pipeline.await`-Resolution und Cleanup ein eigenes `RecordingStopped`:
+
+```rust
+// pipeline_task, nach `let result = if AutoStop { timeout(pipeline) } else { pipeline.await };`
+if press_mode == RecordingMode::AutoStop {
+    event_bus.emit(Event::RecordingStopped { ts_ms: clock.now_ms() });
+}
+// → fallthrough in unbedingten Cleanup + Delivery + RecordingCompleted (Amendment 1)
+```
+
+Subscribers (Tray-State-Pull aus Story 3.8/Epic-3, Pill-Bar aus Story 2.B.A3) sind damit pro Modus uniform — keine `if AutoStop { skip Stopped }`-Sonderlogik nötig.
+
+Test-Coverage in `autostop_transitions_to_idle_after_vad` asserted Sequence-Order (Started < Stopped < Completed); Hard-Cap-Timeout-Pfad ist als A1-Re-F2 für Phase-2-B-Test-Hardening deferred.
