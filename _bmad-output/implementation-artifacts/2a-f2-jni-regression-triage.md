@@ -3,7 +3,7 @@ name: Story 2.A.F2 — JNI Rate-Test Regression Triage
 phase: 2
 wave: A
 story_id: "2.A.F2"
-status: ready
+status: ready-for-dev
 dependencies: []
 adr_refs:
   - docs/adr/0003-jni-spike-outcome.md

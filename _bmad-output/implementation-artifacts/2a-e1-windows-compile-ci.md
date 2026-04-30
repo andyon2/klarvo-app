@@ -3,7 +3,7 @@ name: Story 2.A.E1 — Windows-Compile-CI-Gate (G6)
 phase: 2
 wave: A
 story_id: "2.A.E1"
-status: ready
+status: ready-for-dev
 dependencies: []
 adr_refs: []
 source_ref: "Backlog Windows-Compile-CI-Gate; Epic-3-Followup; memory/project_jni_spike_scope"

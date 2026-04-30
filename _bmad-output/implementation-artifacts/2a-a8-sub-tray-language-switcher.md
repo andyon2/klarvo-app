@@ -3,7 +3,7 @@ name: Story 2.A.A8-Sub — Tray-Language-Switcher
 phase: 2
 wave: A
 story_id: "2.A.A8-Sub"
-status: ready
+status: ready-for-dev
 dependencies:
   - "2.A.A4"
 adr_refs:

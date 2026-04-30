@@ -21,13 +21,13 @@ Alle Story-Files leben in `_bmad-output/implementation-artifacts/` (BMAD-Canon-K
 |----------|-------|------------|--------|--------|
 | 2.A.A4 | Settings-Service Foundation | `2a-a4-settings-panel-foundation.md` | done | Welle 1 (Foundation) |
 | 2.A.D2 | Arc-Wrapping-Duplikat-Fix | `2a-d2-arc-wrapping-fix.md` | done | Stream B |
-| 2.A.A8-Sub | Tray-Language-Switcher | `2a-a8-sub-tray-language-switcher.md` | ready | Stream A (A4-dep) |
-| 2.A.C2 | Hotkey-Konflikt-Erkennung | `2a-c2-hotkey-konflikt-erkennung.md` | ready | Stream A (A4-dep) |
-| 2.A.C3 | Live-Locale-Switch | `2a-c3-live-locale-switch.md` | ready | Stream A (A4-dep) |
-| 2.A.D3 | Graceful-Shutdown (`pipeline_task.abort`) | `2a-d3-graceful-shutdown.md` | ready | Stream B |
-| 2.A.E1 | Windows-Compile-CI-Gate (G6) | `2a-e1-windows-compile-ci.md` | ready | Stream B |
-| 2.A.F2 | JNI-Rate-Test-Regression-Triage | `2a-f2-jni-regression-triage.md` | ready | Stream B |
-| 2.A.C1 | Signierter MSI-Installer | `2a-c1-signed-msi-installer.md` | ready | Stream C (extern-async) |
+| 2.A.A8-Sub | Tray-Language-Switcher | `2a-a8-sub-tray-language-switcher.md` | ready-for-dev | Stream A (A4-dep) |
+| 2.A.C2 | Hotkey-Konflikt-Erkennung | `2a-c2-hotkey-konflikt-erkennung.md` | ready-for-dev | Stream A (A4-dep) |
+| 2.A.C3 | Live-Locale-Switch | `2a-c3-live-locale-switch.md` | ready-for-dev | Stream A (A4-dep) |
+| 2.A.D3 | Graceful-Shutdown (`pipeline_task.abort`) | `2a-d3-graceful-shutdown.md` | ready-for-dev | Stream B |
+| 2.A.E1 | Windows-Compile-CI-Gate (G6) | `2a-e1-windows-compile-ci.md` | ready-for-dev | Stream B |
+| 2.A.F2 | JNI-Rate-Test-Regression-Triage | `2a-f2-jni-regression-triage.md` | ready-for-dev | Stream B |
+| 2.A.C1 | Signierter MSI-Installer | `2a-c1-signed-msi-installer.md` | ready-for-dev | Stream C (extern-async) |
 | 2.A.F1 | Play-Store-Policy-Audit | (kein Story-File — `docs/phase3-android-policy-audit.md`) | extern-pending | F1 |
 
 ## Topologie (Streams + Dispatch-Reihenfolge)

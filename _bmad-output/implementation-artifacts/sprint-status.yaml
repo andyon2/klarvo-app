@@ -169,15 +169,15 @@ development_status:
   # ============================================================
   epic-phase-2-a: in-progress
   2a-a4-settings-panel-foundation: done
-  2a-a8-sub-tray-language-switcher: backlog
-  2a-c1-signed-msi-installer: backlog
-  2a-c2-hotkey-konflikt-erkennung: backlog
-  2a-c3-live-locale-switch: backlog
+  2a-a8-sub-tray-language-switcher: ready-for-dev
+  2a-c1-signed-msi-installer: ready-for-dev
+  2a-c2-hotkey-konflikt-erkennung: ready-for-dev
+  2a-c3-live-locale-switch: ready-for-dev
   2a-d2-arc-wrapping-fix: done
-  2a-d3-graceful-shutdown: backlog
-  2a-e1-windows-compile-ci: backlog
+  2a-d3-graceful-shutdown: ready-for-dev
+  2a-e1-windows-compile-ci: ready-for-dev
   2a-f1-play-store-policy-audit: backlog
-  2a-f2-jni-regression-triage: backlog
+  2a-f2-jni-regression-triage: ready-for-dev
   epic-phase-2-a-retrospective: optional
 
   # ============================================================

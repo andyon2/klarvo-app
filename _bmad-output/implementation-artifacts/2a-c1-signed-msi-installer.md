@@ -3,7 +3,7 @@ name: Story 2.A.C1 — Signierter MSI-Installer
 phase: 2
 wave: A
 story_id: "2.A.C1"
-status: ready
+status: ready-for-dev
 dependencies: []
 adr_refs: []
 source_ref: "Backlog Signierter Installer / MSI-Distribution"

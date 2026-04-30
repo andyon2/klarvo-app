@@ -3,7 +3,7 @@ name: Story 2.A.D3 — Graceful-Shutdown pipeline_task
 phase: 2
 wave: A
 story_id: "2.A.D3"
-status: ready
+status: ready-for-dev
 dependencies: []
 adr_refs:
   - docs/adr/0008-shell-adapter-interface-shape.md

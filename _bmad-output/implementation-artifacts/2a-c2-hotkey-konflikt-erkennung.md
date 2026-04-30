@@ -3,7 +3,7 @@ name: Story 2.A.C2 — Hotkey-Konflikt-Erkennung
 phase: 2
 wave: A
 story_id: "2.A.C2"
-status: ready
+status: ready-for-dev
 dependencies:
   - "2.A.A4"
 adr_refs:
