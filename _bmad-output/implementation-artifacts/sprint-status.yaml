@@ -41,7 +41,7 @@
 # - Phase-1-Stories für 1A/1B/1C/2 stehen inline in epics.md (kein per-Story-File);
 #   Status ist hier explizit auf `done` gesetzt, da Auto-Detection per Story-File-Path nicht greift.
 # - Phase-2 ist in zwei Wellen organisiert (A/B) statt als klassisches Epic — vgl.
-#   _bmad-output/planning-artifacts/phase-2-scope-lock.md und epics/phase-2-a/welle-2-dispatch-plan.md.
+#   _bmad-output/planning-artifacts/phase-2-scope-lock.md und _bmad-output/implementation-artifacts/welle-2-dispatch-plan.md.
 #   Story-IDs folgen `2{a|b}-{LetterID}-{title-kebab}` (z. B. `2a-a4-settings-panel-foundation`).
 # - Epic 6 (Observability, FR37-FR40) und Epic 7 (V1→V2 Migration, FR41-FR43) waren in
 #   epics.md als Phase-1-Epics geplant, wurden aber in Phase-1-Closure nicht implementiert —
@@ -161,7 +161,7 @@ development_status:
 
   # ============================================================
   # Phase-2-A: Foundation + External-Validation + Phase-3-De-Risking
-  # Source: phase-2-scope-lock.md + epics/phase-2-a/welle-2-dispatch-plan.md
+  # Source: phase-2-scope-lock.md + welle-2-dispatch-plan.md (beide via planning- bzw. implementation-artifacts/, kein epics/-Subfolder)
   # Welle-1 = A4 (in review). Welle-2 = Stream A (A8-Sub/C2/C3) + Stream B (D2/D3/E1/F2/C1).
   # F1 = extern (kein Story-File, backlog für Tracking-Zwecke).
   # ============================================================
