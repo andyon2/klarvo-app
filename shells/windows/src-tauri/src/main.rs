@@ -346,20 +346,39 @@ fn main() {
             // AC-2 + AC-3). Reactive only: A8-Sub never writes settings itself;
             // the menu items in the language sub-menu are visual indicators (AC-5
             // Option B). Other `settings.changed` keys are ignored.
+            //
+            // Diagnostics: every early-return path leaves a tracing breadcrumb so
+            // a stale tray locale can be traced back to the cause (review P1+P2).
+            // `newValue` is validated against `tray::SUPPORTED_LOCALES` to avoid
+            // a checkmark-less menu when an unsupported locale slips through
+            // upstream (review P2).
             {
                 let app_handle = app.handle().clone();
                 app.listen("settings.changed", move |event| {
                     let payload: serde_json::Value =
                         match serde_json::from_str(event.payload()) {
                             Ok(v) => v,
-                            Err(_) => return,
+                            Err(e) => {
+                                tracing::warn!(error = %e, "settings.changed payload not valid JSON");
+                                return;
+                            }
                         };
-                    if payload.get("key").and_then(|v| v.as_str()) != Some("ui.language") {
+                    let key = payload.get("key").and_then(|v| v.as_str());
+                    if key != Some("ui.language") {
+                        tracing::trace!(?key, "settings.changed ignored (not ui.language)");
                         return;
                     }
                     let Some(new_locale) = payload.get("newValue").and_then(|v| v.as_str()) else {
+                        tracing::warn!("settings.changed for ui.language missing newValue");
                         return;
                     };
+                    if !tray::SUPPORTED_LOCALES.iter().any(|(code, _)| *code == new_locale) {
+                        tracing::warn!(
+                            locale = new_locale,
+                            "ui.language change to unsupported locale ignored"
+                        );
+                        return;
+                    }
                     tray::rebuild_for_locale(&app_handle, new_locale);
                 });
             }

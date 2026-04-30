@@ -3,7 +3,7 @@ name: Story 2.A.A8-Sub — Tray-Language-Switcher
 phase: 2
 wave: A
 story_id: "2.A.A8-Sub"
-status: review
+status: done
 dependencies:
   - "2.A.A4"
 adr_refs:
@@ -166,6 +166,8 @@ A4-Followup ergänzt; der Test ist wieder grün.
   `settings.changed`-Listener für `ui.language`, Tray-Builder nutzt `tray::build_menu`)
 - `shells/windows/src-tauri/src/i18n.rs` (geändert — REQUIRED_KEYS um 3 tray-Keys +
   co-located `error.unknown` erweitert)
+- `shells/windows/src-tauri/src/config.rs` (Code-Review-Patch P3 — `SUPPORTED_LANGUAGES`-
+  const Single-Source-of-Truth + Refactor `parse_from_str`-Validation)
 - `shells/windows/locales/en.json` (geändert — 3 neue `tray.*`-Keys)
 - `shells/windows/locales/de.json` (geändert — 3 neue `tray.*`-Keys)
 - `_bmad-output/implementation-artifacts/2a-a8-sub-tray-language-switcher.md` (geändert —
@@ -178,6 +180,11 @@ A4-Followup ergänzt; der Test ist wieder grün.
 - 2026-04-30: Story 2.A.A8-Sub implementiert — Tray-Language-Submenu, reaktiver
   `settings.changed`-Listener, 3 neue i18n-Keys; alle xtask-Gates grün, 19 windows-shell
   Lib-Tests grün (inkl. 2 neue tray-Tests); A4-Followup-Patch `error.unknown` co-located.
+- 2026-04-30: Code-Review-Closure — 1 Decision-Needed (Scope-Coupling) durch Commit-Split
+  resolved (`4f0e0f7` + `7803eda`); 3 Patches applied (Listener-Tracing-Breadcrumbs +
+  SUPPORTED_LOCALES-Validation + `config::SUPPORTED_LANGUAGES`-const-Extraktion mit
+  Subset-Test); 4 Defers in `deferred-work.md` (A8-F1..F4); Status review→done.
+  Test-Count 20/21 (1 ignored, requires display).
 
 ## Review Findings
 
@@ -189,15 +196,15 @@ Code-Review 2026-04-30 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, pa
 
 ### Decision Needed
 
-- [ ] [Review][Decision] **Scope-Coupling — 2.B.A1-Code-Review-Closure im Working-Tree** — Auditor: ~330 LOC `klarvo-shell-orchestrator/src/session.rs`-Refactor + `klarvo-core/src/recording/mod.rs` (`Copy`-Derive) + `klarvo-core/src/settings/mod.rs` (Default-Const-Refactor) + `shells/windows/src-tauri/src/commands/settings.rs` (AppError-Propagation) + `shells/windows/src/bindings/index.ts` (regenerated) + 2.B.A1-Spec-Amendments + `sprint-status.yaml`-Flip `2b-a1: review→done` + i18n-Key `error.recording.timeout` sind im uncommitted-Diff, gehören aber zur 2.B.A1-Code-Review-Closure (Post-29ce800), nicht zu A8-Sub's File List. Optionen: (A) Working-Tree in zwei Commits splitten — A8-Sub-only + 2.B.A1-Code-Review-Closure separat; (B) gemischter Commit mit klarer Cross-Story-Coupling-Doku im Body; (C) Pragmatisch akzeptieren und in A8-Sub-Commit-Message als Coupling dokumentieren.
+- [x] [Review][Decision] **Scope-Coupling — 2.B.A1-Code-Review-Closure im Working-Tree** — **Resolved**: Working-Tree in zwei Commits gesplittet — `4f0e0f7 chore(phase-2-b): Story 2.B.A1 Code-Review-Closure` (12 Files, +258/-140) + `7803eda feat(phase-2-a): Story 2.A.A8-Sub Tray-Language-Switcher` (9 Files, +297/-18). 2.B.A1-Findings (8 Items) als A8-F4 für separaten Review unter 2.B.A1-Spec deferred. — Auditor: ~330 LOC `klarvo-shell-orchestrator/src/session.rs`-Refactor + `klarvo-core/src/recording/mod.rs` (`Copy`-Derive) + `klarvo-core/src/settings/mod.rs` (Default-Const-Refactor) + `shells/windows/src-tauri/src/commands/settings.rs` (AppError-Propagation) + `shells/windows/src/bindings/index.ts` (regenerated) + 2.B.A1-Spec-Amendments + `sprint-status.yaml`-Flip `2b-a1: review→done` + i18n-Key `error.recording.timeout` sind im uncommitted-Diff, gehören aber zur 2.B.A1-Code-Review-Closure (Post-29ce800), nicht zu A8-Sub's File List. Optionen: (A) Working-Tree in zwei Commits splitten — A8-Sub-only + 2.B.A1-Code-Review-Closure separat; (B) gemischter Commit mit klarer Cross-Story-Coupling-Doku im Body; (C) Pragmatisch akzeptieren und in A8-Sub-Commit-Message als Coupling dokumentieren.
 
 ### Patch
 
-- [ ] [Review][Patch] **Listener-Diagnostik fehlt — keine Tracing-Breadcrumb auf gefilterten/dropped Events** [`shells/windows/src-tauri/src/main.rs:351-365`] — Step-11c-Listener returnt silent bei (a) Parse-Fail, (b) non-`ui.language`-Key, (c) fehlendem `newValue`. Future-Debug von "warum zeigt mein Tray die alte Locale" hat keinen Breadcrumb. Fix: `tracing::trace!`/`tracing::warn!` in jedem Early-Return.
+- [x] [Review][Patch] **Listener-Diagnostik fehlt — keine Tracing-Breadcrumb auf gefilterten/dropped Events** [`shells/windows/src-tauri/src/main.rs:351-365`] — **Applied**: 3 Early-Returns mit `tracing::warn!` (Parse-Fail / missing `newValue`) bzw. `tracing::trace!` (non-`ui.language`-Key) instrumentiert.
 
-- [ ] [Review][Patch] **`newValue`-Validation gegen SUPPORTED_LOCALES fehlt — silent fallthrough** [`shells/windows/src-tauri/src/main.rs:360-363` + `shells/windows/src-tauri/src/tray.rs:69`] — Bei `newValue = "fr"` / `""` / `"EN"`: `i18n::load` fällt zurück auf en-Tabelle (correct), aber `active_locale` bleibt die Raw-String → `active_locale == *code` ist für beide en/de false → Tray zeigt keinen Checkmark, kein Error-Log. Fix: `new_locale` gegen `tray::SUPPORTED_LOCALES`-Codes validieren vor `rebuild_for_locale`, `tracing::warn!` bei unsupported.
+- [x] [Review][Patch] **`newValue`-Validation gegen SUPPORTED_LOCALES fehlt — silent fallthrough** [`shells/windows/src-tauri/src/main.rs:360-363` + `shells/windows/src-tauri/src/tray.rs:69`] — **Applied**: Listener prüft `tray::SUPPORTED_LOCALES.iter().any(|(code, _)| *code == new_locale)` vor `rebuild_for_locale`, `tracing::warn!` bei Mismatch. Verhindert checkmark-loses Menü bei unsupported / empty / mis-cased Locale.
 
-- [ ] [Review][Patch] **`SUPPORTED_LOCALES`-Drift gegen `ShellConfig::ui_language`-Allow-List ungesichert** [`shells/windows/src-tauri/src/tray.rs:30-33`] — `tray::SUPPORTED_LOCALES = &[("en", …), ("de", …)]` und die Schema-Validation in `ShellConfig` (Story 4.1 AC-C) sind separate Sources-of-Truth. Adding `"fr"` zu einem ohne das andere → Tray ohne Submenu-Eintrag + ohne Checkmark. Fix: Unit-Test der asserted, dass `SUPPORTED_LOCALES`-Codes ⊆ `ShellConfig`-Allow-List.
+- [x] [Review][Patch] **`SUPPORTED_LOCALES`-Drift gegen `ShellConfig::ui_language`-Allow-List ungesichert** [`shells/windows/src-tauri/src/tray.rs:30-33`] — **Applied**: `pub const SUPPORTED_LANGUAGES: &[&str] = &["en", "de"]` in `config.rs` als Single-Source-of-Truth extrahiert; `parse_from_str`-Validation nutzt sie; neuer Test `tray::tests::supported_locales_subset_of_config_allow_list` failed bei Drift.
 
 ### Deferred
 

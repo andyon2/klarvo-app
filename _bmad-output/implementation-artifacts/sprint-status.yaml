@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-04-30 (Story 2.A.A8-Sub Tray-Language-Switcher: ready-for-dev→review)
+# last_updated: 2026-04-30 (Story 2.A.A8-Sub Tray-Language-Switcher: review→done)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -53,7 +53,7 @@
 #   Re-Scoping in Phase-2-B oder Phase-3 pending.
 
 generated: 2026-04-29
-last_updated: 2026-04-30 (Story 2.A.A8-Sub Tray-Language-Switcher: ready-for-dev→review)
+last_updated: 2026-04-30 (Story 2.A.A8-Sub Tray-Language-Switcher: review→done)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -169,7 +169,7 @@ development_status:
   # ============================================================
   epic-phase-2-a: in-progress
   2a-a4-settings-panel-foundation: done
-  2a-a8-sub-tray-language-switcher: review
+  2a-a8-sub-tray-language-switcher: done
   2a-c1-signed-msi-installer: ready-for-dev
   2a-c2-hotkey-konflikt-erkennung: ready-for-dev
   2a-c3-live-locale-switch: ready-for-dev

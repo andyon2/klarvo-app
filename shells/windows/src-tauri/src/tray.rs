@@ -130,4 +130,16 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn supported_locales_subset_of_config_allow_list() {
+        for (code, _) in SUPPORTED_LOCALES {
+            assert!(
+                crate::config::SUPPORTED_LANGUAGES.contains(code),
+                "tray SUPPORTED_LOCALES contains {code:?} which is not in \
+                 config::SUPPORTED_LANGUAGES — the tray would surface a locale that \
+                 ShellConfig::ui_language validation rejects"
+            );
+        }
+    }
 }

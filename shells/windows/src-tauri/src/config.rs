@@ -3,6 +3,12 @@ use std::path::{Path, PathBuf};
 
 use klarvo_core::{AppError, AppErrorKind};
 
+/// Allow-list of supported language codes for the three i18n axes
+/// (`ui_language`, `dictionary_language`, `output_language`) per FR26.
+/// Single source of truth — `parse_from_str` validation and surfaces that
+/// pivot on the active locale (e.g. `tray::SUPPORTED_LOCALES`) reference this.
+pub const SUPPORTED_LANGUAGES: &[&str] = &["en", "de"];
+
 /// Typed representation of `%APPDATA%\Klarvo\config.toml`.
 ///
 /// All fields have sensible defaults so an empty `config.toml` is valid.
@@ -120,7 +126,7 @@ fn parse_from_str(raw: &str) -> Result<ShellConfig, AppError> {
         ("dictionary_language", &config.dictionary_language),
         ("output_language", &config.output_language),
     ] {
-        if !matches!(value.as_str(), "en" | "de") {
+        if !SUPPORTED_LANGUAGES.contains(&value.as_str()) {
             return Err(AppError {
                 kind: AppErrorKind::Configuration,
                 message: format!("unsupported {field_name}: {value}"),
