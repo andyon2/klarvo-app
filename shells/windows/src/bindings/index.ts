@@ -6,19 +6,104 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	ping: (name: string) => __TAURI_INVOKE<string>("ping", { name }),
+	setHotkeySlot1: (combo: string) => typedError<null, AppError>(__TAURI_INVOKE("set_hotkey_slot1", { combo })),
+	setUiLanguage: (lang: string) => typedError<null, AppError>(__TAURI_INVOKE("set_ui_language", { lang })),
+	setOutputTarget: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("set_output_target", { id })),
+	setDictionaryLanguage: (lang: string) => typedError<null, AppError>(__TAURI_INVOKE("set_dictionary_language", { lang })),
+	setOutputLanguage: (lang: string) => typedError<null, AppError>(__TAURI_INVOKE("set_output_language", { lang })),
+	getUserSettings: () => typedError<UserSettings, AppError>(__TAURI_INVOKE("get_user_settings")),
+	setPluginSetting: (pluginId: string, key: string, value: string) => typedError<null, AppError>(__TAURI_INVOKE("set_plugin_setting", { pluginId, key, value })),
+	getPluginSetting: (pluginId: string, key: string) => typedError<string | null, AppError>(__TAURI_INVOKE("get_plugin_setting", { pluginId, key })),
 };
 
 /** Events */
 export const events = {
 	appReady: makeEvent<AppReady>("app.ready"),
+	settingsChanged: makeEvent<SettingsChangedEvent>("settings.changed"),
 };
 
 /* Types */
+export type AppError = {
+	kind: AppErrorKind,
+	message: string,
+	userMessage: string | null,
+	retryable: boolean,
+};
+
+export type AppErrorKind = 
+// Network-layer failure (TCP, DNS, TLS). Typical retryable=true.
+"network" | 
+// Authentication/authorization rejection (401, 403). Typical retryable=false.
+"auth" | 
+/**
+ *  Client-input validation failure. Distinct from `PipelineValidation`
+ *  (boot-time manifest-strict-error). Typical retryable=false.
+ */
+"validation" | 
+// Upstream rate-limit signal (429 + retry_after_ms). Typical retryable=true.
+"rate_limit" | 
+// Programmer-error, logic-bug, invariant-violation. Typical retryable=false.
+"internal" | 
+// Upstream provider unavailable (5xx, timeout, connection-reset). Typical retryable=true.
+"upstream_unavailable" | 
+// OS configuration error (e.g., output target not found in registry). Typical retryable=false.
+"configuration" | 
+// OS-level I/O error (e.g., clipboard write, file access). Typical retryable=false.
+"io" | 
+/**
+ *  OS-level permission denied (e.g., microphone, accessibility-service).
+ *  Typical retryable=false — requires user-action at OS-level.
+ */
+"permission_denied" | 
+/**
+ *  Manifest strict-validation error at boot-time (unknown stage-type, type-mismatch).
+ *  Distinct from `Validation` (runtime client-input). Typical retryable=false.
+ */
+"pipeline_validation" | 
+/**
+ *  KeyStore-lookup miss during plugin-init. Plugin-identifier lands in `AppError.message`.
+ *  Typical retryable=false.
+ */
+"key_missing";
+
 export type AppReady = {
 	session_id: string,
 };
 
+/**
+ *  Event payload emitted on every successful settings write (AC-5 + AC-6).
+ * 
+ *  Frontend listeners (A8-Sub, C2, C3) subscribe to `"settings.changed"`.
+ */
+export type SettingsChangedEvent = {
+	key: string,
+	newValue: string,
+};
+
+/**
+ *  Bulk-read projection of all 5 Core-Settings (AC-6 `get_user_settings` return type).
+ * 
+ *  Shell-side type — aggregates typed accessor returns for a single IPC round-trip.
+ *  Lives in the shell, not in `klarvo-core` (tauri-specta concern; not a Core domain type).
+ */
+export type UserSettings = {
+	hotkeySlot1Combo: string,
+	outputTargetId: string,
+	uiLanguage: string,
+	dictionaryLanguage: string,
+	outputLanguage: string,
+};
+
 /* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
+
 function makeEvent<T>(name: string) {
     const base = {
         listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, cb),

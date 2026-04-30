@@ -7,6 +7,8 @@ pub mod manifest;
 pub mod output;
 pub mod pipeline;
 pub mod registry;
+#[cfg(feature = "settings")]
+pub mod settings;
 pub mod time;
 pub mod traits;
 #[cfg(feature = "v1-import")]

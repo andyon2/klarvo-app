@@ -29,5 +29,9 @@
   "error.stt.upstream_5xx": "Speech recognition service is unavailable. Please try again later.",
   "error.stt.upstream_4xx": "Request rejected by speech recognition service. Please check your settings.",
   "error.internal": "An internal error occurred. Please restart the application; if the problem persists, export the diagnostic log.",
+  "error.config.parse_failed": "Your configuration file is invalid. Please check it for syntax errors; settings migration was skipped.",
+  "error.settings.in_memory_fallback": "Settings storage is unavailable. Changes will be lost when the app exits.",
+  "error.settings.validation": "Setting value is invalid. Please check the input and try again.",
+  "error.unknown": "An unexpected error occurred. Please try again.",
   "tray.menu.exit": "Exit"
 }

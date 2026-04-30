@@ -29,5 +29,9 @@
   "error.stt.upstream_5xx": "Spracherkennungsdienst nicht verfügbar. Bitte versuchen Sie es später erneut.",
   "error.stt.upstream_4xx": "Anfrage vom Spracherkennungsdienst abgelehnt. Bitte prüfen Sie Ihre Einstellungen.",
   "error.internal": "Ein interner Fehler ist aufgetreten. Bitte starten Sie die Anwendung neu; bei wiederholtem Auftreten exportieren Sie das Diagnose-Log.",
+  "error.config.parse_failed": "Ihre Konfigurationsdatei ist ungültig. Bitte prüfen Sie die Datei auf Syntaxfehler; die Migration der Einstellungen wurde übersprungen.",
+  "error.settings.in_memory_fallback": "Einstellungs-Speicher nicht verfügbar. Änderungen gehen beim Beenden verloren.",
+  "error.settings.validation": "Ungültiger Eingabewert. Bitte prüfen Sie die Eingabe und versuchen Sie es erneut.",
+  "error.unknown": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
   "tray.menu.exit": "Beenden"
 }

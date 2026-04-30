@@ -1,12 +1,262 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Klarvo (Windows shell — Phase-0 placeholder)</title>
+    <title>Klarvo</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #0d0f14;
+        color: #e0e4ef;
+        min-height: 100vh;
+      }
+      #root { max-width: 480px; margin: 0 auto; padding: 24px 16px; }
+      h1 { font-size: 18px; font-weight: 600; margin-bottom: 24px; color: #2ac3a8; }
+      .field { margin-bottom: 16px; }
+      label { display: block; font-size: 12px; color: #8090a0; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+      input, select {
+        width: 100%; padding: 8px 12px;
+        background: #1a1e28; border: 1px solid #2a3040;
+        border-radius: 8px; color: #e0e4ef;
+        font-size: 14px; outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus, select:focus { border-color: #2ac3a8; }
+      button {
+        padding: 8px 20px; border-radius: 8px; border: none;
+        font-size: 14px; font-weight: 500; cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .btn-primary { background: #2ac3a8; color: #0d0f14; }
+      .btn-primary:hover:not(:disabled) { opacity: 0.85; }
+      .actions { margin-top: 24px; display: flex; gap: 10px; align-items: center; }
+      .spinner {
+        display: inline-block; width: 18px; height: 18px;
+        border: 2px solid #2a3040; border-top-color: #2ac3a8;
+        border-radius: 50%; animation: spin 0.6s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .toast { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+      .toast.ok  { background: #1a3028; color: #2ac3a8; border: 1px solid #2ac3a830; }
+      .toast.err { background: #2e1414; color: #ff7369; border: 1px solid #ff736930; }
+      .loading-row { display: flex; align-items: center; gap: 8px; color: #8090a0; font-size: 14px; }
+    </style>
   </head>
   <body>
-    <!-- Phase-0 placeholder. Real frontend lands in Phase 1. -->
-    <main>Klarvo Windows shell — Phase-0 placeholder.</main>
+    <div id="root"></div>
+
+    <script type="module">
+      // React 19 via ESM CDN — no build step for this Phase-2-A minimal panel.
+      // Phase-2-B migrates to a full Vite+React workspace once the UI expands.
+      import { createElement as h, useState, useEffect, useCallback } from "https://esm.sh/react@19";
+      import { createRoot } from "https://esm.sh/react-dom@19/client";
+
+      // ---------------------------------------------------------------------------
+      // Tauri IPC
+      // ---------------------------------------------------------------------------
+
+      const tauriCore = window.__TAURI__?.core ?? null;
+      const tauriEvent = window.__TAURI__?.event ?? null;
+
+      async function invoke(cmd, args) {
+        if (!tauriCore) throw new Error("Tauri runtime not found");
+        return tauriCore.invoke(cmd, args);
+      }
+
+      // AppError serialised with #[serde(rename_all = "camelCase")] →
+      // { kind, message, userMessage, retryable }. `userMessage` carries the
+      // i18n-key for the toast. We never fall back to the technical `message`
+      // (Rust-side, often "settings db: write …: locked") because that leaks
+      // implementation details to the user; an unknown shape becomes the
+      // i18n-key `error.unknown` so the toast layer can translate it.
+      function errorToToast(e) {
+        if (e && typeof e === "object" && typeof e.userMessage === "string" && e.userMessage) {
+          return { kind: "err", msg: e.userMessage };
+        }
+        return { kind: "err", msg: "error.unknown" };
+      }
+
+      // ---------------------------------------------------------------------------
+      // SettingsPanel — AC-8 (load) + AC-9 (save)
+      // ---------------------------------------------------------------------------
+
+      // Phase-1 defaults — kept in sync with klarvo-core/src/settings/defaults.rs.
+      // Used as a Fresh-Install fallback when get_user_settings cannot reach the
+      // backend (Code-Review P11).
+      const FORM_DEFAULTS = {
+        hotkeySlot1Combo: "Alt+Shift+R",
+        outputTargetId: "clipboard",
+        uiLanguage: "en",
+        dictionaryLanguage: "en",
+        outputLanguage: "en",
+      };
+
+      const LANG_OPTIONS = [
+        { value: "en", label: "English" },
+        { value: "de", label: "Deutsch" },
+      ];
+
+      // P10: render the backend value even when it falls outside the curated
+      // LANG_OPTIONS list (e.g. a v1-imported "fr") instead of silently
+      // showing an empty <select>.
+      function langOptionsFor(currentValue) {
+        if (!currentValue || LANG_OPTIONS.some((o) => o.value === currentValue)) {
+          return LANG_OPTIONS;
+        }
+        return [...LANG_OPTIONS, { value: currentValue, label: currentValue }];
+      }
+
+      function SettingsPanel() {
+        const [loading, setLoading] = useState(true);
+        const [saving, setSaving] = useState(false);
+        const [toast, setToast] = useState(null); // { kind: "ok" | "err", msg: string }
+        const [form, setForm] = useState(FORM_DEFAULTS);
+
+        // ADR-0009 Hybrid-C: subscribe to global app.error so backend-emitted
+        // errors (config-parse, settings-fallback, hotkey-conflict, …) surface
+        // through the same toast UI as local invoke-failures. The frontend has
+        // no full i18n loader yet (Phase-2-B Vite+React migration), so the
+        // received key is rendered verbatim — translation lands with the
+        // toolchain rebuild.
+        useEffect(() => {
+          if (!tauriEvent) return;
+          // Cancellation-flag pattern: tauriEvent.listen() returns a Promise
+          // that resolves with the unlisten function. If the component
+          // unmounts before the Promise resolves, we must not stash the
+          // resolver into a stale ref — and we must invoke it as soon as it
+          // arrives so the listener does not leak and write into unmounted
+          // state.
+          let cancelled = false;
+          let unlisten = null;
+          tauriEvent
+            .listen("app.error", (evt) => {
+              const payload = evt?.payload;
+              const key =
+                typeof payload === "string"
+                  ? payload
+                  : (payload && typeof payload.key === "string" ? payload.key : "error.unknown");
+              setToast({ kind: "err", msg: key });
+            })
+            .then((fn) => {
+              if (cancelled) {
+                fn();
+              } else {
+                unlisten = fn;
+              }
+            })
+            .catch((err) => {
+              if (typeof console !== "undefined") {
+                console.warn("[settings-panel] app.error listen failed", err);
+              }
+            });
+          return () => {
+            cancelled = true;
+            if (unlisten) unlisten();
+          };
+        }, []);
+
+        // AC-8: load on mount — no flash of empty content (loading spinner while async runs)
+        useEffect(() => {
+          invoke("get_user_settings")
+            .then((s) => {
+              setForm({
+                hotkeySlot1Combo: s.hotkeySlot1Combo ?? FORM_DEFAULTS.hotkeySlot1Combo,
+                outputTargetId: s.outputTargetId ?? FORM_DEFAULTS.outputTargetId,
+                uiLanguage: s.uiLanguage ?? FORM_DEFAULTS.uiLanguage,
+                dictionaryLanguage: s.dictionaryLanguage ?? FORM_DEFAULTS.dictionaryLanguage,
+                outputLanguage: s.outputLanguage ?? FORM_DEFAULTS.outputLanguage,
+              });
+            })
+            .catch((e) => {
+              // P11: keep the form populated with Phase-1 defaults so AC-8
+              // ("kein blank/undefined") holds even when the IPC call fails.
+              setForm(FORM_DEFAULTS);
+              setToast(errorToToast(e));
+            })
+            .finally(() => setLoading(false));
+        }, []);
+
+        // AC-9: save — invoke typed Core-Set commands, show app.error toast on failure
+        const handleSave = useCallback(async () => {
+          setSaving(true);
+          setToast(null);
+          try {
+            await invoke("set_hotkey_slot1",       { combo: form.hotkeySlot1Combo });
+            await invoke("set_output_target",      { id: form.outputTargetId });
+            await invoke("set_ui_language",        { lang: form.uiLanguage });
+            await invoke("set_dictionary_language",{ lang: form.dictionaryLanguage });
+            await invoke("set_output_language",    { lang: form.outputLanguage });
+            setToast({ kind: "ok", msg: "Settings saved." });
+          } catch (e) {
+            setToast(errorToToast(e));
+          } finally {
+            setSaving(false);
+          }
+        }, [form]);
+
+        const patch = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+        const textField = (label, key) =>
+          h("div", { className: "field" },
+            h("label", null, label),
+            h("input", { type: "text", value: form[key], onChange: patch(key), disabled: loading || saving })
+          );
+
+        const selectField = (label, key, options) =>
+          h("div", { className: "field" },
+            h("label", null, label),
+            h("select", { value: form[key], onChange: patch(key), disabled: loading || saving },
+              options.map((o) => h("option", { key: o.value, value: o.value }, o.label))
+            )
+          );
+
+        return h("div", null,
+          h("h1", null, "Klarvo Settings"),
+
+          loading
+            ? h("div", { className: "loading-row" },
+                h("div", { className: "spinner" }),
+                "Loading…"
+              )
+            : h("form", {
+                onSubmit: (e) => {
+                  e.preventDefault();
+                  // Guard against Enter-key submits while a save is already
+                  // in flight — the button is `disabled`, but `<form>` still
+                  // reacts to Enter inside text inputs and would race the
+                  // first handleSave with potentially-mutated form state.
+                  if (saving || loading) return;
+                  handleSave();
+                }
+              },
+              textField("Global Hotkey", "hotkeySlot1Combo"),
+              textField("Output Target", "outputTargetId"),
+              selectField("UI Language", "uiLanguage", langOptionsFor(form.uiLanguage)),
+              selectField("Dictionary Language", "dictionaryLanguage", langOptionsFor(form.dictionaryLanguage)),
+              selectField("Output Language", "outputLanguage", langOptionsFor(form.outputLanguage)),
+
+              h("div", { className: "actions" },
+                h("button", { type: "submit", className: "btn-primary", disabled: saving },
+                  saving
+                    ? h("span", { style: { display: "flex", alignItems: "center", gap: 6 } },
+                        h("div", { className: "spinner", style: { width: 14, height: 14 } }),
+                        "Saving…"
+                      )
+                    : "Save Settings"
+                )
+              ),
+
+              toast && h("div", { className: `toast ${toast.kind}`, style: { marginTop: 16 } },
+                toast.msg
+              )
+            )
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(h(SettingsPanel, null));
+    </script>
   </body>
 </html>

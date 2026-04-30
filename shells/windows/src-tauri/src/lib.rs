@@ -4,8 +4,11 @@
 //! so that `xtask generate-bindings` has a real payload to emit and
 //! `xtask lint-events` has a real event type to enforce the dot-notation
 //! rename convention against (G1 Validation-Patch).
+//!
+//! Story 2.A.A4: `commands::settings` adds 8 Settings commands + `SettingsChangedEvent`.
 
 pub mod bridge;
+pub mod commands;
 pub mod config;
 pub mod i18n;
 #[cfg(any(target_os = "windows", feature = "dev-plain-keystore"))]
@@ -20,6 +23,11 @@ pub mod paste;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
+
+use commands::settings::{
+    SettingsChangedEvent, get_plugin_setting, get_user_settings, set_dictionary_language,
+    set_hotkey_slot1, set_output_language, set_output_target, set_plugin_setting, set_ui_language,
+};
 
 #[tauri::command]
 #[specta::specta]
@@ -37,6 +45,17 @@ pub struct AppReady {
 /// (`main.rs`) and the export binary (`bin/export_bindings.rs`).
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![ping])
-        .events(collect_events![AppReady])
+        .commands(collect_commands![
+            ping,
+            // Story 2.A.A4: Settings commands (AC-6/7)
+            set_hotkey_slot1,
+            set_ui_language,
+            set_output_target,
+            set_dictionary_language,
+            set_output_language,
+            get_user_settings,
+            set_plugin_setting,
+            get_plugin_setting,
+        ])
+        .events(collect_events![AppReady, SettingsChangedEvent])
 }

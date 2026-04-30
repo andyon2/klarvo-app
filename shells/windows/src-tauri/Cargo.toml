@@ -36,7 +36,7 @@ toml = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-klarvo-core = { path = "../../../klarvo-core" }
+klarvo-core = { path = "../../../klarvo-core", features = ["settings"] }
 klarvo-shell-orchestrator = { path = "../../../klarvo-shell-orchestrator" }
 klarvo-plugin-verbatim = { path = "../../../klarvo-plugins/klarvo-plugin-verbatim" }
 

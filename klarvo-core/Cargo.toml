@@ -6,12 +6,13 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["stage-passthrough", "stage-stt", "stage-cleanup", "v1-import"]
+default = ["stage-passthrough", "stage-stt", "stage-cleanup", "v1-import", "settings"]
 stage-passthrough = []
 stage-stt = []
 stage-cleanup = []
-v1-import = ["rusqlite"]
-dev-plain-keystore = ["rusqlite"]
+v1-import = ["dep:rusqlite"]
+dev-plain-keystore = ["dep:rusqlite"]
+settings = ["dep:rusqlite"]
 
 [dependencies]
 async-trait.workspace = true
