@@ -21,7 +21,6 @@ fn main() {
     use klarvo_core::time::MonotonicClock;
     use klarvo_shell_orchestrator::SessionOrchestrator;
     use tauri::image::Image;
-    use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
     use tauri::Manager;
 
@@ -32,6 +31,7 @@ fn main() {
     use klarvo_windows_shell::hotkey::register_hotkey;
     use klarvo_windows_shell::keystore::{make_keystore, verify_keystore_ready};
     use klarvo_windows_shell::paste::WinSendInputPasteBackend;
+    use klarvo_windows_shell::tray;
 
     /// Construct the `PluginRegistry` with all Phase-1 plugins registered.
     ///
@@ -302,18 +302,21 @@ fn main() {
             // app.manage(clock)     → consumed by hotkey-callback for shared session-baseline ts_ms
             //                         (project_event_ts_ms_convention — single MonotonicClock origin)
             // app.manage(settings)            → consumed by Settings Tauri-Commands (Story 2.A.A4)
-            // app.manage(recording_mode_arc)  → consumed by set_recording_mode_slot1 Command (Story 2.B.A1)
+            // recording_mode_arc is intentionally NOT managed: per AC-7 the Arc is
+            // orchestrator-internal; the `settings.changed` listener (Step 11b) is
+            // the single writer, so the set_recording_mode_slot1 Command does not
+            // need direct access via tauri::State.
             debug_assert!(app.manage(orch));
             debug_assert!(app.manage(Arc::new(config.clone())));
             debug_assert!(app.manage(Arc::clone(&keystore)));
             debug_assert!(app.manage(Arc::clone(&emitter)));
             debug_assert!(app.manage(Arc::clone(&clock)));
             debug_assert!(app.manage(settings));
-            debug_assert!(app.manage(Arc::clone(&recording_mode_arc)));
-            let exit_label = i18n_table
-                .get("tray.menu.exit")
-                .cloned()
-                .unwrap_or_else(|| "Exit".to_string());
+            // Snapshot the boot-time locale separately because `i18n_table` is
+            // moved into managed state below; the listener (Step 11c) owns its
+            // own freshly-loaded copy on every locale change.
+            let boot_locale = config.ui_language.clone();
+            let boot_i18n = Arc::clone(&i18n_table);
             app.manage(i18n_table);
             specta_builder.mount_events(app);
 
@@ -338,6 +341,29 @@ fn main() {
                 });
             }
 
+            // Step 11c: settings.changed listener — rebuilds the tray menu when the
+            // user switches `ui.language` via the Settings-Panel (Story 2.A.A8-Sub
+            // AC-2 + AC-3). Reactive only: A8-Sub never writes settings itself;
+            // the menu items in the language sub-menu are visual indicators (AC-5
+            // Option B). Other `settings.changed` keys are ignored.
+            {
+                let app_handle = app.handle().clone();
+                app.listen("settings.changed", move |event| {
+                    let payload: serde_json::Value =
+                        match serde_json::from_str(event.payload()) {
+                            Ok(v) => v,
+                            Err(_) => return,
+                        };
+                    if payload.get("key").and_then(|v| v.as_str()) != Some("ui.language") {
+                        return;
+                    }
+                    let Some(new_locale) = payload.get("newValue").and_then(|v| v.as_str()) else {
+                        return;
+                    };
+                    tray::rebuild_for_locale(&app_handle, new_locale);
+                });
+            }
+
             // Step 12: Hotkey registration (fail-soft — parse or registration failure emits
             // Toast via TauriErrorEmitter internally; app starts without hotkey rather than exit)
             register_hotkey(app, &config);
@@ -357,15 +383,21 @@ fn main() {
             let tray_setup = (|| -> tauri::Result<_> {
                 let idle_icon = Image::from_bytes(include_bytes!("../icons/tray-idle.png"))?;
                 let recording_icon = Image::from_bytes(include_bytes!("../icons/tray-recording.png"))?;
-                let menu = MenuBuilder::new(app)
-                    .item(&MenuItemBuilder::with_id("info", "Klarvo").enabled(false).build(app)?)
-                    .item(&MenuItemBuilder::with_id("quit", &exit_label).build(app)?)
-                    .build()?;
-                let tray = TrayIconBuilder::with_id("klarvo-tray")
+                // Story 2.A.A8-Sub: builder lives in `tray.rs` so the
+                // `settings.changed` listener (Step 11c) can rebuild the same
+                // layout when the user switches `ui.language`.
+                let menu = tray::build_menu(app, &boot_i18n, &boot_locale)?;
+                let tray = TrayIconBuilder::with_id(tray::TRAY_ID)
                     .icon(idle_icon.clone())
                     .menu(&menu)
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "quit" => app.exit(0),
+                        // AC-5 Option B: language items are disabled CheckMenuItems —
+                        // they should not fire menu events on Windows, but the dispatch
+                        // ignores them defensively in case a platform delivers anyway.
+                        other if other.starts_with("language.") => {
+                            tracing::debug!(menu_id = other, "tray language item click ignored (AC-5 Option B)");
+                        }
                         other => tracing::warn!(menu_id = other, "unhandled tray menu event"),
                     })
                     .build(app)?;

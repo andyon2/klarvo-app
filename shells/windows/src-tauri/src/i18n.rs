@@ -101,7 +101,14 @@ mod tests {
         "error.stt.upstream_5xx",
         "error.stt.upstream_4xx",
         "error.internal",
+        // Story 2.A.A4 P2-P11 added `error.unknown` to the locale files but
+        // missed REQUIRED_KEYS; co-located in 2.A.A8-Sub since this test was
+        // already touched here.
+        "error.unknown",
         "tray.menu.exit",
+        "tray.language_switcher.label",
+        "tray.language.en",
+        "tray.language.de",
     ];
 
     #[test]

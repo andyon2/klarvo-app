@@ -34,5 +34,8 @@
   "error.settings.in_memory_fallback": "Settings storage is unavailable. Changes will be lost when the app exits.",
   "error.settings.validation": "Setting value is invalid. Please check the input and try again.",
   "error.unknown": "An unexpected error occurred. Please try again.",
-  "tray.menu.exit": "Exit"
+  "tray.menu.exit": "Exit",
+  "tray.language_switcher.label": "Language",
+  "tray.language.en": "English",
+  "tray.language.de": "Deutsch"
 }

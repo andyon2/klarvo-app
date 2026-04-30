@@ -34,5 +34,8 @@
   "error.settings.in_memory_fallback": "Einstellungs-Speicher nicht verfügbar. Änderungen gehen beim Beenden verloren.",
   "error.settings.validation": "Ungültiger Eingabewert. Bitte prüfen Sie die Eingabe und versuchen Sie es erneut.",
   "error.unknown": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
-  "tray.menu.exit": "Beenden"
+  "tray.menu.exit": "Beenden",
+  "tray.language_switcher.label": "Sprache",
+  "tray.language.en": "English",
+  "tray.language.de": "Deutsch"
 }

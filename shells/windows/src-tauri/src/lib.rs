@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod commands;
 pub mod config;
 pub mod i18n;
+pub mod tray;
 #[cfg(any(target_os = "windows", feature = "dev-plain-keystore"))]
 pub mod keystore;
 #[cfg(target_os = "windows")]
