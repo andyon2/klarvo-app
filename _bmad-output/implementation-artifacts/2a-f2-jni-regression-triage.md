@@ -3,7 +3,7 @@ name: Story 2.A.F2 — JNI Rate-Test Regression Triage
 phase: 2
 wave: A
 story_id: "2.A.F2"
-status: in-progress
+status: review
 dependencies: []
 adr_refs:
   - docs/adr/0003-jni-spike-outcome.md
@@ -135,12 +135,22 @@ Backlog-Phase-3-Update. `--exclude`-Flag in E1 bleibt dokumentiert. Keine weiter
 
 ### Completion Notes
 
-(wird nach Fix ausgefüllt)
+Fix-Outcome gewählt. Root-Cause: Test-Isolation-Race in statischem `LISTENER`. Kein Production-Code-Bug.
+
+- `static TEST_MUTEX: Mutex<()>` in `tests/audio_level_callback.rs` serialisiert alle Tests die `LISTENER` teilen.
+- `cargo test -p klarvo-bridge-jni` ohne `--test-threads=1` läuft grün: 200 events / 10s (0 drops), smoke OK.
+- ADR-0003 Amendment-2 angehängt (Root-Cause + Fix + Messwerte; Status Proposed → Accepted).
+- E1 windows-ci.yml `--exclude klarvo-bridge-jni` entfernt (separater Commit 3fda8a2).
 
 ## File List
 
-(wird nach Implementierung ergänzt)
+- `klarvo-bridge-jni/tests/audio_level_callback.rs` — TEST_MUTEX hinzugefügt
+- `docs/adr/0003-jni-spike-outcome.md` — Amendment-2 angehängt
+- `.github/workflows/windows-ci.yml` — `--exclude klarvo-bridge-jni` entfernt
+- `_bmad-output/implementation-artifacts/2a-f2-jni-regression-triage.md` — Story-File (Tasks + Record + Status)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status-Updates
 
 ## Change Log
 
-(wird nach Implementierung ergänzt)
+- 2026-05-01: Fix implementiert (cf07309) — TEST_MUTEX + ADR-0003-Amendment-2
+- 2026-05-01: E1-Flag-Entfernung (3fda8a2) — windows-ci ohne --exclude
