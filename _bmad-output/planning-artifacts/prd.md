@@ -3,9 +3,9 @@ stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-02b-vision', 'step-0
 status: complete
 completedAt: '2026-04-19'
 inputDocuments:
-  - output/planning-artifacts/product-brief-klarvo.md
-  - output/planning-artifacts/product-brief-klarvo-distillate.md
-  - output/planning-artifacts/architecture.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo-distillate.md
+  - _bmad-output/planning-artifacts/architecture.md
   - docs/index.md
   - docs/project-overview.md
   - docs/rebuild-discussion.md

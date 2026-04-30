@@ -4,8 +4,8 @@ lastStep: 8
 status: 'complete'
 completedAt: '2026-04-18'
 inputDocuments:
-  - output/planning-artifacts/product-brief-klarvo.md
-  - output/planning-artifacts/product-brief-klarvo-distillate.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo-distillate.md
   - docs/index.md
   - docs/project-overview.md
   - docs/v1-architecture-snapshot.md

@@ -4,10 +4,10 @@ scopePhase: 'phase-1'
 uxSpec: 'none'
 uxSpecRationale: 'Phase-1 dogfooding-prototype; acceptedFriction: Kein Onboarding, config.toml-only Konfiguration, toleriert Rough-Edges. Minimal-UI-Elemente der Windows-Shell (Tray-Icon, Notifications) erhalten ACs direkt aus PRD-FRs in Shell-Adapter-Stories. Ref personaTiering.phase1Target in prd.md.'
 inputDocuments:
-  - output/planning-artifacts/product-brief-klarvo.md
-  - output/planning-artifacts/product-brief-klarvo-distillate.md
-  - output/planning-artifacts/architecture.md
-  - output/planning-artifacts/prd.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo-distillate.md
+  - _bmad-output/planning-artifacts/architecture.md
+  - _bmad-output/planning-artifacts/prd.md
   - docs/index.md
   - docs/project-overview.md
   - docs/rebuild-discussion.md

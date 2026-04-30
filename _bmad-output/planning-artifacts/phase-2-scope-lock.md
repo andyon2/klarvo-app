@@ -5,9 +5,9 @@ phase: 2
 created: "2026-04-26"
 updated: "2026-04-26"
 inputs:
-  - output/planning-artifacts/product-brief-klarvo.md
-  - output/planning-artifacts/product-brief-klarvo-distillate.md
-  - output/planning-artifacts/architecture.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo.md
+  - _bmad-output/planning-artifacts/product-brief-klarvo-distillate.md
+  - _bmad-output/planning-artifacts/architecture.md
   - docs/rebuild-discussion.md
   - docs/backlog.md
   - _bmad-output/implementation-artifacts/deferred-work.md
@@ -187,8 +187,8 @@ Items, die vor entsprechender Story-Eröffnung User-Decision brauchen:
 - `docs/adr/0013-settings-persistence-schema.md` — Mini-Arch-Pass, Status Proposed, blockt A4.
 - `docs/adr/0011-hotkey-backend.md` — Phase-1-Hotkey-Foundation, additiv erweitert in A2.
 - `docs/adr/0012-orchestrator-owner.md` — Phase-1-Orchestrator-Foundation, erweitert für A1 (Recording-Modi).
-- `output/planning-artifacts/architecture.md` §2 :247 (KeyStore-Phase-Placement, Phase-4-Confirmation), §2 :245 (Config-Hybrid-Decision, ADR-0013-Vorlage), §7 :311 (Play-Store-Phase-3-Blocker, F1-Source).
-- `output/planning-artifacts/product-brief-klarvo.md` §Phasenplan, §Erfolgskriterien (2nd-STT-Plugin als Validation).
+- `_bmad-output/planning-artifacts/architecture.md` §2 :247 (KeyStore-Phase-Placement, Phase-4-Confirmation), §2 :245 (Config-Hybrid-Decision, ADR-0013-Vorlage), §7 :311 (Play-Store-Phase-3-Blocker, F1-Source).
+- `_bmad-output/planning-artifacts/product-brief-klarvo.md` §Phasenplan, §Erfolgskriterien (2nd-STT-Plugin als Validation).
 - `_bmad-output/implementation-artifacts/deferred-work.md` — F1–F24 Defer-Items, selektiv eingesammelt in Phase-2-A (D2/D3).
 - `memory/feedback_skip_with_rationale` — Skip-Section-Form-Convention.
 - `memory/feedback_premature_abstraction_guard` — Begründung für ADR-0013-Mini-Pass statt Inline-Decision.
