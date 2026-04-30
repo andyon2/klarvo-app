@@ -14,8 +14,8 @@ export const commands = {
 	getUserSettings: () => typedError<UserSettings, AppError>(__TAURI_INVOKE("get_user_settings")),
 	setPluginSetting: (pluginId: string, key: string, value: string) => typedError<null, AppError>(__TAURI_INVOKE("set_plugin_setting", { pluginId, key, value })),
 	getPluginSetting: (pluginId: string, key: string) => typedError<string | null, AppError>(__TAURI_INVOKE("get_plugin_setting", { pluginId, key })),
-	getRecordingModeSlot1: () => typedError<string, string>(__TAURI_INVOKE("get_recording_mode_slot1")),
-	setRecordingModeSlot1: (mode: string) => typedError<null, string>(__TAURI_INVOKE("set_recording_mode_slot1", { mode })),
+	getRecordingModeSlot1: () => typedError<string, AppError>(__TAURI_INVOKE("get_recording_mode_slot1")),
+	setRecordingModeSlot1: (mode: string) => typedError<null, AppError>(__TAURI_INVOKE("set_recording_mode_slot1", { mode })),
 };
 
 /** Events */

@@ -3,7 +3,7 @@ name: Story 2.B.A1 — Toggle + AutoStop + Wait-and-Type Recording-Modi
 phase: 2
 wave: B
 story_id: "2.B.A1"
-status: review
+status: done
 dependencies:
   - 2a-a4-settings-panel-foundation  # Settings-Service + Tauri-Command-Surface
   - 2a-d3-graceful-shutdown           # shutdown()-Methode in SessionOrchestrator (Phase-2-A)
@@ -107,7 +107,7 @@ ADR-0012 erhält ein Amendment, das die Phase-2-Erweiterungen dokumentiert.
 - **Erster Druck (state = Idle + mode = Toggle)**: Aufnahme starten — identische Logik wie Hold.
 - **Zweiter Druck (state = Recording + mode = Toggle)**: Aufnahme stoppen — identische Logik wie `on_release()` (CaptureHandle droppen, RecordingStopped-Event emittieren).
 - `on_release()` mit Toggle-Modus: **No-op** (early return nach Modus-Check). Kein State-Change, kein Event.
-- Key-Repeat-Guard bleibt erhalten: beim ersten Druck (Idle → Recording) werden OS-Key-Repeat-Events (weitere Pressed-Events ohne Release) weiterhin verworfen (state = Recording, nicht Idle).
+- **Key-Repeat-Guard (amendiert 2026-04-30, Code-Review D2):** Bleibt erhalten **nur für Hold/WaitAndType** — dort discardet `on_press` bei state=Recording als Key-Repeat. **Toggle reagiert deliberately auf jede Press**, weil das Backend (`tauri-plugin-global-shortcut` v2.3.1 → Win32 `RegisterHotKey`) keine OS-Auto-Repeats emittiert (`hotkey.rs:53` Comment ist defensiv gegen Test-Fixtures + Backend-Drift, nicht gegen reale OS-Repeats). Originalformulierung "Key-Repeat-Guard bleibt erhalten" wäre für Toggle widersprüchlich zu "Zweiter Druck stoppt".
 - Unit-Test: `toggle_press_starts_recording`, `toggle_second_press_stops_recording`, `toggle_release_is_noop`.
 
 ---
@@ -121,12 +121,15 @@ ADR-0012 erhält ein Amendment, das die Phase-2-Erweiterungen dokumentiert.
 - `on_press()` startet Aufnahme identisch wie Hold.
 - `on_release()` mit AutoStop-Modus: **No-op** (early return) — Audio läuft bis VAD-SpeechEnd.
   - **Begründung:** `run_capture_session` returned bereits nach VAD-SpeechEnd (Zeile 92-106 in `orchestrator.rs`). Die Broadcast-Channel muss nicht erst geschlossen werden.
-- Nach `run_capture_session` returns (SpeechEnd) + Pipeline-Delivery:
-  1. Pipeline-Task acquiriert `session_state`-Lock.
-  2. `std::mem::replace(&mut *state, SessionState::Idle)` → nimmt `Recording { capture_handle, .. }` heraus.
-  3. `drop(capture_handle)` — Audio-Source stoppt.
-  4. State ist `Idle`.
-  5. `event_bus.emit(Event::RecordingCompleted { .. })`.
+- **Cleanup-Reihenfolge (amendiert 2026-04-30, Code-Review D3 — alignt mit ADR-0012 Amendment 1):** Cleanup läuft **vor** OutputTarget-Delivery, **unbedingt** auf jedem Pipeline-Exit-Pfad (Success / Empty / Error / Timeout — nicht nur im Text-Success-Branch).
+  1. Pipeline-Task: `run_capture_session` returnt (SpeechEnd, Channel-Close, Timeout, oder Pipeline-Error).
+  2. Pipeline-Task acquiriert `session_state`-Lock.
+  3. `std::mem::replace(&mut *state, SessionState::Idle)` → nimmt `Recording { capture_handle, .. }` heraus.
+  4. `drop(capture_handle)` — Audio-Source stoppt.
+  5. State ist `Idle`.
+  6. (Falls Text vorhanden) OutputTarget-Delivery + ggf. Paste / RecordingDelivered-Event.
+  7. `event_bus.emit(Event::RecordingCompleted { .. })`.
+- **AutoStop Hard-Cap (amendiert 2026-04-30, Code-Review D5):** `pipeline_task` wraps `run_capture_session` in `tokio::time::timeout(MAX_RECORDING_DURATION_SECS, …)` (Default 60s). Bei Timeout: `error.recording.timeout` Toast + Cleanup wie oben + Idle. User-konfigurierbarer Threshold ist Folge-Story (deferred-work A1-D5).
 - **Race-Condition-Sicherheit:** Falls `on_release` vor dem Pipeline-Task-Cleanup feuert (User lässt Taste los bevor Stille erkannt): `on_release` setzt state auf `Idle` und dropped `capture_handle`. Pipeline-Task findet dann keinen `Recording`-State mehr → kein zweites Drop. Korrekt dank Mutex.
 - `pipeline_task` bekommt `Arc::clone(&self.session_state)` als zusätzlichen Capture für die AutoStop-Cleanup-Branch.
 - Unit-Tests: `autostop_transitions_to_idle_after_vad`, `autostop_release_is_noop`.
@@ -555,3 +558,54 @@ claude-sonnet-4-6
 | Date | Change |
 |------|--------|
 | 2026-04-30 | Initial implementation: T1–T8 all complete; all tests green; bindings in sync |
+
+### Review Findings
+
+_Code-Review 2026-04-30 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, parallel auf commit `29ce800`). Ergebnis: 5 `decision-needed` resolved, 11 `patch` applied (1 → Defer beim Batch-Apply: i18n-Loader-Scope), 11 `defer` (inkl. 4 neue D2/D5/D5b/D7 aus Decisions), 9 `dismiss`. Resolution + Batch-Apply 2026-04-30._
+
+#### Decision Needed (alle resolved 2026-04-30)
+
+- [x] [Review][Decision] **AC-7 ⇄ AC-8 Spec-Widerspruch (`mode_arc` in `tauri::State`)** — *Resolved Option 2:* Single-Writer-Refactor angewandt — Command schreibt nur Settings, Listener (`main.rs:325-338`) ist alleiniger `mode_arc`-Writer, `app.manage(mode_arc)` entfernt. AC-7 ist damit ohne Amendment erfüllt (siehe AC-8-Wortlaut wurde implizit auf "Command nimmt nur `Settings`-State" reduziert). Patch P5-merge.
+- [x] [Review][Decision] **Toggle Key-Repeat-Guard-Regression** — *Resolved Option 1:* ADR-0011-Backend (`tauri-plugin-global-shortcut` v2.3.1, Win32 `RegisterHotKey`) emittiert keine OS-Auto-Repeats. AC-4 amendiert (siehe Story-Section AC-4 oben — Guard nur für Hold/WaitAndType, Toggle reagiert deliberately). Defer-Note A1-D2 für Backend-Drift-Schutz.
+- [x] [Review][Decision] **AC-5 Reihenfolge ⇄ ADR-0012 Amendment 1 (cleanup vor/nach `deliver`)** — *Resolved Option 1:* AC-5 amendiert (siehe Story-Section AC-5 oben) — Cleanup vor Delivery, unbedingt auf jedem Pipeline-Exit-Pfad. Spec-Drift geheilt; matched ADR-0012 Amendment 1.
+- [x] [Review][Decision] **Mode-Snapshot-Semantik (press-time vs. fresh)** — *Resolved Option 1:* `SessionState::Recording { ..., press_mode }` Field hinzugefügt (`session.rs:24-37`). `on_release` und Toggle-Inline-Stop dispatchen auf `press_mode`-Snapshot statt fresh-Read. Mode-Change-mid-Session wirkt erst beim nächsten Press.
+- [x] [Review][Decision] **AutoStop ohne VAD-SpeechEnd → unendliche Aufnahme** — *Resolved Option 4:* Hard-Cap 60s default via `tokio::time::timeout` für AutoStop in `pipeline_task` (`session.rs:189-209`). Neuer i18n-Key `error.recording.timeout` in `REQUIRED_KEYS` + en/de-Locales. Folge-Story für User-konfigurierbaren Threshold in deferred-work.md (A1-D5 + A1-D5b).
+
+#### Patch (Batch-Apply 2026-04-30)
+
+- [x] [Review][Patch] **CRITICAL — AutoStop-Cleanup wird auf Error-/Empty-Pfaden übersprungen** [`klarvo-shell-orchestrator/src/session.rs`] — Cleanup-Block aus dem Text-Success-Branch herausgehoben; läuft jetzt unbedingt nach dem Pipeline-Match, vor Delivery. Alle Pipeline-Exit-Pfade (Text-Success / Non-Text-Success / Empty / Error / Timeout) führen den Cleanup aus. Test-Coverage in `autostop_transitions_to_idle_after_vad` durch neue `assert!(orch.is_idle().await)`-Assertion verstärkt.
+- [x] [Review][Defer] **i18n-Keys tot — Frontend-Dropdown nutzt hardcoded English** [`shells/windows/src/index.html:99-103,274`] — Beim Batch-Apply als Defer eingestuft: kein React-i18n-Loader vorhanden; sauberer Fix braucht entweder `i18n_table` via `app.manage` + `t()`-Helper im Settings-Panel oder die Phase-2-B-Vite-Migration. Folge-Story bündelt mit A8-Sub (Tray-Language-Switcher) — siehe deferred-work A1-D7.
+- [x] [Review][Patch] **Silent Error-Masking in `get_user_settings`** [`shells/windows/src-tauri/src/commands/settings.rs`] — `unwrap_or_else(|_| "hold".to_string())` durch `?`-Propagation ersetzt. Validation-Errors gehen jetzt sauber als `AppError` ans Frontend.
+- [x] [Review][Patch] **Fehler-Typ-Inkonsistenz: `get/set_recording_mode_slot1`** [`shells/windows/src-tauri/src/commands/settings.rs`] — Beide Commands nutzen jetzt `Result<_, AppError>`. `set_recording_mode_slot1` ist sync (kein async-await mehr nötig nach Single-Writer-Refactor); `tauri::State<Arc<RwLock<RecordingMode>>>`-Argument entfernt.
+- [x] [Review][Patch] **Double-Write-Race `mode_arc`: Command + `settings.changed`-Listener** — Mit D1-Resolution miterledigt: Command schreibt nicht mehr direkt in `mode_arc`, Listener (`main.rs:312-330`) ist alleiniger Writer. `app.manage(recording_mode_arc)` entfernt.
+- [x] [Review][Patch] **`DEFAULT_RECORDING_MODE_SLOT1`-Konstante unused** [`klarvo-core/src/settings/mod.rs`] — Accessor parst jetzt `unwrap_or_else(|| DEFAULT_RECORDING_MODE_SLOT1.to_string())` + `RecordingMode::from_str`. Single-Source-of-Truth wiederhergestellt.
+- [x] [Review][Patch] **Test-Helper `wait_for_completed` ungenutzt** [`klarvo-shell-orchestrator/tests/session_tests.rs`] — In `autostop_transitions_to_idle_after_vad` eingesetzt, um `RecordingCompleted`-Ordering vor dem Idle-Assert abzuwarten. Dead-code-Warning weg.
+- [x] [Review][Patch] **Test `autostop_transitions_to_idle_after_vad` asserted State nicht** — Neuer `assert!(orch.is_idle().await, …)` ergänzt. Dafür wurde `pub async fn is_idle(&self) -> bool` zur Orchestrator-API hinzugefügt (test-friendly + nützlich für State-Pull-Konsumenten wie Tray).
+- [x] [Review][Patch] **Drop+Re-Acquire-Race in `on_press` Toggle und `on_release`** [`klarvo-shell-orchestrator/src/session.rs`] — Single-Critical-Section eingeführt: `on_press` und `on_release` halten den Lock von `matches!`-Check bis `mem::replace`; CaptureHandle-Drop außerhalb des Locks (nach `drop(guard)`). Race-Window für concurrent Press/Release eliminiert.
+- [x] [Review][Patch] **AC-4 Spec-Amendment (Toggle Key-Repeat-Guard)** — Story-AC-4 oben aktualisiert (Guard nur für Hold/WaitAndType; Toggle reagiert deliberately, Backend-Garantie ADR-0011).
+- [x] [Review][Patch] **AC-5 Spec-Amendment (Cleanup-Reihenfolge + Hard-Cap)** — Story-AC-5 oben aktualisiert (Cleanup vor Delivery, unbedingt; AutoStop-Hard-Cap 60s + i18n-Key dokumentiert).
+
+#### Deferred (pre-existing oder Out-of-Scope-Folgearbeit)
+
+- [x] [Review][Defer] **Empty `de.json` außer Recording-Mode-Keys** [`shells/windows/src/locales/de.json`] — File war pre-state `{}`; jetzt 5 Keys. Story-übergreifender i18n-Gap, nicht durch A1 verursacht.
+- [x] [Review][Defer] **Naming-Convention-Spread für Recording-Mode-Setting** — `hotkey_slot1_mode` (struct) / `hotkey.slot1.mode` (DB) / `hotkeySlot1Mode` (TS) / `settings.recording_mode.*` (i18n). Fünf Conventions; Refactor wäre cross-cutting.
+- [x] [Review][Defer] **Keine Deduplizierung identischer `settings.changed`-Updates** [`main.rs:325-338`] — Listener schreibt RwLock auch bei identischem Wert. Cheap individually; Write-Amplification nur bei buggy upstream.
+- [x] [Review][Defer] **AutoStop-Pipeline-finishes-before-state-set Race** [`session.rs:161-246`] — Theoretisch möglich, wenn `run_capture_session` sehr schnell returniert (Audio-Source-Start-Failure, leere VAD-Stream-Buffer). Praktisch durch Audio-Latenz blockiert.
+- [x] [Review][Defer] **Audio-Capture läuft während STT in AutoStop weiter** [`session.rs:182-189`] — Cleanup nach STT-Result statt direkt nach `run_capture_session`-Return. Resource-Waste (~Sekunden Audio in Bounded-Channel), keine Korrektheits-Issue. Folgt ADR-0012 Amendment 1.
+- [x] [Review][Defer] **WaitAndType emittiert `RecordingDelivered` mit empty text** [`session.rs:200-205`] — Bei silent-Recording (VAD findet was, STT liefert ""). Pill-Bar (Story A3) müsste empty-Case rendern; Empfehlung in A3 berücksichtigen.
+- [x] [Review][Defer] **`RecordingDelivered.text`: unbounded String über Tokio-Broadcast + Tauri-IPC** [`klarvo-core/src/event/bus.rs`, `bridge.rs`] — Lange Transkripte → mehrere MB pro Subscriber (Clone). Phase-2-B-Pill-Bar-Design wird Cap definieren.
+- [x] [Review][Defer] **Subscriber-Lag droppt `RecordingDelivered` aus Broadcast-Channel** — Broadcast-Capacity-Pattern bereits etabliert; Pill-Bar-Subscriber-Garantie wird in A3 designt.
+- [x] [Review][Defer] **`emit("recording.delivered")`-Failure-Pfad** [`bridge.rs:177-179`] — `tracing::warn!`+continue, keine Persistenz/Retry. Pre-existing Pattern aus RecordingCompleted.
+- [x] [Review][Defer] **AutoStop-Cleanup-Race überschreibt freshly-started new Recording** [`session.rs:182-189`] — Nur möglich, wenn altes Pipeline-Cleanup-Lock-Acquire erst nach neuer on_press läuft; faktisch durch Tokio-Mutex-Fairness blockiert.
+
+#### Dismissed (Noise / False-Positive / verifiziert OK)
+
+- `settings.changed`-Payload-Key `newValue` matching: `SettingsChangedEvent` hat `#[serde(rename_all = "camelCase")]` (verifiziert in `commands/settings.rs:43-49`); Listener-Lookup in `main.rs:328` und Frontend-Listener in `index.html:200` sind beide korrekt.
+- `recording.delivered` hardcoded Wire-Name in `bridge.rs:179` — matcht etabliertem RecordingCompleted-Mirror-Pattern (L161-163); `bindings-drift` xtask fängt Divergenz.
+- `tauri::async_runtime::spawn` im Listener — Tauri verwaltet Runtime-Lifetime; spawn-leak nicht real.
+- `mode_arc.write().await` Hang-Possibility — Tokio `RwLock` hat keinen Poison-State; deadlock-frei für `&mut` durch Single-Writer.
+- `RecordingMode::from_str` strict-casing/whitespace — Spec AC-1 fordert exakt-Strings; trim/lowercase wäre Scope-Creep.
+- `drop(pipeline_task)` detach (kein abort) — intendiertes Pattern (Closed-mid-Speech-Semantik); Graceful-Shutdown-Story (D3) deckt abort-on-shutdown ab.
+- AC-12 `cargo xtask verify-release` + `cargo check --target x86_64-pc-windows-msvc` lokal geskippt — Repo-Konvention (CI-Gate G2/G6 fängt; vgl. Story 2.A.E1-Closure).
+- Mode-Read-Inconsistency in `pipeline_task` (Closure-Capture vs. self.mode) — Mode wird per Closure-Capture festgehalten, kein Re-Read; flagged von Edge-Case-Hunter aber irrelevant in aktueller Code-Form (separates Decision für press-time vs fresh siehe oben).
+- Toggle-Stop-Press während Pipeline mid-execution — `drop(capture_handle)` schließt Channel, Pipeline completed natural; `drop(pipeline_task)` detacht JoinHandle. Pre-existing Pattern.

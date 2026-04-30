@@ -5,7 +5,6 @@
 //! - `TauriSettingsEmitter` implements `klarvo_core::settings::SettingsEmitter`;
 //!   lives here so `klarvo-core` has no Tauri dependency (ADR-0009 Hybrid-C analog).
 
-use std::sync::Arc;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -139,10 +138,7 @@ pub fn get_user_settings(
         ui_language: settings.ui_language()?,
         dictionary_language: settings.dictionary_language()?,
         output_language: settings.output_language()?,
-        hotkey_slot1_mode: settings
-            .recording_mode_slot1()
-            .map(|m| m.to_string())
-            .unwrap_or_else(|_| "hold".to_string()),
+        hotkey_slot1_mode: settings.recording_mode_slot1()?.to_string(),
     })
 }
 
@@ -152,25 +148,21 @@ pub fn get_user_settings(
 #[specta::specta]
 pub fn get_recording_mode_slot1(
     settings: tauri::State<'_, Settings>,
-) -> Result<String, String> {
-    settings
-        .recording_mode_slot1()
-        .map(|m| m.to_string())
-        .map_err(|e| e.to_string())
+) -> Result<String, AppError> {
+    settings.recording_mode_slot1().map(|m| m.to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_recording_mode_slot1(
+pub fn set_recording_mode_slot1(
     mode: String,
     settings: tauri::State<'_, Settings>,
-    mode_arc: tauri::State<'_, Arc<tokio::sync::RwLock<RecordingMode>>>,
-) -> Result<(), String> {
-    let parsed = RecordingMode::from_str(&mode).map_err(|e| e.to_string())?;
-    settings
-        .set_recording_mode_slot1(parsed.clone())
-        .map_err(|e| e.to_string())?;
-    *mode_arc.write().await = parsed;
+) -> Result<(), AppError> {
+    let parsed = RecordingMode::from_str(&mode)?;
+    settings.set_recording_mode_slot1(parsed)?;
+    // The orchestrator's mode_arc is updated by the `settings.changed` listener
+    // in main.rs (single-writer pattern, AC-7 spirit). This command only writes
+    // through Settings, which fires the emitter.
     Ok(())
 }
 

@@ -26,8 +26,18 @@ enum SessionState {
         /// Phase-2 Toggle-Mode revisit: graceful await/abort on App-Exit
         /// (ADR-0012 Open-Questions §Orchestrator-Shutdown-bei-App-Exit).
         pipeline_task: tokio::task::JoinHandle<()>,
+        /// Mode active when the session was started. `on_release` and the second
+        /// Toggle press route on this snapshot — not on the current
+        /// `Orchestrator::mode` value — so a settings-driven mode change while a
+        /// session is active does not split press-time and release-time semantics.
+        press_mode: RecordingMode,
     },
 }
+
+/// AutoStop hard-cap: the longest a single AutoStop session may run before the
+/// pipeline is aborted with `error.recording.timeout`. Default 60s; user-
+/// configurable threshold tracked in deferred-work.md (A1-D5 follow-up).
+const MAX_RECORDING_DURATION_SECS: u64 = 60;
 
 /// Coordinates the 7-Step Push-to-Talk cycle.
 ///
@@ -86,6 +96,12 @@ impl SessionOrchestrator {
         }
     }
 
+    /// `true` if no session is active. Useful for test assertions and for shell
+    /// state-pull UIs (tray, status bar). Cheap — single Mutex read.
+    pub async fn is_idle(&self) -> bool {
+        matches!(*self.session_state.lock().await, SessionState::Idle)
+    }
+
     /// Begin a push-to-talk recording session (Step 1).
     ///
     /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):
@@ -98,29 +114,33 @@ impl SessionOrchestrator {
     /// Errors from `AudioSource::start` are emitted via `ErrorEmitter`; state remains
     /// `Idle` on failure. i18n key emitted: `error.audio.start_failed`.
     pub async fn on_press(&self) {
-        let mode = self.mode.read().await.clone();
-
+        // Single critical section for the Recording-state branch: dispatching on
+        // press_mode (snapshotted at session start) under the same lock guard
+        // that does mem::replace, so a concurrent on_press cannot observe a
+        // transient Idle window between check and replace.
         {
-            let state = self.session_state.lock().await;
-            if matches!(*state, SessionState::Recording { .. }) {
-                if mode == RecordingMode::Toggle {
-                    // Second Toggle-press: inline stop, same as on_release for Hold.
-                    // Lock MUST be released before re-acquiring below (deadlock guard).
-                    drop(state);
-                    let mut st = self.session_state.lock().await;
-                    let prev = std::mem::replace(&mut *st, SessionState::Idle);
-                    drop(st);
-                    if let SessionState::Recording { capture_handle, pipeline_task } = prev {
+            let mut state = self.session_state.lock().await;
+            if let SessionState::Recording { press_mode, .. } = *state {
+                if press_mode == RecordingMode::Toggle {
+                    let prev = std::mem::replace(&mut *state, SessionState::Idle);
+                    drop(state); // release before drop(capture_handle)
+                    if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
                         self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
                         drop(capture_handle);
                         drop(pipeline_task);
                     }
-                    return;
+                } else {
+                    tracing::debug!(
+                        "on_press called while recording in {:?}; discarding (key-repeat-guard)",
+                        press_mode
+                    );
                 }
-                tracing::debug!("on_press called while recording; discarding (key-repeat-guard)");
                 return;
             }
-        } // lock released here
+        } // lock released
+
+        // Idle: snapshot current mode at press-time and start a new session.
+        let press_mode = self.mode.read().await.clone();
 
         let (tx, rx) = tokio::sync::broadcast::channel::<AudioEvent>(DEFAULT_AUDIOEVENT_CAPACITY);
         let config = CaptureConfig {
@@ -151,79 +171,52 @@ impl SessionOrchestrator {
         let clock = Arc::clone(&self.clock);
         let event_bus = Arc::clone(&self.event_bus);
 
-        // AutoStop needs session_state to clean up after pipeline delivery (ADR-0012 Amendment 1).
-        let session_state_for_autostop = if mode == RecordingMode::AutoStop {
+        // AutoStop needs session_state to clean up after pipeline (ADR-0012 Amendment 1
+        // + AC-5 amendment: cleanup runs unconditionally on every pipeline-task exit
+        // path, before any deliver, so error/empty results do not leak the
+        // capture_handle and pin the audio source open.
+        let session_state_for_autostop = if press_mode == RecordingMode::AutoStop {
             Some(Arc::clone(&self.session_state))
         } else {
             None
         };
 
         let pipeline_task = tokio::spawn(async move {
-            let mut vad_guard = vad.lock().await;
-            let result =
-                run_capture_session(rx, &mut **vad_guard, &manifest, &registry).await;
-            drop(vad_guard);
+            let pipeline = async {
+                let mut vad_guard = vad.lock().await;
+                let r = run_capture_session(rx, &mut **vad_guard, &manifest, &registry).await;
+                drop(vad_guard);
+                r
+            };
 
-            match result {
-                Ok(Some(stage_data)) => {
-                    let text = match stage_data {
-                        StageData::Text(t) => t,
-                        // Audio variant not expected at pipeline output — swallow silently.
-                        _ => {
-                            event_bus.emit(Event::RecordingCompleted { ts_ms: clock.now_ms() });
-                            return;
-                        }
-                    };
-
-                    // AutoStop cleanup: capture_handle has not been dropped yet (on_release is
-                    // a no-op in AutoStop mode). Drop it now to stop audio capture.
-                    // Race-safety: if on_release fires concurrently, std::mem::replace finds
-                    // no Recording state and is a no-op (Mutex guards exclusive access).
-                    if let Some(state_arc) = session_state_for_autostop {
-                        let mut st = state_arc.lock().await;
-                        if let SessionState::Recording { capture_handle, .. } =
-                            std::mem::replace(&mut *st, SessionState::Idle)
-                        {
-                            drop(capture_handle);
-                        }
-                    }
-
-                    match registry.output(&output_target_id) {
-                        Some(target) => {
-                            if let Err(e) = target.deliver(&text).await {
-                                error_emitter
-                                    .emit_error(
-                                        e.user_message.as_deref().unwrap_or("error.internal"),
-                                        clock.now_ms(),
-                                    )
-                                    .await;
-                            } else if mode == RecordingMode::WaitAndType {
-                                // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
-                                event_bus.emit(Event::RecordingDelivered {
-                                    ts_ms: clock.now_ms(),
-                                    text: text.clone(),
-                                });
-                            } else if let Err(e) = paste_backend.paste().await {
-                                error_emitter
-                                    .emit_error(
-                                        e.user_message.as_deref().unwrap_or("error.internal"),
-                                        clock.now_ms(),
-                                    )
-                                    .await;
-                            }
-                        }
-                        None => {
-                            error_emitter
-                                .emit_error(
-                                    "error.config.output_target_not_found",
-                                    clock.now_ms(),
-                                )
-                                .await;
-                        }
+            // AutoStop hard-cap: prevent runaway recording when VAD never reports
+            // SpeechEnd (continuous noise above threshold). Other modes have
+            // explicit user-driven termination, so no timeout is wrapped.
+            let result = if press_mode == RecordingMode::AutoStop {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(MAX_RECORDING_DURATION_SECS),
+                    pipeline,
+                )
+                .await
+                {
+                    Ok(r) => r,
+                    Err(_) => {
+                        error_emitter
+                            .emit_error("error.recording.timeout", clock.now_ms())
+                            .await;
+                        Ok(None)
                     }
                 }
-                // Channel closed before any speech — accidental hotkey trigger, swallow silently.
-                Ok(None) => {}
+            } else {
+                pipeline.await
+            };
+
+            // Extract delivery text, if any. Non-Text variants and empty results
+            // skip delivery; errors emit a toast.
+            let text_to_deliver = match result {
+                Ok(Some(StageData::Text(t))) => Some(t),
+                Ok(Some(_)) => None, // Audio variant not expected at pipeline output
+                Ok(None) => None,    // channel closed before any speech (accidental press)
                 Err(e) => {
                     error_emitter
                         .emit_error(
@@ -231,6 +224,57 @@ impl SessionOrchestrator {
                             clock.now_ms(),
                         )
                         .await;
+                    None
+                }
+            };
+
+            // AutoStop cleanup runs BEFORE any deliver (ADR-0012 Amendment 1) and
+            // unconditionally across success/empty/error paths so the capture
+            // handle is always released. Race-safety: if on_release fires
+            // concurrently (mode change mid-session), mem::replace on a
+            // non-Recording state is a no-op under the same Mutex.
+            if let Some(state_arc) = session_state_for_autostop {
+                let mut st = state_arc.lock().await;
+                if let SessionState::Recording { capture_handle, .. } =
+                    std::mem::replace(&mut *st, SessionState::Idle)
+                {
+                    drop(capture_handle);
+                }
+            }
+
+            if let Some(text) = text_to_deliver {
+                match registry.output(&output_target_id) {
+                    Some(target) => {
+                        if let Err(e) = target.deliver(&text).await {
+                            error_emitter
+                                .emit_error(
+                                    e.user_message.as_deref().unwrap_or("error.internal"),
+                                    clock.now_ms(),
+                                )
+                                .await;
+                        } else if press_mode == RecordingMode::WaitAndType {
+                            // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
+                            event_bus.emit(Event::RecordingDelivered {
+                                ts_ms: clock.now_ms(),
+                                text: text.clone(),
+                            });
+                        } else if let Err(e) = paste_backend.paste().await {
+                            error_emitter
+                                .emit_error(
+                                    e.user_message.as_deref().unwrap_or("error.internal"),
+                                    clock.now_ms(),
+                                )
+                                .await;
+                        }
+                    }
+                    None => {
+                        error_emitter
+                            .emit_error(
+                                "error.config.output_target_not_found",
+                                clock.now_ms(),
+                            )
+                            .await;
+                    }
                 }
             }
 
@@ -243,7 +287,7 @@ impl SessionOrchestrator {
 
         // Re-acquire state lock to transition to Recording.
         let mut state = self.session_state.lock().await;
-        *state = SessionState::Recording { capture_handle, pipeline_task };
+        *state = SessionState::Recording { capture_handle, pipeline_task, press_mode };
     }
 
     /// End the push-to-talk recording session (Step 4).
@@ -256,38 +300,40 @@ impl SessionOrchestrator {
     ///
     /// Stray release calls (state=Idle for any mode) are a silent no-op.
     pub async fn on_release(&self) {
-        let mode = self.mode.read().await.clone();
+        // Single critical section: dispatch on press_mode (snapshotted at session
+        // start) under one lock guard. Avoids the drop+re-acquire race where a
+        // concurrent on_press could observe transient Idle and start a new
+        // session that this release would then destroy.
+        let mut state = self.session_state.lock().await;
 
-        // Toggle and AutoStop: on_release is a no-op while recording
-        // (Toggle stops via second on_press; AutoStop stops via VAD).
-        if matches!(mode, RecordingMode::Toggle | RecordingMode::AutoStop) {
-            let state = self.session_state.lock().await;
-            if matches!(*state, SessionState::Recording { .. }) {
+        match &*state {
+            SessionState::Recording { press_mode: RecordingMode::Toggle, .. }
+            | SessionState::Recording { press_mode: RecordingMode::AutoStop, .. } => {
                 tracing::debug!(
-                    "on_release in {:?} mode while recording; no-op",
-                    mode
+                    "on_release while recording in non-release-driven mode; no-op"
                 );
                 return;
             }
+            SessionState::Idle => {
+                tracing::debug!("on_release called while idle; discarding (stray-release)");
+                return;
+            }
+            SessionState::Recording { .. } => {
+                // Hold or WaitAndType: fall through to the cleanup below.
+            }
         }
 
-        let mut state = self.session_state.lock().await;
         let prev = std::mem::replace(&mut *state, SessionState::Idle);
         drop(state); // release lock before drop(capture_handle)
 
-        match prev {
-            SessionState::Idle => {
-                tracing::debug!("on_release called while idle; discarding (stray-release)");
-            }
-            SessionState::Recording { capture_handle, pipeline_task } => {
-                self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
-                // Step 4: drop CaptureHandle → broadcast sender closes →
-                // run_capture_session's receiver gets RecvError::Closed.
-                drop(capture_handle);
-                // Dropping JoinHandle detaches the task (does NOT abort it) —
-                // pipeline_task runs to completion to deliver results or emit errors.
-                drop(pipeline_task);
-            }
+        if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
+            self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
+            // Step 4: drop CaptureHandle → broadcast sender closes →
+            // run_capture_session's receiver gets RecvError::Closed.
+            drop(capture_handle);
+            // Dropping JoinHandle detaches the task (does NOT abort it) —
+            // pipeline_task runs to completion to deliver results or emit errors.
+            drop(pipeline_task);
         }
     }
 }

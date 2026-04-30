@@ -7,7 +7,7 @@ use crate::error::{AppError, AppErrorKind};
 ///
 /// Controls the start/stop semantics of a recording session (ADR-0012 Amendment 1).
 /// Serialised as lowercase strings in user settings (`hotkey.slot1.mode`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordingMode {
     /// Hold key to record; release to stop and transcribe (Phase-1 default).
     Hold,

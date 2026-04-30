@@ -301,10 +301,10 @@ impl Settings {
     }
 
     pub fn recording_mode_slot1(&self) -> Result<RecordingMode, AppError> {
-        match self.get_raw("hotkey.slot1.mode")? {
-            Some(s) => RecordingMode::from_str(&s),
-            None => Ok(RecordingMode::Hold),
-        }
+        let raw = self
+            .get_raw("hotkey.slot1.mode")?
+            .unwrap_or_else(|| DEFAULT_RECORDING_MODE_SLOT1.to_string());
+        RecordingMode::from_str(&raw)
     }
 
     pub fn set_recording_mode_slot1(&self, mode: RecordingMode) -> Result<(), AppError> {

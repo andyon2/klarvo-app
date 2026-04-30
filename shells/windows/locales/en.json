@@ -6,6 +6,7 @@
   "error.audio.start_failed": "Failed to start audio capture. Check your microphone settings.",
   "error.audio.device_unavailable": "Audio device is unavailable. Please check your microphone settings.",
   "error.audio.unsupported_format": "Audio format is not supported. Please check your microphone settings.",
+  "error.recording.timeout": "Recording stopped: silence not detected within the maximum recording duration.",
   "error.paste.send_input_failed": "Paste failed. The clipboard content could not be injected into the active window.",
   "error.keystore.read_failed": "Secure key storage is unavailable. Please restart the application.",
   "error.keystore.not_found": "API key not found. Please set your API key in the application settings.",

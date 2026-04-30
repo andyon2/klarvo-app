@@ -6,6 +6,7 @@
   "error.audio.start_failed": "Audioaufnahme konnte nicht gestartet werden. Bitte prüfen Sie Ihre Mikrofon-Einstellungen.",
   "error.audio.device_unavailable": "Audiogerät nicht verfügbar. Bitte prüfen Sie Ihre Mikrofoneinstellungen.",
   "error.audio.unsupported_format": "Audioformat wird nicht unterstützt. Bitte prüfen Sie Ihre Mikrofoneinstellungen.",
+  "error.recording.timeout": "Aufnahme gestoppt: Innerhalb der maximalen Aufnahmedauer wurde keine Stille erkannt.",
   "error.paste.send_input_failed": "Einfügen fehlgeschlagen. Der Zwischenablage-Inhalt konnte nicht in das aktive Fenster eingefügt werden.",
   "error.keystore.read_failed": "Sicherer Schlüsselspeicher nicht verfügbar. Bitte starten Sie die Anwendung neu.",
   "error.keystore.not_found": "API-Schlüssel nicht gefunden. Bitte hinterlegen Sie den Schlüssel in den Einstellungen.",

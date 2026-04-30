@@ -306,15 +306,20 @@ async fn toggle_release_is_noop() {
 #[tokio::test]
 async fn autostop_transitions_to_idle_after_vad() {
     let stt = Arc::new(MockSttProvider::returning("autostop text"));
-    let (orch, output_target, paste_backend, _err, _event_bus) =
+    let (orch, output_target, paste_backend, _err, event_bus) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
+    let mut rx = event_bus.subscribe();
 
     orch.on_press().await;
-    // VAD fires SpeechEnd automatically via MockVadProvider → pipeline runs → cleanup → Idle
+    // VAD fires SpeechEnd automatically via MockVadProvider → pipeline runs → cleanup → Idle.
     wait_for_delivery(&output_target).await;
+    wait_for_completed(&mut rx).await;
 
     assert_eq!(output_target.last_delivered().as_deref(), Some("autostop text"));
     assert!(paste_backend.was_called(), "paste must be called in AutoStop mode");
+    // AC-5: cleanup branch must transition state back to Idle so the next press
+    // is not blocked by a stale Recording state.
+    assert!(orch.is_idle().await, "orchestrator must be Idle after AutoStop cleanup");
 }
 
 #[tokio::test]

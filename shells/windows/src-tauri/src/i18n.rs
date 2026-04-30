@@ -77,6 +77,7 @@ mod tests {
         "error.audio.start_failed",
         "error.audio.device_unavailable",
         "error.audio.unsupported_format",
+        "error.recording.timeout",
         "error.paste.send_input_failed",
         "error.keystore.read_failed",
         "error.keystore.not_found",
