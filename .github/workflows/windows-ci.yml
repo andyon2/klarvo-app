@@ -38,7 +38,7 @@ jobs:
           workspaces: ". -> target"
           shared-key: windows-compile-g6
 
-      - name: cargo check --workspace --exclude klarvo-bridge-jni
+      - name: cargo check --workspace --all-targets --exclude klarvo-bridge-jni
         # JNI rate-test regression open (Story 2.A.F2; ADR-0003).
         # Remove --exclude once F2 closes.
-        run: cargo check --workspace --exclude klarvo-bridge-jni
+        run: cargo check --workspace --all-targets --exclude klarvo-bridge-jni

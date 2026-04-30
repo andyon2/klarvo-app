@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-04-30 (Story 2.A.E1 Windows-Compile-CI-Gate: ready-for-dev→review; .github/workflows/windows-ci.yml added)
+# last_updated: 2026-04-30 (Story 2.A.E1 Windows-Compile-CI-Gate: review→done nach Code-Review-Closure (1 Patch --all-targets, 4 Decisions zu CI-Hardening-Folge-Story deferred))
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -175,7 +175,7 @@ development_status:
   2a-c3-live-locale-switch: ready-for-dev
   2a-d2-arc-wrapping-fix: done
   2a-d3-graceful-shutdown: ready-for-dev
-  2a-e1-windows-compile-ci: review
+  2a-e1-windows-compile-ci: done
   2a-f1-play-store-policy-audit: backlog
   2a-f2-jni-regression-triage: ready-for-dev
   epic-phase-2-a-retrospective: optional

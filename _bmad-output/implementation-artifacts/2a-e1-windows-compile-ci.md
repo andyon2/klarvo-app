@@ -3,7 +3,7 @@ name: Story 2.A.E1 — Windows-Compile-CI-Gate (G6)
 phase: 2
 wave: A
 story_id: "2.A.E1"
-status: review
+status: done
 dependencies: []
 adr_refs: []
 source_ref: "Backlog Windows-Compile-CI-Gate; Epic-3-Followup; memory/project_jni_spike_scope"
@@ -128,3 +128,33 @@ in `shells/windows/src-tauri/src/main.rs:7` fehl — genau die Lücke, die diese
 ### Change Log
 
 - 2026-04-30: Initial implementation, Status → review (Dev Agent: Andy via Opus 4.7 1M).
+- 2026-04-30: Code-Review-Closure. 1 Patch (D4 `--all-targets`), 4 Decisions deferred zur Cross-Cutting CI-Hardening-Folge-Story, 5 weitere Defers (Repo-Pattern), 1 Dismiss. Status → done.
+
+## Review Findings
+
+Code-Review 2026-04-30 (Opus 4.7 1M, 3 parallel layer: Blind Hunter / Edge Case Hunter / Acceptance Auditor). Acceptance Auditor: alle 4 ACs erfüllt, keine Findings. Blind+Edge: 11 Findings → 1 Patch, 9 Defer, 1 Dismiss.
+
+### Patch (applied)
+
+- [x] [Review][Patch] **`--all-targets` ergänzt** [`.github/workflows/windows-ci.yml:41-44`] — `cargo check --workspace --all-targets --exclude klarvo-bridge-jni`. Type-Check deckt jetzt auch Tests/Examples/Feature-gated-Code (nur kompilieren, nicht laufen — Scope-Fence „kein cargo test" konform). Schließt Lücke: Linux-CI compile-checked Tests nicht (xtask-only), ohne `--all-targets` würden Windows-only-Test-Compile-Fehler durch beide Gates schlüpfen. (Blind, major)
+
+### Defer
+
+**4 Cross-Cutting CI-Hardening (eigene Folge-Story für alle 4 Workflows simultan):**
+
+- [x] [Review][Defer] **Toolchain-Pin nicht honoriert** [`.github/workflows/windows-ci.yml:31-33`] — Reviewer-Claim („`dtolnay/rust-toolchain@stable` ignoriert `rust-toolchain.toml`") ist unverifiziert (memory `feedback_reviewer_external_fact_verification`). Selbst wenn wahr: 4 Workflows betroffen → Cross-Cutting-Folge-Story (1) Action-Verhalten verifizieren (2) alle simultan fixen. (Blind+Edge, major)
+- [x] [Review][Defer] **Kein `--locked` flag** [`.github/workflows/windows-ci.yml:44`] — Real, aber Cross-Cutting Pattern. Bündel mit Toolchain-Pin in CI-Hardening-Welle. (Blind+Edge, major)
+- [x] [Review][Defer] **Kein `RUSTFLAGS=-D warnings`** — Compile-Gate ≠ Lint-Gate. Lint-Strictness verdient eigene koordinierte Story (eher `cargo clippy -D warnings` als `RUSTFLAGS`, workspace-weit konsistent); ohne Toolchain-Pin würde stable-Drift Warnings unbemerkt einführen → erst Pin lösen, dann Strictness. (Blind, major)
+- [x] [Review][Defer] **Kein `timeout-minutes`** — Defensive-Ceremony, kein konkreter Trigger. Bündeln in CI-Hardening-Welle. (Blind+Edge, minor)
+
+**5 Pre-existing Repo-Pattern / Spec-conform:**
+
+- [x] [Review][Defer] **`pull_request` triggert doppelt auf same-repo PRs** [`.github/workflows/windows-ci.yml:12-15`] — `push` + `pull_request` feuern beide; Concurrency-Keys differieren zwischen Events. Repo-weiter Pattern (`ci-event-lint.yml`, `ci-bindings-drift.yml` haben dieselbe Form). (Edge, major)
+- [x] [Review][Defer] **`klarvo-bridge-jni` Compile-Coverage = 0 auf CI** [Linux-CI vs Windows-CI] — Windows-CI excluded JNI-Bridge (F2-Rationale OK); Linux-CI führt nur xtask aus, kein Workspace-Compile. Bridge wird daher auf KEINEM CI-Platform compile-checked. Pre-existing Gap, nicht durch diesen Diff eingeführt; nach F2-Closure auf Windows wieder gedeckt. Linux-Compile-Gate für Bridge eigene Folge-Story. (Edge, major)
+- [x] [Review][Defer] **Kein `paths-ignore`** [`.github/workflows/windows-ci.yml:12-15`] — Docs-only / `_bmad-output/`-only PRs triggern Windows-Runner. Repo-Konvention. Cost, keine Korrektheit. (Blind+Edge, minor)
+- [x] [Review][Defer] **`cancel-in-progress: true` auf Master-Pushes maskiert cancelled Runs** [`.github/workflows/windows-ci.yml:20-22`] — Spec mandatiert `cancel-in-progress: true` (AC-1); Branch-Protection / `head_ref`-Keying ist Repo-Config out-of-scope. (Blind, minor)
+- [x] [Review][Defer] **`pull_request` läuft auf Draft-PRs (default `types`)** [`.github/workflows/windows-ci.yml:15`] — Draft-WIP-Commits konsumieren Windows-Runner-Minuten. Repo-Konvention. (Edge, minor)
+
+### Dismissed (1)
+
+- **Comment/Code-Drift auf `--exclude`** — AC-3 explizit erfüllt: Inline-Kommentar enthält Story-Ref (`Story 2.A.F2`) UND ADR-Ref (`ADR-0003`). Kein TODO-Lint im Repo etabliert. (Blind, minor)

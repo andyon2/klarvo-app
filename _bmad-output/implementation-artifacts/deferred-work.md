@@ -98,3 +98,22 @@ D1-D9 siehe Story-File `_bmad-output/implementation-artifacts/2a-d2-arc-wrapping
 - **D2-Dismiss-D1** (`SessionOrchestrator: Clone`-Safety): "AA-verified all fields Arc<…>, see session.rs:39-55".
 - **D2-Dismiss-D5** (`expect()`-Panic in Fallback): "A4-P3 Two-Step-Fallback reviewed; final expect = dokumentiertes Last-Resort gegen rusqlite-in-memory-infallible".
 - **D2-Dismiss-D8** (`NoopSettingsEmitter` swallows): "A4-P13: in-memory-Pfad nutzt TauriSettingsEmitter; Noop nur deepest Last-Resort".
+
+## Deferred from: code review of story-2a-E1 (2026-04-30)
+
+Code-Review auf E1-Diff (Single-File-Add `.github/workflows/windows-ci.yml`, 44 Zeilen). Acceptance Auditor: alle 4 ACs erfüllt. Blind+Edge: 5 Defer + 5 Decision-Needed (Decision-Needed bleibt in Story-File, hier nur Defer).
+
+- **E1-W1 — `pull_request` triggert doppelt auf same-repo PRs** [`.github/workflows/windows-ci.yml:11-13`] — `push` + `pull_request` feuern beide auf same-repo-Branch-Pushes. Concurrency-Keys differieren (`refs/heads/<branch>` vs `refs/pull/<n>/merge`) → keine gegenseitige Cancellation, doppelter Windows-Runner. Repo-weiter Pattern (`ci-event-lint.yml`, `ci-bindings-drift.yml` haben dieselbe Form); Cross-Cutting Cleanup als Folge-Story für alle CI-Workflows.
+- **E1-W2 — `klarvo-bridge-jni` Compile-Coverage = 0 auf CI** [Linux-CI vs Windows-CI] — Windows-CI excluded JNI-Bridge (F2-Rationale OK + temp); Linux-CI führt nur xtask aus, kein Workspace-Compile. Bridge wird daher auf KEINEM CI-Platform compile-checked. Nicht durch E1 eingeführt; nach F2-Closure auf Windows wieder gedeckt — Linux-Compile-Gate für Bridge bleibt offen als eigene Folge-Story.
+- **E1-W3 — Kein `paths-ignore`** [`.github/workflows/windows-ci.yml:11-13`] — Docs-only / `_bmad-output/`-only PRs triggern Windows-Runner (teuerste Compute-Surface). Repo-Konvention (kein Workflow nutzt `paths`/`paths-ignore`). Cost-Concern, keine Korrektheit; Cross-Cutting Phase-2-Cleanup.
+- **E1-W4 — `cancel-in-progress: true` maskiert cancelled Master-Runs** [`.github/workflows/windows-ci.yml:19-20`] — Rapid Master-Pushes brechen laufende Compile-Gates ab → grünes Badge auf cancelled Run möglich. Spec mandatiert `cancel-in-progress: true` (AC-1); `head_ref`-Keying / `false` für protected-branches ist Branch-Protection-Config out-of-scope.
+- **E1-W5 — `pull_request` läuft auf Draft-PRs (default `types`)** [`.github/workflows/windows-ci.yml:13`] — Draft-PR-WIP-Commits konsumieren Windows-Runner-Minuten. Repo-Konvention (kein Workflow setzt `types:`). Cost-Concern.
+
+### Cross-Cutting CI-Hardening-Folge-Story (E1-Decision-Resolutions, 2026-04-30)
+
+4 Decisions aus E1-Code-Review zur Cross-Cutting-Folge-Story konsolidiert. Betrifft alle 4 GitHub-Workflows (`windows-ci.yml`, `ci-event-lint.yml`, `ci-bindings-drift.yml`, `ci-release-build.yml` ggf.). Hier alleine fixen schafft Inkonsistenz; Bündel-Story tightent simultan:
+
+- **E1-D1 — Toolchain-Pin-Honoring verifizieren + fixen** [alle Workflows mit `dtolnay/rust-toolchain@stable`] — Reviewer-Claim („`@stable` ignoriert `rust-toolchain.toml` (1.94.0)") ist unverifizierte externe Crate-Behauptung (memory `feedback_reviewer_external_fact_verification`). Folge-Story: (1) Action-Verhalten verifizieren (Action-Source / GitHub-Actions-Run-Log inspizieren — installiert Action wirklich `1.94.0` oder current stable?); (2) Falls Pin nicht greift: entweder `with: toolchain: 1.94.0` explizit übergeben ODER auf `actions-rust-lang/setup-rust-toolchain@v1` wechseln; (3) inline-Kommentar in jedem Workflow harmonisieren.
+- **E1-D2 — `--locked`-Flag** [alle `cargo`-Steps in CI-Workflows] — Reproducibility-Garantie. Aktuell kann `Cargo.lock` unter `cargo check`/`build` mutieren, Cache-Invariante geschwächt. Folge-Story tightent in einem Commit über alle Workflows.
+- **E1-D3 — Lint-Gate-Story** — Compile-Gate akzeptiert Warnings; Windows-only-Warnings rotten unbemerkt. Lösung NICHT `RUSTFLAGS=-D warnings` (zu grob, bricht bei stable-Drift), sondern eigene `cargo clippy -- -D warnings`-Gate (workspace-weit, separate Workflow-File analog `ci-event-lint`). Erst E1-D1 (Toolchain-Pin) lösen, sonst stable-Drift = unerklärliches Lint-Rot.
+- **E1-D5 — `timeout-minutes`** [alle Job-Definitionen in CI-Workflows] — Defensive gegen hung Runs (Default 6h). `timeout-minutes: 30` für alle compile-Jobs, vermutlich kürzer für xtask-Jobs. Folge-Story bündelt mit E1-D2.
