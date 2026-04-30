@@ -8,7 +8,7 @@ dependencies:
   - "2.A.A4"
 adr_refs:
   - docs/adr/0013-settings-persistence-schema.md
-source_ref: "welle-2-dispatch-plan.md C3; memory/project_i18n_three_axes; memory/project_i18n_core_contract"
+source_ref: "_bmad-output/planning-artifacts/epics/epic-phase-2-a.md C3; memory/project_i18n_three_axes; memory/project_i18n_core_contract"
 ---
 
 # Story 2.A.C3: Live-Locale-Switch

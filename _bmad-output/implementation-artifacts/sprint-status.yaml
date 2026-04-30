@@ -40,14 +40,16 @@
 #   memory/project_epic3_complete, memory/project_epic4_complete, memory/project_epic5_complete).
 # - Phase-1-Stories für 1A/1B/1C/2 stehen inline in epics.md (kein per-Story-File);
 #   Status ist hier explizit auf `done` gesetzt, da Auto-Detection per Story-File-Path nicht greift.
-# - Phase-2 ist in zwei Wellen organisiert (A/B) statt als klassisches Epic — vgl.
-#   _bmad-output/planning-artifacts/phase-2-scope-lock.md und _bmad-output/implementation-artifacts/welle-2-dispatch-plan.md.
-#   Story-IDs folgen `2{a|b}-{LetterID}-{title-kebab}` (z. B. `2a-a4-settings-panel-foundation`).
+# - Phase-2-A ist als Epic-File `_bmad-output/planning-artifacts/epics/epic-phase-2-a.md`
+#   strukturiert (BMad-Standard-Schema seit 2026-04-30, materialisiert aus dem vorherigen
+#   Welle-2-Dispatch-Plan). Phase-Boundary lebt in `planning-artifacts/phase-2-scope-lock.md`.
+#   Story-IDs folgen `2{a|b}-{LetterID}-{title-kebab}` (z. B. `2a-a4-settings-panel-foundation`)
+#   weil Phase-2-A multi-stream-organisiert ist (Letter encodet Stream-Zugehörigkeit).
 # - Epic 6 (Observability, FR37-FR40) und Epic 7 (V1→V2 Migration, FR41-FR43) waren in
 #   epics.md als Phase-1-Epics geplant, wurden aber in Phase-1-Closure nicht implementiert —
 #   Phase-1-FR-Scope endete bei FR35 (vgl. memory/project_epic5_complete: "Phase-1 (FR1-FR35)
 #   feature-vollständig"). FR37-FR43 sind aktuell offen ohne explizite Phase-Zuordnung
-#   (weder in phase-2-scope-lock.md noch in welle-2-dispatch-plan.md referenziert);
+#   (weder in phase-2-scope-lock.md noch in epics/epic-phase-2-a.md referenziert);
 #   Re-Scoping in Phase-2-B oder Phase-3 pending.
 
 generated: 2026-04-29
@@ -161,8 +163,8 @@ development_status:
 
   # ============================================================
   # Phase-2-A: Foundation + External-Validation + Phase-3-De-Risking
-  # Source: phase-2-scope-lock.md + welle-2-dispatch-plan.md (beide via planning- bzw. implementation-artifacts/, kein epics/-Subfolder)
-  # Welle-1 = A4 (in review). Welle-2 = Stream A (A8-Sub/C2/C3) + Stream B (D2/D3/E1/F2/C1).
+  # Source: phase-2-scope-lock.md (Phase-Boundary) + epics/epic-phase-2-a.md (Epic-Definition + Story-Liste).
+  # Welle-1 = A4 (done). Welle-2 = Stream A (A8-Sub/C2/C3) + Stream B (D2 done; D3/E1/F2 ready) + Stream C (C1).
   # F1 = extern (kein Story-File, backlog für Tracking-Zwecke).
   # ============================================================
   epic-phase-2-a: in-progress

@@ -10,7 +10,7 @@ adr_refs:
   - docs/adr/0013-settings-persistence-schema.md
   - docs/adr/0011-hotkey-backend.md
   - docs/adr/0009-shell-error-bridge.md
-source_ref: "welle-2-dispatch-plan.md C2; ADR-0013 Sub-Decision 4"
+source_ref: "_bmad-output/planning-artifacts/epics/epic-phase-2-a.md C2; ADR-0013 Sub-Decision 4"
 ---
 
 # Story 2.A.C2: Hotkey-Konflikt-Erkennung

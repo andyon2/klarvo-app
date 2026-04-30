@@ -8,7 +8,7 @@ dependencies:
   - "2.A.A4"
 adr_refs:
   - docs/adr/0013-settings-persistence-schema.md
-source_ref: "welle-2-dispatch-plan.md A8-Sub; ADR-0013 Sub-Decision 5"
+source_ref: "_bmad-output/planning-artifacts/epics/epic-phase-2-a.md A8-Sub; ADR-0013 Sub-Decision 5"
 ---
 
 # Story 2.A.A8-Sub: Tray-Language-Switcher
