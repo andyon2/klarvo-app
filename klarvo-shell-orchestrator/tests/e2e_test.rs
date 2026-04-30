@@ -6,6 +6,7 @@ use klarvo_core::audio::vad::RmsVad;
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
+use klarvo_core::recording::RecordingMode;
 use klarvo_core::time::MonotonicClock;
 use klarvo_test_fixtures::{
     InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
@@ -78,6 +79,7 @@ fn make_test_orchestrator_real_pipeline(
     let clock: Arc<dyn klarvo_core::time::Clock> = Arc::new(MonotonicClock::new());
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
+    let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let orch = SessionOrchestrator::new(
         registry,
         manifest,
@@ -88,6 +90,7 @@ fn make_test_orchestrator_real_pipeline(
         clock,
         vad,
         Arc::clone(&event_bus),
+        mode_arc,
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus)

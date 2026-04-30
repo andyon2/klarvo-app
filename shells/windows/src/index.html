@@ -92,7 +92,15 @@
         uiLanguage: "en",
         dictionaryLanguage: "en",
         outputLanguage: "en",
+        hotkeySlot1Mode: "hold",
       };
+
+      const RECORDING_MODE_OPTIONS = [
+        { value: "hold",          label: "Hold to Talk" },
+        { value: "toggle",        label: "Toggle" },
+        { value: "autostop",      label: "Auto-Stop" },
+        { value: "wait_and_type", label: "Wait & Type" },
+      ];
 
       const LANG_OPTIONS = [
         { value: "en", label: "English" },
@@ -168,6 +176,7 @@
                 uiLanguage: s.uiLanguage ?? FORM_DEFAULTS.uiLanguage,
                 dictionaryLanguage: s.dictionaryLanguage ?? FORM_DEFAULTS.dictionaryLanguage,
                 outputLanguage: s.outputLanguage ?? FORM_DEFAULTS.outputLanguage,
+                hotkeySlot1Mode: s.hotkeySlot1Mode ?? FORM_DEFAULTS.hotkeySlot1Mode,
               });
             })
             .catch((e) => {
@@ -179,16 +188,41 @@
             .finally(() => setLoading(false));
         }, []);
 
+        // AC-10: settings.changed listener — keep dropdown in sync when mode changes
+        // from other sources (e.g. future CLI or another shell instance).
+        useEffect(() => {
+          if (!tauriEvent) return;
+          let cancelled = false;
+          let unlisten = null;
+          tauriEvent
+            .listen("settings.changed", (evt) => {
+              const payload = evt?.payload;
+              if (payload && payload.key === "hotkey.slot1.mode" && typeof payload.newValue === "string") {
+                setForm((f) => ({ ...f, hotkeySlot1Mode: payload.newValue }));
+              }
+            })
+            .then((fn) => {
+              if (cancelled) fn();
+              else unlisten = fn;
+            })
+            .catch(() => {});
+          return () => {
+            cancelled = true;
+            if (unlisten) unlisten();
+          };
+        }, []);
+
         // AC-9: save — invoke typed Core-Set commands, show app.error toast on failure
         const handleSave = useCallback(async () => {
           setSaving(true);
           setToast(null);
           try {
-            await invoke("set_hotkey_slot1",       { combo: form.hotkeySlot1Combo });
-            await invoke("set_output_target",      { id: form.outputTargetId });
-            await invoke("set_ui_language",        { lang: form.uiLanguage });
-            await invoke("set_dictionary_language",{ lang: form.dictionaryLanguage });
-            await invoke("set_output_language",    { lang: form.outputLanguage });
+            await invoke("set_hotkey_slot1",         { combo: form.hotkeySlot1Combo });
+            await invoke("set_output_target",        { id: form.outputTargetId });
+            await invoke("set_ui_language",          { lang: form.uiLanguage });
+            await invoke("set_dictionary_language",  { lang: form.dictionaryLanguage });
+            await invoke("set_output_language",      { lang: form.outputLanguage });
+            await invoke("set_recording_mode_slot1", { mode: form.hotkeySlot1Mode });
             setToast({ kind: "ok", msg: "Settings saved." });
           } catch (e) {
             setToast(errorToToast(e));
@@ -237,6 +271,7 @@
               selectField("UI Language", "uiLanguage", langOptionsFor(form.uiLanguage)),
               selectField("Dictionary Language", "dictionaryLanguage", langOptionsFor(form.dictionaryLanguage)),
               selectField("Output Language", "outputLanguage", langOptionsFor(form.outputLanguage)),
+              selectField("Recording Mode", "hotkeySlot1Mode", RECORDING_MODE_OPTIONS),
 
               h("div", { className: "actions" },
                 h("button", { type: "submit", className: "btn-primary", disabled: saving },

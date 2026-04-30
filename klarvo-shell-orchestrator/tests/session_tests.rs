@@ -4,6 +4,7 @@ use std::time::Duration;
 use klarvo_core::audio::vad::VadDecision;
 use klarvo_core::event::{Event, EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
+use klarvo_core::recording::RecordingMode;
 use klarvo_test_fixtures::{
     FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
     MockSttProvider, MockVadProvider, MockCleanupStyle, QueuedMockSttProvider,
@@ -26,10 +27,10 @@ plugin_id = "mock-cleanup"
 "#
 }
 
-/// Shared setup: builds a SessionOrchestrator with controllable mocks.
-/// Returns (orchestrator, output_target, paste_backend, error_emitter, event_bus).
-fn make_orchestrator(
+/// Build a `SessionOrchestrator` with the given mode and controllable mocks.
+fn make_orchestrator_with_mode(
     stt: Arc<dyn klarvo_core::traits::SttProvider>,
+    mode: RecordingMode,
 ) -> (
     SessionOrchestrator,
     Arc<InMemoryOutputTarget>,
@@ -63,6 +64,7 @@ fn make_orchestrator(
     let error_emitter = Arc::new(MockErrorEmitter::new());
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
+    let mode_arc = Arc::new(tokio::sync::RwLock::new(mode));
 
     let orch = SessionOrchestrator::new(
         registry,
@@ -74,9 +76,23 @@ fn make_orchestrator(
         clock as Arc<dyn klarvo_core::time::Clock>,
         vad,
         Arc::clone(&event_bus),
+        mode_arc,
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus)
+}
+
+/// Shared setup: builds a SessionOrchestrator with Hold mode (Phase-1 default).
+fn make_orchestrator(
+    stt: Arc<dyn klarvo_core::traits::SttProvider>,
+) -> (
+    SessionOrchestrator,
+    Arc<InMemoryOutputTarget>,
+    Arc<MockPasteBackend>,
+    Arc<MockErrorEmitter>,
+    Arc<EventBus>,
+) {
+    make_orchestrator_with_mode(stt, RecordingMode::Hold)
 }
 
 /// Poll until `InMemoryOutputTarget` has at least one delivery, or timeout.
@@ -105,6 +121,22 @@ async fn wait_for_error(emitter: &MockErrorEmitter) {
     })
     .await
     .expect("error must be emitted within 5 seconds");
+}
+
+/// Poll until a RecordingCompleted event is received, or timeout.
+async fn wait_for_completed(rx: &mut tokio::sync::broadcast::Receiver<Event>) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.try_recv() {
+                Ok(Event::RecordingCompleted { .. }) => break,
+                Ok(_) | Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        }
+    })
+    .await
+    .expect("RecordingCompleted must arrive within 5 seconds");
 }
 
 #[tokio::test]
@@ -201,4 +233,142 @@ async fn test4_pipeline_failure_emits_error_state_recovers() {
 
     assert!(!error_emitter.recorded().is_empty(), "pipeline failure must emit an error");
     assert!(!paste_backend.was_called(), "paste must not happen after STT failure");
+}
+
+// ---------------------------------------------------------------------------
+// AC-4: Toggle-Modus
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn toggle_press_starts_recording() {
+    let stt = Arc::new(MockSttProvider::returning("toggle text"));
+    let (orch, _output, _paste, _err, event_bus) = make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+    let mut rx = event_bus.subscribe();
+
+    orch.on_press().await;
+
+    // RecordingStarted must be emitted synchronously
+    let evt = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let Ok(e) = rx.try_recv() {
+                return e;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("RecordingStarted within 1s");
+
+    assert!(matches!(evt, Event::RecordingStarted { .. }), "first event must be RecordingStarted");
+
+    // Cleanup
+    orch.on_press().await; // second press to stop
+}
+
+#[tokio::test]
+async fn toggle_second_press_stops_recording() {
+    let stt = Arc::new(MockSttProvider::returning("toggle delivery"));
+    let (orch, output_target, paste_backend, _err, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+
+    orch.on_press().await; // start
+    orch.on_press().await; // stop → channel closes → pipeline runs
+
+    wait_for_delivery(&output_target).await;
+    assert_eq!(output_target.last_delivered().as_deref(), Some("toggle delivery"));
+    // Paste should be called (Toggle behavior same as Hold)
+    assert!(paste_backend.was_called(), "paste must be called in Toggle mode");
+}
+
+#[tokio::test]
+async fn toggle_release_is_noop() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, paste_backend, error_emitter, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+
+    orch.on_press().await; // start recording
+
+    // on_release in Toggle mode while recording — must be a no-op
+    orch.on_release().await;
+
+    // No paste yet, no errors from stray release
+    assert!(!paste_backend.was_called());
+    assert!(error_emitter.recorded().is_empty());
+
+    // Cleanup: second press to stop
+    orch.on_press().await;
+}
+
+// ---------------------------------------------------------------------------
+// AC-5: AutoStop-Modus
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn autostop_transitions_to_idle_after_vad() {
+    let stt = Arc::new(MockSttProvider::returning("autostop text"));
+    let (orch, output_target, paste_backend, _err, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
+
+    orch.on_press().await;
+    // VAD fires SpeechEnd automatically via MockVadProvider → pipeline runs → cleanup → Idle
+    wait_for_delivery(&output_target).await;
+
+    assert_eq!(output_target.last_delivered().as_deref(), Some("autostop text"));
+    assert!(paste_backend.was_called(), "paste must be called in AutoStop mode");
+}
+
+#[tokio::test]
+async fn autostop_release_is_noop() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, paste_backend, error_emitter, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
+
+    orch.on_press().await;
+
+    // on_release in AutoStop mode while recording — must be a no-op
+    orch.on_release().await;
+
+    assert!(!paste_backend.was_called());
+    assert!(error_emitter.recorded().is_empty());
+
+    // Wait for VAD-triggered cleanup to complete
+    tokio::time::sleep(Duration::from_millis(200)).await;
+}
+
+// ---------------------------------------------------------------------------
+// AC-6: WaitAndType-Modus
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn wait_and_type_skips_paste_emits_delivered() {
+    let stt = Arc::new(MockSttProvider::returning("wait text"));
+    let (orch, output_target, paste_backend, _err, event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::WaitAndType);
+    let mut rx = event_bus.subscribe();
+
+    orch.on_press().await;
+    wait_for_delivery(&output_target).await;
+    orch.on_release().await;
+
+    // Text must be in clipboard (OutputTarget delivery)
+    assert_eq!(output_target.last_delivered().as_deref(), Some("wait text"));
+
+    // Paste must NOT be called
+    assert!(!paste_backend.was_called(), "paste must be skipped in WaitAndType mode");
+
+    // RecordingDelivered must be emitted
+    let delivered = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match rx.try_recv() {
+                Ok(Event::RecordingDelivered { text, .. }) => return text,
+                Ok(_) | Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        }
+    })
+    .await
+    .expect("RecordingDelivered must be emitted within 2s");
+
+    assert_eq!(delivered, "wait text");
 }

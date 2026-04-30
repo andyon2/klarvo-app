@@ -16,6 +16,7 @@ fn main() {
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
     use klarvo_core::keystore::KeyStore;
+    use klarvo_core::recording::RecordingMode;
     use klarvo_core::settings::{NoopSettingsEmitter, Settings, TomlMigrationSource};
     use klarvo_core::time::MonotonicClock;
     use klarvo_shell_orchestrator::SessionOrchestrator;
@@ -208,6 +209,15 @@ fn main() {
                 }
             }
 
+            // Step 2e: Recording-Mode Arc (fail-soft — defaults to Hold on DB-error).
+            // Shared between SessionOrchestrator (reads mode per-press) and
+            // set_recording_mode_slot1 Command (writes on user change). Managed as
+            // tauri::State so the Command can update it without direct orchestrator ref.
+            let recording_mode_arc: Arc<tokio::sync::RwLock<RecordingMode>> = {
+                let mode = settings.recording_mode_slot1().unwrap_or(RecordingMode::Hold);
+                Arc::new(tokio::sync::RwLock::new(mode))
+            };
+
             // Step 3: Keystore (fail-soft — Credential Manager boot-race is ephemeral;
             // per-plugin key errors surface lazily in Plugin-Init, not at boot).
             //
@@ -280,6 +290,7 @@ fn main() {
                 Arc::clone(&clock),
                 vad,
                 Arc::clone(&event_bus),
+                Arc::clone(&recording_mode_arc),
             );
 
             // Step 11: State management — all slots must be registered before Step 12
@@ -290,19 +301,42 @@ fn main() {
             // app.manage(emitter)   → consumed by error-emit call-sites in commands (Phase-2)
             // app.manage(clock)     → consumed by hotkey-callback for shared session-baseline ts_ms
             //                         (project_event_ts_ms_convention — single MonotonicClock origin)
-            // app.manage(settings)  → consumed by Settings Tauri-Commands (Story 2.A.A4)
+            // app.manage(settings)            → consumed by Settings Tauri-Commands (Story 2.A.A4)
+            // app.manage(recording_mode_arc)  → consumed by set_recording_mode_slot1 Command (Story 2.B.A1)
             debug_assert!(app.manage(orch));
             debug_assert!(app.manage(Arc::new(config.clone())));
             debug_assert!(app.manage(Arc::clone(&keystore)));
             debug_assert!(app.manage(Arc::clone(&emitter)));
             debug_assert!(app.manage(Arc::clone(&clock)));
             debug_assert!(app.manage(settings));
+            debug_assert!(app.manage(Arc::clone(&recording_mode_arc)));
             let exit_label = i18n_table
                 .get("tray.menu.exit")
                 .cloned()
                 .unwrap_or_else(|| "Exit".to_string());
             app.manage(i18n_table);
             specta_builder.mount_events(app);
+
+            // Step 11b: settings.changed listener — keeps recording_mode_arc in sync when
+            // set_recording_mode_slot1 Command writes a new mode (AC-7 live-update).
+            {
+                use std::str::FromStr;
+                let mode_arc_listener = Arc::clone(&recording_mode_arc);
+                app.listen("settings.changed", move |event| {
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                        if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot1.mode") {
+                            if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
+                                if let Ok(mode) = RecordingMode::from_str(new_value) {
+                                    let arc = Arc::clone(&mode_arc_listener);
+                                    tauri::async_runtime::spawn(async move {
+                                        *arc.write().await = mode;
+                                    });
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // Step 12: Hotkey registration (fail-soft — parse or registration failure emits
             // Toast via TauriErrorEmitter internally; app starts without hotkey rather than exit)

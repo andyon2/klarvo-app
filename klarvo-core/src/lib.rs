@@ -6,6 +6,7 @@ pub mod keystore;
 pub mod manifest;
 pub mod output;
 pub mod pipeline;
+pub mod recording;
 pub mod registry;
 #[cfg(feature = "settings")]
 pub mod settings;

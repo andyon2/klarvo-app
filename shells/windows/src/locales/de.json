@@ -1,1 +1,7 @@
-{}
+{
+  "settings.recording_mode.label": "Aufnahmemodus",
+  "settings.recording_mode.hold": "Halten zum Sprechen",
+  "settings.recording_mode.toggle": "Ein-/Ausschalten",
+  "settings.recording_mode.autostop": "Automatischer Stopp",
+  "settings.recording_mode.wait_and_type": "Warten und Tippen"
+}

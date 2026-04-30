@@ -67,6 +67,12 @@ struct PipelineStageCompletedPayload {
     ts_ms: u64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingDeliveredPayload {
+    pub ts_ms: u64,
+    pub text: String,
+}
+
 // ---------------------------------------------------------------------------
 // TauriErrorEmitter
 // ---------------------------------------------------------------------------
@@ -168,6 +174,9 @@ impl<R: tauri::Runtime> EventMirror<R> {
             Event::ErrorEmitted { error_key, ts_ms } => self
                 .app_handle
                 .emit("app.error", &AppErrorEventPayload { key: error_key, ts_ms }),
+            Event::RecordingDelivered { ts_ms, text } => self
+                .app_handle
+                .emit("recording.delivered", &RecordingDeliveredPayload { ts_ms, text }),
         };
         if let Err(e) = result {
             tracing::warn!(error = %e, "EventMirror failed to emit event to frontend");

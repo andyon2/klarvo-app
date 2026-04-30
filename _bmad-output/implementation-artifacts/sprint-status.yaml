@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-04-30 (Story 2.A.E1 Windows-Compile-CI-Gate: review→done nach Code-Review-Closure (1 Patch --all-targets, 4 Decisions zu CI-Hardening-Folge-Story deferred))
+# last_updated: 2026-04-30 (Story 2.B.A1 Toggle+AutoStop+WaitAndType: in-progress→review)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -53,7 +53,7 @@
 #   Re-Scoping in Phase-2-B oder Phase-3 pending.
 
 generated: 2026-04-29
-last_updated: 2026-04-30
+last_updated: 2026-04-30 (Story 2.B.A1 Toggle+AutoStop+WaitAndType: backlog→ready-for-dev; epic-phase-2-b: backlog→in-progress)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -184,8 +184,8 @@ development_status:
   # Phase-2-B: User-Value-Wave (Recording-Modi + Pill-Bar + 2nd-STT)
   # Source: phase-2-scope-lock.md (Pre-Story-Decisions: Pill-Bar UX-Mini-Pass + 2nd-STT-Choice).
   # ============================================================
-  epic-phase-2-b: backlog
-  2b-a1-toggle-autostop-wait-and-type-modes: backlog
+  epic-phase-2-b: in-progress
+  2b-a1-toggle-autostop-wait-and-type-modes: review
   2b-a2-second-hotkey-slot: backlog
   2b-a3-floating-pill-bar: backlog
   2b-a5-return-focus: backlog

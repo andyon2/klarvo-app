@@ -14,6 +14,8 @@ export const commands = {
 	getUserSettings: () => typedError<UserSettings, AppError>(__TAURI_INVOKE("get_user_settings")),
 	setPluginSetting: (pluginId: string, key: string, value: string) => typedError<null, AppError>(__TAURI_INVOKE("set_plugin_setting", { pluginId, key, value })),
 	getPluginSetting: (pluginId: string, key: string) => typedError<string | null, AppError>(__TAURI_INVOKE("get_plugin_setting", { pluginId, key })),
+	getRecordingModeSlot1: () => typedError<string, string>(__TAURI_INVOKE("get_recording_mode_slot1")),
+	setRecordingModeSlot1: (mode: string) => typedError<null, string>(__TAURI_INVOKE("set_recording_mode_slot1", { mode })),
 };
 
 /** Events */
@@ -81,7 +83,7 @@ export type SettingsChangedEvent = {
 };
 
 /**
- *  Bulk-read projection of all 5 Core-Settings (AC-6 `get_user_settings` return type).
+ *  Bulk-read projection of all user-configurable Core-Settings (`get_user_settings` return type).
  * 
  *  Shell-side type — aggregates typed accessor returns for a single IPC round-trip.
  *  Lives in the shell, not in `klarvo-core` (tauri-specta concern; not a Core domain type).
@@ -92,6 +94,8 @@ export type UserSettings = {
 	uiLanguage: string,
 	dictionaryLanguage: string,
 	outputLanguage: string,
+	// Serialised RecordingMode string (e.g. `"hold"`, `"toggle"`, `"autostop"`, `"wait_and_type"`).
+	hotkeySlot1Mode: string,
 };
 
 /* Tauri Specta runtime */

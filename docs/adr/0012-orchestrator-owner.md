@@ -197,3 +197,86 @@ Rejected:
 2. Story-3.X-Orchestrator-Crate-Bootstrap.
 3. Story-3.X-PasteBackend-Trait-Add (Core).
 4. Story-3.1-Bootstrap-Update: Orchestrator in Tauri-managed-State.
+
+---
+
+## Amendment 1 — Phase-2-B Recording-Modi (Story 2.B.A1, 2026-04-30)
+
+**Status:** Accepted
+
+### Neue RecordingMode-Varianten
+
+`klarvo_core::recording::RecordingMode` erweitert die Phase-1-Hold-Semantik um drei Modi:
+
+| Variante | `on_press` | `on_release` | Pipeline-Post-Delivery |
+|----------|-----------|-------------|----------------------|
+| `Hold` | Aufnahme starten | Channel schließen → Pipeline | `paste_backend.paste()` |
+| `Toggle` | Erster Druck: starten; zweiter Druck: inline-Stop (wie Hold-Release) | **No-op** wenn Recording | `paste_backend.paste()` |
+| `AutoStop` | Aufnahme starten | **No-op** wenn Recording | AutoStop-Cleanup + `paste_backend.paste()` |
+| `WaitAndType` | Aufnahme starten | Channel schließen → Pipeline | `RecordingDelivered` emittieren, **kein** `paste()` |
+
+### Toggle-Inline-Stop-Pattern
+
+`on_press()` prüft den Modus VOR dem Key-Repeat-Guard. Zweiter Toggle-Druck (State = Recording):
+1. Modus-Check → Toggle-Branch
+2. Lock freigeben (Deadlock-Prävention: `on_release` würde erneut Lock anfordern)
+3. `std::mem::replace(&mut *state, SessionState::Idle)` → `Recording { capture_handle, pipeline_task }`
+4. `event_bus.emit(Event::RecordingStopped { .. })`
+5. `drop(capture_handle)` → Channel schließt → `run_capture_session` gibt `Ok(Some(...))` zurück (Closed-mid-Speech-Semantik)
+6. `drop(pipeline_task)` (detach)
+
+`on_release()` gibt bei Toggle+Recording früh zurück (kein State-Change, kein Event) — physisches Key-Release tut nichts.
+
+### AutoStop-Cleanup-Pattern
+
+`run_capture_session` returned bei `VadDecision::SpeechEnd` mit `Ok(Some(...))` — der Channel ist noch offen (CaptureHandle nicht gedroppt). Der pipeline_task macht nach Text-Extraktion (vor OutputTarget-Delivery) den Cleanup:
+
+```rust
+// AutoStop-Branch in pipeline_task (nach run_capture_session, vor deliver)
+if let Some(state_arc) = session_state_for_autostop {
+    let mut st = state_arc.lock().await;
+    if let SessionState::Recording { capture_handle, .. } =
+        std::mem::replace(&mut *st, SessionState::Idle)
+    {
+        drop(capture_handle); // Audio-Source stoppt
+    }
+}
+```
+
+`session_state_for_autostop` ist ein `Option<Arc<Mutex<SessionState>>>`, der nur für AutoStop-Mode im `on_press`-Body geclont wird. Race-Safety: falls `on_release` vor dem Cleanup feuert, findet `std::mem::replace` keinen `Recording`-State mehr → No-op.
+
+### WaitAndType-Pattern
+
+Nach `target.deliver(&text)` (Clipboard befüllen):
+```rust
+event_bus.emit(Event::RecordingDelivered { ts_ms: clock.now_ms(), text: text.clone() });
+// paste_backend.paste() wird NICHT aufgerufen
+```
+
+`RecordingCompleted` wird unverändert am Ende der pipeline_task emittiert.
+`RecordingDelivered` hat wire-name `"recording.delivered"` (ADR-0002-Konvention).
+
+### Arc\<RwLock\<RecordingMode\>\>-Injection-Pattern
+
+`SessionOrchestrator` hält `Arc<tokio::sync::RwLock<RecordingMode>>` statt `Arc<Settings>` direkt:
+- Entkoppelung vom Settings-Typ (Orchestrator kennt keine DB-API)
+- Shell trägt Read-on-Boot + Write-on-Change-Logik
+- `main.rs` legt Arc an, übergibt Clone an Orchestrator + registriert ihn via `app.manage()` für den `set_recording_mode_slot1`-Command
+
+Bootstrap in `shells/windows/src-tauri/src/main.rs`:
+```rust
+let recording_mode_arc = Arc::new(tokio::sync::RwLock::new(
+    settings.recording_mode_slot1().unwrap_or(RecordingMode::Hold)
+));
+// → SessionOrchestrator::new(..., Arc::clone(&recording_mode_arc))
+// → app.manage(Arc::clone(&recording_mode_arc))
+```
+
+`settings.changed`-Listener hält Arc live-synchron:
+```rust
+app.listen("settings.changed", |event| {
+    if payload.key == "hotkey.slot1.mode" {
+        *mode_arc.write().await = RecordingMode::from_str(&payload.newValue)?;
+    }
+});
+```

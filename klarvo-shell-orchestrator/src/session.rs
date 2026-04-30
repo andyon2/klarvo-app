@@ -8,6 +8,7 @@ use klarvo_core::event::emitter::ErrorEmitter;
 use klarvo_core::manifest::PipelineManifest;
 use klarvo_core::output::PasteBackend;
 use klarvo_core::pipeline::{run_capture_session, StageData};
+use klarvo_core::recording::RecordingMode;
 use klarvo_core::registry::PluginRegistry;
 use klarvo_core::time::Clock;
 
@@ -52,6 +53,8 @@ pub struct SessionOrchestrator {
     vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
     event_bus: Arc<EventBus>,
     session_state: Arc<tokio::sync::Mutex<SessionState>>,
+    /// Active recording mode; updated by the shell on settings change (ADR-0012 Amendment 1).
+    mode: Arc<tokio::sync::RwLock<RecordingMode>>,
 }
 
 impl SessionOrchestrator {
@@ -66,6 +69,7 @@ impl SessionOrchestrator {
         clock: Arc<dyn Clock>,
         vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
         event_bus: Arc<EventBus>,
+        mode: Arc<tokio::sync::RwLock<RecordingMode>>,
     ) -> Self {
         Self {
             registry,
@@ -78,21 +82,41 @@ impl SessionOrchestrator {
             vad,
             event_bus,
             session_state: Arc::new(tokio::sync::Mutex::new(SessionState::Idle)),
+            mode,
         }
     }
 
     /// Begin a push-to-talk recording session (Step 1).
     ///
-    /// If already recording (key-repeat OS event), the call is silently discarded.
-    /// Errors from `AudioSource::start` are emitted via `ErrorEmitter`; the state
-    /// remains `Idle` on failure.
+    /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):
+    /// - **Hold/WaitAndType**: starts recording; `on_release` triggers stop.
+    /// - **Toggle**: first press starts; second press stops (inline stop logic).
+    ///   Key-repeat OS events (state=Recording, second press discarded for non-Toggle)
+    ///   are routed to the Toggle-stop branch instead.
+    /// - **AutoStop**: starts recording; VAD SpeechEnd auto-stops via pipeline cleanup.
     ///
-    /// Error i18n keys emitted: `error.audio.start_failed`.
+    /// Errors from `AudioSource::start` are emitted via `ErrorEmitter`; state remains
+    /// `Idle` on failure. i18n key emitted: `error.audio.start_failed`.
     pub async fn on_press(&self) {
-        // Check for key-repeat without holding the lock across async boundaries.
+        let mode = self.mode.read().await.clone();
+
         {
             let state = self.session_state.lock().await;
             if matches!(*state, SessionState::Recording { .. }) {
+                if mode == RecordingMode::Toggle {
+                    // Second Toggle-press: inline stop, same as on_release for Hold.
+                    // Lock MUST be released before re-acquiring below (deadlock guard).
+                    drop(state);
+                    let mut st = self.session_state.lock().await;
+                    let prev = std::mem::replace(&mut *st, SessionState::Idle);
+                    drop(st);
+                    if let SessionState::Recording { capture_handle, pipeline_task } = prev {
+                        self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
+                        drop(capture_handle);
+                        drop(pipeline_task);
+                    }
+                    return;
+                }
                 tracing::debug!("on_press called while recording; discarding (key-repeat-guard)");
                 return;
             }
@@ -127,6 +151,13 @@ impl SessionOrchestrator {
         let clock = Arc::clone(&self.clock);
         let event_bus = Arc::clone(&self.event_bus);
 
+        // AutoStop needs session_state to clean up after pipeline delivery (ADR-0012 Amendment 1).
+        let session_state_for_autostop = if mode == RecordingMode::AutoStop {
+            Some(Arc::clone(&self.session_state))
+        } else {
+            None
+        };
+
         let pipeline_task = tokio::spawn(async move {
             let mut vad_guard = vad.lock().await;
             let result =
@@ -143,6 +174,20 @@ impl SessionOrchestrator {
                             return;
                         }
                     };
+
+                    // AutoStop cleanup: capture_handle has not been dropped yet (on_release is
+                    // a no-op in AutoStop mode). Drop it now to stop audio capture.
+                    // Race-safety: if on_release fires concurrently, std::mem::replace finds
+                    // no Recording state and is a no-op (Mutex guards exclusive access).
+                    if let Some(state_arc) = session_state_for_autostop {
+                        let mut st = state_arc.lock().await;
+                        if let SessionState::Recording { capture_handle, .. } =
+                            std::mem::replace(&mut *st, SessionState::Idle)
+                        {
+                            drop(capture_handle);
+                        }
+                    }
+
                     match registry.output(&output_target_id) {
                         Some(target) => {
                             if let Err(e) = target.deliver(&text).await {
@@ -152,6 +197,12 @@ impl SessionOrchestrator {
                                         clock.now_ms(),
                                     )
                                     .await;
+                            } else if mode == RecordingMode::WaitAndType {
+                                // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
+                                event_bus.emit(Event::RecordingDelivered {
+                                    ts_ms: clock.now_ms(),
+                                    text: text.clone(),
+                                });
                             } else if let Err(e) = paste_backend.paste().await {
                                 error_emitter
                                     .emit_error(
@@ -197,12 +248,29 @@ impl SessionOrchestrator {
 
     /// End the push-to-talk recording session (Step 4).
     ///
-    /// Drops the `CaptureHandle`, closing the broadcast channel and signalling
-    /// the audio task to stop. The pipeline task continues asynchronously;
-    /// `on_release` returns immediately (non-blocking).
+    /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):
+    /// - **Hold/WaitAndType**: drops `CaptureHandle`, closing the broadcast channel and
+    ///   signalling the audio task to stop. Non-blocking.
+    /// - **Toggle**: no-op when Recording (stop triggered by second `on_press`).
+    /// - **AutoStop**: no-op when Recording (stop triggered by VAD SpeechEnd in pipeline).
     ///
-    /// If called without a prior `on_press` (stray release), the call is a no-op.
+    /// Stray release calls (state=Idle for any mode) are a silent no-op.
     pub async fn on_release(&self) {
+        let mode = self.mode.read().await.clone();
+
+        // Toggle and AutoStop: on_release is a no-op while recording
+        // (Toggle stops via second on_press; AutoStop stops via VAD).
+        if matches!(mode, RecordingMode::Toggle | RecordingMode::AutoStop) {
+            let state = self.session_state.lock().await;
+            if matches!(*state, SessionState::Recording { .. }) {
+                tracing::debug!(
+                    "on_release in {:?} mode while recording; no-op",
+                    mode
+                );
+                return;
+            }
+        }
+
         let mut state = self.session_state.lock().await;
         let prev = std::mem::replace(&mut *state, SessionState::Idle);
         drop(state); // release lock before drop(capture_handle)

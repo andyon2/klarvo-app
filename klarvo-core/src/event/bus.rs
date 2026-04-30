@@ -45,6 +45,11 @@ pub enum Event {
     /// constructor in debug builds). Use `Event::error_emitted(key, ts_ms)` at
     /// emission sites to enforce this invariant.
     ErrorEmitted { error_key: String, ts_ms: u64 },
+    /// Text delivered to OutputTarget but `PasteBackend::paste()` was intentionally
+    /// skipped (WaitAndType mode). `text` is the transcribed payload — not an i18n key.
+    /// Subscribers (Pill-Bar, Story A3) use this to display the transcription for
+    /// manual confirmation before pasting.
+    RecordingDelivered { ts_ms: u64, text: String },
 }
 
 impl Event {

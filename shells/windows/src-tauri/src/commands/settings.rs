@@ -5,19 +5,23 @@
 //! - `TauriSettingsEmitter` implements `klarvo_core::settings::SettingsEmitter`;
 //!   lives here so `klarvo-core` has no Tauri dependency (ADR-0009 Hybrid-C analog).
 
+use std::sync::Arc;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::Emitter as _;
 use tauri_specta::Event;
 
 use klarvo_core::error::AppError;
+use klarvo_core::recording::RecordingMode;
 use klarvo_core::settings::Settings;
 
 // ---------------------------------------------------------------------------
 // Shared payload types (tauri-specta exported)
 // ---------------------------------------------------------------------------
 
-/// Bulk-read projection of all 5 Core-Settings (AC-6 `get_user_settings` return type).
+/// Bulk-read projection of all user-configurable Core-Settings (`get_user_settings` return type).
 ///
 /// Shell-side type — aggregates typed accessor returns for a single IPC round-trip.
 /// Lives in the shell, not in `klarvo-core` (tauri-specta concern; not a Core domain type).
@@ -29,6 +33,8 @@ pub struct UserSettings {
     pub ui_language: String,
     pub dictionary_language: String,
     pub output_language: String,
+    /// Serialised RecordingMode string (e.g. `"hold"`, `"toggle"`, `"autostop"`, `"wait_and_type"`).
+    pub hotkey_slot1_mode: String,
 }
 
 /// Event payload emitted on every successful settings write (AC-5 + AC-6).
@@ -133,7 +139,39 @@ pub fn get_user_settings(
         ui_language: settings.ui_language()?,
         dictionary_language: settings.dictionary_language()?,
         output_language: settings.output_language()?,
+        hotkey_slot1_mode: settings
+            .recording_mode_slot1()
+            .map(|m| m.to_string())
+            .unwrap_or_else(|_| "hold".to_string()),
     })
+}
+
+// --- Recording-Mode (2 commands) ---
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_recording_mode_slot1(
+    settings: tauri::State<'_, Settings>,
+) -> Result<String, String> {
+    settings
+        .recording_mode_slot1()
+        .map(|m| m.to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_recording_mode_slot1(
+    mode: String,
+    settings: tauri::State<'_, Settings>,
+    mode_arc: tauri::State<'_, Arc<tokio::sync::RwLock<RecordingMode>>>,
+) -> Result<(), String> {
+    let parsed = RecordingMode::from_str(&mode).map_err(|e| e.to_string())?;
+    settings
+        .set_recording_mode_slot1(parsed.clone())
+        .map_err(|e| e.to_string())?;
+    *mode_arc.write().await = parsed;
+    Ok(())
 }
 
 // --- Plugin API (2 commands) ---

@@ -13,11 +13,13 @@ pub mod defaults;
 mod migrations;
 
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
 use crate::error::{AppError, AppErrorKind};
+use crate::recording::RecordingMode;
 use defaults::*;
 
 /// Core namespace key-prefixes that plugin-setting writes/reads must not access.
@@ -296,6 +298,17 @@ impl Settings {
     pub fn set_output_target_id(&self, val: &str) -> Result<(), AppError> {
         validate_setting_value("app.output_target_id", val)?;
         self.set_raw("app.output_target_id", val, "string")
+    }
+
+    pub fn recording_mode_slot1(&self) -> Result<RecordingMode, AppError> {
+        match self.get_raw("hotkey.slot1.mode")? {
+            Some(s) => RecordingMode::from_str(&s),
+            None => Ok(RecordingMode::Hold),
+        }
+    }
+
+    pub fn set_recording_mode_slot1(&self, mode: RecordingMode) -> Result<(), AppError> {
+        self.set_raw("hotkey.slot1.mode", &mode.to_string(), "string")
     }
 
     // -----------------------------------------------------------------------
@@ -834,5 +847,46 @@ mod tests {
             )
             .unwrap();
         assert_eq!(key, "plugins.groq.model");
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-2: recording_mode_slot1 accessor
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn recording_mode_slot1_default_fallback_returns_hold() {
+        let s = Settings::in_memory(noop()).unwrap();
+        let mode = s.recording_mode_slot1().unwrap();
+        assert_eq!(mode, crate::recording::RecordingMode::Hold);
+    }
+
+    #[test]
+    fn recording_mode_slot1_roundtrip() {
+        let s = Settings::in_memory(noop()).unwrap();
+        for mode in [
+            crate::recording::RecordingMode::Hold,
+            crate::recording::RecordingMode::Toggle,
+            crate::recording::RecordingMode::AutoStop,
+            crate::recording::RecordingMode::WaitAndType,
+        ] {
+            s.set_recording_mode_slot1(mode.clone()).unwrap();
+            let got = s.recording_mode_slot1().unwrap();
+            assert_eq!(got, mode);
+        }
+    }
+
+    #[test]
+    fn recording_mode_slot1_invalid_stored_value_returns_validation_error() {
+        let s = Settings::in_memory(noop()).unwrap();
+        // Directly insert a bad value, bypassing the typed accessor
+        {
+            let g = s.conn.lock().unwrap();
+            g.execute(
+                "INSERT OR REPLACE INTO settings (key, value, type) VALUES ('hotkey.slot1.mode', 'bad_mode', 'string')",
+                [],
+            ).unwrap();
+        }
+        let err = s.recording_mode_slot1().unwrap_err();
+        assert!(matches!(err.kind, AppErrorKind::Validation));
     }
 }
