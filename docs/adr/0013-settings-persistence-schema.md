@@ -286,3 +286,27 @@ Alle 5 Open-Questions des Proposed-State (2026-04-26) wurden 2026-04-27 von Andy
 **Nicht geändert:** Payload-Schema `SettingsChangedEvent { key, new_value }` (Form unverändert), Subscription-Mechanik, Filter-Empfehlungen, Concurrency-Modell. Funktional ist die Korrektur rein deklarativ (Event-Identifier-String).
 
 **Cross-Refs:** Story 2.A.A4 §Spec-Deviations „Event-Name `settings.changed` (Dot-Notation) statt `settings-changed`"; Code-Review Pass-2 Patch P2-P16.
+
+---
+
+## Amendment 3 — 2026-05-01 — Hotkey-Konflikt-Modell: Pre-Validation statt Settings-Rollback (Story-C2-Wortlaut-Drift)
+
+**Trigger:** Phase-2-A-Retrospektive 2026-05-01 (`epic-phase-2-a-retro-2026-05-01.md` AI-4) flaggt Diskrepanz zwischen ADR-Wortlaut §181 und Story-2.A.C2-Implementation. Defer aus C2-Code-Review-Closure (`2a-c2-hotkey-konflikt-erkennung.md` Defer-Item W1) wird hier resolved.
+
+**Geändert (§181 / Story-Impacts Phase-2-A — Story C2):**
+
+Alter Wortlaut (2026-04-26 Authoring):
+
+> **Story C2 (Hotkey-Konflikt-Erkennung):** Schreibt `hotkey.slot1.combo` über Settings-API; bei `RegisterHotKey`-Fail rollt Settings-Mutation zurück.
+
+Neuer Wortlaut (Implementation-aligned):
+
+> **Story C2 (Hotkey-Konflikt-Erkennung):** Pre-Validation-Modell — Settings-Write erst nach erfolgreicher `RegisterHotKey`-Probe. `set_hotkey_slot1` sequenziert: (1) Skip-if-equal-Fast-Path falls `new_combo == old_combo`; (2) Grammar-Gate via `Shortcut::from_str` vor Probe; (3) `unregister(old)`; (4) Probe (`RegisterHotKey` + sofortiges `UnregisterHotKey` auf AtomicI32-Probe-ID, RAII-Guard); (5) bei Probe-Fail Re-Register-Old als Recovery + Return `HotkeyConflict`; (6) bei Probe-Erfolg Settings-Write + `register(new)`. Falls `register(new)` post-Settings-Write fehlschlägt: Re-Register-Old als Recovery + Toast `error.hotkey.update_failed_old_active`; **Settings bleiben neu, Hotkey bleibt alt** — kein Settings-Rollback (zu komplex bei async Win32-Failure-Modes).
+
+**Begründung:** Pre-Validation ist die strukturell einfachere Topologie — Settings-Mutation passiert *nur* nach bewiesener Hotkey-Akquirierbarkeit, statt nach optimistischem Write mit fehleranfälligem Async-Rollback. Win32 `RegisterHotKey` ist Thread-spezifisch (Message-Queue des calling Thread, vgl. C2-Story §115); Probe-Pattern entkoppelt Akquise-Test vom Persist-Write. Recovery-Pfad bei post-Write-Register-Fail nutzt Re-Register-Old statt Settings-Rollback, weil (a) Settings-Schema schon mutiert ist und transaktionaler Rollback Cross-Layer-Coordination bräuchte (SQLite-Tx + Win32-State), (b) User-facing Verhalten ("alter Hotkey aktiv, Settings zeigen neuen") via Toast eindeutig kommunizierbar ist.
+
+**Nicht geändert:** Settings-Service-API-Surface (Sub-Decision 4 typed-pro-Namespace), Settings-Change-Notification (Sub-Decision 5 Push-Event, vgl. Amendment 2), SQLite-Schema (Sub-Decision 1 flat-Keys mit dot-namespacing), Migration-Path (Sub-Decision 3 Hard-Cut).
+
+**Phase-2-B-Implikation:** 2.B.A2 (Second-Hotkey-Slot) erbt Pre-Validation-Modell für Slot-2-Akquisition: identische Sequenz mit `hotkey.slot2.combo`. AtomicI32-Probe-ID-Counter ist global (ein Counter für beide Slots) — Concurrent-Probe-Sicherheit gilt cross-slot. Story-Spec für 2.B.A2 muss explizit auf diesen Amendment-Block referenzieren.
+
+**Cross-Refs:** Story 2.A.C2 §Code-Review-Closure (Patches P10/P11/P12 + Defer W1); `epic-phase-2-a-retro-2026-05-01.md` AI-4; `feedback_adr_amendment_convention` (Amendment-Convention).
