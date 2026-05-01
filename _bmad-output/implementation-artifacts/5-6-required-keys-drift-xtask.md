@@ -2,7 +2,7 @@
 name: Story 5.6 — REQUIRED_KEYS-Drift-Detection xtask
 epic: 5
 story_number: "5.6"
-status: ready-for-dev
+status: done
 dependencies:
   - "5-3-lint-events-g3-extension"
   - "4.4"
@@ -10,7 +10,7 @@ dependencies:
 
 # Story 5.6: REQUIRED_KEYS-Drift-Detection xtask
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -209,47 +209,96 @@ Initial-Inhalt (Stand 2026-05-01, verifiziert per Grep): ein Eintrag — `error.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Code-Key-Scope-Erweiterung (AC-A)
-  - [ ] 1.1 `run_g3a_user_string_check` (oder neue Funktion `collect_code_keys`) erweitern um `klarvo-shell-orchestrator/src/` und `shells/windows/src-tauri/src/` als Scan-Roots
-  - [ ] 1.2 Visitor erweitern: `Expr::MethodCall` mit Method-Name `emit_error` + erstes Arg = Literal → in `code_keys` aufnehmen wenn `is_key()`
-  - [ ] 1.3 Visitor erweitern: `Expr::MethodCall` mit Method-Name `unwrap_or` + einziges Arg = Literal → in `code_keys` aufnehmen wenn `is_key()`
-  - [ ] 1.4 Test-Module (`#[cfg(test)]`) bleiben ausgeschlossen via bestehender `in_test_mod`-Heuristik
+- [x] Task 1 — Code-Key-Scope-Erweiterung (AC-A)
+  - [x] 1.1 `run_g3a_user_string_check` (oder neue Funktion `collect_code_keys`) erweitern um `klarvo-shell-orchestrator/src/` und `shells/windows/src-tauri/src/` als Scan-Roots
+  - [x] 1.2 Visitor erweitern: `Expr::MethodCall` mit Method-Name `emit_error` + erstes Arg = Literal → in `code_keys` aufnehmen wenn `is_key()`
+  - [x] 1.3 Visitor erweitern: `Expr::MethodCall` mit Method-Name `unwrap_or` + einziges Arg = Literal → in `code_keys` aufnehmen wenn `is_key()`
+  - [x] 1.4 Test-Module (`#[cfg(test)]`) bleiben ausgeschlossen via bestehender `in_test_mod`-Heuristik
 
-- [ ] Task 2 — Orphan-Check-Logic + Allowlist (AC-B)
-  - [ ] 2.1 Neuer Sub-Pass `run_g3d_orphan_check(workspace_root, code_keys)` in `xtask/src/lint_events.rs`
-  - [ ] 2.2 Lädt `en.json`, sammelt en-Keys, prüft jedes en-Key gegen `code_keys`-Set; nicht-vorhandene Keys → Violation
-  - [ ] 2.3 Lädt `xtask/orphan-allowlist.txt`, normalisiert Whitespace, skippt Comment-Lines (`#`-prefix); Allowlist-Hits werden vor Violation-Push übersprungen
-  - [ ] 2.4 Allowlist-File `xtask/orphan-allowlist.txt` initial mit Header-Comment + `error.unknown`-Eintrag (Frontend-Only, siehe AC-B Initial-Inhalt) anlegen
-  - [ ] 2.4a Pre-Verifikation: `grep -rn "<frontend-only-key>" shells/windows/src/` für jeden in en.json gelisteten Key OHNE Rust-Emit-Site → ggf. zusätzliche Allowlist-Einträge mit Begründung
-  - [ ] 2.5 Sub-Pass in `run()`-Funktion sequenziell nach G3-C aufrufen, Violations aggregieren
+- [x] Task 2 — Orphan-Check-Logic + Allowlist (AC-B)
+  - [x] 2.1 Neuer Sub-Pass `run_g3d_orphan_check(workspace_root, code_keys)` in `xtask/src/lint_events.rs`
+  - [x] 2.2 Lädt `en.json`, sammelt en-Keys, prüft jedes en-Key gegen `code_keys`-Set; nicht-vorhandene Keys → Violation
+  - [x] 2.3 Lädt `xtask/orphan-allowlist.txt`, normalisiert Whitespace, skippt Comment-Lines (`#`-prefix); Allowlist-Hits werden vor Violation-Push übersprungen
+  - [x] 2.4 Allowlist-File `xtask/orphan-allowlist.txt` initial mit Header-Comment + `error.unknown`-Eintrag (Frontend-Only, siehe AC-B Initial-Inhalt) anlegen
+  - [x] 2.4a Pre-Verifikation: `grep -rn "<frontend-only-key>" shells/windows/src/` für jeden in en.json gelisteten Key OHNE Rust-Emit-Site → ggf. zusätzliche Allowlist-Einträge mit Begründung
+  - [x] 2.5 Sub-Pass in `run()`-Funktion sequenziell nach G3-C aufrufen, Violations aggregieren
 
-- [ ] Task 3 — Forcing-Sentinels (AC-D)
-  - [ ] 3.1 Inline-Test `g3d_orphan_key_detected`: konstruiert leere `code_keys`, en-Table mit `{"test.orphan.sentinel": "..."}`, leere Allowlist; assertiert eine `[locale-orphan]`-Violation enthaltend `"test.orphan.sentinel"`
-  - [ ] 3.2 Inline-Test `g3d_orphan_allowlist_skips_match`: gleiche Inputs, aber Allowlist enthält `"test.orphan.sentinel"`; assertiert keine Violation
-  - [ ] 3.3 Inline-Test `g3d_collect_code_keys_finds_emit_error_calls`: Source-String mit `emitter.emit_error("error.foo", ts)` + `e.user_message.as_deref().unwrap_or("error.bar")`; assertiert dass `code_keys` beide enthält
+- [x] Task 3 — Forcing-Sentinels (AC-D)
+  - [x] 3.1 Inline-Test `g3d_orphan_key_detected`: konstruiert leere `code_keys`, en-Table mit `{"test.orphan.sentinel": "..."}`, leere Allowlist; assertiert eine `[locale-orphan]`-Violation enthaltend `"test.orphan.sentinel"`
+  - [x] 3.2 Inline-Test `g3d_orphan_allowlist_skips_match`: gleiche Inputs, aber Allowlist enthält `"test.orphan.sentinel"`; assertiert keine Violation
+  - [x] 3.3 Inline-Test `g3d_collect_code_keys_finds_emit_error_calls`: Source-String mit `emitter.emit_error("error.foo", ts)` + `e.user_message.as_deref().unwrap_or("error.bar")`; assertiert dass `code_keys` beide enthält
 
-- [ ] Task 4 — REQUIRED_KEYS-Cleanup (AC-C, **erst nach grünem AC-A + AC-B**)
-  - [ ] 4.1 `const REQUIRED_KEYS: &[&str]` aus `shells/windows/src-tauri/src/i18n.rs:72-116` entfernen
-  - [ ] 4.2 Test `en_json_covers_all_required_keys` (Zeile 118-131) entfernen
-  - [ ] 4.3 Test `no_orphan_keys_in_en_json` (Zeile 147-161) entfernen
-  - [ ] 4.4 Doc-Block Zeile 54-71 entfernen, durch Kurz-Verweis ersetzen: `// i18n-Drift wird durch 'cargo xtask lint-events' (Stories 5.3 + 5.6) mechanisch enforct.`
-  - [ ] 4.5 Test `de_json_covers_same_key_set` bleibt erhalten (shell-lokaler Smoke-Test, Trade-off-begründet)
+- [x] Task 4 — REQUIRED_KEYS-Cleanup (AC-C, **erst nach grünem AC-A + AC-B**)
+  - [x] 4.1 `const REQUIRED_KEYS: &[&str]` aus `shells/windows/src-tauri/src/i18n.rs:72-116` entfernen
+  - [x] 4.2 Test `en_json_covers_all_required_keys` (Zeile 118-131) entfernen
+  - [x] 4.3 Test `no_orphan_keys_in_en_json` (Zeile 147-161) entfernen
+  - [x] 4.4 Doc-Block Zeile 54-71 entfernen, durch Kurz-Verweis ersetzen: `// i18n-Drift wird durch 'cargo xtask lint-events' (Stories 5.3 + 5.6) mechanisch enforct.`
+  - [x] 4.5 Test `de_json_covers_same_key_set` bleibt erhalten (shell-lokaler Smoke-Test, Trade-off-begründet)
 
-- [ ] Task 5 — Verifikation (AC-E)
-  - [ ] 5.1 `cargo xtask lint-events` → Exit 0 auf master nach Cleanup (en.json + de.json müssen sauber sein)
-  - [ ] 5.2 `cargo test -p xtask` → grün inklusive 3 neuer Sentinels
-  - [ ] 5.3 `cargo test -p klarvo-windows-shell` (Linux-Cross-Target oder CI auf Windows) → grün ohne entfernte Tests
-  - [ ] 5.4 CI-Verifikation per temporärem Sentinel-Key (revert vor Merge): rot auf Sentinel-Branch, grün auf master nach Revert
-  - [ ] 5.5 Completion-Notes dokumentieren: Listings der entfernten Tests + Diff-Größe der i18n.rs + Allowlist-File-Pfad
+- [x] Task 5 — Verifikation (AC-E)
+  - [x] 5.1 `cargo xtask lint-events` → Exit 0 auf master nach Cleanup (en.json + de.json müssen sauber sein)
+  - [x] 5.2 `cargo test -p xtask` → grün inklusive 3 neuer Sentinels
+  - [x] 5.3 `cargo test -p klarvo-windows-shell` (Linux-Cross-Target oder CI auf Windows) → grün ohne entfernte Tests
+  - [x] 5.4 CI-Verifikation per temporärem Sentinel-Key (revert vor Merge): rot auf Sentinel-Branch, grün auf master nach Revert
+  - [x] 5.5 Completion-Notes dokumentieren: Listings der entfernten Tests + Diff-Größe der i18n.rs + Allowlist-File-Pfad
+
+### Review Findings
+
+**Decisions resolved 2026-05-01:** D1 → leichte Schärfung; D2 → lokale Verifikation akzeptiert + Doc-Update; D3 → Visitor-Arm für `lookup()` + Follow-Up-Story für DETECTION-GAP-Refactor.
+
+- [x] [Review][Patch] D1 — `Expr::Call`-Recursion in `extract_string_literal_from_expr` entfernen [`xtask/src/lint_events.rs:486-506`] — Recursion war nicht von Spec gefordert, vergrößert False-Positive-Surface (z.B. `make_thing("error.foo")` als Emit-Site). KEY_REGEX-Filter behalten; Trait-Use-Path-Check verworfen (Pioneer-Aufwand ohne realen Trigger im Phase-1-Workspace). (resolved: blind+edge → patch)
+- [x] [Review][Patch] D2 — Dev Agent Record CI-Sentinel-Notiz nachschärfen [story-file] — Knappe Klarstellung: "CI-Pipeline aus 5.1-5.4 unverändert; `.github/workflows/ci-event-lint.yml:32-33` ruft `lint-events`; Sentinel-Roundtrip nicht durchgezogen, lokales Exit-1-Confirm als Equivalent akzeptiert". (resolved: auditor → patch)
+- [x] [Review][Patch] D3 — Visitor um `lookup`-Arm erweitern + 4 Tray-Keys aus Allowlist entfernen [`xtask/src/lint_events.rs:393-428`, `xtask/orphan-allowlist.txt`] — Drittes Method-Match neben `emit_error`/`unwrap_or`: `lookup("<key>", "<fallback>")` (zwei Args, Erstes = Key-Literal). Einträge `tray.menu.exit`, `tray.language_switcher.label`, `tray.language.en`, `tray.language.de` raus aus Allowlist. 3 DETECTION-GAP-Einträge (`error.config.unknown_field`, `error.config.parse_failed`, `error.settings.in_memory_fallback`) bleiben mit TODO-Kommentar + Verweis auf neue Follow-Up-Story (Refactor early-boot `json!()`-emits + if/else-Var-Pattern zu `ErrorEmitter`-Calls; via `bmad-create-story` zu erstellen). (resolved: auditor → patch + follow-up-story)
+
+- [x] [Review][Patch] Allowlist verschluckt alle IO-Fehler stillschweigend [`xtask/src/lint_events.rs:294-298`] — `load_orphan_allowlist` returnt leere `BTreeSet` bei jedem `Err(_)` (NotFound, Permissions, Encoding, Symlink-broken). Kombiniert mit Empty-Fallback explodiert eine fehlende/unlesbare Datei in 8 spurious Violations ohne Pointer auf File-Issue. Fix: NotFound vs andere Errors trennen, bei Non-NotFound `[allowlist-load]`-Violation emittieren (analog `[locale-load]`). (sources: blind+edge)
+- [x] [Review][Patch] Allowlist-Parser ohne Key-Format-Validation + Stale-Entry-Detection [`xtask/src/lint_events.rs:299-304`] — (a) Jeder Eintrag sollte gegen `is_key()` validiert werden; (b) jeder Allowlist-Key muss in en.json existieren (catched Rename-Rot: alter Key bleibt für immer in der Datei wenn en.json + Code auf neuen Key umgezogen sind); (c) Duplicate-Entries sollten `[allowlist-duplicate]`-Violation ausgeben statt stillschweigend dedupliziert zu werden. (sources: blind+edge)
+- [x] [Review][Patch] `syn::parse_file`-Failures silently `continue` [`xtask/src/lint_events.rs:271-275`] — Transient Syntax-Error in einer Datei (in-progress Refactor) reduziert `code_keys` ohne Diagnostic. Failure-Mode bleibt grün-zu-rot mit irreführender Orphan-Diagnose statt Parse-Error-Hinweis. Fix: `[parse-skip]`-Violation pro Failure (mirrors `[locale-load]`). (source: edge)
+- [x] [Review][Patch] Keine Tests für `load_orphan_allowlist` [`xtask/src/lint_events.rs:1206-1237`] — Bestehende 3 Sentinels testen `check_orphan_keys` mit synthetischen Maps. Pfadfehler/Parse-Hygiene des Files selbst ist ungetestet. Add: Comment-Stripping, Blank-Line-Filter, Duplicate-Detection, BOM/CRLF, Missing-File-vs-NotFound. (source: blind)
+- [x] [Review][Patch] `en.json` verlor Trailing-Newline [`shells/windows/locales/en.json`] — Diff zeigt `\ No newline at end of file`; `de.json` behält Newline → Asymmetrie. Vermutlich Editor-Artefakt, nicht intentional. Restore. (sources: blind+edge+auditor)
+
+**Dismissed (11):** G3-D iteriert nur en.json (G3-B-Symmetrie deckt de-Side); `is_excluded_g3` „output"-Drop (Low-Risk, Filename-Heuristik); File-Scope `#[cfg(test)]` (kein Current-Case); `record_key` Line-Attribution für Method-Chains (kosmetisch); G3-A↔G3-D Dedup (BTreeMap-`entry().or_insert_with()` handelt's); `BTreeSet`-Import in i18n.rs nicht stranded (von `de_json_covers_same_key_set` weiter verwendet); Workspace-Root-Path-Hardcoding (subsumiert von Allowlist-IO-Patch); REQUIRED_KEYS-vs-G3-D Tightness-Regression (intentionaler Spec-Trade-off); CI-Workflow-Filename-Mismatch in Spec (Doc-Issue, nicht Code); Pre-Verifikations-Doc-Trail in Task 2.4a (Dev-Record-Gap, Low-Risk); G3-A auf Shell-Scope breiter als AC-A wörtlich (Doc-Comment macht Intent explizit, currently grün).
+
+### Review Closure (2026-05-01)
+
+8 Patches angewendet: D1 (Expr::Call-Recursion entfernt), D2 (Dev Agent Record CI-Sentinel-Notiz), D3 (lookup-Visitor-Arm + 2 Tray-Keys aus Allowlist + Follow-Up-Story-TODO), P1 (`[allowlist-load]`-Violation auf Non-NotFound-IO), P2 (Allowlist-Format/Duplicate/Stale-Entry-Validation), P3 (`[parse-skip]`-Violation in G1/G3-A/G3-C statt silent continue), P4 (9 neue Allowlist-Parser-Tests), P5 (en.json Trailing-Newline restauriert).
+
+Bonus-Fix: `shells/windows/src-tauri/src/bin/export_bindings.rs` — Attribute-on-method-call (zwischen `.parent()` und `.expect(...)`) auf Let-Statement-Level verschoben; `syn` parsed das jetzt sauber. Pre-existing Parse-Fail wurde durch den neuen `[parse-skip]`-Pass aufgedeckt.
+
+Verifikation: `cargo test -p xtask` → 45/45 (vorher 36/36 + 9 neue Tests); `cargo xtask lint-events` → OK (5 Events scanned); `cargo test -p klarvo-windows-shell --lib` → 22/22 + 1 ignored.
+
+Allowlist-Drift: 8 Einträge → 5 (`error.unknown` + 3 DETECTION-GAP + 2 TUPLE-CONST). `tray.menu.exit` und `tray.language_switcher.label` werden jetzt mechanisch via `lookup()`-Arm erfasst.
+
+Follow-Up-Story dispatchen: Refactor early-boot `json!()`-emits + if/else-Var-Pattern zu `ErrorEmitter::emit_error(...)`. Danach 3 DETECTION-GAP-Einträge entfernen.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 4.6 (claude-sonnet-4-6)
 
 ### Debug Log References
 
+- `is_excluded_g3` hatte `"output"` in der Exclusion-Liste, was `klarvo-core/src/output/` (und damit `error.output.*`-Keys in keys.rs) aus dem Scan ausschloss. Fix: `"output"` aus G3-Exclusion entfernt (war historisch für Build-Artefakt-Dirs gedacht, trifft aber Quell-Modulverzeichnis).
+- 3 Keys (`error.config.unknown_field`, `error.config.parse_failed`, `error.settings.in_memory_fallback`) haben Rust-Emit-Sites, aber via Patterns außerhalb des G3-D-Scopes (if/else-Variable-Assignment in config.rs; `serde_json::json!()`-Makros in main.rs für Early-Boot-Errors vor Tauri-managed-State-Init). In allowlist als DETECTION-GAP dokumentiert.
+- `check_orphan_keys()` als testbarer Inner-Helper extrahiert → Forcing-Sentinels testen direkt die Core-Logic.
+
 ### Completion Notes List
 
+- **G3-Sub-Lint D implementiert** in `xtask/src/lint_events.rs`:
+  - Neue Scan-Roots: `klarvo-shell-orchestrator/src/` + `shells/windows/src-tauri/src/`
+  - Neue `visit_expr_method_call` in `UserStringVisitor`: sammelt Keys aus `emit_error("<key>", ...)` (ADR-0009-Pattern) und `unwrap_or("<key>")` (Orchestrator-Fallback-Pattern)
+  - `run_g3d_orphan_check()` + `check_orphan_keys()` + `load_orphan_allowlist()`
+  - Exclusion-Bug `"output"` in `is_excluded_g3` gefixt (blockierte `klarvo-core/src/output/keys.rs`)
+- **`xtask/orphan-allowlist.txt` angelegt** mit 3 Kategorien: FRONTEND-ONLY (error.unknown), TRAY-LOOKUP (4 tray.*-Keys via lookup()-Closure), DETECTION-GAP (3 Keys via if/else-Var + json!-Makro)
+- **REQUIRED_KEYS-Cleanup (AC-C):** `const REQUIRED_KEYS` (37 Einträge, ~45 Zeilen), Test `en_json_covers_all_required_keys`, Test `no_orphan_keys_in_en_json` aus `i18n.rs` entfernt; Doc-Block durch Kurz-Verweis ersetzt
+- **3 Forcing-Sentinels** in xtask Test-Modul: `g3d_orphan_key_detected`, `g3d_orphan_allowlist_skips_match`, `g3d_collect_code_keys_finds_emit_error_calls`
+- **Verifikation:** `cargo xtask lint-events` → OK (Exit 0); `cargo test -p xtask` → 36/36; `cargo test -p klarvo-windows-shell --lib` → 22/22; Sentinel-Branch-Test → Exit 1 bestätigt (G3-B + G3-D feuern beide)
+- **AC-E.5 CI-Sentinel-Klarstellung (review-pass D2):** Lokales Exit-1-Confirm wurde durchgeführt; ein echter CI-Roundtrip mit temporär committetem Sentinel-Key wurde NICHT durchgeführt. Begründung: die `lint-events`-CI-Pipeline ist seit Stories 5.1-5.4 unverändert (`.github/workflows/ci-event-lint.yml:32-33` ruft `cargo xtask lint-events`); die Pipeline-Konvention (Exit-1 → CI-Fail → PR-Block) wurde durch jene früheren Stories End-to-End validiert. Lokales Reproduzieren der Exit-Code-Semantik wird als äquivalent akzeptiert.
+
 ### File List
+
+- `xtask/src/lint_events.rs` — G3-D Sub-Pass + Scope-Erweiterung + Exclusion-Bug-Fix + 3 Tests
+- `xtask/orphan-allowlist.txt` — NEU: Orphan-Allowlist mit 3 Kategorien (8 Keys)
+- `shells/windows/src-tauri/src/i18n.rs` — REQUIRED_KEYS + 2 Tests entfernt, Doc-Block durch Kurz-Verweis ersetzt
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status-Updates
+- `_bmad-output/implementation-artifacts/5-6-required-keys-drift-xtask.md` — Tasks + Dev Agent Record

@@ -13,8 +13,14 @@
 //! 4. **G3-Sub-Lint C:** Wildcard-match detection. `match` blocks on `PipelineStageType`
 //!    must not contain `_` catch-all arms — exhaustive match is mandatory per the no-wildcard
 //!    invariant in `klarvo-core/src/pipeline/stage.rs`.
+//! 5. **G3-Sub-Lint D:** Backward-orphan detection. Keys present in
+//!    `shells/windows/locales/en.json` that are not emitted by any Rust code site in the
+//!    extended scope (core + plugins + shell-orchestrator + windows-shell) are flagged as
+//!    orphan keys. Exceptions for frontend-only and tray-lookup keys are listed in
+//!    `xtask/orphan-allowlist.txt`. Replaces the manual `REQUIRED_KEYS` whitelist in
+//!    `shells/windows/src-tauri/src/i18n.rs` (Story 5.6, AC-C cleanup).
 //!
-//! All four sub-passes run sequentially; violations are aggregated before exit (no early-exit
+//! All five sub-passes run sequentially; violations are aggregated before exit (no early-exit
 //! per sub-pass). Exit code: `1` if any violation, `0` if all clean, `2` on internal error.
 //!
 //! # Key-Format-Regex Reference (feedback_reference_block_discipline)
@@ -74,6 +80,10 @@ pub fn run() -> ExitCode {
     let g3c_violations = run_g3c_wildcard_match_check(&workspace_root);
     all_violations.extend(g3c_violations);
 
+    // Sub-pass G3-D: backward-orphan detection (Story 5.6 AC-B).
+    let g3d_violations = run_g3d_orphan_check(&workspace_root, &code_keys);
+    all_violations.extend(g3d_violations);
+
     if all_violations.is_empty() {
         println!("xtask lint-events: OK ({events_scanned} event(s) scanned)");
         ExitCode::SUCCESS
@@ -117,7 +127,13 @@ fn run_g1_event_name_check(workspace_root: &Path) -> (usize, Vec<String>) {
         };
         let file = match syn::parse_file(&content) {
             Ok(f) => f,
-            Err(_) => continue,
+            Err(e) => {
+                violations.push(format!(
+                    "VIOLATION [parse-skip]: cannot parse {}: {e}",
+                    path.display()
+                ));
+                continue;
+            }
         };
 
         for item in &file.items {
@@ -207,13 +223,19 @@ fn extract_event_name(attrs: &[Attribute]) -> Option<String> {
 
 // ── G3-A: User-Facing-String Detection ──────────────────────────────────────
 
-/// Scans klarvo-core and klarvo-plugins for string literals in `user_message: Some(…)` positions.
-/// Returns (violations, all_valid_keys_found_as_literals).
+/// Scans core, plugins, and shells for i18n key literals. Returns (violations, code_keys).
 ///
 /// # Scope
 ///
-/// Covers `klarvo-core/src/` and `klarvo-plugins/*/src/` — the G3-Kontrakt scope
-/// (`memory/project_i18n_core_contract.md`). `shells/` is excluded (G1 is owner there).
+/// - `klarvo-core/src/` and `klarvo-plugins/*/src/` — G3-Kontrakt scope
+///   (`memory/project_i18n_core_contract.md`). Non-key literals in `user_message: Some(…)`
+///   positions are flagged as G3-A violations.
+/// - `klarvo-shell-orchestrator/src/` and `shells/windows/src-tauri/src/` — extended scope
+///   for backward-orphan detection (Story 5.6, G3-Sub-Lint D). Keys are collected from
+///   `emit_error("<key>", …)`, `unwrap_or("<key>")`, and `user_message: Some("<key>")` call
+///   sites. G3-A violations still apply (non-key literals in user_message are bugs in shell
+///   code too).
+///
 /// Test modules (`#[cfg(test)]`) are excluded.
 fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, CodeKeys) {
     let mut violations = Vec::new();
@@ -222,6 +244,12 @@ fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, CodeKeys) {
     let scan_roots = [
         workspace_root.join("klarvo-core").join("src"),
         workspace_root.join("klarvo-plugins"),
+        workspace_root.join("klarvo-shell-orchestrator").join("src"),
+        workspace_root
+            .join("shells")
+            .join("windows")
+            .join("src-tauri")
+            .join("src"),
     ];
 
     for root in &scan_roots {
@@ -250,7 +278,13 @@ fn run_g3a_user_string_check(workspace_root: &Path) -> (Vec<String>, CodeKeys) {
             };
             let file = match syn::parse_file(&content) {
                 Ok(f) => f,
-                Err(_) => continue,
+                Err(e) => {
+                    violations.push(format!(
+                        "VIOLATION [parse-skip]: cannot parse {}: {e}",
+                        path.display()
+                    ));
+                    continue;
+                }
             };
 
             // File-based `mod keys;` modules: when the parsed file *is* the `keys` module
@@ -367,6 +401,70 @@ impl<'ast, 'a> Visit<'ast> for UserStringVisitor<'a> {
         }
         visit::visit_variant(self, node);
     }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if !self.in_test_mod {
+            let method = node.method.to_string();
+            match method.as_str() {
+                // Pattern 1 (Story 5.6 AC-A): receiver.emit_error("<key>", …)
+                // Heuristic: method-name "emit_error" + first arg is a key literal.
+                // Limitation: matches any method named emit_error (no type-resolution);
+                // no other method with this name exists in the Phase-1 workspace.
+                "emit_error" => {
+                    if let Some(first_arg) = node.args.first() {
+                        if let Some(lit) = extract_string_literal_from_expr(first_arg) {
+                            if is_key(&lit) {
+                                let line = first_arg.span().start().line;
+                                self.record_key(lit, line);
+                            }
+                        }
+                    }
+                }
+                // Pattern 2 (Story 5.6 AC-A): <expr>.unwrap_or("<key>")
+                // Heuristic: single-arg unwrap_or whose argument is a key literal.
+                // is_key() filter avoids false positives on unwrap_or("fallback text").
+                "unwrap_or" => {
+                    if node.args.len() == 1 {
+                        if let Some(lit) = extract_string_literal_from_expr(&node.args[0]) {
+                            if is_key(&lit) {
+                                let line = node.args[0].span().start().line;
+                                self.record_key(lit, line);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if !self.in_test_mod {
+            // Pattern 3 (Story 5.6 review-pass D3): lookup("<key>", "<fallback>")
+            // Closure-call helper used in shells/windows/src-tauri/src/tray.rs to resolve
+            // i18n strings. Matches an unqualified `lookup` callee with exactly two args
+            // where the first is a key literal.
+            if let Expr::Path(p) = node.func.as_ref() {
+                let is_lookup = p
+                    .path
+                    .segments
+                    .last()
+                    .map(|s| s.ident == "lookup")
+                    .unwrap_or(false)
+                    && p.path.segments.len() == 1;
+                if is_lookup && node.args.len() == 2 {
+                    if let Some(lit) = extract_string_literal_from_expr(&node.args[0]) {
+                        if is_key(&lit) {
+                            let line = node.args[0].span().start().line;
+                            self.record_key(lit, line);
+                        }
+                    }
+                }
+            }
+        }
+        visit::visit_expr_call(self, node);
+    }
 }
 
 impl<'a> UserStringVisitor<'a> {
@@ -424,6 +522,10 @@ fn extract_some_string_literal(expr: &Expr) -> Option<String> {
 }
 
 /// Walk an expression to find a string literal, handling method chains like `.into()`.
+///
+/// `Expr::Call` recursion is intentionally NOT performed: it would make `wrap("error.x")`
+/// register as an emit-site for `"error.x"`, over-collecting unrelated literals and
+/// silently neutralising G3-D orphan detection (Story 5.6 review-pass D1).
 fn extract_string_literal_from_expr(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Lit(el) => {
@@ -434,14 +536,6 @@ fn extract_string_literal_from_expr(expr: &Expr) -> Option<String> {
             }
         }
         Expr::MethodCall(mc) => extract_string_literal_from_expr(&mc.receiver),
-        Expr::Call(call) => {
-            // e.g. String::from("…")
-            if call.args.len() == 1 {
-                extract_string_literal_from_expr(&call.args[0])
-            } else {
-                None
-            }
-        }
         _ => None,
     }
 }
@@ -571,7 +665,13 @@ fn run_g3c_wildcard_match_check(workspace_root: &Path) -> Vec<String> {
         };
         let file = match syn::parse_file(&content) {
             Ok(f) => f,
-            Err(_) => continue,
+            Err(e) => {
+                violations.push(format!(
+                    "VIOLATION [parse-skip]: cannot parse {}: {e}",
+                    path.display()
+                ));
+                continue;
+            }
         };
 
         let mut visitor = WildcardMatchVisitor {
@@ -636,6 +736,134 @@ fn path_has_pst_ident(path: &syn::Path) -> bool {
     path.segments.iter().any(|s| s.ident == "PipelineStageType")
 }
 
+// ── G3-D: Backward-Orphan Detection ─────────────────────────────────────────
+
+/// Checks every key in en.json against the collected `code_keys` set. Keys with no Rust
+/// emit-site that are not listed in `xtask/orphan-allowlist.txt` are reported as violations.
+///
+/// # Allowlist
+///
+/// `xtask/orphan-allowlist.txt`: one key per line, `#`-prefixed comment lines and blank lines
+/// are ignored. Intended for frontend-only keys (TypeScript consumers) and tray-lookup keys
+/// that use a `lookup()` helper rather than `emit_error`/`unwrap_or` patterns.
+fn run_g3d_orphan_check(workspace_root: &Path, code_keys: &CodeKeys) -> Vec<String> {
+    let en_path = workspace_root
+        .join("shells")
+        .join("windows")
+        .join("locales")
+        .join("en.json");
+
+    let en_table: BTreeMap<String, String> = match load_locale_json(&en_path) {
+        Ok(t) => t,
+        Err(e) => {
+            return vec![format!(
+                "VIOLATION [locale-load]: cannot load en.json for G3-D: {e}"
+            )];
+        }
+    };
+
+    let allowlist_path = workspace_root.join("xtask").join("orphan-allowlist.txt");
+    let (allowlist, mut violations) = load_orphan_allowlist(&allowlist_path);
+    violations.extend(check_stale_allowlist_entries(&en_table, &allowlist));
+    violations.extend(check_orphan_keys(&en_table, code_keys, &allowlist));
+    violations
+}
+
+/// Core orphan-check logic extracted for testability (Story 5.6 AC-D forcing sentinels).
+fn check_orphan_keys(
+    en_table: &BTreeMap<String, String>,
+    code_keys: &CodeKeys,
+    allowlist: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut violations = Vec::new();
+    for key in en_table.keys() {
+        if !code_keys.contains_key(key.as_str()) && !allowlist.contains(key.as_str()) {
+            violations.push(format!(
+                "VIOLATION [locale-orphan]: key {:?} present in en.json but no Rust emit-site \
+                 found in klarvo-core/, klarvo-plugins/, klarvo-shell-orchestrator/, \
+                 shells/windows/src-tauri/",
+                key
+            ));
+        }
+    }
+    violations
+}
+
+/// Flag allowlist entries that are not present in en.json. Catches rename-rot:
+/// when a key is renamed in en.json + code in lockstep, the old name lingers in the
+/// allowlist forever. Story 5.6 review-pass P5.
+fn check_stale_allowlist_entries(
+    en_table: &BTreeMap<String, String>,
+    allowlist: &BTreeSet<String>,
+) -> Vec<String> {
+    allowlist
+        .iter()
+        .filter(|entry| !en_table.contains_key(entry.as_str()))
+        .map(|entry| {
+            format!(
+                "VIOLATION [allowlist-stale]: entry {entry:?} in xtask/orphan-allowlist.txt \
+                 has no matching key in en.json — likely a rename or removed key; remove the entry"
+            )
+        })
+        .collect()
+}
+
+/// Parse `xtask/orphan-allowlist.txt` and return the allowlist plus any format/IO violations.
+///
+/// Behaviour:
+/// - File does not exist → empty allowlist, no violation (clean repo state).
+/// - Other IO errors (permissions, encoding) → empty allowlist + `[allowlist-load]` violation.
+/// - Each non-comment, non-empty line must satisfy `is_key`; otherwise `[allowlist-format]`.
+/// - Duplicate entries trigger `[allowlist-duplicate]` (set-dedup keeps the first).
+fn load_orphan_allowlist(path: &Path) -> (BTreeSet<String>, Vec<String>) {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return (BTreeSet::new(), Vec::new());
+        }
+        Err(e) => {
+            return (
+                BTreeSet::new(),
+                vec![format!(
+                    "VIOLATION [allowlist-load]: cannot read {}: {e}",
+                    path.display()
+                )],
+            );
+        }
+    };
+
+    parse_orphan_allowlist(&content, path)
+}
+
+/// Pure parser for orphan-allowlist content. Extracted for unit-testability.
+fn parse_orphan_allowlist(content: &str, path: &Path) -> (BTreeSet<String>, Vec<String>) {
+    let mut allowlist = BTreeSet::new();
+    let mut violations = Vec::new();
+
+    for (i, raw_line) in content.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let lineno = i + 1;
+        if !is_key(line) {
+            violations.push(format!(
+                "VIOLATION [allowlist-format]: {}:{lineno} entry {line:?} is not a valid i18n key",
+                path.display()
+            ));
+            continue;
+        }
+        if !allowlist.insert(line.to_string()) {
+            violations.push(format!(
+                "VIOLATION [allowlist-duplicate]: {}:{lineno} duplicate entry {line:?}",
+                path.display()
+            ));
+        }
+    }
+
+    (allowlist, violations)
+}
+
 // ── Shared Helpers ───────────────────────────────────────────────────────────
 
 fn locate_workspace_root() -> Option<PathBuf> {
@@ -665,12 +893,16 @@ fn is_excluded(path: &Path, workspace_root: &Path) -> bool {
 }
 
 /// Exclusion filter for G3 sub-lints (tighter: also skip test-fixtures and android).
+///
+/// Note: `"output"` is intentionally NOT excluded here — `klarvo-core/src/output/` is a
+/// legitimate Rust module directory containing i18n key constants. Only `"target"` covers
+/// Cargo build artifacts; `"gen"` covers generated code.
 fn is_excluded_g3(path: &Path) -> bool {
     let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     matches!(
         name,
         "target" | ".git" | "node_modules" | "dist" | "_bmad" | "_bmad-output"
-            | "gen" | "output" | "test-fixtures" | "android"
+            | "gen" | "test-fixtures" | "android"
     )
 }
 
@@ -1072,5 +1304,171 @@ fn f() {
         "#;
         let violations = scan_g3c(src);
         assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+    }
+
+    // ── G3-D tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn g3d_orphan_key_detected() {
+        // Forcing sentinel (Story 5.6 AC-D): en.json key with no code emit-site → violation.
+        let code_keys: CodeKeys = BTreeMap::new();
+        let mut en_table: BTreeMap<String, String> = BTreeMap::new();
+        en_table.insert("test.orphan.sentinel".to_string(), "test value".to_string());
+        let allowlist: BTreeSet<String> = BTreeSet::new();
+
+        let violations = check_orphan_keys(&en_table, &code_keys, &allowlist);
+
+        assert_eq!(violations.len(), 1, "expected one locale-orphan violation: {violations:?}");
+        assert!(violations[0].contains("locale-orphan"), "{}", violations[0]);
+        assert!(violations[0].contains("test.orphan.sentinel"), "{}", violations[0]);
+    }
+
+    #[test]
+    fn g3d_orphan_allowlist_skips_match() {
+        // Forcing sentinel (Story 5.6 AC-D): allowlisted orphan key must not produce a violation.
+        let code_keys: CodeKeys = BTreeMap::new();
+        let mut en_table: BTreeMap<String, String> = BTreeMap::new();
+        en_table.insert("test.orphan.sentinel".to_string(), "test value".to_string());
+        let mut allowlist: BTreeSet<String> = BTreeSet::new();
+        allowlist.insert("test.orphan.sentinel".to_string());
+
+        let violations = check_orphan_keys(&en_table, &code_keys, &allowlist);
+
+        assert!(violations.is_empty(), "allowlisted key must not be flagged: {violations:?}");
+    }
+
+    #[test]
+    fn g3d_collect_code_keys_finds_emit_error_calls() {
+        // Forcing sentinel (Story 5.6 AC-D): verifies that the UserStringVisitor collects
+        // keys from shell-style emit_error and unwrap_or call sites.
+        let src = r#"
+        async fn session_fn(emitter: &dyn ErrorEmitter, e: SomeError, clock: &dyn Clock) {
+            emitter.emit_error("error.foo", clock.now_ms()).await;
+            let _ = e.user_message.as_deref().unwrap_or("error.bar");
+        }
+        "#;
+        let (violations, keys) = scan_g3a_with(src, /* initial_in_keys= */ false);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(keys.contains_key("error.foo"), "emit_error key not collected: {keys:?}");
+        assert!(keys.contains_key("error.bar"), "unwrap_or key not collected: {keys:?}");
+    }
+
+    #[test]
+    fn g3d_collect_code_keys_finds_lookup_closure_calls() {
+        // Review-pass D3 (Story 5.6): Tray-menu uses a closure
+        // `lookup(key, fallback)` to resolve i18n labels. Visitor must collect the
+        // first-arg literal of two-arg `lookup(...)` Expr::Call sites.
+        let src = r#"
+        fn build() {
+            let lookup = |k: &str, f: &str| -> String { k.to_string() };
+            let a = lookup("tray.menu.exit", "Exit");
+            let b = lookup("tray.language_switcher.label", "Language");
+        }
+        "#;
+        let (violations, keys) = scan_g3a_with(src, /* initial_in_keys= */ false);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(keys.contains_key("tray.menu.exit"), "lookup key not collected: {keys:?}");
+        assert!(keys.contains_key("tray.language_switcher.label"), "lookup key not collected: {keys:?}");
+    }
+
+    #[test]
+    fn g3d_extract_string_does_not_recurse_into_call_args() {
+        // Review-pass D1 (Story 5.6): `extract_string_literal_from_expr` must NOT
+        // recurse into `Expr::Call` single-arg, otherwise `wrap("error.x")` would
+        // register `"error.x"` as an emit-site (over-collection). Verified via
+        // `unwrap_or(make_thing("error.x.over_collected"))` — the key must not appear.
+        let src = r#"
+        fn f() {
+            fn wrap(s: &'static str) -> &'static str { s }
+            let _: &'static str = Some("v").unwrap_or(wrap("error.x.over_collected"));
+        }
+        "#;
+        let (_, keys) = scan_g3a_with(src, /* initial_in_keys= */ false);
+        assert!(
+            !keys.contains_key("error.x.over_collected"),
+            "expected no over-collection from Expr::Call recursion: {keys:?}"
+        );
+    }
+
+    // ── G3-D allowlist parser tests (review-pass P5/P7) ──────────────────
+
+    fn parse_allowlist(content: &str) -> (BTreeSet<String>, Vec<String>) {
+        parse_orphan_allowlist(content, Path::new("test/orphan-allowlist.txt"))
+    }
+
+    #[test]
+    fn parse_allowlist_strips_comments_and_blanks() {
+        let content = "# header comment\n\n# another\n  \nerror.foo\n\nerror.bar\n";
+        let (allowlist, violations) = parse_allowlist(content);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert_eq!(allowlist.len(), 2);
+        assert!(allowlist.contains("error.foo"));
+        assert!(allowlist.contains("error.bar"));
+    }
+
+    #[test]
+    fn parse_allowlist_trims_whitespace() {
+        let content = "  error.padded  \n\terror.tabbed\t\n";
+        let (allowlist, violations) = parse_allowlist(content);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert!(allowlist.contains("error.padded"));
+        assert!(allowlist.contains("error.tabbed"));
+    }
+
+    #[test]
+    fn parse_allowlist_flags_invalid_key_format() {
+        // is_key requires the dot-notation pattern; a bare word must be rejected.
+        let content = "error.ok\nNotAKey\nerror.also_ok\n";
+        let (allowlist, violations) = parse_allowlist(content);
+        assert_eq!(allowlist.len(), 2, "valid keys must still be parsed: {allowlist:?}");
+        assert_eq!(violations.len(), 1, "invalid line must produce one violation: {violations:?}");
+        assert!(violations[0].contains("allowlist-format"), "{}", violations[0]);
+        assert!(violations[0].contains("NotAKey"), "{}", violations[0]);
+        assert!(violations[0].contains(":2"), "lineno must reference line 2: {}", violations[0]);
+    }
+
+    #[test]
+    fn parse_allowlist_flags_duplicates() {
+        let content = "error.foo\nerror.bar\nerror.foo\n";
+        let (allowlist, violations) = parse_allowlist(content);
+        assert_eq!(allowlist.len(), 2, "set-dedup expected: {allowlist:?}");
+        assert_eq!(violations.len(), 1, "duplicate must produce one violation: {violations:?}");
+        assert!(violations[0].contains("allowlist-duplicate"), "{}", violations[0]);
+        assert!(violations[0].contains(":3"), "duplicate lineno must reference line 3: {}", violations[0]);
+    }
+
+    #[test]
+    fn parse_allowlist_handles_crlf_and_trailing_blank_lines() {
+        let content = "error.crlf\r\nerror.lf\n\n\n";
+        let (allowlist, violations) = parse_allowlist(content);
+        assert!(violations.is_empty(), "unexpected violations: {violations:?}");
+        assert_eq!(allowlist.len(), 2);
+        assert!(allowlist.contains("error.crlf"));
+        assert!(allowlist.contains("error.lf"));
+    }
+
+    #[test]
+    fn load_allowlist_missing_file_returns_clean_empty() {
+        // NotFound → no violation, no entries (clean repo state without an allowlist).
+        let nonexistent = Path::new("/nonexistent/orphan-allowlist.txt");
+        let (allowlist, violations) = load_orphan_allowlist(nonexistent);
+        assert!(allowlist.is_empty());
+        assert!(violations.is_empty(), "missing file must not produce violation: {violations:?}");
+    }
+
+    #[test]
+    fn check_stale_allowlist_entries_flags_missing_in_en() {
+        // Allowlist entry not present in en.json → [allowlist-stale] violation
+        // (review-pass P5: catches rename-rot).
+        let mut en_table: BTreeMap<String, String> = BTreeMap::new();
+        en_table.insert("error.live".to_string(), "x".to_string());
+        let mut allowlist: BTreeSet<String> = BTreeSet::new();
+        allowlist.insert("error.live".to_string());
+        allowlist.insert("error.dead".to_string());
+
+        let violations = check_stale_allowlist_entries(&en_table, &allowlist);
+        assert_eq!(violations.len(), 1, "expected one stale-entry violation: {violations:?}");
+        assert!(violations[0].contains("allowlist-stale"), "{}", violations[0]);
+        assert!(violations[0].contains("error.dead"), "{}", violations[0]);
     }
 }

@@ -13,11 +13,11 @@ use specta_typescript::Typescript;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // crate root = shells/windows/src-tauri/
     // bindings out = shells/windows/src/bindings/index.ts
+    // INTENTIONAL: env!("CARGO_MANIFEST_DIR") always has a parent; this is a dev-tool binary
+    // that is never shipped as a production artifact.
+    #[allow(clippy::disallowed_methods)]
     let out = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        // INTENTIONAL: env!("CARGO_MANIFEST_DIR") always has a parent; this is a dev-tool binary
-        // that is never shipped as a production artifact.
-        #[allow(clippy::disallowed_methods)]
         .expect("src-tauri has a parent (shells/windows)")
         .join("src")
         .join("bindings")
