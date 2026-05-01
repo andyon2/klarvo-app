@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-01 (Story 5.7 done + Epic 5 → done — alle 7 Stories + Retro abgeschlossen; Code-Review-Closure: 3 Patches + 5 Defers in deferred-work.md)"
+last_updated: "2026-05-01 (Epic 6 gestartet — Story 6.1 ready-for-dev; Story 6.2 backlog)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -160,7 +160,9 @@ development_status:
   # Vor Epic 8/9/10 dispatched — strukturierte Logs als Foundation für Whisper-Local-Debugging
   # (Epic 10) und externe-Tester-Triage. Stories via bmad-create-story.
   # ============================================================
-  epic-6: backlog
+  epic-6: in-progress
+  epic-6-telemetry-logging-rolling-file: ready-for-dev  # 2026-05-01 — Story 6.1: tracing-subscriber + rolling-file + release-filter gate (FR37+FR38)
+  epic-6-panic-hook-export-stub: backlog                 # Story 6.2: panic-hook (FR39) + telemetry::export-stub (FR40)
   epic-6-retrospective: optional
 
   # ============================================================
