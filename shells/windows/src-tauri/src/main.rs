@@ -490,7 +490,7 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
-            eprintln!("Tauri setup failed: {e}");
+            tracing::error!(error = %e, "Tauri setup failed");
             std::process::exit(1)
         })
         .run(|app_handle, event| {

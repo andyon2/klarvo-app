@@ -2,14 +2,14 @@
 name: Story 5.5 — Disallowed-Methods-Lint-Gate
 epic: 5
 story_number: "5.5"
-status: review
+status: done
 dependencies:
   - "5-4-verify-release-hardening"
 ---
 
 # Story 5.5: Disallowed-Methods-Lint-Gate
 
-Status: review
+Status: done
 
 ## Story
 
@@ -276,6 +276,18 @@ Story 5.5 catched ausschließlich `Option::unwrap`/`Option::expect`/`Result::unw
   - [x] 5.3 `cargo test -p klarvo-core` → alle Tests grün: 97 passed, 0 failed
   - [x] 5.4 Windows-Shell-Clippy: lokales Cross-Compile auf Linux nicht möglich; CI-Gate live (AC-E.5)
   - [x] 5.5 CI-Workflow `.github/workflows/windows-ci.yml` erweitert: 2 neue Clippy-Steps (Default + dev-plain-keystore)
+
+### Review Findings
+
+- [x] [Review][Patch] CI-Coverage-Gap: Lint-Gate für klarvo-core + orchestrator in CI live [`.github/workflows/ci-clippy-lint-gate.yml` (neu)] — Decision: Patch jetzt (statt Defer als Folge-Story oder Dismiss). Neuer Linux-CI-Workflow mit zwei Steps: `cargo clippy -p klarvo-core --all-features -- -D clippy::disallowed_methods` und `cargo clippy -p klarvo-shell-orchestrator --all-features -- -D clippy::disallowed_methods`. Narrow `-D clippy::disallowed_methods` statt `-D warnings`, weil orchestrator pre-existing `clone_on_copy`/`too_many_arguments`-Warnings hat (außerhalb 5.5-Scope, Dev-Notes). Begründung Patch-statt-Defer: Story-Motivation (Phase-2-A-Retro-Reibungsstelle 2) ist preventive enforcement gegen die in Retro identifizierten 4 Patch-Runden — 3 davon in klarvo-core/orchestrator-betroffen; Spec-AC-E.5-Wortlaut deckt nur Cross-Compile-Sonderfall windows-shell, nicht den gate-intent. Memory: `feedback_ci_gate_philosophy` "Preventive Enforcement, keine Stub-Checks". Lokal verifiziert: beide Steps Exit 0.
+- [x] [Review][Patch] AC-E.5 empirische Test-Violation-Verifikation durchgeführt — Decision: Patch jetzt. Lokal (Linux-Runner-äquivalent) verifiziert via temp-Violation + Revert in zwei Crates:
+  - **klarvo-core**: temp `.unwrap()` in `klarvo-core/src/manifest.rs:138` (statt `unwrap_or_else(|e| unreachable!(...))`). Run `cargo clippy -p klarvo-core --all-features -- -D clippy::disallowed_methods` → Exit-Code **101**, error: `use of a disallowed method 'core::result::Result::unwrap'` mit reason-String aus clippy.toml. Revert: zurück zu `unwrap_or_else(...)`. Re-Run nach Revert: Exit 0.
+  - **klarvo-shell-orchestrator**: temp `.unwrap()` in `klarvo-shell-orchestrator/src/session.rs:234` (statt `unwrap_or("error.internal")`). Run `cargo clippy -p klarvo-shell-orchestrator --all-features -- -D clippy::disallowed_methods` → Exit-Code **101**, error: `use of a disallowed method 'core::option::Option::unwrap'`. Revert: zurück zu `unwrap_or(...)`. Re-Run nach Revert: Exit 0.
+  - **klarvo-windows-shell**: nicht lokal verifizierbar (kein MSVC-Target auf Linux); CI-Verifikation per `windows-ci.yml` AC-E.5-Steps. Beweisbar gleicher Mechanismus (Cargo.toml `[lints.clippy]` + CLI-Flag).
+  Gate-Mechanismus damit empirisch validiert: `[lints.clippy] disallowed_methods = "deny"` in Cargo.toml + `-D clippy::disallowed_methods` CLI-Flag im CI-Step produzieren Exit non-zero und brechen den Workflow korrekt ab.
+- [x] [Review][Patch] eprintln! → tracing::error! vor fatalem Exit [shells/windows/src-tauri/src/keystore.rs:36, shells/windows/src-tauri/src/main.rs:493] — angewendet. Beide Stellen nutzen jetzt `tracing::error!(error = %e, "<msg>");` analog zum Pattern an main.rs:108/120/143/148/164/174 etc. Semantisch identisch (Exit-Code 1 bleibt). Verifikation: nicht lokal Cross-Compile-bar (klarvo-windows-shell ist target_os="windows"-gegated); Code-Inspektion + tracing-Crate-Workspace-Dep + bestehende `tracing::error!`-Calls im selben File belegen Korrektheit. CI-Verifikation per windows-ci.yml.
+- [x] [Review][Defer] panic!/todo!/unimplemented! Macro-Lücke im Lint-Scope [klarvo-core/src/registry.rs:32,46,60; shells/windows/src-tauri/src/i18n.rs:30,33] — deferred, spec-explicit out-of-scope (siehe Story-Section "Out-of-Scope: panic!/todo!/unimplemented!-Macros"). 5 reale Production-Panic-Sites, die `disallowed_methods` nicht catched (Macros ≠ Methods). Folge-Story: zweiter Gate via `clippy::panic`/`clippy::todo`/`clippy::unimplemented`.
+- [x] [Review][Defer] Sprint-Status-Hygiene: 5.6 silent-flip + last_updated overwrite [_bmad-output/implementation-artifacts/sprint-status.yaml:63,154] — deferred, Sprint-Tracking-Hygiene (memory: `feedback_status_drift_audit`). Story 5.6 wurde von `backlog` auf `ready-for-dev` geflipped innerhalb dieses 5.5-Commits (mixed scope); `last_updated` verlor Multi-Clause-Epic-Restructuring-Kontext.
 
 ## Dev Agent Record
 

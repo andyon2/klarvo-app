@@ -1,0 +1,45 @@
+name: clippy-lint-gate (5.5)
+
+# Scope: Story 5.5 — disallowed_methods Lint-Gate für klarvo-core und
+# klarvo-shell-orchestrator. klarvo-windows-shell ist in windows-ci.yml gegated
+# (braucht Windows-Runner wegen target_os = "windows" gates).
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy:
+    name: cargo clippy disallowed_methods
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # rust-toolchain.toml in the repo pins the channel; this action honors it.
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: clippy-lint-gate
+
+      # Narrow `-D clippy::disallowed_methods` (statt `-D warnings`) — fokussiert auf
+      # Story-5.5-Gate, lässt pre-existing Lint-Warnings (clone_on_copy, too_many_arguments
+      # in orchestrator) unberührt. Cargo.toml `[lints.clippy] disallowed_methods = "deny"`
+      # macht den Gate ohnehin auf Error-Level; CLI-Flag ist explizit-redundant zur
+      # Klarstellung welcher Lint hart ist.
+      - name: cargo clippy klarvo-core
+        run: cargo clippy -p klarvo-core --all-features -- -D clippy::disallowed_methods
+
+      - name: cargo clippy klarvo-shell-orchestrator
+        run: cargo clippy -p klarvo-shell-orchestrator --all-features -- -D clippy::disallowed_methods

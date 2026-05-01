@@ -33,7 +33,7 @@ pub fn make_keystore() -> Arc<dyn KeyStore> {
     Arc::new(
         klarvo_core::keystore::PlainSqliteKeyStore::open(default_keystore_path())
             .unwrap_or_else(|e| {
-                eprintln!("PlainSqliteKeyStore init failed in dev mode: {e}");
+                tracing::error!(error = %e, "PlainSqliteKeyStore init failed in dev mode");
                 std::process::exit(1)
             }),
     )
