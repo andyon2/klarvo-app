@@ -2,6 +2,8 @@
 //!
 //! Avoids pulling in `tempfile` as a dev-dep just for a few parse tests.
 
+#![allow(clippy::disallowed_methods)]
+
 use std::path::{Path, PathBuf};
 
 pub(crate) struct TempDir(PathBuf);

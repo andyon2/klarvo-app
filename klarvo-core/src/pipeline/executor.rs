@@ -177,7 +177,8 @@ pub async fn run_pipeline(
                 let StageData::Audio(audio) = data else {
                     unreachable!("boot-time Type-Chaining-Check guarantees Audio-variant here");
                 };
-                let plugin = registry.stt(plugin_id).expect("boot-check guaranteed registered");
+                let plugin = registry.stt(plugin_id)
+                    .unwrap_or_else(|| unreachable!("boot-check guaranteed registered"));
                 let text = plugin.transcribe(audio).await?;
                 StageData::Text(text)
             }
@@ -188,7 +189,8 @@ pub async fn run_pipeline(
                 let StageData::Text(raw) = data else {
                     unreachable!("boot-time Type-Chaining-Check guarantees Text-variant here");
                 };
-                let plugin = registry.cleanup(plugin_id).expect("boot-check guaranteed registered");
+                let plugin = registry.cleanup(plugin_id)
+                    .unwrap_or_else(|| unreachable!("boot-check guaranteed registered"));
                 let cleanup_input = CleanupInput::from_raw(raw);
                 let text = plugin.apply(cleanup_input).await?;
                 StageData::Text(text)

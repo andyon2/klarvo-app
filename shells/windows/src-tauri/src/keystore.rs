@@ -32,7 +32,10 @@ fn default_keystore_path() -> std::path::PathBuf {
 pub fn make_keystore() -> Arc<dyn KeyStore> {
     Arc::new(
         klarvo_core::keystore::PlainSqliteKeyStore::open(default_keystore_path())
-            .expect("PlainSqliteKeyStore init failed in dev mode"),
+            .unwrap_or_else(|e| {
+                eprintln!("PlainSqliteKeyStore init failed in dev mode: {e}");
+                std::process::exit(1)
+            }),
     )
 }
 
@@ -71,6 +74,7 @@ pub async fn verify_keystore_ready(keystore: &dyn KeyStore) -> Result<(), AppErr
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use klarvo_core::error::{AppError, AppErrorKind};
 

@@ -1,4 +1,5 @@
 #![cfg(feature = "dev-plain-keystore")]
+#![allow(clippy::disallowed_methods)]
 
 use secrecy::{ExposeSecret, SecretString};
 

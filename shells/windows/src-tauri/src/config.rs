@@ -169,6 +169,7 @@ pub fn load_config(path: &Path) -> Result<ShellConfig, AppError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

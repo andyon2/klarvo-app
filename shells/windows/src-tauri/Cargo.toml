@@ -40,6 +40,9 @@ klarvo-core = { path = "../../../klarvo-core", features = ["settings"] }
 klarvo-shell-orchestrator = { path = "../../../klarvo-shell-orchestrator" }
 klarvo-plugin-verbatim = { path = "../../../klarvo-plugins/klarvo-plugin-verbatim" }
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
 klarvo-test-fixtures = { path = "../../../klarvo-test-fixtures" }

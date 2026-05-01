@@ -4,6 +4,8 @@
 //! (accessed via `klarvo-test-fixtures`). Fail-mode tests build synthetic
 //! AppData directories in tempdirs.
 
+#![allow(clippy::disallowed_methods)]
+
 use std::path::{Path, PathBuf};
 
 use klarvo_core::v1_import::{V1ImportWarning, load_from_path};

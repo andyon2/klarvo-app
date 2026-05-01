@@ -47,6 +47,7 @@ pub fn load(ui_language: &str) -> SharedI18nTable {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use std::collections::BTreeSet;

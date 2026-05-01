@@ -160,6 +160,7 @@ pub enum PipelineStageType {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use async_trait::async_trait;

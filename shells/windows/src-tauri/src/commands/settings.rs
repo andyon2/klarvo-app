@@ -282,6 +282,7 @@ pub fn reload_locale(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::i18n::{load_locale, SharedI18nTable};

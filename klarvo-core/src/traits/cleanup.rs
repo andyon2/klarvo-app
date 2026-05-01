@@ -88,6 +88,7 @@ pub trait CleanupStyle: PipelineStage<Input = CleanupInput, Output = String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

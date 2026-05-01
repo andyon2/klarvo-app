@@ -36,3 +36,11 @@ jobs:
 
       - name: cargo check --workspace --all-targets
         run: cargo check --workspace --all-targets
+
+      - name: cargo clippy klarvo-windows-shell (default features)
+        # Story 5.5: disallowed_methods lint-gate (AC-E.5)
+        run: cargo clippy -p klarvo-windows-shell -- -D warnings
+
+      - name: cargo clippy klarvo-windows-shell (dev-plain-keystore)
+        # Story 5.5: dev-plain-keystore feature activates keystore.rs make_keystore()
+        run: cargo clippy -p klarvo-windows-shell --features dev-plain-keystore -- -D warnings

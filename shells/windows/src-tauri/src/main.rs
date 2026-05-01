@@ -165,7 +165,7 @@ fn main() {
                         // Last-resort: a Settings constructed via in_memory always succeeds
                         // unless SQLite itself is broken; if that happens we still avoid panic.
                         Settings::in_memory(Arc::new(NoopSettingsEmitter))
-                            .expect("rusqlite in-memory open is infallible on healthy SQLite build")
+                            .unwrap_or_else(|e| unreachable!("in-memory SQLite open is infallible: {e}"))
                     })
             } else {
                 match Settings::open(&settings_db_path, Arc::clone(&settings_emitter)) {
@@ -180,7 +180,7 @@ fn main() {
                             .unwrap_or_else(|e2| {
                                 tracing::error!(error = %e2, "in-memory settings init failed; using NoopSettings stub");
                                 Settings::in_memory(Arc::new(NoopSettingsEmitter))
-                                    .expect("rusqlite in-memory open is infallible on healthy SQLite build")
+                                    .unwrap_or_else(|e| unreachable!("in-memory SQLite open is infallible: {e}"))
                             })
                     }
                 }
@@ -489,7 +489,10 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error building tauri application")
+        .unwrap_or_else(|e| {
+            eprintln!("Tauri setup failed: {e}");
+            std::process::exit(1)
+        })
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 // Use `try_state` to avoid a second panic in the exit handler if Setup

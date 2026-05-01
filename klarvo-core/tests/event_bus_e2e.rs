@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use klarvo_core::event::{Event, EventBus};
 
 const CAPACITY: usize = 16;

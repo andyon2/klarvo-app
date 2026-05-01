@@ -89,6 +89,7 @@ fn json_kind(v: &serde_json::Value) -> &'static str {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::v1_import::test_util::tempdir;

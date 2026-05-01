@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use klarvo_core::event::ErrorEmitter;
 use klarvo_test_fixtures::MockErrorEmitter;
 

@@ -13,6 +13,9 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [dev-dependencies]
 klarvo-test-fixtures = { path = "../klarvo-test-fixtures" }
 klarvo-plugin-verbatim = { path = "../klarvo-plugins/klarvo-plugin-verbatim" }

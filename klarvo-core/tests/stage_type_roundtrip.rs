@@ -2,6 +2,8 @@
 //! to exercise serde-tag-parsing without depending on Pipeline-Shape —
 //! Pipeline-Shape-Roundtrip is 1B.2-Scope.
 
+#![allow(clippy::disallowed_methods)]
+
 use klarvo_core::pipeline::PipelineStageType;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]

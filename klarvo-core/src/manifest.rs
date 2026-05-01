@@ -136,7 +136,7 @@ pub fn parse_from_str(toml_src: &str) -> Result<PipelineManifest, AppError> {
     // Re-serialize captured pipeline Value → TOML string, then parse as PipelineSpec.
     // Unknown type-tags fail here with cause-chain from serde (tag + position context).
     let pipeline_str = toml::to_string_pretty(&peek.pipeline)
-        .expect("toml::Value parsed from valid TOML is always re-serializable");
+        .unwrap_or_else(|e| unreachable!("toml::Value parsed from valid TOML is always re-serializable: {e}"));
     let spec: PipelineSpec = toml::from_str(&pipeline_str).map_err(|e| {
         debug_assert!(crate::i18n::is_key(keys::UNKNOWN_STAGE_TYPE));
         AppError {
@@ -154,6 +154,7 @@ pub fn parse_from_str(toml_src: &str) -> Result<PipelineManifest, AppError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::error::AppErrorKind;

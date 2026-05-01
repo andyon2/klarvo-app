@@ -347,6 +347,7 @@ fn key_name_to_vk(key: &str) -> Option<u32> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

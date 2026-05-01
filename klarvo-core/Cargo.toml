@@ -34,6 +34,9 @@ klarvo-test-fixtures = { path = "../klarvo-test-fixtures" }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

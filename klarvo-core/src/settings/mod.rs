@@ -502,6 +502,7 @@ fn lock_conn(m: &Mutex<Connection>) -> std::sync::MutexGuard<'_, Connection> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use std::sync::Arc;
 

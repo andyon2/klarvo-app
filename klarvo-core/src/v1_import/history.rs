@@ -184,6 +184,7 @@ fn row_to_usage(row: &rusqlite::Row<'_>) -> rusqlite::Result<V1UsageEntry> {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::v1_import::test_util::tempdir;

@@ -1,0 +1,6 @@
+disallowed-methods = [
+    { path = "core::option::Option::unwrap", reason = "Use structured error handling (?, unwrap_or_else, match); in tests: #[allow(clippy::disallowed_methods)] on mod tests" },
+    { path = "core::result::Result::unwrap", reason = "Use structured error handling (?, unwrap_or_else, match); in tests: #[allow(clippy::disallowed_methods)] on mod tests" },
+    { path = "core::option::Option::expect", reason = "Use AppError with i18n-key; in tests: #[allow(clippy::disallowed_methods)] on mod tests; for invariants: unwrap_or_else(|| unreachable!(\"...\"))" },
+    { path = "core::result::Result::expect", reason = "Use AppError with i18n-key; in tests: #[allow(clippy::disallowed_methods)] on mod tests; for invariants: unwrap_or_else(|| unreachable!(\"...\"))" },
+]

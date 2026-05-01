@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-01 (Sprint-Change: Phasen/Stream-Hybrid -> BMad-Standard-Epic-Liste; Epic 5 reopen; Epic 6/8/9/10 neu)"
+last_updated: "2026-05-01 (Story 5.5 review)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -150,8 +150,8 @@ development_status:
   5-2-bindings-drift-xtask: done
   5-3-lint-events-g3-extension: done
   5-4-verify-release-hardening: done
-  5-5-disallowed-methods-lint-gate: backlog
-  5-6-required-keys-drift-xtask: backlog
+  5-5-disallowed-methods-lint-gate: review
+  5-6-required-keys-drift-xtask: ready-for-dev
   epic-5-retrospective: optional
 
   # ============================================================
