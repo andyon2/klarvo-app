@@ -3,10 +3,13 @@ name: Story 2.A.C1 — Signierter MSI-Installer
 phase: 2
 wave: A
 story_id: "2.A.C1"
-status: ready-for-dev
+status: backlog
 dependencies: []
 adr_refs: []
 source_ref: "Backlog Signierter Installer / MSI-Distribution"
+deferred:
+  date: "2026-05-01"
+  reason: "Code-Signing-Zertifikat-Beschaffung (extern) noch nicht geklärt; Build-Track ohne Signing-Track liefert keinen Phase-2-A-Mehrwert über Status quo. Re-aktivieren sobald Cert-Pfad entschieden."
 ---
 
 # Story 2.A.C1: Signierter MSI-Installer

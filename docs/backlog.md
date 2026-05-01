@@ -212,10 +212,10 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 ### Signierter Installer / MSI-Distribution
 
-- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25)
+- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25); Story 2.A.C1 deferred 2026-05-01
 - **Description**: Phase-1 hat keinen signierten Installer — Tester bekommen eine rohe `klarvo.exe` oder bauen selbst. Für Sanity-Tester ohne Rust-Toolchain ist das eine Hürde. Phase-2-Deliverable: signiertes MSI oder NSIS-Installer-Bundle (Tauri `tauri build --bundles msi` / `nsis`). Code-Signing-Zertifikat ist separater Dependency.
-- **Dependencies**: Code-Signing-Zertifikat, Windows-Build-Pipeline (CI-Gate G6 oder lokal)
-- **Status**: Planned
+- **Dependencies**: Code-Signing-Zertifikat (Beschaffungspfad noch offen), Windows-Build-Pipeline (CI-Gate G6 oder lokal)
+- **Status**: Blocked-by-Cert-Beschaffung — Story 2.A.C1 wurde 2026-05-01 von `ready-for-dev` auf `backlog` zurückgesetzt; Re-aktivieren sobald Cert-Pfad entschieden. Story-File: `_bmad-output/implementation-artifacts/2a-c1-signed-msi-installer.md`
 
 ### Hotkey-Konflikt-Erkennung
 

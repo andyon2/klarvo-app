@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-05-01 (2a-c2 Hotkey-Konflikt-Erkennung: review→done, Code-Review-Closure 12 Patches)
+# last_updated: 2026-05-01 (Story 2.A.C1 Signed MSI-Installer: ready-for-dev→backlog, Cert-Beschaffung extern offen)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -53,7 +53,7 @@
 #   Re-Scoping in Phase-2-B oder Phase-3 pending.
 
 generated: 2026-04-29
-last_updated: 2026-05-01 (Story 2.A.F2 JNI-Regression-Triage: review→done, Code-Review-Closure 5 Patches + 6 Defers)
+last_updated: 2026-05-01 (Story 2.A.C1 Signed MSI-Installer: ready-for-dev→backlog, Cert-Beschaffung extern offen)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -170,7 +170,7 @@ development_status:
   epic-phase-2-a: in-progress
   2a-a4-settings-panel-foundation: done
   2a-a8-sub-tray-language-switcher: done
-  2a-c1-signed-msi-installer: ready-for-dev
+  2a-c1-signed-msi-installer: backlog  # deferred 2026-05-01 — Cert-Beschaffung extern offen
   2a-c2-hotkey-konflikt-erkennung: done
   2a-c3-live-locale-switch: ready-for-dev
   2a-d2-arc-wrapping-fix: done
