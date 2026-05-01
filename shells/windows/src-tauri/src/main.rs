@@ -482,8 +482,19 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Use `try_state` to avoid a second panic in the exit handler if Setup
+                // failed before `app.manage(orch)` ran — preserves the original boot error.
+                if let Some(orch) = app_handle.try_state::<SessionOrchestrator>() {
+                    tauri::async_runtime::block_on(async move {
+                        orch.shutdown().await;
+                    });
+                }
+            }
+        });
 }
 
 #[cfg(test)]

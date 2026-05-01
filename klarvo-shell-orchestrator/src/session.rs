@@ -301,6 +301,30 @@ impl SessionOrchestrator {
         *state = SessionState::Recording { capture_handle, pipeline_task, press_mode };
     }
 
+    /// Abort any active pipeline and return to `Idle`. Called on App-Exit.
+    ///
+    /// Differs from `on_release`: calls `pipeline_task.abort()` (hard-cancel) instead
+    /// of dropping the handle (which only detaches). Awaits the JoinHandle after abort
+    /// so the teardown is deterministic (matches the Outcome contract from Story 2.A.D3).
+    /// Does NOT emit `RecordingStopped` — App-Exit is a forced-teardown path, not a
+    /// user-driven stop.
+    ///
+    /// Idempotent and concurrent-safe: callers serialize via the `session_state` mutex;
+    /// the second caller observes `Idle` and no-ops.
+    pub async fn shutdown(&self) {
+        let mut state = self.session_state.lock().await;
+        let prev = std::mem::replace(&mut *state, SessionState::Idle);
+        drop(state);
+        if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
+            pipeline_task.abort();
+            // Await JoinHandle so shutdown returns only after the task actually observed
+            // the cancel. JoinError::is_cancelled() is the expected outcome; Ok(()) means
+            // the task completed before the abort signal landed — both are acceptable.
+            let _ = pipeline_task.await;
+            drop(capture_handle);
+        }
+    }
+
     /// End the push-to-talk recording session (Step 4).
     ///
     /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):

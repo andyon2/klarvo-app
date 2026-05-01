@@ -410,3 +410,159 @@ async fn wait_and_type_skips_paste_emits_delivered() {
 
     assert_eq!(delivered, "wait text");
 }
+
+// ---------------------------------------------------------------------------
+// AC-1 / AC-3 / AC-4: shutdown()
+// ---------------------------------------------------------------------------
+
+/// Drain a broadcast Receiver until it is empty, with a bounded timeout per recv attempt.
+/// More deterministic than `sleep + try_recv` — surfaces late events instead of racing them.
+async fn drain_events(rx: &mut tokio::sync::broadcast::Receiver<Event>) -> Vec<Event> {
+    let mut events = Vec::new();
+    while let Ok(Ok(evt)) =
+        tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
+    {
+        events.push(evt);
+    }
+    events
+}
+
+/// Wrap a `shutdown().await` in a 1-second timeout — surfaces hangs (deadlocks, lock
+/// contention, awaiting on never-completing futures) as a useful test failure instead of
+/// blocking the test runner indefinitely.
+async fn shutdown_with_timeout(orch: &SessionOrchestrator) {
+    tokio::time::timeout(Duration::from_secs(1), orch.shutdown())
+        .await
+        .expect("shutdown must complete within 1s");
+}
+
+/// AC-1: shutdown() while Idle is a no-op and does not panic.
+#[tokio::test]
+async fn shutdown_while_idle_is_noop() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+
+    // Idle state — shutdown must be a no-op.
+    shutdown_with_timeout(&orch).await;
+
+    assert!(!paste_backend.was_called());
+    assert!(error_emitter.recorded().is_empty());
+    assert!(orch.is_idle().await);
+}
+
+/// AC-1: shutdown() while Recording aborts the pipeline and transitions to Idle.
+/// AC-1: RecordingStopped + RecordingCompleted must NOT be emitted on the forced-teardown path.
+#[tokio::test]
+async fn shutdown_while_recording_aborts_and_no_stopped_event() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, _paste, _err, event_bus) = make_orchestrator(stt);
+    let mut rx = event_bus.subscribe();
+
+    orch.on_press().await;
+    // Verify we are recording.
+    assert!(!orch.is_idle().await);
+
+    shutdown_with_timeout(&orch).await;
+
+    // After shutdown, state must be Idle.
+    assert!(orch.is_idle().await, "orchestrator must be Idle after shutdown");
+
+    // Drain via a bounded poll loop instead of sleep+try_recv — see drain_events doc.
+    let events = drain_events(&mut rx).await;
+
+    // RecordingStarted must have been emitted by on_press.
+    assert!(
+        events.iter().any(|e| matches!(e, Event::RecordingStarted { .. })),
+        "RecordingStarted must be emitted by on_press; got {events:?}"
+    );
+    // RecordingStopped must NOT be emitted by shutdown().
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::RecordingStopped { .. })),
+        "RecordingStopped must NOT be emitted on forced shutdown; got {events:?}"
+    );
+    // RecordingCompleted must NOT be emitted on the forced-teardown path either.
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::RecordingCompleted { .. })),
+        "RecordingCompleted must NOT be emitted on forced shutdown; got {events:?}"
+    );
+}
+
+/// AC-1: shutdown() is idempotent — calling it twice must not panic.
+#[tokio::test]
+async fn shutdown_is_idempotent() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, _paste, _err, _event_bus) = make_orchestrator(stt);
+
+    orch.on_press().await;
+    shutdown_with_timeout(&orch).await;
+    shutdown_with_timeout(&orch).await; // second call — must not panic, must stay Idle
+
+    assert!(orch.is_idle().await);
+}
+
+/// AC-3: on_release semantics unchanged after shutdown is added — stray release still no-op.
+/// Also covers the post-shutdown stray-release path: `shutdown() → on_release()` must be safe.
+#[tokio::test]
+async fn on_release_semantics_unchanged_after_shutdown_impl() {
+    let stt = Arc::new(MockSttProvider::returning("hello"));
+    let (orch, output_target, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+
+    // Phase 1: Normal Hold press/release cycle must still work.
+    orch.on_press().await;
+    wait_for_delivery(&output_target).await;
+    orch.on_release().await;
+
+    assert_eq!(output_target.last_delivered().as_deref(), Some("hello"));
+    assert!(paste_backend.was_called(), "paste must still be called in normal Hold cycle");
+    assert!(error_emitter.recorded().is_empty());
+
+    // Phase 2: After shutdown, a stray on_release must remain a safe no-op.
+    shutdown_with_timeout(&orch).await;
+    assert!(orch.is_idle().await);
+    orch.on_release().await; // must not panic; orchestrator is Idle
+    assert!(orch.is_idle().await, "stray on_release post-shutdown must not change state");
+}
+
+/// AC-1/coverage: `on_press → on_release → shutdown` — pipeline_task is detached
+/// (Hold-mode `on_release` drops the handle without abort); shutdown afterwards must
+/// remain a safe no-op (state already Idle) and not panic.
+#[tokio::test]
+async fn shutdown_after_on_release_is_safe_noop() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, _paste, _err, _event_bus) = make_orchestrator(stt);
+
+    orch.on_press().await;
+    orch.on_release().await; // detaches pipeline_task — state transitions to Idle
+    assert!(orch.is_idle().await);
+
+    shutdown_with_timeout(&orch).await; // must be a clean no-op
+    assert!(orch.is_idle().await);
+}
+
+/// AC-1/coverage: shutdown() in AutoStop mode while Recording. AutoStop's pipeline-internal
+/// session_state lock-acquire (session.rs `RecordingMode::AutoStop` cleanup branch) is the
+/// path most likely to deadlock if `shutdown()`'s lock-ordering is wrong. With the 1-second
+/// timeout wrapper, a deadlock surfaces as a clean test failure.
+#[tokio::test]
+async fn shutdown_while_recording_autostop_does_not_deadlock() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, _paste, _err, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
+
+    orch.on_press().await;
+    shutdown_with_timeout(&orch).await;
+    assert!(orch.is_idle().await);
+}
+
+/// AC-1/coverage: shutdown() in Toggle mode while Recording. Toggle treats the second
+/// on_press as the stop signal, so shutdown is the only forced-exit path mid-recording.
+#[tokio::test]
+async fn shutdown_while_recording_toggle_does_not_deadlock() {
+    let stt = Arc::new(MockSttProvider::returning("ignored"));
+    let (orch, _output, _paste, _err, _event_bus) =
+        make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+
+    orch.on_press().await; // Toggle: enters Recording
+    shutdown_with_timeout(&orch).await;
+    assert!(orch.is_idle().await);
+}
