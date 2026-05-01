@@ -10,7 +10,7 @@ dependencies:
 adr_refs:
   - docs/adr/0012-orchestrator-owner.md   # Phase-2-Erweiterung: Amendment anhängen
   - docs/adr/0011-hotkey-backend.md
-source_ref: "phase-2-scope-lock.md Phase-2-B A1 / backlog.md #Toggle-AutoStop-WaitAndType"
+source_ref: "_archive/phase-2-scope-lock.md (historisch) / backlog.md Windows-Daily-Drive-Kandidaten — thematische Heimat: Epic 8 (Letter-ID-Outlier; path-hygiene)"
 ---
 
 # Story 2.B.A1: Toggle + AutoStop + Wait-and-Type Recording-Modi

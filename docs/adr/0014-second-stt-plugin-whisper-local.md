@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-05-01 (Stub Proposed; 5 Open Questions in derselben Session resolved → Accepted)
-**Source:** Phase-2-A-Retrospektive AI-6; `phase-2-scope-lock.md` Pre-Story-Decision §168 (2nd-STT-Plugin-Choice).
+**Source:** Phase-2-A-Retrospektive AI-6; `_archive/phase-2-scope-lock.md` Pre-Story-Decision §168 (2nd-STT-Plugin-Choice — historisch).
 
 ## Context
 
@@ -103,7 +103,7 @@ Validation-Goal: kein Member, der Cloud-spezifisch ist (kein `reqwest::Client`, 
 
 ## References
 
-- `phase-2-scope-lock.md` §168 (Pre-Story-Decision-Item).
+- `_archive/phase-2-scope-lock.md` §168 (Pre-Story-Decision-Item — historisch).
 - `epic-phase-2-a-retro-2026-05-01.md` AI-6.
 - `klarvo-core/src/traits/stt.rs` — Trait-Definition (Phase-1-Locked).
 - `klarvo-plugins/klarvo-plugin-groq` — Cloud-Reference-Impl.

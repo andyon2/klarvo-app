@@ -6,7 +6,7 @@
 
 ## Context
 
-Phase-2 Settings-Panel (`output/planning-artifacts/phase-2-scope-lock.md` Phase-2-A Item A4) braucht einen User-editable-Persistence-Layer für Settings. Phase-1 hat keinen — alle User-Settings leben in `%APPDATA%\Klarvo\config.toml` (5 Felder, hand-edited), API-Keys liegen im OS-Keystore / `dev-plain-keystore` (KeyStore-Trait, Story 1C.x).
+Phase-2 Settings-Panel (`_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md` Phase-2-A Item A4 — historisch) braucht einen User-editable-Persistence-Layer für Settings. Phase-1 hat keinen — alle User-Settings leben in `%APPDATA%\Klarvo\config.toml` (5 Felder, hand-edited), API-Keys liegen im OS-Keystore / `dev-plain-keystore` (KeyStore-Trait, Story 1C.x).
 
 **Phase-1-Ist-Stand:**
 
@@ -223,7 +223,7 @@ Alle 5 Open-Questions des Proposed-State (2026-04-26) wurden 2026-04-27 von Andy
 ## Cross-References
 
 - `output/planning-artifacts/architecture.md` §2 :245 (Config-Hybrid Decision-Source), §2 :247 (KeyStore-Layer-Trennung), §L520 (Namespace-Convention), §L536 (Typed-Accessor-Layer-Mandate)
-- `output/planning-artifacts/phase-2-scope-lock.md` Phase-2-A Item A4 (blockt durch dieses ADR)
+- `_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md` Phase-2-A Item A4 (historisch — blockte durch dieses ADR)
 - `docs/adr/0004-v1-to-v2-migration-strategy.md` (Phase-4 v1-Import, Q5-Cross-Ref)
 - `docs/adr/0011-hotkey-backend.md` (Hotkey-Foundation Phase-1, additiv erweitert in Q1-Composite-Threshold)
 - `docs/adr/0012-orchestrator-owner.md` (Orchestrator-Owner, konsumiert Settings-API in Phase 2-B A1)

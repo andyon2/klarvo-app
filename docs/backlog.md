@@ -1,11 +1,12 @@
-# Klarvo v2 — Backlog (Phase-N+1-Single-Source-of-Truth)
+# Klarvo v2 — Backlog (MVP-Closure-Single-Source-of-Truth)
 
 **Status:** Living Document
 **Bootstrapped:** 2026-04-21 (Phase-1-Closure Review)
+**Re-Strukturiert:** 2026-05-01 (Phasen-Vokabular → thematische Buckets; ref Sprint-Change-Proposal `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-01.md`)
 
 ## Zweck
 
-Diese Datei ist die **einzige authoritative Liste aller Phase-N+1-Items** — alles, was im aktuellen Phase-Scope nicht enthalten ist, aber für eine spätere Phase vorgemerkt bleibt. Vor 2026-04-21 war diese Information verteilt über PRD-Frontmatter (`explicitlyOutOfScope`-Array), Product-Brief-Prose ("P1 (kurz nach MVP)", "P2 (Power-Features)", "DEFER / nicht in v2"), Distillate-Phase-Definitionen und Architecture-Tabellen ("Deferred auf P1/P2", "Phase-2+"). Scattered-Backlog ist Leck-Risiko.
+Diese Datei ist die **einzige authoritative Liste aller noch-nicht-Epic-gestubbten Items** — alles, was im aktuellen Epic-Scope nicht enthalten ist, aber für eine spätere Epic-Eröffnung vorgemerkt bleibt. Vor 2026-04-21 war diese Information verteilt über PRD-Frontmatter (`explicitlyOutOfScope`-Array), Product-Brief-Prose ("P1 (kurz nach MVP)", "P2 (Power-Features)", "DEFER / nicht in v2"), Distillate-Definitionen und Architecture-Tabellen. Scattered-Backlog ist Leck-Risiko.
 
 Konvention: `memory/feedback_backlog_discipline`. Bei jedem Scope-Cut oder Review-Deferral wird ein Backlog-Entry sofort hier hinzugefügt, mit Source-Ref + Status.
 
@@ -13,39 +14,39 @@ Konvention: `memory/feedback_backlog_discipline`. Bei jedem Scope-Cut oder Revie
 
 Jedes Item hat:
 
-- **Source**: Wo wurde es entschieden/vermerkt? (PRD-Frontmatter-Zeile, Brief-Section, ADR-Nummer, Phase-N-Review-Axis, etc.)
+- **Source**: Wo wurde es entschieden/vermerkt? (PRD-Frontmatter-Zeile, Brief-Section, ADR-Nummer, Review-Axis, etc.)
 - **Description**: 1–2 Sätze Was + Motivation
 - **Dependencies**: Was muss vorher geklärt/gemacht sein?
 - **Status**: `Planned` | `UX-Spec-TODO` | `Blocked-by-<X>` | `Ready-for-Story-Writing` | `BLOCKER`
 
-Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
+Gliederung nach thematischen Buckets — **keine 1:1-Bucket-zu-Epic-Kopplung**, weil Items zwischen Epics neu geslicet werden können. Innerhalb eines Buckets nach groben Themenblöcken.
 
 ---
 
-## Phase 2 — Windows daily usable
+## Windows-Daily-Drive-Kandidaten
 
-**Phase-Goal** (ref Product-Brief §Phasenplan, PRD Phase 1 Growth Features): Windows-Shell vollständig, alle Recording-Modi, zweite Hotkey-Slot, komplette Pill Bar, minimales Settings-Panel, zweiter STT-Plugin (Trait-Stability-Test).
+**Bucket-Outcome** (ref Product-Brief §Erfolgskriterien): Windows-Shell vollständig, alle Recording-Modi, zweiter Hotkey-Slot, komplette Pill Bar, minimales Settings-Panel, zweiter STT-Plugin (Trait-Stability-Test). Items wandern in Epic 6 / 8 / 9 / 10 (oder Epic-Phase-2-A-historisch) wenn dispatched.
 
-> **2026-04-26:** "OS-Keystore als Release-Default" aus dieser Goal-Line entfernt. Phase-Placement ist Phase 4 (PRD L159 + Andy-Call 2026-04-21, siehe Phase-4-Eintrag unten). Authoritative Phase-2-Scope-Snapshot: `output/planning-artifacts/phase-2-scope-lock.md`.
+> **2026-04-26:** "OS-Keystore als Release-Default" aus dieser Outcome-Line entfernt. Bucket-Placement ist MVP-Closure-Kandidaten (PRD L159 + Andy-Call 2026-04-21, siehe MVP-Closure-Eintrag unten). Historischer Scope-Snapshot: `_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md`.
 
 ### Audio-Cpal Precision & Correctness Hardening
 
 - **Source**: Phase-1-Review Axis #2 (2026-04-21), `project_phase1_complete` §Carry-Over
-- **Description**: **Drei** Items aus Story 2.5 / Phase-1-Closure-Review (`klarvo-audio-cpal`), die Phase-1 pragmatisch als akzeptabel eingeordnet wurden. (1) `ts_ms`-Stamping-at-First-Sample: aktuell approximiert im flush_chunks-Loop; exakte Sample-Count-basierte Timestamp-Derivation ist Phase-2-Tightening. (2) Resampler-Multi-Call-Steady-State-Test: `resampler_sample_count_correct`-Test wurde auf Range `[1, 342]` relaxed statt fixer Gleichheit; Multi-Call-Steady-State-Assertion ist nachzuholen. (3) Safety-Comment-Accuracy-Fix: Der existierende Comment in `klarvo-audio-cpal/src/source.rs:45-47` behauptet fälschlich „cpal::Stream is Send on all supported platforms" — cpal 0.15 markiert Stream via NotSendSyncAcrossAllPlatforms (PhantomData<*mut ()>) universell als !Send + !Sync; das unsafe impl Send/Sync ist load-bearing. Korrekter Safety-Reason: „CpalGuard wird nur beim Construction-Zeitpunkt in einen anderen Thread bewegt und nur vom Owning-Thread gedropped; Stream wird nie durch &-Reference mutiert" (Reviewer-Self-Finding aus Phase-1-Closure-Review 2026-04-21).
-- **Dependencies**: Keine (kann parallel zu anderen Phase-2-Items laufen)
+- **Description**: **Drei** Items aus Story 2.5 / Phase-1-Closure-Review (`klarvo-audio-cpal`), die Phase-1 pragmatisch als akzeptabel eingeordnet wurden. (1) `ts_ms`-Stamping-at-First-Sample: aktuell approximiert im flush_chunks-Loop; exakte Sample-Count-basierte Timestamp-Derivation ist Windows-Daily-Drive-Tightening. (2) Resampler-Multi-Call-Steady-State-Test: `resampler_sample_count_correct`-Test wurde auf Range `[1, 342]` relaxed statt fixer Gleichheit; Multi-Call-Steady-State-Assertion ist nachzuholen. (3) Safety-Comment-Accuracy-Fix: Der existierende Comment in `klarvo-audio-cpal/src/source.rs:45-47` behauptet fälschlich „cpal::Stream is Send on all supported platforms" — cpal 0.15 markiert Stream via NotSendSyncAcrossAllPlatforms (PhantomData<*mut ()>) universell als !Send + !Sync; das unsafe impl Send/Sync ist load-bearing. Korrekter Safety-Reason: „CpalGuard wird nur beim Construction-Zeitpunkt in einen anderen Thread bewegt und nur vom Owning-Thread gedropped; Stream wird nie durch &-Reference mutiert" (Reviewer-Self-Finding aus Phase-1-Closure-Review 2026-04-21).
+- **Dependencies**: Keine (kann parallel zu anderen Windows-Daily-Drive-Items laufen)
 - **Status**: Ready-for-Story-Writing
 
 ### Audio-Capture-Config-Overrides via ShellConfig
 
 - **Source**: `output/planning-artifacts/epics/epic-3/story-3.7-cpal-audiosource-wireup.md` Technical Notes §Phase-2-Expansion
-- **Description**: User-konfigurierbare Audio-Settings (Sample-Rate, Channel-Count, Device-Selection) via `ShellConfig`. Phase-1 `CpalAudioSource` nutzt OS-determined defaults (`default_host().default_input_device().default_input_config()`); User-konfigurierbare Overrides sind legitimer Phase-2-Power-User-Feature. Settings-UI (Phase-2 separat) würde ShellConfig-Audio-Section editierbar machen.
-- **Dependencies**: Story 3.2 ShellConfig-Shape-Extension (neue Felder: `audio.sample_rate`, `audio.channels`, optional `audio.device_id`); `klarvo-audio-cpal/src/source.rs` CaptureConfig-Param-Threading (aktuell hardcoded via `default_input_config()`). `CpalAudioSource` als Unit-Struct muss ggf. zu `pub struct CpalAudioSource { config: AudioConfig }` erweitert werden; impliziter Test-Suite-Update (Phase-2-Story-Scope).
+- **Description**: User-konfigurierbare Audio-Settings (Sample-Rate, Channel-Count, Device-Selection) via `ShellConfig`. Phase-1 `CpalAudioSource` nutzt OS-determined defaults (`default_host().default_input_device().default_input_config()`); User-konfigurierbare Overrides sind legitimer Windows-Daily-Drive-Power-User-Feature. Settings-UI (Epic-Phase-2-A done) macht ShellConfig-Audio-Section editierbar.
+- **Dependencies**: Story 3.2 ShellConfig-Shape-Extension (neue Felder: `audio.sample_rate`, `audio.channels`, optional `audio.device_id`); `klarvo-audio-cpal/src/source.rs` CaptureConfig-Param-Threading (aktuell hardcoded via `default_input_config()`). `CpalAudioSource` als Unit-Struct muss ggf. zu `pub struct CpalAudioSource { config: AudioConfig }` erweitert werden; impliziter Test-Suite-Update (Story-Scope).
 - **Status**: Proposed
 
 ### Tray-Icon Extensions
 
 - **Source**: Phase-1-Review Axis #4 Tray-Scope-Discussion (2026-04-21)
-- **Description**: Tray-Icon (FR20) in Phase-1-MVP zeigt nur Recording/Idle-State. Phase-2-Erweiterungen: (a) Session-Statistik-Counter (Dictations heute / gesamt), (b) Post-Error-Restart-Onboarding-Hint (nach Boot-Error-Recovery), (c) Language-Switcher im Tray-Menu (ui_language vs. output_language).
+- **Description**: Tray-Icon (FR20) in Phase-1-MVP zeigt nur Recording/Idle-State. Daily-Drive-Erweiterungen: (a) Session-Statistik-Counter (Dictations heute / gesamt), (b) Post-Error-Restart-Onboarding-Hint (nach Boot-Error-Recovery), (c) Language-Switcher im Tray-Menu (ui_language vs. output_language).
 - **Dependencies**: ADR-0009 SD-4 (Boot-Error-UX) muss entschieden sein — Restart-Onboarding-Hint ist Folge-Feature
 - **Status**: Ready-for-Story-Writing (für alle drei Subfeatures)
 
@@ -60,14 +61,14 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: PRD L153 (`explicitlyOutOfScope`: "Toggle / AutoStop / Wait-and-Type recording modes (Phase 2)")
 - **Description**: Zusätzliche Recording-Modi neben Phase-1-Hold-to-Talk. Orchestrator-State-Machine (ADR-0012) muss um weitere State-Transitions erweitert werden.
-- **Dependencies**: ADR-0012 implementiert (Phase-1-Epic-3), Settings-Panel (Phase-2-parallel für User-Switch)
+- **Dependencies**: ADR-0012 implementiert (Phase-1-Epic-3), Settings-Panel (Epic-Phase-2-A done) für User-Switch
 - **Status**: Planned
 
 ### Second Hotkey-Slot
 
 - **Source**: PRD L154 (`explicitlyOutOfScope`: "Second hotkey slot (Phase 2)"), Product-Brief §Scope MVP-enthalten "2 Slots (skaliert später auf 4–5)"
 - **Description**: Zweiter user-konfigurierbarer Hotkey-Slot (z. B. für Toggle-Mode vs. Hold-Mode Parallelbetrieb). ADR-0011 erlaubt additive Slot-Registrierung ohne Plugin-Change. Offene Frage (Distillate §Offene Fragen): Hotkey-Slot-Skalierung MVP (2) → Post-MVP (4–5) Trigger-Bedingung.
-- **Dependencies**: ADR-0011-Plugin (Phase-1-Epic-3), Settings-Panel (Phase-2)
+- **Dependencies**: ADR-0011-Plugin (Phase-1-Epic-3), Settings-Panel (Epic-Phase-2-A done)
 - **Status**: Planned
 
 ### Minimales Settings-Panel
@@ -80,15 +81,15 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 ### StylePicker (UI-Component)
 
 - **Source**: Product-Brief §Scope MVP-enthalten UI/UX, PRD §Growth-Features Phase-2 "StylePicker"
-- **Description**: UI-Selector für Cleanup-Style (Verbatim / Chat / Polished). Phase-1-Default ist Verbatim-only (`config.toml`); Picker wird relevant wenn Chat-Plugin (später) und Polished-Plugin (Phase 4) existieren.
-- **Dependencies**: Chat-Plugin (unterhalb Phase 4), Settings-Panel
+- **Description**: UI-Selector für Cleanup-Style (Verbatim / Chat / Polished). Phase-1-Default ist Verbatim-only (`config.toml`); Picker wird relevant wenn Chat-Plugin (später) und Polished-Plugin (MVP-Closure-Kandidat) existieren.
+- **Dependencies**: Chat-Plugin (MVP-Closure-Kandidat), Settings-Panel
 - **Status**: Planned
 
 ### History-Panel
 
 - **Source**: Product-Brief §Scope MVP-enthalten UI/UX, PRD §Growth-Features Phase-2
 - **Description**: UI für History-Einträge (Read/Delete/Clear-All). History-Write passiert bereits Phase-1 (7-Step-Topology-Step-7 äquivalent via OutputTarget-Wire-Up-Downstream-Plan). Panel = UI-Surface dafür.
-- **Dependencies**: Settings-Panel / Main-Window (Phase-2), SQLite-History-Schema bereits Phase-0/1
+- **Dependencies**: Settings-Panel / Main-Window (Epic-Phase-2-A done), SQLite-History-Schema bereits Phase-0/1
 - **Status**: Planned
 
 ### Return-Focus Feature
@@ -129,15 +130,15 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 ### Debug-Export-Zip (Settings-UI-gebunden)
 
 - **Source**: PRD Section, explicit FR40 + Deferred-to-Later-Phases Phase 2, `memory/project_no_remote_telemetry`
-- **Description**: User-triggered Zip-Export (Logs + redacted Config + Sys-Info) via Settings-Panel. `klarvo-core::telemetry::export`-Module-Stub existiert bereits Phase-1 (FR40); UI-Trigger + Redaction-Logic sind Phase-2.
+- **Description**: User-triggered Zip-Export (Logs + redacted Config + Sys-Info) via Settings-Panel. `klarvo-core::telemetry::export`-Module-Stub existiert bereits Phase-1 (FR40); UI-Trigger + Redaction-Logic sind Epic 9 (UX Surface).
 - **Dependencies**: Settings-Panel
 - **Status**: Planned
 
 ### Editor-Schema-Support für Pipeline-Manifest-TOML (VS-Code-JSON / Taplo-LSP)
 
 - **Source**: PRD §Deferred-to-Later-Phases Phase-2 "Editor-Schema-Support für Manifest-TOML (VS-Code-JSON / Taplo-LSP)"
-- **Description**: JSON-Schema für `pipeline.toml`, konsumierbar in VS-Code + Taplo-TOML-LSP. Phase-2-Trigger: Validation-Persona onboarded Plugin-Authors, braucht Editor-Support vor `cargo build`-Feedback.
-- **Dependencies**: Plugin-Author-Persona aktiv (Phase-2-Timing)
+- **Description**: JSON-Schema für `pipeline.toml`, konsumierbar in VS-Code + Taplo-TOML-LSP. Trigger: Validation-Persona onboarded Plugin-Authors, braucht Editor-Support vor `cargo build`-Feedback.
+- **Dependencies**: Plugin-Author-Persona aktiv (MVP-Closure-Timing)
 - **Status**: Planned
 
 ### i18n-Coverage-Test durch Epic 5 FR34 Lint-Gate ersetzen [CLOSED 5.3]
@@ -147,7 +148,7 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 - **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass), G3-Gate-Rollout
 - **Status**: CLOSED 5.3 — G3-Sub-Lint B übernimmt seit Story 5.3 die mechanische Key-Drift-Prüfung
 
-### [Phase-2-Cleanup] REQUIRED_KEYS-Konstante und manuellen i18n-Coverage-Test entfernen
+### [Cleanup] REQUIRED_KEYS-Konstante und manuellen i18n-Coverage-Test entfernen
 
 - **Source**: Story 5.3 AC-G (2026-04-25)
 - **Description**: `REQUIRED_KEYS`-Konstante und die zugehörigen Tests (`en_json_covers_all_required_keys`, `no_orphan_keys_in_en_json`) aus `shells/windows/src-tauri/src/i18n.rs` entfernen; durch G3-Sub-Lint-B-Ausgabe (`cargo xtask lint-events`) ersetzt (Story 5.3). Entfernung erst nach Verifikation, dass G3-Sub-Lint alle Shell-Emit-Sites mitabdeckt oder ein Shell-G3-Pass eingeführt ist.
@@ -171,21 +172,21 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 ### PluginError-Variant-zu-i18n-Key-Mapping
 
 - **Source**: Epic-4-Code-Review-Followup (2026-04-25), `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md` §P1
-- **Description**: `From<PluginError> for AppError` in `klarvo-core/src/error.rs:73-101` setzt für 5 von 6 PluginError-Varianten (`Network`, `Auth`, `RateLimit`, `Fatal`, `UpstreamUnavailable`) `user_message: None`. Konsequenz: Diese Errors triggern in `klarvo-shell-orchestrator/src/session.rs:148,155,176` den `unwrap_or("error.internal")`-Fallback und Frontend zeigt einen generischen Internal-Error-Toast statt eines provider-/grund-spezifischen Strings. Phase-1-Workaround: `error.internal` ist als Locale-Key registriert (Epic-4-Review-Patch P1). Phase-2-Cleanup: Pro PluginError-Variant einen passenden i18n-Key setzen (`error.plugin.network`/`error.plugin.auth`/`error.plugin.rate_limited`/`error.plugin.fatal`/`error.plugin.upstream_unavailable` oder Provider-spezifisch je nach Plugin-Owner-Convention) — entweder in `From<PluginError>` global oder per-Plugin durch explicit `user_message: Some(...)` an jedem Emit-Site (analog Groq lib.rs:153,245,298,316).
+- **Description**: `From<PluginError> for AppError` in `klarvo-core/src/error.rs:73-101` setzt für 5 von 6 PluginError-Varianten (`Network`, `Auth`, `RateLimit`, `Fatal`, `UpstreamUnavailable`) `user_message: None`. Konsequenz: Diese Errors triggern in `klarvo-shell-orchestrator/src/session.rs:148,155,176` den `unwrap_or("error.internal")`-Fallback und Frontend zeigt einen generischen Internal-Error-Toast statt eines provider-/grund-spezifischen Strings. Phase-1-Workaround: `error.internal` ist als Locale-Key registriert (Epic-4-Review-Patch P1). MVP-Cleanup: Pro PluginError-Variant einen passenden i18n-Key setzen (`error.plugin.network`/`error.plugin.auth`/`error.plugin.rate_limited`/`error.plugin.fatal`/`error.plugin.upstream_unavailable` oder Provider-spezifisch je nach Plugin-Owner-Convention) — entweder in `From<PluginError>` global oder per-Plugin durch explicit `user_message: Some(...)` an jedem Emit-Site (analog Groq lib.rs:153,245,298,316).
 - **Dependencies**: Keine (rein klarvo-core + Plugin-Refactor)
 - **Status**: Planned
 
 ### Audit-Grep-Erweiterung für unwrap_or-Fallback-Keys
 
 - **Source**: Epic-4-Code-Review-Followup (2026-04-25), `_bmad-output/implementation-artifacts/epic-4-code-review-2026-04-25.md` §P1
-- **Description**: Story-4.4-Coverage-Audit-Method greppte nur `user_message: Some(...)`-Emit-Sites und `pub const *: &str = "error.*"`-Konstanten — der `unwrap_or("error.internal")`-Pattern in `session.rs` rutschte durch und blieb 4 Tage unentdeckt. Beim Phase-2-Refactor des `cargo xtask lint-events`-Lint-Gate (FR34) muss der AST-Walk auch `unwrap_or(<&str literal>)`-Patterns auf `Option<String>`-Feldern erfassen, sowie `unwrap_or_else(|| "...".to_string())`-Varianten. Andernfalls schlüpfen Phase-2-Plugin-Authoren analoge Fallback-Keys ohne Coverage-Test. Greppen sollte zudem `format!("error.x.{}")`-Dynamic-Keys flaggen (heute erlauben sie Drift, weil REQUIRED_KEYS kein Glob/Pattern-Match erlaubt).
+- **Description**: Story-4.4-Coverage-Audit-Method greppte nur `user_message: Some(...)`-Emit-Sites und `pub const *: &str = "error.*"`-Konstanten — der `unwrap_or("error.internal")`-Pattern in `session.rs` rutschte durch und blieb 4 Tage unentdeckt. Beim Cleanup-Refactor des `cargo xtask lint-events`-Lint-Gate (FR34) muss der AST-Walk auch `unwrap_or(<&str literal>)`-Patterns auf `Option<String>`-Feldern erfassen, sowie `unwrap_or_else(|| "...".to_string())`-Varianten. Andernfalls schlüpfen Plugin-Authoren analoge Fallback-Keys ohne Coverage-Test. Greppen sollte zudem `format!("error.x.{}")`-Dynamic-Keys flaggen (heute erlauben sie Drift, weil REQUIRED_KEYS kein Glob/Pattern-Match erlaubt).
 - **Dependencies**: Epic 5 FR34 (cargo xtask lint-events AST-Pass)
 - **Status**: Planned
 
 ### Windows-Compile-CI-Gate für klarvo-core windows-cfg + klarvo-windows-shell
 
 - **Source**: Epic-3-Code-Review-Pass-Followup (2026-04-25, commit `0b5306e`)
-- **Description**: Auf WSL/Linux überspringt cargo den Windows-cfg-Code in `klarvo-core/src/keystore/os/windows.rs` und `klarvo-windows-shell` ist hard `compile_error!`-gated für non-Windows. Konsequenz: 4 Compile-Errors blieben 4 Tage unentdeckt (2× pre-existing aus Story 1C.3 / Story 3.5, 2× Batch-B-Code-Review-Patches die nur Linux-verifiziert wurden). Phase-2-Item: CI-Gate G6 oder GitHub-Actions-Windows-Job, der `cargo check -p klarvo-windows-shell` auf jedem Push gegen master laufen lässt. Alternativ lokales `cargo xtask check-windows`-Subcommand das via cargo.exe + WSL-Interop oder remote Windows-Runner ausführt.
+- **Description**: Auf WSL/Linux überspringt cargo den Windows-cfg-Code in `klarvo-core/src/keystore/os/windows.rs` und `klarvo-windows-shell` ist hard `compile_error!`-gated für non-Windows. Konsequenz: 4 Compile-Errors blieben 4 Tage unentdeckt (2× pre-existing aus Story 1C.3 / Story 3.5, 2× Batch-B-Code-Review-Patches die nur Linux-verifiziert wurden). Windows-Daily-Drive-Item: CI-Gate G6 oder GitHub-Actions-Windows-Job, der `cargo check -p klarvo-windows-shell` auf jedem Push gegen master laufen lässt. Alternativ lokales `cargo xtask check-windows`-Subcommand das via cargo.exe + WSL-Interop oder remote Windows-Runner ausführt.
 - **Dependencies**: GitHub-Actions-Setup (oder anderer CI-Provider mit Windows-Runner-Support); evtl. `CARGO_TARGET_DIR` auf Windows-Path-Pinning für WSL-Interop-Pfad
 - **Status**: Planned
 
@@ -200,42 +201,42 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: PRD L517 "Kein JavaScript-/Python-/WASM-Plugin-Authoring Phase 1 (WASM-Runtime-Plugins deferred to Phase 2+, cf. memory/project_plugin_architecture.md)", Brief §Lösung "Eine WASM-Erweiterung für Third-Party-Plugins bleibt als v2.x-Option offen"
 - **Description**: Zusätzlicher `WasmPluginLoader`, der dieselbe `PluginRegistry` füllt — ermöglicht Third-Party-Plugins ohne Cargo-Feature-Dance.
-- **Dependencies**: Trait-Surface-Stability-Pass (Phase 2), WASM-Host-Choice (wasmtime, wasmer, etc.)
-- **Status**: Planned (explorativ, könnte auch Phase 3+ werden)
+- **Dependencies**: Trait-Surface-Stability-Pass (MVP), WASM-Host-Choice (wasmtime, wasmer, etc.)
+- **Status**: Planned (explorativ, könnte auch Android-Daily-Drive+ werden)
 
 ### Live-Locale-Switch (Hot-Reload)
 
 - **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25); Story 4.2 AC-E
 - **Description**: `ui_language` (und ggf. die anderen Sprach-Achsen) beim laufenden Betrieb wechseln ohne App-Neustart. Phase-1-Constraint: Locale wird einmalig beim Boot aus `ShellConfig` geladen (`shells/windows/src-tauri/src/i18n.rs`); ein Hot-Reload-Pfad fehlt. Tray-Menu-Labels würden bei Locale-Wechsel live aktualisiert. Abhängig von Settings-Panel (UI-Trigger) oder Datei-Watcher auf `config.toml`.
-- **Dependencies**: Minimales Settings-Panel (Phase-2) oder File-Watcher-Integration
+- **Dependencies**: Minimales Settings-Panel (Epic-Phase-2-A done) oder File-Watcher-Integration
 - **Status**: Planned
 
 ### Signierter Installer / MSI-Distribution
 
 - **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25); Story 2.A.C1 deferred 2026-05-01
-- **Description**: Phase-1 hat keinen signierten Installer — Tester bekommen eine rohe `klarvo.exe` oder bauen selbst. Für Sanity-Tester ohne Rust-Toolchain ist das eine Hürde. Phase-2-Deliverable: signiertes MSI oder NSIS-Installer-Bundle (Tauri `tauri build --bundles msi` / `nsis`). Code-Signing-Zertifikat ist separater Dependency.
+- **Description**: Phase-1 hat keinen signierten Installer — Tester bekommen eine rohe `klarvo.exe` oder bauen selbst. Für Sanity-Tester ohne Rust-Toolchain ist das eine Hürde. Daily-Drive-Deliverable: signiertes MSI oder NSIS-Installer-Bundle (Tauri `tauri build --bundles msi` / `nsis`). Code-Signing-Zertifikat ist separater Dependency.
 - **Dependencies**: Code-Signing-Zertifikat (Beschaffungspfad noch offen), Windows-Build-Pipeline (CI-Gate G6 oder lokal)
 - **Status**: Blocked-by-Cert-Beschaffung — Story 2.A.C1 wurde 2026-05-01 von `ready-for-dev` auf `backlog` zurückgesetzt; Re-aktivieren sobald Cert-Pfad entschieden. Story-File: `_bmad-output/implementation-artifacts/2a-c1-signed-msi-installer.md`
 
 ### Hotkey-Konflikt-Erkennung
 
 - **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25)
-- **Description**: Phase-1 emittiert bei Hotkey-Kollision `error.hotkey.registration_failed` als Toast — User muss den Konflikt selbst lösen und `config.toml` manuell anpassen. Phase-2-UX: (a) Beim Boot-Fehler direkt den konfliktierenden Prozess nennen (Windows `RegisterHotKey` liefert keinen Eigentümer — Workaround via `GetForegroundWindow` / Accessibility-API oder User-Hint im Toast); (b) Settings-Panel mit „Hotkey ändern"-Dialog, der sofort auf Registrierungsfehler reagiert.
-- **Dependencies**: Minimales Settings-Panel (Phase-2)
+- **Description**: Phase-1 emittiert bei Hotkey-Kollision `error.hotkey.registration_failed` als Toast — User muss den Konflikt selbst lösen und `config.toml` manuell anpassen. Daily-Drive-UX: (a) Beim Boot-Fehler direkt den konfliktierenden Prozess nennen (Windows `RegisterHotKey` liefert keinen Eigentümer — Workaround via `GetForegroundWindow` / Accessibility-API oder User-Hint im Toast); (b) Settings-Panel mit „Hotkey ändern"-Dialog, der sofort auf Registrierungsfehler reagiert.
+- **Dependencies**: Minimales Settings-Panel (Epic-Phase-2-A done)
 - **Status**: Planned
 
 ---
 
-## Phase 3 — Android daily usable
+## Android-Daily-Drive-Kandidaten
 
-**Phase-Goal** (ref Product-Brief §Phasenplan, PRD §Growth-Features): Android-Shell mit allen Bubble-Zuständen, Gesten, AccessibilityService, JNI-Bridge produktiv (uniffi Control-Plane + raw jni Data-Plane), Android-v1-Import.
+**Bucket-Outcome** (ref Product-Brief §Markteintritt, PRD §Growth-Features): Android-Shell mit allen Bubble-Zuständen, Gesten, AccessibilityService, JNI-Bridge produktiv (uniffi Control-Plane + raw jni Data-Plane), Android-v1-Import.
 
 ### Play-Store-Policy-Audit (AccessibilityService) — ⚠️ BLOCKER
 
 - **Source**: `memory/project_play_store_phase3_blocker`, `memory/project_android_playstore_risk`, Architecture §7 :311 "Play Store als Primär-Distribution, Phase-3-Blocker. Vor Phase-3-Start: AccessibilityService-Policy-Audit als Pflicht-Deliverable"
 - **Description**: Google-Play-Policy-Klärung für AccessibilityService-Usage. Deliverables: (1) Policy-Klärungs-Ticket mit Google Play Console Developer Support / Policy-Hotline; (2) Justification-Text (Diktat als Accessibility-Feature positionieren, RSI + motorische Einschränkungen als Sekundärgruppe); (3) Fallback-Plan bei Ablehnung → APK-Direct (Klarvo-Website) + F-Droid + UX-Anpassung für Sideload-Onboarding.
-- **Dependencies**: Keine (kann parallel zur Windows-Phase-2-Arbeit starten)
-- **Status**: Pending-Google-Response — Audit-Doc erstellt (`docs/phase3-android-policy-audit.md`, 2026-04-29); Einreichung bei Google Developer Support ausstehend. Phase 3 bleibt geblockt bis Klärung.
+- **Dependencies**: Keine (kann parallel zur Windows-Daily-Drive-Arbeit starten)
+- **Status**: Pending-Google-Response — Audit-Doc erstellt (`docs/phase3-android-policy-audit.md`, 2026-04-29); Einreichung bei Google Developer Support ausstehend. Android-Daily-Drive bleibt geblockt bis Klärung.
 
 ### Android-Shell (native Kotlin + JNI-Bridge)
 
@@ -274,9 +275,9 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 ---
 
-## Phase 4+ — MVP-Completion + Moat
+## MVP-Closure-Kandidaten
 
-**Phase-Goal** (ref Product-Brief §Phasenplan, PRD §Vision): Lizenz-System, Polished-Cleanup-Plugin (neu-gebaut), Onboarding-Flow, v1-Import-UI-Button, Settings-Polish, Vertikal-Nischen-Builds.
+**Bucket-Outcome** (ref Product-Brief §Erfolgskriterien §Vision): Lizenz-System, Polished-Cleanup-Plugin (neu-gebaut), Onboarding-Flow, v1-Import-UI-Button, Settings-Polish, Vertikal-Nischen-Builds. Triggert Epic 7 (V1→V2 Migration) durch Onboarding-Flow.
 
 ### Lizenz-System (HMAC + Trial + 30-Tage-Cache + 48h-Grace)
 
@@ -303,7 +304,7 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: PRD L157 (`explicitlyOutOfScope`: "Onboarding flow (Phase 4)"), Brief §Onboarding-Default
 - **Description**: Fresh-Install-Flow: Cloud-First Groq + DeepSeek als Default-Stack, BYOK-Schritt integriert, Ziel "Erstes erfolgreiches Diktat in < 2 min".
-- **Dependencies**: Settings-Panel (Phase 2), Lizenz-System (für Trial-Start-Flow)
+- **Dependencies**: Settings-Panel (Epic-Phase-2-A done), Lizenz-System (für Trial-Start-Flow)
 - **Status**: Planned
 
 ### v1-Import-UI-Button
@@ -324,7 +325,7 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: PRD §Deferred-to-Later-Phases Phase-4+, Brief §Vision, Distillate §Go-to-Market
 - **Description**: Cargo-Feature-Variants für Nischen-Märkte. Jede Variante mit eigener Plugin-Set, Dictionary, LLM-Endpoint-Config. Moat-Strategy gegen horizontale Wettbewerber (siehe Brief §Was Klarvo unterscheidet Punkt 1).
-- **Dependencies**: Trait-Surface-Stability-Pass (Phase 2 validiert), Plugin-Author-Guide, konkrete Nischen-Markt-Identifikation (siehe "Konkrete Nischen-Markt-Ideen" unten)
+- **Dependencies**: Trait-Surface-Stability-Pass (durch Epic 10 validiert), Plugin-Author-Guide, konkrete Nischen-Markt-Identifikation (siehe "Konkrete Nischen-Markt-Ideen" unten)
 - **Status**: Planned
 
 ### Windows-Shell-Extension (Explorer-Context-Menu)
@@ -338,12 +339,12 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: Distillate §Lizenz-System "Lemon Squeezy (Payment-Integration) ist P1, nicht im MVP", Offene Fragen "Lemon-Squeezy-Integration-Timing: P1-Label ist grob"
 - **Description**: Commercial-Tier-Payment via Lemon Squeezy. P1-Label aus Brief ist grob — welcher P1-Meilenstein löst es aus?
-- **Dependencies**: Lizenz-System (Phase 4)
-- **Status**: Blocked-by-Phase-Timing-Decision
+- **Dependencies**: Lizenz-System (MVP-Closure-Kandidat)
+- **Status**: Blocked-by-Lizenz-Timing-Decision
 
 ---
 
-## Post-MVP P1 (Early-Post-MVP, nach Phase 4)
+## Post-MVP P1 (Early-Post-MVP, nach MVP-Closure)
 
 ### Auto-Turso-Sync
 
@@ -377,7 +378,7 @@ Gliederung nach Phasen. Innerhalb einer Phase nach groben Themenblöcken.
 
 - **Source**: PRD §Post-MVP-P1
 - **Description**: UI-Features. Cost-Tracking pro Provider (Kosten/Session + Summen).
-- **Dependencies**: History-Panel (Phase 2), Settings-Panel
+- **Dependencies**: History-Panel (Epic 9), Settings-Panel
 - **Status**: Planned
 
 ### Unlimitiertes Dictionary
@@ -531,7 +532,7 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **Konkrete Nischen-Markt-Ideen** (Brief §Offene Fragen): Andy hat Ideen, nicht im Brief verortet. Separate Arbeitsstränge.
 - **Beta-Testing-Plan für Klarvo 1.0** (Brief §Offene Fragen): Soll es eine Beta-Phase geben, oder direkt Release? Keine Entscheidung.
 - **Erste zahlende Nutzer** (Brief §Offene Fragen): Konkrete Quellen/Kanäle noch nicht definiert.
-- **Team/Agent-Setup** (Brief §Offene Fragen): Bewusst nach Phase 0 vertagt — in Klarvo-v2-Kontext: revisit wenn Phase-2-Start ansteht.
+- **Team/Agent-Setup** (Brief §Offene Fragen): Vertagt — in Klarvo-v2-Kontext aktuell solo (cf. `memory/project_ea_withdrawn`); revisit bei Skalierung.
 - **Lemon-Squeezy-Integration-Timing** (Brief §Offene Fragen): P1-Label grob. Welcher P1-Meilenstein löst aus?
 - **Hotkey-Slot-Skalierung-Trigger** (Brief §Offene Fragen): MVP hat 2, skaliert auf 4–5 — Trigger-Bedingung offen.
 
@@ -544,5 +545,6 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **2026-04-21:** Audio-Capture-Config-Overrides added (Phase 2) — Source: Story 3.7 Technical-Notes. Welle-3-Review-Decision (Reviewer-approval).
 - **2026-04-25:** Epic-4-Code-Review-Followup: zwei neue Phase-2-Items — (a) PluginError-Variant-zu-i18n-Key-Mapping (P1-Wurzel: 5/6 Varianten setzen `user_message: None`); (b) Audit-Grep-Erweiterung für `unwrap_or`-Fallback-Keys (Method-Lücke aus Story-4.4-Coverage-Audit). Drei Defer-Items (F11 TOML-Type-Mismatch-UX, F12 eager-Validation-Regression-Test, F13 symmetric TODO-Marker-Test für DE) in `_bmad-output/implementation-artifacts/deferred-work.md`.
 - **2026-04-25 (Epic-5):** Story 5.2 AC-F: `bindings-drift --fix` Phase-2-Planned. Story 5.3 AC-G: Story-4.4-Eintrag als `[CLOSED 5.3]` markiert; Phase-2-Cleanup-Story für REQUIRED_KEYS-Entfernung angelegt. Story 5.4 Technical Notes: Tauri-Bundle-Profile-Detection als Phase-2-Planned eingetragen.
-- **2026-04-26 (Phase-2-Scope-Lock):** Phase-2-Goal-Line oben korrigiert — "OS-Keystore als Release-Default" entfernt (Phase-4 per Andy-Call 2026-04-21, F1-Resolution im Phase-2-Scoping-Brief). Authoritative Phase-2-Scope-Snapshot ist `output/planning-artifacts/phase-2-scope-lock.md` (Phase-2-A/B-Wellen-Split, Skip-Section, Open-Items für Pre-Story-Decisions). Backlog bleibt Single-Source-of-Truth für Item-Inventur; Scope-Lock ist Phase-Boundary-Snapshot.
+- **2026-04-26 (Phase-2-Scope-Lock, historisch):** Goal-Line oben korrigiert — "OS-Keystore als Release-Default" entfernt (MVP-Closure-Kandidat per Andy-Call 2026-04-21, F1-Resolution im Phase-2-Scoping-Brief). Historischer Scope-Snapshot: `_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md`. Backlog bleibt Single-Source-of-Truth für Item-Inventur.
+- **2026-05-01 (BMad-Reset):** Phasen-Headers → thematische Buckets; Sprint-Tracking 100% Epic-basiert (sprint-status.yaml). Cf. `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-01.md`.
 - **2026-04-29 (Welle-2-Dispatch):** Play-Store-Policy-Audit: `docs/phase3-android-policy-audit.md` erstellt, Status auf `Pending-Google-Response` gesetzt. Phase-2-A-Welle-2-Story-Files erstellt (D2/D3/E1/F2/C1) + Stream-A AC-Writing (A8-Sub/C2/C3) gestartet.

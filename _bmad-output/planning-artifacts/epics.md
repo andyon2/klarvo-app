@@ -2243,11 +2243,15 @@ Core-Dev und Plugin-Dev haben mechanische Pre-Commit-Gates, die fail-loud auf Co
 - FR32 enforced Epic 1B FR6-Invariante auf xtask-Ebene (Pre-Commit-Mirror der Boot-Time-Executor-Strictness).
 - Persona-Achsentrennung: dies ist Plugin-Author-Tooling, kein End-User-Feature.
 
+**Re-Open-Erweiterung (2026-05-01, post-Phase-2-A-Retro):** Epic 5 wird re-opened für 2 Hardening-Stories aus Phase-2-A-Retro AI-2 + AI-3:
+- **5.5 Disallowed-Methods-Lint-Gate**: `clippy::disallowed_methods` für `expect`/`unwrap` in `klarvo-core` / `klarvo-windows-shell` / `klarvo-orchestrator`; Test-Module via `#[allow]`. Trigger: Phase-2-A-Retro Reibungsstelle 2 (Fail-Soft-Pattern wiederholt nachgepatcht in 4 Stories).
+- **5.6 REQUIRED_KEYS-Drift-Detection-xtask**: Parse JSON-Locale-Files, diff gegen `i18n.rs::REQUIRED_KEYS`. Trigger: Phase-2-A-Retro Reibungsstelle 3 (REQUIRED_KEYS-Drift in A4 → A8-Sub → D2 Nachpflege-Kette; G3-Lint catched anderes).
+
 ---
 
 ### Epic 6: Observability & Privacy-Respecting Diagnostics
 
-Andy kann Failures via structured Logs debuggen, ohne BYOK-Privacy-Narrative zu verletzen. Log-Export-Stub bereit für Phase-2-UI-Expansion.
+Andy kann Failures via structured Logs debuggen, ohne BYOK-Privacy-Narrative zu verletzen. Log-Export-Stub bereit für UI-Trigger-Expansion in Epic 9.
 
 **FRs covered:** FR37, FR38, FR39, FR40 — 4 FRs
 
@@ -2255,8 +2259,9 @@ Andy kann Failures via structured Logs debuggen, ohne BYOK-Privacy-Narrative zu 
 
 **Implementation Notes:**
 - NFR5 (kein Audio/Text im Log) + NFR6 (keine Outbound-Calls außer user-konfigurierter BYOK-Upstream) sind implizite Invarianten in Story-ACs.
-- FR40 ist explizit Phase-1-Stub; UI-triggered-Zip-Generation-Forward-Reference → Phase 2 als Inline-Notiz im Epic-6-Stub-Story-AC.
+- FR40 ist als Foundation-Stub committed (`klarvo-core::telemetry::export`); UI-triggered-Zip-Generation ist deferred-to-Epic-9 (UX Surface) als Settings-UI-gebundener Trigger.
 - NFR1 (Latency-Observable via ts_ms im Log) verbindet Epic 6 + Epic 2.
+- **Eröffnungs-Trigger (2026-05-01):** Epic 6 wird vor Epic 8/9/10 dispatched, weil Whisper-Local-Debugging (Epic 10 RTF/Latency/Drops) und externe-Tester-Triage strukturierte Logs voraussetzen.
 
 ---
 
@@ -2271,4 +2276,60 @@ V1-User (Andy) kann Dictation-History via CLI-Subcommand nach V2 migrieren — e
 **Implementation Notes:**
 - v1_import parse-only Phase-0-done (commits `aefa1aa` + `7346af4`, ADR-0004). Epic 7 completes **write-to-v2-AppData**-Schritt.
 - v1-Tauri-Identifier `com.klarvo.voice` bereits verifiziert (`memory/reference_klarvo_v1_tauri_identifier.md`).
-- FR43 Exclude-Policy-AC: Verbatim-only-V2-Forward-Reference → Polished-Mode-Rebuild Phase 2 als Inline-Notiz (kein Platzhalter-Story, nur Kommentar).
+- FR43 Exclude-Policy-AC: Verbatim-only-V2-Forward-Reference → Polished-Cleanup-Plugin-Rebuild (deferred, MVP-Closure-Kandidat) als Inline-Notiz (kein Platzhalter-Story, nur Kommentar).
+- **Eröffnungs-Trigger (2026-05-01):** Epic 7 ist `backlog` mit Trigger = Onboarding-Flow-Eröffnung (v1-Import-UI-Button). Ohne UI-Surface ist die CLI-Migration Dev-only und für Andy als einzigen v1-Nutzer nicht load-bearing.
+
+---
+
+### Epic 8: Recording Modes & Hotkeys
+
+Andy nutzt Toggle / AutoStop / Wait-and-Type Recording-Modi und einen zweiten Hotkey-Slot ohne `config.toml`-Edit. Recording-UX-Vollständigkeit für Daily-Drive.
+
+**FRs covered:** Brief-bezogen (Recording-Modes, Second-Hotkey-Slot) — keine FR-Numerierung in PRD; bezieht sich auf `backlog.md` Items "Toggle + AutoStop + Wait-and-Type Recording-Modi" + "Second Hotkey-Slot".
+
+**Dependencies:** Epic 5 (Lint-Gate vor Story-Writing, AI-2-Trigger), Epic-Phase-2-A (Settings-Service Foundation, ADR-0011 Hotkey-Backend, ADR-0012 Orchestrator-Owner).
+
+**Implementation Notes:**
+- 2.B.A1-Story (`2b-a1-toggle-autostop-wait-and-type-modes.md`) ist done — Letter-ID-Outlier (path-hygiene; Hybrid-Form-Erbe vor BMad-Reset 2026-05-01). Epic 8 referenziert das File, neue Stories folgen Naming-Schema `epic-8-…md`.
+- Second-Hotkey-Slot extended ADR-0011 (Phase-1-Hotkey-Foundation) additiv.
+
+---
+
+### Epic 9: UX Surface — Pill Bar, Return-Focus, History, Toasts
+
+Andy hat eine Pill-Bar-Visualisierung der laufenden Recording-Session, Return-Focus zum vorherigen Window nach Paste, History-Panel im Settings-Window und Windows-Toast-Notifications für relevante Events. UX-Daily-Drive-Vollständigkeit.
+
+**FRs covered:** Brief-bezogen (UX-Polish + History-Visibility) — siehe `backlog.md` Items "Floating Pill Bar", "Return-Focus Feature", "History-Panel", "Windows-Toast-Notifications".
+
+**Dependencies:** Epic-Phase-2-A (Settings-Window-Surface), Pre-Story-Decision-Doc `_bmad-output/planning-artifacts/pill-bar-ux-decisions.md` (vor Pill-Bar-Story).
+
+**Implementation Notes:**
+- Pill-Bar UX-Mini-Pass blockt Pill-Bar-Story (analog ADR-0013-vor-A4-Pattern aus Phase-2-A); Return-Focus + Toasts dependency-frei.
+- Epic 6 (FR40 Log-Export-Stub) bekommt UI-Trigger in Epic 9 als Settings-UI-Aktion (Cross-Epic-Konsumption).
+
+---
+
+### Epic 10: Whisper-Local STT-Plugin (Substrate-Validation)
+
+Substrate-Validation-Test: Zweiter STT-Plugin als reiner Trait-Impl, ohne Core-Änderung. Validiert Plugin-Architektur durch Cloud-vs-Local-Differenzierung. Zusatznutzen: Offline-Diktat-Kapazität.
+
+**FRs covered:** Brief §Erfolgskriterien ("Neue Feature-Entwicklung ... erfordert keine Änderung an Shell-Code"); siehe `backlog.md` Items "Zweiter STT-Plugin (Trait-Stability-Test)" + "Audio-Capture-Config-Overrides via ShellConfig".
+
+**Dependencies:** Epic 6 (strukturierte Logs für RTF / Latency / Drop-Diagnostik), Epic-Phase-2-A (Settings-Audio-Section für Capture-Overrides), ADR-0014 (Accepted, commit 0513969).
+
+**Implementation Notes:**
+- ADR-0014 ist Architektur-Anker; Plugin-Crate-Name + Cloud-vs-Local-Differenzierung dokumentiert.
+- Audio-Capture-Config-Overrides (Story 3.7 §Phase-2-Expansion-Carry-Over) ist als zweite Epic-10-Story sinnvoll, weil Whisper-Local andere Capture-Defaults (16kHz Mono Float) als Cloud-Provider braucht.
+- Observability-AC kann bei Bedarf inline statt eigener Epic-6-Story; Cross-Epic-Sequencing entscheidet beim Story-Writing.
+
+---
+
+## MVP-Boundary
+
+**Innerhalb MVP-Scope:** Epic 1A — Epic 10 + Epic-Phase-2-A (Hybrid-Outlier).
+
+**Post-MVP-Trigger-Epics (in `epics.md` ungestaffelt; Eröffnung erst bei Trigger):**
+- Epic 7: V1→V2 Migration (Trigger: Onboarding-Flow-Eröffnung)
+- Weitere Epics ergeben sich aus `backlog.md` MVP-Closure-Kandidaten + Post-MVP-P1/P2.
+
+MVP-Definition referenziert `product-brief-klarvo.md` §Erfolgskriterien (Pipeline-Vollständigkeit + 2-Min-First-Diktat + Lizenz-System + v1-Import-Button auf Win + Android).

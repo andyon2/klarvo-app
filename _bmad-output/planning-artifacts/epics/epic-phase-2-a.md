@@ -5,7 +5,7 @@ epic_id: phase-2-a
 status: in-progress
 created: 2026-04-28 (scope-locked); 2026-04-30 (Epic-File materialisiert aus Welle-2-Dispatch-Plan)
 source_docs:
-  - "_bmad-output/planning-artifacts/phase-2-scope-lock.md"
+  - "_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md"
   - "docs/adr/0013-settings-persistence-schema.md"
 ---
 

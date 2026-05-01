@@ -72,7 +72,7 @@ Klarvo richtet sich bewusst nicht an den Massenmarkt. BYOK-Reibung ist Akzeptanz
 
 ## Erfolgskriterien
 
-**MVP-Abschluss (Phase 4, 3–5 Monate Vollzeit konservativ geschätzt)**:
+**MVP-Abschluss (3–5 Monate Vollzeit konservativ geschätzt)**:
 - Pipeline läuft durchgehend auf Windows und Android mit allen Recording-Modi (Hold/Toggle/AutoStop) und kompletter Pill-Bar bzw. Bubble-UX.
 - Ein Nutzer kommt vom Fresh Install in unter zwei Minuten zum ersten erfolgreichen Diktat (Groq + DeepSeek als BYOK-Default).
 - Der v1-Import-Button migriert History, Dictionary, API-Keys und Hotkey-Config in einem Klick.
@@ -84,7 +84,7 @@ Klarvo richtet sich bewusst nicht an den Massenmarkt. BYOK-Reibung ist Akzeptanz
 - Neue Feature-Entwicklung (z. B. ein neuer STT-Provider oder Cleanup-Style) erfordert keine Änderung an Shell-Code.
 
 **Regressions-Disziplin (Mechanismus statt Metrik)**:
-- Der Erfolgsindikator ist nicht eine Zahl, sondern ein Verhaltenswechsel: Feature-Entwicklung fühlt sich nicht mehr an wie Brand-Löschen. Operationalisiert durch Specs-vor-Code-Workflow (BMad-gestützt), headless testbaren Core ab Phase 0, und Review-Disziplin bei jeder Pipeline-Änderung. Eine v1-Baseline existiert nicht sauber — die qualitative Aussage „Änderungen in einem Feature brechen keine anderen" ist der Erfolgs-Anker.
+- Der Erfolgsindikator ist nicht eine Zahl, sondern ein Verhaltenswechsel: Feature-Entwicklung fühlt sich nicht mehr an wie Brand-Löschen. Operationalisiert durch Specs-vor-Code-Workflow (BMad-gestützt), headless testbaren Core ab Workspace-Foundation, und Review-Disziplin bei jeder Pipeline-Änderung. Eine v1-Baseline existiert nicht sauber — die qualitative Aussage „Änderungen in einem Feature brechen keine anderen" ist der Erfolgs-Anker.
 
 **Langfristig (Post-MVP, P1/P2)**:
 - Zweites Gerät vom selben Nutzer via Turso-Sync nahtlos angeschlossen.

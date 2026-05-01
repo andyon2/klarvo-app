@@ -1,7 +1,9 @@
 ---
-title: "Phase 2 Scope Lock"
-status: "locked"
+title: "Phase 2 Scope Lock (HISTORISCH — Hybrid-Form vor BMad-Reset 2026-05-01)"
+status: "archived"
 phase: 2
+archived: "2026-05-01"
+archive_reason: "Phase/Stream-Hybrid → BMad-Standard-Epic-Liste; ref _bmad-output/planning-artifacts/sprint-change-proposal-2026-05-01.md"
 created: "2026-04-26"
 updated: "2026-04-26"
 inputs:

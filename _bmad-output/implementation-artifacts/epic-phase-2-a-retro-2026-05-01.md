@@ -7,7 +7,7 @@ participant: Andy (Project Lead, solo)
 facilitation: BMad Retrospective Workflow (party-mode condensed)
 inputs:
   - _bmad-output/planning-artifacts/epics/epic-phase-2-a.md
-  - _bmad-output/planning-artifacts/phase-2-scope-lock.md
+  - _bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md
   - _bmad-output/implementation-artifacts/2a-*.md (9 Story-Files)
   - _bmad-output/implementation-artifacts/deferred-work.md
   - _bmad-output/implementation-artifacts/epic-3-code-review-2026-04-25.md
