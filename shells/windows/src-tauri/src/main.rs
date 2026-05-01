@@ -53,26 +53,27 @@ fn main() {
         .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
             // Bootstrap sequence (Story 3.10 + Story 4.2):
+            // Step 0:  TauriErrorEmitter::new (before Step 1 — enables early-boot emit sites;
+            //          Story 5.7: moved from Step 4 so Steps 1-2 can use it instead of json!()-emits)
             // Step 1:  resolve_config_path
             // Step 2:  load_config (fail-soft → ShellConfig::default on error)
             // Step 2b: i18n::load(ui_language) — locale-aware table; depends on config (Step 2)
             // Step 3:  make_keystore + verify_keystore_ready (fail-soft → continue on error)
-            // Step 4:  TauriErrorEmitter::new
-            // Step 5:  make_audio_source
-            // Step 6:  WinSendInputPasteBackend
-            // Step 7:  MonotonicClock (Phase-1 default Clock impl)
-            // Step 8:  RmsVad (Phase-1-Default VadProvider)
-            // Step 9:  parse_embedded manifest + build_plugin_registry (fatal on error)
-            //          EventBus::new (between 9 and 10 — injected into SessionOrchestrator)
-            // Step 10: SessionOrchestrator::new (fatal on error)
-            // Step 11: app.manage (State-insertion)
-            // Step 12: Hotkey-registration (fail-soft → emit error + continue)
-            // Step 13: Tray-Icon + EventMirror spawn
+            // Step 4:  make_audio_source
+            // Step 5:  WinSendInputPasteBackend
+            // Step 6:  MonotonicClock (Phase-1 default Clock impl)
+            // Step 7:  RmsVad (Phase-1-Default VadProvider)
+            // Step 8:  parse_embedded manifest + build_plugin_registry (fatal on error)
+            //          EventBus::new (between 8 and 9 — injected into SessionOrchestrator)
+            // Step 9:  SessionOrchestrator::new (fatal on error)
+            // Step 10: app.manage (State-insertion)
+            // Step 11: Hotkey-registration (fail-soft → emit error + continue)
+            // Step 12: Tray-Icon + EventMirror spawn
             //
             // # Bootstrap-Error-Policy
             //
-            // Fail-soft (continue with defaults/no-op) for Steps 1-8, 12: App remains
-            // functional or degraded but launchable. Fatal (return Err) for Steps 9-10:
+            // Fail-soft (continue with defaults/no-op) for Steps 0-7, 11: App remains
+            // functional or degraded but launchable. Fatal (return Err) for Steps 8-9:
             // without a valid manifest + orchestrator, the App has no meaningful function.
             //
             // Step 2b is currently a Panic-Path (Phase-1 stub): JSON-corruption in the
@@ -95,7 +96,10 @@ fn main() {
             // partial/garbled values never silently overwrite the SQLite settings layer.
             // The user is notified via app.error (toast in the Settings-Panel — D1 from
             // code-review 2026-04-29).
-            use tauri::Emitter as _;
+            // Step 0: Error emitter — created before Steps 1-2 (fail-soft: infallible constructor)
+            use klarvo_core::event::ErrorEmitter as _;
+            let emitter: Arc<dyn klarvo_core::event::ErrorEmitter> =
+                Arc::new(TauriErrorEmitter::new(app.handle().clone()));
 
             let mut toml_loaded_ok = false;
             let config = match config::resolve_config_path() {
@@ -106,13 +110,7 @@ fn main() {
                     }
                     Err(e) => {
                         tracing::error!(error = %e, "ShellConfig load failed; using defaults; settings migration skipped");
-                        let _ = app.handle().emit(
-                            "app.error",
-                            serde_json::json!({
-                                "key": "error.config.parse_failed",
-                                "ts_ms": 0u64,
-                            }),
-                        );
+                        tauri::async_runtime::block_on(emitter.emit_error("error.config.parse_failed", 0));
                         ShellConfig::default()
                     }
                 },
@@ -155,10 +153,7 @@ fn main() {
 
             let settings: Settings = if settings_db_path.as_os_str().is_empty() {
                 tracing::warn!("opening in-memory settings (app_data_dir unavailable)");
-                let _ = app.handle().emit(
-                    "app.error",
-                    serde_json::json!({ "key": "error.settings.in_memory_fallback", "ts_ms": 0u64 }),
-                );
+                tauri::async_runtime::block_on(emitter.emit_error("error.settings.in_memory_fallback", 0));
                 Settings::in_memory(Arc::clone(&settings_emitter))
                     .unwrap_or_else(|e| {
                         tracing::error!(error = %e, "in-memory settings init failed; using NoopSettings stub");
@@ -172,10 +167,7 @@ fn main() {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::error!(error = %e, path = %settings_db_path.display(), "settings db open failed; falling back to in-memory");
-                        let _ = app.handle().emit(
-                            "app.error",
-                            serde_json::json!({ "key": "error.settings.in_memory_fallback", "ts_ms": 0u64 }),
-                        );
+                        tauri::async_runtime::block_on(emitter.emit_error("error.settings.in_memory_fallback", 0));
                         Settings::in_memory(Arc::clone(&settings_emitter))
                             .unwrap_or_else(|e2| {
                                 tracing::error!(error = %e2, "in-memory settings init failed; using NoopSettings stub");
@@ -246,26 +238,22 @@ fn main() {
                 }
             }
 
-            // Step 4: Error emitter
-            let emitter: Arc<dyn klarvo_core::event::ErrorEmitter> =
-                Arc::new(TauriErrorEmitter::new(app.handle().clone()));
-
-            // Step 5: Audio source (CpalAudioSource, WASAPI)
+            // Step 4: Audio source (CpalAudioSource, WASAPI)
             let audio = make_audio_source();
 
-            // Step 6: Paste backend (Win32 SendInput Ctrl+V)
+            // Step 5: Paste backend (Win32 SendInput Ctrl+V)
             let paste: Arc<dyn klarvo_core::output::PasteBackend> = Arc::new(WinSendInputPasteBackend);
 
-            // Step 7: Clock (Phase-1 default: MonotonicClock — session-relative monotone ms)
+            // Step 6: Clock (Phase-1 default: MonotonicClock — session-relative monotone ms)
             // Phase-2: revisit if wall-clock timestamps are required for cross-session correlation.
             let clock: Arc<dyn klarvo_core::time::Clock> = Arc::new(MonotonicClock::new());
 
-            // Step 8: VAD (Phase-1 default: RmsVad energy threshold).
+            // Step 7: VAD (Phase-1 default: RmsVad energy threshold).
             // Phase-2+ may substitute SileroVad behind the same VadProvider trait.
             let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
                 Arc::new(tokio::sync::Mutex::new(Box::new(RmsVad::new())));
 
-            // Step 9: Manifest + Registry (fatal — without valid manifest + registry the app
+            // Step 8: Manifest + Registry (fatal — without valid manifest + registry the app
             // has no pipeline and no meaningful voice-transcription function)
             let manifest = Arc::new(klarvo_core::manifest::parse_embedded().map_err(|e| {
                 tracing::error!(error = %e, "manifest parse failed");
@@ -273,12 +261,12 @@ fn main() {
             })?);
             let registry = Arc::new(build_plugin_registry());
 
-            // EventBus constructed here (before Step 10) so SessionOrchestrator can emit
+            // EventBus constructed here (before Step 9) so SessionOrchestrator can emit
             // recording-lifecycle events (Started/Stopped/Completed). Managed as State
-            // in Step 11 to keep sender alive.
+            // in Step 10 to keep sender alive.
             let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
-            // Step 10: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
+            // Step 9: SessionOrchestrator (fatal — constructor is infallible per Story 3.3
             // AC-B; type-shape mismatches are programmer errors caught at compile time)
             let orch = SessionOrchestrator::new(
                 Arc::clone(&registry),
@@ -293,9 +281,9 @@ fn main() {
                 Arc::clone(&recording_mode_arc),
             );
 
-            // Step 11: State management — all slots must be registered before Step 12
+            // Step 10: State management — all slots must be registered before Step 11
             // (hotkey callback accesses SessionOrchestrator via tauri::State)
-            // app.manage(orch)      → consumed by hotkey-callback (Step 12) + tray-subscription (Step 13)
+            // app.manage(orch)      → consumed by hotkey-callback (Step 11) + tray-subscription (Step 12)
             // app.manage(config)    → consumed by legacy read paths (Phase-2)
             // app.manage(keystore)  → consumed by future xtask set-key Command (Phase-2)
             // app.manage(emitter)   → consumed by error-emit call-sites in commands (Phase-2)
@@ -303,7 +291,7 @@ fn main() {
             //                         (project_event_ts_ms_convention — single MonotonicClock origin)
             // app.manage(settings)            → consumed by Settings Tauri-Commands (Story 2.A.A4)
             // recording_mode_arc is intentionally NOT managed: per AC-7 the Arc is
-            // orchestrator-internal; the `settings.changed` listener (Step 11b) is
+            // orchestrator-internal; the `settings.changed` listener (Step 10b) is
             // the single writer, so the set_recording_mode_slot1 Command does not
             // need direct access via tauri::State.
             debug_assert!(app.manage(orch));
@@ -313,7 +301,7 @@ fn main() {
             debug_assert!(app.manage(Arc::clone(&clock)));
             debug_assert!(app.manage(settings));
             // Snapshot the boot-time locale separately because `i18n_table` is
-            // moved into managed state below; the listener (Step 11c) owns its
+            // moved into managed state below; the listener (Step 10c) owns its
             // own freshly-loaded copy on every locale change.
             // Story 2.A.C3: `i18n_table` is now `SharedI18nTable = Arc<RwLock<I18nTable>>`.
             // `boot_i18n` holds a second Arc-reference for the tray setup below.
@@ -322,7 +310,7 @@ fn main() {
             app.manage(i18n_table);
             specta_builder.mount_events(app);
 
-            // Step 11b: settings.changed listener — keeps recording_mode_arc in sync when
+            // Step 10b: settings.changed listener — keeps recording_mode_arc in sync when
             // set_recording_mode_slot1 Command writes a new mode (AC-7 live-update).
             //
             // Diagnostics: parse-failures on `RecordingMode::from_str` leave a
@@ -356,7 +344,7 @@ fn main() {
                 });
             }
 
-            // Step 11c: settings.changed listener — rebuilds the tray menu when the
+            // Step 10c: settings.changed listener — rebuilds the tray menu when the
             // user switches `ui.language` via the Settings-Panel (Story 2.A.A8-Sub
             // AC-2 + AC-3). Reactive only: A8-Sub never writes settings itself;
             // the menu items in the language sub-menu are visual indicators (AC-5
@@ -398,19 +386,19 @@ fn main() {
                 });
             }
 
-            // Step 12: Hotkey registration (fail-soft — parse or registration failure emits
+            // Step 11: Hotkey registration (fail-soft — parse or registration failure emits
             // Toast via TauriErrorEmitter internally; app starts without hotkey rather than exit)
             register_hotkey(app, &config);
 
-            // Step 13: Tray-Icon + EventMirror spawn
+            // Step 12: Tray-Icon + EventMirror spawn
             //
-            // EventBus already constructed before Step 10 and injected into SessionOrchestrator.
+            // EventBus already constructed before Step 9 and injected into SessionOrchestrator.
             // Managed as State so the broadcast sender lives for the app lifetime.
             let event_bus_rx_tray = event_bus.subscribe();
             let event_bus_rx_mirror = event_bus.subscribe();
             debug_assert!(app.manage(Arc::clone(&event_bus)));
 
-            // Step 13a: Tray icon with recording-state indicator (fail-soft per AC-F —
+            // Step 12a: Tray icon with recording-state indicator (fail-soft per AC-F —
             // asset decode or builder errors log and skip; the app continues without
             // a system-tray icon rather than refusing to boot).
             // TODO Phase-2-Branding: replace placeholder icons with finalized assets
@@ -418,7 +406,7 @@ fn main() {
                 let idle_icon = Image::from_bytes(include_bytes!("../icons/tray-idle.png"))?;
                 let recording_icon = Image::from_bytes(include_bytes!("../icons/tray-recording.png"))?;
                 // Story 2.A.A8-Sub: builder lives in `tray.rs` so the
-                // `settings.changed` listener (Step 11c) can rebuild the same
+                // `settings.changed` listener (Step 10c) can rebuild the same
                 // layout when the user switches `ui.language`.
                 // Story 2.A.C3: read-lock `boot_i18n` (SharedI18nTable) for the initial menu
                 // build. Recover from poisoning fail-soft — at boot the table cannot have been
@@ -451,7 +439,7 @@ fn main() {
                     //               still draining; audio capture has ended). TODO Phase-2-Branding:
                     //               distinct processing icon (e.g. red mic + spinner overlay).
                     //   Completed → idle icon (gray) — pipeline task has fully exited.
-                    // Subscribes independently from EventMirror (Step 13b) per AC-G separation requirement.
+                    // Subscribes independently from EventMirror (Step 12b) per AC-G separation requirement.
                     let tray_handle = tray.clone();
                     let idle_icon_tray = idle_icon.clone();
                     let recording_icon_tray = recording_icon.clone();
@@ -482,7 +470,7 @@ fn main() {
                 }
             }
 
-            // Step 13b: EventMirror — ref Story 3.8 AC-D. Always wired, independent of
+            // Step 12b: EventMirror — ref Story 3.8 AC-D. Always wired, independent of
             // tray outcome (separate broadcast::Receiver per AC-G).
             EventMirror::new(app.handle().clone()).start(event_bus_rx_mirror);
 

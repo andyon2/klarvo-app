@@ -2246,6 +2246,7 @@ Core-Dev und Plugin-Dev haben mechanische Pre-Commit-Gates, die fail-loud auf Co
 **Re-Open-Erweiterung (2026-05-01, post-Phase-2-A-Retro):** Epic 5 wird re-opened für 2 Hardening-Stories aus Phase-2-A-Retro AI-2 + AI-3:
 - **5.5 Disallowed-Methods-Lint-Gate**: `clippy::disallowed_methods` für `expect`/`unwrap` in `klarvo-core` / `klarvo-windows-shell` / `klarvo-orchestrator`; Test-Module via `#[allow]`. Trigger: Phase-2-A-Retro Reibungsstelle 2 (Fail-Soft-Pattern wiederholt nachgepatcht in 4 Stories).
 - **5.6 REQUIRED_KEYS-Drift-Detection-xtask**: Parse JSON-Locale-Files, diff gegen `i18n.rs::REQUIRED_KEYS`. Trigger: Phase-2-A-Retro Reibungsstelle 3 (REQUIRED_KEYS-Drift in A4 → A8-Sub → D2 Nachpflege-Kette; G3-Lint catched anderes).
+- **5.7 DETECTION-GAP-Migration**: Refactor 3 Emit-Sites (`config.rs::error.config.unknown_field` if/else-Var; `main.rs::error.config.parse_failed` + `error.settings.in_memory_fallback` json!()-Makro) zu lint-detektierbaren Patterns (inline Literals / `emit_error`-MethodCall). Danach 3 DETECTION-GAP-Einträge aus `xtask/orphan-allowlist.txt` entfernen. Trigger: Epic-5-Retro AI-1 (2026-05-01).
 
 ---
 

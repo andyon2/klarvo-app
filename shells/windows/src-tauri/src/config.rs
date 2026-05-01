@@ -108,16 +108,20 @@ pub fn resolve_config_path() -> Result<PathBuf, AppError> {
 fn parse_from_str(raw: &str) -> Result<ShellConfig, AppError> {
     let config: ShellConfig = toml::from_str(raw).map_err(|e| {
         let msg = e.to_string();
-        let user_key = if msg.contains("unknown field") {
-            "error.config.unknown_field"
+        if msg.contains("unknown field") {
+            AppError {
+                kind: AppErrorKind::Configuration,
+                message: msg,
+                user_message: Some("error.config.unknown_field".to_string()),
+                retryable: false,
+            }
         } else {
-            "error.config.missing"
-        };
-        AppError {
-            kind: AppErrorKind::Configuration,
-            message: msg,
-            user_message: Some(user_key.to_string()),
-            retryable: false,
+            AppError {
+                kind: AppErrorKind::Configuration,
+                message: msg,
+                user_message: Some("error.config.missing".to_string()),
+                retryable: false,
+            }
         }
     })?;
 

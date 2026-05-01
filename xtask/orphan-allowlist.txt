@@ -5,38 +5,16 @@
 # Stale-Entries und Format-Verstöße erzeugen `[allowlist-stale]` /
 # `[allowlist-format]`-Violations (review-pass P5).
 #
-# Drei Kategorien:
+# Zwei Kategorien (Story 5.7: DETECTION-GAP entfernt — 3 Sites migriert):
 #   FRONTEND-ONLY:  Kein Rust-Emit-Site geplant; TypeScript-Konsument.
-#   DETECTION-GAP:  Rust-Emit-Site vorhanden, aber außerhalb der Visitor-Patterns
-#                   (json!()-Macro / if-else-Variablen-Tracing). Visitor kann die
-#                   Verbindung nicht mechanisch herstellen.
 #   TUPLE-CONST:    Keys leben in `&[(&str, &str)]`-const-Arrays. Visitor scannt
 #                   tuple-Elemente in const-Arrays nicht.
-#
-# TODO (review-pass D3 / Follow-Up-Story): DETECTION-GAP-Einträge auf
-# `ErrorEmitter::emit_error(...)`-Pattern migrieren; danach hier entfernen.
 
 # ── FRONTEND-ONLY ─────────────────────────────────────────────────────────────
 
 # error.unknown: Frontend-Fallback in shells/windows/src/index.html:79,148
 # für unbekannte Error-Payloads aus app.error-Event. Kein Rust-Emit-Site geplant.
 error.unknown
-
-# ── DETECTION-GAP ─────────────────────────────────────────────────────────────
-
-# error.config.unknown_field: shells/windows/src-tauri/src/config.rs:112
-# if/else-Branch in `user_key`-Variable, dann AppError { user_message: Some(user_key.to_string()) }.
-# Variablen-Tracing ist außerhalb der Visitor-Heuristik.
-error.config.unknown_field
-
-# error.config.parse_failed: shells/windows/src-tauri/src/main.rs:112
-# Early-boot app.handle().emit("app.error", json!({"key": "..."})) vor
-# Tauri-Managed-State-Init. Visitor scannt json!()-Macro-Tokens nicht.
-error.config.parse_failed
-
-# error.settings.in_memory_fallback: shells/windows/src-tauri/src/main.rs:160,177
-# Gleiches Pattern wie error.config.parse_failed (early-boot json!()-emit).
-error.settings.in_memory_fallback
 
 # ── TUPLE-CONST ───────────────────────────────────────────────────────────────
 # `pub const SUPPORTED_LOCALES: &[(&str, &str)]` at tray.rs:30-33. Lookup-Path
