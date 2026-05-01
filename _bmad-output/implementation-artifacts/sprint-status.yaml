@@ -161,8 +161,8 @@ development_status:
   # (Epic 10) und externe-Tester-Triage. Stories via bmad-create-story.
   # ============================================================
   epic-6: in-progress
-  epic-6-telemetry-logging-rolling-file: ready-for-dev  # 2026-05-01 — Story 6.1: tracing-subscriber + rolling-file + release-filter gate (FR37+FR38)
-  epic-6-panic-hook-export-stub: backlog                 # Story 6.2: panic-hook (FR39) + telemetry::export-stub (FR40)
+  6-1-telemetry-logging-rolling-file: ready-for-dev  # 2026-05-01 — Story 6.1: tracing-subscriber + rolling-file + release-filter gate (FR37+FR38)
+  6-2-panic-hook-export-stub: backlog                # Story 6.2: panic-hook (FR39) + telemetry::export-stub (FR40)
   epic-6-retrospective: optional
 
   # ============================================================

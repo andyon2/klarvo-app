@@ -2260,9 +2260,13 @@ Andy kann Failures via structured Logs debuggen, ohne BYOK-Privacy-Narrative zu 
 
 **Implementation Notes:**
 - NFR5 (kein Audio/Text im Log) + NFR6 (keine Outbound-Calls außer user-konfigurierter BYOK-Upstream) sind implizite Invarianten in Story-ACs.
-- FR40 ist als Foundation-Stub committed (`klarvo-core::telemetry::export`); UI-triggered-Zip-Generation ist deferred-to-Epic-9 (UX Surface) als Settings-UI-gebundener Trigger.
+- FR40-Stub existiert noch NICHT in klarvo-core (Vorläufer-Claim korrigiert 2026-05-01); wird in Story 6.2 erstellt.
 - NFR1 (Latency-Observable via ts_ms im Log) verbindet Epic 6 + Epic 2.
 - **Eröffnungs-Trigger (2026-05-01):** Epic 6 wird vor Epic 8/9/10 dispatched, weil Whisper-Local-Debugging (Epic 10 RTF/Latency/Drops) und externe-Tester-Triage strukturierte Logs voraussetzen.
+
+**Stories (2026-05-01):**
+- **6.1 `telemetry::logging` — tracing-subscriber + rolling-file appender + release-filter gate**: Workspace-Deps `tracing-subscriber` + `tracing-appender`; `klarvo-core::telemetry::logging::init_tracing()` (DAILY-rolling, max 5 Files, fail-soft); Windows-Shell-Init vor tauri-Builder; `verify_release`-Sentinel durch 2-Check-Gate ersetzen. FR37 + FR38.
+- **6.2 Panic-Hook + `telemetry::export`-Stub**: `std::panic::set_hook` → `tracing::error!` in Rolling-File-Stream; `klarvo-core::telemetry::export::export_debug_zip()` als fail-soft-Stub. FR39 + FR40.
 
 ---
 
