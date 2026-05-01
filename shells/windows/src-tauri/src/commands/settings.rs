@@ -229,12 +229,68 @@ pub fn get_plugin_setting(
     settings.get_plugin_setting(&plugin_id, &key)
 }
 
+// --- Locale-Reload (Story 2.A.C3) ---
+
+/// Upper bound for the `lang` parameter accepted by [`reload_locale`].
+/// BCP-47 tags in `SUPPORTED_LANGUAGES` are 2-character codes today; 16 leaves
+/// room for region/script subtags without admitting unbounded WebView strings.
+const MAX_LANG_LEN: usize = 16;
+
+/// Inner reload logic — extracted for unit-testability (avoids Tauri runtime in tests).
+///
+/// Validates `lang` against the length cap and the supported-language allow-list
+/// before writing. Oversized or unknown locales are a fail-soft no-op
+/// (`tracing::warn!` with sanitized log field + `Ok(())`).
+fn apply_locale_reload(lang: &str, i18n_table: &crate::i18n::SharedI18nTable) -> Result<(), AppError> {
+    if lang.len() > MAX_LANG_LEN {
+        let truncated: String = lang.chars().take(MAX_LANG_LEN).collect();
+        tracing::warn!(
+            lang_truncated = %truncated,
+            lang_len = lang.len(),
+            "reload_locale: oversized locale; rejecting"
+        );
+        return Ok(());
+    }
+    if !crate::config::SUPPORTED_LANGUAGES.contains(&lang) {
+        // Strip control chars to prevent log injection from a misbehaving WebView.
+        let sanitized: String = lang.chars().filter(|c| !c.is_control()).collect();
+        tracing::warn!(lang = %sanitized, "reload_locale: unsupported locale; keeping current i18n table");
+        return Ok(());
+    }
+    let new_table = crate::i18n::load_locale(lang);
+    // Recover from poisoning: the wrapped `HashMap` cannot be partially mutated
+    // (replace-only), so a poisoned lock still holds intact data — fail-soft per ADR-0009.
+    *i18n_table.write().unwrap_or_else(|e| e.into_inner()) = new_table;
+    Ok(())
+}
+
+/// Reload the backend `i18n_table` for `lang` without restarting the app (Story 2.A.C3 AC-2).
+///
+/// Called by the frontend `settings.changed` listener (AC-3) when `ui.language` changes.
+/// Unknown locales are fail-soft: table unchanged + `tracing::warn!`.
+#[tauri::command]
+#[specta::specta]
+pub fn reload_locale(
+    lang: String,
+    i18n_table: tauri::State<'_, crate::i18n::SharedI18nTable>,
+) -> Result<(), AppError> {
+    apply_locale_reload(&lang, &i18n_table)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::i18n::{load_locale, SharedI18nTable};
+    use std::sync::{Arc, RwLock};
+
+    fn make_table(lang: &str) -> SharedI18nTable {
+        Arc::new(RwLock::new(load_locale(lang)))
+    }
+
     /// Compile-time check: TauriSettingsEmitter<Wry> satisfies SettingsEmitter trait bounds.
     #[allow(dead_code)]
     fn _assert_emitter_bounds<T: klarvo_core::settings::SettingsEmitter + Send + Sync>() {}
@@ -242,5 +298,44 @@ mod tests {
     #[allow(dead_code)]
     fn _check_wry() {
         _assert_emitter_bounds::<super::TauriSettingsEmitter<tauri::Wry>>();
+    }
+
+    #[test]
+    fn reload_locale_known_lang_replaces_table() {
+        let table = make_table("en");
+        let en_val = table.read().unwrap().get("error.config.missing").unwrap().clone();
+
+        apply_locale_reload("de", &table).unwrap();
+
+        let de_val = table.read().unwrap().get("error.config.missing").unwrap().clone();
+        assert_ne!(en_val, de_val, "de table must differ from en table after reload");
+    }
+
+    #[test]
+    fn reload_locale_unknown_lang_is_noop() {
+        let table = make_table("en");
+        let before: crate::i18n::I18nTable = table.read().unwrap().clone();
+
+        apply_locale_reload("zz", &table).unwrap();
+
+        let after = table.read().unwrap();
+        assert_eq!(before, *after, "unknown locale must not mutate the i18n table");
+    }
+
+    #[test]
+    fn reload_locale_de_then_en_round_trips() {
+        let table = make_table("en");
+        apply_locale_reload("de", &table).unwrap();
+        apply_locale_reload("en", &table).unwrap();
+
+        let expected = load_locale("en");
+        assert_eq!(*table.read().unwrap(), expected, "table must match en after de→en round-trip");
+    }
+
+    #[test]
+    fn reload_locale_same_lang_is_idempotent() {
+        let table = make_table("en");
+        apply_locale_reload("en", &table).unwrap();
+        assert!(table.read().unwrap().contains_key("error.config.missing"));
     }
 }

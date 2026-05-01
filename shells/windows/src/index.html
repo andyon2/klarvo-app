@@ -51,7 +51,7 @@
     <script type="module">
       // React 19 via ESM CDN — no build step for this Phase-2-A minimal panel.
       // Phase-2-B migrates to a full Vite+React workspace once the UI expands.
-      import { createElement as h, useState, useEffect, useCallback } from "https://esm.sh/react@19";
+      import { createElement as h, useState, useEffect, useCallback, useRef } from "https://esm.sh/react@19";
       import { createRoot } from "https://esm.sh/react-dom@19/client";
 
       // ---------------------------------------------------------------------------
@@ -206,6 +206,45 @@
               else unlisten = fn;
             })
             .catch(() => {});
+          return () => {
+            cancelled = true;
+            if (unlisten) unlisten();
+          };
+        }, []);
+
+        // Story 2.A.C3 AC-3 + AC-5: live-locale-switch — reload backend i18n_table on
+        // ui.language change. Axis-1 only: other settings.changed keys are ignored (AC-5).
+        const lastAppliedLocaleRef = useRef(null);
+        useEffect(() => {
+          if (!tauriEvent) return;
+          let cancelled = false;
+          let unlisten = null;
+          tauriEvent
+            .listen("settings.changed", (evt) => {
+              const payload = evt?.payload;
+              // AC-5: filter exclusively on "ui.language" — do not react to axis-2/axis-3 keys.
+              if (!payload || payload.key !== "ui.language" || typeof payload.newValue !== "string") {
+                return;
+              }
+              // De-dup: skip when the same locale fires twice (e.g. settings replay or
+              // migration storm). Update the ref before the invoke so a concurrent retry
+              // collapses to one IPC.
+              if (payload.newValue === lastAppliedLocaleRef.current) return;
+              lastAppliedLocaleRef.current = payload.newValue;
+              // AC-3: trigger backend reload. Backend warns on unknown locale; surface
+              // transport / serialization / future AppError variants via console.warn
+              // so silent IPC failures are at least observable in devtools.
+              invoke("reload_locale", { lang: payload.newValue }).catch((e) => {
+                console.warn("reload_locale failed:", e);
+              });
+            })
+            .then((fn) => {
+              if (cancelled) fn();
+              else unlisten = fn;
+            })
+            .catch((e) => {
+              console.warn("settings.changed listen failed:", e);
+            });
           return () => {
             cancelled = true;
             if (unlisten) unlisten();

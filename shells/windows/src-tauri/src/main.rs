@@ -315,6 +315,8 @@ fn main() {
             // Snapshot the boot-time locale separately because `i18n_table` is
             // moved into managed state below; the listener (Step 11c) owns its
             // own freshly-loaded copy on every locale change.
+            // Story 2.A.C3: `i18n_table` is now `SharedI18nTable = Arc<RwLock<I18nTable>>`.
+            // `boot_i18n` holds a second Arc-reference for the tray setup below.
             let boot_locale = config.ui_language.clone();
             let boot_i18n = Arc::clone(&i18n_table);
             app.manage(i18n_table);
@@ -418,7 +420,11 @@ fn main() {
                 // Story 2.A.A8-Sub: builder lives in `tray.rs` so the
                 // `settings.changed` listener (Step 11c) can rebuild the same
                 // layout when the user switches `ui.language`.
-                let menu = tray::build_menu(app, &boot_i18n, &boot_locale)?;
+                // Story 2.A.C3: read-lock `boot_i18n` (SharedI18nTable) for the initial menu
+                // build. Recover from poisoning fail-soft — at boot the table cannot have been
+                // mutated yet, so a poisoned lock still holds intact data.
+                let boot_i18n_guard = boot_i18n.read().unwrap_or_else(|e| e.into_inner());
+                let menu = tray::build_menu(app, &*boot_i18n_guard, &boot_locale)?;
                 let tray = TrayIconBuilder::with_id(tray::TRAY_ID)
                     .icon(idle_icon.clone())
                     .menu(&menu)

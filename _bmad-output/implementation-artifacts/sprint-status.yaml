@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-05-01 (Story 2.A.D3 Graceful-Shutdown: review→done with 1 D-Resolution + 8 Patches + 4 Defers)
+# last_updated: 2026-05-01 (Story 2.A.C3 Live-Locale-Switch: ready-for-dev→done with 10 Patches applied + D-1 commit-split resolved + 7 Defers; Story 2.A.D3 Graceful-Shutdown: review→done with 1 D-Resolution + 8 Patches + 4 Defers)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -53,7 +53,7 @@
 #   Re-Scoping in Phase-2-B oder Phase-3 pending.
 
 generated: 2026-04-29
-last_updated: 2026-05-01 (Story 2.A.D3 Graceful-Shutdown: review→done with 1 D-Resolution + 8 Patches + 4 Defers)
+last_updated: 2026-05-01 (Story 2.A.C3 Live-Locale-Switch: ready-for-dev→done with 10 Patches applied + D-1 commit-split resolved + 7 Defers; Story 2.A.D3 Graceful-Shutdown: review→done with 1 D-Resolution + 8 Patches + 4 Defers)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -172,7 +172,7 @@ development_status:
   2a-a8-sub-tray-language-switcher: done
   2a-c1-signed-msi-installer: backlog  # deferred 2026-05-01 — Cert-Beschaffung extern offen
   2a-c2-hotkey-konflikt-erkennung: done
-  2a-c3-live-locale-switch: ready-for-dev
+  2a-c3-live-locale-switch: done
   2a-d2-arc-wrapping-fix: done
   2a-d3-graceful-shutdown: done
   2a-e1-windows-compile-ci: done

@@ -12,8 +12,8 @@
 //! Settings-Panel (`set_ui_language` Tauri command, Story 2.A.A4); the tray
 //! is purely reactive to the `settings.changed` event.
 //!
-//! Story 2.A.C3 (Live-Locale-Switch) will reuse [`build_menu`] when it upgrades
-//! the managed `I18nTable` to an interior-mutable container.
+//! Story 2.A.C3 (Live-Locale-Switch) reuses [`build_menu`] indirectly via
+//! [`rebuild_for_locale`]; the managed `I18nTable` was upgraded to `SharedI18nTable`.
 
 use std::collections::HashMap;
 
@@ -84,11 +84,11 @@ pub fn build_menu<R: Runtime, M: Manager<R>>(
 /// locale files. No-op when the tray is missing (e.g. when the boot-time
 /// builder failed in fail-soft mode).
 ///
-/// Reloads the locale file on every call rather than mutating shared state,
-/// so this stays compatible with the boot-time `Arc<I18nTable>` snapshot
-/// used elsewhere in `main.rs`.
+/// Uses `load_locale` (returns a plain `I18nTable`) rather than `load`
+/// (returns `SharedI18nTable`) because the tray rebuild owns a private, short-lived
+/// copy — it does not need to share the RwLock with the managed state.
 pub fn rebuild_for_locale<R: Runtime>(app: &tauri::AppHandle<R>, locale: &str) {
-    let i18n = crate::i18n::load(locale);
+    let i18n = crate::i18n::load_locale(locale);
     let menu = match build_menu(app, &i18n, locale) {
         Ok(m) => m,
         Err(e) => {

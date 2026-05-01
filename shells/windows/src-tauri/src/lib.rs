@@ -27,7 +27,7 @@ use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
-    set_dictionary_language, set_hotkey_slot1, set_output_language, set_output_target,
+    reload_locale, set_dictionary_language, set_hotkey_slot1, set_output_language, set_output_target,
     set_plugin_setting, set_recording_mode_slot1, set_ui_language,
 };
 
@@ -61,6 +61,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             // Story 2.B.A1: Recording-Mode commands (AC-8)
             get_recording_mode_slot1,
             set_recording_mode_slot1,
+            // Story 2.A.C3: Live-Locale-Switch
+            reload_locale,
         ])
         .events(collect_events![AppReady, SettingsChangedEvent])
 }
