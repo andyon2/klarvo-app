@@ -118,7 +118,7 @@ Agents, die Android-JNI-Tutorials (typisch 0.21-basiert) referenzieren: bitte ge
 > **Hinweis (post-Amendment 2):** `--test-threads=1` ist seit der TEST_MUTEX-Fix
 > obsolet — der Mutex serialisiert die Tests intern. Das Flag bleibt unten als
 > historisches Spike-Reproduzierbarkeits-Kommando dokumentiert; kanonischer
-> Smoke-Befehl ist heute `cargo test -p klarvo-bridge-jni` (ohne Flag).
+> Smoke-Befehl siehe Amendment 2 → Fix-Messwerte.
 
 ```bash
 cargo test -p klarvo-bridge-jni -- --test-threads=1 --nocapture
