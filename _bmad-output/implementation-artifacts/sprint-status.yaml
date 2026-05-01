@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-01 (Epic 6 gestartet — Story 6.1 ready-for-dev; Story 6.2 backlog)"
+last_updated: "2026-05-01 (Epic 6 gestartet — 3-Story-Split: 6.1 ready-for-dev, 6.2 + 6.3 backlog; Re-Split aus 2-Story-Initial-Form, AC-Bündelung in 6.1 zu breit)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -161,8 +161,9 @@ development_status:
   # (Epic 10) und externe-Tester-Triage. Stories via bmad-create-story.
   # ============================================================
   epic-6: in-progress
-  6-1-telemetry-logging-rolling-file: ready-for-dev  # 2026-05-01 — Story 6.1: tracing-subscriber + rolling-file + release-filter gate (FR37+FR38)
-  6-2-panic-hook-export-stub: backlog                # Story 6.2: panic-hook (FR39) + telemetry::export-stub (FR40)
+  6-1-telemetry-logging-rolling-file: ready-for-dev      # Story 6.1: tracing-subscriber + tracing-appender rolling-file + Windows-Shell-Init (FR37). Lässt verify_release-Sentinel temporär feuern (Story 6.2 löst auf).
+  6-2-verify-release-release-filter-gate: backlog        # Story 6.2: verify_release-Sentinel-Replacement durch echten Release-Filter-Gate (FR38). Depends on 6.1.
+  6-3-panic-hook-export-stub: backlog                    # Story 6.3: std::panic::set_hook → tracing::error! + telemetry::export fail-soft Stub (FR39 + FR40). Depends on 6.1.
   epic-6-retrospective: optional
 
   # ============================================================

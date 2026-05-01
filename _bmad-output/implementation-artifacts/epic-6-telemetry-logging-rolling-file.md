@@ -1,12 +1,12 @@
 ---
-name: Story 6.1 — telemetry::logging — tracing-subscriber + rolling-file appender + release-filter gate
+name: Story 6.1 — telemetry::logging — tracing-subscriber + rolling-file appender
 epic: 6
 story_number: "6.1"
 status: ready-for-dev
 dependencies: []
 ---
 
-# Story 6.1: `telemetry::logging` — tracing-subscriber + rolling-file appender + release-filter gate
+# Story 6.1: `telemetry::logging` — tracing-subscriber + rolling-file appender
 
 Status: ready-for-dev
 
@@ -14,15 +14,15 @@ Status: ready-for-dev
 
 Als Core-Dev / Shell-Dev
 möchte ich `klarvo-core::telemetry::logging` mit `tracing-subscriber` + `tracing-appender` implementieren und den Windows-Shell-Bootstrapper damit initialisieren,
-damit alle `tracing!`-Events in eine Rolling-Log-Datei unter `%APPDATA%\klarvo\logs\` geschrieben werden, DEBUG/TRACE-Events im Release-Build gefiltert sind (PII-Protection per NFR5), und der `verify_release`-Sentinel durch einen echten Release-Filter-Gate ersetzt wird.
+damit alle `tracing!`-Events in eine Rolling-Log-Datei unter `%APPDATA%\klarvo\logs\` geschrieben werden und DEBUG/TRACE-Events im Release-Build gefiltert sind (PII-Protection per NFR5).
 
 ## Kontext und Motivation
 
-**Ausgangslage:** `tracing::info!()`, `tracing::error!()` etc. werden seit Epic 1A/2/3/4 durchgehend verwendet, aber es ist kein Subscriber konfiguriert — alle Events gehen ins Void. FR37 (Rolling-File-Log) + FR38 (no remote telemetry) aus Epic 6 schließen diese Lücke.
+**Ausgangslage:** `tracing::info!()`, `tracing::error!()` etc. werden seit Epic 1A/2/3/4 durchgehend verwendet, aber es ist kein Subscriber konfiguriert — alle Events gehen ins Void. FR37 (Rolling-File-Log) aus Epic 6 schließt diese Lücke.
 
-**Forcing-Sentinel:** `xtask/src/verify_release.rs::check_tracing_subscriber_sentinel` schlägt fehl wenn `tracing-subscriber` als Dependency vorhanden ist. Das ist ein Forcing-Sentinel (CI-Gate-Philosophy, `memory/feedback_ci_gate_philosophy.md`): "wer `tracing-subscriber` hinzufügt, muss den echten Filter-Check implementieren und den Sentinel löschen." Story 6.1 löst diesen Sentinel ein.
+**Kein Telemetry-Modul in klarvo-core:** `klarvo-core/src/lib.rs` hat kein `pub mod telemetry`, obwohl `architecture.md §9 Observability` und die Dateistruktur-Spec `klarvo-core/src/telemetry/{mod.rs, logging.rs, export.rs}` beschreiben. Das Modul wird in Story 6.1 erstellt (`export.rs` folgt in Story 6.3).
 
-**Kein Telemetry-Modul in klarvo-core:** `klarvo-core/src/lib.rs` hat kein `pub mod telemetry`, obwohl `architecture.md §9 Observability` und die Dateistruktur-Spec `klarvo-core/src/telemetry/{mod.rs, logging.rs, export.rs}` beschreiben. Das Modul wird in Story 6.1 erstellt (`export.rs` folgt in Story 6.2).
+**Forcing-Sentinel-Hinweis:** `xtask/src/verify_release.rs::check_tracing_subscriber_sentinel` schlägt fehl sobald `tracing-subscriber` als Dependency aufgenommen wird. **Story 6.1 löst diesen Sentinel NICHT auf** — das ist Story 6.2 (verify_release-Filter-Gate). Story 6.1 lässt `cargo xtask verify-release` daher temporär rot. Das ist gewollt: der Sentinel forciert genau diese Sequenz (6.1 fügt Dep hinzu → 6.2 ersetzt Sentinel durch echten Gate). Andere CI-Gates (`cargo build`, `cargo test`, `cargo xtask lint-events` etc.) bleiben grün.
 
 ## Acceptance Criteria
 
@@ -97,29 +97,7 @@ Diese Konstanten dienen auch dem xtask-Filter-Gate (AC-6) als Sentinel.
 
 **Note zum Timing:** `APPDATA`-Env-Var ist identisch zu `config::resolve_config_path()` (Step 1 im bisherigen Bootstrap). Logging-Init ist vor Step 0 und hat keinen Tauri-Kontext — nur `APPDATA`. Dieser Pfad-Ansatz ist konsistent mit `config.rs::resolve_config_path()`.
 
-### AC-6: `verify_release`-Sentinel ersetzt durch echten Release-Filter-Gate
-
-**Given** `xtask/src/verify_release.rs::check_tracing_subscriber_sentinel` schlägt fehl wenn `tracing-subscriber` present,
-**When** Story 6.1 committed ist,
-**Then**:
-- Funktion `check_tracing_subscriber_sentinel` ist **gelöscht**
-- Neue Funktion `check_tracing_release_filter(metadata: &Metadata) -> Result<(), String>`:
-  1. **Check 1 — tracing-subscriber present:**
-     `metadata.packages.iter().any(|p| p.name == "tracing-subscriber")` — wenn NICHT present: `Err("tracing-subscriber missing — rolling-file logging requires it; add to workspace Cargo.toml")`
-  2. **Check 2 — release-filter sentinel in source:**
-     Liest `{workspace_root}/klarvo-core/src/telemetry/logging.rs` via `locate_workspace_root()` + `std::fs::read_to_string`
-     Prüft ob Datei `RELEASE_MAX_LEVEL` AND `LevelFilter::INFO` AND `not(debug_assertions)` enthält — wenn nicht: `Err("release-level filter (LevelFilter::INFO behind cfg(not(debug_assertions))) not found in telemetry/logging.rs — PII-Protection: DEBUG/TRACE must not reach release builds. Spec: architecture.md §4a.")`
-- `run()`-Funktion ruft `check_tracing_release_filter` statt `check_tracing_subscriber_sentinel`
-- Module-doc (`//!`) von `verify_release.rs` aktualisiert: Check #2 beschreibt den neuen Filter-Gate statt des Sentinels
-- Unit-Tests aktualisiert (alte Sentinel-Tests gelöscht, neue Tests für Check 1 + Check 2 hinzugefügt)
-
-### AC-7: `cargo xtask verify-release` grün nach Story 6.1
-
-**Given** Story 6.1 ist committed,
-**When** `cargo xtask verify-release --skip-cross-compile` läuft,
-**Then** exitiert mit Code 0 (keine Violations).
-
-### AC-8: Headless-Test in `klarvo-core`
+### AC-6: Headless-Test in `klarvo-core`
 
 **Given** `logging.rs` ist implementiert,
 **Then** existiert in `klarvo-core/src/telemetry/logging.rs` (oder `tests/`-Module) mindestens ein Headless-Test:
@@ -141,19 +119,13 @@ Diese Konstanten dienen auch dem xtask-Filter-Gate (AC-6) als Sentinel.
 - [ ] Windows-Shell-Bootstrapper anpassen (AC-5)
   - [ ] `main.rs`: `_tracing_guard` vor specta_builder
   - [ ] Bootstrap-Kommentar im Logging-Block
-- [ ] `verify_release.rs` Sentinel ersetzen (AC-6)
-  - [ ] Alte Funktion + Tests löschen
-  - [ ] `check_tracing_release_filter` implementieren (2 Checks)
-  - [ ] Module-doc aktualisieren
-  - [ ] Unit-Tests für neuen Gate
-- [ ] `cargo xtask verify-release` grün (AC-7)
-- [ ] Headless-Test (AC-8)
+- [ ] Headless-Test (AC-6)
 
 ## Dev Notes
 
 ### Bestehende Tracing-Nutzung
 
-`tracing = "0.1"` ist im Workspace. Alle Crates nutzen `tracing::info!()`, `tracing::error!()` etc. bereits — es fehlt nur der Subscriber. Story 6.1 installiert ihn; kein bestehender Code muss geändert werden (ausser `main.rs` + `lib.rs` + `verify_release.rs`).
+`tracing = "0.1"` ist im Workspace. Alle Crates nutzen `tracing::info!()`, `tracing::error!()` etc. bereits — es fehlt nur der Subscriber. Story 6.1 installiert ihn; kein bestehender Code muss geändert werden (ausser `main.rs` + `lib.rs` + Cargo.toml-Files).
 
 ### tracing-appender Builder API
 
@@ -183,30 +155,13 @@ let _ = init_tracing(...);               // FALSCH: wird sofort gedroppt (Rust-S
 
 `Option<WorkerGuard>` — kein `.unwrap()`. Pattern: `let _tracing_guard = init_tracing(&log_dir);` (kein Destructuring nötig).
 
-### verify_release: `locate_workspace_root()`
+### `RELEASE_MAX_LEVEL`-Konstante als Story-6.2-Sentinel
 
-In `verify_release.rs` bereits vorhanden:
-```rust
-fn locate_workspace_root() -> Option<PathBuf> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest.parent().map(Path::to_path_buf)
-}
-```
-
-Für Check 2 in `check_tracing_release_filter`:
-```rust
-let root = locate_workspace_root().ok_or("could not locate workspace root")?;
-let logging_src = root.join("klarvo-core/src/telemetry/logging.rs");
-let content = std::fs::read_to_string(&logging_src)
-    .map_err(|e| format!("cannot read telemetry/logging.rs: {e}"))?;
-if !content.contains("RELEASE_MAX_LEVEL") || !content.contains("not(debug_assertions)") {
-    return Err("release-level filter missing in telemetry/logging.rs — ...".into());
-}
-```
+Die `RELEASE_MAX_LEVEL`-Konstante (AC-4) dient nicht nur dem Subscriber-Setup, sondern wird in Story 6.2 als Source-Grep-Sentinel im neuen `verify_release`-Gate verwendet. Der genaue Token-Name `RELEASE_MAX_LEVEL` ist deshalb load-bearing — bitte nicht abkürzen oder umbenennen. Spec Story 6.2 AC-2.
 
 ### `set_global_default` darf nur einmal aufgerufen werden
 
-`tracing_subscriber::registry()...init()` installiert den Subscriber global. In Tests mit mehreren `init_tracing`-Aufrufen schlägt der zweite mit `SetGlobalDefaultError` fehl. Lösung: Test testet nur den Fehler-Pfad VOR der Installation (AC-8). Für Tests die tatsächlich Tracing testen: `#[cfg(test)]`-Subscriber via `tracing_subscriber::fmt().with_test_writer().init()` in einem `#[test]`-Scope (aber das ist Story 6.2 oder spätere Story).
+`tracing_subscriber::registry()...init()` installiert den Subscriber global. In Tests mit mehreren `init_tracing`-Aufrufen schlägt der zweite mit `SetGlobalDefaultError` fehl. Lösung: Test testet nur den Fehler-Pfad VOR der Installation (AC-6). Für Tests die tatsächlich Tracing testen: `#[cfg(test)]`-Subscriber via `tracing_subscriber::fmt().with_test_writer().init()` in einem `#[test]`-Scope (aber das ist Story 6.3 oder spätere Story).
 
 ### tracing-subscriber features
 
@@ -242,23 +197,22 @@ Geänderte Dateien:
 - `klarvo-core/Cargo.toml` (2 Zeilen workspace-refs)
 - `Cargo.toml` (2 Zeilen workspace-deps)
 - `shells/windows/src-tauri/src/main.rs` (~5-8 Zeilen)
-- `xtask/src/verify_release.rs` (Sentinel-Delete + neuer Gate + Tests)
 
-`telemetry/export.rs` wird in Story 6.2 erstellt (FR40 Export-Stub + FR39 Panic-Hook). Noch NICHT in Story 6.1 anlegen.
+`telemetry/export.rs` wird in Story 6.3 erstellt (FR40 Export-Stub + FR39 Panic-Hook). Noch NICHT in Story 6.1 anlegen.
+
+`xtask/src/verify_release.rs` wird in Story 6.2 angefasst (Sentinel-Replacement). Noch NICHT in Story 6.1 anfassen — Story 6.1 lässt den Sentinel temporär feuern (gewollt, siehe Kontext-Sektion).
 
 ### References
 
 - [architecture.md §4 Telemetrie / §4a Release-Hardening] — Rolling-file spec, Release-Filter-Requirement
 - [architecture.md §9 Observability] — `klarvo-core/src/telemetry/` Dateistruktur-Spec
 - [prd.md §Journey Requirements: Rolling-File-Log] — `%APPDATA%/klarvo/logs/`, max 10 MB, 5 Rotations
-- [prd.md FR37/FR38] — Structured logs + No remote telemetry
+- [prd.md FR37] — Structured logs in Rolling-File mit konfigurierbarer Verbosity
 - [prd.md NFR5] — Kein Audio/Text im Log
-- [memory/feedback_ci_gate_philosophy.md] — Forcing-Sentinel-Pattern, keine Stub-Checks
 - [memory/project_no_remote_telemetry.md] — BYOK-Narrativ, kein Sentry
-- [xtask/src/verify_release.rs:190-206] — aktueller Sentinel (zu ersetzen)
-- [xtask/src/verify_release.rs:137-139] — `locate_workspace_root()`
 - [memory/feedback_scaffold_fail_soft_pattern.md] — fail-soft returns structured error / None, nie panic
 - [shells/windows/src-tauri/src/config.rs:104-108] — Pattern für APPDATA-Env-Var (Referenz für main.rs-Init)
+- Story 6.2 (verify_release-Filter-Gate) konsumiert die in Story 6.1 etablierte `RELEASE_MAX_LEVEL`-Konstante
 
 ## Dev Agent Record
 

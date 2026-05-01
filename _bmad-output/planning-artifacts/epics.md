@@ -2264,9 +2264,10 @@ Andy kann Failures via structured Logs debuggen, ohne BYOK-Privacy-Narrative zu 
 - NFR1 (Latency-Observable via ts_ms im Log) verbindet Epic 6 + Epic 2.
 - **Eröffnungs-Trigger (2026-05-01):** Epic 6 wird vor Epic 8/9/10 dispatched, weil Whisper-Local-Debugging (Epic 10 RTF/Latency/Drops) und externe-Tester-Triage strukturierte Logs voraussetzen.
 
-**Stories (2026-05-01):**
-- **6.1 `telemetry::logging` — tracing-subscriber + rolling-file appender + release-filter gate**: Workspace-Deps `tracing-subscriber` + `tracing-appender`; `klarvo-core::telemetry::logging::init_tracing()` (DAILY-rolling, max 5 Files, fail-soft); Windows-Shell-Init vor tauri-Builder; `verify_release`-Sentinel durch 2-Check-Gate ersetzen. FR37 + FR38.
-- **6.2 Panic-Hook + `telemetry::export`-Stub**: `std::panic::set_hook` → `tracing::error!` in Rolling-File-Stream; `klarvo-core::telemetry::export::export_debug_zip()` als fail-soft-Stub. FR39 + FR40.
+**Stories (2026-05-01, 3-Story-Split):**
+- **6.1 `telemetry::logging` — tracing-subscriber + rolling-file appender**: Workspace-Deps `tracing-subscriber` + `tracing-appender`; `klarvo-core::telemetry::logging::init_tracing()` (DAILY-rolling, max 5 Files, fail-soft); `RELEASE_MAX_LEVEL`-Konstante mit cfg-Gate; Windows-Shell-Init vor tauri-Builder. FR37. Lässt verify_release-Sentinel temporär feuern (gewollt — Story 6.2 löst auf).
+- **6.2 `verify_release`-Sentinel-Replacement durch Release-Filter-Gate**: Sentinel-Funktion löschen + neuer 2-Check-Gate (Dep-Presence + Source-Sentinel-Grep auf `RELEASE_MAX_LEVEL` in `logging.rs`); Pattern analog Story 5.6 REQUIRED_KEYS-Drift. FR38. Depends on 6.1.
+- **6.3 Panic-Hook + `telemetry::export`-Stub**: `std::panic::set_hook` → `tracing::error!` in Rolling-File-Stream; `klarvo-core::telemetry::export::export_debug_zip()` als fail-soft-Stub mit i18n-Key `error.telemetry.export.unimplemented`. FR39 + FR40. Depends on 6.1.
 
 ---
 
