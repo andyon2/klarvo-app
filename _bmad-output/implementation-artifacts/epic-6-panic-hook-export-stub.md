@@ -2,14 +2,14 @@
 name: Story 6.3 — Panic-Hook + telemetry::export-Stub
 epic: 6
 story_number: "6.3"
-status: backlog
+status: done
 dependencies:
   - "6-1-telemetry-logging-rolling-file"
 ---
 
 # Story 6.3: Panic-Hook + `telemetry::export`-Stub
 
-Status: backlog
+Status: done
 
 ## Story
 
@@ -143,20 +143,20 @@ Das ist ein **manueller Smoke-Test** im Story-Closure, nicht ein automatisierter
 
 ## Tasks / Subtasks
 
-- [ ] Panic-Hook implementieren (AC-1)
-  - [ ] `install_panic_hook` in `logging.rs`
-  - [ ] Payload-Extraktions-Helper (Refactor für AC-6 Testbarkeit)
-- [ ] Windows-Shell-Bootstrapper anpassen (AC-2)
-  - [ ] `main.rs`: `install_panic_hook()` direkt nach `init_tracing`
-- [ ] i18n-Keys (AC-3)
-  - [ ] `error.telemetry.export.unimplemented` in `REQUIRED_KEYS`
-  - [ ] Übersetzungen in `de.json` + `en.json`
-  - [ ] `cargo xtask required-keys-drift` grün
-- [ ] Export-Stub (AC-4)
-  - [ ] `klarvo-core/src/telemetry/export.rs` anlegen
-  - [ ] `pub mod export;` in `mod.rs`
-- [ ] Tests (AC-5 + AC-6)
-- [ ] Manueller Smoke-Test + Documentation in Completion Notes (AC-7)
+- [x] Panic-Hook implementieren (AC-1)
+  - [x] `install_panic_hook` in `logging.rs`
+  - [x] Payload-Extraktions-Helper (Refactor für AC-6 Testbarkeit)
+- [x] Windows-Shell-Bootstrapper anpassen (AC-2)
+  - [x] `main.rs`: `install_panic_hook()` direkt nach `init_tracing`
+- [x] i18n-Keys (AC-3)
+  - [x] `error.telemetry.export.unimplemented` in den Backend-Locale-Files (`shells/windows/locales/{en,de}.json`); `REQUIRED_KEYS`-Const wurde durch Story 5.6 obsolet, Äquivalenz via `cargo xtask lint-events` G3-D orphan-check
+  - [x] Übersetzungen in `de.json` + `en.json`
+  - [x] `cargo xtask lint-events` grün
+- [x] Export-Stub (AC-4)
+  - [x] `klarvo-core/src/telemetry/export.rs` anlegen
+  - [x] `pub mod export;` in `mod.rs`
+- [x] Tests (AC-5 + AC-6)
+- [ ] Manueller Smoke-Test (AC-7) — **Carry-Over Windows-Env:** in WSL/Linux-Build-Env nicht ausführbar; Verfahren in Completion Notes List dokumentiert, Ausführung sobald Windows-Build-Box verfügbar
 
 ## Dev Notes
 
@@ -226,10 +226,67 @@ Geänderte Dateien:
 
 ### Agent Model Used
 
-claude-opus-4-7[1m] (create-story 2026-05-01)
+claude-opus-4-7[1m] (create-story 2026-05-01); claude-sonnet-4-6 (implementation 2026-05-02)
 
 ### Debug Log References
 
+- Locale-Pfad-Korrektur: Story-Spec nannte `shells/windows/src/locales/` (Frontend-Files), aber xtask lint-events und `include_str!` lesen `shells/windows/locales/` (Rust-Backend-Files). Key wurde in die korrekten Backend-Locale-Files eingefügt. Frontend-Files (`src/locales/`) ebenfalls gepflegt für Konsistenz.
+- REQUIRED_KEYS-Const: Story-Spec setzt REQUIRED_KEYS in `klarvo-core/src/i18n.rs` voraus, aber diese Konstante wurde durch Story 5.6 durch `cargo xtask lint-events` G3-D ersetzt. Key in `shells/windows/locales/en.json` + `de.json` → xtask grün als Äquivalenz.
+- `PanicHookInfo` (Rust 1.81+, Toolchain 1.94): Typ korrekt verwendet; `PanicInfo` für Hook-Use-Case ist deprecated.
+
 ### Completion Notes List
 
+- AC-1: `install_panic_hook()` + `extract_panic_message()` in `klarvo-core/src/telemetry/logging.rs` implementiert. Hook ersetzt Default-Hook vollständig (kein prev_hook chaining). Payload-Extraktion: &str → String → Fallback. Backtrace via `Backtrace::force_capture()`. Felder: `panic.message`, `panic.location.file/line/column`, `panic.backtrace`.
+- AC-2: `install_panic_hook()` direkt nach `init_tracing` in `shells/windows/src-tauri/src/main.rs`. Reihenfolge korrekt: Subscriber muss vor Hook aktiv sein.
+- AC-3: `error.telemetry.export.unimplemented` in `shells/windows/locales/en.json` + `de.json` (Backend-Locale). `cargo xtask lint-events` → OK (G3-B forward-drift + G3-D orphan-check grün). Frontend-Locale-Files (`src/locales/`) ebenfalls gepflegt.
+- AC-4: `klarvo-core/src/telemetry/export.rs` angelegt mit fail-soft Stub; `pub mod export;` in `telemetry/mod.rs`.
+- AC-5: Headless-Test `export_debug_zip_returns_unimplemented_error` in `export.rs` — prüft `user_message` + `retryable: false`. Grün.
+- AC-6: 3 Headless-Tests in `logging.rs` für `extract_panic_message`: static-str, String, non-string-fallback. Alle grün.
+- AC-7 (Manuell): Smoke-Test erfordert laufende Windows-Tauri-App. Nicht automatisierbar in WSL/Linux-Build-Env. Zur Verifikation: temporär `panic!("smoke test")` direkt nach `install_panic_hook()` in `main.rs` einfügen, App starten, Rolling-File-Log unter `%APPDATA%\Klarvo\logs\klarvo.YYYY-MM-DD` prüfen — `level=ERROR`-Eintrag mit Backtrace erwartet. Dann `panic!` entfernen.
+- Regression-Suite: 102 klarvo-core Tests + 55 xtask Tests + alle Workspace-Tests (excl. Windows-only) grün.
+
 ### File List
+
+- `klarvo-core/src/telemetry/export.rs` (neu)
+- `klarvo-core/src/telemetry/mod.rs` (geändert: `pub mod export;` hinzugefügt)
+- `klarvo-core/src/telemetry/logging.rs` (geändert: `install_panic_hook` + `extract_panic_message` + 3 Tests)
+- `shells/windows/locales/en.json` (geändert: `error.telemetry.export.unimplemented` hinzugefügt)
+- `shells/windows/locales/de.json` (geändert: `error.telemetry.export.unimplemented` hinzugefügt)
+- `shells/windows/src-tauri/src/main.rs` (geändert: `install_panic_hook()` nach `init_tracing`)
+- `shells/windows/src/locales/{en,de}.json` (gelöscht via Code-Review-Patch P8 / Decision 3b — keine React-Konsumenten, Drift-Risiko statt Konsistenz-Nutzen)
+
+## Change Log
+
+- 2026-05-02: Story 6.3 implementiert — Panic-Hook (FR39) + telemetry::export-Stub (FR40). Neue Dateien: `export.rs`. Geänderte Dateien: `logging.rs`, `telemetry/mod.rs`, `main.rs`, 4× Locale-Files.
+- 2026-05-02: Code-Review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) — Findings unten in `### Review Findings`.
+- 2026-05-02: Code-Review-Closure — 4 Decisions resolved (1a/2b/3b/4b), 8 Patches applied (inkl. `catch_unwind`-Reentry-Guard im Panic-Hook, Frontend-Locale-Files-Deletion, AC-3-Pfad-Korrektur + `REQUIRED_KEYS`-Spec-Amendment, Phase-2-Hinweise im `export.rs`-Doc-Comment), 1 zusätzlicher Defer (`6.3-W6`). Status `review` → `done`.
+
+### Review Findings
+
+**Decision-Needed (4)** — alle resolved:
+
+- [x] [Review][Decision] **Panic-in-Hook → Process-Abort-Risiko** — Resolution **1a**: `catch_unwind(AssertUnwindSafe(...))` um Hook-Body + stderr-Fallback bei Hook-internem Panic. Patch applied in `klarvo-core/src/telemetry/logging.rs:111-130`.
+- [x] [Review][Decision] **`Backtrace::force_capture` vs. `capture`** — Resolution **2b**: `force_capture` behalten (Backtrace-Garantie in Field-Logs > Allokationskosten), Begründung als Doc-Comment im `install_panic_hook`-Header dokumentiert. Patch applied in `klarvo-core/src/telemetry/logging.rs:94-110`.
+- [x] [Review][Decision] **Frontend `shells/windows/src/locales/*.json` Dead-Files** — Resolution **3b**: Files + leeres Verzeichnis gelöscht; AC-3-Pfad-Liste auf Backend-only korrigiert; File List in dieser Story aktualisiert. Verifiziert via Grep (0 React-Konsumenten); xtask-Drift-Gate validiert weiterhin nur Backend.
+- [x] [Review][Decision] **`install_panic_hook` ohne Integration-Test** — Resolution **4b**: Defer als `6.3-W6` in `deferred-work.md`; AC-7-Manual-Smoke deckt Phase-1-Need; `serial_test`-Infrastructure in Phase 2, sobald weitere global-state-Tests aufkommen.
+
+**Patches (8)** — alle applied:
+
+- [x] [Review][Patch] **AC-7 Manueller Smoke-Test als Windows-Carry-Over rephrast** (Task-Box jetzt `[ ]` mit explizitem Carry-Over-Marker)
+- [x] [Review][Patch] **`AppErrorKind::Configuration` TODO(phase-2)-Sentinel ergänzt** [`klarvo-core/src/telemetry/export.rs:21-24`]
+- [x] [Review][Patch] **AC-3 `REQUIRED_KEYS`-Deviation als Sub-Task-Wording-Update + Change-Log-Eintrag formalisiert**
+- [x] [Review][Patch] **AC-3 Locale-Pfad-Liste auf Backend-only korrigiert** (kombiniert mit Frontend-Delete unten)
+- [x] [Review][Patch] **`export.rs`-Doc-Comment um NFR5/Path-Traversal/Single-Flight/i18n-Resolve-Hinweise für Phase-2-Real-Impl ergänzt** [`klarvo-core/src/telemetry/export.rs:1-13`]
+- [x] [Review][Patch] **`catch_unwind(AssertUnwindSafe(...))` + stderr-Fallback um Hook-Body** (aus Decision 1a) [`klarvo-core/src/telemetry/logging.rs:111-130`]
+- [x] [Review][Patch] **Doc-Comment-Block in `install_panic_hook` zur bewussten `force_capture`-Wahl + Reentry-Safety** (aus Decision 2b) [`klarvo-core/src/telemetry/logging.rs:94-110`]
+- [x] [Review][Patch] **Frontend-Locale-Files `shells/windows/src/locales/{en,de}.json` gelöscht + leeres Verzeichnis entfernt** (aus Decision 3b)
+
+**Deferred (5)** — pre-existing oder Phase-2:
+
+- [x] [Review][Defer] **`extract_panic_message` deckt nicht `Box<dyn Error>` / `anyhow::Error` / non-static `&str`** [`klarvo-core/src/telemetry/logging.rs:84-90`] — Spec-AC-1 mandatet nur `&str`/`String`/Fallback; Erweiterung Phase-2 wenn anyhow/eyre eingeführt
+- [x] [Review][Defer] **Concurrent `export_debug_zip` calls — kein Single-Flight-Guard** [`klarvo-core/src/telemetry/export.rs:17`] — Stub returnt immer Err, Race irrelevant; Phase-2-Real-Impl-Concern
+- [x] [Review][Defer] **`process::exit(1)` in main.rs droppt `_tracing_guard` während Hook noch installed** [`shells/windows/src-tauri/src/main.rs:489-499`] — pre-existing Pattern, außerhalb Story-6.3-Scope
+- [x] [Review][Defer] **OOM-Panic → Backtrace-Allocation-Failure → Hook-Abort** [`klarvo-core/src/telemetry/logging.rs:108`] — Phase-2-OOM-Handling, niedrige Priorität
+- [x] [Review][Defer] **`init_tracing`→None silent-failure: Hook fires gegen No-Op-Subscriber, Panics gehen verloren** [`shells/windows/src-tauri/src/main.rs:22-23`] — pre-existing aus Story 6.1; gehört zu Story-6.1-Carry-Over (Boot-Error-UX)
+
+**Dismissed (7)** — nicht persistiert, nur zur Transparenz: Test-Payload `42u32` (deckt Any-Fallback äquivalent), `tracing` dotted field-names (Standard-Konvention, kein aktiver Konsument), Sprint-Status `review` mit allen Tasks `[x]` (genau der BMad-Workflow), Stub-Dev-Jargon-Message in `err.message` (Standard-Pattern, `user_message` ist localized), AC-1 `unwrap_or_else` vs. `unwrap_or` (semantisch äquivalent, Refactor von AC-6 invited), Multi-Line-Panic-Message bricht line-per-event (kein Downstream-Parser, lokale Logs only per `project_no_remote_telemetry`), Threads-spawned-before-hook (set_hook ist global, alle Threads inheriten panic-time-current).

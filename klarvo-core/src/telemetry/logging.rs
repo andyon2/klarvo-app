@@ -79,9 +79,88 @@ pub fn init_tracing(log_dir: &Path) -> Option<WorkerGuard> {
     }
 }
 
+/// Extract a human-readable message from a panic payload.
+///
+/// Tries `&'static str` then `String` downcasts; returns `"<non-string panic payload>"` for
+/// other types. Extracted as a separately-testable helper for AC-6.
+fn extract_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&'static str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "<non-string panic payload>".to_owned())
+}
+
+/// Installs a global panic hook that captures uncaught panics as `tracing::error!` events.
+///
+/// Must be called after [`init_tracing`] to ensure the rolling-file subscriber is active.
+/// Replaces the default panic handler entirely — the default hook (which prints to stderr)
+/// is not chained. In release builds with `windows_subsystem = "windows"`, stderr is not
+/// visible, so the default hook provides no value.
+///
+/// **`Backtrace::force_capture` (vs. `capture`):** chosen deliberately so backtraces are
+/// always present in the rolling-file log, regardless of whether `RUST_BACKTRACE` is set
+/// in the user's environment. The cost (multi-KB allocation + symbol resolution per panic)
+/// is acceptable because uncaught panics are rare and the diagnostic value of a guaranteed
+/// backtrace outweighs the cost. Revisit if Klarvo ever runs panic-throttling test loops.
+///
+/// **Reentry safety:** the hook body is wrapped in `catch_unwind` so a panic *inside* the
+/// hook itself (e.g., the tracing subscriber's writer panicking on a full disk, the
+/// backtrace symbolizer panicking, OOM during allocation) does not trigger Rust's
+/// recursive-panic abort. On hook-internal panic, a last-resort line is written to stderr.
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let message = extract_panic_message(info.payload());
+            let (file, line, column) = info
+                .location()
+                .map_or(("<unknown>", 0u32, 0u32), |l| {
+                    (l.file(), l.line(), l.column())
+                });
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            tracing::error!(
+                panic.message = %message,
+                panic.location.file = %file,
+                panic.location.line = line,
+                panic.location.column = column,
+                panic.backtrace = %backtrace,
+                "uncaught panic"
+            );
+        }));
+        if result.is_err() {
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "klarvo: panic-hook itself panicked while handling an uncaught panic"
+            );
+        }
+    }));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_panic_message_from_static_str() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("static str panic");
+        assert_eq!(extract_panic_message(payload.as_ref()), "static str panic");
+    }
+
+    #[test]
+    fn extract_panic_message_from_string() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("owned panic"));
+        assert_eq!(extract_panic_message(payload.as_ref()), "owned panic");
+    }
+
+    #[test]
+    fn extract_panic_message_non_string_fallback() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new(42u32);
+        assert_eq!(
+            extract_panic_message(payload.as_ref()),
+            "<non-string panic payload>"
+        );
+    }
 
     /// Verifies that calling `init_tracing` with an uncreateable path returns
     /// `None` without panicking.

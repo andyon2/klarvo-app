@@ -20,6 +20,7 @@ fn main() {
         .map(|d| std::path::PathBuf::from(d).join("Klarvo").join("logs"))
         .unwrap_or_else(|_| std::env::temp_dir().join("Klarvo").join("logs"));
     let _tracing_guard = klarvo_core::telemetry::logging::init_tracing(&log_dir);
+    klarvo_core::telemetry::logging::install_panic_hook();
 
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};

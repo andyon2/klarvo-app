@@ -1,4 +1,5 @@
 {
+  "error.telemetry.export.unimplemented": "Debug export is not available in this version.",
   "error.config.missing": "Configuration file not found. Please create config.toml.",
   "error.config.unknown_field": "Unknown field in config.toml. Please remove unrecognized keys.",
   "error.config.invalid_language": "Unsupported language. Supported values: en, de.",
