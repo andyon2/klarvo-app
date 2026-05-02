@@ -16,13 +16,16 @@
 //!      Explicitly covers `dev-plain-keystore` (Security-Theater-Gate, Story 5.4,
 //!      memory `project_keystore_trait_surface.md` + `project_api_key_os_keystore_mvp.md`).
 //!
-//!   2. Sentinel: `tracing-subscriber` must NOT be a resolved dependency yet.
-//!      Rationale: the real check is "DEBUG/TRACE subscribers are not
-//!      attached in release builds" (PII protection for Debug-Export-Zip —
-//!      memory `project_no_remote_telemetry.md`). That check requires a
-//!      subscriber to exist. Until it does, this sentinel fires so the
-//!      Phase-1 session that wires up `tracing-subscriber` is forced to
-//!      also implement the real check here and delete the sentinel.
+//!   2. Release-Filter-Gate: `tracing-subscriber` MUST be a direct
+//!      (non-transitive, non-dev) dependency of `klarvo-core`,
+//!      AND `klarvo-core/src/telemetry/logging.rs` MUST contain a
+//!      `RELEASE_MAX_LEVEL` const gated by `cfg(not(debug_assertions))` set to
+//!      `LevelFilter::INFO`. Rationale: PII-Protection — DEBUG/TRACE events
+//!      could leak request payloads into the Rolling-File-Log and the
+//!      Debug-Export-Zip (memory `project_no_remote_telemetry.md`).
+//!      Spec §4 Telemetrie + §4a Release-Hardening. The source-side check
+//!      is a `syn`-AST walk over `logging.rs` (not token-grep), so disjoint
+//!      tokens, comments, or weakened cfg-arms cannot bypass the gate.
 //!
 //!   3. `dev-plain-keystore` Feature-Off-in-Release (Story 5.4):
 //!      Already covered by check #1 (`name.starts_with("dev-")`). This entry
@@ -67,6 +70,17 @@ struct Metadata {
 #[derive(Deserialize, Debug)]
 struct Package {
     name: String,
+    #[serde(default)]
+    dependencies: Vec<Dependency>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Dependency {
+    name: String,
+    /// `null` (Cargo metadata convention) for normal deps;
+    /// `Some("dev")` / `Some("build")` for dev/build deps.
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -98,7 +112,7 @@ pub fn run(skip_cross_compile: bool) -> ExitCode {
 
     let mut failures: Vec<String> = Vec::new();
     failures.extend(check_forbidden_features(&metadata));
-    if let Err(msg) = check_tracing_subscriber_sentinel(&metadata) {
+    if let Err(msg) = check_tracing_release_filter(&metadata) {
         failures.push(msg);
     }
     failures.extend(check_android_cross_compile(skip_cross_compile));
@@ -187,23 +201,104 @@ fn package_name_from_id(id: &str) -> &str {
     }
 }
 
-fn check_tracing_subscriber_sentinel(metadata: &Metadata) -> Result<(), String> {
-    let present = metadata
+/// Structural check: parse `source` as a Rust file and verify it contains
+/// a `pub const RELEASE_MAX_LEVEL` item gated by `#[cfg(not(debug_assertions))]`
+/// and initialised to `LevelFilter::INFO`.
+///
+/// Stricter than a token-grep: ignores comments and disjoint occurrences
+/// (the cfg-attribute, ident, and value must all belong to a single `const` item).
+fn release_filter_const_present(source: &str) -> bool {
+    let Ok(file) = syn::parse_file(source) else {
+        return false;
+    };
+    file.items.iter().any(|item| match item {
+        syn::Item::Const(c) => {
+            c.ident == "RELEASE_MAX_LEVEL"
+                && attrs_have_cfg_not_debug_assertions(&c.attrs)
+                && expr_is_levelfilter_info(&c.expr)
+        }
+        _ => false,
+    })
+}
+
+fn attrs_have_cfg_not_debug_assertions(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|a| {
+        if !a.path().is_ident("cfg") {
+            return false;
+        }
+        match a.parse_args::<syn::Meta>() {
+            Ok(syn::Meta::List(list)) if list.path.is_ident("not") => {
+                list.tokens.to_string().split_whitespace().collect::<String>()
+                    == "debug_assertions"
+            }
+            _ => false,
+        }
+    })
+}
+
+fn expr_is_levelfilter_info(expr: &syn::Expr) -> bool {
+    let syn::Expr::Path(p) = expr else {
+        return false;
+    };
+    let segs: Vec<String> = p.path.segments.iter().map(|s| s.ident.to_string()).collect();
+    segs.len() >= 2
+        && segs[segs.len() - 2] == "LevelFilter"
+        && segs[segs.len() - 1] == "INFO"
+}
+
+fn check_klarvo_core_directly_depends_on_tracing_subscriber(
+    metadata: &Metadata,
+) -> Result<(), String> {
+    let klarvo_core = metadata
         .packages
         .iter()
-        .any(|p| p.name == "tracing-subscriber");
-    if present {
-        Err(
-            "`tracing-subscriber` is now a resolved dependency. Implement the \
-             real DEBUG/TRACE release-filter check in \
-             xtask/src/verify_release.rs::check_tracing_subscriber_sentinel \
-             and delete this sentinel. Spec: architecture.md §4 Telemetrie, \
-             §4a. Memory: project_no_remote_telemetry.md."
+        .find(|p| p.name == "klarvo-core")
+        .ok_or("klarvo-core package not found in workspace metadata")?;
+
+    let direct = klarvo_core
+        .dependencies
+        .iter()
+        .any(|d| d.name == "tracing-subscriber" && d.kind.is_none());
+
+    if !direct {
+        return Err(
+            "`tracing-subscriber` missing from workspace dependencies. \
+             Rolling-file logging (FR37) requires it as a direct \
+             (non-transitive, non-dev) dependency of `klarvo-core`. \
+             Add to root `Cargo.toml` and reference via `klarvo-core/Cargo.toml`. \
+             Spec: architecture.md §4 Telemetrie."
                 .into(),
-        )
-    } else {
-        Ok(())
+        );
     }
+    Ok(())
+}
+
+fn check_tracing_release_filter(metadata: &Metadata) -> Result<(), String> {
+    let root = locate_workspace_root().ok_or("could not locate workspace root")?;
+    let logging_src = root.join("klarvo-core/src/telemetry/logging.rs");
+    let content = std::fs::read_to_string(&logging_src)
+        .map_err(|e| format!("cannot read {}: {e}", logging_src.display()))?;
+    check_tracing_release_filter_in(metadata, &content)
+}
+
+/// Pure-input variant of [`check_tracing_release_filter`] for unit testing
+/// without filesystem dependencies. The `source` argument is the contents
+/// of `klarvo-core/src/telemetry/logging.rs`.
+fn check_tracing_release_filter_in(metadata: &Metadata, source: &str) -> Result<(), String> {
+    check_klarvo_core_directly_depends_on_tracing_subscriber(metadata)?;
+
+    if !release_filter_const_present(source) {
+        return Err(
+            "release-level filter sentinel not found in klarvo-core/src/telemetry/logging.rs. \
+             Expected: `RELEASE_MAX_LEVEL` const gated by `cfg(not(debug_assertions))` \
+             and set to `LevelFilter::INFO`. PII-Protection: DEBUG/TRACE must not reach \
+             release builds (sensitive request payloads could leak into Debug-Export-Zip). \
+             Spec: architecture.md §4a Release-Hardening + Story 6.1 AC-4."
+                .into(),
+        );
+    }
+
+    Ok(())
 }
 
 /// Check `aarch64-linux-android` cross-compile for `klarvo-core` + pure-Rust plugins.
@@ -291,11 +386,40 @@ mod tests {
                 .iter()
                 .map(|n| Package {
                     name: (*n).to_string(),
+                    dependencies: Vec::new(),
                 })
                 .collect(),
             resolve: Resolve { nodes },
         }
     }
+
+    /// Build a metadata fixture where `klarvo-core` declares the given direct
+    /// dependencies. Each tuple is `(dep-name, dep-kind)` where `dep-kind` is
+    /// `None` for normal deps, `Some("dev")` / `Some("build")` otherwise.
+    fn fixture_with_klarvo_core_deps(direct_deps: &[(&str, Option<&str>)]) -> Metadata {
+        let klarvo_core = Package {
+            name: "klarvo-core".into(),
+            dependencies: direct_deps
+                .iter()
+                .map(|(n, k)| Dependency {
+                    name: (*n).to_string(),
+                    kind: k.map(String::from),
+                })
+                .collect(),
+        };
+        Metadata {
+            packages: vec![klarvo_core],
+            resolve: Resolve { nodes: vec![] },
+        }
+    }
+
+    const SYNTHETIC_LOGGING_RS_OK: &str = r#"
+use tracing_subscriber::filter::LevelFilter;
+#[cfg(not(debug_assertions))]
+pub const RELEASE_MAX_LEVEL: LevelFilter = LevelFilter::INFO;
+#[cfg(debug_assertions)]
+pub const RELEASE_MAX_LEVEL: LevelFilter = LevelFilter::DEBUG;
+"#;
 
     #[test]
     fn is_forbidden_feature_matches_spec() {
@@ -372,17 +496,124 @@ mod tests {
     }
 
     #[test]
-    fn tracing_subscriber_sentinel_absent_passes() {
-        let m = fixture(&["tracing", "serde"], vec![]);
-        assert!(check_tracing_subscriber_sentinel(&m).is_ok());
+    fn release_filter_const_present_accepts_canonical_form() {
+        assert!(release_filter_const_present(SYNTHETIC_LOGGING_RS_OK));
     }
 
     #[test]
-    fn tracing_subscriber_sentinel_present_fails_with_guidance() {
-        let m = fixture(&["tracing", "tracing-subscriber", "serde"], vec![]);
-        let err = check_tracing_subscriber_sentinel(&m).unwrap_err();
-        assert!(err.contains("tracing-subscriber"));
-        assert!(err.contains("verify_release"));
+    fn release_filter_const_present_rejects_missing_const() {
+        let src = r#"
+use tracing_subscriber::filter::LevelFilter;
+fn other() {}
+"#;
+        assert!(!release_filter_const_present(src));
+    }
+
+    /// Token-grep bypass: all three tokens present but inside a comment.
+    /// AST-walk must reject this — a comment is not a const item.
+    #[test]
+    fn release_filter_const_present_rejects_tokens_only_in_comment() {
+        let src = r#"
+// historical: RELEASE_MAX_LEVEL was here under cfg(not(debug_assertions)) = LevelFilter::INFO
+fn other() {}
+"#;
+        assert!(!release_filter_const_present(src));
+    }
+
+    /// Token-grep bypass: cfg-attribute, ident, and value live on disjoint items.
+    /// AST-walk must reject this — they must belong to one const item.
+    #[test]
+    fn release_filter_const_present_rejects_disjoint_items() {
+        let src = r#"
+#[cfg(debug_assertions)]
+pub const RELEASE_MAX_LEVEL: tracing_subscriber::filter::LevelFilter =
+    tracing_subscriber::filter::LevelFilter::TRACE;
+#[cfg(not(debug_assertions))]
+pub const OTHER: tracing_subscriber::filter::LevelFilter =
+    tracing_subscriber::filter::LevelFilter::INFO;
+"#;
+        assert!(!release_filter_const_present(src));
+    }
+
+    /// Filter weakened to TRACE under the correct cfg arm: AST-walk rejects.
+    #[test]
+    fn release_filter_const_present_rejects_weakened_filter() {
+        let src = r#"
+#[cfg(not(debug_assertions))]
+pub const RELEASE_MAX_LEVEL: tracing_subscriber::filter::LevelFilter =
+    tracing_subscriber::filter::LevelFilter::TRACE;
+"#;
+        assert!(!release_filter_const_present(src));
+    }
+
+    /// cfg-arm inverted: const exists with correct value but on the wrong arm.
+    #[test]
+    fn release_filter_const_present_rejects_inverted_cfg() {
+        let src = r#"
+#[cfg(debug_assertions)]
+pub const RELEASE_MAX_LEVEL: tracing_subscriber::filter::LevelFilter =
+    tracing_subscriber::filter::LevelFilter::INFO;
+"#;
+        assert!(!release_filter_const_present(src));
+    }
+
+    /// Fully-qualified path is accepted (last two segments must be
+    /// `LevelFilter::INFO`).
+    #[test]
+    fn release_filter_const_present_accepts_fully_qualified_path() {
+        let src = r#"
+#[cfg(not(debug_assertions))]
+pub const RELEASE_MAX_LEVEL: tracing_subscriber::filter::LevelFilter =
+    tracing_subscriber::filter::LevelFilter::INFO;
+"#;
+        assert!(release_filter_const_present(src));
+    }
+
+    #[test]
+    fn release_filter_fails_when_dep_missing() {
+        let m = fixture_with_klarvo_core_deps(&[("tracing", None), ("serde", None)]);
+        let err = check_tracing_release_filter_in(&m, SYNTHETIC_LOGGING_RS_OK).unwrap_err();
+        assert!(err.contains("missing from workspace dependencies"), "{err}");
+    }
+
+    /// Transitive `tracing-subscriber` (e.g. via `tracing-appender`) MUST NOT
+    /// satisfy the gate — only a direct dep of `klarvo-core` does.
+    #[test]
+    fn release_filter_fails_when_tracing_subscriber_only_transitive() {
+        let m = fixture_with_klarvo_core_deps(&[("tracing-appender", None)]);
+        let err = check_tracing_release_filter_in(&m, SYNTHETIC_LOGGING_RS_OK).unwrap_err();
+        assert!(err.contains("missing from workspace dependencies"), "{err}");
+    }
+
+    /// Dev-only `tracing-subscriber` MUST NOT satisfy the gate.
+    #[test]
+    fn release_filter_fails_when_tracing_subscriber_dev_only() {
+        let m = fixture_with_klarvo_core_deps(&[("tracing-subscriber", Some("dev"))]);
+        let err = check_tracing_release_filter_in(&m, SYNTHETIC_LOGGING_RS_OK).unwrap_err();
+        assert!(err.contains("missing from workspace dependencies"), "{err}");
+    }
+
+    /// Dep present + source missing the const → wrapper returns spec-mandated
+    /// error substring (AC-5 #3).
+    #[test]
+    fn release_filter_fails_when_source_sentinel_missing_const() {
+        let m = fixture_with_klarvo_core_deps(&[("tracing-subscriber", None)]);
+        let synthetic_no_const = r#"
+use tracing_subscriber::filter::LevelFilter;
+fn other() {}
+"#;
+        let err = check_tracing_release_filter_in(&m, synthetic_no_const).unwrap_err();
+        assert!(
+            err.contains("release-level filter sentinel not found"),
+            "{err}"
+        );
+    }
+
+    /// Dep present + source has the const → gate passes (AC-5 #1).
+    #[test]
+    fn release_filter_passes_when_dep_present_and_sentinel_in_source() {
+        let m = fixture_with_klarvo_core_deps(&[("tracing-subscriber", None)]);
+        assert!(check_tracing_release_filter_in(&m, SYNTHETIC_LOGGING_RS_OK).is_ok());
     }
 
     #[test]

@@ -63,6 +63,9 @@ pub fn init_tracing(log_dir: &Path) -> Option<WorkerGuard> {
     let subscriber = tracing_subscriber::registry().with(
         fmt::layer()
             .with_ansi(false)
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_thread_names(true)
             .with_writer(non_blocking)
             .with_filter(RELEASE_MAX_LEVEL),
     );
