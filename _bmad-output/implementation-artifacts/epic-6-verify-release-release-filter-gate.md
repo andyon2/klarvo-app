@@ -156,6 +156,9 @@ Tests prüfen `release_filter_tokens_present` mit handgebauten Strings; `check_t
   - [ ] `run()`-Aufruf eintragen
 - [ ] Unit-Tests (AC-5)
 - [ ] Smoke-Run: `cargo xtask verify-release --skip-cross-compile` grün (AC-6)
+- [ ] `fmt::layer()` Format-Config pinnen in `klarvo-core/src/telemetry/logging.rs` (W9-Defer aus 6.1-Code-Review)
+  - [ ] `with_target(true).with_thread_ids(false).with_thread_names(false)` zur fmt-Layer-Kette ergänzen
+  - [ ] Timestamp-Format empirisch prüfen (W7): Default-Timer (`SystemTime`) in tracing-subscriber 0.3.23 gibt bereits `YYYY-MM-DDTHH:MM:SS.ffffffZ` aus (UTC, RFC 3339). Erwartung: kein `local-time`-Feature und kein `with_timer()`-Aufruf nötig — verifizieren.
 
 ## Dev Notes
 
@@ -186,12 +189,30 @@ Story 5.5 (Lint-Gate) scope ist `klarvo-core` + `klarvo-windows-shell` + `klarvo
 
 Bei Story 6.1 wurde der Forcing-Sentinel im Module-doc bereits als "noch zu lösen" annotiert. In Story 6.2 wird der Eintrag final ausgetauscht. Wenn beide Stories Tag-an-Tag ausgeführt werden, ist die Drift minimal. Wenn dazwischen Tage liegen: das `cargo xtask verify-release` ist temporär rot (gewollter Forcing-Effekt).
 
+### W9/W7/W3 — Defers aus 6.1-Code-Review
+
+**W9 (fmt Format-Config-Pinning, `deferred-work.md §6.1-W9`):** `fmt::layer()` in `logging.rs:62-66` nutzt Defaults für `with_target`/`with_thread_*`/Timer. Defaults können zwischen Minor-Versionen driften. Explizit pinnen:
+```rust
+fmt::layer()
+    .with_ansi(false)
+    .with_target(true)         // qualifizierter Event-Pfad im Log
+    .with_thread_ids(false)    // kein Thread-Rauschen, Single-Subscriber-Setup
+    .with_thread_names(false)
+    .with_writer(non_blocking)
+    .with_filter(RELEASE_MAX_LEVEL)
+```
+
+**W7 (Timestamp-Format, `deferred-work.md §6.1-W7`):** Default-Timer = `SystemTime`. Empirisch verifizieren: Debug-Build starten, Log-Output prüfen. Falls nicht RFC-3339: `.with_timer(fmt::time::UtcTime::rfc_3339())` — erfordert `tracing-subscriber` Feature `local-time`. Phase-1-Preference: UTC-only (`UtcTime::rfc_3339()`) statt `local_rfc_3339()` (Windows-DST-Offset-Race). Cargo.toml-Delta: `features = ["fmt", "registry", "local-time"]`.
+
+**W3 (EnvFilter/RUST_LOG, `deferred-work.md §6.1-W3`):** Story 6.2 adressiert nur Release-Gate. `RELEASE_MAX_LEVEL` ist Hard-Ceiling über jedem zukünftigen `EnvFilter`-Layer (Layer-Stack-Reihenfolge matters). Defer zu Story 6.3 oder separater Story — nicht in 6.2 öffnen.
+
 ### Project Structure Notes
 
 Geänderte Dateien:
 - `xtask/src/verify_release.rs` (Sentinel-Delete + neue Funktion + Tests + Module-doc-Update)
+- `klarvo-core/src/telemetry/logging.rs` (fmt::layer() Format-Config-Pinning, W9-Defer)
 
-Keine neuen Dateien, keine Cargo-Dep-Änderungen.
+Keine neuen Dateien. Cargo-Dep-Änderung nur wenn W7-Timestamp-Fix nötig: `tracing-subscriber` Feature `local-time` ergänzen.
 
 ### References
 
@@ -205,15 +226,21 @@ Keine neuen Dateien, keine Cargo-Dep-Änderungen.
 - [memory/project_no_remote_telemetry.md] — PII-Protection-Rationale für Filter
 - Story 6.1 — etabliert `RELEASE_MAX_LEVEL`-Konstante (Source-Sentinel-Token)
 - Story 5.6 (REQUIRED_KEYS-Drift) — Präzedenz für Source-Grep-Pattern in xtask
+- [deferred-work.md §6.1-W9] — fmt::layer() Format-Config-Pinning-Defer (adress in diesem Story)
+- [deferred-work.md §6.1-W7] — ISO-8601-Timestamp-Verifikation-Defer (adress in diesem Story)
+- [deferred-work.md §6.1-W3] — EnvFilter/RUST_LOG-Defer (zu Story 6.3 oder eigene Story)
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-claude-opus-4-7[1m] (create-story 2026-05-01)
+claude-opus-4-7[1m] (create-story 2026-05-01; enriched 2026-05-02 — W9/W7/W3-Defer-Integration)
 
 ### Debug Log References
 
 ### Completion Notes List
 
 ### File List
+
+- `xtask/src/verify_release.rs`
+- `klarvo-core/src/telemetry/logging.rs`
