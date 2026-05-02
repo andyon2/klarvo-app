@@ -2,19 +2,19 @@
 name: Story 6.1 — telemetry::logging — tracing-subscriber + rolling-file appender
 epic: 6
 story_number: "6.1"
-status: ready-for-dev
+status: done
 dependencies: []
 ---
 
 # Story 6.1: `telemetry::logging` — tracing-subscriber + rolling-file appender
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
 Als Core-Dev / Shell-Dev
 möchte ich `klarvo-core::telemetry::logging` mit `tracing-subscriber` + `tracing-appender` implementieren und den Windows-Shell-Bootstrapper damit initialisieren,
-damit alle `tracing!`-Events in eine Rolling-Log-Datei unter `%APPDATA%\klarvo\logs\` geschrieben werden und DEBUG/TRACE-Events im Release-Build gefiltert sind (PII-Protection per NFR5).
+damit alle `tracing!`-Events in eine Rolling-Log-Datei unter `%APPDATA%\Klarvo\logs\` geschrieben werden und DEBUG/TRACE-Events im Release-Build gefiltert sind (PII-Protection per NFR5).
 
 ## Kontext und Motivation
 
@@ -106,20 +106,44 @@ Diese Konstanten dienen auch dem xtask-Filter-Gate (AC-6) als Sentinel.
 
 ## Tasks / Subtasks
 
-- [ ] Workspace-Deps hinzufügen (AC-1)
-  - [ ] `Cargo.toml` (root): `tracing-subscriber`, `tracing-appender` eintragen
-  - [ ] `klarvo-core/Cargo.toml`: workspace-refs eintragen
-- [ ] `telemetry`-Modul erstellen (AC-2)
-  - [ ] `klarvo-core/src/telemetry/mod.rs` anlegen
-  - [ ] `klarvo-core/src/lib.rs`: `pub mod telemetry;` eintragen
-- [ ] `logging.rs` implementieren (AC-3 + AC-4)
-  - [ ] `RELEASE_MAX_LEVEL`-Konstante mit cfg-Gates
-  - [ ] `init_tracing(log_dir: &Path) -> Option<WorkerGuard>` fail-soft
-  - [ ] NFR5-Kommentar in Module-doc
-- [ ] Windows-Shell-Bootstrapper anpassen (AC-5)
-  - [ ] `main.rs`: `_tracing_guard` vor specta_builder
-  - [ ] Bootstrap-Kommentar im Logging-Block
-- [ ] Headless-Test (AC-6)
+- [x] Workspace-Deps hinzufügen (AC-1)
+  - [x] `Cargo.toml` (root): `tracing-subscriber`, `tracing-appender` eintragen
+  - [x] `klarvo-core/Cargo.toml`: workspace-refs eintragen
+- [x] `telemetry`-Modul erstellen (AC-2)
+  - [x] `klarvo-core/src/telemetry/mod.rs` anlegen
+  - [x] `klarvo-core/src/lib.rs`: `pub mod telemetry;` eintragen
+- [x] `logging.rs` implementieren (AC-3 + AC-4)
+  - [x] `RELEASE_MAX_LEVEL`-Konstante mit cfg-Gates
+  - [x] `init_tracing(log_dir: &Path) -> Option<WorkerGuard>` fail-soft
+  - [x] NFR5-Kommentar in Module-doc
+- [x] Windows-Shell-Bootstrapper anpassen (AC-5)
+  - [x] `main.rs`: `_tracing_guard` vor specta_builder
+  - [x] Bootstrap-Kommentar im Logging-Block
+- [x] Headless-Test (AC-6)
+
+### Review Findings
+
+_Code-Review 2026-05-02 (parallel: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 31 raw findings → 25 nach Dedup → 4 Patches (alle appliziert), 9 Defers, 12 Dismiss. 5 Decisions aufgelöst (3× Defer, 1× Patch, 1× Dismiss)._
+
+**Patches (alle appliziert):**
+
+- [x] [Review][Patch] Path-Casing `klarvo` → `Klarvo` [shells/windows/src-tauri/src/main.rs:17,20,21] — Codebase-Konvention ist `Klarvo` (capital K) per `config.rs:101`, `keystore.rs:15`, `tray.rs:77`, `docs/sanity-tester-onboarding.md`. AC-5 enthielt Typo (lowercase), Spec mit-korrigiert. Source: edge.
+- [x] [Review][Patch] `process::exit(1)` skipt `_tracing_guard` Drop, finaler `tracing::error!` verloren [shells/windows/src-tauri/src/main.rs:487-499] — `unwrap_or_else`-Chain durch `match`-Statement ersetzt; `drop(_tracing_guard)` vor `process::exit(1)` flusht Non-Blocking-Writer-mpsc-Channel. Strukturelle Änderung: `let app = tauri::Builder::default()...build(...)` + `let app = match app { ... }`. Source: edge.
+- [x] [Review][Patch] Test-Pfad unreliable + Comment incorrect [klarvo-core/src/telemetry/logging.rs:88-105] — Test umbenannt zu `init_tracing_with_uncreatable_dir_returns_none`; nutzt jetzt `Path::new("\0klarvo_test_uncreatable")` (NUL-Byte wird sowohl von `CString::new` auf Unix als auch von Rust's WinAPI-UTF-16-Konversion auf Windows zuverlässig rejected). Test grün. Source: blind+edge.
+- [x] [Review][Patch] `.filename_suffix("log")` hinzugefügt [klarvo-core/src/telemetry/logging.rs:47-51] — Files heißen jetzt `klarvo.YYYY-MM-DD.log`; matcht Windows-Explorer-Association + Tester-Onboarding-Doc. Source: blind.
+
+**Deferred:**
+
+- [x] [Review][Defer] Grep-Sentinel-Design-Fragilität [klarvo-core/src/telemetry/logging.rs:21-26] — deferred, Story 6.2 ersetzt Grep-Sentinel durch echten Filter-Gate; flag für 6.2 nicht-naive-grep zu nutzen.
+- [x] [Review][Defer] `debug_assertions` cfg-Gate kann Custom-Profiles überraschen [klarvo-core/src/telemetry/logging.rs:21-26] — deferred, Phase-4-Release-Hardening; Default-Cargo-Profiles sind safe.
+- [x] [Review][Defer] EnvFilter / RUST_LOG fehlt — FR37 "configurable verbosity" partial [klarvo-core/src/telemetry/logging.rs:62-66] — deferred, Story 6.2 oder neue Story (ACs 6.1 mandaten EnvFilter nicht).
+- [x] [Review][Defer] Keine Opt-Out für File-Logging (Privacy-Toggle) [klarvo-core/src/telemetry/logging.rs] — deferred, Epic 9 Settings-Panel.
+- [x] [Review][Defer] Kein Cross-Process-Locking bei concurrent Klarvo-Instances [klarvo-core/src/telemetry/logging.rs] — deferred, Single-Instance per Tauri-Plugin schon enforced; Known-Limitation.
+- [x] [Review][Defer] Late-Drop-Tracing-Events nach `_tracing_guard`-Drop verloren [shells/windows/src-tauri/src/main.rs:22] — deferred, Future-Shutdown-Hardening; major refactor needed.
+- [x] [Review][Defer] Default-fmt-Timestamp eventuell nicht ISO-8601 [klarvo-core/src/telemetry/logging.rs:62-66] — deferred, Dev Notes markieren explicit-`with_timer` als optional für Phase 1; empirisch verifizieren in Story 6.2 oder Polish-Pass.
+- [x] [Review][Defer] eprintln! invisible under `windows_subsystem = "windows"` (silent fail-soft) [klarvo-core/src/telemetry/logging.rs:43,55,72] — deferred zu Story 6.3: Story 6.3 hat den passenden Scope - dort sauber mitnehmen statt hier Scope aufzumachen.
+- [x] [Review][Defer] `fmt::layer()` Format-Config explizit pinnen [klarvo-core/src/telemetry/logging.rs:62-66] — deferred zu Story 6.2: Story 6.2 fasst verify_release sowieso an; Format-Pinning dort sauber mit-erledigen statt hier Scope aufzumachen.
+- [x] [Review][Defer] PRD "max 10 MB" cap vs AC-3 count-only Divergenz [klarvo-core/src/telemetry/logging.rs:47-51] — deferred zu Phase-2-Hardening: AC-3 spezifiziert bewusst nur Count (tracing-appender 0.2.5 kann kein Per-File-Size mit DAILY-Rotation); INFO-Level im Release ist nicht hot-loop-prone. Custom-Size-Check wäre Scope-Creep für minor Risk.
 
 ## Dev Notes
 
@@ -224,4 +248,23 @@ claude-sonnet-4-6 (create-story 2026-05-01)
 
 ### Completion Notes List
 
+- Implementiert: `klarvo-core::telemetry::logging` mit `init_tracing(log_dir: &Path) -> Option<WorkerGuard>` — fail-soft, DAILY-Rotation, max 5 Files, `with_ansi(false)`
+- `RELEASE_MAX_LEVEL`-Konstante mit `cfg(not(debug_assertions))` / `cfg(debug_assertions)` — load-bearing für Story-6.2-Sentinel
+- NFR5-Modul-Doc in `logging.rs` eingefügt
+- Windows-Shell `main.rs`: `_tracing_guard` vor specta_builder, Bootstrap-Kommentar ergänzt
+- Headless-Test `init_tracing_with_nonexistent_dir_returns_none` — testet Fehler-Pfad (pre-subscriber-install), `Some(guard)` nicht getestet (set_global_default einmal-pro-Binary)
+- `cargo xtask lint-events` grün; `cargo xtask verify-release` Sentinel feuert wie erwartet (Story 6.2 löst auf)
+- Alle Workspace-Tests grün (98 unit + integration tests in klarvo-core, keine Regressions)
+
 ### File List
+
+- `Cargo.toml` — workspace deps: `tracing-subscriber 0.3`, `tracing-appender 0.2` hinzugefügt
+- `klarvo-core/Cargo.toml` — workspace-refs für `tracing-subscriber` + `tracing-appender`
+- `klarvo-core/src/lib.rs` — `pub mod telemetry;` hinzugefügt
+- `klarvo-core/src/telemetry/mod.rs` — neu: `pub mod logging;`
+- `klarvo-core/src/telemetry/logging.rs` — neu: `RELEASE_MAX_LEVEL`, `init_tracing`, Test
+- `shells/windows/src-tauri/src/main.rs` — Logging-Init vor specta_builder eingefügt
+
+## Change Log
+
+- 2026-05-02: Story 6.1 implementiert — `klarvo-core::telemetry::logging`, workspace deps, Windows-Shell-Bootstrap, Headless-Test (claude-sonnet-4-6)

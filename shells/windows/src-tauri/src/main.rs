@@ -13,6 +13,14 @@ compile_error!("shells/windows requires Windows target");
 fn main() {
     use std::sync::Arc;
 
+    // Logging-Init (before Step 0): install rolling-file tracing subscriber so
+    // all subsequent tracing! calls land in %APPDATA%\Klarvo\logs\.
+    // `_tracing_guard` keeps the non-blocking writer alive until main() returns.
+    let log_dir = std::env::var("APPDATA")
+        .map(|d| std::path::PathBuf::from(d).join("Klarvo").join("logs"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("Klarvo").join("logs"));
+    let _tracing_guard = klarvo_core::telemetry::logging::init_tracing(&log_dir);
+
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
     use klarvo_core::keystore::KeyStore;
@@ -46,7 +54,7 @@ fn main() {
 
     let specta_builder = klarvo_windows_shell::specta_builder();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4); Story-3.6
         // `register_hotkey` consumes the plugin handle inside the .setup() closure.
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -476,22 +484,31 @@ fn main() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
-        .unwrap_or_else(|e| {
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(e) => {
             tracing::error!(error = %e, "Tauri setup failed");
-            std::process::exit(1)
-        })
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                // Use `try_state` to avoid a second panic in the exit handler if Setup
-                // failed before `app.manage(orch)` ran — preserves the original boot error.
-                if let Some(orch) = app_handle.try_state::<SessionOrchestrator>() {
-                    tauri::async_runtime::block_on(async move {
-                        orch.shutdown().await;
-                    });
-                }
+            // Flush the non-blocking tracing writer before process::exit
+            // skips Drop chains — without this, the error event above
+            // sits in the writer's mpsc channel and never reaches the
+            // rolling-file (loses the most diagnostically valuable line
+            // when boot fails). Story-6.1 review patch P2.
+            drop(_tracing_guard);
+            std::process::exit(1);
+        }
+    };
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            // Use `try_state` to avoid a second panic in the exit handler if Setup
+            // failed before `app.manage(orch)` ran — preserves the original boot error.
+            if let Some(orch) = app_handle.try_state::<SessionOrchestrator>() {
+                tauri::async_runtime::block_on(async move {
+                    orch.shutdown().await;
+                });
             }
-        });
+        }
+    });
 }
 
 #[cfg(test)]

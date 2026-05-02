@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod telemetry;
 pub mod error;
 pub mod event;
 pub mod i18n;

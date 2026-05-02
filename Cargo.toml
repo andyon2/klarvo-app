@@ -39,6 +39,8 @@ serde_json = "1"
 toml = "0.9"
 tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "registry"] }
+tracing-appender = "0.2"
 # klarvo-audio-cpal: AC-pinned versions (cpal 0.15, rubato 0.16); newer major
 # versions (0.17, 2.0) carry API breaks incompatible with the Story-2.5 AC.
 cpal = "0.15"
