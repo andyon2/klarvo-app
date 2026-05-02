@@ -1,7 +1,8 @@
 ---
 title: "Pill-Bar UX-Mini-Pass — Pre-Story-Decisions"
-status: open
+status: accepted
 date: 2026-05-01
+accepted_date: 2026-05-03
 form: UX-Mini-Pass (kein Full-UX-Design, kein ADR)
 blocks: Epic 9 Pill-Bar-Story
 pattern_ref: ADR-0013-vor-A4 (Phase-2-A) — Pre-Story-Decision-Pattern reproduziert
@@ -23,7 +24,7 @@ Pill-Bar ist UI-Surface mit nicht-textbaren UX-Entscheidungen. Inline-Decisions 
 
 ## Status
 
-**Open.** 4 Decision-Points unten zu beantworten, dann via Andy-Approval → Status `accepted`. Story-Writing für Epic 9 Pill-Bar-Story ist blockiert bis Status `accepted`.
+**Accepted (2026-05-03).** Alle 4 Decisions durch Andy approved. Epic 9 Pill-Bar-Story ist dispatchable.
 
 ## Pattern-Referenz
 
@@ -40,12 +41,9 @@ ADR-0013 (Settings-Persistence-Schema) hat in Phase-2-A das Pre-Story-Decision-P
 - **B** Adaptive Größe — schmal im Idle (96×32px reines Mic-Icon), expandiert bei Recording auf Waveform-Breite.
 - **C** Floating-Capsule mit dynamischer Höhe je nach Mode (Hold = schmal; Toggle = mittel mit Stop-Button; AutoStop = mittel mit Countdown-Indikator).
 
-**Decision:** [TBD — Andy]
+**Decision: A — Fixe Größe (2026-05-03)**
 
-**Begründungs-Kandidaten zur Diskussion:**
-- A ist am einfachsten zu implementieren und am vorhersehbarsten visuell. Risk: schaut "klobig" aus im Idle.
-- B fühlt sich UX-cleaner an, aber Tauri-Window-Resize-Animation ist plattform-mäßig fragil (Win32-Window-Resize ist nicht butter-smooth).
-- C koppelt Recording-Mode (Epic 8) an Pill-Bar-Form — Cross-Epic-Dep, die Story-Writing erschwert.
+YAGNI. Tauri-Window-Resize ist auf Win32 fragil; adaptive Size ist UX-Polish, kein MVP-Blocker. Footprint: 320×48px, runde Ecken.
 
 ## Decision-Point 2: Drag-Verhalten
 
@@ -56,12 +54,9 @@ ADR-0013 (Settings-Persistence-Schema) hat in Phase-2-A das Pre-Story-Decision-P
 - **B** Draggable, Position wird via Settings-Service (ADR-0013-Konvention) als `ui.pill_bar.position_x` / `…position_y` persistiert — Live-Update beim Drop.
 - **C** Draggable nur via Modifier+Drag (z.B. Ctrl+Drag), um versehentliche Verschiebungen zu vermeiden. Position-Persistierung wie B.
 
-**Decision:** [TBD — Andy]
+**Decision: A — Nicht draggable (2026-05-03)**
 
-**Begründungs-Kandidaten:**
-- A ist YAGNI-konform für MVP — kein Setting, kein Edge-Case. Risk: User mit Ultrawide / Multi-Monitor sind unzufrieden.
-- B ist die Power-User-Erwartung. Risk: Drag-Hit-Box-Konflikt mit Stop-Button bei Mode `toggle`.
-- C ist das Mittelding aber UX-Friction (User muss Modifier kennen).
+YAGNI. Feste Default-Position (unten-mitte). Kein Settings-Key, keine Hit-Box-Konflikte, deterministisch.
 
 ## Decision-Point 3: Waveform-Render-Owner
 
@@ -72,12 +67,9 @@ ADR-0013 (Settings-Persistence-Schema) hat in Phase-2-A das Pre-Story-Decision-P
 - **B** Backend-Render: Rust pre-computed Wave-Frame-Buffer (z.B. 64 amplitude-bins pro 50ms), sendet als `pill_bar.waveform_tick`-Event mit `Vec<f32>` payload. Frontend zeichnet nur die bins.
 - **C** Backend-Render-as-Image: Rust pre-renderet die Waveform als PNG/Bitmap, sendet base64-encoded. Niedrigste Frontend-Last, höchste Latenz + Payload-Größe.
 
-**Decision:** [TBD — Andy]
+**Decision: B — Backend pre-computed bins (2026-05-03)**
 
-**Begründungs-Kandidaten:**
-- A ist die Standard-WebApp-Lösung, aber Tauri-IPC-Frequenz für Raw-Audio (16kHz mono = 32KB/s) ist nicht trivial.
-- B ist der Pragmatiker-Pfad: Backend ist eh Audio-Owner, Pre-Compute reduziert IPC-Volume auf ~ 1KB/s (64 bins × 4 byte × 20Hz). Cross-Ref: `memory/project_event_ts_ms_convention` (alle Events nutzen session-relative monotone ts_ms — passt).
-- C ist überoptimiert.
+Backend ist Audio-Owner. 64 amplitude-bins × 4 byte × 20Hz ≈ 1KB/s IPC-Volume. `pill_bar.waveform_tick`-Event mit `Vec<f32>`-Payload + `ts_ms` (ts_ms-Convention, ref memory/project_event_ts_ms_convention).
 
 ## Decision-Point 4: Auto-Hide-Logic
 
@@ -88,12 +80,9 @@ ADR-0013 (Settings-Persistence-Schema) hat in Phase-2-A das Pre-Story-Decision-P
 - **B** Show-on-Recording-only: Pill-Bar erscheint mit Hotkey-Press (Step 1 der Session-Lifecycle, ref `memory/project_shell_session_lifecycle`), verschwindet nach Drop (Step 7) mit Fade-Out (z.B. 300ms).
 - **C** Auto-Hide-after-Idle: Always-visible, aber dimmt nach X Sekunden ohne Recording (z.B. Opacity 0.3 nach 5s) — kommt zurück bei Hover oder Recording-Start.
 
-**Decision:** [TBD — Andy]
+**Decision: B — Show-on-Recording-only (2026-05-03)**
 
-**Begründungs-Kandidaten:**
-- A ist visuell am intrusivsten, aber operational am ehrlichsten — User weiß immer "Klarvo läuft".
-- B ist die "minimalistisch-clean"-Lösung — passt zu Power-User-Persona (`memory/project_market_positioning`). Risk: User vergisst, ob die App läuft.
-- C ist der Mittelweg, aber zusätzlicher State + Timer-Logic.
+Minimalistisch, passt zu Power-User-Persona. Pill-Bar erscheint bei `RecordingStarted`-Event, verschwindet nach `RecordingCompleted` mit 300ms Fade-Out. Tray-Icon zeigt "läuft Klarvo" im Idle.
 
 ---
 
