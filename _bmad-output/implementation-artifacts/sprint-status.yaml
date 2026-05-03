@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-03 (Epic-9 eröffnet — 6 Stories definiert (9.1–9.6), pill-bar-ux-decisions.md accepted A/A/B/B, Story 9.1 ready-for-dev. Voriger Eintrag: Epic-6 closed — alle 3 Stories done, kein Retro)"
+last_updated: "2026-05-03 (Story 9.1 return-focus review-closure → done: 5 Patches + 1 Bonus-Fix (Tauri-Listener-Trait-Import in main.rs:34, von Linux-only-Tests maskiert, während MinGW-Cross-Compile entdeckt); 20 session_tests + 5 e2e grün; gesamte Windows-Shell clean auf x86_64-pc-windows-gnu. Voriger Eintrag: 9.1 review-closure → in-progress)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -190,7 +190,7 @@ development_status:
   # Story-Order: 9.1→9.2→9.3 (dep-chain History), 9.4+9.5 independent, 9.6 Pill-Bar last.
   # ============================================================
   epic-9: in-progress
-  9-1-return-focus: ready-for-dev
+  9-1-return-focus: done
   9-2-history-backend: backlog
   9-3-history-panel: backlog              # depends on 9.2
   9-4-toast-notifications: backlog

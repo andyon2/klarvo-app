@@ -8,8 +8,8 @@ use klarvo_core::event::{Event, EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_core::recording::RecordingMode;
 use klarvo_test_fixtures::{
-    FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
-    MockSttProvider, MockVadProvider, MockCleanupStyle, QueuedMockSttProvider,
+    FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockFocusCapture,
+    MockPasteBackend, MockSttProvider, MockVadProvider, MockCleanupStyle, QueuedMockSttProvider,
 };
 
 use klarvo_shell_orchestrator::SessionOrchestrator;
@@ -39,6 +39,7 @@ fn make_orchestrator_with_mode(
     Arc<MockPasteBackend>,
     Arc<MockErrorEmitter>,
     Arc<EventBus>,
+    Arc<MockFocusCapture>,
 ) {
     let manifest = Arc::new(parse_manifest(test_manifest_toml()).expect("test manifest must parse"));
 
@@ -67,6 +68,7 @@ fn make_orchestrator_with_mode(
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
     let mode_arc = Arc::new(tokio::sync::RwLock::new(mode));
+    let focus_capture = Arc::new(MockFocusCapture::new());
 
     let orch = SessionOrchestrator::new(
         registry,
@@ -79,9 +81,10 @@ fn make_orchestrator_with_mode(
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
     );
 
-    (orch, output_target, paste_backend, error_emitter, event_bus)
+    (orch, output_target, paste_backend, error_emitter, event_bus, focus_capture)
 }
 
 /// Shared setup: builds a SessionOrchestrator with Hold mode (Phase-1 default).
@@ -93,6 +96,7 @@ fn make_orchestrator(
     Arc<MockPasteBackend>,
     Arc<MockErrorEmitter>,
     Arc<EventBus>,
+    Arc<MockFocusCapture>,
 ) {
     make_orchestrator_with_mode(stt, RecordingMode::Hold)
 }
@@ -125,6 +129,21 @@ async fn wait_for_error(emitter: &MockErrorEmitter) {
     .expect("error must be emitted within 5 seconds");
 }
 
+/// Poll until `MockFocusCapture` has at least `n` recorded restore() calls, or timeout.
+/// Replaces sleep-based test sync to avoid CI flakes (see Review 2026-05-03 P4).
+async fn wait_for_restore(focus_capture: &MockFocusCapture, n: usize) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if focus_capture.restore_count() >= n {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("restore must be called within 5 seconds");
+}
+
 /// Collect every event received until `RecordingCompleted` arrives, then return
 /// the full sequence. Used to assert lifecycle ordering (Started→Stopped→Completed).
 async fn collect_events_until_completed(
@@ -153,7 +172,7 @@ async fn collect_events_until_completed(
 #[tokio::test]
 async fn test1_happy_path_press_release_delivers_and_pastes() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, output_target, paste_backend, error_emitter, event_bus) = make_orchestrator(stt);
+    let (orch, output_target, paste_backend, error_emitter, event_bus, _) = make_orchestrator(stt);
     let mut rx = event_bus.subscribe();
 
     orch.on_press().await;
@@ -206,7 +225,7 @@ async fn test1_happy_path_press_release_delivers_and_pastes() {
 #[tokio::test]
 async fn test2_idempotent_press_key_repeat_guard() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, output_target, _paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+    let (orch, output_target, _paste_backend, error_emitter, _event_bus, _) = make_orchestrator(stt);
 
     orch.on_press().await;
     orch.on_press().await; // second press — must be discarded by key-repeat guard
@@ -223,7 +242,7 @@ async fn test2_idempotent_press_key_repeat_guard() {
 #[tokio::test]
 async fn test3_stray_release_is_noop() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, _output, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+    let (orch, _output, paste_backend, error_emitter, _event_bus, _) = make_orchestrator(stt);
 
     // Release without prior press — must be a silent no-op.
     orch.on_release().await;
@@ -236,7 +255,7 @@ async fn test3_stray_release_is_noop() {
 async fn test4_pipeline_failure_emits_error_state_recovers() {
     // Empty queue → QueuedMockSttProvider returns Internal error on first call.
     let stt = Arc::new(QueuedMockSttProvider::with_transcriptions(vec![]));
-    let (orch, _, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+    let (orch, _, paste_backend, error_emitter, _event_bus, _) = make_orchestrator(stt);
 
     orch.on_press().await;
     wait_for_error(&error_emitter).await;
@@ -253,7 +272,7 @@ async fn test4_pipeline_failure_emits_error_state_recovers() {
 #[tokio::test]
 async fn toggle_press_starts_recording() {
     let stt = Arc::new(MockSttProvider::returning("toggle text"));
-    let (orch, _output, _paste, _err, event_bus) = make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+    let (orch, _output, _paste, _err, event_bus, _) = make_orchestrator_with_mode(stt, RecordingMode::Toggle);
     let mut rx = event_bus.subscribe();
 
     orch.on_press().await;
@@ -279,7 +298,7 @@ async fn toggle_press_starts_recording() {
 #[tokio::test]
 async fn toggle_second_press_stops_recording() {
     let stt = Arc::new(MockSttProvider::returning("toggle delivery"));
-    let (orch, output_target, paste_backend, _err, _event_bus) =
+    let (orch, output_target, paste_backend, _err, _event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
     orch.on_press().await; // start
@@ -294,7 +313,7 @@ async fn toggle_second_press_stops_recording() {
 #[tokio::test]
 async fn toggle_release_is_noop() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, paste_backend, error_emitter, _event_bus) =
+    let (orch, _output, paste_backend, error_emitter, _event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
     orch.on_press().await; // start recording
@@ -317,7 +336,7 @@ async fn toggle_release_is_noop() {
 #[tokio::test]
 async fn autostop_transitions_to_idle_after_vad() {
     let stt = Arc::new(MockSttProvider::returning("autostop text"));
-    let (orch, output_target, paste_backend, _err, event_bus) =
+    let (orch, output_target, paste_backend, _err, event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
     let mut rx = event_bus.subscribe();
 
@@ -360,7 +379,7 @@ async fn autostop_transitions_to_idle_after_vad() {
 #[tokio::test]
 async fn autostop_release_is_noop() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, paste_backend, error_emitter, _event_bus) =
+    let (orch, _output, paste_backend, error_emitter, _event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
 
     orch.on_press().await;
@@ -382,7 +401,7 @@ async fn autostop_release_is_noop() {
 #[tokio::test]
 async fn wait_and_type_skips_paste_emits_delivered() {
     let stt = Arc::new(MockSttProvider::returning("wait text"));
-    let (orch, output_target, paste_backend, _err, event_bus) =
+    let (orch, output_target, paste_backend, _err, event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::WaitAndType);
     let mut rx = event_bus.subscribe();
 
@@ -442,7 +461,7 @@ async fn shutdown_with_timeout(orch: &SessionOrchestrator) {
 #[tokio::test]
 async fn shutdown_while_idle_is_noop() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+    let (orch, _output, paste_backend, error_emitter, _event_bus, _) = make_orchestrator(stt);
 
     // Idle state — shutdown must be a no-op.
     shutdown_with_timeout(&orch).await;
@@ -457,7 +476,7 @@ async fn shutdown_while_idle_is_noop() {
 #[tokio::test]
 async fn shutdown_while_recording_aborts_and_no_stopped_event() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, _paste, _err, event_bus) = make_orchestrator(stt);
+    let (orch, _output, _paste, _err, event_bus, _) = make_orchestrator(stt);
     let mut rx = event_bus.subscribe();
 
     orch.on_press().await;
@@ -493,7 +512,7 @@ async fn shutdown_while_recording_aborts_and_no_stopped_event() {
 #[tokio::test]
 async fn shutdown_is_idempotent() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, _paste, _err, _event_bus) = make_orchestrator(stt);
+    let (orch, _output, _paste, _err, _event_bus, _) = make_orchestrator(stt);
 
     orch.on_press().await;
     shutdown_with_timeout(&orch).await;
@@ -507,7 +526,7 @@ async fn shutdown_is_idempotent() {
 #[tokio::test]
 async fn on_release_semantics_unchanged_after_shutdown_impl() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
-    let (orch, output_target, paste_backend, error_emitter, _event_bus) = make_orchestrator(stt);
+    let (orch, output_target, paste_backend, error_emitter, _event_bus, _) = make_orchestrator(stt);
 
     // Phase 1: Normal Hold press/release cycle must still work.
     orch.on_press().await;
@@ -531,7 +550,7 @@ async fn on_release_semantics_unchanged_after_shutdown_impl() {
 #[tokio::test]
 async fn shutdown_after_on_release_is_safe_noop() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, _paste, _err, _event_bus) = make_orchestrator(stt);
+    let (orch, _output, _paste, _err, _event_bus, _) = make_orchestrator(stt);
 
     orch.on_press().await;
     orch.on_release().await; // detaches pipeline_task — state transitions to Idle
@@ -548,7 +567,7 @@ async fn shutdown_after_on_release_is_safe_noop() {
 #[tokio::test]
 async fn shutdown_while_recording_autostop_does_not_deadlock() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, _paste, _err, _event_bus) =
+    let (orch, _output, _paste, _err, _event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
 
     orch.on_press().await;
@@ -561,10 +580,193 @@ async fn shutdown_while_recording_autostop_does_not_deadlock() {
 #[tokio::test]
 async fn shutdown_while_recording_toggle_does_not_deadlock() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
-    let (orch, _output, _paste, _err, _event_bus) =
+    let (orch, _output, _paste, _err, _event_bus, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
     orch.on_press().await; // Toggle: enters Recording
     shutdown_with_timeout(&orch).await;
     assert!(orch.is_idle().await);
+}
+
+// ---------------------------------------------------------------------------
+// AC-8: Return-Focus-Dispatch (always-restore policy, Review-Closure 2026-05-03 D1=A)
+// ---------------------------------------------------------------------------
+
+/// After successful delivery in Hold mode, focus is restored exactly once with
+/// the sentinel handle captured by MockFocusCapture.
+#[tokio::test]
+async fn focus_restored_after_successful_delivery() {
+    let stt = Arc::new(MockSttProvider::returning("hello"));
+    let (orch, output_target, _paste, _err, _event_bus, focus_capture) =
+        make_orchestrator(stt);
+
+    orch.on_press().await;
+    wait_for_delivery(&output_target).await;
+    orch.on_release().await;
+
+    wait_for_restore(&focus_capture, 1).await;
+
+    assert_eq!(focus_capture.restore_count(), 1, "restore must be called once after successful delivery");
+    assert_eq!(
+        focus_capture.last_restored(),
+        Some(Some(42)),
+        "restored handle must match sentinel captured by MockFocusCapture"
+    );
+}
+
+/// Always-restore policy: after a failed delivery (OutputTarget returns error), focus
+/// MUST still be restored so the user is not stranded on Klarvo's overlay.
+#[tokio::test]
+async fn focus_restored_after_deliver_error() {
+    use klarvo_core::error::{AppError, AppErrorKind};
+
+    // Build orchestrator manually with a failing output target
+    let stt = Arc::new(MockSttProvider::returning("hello"));
+    let manifest =
+        Arc::new(klarvo_core::manifest::parse_from_str(test_manifest_toml()).expect("test manifest"));
+
+    let mut registry = klarvo_core::registry::bootstrap();
+    registry.register_stt("mock-stt", stt);
+    registry.register_cleanup("mock-cleanup", Arc::new(MockCleanupStyle::identity()));
+    // Register a failing output target by wrapping InMemoryOutputTarget with a custom impl
+    struct FailingOutputTarget;
+    #[async_trait::async_trait]
+    impl klarvo_core::output::OutputTarget for FailingOutputTarget {
+        async fn deliver(&self, _text: &str) -> Result<(), AppError> {
+            Err(AppError {
+                kind: AppErrorKind::Internal,
+                message: "simulated deliver failure".to_string(),
+                user_message: Some("error.internal".to_string()),
+                retryable: false,
+            })
+        }
+    }
+    registry.register_output("test-output", Arc::new(FailingOutputTarget) as Arc<dyn klarvo_core::output::OutputTarget>);
+    let registry = Arc::new(registry);
+
+    let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(MockVadProvider::with_decisions(vec![
+            klarvo_core::audio::vad::VadDecision::SpeechStart { ts_ms: 0 },
+            klarvo_core::audio::vad::VadDecision::SpeechEnd { ts_ms: 10, duration_ms: 10 },
+        ]))));
+    let audio_source: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::AudioSource>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(
+            MockAudioSource::with_synthetic_chunks(10, 160, 0),
+        )));
+
+    let paste_backend = Arc::new(MockPasteBackend::new());
+    let error_emitter = Arc::new(MockErrorEmitter::new());
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
+    let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
+    let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
+    let focus_capture = Arc::new(MockFocusCapture::new());
+
+    let orch = SessionOrchestrator::new(
+        registry,
+        manifest,
+        audio_source,
+        "test-output".to_string(),
+        Arc::clone(&paste_backend) as Arc<dyn klarvo_core::output::PasteBackend>,
+        Arc::clone(&error_emitter) as Arc<dyn klarvo_core::event::emitter::ErrorEmitter>,
+        clock as Arc<dyn klarvo_core::time::Clock>,
+        vad,
+        Arc::clone(&event_bus),
+        mode_arc,
+        Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
+    );
+
+    orch.on_press().await;
+    wait_for_error(&error_emitter).await;
+    orch.on_release().await;
+
+    wait_for_restore(&focus_capture, 1).await;
+
+    assert_eq!(
+        focus_capture.restore_count(),
+        1,
+        "restore MUST be called after failed delivery (always-restore policy)"
+    );
+    assert_eq!(
+        focus_capture.last_restored(),
+        Some(Some(42)),
+        "restored handle must match sentinel captured by MockFocusCapture"
+    );
+}
+
+/// Always-restore policy: when the paste backend fails, focus MUST still be restored.
+/// Covers the Hold/Toggle/AutoStop paste-error branch of the always-restore decision.
+#[tokio::test]
+async fn focus_restored_after_paste_error() {
+    use klarvo_core::error::{AppError, AppErrorKind};
+
+    let stt = Arc::new(MockSttProvider::returning("hello"));
+    let manifest =
+        Arc::new(klarvo_core::manifest::parse_from_str(test_manifest_toml()).expect("test manifest"));
+
+    let mut registry = klarvo_core::registry::bootstrap();
+    registry.register_stt("mock-stt", stt);
+    registry.register_cleanup("mock-cleanup", Arc::new(MockCleanupStyle::identity()));
+    let output_target = Arc::new(InMemoryOutputTarget::new());
+    registry.register_output(
+        "test-output",
+        Arc::clone(&output_target) as Arc<dyn klarvo_core::output::OutputTarget>,
+    );
+    let registry = Arc::new(registry);
+
+    let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(MockVadProvider::with_decisions(vec![
+            klarvo_core::audio::vad::VadDecision::SpeechStart { ts_ms: 0 },
+            klarvo_core::audio::vad::VadDecision::SpeechEnd { ts_ms: 10, duration_ms: 10 },
+        ]))));
+    let audio_source: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::AudioSource>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(
+            MockAudioSource::with_synthetic_chunks(10, 160, 0),
+        )));
+
+    // Paste backend that always returns an error.
+    struct FailingPasteBackend;
+    #[async_trait::async_trait]
+    impl klarvo_core::output::PasteBackend for FailingPasteBackend {
+        async fn paste(&self) -> Result<(), AppError> {
+            Err(AppError {
+                kind: AppErrorKind::Internal,
+                message: "simulated paste failure".to_string(),
+                user_message: Some("error.internal".to_string()),
+                retryable: false,
+            })
+        }
+    }
+    let paste_backend: Arc<dyn klarvo_core::output::PasteBackend> = Arc::new(FailingPasteBackend);
+    let error_emitter = Arc::new(MockErrorEmitter::new());
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
+    let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
+    let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
+    let focus_capture = Arc::new(MockFocusCapture::new());
+
+    let orch = SessionOrchestrator::new(
+        registry,
+        manifest,
+        audio_source,
+        "test-output".to_string(),
+        paste_backend,
+        Arc::clone(&error_emitter) as Arc<dyn klarvo_core::event::emitter::ErrorEmitter>,
+        clock as Arc<dyn klarvo_core::time::Clock>,
+        vad,
+        Arc::clone(&event_bus),
+        mode_arc,
+        Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
+    );
+
+    orch.on_press().await;
+    wait_for_delivery(&output_target).await; // deliver succeeded
+    wait_for_error(&error_emitter).await;    // paste failed → error emitted
+    orch.on_release().await;
+
+    wait_for_restore(&focus_capture, 1).await;
+
+    assert_eq!(
+        focus_capture.restore_count(),
+        1,
+        "restore MUST be called after paste failure (always-restore policy)"
+    );
 }

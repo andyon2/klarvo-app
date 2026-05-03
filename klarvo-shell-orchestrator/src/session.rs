@@ -6,7 +6,7 @@ use klarvo_core::audio::vad::VadProvider;
 use klarvo_core::event::{Event, EventBus};
 use klarvo_core::event::emitter::ErrorEmitter;
 use klarvo_core::manifest::PipelineManifest;
-use klarvo_core::output::PasteBackend;
+use klarvo_core::output::{FocusCapture, PasteBackend};
 use klarvo_core::pipeline::{run_capture_session, StageData};
 use klarvo_core::recording::RecordingMode;
 use klarvo_core::registry::PluginRegistry;
@@ -65,6 +65,7 @@ pub struct SessionOrchestrator {
     session_state: Arc<tokio::sync::Mutex<SessionState>>,
     /// Active recording mode; updated by the shell on settings change (ADR-0012 Amendment 1).
     mode: Arc<tokio::sync::RwLock<RecordingMode>>,
+    focus_capture: Arc<dyn FocusCapture>,
 }
 
 impl SessionOrchestrator {
@@ -80,6 +81,7 @@ impl SessionOrchestrator {
         vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
         event_bus: Arc<EventBus>,
         mode: Arc<tokio::sync::RwLock<RecordingMode>>,
+        focus_capture: Arc<dyn FocusCapture>,
     ) -> Self {
         Self {
             registry,
@@ -93,6 +95,7 @@ impl SessionOrchestrator {
             event_bus,
             session_state: Arc::new(tokio::sync::Mutex::new(SessionState::Idle)),
             mode,
+            focus_capture,
         }
     }
 
@@ -114,6 +117,10 @@ impl SessionOrchestrator {
     /// Errors from `AudioSource::start` are emitted via `ErrorEmitter`; state remains
     /// `Idle` on failure. i18n key emitted: `error.audio.start_failed`.
     pub async fn on_press(&self) {
+        // Capture focus before any recording-state check or audio start (AC-2 1a).
+        // Captured even on key-repeat (early-return discards it without side effect).
+        let captured_focus = self.focus_capture.capture();
+
         // Single critical section for the Recording-state branch: dispatching on
         // press_mode (snapshotted at session start) under the same lock guard
         // that does mem::replace, so a concurrent on_press cannot observe a
@@ -170,6 +177,7 @@ impl SessionOrchestrator {
         let error_emitter = Arc::clone(&self.error_emitter);
         let clock = Arc::clone(&self.clock);
         let event_bus = Arc::clone(&self.event_bus);
+        let focus_capture = Arc::clone(&self.focus_capture);
 
         // AutoStop needs session_state to clean up after pipeline (ADR-0012 Amendment 1
         // + AC-5 amendment: cleanup runs unconditionally on every pipeline-task exit
@@ -253,6 +261,14 @@ impl SessionOrchestrator {
                 }
             }
 
+            // Always-restore policy (Review-Closure 2026-05-03 Decision D1=A): focus is
+            // restored on every post-capture exit path so the user is never stranded on
+            // Klarvo's overlay after a failure (paste error, output-target-not-found,
+            // empty pipeline, deliver error). WaitAndType is the one branch that restores
+            // *early* — before emitting RecordingDelivered — so the target window is
+            // focused by the time Pill-Bar handles the event.
+            let mut focus_restored = false;
+
             if let Some(text) = text_to_deliver {
                 match registry.output(&output_target_id) {
                     Some(target) => {
@@ -264,6 +280,8 @@ impl SessionOrchestrator {
                                 )
                                 .await;
                         } else if press_mode == RecordingMode::WaitAndType {
+                            focus_capture.restore(captured_focus);
+                            focus_restored = true;
                             // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
                             event_bus.emit(Event::RecordingDelivered {
                                 ts_ms: clock.now_ms(),
@@ -277,6 +295,7 @@ impl SessionOrchestrator {
                                 )
                                 .await;
                         }
+                        // Hold/Toggle/AutoStop success path falls through to end-restore.
                     }
                     None => {
                         error_emitter
@@ -287,6 +306,10 @@ impl SessionOrchestrator {
                             .await;
                     }
                 }
+            }
+
+            if !focus_restored {
+                focus_capture.restore(captured_focus);
             }
 
             // Pipeline processing finished — emit RecordingCompleted regardless of

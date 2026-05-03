@@ -31,12 +31,14 @@ fn main() {
     use klarvo_shell_orchestrator::SessionOrchestrator;
     use tauri::image::Image;
     use tauri::tray::TrayIconBuilder;
+    use tauri::Listener;
     use tauri::Manager;
 
     use klarvo_windows_shell::audio::make_audio_source;
     use klarvo_windows_shell::bridge::{EventMirror, TauriErrorEmitter};
     use klarvo_windows_shell::commands::settings::TauriSettingsEmitter;
     use klarvo_windows_shell::config::{self, ShellConfig};
+    use klarvo_windows_shell::focus::WinFocusCapture;
     use klarvo_windows_shell::hotkey::register_hotkey;
     use klarvo_windows_shell::keystore::{make_keystore, verify_keystore_ready};
     use klarvo_windows_shell::paste::WinSendInputPasteBackend;
@@ -253,6 +255,10 @@ fn main() {
             // Step 5: Paste backend (Win32 SendInput Ctrl+V)
             let paste: Arc<dyn klarvo_core::output::PasteBackend> = Arc::new(WinSendInputPasteBackend);
 
+            // Step 5b: Focus capture (Win32 GetForegroundWindow / SetForegroundWindow)
+            let focus_capture: Arc<dyn klarvo_core::output::FocusCapture> =
+                Arc::new(WinFocusCapture);
+
             // Step 6: Clock (Phase-1 default: MonotonicClock — session-relative monotone ms)
             // Phase-2: revisit if wall-clock timestamps are required for cross-session correlation.
             let clock: Arc<dyn klarvo_core::time::Clock> = Arc::new(MonotonicClock::new());
@@ -288,6 +294,7 @@ fn main() {
                 vad,
                 Arc::clone(&event_bus),
                 Arc::clone(&recording_mode_arc),
+                focus_capture,
             );
 
             // Step 10: State management — all slots must be registered before Step 11

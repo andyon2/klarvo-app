@@ -8,6 +8,7 @@ use klarvo_core::audio::vad::RmsVad;
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
+use klarvo_core::output::NullFocusCapture;
 use klarvo_core::recording::RecordingMode;
 use klarvo_core::time::MonotonicClock;
 use klarvo_test_fixtures::{
@@ -93,6 +94,7 @@ fn make_test_orchestrator_real_pipeline(
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        Arc::new(NullFocusCapture) as Arc<dyn klarvo_core::output::FocusCapture>,
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus)
