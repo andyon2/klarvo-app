@@ -29,6 +29,16 @@ export const commands = {
 	getPluginSetting: (pluginId: string, key: string) => typedError<string | null, AppError>(__TAURI_INVOKE("get_plugin_setting", { pluginId, key })),
 	getRecordingModeSlot1: () => typedError<string, AppError>(__TAURI_INVOKE("get_recording_mode_slot1")),
 	setRecordingModeSlot1: (mode: string) => typedError<null, AppError>(__TAURI_INVOKE("set_recording_mode_slot1", { mode })),
+	/**
+	 *  Reload the backend `i18n_table` for `lang` without restarting the app (Story 2.A.C3 AC-2).
+	 * 
+	 *  Called by the frontend `settings.changed` listener (AC-3) when `ui.language` changes.
+	 *  Unknown locales are fail-soft: table unchanged + `tracing::warn!`.
+	 */
+	reloadLocale: (lang: string) => typedError<null, AppError>(__TAURI_INVOKE("reload_locale", { lang })),
+	getHistory: (limit: number | null) => typedError<HistoryEntryDto[], AppError>(__TAURI_INVOKE("get_history", { limit })),
+	deleteHistoryEntry: (id: number) => typedError<null, AppError>(__TAURI_INVOKE("delete_history_entry", { id })),
+	clearHistory: () => typedError<null, AppError>(__TAURI_INVOKE("clear_history")),
 };
 
 /** Events */
@@ -88,6 +98,20 @@ export type AppErrorKind =
 
 export type AppReady = {
 	session_id: string,
+};
+
+/**
+ *  Tauri-serializable projection of HistoryEntry.
+ *  `specta::Type` export generates a TypeScript interface for Story 9.3.
+ */
+export type HistoryEntryDto = {
+	id: number,
+	text: string,
+	style: string,
+	language: string,
+	createdAt: string,
+	pluginId: string | null,
+	outputLanguage: string | null,
 };
 
 /**

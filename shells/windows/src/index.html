@@ -13,7 +13,14 @@
         min-height: 100vh;
       }
       #root { max-width: 480px; margin: 0 auto; padding: 24px 16px; }
-      h1 { font-size: 18px; font-weight: 600; margin-bottom: 24px; color: #2ac3a8; }
+      .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #2a3040; }
+      .tab-btn {
+        padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent;
+        color: #8090a0; font-size: 14px; font-weight: 500; cursor: pointer;
+        margin-bottom: -1px; transition: color 0.15s, border-color 0.15s;
+      }
+      .tab-btn:hover { color: #e0e4ef; }
+      .tab-btn.active { color: #2ac3a8; border-bottom-color: #2ac3a8; }
       .field { margin-bottom: 16px; }
       label { display: block; font-size: 12px; color: #8090a0; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
       input, select {
@@ -43,6 +50,22 @@
       .toast.ok  { background: #1a3028; color: #2ac3a8; border: 1px solid #2ac3a830; }
       .toast.err { background: #2e1414; color: #ff7369; border: 1px solid #ff736930; }
       .loading-row { display: flex; align-items: center; gap: 8px; color: #8090a0; font-size: 14px; }
+      .entry-row {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 10px 0; border-bottom: 1px solid #1a1e28;
+      }
+      .entry-meta { font-size: 12px; color: #8090a0; flex-shrink: 0; width: 130px; }
+      .entry-text { flex: 1; font-size: 13px; color: #e0e4ef; word-break: break-word; }
+      .btn-danger {
+        padding: 4px 10px; border-radius: 6px; border: 1px solid #3a1e1e;
+        background: #2e1414; color: #ff7369; font-size: 12px; cursor: pointer;
+        flex-shrink: 0; transition: opacity 0.15s;
+      }
+      .btn-danger:hover:not(:disabled) { opacity: 0.75; }
+      .btn-danger:disabled { opacity: 0.5; cursor: default; }
+      .empty-state { text-align: center; padding: 40px 20px; color: #8090a0; }
+      .empty-state p { font-size: 14px; margin-bottom: 8px; }
+      .empty-hint { font-size: 12px; opacity: 0.7; }
     </style>
   </head>
   <body>
@@ -287,8 +310,6 @@
           );
 
         return h("div", null,
-          h("h1", null, "Klarvo Settings"),
-
           loading
             ? h("div", { className: "loading-row" },
                 h("div", { className: "spinner" }),
@@ -330,7 +351,159 @@
         );
       }
 
-      createRoot(document.getElementById("root")).render(h(SettingsPanel, null));
+      // ---------------------------------------------------------------------------
+      // HistoryPanel — AC-3 (load), AC-4 (entry list), AC-5 (delete), AC-6 (clear all), AC-7 (empty state)
+      // ---------------------------------------------------------------------------
+
+      function HistoryPanel() {
+        const [loadState, setLoadState] = useState({ status: "idle" });
+        const [deletingId, setDeletingId] = useState(null);
+        const [clearing, setClearing] = useState(false);
+        const [toast, setToast] = useState(null);
+
+        // P2 (review): mounted-ref guards setState calls in async paths from
+        // writing into an unmounted component when the user switches tabs
+        // while a load/delete/clear-all promise is still in flight.
+        const mountedRef = useRef(true);
+        useEffect(() => {
+          mountedRef.current = true;
+          return () => { mountedRef.current = false; };
+        }, []);
+
+        // P1 (review): `invoke()` wrapper resolves with the raw Tauri value
+        // and rejects with the AppError — analog zu SettingsPanel-Pattern.
+        // Es gibt KEIN { status: "ok", data } Envelope auf der Resolve-Seite.
+        function loadHistory() {
+          setLoadState({ status: "loading" });
+          invoke("get_history", { limit: 100 })
+            .then((entries) => {
+              if (!mountedRef.current) return;
+              setLoadState({ status: "success", entries: entries ?? [] });
+            })
+            .catch((e) => {
+              if (!mountedRef.current) return;
+              setLoadState({ status: "error", error: e });
+              setToast(errorToToast(e));
+            });
+        }
+
+        useEffect(loadHistory, []);
+
+        async function deleteEntry(id) {
+          setDeletingId(id);
+          setToast(null);
+          try {
+            await invoke("delete_history_entry", { id });
+            if (!mountedRef.current) return;
+            setLoadState((prev) =>
+              prev.status === "success"
+                ? { ...prev, entries: prev.entries.filter((e) => e.id !== id) }
+                : prev
+            );
+          } catch (e) {
+            if (!mountedRef.current) return;
+            setToast(errorToToast(e));
+          } finally {
+            if (mountedRef.current) setDeletingId(null);
+          }
+        }
+
+        // P5 (review): rename for verb-first action-naming consistency
+        // with `loadHistory` (architecture.md:754).
+        async function clearHistory() {
+          if (!window.confirm("Clear all dictation history? This cannot be undone.")) return;
+          setClearing(true);
+          setToast(null);
+          try {
+            await invoke("clear_history");
+            if (!mountedRef.current) return;
+            setLoadState((prev) =>
+              prev.status === "success" ? { ...prev, entries: [] } : prev
+            );
+          } catch (e) {
+            if (!mountedRef.current) return;
+            setToast(errorToToast(e));
+          } finally {
+            if (mountedRef.current) setClearing(false);
+          }
+        }
+
+        function renderEntries(entries) {
+          if (entries.length === 0) {
+            return h("div", { className: "empty-state" },
+              // P4 (review): no trailing period — matches `history.empty_state.title`.
+              h("p", null, "No dictations yet"),
+              h("p", { className: "empty-hint" }, "Start dictating with your hotkey — entries appear here.")
+            );
+          }
+          return h("div", null,
+            h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 12 } },
+              h("button", {
+                className: "btn-danger",
+                onClick: clearHistory,
+                disabled: clearing,
+              }, clearing ? "Clearing…" : "Clear All")
+            ),
+            entries.map((entry) => {
+              const preview = entry.text.length > 120
+                ? entry.text.slice(0, 120) + "…"
+                : entry.text;
+              const timestamp = new Date(entry.createdAt).toLocaleString();
+              return h("div", { key: entry.id, className: "entry-row" },
+                h("div", { className: "entry-meta" },
+                  timestamp,
+                  entry.style && entry.style !== "verbatim"
+                    ? h("span", { style: { marginLeft: 6, fontSize: 11, color: "#2ac3a8" } }, entry.style)
+                    : null
+                ),
+                h("div", { className: "entry-text" }, preview),
+                h("button", {
+                  className: "btn-danger",
+                  onClick: () => deleteEntry(entry.id),
+                  disabled: deletingId === entry.id,
+                }, "Delete")
+              );
+            })
+          );
+        }
+
+        // P3 (review): single dedicated toast slot, independent of loadState
+        // branch — avoids the previous two-pronged render with defensive guards.
+        return h("div", null,
+          toast && h("div", { className: "toast err", style: { marginBottom: 16 } }, toast.msg),
+          loadState.status === "loading"
+            ? h("div", { className: "loading-row" },
+                h("div", { className: "spinner" }),
+                "Loading history…"
+              )
+            : loadState.status === "success"
+            ? renderEntries(loadState.entries)
+            : null
+        );
+      }
+
+      // ---------------------------------------------------------------------------
+      // App — Tab-Routing (AC-2)
+      // ---------------------------------------------------------------------------
+
+      function App() {
+        const [activeTab, setActiveTab] = useState("settings");
+        return h("div", null,
+          h("div", { className: "tabs" },
+            h("button", {
+              className: `tab-btn ${activeTab === "settings" ? "active" : ""}`,
+              onClick: () => setActiveTab("settings"),
+            }, "Settings"),
+            h("button", {
+              className: `tab-btn ${activeTab === "history" ? "active" : ""}`,
+              onClick: () => setActiveTab("history"),
+            }, "History"),
+          ),
+          activeTab === "settings" ? h(SettingsPanel, null) : h(HistoryPanel, null)
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(h(App, null));
     </script>
   </body>
 </html>
