@@ -27,6 +27,7 @@ tauri-build = { workspace = true }
 [dependencies]
 tauri = { workspace = true, features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-notification = { workspace = true }
 tauri-specta = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }

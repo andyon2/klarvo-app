@@ -48,6 +48,7 @@
   "history.entry.delete_label": "Löschen",
   "history.clear_all.label": "Alles löschen",
   "history.clear_all.confirm": "Gesamten Diktatverlauf löschen? Dies kann nicht rückgängig gemacht werden.",
+  "notification.dictation.delivered": "Diktat eingefügt",
   "tray.menu.exit": "Beenden",
   "tray.language_switcher.label": "Sprache",
   "tray.language.en": "English",

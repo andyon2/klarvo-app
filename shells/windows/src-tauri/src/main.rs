@@ -59,6 +59,8 @@ fn main() {
     let specta_builder = klarvo_windows_shell::specta_builder();
 
     let app = tauri::Builder::default()
+        // Story 9.4: native OS toast notifications on recording.delivered + session errors.
+        .plugin(tauri_plugin_notification::init())
         // tauri-plugin-global-shortcut activated here (ADR-0011 SD-4); Story-3.6
         // `register_hotkey` consumes the plugin handle inside the .setup() closure.
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -354,6 +356,7 @@ fn main() {
             // Story 2.A.C3: `i18n_table` is now `SharedI18nTable = Arc<RwLock<I18nTable>>`.
             // `boot_i18n` holds a second Arc-reference for the tray setup below.
             let boot_locale = config.ui_language.clone();
+            let notification_i18n = Arc::clone(&i18n_table);
             let boot_i18n = Arc::clone(&i18n_table);
             app.manage(i18n_table);
             specta_builder.mount_events(app);
@@ -444,6 +447,7 @@ fn main() {
             // Managed as State so the broadcast sender lives for the app lifetime.
             let event_bus_rx_tray = event_bus.subscribe();
             let event_bus_rx_mirror = event_bus.subscribe();
+            let event_bus_rx_notification = event_bus.subscribe();
             debug_assert!(app.manage(Arc::clone(&event_bus)));
 
             // Step 12a: Tray icon with recording-state indicator (fail-soft per AC-F —
@@ -521,6 +525,14 @@ fn main() {
             // Step 12b: EventMirror — ref Story 3.8 AC-D. Always wired, independent of
             // tray outcome (separate broadcast::Receiver per AC-G).
             EventMirror::new(app.handle().clone()).start(event_bus_rx_mirror);
+
+            // Step 12c: NotificationService — native OS toast on recording.delivered (AC-1,
+            // Story 9.4) and on ErrorEmitted during active recording session (AC-2).
+            klarvo_windows_shell::notification::NotificationService::new(
+                app.handle().clone(),
+                notification_i18n,
+            )
+            .start(event_bus_rx_notification);
 
             Ok(())
         })

@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-03 (Story 9.4 toast-notifications backlog → ready-for-dev; create-story. Voriger Eintrag: 9.3 history-panel review → done; code-review-closure)"
+last_updated: "2026-05-03 (Story 9.4 toast-notifications in-progress → review; impl complete)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -193,8 +193,8 @@ development_status:
   9-1-return-focus: done
   9-2-history-backend: done
   9-3-history-panel: done                 # depends on 9.2; story-file: 9-3-history-panel.md
-  9-4-toast-notifications: ready-for-dev     # story-file: 9-4-toast-notifications.md
-  9-5-log-export-ui: backlog
+  9-4-toast-notifications: review             # story-file: 9-4-toast-notifications.md
+  9-5-log-export-ui: ready-for-dev
   9-6-pill-bar: backlog
   epic-9-retrospective: optional
 

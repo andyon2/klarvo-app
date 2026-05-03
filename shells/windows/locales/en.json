@@ -48,6 +48,7 @@
   "history.entry.delete_label": "Delete",
   "history.clear_all.label": "Clear All",
   "history.clear_all.confirm": "Clear all dictation history? This cannot be undone.",
+  "notification.dictation.delivered": "Dictation pasted",
   "tray.menu.exit": "Exit",
   "tray.language_switcher.label": "Language",
   "tray.language.en": "English",

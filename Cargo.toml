@@ -53,6 +53,7 @@ secrecy = "0.10"
 tauri = { version = "2", default-features = false }
 tauri-build = { version = "2", default-features = false }
 tauri-plugin-global-shortcut = "2.3.1"
+tauri-plugin-notification = "2"
 tauri-specta = { version = "=2.0.0-rc.24", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.24", features = ["derive"] }
 specta-typescript = "=0.0.11"

@@ -8,7 +8,7 @@ dependencies: []
 
 # Story 9.4: Toast Notifications
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -113,29 +113,29 @@ RecordingDelivered → unverändert (RecordingCompleted folgt danach)
 
 ## Tasks / Subtasks
 
-- [ ] **T1: Cargo-Dep `tauri-plugin-notification` hinzufügen** (AC-1, AC-4)
-  - [ ] `Cargo.toml` (Workspace): `tauri-plugin-notification = "2"` in `[workspace.dependencies]`
-  - [ ] `shells/windows/src-tauri/Cargo.toml`: `tauri-plugin-notification = { workspace = true }` in `[dependencies]`
-  - [ ] `cargo check --target x86_64-pc-windows-gnu` → muss ohne neue Errors compilieren
+- [x] **T1: Cargo-Dep `tauri-plugin-notification` hinzufügen** (AC-1, AC-4)
+  - [x] `Cargo.toml` (Workspace): `tauri-plugin-notification = "2"` in `[workspace.dependencies]`
+  - [x] `shells/windows/src-tauri/Cargo.toml`: `tauri-plugin-notification = { workspace = true }` in `[dependencies]`
+  - [x] `cargo check --target x86_64-pc-windows-gnu` → clean (1 pre-existing unused-import warning, kein Regression)
 
-- [ ] **T2: `notification.rs` Module erstellen** (AC-1, AC-2)
-  - [ ] `shells/windows/src-tauri/src/notification.rs` anlegen (siehe Dev Notes §NotificationService-Skelett)
-  - [ ] `pub mod notification;` in `shells/windows/src-tauri/src/lib.rs` hinzufügen (nach `pub mod bridge;`)
+- [x] **T2: `notification.rs` Module erstellen** (AC-1, AC-2)
+  - [x] `shells/windows/src-tauri/src/notification.rs` angelegt (NotificationService<R> mit in_session AtomicBool)
+  - [x] `pub mod notification;` in `shells/windows/src-tauri/src/lib.rs` hinzugefügt (nach `pub mod bridge;`)
 
-- [ ] **T3: Plugin registrieren + EventBus-Subscriber wiring in `main.rs`** (AC-1, AC-2)
-  - [ ] `.plugin(tauri_plugin_notification::init())` auf `tauri::Builder::default()` (vor `.plugin(tauri_plugin_global_shortcut::...)`)
-  - [ ] `let event_bus_rx_notification = event_bus.subscribe();` (neben `event_bus_rx_tray` + `event_bus_rx_mirror`)
-  - [ ] `notification_i18n = Arc::clone(&i18n_table)` VOR `app.manage(i18n_table)` (shared-Arc bleibt live)
-  - [ ] Step-12c: `NotificationService::new(app.handle().clone(), notification_i18n).start(event_bus_rx_notification);` (nach Step 12b `EventMirror`)
+- [x] **T3: Plugin registrieren + EventBus-Subscriber wiring in `main.rs`** (AC-1, AC-2)
+  - [x] `.plugin(tauri_plugin_notification::init())` als erstes Plugin auf `tauri::Builder::default()`
+  - [x] `let event_bus_rx_notification = event_bus.subscribe();` (Step 12, neben tray + mirror)
+  - [x] `notification_i18n = Arc::clone(&i18n_table)` VOR `app.manage(i18n_table)` eingefügt
+  - [x] Step-12c nach EventMirror: `NotificationService::new(...).start(event_bus_rx_notification)`
 
-- [ ] **T4: i18n-Keys** (AC-3)
-  - [ ] `shells/windows/locales/en.json`: `"notification.dictation.delivered": "Dictation pasted"`
-  - [ ] `shells/windows/locales/de.json`: `"notification.dictation.delivered": "Diktat eingefügt"`
+- [x] **T4: i18n-Keys** (AC-3)
+  - [x] `shells/windows/locales/en.json`: `"notification.dictation.delivered": "Dictation pasted"`
+  - [x] `shells/windows/locales/de.json`: `"notification.dictation.delivered": "Diktat eingefügt"`
 
-- [ ] **T5: Verifikation** (AC-4, AC-5)
-  - [ ] `cargo check --target x86_64-pc-windows-gnu` → grün
-  - [ ] `cargo xtask bindings-drift` → grün
-  - [ ] `cargo xtask required-keys-drift` → grün (kein REQUIRED_KEYS-Update nötig)
+- [x] **T5: Verifikation** (AC-4, AC-5)
+  - [x] `cargo check --target x86_64-pc-windows-gnu` → clean (5s cached build)
+  - [x] `cargo xtask bindings-drift` → OK (index.ts in sync, kein neues Command)
+  - [x] `cargo xtask lint-events` → OK (5 events scanned) — inkl. orphan-allowlist-Fix für 9.3-Schulden + notification.dictation.delivered (RUST-LOOKUP-Kategorie)
 
 ## Dev Notes
 
@@ -367,10 +367,33 @@ In WaitAndType-Mode liefert die Pipeline Text via `RecordingDelivered`-Event (ke
 
 ### Agent Model Used
 
+claude-sonnet-4-6 (dev-story 2026-05-03)
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- `tauri-plugin-notification = "2"` in Workspace-Cargo.toml + Shell-Cargo.toml. Cross-compile x86_64-pc-windows-gnu clean.
+- `notification.rs`: `NotificationService<R>` mit `AtomicBool in_session`-Flag. RecordingStarted → true, RecordingCompleted → false. RecordingDelivered → OS-Toast (60-char Char-Preview). ErrorEmitted → OS-Toast nur wenn in_session.
+- `main.rs`: `.plugin(tauri_plugin_notification::init())` als erstes Plugin. `notification_i18n = Arc::clone(&i18n_table)` vor manage(). Dritter EventBus-Subscriber `event_bus_rx_notification`. Step-12c nach EventMirror.
+- 1 i18n-Key: `notification.dictation.delivered` in en.json + de.json.
+- `orphan-allowlist.txt` um 9 Einträge erweitert: 7 Story-9.3-Schulden (FRONTEND-ONLY: history.* + settings.tab.*) + 1 neuer RUST-LOOKUP-Eintrag + neue Kategorie-Kommentare.
+- Alle Gates grün: `lint-events OK`, `bindings-drift OK`, `manifest-strict 5/5`, cross-compile clean.
+
 ### File List
 
+- `Cargo.toml` — workspace dep: `tauri-plugin-notification = "2"`
+- `Cargo.lock` — updated (tauri-plugin-notification resolved)
+- `shells/windows/src-tauri/Cargo.toml` — dep: `tauri-plugin-notification = { workspace = true }`
+- `shells/windows/src-tauri/src/notification.rs` — NEW: NotificationService<R>
+- `shells/windows/src-tauri/src/lib.rs` — `pub mod notification;` hinzugefügt
+- `shells/windows/src-tauri/src/main.rs` — plugin-init + notification_i18n clone + event_bus_rx_notification + Step-12c
+- `shells/windows/locales/en.json` — 1 neuer Key: notification.dictation.delivered
+- `shells/windows/locales/de.json` — 1 neuer Key: notification.dictation.delivered
+- `xtask/orphan-allowlist.txt` — 9 neue Einträge (7×FRONTEND-ONLY 9.3-Schulden + 1×RUST-LOOKUP + Kategorie-Kommentar)
+- `_bmad-output/implementation-artifacts/9-4-toast-notifications.md` — story-file (status: review)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 9.4: in-progress → review
+
 ### Change Log
+
+- 2026-05-03: Story 9.4 implementiert — tauri-plugin-notification, NotificationService<R> (in_session-Guard, RecordingDelivered-Toast + session-scoped ErrorEmitted-Toast), 1 i18n-Key, orphan-allowlist-Fix für 9.3-Schulden. Status → review.

@@ -5,16 +5,40 @@
 # Stale-Entries und Format-Verstöße erzeugen `[allowlist-stale]` /
 # `[allowlist-format]`-Violations (review-pass P5).
 #
-# Zwei Kategorien (Story 5.7: DETECTION-GAP entfernt — 3 Sites migriert):
+# Drei Kategorien (Story 5.7: DETECTION-GAP entfernt — 3 Sites migriert):
 #   FRONTEND-ONLY:  Kein Rust-Emit-Site geplant; TypeScript-Konsument.
 #   TUPLE-CONST:    Keys leben in `&[(&str, &str)]`-const-Arrays. Visitor scannt
 #                   tuple-Elemente in const-Arrays nicht.
+#   RUST-LOOKUP:    Key wird in Rust via einer Methode konsumiert die der G3-D-
+#                   Visitor nicht erfasst (nicht emit_error / unwrap_or / lookup).
+#                   Beispiel: NotificationService::t() in notification.rs.
 
 # ── FRONTEND-ONLY ─────────────────────────────────────────────────────────────
 
 # error.unknown: Frontend-Fallback in shells/windows/src/index.html:79,148
 # für unbekannte Error-Payloads aus app.error-Event. Kein Rust-Emit-Site geplant.
 error.unknown
+
+# settings.tab.label: shells/windows/src/index.html Tab-Bar (App-Komponente). Story 9.3.
+settings.tab.label
+
+# history.tab.label: shells/windows/src/index.html Tab-Bar (App-Komponente). Story 9.3.
+history.tab.label
+
+# history.empty_state.title: shells/windows/src/index.html HistoryPanel Empty-State. Story 9.3.
+history.empty_state.title
+
+# history.empty_state.hint: shells/windows/src/index.html HistoryPanel Empty-State. Story 9.3.
+history.empty_state.hint
+
+# history.entry.delete_label: shells/windows/src/index.html HistoryPanel Entry-Row Delete-Button. Story 9.3.
+history.entry.delete_label
+
+# history.clear_all.label: shells/windows/src/index.html HistoryPanel Clear-All-Button. Story 9.3.
+history.clear_all.label
+
+# history.clear_all.confirm: shells/windows/src/index.html HistoryPanel window.confirm()-Text. Story 9.3.
+history.clear_all.confirm
 
 # ── TUPLE-CONST ───────────────────────────────────────────────────────────────
 # `pub const SUPPORTED_LOCALES: &[(&str, &str)]` at tray.rs:30-33. Lookup-Path
@@ -27,3 +51,10 @@ tray.language.en
 
 # tray.language.de: shells/windows/src-tauri/src/tray.rs:32 (SUPPORTED_LOCALES const)
 tray.language.de
+
+# ── RUST-LOOKUP ───────────────────────────────────────────────────────────────
+
+# notification.dictation.delivered: shells/windows/src-tauri/src/notification.rs
+# NotificationService::t("notification.dictation.delivered") — G3-D-Visitor erfasst
+# nur emit_error / unwrap_or / lookup; self.t()-Methode liegt außerhalb des Scans.
+notification.dictation.delivered

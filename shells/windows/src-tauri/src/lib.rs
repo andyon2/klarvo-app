@@ -8,6 +8,7 @@
 //! Story 2.A.A4: `commands::settings` adds 8 Settings commands + `SettingsChangedEvent`.
 
 pub mod bridge;
+pub mod notification;
 pub mod commands;
 pub mod config;
 pub mod i18n;
