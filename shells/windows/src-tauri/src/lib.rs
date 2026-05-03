@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
+use commands::history::{clear_history, delete_history_entry, get_history};
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
     reload_locale, set_dictionary_language, set_hotkey_slot1, set_output_language, set_output_target,
@@ -65,6 +66,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             set_recording_mode_slot1,
             // Story 2.A.C3: Live-Locale-Switch
             reload_locale,
+            // Story 9.2: History commands
+            get_history,
+            delete_history_entry,
+            clear_history,
         ])
         .events(collect_events![AppReady, SettingsChangedEvent])
 }

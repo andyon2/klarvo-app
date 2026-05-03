@@ -5,6 +5,7 @@ use klarvo_core::audio::{AudioEvent, AudioSource, CaptureConfig, CaptureHandle,
 use klarvo_core::audio::vad::VadProvider;
 use klarvo_core::event::{Event, EventBus};
 use klarvo_core::event::emitter::ErrorEmitter;
+use klarvo_core::history::{HistoryBackend, NewHistoryEntry};
 use klarvo_core::manifest::PipelineManifest;
 use klarvo_core::output::{FocusCapture, PasteBackend};
 use klarvo_core::pipeline::{run_capture_session, StageData};
@@ -66,6 +67,7 @@ pub struct SessionOrchestrator {
     /// Active recording mode; updated by the shell on settings change (ADR-0012 Amendment 1).
     mode: Arc<tokio::sync::RwLock<RecordingMode>>,
     focus_capture: Arc<dyn FocusCapture>,
+    history_backend: Arc<dyn HistoryBackend>,
 }
 
 impl SessionOrchestrator {
@@ -82,6 +84,7 @@ impl SessionOrchestrator {
         event_bus: Arc<EventBus>,
         mode: Arc<tokio::sync::RwLock<RecordingMode>>,
         focus_capture: Arc<dyn FocusCapture>,
+        history_backend: Arc<dyn HistoryBackend>,
     ) -> Self {
         Self {
             registry,
@@ -96,6 +99,7 @@ impl SessionOrchestrator {
             session_state: Arc::new(tokio::sync::Mutex::new(SessionState::Idle)),
             mode,
             focus_capture,
+            history_backend,
         }
     }
 
@@ -178,6 +182,7 @@ impl SessionOrchestrator {
         let clock = Arc::clone(&self.clock);
         let event_bus = Arc::clone(&self.event_bus);
         let focus_capture = Arc::clone(&self.focus_capture);
+        let history_backend = Arc::clone(&self.history_backend);
 
         // AutoStop needs session_state to clean up after pipeline (ADR-0012 Amendment 1
         // + AC-5 amendment: cleanup runs unconditionally on every pipeline-task exit
@@ -279,23 +284,47 @@ impl SessionOrchestrator {
                                     clock.now_ms(),
                                 )
                                 .await;
-                        } else if press_mode == RecordingMode::WaitAndType {
-                            focus_capture.restore(captured_focus);
-                            focus_restored = true;
-                            // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
-                            event_bus.emit(Event::RecordingDelivered {
-                                ts_ms: clock.now_ms(),
+                        } else {
+                            // History-Persistence: fail-soft — delivery must not be blocked
+                            // by a storage write failure.
+                            let history_entry = NewHistoryEntry {
                                 text: text.clone(),
-                            });
-                        } else if let Err(e) = paste_backend.paste().await {
-                            error_emitter
-                                .emit_error(
-                                    e.user_message.as_deref().unwrap_or("error.internal"),
-                                    clock.now_ms(),
-                                )
-                                .await;
+                                raw_text: None,
+                                style: manifest_stt_style(&manifest),
+                                language: String::new(),
+                                app_name: None,
+                                created_at: klarvo_core::history::wall_clock_iso8601(),
+                                uuid: None,
+                                device_id: None,
+                                plugin_id: manifest_stt_plugin(&manifest),
+                                manifest_version: None,
+                                output_language: None,
+                            };
+                            if let Err(e) = history_backend.append(&history_entry).await {
+                                tracing::warn!(
+                                    error = %e.message,
+                                    "history write failed; continuing without persistence"
+                                );
+                            }
+
+                            if press_mode == RecordingMode::WaitAndType {
+                                focus_capture.restore(captured_focus);
+                                focus_restored = true;
+                                // WaitAndType: skip paste, signal Pill-Bar (Story A3) instead.
+                                event_bus.emit(Event::RecordingDelivered {
+                                    ts_ms: clock.now_ms(),
+                                    text: text.clone(),
+                                });
+                            } else if let Err(e) = paste_backend.paste().await {
+                                error_emitter
+                                    .emit_error(
+                                        e.user_message.as_deref().unwrap_or("error.internal"),
+                                        clock.now_ms(),
+                                    )
+                                    .await;
+                            }
+                            // Hold/Toggle/AutoStop success path falls through to end-restore.
                         }
-                        // Hold/Toggle/AutoStop success path falls through to end-restore.
                     }
                     None => {
                         error_emitter
@@ -394,4 +423,31 @@ impl SessionOrchestrator {
             drop(pipeline_task);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers for History-Persistence (AC-5)
+// ---------------------------------------------------------------------------
+
+/// Extract the STT plugin_id from the first Stt stage in the manifest.
+fn manifest_stt_plugin(manifest: &PipelineManifest) -> Option<String> {
+    use klarvo_core::pipeline::PipelineStageType;
+    manifest.pipeline.stages.iter().find_map(|s| match s {
+        PipelineStageType::Stt { plugin_id } => Some(plugin_id.clone()),
+        _ => None,
+    })
+}
+
+/// Extract the cleanup style name from the first Cleanup stage; falls back to "verbatim".
+fn manifest_stt_style(manifest: &PipelineManifest) -> String {
+    use klarvo_core::pipeline::PipelineStageType;
+    manifest
+        .pipeline
+        .stages
+        .iter()
+        .find_map(|s| match s {
+            PipelineStageType::Cleanup { plugin_id } => Some(plugin_id.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "verbatim".to_string())
 }

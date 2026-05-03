@@ -24,6 +24,7 @@ fn main() {
 
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
+    use klarvo_core::history::{HistoryBackend, NullHistoryBackend, SqliteHistoryStore};
     use klarvo_core::keystore::KeyStore;
     use klarvo_core::recording::RecordingMode;
     use klarvo_core::settings::{NoopSettingsEmitter, Settings, TomlMigrationSource};
@@ -268,6 +269,28 @@ fn main() {
             let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
                 Arc::new(tokio::sync::Mutex::new(Box::new(RmsVad::new())));
 
+            // Step 7b: History store (fail-soft — opens history.db, applies schema migrations).
+            // Path mirrors settings.db in the same AppData dir.
+            let history_store: Arc<dyn HistoryBackend> = {
+                let max_entries = settings.history_max_entries() as u32;
+                match app.path().app_data_dir() {
+                    Ok(dir) => {
+                        let history_db_path = dir.join("history.db");
+                        match SqliteHistoryStore::open(&history_db_path, max_entries) {
+                            Ok(store) => Arc::new(store),
+                            Err(e) => {
+                                tracing::error!(error = %e.message, path = %history_db_path.display(), "history db open failed; falling back to NullHistoryBackend");
+                                Arc::new(NullHistoryBackend)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "app_data_dir unavailable; using NullHistoryBackend");
+                        Arc::new(NullHistoryBackend)
+                    }
+                }
+            };
+
             // Step 8: Manifest + Registry (fatal — without valid manifest + registry the app
             // has no pipeline and no meaningful voice-transcription function)
             let manifest = Arc::new(klarvo_core::manifest::parse_embedded().map_err(|e| {
@@ -295,6 +318,7 @@ fn main() {
                 Arc::clone(&event_bus),
                 Arc::clone(&recording_mode_arc),
                 focus_capture,
+                Arc::clone(&history_store),
             );
 
             // Step 10: State management — all slots must be registered before Step 11
@@ -316,6 +340,7 @@ fn main() {
             debug_assert!(app.manage(Arc::clone(&emitter)));
             debug_assert!(app.manage(Arc::clone(&clock)));
             debug_assert!(app.manage(settings));
+            debug_assert!(app.manage(history_store));
             // Snapshot the boot-time locale separately because `i18n_table` is
             // moved into managed state below; the listener (Step 10c) owns its
             // own freshly-loaded copy on every locale change.

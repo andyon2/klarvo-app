@@ -311,6 +311,17 @@ impl Settings {
         self.set_raw("hotkey.slot1.mode", &mode.to_string(), "string")
     }
 
+    /// Maximum number of dictation history entries to retain.
+    /// Oldest entries are pruned on append when this limit is exceeded.
+    /// Default: 500.
+    pub fn history_max_entries(&self) -> i64 {
+        self.get_raw("history.max_entries")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(500)
+    }
+
     // -----------------------------------------------------------------------
     // Plugin-Setting API (AC-7)
     // -----------------------------------------------------------------------

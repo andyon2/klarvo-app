@@ -1,6 +1,7 @@
 // Shared test fixtures: typed WAV accessors + trait mocks + v1 AppData snapshot.
 
 pub mod audio_source;
+pub mod history;
 pub mod clock;
 pub mod env;
 pub mod event_bus_harness;
@@ -24,6 +25,7 @@ pub use clock::FakeClock;
 pub use env::HeadlessTestEnv;
 pub use event_bus_harness::{MockErrorEmitter, assert_contains_variant, collect_emitted};
 pub use focus::MockFocusCapture;
+pub use history::MockHistoryBackend;
 pub use network::NoNetworkGuard;
 pub use output::InMemoryOutputTarget;
 pub use cleanup::{MockCleanupMode, MockCleanupStyle, assert_cleanup_input};

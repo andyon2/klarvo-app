@@ -36,6 +36,8 @@
   "error.settings.in_memory_fallback": "Settings storage is unavailable. Changes will be lost when the app exits.",
   "error.settings.validation": "Setting value is invalid. Please check the input and try again.",
   "error.unknown": "An unexpected error occurred. Please try again.",
+  "error.history.delete_failed": "Failed to delete history entry",
+  "error.history.clear_failed": "Failed to clear history",
   "tray.menu.exit": "Exit",
   "tray.language_switcher.label": "Language",
   "tray.language.en": "English",

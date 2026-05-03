@@ -2,14 +2,14 @@
 name: Story 9.2 — History-Backend
 epic: 9
 story_number: "9.2"
-status: ready-for-dev
+status: review
 dependencies:
   - 9-1-return-focus
 ---
 
 # Story 9.2: History-Backend
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -481,50 +481,50 @@ Tests in `mod tests` innerhalb von `sqlite.rs`, unter `#[cfg(test)]` + `#[allow(
 
 ## Tasks / Subtasks
 
-- [ ] **AC-1+2: Cargo-Feature + Trait-Definitionen** (AC-1, AC-2)
-  - [ ] `history = ["dep:rusqlite"]` in `klarvo-core/Cargo.toml` features + default
-  - [ ] `klarvo-core/src/history/mod.rs` anlegen: `HistoryEntry`, `NewHistoryEntry`, `HistoryBackend`-Trait, `NullHistoryBackend`, `keys`-Submodul
-  - [ ] `pub mod history;` unter `#[cfg(feature = "history")]` in `klarvo-core/src/lib.rs`
-- [ ] **AC-3: SqliteHistoryStore** (AC-3)
-  - [ ] `klarvo-core/src/history/sqlite.rs` anlegen
-  - [ ] Schema-Migration (PRAGMA user_version, identisch zu settings/migrations.rs)
-  - [ ] `open(path, max_entries)` + `in_memory(max_entries)` Faktories
-  - [ ] `HistoryBackend`-Impl mit append (incl. Retention-Pruning), list, delete, clear, count
-  - [ ] `mod sqlite; pub use sqlite::SqliteHistoryStore;` in history/mod.rs
-- [ ] **AC-4: MockHistoryBackend in klarvo-test-fixtures** (AC-4)
-  - [ ] `klarvo-test-fixtures/src/history.rs` anlegen
-  - [ ] Re-Export in `klarvo-test-fixtures/src/lib.rs`
-- [ ] **AC-5: SessionOrchestrator Wiring** (AC-5)
-  - [ ] Neues Feld `history_backend: Arc<dyn HistoryBackend>` in `SessionOrchestrator`
-  - [ ] `new()` bekommt neuen Parameter als letzten (nach `focus_capture`)
-  - [ ] Arc-Clone für pipeline_task-Closure
-  - [ ] History-Append nach `deliver()-success` (fail-soft: `tracing::warn!` + continue)
-  - [ ] Hilfsfunktionen `manifest_stt_plugin()` + `manifest_stt_style()`
-- [ ] **AC-6: Settings-Accessor** (AC-6)
-  - [ ] `history_max_entries() -> i64` in `klarvo-core/src/settings/mod.rs`
-- [ ] **AC-7: Tauri-Commands** (AC-7)
-  - [ ] `shells/windows/src-tauri/src/commands/history.rs` anlegen
-  - [ ] `HistoryEntryDto` + `From<HistoryEntry>` impl
-  - [ ] `get_history`, `delete_history_entry`, `clear_history` commands
-  - [ ] `pub mod history;` in `commands/mod.rs`
-  - [ ] Commands in `specta_builder()` registrieren (`lib.rs`)
-- [ ] **AC-8: main.rs Boot-Wiring** (AC-8)
-  - [ ] `SqliteHistoryStore::open(history_db_path, max_entries)` im setup-Closure
-  - [ ] Fail-soft-Fallback zu `NullHistoryBackend`
-  - [ ] `app.manage(Arc::clone(&history_store) as Arc<dyn HistoryBackend>)`
-  - [ ] `SessionOrchestrator::new(...)` erhält neuen letzten Parameter
-- [ ] **AC-9: i18n-Keys** (AC-9)
-  - [ ] `error.history.delete_failed` + `error.history.clear_failed` in `en.json` + `de.json`
-  - [ ] `cargo clippy -p klarvo-core` warning-frei
-- [ ] **AC-10: Unit-Tests für SqliteHistoryStore** (AC-10)
-  - [ ] 6 Tests in `sqlite.rs::tests`
-- [ ] **AC-11: Orchestrator-Tests** (AC-11)
-  - [ ] `make_orchestrator_with_mode` mit `Arc<MockHistoryBackend>` updaten
-  - [ ] Neuer Test `history_saved_after_successful_delivery`
-  - [ ] Neuer Test `history_not_saved_on_deliver_error`
-  - [ ] Alle 20 session_tests + 5 e2e_tests grün
-- [ ] **AC-12: Windows Cross-Compile** (AC-12)
-  - [ ] `cargo check --target x86_64-pc-windows-gnu` auf shells/windows/src-tauri clean
+- [x] **AC-1+2: Cargo-Feature + Trait-Definitionen** (AC-1, AC-2)
+  - [x] `history = ["dep:rusqlite"]` in `klarvo-core/Cargo.toml` features + default
+  - [x] `klarvo-core/src/history/mod.rs` anlegen: `HistoryEntry`, `NewHistoryEntry`, `HistoryBackend`-Trait, `NullHistoryBackend`, `keys`-Submodul
+  - [x] `pub mod history;` unter `#[cfg(feature = "history")]` in `klarvo-core/src/lib.rs`
+- [x] **AC-3: SqliteHistoryStore** (AC-3)
+  - [x] `klarvo-core/src/history/sqlite.rs` anlegen
+  - [x] Schema-Migration (PRAGMA user_version, identisch zu settings/migrations.rs)
+  - [x] `open(path, max_entries)` + `in_memory(max_entries)` Faktories
+  - [x] `HistoryBackend`-Impl mit append (incl. Retention-Pruning), list, delete, clear, count
+  - [x] `mod sqlite; pub use sqlite::SqliteHistoryStore;` in history/mod.rs
+- [x] **AC-4: MockHistoryBackend in klarvo-test-fixtures** (AC-4)
+  - [x] `klarvo-test-fixtures/src/history.rs` anlegen
+  - [x] Re-Export in `klarvo-test-fixtures/src/lib.rs`
+- [x] **AC-5: SessionOrchestrator Wiring** (AC-5)
+  - [x] Neues Feld `history_backend: Arc<dyn HistoryBackend>` in `SessionOrchestrator`
+  - [x] `new()` bekommt neuen Parameter als letzten (nach `focus_capture`)
+  - [x] Arc-Clone für pipeline_task-Closure
+  - [x] History-Append nach `deliver()-success` (fail-soft: `tracing::warn!` + continue)
+  - [x] Hilfsfunktionen `manifest_stt_plugin()` + `manifest_stt_style()`
+- [x] **AC-6: Settings-Accessor** (AC-6)
+  - [x] `history_max_entries() -> i64` in `klarvo-core/src/settings/mod.rs`
+- [x] **AC-7: Tauri-Commands** (AC-7)
+  - [x] `shells/windows/src-tauri/src/commands/history.rs` anlegen
+  - [x] `HistoryEntryDto` + `From<HistoryEntry>` impl
+  - [x] `get_history`, `delete_history_entry`, `clear_history` commands
+  - [x] `pub mod history;` in `commands/mod.rs`
+  - [x] Commands in `specta_builder()` registrieren (`lib.rs`)
+- [x] **AC-8: main.rs Boot-Wiring** (AC-8)
+  - [x] `SqliteHistoryStore::open(history_db_path, max_entries)` im setup-Closure
+  - [x] Fail-soft-Fallback zu `NullHistoryBackend`
+  - [x] `app.manage(Arc::clone(&history_store) as Arc<dyn HistoryBackend>)`
+  - [x] `SessionOrchestrator::new(...)` erhält neuen letzten Parameter
+- [x] **AC-9: i18n-Keys** (AC-9)
+  - [x] `error.history.delete_failed` + `error.history.clear_failed` in `en.json` + `de.json`
+  - [x] `cargo clippy -p klarvo-core` warning-frei
+- [x] **AC-10: Unit-Tests für SqliteHistoryStore** (AC-10)
+  - [x] 6 Tests in `sqlite.rs::tests`
+- [x] **AC-11: Orchestrator-Tests** (AC-11)
+  - [x] `make_orchestrator_with_mode` mit `Arc<MockHistoryBackend>` updaten
+  - [x] Neuer Test `history_saved_after_successful_delivery`
+  - [x] Neuer Test `history_not_saved_on_deliver_error`
+  - [x] Alle 20 session_tests + 5 e2e_tests grün
+- [x] **AC-12: Windows Cross-Compile** (AC-12)
+  - [x] `cargo check --target x86_64-pc-windows-gnu` auf shells/windows/src-tauri clean
 
 ## Dev Notes
 
@@ -649,4 +649,33 @@ claude-sonnet-4-6 (create-story 2026-05-03)
 
 ### Completion Notes List
 
+- AC-1+2: `klarvo-core/src/history/mod.rs` + `sqlite.rs` implementiert. `history = ["dep:rusqlite"]` Feature hinzugefügt. Trait, NullImpl, Keys-Submodul wie spec.
+- AC-3: `SqliteHistoryStore` mit PRAGMA user_version Migration (v0→v1). `format_utc_datetime()` ohne chrono (eigene Gregorian-Decomposition). Option A (tokio::sync::Mutex) gewählt — `bundled` rusqlite macht Connection `Send`.
+- AC-4: `MockHistoryBackend` in `klarvo-test-fixtures/src/history.rs` mit in-memory Vec<HistoryEntry> + AtomicI64-id.
+- AC-5: `session.rs` bekommt `history_backend`-Feld. Append nach deliver()-success (fail-soft: warn! + continue). `manifest_stt_plugin()` + `manifest_stt_style()` Helper.
+- AC-6: `history_max_entries() -> i64` accessor in `settings/mod.rs` (Default 500).
+- AC-7: `commands/history.rs` mit HistoryEntryDto + 3 Commands. In specta_builder registriert.
+- AC-8: `main.rs` boot-wiring mit fail-soft NullHistoryBackend-Fallback.
+- AC-9: `error.history.delete_failed` + `error.history.clear_failed` in en.json + de.json.
+- AC-10: 7 Unit-Tests in `sqlite.rs::tests` — alle grün.
+- AC-11: `session_tests.rs` updated — 22/22 Tests grün (20 bestehend + 2 neue). E2e_test.rs: NullHistoryBackend als letzter Param.
+- AC-12: `cargo check --target x86_64-pc-windows-gnu` clean (1 pre-existing unused import warning, kein History-Error).
+
 ### File List
+
+- `klarvo-core/src/history/mod.rs` (new)
+- `klarvo-core/src/history/sqlite.rs` (new)
+- `klarvo-core/Cargo.toml` (modified)
+- `klarvo-core/src/lib.rs` (modified)
+- `klarvo-core/src/settings/mod.rs` (modified)
+- `klarvo-test-fixtures/src/history.rs` (new)
+- `klarvo-test-fixtures/src/lib.rs` (modified)
+- `klarvo-shell-orchestrator/src/session.rs` (modified)
+- `klarvo-shell-orchestrator/tests/session_tests.rs` (modified)
+- `klarvo-shell-orchestrator/tests/e2e_test.rs` (modified)
+- `shells/windows/src-tauri/src/commands/history.rs` (new)
+- `shells/windows/src-tauri/src/commands/mod.rs` (modified)
+- `shells/windows/src-tauri/src/lib.rs` (modified)
+- `shells/windows/src-tauri/src/main.rs` (modified)
+- `shells/windows/locales/en.json` (modified)
+- `shells/windows/locales/de.json` (modified)

@@ -1,4 +1,6 @@
 pub mod audio;
+#[cfg(feature = "history")]
+pub mod history;
 pub mod telemetry;
 pub mod error;
 pub mod event;
