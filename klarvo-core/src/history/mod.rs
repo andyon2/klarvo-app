@@ -3,6 +3,9 @@
 use crate::error::AppError;
 
 mod sqlite;
+// `format_utc_datetime` (the lower-level Gregorian decomposition) is intentionally
+// `pub(crate)` and not re-exported — only `wall_clock_iso8601` is the public surface
+// the orchestrator consumes (session.rs).
 pub use sqlite::{SqliteHistoryStore, wall_clock_iso8601};
 
 /// A stored dictation history entry (full record, with id).
@@ -11,6 +14,12 @@ pub struct HistoryEntry {
     pub id: i64,
     pub text: String,
     pub raw_text: Option<String>,
+    /// Cleanup-Plugin-ID = Style-Identity (v2-Plugin-Architektur).
+    /// Each cleanup plugin defines its own style; values come from the manifest's
+    /// first Cleanup stage `plugin_id`. Examples: `"verbatim"` (no-op cleanup),
+    /// `"polished"`, `"groq-cleanup"`. Multi-cleanup pipelines: first cleanup
+    /// stage is the style of record (later stages are not separately tracked
+    /// in Phase-1).
     pub style: String,
     pub language: String,
     pub app_name: Option<String>,
@@ -89,4 +98,7 @@ impl HistoryBackend for NullHistoryBackend {
 pub mod keys {
     pub const DELETE_FAILED: &str = "error.history.delete_failed";
     pub const CLEAR_FAILED: &str = "error.history.clear_failed";
+    pub const LIST_FAILED: &str = "error.history.list_failed";
+    pub const APPEND_FAILED: &str = "error.history.append_failed";
+    pub const DOWNGRADE_DETECTED: &str = "error.history.downgrade_detected";
 }

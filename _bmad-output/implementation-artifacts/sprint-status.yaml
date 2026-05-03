@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-03 (Story 9.2 history-backend backlog → ready-for-dev; create-story. Voriger Eintrag: 9.1 return-focus review-closure → done)"
+last_updated: "2026-05-03 (Story 9.2 history-backend review → done; code-review-closure mit 19 Patches + 5 deferred. Voriger Eintrag: 9.2 history-backend backlog → ready-for-dev; create-story)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -191,7 +191,7 @@ development_status:
   # ============================================================
   epic-9: in-progress
   9-1-return-focus: done
-  9-2-history-backend: review
+  9-2-history-backend: done
   9-3-history-panel: backlog              # depends on 9.2
   9-4-toast-notifications: backlog
   9-5-log-export-ui: backlog

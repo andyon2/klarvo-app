@@ -48,10 +48,15 @@ fn apply_migrations(conn: &mut Connection) -> Result<(), AppError> {
 
     let max_known = MIGRATIONS.iter().map(|m| m.version).max().unwrap_or(0);
     if current > max_known {
-        return Err(hist_err(format!(
-            "history db at user_version {current} is ahead of binary's max known \
-             migration {max_known} (downgrade?)"
-        )));
+        return Err(AppError {
+            kind: AppErrorKind::Configuration,
+            message: format!(
+                "history db at user_version {current} is ahead of binary's max known \
+                 migration {max_known} (downgrade?)"
+            ),
+            user_message: Some(keys::DOWNGRADE_DETECTED.to_string()),
+            retryable: false,
+        });
     }
 
     for m in MIGRATIONS.iter().filter(|m| m.version > current) {
@@ -69,6 +74,27 @@ fn apply_migrations(conn: &mut Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Apply connection-level pragmas: WAL journal mode, normal sync, foreign keys, busy timeout.
+/// Run once after `Connection::open` to harden against concurrent reads (Story 9.3 panel)
+/// and slow-disk fsync stalls.
+fn setup_pragmas(conn: &Connection) -> Result<(), AppError> {
+    // WAL allows a concurrent reader without blocking writers — keeps Story 9.3 list()
+    // unblocked while session.rs runs an append.
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| hist_err(format!("pragma journal_mode=WAL: {e}")))?;
+    // NORMAL sync is the recommended companion to WAL: durable across app crashes,
+    // not across full power-loss — acceptable for a history log.
+    conn.pragma_update(None, "synchronous", "NORMAL")
+        .map_err(|e| hist_err(format!("pragma synchronous=NORMAL: {e}")))?;
+    conn.pragma_update(None, "foreign_keys", true)
+        .map_err(|e| hist_err(format!("pragma foreign_keys=ON: {e}")))?;
+    // 5s busy timeout: covers transient lock contention without surfacing SQLITE_BUSY
+    // to the orchestrator's fail-soft path.
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| hist_err(format!("busy_timeout: {e}")))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SqliteHistoryStore
 // ---------------------------------------------------------------------------
@@ -80,9 +106,17 @@ pub struct SqliteHistoryStore {
 
 impl SqliteHistoryStore {
     /// Open (or create) history.db at `path` and apply schema migrations.
+    /// Creates parent directories if missing (first-run on clean install).
     pub fn open(path: &std::path::Path, max_entries: u32) -> Result<Self, AppError> {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| hist_err(format!("create parent dir {}: {e}", parent.display())))?;
+        }
         let mut conn =
             Connection::open(path).map_err(|e| hist_err(format!("open: {e}")))?;
+        setup_pragmas(&conn)?;
         apply_migrations(&mut conn)?;
         Ok(Self {
             conn: Arc::new(tokio::sync::Mutex::new(conn)),
@@ -94,6 +128,8 @@ impl SqliteHistoryStore {
     pub fn in_memory(max_entries: u32) -> Result<Self, AppError> {
         let mut conn = Connection::open_in_memory()
             .map_err(|e| hist_err(format!("in_memory: {e}")))?;
+        // foreign_keys + busy_timeout still meaningful for in-memory; WAL is no-op there.
+        setup_pragmas(&conn)?;
         apply_migrations(&mut conn)?;
         Ok(Self {
             conn: Arc::new(tokio::sync::Mutex::new(conn)),
@@ -111,7 +147,7 @@ impl HistoryBackend for SqliteHistoryStore {
         let conn = &mut *guard;
         let tx = conn
             .transaction()
-            .map_err(|e| hist_err(format!("append tx: {e}")))?;
+            .map_err(|e| append_err(format!("append tx: {e}")))?;
 
         tx.execute(
             "INSERT INTO history (text, raw_text, style, language, app_name, created_at,
@@ -131,25 +167,33 @@ impl HistoryBackend for SqliteHistoryStore {
                 entry.output_language,
             ],
         )
-        .map_err(|e| hist_err(format!("insert: {e}")))?;
+        .map_err(|e| append_err(format!("insert: {e}")))?;
 
-        let new_id = tx.last_insert_rowid();
+        let pending_id = tx.last_insert_rowid();
 
-        // Prune oldest entries if over cap.
+        // Retention: max_entries == 0 means "disabled" (unbounded growth — caller
+        // contract; settings clamps to >=1 at boot, but explicit here for safety).
+        // Otherwise prune so the table holds at most `max_entries` rows.
+        // Bind as i64 to avoid signed/unsigned cast surprises in SQLite arithmetic.
         if max_entries > 0 {
+            let cap = max_entries as i64;
             tx.execute(
                 "DELETE FROM history WHERE id IN (
                      SELECT id FROM history ORDER BY id ASC
                      LIMIT MAX(0, (SELECT COUNT(*) FROM history) - ?1)
                  )",
-                [max_entries],
+                [cap],
             )
-            .map_err(|e| hist_err(format!("prune: {e}")))?;
+            .map_err(|e| append_err(format!("prune: {e}")))?;
         }
 
-        tx.commit().map_err(|e| hist_err(format!("commit append: {e}")))?;
+        // Capture the row id only after commit succeeds — otherwise on a failed
+        // commit the caller would receive a valid-looking id for a row that does
+        // not exist (subsequent delete would silently no-op).
+        tx.commit()
+            .map_err(|e| append_err(format!("commit append: {e}")))?;
 
-        Ok(new_id)
+        Ok(pending_id)
     }
 
     async fn list(&self, limit: u32) -> Result<Vec<HistoryEntry>, AppError> {
@@ -160,7 +204,7 @@ impl HistoryBackend for SqliteHistoryStore {
                         uuid, device_id, plugin_id, manifest_version, output_language
                  FROM history ORDER BY id DESC LIMIT ?1",
             )
-            .map_err(|e| hist_err(format!("prepare list: {e}")))?;
+            .map_err(|e| list_err(format!("prepare list: {e}")))?;
 
         let rows = stmt
             .query_map([limit], |row| {
@@ -179,11 +223,11 @@ impl HistoryBackend for SqliteHistoryStore {
                     output_language: row.get(11)?,
                 })
             })
-            .map_err(|e| hist_err(format!("query list: {e}")))?;
+            .map_err(|e| list_err(format!("query list: {e}")))?;
 
         let mut entries = Vec::new();
         for row in rows {
-            entries.push(row.map_err(|e| hist_err(format!("row: {e}")))?);
+            entries.push(row.map_err(|e| list_err(format!("row: {e}")))?);
         }
         Ok(entries)
     }
@@ -219,7 +263,7 @@ impl HistoryBackend for SqliteHistoryStore {
         let guard = self.conn.lock().await;
         let n: u32 = guard
             .query_row("SELECT COUNT(*) FROM history", [], |row| row.get(0))
-            .map_err(|e| hist_err(format!("count: {e}")))?;
+            .map_err(|e| list_err(format!("count: {e}")))?;
         Ok(n)
     }
 }
@@ -228,6 +272,9 @@ impl HistoryBackend for SqliteHistoryStore {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Generic history error without a user-facing key — used for setup/migration paths
+/// where the user_message is set explicitly (e.g. downgrade detection) or where
+/// the failure is fatal-at-boot and surfaces via the boot fail-soft fallback.
 fn hist_err(msg: String) -> AppError {
     AppError {
         kind: AppErrorKind::Io,
@@ -237,8 +284,30 @@ fn hist_err(msg: String) -> AppError {
     }
 }
 
+/// Append-path error with localized user_message (`error.history.append_failed`).
+/// Surfaces in session.rs fail-soft warn-log; user-facing toast resolves the key.
+fn append_err(msg: String) -> AppError {
+    AppError {
+        kind: AppErrorKind::Io,
+        message: format!("history: {msg}"),
+        user_message: Some(keys::APPEND_FAILED.to_string()),
+        retryable: false,
+    }
+}
+
+/// Read-path error with localized user_message (`error.history.list_failed`).
+/// Used by `list()` and `count()` so Tauri-Command failures surface a toast key.
+fn list_err(msg: String) -> AppError {
+    AppError {
+        kind: AppErrorKind::Io,
+        message: format!("history: {msg}"),
+        user_message: Some(keys::LIST_FAILED.to_string()),
+        retryable: false,
+    }
+}
+
 /// Format a UNIX-epoch second count as an ISO-8601 UTC string: `"YYYY-MM-DDTHH:MM:SSZ"`.
-pub fn format_utc_datetime(secs: u64) -> String {
+pub(crate) fn format_utc_datetime(secs: u64) -> String {
     // Manual decomposition — avoids a `chrono` or `time` crate dependency.
     // Gregorian calendar math following the algorithm from "days since epoch".
     let s = secs % 60;
@@ -262,11 +331,21 @@ pub fn format_utc_datetime(secs: u64) -> String {
 }
 
 /// Current wall-clock time as an ISO-8601 UTC string.
+///
+/// On a misconfigured system clock (set before 1970), `duration_since` errors and
+/// we fall back to epoch zero (`1970-01-01T00:00:00Z`). The fallback is logged at
+/// `warn` level so the resulting epoch-stamped entries are diagnosable post-hoc.
 pub fn wall_clock_iso8601() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let secs = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "system clock is before UNIX epoch; history entry timestamped 1970-01-01"
+            );
+            0
+        }
+    };
     format_utc_datetime(secs)
 }
 
@@ -286,7 +365,8 @@ mod tests {
             style: "verbatim".to_string(),
             language: "en".to_string(),
             app_name: None,
-            created_at: "2026-05-03T10:00:00Z".to_string(),
+            // Match the format-test anchor below (1746266400 epoch seconds).
+            created_at: "2025-05-03T10:00:00Z".to_string(),
             uuid: None,
             device_id: None,
             plugin_id: None,
@@ -316,7 +396,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "hello world");
         assert_eq!(entries[0].style, "verbatim");
-        assert_eq!(entries[0].created_at, "2026-05-03T10:00:00Z");
+        assert_eq!(entries[0].created_at, "2025-05-03T10:00:00Z");
     }
 
     #[tokio::test]
@@ -327,11 +407,29 @@ mod tests {
             store.append(&new_entry(&format!("entry {i}"))).await.unwrap();
         }
         assert_eq!(store.count().await.unwrap(), n);
-        // Oldest entry (id=1) must have been pruned.
+
         let entries = store.list(100).await.unwrap();
-        // Entries are ordered newest-first; the last in the list is the oldest survivor.
-        let texts: Vec<_> = entries.iter().map(|e| e.text.as_str()).collect();
+        let texts: Vec<&str> = entries.iter().map(|e| e.text.as_str()).collect();
+        let ids: Vec<i64> = entries.iter().map(|e| e.id).collect();
+
+        // Survivors must be exactly entry 1..=n (oldest pruned, newest retained).
         assert!(!texts.contains(&"entry 0"), "oldest entry must be pruned");
+        for i in 1..=n {
+            let label = format!("entry {i}");
+            assert!(
+                texts.contains(&label.as_str()),
+                "expected {label:?} in survivors, got {texts:?}"
+            );
+        }
+
+        // Newest-first ordering by id (strictly descending).
+        for w in ids.windows(2) {
+            assert!(w[0] > w[1], "ids must be strictly descending: {ids:?}");
+        }
+
+        // Atomicity hint: the highest surviving id must be the last-inserted one (n+1)
+        // — a regression that pruned the newest entry instead of the oldest would fail here.
+        assert_eq!(*ids.first().unwrap(), (n as i64) + 1, "newest must survive");
     }
 
     #[tokio::test]
@@ -354,8 +452,20 @@ mod tests {
     #[tokio::test]
     async fn delete_on_missing_id_is_noop() {
         let store = SqliteHistoryStore::in_memory(100).unwrap();
-        // Should return Ok even if id doesn't exist.
+
+        // Insert real entries first so a buggy DELETE without WHERE-id (or with an
+        // inverted predicate) would visibly destroy them.
+        let id1 = store.append(&new_entry("survivor 1")).await.unwrap();
+        let id2 = store.append(&new_entry("survivor 2")).await.unwrap();
+
+        // Delete a non-existent id — must be Ok and must not touch other rows.
         store.delete(9999).await.unwrap();
+
+        let entries = store.list(10).await.unwrap();
+        assert_eq!(entries.len(), 2, "non-target rows must be untouched");
+        let ids: Vec<i64> = entries.iter().map(|e| e.id).collect();
+        assert!(ids.contains(&id1));
+        assert!(ids.contains(&id2));
     }
 
     #[tokio::test]
@@ -370,9 +480,46 @@ mod tests {
 
     #[test]
     fn format_utc_datetime_known_value() {
-        // 2025-05-03T10:00:00Z = 1746266400 seconds since epoch.
-        assert_eq!(format_utc_datetime(1746266400), "2025-05-03T10:00:00Z");
-        // Epoch itself
+        // Epoch.
         assert_eq!(format_utc_datetime(0), "1970-01-01T00:00:00Z");
+        // One second past epoch — covers seconds field.
+        assert_eq!(format_utc_datetime(1), "1970-01-01T00:00:01Z");
+        // 2025-05-03T10:00:00Z.
+        assert_eq!(format_utc_datetime(1746266400), "2025-05-03T10:00:00Z");
+        // 2000-01-01T00:00:00Z — Y2K boundary, era division.
+        assert_eq!(format_utc_datetime(946684800), "2000-01-01T00:00:00Z");
+    }
+
+    /// January / February dates exercise the `mo <= 2 → y + 1` correction branch
+    /// in the Gregorian decomposition (months 1/2 are year-1 in the algorithm's
+    /// internal representation). Without these the algorithm is silent.
+    #[test]
+    fn format_utc_datetime_jan_feb_year_correction() {
+        // 2025-01-15T00:00:00Z.
+        assert_eq!(format_utc_datetime(1736899200), "2025-01-15T00:00:00Z");
+        // 2025-02-28T23:59:59Z — last second of Feb in non-leap year.
+        assert_eq!(format_utc_datetime(1740787199), "2025-02-28T23:59:59Z");
+        // 2025-03-01T00:00:00Z — first second of March, post-correction branch.
+        assert_eq!(format_utc_datetime(1740787200), "2025-03-01T00:00:00Z");
+    }
+
+    /// Leap-year February 29 — a date that only exists in years divisible by 4
+    /// (and the Gregorian century rule). Regressions in `doy` calculation surface here.
+    #[test]
+    fn format_utc_datetime_leap_day() {
+        // 2024-02-29T12:34:56Z.
+        assert_eq!(format_utc_datetime(1709210096), "2024-02-29T12:34:56Z");
+        // 2000-02-29T00:00:00Z — century leap year (divisible by 400).
+        assert_eq!(format_utc_datetime(951782400), "2000-02-29T00:00:00Z");
+    }
+
+    /// Year-boundary transitions — ensures days-since-epoch arithmetic carries
+    /// correctly across December → January.
+    #[test]
+    fn format_utc_datetime_year_boundary() {
+        // 2024-12-31T23:59:59Z — last second of year.
+        assert_eq!(format_utc_datetime(1735689599), "2024-12-31T23:59:59Z");
+        // 2025-01-01T00:00:00Z — first second of next year.
+        assert_eq!(format_utc_datetime(1735689600), "2025-01-01T00:00:00Z");
     }
 }

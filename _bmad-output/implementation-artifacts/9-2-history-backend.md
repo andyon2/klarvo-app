@@ -2,14 +2,14 @@
 name: Story 9.2 — History-Backend
 epic: 9
 story_number: "9.2"
-status: review
+status: done
 dependencies:
   - 9-1-return-focus
 ---
 
 # Story 9.2: History-Backend
 
-Status: review
+Status: done
 
 ## Story
 
@@ -679,3 +679,47 @@ claude-sonnet-4-6 (create-story 2026-05-03)
 - `shells/windows/src-tauri/src/main.rs` (modified)
 - `shells/windows/locales/en.json` (modified)
 - `shells/windows/locales/de.json` (modified)
+
+### Review Findings
+
+Code-review 2026-05-03 (3 Layer: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 59 raw → 36 nach Dedup. AC-Coverage-Matrix (Auditor): AC-1 bis AC-12 alle OK (AC-12 cross-compile dev-asserted, post-merge verifizierbar).
+
+**Decision-Resolutions (5):**
+
+- [x] [Review][Decision-Resolved] **D1=a: History-Persist bleibt vor `paste()` (spec-as-written)** [session.rs:760-806] — Paste-Failure ist Rare-Edge-Case; in dem Fall ist History-Eintrag nützliches Recovery-Tool ("Text aus History rauskopieren"). Architektur-Boundary `OutputTarget.deliver()` (architecture.md:1344) sauber gehalten. Keine Code-Änderung.
+- [x] [Review][Decision-Resolved] **D2=a: Placeholder-Defaults bleiben spec-konform leer** [session.rs:763-783] — D2=b verworfen: `PipelineManifest` hat `schema_version: u32` (immer `1` Phase-1), kein freies `version: String`-Feld. `schema_version` als `manifest_version` zu persistieren wäre Pseudo-Information. `language`/`app_name`/`output_language` brauchen Orchestrator-Erweiterungen → Story 9.3 / Plumbing-Story.
+- [x] [Review][Decision-Resolved] **D3=c+d: `get_history` `None`=`max_entries` + Upper-Bound-Clamp `MAX_LIST_LIMIT=1000`** → siehe Patch P18.
+- [x] [Review][Decision-Resolved] **D4=c: `HistoryEntry.style` doc-comment fixen — plugin_id IST die Style in v2-Plugin-Architektur** → siehe Patch P19.
+- [x] [Review][Decision-Resolved] **D5=a: SQLite-Calls bleiben inline (P5 busy_timeout+WAL reicht)** [history/sqlite.rs:402-447] — `append`=1 INSERT+1 DELETE ms-Scale auf SSD. `spawn_blocking` = Boilerplate × 5 Methoden, premature optimization (Memory `feedback_premature_abstraction_guard`). Phase-2-Perf-Pass wenn measured-latency Probleme zeigt.
+
+**Patch (17):**
+
+- [x] [Review][Patch] **P1: `format_utc_datetime` boundary-tests fehlen (Jan/Feb, Schaltjahre, Jahresgrenzen)** [klarvo-core/src/history/sqlite.rs:535-555 + tests:666-668]
+- [x] [Review][Patch] **P2: `wall_clock_iso8601` warn-log bei clock-skew (statt silent fallback auf 1970)** [klarvo-core/src/history/sqlite.rs:559-565]
+- [x] [Review][Patch] **P3: SQL prune `max_entries=0`-Semantik dokumentieren+clampen** [klarvo-core/src/history/sqlite.rs:432-442]
+- [x] [Review][Patch] **P4: `Arc<dyn HistoryBackend>` Tauri-State newtype-wrapper (`HistoryStoreState`)** [shells/windows/src-tauri/src/main.rs:340 + commands/history.rs:35-66]
+- [x] [Review][Patch] **P5: `SqliteHistoryStore::open` set busy_timeout(5s) + WAL + foreign_keys** [klarvo-core/src/history/sqlite.rs:377-385]
+- [x] [Review][Patch] **P6: history.db parent-dir `create_dir_all` vor `Connection::open`** [klarvo-core/src/history/sqlite.rs:377-385]
+- [x] [Review][Patch] **P7: `max_entries_pruning` test — assertions strengthen (entries 1..n alle present, ID-Ordering, atomicity)** [klarvo-core/src/history/sqlite.rs:617-629]
+- [x] [Review][Patch] **P8: `delete_on_missing_id_is_noop` — insert rows first, verify other rows untouched** [klarvo-core/src/history/sqlite.rs:649-653]
+- [x] [Review][Patch] **P9: `MockHistoryBackend::list` redundanten rev+sort cleanup (sort-by-id-desc-then-take)** [klarvo-test-fixtures/src/history.rs:71-75]
+- [x] [Review][Patch] **P10: `history_not_saved_on_deliver_error` 100ms-sleep ersetzen (poll-with-timeout oder shutdown-drain)** [klarvo-shell-orchestrator/tests/session_tests.rs:1198-1201]
+- [x] [Review][Patch] **P11: Migration version-conflict — strukturierter `AppErrorKind` + i18n-key user_message** [klarvo-core/src/history/sqlite.rs:344-349]
+- [x] [Review][Patch] **P12: i18n-keys `error.history.list_failed` + `error.history.append_failed` für `hist_err()` user_message** [klarvo-core/src/history/sqlite.rs `hist_err()` + en.json/de.json]
+- [x] [Review][Patch] **P13: `wall_clock_iso8601` + `format_utc_datetime` `pub(crate)` statt `pub` (API-surface narrowing)** [klarvo-core/src/history/mod.rs + sqlite.rs]
+- [x] [Review][Patch] **P14: `history_max_entries()` boot-site clamp negative/zero i64 vor `as u32`** [shells/windows/src-tauri/src/main.rs:271]
+- [x] [Review][Patch] **P15: `MockHistoryBackend` mutex-poison survival (`lock().unwrap_or_else(|p| p.into_inner())`)** [klarvo-test-fixtures/src/history.rs]
+- [x] [Review][Patch] **P16: `SqliteHistoryStore::append` — `new_id` capture nach `tx.commit()`-success** [klarvo-core/src/history/sqlite.rs:402-447]
+- [x] [Review][Patch] **P17: `format_utc_datetime_known_value` test — Comment-Year-Drift fixen, `created_at "2026-…"` vs `"2025-…"` Inkonsistenz auflösen** [klarvo-core/src/history/sqlite.rs:666-668 + tests]
+- [x] [Review][Patch] **P18: `get_history` `None`=`max_entries` + Upper-Bound-Clamp `MAX_LIST_LIMIT=1000` (D3=c+d)** [shells/windows/src-tauri/src/commands/history.rs:50] — replace `limit.unwrap_or(100)` mit `limit.unwrap_or(max_entries).min(MAX_LIST_LIMIT)`; const MAX_LIST_LIMIT=1000; max_entries via Tauri-State oder injected-settings.
+- [x] [Review][Patch] **P19: `HistoryEntry.style` doc-comment fixen — plugin_id ist die Style-Identity in v2 (D4=c)** [klarvo-core/src/history/mod.rs:41] — `// e.g. "verbatim", "polished"` → `// Cleanup-Plugin-ID = Style-Identity (v2-Plugin-Architektur). z.B. "verbatim" (no-op cleanup), "polished", "groq-cleanup". Multi-Cleanup-Pipeline: first cleanup stage of record.`
+
+**Defer (5):**
+
+- [x] [Review][Defer] **W1: `manifest_stt_plugin` returns None silent when no Stt stage** [session.rs:822-829] — defensive log nice-to-have, kein Phase-1-Blocker (manifest-validation müsste Stt-Stage ohnehin garantieren)
+- [x] [Review][Defer] **W2: `history_max_entries()` non-numeric-string warn-log** [klarvo-core/src/settings/mod.rs:695-700] — silent-default-500 verwirrt User bei config-typo; UI gibt's Phase-1 noch nicht
+- [x] [Review][Defer] **W3: history.db corrupt — boot-time test-query / `.corrupt`-rename Recovery** [shells/windows/src-tauri/src/main.rs:269-291] — Recovery-Flow-Story für Phase-2/Epic-Recovery
+- [x] [Review][Defer] **W4: Migration crash-mid-tx Recovery-Tests** [klarvo-core/src/history/sqlite.rs:338-364] — currently OK weil pragma_update inside tx; Test-Coverage-Gap
+- [x] [Review][Defer] **W5: lokale Telemetry-counter für persistente History-failures** [klarvo-shell-orchestrator/src/session.rs:299-300] — `project_no_remote_telemetry` Memory blockt Sentry; lokal-only counter prüfen wenn metrics-infra existiert
+
+**Dismissed (9):** R1 `history`-default-feature compile-bloat (spec AC-2), R2 `NullHistoryBackend::append=Ok(0)` (spec AC-1, dormant), R3 `HistoryEntryDto`-Felder (spec AC-7), R4 `MockHistoryBackend` `std::sync::Mutex` (spec AC-4 Hint), R5 `delete_history_entry` no auth (single-user threat-model), R6 `count() i64→u32` truncation (theoretisch), R7 `delete(0)` no-op (spec idempotenz), R8 AC-12 cross-compile (verifiable post-merge), R9 CORE_PREFIXES `"history."` Verifikation (auditor informational, no diff regression).

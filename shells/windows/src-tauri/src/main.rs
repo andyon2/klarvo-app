@@ -272,7 +272,12 @@ fn main() {
             // Step 7b: History store (fail-soft — opens history.db, applies schema migrations).
             // Path mirrors settings.db in the same AppData dir.
             let history_store: Arc<dyn HistoryBackend> = {
-                let max_entries = settings.history_max_entries() as u32;
+                // Clamp settings i64 → u32: a corrupt/typo'd settings value (negative
+                // or > u32::MAX) must not silently disable retention by wrapping.
+                // `.max(1)` enforces "must keep at least one entry" so retention is
+                // always engaged; `try_from` saturates at u32::MAX for absurd-large.
+                let max_entries: u32 = u32::try_from(settings.history_max_entries().max(1))
+                    .unwrap_or(u32::MAX);
                 match app.path().app_data_dir() {
                     Ok(dir) => {
                         let history_db_path = dir.join("history.db");
@@ -340,7 +345,9 @@ fn main() {
             debug_assert!(app.manage(Arc::clone(&emitter)));
             debug_assert!(app.manage(Arc::clone(&clock)));
             debug_assert!(app.manage(settings));
-            debug_assert!(app.manage(history_store));
+            debug_assert!(app.manage(
+                klarvo_windows_shell::commands::history::HistoryStoreState(history_store)
+            ));
             // Snapshot the boot-time locale separately because `i18n_table` is
             // moved into managed state below; the listener (Step 10c) owns its
             // own freshly-loaded copy on every locale change.

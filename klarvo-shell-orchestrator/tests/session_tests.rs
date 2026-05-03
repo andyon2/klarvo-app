@@ -880,8 +880,10 @@ async fn history_not_saved_on_deliver_error() {
     wait_for_error(&error_emitter).await;
     orch.on_release().await;
 
-    // Small sleep to ensure no async history write sneaks through.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Drain the pipeline-task deterministically: shutdown() aborts the in-flight task
+    // and waits for it to settle. After this returns, no further history.append can
+    // sneak in — so a zero-entry assertion is race-free (no fixed sleep needed).
+    shutdown_with_timeout(&orch).await;
 
     assert_eq!(history_backend.entry_count(), 0, "history must NOT be written when delivery fails");
 }
