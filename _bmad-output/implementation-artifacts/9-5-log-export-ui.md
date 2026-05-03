@@ -26,34 +26,14 @@ damit ich Logs ohne manuelle Dateisystem-Navigation teilen kann, wenn ich einen 
 
 **NFR5-Constraint:** Kein Audio, kein Transkriptions-Text im Export. Nur: Rolling-File-Logs + Sys-Info-Text. Die Config (`pipeline.toml`) enthält keine API-Keys (die sind im KeyStore) — sie kann optional hinzugefügt werden, aber ist kein Pflicht-Scope dieser Story.
 
-**Lint-Voraussetzung (Pre-Condition Fix):** `cargo xtask lint-events` schlägt seit Story 9.3 mit 7 `[locale-orphan]`-Violations fehl — Story 9.3 hat Frontend-Only-Keys zu den Locale-Dateien hinzugefügt, ohne sie in `xtask/orphan-allowlist.txt` einzutragen. Story 9.5 muss diese Regressionen fixen, bevor eigene neue Locale-Keys hinzugefügt werden.
-
 **Scope-Grenze:** Kein File-Save-Dialog (Phase-2-B). Fixer Output-Pfad: `%USERPROFILE%\Downloads\klarvo-debug-{unix_timestamp}.zip`, Fallback `%TEMP%\klarvo-debug-{unix_timestamp}.zip`. Kein "Redacted Config" über sys-info hinaus in dieser Story.
 
 ## Acceptance Criteria
 
-### AC-1: Pre-Condition — 7 Story-9.3-Orphan-Keys in `orphan-allowlist.txt` eintragen
-
-**Given** `cargo xtask lint-events` hat aktuell 7 `[locale-orphan]`-Violations:
-```
-history.clear_all.confirm
-history.clear_all.label
-history.empty_state.hint
-history.empty_state.title
-history.entry.delete_label
-history.tab.label
-settings.tab.label
-```
-
-**When** AC-1 committed ist,
-**Then** sind alle 7 Keys in `xtask/orphan-allowlist.txt` unter `# ── FRONTEND-ONLY ──` eingetragen, jeweils mit Begründungs-Kommentar der Form `# <key>: shells/windows/src/index.html (HistoryPanel/App React-Component)`. Exaktes Format: ein Key pro Zeile, `#`-Kommentar direkt darüber.
-
-`cargo xtask lint-events` → **Exit 0** vor dem Rest dieser Story.
-
-### AC-2: `AppErrorKind::ExportFailed` in `klarvo-core/src/error.rs`
+### AC-1: `AppErrorKind::ExportFailed` in `klarvo-core/src/error.rs`
 
 **Given** `klarvo-core/src/error.rs` enthält `AppErrorKind` Enum,
-**When** AC-2 committed ist,
+**When** AC-1 committed ist,
 **Then** ist ein neuer Variant eingefügt (nach `HotkeyConflict`):
 ```rust
 /// Export of the debug-zip failed (I/O, zip-creation, etc.).
@@ -62,20 +42,20 @@ ExportFailed,
 ```
 `#[non_exhaustive]` auf dem Enum ist weiterhin vorhanden. Keine anderen `error.rs`-Änderungen.
 
-### AC-3: `zip = { version = "2", features = ["deflate"] }` in `klarvo-core/Cargo.toml`
+### AC-2: `zip = { version = "2", features = ["deflate"] }` in `klarvo-core/Cargo.toml`
 
 **Given** `klarvo-core/Cargo.toml` hat keinen `zip`-Eintrag,
-**When** AC-3 committed ist,
+**When** AC-2 committed ist,
 **Then**:
 ```toml
 zip = { version = "2", features = ["deflate"] }
 ```
 Unter `[dependencies]` eingefügt. Kein Workspace-dep — `zip` ist Core-spezifisch.
 
-### AC-4: Reale `export_debug_zip`-Implementierung in `klarvo-core/src/telemetry/export.rs`
+### AC-3: Reale `export_debug_zip`-Implementierung in `klarvo-core/src/telemetry/export.rs`
 
 **Given** `klarvo-core/src/telemetry/export.rs` hat den Phase-1-Stub,
-**When** AC-4 committed ist,
+**When** AC-3 committed ist,
 **Then** ist die Funktion **vollständig ersetzt** durch:
 
 ```rust
@@ -101,7 +81,7 @@ pub fn export_debug_zip(log_dir: &Path, out_path: &Path) -> Result<(), AppError>
 
 **Error-Mapping:** Jeder IO- oder Zip-Fehler → `AppError { kind: AppErrorKind::ExportFailed, message: format!("{e}"), user_message: Some("error.telemetry.export.failed".into()), retryable: false }`.
 
-**Signature-Break:** `_out_path: &Path` (stub) → `log_dir: &Path, out_path: &Path` (real). Alle Caller sind Shell-seitig (neu in AC-6) — kein bestehender Aufrufer außer dem Unit-Test im selben File.
+**Signature-Break:** `_out_path: &Path` (stub) → `log_dir: &Path, out_path: &Path` (real). Alle Caller sind Shell-seitig (neu in AC-5) — kein bestehender Aufrufer außer dem Unit-Test im selben File.
 
 **Test-Update:** Der bestehende Test `export_debug_zip_returns_unimplemented_error` wird **ersetzt** durch:
 - `export_debug_zip_writes_sysinfo_txt` — erstellt Zip in `tempdir`, prüft dass `sysinfo.txt` im Zip vorhanden
@@ -110,10 +90,10 @@ pub fn export_debug_zip(log_dir: &Path, out_path: &Path) -> Result<(), AppError>
 
 **Altes i18n-Key-Entfernen:** Die Zeile `user_message: Some("error.telemetry.export.unimplemented".into())` wird **komplett entfernt** — dieser Key-Verweis darf nicht mehr im Code stehen (sonst failing lint).
 
-### AC-5: i18n-Keys aktualisieren (Locale-Files + Lint)
+### AC-4: i18n-Keys aktualisieren (Locale-Files + Lint)
 
 **Given** beide Locale-Files enthalten `error.telemetry.export.unimplemented`,
-**When** AC-5 committed ist,
+**When** AC-4 committed ist,
 **Then**:
 
 **Entfernen** aus `shells/windows/locales/de.json` und `shells/windows/locales/en.json`:
@@ -129,12 +109,12 @@ pub fn export_debug_zip(log_dir: &Path, out_path: &Path) -> Result<(), AppError>
 
 Die beiden neuen Keys müssen in **beiden** Locale-Files existieren (Symmetrie-Test in `i18n.rs::de_json_covers_same_key_set` schlägt sonst fehl).
 
-`cargo xtask lint-events` → **Exit 0** nach AC-1 + AC-4 + AC-5 zusammen.
+`cargo xtask lint-events` → **Exit 0** nach AC-3 + AC-4 zusammen.
 
-### AC-6: `ExportState` + Tauri-Command `export_debug_zip_cmd`
+### AC-5: `ExportState` + Tauri-Command `export_debug_zip_cmd`
 
 **Given** `shells/windows/src-tauri/src/commands/` enthält `history.rs`, `settings.rs` und `mod.rs`,
-**When** AC-6 committed ist,
+**When** AC-5 committed ist,
 **Then** existiert `shells/windows/src-tauri/src/commands/telemetry.rs`:
 
 ```rust
@@ -194,10 +174,10 @@ Und `shells/windows/src-tauri/src/commands/mod.rs` erhält:
 pub mod telemetry;
 ```
 
-### AC-7: Command in `specta_builder()` registrieren + Managed State in `main.rs`
+### AC-6: Command in `specta_builder()` registrieren + Managed State in `main.rs`
 
 **Given** `shells/windows/src-tauri/src/lib.rs` hat `specta_builder()`, `main.rs` hat `app.manage(...)`-Block,
-**When** AC-7 committed ist,
+**When** AC-6 committed ist,
 **Then**:
 
 **`lib.rs`** — `collect_commands![]` erhält Eintrag:
@@ -224,10 +204,10 @@ debug_assert!(app.manage(klarvo_windows_shell::commands::telemetry::ExportState 
 
 `cargo build --target x86_64-pc-windows-gnu -p klarvo-windows-shell` kompiliert ohne Errors.
 
-### AC-8: Settings-Panel "Export Debug Log" Button in `index.html`
+### AC-7: Settings-Panel "Export Debug Log" Button in `index.html`
 
 **Given** `SettingsPanel` in `shells/windows/src/index.html` hat einen `saving`-State und einen `handleSave`-Button,
-**When** AC-8 committed ist,
+**When** AC-7 committed ist,
 **Then** hat `SettingsPanel` einen separaten `exporting`-State + Export-Button unterhalb der `.actions`-Zeile:
 
 ```javascript
@@ -279,7 +259,7 @@ h("div", { className: "actions", style: { marginTop: 12 } },
 
 Das Export-Toast (Success oder Error) nutzt denselben `toast`-State wie der Settings-Save-Toast — der Benutzer sieht also das zuletzt ausgeführte Feedback.
 
-### AC-9: `cargo xtask lint-events` grün + Windows-Cross-Compile grün
+### AC-8: `cargo xtask lint-events` grün + Windows-Cross-Compile grün
 
 **When** alle ACs committed sind,
 **Then**:
@@ -289,50 +269,32 @@ Das Export-Toast (Success oder Error) nutzt denselben `toast`-State wie der Sett
 
 ## Tasks / Subtasks
 
-- [ ] Pre-condition fix: orphan-allowlist.txt (AC-1)
-  - [ ] 7 Frontend-Only-Keys von Story 9.3 in `xtask/orphan-allowlist.txt` eintragen
-  - [ ] `cargo xtask lint-events` → Exit 0 verifizieren
-- [ ] `AppErrorKind::ExportFailed` in `error.rs` (AC-2)
-- [ ] `zip = "2"` Dep in `klarvo-core/Cargo.toml` (AC-3)
-- [ ] Reale `export_debug_zip`-Implementierung + Tests (AC-4)
+- [ ] `AppErrorKind::ExportFailed` in `error.rs` (AC-1)
+- [ ] `zip = "2"` Dep in `klarvo-core/Cargo.toml` (AC-2)
+- [ ] Reale `export_debug_zip`-Implementierung + Tests (AC-3)
   - [ ] Stub-Implementierung ersetzen, neue Signatur (`log_dir`, `out_path`)
   - [ ] `sysinfo.txt` + Log-Files in Zip
   - [ ] Error-Mapping zu `AppErrorKind::ExportFailed`
   - [ ] Alte Test ersetzen + 3 neue Tests
-- [ ] i18n-Keys aktualisieren (AC-5)
+- [ ] i18n-Keys aktualisieren (AC-4)
   - [ ] `error.telemetry.export.unimplemented` aus beiden Locale-Files entfernen
   - [ ] `error.telemetry.export.failed` + `error.telemetry.export.in_progress` hinzufügen
-- [ ] `ExportState` + Tauri-Command `export_debug_zip_cmd` (AC-6)
+- [ ] `ExportState` + Tauri-Command `export_debug_zip_cmd` (AC-5)
   - [ ] `commands/telemetry.rs` anlegen
   - [ ] `commands/mod.rs` erweitern
-- [ ] Wiring in `lib.rs` + `main.rs` (AC-7)
+- [ ] Wiring in `lib.rs` + `main.rs` (AC-6)
   - [ ] `collect_commands![]` erweitern
   - [ ] `app.manage(ExportState { ... })` in setup-Closure
-- [ ] Settings-Panel-Button in `index.html` (AC-8)
+- [ ] Settings-Panel-Button in `index.html` (AC-7)
   - [ ] `exporting`-State + `handleExport`-Callback
   - [ ] Button-Rendering mit Spinner + Disabled-State
   - [ ] `.btn-secondary`-CSS-Klasse
-- [ ] Lint + Cross-Compile verifizieren (AC-9)
+- [ ] Lint + Cross-Compile verifizieren (AC-8)
   - [ ] `cargo xtask lint-events` → Exit 0
   - [ ] `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell` → Exit 0
   - [ ] `cargo test -p klarvo-core` → Exit 0
 
 ## Dev Notes
-
-### Pre-Condition: Lint-Status
-
-`cargo xtask lint-events` ist aktuell **broken** (7 orphan-Violations von Story 9.3). AC-1 muss als erstes committed werden. Ohne diesen Fix können die neuen Story-9.5-Keys nicht korrekt geprüft werden.
-
-Alle 7 zu addierenden Keys gehören zu Kategorie `FRONTEND-ONLY` in `orphan-allowlist.txt`. Format identisch zum bestehenden `error.unknown`-Eintrag:
-
-```
-# history.clear_all.confirm: shells/windows/src/index.html (HistoryPanel clear-all confirm dialog)
-history.clear_all.confirm
-
-# history.clear_all.label: shells/windows/src/index.html (HistoryPanel clear-all button)
-history.clear_all.label
-# ... (analog für alle 7)
-```
 
 ### `zip` 2.x API — Exakte Verwendung
 
@@ -440,7 +402,6 @@ Beide werden vom Scanner mechanisch erkannt (String-Literal in `Some("...")`-Con
 - `shells/windows/locales/de.json` — Key-Swap (remove unimplemented, add failed + in_progress)
 - `shells/windows/locales/en.json` — Key-Swap (idem)
 - `shells/windows/src/index.html` — Export-Button in SettingsPanel
-- `xtask/orphan-allowlist.txt` — 7 FRONTEND-ONLY Keys hinzufügen
 
 ### References
 
@@ -452,7 +413,6 @@ Beide werden vom Scanner mechanisch erkannt (String-Literal in `Some("...")`-Con
 - `shells/windows/src-tauri/src/main.rs:331-358` — Managed-State-Block (Muster für neuen `debug_assert!(app.manage(...))`)
 - `shells/windows/src/index.html:277-351` — `SettingsPanel`-Render inkl. `handleSave`-Pattern + `.actions`-Div
 - `shells/windows/src/index.html:98-103` — `errorToToast`-Helper
-- `xtask/orphan-allowlist.txt` — Allowlist-Format-Spec + bestehende Einträge
 - `_bmad-output/implementation-artifacts/deferred-work.md §6.3-W2` — Single-Flight-Guard-Hintergrund
 - `memory/project_no_remote_telemetry.md` — NFR5-Constraint-Begründung
 - `prd.md FR40` — Scope-Definition (Phase-2-Zip-UI)
