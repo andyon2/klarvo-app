@@ -99,6 +99,20 @@ Signing ist kein Phase-2-A-Blocker für tägliche Engineering-Arbeit.
 - `bundle.identifier` = `com.klarvo.voice` (aus `memory/reference_klarvo_v1_tauri_identifier`)
   oder bereits gesetzter v2-Identifier — nicht neu einführen, bestehenden Wert konsistent nutzen.
 
+### AC-6 — AppUserModelID-Registrierung für Toast-Notifications (Story 9.4 Cross-Ref)
+
+**Given** der MSI-Installer wird auf Windows ausgeführt  
+**When** Installation abgeschlossen  
+**Then**
+- Eine AppUserModelID (AUMID) mit dem `bundle.identifier`-Wert wird im Windows-Registry
+  registriert (Standard-Verhalten von WiX-Toolset für MSI mit Start-Menu-Shortcut, sofern
+  `bundle.windows.shortcut` aktiviert ist — verifizieren).
+- Konsequenz: `tauri-plugin-notification`-Toasts aus `NotificationService` (Story 9.4) werden
+  vom Windows Action Center angenommen und sichtbar dargestellt. Ohne AUMID liefert
+  notify-rust `Ok(())`, der Toast wird aber verworfen — siehe Story-9.4-AC-1-Visibility-Caveat.
+- Smoke-Test in der MSI-Installations-Doku: nach Installation einen WaitAndType-Diktat
+  durchführen und sicherstellen, dass der Toast `"Diktat bereit: …"` im Action Center erscheint.
+
 ---
 
 ## Technical Notes

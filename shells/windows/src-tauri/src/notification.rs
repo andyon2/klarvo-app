@@ -1,23 +1,26 @@
-use std::sync::{
-    Arc,
-    RwLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 use tauri_plugin_notification::NotificationExt;
 use klarvo_core::event::Event;
 
 use crate::i18n::I18nTable;
 
-/// Subscribes to the [`EventBus`] and emits native OS toast notifications
-/// for dictation-lifecycle events.
+/// Subscribes to the [`EventBus`] and emits a native OS toast notification
+/// for [`Event::RecordingDelivered`] — fired only in WaitAndType-Mode where
+/// the pipeline produces a transcription that has NOT been auto-pasted.
 ///
-/// Triggers:
-/// - [`Event::RecordingDelivered`] — always: "Dictation pasted: {60-char preview}"
-/// - [`Event::ErrorEmitted`] — only during an active recording session
-///   (`in_session` guard: set by `RecordingStarted`, cleared by `RecordingCompleted`).
-///   Boot-time errors (config parse, keystore) are suppressed because they arrive
-///   before `RecordingStarted` fires.
+/// Toast body: `"{label}: {preview}"` where `label` resolves the i18n key
+/// `notification.dictation.delivered` and `preview` is the first 60 chars of
+/// the transcription with a `…` suffix when truncated.
+///
+/// Hold/Toggle/AutoStop modes auto-paste and do not emit `RecordingDelivered`,
+/// so they receive no toast in this story (deferred to follow-up: needs a
+/// `RecordingPasted` event or equivalent emitted from the Hold-success path).
+///
+/// Error toasts are deferred to a follow-up story — `Event::ErrorEmitted` is
+/// not currently published to the EventBus (`TauriErrorEmitter::emit_error`
+/// emits `app.error` directly to the frontend per ADR-0009 §SD-1, bypassing
+/// the bus). A subscriber here would observe nothing in production.
 ///
 /// Generic over `R: tauri::Runtime` — same pattern as `EventMirror` and
 /// `TauriErrorEmitter`, enabling `MockRuntime` in tests.
@@ -38,10 +41,9 @@ impl<R: tauri::Runtime> NotificationService<R> {
     /// (single tokio-Runtime in shell scope).
     pub fn start(self, mut rx: broadcast::Receiver<Event>) {
         tauri::async_runtime::spawn(async move {
-            let in_session = Arc::new(AtomicBool::new(false));
             loop {
                 match rx.recv().await {
-                    Ok(event) => self.handle(&event, &in_session),
+                    Ok(event) => self.handle(&event),
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(skipped = n, "NotificationService lagged; skipped events");
                     }
@@ -51,38 +53,25 @@ impl<R: tauri::Runtime> NotificationService<R> {
         });
     }
 
-    fn handle(&self, event: &Event, in_session: &Arc<AtomicBool>) {
-        match event {
-            Event::RecordingStarted { .. } => {
-                in_session.store(true, Ordering::Relaxed);
-            }
-            Event::RecordingCompleted { .. } => {
-                in_session.store(false, Ordering::Relaxed);
-            }
-            Event::RecordingDelivered { text, .. } => {
-                let label = self.t("notification.dictation.delivered");
-                let char_count = text.chars().count();
-                let preview: String = text.chars().take(60).collect();
-                let suffix = if char_count > 60 { "…" } else { "" };
-                let body = format!("{label}: {preview}{suffix}");
-                self.show(&body);
-            }
-            Event::ErrorEmitted { error_key, .. } => {
-                if in_session.load(Ordering::Relaxed) {
-                    let body = self.t(error_key);
-                    self.show(&body);
-                }
-            }
-            _ => {}
+    fn handle(&self, event: &Event) {
+        if let Event::RecordingDelivered { text, .. } = event {
+            let label = self.t("notification.dictation.delivered");
+            let char_count = text.chars().count();
+            let preview: String = text.chars().take(60).collect();
+            let suffix = if char_count > 60 { "…" } else { "" };
+            let body = format!("{label}: {preview}{suffix}");
+            self.show(&body);
         }
     }
 
     fn t(&self, key: &str) -> String {
-        self.i18n
-            .read()
-            .ok()
-            .and_then(|table| table.get(key).cloned())
-            .unwrap_or_else(|| key.to_string())
+        match self.i18n.read() {
+            Ok(table) => table.get(key).cloned().unwrap_or_else(|| key.to_string()),
+            Err(e) => {
+                tracing::warn!(error = %e, key = key, "i18n RwLock poisoned; falling back to raw key");
+                key.to_string()
+            }
+        }
     }
 
     fn show(&self, body: &str) {

@@ -2,13 +2,13 @@
 name: Story 9.4 — Toast Notifications
 epic: 9
 story_number: "9.4"
-status: ready-for-dev
+status: done
 dependencies: []
 ---
 
 # Story 9.4: Toast Notifications
 
-Status: review
+Status: done
 
 ## Story
 
@@ -32,9 +32,17 @@ damit ich auch dann informiert bin, wenn das Klarvo-Settings-Fenster im Hintergr
 
 ## Acceptance Criteria
 
-### AC-1: Erfolgs-Toast bei `RecordingDelivered`
+**SCOPE-AMENDMENT 2026-05-03 (Code-Review-Closure, M1=C / M2=C / M3=C):**
 
-**Given** `Event::RecordingDelivered { ts_ms, text }` auf dem EventBus geemitted wird,
+Nach Review-Findings wurde Story 9.4 substantiell scope-reduziert. Original-Spec nahm an, `Event::RecordingDelivered` feuere bei jedem erfolgreichen Diktat und `Event::ErrorEmitted` werde auf den EventBus emittiert — beides verifiziert als nicht zutreffend. Konsequenzen:
+
+- **AC-1 ist auf WaitAndType-Mode reduziert** (M2=C). Hold/Toggle/AutoStop-Pfade emittieren `RecordingDelivered` nicht; Toast erscheint dort nicht. Body-Text wurde auf "Dictation ready"/"Diktat bereit" angepasst (semantisch ehrlich, weil im WaitAndType-Mode der Text noch nicht gepastet ist).
+- **AC-2 wurde komplett entfernt** (M1=C). `Event::ErrorEmitted` wird per ADR-0009 §SD-1 direkt an Frontend (`app.error`) geemitted, nicht auf den Bus. Der ErrorEmitted-Arm war Dead Code. Follow-Up-Story (Architektur-Spike) wird separat angelegt.
+- **AC-1-Toast-Visibility ist gated auf signed-MSI** (M3=C). Ohne registriertes AppUserModelID (AUMID via Installer) liefert notify-rust auf Windows `Ok(())`, der Toast erscheint aber nicht. Runtime-Validierung folgt erst mit Story 2.A.C1 (signed-msi-installer).
+
+### AC-1: Toast bei `RecordingDelivered` (WaitAndType-Mode)
+
+**Given** der User dictiert in **WaitAndType-Mode** (`press_mode == RecordingMode::WaitAndType`) und die Pipeline emittiert `Event::RecordingDelivered { ts_ms, text }`,
 **When** `NotificationService` diesen Event empfängt,
 **Then**:
 
@@ -42,40 +50,17 @@ damit ich auch dann informiert bin, wenn das Klarvo-Settings-Fenster im Hintergr
    - **Title:** `"Klarvo"`
    - **Body:** `"{label}: {preview}"` wobei:
      - `{label}` = i18n-Lookup von `notification.dictation.delivered` aus der aktuellen `SharedI18nTable`
-     - `{preview}` = `text.chars().take(60).collect::<String>()` — Char-basiert (kein UTF-16-Slice-Bug analog 9.3-F29), ohne Truncation-Ellipsis wenn ≤60 Chars, mit `…` wenn >60 Chars
-   - Beispiel EN: `"Dictation pasted: Hello, I'm writing to you reg…"`
-   - Beispiel DE: `"Diktat eingefügt: Hallo, ich schreibe Ihnen bezi…"`
+     - `{preview}` = `text.chars().take(60).collect::<String>()` — Char-basiert, ohne Truncation-Ellipsis wenn ≤60 Chars, mit `…` wenn >60 Chars
+   - Beispiel EN: `"Dictation ready: Hello, I'm writing to you regard…"`
+   - Beispiel DE: `"Diktat bereit: Hallo, ich schreibe Ihnen bezügli…"`
 
-2. Falls `tauri_plugin_notification` fehlschlägt (Permission denied, OS-Fehler): `tracing::warn!` + kein Panic (fail-soft).
+2. Falls `tauri_plugin_notification` fehlschlägt: `tracing::warn!` + kein Panic (fail-soft).
 
-3. Der `in_session`-Flag wird nach `RecordingCompleted` zurückgesetzt (AC-2).
+3. **Visibility-Caveat:** Validierung der tatsächlichen Toast-Sichtbarkeit erfolgt erst nach Story 2.A.C1 (signed-MSI mit AUMID-Registrierung). In dev/portable Builds liefert `show()` `Ok(())`, der Toast wird aber vom Windows Action Center verworfen (kein registrierter AUMID). 2.A.C1 muss als Acceptance-Criterion ergänzen: "AUMID `com.klarvo.v2` wird vom Installer registriert, sodass Toasts aus 9.4 sichtbar werden."
 
-### AC-2: Fehler-Toast bei `ErrorEmitted` während Recording-Session
+### AC-2 (REMOVED): Fehler-Toast bei `ErrorEmitted`
 
-**Given** `Event::RecordingStarted` den `in_session`-Flag auf `true` gesetzt hat,
-**When** `Event::ErrorEmitted { error_key, .. }` empfangen wird UND `in_session == true`,
-**Then**:
-
-1. Ein nativer Windows-Toast wird angezeigt mit:
-   - **Title:** `"Klarvo"`
-   - **Body:** i18n-Lookup von `error_key` aus der `SharedI18nTable`. Falls Key nicht gefunden: `error_key` direkt anzeigen (Key als Fallback, kein Panic).
-
-2. `in_session`-Flag wird durch `ErrorEmitted` NICHT zurückgesetzt — kann mehrfach feuern.
-
-3. `RecordingCompleted` setzt `in_session = false`.
-
-**Given** `in_session == false`,
-**When** `ErrorEmitted` empfangen wird (z.B. Boot-Error wie `error.config.parse_failed`),
-**Then** wird KEIN OS-Toast angezeigt (verhindert Boot-Error-Spam).
-
-**in_session-Lifecycle:**
-```
-Initial:             false
-RecordingStarted  →  true
-RecordingCompleted → false
-ErrorEmitted       → unverändert (nur bedingt toast, kein state-change)
-RecordingDelivered → unverändert (RecordingCompleted folgt danach)
-```
+~~Aus Story 9.4 entfernt 2026-05-03 (M1=C).~~ `Event::ErrorEmitted` wird per ADR-0009 nicht auf den EventBus emittiert; der ErrorEmitted-Arm im NotificationService war unerreichbar. Follow-Up-Story (Architektur-Spike: "Wie kommt `Event::ErrorEmitted` ohne ADR-0009-Verstoß auf den Bus?") wird separat per `bmad-create-story` angelegt.
 
 ### AC-3: i18n-Key `notification.dictation.delivered`
 
@@ -85,15 +70,15 @@ RecordingDelivered → unverändert (RecordingCompleted folgt danach)
 
 **en.json addition:**
 ```json
-"notification.dictation.delivered": "Dictation pasted"
+"notification.dictation.delivered": "Dictation ready"
 ```
 
 **de.json addition:**
 ```json
-"notification.dictation.delivered": "Diktat eingefügt"
+"notification.dictation.delivered": "Diktat bereit"
 ```
 
-**Note:** `cargo xtask required-keys-drift` muss nach diesem Add grün bleiben. Der neue Key ist NICHT im REQUIRED_KEYS-Set (nur Error-Keys und structural-Keys sind dort listed) — kein REQUIRED_KEYS-Update nötig.
+**Note:** `cargo xtask lint-events` muss nach diesem Add grün bleiben (Key ist orphan-allowlisted unter RUST-LOOKUP-Kategorie wegen `self.t()`-Method-Lookup, der vom G3-D-Visitor nicht erfasst wird).
 
 ### AC-4: `cargo check --target x86_64-pc-windows-gnu` clean
 
@@ -118,19 +103,19 @@ RecordingDelivered → unverändert (RecordingCompleted folgt danach)
   - [x] `shells/windows/src-tauri/Cargo.toml`: `tauri-plugin-notification = { workspace = true }` in `[dependencies]`
   - [x] `cargo check --target x86_64-pc-windows-gnu` → clean (1 pre-existing unused-import warning, kein Regression)
 
-- [x] **T2: `notification.rs` Module erstellen** (AC-1, AC-2)
-  - [x] `shells/windows/src-tauri/src/notification.rs` angelegt (NotificationService<R> mit in_session AtomicBool)
+- [x] **T2: `notification.rs` Module erstellen** (AC-1)
+  - [x] `shells/windows/src-tauri/src/notification.rs` angelegt; nach Code-Review (M1=C) auf reinen `RecordingDelivered`-Subscriber reduziert (kein in_session-Flag, kein ErrorEmitted-Arm)
   - [x] `pub mod notification;` in `shells/windows/src-tauri/src/lib.rs` hinzugefügt (nach `pub mod bridge;`)
 
-- [x] **T3: Plugin registrieren + EventBus-Subscriber wiring in `main.rs`** (AC-1, AC-2)
+- [x] **T3: Plugin registrieren + EventBus-Subscriber wiring in `main.rs`** (AC-1)
   - [x] `.plugin(tauri_plugin_notification::init())` als erstes Plugin auf `tauri::Builder::default()`
   - [x] `let event_bus_rx_notification = event_bus.subscribe();` (Step 12, neben tray + mirror)
   - [x] `notification_i18n = Arc::clone(&i18n_table)` VOR `app.manage(i18n_table)` eingefügt
   - [x] Step-12c nach EventMirror: `NotificationService::new(...).start(event_bus_rx_notification)`
 
 - [x] **T4: i18n-Keys** (AC-3)
-  - [x] `shells/windows/locales/en.json`: `"notification.dictation.delivered": "Dictation pasted"`
-  - [x] `shells/windows/locales/de.json`: `"notification.dictation.delivered": "Diktat eingefügt"`
+  - [x] `shells/windows/locales/en.json`: `"notification.dictation.delivered": "Dictation ready"` (post-review M2=C: WaitAndType-Semantik)
+  - [x] `shells/windows/locales/de.json`: `"notification.dictation.delivered": "Diktat bereit"`
 
 - [x] **T5: Verifikation** (AC-4, AC-5)
   - [x] `cargo check --target x86_64-pc-windows-gnu` → clean (5s cached build)
@@ -397,3 +382,37 @@ claude-sonnet-4-6 (dev-story 2026-05-03)
 ### Change Log
 
 - 2026-05-03: Story 9.4 implementiert — tauri-plugin-notification, NotificationService<R> (in_session-Guard, RecordingDelivered-Toast + session-scoped ErrorEmitted-Toast), 1 i18n-Key, orphan-allowlist-Fix für 9.3-Schulden. Status → review.
+- 2026-05-03: Code-Review (3-layer: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 2 Critical Decision-Needed (E1/E2 architektonische Spec-Lücken), 1 High Decision-Needed (E3 Runtime-Delivery), 2 Patches, 3 Defers, 5 Dismissed.
+- 2026-05-03: Code-Review-Closure: M1=C (AC-2 entfernt), M2=C (WaitAndType-only-Scope), M3=C (Visibility-Caveat → 2.A.C1). 4 Patches applied: DP1 notification.rs gekürzt (in_session-Flag + ErrorEmitted-Arm + RecordingStarted/Completed-Arme entfernt) · DP3 i18n-Body korrigiert (Dictation ready / Diktat bereit) · DP4 AC-1 Visibility-Caveat dokumentiert + 2.A.C1 AC-6 hinzugefügt · P2 RwLock-Poison-Log. cargo check + lint-events + bindings-drift grün. AC-2-Follow-Up muss noch via bmad-create-story angelegt werden. Status → done.
+
+### Review Findings
+
+#### Decision-Needed (resolved 2026-05-03)
+
+- [x] [Review][Decision] **M1 → Option C** — AC-2 aus Story 9.4 entfernt; `Event::ErrorEmitted`-Arm + `in_session`-Flag aus `notification.rs` entfernt. Follow-Up-Story für Error-Toast-Architektur muss separat per `bmad-create-story` angelegt werden (Architektur-Spike: ADR-0009-konformes Bus-Routing für `Event::ErrorEmitted`).
+- [x] [Review][Decision] **M2 → Option C** — Story 9.4 auf WaitAndType-Mode-only scoped; Body-Text-Korrektur via i18n-Value-Update ("Dictation ready" / "Diktat bereit"). Hold/Toggle/AutoStop bekommen in dieser Story keinen Toast (deferred — braucht eigenes Event aus dem Hold-Erfolgspfad).
+- [x] [Review][Decision] **M3 → Option C** — Toast-Visibility wird auf 2.A.C1 (signed-MSI mit AUMID-Registrierung) deferred; AC-1 enthält explizites Visibility-Caveat. 2.A.C1-Spec sollte ein zusätzliches AC bekommen ("AUMID `com.klarvo.v2` wird via Installer registriert").
+
+#### Patch (applied 2026-05-03)
+
+- [x] [Review][Patch] **DP1 — `notification.rs` auf reduzierten Scope kürzen** [shells/windows/src-tauri/src/notification.rs] — `Event::ErrorEmitted`/`RecordingStarted`/`RecordingCompleted`-Arme + `AtomicBool in_session` entfernt. Verbleibender Match: nur `Event::RecordingDelivered`. Doc-Kommentar amended (begründet die Scope-Beschränkung + verweist auf Follow-Up).
+- [x] [Review][Patch] **DP3 — i18n-Body korrigiert auf WaitAndType-Semantik** [shells/windows/locales/en.json + de.json] — `"Dictation pasted"` → `"Dictation ready"`, `"Diktat eingefügt"` → `"Diktat bereit"`.
+- [x] [Review][Patch] **DP4 — AC-1 Visibility-Caveat dokumentiert** [9-4-toast-notifications.md AC-1 Punkt 3] — Toast-Sichtbarkeit ist gated auf 2.A.C1-Installer-AUMID; Cross-Reference notiert.
+- [x] [Review][Patch] **P2 — RwLock-Poisoning loggt jetzt explizit** [shells/windows/src-tauri/src/notification.rs `t()`] — `.read().ok()` ersetzt durch `match` mit `tracing::warn!(error = %e, key = key, ...)` im Err-Branch.
+- [~] [Review][Patch] **DP2 — Follow-Up-Story für AC-2-Architektur** — NICHT in dieser Session angelegt. Anweisung an User: per `bmad-create-story` mit Spike-Anteil "Wie kommt `Event::ErrorEmitted` ohne ADR-0009-Verstoß auf den Bus?" anlegen. Vorschlag: Story 9.7 oder Epic-9-extension-Story.
+- [x] [Review][Patch] **P1 — `Lagged` resync von `in_session`** — DISMISSED durch DP1 (`in_session`-Flag existiert nicht mehr).
+
+#### Deferred (pre-existing / cosmetic)
+
+- [x] [Review][Defer] **60-char Preview cuttet Grapheme-Cluster** [notification.rs:64-67] — char-basiert ist Spec-konform (Spec L45: "Char-basiert (kein UTF-16-Slice-Bug analog 9.3-F29)"). Cosmetic-Risk für Emoji/ZWJ am Boundary. Defer für `unicode-segmentation`-Upgrade später wenn Preview-Quality-Issue auftritt.
+- [x] [Review][Defer] **`show()` blockiert Broadcast-Loop synchron** [notification.rs:88-99] — kein `spawn_blocking`. Unter normaler Toast-Frequenz <1ms-Latenz unkritisch; nur Risk wenn Win-Toast-COM-Call hängt. Defer auf Phase-3+-Hardening wenn beobachtbar.
+- [x] [Review][Defer] **Keine Unit-Tests für `in_session`-Lifecycle** [notification.rs] — Doc-Comment verspricht `MockRuntime`-Test-Pfad, aber kein `#[cfg(test)] mod tests`. Pattern-konsistent mit `bridge.rs`/`tray.rs` (minimal-test). Defer als Follow-Up-Story wenn AC-2-Architektur (M1) entschieden ist — Tests müssen ohnehin angepasst werden.
+- [x] [Review][Defer] **App-Exit-Shutdown emittiert kein `RecordingCompleted` → in_session-Leak latent** [klarvo-shell-orchestrator/src/session.rs:361-378] — Pre-existing aus Story 3.x; aktuell harmlos weil M1-Pfad dead. Coupled to M1-Resolution. Defer.
+
+#### Dismissed (Noise / Spec-konform / Brand)
+
+- "Klarvo"-Title hardcoded — Brand-Name, intentionale Ausnahme.
+- ErrorEmitted body shows raw key on miss — Spec L60-61 explizit ("Falls Key nicht gefunden: error_key direkt anzeigen, kein Panic").
+- Kein Coalescing rapider Delivered-Bursts — UX-Decision; Story-Scope = 1-Toast-pro-Diktat.
+- `Arc<AtomicBool>` dead-weight im task-local-Scope — Nit, kein Bug.
+- `char_count` walks string twice — Nit, perf vernachlässigbar.
