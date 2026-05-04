@@ -60,6 +60,9 @@ pub enum AppErrorKind {
     /// Win32 `RegisterHotKey` rejected the combo — already claimed by another app.
     /// Typical retryable=false — user must choose a different combo.
     HotkeyConflict,
+    /// Export of the debug-zip failed (I/O, zip-creation, etc.).
+    /// Typical retryable=false.
+    ExportFailed,
 }
 
 impl std::fmt::Display for AppError {

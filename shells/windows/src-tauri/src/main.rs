@@ -350,6 +350,12 @@ fn main() {
             debug_assert!(app.manage(
                 klarvo_windows_shell::commands::history::HistoryStoreState(history_store)
             ));
+            // Story 9.5: ExportState — log_dir mirrors the path used by init_tracing above
+            let log_dir_for_export = log_dir.clone();
+            debug_assert!(app.manage(klarvo_windows_shell::commands::telemetry::ExportState {
+                log_dir: log_dir_for_export,
+                in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            }));
             // Snapshot the boot-time locale separately because `i18n_table` is
             // moved into managed state below; the listener (Step 10c) owns its
             // own freshly-loaded copy on every locale change.

@@ -39,6 +39,7 @@ export const commands = {
 	getHistory: (limit: number | null) => typedError<HistoryEntryDto[], AppError>(__TAURI_INVOKE("get_history", { limit })),
 	deleteHistoryEntry: (id: number) => typedError<null, AppError>(__TAURI_INVOKE("delete_history_entry", { id })),
 	clearHistory: () => typedError<null, AppError>(__TAURI_INVOKE("clear_history")),
+	exportDebugZipCmd: () => typedError<string, AppError>(__TAURI_INVOKE("export_debug_zip_cmd")),
 };
 
 /** Events */
@@ -94,7 +95,12 @@ export type AppErrorKind =
  *  Win32 `RegisterHotKey` rejected the combo — already claimed by another app.
  *  Typical retryable=false — user must choose a different combo.
  */
-"hotkey_conflict";
+"hotkey_conflict" | 
+/**
+ *  Export of the debug-zip failed (I/O, zip-creation, etc.).
+ *  Typical retryable=false.
+ */
+"export_failed";
 
 export type AppReady = {
 	session_id: string,

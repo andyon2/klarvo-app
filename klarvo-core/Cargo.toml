@@ -28,6 +28,8 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 rusqlite = { workspace = true, optional = true }
 secrecy.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tempfile = "3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

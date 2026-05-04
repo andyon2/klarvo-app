@@ -1,5 +1,6 @@
 {
-  "error.telemetry.export.unimplemented": "Debug export is not available in this version.",
+  "error.telemetry.export.failed": "Export failed. Check the logs folder manually.",
+  "error.telemetry.export.in_progress": "Export already in progress. Please wait.",
   "error.config.missing": "Configuration file not found. Please create config.toml.",
   "error.config.unknown_field": "Unknown field in config.toml. Please remove unrecognized keys.",
   "error.config.invalid_language": "Unsupported language. Supported values: en, de.",
@@ -42,6 +43,9 @@
   "error.history.append_failed": "Failed to save dictation to history.",
   "error.history.downgrade_detected": "Your dictation history was created by a newer version of the app. Please update to continue.",
   "settings.tab.label": "Settings",
+  "settings.export.button": "Export Debug Log",
+  "settings.export.in_progress": "Exporting…",
+  "settings.export.success": "Exported to: {path}",
   "history.tab.label": "History",
   "history.empty_state.title": "No dictations yet",
   "history.empty_state.hint": "Start dictating with your hotkey — entries appear here.",

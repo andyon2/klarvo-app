@@ -1,5 +1,6 @@
 {
-  "error.telemetry.export.unimplemented": "Debug-Export ist in dieser Version nicht verfügbar.",
+  "error.telemetry.export.failed": "Export fehlgeschlagen. Prüfen Sie den Logs-Ordner manuell.",
+  "error.telemetry.export.in_progress": "Export läuft bereits. Bitte warten.",
   "error.config.missing": "Konfigurationsdatei nicht gefunden. Bitte legen Sie config.toml an.",
   "error.config.unknown_field": "Unbekanntes Feld in config.toml. Bitte entfernen Sie nicht erkannte Schlüssel.",
   "error.config.invalid_language": "Nicht unterstützte Sprache. Erlaubte Werte: en, de.",
@@ -42,6 +43,9 @@
   "error.history.append_failed": "Diktat konnte nicht im Verlauf gespeichert werden.",
   "error.history.downgrade_detected": "Ihr Diktatverlauf wurde mit einer neueren Version erstellt. Bitte aktualisieren Sie die App.",
   "settings.tab.label": "Einstellungen",
+  "settings.export.button": "Debug-Log exportieren",
+  "settings.export.in_progress": "Exportiere…",
+  "settings.export.success": "Exportiert nach: {path}",
   "history.tab.label": "Verlauf",
   "history.empty_state.title": "Noch keine Diktate",
   "history.empty_state.hint": "Starten Sie eine Diktat-Session mit Ihrem Hotkey — Einträge erscheinen hier.",

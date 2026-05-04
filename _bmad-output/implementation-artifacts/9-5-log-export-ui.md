@@ -2,7 +2,7 @@
 name: Story 9.5 — Log-Export-UI
 epic: 9
 story_number: "9.5"
-status: ready-for-dev
+status: done
 dependencies:
   - "9-3-history-panel"
   - "6-3-panic-hook-export-stub"
@@ -10,7 +10,7 @@ dependencies:
 
 # Story 9.5: Log-Export-UI
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -269,30 +269,30 @@ Das Export-Toast (Success oder Error) nutzt denselben `toast`-State wie der Sett
 
 ## Tasks / Subtasks
 
-- [ ] `AppErrorKind::ExportFailed` in `error.rs` (AC-1)
-- [ ] `zip = "2"` Dep in `klarvo-core/Cargo.toml` (AC-2)
-- [ ] Reale `export_debug_zip`-Implementierung + Tests (AC-3)
-  - [ ] Stub-Implementierung ersetzen, neue Signatur (`log_dir`, `out_path`)
-  - [ ] `sysinfo.txt` + Log-Files in Zip
-  - [ ] Error-Mapping zu `AppErrorKind::ExportFailed`
-  - [ ] Alte Test ersetzen + 3 neue Tests
-- [ ] i18n-Keys aktualisieren (AC-4)
-  - [ ] `error.telemetry.export.unimplemented` aus beiden Locale-Files entfernen
-  - [ ] `error.telemetry.export.failed` + `error.telemetry.export.in_progress` hinzufügen
-- [ ] `ExportState` + Tauri-Command `export_debug_zip_cmd` (AC-5)
-  - [ ] `commands/telemetry.rs` anlegen
-  - [ ] `commands/mod.rs` erweitern
-- [ ] Wiring in `lib.rs` + `main.rs` (AC-6)
-  - [ ] `collect_commands![]` erweitern
-  - [ ] `app.manage(ExportState { ... })` in setup-Closure
-- [ ] Settings-Panel-Button in `index.html` (AC-7)
-  - [ ] `exporting`-State + `handleExport`-Callback
-  - [ ] Button-Rendering mit Spinner + Disabled-State
-  - [ ] `.btn-secondary`-CSS-Klasse
-- [ ] Lint + Cross-Compile verifizieren (AC-8)
-  - [ ] `cargo xtask lint-events` → Exit 0
-  - [ ] `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell` → Exit 0
-  - [ ] `cargo test -p klarvo-core` → Exit 0
+- [x] `AppErrorKind::ExportFailed` in `error.rs` (AC-1)
+- [x] `zip = "2"` Dep in `klarvo-core/Cargo.toml` (AC-2)
+- [x] Reale `export_debug_zip`-Implementierung + Tests (AC-3)
+  - [x] Stub-Implementierung ersetzen, neue Signatur (`log_dir`, `out_path`)
+  - [x] `sysinfo.txt` + Log-Files in Zip
+  - [x] Error-Mapping zu `AppErrorKind::ExportFailed`
+  - [x] Alte Test ersetzen + 3 neue Tests
+- [x] i18n-Keys aktualisieren (AC-4)
+  - [x] `error.telemetry.export.unimplemented` aus beiden Locale-Files entfernen
+  - [x] `error.telemetry.export.failed` + `error.telemetry.export.in_progress` hinzufügen
+- [x] `ExportState` + Tauri-Command `export_debug_zip_cmd` (AC-5)
+  - [x] `commands/telemetry.rs` anlegen
+  - [x] `commands/mod.rs` erweitern
+- [x] Wiring in `lib.rs` + `main.rs` (AC-6)
+  - [x] `collect_commands![]` erweitern
+  - [x] `app.manage(ExportState { ... })` in setup-Closure
+- [x] Settings-Panel-Button in `index.html` (AC-7)
+  - [x] `exporting`-State + `handleExport`-Callback
+  - [x] Button-Rendering mit Spinner + Disabled-State
+  - [x] `.btn-secondary`-CSS-Klasse
+- [x] Lint + Cross-Compile verifizieren (AC-8)
+  - [x] `cargo xtask lint-events` → Exit 0
+  - [x] `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell` → Exit 0
+  - [x] `cargo test -p klarvo-core` → Exit 0
 
 ## Dev Notes
 
@@ -429,4 +429,66 @@ claude-sonnet-4-6 (create-story 2026-05-03)
 
 ### Completion Notes List
 
+- AC-1: `AppErrorKind::ExportFailed` nach `HotkeyConflict` in `klarvo-core/src/error.rs` eingefügt
+- AC-2: `zip = { version = "2", features = ["deflate"] }` + `tempfile = "3"` (dev) in `klarvo-core/Cargo.toml`
+- AC-3: Stub vollständig durch echte Implementierung ersetzt; neue Signatur `(log_dir, out_path)`; `make_export_err` helper; Parent-Dir-Anlegen; Log-Files werden per `read_dir` gesammelt (non-recursive); 3 neue Tests grün (sysinfo_txt, empty_log_dir_ok, creates_parent_dir)
+- AC-4: `error.telemetry.export.unimplemented` aus beiden Locale-Files entfernt; `error.telemetry.export.failed` + `error.telemetry.export.in_progress` hinzugefügt
+- AC-5: `commands/telemetry.rs` mit `ExportState` + `export_debug_zip_cmd` angelegt; `commands/mod.rs` erweitert
+- AC-6: `export_debug_zip_cmd` in `collect_commands![]` (lib.rs) + `app.manage(ExportState { log_dir, in_progress })` in setup-Closure (main.rs); `log_dir_for_export = log_dir.clone()` vor dem Closure
+- AC-7: `exporting`-State, `handleExport`-Callback, Export-Button mit Spinner, `.btn-secondary`-CSS in `index.html`
+- AC-8: `cargo xtask lint-events` → Exit 0 (5 events); `cargo check --target x86_64-pc-windows-gnu` → Exit 0; `cargo test -p klarvo-core` → 114 tests OK
+
 ### File List
+
+- klarvo-core/src/error.rs
+- klarvo-core/src/telemetry/export.rs
+- klarvo-core/Cargo.toml
+- shells/windows/locales/de.json
+- shells/windows/locales/en.json
+- shells/windows/src-tauri/src/commands/telemetry.rs (neu)
+- shells/windows/src-tauri/src/commands/mod.rs
+- shells/windows/src-tauri/src/lib.rs
+- shells/windows/src-tauri/src/main.rs
+- shells/windows/src/index.html
+
+### Review Findings (2026-05-04)
+
+Run via `bmad-code-review`-Skill mit drei parallelen Reviewern (Blind Hunter / Edge Case Hunter / Acceptance Auditor). Triage: 4 decision-needed, 10 patches, 8 deferred, 8 dismissed.
+
+**Decisions (resolved 2026-05-04):**
+
+- [x] [Review][Decision] D1=A — NFR5 Allowlist `*.log` (whitelist). Resolved → **P11**.
+- [x] [Review][Decision] D2=A — Version als Param an `export_debug_zip` durchreichen (Signature-Break + Spec-Amend). Resolved → **P12**.
+- [x] [Review][Decision] D3=B — Write-to-tempfile + atomic rename. Resolved → **P13**.
+- [x] [Review][Decision] D4=B — `retryable=false` bleibt bis Frontend-Retry-UX-Story. Accepted as-is, kein Patch.
+
+**Patches (alle applied 2026-05-04):**
+
+- [x] [Review][Patch] P1 (BLOCKING) — `bindings/index.ts` regeneriert via `cargo xtask generate-bindings`; `bindings-drift`-Gate green. [`shells/windows/src/bindings/index.ts:42`]
+- [x] [Review][Patch] P2 (BLOCKING) — RAII-`InProgressGuard(Drop)` in `commands/telemetry.rs`; Single-Flight-Reset auch bei Panic im Body. [`shells/windows/src-tauri/src/commands/telemetry.rs:14-21`]
+- [x] [Review][Patch] P3 (BLOCKING) — `zip = { version = "2", default-features = false, features = ["deflate"] }` — aes/bzip2/lzma/xz/zstd raus. [`klarvo-core/Cargo.toml:31`]
+- [x] [Review][Patch] P4 (BLOCKING) — Save-Button mutual exclusion: `disabled: saving || exporting` + `onSubmit`-Guard `if (saving || loading || exporting) return;`. [`shells/windows/src/index.html:346,358`]
+- [x] [Review][Patch] P5 — `tokio::task::spawn_blocking` umschließt `export_debug_zip` im Tauri-Command; Runtime-Thread frei. [`shells/windows/src-tauri/src/commands/telemetry.rs:43-55`]
+- [x] [Review][Patch] P6 — i18n-Keys `settings.export.{button,in_progress,success}` in en.json/de.json + `orphan-allowlist.txt`-Einträge. JS bleibt hardcoded-EN-konsistent mit `settings.tab.label`-Pattern (Phase-2-B Vite-Migration löst Resolver auf). [`shells/windows/locales/{en,de}.json`, `xtask/orphan-allowlist.txt`]
+- [x] [Review][Patch] P7 — `std::io::copy(&mut file, &mut zip)` ersetzt `std::fs::read` — bounded memory. [`klarvo-core/src/telemetry/export.rs:96-101`]
+- [x] [Review][Patch] P8 — `std::fs::File::open(&path)` mit `Err → continue`-Branch; concurrent-Rotation überspringt Single-File statt Abort. [`klarvo-core/src/telemetry/export.rs:88-91`]
+- [x] [Review][Patch] P9 — Test umbenannt zu `export_debug_zip_nonexistent_log_dir_ok` + neuer Test `export_debug_zip_only_packs_log_extension` (NFR5-Allowlist) + `export_debug_zip_no_partial_on_failure`. [`klarvo-core/src/telemetry/export.rs:tests`]
+- [x] [Review][Patch] P10 — DISMISSED nach Verification: Project-Pattern hat `tempfile = "3"` direct in 3 Cargo.tomls (`src-tauri`, `klarvo-bridge-jni`, `klarvo-core`); Story 9.5 folgt der Konvention. Blind-Hunter-Annahme stimmt nicht.
+- [x] [Review][Patch] P11 (D1=A) — NFR5-Allowlist `path.extension() == Some("log")` + Doc-Comment-Update + Test `export_debug_zip_only_packs_log_extension` (assertet `.wav`/`.db` nicht im Zip). [`klarvo-core/src/telemetry/export.rs:81-83`]
+- [x] [Review][Patch] P12 (D2=A) — `export_debug_zip(log_dir, out_path, app_version: &str)` Signature-Break; Caller im Shell übergibt `env!("CARGO_PKG_VERSION")` aus `klarvo-windows-shell`. AC-3-Amendment: sysinfo-`klarvo_version` zeigt User-sichtbare App-Version. [`klarvo-core/src/telemetry/export.rs:35-39,63`, `shells/windows/src-tauri/src/commands/telemetry.rs:47`]
+- [x] [Review][Patch] P13 (D3=B) — `tempfile::NamedTempFile::new_in(parent)` + `persist(out_path)`; jeder `?`-Bail räumt das Tempfile auf, kein halb-geschriebenes Zip in Downloads. Test `export_debug_zip_no_partial_on_failure` deckt den Persist-Fail-Path. [`klarvo-core/src/telemetry/export.rs:50-52,116-118`]
+
+**Deferred (siehe `_bmad-output/implementation-artifacts/deferred-work.md`):**
+
+- [x] [Review][Defer] DF1 — Error-Path-Tests für `make_export_err` fehlen [`klarvo-core/src/telemetry/export.rs:tests`] — alle 3 Tests sind happy-path; failure-injection-Helpers brauchen separate Story.
+- [x] [Review][Defer] DF2 — Component-unmount-Race in `handleExport` [`shells/windows/src/index.html:304-315`] — SettingsPanel unmountet heute nicht während Export; theoretisch bis Settings-Tab Route wird.
+- [x] [Review][Defer] DF3 — Subdirs in `log_dir` werden silently übersprungen [`klarvo-core/src/telemetry/export.rs:63-65`] — Spec mandatet non-recursive; relevant erst wenn rolling-appender Subdir-Layout produziert.
+- [x] [Review][Defer] DF4 — `USERPROFILE` → Downloads-ist-eine-Datei-statt-Dir [`shells/windows/src-tauri/src/commands/telemetry.rs:46`] — extreme corner; `temp_dir`-Fallback würde im selben Szenario auch nicht greifen.
+- [x] [Review][Defer] DF5 — `debug_assert!(app.manage(...))` droppt Result in Release [`shells/windows/src-tauri/src/main.rs:344-358`] — projektweites Pre-Existing-Pattern (7+ Sites); separater Refactor.
+- [x] [Review][Defer] DF6 — `exported_at: 0` Fallback versteckt Clock-Errors [`klarvo-core/src/telemetry/export.rs:44`] — minor; Bug-Report mit `exported_at:0` als Diagnose-Signal akzeptabel.
+- [x] [Review][Defer] DF7 — AC-Coverage für `tempfile`-Dev-Dep fehlt [`spec AC-2`] — Spec-Amendment kosmetisch; im Closure-Commit-Body erwähnen reicht.
+- [x] [Review][Defer] DF8 — Spec-Prosa "einzeiliges Text-File" widerspricht 4-Zeilen-Format [`spec L72`] — Spec-Cleanup, code stimmt.
+
+**Dismissed:** B1 (out_path nicht user-controlled), B2 (AtomicBool-unused — false-positive Blind-only), B3 (telemetry.rs body invisible — diff-only-Artefakt; File ist im WT untracked, Reviewer mit Repo-Access hat ihn verifiziert), B6 (zip-slip via `file_name()` — `Path::file_name()` strippt Separators per Definition), B13 (in_progress-Key dead — false-positive; Key wird in `commands/telemetry.rs:22` emittiert), B20 (sprint-status self-flip — dieser Review IST der Signoff), E13 (out_path bare-filename — bereits durch `!parent.as_os_str().is_empty()` geguardet), E14 (env-divergence init_tracing↔clone — theoretisch).
+
+

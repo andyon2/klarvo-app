@@ -40,6 +40,15 @@ history.clear_all.label
 # history.clear_all.confirm: shells/windows/src/index.html HistoryPanel window.confirm()-Text. Story 9.3.
 history.clear_all.confirm
 
+# settings.export.button: shells/windows/src/index.html SettingsPanel Export-Button-Label. Story 9.5.
+settings.export.button
+
+# settings.export.in_progress: shells/windows/src/index.html SettingsPanel Export-Button während Export. Story 9.5.
+settings.export.in_progress
+
+# settings.export.success: shells/windows/src/index.html SettingsPanel Success-Toast nach Export (Path-Param). Story 9.5.
+settings.export.success
+
 # ── TUPLE-CONST ───────────────────────────────────────────────────────────────
 # `pub const SUPPORTED_LOCALES: &[(&str, &str)]` at tray.rs:30-33. Lookup-Path
 # (tray.menu.exit, tray.language_switcher.label) wird mechanisch via lookup()-Arm
