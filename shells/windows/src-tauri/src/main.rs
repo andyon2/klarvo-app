@@ -499,21 +499,26 @@ fn main() {
                     let mut tray_rx = event_bus_rx_tray;
                     tauri::async_runtime::spawn(async move {
                         use klarvo_core::event::Event;
-                        while let Ok(event) = tray_rx.recv().await {
-                            match event {
-                                Event::RecordingStarted { .. } => {
+                        use tokio::sync::broadcast::error::RecvError;
+                        loop {
+                            match tray_rx.recv().await {
+                                Ok(Event::RecordingStarted { .. }) => {
                                     let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
                                 }
-                                Event::RecordingStopped { .. } => {
+                                Ok(Event::RecordingStopped { .. }) => {
                                     // Processing placeholder — same red icon until Phase-2 ships
                                     // a distinct processing icon. Tray returns to idle on
                                     // RecordingCompleted, not on RecordingStopped.
                                     let _ = tray_handle.set_icon(Some(recording_icon_tray.clone()));
                                 }
-                                Event::RecordingCompleted { .. } => {
+                                Ok(Event::RecordingCompleted { .. }) => {
                                     let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
                                 }
-                                _ => {}
+                                Ok(_) => {}
+                                Err(RecvError::Lagged(n)) => {
+                                    tracing::warn!(skipped = n, "tray subscriber lagged; resyncing");
+                                }
+                                Err(RecvError::Closed) => break,
                             }
                         }
                     });

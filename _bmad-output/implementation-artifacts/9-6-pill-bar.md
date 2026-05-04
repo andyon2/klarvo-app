@@ -2,7 +2,7 @@
 name: Story 9.6 — Pill Bar
 epic: 9
 story_number: "9.6"
-status: review
+status: done
 dependencies:
   - "9-1-return-focus"
   - "9-2-history-backend"
@@ -11,7 +11,7 @@ dependencies:
 
 # Story 9.6: Pill Bar
 
-Status: review
+Status: done
 
 ## Story
 
@@ -565,3 +565,47 @@ claude-opus-4-7 (dev-story 2026-05-04)
 - shells/windows/src-tauri/src/main.rs
 - shells/windows/src-tauri/src/overlay/mod.rs (neu)
 - shells/windows/src-tauri/src/overlay/pill_bar.rs (neu)
+
+### Review Findings (2026-05-04)
+
+Run via `bmad-code-review`-Skill mit drei parallelen Reviewern (Blind Hunter / Edge Case Hunter / Acceptance Auditor) auf commit `d252c7f` (post-rebase: `30d0c40`). Triage: 5 decision-needed, 11 patches (D-resolutions inkludiert), 8 deferred, 3 dismissed.
+
+Alle Patches applied 2026-05-04. Cargo-Gates grün post-Patch (`cargo check` core/orchestrator/win-shell, `cargo test -p klarvo-core --lib` 116/116, `cargo xtask lint-events` 5 events). `bindings-drift` zeigt erwarteten Delta gegen die uncommitted 9.5-Surface — wird mit dem 9.5-Closure-Commit aufgelöst.
+
+**Decisions (resolved 2026-05-04):**
+
+- [x] [Review][Decision] D1=A — `#[serde(rename_all = "camelCase")]` entfernen, snake_case `ts_ms` on the wire (project-convention `project_event_ts_ms_convention`). Resolved → **P7**.
+- [x] [Review][Decision] D2=A — `DEFAULT_EVENT_BUS_CAPACITY` von 64 auf 256 bumpen; B (Bus-Split Control vs. Stream) als Phase-2-Story `eventbus-topology-split` im Backlog. Resolved → **P8**.
+- [x] [Review][Decision] D3=A — JoinHandle der Level-Tap-Task in `SessionState::Recording` ablegen + `abort_for_shutdown` ergänzen (analog zu `pipeline_task`). Resolved → **P9**.
+- [x] [Review][Decision] D4=A — `d252c7f` interactive-rebase: 9.5-Lines (lib.rs `use`/`collect_commands![]`, main.rs `app.manage(ExportState)`) rauspatchen, kommen mit 9.5-Closure-Commit. Resolved → **P10**.
+- [x] [Review][Decision] D5=B — `pill_bar_position(&app)` + `set_position()` direkt vor `win.show()` im `RecordingStarted`-Arm aufrufen (deckt Dock/Undock zwischen Sessions). Mid-recording Monitor-Change bleibt offen (DF3 entfällt). Resolved → **P11**.
+
+**Patches (alle applied 2026-05-04):**
+
+- [x] [Review][Patch] P1 (BLOCKING) — Tray-Subscriber-Loop von `while let Ok(...)` auf `loop { match recv() }` mit explizitem `Lagged(n) => warn + continue` und `Closed => break`. [`shells/windows/src-tauri/src/main.rs:498-526`]
+- [x] [Review][Patch] P2 — NaN-Sanitize an Source (Level-Tap-Task `if rms.is_finite() { rms } else { 0.0 }`), defensiv im PillBar-Subscriber, und JS-side `Number.isFinite(v) ? v : 0`. [`klarvo-shell-orchestrator/src/session.rs` level-tap, `shells/windows/src-tauri/src/overlay/pill_bar.rs` `Event::AudioLevel`-Arm, `shells/windows/src/pill-bar.html` waveform_tick-Listener]
+- [x] [Review][Patch] P3 — `AtomicU64`-Fade-Epoch in `PillBar::start`-Closure: jeder `RecordingStarted` increments; Hide-Task captured Snapshot, vergleicht vor `win.hide()`, no-op bei Mismatch. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` `handle_event` + `start`]
+- [x] [Review][Patch] P4 — `let _ = win.show()/hide()` durch `if let Err(e) = ... { tracing::warn!(...) }` ersetzt. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` `RecordingStarted`/`RecordingCompleted`-Arms]
+- [x] [Review][Patch] P5 — JS-Bin-Length-Validation: explizite `console.warn` bei Mismatch + Zero-Fill für Bins jenseits `incoming.length`. [`shells/windows/src/pill-bar.html` waveform_tick-Listener]
+- [x] [Review][Patch] P6 — `pill_bar_position` clamps `x` und `y` mit `.max(0.0)` für Portrait/Small-Monitor. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` `pill_bar_position`]
+- [x] [Review][Patch] P7 (D1=A) — `#[serde(rename_all = "camelCase")]` von `WaveformPayload` entfernt. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` `WaveformPayload`-Struct]
+- [x] [Review][Patch] P8 (D2=A) — `DEFAULT_EVENT_BUS_CAPACITY` 64 → 256 + Doc-Comment-Update. Phase-2-Story `eventbus-topology-split` als Backlog-Folge. [`klarvo-core/src/event/bus.rs:78`]
+- [x] [Review][Patch] P9 (D3=A) — `level_tap_task: JoinHandle<()>` zu `SessionState::Recording` ergänzt; `shutdown` ruft `level_tap_task.abort()` + await; Toggle-Stop / `on_release` droppen den Handle (natürliche Channel-Close-Cascade). [`klarvo-shell-orchestrator/src/session.rs` `SessionState`/`on_press`/`shutdown`/`on_release`]
+- [x] [Review][Patch] P10 (D4=A) — `git rebase -i d252c7f^`: 9.5-Wiring aus `d252c7f` raus, neuer Hash `30d0c40`. Lines bleiben uncommitted im Working-Tree und kommen mit dem 9.5-Closure-Commit. [git history]
+- [x] [Review][Patch] P11 (D5=B) — `RecordingStarted`-Arm ruft `pill_bar_position(&app) + set_position(...)` direkt vor `win.show()` auf; Dock/Undock zwischen Sessions wird abgedeckt. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` `handle_event::RecordingStarted`]
+
+**Deferred (siehe `_bmad-output/implementation-artifacts/deferred-work.md`):**
+
+- [x] [Review][Defer] DF1 — Show vs. waveform_tick Listener-Ordering: `bins.fill(0)` im `pill_bar.show`-Listener kann nachträglich einen bereits eingegangenen `pill_bar.waveform_tick` überschreiben. JS-EventLoop ist single-threaded → in der Praxis OK, aber kein Ordering-Contract. [`shells/windows/src/pill-bar.html:71-75`]
+- [x] [Review][Defer] DF2 — First-Press WebView-Listener-Race: `pill_bar.show` kann emittiert werden, bevor `<script type="module">` die Listener registriert hat. `visible: false` lädt die Seite at-boot, in Praxis registriert; Race aber nicht durch Handshake geschlossen. [`shells/windows/src-tauri/src/overlay/pill_bar.rs:88-92`]
+- [x] [Review][Defer] DF4 — `300ms` als Magic-Number duplexed: Rust `Duration::from_millis(300)` + CSS `transition: opacity 300ms`. Kein shared Constant. Bei Future-Maintainer-Drift visueller Pop. [`shells/windows/src-tauri/src/overlay/pill_bar.rs` Duration + `shells/windows/src/pill-bar.html` CSS]
+- [x] [Review][Defer] DF5 — Title "Klarvo" auf transparentem `decorations: false`-Window pollutet Win32-Window-Enumeration ohne sichtbaren Effekt. [`shells/windows/src-tauri/tauri.conf.json` pill-bar.title]
+- [x] [Review][Defer] DF6 — `ts_ms` im Ring-Buffer-Push wird nicht für Anti-Jitter verwendet (out-of-order broadcast-Delivery überschreibt). Visualization-Wonkiness, kein Safety-Issue. [`shells/windows/src-tauri/src/overlay/pill_bar.rs:866-874`]
+- [x] [Review][Defer] DF7 — Spec-Impl-Divergenz: Spec hat `async fn handle_event`, Impl ist sync. Funktional äquivalent (Body hat kein `.await`). Spec-Cleanup-Kandidat. [`shells/windows/src-tauri/src/overlay/pill_bar.rs:843`]
+- [x] [Review][Defer] DF8 — `tauriEvent.listen()`-Unlisten-Functions werden nicht gespeichert. Pill-Bar-WebView lebt App-Lifetime → Leak nur in Hot-Reload-Dev-Builds. [`shells/windows/src/pill-bar.html:55, 71, 79`]
+- [x] [Review][Defer] DF9 — `PillBar::new()` returnt `Self`, sofort von `start(self)` consumed → API-Smell (one-shot, könnte free function sein). Kosmetisch. [`shells/windows/src-tauri/src/overlay/pill_bar.rs:807-825`]
+
+**Dismissed:**
+- B4 (`event_bus_rx_pill_bar`-Subscribe vor `start()` queued stale events) — at-boot keine Events emittieren vor Step 12d-Wireup; Race nicht reachable.
+- B13 (`clock_level` keep-alive aus Spec absent in Impl) — false-positive: `Arc::clone(&self.event_bus)` capture genügt, `clock_level` war Cargo-cult-Spec-Element.
+- B14 (`#[cfg(target_os="windows")] pub mod overlay;` vs. unconditional `main.rs`-Reference) — false-positive: `klarvo-windows-shell` ist by-name windows-only; cross-compile-Gate (AC-7) bestätigt grün.

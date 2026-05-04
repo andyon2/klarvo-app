@@ -61,8 +61,16 @@
         const payload = evt?.payload;
         if (payload && Array.isArray(payload.bins)) {
           const incoming = payload.bins;
-          for (let i = 0; i < BIN_COUNT && i < incoming.length; i++) {
-            bins[i] = incoming[i];
+          if (incoming.length !== BIN_COUNT) {
+            console.warn(`pill-bar: bin count mismatch (got ${incoming.length}, expected ${BIN_COUNT})`);
+          }
+          const limit = Math.min(BIN_COUNT, incoming.length);
+          for (let i = 0; i < limit; i++) {
+            const v = incoming[i];
+            bins[i] = Number.isFinite(v) ? v : 0;
+          }
+          for (let i = limit; i < BIN_COUNT; i++) {
+            bins[i] = 0;
           }
           drawWaveform();
         }

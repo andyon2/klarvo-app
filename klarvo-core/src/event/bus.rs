@@ -70,12 +70,13 @@ impl Event {
 
 /// Default broadcast capacity for the [`EventBus`].
 ///
-/// Sized for typical Phase-1 burst: hotkey-press + RecordingStarted +
-/// per-stage start/complete events + RecordingStopped within a single
-/// PTT cycle. Subscribers that lag past this watermark observe
-/// `RecvError::Lagged`; tray and EventMirror tasks are expected to drain
-/// well below it.
-pub const DEFAULT_EVENT_BUS_CAPACITY: usize = 64;
+/// Sized for the Phase-1 baseline (hotkey/recording lifecycle, ~5 events per
+/// PTT cycle) plus the Story-9.6 `Event::AudioLevel` stream (~15.6 Hz during
+/// active recording). 256 slots tolerate ~16 s of subscriber back-pressure
+/// before the slowest consumer sees `RecvError::Lagged`. Phase-2 backlog item
+/// `eventbus-topology-split` will move the high-frequency stream to its own
+/// channel; until then, this capacity is the load-bearing buffer.
+pub const DEFAULT_EVENT_BUS_CAPACITY: usize = 256;
 
 /// Non-blocking broadcast bus for [`Event`] values.
 ///

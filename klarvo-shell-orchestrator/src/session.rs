@@ -27,6 +27,12 @@ enum SessionState {
         /// Phase-2 Toggle-Mode revisit: graceful await/abort on App-Exit
         /// (ADR-0012 Open-Questions §Orchestrator-Shutdown-bei-App-Exit).
         pipeline_task: tokio::task::JoinHandle<()>,
+        /// Story 9.6 AC-2 + Code-Review-D3=A: level-tap task forwards
+        /// `AudioEvent::Level` onto the EventBus as `Event::AudioLevel`.
+        /// JoinHandle stored so `shutdown` can abort it deterministically;
+        /// natural-drop paths (`on_press` Toggle-stop, `on_release`) rely
+        /// on the broadcast channel closing once `capture_handle` drops.
+        level_tap_task: tokio::task::JoinHandle<()>,
         /// Mode active when the session was started. `on_release` and the second
         /// Toggle press route on this snapshot — not on the current
         /// `Orchestrator::mode` value — so a settings-driven mode change while a
@@ -135,10 +141,16 @@ impl SessionOrchestrator {
                 if press_mode == RecordingMode::Toggle {
                     let prev = std::mem::replace(&mut *state, SessionState::Idle);
                     drop(state); // release before drop(capture_handle)
-                    if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
+                    if let SessionState::Recording {
+                        capture_handle,
+                        pipeline_task,
+                        level_tap_task,
+                        ..
+                    } = prev {
                         self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
                         drop(capture_handle);
                         drop(pipeline_task);
+                        drop(level_tap_task);
                     }
                 } else {
                     tracing::debug!(
@@ -177,15 +189,22 @@ impl SessionOrchestrator {
 
         // Story 9.6 AC-2: spawn level-tap task that forwards `AudioEvent::Level`
         // values onto the EventBus as `Event::AudioLevel` for the Pill-Bar overlay.
-        // Task terminates when the audio broadcast channel closes at session end.
-        {
+        // Code-Review-D3=A: JoinHandle stored on `SessionState::Recording`; aborted
+        // explicitly in `shutdown` for deterministic teardown. Other exit paths
+        // close the broadcast channel via `drop(capture_handle)`, which the loop
+        // observes as `RecvError::Closed`.
+        let level_tap_task = {
             let event_bus_level = Arc::clone(&self.event_bus);
             tokio::spawn(async move {
                 let mut rx = level_rx;
                 loop {
                     match rx.recv().await {
                         Ok(AudioEvent::Level { rms, ts_ms }) => {
-                            event_bus_level.emit(Event::AudioLevel { rms, ts_ms });
+                            // Code-Review-P2: NaN/Inf at source must never reach the
+                            // Pill-Bar payload (would serialize as JSON `null` and
+                            // break canvas math downstream). Replace with 0.0.
+                            let safe_rms = if rms.is_finite() { rms } else { 0.0 };
+                            event_bus_level.emit(Event::AudioLevel { rms: safe_rms, ts_ms });
                         }
                         Ok(AudioEvent::Samples { .. }) => {}
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -194,8 +213,8 @@ impl SessionOrchestrator {
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
-            });
-        }
+            })
+        };
 
         // Clone Arcs for the pipeline task.
         let registry = Arc::clone(&self.registry);
@@ -375,7 +394,12 @@ impl SessionOrchestrator {
 
         // Re-acquire state lock to transition to Recording.
         let mut state = self.session_state.lock().await;
-        *state = SessionState::Recording { capture_handle, pipeline_task, press_mode };
+        *state = SessionState::Recording {
+            capture_handle,
+            pipeline_task,
+            level_tap_task,
+            press_mode,
+        };
     }
 
     /// Abort any active pipeline and return to `Idle`. Called on App-Exit.
@@ -392,12 +416,23 @@ impl SessionOrchestrator {
         let mut state = self.session_state.lock().await;
         let prev = std::mem::replace(&mut *state, SessionState::Idle);
         drop(state);
-        if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
+        if let SessionState::Recording {
+            capture_handle,
+            pipeline_task,
+            level_tap_task,
+            ..
+        } = prev {
             pipeline_task.abort();
+            // Code-Review-D3=A: abort the level-tap task explicitly so shutdown
+            // does not depend on the implicit channel-close cascade. The task
+            // is short-lived per-session, but abort makes teardown ordering
+            // deterministic and matches the discipline applied to pipeline_task.
+            level_tap_task.abort();
             // Await JoinHandle so shutdown returns only after the task actually observed
             // the cancel. JoinError::is_cancelled() is the expected outcome; Ok(()) means
             // the task completed before the abort signal landed — both are acceptable.
             let _ = pipeline_task.await;
+            let _ = level_tap_task.await;
             drop(capture_handle);
         }
     }
@@ -438,8 +473,17 @@ impl SessionOrchestrator {
         let prev = std::mem::replace(&mut *state, SessionState::Idle);
         drop(state); // release lock before drop(capture_handle)
 
-        if let SessionState::Recording { capture_handle, pipeline_task, .. } = prev {
+        if let SessionState::Recording {
+            capture_handle,
+            pipeline_task,
+            level_tap_task,
+            ..
+        } = prev {
             self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
+            // Level-tap-task self-terminates once the broadcast channel closes
+            // (drop(capture_handle) below). Detach the JoinHandle so the closure
+            // happens asynchronously in the background.
+            drop(level_tap_task);
             // Step 4: drop CaptureHandle → broadcast sender closes →
             // run_capture_session's receiver gets RecvError::Closed.
             drop(capture_handle);

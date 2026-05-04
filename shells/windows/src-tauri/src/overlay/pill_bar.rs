@@ -6,6 +6,8 @@
 //! insufficient on Windows in Tauri v2, see GitHub issue #8308).
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use klarvo_core::event::Event;
 use serde::Serialize;
@@ -18,7 +20,10 @@ const WINDOW_WIDTH: f64 = 320.0;
 const WINDOW_HEIGHT: f64 = 48.0;
 /// Margin between bottom of pill bar and bottom of primary monitor (logical px).
 const BOTTOM_MARGIN: f64 = 16.0;
-/// Fade-out duration matched to CSS transition in `pill-bar.html`.
+/// Fade-out duration matched to CSS transition in `pill-bar.html`. Drift between
+/// these two values produces either a visible-pop (Rust hides before CSS fade
+/// completes) or a transparent click-blocker (CSS fade completes but Rust never
+/// hides). Keep the two in sync.
 const FADE_OUT_MS: u64 = 300;
 
 pub struct PillBar<R: tauri::Runtime> {
@@ -50,10 +55,16 @@ impl<R: tauri::Runtime> PillBar<R> {
         let app = self.app;
         tauri::async_runtime::spawn(async move {
             let mut ring: VecDeque<f32> = VecDeque::from(vec![0.0f32; BIN_COUNT]);
+            // Hide-task generation counter: each `RecordingStarted` increments
+            // this; pending hide-tasks compare their captured snapshot before
+            // calling `win.hide()`. A hide-task whose generation no longer
+            // matches the current epoch is stale (a new recording started
+            // within the 300 ms fade window) and must no-op.
+            let fade_epoch = Arc::new(AtomicU64::new(0));
 
             loop {
                 match receiver.recv().await {
-                    Ok(event) => handle_event(&app, &mut ring, event),
+                    Ok(event) => handle_event(&app, &mut ring, &fade_epoch, event),
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(skipped = n, "PillBar lagged; skipped events");
                     }
@@ -65,14 +76,17 @@ impl<R: tauri::Runtime> PillBar<R> {
 }
 
 /// Compute bottom-center logical position for the pill-bar window.
+///
+/// Negative coordinates are clamped to 0 to keep the pill on-screen on
+/// portrait/small-monitor configurations where `logical_w < WINDOW_WIDTH`.
 fn pill_bar_position<R: tauri::Runtime>(app: &AppHandle<R>) -> (f64, f64) {
     if let Ok(Some(monitor)) = app.primary_monitor() {
         let scale = monitor.scale_factor();
         let size = monitor.size();
         let logical_w = size.width as f64 / scale;
         let logical_h = size.height as f64 / scale;
-        let x = (logical_w - WINDOW_WIDTH) / 2.0;
-        let y = logical_h - WINDOW_HEIGHT - BOTTOM_MARGIN;
+        let x = ((logical_w - WINDOW_WIDTH) / 2.0).max(0.0);
+        let y = (logical_h - WINDOW_HEIGHT - BOTTOM_MARGIN).max(0.0);
         (x, y)
     } else {
         (0.0, 0.0)
@@ -82,29 +96,54 @@ fn pill_bar_position<R: tauri::Runtime>(app: &AppHandle<R>) -> (f64, f64) {
 fn handle_event<R: tauri::Runtime>(
     app: &AppHandle<R>,
     ring: &mut VecDeque<f32>,
+    fade_epoch: &Arc<AtomicU64>,
     event: Event,
 ) {
     match event {
         Event::RecordingStarted { .. } => {
+            // Bump the fade-epoch so any pending hide-task from a previous
+            // session no-ops when its delay elapses.
+            fade_epoch.fetch_add(1, Ordering::SeqCst);
             ring.iter_mut().for_each(|v| *v = 0.0);
             if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
-                let _ = win.show();
+                // Re-position on every show to handle dock/undock or
+                // resolution changes between sessions (D5=B).
+                let (x, y) = pill_bar_position(app);
+                if let Err(e) = win.set_position(LogicalPosition::new(x, y)) {
+                    tracing::warn!(error = %e, "pill-bar set_position failed");
+                }
+                if let Err(e) = win.show() {
+                    tracing::warn!(error = %e, "pill-bar show failed");
+                }
             }
             let _ = app.emit_to(WINDOW_LABEL, "pill_bar.show", ());
         }
         Event::RecordingCompleted { .. } => {
             let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
             let app_clone = app.clone();
+            let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
+            let epoch_clone = Arc::clone(fade_epoch);
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(FADE_OUT_MS)).await;
+                // Stale-hide guard: if a new recording started within the fade
+                // window the epoch advanced; do nothing in that case.
+                if epoch_clone.load(Ordering::SeqCst) != epoch_snapshot {
+                    return;
+                }
                 if let Some(win) = app_clone.get_webview_window(WINDOW_LABEL) {
-                    let _ = win.hide();
+                    if let Err(e) = win.hide() {
+                        tracing::warn!(error = %e, "pill-bar hide failed");
+                    }
                 }
             });
         }
         Event::AudioLevel { rms, ts_ms } => {
+            // NaN/Inf at the source would propagate through `clamp` and serialize
+            // to JSON as `null`, which the JS-side now zero-fills, but cleaner to
+            // sanitize here too so the ring buffer never holds non-finite floats.
+            let v = if rms.is_finite() { rms.clamp(0.0, 1.0) } else { 0.0 };
             ring.pop_front();
-            ring.push_back(rms.clamp(0.0, 1.0));
+            ring.push_back(v);
             let bins: Vec<f32> = ring.iter().copied().collect();
             let _ = app.emit_to(
                 WINDOW_LABEL,
@@ -117,7 +156,6 @@ fn handle_event<R: tauri::Runtime>(
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct WaveformPayload {
     bins: Vec<f32>,
     ts_ms: u64,
