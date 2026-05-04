@@ -220,14 +220,16 @@ pub mod overlay;
 
 ### AC-5: `PillBar` in `overlay/pill_bar.rs`
 
-**Given** `overlay/mod.rs` existiert (AC-3),
+**Pre-Flight-Finding (2026-05-04):** `transparent: true` erfordert in Tauri v2 zwingend einen Eintrag in `tauri.conf.json` — `.transparent(true)` im `WebviewWindowBuilder` alleine hat keine Wirkung (GitHub Issue #8308). Konsequenz: das Pill-Bar-Fenster wird **in `tauri.conf.json` deklariert** (AC-6a) und von Tauri beim App-Start automatisch erzeugt. `PillBar::new()` verwendet daher `get_webview_window()` + `set_position()` statt `WebviewWindowBuilder`. Der `WebviewWindowBuilder`-Import entfällt.
+
+**Given** `overlay/mod.rs` existiert (AC-3) und `tauri.conf.json` enthält den pill-bar-Eintrag (AC-6a),
 **When** AC-5 committed ist,
 **Then** enthält `overlay/pill_bar.rs`:
 
 ```rust
 use std::collections::VecDeque;
 use tokio::sync::broadcast;
-use tauri::{AppHandle, Emitter as _, Manager as _, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter as _, LogicalPosition, Manager as _};
 use klarvo_core::event::Event;
 
 const WINDOW_LABEL: &str = "pill-bar";
@@ -238,28 +240,19 @@ pub struct PillBar<R: tauri::Runtime> {
 }
 
 impl<R: tauri::Runtime> PillBar<R> {
-    /// Create the pill-bar WebView window (initially hidden) and return a PillBar handle.
+    /// Wire up the pill-bar window (declared in tauri.conf.json) and position it.
     ///
-    /// Called once in .setup() after the EventBus is available.
-    /// Window properties: 320×48px, transparent, no-deco, always-on-top, not focused,
-    /// skip-taskbar, initially hidden. Positioned at bottom-center of primary monitor.
+    /// Called once in .setup(). The window is already created by Tauri from conf;
+    /// we only set the bottom-center position here. Fail-soft: if the window label
+    /// is missing (misconfigured conf), returns Ok without crashing — waveform just
+    /// won't show, but recording still works.
     pub fn new(app: &AppHandle<R>) -> tauri::Result<Self> {
-        let (x, y) = pill_bar_position(app);
-
-        WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("pill-bar.html".into()))
-            .title("Klarvo")
-            .decorations(false)
-            .transparent(true)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .focused(false)
-            .visible(false)
-            .resizable(false)
-            .width(320.0)
-            .height(48.0)
-            .position(x, y)
-            .build()?;
-
+        if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
+            let (x, y) = pill_bar_position(app);
+            let _ = win.set_position(LogicalPosition::new(x, y));
+        } else {
+            tracing::warn!("pill-bar window not found; check tauri.conf.json label");
+        }
         Ok(Self { app: app.clone() })
     }
 
@@ -346,11 +339,41 @@ struct WaveformPayload {
 
 **Wichtig:** `PillBar` ist `#[cfg(target_os = "windows")]`-gated via `lib.rs`-Modul-Declaration (AC-3). Kein separates `cfg` in `pill_bar.rs` nötig.
 
-### AC-6: Wire-Up in `main.rs`
+### AC-6a: `tauri.conf.json` — Pill-Bar-Window-Eintrag
+
+**Pre-Flight-Finding (2026-05-04):** `transparent: true` muss in `tauri.conf.json` stehen; Builder alleine reicht nicht.
+
+**Given** `shells/windows/src-tauri/tauri.conf.json` enthält nur einen `main`-Window-Eintrag,
+**When** AC-6a committed ist,
+**Then** hat `app.windows` einen zweiten Eintrag:
+
+```json
+{
+  "label": "pill-bar",
+  "url": "pill-bar.html",
+  "title": "Klarvo",
+  "width": 320,
+  "height": 48,
+  "minWidth": 320,
+  "minHeight": 48,
+  "resizable": false,
+  "decorations": false,
+  "transparent": true,
+  "alwaysOnTop": true,
+  "skipTaskbar": true,
+  "focus": false,
+  "visible": false,
+  "fullscreen": false
+}
+```
+
+Der `"url": "pill-bar.html"` Pfad ist relativ zu `frontendDist = "../src"` — Tauri löst ihn zu `shells/windows/src/pill-bar.html` auf.
+
+### AC-6b: Wire-Up in `main.rs`
 
 **Given** `main.rs` hat einen Step-12-Block für Tray + EventMirror + NotificationService,
-**When** AC-6 committed ist,
-**Then** wird nach den bestehenden `event_bus.subscribe()` Calls ein weiterer Receiver und PillBar-Start ergänzt:
+**When** AC-6b committed ist,
+**Then** wird nach den bestehenden `event_bus.subscribe()` Calls ein weiterer Receiver ergänzt:
 
 ```rust
 let event_bus_rx_pill_bar = event_bus.subscribe();
@@ -360,16 +383,15 @@ Und nach `Step 12c` (NotificationService):
 
 ```rust
 // Step 12d: PillBar — transparent overlay window for recording visualization.
-// Fail-soft: if window creation fails (e.g. missing pill-bar.html), app continues without overlay.
+// Window is declared in tauri.conf.json (transparent: true requires conf entry).
+// Fail-soft: missing window label logs a warning; recording continues without overlay.
 match klarvo_windows_shell::overlay::pill_bar::PillBar::new(app.handle()) {
     Ok(pill_bar) => pill_bar.start(event_bus_rx_pill_bar),
     Err(e) => {
-        tracing::error!(error = %e, "pill-bar window creation failed; continuing without overlay");
+        tracing::error!(error = %e, "pill-bar setup failed; continuing without overlay");
     }
 }
 ```
-
-Die `tauri.conf.json` wird **nicht** geändert — das Pill-Bar-Fenster wird dynamisch in `.setup()` erzeugt.
 
 **Import-Ergänzung in `main.rs`:** Kein separater Import nötig, da über vollqualifizierten Pfad referenziert.
 
@@ -397,13 +419,14 @@ Die `tauri.conf.json` wird **nicht** geändert — das Pill-Bar-Fenster wird dyn
   - [ ] `pill_bar.waveform_tick` listener + Canvas-Draw
   - [ ] `pill_bar.show` listener (reset bins)
   - [ ] `pill_bar.fade_out` listener (CSS transition)
+- [ ] `tauri.conf.json` pill-bar Window-Eintrag mit `transparent: true` (AC-6a) — **VOR AC-5**
 - [ ] `PillBar` Struct in `overlay/pill_bar.rs` (AC-5)
-  - [ ] `PillBar::new()` — WebviewWindowBuilder transparent overlay
+  - [ ] `PillBar::new()` — `get_webview_window()` + `set_position()` (kein WebviewWindowBuilder)
   - [ ] `pill_bar_position()` — bottom-center via `primary_monitor()`
   - [ ] `PillBar::start()` — EventBus subscriber task
   - [ ] `handle_event()` — RecordingStarted / RecordingCompleted / AudioLevel arms
   - [ ] `WaveformPayload` serde struct
-- [ ] Wire-Up in `main.rs` (AC-6)
+- [ ] Wire-Up in `main.rs` (AC-6b)
   - [ ] `event_bus_rx_pill_bar` subscribe
   - [ ] Step 12d mit fail-soft
 - [ ] Gates verifizieren (AC-7)
@@ -446,11 +469,15 @@ Beide Methoden sind auf `tauri::Emitter` trait — `use tauri::Emitter as _;` in
 
 **rms-Normalisierung:** `AudioEvent::Level { rms }` ist 0.0..=1.0 per `CpalAudioSource`-Contract. `rms.clamp(0.0, 1.0)` in `handle_event` ist eine Defensive-Measure für zukünftige AudioSource-Impls.
 
-### Tauri `transparent` + Win32 layered-window Kontext
+### Tauri `transparent` + Win32 — Pre-Flight-Finding
 
-Tauri v2 nutzt intern `WS_EX_LAYERED` für transparente Fenster auf Windows. Dies funktioniert out-of-the-box mit `.transparent(true)` — kein manuelles Win32-API-Aufruf nötig.
+**CRITICAL (pre-flight 2026-05-04):** In Tauri v2 reicht `.transparent(true)` im `WebviewWindowBuilder` auf Windows NICHT. `transparent: true` muss zusätzlich in `tauri.conf.json` pro Window-Eintrag gesetzt sein — sonst zeigt das Fenster einen weißen Hintergrund (kein Compile-Fehler, stilles visuelles Bug). Quelle: [GitHub Issue #8308](https://github.com/tauri-apps/tauri/issues/8308), Tauri v2 Window-Customization-Docs.
 
-**Bekannte Win32-Einschränkung:** `skip_taskbar(true)` in Tauri v2 setzt `WS_EX_TOOLWINDOW` auf dem Win32-Fenster. Dies verhindert Focus auf Alt+Tab. Das ist gewünscht für die Pill-Bar.
+**Konsequenz für diese Story:** Das Pill-Bar-Fenster wird in `tauri.conf.json` deklariert (AC-6a). `PillBar::new()` verwendet `get_webview_window()` statt `WebviewWindowBuilder` (AC-5 amended).
+
+Tauri v2 nutzt intern `WS_EX_LAYERED` für transparente Fenster auf Windows. Zusätzlich gilt:
+- `skip_taskbar: true` → `WS_EX_TOOLWINDOW` auf Win32. Verhindert Alt+Tab-Fokus. Gewünscht.
+- `focus: false` in conf + `always_on_top: true` → Fenster stehlt keinen Fokus beim Show. Kritisch für WaitAndType-Flow.
 
 ### `pill-bar.html` Tauri-Availability Check
 
@@ -481,6 +508,7 @@ Mit `Event::AudioLevel` neu in Core gibt es 3 exhaustive `match event`-Stellen:
 - `shells/windows/src/pill-bar.html`
 
 **Geänderte Dateien:**
+- `shells/windows/src-tauri/tauri.conf.json` — pill-bar Window-Eintrag (AC-6a, **zuerst**)
 - `klarvo-core/src/event/bus.rs` — `AudioLevel`-Variante
 - `klarvo-shell-orchestrator/src/session.rs` — `level_rx` + Level-Tap-Task
 - `shells/windows/src-tauri/src/lib.rs` — `pub mod overlay;`
