@@ -177,6 +177,9 @@ impl<R: tauri::Runtime> EventMirror<R> {
             Event::RecordingDelivered { ts_ms, text } => self
                 .app_handle
                 .emit("recording.delivered", &RecordingDeliveredPayload { ts_ms, text }),
+            // AudioLevel is consumed by PillBar overlay only — not mirrored to main WebView.
+            // High-frequency (~15.6Hz) and the main WebView has no consumer.
+            Event::AudioLevel { .. } => return,
         };
         if let Err(e) = result {
             tracing::warn!(error = %e, "EventMirror failed to emit event to frontend");

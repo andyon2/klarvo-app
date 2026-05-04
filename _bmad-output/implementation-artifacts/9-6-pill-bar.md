@@ -2,7 +2,7 @@
 name: Story 9.6 — Pill Bar
 epic: 9
 story_number: "9.6"
-status: ready-for-dev
+status: review
 dependencies:
   - "9-1-return-focus"
   - "9-2-history-backend"
@@ -11,7 +11,7 @@ dependencies:
 
 # Story 9.6: Pill Bar
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -406,33 +406,35 @@ match klarvo_windows_shell::overlay::pill_bar::PillBar::new(app.handle()) {
 
 ## Tasks / Subtasks
 
-- [ ] `Event::AudioLevel` in `klarvo-core/src/event/bus.rs` + exhaustive-match-Updates (AC-1)
-  - [ ] Neue Variante `AudioLevel { rms: f32, ts_ms: u64 }` einfügen
-  - [ ] `bridge.rs` — `Event::AudioLevel { .. } => return,` Arm hinzufügen
-  - [ ] `main.rs` Tray-Subscriber — `_ => {}` Arm oder expliziter AudioLevel-Arm
-- [ ] Orchestrator Level-Tap-Task (AC-2)
-  - [ ] `level_rx = tx.subscribe()` vor `CaptureConfig` in `session.rs`
-  - [ ] Level-Tap-Task spawnen (filtert auf `AudioEvent::Level`)
-- [ ] `overlay/` Modul-Scaffold + `lib.rs`-Declaration (AC-3)
-- [ ] `pill-bar.html` erstellen (AC-4)
-  - [ ] Transparent background HTML/Canvas setup
-  - [ ] `pill_bar.waveform_tick` listener + Canvas-Draw
-  - [ ] `pill_bar.show` listener (reset bins)
-  - [ ] `pill_bar.fade_out` listener (CSS transition)
-- [ ] `tauri.conf.json` pill-bar Window-Eintrag mit `transparent: true` (AC-6a) — **VOR AC-5**
-- [ ] `PillBar` Struct in `overlay/pill_bar.rs` (AC-5)
-  - [ ] `PillBar::new()` — `get_webview_window()` + `set_position()` (kein WebviewWindowBuilder)
-  - [ ] `pill_bar_position()` — bottom-center via `primary_monitor()`
-  - [ ] `PillBar::start()` — EventBus subscriber task
-  - [ ] `handle_event()` — RecordingStarted / RecordingCompleted / AudioLevel arms
-  - [ ] `WaveformPayload` serde struct
-- [ ] Wire-Up in `main.rs` (AC-6b)
-  - [ ] `event_bus_rx_pill_bar` subscribe
-  - [ ] Step 12d mit fail-soft
-- [ ] Gates verifizieren (AC-7)
-  - [ ] `cargo xtask lint-events` → Exit 0
-  - [ ] `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell` → Exit 0
-  - [ ] `cargo check -p klarvo-core` + `-p klarvo-shell-orchestrator` → Exit 0
+- [x] `Event::AudioLevel` in `klarvo-core/src/event/bus.rs` + exhaustive-match-Updates (AC-1)
+  - [x] Neue Variante `AudioLevel { rms: f32, ts_ms: u64 }` einfügen
+  - [x] `bridge.rs` — `Event::AudioLevel { .. } => return,` Arm hinzufügen
+  - [x] `main.rs` Tray-Subscriber — bestehender `_ => {}` catch-all deckt AudioLevel ab (kein Edit nötig)
+- [x] Orchestrator Level-Tap-Task (AC-2)
+  - [x] `level_rx = tx.subscribe()` vor `CaptureConfig` in `session.rs`
+  - [x] Level-Tap-Task spawnen (filtert auf `AudioEvent::Level`)
+- [x] `overlay/` Modul-Scaffold + `lib.rs`-Declaration (AC-3)
+- [x] `pill-bar.html` erstellen (AC-4)
+  - [x] Transparent background HTML/Canvas setup
+  - [x] `pill_bar.waveform_tick` listener + Canvas-Draw
+  - [x] `pill_bar.show` listener (reset bins)
+  - [x] `pill_bar.fade_out` listener (CSS transition)
+- [x] `tauri.conf.json` pill-bar Window-Eintrag mit `transparent: true` (AC-6a) — **VOR AC-5**
+- [x] `PillBar` Struct in `overlay/pill_bar.rs` (AC-5)
+  - [x] `PillBar::new()` — `get_webview_window()` + `set_position()` (kein WebviewWindowBuilder)
+  - [x] `pill_bar_position()` — bottom-center via `primary_monitor()`
+  - [x] `PillBar::start()` — EventBus subscriber task
+  - [x] `handle_event()` — RecordingStarted / RecordingCompleted / AudioLevel arms
+  - [x] `WaveformPayload` serde struct
+- [x] Wire-Up in `main.rs` (AC-6b)
+  - [x] `event_bus_rx_pill_bar` subscribe
+  - [x] Step 12d mit fail-soft
+- [x] Gates verifizieren (AC-7)
+  - [x] `cargo xtask lint-events` → Exit 0 (5 events scanned)
+  - [x] `cargo xtask bindings-drift` → Exit 0 (in sync)
+  - [x] `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell` → Exit 0
+  - [x] `cargo check -p klarvo-core` + `-p klarvo-shell-orchestrator` → Exit 0
+  - [x] `cargo test -p klarvo-core` → grün
 
 ## Dev Notes
 
@@ -537,9 +539,29 @@ Mit `Event::AudioLevel` neu in Core gibt es 3 exhaustive `match event`-Stellen:
 ### Agent Model Used
 
 claude-sonnet-4-6 (create-story 2026-05-04)
+claude-opus-4-7 (dev-story 2026-05-04)
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- AC-1: `Event::AudioLevel { rms: f32, ts_ms: u64 }` nach `RecordingDelivered` in `klarvo-core/src/event/bus.rs` eingefügt; `bridge.rs` `mirror_event()` arm `Event::AudioLevel { .. } => return,` ergänzt (high-frequency, kein main-WebView-Consumer); `main.rs` Tray-Subscriber hatte bereits `_ => {}` catch-all → kein Edit nötig.
+- AC-2: `level_rx = tx.subscribe()` in `session.rs` vor `CaptureConfig` (Line 158, kein verlorenes Event-Window). Level-Tap-Task `tokio::spawn` direkt nach `RecordingStarted`-Emit, filtert auf `AudioEvent::Level`, ignoriert `Samples`, terminiert auf `Closed`.
+- AC-3: `overlay/mod.rs` + `overlay/pill_bar.rs` neu; `lib.rs` `pub mod overlay;` mit `#[cfg(target_os = "windows")]`-Gate (analog zu `audio`/`hotkey`/`focus`/`paste`).
+- AC-4: `shells/windows/src/pill-bar.html` mit transparenter Body, 320×48 Pill, Canvas (280×32) für Waveform, ESM-style script, `roundRect`-Fallback zu `fillRect` für ältere Chromium.
+- AC-5: `PillBar`-Struct fail-soft (`tracing::warn!` wenn Window-Label fehlt oder `set_position` failt); `set_position` via `LogicalPosition::new(x, y)`; bottom-center berechnet aus `primary_monitor()` mit Scale-Factor; Ring-Buffer als per-Task-lokale `VecDeque<f32>` (kein Arc).
+- AC-6a: `tauri.conf.json` zweiter Window-Eintrag `pill-bar` mit `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`, `focus: false`, `visible: false`, `resizable: false`, `url: "pill-bar.html"`.
+- AC-6b: `event_bus_rx_pill_bar = event_bus.subscribe()` ergänzt; Step 12d nach NotificationService mit fail-soft Match.
+- AC-7: Alle Gates grün — `lint-events` (5 events), `bindings-drift` (in sync), Cross-Compile Win-Shell, `cargo test -p klarvo-core` (114+ Tests + Doctests).
+
 ### File List
+
+- shells/windows/src-tauri/tauri.conf.json
+- shells/windows/src/pill-bar.html (neu)
+- klarvo-core/src/event/bus.rs
+- klarvo-shell-orchestrator/src/session.rs
+- shells/windows/src-tauri/src/lib.rs
+- shells/windows/src-tauri/src/bridge.rs
+- shells/windows/src-tauri/src/main.rs
+- shells/windows/src-tauri/src/overlay/mod.rs (neu)
+- shells/windows/src-tauri/src/overlay/pill_bar.rs (neu)

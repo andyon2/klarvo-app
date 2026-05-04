@@ -154,6 +154,9 @@ impl SessionOrchestrator {
         let press_mode = self.mode.read().await.clone();
 
         let (tx, rx) = tokio::sync::broadcast::channel::<AudioEvent>(DEFAULT_AUDIOEVENT_CAPACITY);
+        // Story 9.6 AC-2: second subscriber for Pill-Bar level tap; created
+        // before tx moves into CaptureConfig so no Level event is missed.
+        let level_rx = tx.subscribe();
         let config = CaptureConfig {
             sample_rate: 16_000,
             channels: 1,
@@ -171,6 +174,28 @@ impl SessionOrchestrator {
         };
 
         self.event_bus.emit(Event::RecordingStarted { ts_ms: self.clock.now_ms() });
+
+        // Story 9.6 AC-2: spawn level-tap task that forwards `AudioEvent::Level`
+        // values onto the EventBus as `Event::AudioLevel` for the Pill-Bar overlay.
+        // Task terminates when the audio broadcast channel closes at session end.
+        {
+            let event_bus_level = Arc::clone(&self.event_bus);
+            tokio::spawn(async move {
+                let mut rx = level_rx;
+                loop {
+                    match rx.recv().await {
+                        Ok(AudioEvent::Level { rms, ts_ms }) => {
+                            event_bus_level.emit(Event::AudioLevel { rms, ts_ms });
+                        }
+                        Ok(AudioEvent::Samples { .. }) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(skipped = n, "level-tap lagged; skipped AudioLevel events");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
 
         // Clone Arcs for the pipeline task.
         let registry = Arc::clone(&self.registry);

@@ -15,6 +15,23 @@
         "height": 600,
         "resizable": true,
         "fullscreen": false
+      },
+      {
+        "label": "pill-bar",
+        "url": "pill-bar.html",
+        "title": "Klarvo",
+        "width": 320,
+        "height": 48,
+        "minWidth": 320,
+        "minHeight": 48,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false,
+        "fullscreen": false
       }
     ],
     "security": {

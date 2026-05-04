@@ -50,6 +50,10 @@ pub enum Event {
     /// Subscribers (Pill-Bar, Story A3) use this to display the transcription for
     /// manual confirmation before pasting.
     RecordingDelivered { ts_ms: u64, text: String },
+    /// RMS audio level tap for Pill-Bar waveform (Shell-subscriber accumulates
+    /// into 64-bin ring buffer; not forwarded to main WebView by EventMirror).
+    /// `rms` is 0.0..=1.0 (same range as `AudioEvent::Level`).
+    AudioLevel { rms: f32, ts_ms: u64 },
 }
 
 impl Event {

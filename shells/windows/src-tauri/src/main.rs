@@ -448,6 +448,7 @@ fn main() {
             let event_bus_rx_tray = event_bus.subscribe();
             let event_bus_rx_mirror = event_bus.subscribe();
             let event_bus_rx_notification = event_bus.subscribe();
+            let event_bus_rx_pill_bar = event_bus.subscribe();
             debug_assert!(app.manage(Arc::clone(&event_bus)));
 
             // Step 12a: Tray icon with recording-state indicator (fail-soft per AC-F —
@@ -533,6 +534,16 @@ fn main() {
                 notification_i18n,
             )
             .start(event_bus_rx_notification);
+
+            // Step 12d: PillBar overlay (Story 9.6) — transparent always-on-top
+            // window declared in tauri.conf.json. Fail-soft: window-missing or
+            // setup errors log and continue; recording pipeline is unaffected.
+            match klarvo_windows_shell::overlay::pill_bar::PillBar::new(app.handle()) {
+                Ok(pill_bar) => pill_bar.start(event_bus_rx_pill_bar),
+                Err(e) => {
+                    tracing::error!(error = %e, "pill-bar setup failed; continuing without overlay");
+                }
+            }
 
             Ok(())
         })
