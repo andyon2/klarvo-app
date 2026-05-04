@@ -21,6 +21,7 @@ jobs:
   windows-compile:
     name: cargo check --workspace (windows-latest)
     runs-on: windows-latest
+    timeout-minutes: 90  # Extended for whisper.cpp first-build; cached on 2nd run
     steps:
       - uses: actions/checkout@v4
 
@@ -32,10 +33,17 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-          shared-key: windows-compile-g6
+          shared-key: windows-compile-g6-v2
 
-      - name: cargo check --workspace --all-targets
-        run: cargo check --workspace --all-targets
+      - name: cargo check --workspace --all-targets (excl. whisper-local C++ build)
+        # klarvo-plugin-whisper-local excluded: whisper-rs compiles whisper.cpp C++ (~15 min
+        # first build). Checked separately below with extended timeout.
+        run: cargo check --workspace --all-targets --exclude klarvo-plugin-whisper-local
+
+      - name: cargo check -p klarvo-plugin-whisper-local (whisper-rs C++ build; cached on 2nd run)
+        # First run: ~15 min C++ compile. Subsequent runs: <1 min from rust-cache.
+        run: cargo check -p klarvo-plugin-whisper-local
+        timeout-minutes: 30
 
       - name: cargo clippy klarvo-windows-shell (default features)
         # Story 5.5: disallowed_methods lint-gate (AC-E.5)

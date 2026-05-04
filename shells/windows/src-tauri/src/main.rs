@@ -45,14 +45,59 @@ fn main() {
     use klarvo_windows_shell::paste::WinSendInputPasteBackend;
     use klarvo_windows_shell::tray;
 
-    /// Construct the `PluginRegistry` with all Phase-1 plugins registered.
-    ///
-    /// Epic-2 (Story 2.1/2.2) will re-introduce a `keystore: Arc<dyn KeyStore>`
-    /// parameter for Groq-plugin registration:
-    ///   `klarvo_plugin_groq::register_stt(&mut registry, keystore.clone());`
-    fn build_plugin_registry() -> klarvo_core::registry::PluginRegistry {
+    fn build_plugin_registry(
+        settings: &klarvo_core::settings::Settings,
+        output_language: &str,
+    ) -> klarvo_core::registry::PluginRegistry {
         let mut registry = klarvo_core::registry::bootstrap();
         klarvo_plugin_verbatim::register(&mut registry);
+
+        // Whisper-local: conditional on model_path plugin-setting (ADR-0014 D-1).
+        // If not configured → no-op (manifest drives STT plugin selection).
+        // If configured but load fails → warn + skip; pipeline falls through to manifest error.
+        match settings.get_plugin_setting("whisper-local", "model_path") {
+            Ok(Some(model_path_str)) => {
+                let model_path = std::path::Path::new(&model_path_str);
+                match klarvo_plugin_whisper_local::WhisperLocal::load(
+                    model_path,
+                    Some(output_language.to_string()),
+                ) {
+                    Ok(plugin) => {
+                        registry.register_stt(
+                            klarvo_plugin_whisper_local::ID,
+                            std::sync::Arc::new(plugin),
+                        );
+                        tracing::info!(
+                            target: "klarvo.bootstrap",
+                            model_path = %model_path.display(),
+                            language = output_language,
+                            "whisper-local: plugin registered"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "klarvo.bootstrap",
+                            error = %e,
+                            "whisper-local: model load failed; plugin NOT registered"
+                        );
+                    }
+                }
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    target: "klarvo.bootstrap",
+                    "whisper-local: no model_path configured; plugin not registered"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "klarvo.bootstrap",
+                    error = %e,
+                    "whisper-local: settings read failed; plugin not registered"
+                );
+            }
+        }
+
         registry
     }
 
@@ -304,7 +349,11 @@ fn main() {
                 tracing::error!(error = %e, "manifest parse failed");
                 e
             })?);
-            let registry = Arc::new(build_plugin_registry());
+            // output_language read before settings is moved into app.manage (Step 10).
+            let output_language = settings
+                .output_language()
+                .unwrap_or_else(|_| "en".to_string());
+            let registry = Arc::new(build_plugin_registry(&settings, &output_language));
 
             // EventBus constructed here (before Step 9) so SessionOrchestrator can emit
             // recording-lifecycle events (Started/Stopped/Completed). Managed as State

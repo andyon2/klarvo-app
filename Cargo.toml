@@ -11,6 +11,7 @@ members = [
     "klarvo-plugins/klarvo-plugin-clipboard",
     "klarvo-plugins/klarvo-plugin-keystroke",
     "klarvo-plugins/klarvo-plugin-vad-silero",
+    "klarvo-plugins/klarvo-plugin-whisper-local",
     "klarvo-bridge-jni",
     "klarvo-test-fixtures",
     "shells/windows/src-tauri",

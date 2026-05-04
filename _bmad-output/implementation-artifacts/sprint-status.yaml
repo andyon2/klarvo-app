@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-04 (Story 9.6 pill-bar review → done; 11 code-review patches applied + d252c7f rebased to 30d0c40)"
+last_updated: "2026-05-04 (Epic 10 started — 10-1-whisper-local-stt-plugin ready-for-dev)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -189,7 +189,7 @@ development_status:
   # pill-bar-ux-decisions.md accepted 2026-05-03 (A/A/B/B). Alle 6 Stories dispatchable.
   # Story-Order: 9.1→9.2→9.3 (dep-chain History), 9.4+9.5 independent, 9.6 Pill-Bar last.
   # ============================================================
-  epic-9: in-progress
+  epic-9: done
   9-1-return-focus: done
   9-2-history-backend: done
   9-3-history-panel: done                 # depends on 9.2; story-file: 9-3-history-panel.md
@@ -203,7 +203,8 @@ development_status:
   # ADR-0014 Accepted (commit 0513969). Plugin-Crate-Name + Cloud-vs-Local-Differenzierung
   # dokumentiert. Dependencies: Epic 6 (Observability) + Epic-Phase-2-A (Settings-Audio-Section).
   # ============================================================
-  epic-10: backlog
+  epic-10: in-progress
+  10-1-whisper-local-stt-plugin: review  # Story-File: epic-10-whisper-local-stt-plugin.md; impl 2026-05-05
   epic-10-retrospective: optional
 
   # ============================================================
