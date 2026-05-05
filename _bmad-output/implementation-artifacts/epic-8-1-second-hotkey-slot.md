@@ -2,7 +2,7 @@
 name: Story 8.1 — Second Hotkey-Slot
 epic: 8
 story_number: "8.1"
-status: review
+status: done
 dependencies:
   - "2b-a1-toggle-autostop-wait-and-type-modes"
 adr_refs:
@@ -12,7 +12,7 @@ adr_refs:
 
 # Story 8.1: Second Hotkey-Slot
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -474,6 +474,47 @@ async fn slot2_press_discarded_when_slot1_recording() {
 - [x] AC-6: Settings Panel Slot-2-Block + Conflict-Validation + `onBlur`-Trigger + Restart-Hint
 - [x] AC-7: Unit Tests (`klarvo-core` 4 Tests + `klarvo-shell-orchestrator` Mutual-Exclusion-Test)
 - [x] `cargo check --workspace --exclude klarvo-windows-shell` → Exit 0
+
+### Review Findings
+
+Code review 2026-05-05 (3 layers: Blind Hunter, Edge Case Hunter, Acceptance Auditor against ADR-0011, ADR-0012, story-spec).
+
+**Decisions resolved 2026-05-05:**
+
+- [x] [Review][Decision] **D-2 conflict-guard not bidirectional** → resolved as Option 1 (symmetric guard); becomes Patch P12.
+- [x] [Review][Decision] **Slot-2 boot-registration soft-fail invisible to user** → resolved as Option 1 (symmetric to slot-1 `app.error` emission); becomes Patch P13.
+- [x] [Review][Decision] **Restart-hint lifecycle ambiguous** → resolved as Option 1 (one-shot toast replaces persistent inline-hint); becomes Patch P14.
+
+**Patches:**
+
+- [x] [Review][Patch] **Slot-aware SessionState — on_release(Two) and Toggle on_press(Two) wrongly affect Slot-1** [klarvo-shell-orchestrator/src/session.rs:143-165, 318-319] — `slot` param is discarded; `Recording { press_mode, .. }` matches without checking owner-slot. Scenario A (Hold/Hold): user holds Slot-1, taps Slot-2 → Slot-2 release stops Slot-1 mid-sentence. Scenario B (Toggle/Hold): user toggles Slot-1 on, taps Slot-2 → Slot-2 press's Toggle-arm stops Slot-1. **Critical** — D-1 mutual-exclusion claim is broken in 2 of 3 mode combinations. Fix: `SessionState::Recording` must track `owner_slot: HotkeySlot`; press and release check `slot == owner_slot`.
+- [x] [Review][Patch] **i18n keys orphaned — UI strings hardcoded English** [shells/windows/src/index.html:1284, 1289, 1308, 1313, 1316, 1319] — **P2 downgraded to no-op during patch.** Discovery: the index.html shell has NO `t()` loader (line 168-173 explicitly notes "frontend has no full i18n loader yet — translation lands with the toolchain rebuild" / Phase-2-B Vite+React migration). All slot-1 strings ("Global Hotkey", "Output Target", "UI Language" etc.) and even toast-error keys are rendered verbatim. The slot-2 hardcoded strings are CONSISTENT with the rest of the frontend, not a regression. **Action taken:** removed the now-unused `settings.hotkey.slot2.restart_hint` key (subsumed by P14 toast); the remaining 4 slot-2 keys stay in en.json/de.json + orphan-allowlist as Phase-2-B-loader-pending stubs (matching the existing pattern). Updated allowlist + en.json + de.json accordingly.
+- [x] [Review][Patch] **String-equality conflict-check bypassed by case/modifier-order/whitespace** [shells/windows/src-tauri/src/commands/settings.rs:879, shells/windows/src-tauri/src/main.rs:1139, shells/windows/src/index.html:294-298] — `"Ctrl+Z"` vs `"Control+Z"` vs `"ctrl+z"` vs `"Ctrl + Z"` vs `"Shift+Ctrl+Z"` vs `"Ctrl+Shift+Z"` all bypass D-2. Fix: parse both via `Shortcut::from_str` and compare normalized values.
+- [x] [Review][Patch] **Test coverage — only Hold-mode + only on_press(Two) tested** [klarvo-shell-orchestrator/tests/session_tests.rs:768-784] — `slot2_press_discarded_when_slot1_recording` uses default `Hold`/`Hold`. Missing: Slot-2-release during Slot-1-Hold-recording, Slot-2-press during Slot-1-Toggle-recording, Slot-1-press during Slot-2-active recording, cross-mode (Hold/Toggle, Toggle/Hold). **Root cause** that the two critical bugs above slipped through. Fix: add 4 tests, include explicit pipeline-drain before `is_idle()` assert.
+- [x] [Review][Patch] **ADR-0012 Amendment-numbering collision** [docs/adr/0012-orchestrator-owner.md:286, 351] — Two `## Amendment 2` sections (Story 2.B.A1 closure-hardening + Story 8.1 HotkeySlot-Enum). Fix: rename Story-8.1 amendment to "Amendment 3".
+- [x] [Review][Patch] **Restart-hint shown on saves where slot-2 didn't change** [shells/windows/src/index.html:1248-1250] — Condition `form.hotkeySlot2Combo !== "" || !slot2WasEmpty` fires whenever slot-2 is or was non-empty, including saves of unrelated fields (e.g., output-language) and pure mode-only changes (mode listener handles those live). Fix: compare loaded vs. form value, only show when combo actually changed.
+- [x] [Review][Patch] **`unwrap_or_default()` on slot1-combo silently bypasses conflict check** [shells/windows/src-tauri/src/commands/settings.rs:878] — DB-read error returns `""`; any non-empty slot-2 combo passes the conflict check trivially. Fix: propagate the read error or reject with internal-error.
+- [x] [Review][Patch] **Whitespace-only and leading/trailing-whitespace combos bypass UI conflict-check** [shells/windows/src/index.html:294-298, klarvo-core/src/settings/mod.rs:441-458] — `validate_setting_value` doesn't reject whitespace-only; UI conflict-check doesn't trim. Fix: trim in frontend conflict-check + reject whitespace-only in `validate_setting_value`.
+- [x] [Review][Patch] **Slot-2 mode-dropdown stale value persists when combo cleared via ×** [shells/windows/src/index.html:430, 410-414] — Dropdown disabled when combo empty, but `form.hotkeySlot2Mode` retains old value; on save, `set_recording_mode_slot2` writes stale mode. Fix: reset `form.hotkeySlot2Mode` to default ("hold") when × is pressed.
+- [x] [Review][Patch] **Slot-2 conflict-check asymmetric: only onBlur, no onChange** [shells/windows/src/index.html:401-402] — Slot-1 conflict re-fires per keystroke (via `patch`), slot-2 only on blur. Fix: add `onChange: checkSlot2Conflict` (or invoke from `patch("hotkeySlot2Combo")`).
+- [x] [Review][Patch] **Mutual-exclusion test races on `is_idle()` after `wait_for_delivery`** [klarvo-shell-orchestrator/tests/session_tests.rs:782-783] — **P11 dismissed during patch as false positive.** `is_idle()` reflects `SessionState`, which transitions to `Idle` synchronously inside `on_release` (Hold-arm: `mem::replace(&mut *state, SessionState::Idle)` runs before `on_release` returns; the pipeline-task continues detached but the state is already Idle). The assertion is not racy. Both Blind Hunter and Edge Case Hunter conflated state-transition with pipeline-task completion. No change required.
+- [x] [Review][Patch] **P12: Symmetric D-2 guard in `set_hotkey_slot1`** [shells/windows/src-tauri/src/commands/settings.rs:102-136] — Add inverse check: reject when `combo == settings.hotkey_slot2_combo()` with `error.settings.hotkey.slot_conflict`. ~10 lines + 1 unit test. Resolves Decision 1.
+- [x] [Review][Patch] **P13: Slot-2 boot-registration emits `app.error` on parse-fail / registration-fail** [shells/windows/src-tauri/src/hotkey.rs:271-289] — Symmetric to slot-1: emit `error.hotkey.parse_failed` / `error.hotkey.registration_failed` instead of silent `tracing::warn!`. Resolves Decision 2.
+- [x] [Review][Patch] **P14: Replace persistent restart-hint with one-shot toast** [shells/windows/src/index.html:1207, 1249, 1306] — Remove `slot2RestartHint` state + inline hint markup; emit a 4-5s success-style toast "Slot-2-Hotkey aktiv ab Neustart" after successful save. Add 1 i18n key (`settings.hotkey.slot2.restart_toast`) — replaces existing `restart_hint` key. Resolves Decision 3.
+
+**Deferred (pre-existing or low-impact, tracked in `_bmad-output/implementation-artifacts/deferred-work.md`):**
+
+- [x] [Review][Defer] Validation order in `set_hotkey_slot2` — `Shortcut::from_str` runs before `validate_setting_value`; minor cross-layer inconsistency [shells/windows/src-tauri/src/commands/settings.rs:888-894 + klarvo-core/src/settings/mod.rs:147-149]
+- [x] [Review][Defer] `mode_arc_slot2` async-spawn race window between save and Arc-write [shells/windows/src-tauri/src/main.rs:1103-1105] — matches slot-1 pattern
+- [x] [Review][Defer] `shortcut_dispatch_handler` relies on `HotkeySlot: Copy` [shells/windows/src-tauri/src/hotkey.rs:971-991] — refactor risk only
+- [x] [Review][Defer] Slot-2 `focus_capture.capture()` runs even on discarded press [klarvo-shell-orchestrator/src/session.rs:275-278] — minor Win32 syscall overhead
+- [x] [Review][Defer] `delete_raw` does not emit `settings.changed` event [klarvo-core/src/settings/mod.rs:170-176] — asymmetry vs. `set_raw`; not load-bearing today
+- [x] [Review][Defer] No integration test for slot-1/slot-2 boot-registration partial failure [shells/windows/src-tauri/src/main.rs:1126-1145] — Windows-only runtime per project convention
+- [x] [Review][Defer] `set_recording_mode_slot2` invoked on every save even when slot-2 untouched [shells/windows/src/index.html:316] — minor DB churn
+- [x] [Review][Defer] Restart-hint not cleared when user manually reverts combo [shells/windows/src/index.html:410-414] — edge case
+- [x] [Review][Defer] `on_release` `slot` parameter is dead arg (no tracing call) [klarvo-shell-orchestrator/src/session.rs:318-319] — spec acknowledges this; tracing not in scope
+- [x] [Review][Defer] No assertion that `delete_raw` actually removes the row [klarvo-core/src/settings/mod.rs:170-176] — DELETE is SQL-idempotent, test would still pass without effect
+- [x] [Review][Defer] Mode-Arc desync mid-session if user changes slot-2 mode while slot-2 recording active [klarvo-shell-orchestrator/src/session.rs:168-172] — matches slot-1 (defensible per ADR-0012 Amendment 1)
 
 ## Dev Notes
 

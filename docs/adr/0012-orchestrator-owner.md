@@ -348,12 +348,20 @@ Subscribers (Tray-State-Pull aus Story 3.8/Epic-3, Pill-Bar aus Story 2.B.A3) si
 
 Test-Coverage in `autostop_transitions_to_idle_after_vad` asserted Sequence-Order (Started < Stopped < Completed); Hard-Cap-Timeout-Pfad ist als A1-Re-F2 für Phase-2-B-Test-Hardening deferred.
 
-## Amendment 2 — HotkeySlot-Enum (Story 8.1, 2026-05-05)
+## Amendment 3 — HotkeySlot-Enum + Slot-Aware SessionState (Story 8.1, 2026-05-05)
+
+> **Numbering note (Code-Review-Closure 2026-05-05):** Originally landed as "Amendment 2" in Story-8.1 commit; renumbered to Amendment 3 to resolve collision with the existing Amendment 2 (Story 2.B.A1 Closure-Hardening, above).
 
 `HotkeySlot { One, Two }` in `klarvo-core/src/recording/mod.rs` eingeführt.
 `on_press(slot: HotkeySlot)` / `on_release(slot: HotkeySlot)` erweitern die Signatur.
 Mode-Lookup via `self.mode` (Slot::One) bzw. `self.mode_slot2` (Slot::Two).
 `shortcut_dispatch_handler` in `hotkey.rs` nimmt jetzt einen `slot: HotkeySlot` Parameter;
 slot-1 call-sites übergeben `HotkeySlot::One`, `register_hotkey_slot2` nutzt `HotkeySlot::Two`.
-Mutual-Exclusion (D-1): bestehender `SessionState`-Guard discarded Slot-2-Press
-während Slot-1-Recording transparent — kein neuer Code.
+
+**Mutual-Exclusion (D-1) — Code-Review-Closure-Korrektur (2026-05-05):**
+Die ursprüngliche Annahme im Story-Spec ("Slot-2-Press während Slot-1-Recording wird durch bestehenden SessionState-Guard transparent discarded — kein neuer Code") war **nur für die Hold/Hold-Mode-Kombination und nur für `on_press` korrekt**. Edge-Case-Hunter + Blind-Hunter Code-Review identifizierten zwei kritische Lücken:
+
+1. **`on_release(Two)` während Slot-1-Hold-Recording beendete Slot-1 fälschlich**, weil das `slot`-Argument nur dokumentarisch war (`let _ = slot;`) und der Release-Match auf `press_mode` aus `SessionState::Recording` dispatchte — gesetzt von Slot-1's Press.
+2. **Slot-2-Press während Slot-1-Toggle-Recording stoppte Slot-1**, weil der Toggle-Stop-Arm im `on_press`-Match nicht prüfte, *welcher* Slot gerade die Recording-Session besitzt.
+
+Fix: `SessionState::Recording` trägt jetzt ein zusätzliches Field `owner_slot: HotkeySlot`. `on_press` und `on_release` prüfen explizit `slot == owner_slot` bevor sie die laufende Session beeinflussen. Slot-2-Press/-Release während einer Slot-1-Session (und vice versa) wird per Slot-Mismatch-Guard discarded — modus-unabhängig (Hold, Toggle, AutoStop, WaitAndType).

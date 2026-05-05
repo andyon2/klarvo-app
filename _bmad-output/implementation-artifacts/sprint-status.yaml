@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-05-05 (Story 8.1 ready-for-dev via /bmad-create-epics-and-stories; Epic 8 in-progress)
+# last_updated: 2026-05-05 (Story 8.1 code-review-closure: 3 decisions + 14 patches applied; status done)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -182,7 +182,7 @@ development_status:
   # ============================================================
   epic-8: in-progress
   2b-a1-toggle-autostop-wait-and-type-modes: done  # Hybrid-Outlier; thematische Heimat = Epic 8
-  8-1-second-hotkey-slot: review  # Story-File: epic-8-1-second-hotkey-slot.md; created 2026-05-05; impl complete 2026-05-05
+  8-1-second-hotkey-slot: done  # Story-File: epic-8-1-second-hotkey-slot.md; created 2026-05-05; impl complete 2026-05-05; code-review-closure 2026-05-05 (3 decisions + 14 patches)
   epic-8-retrospective: optional
 
   # ============================================================

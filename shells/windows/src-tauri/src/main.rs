@@ -548,7 +548,17 @@ fn main() {
 
                 if let Some(ref combo2) = slot2_combo {
                     let slot1_combo = settings.hotkey_slot1_combo().unwrap_or_default();
-                    if combo2 == &slot1_combo {
+                    // P3 (Code-Review-Closure 2026-05-05): compare parsed Shortcuts so
+                    // case / modifier-order / whitespace differences cannot let two
+                    // colliding combos slip through and cause a silent OS-level
+                    // override on the second on_shortcut registration.
+                    use std::str::FromStr;
+                    use tauri_plugin_global_shortcut::Shortcut;
+                    let collides = match (Shortcut::from_str(combo2), Shortcut::from_str(&slot1_combo)) {
+                        (Ok(a), Ok(b)) => a == b,
+                        _ => combo2 == &slot1_combo,
+                    };
+                    if collides {
                         tracing::warn!(
                             combo = %combo2,
                             "hotkey slot-2 combo identical to slot-1; slot 2 not registered (D-2)"

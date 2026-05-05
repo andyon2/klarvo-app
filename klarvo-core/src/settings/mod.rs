@@ -444,6 +444,15 @@ fn validate_setting_value(key: &str, val: &str) -> Result<(), AppError> {
             "settings value for '{key}' must not be empty"
         )));
     }
+    // Code-Review-Closure 2026-05-05 P8: reject whitespace-only values. Without
+    // this, a user-supplied "   " for a hotkey combo (or any setting) bypasses
+    // the empty-string check and reaches downstream parsers as garbage. No
+    // legitimate setting in this app accepts whitespace-only values.
+    if val.trim().is_empty() {
+        return Err(validation_err(format!(
+            "settings value for '{key}' must not be whitespace-only"
+        )));
+    }
     if val.len() > MAX_VALUE_LEN {
         return Err(validation_err(format!(
             "settings value for '{key}' byte-length {} exceeds maximum {MAX_VALUE_LEN}",

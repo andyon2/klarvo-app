@@ -20,7 +20,6 @@
   "error.settings.hotkey.slot_conflict": "Diese Tastenkombination wird bereits von Slot 1 verwendet.",
   "settings.hotkey.slot2.label": "Zweiter Hotkey",
   "settings.hotkey.slot2.placeholder": "Nicht gesetzt — zum Konfigurieren klicken",
-  "settings.hotkey.slot2.restart_hint": "Aktiv nach Neustart",
   "settings.recording_mode.slot2.label": "Slot 2 Modus",
   "error.pipeline.toml_parse_failure": "Pipeline-Konfiguration ist ungültig. Bitte prüfen Sie pipeline-manifest.toml.",
   "error.pipeline.schema_version_unsupported": "Pipeline-Schema-Version wird von diesem Build nicht unterstützt.",

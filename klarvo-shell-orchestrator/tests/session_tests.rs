@@ -107,6 +107,70 @@ fn make_orchestrator(
     make_orchestrator_with_mode(stt, RecordingMode::Hold)
 }
 
+/// Build a `SessionOrchestrator` with separate modes for slot-1 and slot-2.
+/// Used by Story 8.1 cross-slot mutual-exclusion tests where slot-1 and slot-2
+/// can have different recording modes (Code-Review-Closure 2026-05-05 P4).
+fn make_orchestrator_with_modes(
+    stt: Arc<dyn klarvo_core::traits::SttProvider>,
+    mode_slot1: RecordingMode,
+    mode_slot2: RecordingMode,
+) -> (
+    SessionOrchestrator,
+    Arc<InMemoryOutputTarget>,
+    Arc<MockPasteBackend>,
+    Arc<MockErrorEmitter>,
+    Arc<EventBus>,
+    Arc<MockFocusCapture>,
+    Arc<MockHistoryBackend>,
+) {
+    let manifest = Arc::new(parse_manifest(test_manifest_toml()).expect("test manifest must parse"));
+
+    let mut registry = klarvo_core::registry::bootstrap();
+    registry.register_stt("mock-stt", stt);
+    registry.register_cleanup("mock-cleanup", Arc::new(MockCleanupStyle::identity()));
+    let output_target = Arc::new(InMemoryOutputTarget::new());
+    registry.register_output("test-output", Arc::clone(&output_target) as Arc<dyn klarvo_core::output::OutputTarget>);
+    let registry = Arc::new(registry);
+
+    let vad: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::vad::VadProvider>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(MockVadProvider::with_decisions(vec![
+            VadDecision::SpeechStart { ts_ms: 0 },
+            VadDecision::SpeechEnd { ts_ms: 10, duration_ms: 10 },
+        ]))));
+
+    let audio_source: Arc<tokio::sync::Mutex<Box<dyn klarvo_core::audio::AudioSource>>> =
+        Arc::new(tokio::sync::Mutex::new(Box::new(
+            MockAudioSource::with_synthetic_chunks(10, 160, 0),
+        )));
+
+    let paste_backend = Arc::new(MockPasteBackend::new());
+    let error_emitter = Arc::new(MockErrorEmitter::new());
+    let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
+    let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
+    let mode_arc = Arc::new(tokio::sync::RwLock::new(mode_slot1));
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(mode_slot2));
+    let focus_capture = Arc::new(MockFocusCapture::new());
+    let history_backend = Arc::new(MockHistoryBackend::new());
+
+    let orch = SessionOrchestrator::new(
+        registry,
+        manifest,
+        audio_source,
+        "test-output".to_string(),
+        Arc::clone(&paste_backend) as Arc<dyn klarvo_core::output::PasteBackend>,
+        Arc::clone(&error_emitter) as Arc<dyn klarvo_core::event::emitter::ErrorEmitter>,
+        clock as Arc<dyn klarvo_core::time::Clock>,
+        vad,
+        Arc::clone(&event_bus),
+        mode_arc,
+        mode_arc_slot2,
+        Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
+        Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+    );
+
+    (orch, output_target, paste_backend, error_emitter, event_bus, focus_capture, history_backend)
+}
+
 /// Poll until `InMemoryOutputTarget` has at least one delivery, or timeout.
 async fn wait_for_delivery(target: &InMemoryOutputTarget) {
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -901,7 +965,8 @@ async fn history_not_saved_on_deliver_error() {
 // ---------------------------------------------------------------------------
 
 /// D-1: A Slot-Two press while Slot-One is recording must be silently discarded.
-/// The existing SessionState::Recording guard handles both slots without extra code.
+/// Code-Review-Closure 2026-05-05 P1 made the guard slot-aware; it now relies on
+/// `SessionState::Recording.owner_slot` rather than the press-mode dispatch.
 #[tokio::test]
 async fn slot2_press_discarded_when_slot1_recording() {
     let stt = Arc::new(MockSttProvider::returning("hello from slot1"));
@@ -919,4 +984,101 @@ async fn slot2_press_discarded_when_slot1_recording() {
     orch.on_release(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
     assert!(orch.is_idle().await, "must be Idle after Slot-1 release and pipeline drain");
+}
+
+/// P4 (Code-Review-Closure 2026-05-05): a stray `on_release(Two)` while Slot-1 is
+/// recording in Hold mode must NOT terminate Slot-1. Pre-fix the `slot` parameter
+/// was discarded (`let _ = slot;`) and the Hold-arm of `on_release` ran on every
+/// release call regardless of which slot fired it — turning a Slot-2 tap into an
+/// accidental Slot-1 stop mid-recording.
+#[tokio::test]
+async fn slot2_release_does_not_terminate_slot1_hold_recording() {
+    let stt = Arc::new(MockSttProvider::returning("intact slot1 dictation"));
+    let (orch, output_target, paste_backend, _err, _event_bus, _, _) = make_orchestrator(stt);
+
+    orch.on_press(HotkeySlot::One).await;
+    assert!(!orch.is_idle().await, "must be Recording after Slot-1 press");
+
+    // Stray Slot-2 release while Slot-1 is in Hold-recording: must be silently discarded.
+    orch.on_release(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "Slot-2 release must NOT stop Slot-1 (D-1 cross-slot guard)");
+    assert!(!paste_backend.was_called(), "paste must not fire — Slot-1 still recording");
+
+    // Slot-1 release legitimately stops the session and triggers delivery.
+    orch.on_release(HotkeySlot::One).await;
+    wait_for_delivery(&output_target).await;
+    assert_eq!(output_target.last_delivered().as_deref(), Some("intact slot1 dictation"));
+}
+
+/// P4: a Slot-2 press while Slot-One is recording in Toggle mode must NOT toggle
+/// Slot-One off. Pre-fix the `if press_mode == Toggle` arm in `on_press` ran
+/// without checking which slot fired the press, so any Slot-Two tap during a
+/// Slot-One Toggle-session would stop Slot-One.
+#[tokio::test]
+async fn slot2_press_does_not_stop_slot1_toggle_recording() {
+    let stt = Arc::new(MockSttProvider::returning("toggle stays alive"));
+    let (orch, output_target, _paste, _err, _event_bus, _, _) =
+        make_orchestrator_with_mode(stt, RecordingMode::Toggle);
+
+    orch.on_press(HotkeySlot::One).await; // start Toggle-recording
+    assert!(!orch.is_idle().await, "must be Recording after Slot-1 toggle-start");
+
+    // Slot-2 press: must be discarded by cross-slot guard, NOT trigger toggle-stop.
+    orch.on_press(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "Slot-2 press must NOT stop Slot-1 Toggle-recording");
+
+    // Second Slot-1 press legitimately stops via toggle-arm and triggers delivery.
+    orch.on_press(HotkeySlot::One).await;
+    wait_for_delivery(&output_target).await;
+    assert_eq!(output_target.last_delivered().as_deref(), Some("toggle stays alive"));
+    assert!(orch.is_idle().await, "must be Idle after Slot-1 toggle-stop and pipeline drain");
+}
+
+/// P4: symmetric check — when Slot-2 owns an active recording (Slot-2 in Hold),
+/// a stray Slot-1 press must be discarded by the cross-slot guard.
+#[tokio::test]
+async fn slot1_press_discarded_when_slot2_recording_hold() {
+    let stt = Arc::new(MockSttProvider::returning("intact slot2 dictation"));
+    let (orch, output_target, paste_backend, _err, _event_bus, _, _) = make_orchestrator(stt);
+
+    orch.on_press(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "must be Recording after Slot-2 press");
+
+    // Slot-1 press while Slot-2 owns the session: discard.
+    orch.on_press(HotkeySlot::One).await;
+    assert!(!orch.is_idle().await, "Slot-1 press must NOT affect Slot-2 ownership");
+    assert!(!paste_backend.was_called(), "paste must not fire — Slot-2 still recording");
+
+    // Slot-2 release legitimately stops; Slot-1 release between them was a no-op.
+    orch.on_release(HotkeySlot::Two).await;
+    wait_for_delivery(&output_target).await;
+    assert_eq!(output_target.last_delivered().as_deref(), Some("intact slot2 dictation"));
+}
+
+/// P4: cross-mode coverage — Slot-1 Hold + Slot-2 Toggle. Each slot's session
+/// must use its own mode arc; cross-slot presses/releases must be discarded.
+#[tokio::test]
+async fn cross_mode_slot1_hold_slot2_toggle_independence() {
+    let stt = Arc::new(MockSttProvider::returning("slot1 hold session"));
+    let (orch, output_target, _paste, _err, _event_bus, _, _) =
+        make_orchestrator_with_modes(stt, RecordingMode::Hold, RecordingMode::Toggle);
+
+    // Slot-1 press starts a Hold-mode session.
+    orch.on_press(HotkeySlot::One).await;
+    assert!(!orch.is_idle().await);
+
+    // A Slot-2 press during Slot-1 Hold-recording: cross-slot guard discards.
+    // Pre-fix this would have hit the Toggle-stop arm via Slot-1's mode lookup
+    // (no slot check) — but with cross-slot guard it returns silently.
+    orch.on_press(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "Slot-2 press must not affect Slot-1 Hold-recording");
+
+    // Slot-2 release: cross-slot guard discards (Slot-1 still owns).
+    orch.on_release(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "Slot-2 release must not affect Slot-1 Hold-recording");
+
+    // Slot-1 release legitimately stops Hold-recording.
+    orch.on_release(HotkeySlot::One).await;
+    wait_for_delivery(&output_target).await;
+    assert_eq!(output_target.last_delivered().as_deref(), Some("slot1 hold session"));
 }

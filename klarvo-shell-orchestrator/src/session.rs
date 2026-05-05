@@ -38,6 +38,13 @@ enum SessionState {
         /// `Orchestrator::mode` value — so a settings-driven mode change while a
         /// session is active does not split press-time and release-time semantics.
         press_mode: RecordingMode,
+        /// Slot that owns this session. `on_press` / `on_release` from a different
+        /// slot are discarded (D-1 mutual-exclusion across slots — ADR-0012
+        /// Amendment 3 / Story 8.1 Code-Review-Closure 2026-05-05). Without this,
+        /// a Slot-Two release during a Slot-One Hold-recording would terminate
+        /// Slot-One, and a Slot-Two press during a Slot-One Toggle-recording
+        /// would toggle Slot-One off.
+        owner_slot: HotkeySlot,
     },
 }
 
@@ -126,9 +133,12 @@ impl SessionOrchestrator {
     /// - **Toggle**: first press starts; second press stops (inline stop logic).
     /// - **AutoStop**: starts recording; VAD SpeechEnd auto-stops via pipeline cleanup.
     ///
-    /// `slot` identifies which hotkey fired; mode is looked up per slot (Amendment 2).
-    /// Mutual-Exclusion (D-1): a Slot-Two press while Slot-One is recording is discarded
-    /// by the existing `SessionState::Recording` guard — no additional code needed.
+    /// `slot` identifies which hotkey fired; mode is looked up per slot (Amendment 3).
+    ///
+    /// Mutual-Exclusion (D-1, ADR-0012 Amendment 3): if a Recording session is
+    /// active and `slot != owner_slot`, the press is discarded — modus-unabhängig.
+    /// Same-slot Toggle press stops the session; same-slot Hold/AutoStop/WaitAndType
+    /// press during recording is treated as key-repeat and discarded.
     pub async fn on_press(&self, slot: HotkeySlot) {
         // Capture focus before any recording-state check or audio start (AC-2 1a).
         // Captured even on key-repeat (early-return discards it without side effect).
@@ -140,7 +150,14 @@ impl SessionOrchestrator {
         // transient Idle window between check and replace.
         {
             let mut state = self.session_state.lock().await;
-            if let SessionState::Recording { press_mode, .. } = *state {
+            if let SessionState::Recording { press_mode, owner_slot, .. } = *state {
+                if slot != owner_slot {
+                    tracing::debug!(
+                        "on_press({:?}) while recording owned by {:?}; discarding (D-1 cross-slot mutual-exclusion)",
+                        slot, owner_slot
+                    );
+                    return;
+                }
                 if press_mode == RecordingMode::Toggle {
                     let prev = std::mem::replace(&mut *state, SessionState::Idle);
                     drop(state); // release before drop(capture_handle)
@@ -157,8 +174,8 @@ impl SessionOrchestrator {
                     }
                 } else {
                     tracing::debug!(
-                        "on_press called while recording in {:?}; discarding (key-repeat-guard / D-1 mutual-exclusion)",
-                        press_mode
+                        "on_press({:?}) called while recording in {:?}; discarding (key-repeat-guard)",
+                        slot, press_mode
                     );
                 }
                 return;
@@ -405,6 +422,7 @@ impl SessionOrchestrator {
             pipeline_task,
             level_tap_task,
             press_mode,
+            owner_slot: slot,
         };
     }
 
@@ -450,11 +468,11 @@ impl SessionOrchestrator {
     /// - **Toggle**: no-op (stop triggered by second `on_press`).
     /// - **AutoStop**: no-op (stop triggered by VAD SpeechEnd in pipeline).
     ///
-    /// `slot` is accepted for semantic clarity (ADR-0012 Amendment 2); the
-    /// press_mode snapshotted in `SessionState::Recording` governs stop-semantics.
-    /// Stray release calls (state=Idle for any mode) are a silent no-op.
+    /// `slot` identifies which hotkey released. If `slot != owner_slot`, the
+    /// release is discarded (D-1 cross-slot mutual-exclusion — ADR-0012 Amendment 3).
+    /// Otherwise the press_mode snapshotted in `SessionState::Recording` governs
+    /// stop-semantics. Stray release calls (state=Idle for any mode) are a silent no-op.
     pub async fn on_release(&self, slot: HotkeySlot) {
-        let _ = slot; // suppress unused-var when no tracing
         // Single critical section: dispatch on press_mode (snapshotted at session
         // start) under one lock guard. Avoids the drop+re-acquire race where a
         // concurrent on_press could observe transient Idle and start a new
@@ -462,19 +480,27 @@ impl SessionOrchestrator {
         let mut state = self.session_state.lock().await;
 
         match &*state {
+            SessionState::Recording { owner_slot, .. } if *owner_slot != slot => {
+                tracing::debug!(
+                    "on_release({:?}) while recording owned by {:?}; discarding (D-1 cross-slot mutual-exclusion)",
+                    slot, owner_slot
+                );
+                return;
+            }
             SessionState::Recording { press_mode: RecordingMode::Toggle, .. }
             | SessionState::Recording { press_mode: RecordingMode::AutoStop, .. } => {
                 tracing::debug!(
-                    "on_release while recording in non-release-driven mode; no-op"
+                    "on_release({:?}) while recording in non-release-driven mode; no-op",
+                    slot
                 );
                 return;
             }
             SessionState::Idle => {
-                tracing::debug!("on_release called while idle; discarding (stray-release)");
+                tracing::debug!("on_release({:?}) called while idle; discarding (stray-release)", slot);
                 return;
             }
             SessionState::Recording { .. } => {
-                // Hold or WaitAndType: fall through to the cleanup below.
+                // Hold or WaitAndType + same slot: fall through to the cleanup below.
             }
         }
 

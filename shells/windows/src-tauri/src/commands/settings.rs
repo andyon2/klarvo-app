@@ -121,6 +121,35 @@ pub async fn set_hotkey_slot1(
         return Ok(());
     }
 
+    // P12 (Code-Review-Closure 2026-05-05): symmetric D-2 guard — reject when the
+    // new slot-1 combo would collide with the configured slot-2 combo. Without
+    // this, the only check was the Win32 OS-probe in `validate_hotkey_not_conflicting`,
+    // which reports `error.hotkey.conflict` ("already in use by another application")
+    // — misleading because the "other application" is Klarvo itself. Compares
+    // parsed Shortcuts so case / modifier-order / whitespace differences cannot
+    // bypass the check.
+    if let Some(slot2) = settings.hotkey_slot2_combo().map_err(|e| AppError {
+        kind: AppErrorKind::Internal,
+        message: format!("failed to read slot-2 combo for D-2 conflict check: {}", e.message),
+        user_message: Some("error.internal".into()),
+        retryable: true,
+    })? {
+        if !slot2.is_empty() {
+            let collides = match (Shortcut::from_str(&combo), Shortcut::from_str(&slot2)) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => combo == slot2,
+            };
+            if collides {
+                return Err(AppError {
+                    kind: AppErrorKind::Configuration,
+                    message: format!("hotkey slot-1 combo identical to slot-2: {combo}"),
+                    user_message: Some("error.settings.hotkey.slot_conflict".into()),
+                    retryable: false,
+                });
+            }
+        }
+    }
+
     // AC-1 + P10/P11: grammar gate + unregister-old + Win32 probe + recovery.
     #[cfg(target_os = "windows")]
     crate::hotkey::validate_hotkey_not_conflicting(&app, &old_combo, &combo).await?;
@@ -230,23 +259,40 @@ pub async fn set_hotkey_slot2(
     match combo {
         None => settings.clear_hotkey_slot2_combo()?,
         Some(ref new_combo) => {
-            // D-2 Backend-Guard: same combo as slot 1
-            let slot1 = settings.hotkey_slot1_combo().unwrap_or_default();
-            if new_combo == &slot1 {
-                return Err(AppError {
-                    kind: AppErrorKind::Configuration,
-                    message: format!("hotkey slot-2 combo identical to slot-1: {new_combo}"),
-                    user_message: Some("error.settings.hotkey.slot_conflict".into()),
-                    retryable: false,
-                });
-            }
-            // Grammar gate — same error key as existing hotkey parse-failure UX
-            Shortcut::from_str(new_combo).map_err(|_| AppError {
+            // Grammar gate first — needed both for validation and for normalized
+            // comparison against slot-1 (Code-Review-Closure 2026-05-05 P3:
+            // raw-string compare let case/modifier-order/whitespace differences
+            // bypass the D-2 guard).
+            let new_parsed = Shortcut::from_str(new_combo).map_err(|_| AppError {
                 kind: AppErrorKind::Configuration,
                 message: format!("invalid hotkey combo: {new_combo}"),
                 user_message: Some("error.hotkey.parse_failed".into()),
                 retryable: false,
             })?;
+
+            // D-2 Backend-Guard (P3 + P7): compare parsed Shortcuts. P7: surface
+            // DB-read errors instead of `unwrap_or_default()` which would silently
+            // skip the conflict-check on a transient SQLite failure.
+            let slot1 = settings.hotkey_slot1_combo().map_err(|e| AppError {
+                kind: AppErrorKind::Internal,
+                message: format!("failed to read slot-1 combo for D-2 conflict check: {}", e.message),
+                user_message: Some("error.internal".into()),
+                retryable: true,
+            })?;
+            if !slot1.is_empty() {
+                let collides = match Shortcut::from_str(&slot1) {
+                    Ok(slot1_parsed) => slot1_parsed == new_parsed,
+                    Err(_) => new_combo == &slot1, // raw fallback if slot-1 unparseable
+                };
+                if collides {
+                    return Err(AppError {
+                        kind: AppErrorKind::Configuration,
+                        message: format!("hotkey slot-2 combo identical to slot-1: {new_combo}"),
+                        user_message: Some("error.settings.hotkey.slot_conflict".into()),
+                        retryable: false,
+                    });
+                }
+            }
             settings.set_hotkey_slot2_combo(new_combo)?;
         }
     }

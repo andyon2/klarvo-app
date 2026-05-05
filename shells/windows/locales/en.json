@@ -20,7 +20,6 @@
   "error.settings.hotkey.slot_conflict": "This shortcut is already used by slot 1.",
   "settings.hotkey.slot2.label": "Second hotkey",
   "settings.hotkey.slot2.placeholder": "Not set — click to configure",
-  "settings.hotkey.slot2.restart_hint": "Active after restart",
   "settings.recording_mode.slot2.label": "Slot 2 mode",
   "error.pipeline.toml_parse_failure": "Pipeline configuration is invalid. Please check pipeline-manifest.toml.",
   "error.pipeline.schema_version_unsupported": "Pipeline schema version is not supported by this build.",

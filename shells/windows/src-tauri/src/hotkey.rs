@@ -266,13 +266,26 @@ fn shortcut_dispatch_handler<R: tauri::Runtime>(
 
 /// Register the optional second push-to-talk hotkey (Story 8.1 AC-3).
 ///
-/// Fails soft (warn + return) on parse or registration error — app remains
-/// functional with slot 1 only (D-3). No error event emitted to frontend.
+/// Fails soft on parse or registration error — app remains functional with
+/// slot 1 only (D-3). P13 (Code-Review-Closure 2026-05-05): on failure, emit
+/// the same `error.hotkey.parse_failed` / `error.hotkey.registration_failed`
+/// app-error events as slot-1, so the user sees a toast instead of a silent
+/// "configured-but-not-firing" hotkey. The original "by design" silent-mode
+/// was undocumented (no ADR, no spec rationale) and made slot-2-only failures
+/// invisible to the user.
 pub fn register_hotkey_slot2<R: tauri::Runtime>(app: &tauri::App<R>, combo: &str) {
+    let emitter: Arc<dyn ErrorEmitter> = app.state::<Arc<dyn ErrorEmitter>>().inner().clone();
+    let clock: Arc<dyn Clock> = app.state::<Arc<dyn Clock>>().inner().clone();
+
     let shortcut = match Shortcut::from_str(combo) {
         Ok(s) => s,
         Err(_) => {
             tracing::warn!(combo, "hotkey slot-2 combo parse failed; slot 2 not registered");
+            let ts_ms = clock.now_ms();
+            let emitter = Arc::clone(&emitter);
+            tauri::async_runtime::spawn(async move {
+                emitter.emit_error("error.hotkey.parse_failed", ts_ms).await;
+            });
             return;
         }
     };
@@ -282,6 +295,10 @@ pub fn register_hotkey_slot2<R: tauri::Runtime>(app: &tauri::App<R>, combo: &str
         handle.global_shortcut().on_shortcut(shortcut, shortcut_dispatch_handler(HotkeySlot::Two))
     {
         tracing::warn!(error = %e, combo, "hotkey slot-2 registration failed; slot 2 not active");
+        let ts_ms = clock.now_ms();
+        tauri::async_runtime::spawn(async move {
+            emitter.emit_error("error.hotkey.registration_failed", ts_ms).await;
+        });
     } else {
         tracing::info!(combo, "hotkey slot-2 registered");
     }

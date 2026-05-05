@@ -157,8 +157,15 @@
         const [form, setForm] = useState(FORM_DEFAULTS);
         // D-2 conflict-validation state: true when slot2 combo === slot1 combo (non-empty)
         const [slot2Conflict, setSlot2Conflict] = useState(false);
-        // Restart-hint: true after slot2 combo was saved successfully (one-shot)
-        const [slot2RestartHint, setSlot2RestartHint] = useState(false);
+        // P14 (Code-Review-Closure 2026-05-05): the previous persistent inline
+        // "Active after restart" hint was replaced by a one-shot success toast
+        // emitted from handleSave when the slot-2 combo actually changed.
+        // No state needed for the toast — it rides on the existing setToast queue.
+        // P6 (subsumed by P14): compare loaded slot-2 combo to form value at save
+        // time to decide whether the toast fires. The loaded value is captured at
+        // get_user_settings-resolution and never updated again until the next
+        // backend reload (effectively "what's persisted on disk right now").
+        const loadedSlot2ComboRef = useRef(null);
 
         // ADR-0009 Hybrid-C: subscribe to global app.error so backend-emitted
         // errors (config-parse, settings-fallback, hotkey-conflict, …) surface
@@ -217,6 +224,9 @@
                 hotkeySlot2Combo: s.hotkeySlot2Combo ?? "",
                 hotkeySlot2Mode: s.hotkeySlot2Mode ?? FORM_DEFAULTS.hotkeySlot2Mode,
               });
+              // P6/P14: snapshot the persisted slot-2 combo so handleSave can detect
+              // an actual change vs. a save where slot-2 is untouched.
+              loadedSlot2ComboRef.current = s.hotkeySlot2Combo ?? null;
             })
             .catch((e) => {
               // P11: keep the form populated with Phase-1 defaults so AC-8
@@ -290,9 +300,12 @@
           };
         }, []);
 
-        // D-2 conflict check: fires onBlur on slot-2 field
+        // D-2 conflict check: P8 (Code-Review-Closure 2026-05-05) trims so that
+        // leading/trailing whitespace ("Ctrl+Z " vs "Ctrl+Z") cannot bypass the
+        // inline UI guard. Backend has its own normalized comparison.
         const checkSlot2Conflict = useCallback((slot2Val) => {
-          const conflict = slot2Val.length > 0 && slot2Val === form.hotkeySlot1Combo;
+          const trimmed = (slot2Val || "").trim();
+          const conflict = trimmed.length > 0 && trimmed === (form.hotkeySlot1Combo || "").trim();
           setSlot2Conflict(conflict);
           return conflict;
         }, [form.hotkeySlot1Combo]);
@@ -302,7 +315,12 @@
           if (slot2Conflict) return; // guard: Save-Button should be disabled, but double-check
           setSaving(true);
           setToast(null);
-          const slot2WasEmpty = form.hotkeySlot2Combo === "";
+          // P14 + P6: emit the restart-toast only when slot-2 combo *actually*
+          // changed compared to the value loaded from the backend. Pure mode-only
+          // changes propagate live via the settings.changed listener and need no
+          // restart, so the user shouldn't see the hint for them.
+          const newSlot2 = form.hotkeySlot2Combo.length > 0 ? form.hotkeySlot2Combo : null;
+          const slot2Changed = newSlot2 !== loadedSlot2ComboRef.current;
           try {
             await invoke("set_hotkey_slot1",         { combo: form.hotkeySlot1Combo });
             await invoke("set_output_target",        { id: form.outputTargetId });
@@ -311,14 +329,19 @@
             await invoke("set_output_language",      { lang: form.outputLanguage });
             await invoke("set_recording_mode_slot1", { mode: form.hotkeySlot1Mode });
             // Slot-2: send null to clear (D-3), or the combo string to set
-            await invoke("set_hotkey_slot2",
-              { combo: form.hotkeySlot2Combo.length > 0 ? form.hotkeySlot2Combo : null });
+            await invoke("set_hotkey_slot2", { combo: newSlot2 });
             await invoke("set_recording_mode_slot2", { mode: form.hotkeySlot2Mode });
-            // Show restart-hint when slot2 combo was changed from empty to non-empty or vice versa
-            if (form.hotkeySlot2Combo !== "" || !slot2WasEmpty) {
-              setSlot2RestartHint(true);
+            // P14: one-shot toast only when the slot-2 combo changed (set, cleared,
+            // or replaced). The success-toast queue auto-dismisses, replacing the
+            // previous persistent inline-hint that lived until × Clear.
+            if (slot2Changed) {
+              setToast({ kind: "ok", msg: "Settings saved. Slot-2 hotkey active after restart." });
+              // Update the snapshot so a re-save without further changes does not
+              // re-fire the restart-toast.
+              loadedSlot2ComboRef.current = newSlot2;
+            } else {
+              setToast({ kind: "ok", msg: "Settings saved." });
             }
-            setToast({ kind: "ok", msg: "Settings saved." });
           } catch (e) {
             setToast(errorToToast(e));
           } finally {
@@ -342,9 +365,17 @@
         const patch = (key) => (e) => {
           const val = e.target.value;
           setForm((f) => ({ ...f, [key]: val }));
-          // Re-check slot2 conflict on every slot1 combo change so the error clears reactively
+          // P8/P10 (Code-Review-Closure 2026-05-05): trim and check D-2 conflict
+          // reactively on every slot-1 OR slot-2 keystroke (previously slot-2
+          // only fired on blur, asymmetric with slot-1's per-keystroke check).
           if (key === "hotkeySlot1Combo") {
-            setSlot2Conflict(form.hotkeySlot2Combo.length > 0 && val === form.hotkeySlot2Combo);
+            const trimmedSlot1 = (val || "").trim();
+            const trimmedSlot2 = (form.hotkeySlot2Combo || "").trim();
+            setSlot2Conflict(trimmedSlot2.length > 0 && trimmedSlot1 === trimmedSlot2);
+          } else if (key === "hotkeySlot2Combo") {
+            const trimmedSlot2 = (val || "").trim();
+            const trimmedSlot1 = (form.hotkeySlot1Combo || "").trim();
+            setSlot2Conflict(trimmedSlot2.length > 0 && trimmedSlot2 === trimmedSlot1);
           }
         };
 
@@ -408,9 +439,17 @@
                     style: { padding: "8px 12px", flexShrink: 0 },
                     disabled: loading || saving || form.hotkeySlot2Combo === "",
                     onClick: () => {
-                      setForm((f) => ({ ...f, hotkeySlot2Combo: "" }));
+                      // P9 (Code-Review-Closure 2026-05-05): reset mode to default
+                      // alongside clearing the combo so a stale mode value doesn't
+                      // get persisted on the next save (the dropdown becomes disabled
+                      // when combo is empty, but `form.hotkeySlot2Mode` would otherwise
+                      // retain whatever was last selected and resurface on re-bind).
+                      setForm((f) => ({
+                        ...f,
+                        hotkeySlot2Combo: "",
+                        hotkeySlot2Mode: FORM_DEFAULTS.hotkeySlot2Mode,
+                      }));
                       setSlot2Conflict(false);
-                      setSlot2RestartHint(false);
                     },
                     title: "Clear slot-2 hotkey",
                   }, "×")
@@ -418,9 +457,6 @@
                 slot2Conflict && h("span", {
                   style: { color: "#ff7369", fontSize: 12, marginTop: 4, display: "block" }
                 }, "This shortcut is already used by slot 1."),
-                slot2RestartHint && !slot2Conflict && h("span", {
-                  style: { color: "#8090a0", fontSize: 12, marginTop: 4, display: "block" }
-                }, "Active after restart"),
               ),
               h("div", { className: "field" },
                 h("label", null, "Slot 2 Mode"),
