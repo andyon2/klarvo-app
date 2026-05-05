@@ -30,6 +30,15 @@ export const commands = {
 	getRecordingModeSlot1: () => typedError<string, AppError>(__TAURI_INVOKE("get_recording_mode_slot1")),
 	setRecordingModeSlot1: (mode: string) => typedError<null, AppError>(__TAURI_INVOKE("set_recording_mode_slot1", { mode })),
 	/**
+	 *  Set or clear the slot-2 hotkey combo.
+	 * 
+	 *  `None` → clears the combo (slot 2 becomes inactive on next reboot).
+	 *  `Some(combo)` → validates grammar + Slot-1 conflict before writing to DB.
+	 *  Re-registration happens at next app start (no live re-register — see Dev Notes).
+	 */
+	setHotkeySlot2: (combo: string | null) => typedError<null, AppError>(__TAURI_INVOKE("set_hotkey_slot2", { combo })),
+	setRecordingModeSlot2: (mode: string) => typedError<null, AppError>(__TAURI_INVOKE("set_recording_mode_slot2", { mode })),
+	/**
 	 *  Reload the backend `i18n_table` for `lang` without restarting the app (Story 2.A.C3 AC-2).
 	 * 
 	 *  Called by the frontend `settings.changed` listener (AC-3) when `ui.language` changes.
@@ -144,6 +153,10 @@ export type UserSettings = {
 	outputLanguage: string,
 	// Serialised RecordingMode string (e.g. `"hold"`, `"toggle"`, `"autostop"`, `"wait_and_type"`).
 	hotkeySlot1Mode: string,
+	// Slot-2 hotkey combo; `None` when not configured (Story 8.1 D-3).
+	hotkeySlot2Combo: string | null,
+	// Slot-2 recording mode; `"hold"` when not set.
+	hotkeySlot2Mode: string,
 };
 
 /* Tauri Specta runtime */

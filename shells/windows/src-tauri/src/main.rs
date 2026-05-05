@@ -41,7 +41,7 @@ fn main() {
     use klarvo_windows_shell::commands::settings::TauriSettingsEmitter;
     use klarvo_windows_shell::config::{self, ShellConfig};
     use klarvo_windows_shell::focus::WinFocusCapture;
-    use klarvo_windows_shell::hotkey::register_hotkey;
+    use klarvo_windows_shell::hotkey::{register_hotkey, register_hotkey_slot2};
     use klarvo_windows_shell::keystore::{make_keystore, verify_keystore_ready};
     use klarvo_windows_shell::paste::WinSendInputPasteBackend;
     use klarvo_windows_shell::tray;
@@ -258,12 +258,16 @@ fn main() {
                 }
             }
 
-            // Step 2e: Recording-Mode Arc (fail-soft — defaults to Hold on DB-error).
+            // Step 2e: Recording-Mode Arcs (fail-soft — defaults to Hold on DB-error).
             // Shared between SessionOrchestrator (reads mode per-press) and
-            // set_recording_mode_slot1 Command (writes on user change). Managed as
-            // tauri::State so the Command can update it without direct orchestrator ref.
+            // set_recording_mode_slot* Commands (write on user change).
             let recording_mode_arc: Arc<tokio::sync::RwLock<RecordingMode>> = {
                 let mode = settings.recording_mode_slot1().unwrap_or(RecordingMode::Hold);
+                Arc::new(tokio::sync::RwLock::new(mode))
+            };
+            // Slot-2: optional second hotkey mode (Story 8.1). Defaults to Hold when not set.
+            let recording_mode_arc_slot2: Arc<tokio::sync::RwLock<RecordingMode>> = {
+                let mode = settings.recording_mode_slot2().unwrap_or(RecordingMode::Hold);
                 Arc::new(tokio::sync::RwLock::new(mode))
             };
 
@@ -380,6 +384,7 @@ fn main() {
                 vad,
                 Arc::clone(&event_bus),
                 Arc::clone(&recording_mode_arc),
+                Arc::clone(&recording_mode_arc_slot2),
                 focus_capture,
                 Arc::clone(&history_store),
             );
@@ -457,6 +462,35 @@ fn main() {
                 });
             }
 
+            // Step 10b-slot2: settings.changed listener — keeps recording_mode_arc_slot2
+            // in sync when set_recording_mode_slot2 Command writes a new mode (Story 8.1).
+            {
+                use std::str::FromStr;
+                let mode_arc_slot2_listener = Arc::clone(&recording_mode_arc_slot2);
+                app.listen("settings.changed", move |event| {
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                        if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot2.mode") {
+                            if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
+                                match RecordingMode::from_str(new_value) {
+                                    Ok(mode) => {
+                                        let arc = Arc::clone(&mode_arc_slot2_listener);
+                                        tauri::async_runtime::spawn(async move {
+                                            *arc.write().await = mode;
+                                        });
+                                    }
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            value = new_value,
+                                            "settings.changed hotkey.slot2.mode value not parseable as RecordingMode"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             // Step 10c: settings.changed listener — rebuilds the tray menu when the
             // user switches `ui.language` via the Settings-Panel (Story 2.A.A8-Sub
             // AC-2 + AC-3). Reactive only: A8-Sub never writes settings itself;
@@ -502,6 +536,30 @@ fn main() {
             // Step 11: Hotkey registration (fail-soft — parse or registration failure emits
             // Toast via TauriErrorEmitter internally; app starts without hotkey rather than exit)
             register_hotkey(app, &config);
+
+            // Step 11b: Slot-2 Hotkey (conditional, D-3 — Story 8.1).
+            // Only registered when configured and not identical to slot-1 (backend guard D-2).
+            // Re-registration after settings-write is deferred to next boot (Dev Notes §kein-live-re-register).
+            {
+                let slot2_combo = settings.hotkey_slot2_combo().unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "hotkey_slot2_combo read failed; slot 2 not registered");
+                    None
+                });
+
+                if let Some(ref combo2) = slot2_combo {
+                    let slot1_combo = settings.hotkey_slot1_combo().unwrap_or_default();
+                    if combo2 == &slot1_combo {
+                        tracing::warn!(
+                            combo = %combo2,
+                            "hotkey slot-2 combo identical to slot-1; slot 2 not registered (D-2)"
+                        );
+                    } else {
+                        register_hotkey_slot2(app, combo2);
+                    }
+                } else {
+                    tracing::debug!("hotkey slot-2 not configured; skipping registration (D-3)");
+                }
+            }
 
             // Step 12: Tray-Icon + EventMirror spawn
             //

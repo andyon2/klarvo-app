@@ -3,6 +3,13 @@ use std::str::FromStr;
 
 use crate::error::{AppError, AppErrorKind};
 
+/// Identifies which hotkey slot fired a press or release event (Story 8.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeySlot {
+    One,
+    Two,
+}
+
 /// Recording mode for the push-to-talk hotkey slot.
 ///
 /// Controls the start/stop semantics of a recording session (ADR-0012 Amendment 1).

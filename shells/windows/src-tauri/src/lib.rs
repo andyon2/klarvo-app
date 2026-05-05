@@ -34,8 +34,9 @@ use commands::history::{clear_history, delete_history_entry, get_history};
 use commands::telemetry::export_debug_zip_cmd;
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
-    reload_locale, set_dictionary_language, set_hotkey_slot1, set_output_language, set_output_target,
-    set_plugin_setting, set_recording_mode_slot1, set_ui_language,
+    reload_locale, set_dictionary_language, set_hotkey_slot1, set_hotkey_slot2,
+    set_output_language, set_output_target, set_plugin_setting,
+    set_recording_mode_slot1, set_recording_mode_slot2, set_ui_language,
 };
 
 #[tauri::command]
@@ -68,6 +69,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             // Story 2.B.A1: Recording-Mode commands (AC-8)
             get_recording_mode_slot1,
             set_recording_mode_slot1,
+            // Story 8.1: Second hotkey-slot commands
+            set_hotkey_slot2,
+            set_recording_mode_slot2,
             // Story 2.A.C3: Live-Locale-Switch
             reload_locale,
             // Story 9.2: History commands

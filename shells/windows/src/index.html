@@ -123,6 +123,8 @@
         dictionaryLanguage: "en",
         outputLanguage: "en",
         hotkeySlot1Mode: "hold",
+        hotkeySlot2Combo: "",   // null/undefined from backend → empty string
+        hotkeySlot2Mode: "hold",
       };
 
       const RECORDING_MODE_OPTIONS = [
@@ -153,6 +155,10 @@
         const [exporting, setExporting] = useState(false);
         const [toast, setToast] = useState(null); // { kind: "ok" | "err", msg: string }
         const [form, setForm] = useState(FORM_DEFAULTS);
+        // D-2 conflict-validation state: true when slot2 combo === slot1 combo (non-empty)
+        const [slot2Conflict, setSlot2Conflict] = useState(false);
+        // Restart-hint: true after slot2 combo was saved successfully (one-shot)
+        const [slot2RestartHint, setSlot2RestartHint] = useState(false);
 
         // ADR-0009 Hybrid-C: subscribe to global app.error so backend-emitted
         // errors (config-parse, settings-fallback, hotkey-conflict, …) surface
@@ -208,6 +214,8 @@
                 dictionaryLanguage: s.dictionaryLanguage ?? FORM_DEFAULTS.dictionaryLanguage,
                 outputLanguage: s.outputLanguage ?? FORM_DEFAULTS.outputLanguage,
                 hotkeySlot1Mode: s.hotkeySlot1Mode ?? FORM_DEFAULTS.hotkeySlot1Mode,
+                hotkeySlot2Combo: s.hotkeySlot2Combo ?? "",
+                hotkeySlot2Mode: s.hotkeySlot2Mode ?? FORM_DEFAULTS.hotkeySlot2Mode,
               });
             })
             .catch((e) => {
@@ -282,10 +290,19 @@
           };
         }, []);
 
+        // D-2 conflict check: fires onBlur on slot-2 field
+        const checkSlot2Conflict = useCallback((slot2Val) => {
+          const conflict = slot2Val.length > 0 && slot2Val === form.hotkeySlot1Combo;
+          setSlot2Conflict(conflict);
+          return conflict;
+        }, [form.hotkeySlot1Combo]);
+
         // AC-9: save — invoke typed Core-Set commands, show app.error toast on failure
         const handleSave = useCallback(async () => {
+          if (slot2Conflict) return; // guard: Save-Button should be disabled, but double-check
           setSaving(true);
           setToast(null);
+          const slot2WasEmpty = form.hotkeySlot2Combo === "";
           try {
             await invoke("set_hotkey_slot1",         { combo: form.hotkeySlot1Combo });
             await invoke("set_output_target",        { id: form.outputTargetId });
@@ -293,13 +310,21 @@
             await invoke("set_dictionary_language",  { lang: form.dictionaryLanguage });
             await invoke("set_output_language",      { lang: form.outputLanguage });
             await invoke("set_recording_mode_slot1", { mode: form.hotkeySlot1Mode });
+            // Slot-2: send null to clear (D-3), or the combo string to set
+            await invoke("set_hotkey_slot2",
+              { combo: form.hotkeySlot2Combo.length > 0 ? form.hotkeySlot2Combo : null });
+            await invoke("set_recording_mode_slot2", { mode: form.hotkeySlot2Mode });
+            // Show restart-hint when slot2 combo was changed from empty to non-empty or vice versa
+            if (form.hotkeySlot2Combo !== "" || !slot2WasEmpty) {
+              setSlot2RestartHint(true);
+            }
             setToast({ kind: "ok", msg: "Settings saved." });
           } catch (e) {
             setToast(errorToToast(e));
           } finally {
             setSaving(false);
           }
-        }, [form]);
+        }, [form, slot2Conflict]);
 
         const handleExport = useCallback(async () => {
           setExporting(true);
@@ -314,7 +339,14 @@
           }
         }, []);
 
-        const patch = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+        const patch = (key) => (e) => {
+          const val = e.target.value;
+          setForm((f) => ({ ...f, [key]: val }));
+          // Re-check slot2 conflict on every slot1 combo change so the error clears reactively
+          if (key === "hotkeySlot1Combo") {
+            setSlot2Conflict(form.hotkeySlot2Combo.length > 0 && val === form.hotkeySlot2Combo);
+          }
+        };
 
         const textField = (label, key) =>
           h("div", { className: "field" },
@@ -354,8 +386,55 @@
               selectField("Output Language", "outputLanguage", langOptionsFor(form.outputLanguage)),
               selectField("Recording Mode", "hotkeySlot1Mode", RECORDING_MODE_OPTIONS),
 
+              // Slot-2 block (Story 8.1)
+              h("div", { className: "field" },
+                h("label", null, "Second Hotkey"),
+                h("div", { style: { display: "flex", gap: 8 } },
+                  h("input", {
+                    type: "text",
+                    value: form.hotkeySlot2Combo,
+                    placeholder: "Not set — click to configure",
+                    "aria-invalid": slot2Conflict ? "true" : undefined,
+                    style: slot2Conflict
+                      ? { flex: 1, borderColor: "#ff7369" }
+                      : { flex: 1 },
+                    onChange: patch("hotkeySlot2Combo"),
+                    onBlur: (e) => checkSlot2Conflict(e.target.value),
+                    disabled: loading || saving,
+                  }),
+                  h("button", {
+                    type: "button",
+                    className: "btn-secondary",
+                    style: { padding: "8px 12px", flexShrink: 0 },
+                    disabled: loading || saving || form.hotkeySlot2Combo === "",
+                    onClick: () => {
+                      setForm((f) => ({ ...f, hotkeySlot2Combo: "" }));
+                      setSlot2Conflict(false);
+                      setSlot2RestartHint(false);
+                    },
+                    title: "Clear slot-2 hotkey",
+                  }, "×")
+                ),
+                slot2Conflict && h("span", {
+                  style: { color: "#ff7369", fontSize: 12, marginTop: 4, display: "block" }
+                }, "This shortcut is already used by slot 1."),
+                slot2RestartHint && !slot2Conflict && h("span", {
+                  style: { color: "#8090a0", fontSize: 12, marginTop: 4, display: "block" }
+                }, "Active after restart"),
+              ),
+              h("div", { className: "field" },
+                h("label", null, "Slot 2 Mode"),
+                h("select", {
+                  value: form.hotkeySlot2Mode,
+                  onChange: patch("hotkeySlot2Mode"),
+                  disabled: loading || saving || form.hotkeySlot2Combo === "",
+                },
+                  RECORDING_MODE_OPTIONS.map((o) => h("option", { key: o.value, value: o.value }, o.label))
+                ),
+              ),
+
               h("div", { className: "actions" },
-                h("button", { type: "submit", className: "btn-primary", disabled: saving || exporting },
+                h("button", { type: "submit", className: "btn-primary", disabled: saving || exporting || slot2Conflict },
                   saving
                     ? h("span", { style: { display: "flex", alignItems: "center", gap: 6 } },
                         h("div", { className: "spinner", style: { width: 14, height: 14 } }),

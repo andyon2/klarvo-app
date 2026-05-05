@@ -6,7 +6,7 @@ use std::time::Duration;
 use klarvo_core::audio::vad::VadDecision;
 use klarvo_core::event::{Event, EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
-use klarvo_core::recording::RecordingMode;
+use klarvo_core::recording::{HotkeySlot, RecordingMode};
 use klarvo_test_fixtures::{
     FakeClock, InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockFocusCapture,
     MockHistoryBackend, MockPasteBackend, MockSttProvider, MockVadProvider, MockCleanupStyle, QueuedMockSttProvider,
@@ -72,6 +72,7 @@ fn make_orchestrator_with_mode(
     let focus_capture = Arc::new(MockFocusCapture::new());
     let history_backend = Arc::new(MockHistoryBackend::new());
 
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let orch = SessionOrchestrator::new(
         registry,
         manifest,
@@ -83,6 +84,7 @@ fn make_orchestrator_with_mode(
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
     );
@@ -193,9 +195,9 @@ async fn test1_happy_path_press_release_delivers_and_pastes() {
     let (orch, output_target, paste_backend, error_emitter, event_bus, _, _) = make_orchestrator(stt);
     let mut rx = event_bus.subscribe();
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert_eq!(output_target.last_delivered().as_deref(), Some("hello"));
     assert!(paste_backend.was_called(), "paste must be called after delivery");
@@ -245,12 +247,12 @@ async fn test2_idempotent_press_key_repeat_guard() {
     let stt = Arc::new(MockSttProvider::returning("hello"));
     let (orch, output_target, _paste_backend, error_emitter, _event_bus, _, _) = make_orchestrator(stt);
 
-    orch.on_press().await;
-    orch.on_press().await; // second press — must be discarded by key-repeat guard
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_press(HotkeySlot::One).await; // second press — must be discarded by key-repeat guard
 
     // Wait for the single pipeline to deliver, then clean up.
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     // Only one delivery, no error emitted.
     assert_eq!(output_target.all_delivered().len(), 1, "exactly one delivery expected");
@@ -263,7 +265,7 @@ async fn test3_stray_release_is_noop() {
     let (orch, _output, paste_backend, error_emitter, _event_bus, _, _) = make_orchestrator(stt);
 
     // Release without prior press — must be a silent no-op.
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert!(!paste_backend.was_called(), "stray release must not paste");
     assert!(error_emitter.recorded().is_empty(), "stray release must not emit errors");
@@ -275,9 +277,9 @@ async fn test4_pipeline_failure_emits_error_state_recovers() {
     let stt = Arc::new(QueuedMockSttProvider::with_transcriptions(vec![]));
     let (orch, _, paste_backend, error_emitter, _event_bus, _, _) = make_orchestrator(stt);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_error(&error_emitter).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert!(!error_emitter.recorded().is_empty(), "pipeline failure must emit an error");
     assert!(!paste_backend.was_called(), "paste must not happen after STT failure");
@@ -293,7 +295,7 @@ async fn toggle_press_starts_recording() {
     let (orch, _output, _paste, _err, event_bus, _, _) = make_orchestrator_with_mode(stt, RecordingMode::Toggle);
     let mut rx = event_bus.subscribe();
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
 
     // RecordingStarted must be emitted synchronously
     let evt = tokio::time::timeout(Duration::from_secs(1), async {
@@ -310,7 +312,7 @@ async fn toggle_press_starts_recording() {
     assert!(matches!(evt, Event::RecordingStarted { .. }), "first event must be RecordingStarted");
 
     // Cleanup
-    orch.on_press().await; // second press to stop
+    orch.on_press(HotkeySlot::One).await; // second press to stop
 }
 
 #[tokio::test]
@@ -319,8 +321,8 @@ async fn toggle_second_press_stops_recording() {
     let (orch, output_target, paste_backend, _err, _event_bus, _, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
-    orch.on_press().await; // start
-    orch.on_press().await; // stop → channel closes → pipeline runs
+    orch.on_press(HotkeySlot::One).await; // start
+    orch.on_press(HotkeySlot::One).await; // stop → channel closes → pipeline runs
 
     wait_for_delivery(&output_target).await;
     assert_eq!(output_target.last_delivered().as_deref(), Some("toggle delivery"));
@@ -334,17 +336,17 @@ async fn toggle_release_is_noop() {
     let (orch, _output, paste_backend, error_emitter, _event_bus, _, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
-    orch.on_press().await; // start recording
+    orch.on_press(HotkeySlot::One).await; // start recording
 
     // on_release in Toggle mode while recording — must be a no-op
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     // No paste yet, no errors from stray release
     assert!(!paste_backend.was_called());
     assert!(error_emitter.recorded().is_empty());
 
     // Cleanup: second press to stop
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +360,7 @@ async fn autostop_transitions_to_idle_after_vad() {
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
     let mut rx = event_bus.subscribe();
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     // VAD fires SpeechEnd automatically via MockVadProvider → pipeline runs → cleanup → Idle.
     wait_for_delivery(&output_target).await;
     let events = collect_events_until_completed(&mut rx).await;
@@ -400,10 +402,10 @@ async fn autostop_release_is_noop() {
     let (orch, _output, paste_backend, error_emitter, _event_bus, _, _) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
 
     // on_release in AutoStop mode while recording — must be a no-op
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert!(!paste_backend.was_called());
     assert!(error_emitter.recorded().is_empty());
@@ -423,9 +425,9 @@ async fn wait_and_type_skips_paste_emits_delivered() {
         make_orchestrator_with_mode(stt, RecordingMode::WaitAndType);
     let mut rx = event_bus.subscribe();
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     // Text must be in clipboard (OutputTarget delivery)
     assert_eq!(output_target.last_delivered().as_deref(), Some("wait text"));
@@ -497,7 +499,7 @@ async fn shutdown_while_recording_aborts_and_no_stopped_event() {
     let (orch, _output, _paste, _err, event_bus, _, _) = make_orchestrator(stt);
     let mut rx = event_bus.subscribe();
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     // Verify we are recording.
     assert!(!orch.is_idle().await);
 
@@ -532,7 +534,7 @@ async fn shutdown_is_idempotent() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
     let (orch, _output, _paste, _err, _event_bus, _, _) = make_orchestrator(stt);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     shutdown_with_timeout(&orch).await;
     shutdown_with_timeout(&orch).await; // second call — must not panic, must stay Idle
 
@@ -547,9 +549,9 @@ async fn on_release_semantics_unchanged_after_shutdown_impl() {
     let (orch, output_target, paste_backend, error_emitter, _event_bus, _, _) = make_orchestrator(stt);
 
     // Phase 1: Normal Hold press/release cycle must still work.
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert_eq!(output_target.last_delivered().as_deref(), Some("hello"));
     assert!(paste_backend.was_called(), "paste must still be called in normal Hold cycle");
@@ -558,7 +560,7 @@ async fn on_release_semantics_unchanged_after_shutdown_impl() {
     // Phase 2: After shutdown, a stray on_release must remain a safe no-op.
     shutdown_with_timeout(&orch).await;
     assert!(orch.is_idle().await);
-    orch.on_release().await; // must not panic; orchestrator is Idle
+    orch.on_release(HotkeySlot::One).await; // must not panic; orchestrator is Idle
     assert!(orch.is_idle().await, "stray on_release post-shutdown must not change state");
 }
 
@@ -570,8 +572,8 @@ async fn shutdown_after_on_release_is_safe_noop() {
     let stt = Arc::new(MockSttProvider::returning("ignored"));
     let (orch, _output, _paste, _err, _event_bus, _, _) = make_orchestrator(stt);
 
-    orch.on_press().await;
-    orch.on_release().await; // detaches pipeline_task — state transitions to Idle
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_release(HotkeySlot::One).await; // detaches pipeline_task — state transitions to Idle
     assert!(orch.is_idle().await);
 
     shutdown_with_timeout(&orch).await; // must be a clean no-op
@@ -588,7 +590,7 @@ async fn shutdown_while_recording_autostop_does_not_deadlock() {
     let (orch, _output, _paste, _err, _event_bus, _, _) =
         make_orchestrator_with_mode(stt, RecordingMode::AutoStop);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     shutdown_with_timeout(&orch).await;
     assert!(orch.is_idle().await);
 }
@@ -601,7 +603,7 @@ async fn shutdown_while_recording_toggle_does_not_deadlock() {
     let (orch, _output, _paste, _err, _event_bus, _, _) =
         make_orchestrator_with_mode(stt, RecordingMode::Toggle);
 
-    orch.on_press().await; // Toggle: enters Recording
+    orch.on_press(HotkeySlot::One).await; // Toggle: enters Recording
     shutdown_with_timeout(&orch).await;
     assert!(orch.is_idle().await);
 }
@@ -618,9 +620,9 @@ async fn focus_restored_after_successful_delivery() {
     let (orch, output_target, _paste, _err, _event_bus, focus_capture, _) =
         make_orchestrator(stt);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     wait_for_restore(&focus_capture, 1).await;
 
@@ -677,6 +679,7 @@ async fn focus_restored_after_deliver_error() {
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
     let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let focus_capture = Arc::new(MockFocusCapture::new());
 
     let orch = SessionOrchestrator::new(
@@ -690,13 +693,14 @@ async fn focus_restored_after_deliver_error() {
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
     );
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_error(&error_emitter).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     wait_for_restore(&focus_capture, 1).await;
 
@@ -760,6 +764,7 @@ async fn focus_restored_after_paste_error() {
     let clock: Arc<FakeClock> = Arc::new(FakeClock::default());
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
     let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let focus_capture = Arc::new(MockFocusCapture::new());
 
     let orch = SessionOrchestrator::new(
@@ -773,14 +778,15 @@ async fn focus_restored_after_paste_error() {
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
     );
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await; // deliver succeeded
     wait_for_error(&error_emitter).await;    // paste failed → error emitted
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     wait_for_restore(&focus_capture, 1).await;
 
@@ -802,9 +808,9 @@ async fn history_saved_after_successful_delivery() {
     let (orch, output_target, _paste, _err, _event_bus, _, history_backend) =
         make_orchestrator(stt);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     wait_for_history(&history_backend, 1).await;
 
@@ -861,6 +867,7 @@ async fn history_not_saved_on_deliver_error() {
     let focus_capture = Arc::new(MockFocusCapture::new());
     let history_backend = Arc::new(MockHistoryBackend::new());
 
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let orch = SessionOrchestrator::new(
         registry,
         manifest,
@@ -872,13 +879,14 @@ async fn history_not_saved_on_deliver_error() {
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
     );
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_error(&error_emitter).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     // Drain the pipeline-task deterministically: shutdown() aborts the in-flight task
     // and waits for it to settle. After this returns, no further history.append can
@@ -886,4 +894,29 @@ async fn history_not_saved_on_deliver_error() {
     shutdown_with_timeout(&orch).await;
 
     assert_eq!(history_backend.entry_count(), 0, "history must NOT be written when delivery fails");
+}
+
+// ---------------------------------------------------------------------------
+// AC-7 (Story 8.1): Mutual-Exclusion — Slot-2 press discarded during Slot-1 recording
+// ---------------------------------------------------------------------------
+
+/// D-1: A Slot-Two press while Slot-One is recording must be silently discarded.
+/// The existing SessionState::Recording guard handles both slots without extra code.
+#[tokio::test]
+async fn slot2_press_discarded_when_slot1_recording() {
+    let stt = Arc::new(MockSttProvider::returning("hello from slot1"));
+    let (orch, output_target, _paste, _err, _event_bus, _, _history) = make_orchestrator(stt);
+
+    // Start recording via Slot 1
+    orch.on_press(HotkeySlot::One).await;
+    assert!(!orch.is_idle().await, "must be Recording after Slot-1 press");
+
+    // Slot-2 press while recording: must be silently discarded — state stays Recording
+    orch.on_press(HotkeySlot::Two).await;
+    assert!(!orch.is_idle().await, "must remain Recording after Slot-2 press (D-1 mutual-exclusion)");
+
+    // Clean up: release Slot 1 and drain the pipeline
+    orch.on_release(HotkeySlot::One).await;
+    wait_for_delivery(&output_target).await;
+    assert!(orch.is_idle().await, "must be Idle after Slot-1 release and pipeline drain");
 }

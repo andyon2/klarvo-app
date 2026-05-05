@@ -9,7 +9,7 @@ use klarvo_core::history::{HistoryBackend, NewHistoryEntry};
 use klarvo_core::manifest::PipelineManifest;
 use klarvo_core::output::{FocusCapture, PasteBackend};
 use klarvo_core::pipeline::{run_capture_session, StageData};
-use klarvo_core::recording::RecordingMode;
+use klarvo_core::recording::{HotkeySlot, RecordingMode};
 use klarvo_core::registry::PluginRegistry;
 use klarvo_core::time::Clock;
 
@@ -70,8 +70,10 @@ pub struct SessionOrchestrator {
     vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
     event_bus: Arc<EventBus>,
     session_state: Arc<tokio::sync::Mutex<SessionState>>,
-    /// Active recording mode; updated by the shell on settings change (ADR-0012 Amendment 1).
+    /// Active recording mode for slot 1; updated by the shell on settings change (ADR-0012 Amendment 1).
     mode: Arc<tokio::sync::RwLock<RecordingMode>>,
+    /// Active recording mode for slot 2 (Story 8.1 / ADR-0012 Amendment 2).
+    mode_slot2: Arc<tokio::sync::RwLock<RecordingMode>>,
     focus_capture: Arc<dyn FocusCapture>,
     history_backend: Arc<dyn HistoryBackend>,
 }
@@ -89,6 +91,7 @@ impl SessionOrchestrator {
         vad: Arc<tokio::sync::Mutex<Box<dyn VadProvider>>>,
         event_bus: Arc<EventBus>,
         mode: Arc<tokio::sync::RwLock<RecordingMode>>,
+        mode_slot2: Arc<tokio::sync::RwLock<RecordingMode>>,
         focus_capture: Arc<dyn FocusCapture>,
         history_backend: Arc<dyn HistoryBackend>,
     ) -> Self {
@@ -104,6 +107,7 @@ impl SessionOrchestrator {
             event_bus,
             session_state: Arc::new(tokio::sync::Mutex::new(SessionState::Idle)),
             mode,
+            mode_slot2,
             focus_capture,
             history_backend,
         }
@@ -120,13 +124,12 @@ impl SessionOrchestrator {
     /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):
     /// - **Hold/WaitAndType**: starts recording; `on_release` triggers stop.
     /// - **Toggle**: first press starts; second press stops (inline stop logic).
-    ///   Key-repeat OS events (state=Recording, second press discarded for non-Toggle)
-    ///   are routed to the Toggle-stop branch instead.
     /// - **AutoStop**: starts recording; VAD SpeechEnd auto-stops via pipeline cleanup.
     ///
-    /// Errors from `AudioSource::start` are emitted via `ErrorEmitter`; state remains
-    /// `Idle` on failure. i18n key emitted: `error.audio.start_failed`.
-    pub async fn on_press(&self) {
+    /// `slot` identifies which hotkey fired; mode is looked up per slot (Amendment 2).
+    /// Mutual-Exclusion (D-1): a Slot-Two press while Slot-One is recording is discarded
+    /// by the existing `SessionState::Recording` guard — no additional code needed.
+    pub async fn on_press(&self, slot: HotkeySlot) {
         // Capture focus before any recording-state check or audio start (AC-2 1a).
         // Captured even on key-repeat (early-return discards it without side effect).
         let captured_focus = self.focus_capture.capture();
@@ -154,7 +157,7 @@ impl SessionOrchestrator {
                     }
                 } else {
                     tracing::debug!(
-                        "on_press called while recording in {:?}; discarding (key-repeat-guard)",
+                        "on_press called while recording in {:?}; discarding (key-repeat-guard / D-1 mutual-exclusion)",
                         press_mode
                     );
                 }
@@ -162,8 +165,11 @@ impl SessionOrchestrator {
             }
         } // lock released
 
-        // Idle: snapshot current mode at press-time and start a new session.
-        let press_mode = self.mode.read().await.clone();
+        // Idle: snapshot mode for the active slot at press-time (ADR-0012 Amendment 2).
+        let press_mode = match slot {
+            HotkeySlot::One => self.mode.read().await.clone(),
+            HotkeySlot::Two => self.mode_slot2.read().await.clone(),
+        };
 
         let (tx, rx) = tokio::sync::broadcast::channel::<AudioEvent>(DEFAULT_AUDIOEVENT_CAPACITY);
         // Story 9.6 AC-2: second subscriber for Pill-Bar level tap; created
@@ -440,13 +446,15 @@ impl SessionOrchestrator {
     /// End the push-to-talk recording session (Step 4).
     ///
     /// Behaviour varies by `RecordingMode` (ADR-0012 Amendment 1):
-    /// - **Hold/WaitAndType**: drops `CaptureHandle`, closing the broadcast channel and
-    ///   signalling the audio task to stop. Non-blocking.
-    /// - **Toggle**: no-op when Recording (stop triggered by second `on_press`).
-    /// - **AutoStop**: no-op when Recording (stop triggered by VAD SpeechEnd in pipeline).
+    /// - **Hold/WaitAndType**: drops `CaptureHandle`, closing the broadcast channel.
+    /// - **Toggle**: no-op (stop triggered by second `on_press`).
+    /// - **AutoStop**: no-op (stop triggered by VAD SpeechEnd in pipeline).
     ///
+    /// `slot` is accepted for semantic clarity (ADR-0012 Amendment 2); the
+    /// press_mode snapshotted in `SessionState::Recording` governs stop-semantics.
     /// Stray release calls (state=Idle for any mode) are a silent no-op.
-    pub async fn on_release(&self) {
+    pub async fn on_release(&self, slot: HotkeySlot) {
+        let _ = slot; // suppress unused-var when no tracing
         // Single critical section: dispatch on press_mode (snapshotted at session
         // start) under one lock guard. Avoids the drop+re-acquire race where a
         // concurrent on_press could observe transient Idle and start a new

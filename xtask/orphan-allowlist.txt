@@ -67,3 +67,17 @@ tray.language.de
 # NotificationService::t("notification.dictation.delivered") — G3-D-Visitor erfasst
 # nur emit_error / unwrap_or / lookup; self.t()-Methode liegt außerhalb des Scans.
 notification.dictation.delivered
+
+# ── Story 8.1: Second Hotkey-Slot ─────────────────────────────────────────────
+
+# settings.hotkey.slot2.label: shells/windows/src/index.html SettingsPanel Slot-2-Label. Story 8.1.
+settings.hotkey.slot2.label
+
+# settings.hotkey.slot2.placeholder: shells/windows/src/index.html SettingsPanel Slot-2-Placeholder. Story 8.1.
+settings.hotkey.slot2.placeholder
+
+# settings.hotkey.slot2.restart_hint: shells/windows/src/index.html SettingsPanel Restart-Hint. Story 8.1.
+settings.hotkey.slot2.restart_hint
+
+# settings.recording_mode.slot2.label: shells/windows/src/index.html SettingsPanel Slot-2-Mode-Label. Story 8.1.
+settings.recording_mode.slot2.label

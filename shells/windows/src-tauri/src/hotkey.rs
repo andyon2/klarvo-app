@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::event::ErrorEmitter;
+use klarvo_core::recording::HotkeySlot;
 use klarvo_core::time::Clock;
 use klarvo_shell_orchestrator::SessionOrchestrator;
 use tauri::Manager;
@@ -58,7 +59,7 @@ pub fn register_hotkey<R: tauri::Runtime>(app: &tauri::App<R>, config: &ShellCon
     // AC-C: register shortcut + dispatch (plugin activated in main.rs Builder chain
     // per ADR-0011 SD-4).
     // Key-repeat filtering lives in SessionOrchestrator (ADR-0011 SD-3).
-    if let Err(_) = handle.global_shortcut().on_shortcut(shortcut, shortcut_dispatch_handler()) {
+    if let Err(_) = handle.global_shortcut().on_shortcut(shortcut, shortcut_dispatch_handler(HotkeySlot::One)) {
         // AC-D: registration failure path.
         let ts_ms = clock.now_ms();
         tauri::async_runtime::spawn(async move {
@@ -110,7 +111,7 @@ pub async fn validate_hotkey_not_conflicting<R: tauri::Runtime>(
         Err(e) => {
             // P10/D1 recovery: probe failed → re-register old to keep app functional.
             if let Some(old_sc) = old_parsed {
-                let _ = gs.on_shortcut(old_sc, shortcut_dispatch_handler());
+                let _ = gs.on_shortcut(old_sc, shortcut_dispatch_handler(HotkeySlot::One));
             }
             Err(e)
         }
@@ -211,17 +212,17 @@ pub fn reregister_hotkey<R: tauri::Runtime>(
             emit_hotkey_error_async(app_handle, "error.hotkey.parse_failed");
             // P12: try to keep the app functional with the old combo.
             if let Ok(old_sc) = Shortcut::from_str(old_combo) {
-                let _ = gs.on_shortcut(old_sc, shortcut_dispatch_handler());
+                let _ = gs.on_shortcut(old_sc, shortcut_dispatch_handler(HotkeySlot::One));
             }
             return;
         }
     };
 
-    if let Err(e) = gs.on_shortcut(new_shortcut, shortcut_dispatch_handler()) {
+    if let Err(e) = gs.on_shortcut(new_shortcut, shortcut_dispatch_handler(HotkeySlot::One)) {
         tracing::warn!(error = %e, combo = new_combo, "reregister_hotkey: on_shortcut(new) failed; recovering with old");
         // P12/D4: re-register old so the app still has a working hotkey.
         if let Ok(old_sc) = Shortcut::from_str(old_combo) {
-            if let Err(re) = gs.on_shortcut(old_sc, shortcut_dispatch_handler()) {
+            if let Err(re) = gs.on_shortcut(old_sc, shortcut_dispatch_handler(HotkeySlot::One)) {
                 tracing::warn!(error = %re, combo = old_combo, "reregister_hotkey: recovery re-register-old also failed");
             }
         }
@@ -242,22 +243,47 @@ fn emit_hotkey_error_async<R: tauri::Runtime>(app: &tauri::AppHandle<R>, key: &'
 /// Shared press/release dispatch closure for `tauri-plugin-global-shortcut`.
 ///
 /// Extracted so both `register_hotkey` (boot) and `reregister_hotkey` (settings-change)
-/// use identical dispatch logic without duplication.
+/// use identical dispatch logic without duplication. `slot` identifies which hotkey
+/// fired (ADR-0012 Amendment 2).
 fn shortcut_dispatch_handler<R: tauri::Runtime>(
+    slot: HotkeySlot,
 ) -> impl Fn(&tauri::AppHandle<R>, &Shortcut, tauri_plugin_global_shortcut::ShortcutEvent)
        + Send
        + Sync
        + 'static {
-    |app: &tauri::AppHandle<R>, _shortcut: &Shortcut, event: tauri_plugin_global_shortcut::ShortcutEvent| {
+    move |app: &tauri::AppHandle<R>, _shortcut: &Shortcut, event: tauri_plugin_global_shortcut::ShortcutEvent| {
         let orch = app.state::<SessionOrchestrator>().inner().clone();
         match event.state() {
             ShortcutState::Pressed => {
-                tauri::async_runtime::spawn(async move { orch.on_press().await });
+                tauri::async_runtime::spawn(async move { orch.on_press(slot).await });
             }
             ShortcutState::Released => {
-                tauri::async_runtime::spawn(async move { orch.on_release().await });
+                tauri::async_runtime::spawn(async move { orch.on_release(slot).await });
             }
         }
+    }
+}
+
+/// Register the optional second push-to-talk hotkey (Story 8.1 AC-3).
+///
+/// Fails soft (warn + return) on parse or registration error — app remains
+/// functional with slot 1 only (D-3). No error event emitted to frontend.
+pub fn register_hotkey_slot2<R: tauri::Runtime>(app: &tauri::App<R>, combo: &str) {
+    let shortcut = match Shortcut::from_str(combo) {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::warn!(combo, "hotkey slot-2 combo parse failed; slot 2 not registered");
+            return;
+        }
+    };
+
+    let handle = app.handle().clone();
+    if let Err(e) =
+        handle.global_shortcut().on_shortcut(shortcut, shortcut_dispatch_handler(HotkeySlot::Two))
+    {
+        tracing::warn!(error = %e, combo, "hotkey slot-2 registration failed; slot 2 not active");
+    } else {
+        tracing::info!(combo, "hotkey slot-2 registered");
     }
 }
 

@@ -347,3 +347,13 @@ if press_mode == RecordingMode::AutoStop {
 Subscribers (Tray-State-Pull aus Story 3.8/Epic-3, Pill-Bar aus Story 2.B.A3) sind damit pro Modus uniform — keine `if AutoStop { skip Stopped }`-Sonderlogik nötig.
 
 Test-Coverage in `autostop_transitions_to_idle_after_vad` asserted Sequence-Order (Started < Stopped < Completed); Hard-Cap-Timeout-Pfad ist als A1-Re-F2 für Phase-2-B-Test-Hardening deferred.
+
+## Amendment 2 — HotkeySlot-Enum (Story 8.1, 2026-05-05)
+
+`HotkeySlot { One, Two }` in `klarvo-core/src/recording/mod.rs` eingeführt.
+`on_press(slot: HotkeySlot)` / `on_release(slot: HotkeySlot)` erweitern die Signatur.
+Mode-Lookup via `self.mode` (Slot::One) bzw. `self.mode_slot2` (Slot::Two).
+`shortcut_dispatch_handler` in `hotkey.rs` nimmt jetzt einen `slot: HotkeySlot` Parameter;
+slot-1 call-sites übergeben `HotkeySlot::One`, `register_hotkey_slot2` nutzt `HotkeySlot::Two`.
+Mutual-Exclusion (D-1): bestehender `SessionState`-Guard discarded Slot-2-Press
+während Slot-1-Recording transparent — kein neuer Code.

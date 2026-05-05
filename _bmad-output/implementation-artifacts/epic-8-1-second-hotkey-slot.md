@@ -2,7 +2,7 @@
 name: Story 8.1 — Second Hotkey-Slot
 epic: 8
 story_number: "8.1"
-status: ready-for-dev
+status: review
 dependencies:
   - "2b-a1-toggle-autostop-wait-and-type-modes"
 adr_refs:
@@ -464,16 +464,16 @@ async fn slot2_press_discarded_when_slot1_recording() {
 
 ## Tasks / Subtasks
 
-- [ ] AC-1: `hotkey_slot2_combo()` + `recording_mode_slot2()` Accessors + `delete_raw()` (falls fehlend) — `klarvo-core`
-- [ ] AC-2: `HotkeySlot`-Enum in `recording.rs` + `on_press(slot)` / `on_release(slot)` + `mode_slot2`-Feld + ADR-0012 Amendment 2
-- [ ] AC-3: `register_hotkey_slot2()` in `hotkey.rs` + conditional Boot-Registration in `main.rs`
-- [ ] AC-4: `UserSettings`-Extension + `set_hotkey_slot2` + `set_recording_mode_slot2` Commands + Command-Registration
-  - [ ] `cargo xtask bindings-drift` grün
-- [ ] AC-5: i18n-Keys in `en.json` + `de.json` (4 Keys + `restart_hint`)
-  - [ ] `cargo xtask lint-events` grün (Orphan-Allowlist prüfen)
-- [ ] AC-6: Settings Panel Slot-2-Block + Conflict-Validation + `onBlur`-Trigger + Restart-Hint
-- [ ] AC-7: Unit Tests (`klarvo-core` 4 Tests + `klarvo-shell-orchestrator` Mutual-Exclusion-Test)
-- [ ] `cargo check --workspace --exclude klarvo-windows-shell` → Exit 0
+- [x] AC-1: `hotkey_slot2_combo()` + `recording_mode_slot2()` Accessors + `delete_raw()` (falls fehlend) — `klarvo-core`
+- [x] AC-2: `HotkeySlot`-Enum in `recording.rs` + `on_press(slot)` / `on_release(slot)` + `mode_slot2`-Feld + ADR-0012 Amendment 2
+- [x] AC-3: `register_hotkey_slot2()` in `hotkey.rs` + conditional Boot-Registration in `main.rs`
+- [x] AC-4: `UserSettings`-Extension + `set_hotkey_slot2` + `set_recording_mode_slot2` Commands + Command-Registration
+  - [x] `cargo xtask bindings-drift` grün
+- [x] AC-5: i18n-Keys in `en.json` + `de.json` (4 Keys + `restart_hint`)
+  - [x] `cargo xtask lint-events` grün (Orphan-Allowlist prüfen)
+- [x] AC-6: Settings Panel Slot-2-Block + Conflict-Validation + `onBlur`-Trigger + Restart-Hint
+- [x] AC-7: Unit Tests (`klarvo-core` 4 Tests + `klarvo-shell-orchestrator` Mutual-Exclusion-Test)
+- [x] `cargo check --workspace --exclude klarvo-windows-shell` → Exit 0
 
 ## Dev Notes
 
@@ -524,8 +524,40 @@ async fn slot2_press_discarded_when_slot1_recording() {
 
 ### Agent Model Used
 
+claude-sonnet-4-6
+
 ### Debug Log References
+
+Keine Blocker. `delete_raw` war noch nicht vorhanden → implementiert. `shortcut_dispatch_handler` brauchte `slot: HotkeySlot`-Parameter + `move`-Closure wegen Borrow-Semantik. Bindings-Drift nach generate-bindings aufgelöst.
 
 ### Completion Notes List
 
+- AC-1: `hotkey_slot2_combo`, `set_hotkey_slot2_combo`, `clear_hotkey_slot2_combo`, `recording_mode_slot2`, `set_recording_mode_slot2`, `delete_raw` in `klarvo-core/src/settings/mod.rs` implementiert. 4 Unit-Tests grün.
+- AC-2: `HotkeySlot { One, Two }` in `klarvo-core/src/recording/mod.rs`. `on_press(slot)` / `on_release(slot)` + `mode_slot2`-Feld in Orchestrator. ADR-0012 Amendment 2 angehängt. Alle Test-Call-Sites auf `HotkeySlot::One` migriert.
+- AC-3: `register_hotkey_slot2()` in `hotkey.rs` (soft-fail). `shortcut_dispatch_handler` mit `slot`-Parameter. Conditional Slot-2-Boot-Registration + D-2-Guard + settings.changed-Listener für `hotkey.slot2.mode` in `main.rs`.
+- AC-4: `UserSettings` um `hotkey_slot2_combo: Option<String>` + `hotkey_slot2_mode: String` erweitert. `set_hotkey_slot2` (mit D-2-Guard + Grammar-Gate) + `set_recording_mode_slot2` Commands registriert. Bindings nach `generate-bindings` regeneriert.
+- AC-5: 5 Keys in `en.json` + `de.json` (4 + `restart_hint`). 4 Frontend-only-Keys in `orphan-allowlist.txt`. `lint-events` OK.
+- AC-6: Settings-Panel-Slot-2-Block mit Text-Input, Clear-Button (×), Conflict-Inline-Error, Restart-Hint, Mode-Dropdown (disabled wenn Combo leer). `onBlur`-Trigger für Conflict-Check. Save-Button disabled bei `slot2Conflict`.
+- AC-7: 4 Unit-Tests in `klarvo-core`, 1 Mutual-Exclusion-Test (`slot2_press_discarded_when_slot1_recording`) in `klarvo-shell-orchestrator`. 23 Orchestrator-Tests grün.
+
 ### File List
+
+- `klarvo-core/src/recording/mod.rs` (modified — HotkeySlot enum)
+- `klarvo-core/src/settings/mod.rs` (modified — slot2 accessors, delete_raw, 4 unit tests)
+- `klarvo-shell-orchestrator/src/session.rs` (modified — mode_slot2 field, on_press/on_release slot param)
+- `shells/windows/src-tauri/src/hotkey.rs` (modified — shortcut_dispatch_handler slot param, register_hotkey_slot2)
+- `shells/windows/src-tauri/src/main.rs` (modified — slot2 boot registration, mode_arc_slot2, settings.changed listener)
+- `shells/windows/src-tauri/src/commands/settings.rs` (modified — UserSettings extension, set_hotkey_slot2, set_recording_mode_slot2)
+- `shells/windows/src-tauri/src/lib.rs` (modified — command registration)
+- `shells/windows/locales/en.json` (modified — 5 new keys)
+- `shells/windows/locales/de.json` (modified — 5 new keys)
+- `shells/windows/src/index.html` (modified — slot2 UI block)
+- `shells/windows/src/bindings/index.ts` (modified — regenerated bindings)
+- `xtask/orphan-allowlist.txt` (modified — 4 frontend-only keys)
+- `docs/adr/0012-orchestrator-owner.md` (modified — Amendment 2)
+- `klarvo-shell-orchestrator/tests/session_tests.rs` (modified — HotkeySlot::One migration + mutual-exclusion test)
+- `klarvo-shell-orchestrator/tests/e2e_test.rs` (modified — HotkeySlot::One migration + mode_arc_slot2)
+
+### Change Log
+
+- 2026-05-05: Story 8.1 implementiert — Second Hotkey-Slot (AC-1..AC-7). HotkeySlot-Enum, Settings-Accessors, Shell-Registration, Tauri-Commands, i18n-Keys, Settings-Panel-UI, Tests.

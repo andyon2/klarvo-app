@@ -7,12 +7,14 @@
 
 use std::str::FromStr;
 
+use tauri_plugin_global_shortcut::Shortcut;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::Emitter as _;
 use tauri_specta::Event;
 
-use klarvo_core::error::AppError;
+use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::recording::RecordingMode;
 use klarvo_core::settings::Settings;
 
@@ -34,6 +36,10 @@ pub struct UserSettings {
     pub output_language: String,
     /// Serialised RecordingMode string (e.g. `"hold"`, `"toggle"`, `"autostop"`, `"wait_and_type"`).
     pub hotkey_slot1_mode: String,
+    /// Slot-2 hotkey combo; `None` when not configured (Story 8.1 D-3).
+    pub hotkey_slot2_combo: Option<String>,
+    /// Slot-2 recording mode; `"hold"` when not set.
+    pub hotkey_slot2_mode: String,
 }
 
 /// Event payload emitted on every successful settings write (AC-5 + AC-6).
@@ -179,6 +185,8 @@ pub fn get_user_settings(
         dictionary_language: settings.dictionary_language()?,
         output_language: settings.output_language()?,
         hotkey_slot1_mode: settings.recording_mode_slot1()?.to_string(),
+        hotkey_slot2_combo: settings.hotkey_slot2_combo()?,
+        hotkey_slot2_mode: settings.recording_mode_slot2()?.to_string(),
     })
 }
 
@@ -204,6 +212,55 @@ pub fn set_recording_mode_slot1(
     // in main.rs (single-writer pattern, AC-7 spirit). This command only writes
     // through Settings, which fires the emitter.
     Ok(())
+}
+
+// --- Slot-2 Commands (Story 8.1) ---
+
+/// Set or clear the slot-2 hotkey combo.
+///
+/// `None` → clears the combo (slot 2 becomes inactive on next reboot).
+/// `Some(combo)` → validates grammar + Slot-1 conflict before writing to DB.
+/// Re-registration happens at next app start (no live re-register — see Dev Notes).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_hotkey_slot2(
+    combo: Option<String>,
+    settings: tauri::State<'_, Settings>,
+) -> Result<(), AppError> {
+    match combo {
+        None => settings.clear_hotkey_slot2_combo()?,
+        Some(ref new_combo) => {
+            // D-2 Backend-Guard: same combo as slot 1
+            let slot1 = settings.hotkey_slot1_combo().unwrap_or_default();
+            if new_combo == &slot1 {
+                return Err(AppError {
+                    kind: AppErrorKind::Configuration,
+                    message: format!("hotkey slot-2 combo identical to slot-1: {new_combo}"),
+                    user_message: Some("error.settings.hotkey.slot_conflict".into()),
+                    retryable: false,
+                });
+            }
+            // Grammar gate — same error key as existing hotkey parse-failure UX
+            Shortcut::from_str(new_combo).map_err(|_| AppError {
+                kind: AppErrorKind::Configuration,
+                message: format!("invalid hotkey combo: {new_combo}"),
+                user_message: Some("error.hotkey.parse_failed".into()),
+                retryable: false,
+            })?;
+            settings.set_hotkey_slot2_combo(new_combo)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_recording_mode_slot2(
+    mode: String,
+    settings: tauri::State<'_, Settings>,
+) -> Result<(), AppError> {
+    let parsed = RecordingMode::from_str(&mode)?;
+    settings.set_recording_mode_slot2(parsed)
 }
 
 // --- Plugin API (2 commands) ---

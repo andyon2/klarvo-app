@@ -9,7 +9,7 @@ use klarvo_core::error::{AppError, AppErrorKind};
 use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
 use klarvo_core::manifest::parse_from_str as parse_manifest;
 use klarvo_core::output::NullFocusCapture;
-use klarvo_core::recording::RecordingMode;
+use klarvo_core::recording::{HotkeySlot, RecordingMode};
 use klarvo_core::time::MonotonicClock;
 use klarvo_test_fixtures::{
     InMemoryOutputTarget, MockAudioSource, MockErrorEmitter, MockPasteBackend,
@@ -83,6 +83,7 @@ fn make_test_orchestrator_real_pipeline(
     let event_bus = Arc::new(EventBus::new(DEFAULT_EVENT_BUS_CAPACITY));
 
     let mode_arc = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
+    let mode_arc_slot2 = Arc::new(tokio::sync::RwLock::new(RecordingMode::Hold));
     let orch = SessionOrchestrator::new(
         registry,
         manifest,
@@ -94,6 +95,7 @@ fn make_test_orchestrator_real_pipeline(
         vad,
         Arc::clone(&event_bus),
         mode_arc,
+        mode_arc_slot2,
         Arc::new(NullFocusCapture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
     );
@@ -148,9 +150,9 @@ async fn e2e_happy_path_delivers_and_pastes() {
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
         make_test_orchestrator_real_pipeline(stt);
 
-    orch.on_press().await;
+    orch.on_press(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert_eq!(output_target.last_delivered().as_deref(), Some("hello world"));
     assert_eq!(paste_backend.call_count(), 1);
@@ -166,13 +168,13 @@ async fn e2e_two_cycles_are_independent() {
         make_test_orchestrator_real_pipeline(stt);
 
     // Cycle 1
-    orch.on_press().await;
-    orch.on_release().await;
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_release(HotkeySlot::One).await;
     wait_for_delivery_count(&output_target, 1).await;
 
     // Cycle 2
-    orch.on_press().await;
-    orch.on_release().await;
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_release(HotkeySlot::One).await;
     wait_for_delivery_count(&output_target, 2).await;
 
     assert_eq!(output_target.all_delivered().len(), 2, "exactly two deliveries expected");
@@ -188,10 +190,10 @@ async fn e2e_key_repeat_guard_prevents_double_start() {
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
         make_test_orchestrator_real_pipeline(stt);
 
-    orch.on_press().await;
-    orch.on_press().await; // second press while Recording — must be discarded
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_press(HotkeySlot::One).await; // second press while Recording — must be discarded
     wait_for_delivery(&output_target).await;
-    orch.on_release().await;
+    orch.on_release(HotkeySlot::One).await;
 
     assert_eq!(output_target.all_delivered().len(), 1, "exactly one delivery expected");
     assert_eq!(paste_backend.call_count(), 1, "paste called exactly once");
@@ -206,7 +208,7 @@ async fn e2e_stray_release_is_noop() {
     let (orch, output_target, paste_backend, error_emitter, _event_bus) =
         make_test_orchestrator_real_pipeline(stt);
 
-    orch.on_release().await; // release without prior press
+    orch.on_release(HotkeySlot::One).await; // release without prior press
 
     assert!(output_target.last_delivered().is_none(), "stray release must not deliver");
     assert_eq!(paste_backend.call_count(), 0, "stray release must not paste");
@@ -263,16 +265,16 @@ async fn e2e_pipeline_fail_in_cycle1_does_not_prevent_cycle2() {
         make_test_orchestrator_real_pipeline(stt);
 
     // Cycle 1 — will fail at STT
-    orch.on_press().await;
-    orch.on_release().await;
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_release(HotkeySlot::One).await;
     wait_for_error_or_timeout(&error_emitter, Duration::from_secs(3)).await;
 
     assert!(!error_emitter.recorded().is_empty(), "cycle-1 must emit at least one error");
     assert_eq!(paste_backend.call_count(), 0, "cycle-1 must not paste on STT failure");
 
     // Cycle 2 — must succeed (Orchestrator recovered to Idle after cycle-1)
-    orch.on_press().await;
-    orch.on_release().await;
+    orch.on_press(HotkeySlot::One).await;
+    orch.on_release(HotkeySlot::One).await;
     wait_for_delivery(&output_target).await;
 
     assert_eq!(output_target.all_delivered().len(), 1, "cycle-2 delivers");

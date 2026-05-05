@@ -182,7 +182,7 @@ development_status:
   # ============================================================
   epic-8: in-progress
   2b-a1-toggle-autostop-wait-and-type-modes: done  # Hybrid-Outlier; thematische Heimat = Epic 8
-  8-1-second-hotkey-slot: ready-for-dev  # Story-File: epic-8-1-second-hotkey-slot.md; created 2026-05-05
+  8-1-second-hotkey-slot: review  # Story-File: epic-8-1-second-hotkey-slot.md; created 2026-05-05; impl complete 2026-05-05
   epic-8-retrospective: optional
 
   # ============================================================

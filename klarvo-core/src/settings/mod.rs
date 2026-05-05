@@ -311,6 +311,45 @@ impl Settings {
         self.set_raw("hotkey.slot1.mode", &mode.to_string(), "string")
     }
 
+    // --- Slot-2 accessors (Story 8.1) ---
+
+    /// Returns `Ok(None)` when no slot-2 hotkey is configured (D-3).
+    pub fn hotkey_slot2_combo(&self) -> Result<Option<String>, AppError> {
+        self.get_raw("hotkey.slot2.combo")
+    }
+
+    pub fn set_hotkey_slot2_combo(&self, val: &str) -> Result<(), AppError> {
+        validate_setting_value("hotkey.slot2.combo", val)?;
+        self.set_raw("hotkey.slot2.combo", val, "string")
+    }
+
+    /// Clear slot-2 combo (deletes the key from DB — slot 2 becomes inactive on next boot).
+    pub fn clear_hotkey_slot2_combo(&self) -> Result<(), AppError> {
+        self.delete_raw("hotkey.slot2.combo")
+    }
+
+    /// Returns `RecordingMode::Hold` when `hotkey.slot2.mode` is not set.
+    /// Only meaningful when `hotkey_slot2_combo()` returns `Some`.
+    pub fn recording_mode_slot2(&self) -> Result<RecordingMode, AppError> {
+        match self.get_raw("hotkey.slot2.mode")? {
+            Some(raw) => RecordingMode::from_str(&raw),
+            None => Ok(RecordingMode::Hold),
+        }
+    }
+
+    pub fn set_recording_mode_slot2(&self, mode: RecordingMode) -> Result<(), AppError> {
+        self.set_raw("hotkey.slot2.mode", &mode.to_string(), "string")
+    }
+
+    /// Delete a setting key from the DB. Used to clear optional keys (e.g. slot-2 combo).
+    pub fn delete_raw(&self, key: &str) -> Result<(), AppError> {
+        let guard = lock_conn(&self.conn);
+        guard
+            .execute("DELETE FROM settings WHERE key = ?1", [key])
+            .map_err(|e| db_err(format!("delete_raw({key}): {e}")))?;
+        Ok(())
+    }
+
     /// Maximum number of dictation history entries to retain.
     /// Oldest entries are pruned on append when this limit is exceeded.
     /// Default: 500.
@@ -885,6 +924,38 @@ mod tests {
             let got = s.recording_mode_slot1().unwrap();
             assert_eq!(got, mode);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // AC-7 (Story 8.1): hotkey_slot2 accessors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hotkey_slot2_combo_returns_none_when_not_set() {
+        let s = Settings::in_memory(noop()).unwrap();
+        assert_eq!(s.hotkey_slot2_combo().unwrap(), None);
+    }
+
+    #[test]
+    fn hotkey_slot2_combo_roundtrip() {
+        let s = Settings::in_memory(noop()).unwrap();
+        s.set_hotkey_slot2_combo("F9").unwrap();
+        assert_eq!(s.hotkey_slot2_combo().unwrap(), Some("F9".to_string()));
+        s.clear_hotkey_slot2_combo().unwrap();
+        assert_eq!(s.hotkey_slot2_combo().unwrap(), None);
+    }
+
+    #[test]
+    fn recording_mode_slot2_defaults_to_hold_when_not_set() {
+        let s = Settings::in_memory(noop()).unwrap();
+        assert_eq!(s.recording_mode_slot2().unwrap(), RecordingMode::Hold);
+    }
+
+    #[test]
+    fn recording_mode_slot2_roundtrip() {
+        let s = Settings::in_memory(noop()).unwrap();
+        s.set_recording_mode_slot2(RecordingMode::Toggle).unwrap();
+        assert_eq!(s.recording_mode_slot2().unwrap(), RecordingMode::Toggle);
     }
 
     #[test]
