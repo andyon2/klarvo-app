@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-05-05 (Story 10.1 review → done; code-review pass: 1 decision + 5 patches applied, 5 deferred, 9 dismissed; Epic 10 closed)
+# last_updated: 2026-05-05 (Story 8.1 ready-for-dev via /bmad-create-epics-and-stories; Epic 8 in-progress)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -180,8 +180,9 @@ development_status:
   # Story 2.B.A1 (toggle-autostop-wait-and-type-modes) ist done — Letter-ID-Outlier
   # (path-hygiene; Hybrid-Form-Erbe vor BMad-Reset 2026-05-01).
   # ============================================================
-  epic-8: backlog
+  epic-8: in-progress
   2b-a1-toggle-autostop-wait-and-type-modes: done  # Hybrid-Outlier; thematische Heimat = Epic 8
+  8-1-second-hotkey-slot: ready-for-dev  # Story-File: epic-8-1-second-hotkey-slot.md; created 2026-05-05
   epic-8-retrospective: optional
 
   # ============================================================

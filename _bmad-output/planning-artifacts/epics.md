@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories-epic-1A', 'step-03-create-stories-epic-1B', 'step-03-create-stories-epic-1C']
+stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories-epic-1A', 'step-03-create-stories-epic-1B', 'step-03-create-stories-epic-1C', 'step-03-create-stories-epic-8']
 scopePhase: 'phase-1'
 uxSpec: 'none'
 uxSpecRationale: 'Phase-1 dogfooding-prototype; acceptedFriction: Kein Onboarding, config.toml-only Konfiguration, toleriert Rough-Edges. Minimal-UI-Elemente der Windows-Shell (Tray-Icon, Notifications) erhalten ACs direkt aus PRD-FRs in Shell-Adapter-Stories. Ref personaTiering.phase1Target in prd.md.'
