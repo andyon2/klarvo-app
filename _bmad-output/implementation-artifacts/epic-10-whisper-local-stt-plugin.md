@@ -595,12 +595,12 @@ mod tests {
 - [x] AC-4: `PipelineStage::process` via `spawn_blocking`
   - [x] Verify `WhisperContext: Send` in whisper-rs 0.13 (confirmed via source: unsafe impl Send for WhisperInnerContext)
   - [x] Verify `FullParams` lifetime situation (confirmed: 'a, 'b params; constructed inside closure)
-- [x] AC-5: `impl SttProvider for WhisperLocal {}` + (cargo check blocked by missing libclang on WSL)
+- [x] AC-5: `impl SttProvider for WhisperLocal {}` + `cargo check -p klarvo-plugin-whisper-local` ✓
 - [x] AC-6: i18n keys in `en.json` + `de.json` + `cargo xtask lint-events` grün ✓
 - [x] AC-7: `build_plugin_registry()` Signatur + Whisper-Conditional-Registration
   - [x] `klarvo-plugin-whisper-local` dep in `shells/windows/src-tauri/Cargo.toml`
   - [x] `output_language` read + pass to function
-  - [ ] `cargo check -p klarvo-windows-shell` → blocked by missing libclang on WSL
+  - [x] `cargo check --workspace --exclude klarvo-windows-shell` ✓ (windows-shell has Linux compile_error guard; native Windows compile via CI)
 - [x] AC-8: `windows-ci.yml` — exclude + dedizierter Step + Job-Timeout + Cache-Bust
 - [x] AC-9: Unit-Tests (kein Model-File nötig)
 - [x] AC-10: Module-Level-Rustdoc mit Onboarding-Doku
@@ -707,9 +707,11 @@ claude-sonnet-4-6
 ### Completion Notes List
 
 - API-Deviation D1: `AppErrorKind::Fatal` in the AC spec does not exist in `klarvo-core`. All inference-path errors use `AppErrorKind::Internal` (invariant violation) instead.
-- API-Verification: whisper-rs API read directly from crate source (libclang not available on WSL for `cargo doc`). Key findings: `WhisperContext::new_with_params(path: &str, params: WhisperContextParameters)` ✓; `WhisperState::full` returns `Result<c_int, WhisperError>` (not `Result<(), ...>` as sketched); `FullParams<'a, 'b>` has two lifetime params; `WhisperInnerContext: Send + Sync` (unsafe impl).
-- cargo xtask lint-events: green (3 new keys have emit-sites in plugin).
-- `cargo check -p klarvo-plugin-whisper-local` blocked on WSL — whisper-rs-sys requires libclang for bindgen. Windows CI (windows-latest) has MSVC toolchain and will compile correctly. Install: `sudo apt-get install -y libclang-dev` for local Linux dev.
+- API-Verification: whisper-rs API read directly from crate source. Key findings: `WhisperContext::new_with_params(path: &str, params: WhisperContextParameters)` ✓; `WhisperState::full` returns `Result<c_int, WhisperError>` (not `Result<(), ...>` as sketched); `FullParams<'a, 'b>` has two lifetime params (constructed inside `spawn_blocking` closure); `WhisperInnerContext: Send + Sync` (unsafe impl).
+- Test-Deviation D2: `Result::expect_err` requires `T: Debug`; `WhisperContext` (the wrapper) does not derive `Debug`. Replaced `result.expect_err(...)` with explicit `match` in `load_rejects_nonexistent_model_path`.
+- Verifications: `cargo check -p klarvo-plugin-whisper-local` ✓; `cargo test -p klarvo-plugin-whisper-local` ✓ (3/3); `cargo xtask lint-events` ✓; `cargo check --workspace --exclude klarvo-windows-shell` ✓.
+- Local Linux dev requires `libclang-dev` + `cmake` + g++ for whisper.cpp compilation. Windows CI (windows-latest) has MSVC toolchain natively.
+- Windows cross-compile from Linux (`x86_64-pc-windows-gnu`) blocked by host-libclang/MinGW header mismatch in whisper-rs-sys bindgen — known crate issue, irrelevant for native Windows CI.
 
 ### File List
 

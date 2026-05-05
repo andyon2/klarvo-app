@@ -197,7 +197,7 @@ impl PipelineStage for WhisperLocal {
         })
         .await
         .map_err(|join_err| AppError {
-            kind: AppErrorKind::Fatal,
+            kind: AppErrorKind::Internal,
             message: format!("whisper-local: spawn_blocking panic: {join_err}"),
             user_message: Some(keys::INFERENCE_FAILED.to_string()),
             retryable: false,
@@ -229,7 +229,10 @@ mod tests {
             std::path::Path::new("/does/not/exist/model.gguf"),
             Some("en".to_string()),
         );
-        let err = result.expect_err("must fail for nonexistent path");
+        let err = match result {
+            Ok(_) => panic!("must fail for nonexistent path"),
+            Err(e) => e,
+        };
         assert_eq!(err.user_message.as_deref(), Some(keys::MODEL_NOT_FOUND));
         assert!(matches!(
             err.kind,
