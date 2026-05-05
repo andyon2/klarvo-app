@@ -170,17 +170,17 @@ impl PipelineStage for WhisperLocal {
                 retryable: false,
             })?;
 
+            // Pure verbatim aggregation (D1 review-decision 2026-05-05): preserve
+            // whisper.cpp's native segment whitespace (typically a leading space on
+            // each segment). No per-segment trim and no manual ' '-insertion —
+            // klarvo's default is verbatim per `memory/feedback_polished_designschwaeche`.
             let mut result = String::new();
+            let mut successful_segments: i32 = 0;
             for i in 0..n_segments {
                 match state.full_get_segment_text(i) {
                     Ok(seg) => {
-                        let trimmed = seg.trim();
-                        if !trimmed.is_empty() {
-                            if !result.is_empty() {
-                                result.push(' ');
-                            }
-                            result.push_str(trimmed);
-                        }
+                        successful_segments += 1;
+                        result.push_str(&seg);
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -191,6 +191,21 @@ impl PipelineStage for WhisperLocal {
                         );
                     }
                 }
+            }
+
+            // If whisper produced segments but every text-extraction failed, the result
+            // is an empty string that the pipeline cannot distinguish from real silence.
+            // Surface this as INFERENCE_FAILED instead of a silent Ok("").
+            if n_segments > 0 && successful_segments == 0 {
+                debug_assert!(i18n::is_key(keys::INFERENCE_FAILED));
+                return Err(AppError {
+                    kind: AppErrorKind::Internal,
+                    message: format!(
+                        "whisper-local: all {n_segments} segments failed text extraction"
+                    ),
+                    user_message: Some(keys::INFERENCE_FAILED.to_string()),
+                    retryable: false,
+                });
             }
 
             Ok::<String, AppError>(result)

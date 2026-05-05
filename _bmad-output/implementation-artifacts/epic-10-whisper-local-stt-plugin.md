@@ -2,7 +2,7 @@
 name: Story 10.1 — Whisper-Local STT-Plugin
 epic: 10
 story_number: "10.1"
-status: review
+status: done
 dependencies:
   - "6-1-telemetry-logging-rolling-file"
   - "2a-a4-settings-panel-foundation"
@@ -12,7 +12,7 @@ adr_refs:
 
 # Story 10.1: Whisper-Local STT-Plugin
 
-Status: review
+Status: done
 
 ## Story
 
@@ -261,17 +261,17 @@ impl PipelineStage for WhisperLocal {
                 retryable: false,
             })?;
 
+            // Pure verbatim aggregation (D1 review-decision 2026-05-05): preserve
+            // whisper.cpp's native segment whitespace. No per-segment trim and no
+            // manual ' '-insertion — klarvo's default is verbatim per
+            // `memory/feedback_polished_designschwaeche`.
             let mut result = String::new();
+            let mut successful_segments: i32 = 0;
             for i in 0..n_segments {
                 match state.full_get_segment_text(i) {
                     Ok(seg) => {
-                        let trimmed = seg.trim();
-                        if !trimmed.is_empty() {
-                            if !result.is_empty() {
-                                result.push(' ');
-                            }
-                            result.push_str(trimmed);
-                        }
+                        successful_segments += 1;
+                        result.push_str(&seg);
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -282,6 +282,19 @@ impl PipelineStage for WhisperLocal {
                         );
                     }
                 }
+            }
+
+            // Distinguish "real silence" from "all segments errored":
+            if n_segments > 0 && successful_segments == 0 {
+                debug_assert!(i18n::is_key(keys::INFERENCE_FAILED));
+                return Err(AppError {
+                    kind: AppErrorKind::Internal,
+                    message: format!(
+                        "whisper-local: all {n_segments} segments failed text extraction"
+                    ),
+                    user_message: Some(keys::INFERENCE_FAILED.to_string()),
+                    retryable: false,
+                });
             }
 
             Ok::<String, AppError>(result)
@@ -604,6 +617,23 @@ mod tests {
 - [x] AC-8: `windows-ci.yml` — exclude + dedizierter Step + Job-Timeout + Cache-Bust
 - [x] AC-9: Unit-Tests (kein Model-File nötig)
 - [x] AC-10: Module-Level-Rustdoc mit Onboarding-Doku
+
+### Review Findings
+
+_From `bmad-code-review` 2026-05-05 (3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor; 22 raw findings → 19 unique after dedup; 9 dismissed as spec-explicit / cosmetic / verified-justified)._
+
+- [x] [Review][Patch] Segment-Text-Aggregation auf pure verbatim umstellen [lib.rs:173-208] — D1 resolved: `result.push_str(&seg)` ohne `trim()` / ohne `' '`-Separator. AC-4-Spec-Block in dieser Datei nachgezogen. [Source: Blind F-1; D1 user-decision 2026-05-05]
+
+- [x] [Review][Patch] Boot-time `output_language()` Err-arm logged silently [shells/windows/src-tauri/src/main.rs:353-364] — `match` mit `tracing::warn!`-Fallback statt `unwrap_or_else`.
+- [x] [Review][Patch] Windows-CI step 2 fehlt `--all-targets` [.github/workflows/windows-ci.yml:43-46] — `--all-targets` ergänzt; `#[cfg(test)]`-Tests werden jetzt auf MSVC typecheckt.
+- [x] [Review][Patch] Empty-transcription Ok("") nicht unterscheidbar von "alle Segmente erroren" [lib.rs:198-208] — `successful_segments`-Counter; `n_segments > 0 && successful_segments == 0` → `AppError(Internal, INFERENCE_FAILED)`.
+- [x] [Review][Patch] AC-7 `use klarvo_plugin_whisper_local;` nicht im use-Block ergänzt [shells/windows/src-tauri/src/main.rs:32] — `use klarvo_plugin_whisper_local::WhisperLocal;` (substantive form; bare-crate-Import würde `clippy::single_component_path_imports` auf `-D warnings`-CI-Gate triggern). Call-Site `WhisperLocal::load(...)` entsprechend gekürzt.
+
+- [x] [Review][Defer] Mutex-Poisoning brickt Plugin permanent [lib.rs:1325-1330] — deferred, FFI-Panic ist seltener Failure-Mode; Process-Restart recovert; `parking_lot::Mutex` als follow-up wenn empirisch nötig
+- [x] [Review][Defer] Language-Input nicht validiert/normalisiert (z.B. `"de-DE"` / leerer String) [main.rs ↔ lib.rs:1346] — deferred, heute strukturell von `validate_setting_value` gesichert; Phase-2+-Migration-Risk only
+- [x] [Review][Defer] Long-Inference nicht cancellable bei App-Shutdown [lib.rs:1320-1401] — deferred, architektural; whisper.cpp `abort_callback`-Wiring + `CancellationToken` ist eigene Story
+- [x] [Review][Defer] Sample-Rate-Guard fehlt (16kHz hardcoded) [lib.rs:1355] — deferred, ADR-0006 SD-2 fixt heute auf 16kHz; Phase-2+ wenn variable Sample-Rate eingeführt wird
+- [x] [Review][Defer] `spawn_blocking` JoinError-Panic-Payload nicht extrahiert [lib.rs:1394-1400] — deferred, Diagnostic-Quality only; `join_err.into_panic()`-Downcast als follow-up
 
 ## Dev Notes
 

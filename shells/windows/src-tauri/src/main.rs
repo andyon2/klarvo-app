@@ -29,6 +29,7 @@ fn main() {
     use klarvo_core::recording::RecordingMode;
     use klarvo_core::settings::{NoopSettingsEmitter, Settings, TomlMigrationSource};
     use klarvo_core::time::MonotonicClock;
+    use klarvo_plugin_whisper_local::WhisperLocal;
     use klarvo_shell_orchestrator::SessionOrchestrator;
     use tauri::image::Image;
     use tauri::tray::TrayIconBuilder;
@@ -58,10 +59,7 @@ fn main() {
         match settings.get_plugin_setting("whisper-local", "model_path") {
             Ok(Some(model_path_str)) => {
                 let model_path = std::path::Path::new(&model_path_str);
-                match klarvo_plugin_whisper_local::WhisperLocal::load(
-                    model_path,
-                    Some(output_language.to_string()),
-                ) {
+                match WhisperLocal::load(model_path, Some(output_language.to_string())) {
                     Ok(plugin) => {
                         registry.register_stt(
                             klarvo_plugin_whisper_local::ID,
@@ -350,9 +348,18 @@ fn main() {
                 e
             })?);
             // output_language read before settings is moved into app.manage (Step 10).
-            let output_language = settings
-                .output_language()
-                .unwrap_or_else(|_| "en".to_string());
+            // Err-arm logs explicitly so a misconfigured / unreadable settings DB does
+            // not silently downgrade a German-configured user to English transcription.
+            let output_language = match settings.output_language() {
+                Ok(lang) => lang,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "output_language read failed; falling back to \"en\" for STT"
+                    );
+                    "en".to_string()
+                }
+            };
             let registry = Arc::new(build_plugin_registry(&settings, &output_language));
 
             // EventBus constructed here (before Step 9) so SessionOrchestrator can emit

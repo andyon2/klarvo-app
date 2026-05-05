@@ -40,9 +40,10 @@ jobs:
         # first build). Checked separately below with extended timeout.
         run: cargo check --workspace --all-targets --exclude klarvo-plugin-whisper-local
 
-      - name: cargo check -p klarvo-plugin-whisper-local (whisper-rs C++ build; cached on 2nd run)
+      - name: cargo check -p klarvo-plugin-whisper-local --all-targets (whisper-rs C++ build; cached on 2nd run)
         # First run: ~15 min C++ compile. Subsequent runs: <1 min from rust-cache.
-        run: cargo check -p klarvo-plugin-whisper-local
+        # --all-targets ensures #[cfg(test)] mod tests also typecheck on MSVC.
+        run: cargo check -p klarvo-plugin-whisper-local --all-targets
         timeout-minutes: 30
 
       - name: cargo clippy klarvo-windows-shell (default features)

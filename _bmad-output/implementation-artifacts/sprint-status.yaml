@@ -1,5 +1,5 @@
 # generated: 2026-04-29
-# last_updated: 2026-05-03 (Story 9.2 history-backend in-progress → review; impl complete)
+# last_updated: 2026-05-05 (Story 10.1 review → done; code-review pass: 1 decision + 5 patches applied, 5 deferred, 9 dismissed; Epic 10 closed)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -203,8 +203,8 @@ development_status:
   # ADR-0014 Accepted (commit 0513969). Plugin-Crate-Name + Cloud-vs-Local-Differenzierung
   # dokumentiert. Dependencies: Epic 6 (Observability) + Epic-Phase-2-A (Settings-Audio-Section).
   # ============================================================
-  epic-10: in-progress
-  10-1-whisper-local-stt-plugin: review  # Story-File: epic-10-whisper-local-stt-plugin.md; impl 2026-05-05
+  epic-10: done  # 2026-05-05: 10.1 code-review-pass complete; single-story epic closed
+  10-1-whisper-local-stt-plugin: done  # Story-File: epic-10-whisper-local-stt-plugin.md; impl 2026-05-05; code-review-pass 2026-05-05
   epic-10-retrospective: optional
 
   # ============================================================
