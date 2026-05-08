@@ -2,7 +2,7 @@
 name: Story 11.2 — Token Foundation (minimal)
 epic: 11
 story_number: "11.2"
-status: ready-for-dev
+status: done
 dependencies:
   - "11-1-pill-bar-html-reimpl"  # pill-bar.html baseline established; cancel_recording + Capability done
 inputDocuments:
@@ -13,7 +13,7 @@ inputDocuments:
 
 # Story 11.2: Token Foundation (minimal)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
