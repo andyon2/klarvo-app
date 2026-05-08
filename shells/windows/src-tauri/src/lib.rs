@@ -33,6 +33,8 @@ use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use commands::history::{clear_history, delete_history_entry, get_history};
 use commands::recording::cancel_recording;
 use commands::telemetry::export_debug_zip_cmd;
+#[cfg(target_os = "windows")]
+use overlay::pill_bar::dev_pill_bar_enter_live_preview;
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
     reload_locale, set_dictionary_language, set_hotkey_slot1, set_hotkey_slot2,
@@ -55,7 +57,7 @@ pub struct AppReady {
 /// Shared specta builder — single source of truth for the runtime app
 /// (`main.rs`) and the export binary (`bin/export_bindings.rs`).
 pub fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
+    let builder = Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             ping,
             // Story 2.A.A4: Settings commands (AC-6/7)
@@ -83,6 +85,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             export_debug_zip_cmd,
             // Story 11.1: Pill-Bar abort button
             cancel_recording,
-        ])
-        .events(collect_events![AppReady, SettingsChangedEvent])
+        ]);
+    // Story 11.3: LP-resize test trigger (Windows-only; overlay module is cfg-gated)
+    #[cfg(target_os = "windows")]
+    let builder = builder.commands(collect_commands![dev_pill_bar_enter_live_preview]);
+    builder.events(collect_events![AppReady, SettingsChangedEvent])
 }

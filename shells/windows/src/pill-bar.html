@@ -8,10 +8,10 @@
     html, body {
       background: transparent;
       overflow: hidden;
-      width: 320px; height: 48px;
+      width: 100%; height: 100%;
     }
     #pill {
-      width: 320px; height: 48px;
+      width: 100%; height: 100%;
       background: var(--klarvo-color-overlay-bg);
       border-radius: 24px;
       display: flex;
@@ -19,6 +19,7 @@
       gap: 8px;
       padding: 0 10px;
       opacity: 1;
+      cursor: move;
       transition: opacity var(--klarvo-timing-medium) ease-out;
     }
     #pill.fade-out { opacity: 0; }
@@ -62,6 +63,18 @@
       transition: height 40ms linear;
     }
 
+    /* Mode badge: shown right of waveform in recording state */
+    #mode-badge {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--klarvo-color-surface-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
     /* Abort button: v1 StopButton — red square on transparent button */
     #abort-btn {
       width: 22px; height: 22px;
@@ -84,10 +97,13 @@
       background: var(--klarvo-color-danger);
       opacity: 0.85;
     }
+
+    /* Live-Preview layout — content wired by Story 11.4 */
+    #pill.live-preview #mode-badge { display: none; }
   </style>
 </head>
 <body>
-  <div id="pill">
+  <div id="pill" data-tauri-drag-region>
     <!-- K-Logo: verbatim aus v1 KlarvoLogo component (FloatingBar.tsx) -->
     <div id="k-logo">K</div>
 
@@ -99,6 +115,9 @@
       <div class="bar" data-idx="3"></div>
       <div class="bar" data-idx="4"></div>
     </div>
+
+    <!-- Mode badge: shows current recording mode -->
+    <span id="mode-badge">Hold</span>
 
     <!-- Abort button: verbatim aus v1 StopButton component -->
     <button id="abort-btn" title="Cancel recording" aria-label="Cancel recording">
@@ -159,9 +178,10 @@
         }
       });
 
-      // Show: clear fade-out class, reset bars
+      // Show: clear fade-out + live-preview classes, reset bars
       tauriEvent.listen('pill_bar.show', () => {
         pill.classList.remove('fade-out');
+        pill.classList.remove('live-preview');
         bins.fill(0);
         updateBars();
       });
@@ -169,6 +189,11 @@
       // Fade-out: CSS transition; Rust hides window after 300ms (FADE_OUT_MS constant)
       tauriEvent.listen('pill_bar.fade_out', () => {
         pill.classList.add('fade-out');
+      });
+
+      // Live-Preview: resize already done by Rust before this event fires
+      tauriEvent.listen('pill_bar.enter_live_preview', () => {
+        pill.classList.add('live-preview');
       });
     }
   </script>

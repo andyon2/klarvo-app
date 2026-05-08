@@ -7,17 +7,21 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use klarvo_core::event::Event;
+use klarvo_core::settings::Settings;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter as _, LogicalPosition, Manager as _};
+use tauri::{AppHandle, Emitter as _, LogicalPosition, LogicalSize, Manager as _};
 use tokio::sync::broadcast;
 
 const WINDOW_LABEL: &str = "pill-bar";
 const BIN_COUNT: usize = 64;
 const WINDOW_WIDTH: f64 = 320.0;
 const WINDOW_HEIGHT: f64 = 48.0;
+const LIVE_PREVIEW_WIDTH: f64 = 480.0;
+const LIVE_PREVIEW_HEIGHT: f64 = 84.0;
 /// Margin between bottom of pill bar and bottom of primary monitor (logical px).
 const BOTTOM_MARGIN: f64 = 16.0;
 /// Fade-out duration matched to CSS transition in `pill-bar.html`. Drift between
@@ -25,6 +29,8 @@ const BOTTOM_MARGIN: f64 = 16.0;
 /// completes) or a transparent click-blocker (CSS fade completes but Rust never
 /// hides). Keep the two in sync.
 const FADE_OUT_MS: u64 = 300;
+/// Debounce window for position saves triggered by WindowEvent::Moved.
+const DRAG_DEBOUNCE_MS: u64 = 300;
 
 pub struct PillBar<R: tauri::Runtime> {
     app: AppHandle<R>,
@@ -32,7 +38,8 @@ pub struct PillBar<R: tauri::Runtime> {
 
 impl<R: tauri::Runtime> PillBar<R> {
     /// Position the pill-bar window (already created by Tauri from conf) at the
-    /// bottom-center of the primary monitor.
+    /// bottom-center of the primary monitor, and register the drag-position
+    /// listener for Story 11.3.
     ///
     /// Fail-soft: if the window label is missing (misconfigured conf) or
     /// monitor metadata is unavailable, returns `Ok` without crashing — the
@@ -43,6 +50,52 @@ impl<R: tauri::Runtime> PillBar<R> {
             if let Err(e) = win.set_position(LogicalPosition::new(x, y)) {
                 tracing::warn!(error = %e, "pill-bar set_position failed; using OS default");
             }
+
+            // Story 11.3: debounced position-save on drag
+            let app_for_drag = app.clone();
+            let pending_pos: Arc<Mutex<Option<(f64, f64)>>> = Arc::new(Mutex::new(None));
+            let save_pending = Arc::new(AtomicBool::new(false));
+
+            let pending_pos_clone = Arc::clone(&pending_pos);
+            let save_pending_clone = Arc::clone(&save_pending);
+
+            win.on_window_event(move |event| {
+                if let tauri::WindowEvent::Moved(phys_pos) = event {
+                    let scale = app_for_drag
+                        .primary_monitor()
+                        .ok()
+                        .flatten()
+                        .map(|m| m.scale_factor())
+                        .unwrap_or(1.0);
+                    let lx = phys_pos.x as f64 / scale;
+                    let ly = phys_pos.y as f64 / scale;
+                    {
+                        let mut guard = pending_pos_clone.lock().unwrap();
+                        *guard = Some((lx, ly));
+                    }
+                    if save_pending_clone
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        let app2 = app_for_drag.clone();
+                        let pp = Arc::clone(&pending_pos_clone);
+                        let flag = Arc::clone(&save_pending_clone);
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(DRAG_DEBOUNCE_MS))
+                                .await;
+                            flag.store(false, Ordering::SeqCst);
+                            let pos = pp.lock().unwrap().take();
+                            if let Some((x, y)) = pos {
+                                if let Err(e) =
+                                    app2.state::<Settings>().set_pill_bar_position(x, y)
+                                {
+                                    tracing::warn!(error = %e, "pill-bar position save failed");
+                                }
+                            }
+                        });
+                    }
+                }
+            });
         } else {
             tracing::warn!("pill-bar window not found; check tauri.conf.json label");
         }
@@ -106,12 +159,19 @@ fn handle_event<R: tauri::Runtime>(
             fade_epoch.fetch_add(1, Ordering::SeqCst);
             ring.iter_mut().for_each(|v| *v = 0.0);
             if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
-                // Re-position on every show to handle dock/undock or
-                // resolution changes between sessions (D5=B).
-                let (x, y) = pill_bar_position(app);
+                // 1. Reset to recording size (in case previous session was in LP mode)
+                if let Err(e) = win.set_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT)) {
+                    tracing::warn!(error = %e, "pill-bar size reset failed");
+                }
+                // 2. Restore last dragged position, or fall back to bottom-center
+                let (x, y) = match app.state::<Settings>().pill_bar_position() {
+                    Ok(Some((x, y))) => (x, y),
+                    _ => pill_bar_position(app),
+                };
                 if let Err(e) = win.set_position(LogicalPosition::new(x, y)) {
                     tracing::warn!(error = %e, "pill-bar set_position failed");
                 }
+                // 3. Show
                 if let Err(e) = win.show() {
                     tracing::warn!(error = %e, "pill-bar show failed");
                 }
@@ -170,6 +230,21 @@ fn schedule_fade_and_hide<R: tauri::Runtime>(
             }
         }
     });
+}
+
+/// Story 11.3: LP-resize test trigger; wired to pipeline in 11.4.
+#[tauri::command]
+#[specta::specta]
+pub async fn dev_pill_bar_enter_live_preview<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
+        win.set_size(LogicalSize::new(LIVE_PREVIEW_WIDTH, LIVE_PREVIEW_HEIGHT))
+            .map_err(|e| e.to_string())?;
+        app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ())
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]
