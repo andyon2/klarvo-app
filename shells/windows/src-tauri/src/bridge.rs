@@ -177,6 +177,8 @@ impl<R: tauri::Runtime> EventMirror<R> {
             Event::RecordingDelivered { ts_ms, text } => self
                 .app_handle
                 .emit("recording.delivered", &RecordingDeliveredPayload { ts_ms, text }),
+            // RecordingAborted: pill-bar fades via its own subscriber; main WebView has no consumer yet.
+            Event::RecordingAborted { .. } => return,
             // AudioLevel is consumed by PillBar overlay only — not mirrored to main WebView.
             // High-frequency (~15.6Hz) and the main WebView has no consumer.
             Event::AudioLevel { .. } => return,

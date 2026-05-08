@@ -13,57 +13,139 @@
       width: 320px; height: 48px;
       background: rgba(13, 15, 20, 0.85);
       border-radius: 24px;
-      display: flex; align-items: center; justify-content: center;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
       opacity: 1;
       transition: opacity 300ms ease-out;
     }
     #pill.fade-out { opacity: 0; }
-    canvas { display: block; }
+
+    /* K-Logo: verbatim v1 KlarvoLogo (24×24 rounded, Teal #14B8A6, white K) */
+    #k-logo {
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      background: #14B8A6;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      line-height: 1;
+      font-family: system-ui, -apple-system, sans-serif;
+      user-select: none;
+    }
+
+    /* 5-bar waveform container */
+    #waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex: 1;
+      height: 28px;
+      min-width: 0;
+    }
+
+    /* Individual pill-shaped bars — Trust-Anchor Teal #14B8A6 (v1 verbatim) */
+    .bar {
+      flex: 1;
+      border-radius: 9999px;
+      background: #14B8A6;
+      opacity: 0.85;
+      height: 4px;
+      min-height: 4px;
+      max-height: 28px;
+      transition: height 40ms linear;
+    }
+
+    /* Abort button: v1 StopButton — red square on transparent button */
+    #abort-btn {
+      width: 22px; height: 22px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-radius: 2px;
+      padding: 0;
+    }
+    #abort-btn:hover #abort-square {
+      opacity: 1;
+    }
+    #abort-square {
+      width: 10px; height: 10px;
+      border-radius: 1px;
+      background: rgba(248, 113, 113, 0.9);
+      opacity: 0.85;
+    }
   </style>
 </head>
 <body>
   <div id="pill">
-    <canvas id="waveform" width="280" height="32"></canvas>
+    <!-- K-Logo: verbatim aus v1 KlarvoLogo component (FloatingBar.tsx) -->
+    <div id="k-logo">K</div>
+
+    <!-- 5 Pill-shaped Waveform-Bars (v1 BAR_COUNT=5, borderRadius:9999) -->
+    <div id="waveform">
+      <div class="bar" data-idx="0"></div>
+      <div class="bar" data-idx="1"></div>
+      <div class="bar" data-idx="2"></div>
+      <div class="bar" data-idx="3"></div>
+      <div class="bar" data-idx="4"></div>
+    </div>
+
+    <!-- Abort button: verbatim aus v1 StopButton component -->
+    <button id="abort-btn" title="Cancel recording" aria-label="Cancel recording">
+      <div id="abort-square"></div>
+    </button>
   </div>
   <script type="module">
+    const tauriCore  = window.__TAURI__?.core  ?? null;
     const tauriEvent = window.__TAURI__?.event ?? null;
-    const pill = document.getElementById("pill");
-    const canvas = document.getElementById("waveform");
-    const ctx = canvas.getContext("2d");
-    const BIN_COUNT = 64;
 
+    const pill      = document.getElementById('pill');
+    const abortBtn  = document.getElementById('abort-btn');
+    const bars      = Array.from(document.querySelectorAll('.bar'));
+
+    const BIN_COUNT = 64;
+    const BAR_COUNT = 5;
+
+    // bins: full 64-element snapshot from the last waveform_tick
     let bins = new Float32Array(BIN_COUNT);
 
-    function drawWaveform() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const barW = Math.floor(canvas.width / BIN_COUNT);
-      const gap = 1;
-      for (let i = 0; i < BIN_COUNT; i++) {
-        const h = Math.max(2, bins[i] * canvas.height);
-        const x = i * barW;
-        const y = (canvas.height - h) / 2;
-        const alpha = 0.5 + bins[i] * 0.5;
-        ctx.fillStyle = `rgba(42, 195, 168, ${alpha})`;
-        if (typeof ctx.roundRect === "function") {
-          ctx.beginPath();
-          ctx.roundRect(x, y, Math.max(1, barW - gap), h, 2);
-          ctx.fill();
-        } else {
-          ctx.fillRect(x, y, Math.max(1, barW - gap), h);
-        }
+    // Map 64 bins → 5 bars by sampling evenly-spaced indices (matches v1's approach
+    // from FloatingBar.tsx: levelIdx = Math.round(i/(BAR_COUNT-1)*(levels.length-1)))
+    function updateBars() {
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const binIdx = Math.round(i / (BAR_COUNT - 1) * (BIN_COUNT - 1));
+        const amplitude = Math.max(0.12, bins[binIdx] ?? 0);
+        const heightPx = Math.round(amplitude * 28);
+        bars[i].style.height = `${heightPx}px`;
       }
     }
 
-    drawWaveform();
+    // Initial idle state: all bars at minimum height
+    updateBars();
+
+    // Abort button: invoke cancel_recording Tauri command
+    abortBtn.addEventListener('click', () => {
+      if (!tauriCore) return;
+      tauriCore.invoke('cancel_recording').catch((e) => {
+        console.error('[pill-bar] cancel_recording failed:', e);
+      });
+    });
 
     if (tauriEvent) {
-      tauriEvent.listen("pill_bar.waveform_tick", (evt) => {
+      // Waveform tick: update bins + redraw 5 bars
+      tauriEvent.listen('pill_bar.waveform_tick', (evt) => {
         const payload = evt?.payload;
         if (payload && Array.isArray(payload.bins)) {
           const incoming = payload.bins;
-          if (incoming.length !== BIN_COUNT) {
-            console.warn(`pill-bar: bin count mismatch (got ${incoming.length}, expected ${BIN_COUNT})`);
-          }
           const limit = Math.min(BIN_COUNT, incoming.length);
           for (let i = 0; i < limit; i++) {
             const v = incoming[i];
@@ -72,18 +154,20 @@
           for (let i = limit; i < BIN_COUNT; i++) {
             bins[i] = 0;
           }
-          drawWaveform();
+          updateBars();
         }
       });
 
-      tauriEvent.listen("pill_bar.show", () => {
-        pill.classList.remove("fade-out");
+      // Show: clear fade-out class, reset bars
+      tauriEvent.listen('pill_bar.show', () => {
+        pill.classList.remove('fade-out');
         bins.fill(0);
-        drawWaveform();
+        updateBars();
       });
 
-      tauriEvent.listen("pill_bar.fade_out", () => {
-        pill.classList.add("fade-out");
+      // Fade-out: CSS transition; Rust hides window after 300ms (FADE_OUT_MS constant)
+      tauriEvent.listen('pill_bar.fade_out', () => {
+        pill.classList.add('fade-out');
       });
     }
   </script>

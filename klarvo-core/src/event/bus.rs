@@ -39,6 +39,10 @@ pub enum Event {
     /// outcome. Subscribers reflecting "system idle" UI consume this event.
     /// `ts_ms` reflects pipeline-completion time, not hotkey-release time.
     RecordingCompleted { ts_ms: u64 },
+    /// User aborted the recording session via the Pill-Bar abort button.
+    /// Audio buffer is discarded; pipeline task is hard-cancelled (no STT call,
+    /// no paste). Pill-Bar fades out on this event identically to RecordingCompleted.
+    RecordingAborted { ts_ms: u64 },
     PipelineStageStarted { stage_type: String, ts_ms: u64 },
     PipelineStageCompleted { stage_type: String, ts_ms: u64 },
     /// `error_key` MUST be a valid i18n key (validated via `Event::error_emitted`

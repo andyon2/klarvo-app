@@ -49,6 +49,15 @@ export const commands = {
 	deleteHistoryEntry: (id: number) => typedError<null, AppError>(__TAURI_INVOKE("delete_history_entry", { id })),
 	clearHistory: () => typedError<null, AppError>(__TAURI_INVOKE("clear_history")),
 	exportDebugZipCmd: () => typedError<string, AppError>(__TAURI_INVOKE("export_debug_zip_cmd")),
+	/**
+	 *  Abort the current recording session (Pill-Bar abort button).
+	 * 
+	 *  No-op if no recording is active. Returns immediately — the orchestrator's
+	 *  async teardown (pipeline_task.abort, level_tap_task.abort) completes
+	 *  concurrently; the Pill-Bar fades via `Event::RecordingAborted` on the
+	 *  EventBus subscriber.
+	 */
+	cancelRecording: () => typedError<null, null>(__TAURI_INVOKE("cancel_recording")),
 };
 
 /** Events */

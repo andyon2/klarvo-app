@@ -644,6 +644,10 @@ fn main() {
                                 Ok(Event::RecordingCompleted { .. }) => {
                                     let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
                                 }
+                                Ok(Event::RecordingAborted { .. }) => {
+                                    // Recording aborted — return tray icon to idle state immediately.
+                                    let _ = tray_handle.set_icon(Some(idle_icon_tray.clone()));
+                                }
                                 Ok(_) => {}
                                 Err(RecvError::Lagged(n)) => {
                                     tracing::warn!(skipped = n, "tray subscriber lagged; resyncing");

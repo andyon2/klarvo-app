@@ -31,6 +31,7 @@ use specta::Type;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
 use commands::history::{clear_history, delete_history_entry, get_history};
+use commands::recording::cancel_recording;
 use commands::telemetry::export_debug_zip_cmd;
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
@@ -80,6 +81,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             clear_history,
             // Story 9.5: Debug-Export command
             export_debug_zip_cmd,
+            // Story 11.1: Pill-Bar abort button
+            cancel_recording,
         ])
         .events(collect_events![AppReady, SettingsChangedEvent])
 }

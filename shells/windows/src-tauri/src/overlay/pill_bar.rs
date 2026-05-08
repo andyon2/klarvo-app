@@ -151,6 +151,25 @@ fn handle_event<R: tauri::Runtime>(
                 WaveformPayload { bins, ts_ms },
             );
         }
+        Event::RecordingAborted { .. } => {
+            // Fade out identically to RecordingCompleted.
+            // No epoch bump needed — abort ends the current session, does not start a new one.
+            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
+            let app_clone = app.clone();
+            let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
+            let epoch_clone = Arc::clone(fade_epoch);
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(FADE_OUT_MS)).await;
+                if epoch_clone.load(Ordering::SeqCst) != epoch_snapshot {
+                    return; // New recording started within the 300ms fade window — no-op.
+                }
+                if let Some(win) = app_clone.get_webview_window(WINDOW_LABEL) {
+                    if let Err(e) = win.hide() {
+                        tracing::warn!(error = %e, "pill-bar hide failed (abort path)");
+                    }
+                }
+            });
+        }
         _ => {}
     }
 }

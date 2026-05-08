@@ -2,7 +2,7 @@
 name: Story 11.1 — Pill Bar HTML Re-Implementation
 epic: 11
 story_number: "11.1"
-status: ready-for-dev
+status: review
 dependencies:
   - "9-6-pill-bar"  # Pill-Bar-Overlay-Infrastructure (PillBar Rust-Struct, tauri.conf.json, EventBus-Subscriber-Task)
 inputDocuments:
@@ -14,7 +14,7 @@ inputDocuments:
 
 # Story 11.1: Pill Bar HTML Re-Implementation
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -515,12 +515,33 @@ Per AC-1 Story 9.6: das `Event`-Enum hat explizit KEIN `#[non_exhaustive]`. Das 
 
 ## Dev Agent Record
 
-### Agent Model Used
+### Completion Notes
 
-### Debug Log References
+All 6 ACs implemented in one session (2026-05-08):
 
-### Completion Notes List
+- **AC-1**: `Event::RecordingAborted { ts_ms: u64 }` added to `bus.rs` after `RecordingCompleted`. All three exhaustive match sites updated: `bridge.rs` (return — no main WebView consumer), `pill_bar.rs` (fade-out path identical to RecordingCompleted, no epoch bump), `main.rs` tray-subscriber (idle icon restore, inserted before `Ok(_) => {}` catch-all).
+- **AC-2**: `cancel_recording()` added to `SessionOrchestrator` in `session.rs`. Hard-aborts pipeline_task + level_tap_task, drops capture_handle, emits `Event::RecordingAborted`. Idempotent (Idle no-op). Pattern mirrors `shutdown()` except it emits RecordingAborted instead of nothing.
+- **AC-3**: `commands/recording.rs` created with `cancel_recording` Tauri command (`Result<(), ()>` return type). `mod.rs` and `lib.rs` updated with import + collect_commands! entry.
+- **AC-4**: `capabilities/pill-bar.json` created with `core:default` permission for the `pill-bar` window.
+- **AC-5**: `pill-bar.html` fully replaced — Canvas/ctx/drawWaveform removed; 5 pill-shaped divs + K-Logo + Abort-Button added. JS uses `window.__TAURI__?.core` for `invoke` (Tauri v2 pattern). 64→5 bin mapping via Math.round sampling.
+- **AC-6**: `cargo xtask generate-bindings` run → `cancelRecording` exported. `cargo xtask bindings-drift` → OK.
 
-### File List
+**Cross-compile note**: `cargo check --target x86_64-pc-windows-gnu` fails on `whisper-rs-sys` (pre-existing MinGW/Linux-bindgen size mismatch, confirmed on baseline). `klarvo-core` and `klarvo-shell-orchestrator` pass MinGW cross-compile cleanly. `klarvo-windows-shell --lib` passes on Linux. MinGW failure predates Story 11.1.
+
+## File List
+
+- `klarvo-core/src/event/bus.rs` — NEW variant `RecordingAborted { ts_ms: u64 }`
+- `shells/windows/src-tauri/src/bridge.rs` — NEW arm `Event::RecordingAborted { .. } => return`
+- `shells/windows/src-tauri/src/overlay/pill_bar.rs` — NEW arm `Event::RecordingAborted` with fade-out logic
+- `shells/windows/src-tauri/src/main.rs` — NEW arm `Ok(Event::RecordingAborted { .. })` for tray idle-restore
+- `klarvo-shell-orchestrator/src/session.rs` — NEW method `cancel_recording()`
+- `shells/windows/src-tauri/src/commands/mod.rs` — NEW `pub mod recording`
+- `shells/windows/src-tauri/src/commands/recording.rs` — NEW file: `cancel_recording` Tauri command
+- `shells/windows/src-tauri/src/lib.rs` — NEW import + `cancel_recording` in `collect_commands!`
+- `shells/windows/src-tauri/capabilities/pill-bar.json` — NEW capability file
+- `shells/windows/src/pill-bar.html` — REPLACED: Canvas → 5 pill-bars + K-Logo + Abort-Button
+- `shells/windows/src/bindings/index.ts` — UPDATED: `cancelRecording` export added
 
 ## Change Log
+
+- 2026-05-08: Story 11.1 implementation — `Event::RecordingAborted` backend + `cancel_recording` Tauri command + `capabilities/pill-bar.json` + Pill-Bar visual overhaul (5 pill-shaped bars, K-Logo, Abort-Button). Bindings regenerated.

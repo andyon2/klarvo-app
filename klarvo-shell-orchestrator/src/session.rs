@@ -426,6 +426,34 @@ impl SessionOrchestrator {
         };
     }
 
+    /// Abort the current recording session from the UI (Pill-Bar abort button).
+    ///
+    /// Differs from `shutdown`: emits `Event::RecordingAborted` after teardown
+    /// (so the Pill-Bar overlay fades). Does NOT emit `RecordingStopped` (no
+    /// meaningful audio boundary crossed). Idempotent: second call observes Idle
+    /// and no-ops.
+    ///
+    /// Pipeline task is hard-cancelled (abort, not graceful drop) — audio buffer
+    /// is discarded without STT call or paste (per UX-Spec §2.5 Abort Affordance).
+    pub async fn cancel_recording(&self) {
+        let mut state = self.session_state.lock().await;
+        let prev = std::mem::replace(&mut *state, SessionState::Idle);
+        drop(state); // release lock before async work
+        if let SessionState::Recording {
+            capture_handle,
+            pipeline_task,
+            level_tap_task,
+            ..
+        } = prev {
+            pipeline_task.abort();
+            level_tap_task.abort();
+            let _ = pipeline_task.await; // JoinError::is_cancelled() expected
+            let _ = level_tap_task.await;
+            drop(capture_handle);
+            self.event_bus.emit(Event::RecordingAborted { ts_ms: self.clock.now_ms() });
+        }
+    }
+
     /// Abort any active pipeline and return to `Idle`. Called on App-Exit.
     ///
     /// Differs from `on_release`: calls `pipeline_task.abort()` (hard-cancel) instead
