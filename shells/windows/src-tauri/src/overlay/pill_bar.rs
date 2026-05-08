@@ -201,13 +201,20 @@ fn handle_event<R: tauri::Runtime>(
             schedule_fade_and_hide(app, fade_epoch, "abort");
         }
         Event::LivePreviewChunk { text, ts_ms } => {
+            // Pass-2 EC-3 (code-review 2026-05-08): all window-related side-effects
+            // gated on get_webview_window — matches the RecordingStarted arm
+            // pattern. Avoids fan-out emit_to to a non-existent window if pill-bar
+            // creation failed at boot (rare, but consistent with the rest of the
+            // file's defensive pattern).
             if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
                 if let Err(e) = win.set_size(LogicalSize::new(LIVE_PREVIEW_WIDTH, LIVE_PREVIEW_HEIGHT)) {
                     tracing::warn!(error = %e, "pill-bar LP resize failed");
                 }
+                let _ = app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ());
+                let _ = app.emit_to(WINDOW_LABEL, "pill_bar.live_preview_chunk", LivePreviewPayload { text, ts_ms });
+            } else {
+                tracing::debug!("LivePreviewChunk dropped: pill-bar window not available");
             }
-            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ());
-            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.live_preview_chunk", LivePreviewPayload { text, ts_ms });
         }
         _ => {}
     }

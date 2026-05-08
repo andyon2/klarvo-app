@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use klarvo_core::audio::{AudioEvent, AudioSource, CaptureConfig, CaptureHandle,
     DEFAULT_AUDIOEVENT_CAPACITY};
@@ -83,6 +84,15 @@ pub struct SessionOrchestrator {
     mode_slot2: Arc<tokio::sync::RwLock<RecordingMode>>,
     focus_capture: Arc<dyn FocusCapture>,
     history_backend: Arc<dyn HistoryBackend>,
+    /// Generation counter incremented on every new session start. The
+    /// pipeline task captures its session_id at spawn-time and self-filters
+    /// `Event::LivePreviewChunk` emit when a newer session has superseded it
+    /// (Toggle stop-then-start race: without this guard, stale LP-text from
+    /// the old session would overwrite the freshly-shown pill-bar of the new
+    /// session). Delivery itself is unaffected — the user still gets their
+    /// transcript pasted; only the visual feedback is suppressed for the
+    /// detached old task.
+    session_counter: Arc<AtomicU64>,
 }
 
 impl SessionOrchestrator {
@@ -117,6 +127,7 @@ impl SessionOrchestrator {
             mode_slot2,
             focus_capture,
             history_backend,
+            session_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -261,6 +272,15 @@ impl SessionOrchestrator {
             None
         };
 
+        // Snapshot a session-generation id for the LivePreviewChunk stale-emit
+        // guard (Story 11.4 Pass-2 EC-2): if a NEWER session starts before this
+        // pipeline_task finishes, the global counter advances past our snapshot
+        // and the LP-emit self-suppresses so the new session's pill-bar isn't
+        // overwritten by stale text. fetch_add returns the previous value, so
+        // the freshly-captured id is `prev + 1`.
+        let session_id = self.session_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let session_counter_for_task = Arc::clone(&self.session_counter);
+
         let pipeline_task = tokio::spawn(async move {
             let pipeline = async {
                 let mut vad_guard = vad.lock().await;
@@ -343,11 +363,23 @@ impl SessionOrchestrator {
 
             // LivePreview: emit before delivery so the Pill Bar shows the text
             // before focus shifts to the target window (AC-2 ordering invariant).
+            //
+            // Pass-2 guards (code-review 2026-05-08):
+            //   EC-1: skip empty text — empty STT result would otherwise resize
+            //   the pill-bar to LP-mode and display nothing, visually misleading.
+            //   EC-2: skip if session has been superseded — Toggle stop-then-start
+            //   race spawns a new session before this detached pipeline_task
+            //   finishes; without the guard, stale LP-text would overwrite the
+            //   new session's pill-bar.
+            let session_active =
+                session_counter_for_task.load(Ordering::SeqCst) == session_id;
             if let Some(ref text) = text_to_deliver {
-                event_bus.emit(Event::LivePreviewChunk {
-                    text: text.clone(),
-                    ts_ms: clock.now_ms(),
-                });
+                if session_active && !text.is_empty() {
+                    event_bus.emit(Event::LivePreviewChunk {
+                        text: text.clone(),
+                        ts_ms: clock.now_ms(),
+                    });
+                }
             }
 
             if let Some(text) = text_to_deliver {
