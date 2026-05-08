@@ -61,3 +61,7 @@ _bmad/
 
 # Claude Code session state (memory, settings, not project artifact)
 .claude/
+
+# BMad runtime + test ephemera (regenerated per-session, not project artifact)
+_bmad-output/runtime/
+_bmad-output/test-artifacts/
