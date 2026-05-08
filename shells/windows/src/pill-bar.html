@@ -98,8 +98,55 @@
       opacity: 0.85;
     }
 
-    /* Live-Preview layout — content wired by Story 11.4 */
+    /* Live-Preview layout */
     #pill.live-preview #mode-badge { display: none; }
+
+    /* Recording-State: lp-area ausblenden */
+    #lp-area { display: none; }
+
+    /* Live-Preview: waveform ausblenden, lp-area einblenden */
+    #pill.live-preview #waveform { display: none; }
+    #pill.live-preview #lp-area {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    /* Text-Area: fills available space, overflow ellipsis */
+    #lp-text {
+      flex: 1;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--klarvo-color-text-primary);
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    /* Side-Strip: 8 narrow bars on the right */
+    #side-strip {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+      height: 28px;
+    }
+    .sbar {
+      width: 3px;
+      border-radius: var(--klarvo-radius-pill);
+      background: var(--klarvo-color-action);
+      opacity: 0.7;
+      height: 4px;
+      min-height: 4px;
+      max-height: 28px;
+      transition: height 40ms linear;
+    }
   </style>
 </head>
 <body>
@@ -123,6 +170,21 @@
     <button id="abort-btn" title="Cancel recording" aria-label="Cancel recording">
       <div id="abort-square"></div>
     </button>
+
+    <!-- Live-Preview content: wired by Story 11.4 -->
+    <div id="lp-area">
+      <div id="lp-text" role="status" aria-live="polite"></div>
+      <div id="side-strip">
+        <div class="sbar" data-idx="0"></div>
+        <div class="sbar" data-idx="1"></div>
+        <div class="sbar" data-idx="2"></div>
+        <div class="sbar" data-idx="3"></div>
+        <div class="sbar" data-idx="4"></div>
+        <div class="sbar" data-idx="5"></div>
+        <div class="sbar" data-idx="6"></div>
+        <div class="sbar" data-idx="7"></div>
+      </div>
+    </div>
   </div>
   <script type="module">
     const tauriCore  = window.__TAURI__?.core  ?? null;
@@ -131,9 +193,12 @@
     const pill      = document.getElementById('pill');
     const abortBtn  = document.getElementById('abort-btn');
     const bars      = Array.from(document.querySelectorAll('.bar'));
+    const lpText    = document.getElementById('lp-text');
+    const sbars     = Array.from(document.querySelectorAll('.sbar'));
 
-    const BIN_COUNT = 64;
-    const BAR_COUNT = 5;
+    const BIN_COUNT  = 64;
+    const BAR_COUNT  = 5;
+    const SBAR_COUNT = 8;
 
     // bins: full 64-element snapshot from the last waveform_tick
     let bins = new Float32Array(BIN_COUNT);
@@ -149,8 +214,18 @@
       }
     }
 
+    function updateSbars() {
+      for (let i = 0; i < SBAR_COUNT; i++) {
+        const binIdx = Math.round(i / (SBAR_COUNT - 1) * (BIN_COUNT - 1));
+        const amplitude = Math.max(0.08, bins[binIdx] ?? 0);
+        const heightPx = Math.round(amplitude * 28);
+        sbars[i].style.height = `${heightPx}px`;
+      }
+    }
+
     // Initial idle state: all bars at minimum height
     updateBars();
+    updateSbars();
 
     // Abort button: invoke cancel_recording Tauri command
     abortBtn.addEventListener('click', () => {
@@ -175,6 +250,7 @@
             bins[i] = 0;
           }
           updateBars();
+          updateSbars();
         }
       });
 
@@ -182,8 +258,10 @@
       tauriEvent.listen('pill_bar.show', () => {
         pill.classList.remove('fade-out');
         pill.classList.remove('live-preview');
+        lpText.textContent = '';
         bins.fill(0);
         updateBars();
+        updateSbars();
       });
 
       // Fade-out: CSS transition; Rust hides window after 300ms (FADE_OUT_MS constant)
@@ -194,6 +272,14 @@
       // Live-Preview: resize already done by Rust before this event fires
       tauriEvent.listen('pill_bar.enter_live_preview', () => {
         pill.classList.add('live-preview');
+      });
+
+      // Live-Preview chunk: update text area
+      tauriEvent.listen('pill_bar.live_preview_chunk', (evt) => {
+        const payload = evt?.payload;
+        if (payload && typeof payload.text === 'string') {
+          lpText.textContent = payload.text;
+        }
       });
     }
   </script>
