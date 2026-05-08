@@ -2349,7 +2349,7 @@ Vollständige Umsetzung der UX-Spec §2.5 Pill-Bar-State-Machine auf Windows (C1
 
 **Story-Sequenz:**
 - **11.1** (done): Visual Overhaul + Abort-Button-Backend (5 Pill-Bars, K-Logo, `cancel_recording`)
-- **11.2** (backlog): Token Foundation minimal — `design-tokens.toml` + xtask CSS-Generator + `pill-bar.html` refactor auf `var(--klarvo-*)`
+- **11.2** (done): Token Foundation minimal — `design-tokens.toml` + xtask CSS-Generator + `pill-bar.html` refactor auf `var(--klarvo-*)`
 - **11.3** (backlog): Floating Pill Bar — Drag, Position-Persistence, mode-dependent Size (~480×84 LivePreview), Mode-Badge
 - **11.4** (backlog): LivePreview-State — §2.5.8, Text + Side-Strip-Waveform (8 Bars), Live-Update per `pill_bar.live_preview_chunk`-Event
 - **11.5** (backlog): CleanupDone-Morph + FadeOut — Text morpht auf Cleanup-Ergebnis, success-edge border, cross-state FadeOut
