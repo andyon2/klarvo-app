@@ -341,6 +341,36 @@ impl Settings {
         self.set_raw("hotkey.slot2.mode", &mode.to_string(), "string")
     }
 
+    // --- Pill-Bar position accessors (Story 11.3) ---
+
+    /// Stored position of the pill-bar window (logical pixels, last user-dragged position).
+    /// Returns `None` when no position is saved (first run, fallback to bottom-center).
+    pub fn pill_bar_position(&self) -> Result<Option<(f64, f64)>, AppError> {
+        let x_str = self.get_raw("ui.pill_bar.position_x")?;
+        let y_str = self.get_raw("ui.pill_bar.position_y")?;
+        match (x_str, y_str) {
+            (Some(xs), Some(ys)) => {
+                let x: f64 = xs.parse().unwrap_or(f64::NAN);
+                let y: f64 = ys.parse().unwrap_or(f64::NAN);
+                if x.is_finite() && y.is_finite() {
+                    Ok(Some((x, y)))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Persist the pill-bar's logical-pixel position.
+    ///
+    /// Skips `validate_setting_value` — values are programmatically generated
+    /// (not user-supplied) and are always finite f64s by the time we call this.
+    pub fn set_pill_bar_position(&self, x: f64, y: f64) -> Result<(), AppError> {
+        self.set_raw("ui.pill_bar.position_x", &x.to_string(), "string")?;
+        self.set_raw("ui.pill_bar.position_y", &y.to_string(), "string")
+    }
+
     /// Delete a setting key from the DB. Used to clear optional keys (e.g. slot-2 combo).
     pub fn delete_raw(&self, key: &str) -> Result<(), AppError> {
         let guard = lock_conn(&self.conn);
@@ -965,6 +995,33 @@ mod tests {
         let s = Settings::in_memory(noop()).unwrap();
         s.set_recording_mode_slot2(RecordingMode::Toggle).unwrap();
         assert_eq!(s.recording_mode_slot2().unwrap(), RecordingMode::Toggle);
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 11.3: pill_bar_position round-trip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pill_bar_position_roundtrip() {
+        let s = Settings::in_memory(noop()).unwrap();
+        assert_eq!(s.pill_bar_position().unwrap(), None, "no position on fresh DB");
+        s.set_pill_bar_position(123.5, 456.75).unwrap();
+        let pos = s.pill_bar_position().unwrap();
+        assert_eq!(pos, Some((123.5, 456.75)));
+    }
+
+    #[test]
+    fn pill_bar_position_returns_none_for_partial_save() {
+        let s = Settings::in_memory(noop()).unwrap();
+        // Only x stored (should not happen in practice, but guard against it)
+        {
+            let g = s.conn.lock().unwrap();
+            g.execute(
+                "INSERT INTO settings (key, value, type) VALUES ('ui.pill_bar.position_x', '10.0', 'string')",
+                [],
+            ).unwrap();
+        }
+        assert_eq!(s.pill_bar_position().unwrap(), None);
     }
 
     #[test]
