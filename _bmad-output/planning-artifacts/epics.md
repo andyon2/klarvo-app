@@ -2332,16 +2332,28 @@ Substrate-Validation-Test: Zweiter STT-Plugin als reiner Trait-Impl, ohne Core-�
 
 ### Epic 11: Pill Bar Visual Overhaul (UX-Spec Implementation)
 
-V1-Visual-Continuity-Decision aus UX-Spec §2.5.2 (2026-05-07) umgesetzt: 5 Pill-shaped Waveform-Bars (statt 64-bin Canvas), K-Logo links, roter Abort-Button rechts — verbatim aus v1 `FloatingBar.tsx`. Abort-Button erfordert neues Backend (`Event::RecordingAborted` + `cancel_recording`-Tauri-Command).
+Vollständige Umsetzung der UX-Spec §2.5 Pill-Bar-State-Machine auf Windows (C1). Umfasst Design-Token-Foundation, Floating-Pill-Bar, und alle State-Machine-States (Idle/Recording/LivePreview/CleanupDone/Error/FadeOut) gemäß UX-Spec §2.5.1–§2.5.8 und Component-Spec §C1.
 
-**FRs covered:** UX-Spec §2.5.2 Visual Contract + §2.5 Abort Affordance — Source: `backlog.md` Items "Pill Bar HTML Re-Implementation" + "Floating Pill Bar".
+**Scope-Expansion (2026-05-08):** Epic 11 wurde ursprünglich aus `backlog.md`-Items "Pill Bar HTML Re-Implementation" + "Floating Pill Bar" abgeleitet (11.1). Nach UX-Spec-Review wurde der Scope auf die vollständige State-Machine erweitert. Neu: Token-Foundation (11.2) als Prerequisite für alle weiteren UI-Stories.
+
+**FRs covered:** UX-Spec §2.5 (Experience Mechanics vollständig), §2.5.2 Visual Contract, §2.5.8 LivePreview-Mode, §C1 Pill-Bar-Component-Spec, §J-D Error-Recovery-UI. Source: `backlog.md` Items + UX-Design-Specification.
 
 **Dependencies:** Story 9.6 (Pill-Bar-Overlay-Infrastructure: PillBar Rust-Struct, `tauri.conf.json`-Deklaration, EventBus-Subscriber-Task), UX-Spec §2.5.2 V1-Visual-Continuity-Decisions (2026-05-07), `pill-bar-ux-decisions.md` (accepted 2026-05-03).
 
 **Implementation Notes:**
-- 11.1 ist visual overhaul + abort-button-backend. Floating Pill Bar (Drag, Position-Persistence, mode-dependent Size) ist Folge-Story 11.2.
-- Pre-Decisions (Shape=A, Drag=A, Waveform=B, AutoHide=B aus `pill-bar-ux-decisions.md`) bleiben unverändert. Nur Visual-Contract wird aktualisiert.
-- `cancel_recording`-Command braucht Capability-Eintrag für pill-bar-Window (`capabilities/pill-bar.json`).
+- Pre-Decisions (Shape=A, Drag=A, Waveform=B, AutoHide=B aus `pill-bar-ux-decisions.md`) bleiben unverändert für alle Stories.
+- `cancel_recording`-Command + Capability bereits in 11.1 implementiert — keine Änderung nötig.
+- Token-Foundation (11.2) ist Prerequisite für 11.3–11.6; keine Story darf vor 11.2 starten.
+- Pill Bar bleibt plain HTML/CSS/Canvas (kein React, kein shadcn) — zu leichtgewichtig für Framework-Overhead.
+- shadcn-init und `Tokens.kt` (Android) gehören NICHT in diesen Epic — erst in Settings/Onboarding/Android-Epics.
+
+**Story-Sequenz:**
+- **11.1** (done): Visual Overhaul + Abort-Button-Backend (5 Pill-Bars, K-Logo, `cancel_recording`)
+- **11.2** (backlog): Token Foundation minimal — `design-tokens.toml` + xtask CSS-Generator + `pill-bar.html` refactor auf `var(--klarvo-*)`
+- **11.3** (backlog): Floating Pill Bar — Drag, Position-Persistence, mode-dependent Size (~480×84 LivePreview), Mode-Badge
+- **11.4** (backlog): LivePreview-State — §2.5.8, Text + Side-Strip-Waveform (8 Bars), Live-Update per `pill_bar.live_preview_chunk`-Event
+- **11.5** (backlog): CleanupDone-Morph + FadeOut — Text morpht auf Cleanup-Ergebnis, success-edge border, cross-state FadeOut
+- **11.6** (backlog): Error-State in Pill Bar — named cause-message per §J-D/P-Named-Failure, danger-border, kein Abort-Button
 
 ---
 
