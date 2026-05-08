@@ -4,19 +4,19 @@
 :root {
   /* Surface */
   --klarvo-color-surface-bg: #0F1715;
-  --klarvo-color-surface-dim: #4A5851;
-  --klarvo-color-surface-elevated: #1F2926;
-  --klarvo-color-surface-muted: #7A8A85;
   --klarvo-color-surface-surface: #161E1C;
+  --klarvo-color-surface-elevated: #1F2926;
   --klarvo-color-surface-text: #E8EFEC;
+  --klarvo-color-surface-muted: #7A8A85;
+  --klarvo-color-surface-dim: #4A5851;
 
   /* Roles */
   --klarvo-color-action: #14B8A6;
   --klarvo-color-activity: #FBBF24;
-  --klarvo-color-danger: #EF4444;
-  --klarvo-color-info: #60A5FA;
   --klarvo-color-success: #34D399;
+  --klarvo-color-info: #60A5FA;
   --klarvo-color-warm: #FB923C;
+  --klarvo-color-danger: #EF4444;
 
   /* Overlay */
   --klarvo-color-overlay-bg: rgba(13, 15, 20, 0.92);
@@ -27,8 +27,8 @@
   --klarvo-timing-slow: 400ms;
 
   /* Radius */
-  --klarvo-radius-lg: 12px;
-  --klarvo-radius-md: 8px;
-  --klarvo-radius-pill: 9999px;
   --klarvo-radius-sm: 4px;
+  --klarvo-radius-md: 8px;
+  --klarvo-radius-lg: 12px;
+  --klarvo-radius-pill: 9999px;
 }

@@ -173,14 +173,14 @@ pill = "9999px"   # Pill Bar bars, pill-shaped elements
 | `rgba(13, 15, 20, 0.85)` (pill background) | `var(--klarvo-color-overlay-bg)` |
 | `#14B8A6` (k-logo background) | `var(--klarvo-color-action)` |
 | `#14B8A6` (bar background) | `var(--klarvo-color-action)` |
-| `rgba(248, 113, 113, 0.9)` (abort-square bg) | `var(--klarvo-color-danger)` — volle Opazität, kein Alpha mehr (UX-Spec §C1: `var(--klarvo-color-danger)`) |
+| `rgba(248, 113, 113, 0.9)` (abort-square bg) | `var(--klarvo-color-danger)` — Alpha-Channel im Color-Wert entfernt (`#EF4444`); Element-Rule `opacity: 0.85` auf `#abort-square` bleibt erhalten als pre-existing visuelles Treatment (UX-Spec §C1: `var(--klarvo-color-danger)`) |
 | `300ms ease-out` (fade-out transition) | `var(--klarvo-timing-medium) ease-out` (250ms) |
 | `border-radius: 9999px` (bars) | `var(--klarvo-radius-pill)` |
 | `border-radius: 24px` (pill container) | bleibt hardcoded — kein passender Radius-Token; 24px ist layout-spezifisch (= half of 48px height), nicht semantic |
 
 3. `grep -E '#14B8A6|rgba\(13.*0\.85|rgba\(248' shells/windows/src/pill-bar.html` gibt keinen Match.
 
-**Visueller Smoke-Test:** Nach dem Refactor zeigt die Pill Bar in `cargo tauri dev` optisch dasselbe wie vor dem Refactor — außer dass die Overlay-Opazität von 0.85 auf 0.92 angehoben wurde (bewusste Spec-Anpassung) und der Abort-Button von `rgba(248, 113, 113, 0.9)` auf `#EF4444` (voller Rot) wechselt. Beide Änderungen sind UX-Spec-konform.
+**Visueller Smoke-Test:** Nach dem Refactor zeigt die Pill Bar in `cargo tauri dev` optisch dasselbe wie vor dem Refactor — außer dass die Overlay-Opazität von 0.85 auf 0.92 angehoben wurde (bewusste Spec-Anpassung) und der Abort-Button von `rgba(248, 113, 113, 0.9)` auf `#EF4444` wechselt. Element-Rule `opacity: 0.85` auf `#abort-square` bleibt erhalten → effektive Render-Alpha steigt von ≈0.765 auf 0.85 (etwas roter, leicht opaker). Beide Änderungen sind UX-Spec-konform.
 
 ### AC-5: `cargo xtask gen-tokens` im CI-Help-Text dokumentiert
 
@@ -328,3 +328,37 @@ Empfohlene Implementierungsreihenfolge:
 ```
 feat(11.2): design-token foundation — design-tokens.toml + xtask gen-tokens + pill-bar.html refactor
 ```
+
+## Review Findings
+
+Code review 2026-05-08 (Blind Hunter + Acceptance Auditor; Edge Case Hunter failed, layer skipped).
+
+### Decision-needed
+
+- [x] [Review][Decision] **CSS-Output-Order vs AC-2 verbatim Spec-Block** — AC-2 zeigt CSS-Block in TOML/semantischer Reihenfolge (Surface: `bg, surface, elevated, text, muted, dim`; Roles: `action, activity, success, info, warm, danger`; Radius: `sm, md, lg, pill`). Technical Notes mandatieren `BTreeMap` für deterministische Ausgabe → erzwingt alphabetische Ordnung. Ausgelieferte `tokens.css` ist alphabetisch (Surface: `bg, dim, elevated, muted, surface, text`; Roles: `action, activity, danger, info, success, warm`; Radius: `lg, md, pill, sm`). Spec-self-contradiction. Optionen: (a) AC-2 Verbatim-Block auf alphabetisch updaten; (b) Generator auf `IndexMap`/`Vec<(String,String)>` umstellen damit TOML-Reihenfolge erhalten bleibt (Roles encodieren Trust-Anchor-Priorität, nicht Lookup-Reihenfolge). [Source: blind+auditor — `xtask/src/gen_tokens.rs:46-58`, `shells/windows/src/styles/tokens.css:5-31`]
+
+- [x] [Review][Decision] **`#abort-square` `opacity: 0.85` retention vs AC-4 „voller Rot"** — AC-4 Replacement-Tabelle sagt „volle Opazität, kein Alpha mehr", Visual-Smoke-Test sagt Switch auf `#EF4444` (voller Rot). `pill-bar.html:84` setzt jetzt `background: var(--klarvo-color-danger)` aber Element-Rule `opacity: 0.85` bleibt → effektive Alpha = 0.85, nicht 1.0. Lesbar narrow („kein rgba-Alpha im Color-Wert mehr" = erfüllt) oder broad („Render bei voller Opazität" = nicht erfüllt). Optionen: (a) `opacity: 0.85` auf `#abort-square` droppen; (b) Spec-Amendment „Alpha-Channel entfernt; Element-Opacity-Rule erhalten". [Source: blind+auditor — `shells/windows/src/pill-bar.html:84`]
+
+### Patch
+
+- [x] [Review][Patch] **`#[serde(deny_unknown_fields)]` an `Tokens` + `ColorTokens` ergänzen** [`xtask/src/gen_tokens.rs:11,18`] — Tippfehler in `design-tokens.toml` (z.B. `[colors]` statt `[color]` oder `background` statt `bg`) parsen heute silent durch / produzieren irreführende „missing field"-Errors statt der Tippfehler-Ursache zu zeigen.
+
+- [x] [Review][Patch] **`.expect()` an Lines 26 + 79 durch strukturierten Error ersetzen** [`xtask/src/gen_tokens.rs:26`, `xtask/src/gen_tokens.rs:79`] — AC-2 mandatiert „non-zero + descriptive error on any failure". `.expect()` panickt mit Stack-Trace statt eprintln+`ExitCode::FAILURE` wie alle anderen Error-Pfade in der Datei.
+
+- [x] [Review][Patch] **Pill-bar.html-Kommentare Lines 26 + 53 — `color: --klarvo-color-action` ist keine valide CSS-Syntax-Konvention** [`shells/windows/src/pill-bar.html:26`, `shells/windows/src/pill-bar.html:53`] — `color: --klarvo-color-action` liest sich wie eine CSS-Property-Declaration, ist aber ein Token-Name-Hinweis. Auf `var(--klarvo-color-action)` oder schlicht `klarvo-color-action` umstellen.
+
+### Deferred (pre-existing oder out-of-scope)
+
+- [x] [Review][Defer] **Generator-Unit-Tests fehlen** [`xtask/src/gen_tokens.rs`] — deferred, Test-Plan AC-6 fordert nur Binary-Execution, keine CSS-Struktur-Asserts; eigene Story-Folge.
+- [x] [Review][Defer] **CI-Drift-Gate für `tokens.css` (`gen-tokens --check` oder verify-release-Hook)** [`xtask/src/gen_tokens.rs`, `xtask/src/main.rs`] — deferred, AC-3 explizit ausgeklammert („CI-Gate für CSS-Drift = separates deferred-work Item, nicht hier").
+- [x] [Review][Defer] **Schema-Härtung-Batch: Hex-Case-Normalisierung, `_meta`-Versioning in `design-tokens.toml`, `.gitattributes linguist-generated=true` für `tokens.css`** [`design-tokens.toml`, `shells/windows/src/styles/tokens.css`] — deferred, kein akuter Schmerz; sammeln bis nächstes Token-System-Wachstum.
+- [x] [Review][Defer] **Leere `[timing]`/`[radius]`-Tabellen produzieren leere CSS-Sektionen statt Error** [`xtask/src/gen_tokens.rs:18-22`] — deferred, gleiche Klasse wie Schema-Härtung; mit `deny_unknown_fields` zusammen härten wenn nächste Token-Kategorie dazukommt.
+- [x] [Review][Defer] **`warm` als Role-Token taxonomisch ungewöhnlich** [`design-tokens.toml:21`] — deferred, UX-Vocab-Review (`warm` ist Hue-Temperature, nicht Role wie `success`/`info`/`danger`); nicht-blocking für Pill-Bar-Stories.
+
+### Resolution (2026-05-08)
+
+- **D1 → resolved as Generator-Refactor:** `BTreeMap`/lockere Maps durch typisierte Named-Struct-Fields (`SurfaceColors`, `RoleColors`, `OverlayColors`, `TimingTokens`, `RadiusTokens`) ersetzt. Reihenfolge ist jetzt strukturell durch Field-Ordering fixiert (matched AC-2 verbatim Spec-Block). `tokens.css` regeneriert. Beifang: P1 (`#[serde(deny_unknown_fields)]`) und Empty-Section-Edge-Case (Defer-Item DF4) durch Named-Fields automatisch geschlossen.
+- **D2 → resolved as Spec-Amendment:** AC-4-Tabelle und Visuelle-Smoke-Test-Beschreibung explizit annotiert: `opacity: 0.85` Element-Rule auf `#abort-square` bleibt erhalten; effektive Render-Alpha steigt von ≈0.765 auf 0.85 (Color-Wert verlor Alpha, Element-Opacity-Rule bleibt).
+- **P2 → applied:** `.expect()` an Lines 26 + 79 in `gen_tokens.rs` durch `match … None => eprintln+ExitCode::FAILURE` ersetzt.
+- **P3 → applied:** Pill-bar.html Kommentare Lines 26 + 53 → `var(--klarvo-color-action)` (CSS-Syntax-konform).
+- **AC-6 verifiziert:** `cargo check -p xtask` und `cargo check -p klarvo-windows-shell --lib` grün; MinGW-Cross-Compile-Failure bleibt 11.1-DF1 (whisper-rs-sys baseline, pre-existing).

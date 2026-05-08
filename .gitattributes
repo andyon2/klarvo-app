@@ -9,3 +9,8 @@
 test-assets/audio/*.wav filter=lfs diff=lfs merge=lfs -text
 test-assets/audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
 test-assets/audio/*.ogg filter=lfs diff=lfs merge=lfs -text
+
+# Generated CSS pinned to LF so `cargo xtask gen-tokens` produces identical
+# bytes on Linux/macOS/Windows checkouts (avoids CRLF↔LF diff churn under
+# core.autocrlf=true on Windows hosts). Story 11.2 DF3 follow-up.
+shells/windows/src/styles/tokens.css text eol=lf

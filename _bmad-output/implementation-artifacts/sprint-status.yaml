@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-08 (Story 11.2 token-foundation → done)"
+last_updated: "2026-05-08 (Story 11.2 code-review → 5 patches applied, status remains done)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
