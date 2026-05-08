@@ -53,9 +53,26 @@ Gliederung nach thematischen Buckets — **keine 1:1-Bucket-zu-Epic-Kopplung**, 
 ### Floating Pill Bar
 
 - **Source**: PRD L155 (`explicitlyOutOfScope`: "Floating Pill Bar with waveform/drag/shapes (Phase 2)"), PRD L179 (Umfang Phase 1: "keine Floating Pill Bar"), Product-Brief §Scope MVP-enthalten "komplette Floating Pill Bar (Windows)"
-- **Description**: Persistente Floating-Window-UI während Recording, die Waveform visualisiert und per Drag positionierbar ist. UX-Spec unvollständig in aktueller Dokumentation — Shape-Definition (Pill vs. Bar vs. Other), Drag-Behavior-Konvention, Waveform-Rendering-Responsibility (Rust-getriggert per `memory`-Architecture §5), Auto-Hide-Logic (Release + Delay? User-Trigger?), Position-Persistence über Sessions hinweg.
-- **Dependencies**: UX-Spec-Decisions (vor Story-Writing); evtl. separater UX-Arbeitsstrang
-- **Status**: UX-Spec-TODO
+- **Description**: Persistente Floating-Window-UI während Recording, die Waveform visualisiert und per Drag positionierbar ist. **UX-Spec Decisions abgeschlossen 2026-05-07** in `_bmad-output/planning-artifacts/ux-design-specification.md` §2.5 + Surface-Adaptation: 5-Pill-Bars Waveform (verbatim aus v1), K-Logo + roter Abort-Button, mode-dependent Größe (320×48 Waveform / ~480×84 Live-Preview), Position-Persistence per Monitor-Signature, nicht user-resizable in Waveform-Mode. Mockup: `_bmad-output/planning-artifacts/ux-design-directions.html`.
+- **Dependencies**: UX-Spec done. Pre-Decisions in `_bmad-output/planning-artifacts/pill-bar-ux-decisions.md` müssen vor Story-Writing als ADR re-affirmed werden (Live-Preview-Mode war dort nicht vorhergesehen)
+- **Status**: Ready-for-Story-Writing
+
+### Pill Bar HTML Re-Implementation
+
+- **Source**: UX-Spec §2.5.2 Visual Contract (2026-05-07) — V1-Visual-Continuity-Decision aus User-Screenshots
+- **Description**: Aktuelle `shells/windows/src/pill-bar.html` (64-Bin Canvas-Waveform, 320×48 fix, kein Abort-Button) muss umgebaut werden auf: 5 Pill-shaped Waveform-Bars (verbatim aus v1 `src/FloatingBar.tsx:25` `BAR_COUNT=5`, `borderRadius:9999`), K-Logo links, roter Abort-Button rechts (calls `cancelRecording`-Equivalent), mode-dependent Größe für Live-Preview (Welle-2). Trust-Anchor-Teal (#14B8A6) für Active-Bars.
+- **Dependencies**: Pill-Bar-Pre-Decisions ADR re-affirmed; `klarvo-windows-shell` Tauri-Window-resize-API für mode-dependent Größe (oder zwei separate Tauri-Windows, eines per Mode)
+- **Status**: Dispatched → Story 11.1 (`epic-11-1-pill-bar-html-reimpl.md`, 2026-05-08) — mode-dependent Größe (Live-Preview Wave-2) bleibt in Story 11.2
+
+### UX-Spec Open Follow-Ups (konsolidiert)
+
+- **Source**: `_bmad-output/planning-artifacts/ux-design-specification.md` (2026-05-07, Steps 1–14 done)
+- **Description**: Sammeleintrag für die Open-Follow-Ups, die in der UX-Spec verstreut markiert sind. Drei Kategorien:
+  - **ADR-Kandidaten (vor Story-Writing zu lösen):** (1) Pill Bar Pre-Decisions Re-Open (Live-Preview-Mode-Erweiterung gegen `pill-bar-ux-decisions.md`); (2) HotkeyCaptureModal Esc Dual-Meaning (cancel modal vs. cancel recording); (3) STT-Provider Capability Matrix als Trait-Surface (welche Provider streamen, welche nur batch).
+  - **Architecture-Amendments:** (4) Pipeline-Streaming-Mode → `architecture.md` (Live-Preview Chunked-Batch + Audio-Buffer-Lifetime Memory-Implications).
+  - **Story-Internal-Defaults (in Story-Writing zu setzen, nicht standalone):** (5) AutoStop-Silence-Threshold Default-Wert; (6) Live-Preview Default ON/OFF in Onboarding; (7) Chunk-Size-Defaults pro Provider-Tier; (8) Pill Bar Live-Preview konkrete Max-Größe (~480×84 placeholder); (9) Live-Preview aria-live Default-State + Settings-Toggle; (10) Settings Window Min-Size 800×600 validieren (vs. Onboarding 720×560).
+- **Dependencies**: ADR-Kandidaten (1–3) blocken Story-Writing der jeweiligen Epics. Architecture-Amendment (4) blockt nicht direkt — kann parallel laufen. Story-Internal-Defaults (5–10) werden in den jeweiligen Stories entschieden.
+- **Status**: Ready-for-Decision-Triage (ADR-Kandidaten zuerst)
 
 ### Toggle + AutoStop + Wait-and-Type Recording-Modi
 
@@ -220,9 +237,9 @@ Gliederung nach thematischen Buckets — **keine 1:1-Bucket-zu-Epic-Kopplung**, 
 
 ### Hotkey-Konflikt-Erkennung
 
-- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25)
-- **Description**: Phase-1 emittiert bei Hotkey-Kollision `error.hotkey.registration_failed` als Toast — User muss den Konflikt selbst lösen und `config.toml` manuell anpassen. Daily-Drive-UX: (a) Beim Boot-Fehler direkt den konfliktierenden Prozess nennen (Windows `RegisterHotKey` liefert keinen Eigentümer — Workaround via `GetForegroundWindow` / Accessibility-API oder User-Hint im Toast); (b) Settings-Panel mit „Hotkey ändern"-Dialog, der sofort auf Registrierungsfehler reagiert.
-- **Dependencies**: Minimales Settings-Panel (Epic-Phase-2-A done)
+- **Source**: Story 4.5 `docs/sanity-tester-onboarding.md` (2026-04-25); UX-Spec Open-Follow-Up (2026-05-07)
+- **Description**: Phase-1 emittiert bei Hotkey-Kollision `error.hotkey.registration_failed` als Toast — User muss den Konflikt selbst lösen und `config.toml` manuell anpassen. Daily-Drive-UX: (a) Beim Boot-Fehler direkt den konfliktierenden Prozess nennen (Windows `RegisterHotKey` liefert keinen Eigentümer — Workaround via `GetForegroundWindow` / Accessibility-API oder User-Hint im Toast); (b) Settings-Panel mit „Hotkey ändern"-Dialog, der sofort auf Registrierungsfehler reagiert; (c) **Probe-Feature (UX-Spec)**: Vor Hotkey-Bind im HotkeyCaptureModal trial-`RegisterHotKey` + sofortiger `UnregisterHotKey`, um Kollision *vor* Save anzuzeigen statt nach Boot-Restart.
+- **Dependencies**: Minimales Settings-Panel (Epic-Phase-2-A done); Probe-Feature setzt HotkeyCaptureModal-Component (C5) voraus
 - **Status**: Planned
 
 ---
@@ -548,3 +565,4 @@ Items, die Entscheidungs-Workflows brauchen, bevor sie Backlog-Items werden:
 - **2026-04-26 (Phase-2-Scope-Lock, historisch):** Goal-Line oben korrigiert — "OS-Keystore als Release-Default" entfernt (MVP-Closure-Kandidat per Andy-Call 2026-04-21, F1-Resolution im Phase-2-Scoping-Brief). Historischer Scope-Snapshot: `_bmad-output/planning-artifacts/_archive/phase-2-scope-lock.md`. Backlog bleibt Single-Source-of-Truth für Item-Inventur.
 - **2026-05-01 (BMad-Reset):** Phasen-Headers → thematische Buckets; Sprint-Tracking 100% Epic-basiert (sprint-status.yaml). Cf. `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-01.md`.
 - **2026-04-29 (Welle-2-Dispatch):** Play-Store-Policy-Audit: `docs/phase3-android-policy-audit.md` erstellt, Status auf `Pending-Google-Response` gesetzt. Phase-2-A-Welle-2-Story-Files erstellt (D2/D3/E1/F2/C1) + Stream-A AC-Writing (A8-Sub/C2/C3) gestartet.
+- **2026-05-07 (UX-Spec-Closure):** `bmad-create-ux-design`-Workflow Steps 1–14 abgeschlossen (`_bmad-output/planning-artifacts/ux-design-specification.md`, `ux-design-directions.html`). Backlog-Updates: (1) "Floating Pill Bar" `UX-Spec-TODO` → `Ready-for-Story-Writing` mit V1-Visual-Continuity-Decisions (5-Pill-Bars, K-Logo, Abort-Button, mode-dependent Größe für Live-Preview); (2) Neuer Eintrag "Pill Bar HTML Re-Implementation" (entblockt Epic 9); (3) Neuer Konsolidiert-Eintrag "UX-Spec Open Follow-Ups" mit 10 Items in 3 Kategorien (ADR / Architecture-Amendment / Story-Internal); (4) Hotkey-Konflikt-Erkennung um "Probe-Feature" (Trial-Register vor Save) erweitert.

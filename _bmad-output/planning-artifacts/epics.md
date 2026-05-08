@@ -2330,9 +2330,24 @@ Substrate-Validation-Test: Zweiter STT-Plugin als reiner Trait-Impl, ohne Core-�
 
 ---
 
+### Epic 11: Pill Bar Visual Overhaul (UX-Spec Implementation)
+
+V1-Visual-Continuity-Decision aus UX-Spec §2.5.2 (2026-05-07) umgesetzt: 5 Pill-shaped Waveform-Bars (statt 64-bin Canvas), K-Logo links, roter Abort-Button rechts — verbatim aus v1 `FloatingBar.tsx`. Abort-Button erfordert neues Backend (`Event::RecordingAborted` + `cancel_recording`-Tauri-Command).
+
+**FRs covered:** UX-Spec §2.5.2 Visual Contract + §2.5 Abort Affordance — Source: `backlog.md` Items "Pill Bar HTML Re-Implementation" + "Floating Pill Bar".
+
+**Dependencies:** Story 9.6 (Pill-Bar-Overlay-Infrastructure: PillBar Rust-Struct, `tauri.conf.json`-Deklaration, EventBus-Subscriber-Task), UX-Spec §2.5.2 V1-Visual-Continuity-Decisions (2026-05-07), `pill-bar-ux-decisions.md` (accepted 2026-05-03).
+
+**Implementation Notes:**
+- 11.1 ist visual overhaul + abort-button-backend. Floating Pill Bar (Drag, Position-Persistence, mode-dependent Size) ist Folge-Story 11.2.
+- Pre-Decisions (Shape=A, Drag=A, Waveform=B, AutoHide=B aus `pill-bar-ux-decisions.md`) bleiben unverändert. Nur Visual-Contract wird aktualisiert.
+- `cancel_recording`-Command braucht Capability-Eintrag für pill-bar-Window (`capabilities/pill-bar.json`).
+
+---
+
 ## MVP-Boundary
 
-**Innerhalb MVP-Scope:** Epic 1A — Epic 10 + Epic-Phase-2-A (Hybrid-Outlier).
+**Innerhalb MVP-Scope:** Epic 1A — Epic 11 + Epic-Phase-2-A (Hybrid-Outlier).
 
 **Post-MVP-Trigger-Epics (in `epics.md` ungestaffelt; Eröffnung erst bei Trigger):**
 - Epic 7: V1→V2 Migration (Trigger: Onboarding-Flow-Eröffnung)

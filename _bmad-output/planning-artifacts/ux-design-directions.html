@@ -1,0 +1,1100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Klarvo v2 — Design Directions Mockups</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* Trust Anchor — Surfaces */
+      --bg:        #0F1715;
+      --surface:   #161E1C;
+      --elevated:  #1F2926;
+      --text:      #E8EFEC;
+      --muted:     #7A8A85;
+      --dim:       #4A5851;
+
+      /* Functional Roles */
+      --action:    #14B8A6;
+      --activity:  #FBBF24;
+      --success:   #34D399;
+      --info:      #60A5FA;
+      --warm:      #FB923C;
+      --danger:    #EF4444;
+
+      /* Translucent variants for tints/borders */
+      --action-tint:   rgba(20, 184, 166, 0.12);
+      --action-border: rgba(20, 184, 166, 0.30);
+      --activity-tint: rgba(251, 191, 36, 0.12);
+      --success-tint:  rgba(52, 211, 153, 0.12);
+      --info-tint:     rgba(96, 165, 250, 0.12);
+      --warm-tint:     rgba(251, 146, 60, 0.12);
+      --danger-tint:   rgba(239, 68, 68, 0.12);
+      --danger-border: rgba(239, 68, 68, 0.35);
+
+      /* Spacing */
+      --s-1: 4px;
+      --s-2: 8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 24px;
+      --s-6: 32px;
+      --s-7: 48px;
+      --s-8: 64px;
+
+      /* Radii */
+      --r-sm: 4px;
+      --r-md: 8px;
+      --r-lg: 12px;
+      --r-pill: 999px;
+
+      /* Timing */
+      --t-fast: 150ms;
+      --t-medium: 250ms;
+      --t-slow: 400ms;
+
+      --easing: cubic-bezier(0.4, 0, 0.2, 1);
+
+      /* Type */
+      --font-sans: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, "SF Mono", Consolas, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { color-scheme: dark; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 22px;
+      -webkit-font-smoothing: antialiased;
+      padding: var(--s-7) var(--s-5);
+    }
+
+    /* Page-level layout */
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-8);
+    }
+
+    .page-header {
+      border-bottom: 1px solid var(--dim);
+      padding-bottom: var(--s-5);
+    }
+    .page-header h1 {
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+      margin-bottom: var(--s-2);
+    }
+    .page-header p {
+      color: var(--muted);
+      max-width: 680px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-5);
+    }
+    .section-header {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-2);
+    }
+    .section-header h2 {
+      font-size: 18px;
+      line-height: 26px;
+      font-weight: 600;
+    }
+    .section-header p {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 680px;
+    }
+
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--dim);
+      border-radius: var(--r-md);
+      padding: var(--s-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-4);
+    }
+
+    .mockup-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 16px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* ───────────────────────────────────────────── */
+    /* Section 1: Pill Bar States (Windows)          */
+    /* ───────────────────────────────────────────── */
+
+    .pill-states {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-5);
+    }
+
+    .pill-state {
+      display: flex;
+      align-items: center;
+      gap: var(--s-5);
+    }
+
+    .pill-state-meta {
+      width: 200px;
+      flex-shrink: 0;
+    }
+    .pill-state-meta h4 {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: var(--s-1);
+    }
+    .pill-state-meta p {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .pill {
+      background: rgba(13, 15, 20, 0.92);
+      border-radius: var(--r-pill);
+      display: flex;
+      align-items: center;
+      gap: var(--s-3);
+      padding: 0 var(--s-3);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4),
+                  0 2px 6px rgba(0, 0, 0, 0.3);
+      transition: width var(--t-slow) var(--easing),
+                  height var(--t-slow) var(--easing);
+    }
+
+    .pill--idle { width: 320px; height: 48px; justify-content: flex-start; }
+    .pill--recording { width: 320px; height: 48px; }
+    .pill--live-preview { width: 480px; height: 84px; padding: var(--s-3); align-items: flex-start; }
+    .pill--cleanup-done { width: 480px; height: 84px; padding: var(--s-3); align-items: flex-start; }
+    .pill--error { width: 320px; height: 48px; }
+
+    /* Klarvo K-logo (brand anchor inside the pill) */
+    .pill-logo {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      border-radius: var(--r-sm);
+      background: var(--action-tint);
+      border: 1px solid var(--action-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--action);
+      font-weight: 600;
+      font-size: 13px;
+      font-family: var(--font-sans);
+    }
+
+    /* Abort button (red square, next to logo) */
+    .abort-button {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      border-radius: 5px;
+      background: var(--danger);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform var(--t-fast) var(--easing);
+    }
+    .abort-button:hover { transform: scale(1.1); }
+    .abort-button .square {
+      width: 9px;
+      height: 9px;
+      background: rgba(13, 15, 20, 0.92);
+      border-radius: 1px;
+    }
+
+    /* Mode badge (right side) */
+    .mode-badge {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+      margin-left: auto;
+      padding-right: var(--s-2);
+    }
+
+    /* Pill waveform — 5 pill-shaped bars (v1 visual: borderRadius 9999) */
+    .waveform-canvas {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      height: 24px;
+      flex: 1;
+      min-width: 0;
+    }
+    .waveform-canvas .bar {
+      flex: 1;
+      max-width: 5px;
+      background: var(--action);
+      border-radius: 9999px;
+      opacity: 0.85;
+    }
+    .pill--idle .waveform-canvas .bar { opacity: 0.25; height: 4px !important; }
+
+    /* Pill: Live-Preview — text fills, abort + side-strip waveform */
+    .pill--live-preview .pill-logo,
+    .pill--cleanup-done .pill-logo {
+      align-self: flex-start;
+    }
+    .live-preview-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-1);
+      min-width: 0;
+    }
+    .live-preview-text {
+      color: var(--text);
+      font-size: 13px;
+      line-height: 19px;
+      max-height: 57px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+    .live-preview-text .recent {
+      color: var(--text);
+    }
+    .live-preview-text .older {
+      color: var(--muted);
+    }
+    .pill--live-preview .waveform-strip {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      height: 8px;
+      width: 100%;
+      max-width: 80px;
+    }
+    .pill--live-preview .waveform-strip .bar {
+      flex: 1;
+      max-width: 4px;
+      background: var(--action);
+      border-radius: 9999px;
+      opacity: 0.7;
+    }
+
+    /* Pill: Cleanup-Done — final cleaned text with success edge */
+    .pill--cleanup-done {
+      border: 1px solid rgba(52, 211, 153, 0.30);
+    }
+    .cleanup-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-1);
+      min-width: 0;
+    }
+    .cleanup-text {
+      color: var(--text);
+      font-size: 13px;
+      line-height: 19px;
+      font-weight: 400;
+    }
+    .cleanup-badge {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      border-radius: var(--r-pill);
+      background: var(--success-tint);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      align-self: flex-start;
+    }
+    .cleanup-badge svg {
+      width: 14px;
+      height: 14px;
+      stroke: var(--success);
+    }
+
+    /* Pill: Error — red border + icon + message */
+    .pill--error {
+      border: 1px solid var(--danger-border);
+    }
+    .pill--error .error-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      color: var(--danger);
+    }
+    .pill--error .error-text {
+      flex: 1;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .pill--error .error-detail {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* ───────────────────────────────────────────── */
+    /* Section 2: Settings Home (Windows WebView)    */
+    /* ───────────────────────────────────────────── */
+
+    .window-frame {
+      width: 960px;
+      height: 720px;
+      background: var(--bg);
+      border: 1px solid var(--dim);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .window-titlebar {
+      height: 32px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--dim);
+      display: flex;
+      align-items: center;
+      padding: 0 var(--s-3);
+      gap: var(--s-2);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .window-titlebar .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: var(--r-pill);
+      background: var(--dim);
+    }
+    .window-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .settings-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      overflow: hidden;
+    }
+    .settings-sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--dim);
+      padding: var(--s-5) var(--s-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-1);
+    }
+    .settings-sidebar .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--s-2);
+      padding: var(--s-2) var(--s-3);
+      margin-bottom: var(--s-4);
+    }
+    .settings-sidebar .brand .logo {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--r-sm);
+      background: var(--action-tint);
+      border: 1px solid var(--action-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--action);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .settings-sidebar .brand .name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: var(--s-3);
+      padding: var(--s-2) var(--s-3);
+      border-radius: var(--r-sm);
+      color: var(--muted);
+      font-size: 13px;
+      cursor: default;
+    }
+    .nav-item:hover { background: var(--elevated); color: var(--text); }
+    .nav-item.active {
+      background: var(--action-tint);
+      color: var(--action);
+    }
+    .nav-item .icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      stroke-width: 1.6;
+    }
+
+    .settings-main {
+      padding: var(--s-7) var(--s-7);
+      overflow-y: auto;
+      max-width: 680px;
+    }
+    .settings-main h1 {
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+      margin-bottom: var(--s-2);
+    }
+    .settings-main > p.lead {
+      color: var(--muted);
+      margin-bottom: var(--s-7);
+    }
+    .settings-section {
+      margin-bottom: var(--s-7);
+    }
+    .settings-section h2 {
+      font-size: 18px;
+      line-height: 26px;
+      font-weight: 600;
+      margin-bottom: var(--s-4);
+    }
+
+    .list-row {
+      display: flex;
+      align-items: center;
+      gap: var(--s-4);
+      padding: var(--s-3) var(--s-4);
+      border-radius: var(--r-sm);
+      cursor: default;
+    }
+    .list-row:hover { background: var(--elevated); }
+    .list-row + .list-row { border-top: 1px solid var(--dim); }
+    .list-row + .list-row:hover { border-top: 1px solid transparent; }
+
+    .list-row .badge-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--r-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .badge-icon.action   { background: var(--action-tint); color: var(--action); }
+    .badge-icon.activity { background: var(--activity-tint); color: var(--activity); }
+    .badge-icon.success  { background: var(--success-tint); color: var(--success); }
+    .badge-icon.info     { background: var(--info-tint); color: var(--info); }
+    .badge-icon.warm     { background: var(--warm-tint); color: var(--warm); }
+    .badge-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }
+
+    .list-row .label {
+      flex: 1;
+    }
+    .list-row .label .title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .list-row .label .desc {
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .list-row .value {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .list-row .chevron {
+      color: var(--dim);
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .pill-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px var(--s-2);
+      border-radius: var(--r-pill);
+      background: var(--info-tint);
+      color: var(--info);
+    }
+
+    /* ───────────────────────────────────────────── */
+    /* Section 3: Onboarding Step 1 (BYOK)           */
+    /* ───────────────────────────────────────────── */
+
+    .onboarding-main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--s-7);
+    }
+    .onboarding-card {
+      max-width: 480px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-5);
+    }
+    .step-indicator {
+      display: flex;
+      gap: var(--s-2);
+      align-items: center;
+    }
+    .step-dot {
+      width: 24px;
+      height: 4px;
+      border-radius: var(--r-pill);
+      background: var(--dim);
+    }
+    .step-dot.active {
+      background: var(--action);
+    }
+    .step-dot.past {
+      background: var(--action);
+      opacity: 0.4;
+    }
+
+    .onboarding-card h1 {
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+    }
+    .onboarding-card .lead {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 22px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-2);
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .form-input {
+      background: var(--surface);
+      border: 1px solid var(--dim);
+      border-radius: var(--r-sm);
+      padding: var(--s-3) var(--s-4);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 20px;
+      outline: none;
+      transition: border-color var(--t-fast) var(--easing);
+    }
+    .form-input:focus {
+      border-color: var(--action);
+      box-shadow: 0 0 0 2px var(--action-tint);
+    }
+    .form-input.populated {
+      border-color: var(--success);
+    }
+
+    .form-select {
+      background: var(--surface);
+      border: 1px solid var(--dim);
+      border-radius: var(--r-sm);
+      padding: var(--s-3) var(--s-4);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: default;
+    }
+
+    .form-help {
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--muted);
+    }
+    .form-help a {
+      color: var(--info);
+      text-decoration: none;
+    }
+
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: var(--s-3);
+    }
+    .button {
+      padding: var(--s-3) var(--s-5);
+      border-radius: var(--r-sm);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 500;
+      border: 1px solid transparent;
+      cursor: default;
+      transition: background var(--t-fast) var(--easing);
+    }
+    .button-secondary {
+      background: transparent;
+      color: var(--muted);
+    }
+    .button-secondary:hover {
+      color: var(--text);
+    }
+    .button-primary {
+      background: var(--action-tint);
+      border-color: var(--action-border);
+      color: var(--action);
+    }
+    .button-primary:hover {
+      background: rgba(20, 184, 166, 0.20);
+    }
+
+    /* ───────────────────────────────────────────── */
+    /* Notes section                                  */
+    /* ───────────────────────────────────────────── */
+
+    .notes {
+      background: var(--surface);
+      border-left: 3px solid var(--info);
+      border-radius: var(--r-sm);
+      padding: var(--s-4) var(--s-5);
+      font-size: 13px;
+      line-height: 20px;
+      color: var(--muted);
+    }
+    .notes strong { color: var(--text); font-weight: 500; }
+    .notes ul { margin-left: var(--s-5); margin-top: var(--s-2); }
+    .notes li + li { margin-top: var(--s-1); }
+
+    .android-note {
+      background: var(--surface);
+      border: 1px dashed var(--dim);
+      border-radius: var(--r-md);
+      padding: var(--s-5);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .android-note h3 {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: var(--s-2);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header class="page-header">
+      <h1>Klarvo v2 — Design Directions</h1>
+      <p>
+        Concrete mockups applying the Step-8 Visual Foundation (Trust Anchor palette, Inter + JetBrains Mono, 4-8-12-16-24-32-48-64 spacing, KaraFun-DNA layout). Three sections cover the most distinctive Klarvo surfaces.
+      </p>
+    </header>
+
+    <!-- ───── Section 1: Pill Bar States ───── -->
+    <section class="section">
+      <div class="section-header">
+        <h2>1. Pill Bar — 5 States (Windows)</h2>
+        <p>
+          The Pill Bar at native dimensions. Idle/Recording = 320×48; Live-Preview/Cleanup-Done = 480×84 (Step-7 §2.5.8 mode-dependent grow); Error = 320×48.
+        </p>
+      </div>
+
+      <div class="mockup-frame">
+        <div class="pill-states">
+
+          <!-- State 1: Idle -->
+          <div class="pill-state">
+            <div class="pill-state-meta">
+              <h4>1. Idle (pre-acquire)</h4>
+              <p>Visible 300ms after hotkey-press. K-logo + waiting waveform. Abort button not yet visible (no audio captured to abort).</p>
+            </div>
+            <div class="pill pill--idle">
+              <div class="pill-logo">K</div>
+              <div class="waveform-canvas">
+                <span class="bar" style="height:4px"></span>
+                <span class="bar" style="height:4px"></span>
+                <span class="bar" style="height:4px"></span>
+                <span class="bar" style="height:4px"></span>
+                <span class="bar" style="height:4px"></span>
+              </div>
+              <span class="mode-badge">Hold</span>
+            </div>
+          </div>
+
+          <!-- State 2: Recording -->
+          <div class="pill-state">
+            <div class="pill-state-meta">
+              <h4>2. Recording (waveform-only)</h4>
+              <p>K-logo + abort button (red square) + 5 pill-shaped waveform bars + mode label. Live-Preview off, classic mode. v1-equivalent layout.</p>
+            </div>
+            <div class="pill pill--recording">
+              <div class="pill-logo">K</div>
+              <button class="abort-button" title="Abort &amp; discard"><span class="square"></span></button>
+              <div class="waveform-canvas">
+                <span class="bar" style="height:6px"></span>
+                <span class="bar" style="height:18px"></span>
+                <span class="bar" style="height:22px"></span>
+                <span class="bar" style="height:14px"></span>
+                <span class="bar" style="height:8px"></span>
+              </div>
+              <span class="mode-badge">Hold</span>
+            </div>
+          </div>
+
+          <!-- State 3: Live-Preview -->
+          <div class="pill-state">
+            <div class="pill-state-meta">
+              <h4>3. Live-Preview (recording + STT-text)</h4>
+              <p>Pill grows to 480×84. K-logo + abort button + STT-text + side-strip waveform underneath. Live-Preview Mode active.</p>
+            </div>
+            <div class="pill pill--live-preview">
+              <div class="pill-logo">K</div>
+              <button class="abort-button" title="Abort &amp; discard"><span class="square"></span></button>
+              <div class="live-preview-content">
+                <div class="live-preview-text">
+                  <span class="older">um, this is a quick note about the design system,</span>
+                  <span class="recent"> we should make sure the spacing tokens are consistent across both surfaces and</span>
+                </div>
+                <div class="waveform-strip">
+                  <span class="bar" style="height:3px"></span>
+                  <span class="bar" style="height:6px"></span>
+                  <span class="bar" style="height:8px"></span>
+                  <span class="bar" style="height:5px"></span>
+                  <span class="bar" style="height:7px"></span>
+                  <span class="bar" style="height:4px"></span>
+                  <span class="bar" style="height:6px"></span>
+                  <span class="bar" style="height:8px"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- State 4: Cleanup Done -->
+          <div class="pill-state">
+            <div class="pill-state-meta">
+              <h4>4. Cleanup applied (post-release)</h4>
+              <p>Abort button gone (no longer cancellable). STT text morphs into cleanup-filter result. Success-edge border. Brief fade-pulse marks transition. Then fade-out.</p>
+            </div>
+            <div class="pill pill--cleanup-done">
+              <div class="pill-logo">K</div>
+              <div class="cleanup-content">
+                <div class="cleanup-text">This is a quick note about the design system. We should make sure the spacing tokens are consistent across both surfaces.</div>
+              </div>
+              <div class="cleanup-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- State 5: Error -->
+          <div class="pill-state">
+            <div class="pill-state-meta">
+              <h4>5. Error (network timeout)</h4>
+              <p>Abort button gone (already terminated). Error icon + message + cause-detail. Visible ~3s before fade. Audio discarded.</p>
+            </div>
+            <div class="pill pill--error">
+              <div class="pill-logo">K</div>
+              <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <div class="error-text">Connection timed out</div>
+              <div class="error-detail">groq · 10s</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── Section 2: Settings Home ───── -->
+    <section class="section">
+      <div class="section-header">
+        <h2>2. Settings Home (Windows WebView)</h2>
+        <p>
+          KaraFun-DNA: drill-down nav, colored icon-badges, dense list-rows. Default window 960×720. Content max-width 680px.
+        </p>
+      </div>
+
+      <div class="mockup-frame">
+        <div class="window-frame">
+          <div class="window-titlebar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span style="margin-left:auto">Klarvo · Settings</span>
+          </div>
+          <div class="window-content">
+            <div class="settings-layout">
+
+              <aside class="settings-sidebar">
+                <div class="brand">
+                  <div class="logo">K</div>
+                  <div class="name">Klarvo</div>
+                </div>
+                <div class="nav-item active">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+                  General
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01"/></svg>
+                  Hotkeys
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20"/></svg>
+                  Providers
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/></svg>
+                  Pipeline
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c0-5 4-9 9-9s9 4 9 9-4 9-9 9-9-4-9-9z"/><path d="M9 12l3 3 3-3"/></svg>
+                  Voice &amp; Style
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                  History
+                </div>
+                <div class="nav-item">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                  About
+                </div>
+              </aside>
+
+              <main class="settings-main">
+                <h1>General</h1>
+                <p class="lead">Default behavior for Klarvo. Provider-specific settings live under Providers.</p>
+
+                <div class="settings-section">
+                  <h2>Recording</h2>
+
+                  <div class="list-row">
+                    <div class="badge-icon action">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Default mode</div>
+                      <div class="desc">Hold-to-talk or auto-stop on silence.</div>
+                    </div>
+                    <div class="value">Hold</div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+
+                  <div class="list-row">
+                    <div class="badge-icon activity">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Live-Preview</div>
+                      <div class="desc">Show transcription as you speak.</div>
+                    </div>
+                    <div class="value">On</div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+
+                  <div class="list-row">
+                    <div class="badge-icon info">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Default style</div>
+                      <div class="desc">Verbatim, Polished, or Chat.</div>
+                    </div>
+                    <div class="value">Verbatim</div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+
+                <div class="settings-section">
+                  <h2>Hotkeys</h2>
+
+                  <div class="list-row">
+                    <div class="badge-icon action">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Slot 1</div>
+                      <div class="desc">Primary dictation hotkey.</div>
+                    </div>
+                    <div class="value">Ctrl+Shift+D</div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+
+                  <div class="list-row">
+                    <div class="badge-icon action">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Slot 2</div>
+                      <div class="desc">Secondary hotkey, e.g. for alt-style.</div>
+                    </div>
+                    <div class="value">Alt+Space</div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+
+                <div class="settings-section">
+                  <h2>Providers</h2>
+
+                  <div class="list-row">
+                    <div class="badge-icon success">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Speech-to-Text</div>
+                      <div class="desc">Transcription provider.</div>
+                    </div>
+                    <span class="pill-tag">groq · whisper-large-v3</span>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" style="margin-left:var(--s-3)"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+
+                  <div class="list-row">
+                    <div class="badge-icon warm">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+                    </div>
+                    <div class="label">
+                      <div class="title">Cleanup LLM</div>
+                      <div class="desc">For Polished &amp; Chat styles.</div>
+                    </div>
+                    <span class="pill-tag">groq · llama-3.3-70b</span>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" style="margin-left:var(--s-3)"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+              </main>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── Section 3: Onboarding Step 1 ───── -->
+    <section class="section">
+      <div class="section-header">
+        <h2>3. Onboarding — Step 1 (BYOK)</h2>
+        <p>
+          Linear/Raycast restraint: ask only what's necessary, name the provider, expose configuration up-front. No wizard chrome, no celebration.
+        </p>
+      </div>
+
+      <div class="mockup-frame">
+        <div class="window-frame">
+          <div class="window-titlebar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span style="margin-left:auto">Klarvo · Setup</span>
+          </div>
+          <div class="window-content">
+            <div class="onboarding-main">
+              <div class="onboarding-card">
+
+                <div class="step-indicator">
+                  <span class="step-dot past"></span>
+                  <span class="step-dot active"></span>
+                  <span class="step-dot"></span>
+                  <span class="step-dot"></span>
+                </div>
+
+                <div>
+                  <h1>Bring your API key</h1>
+                  <p class="lead">Klarvo runs on the speech-to-text provider you choose. Your key stays in your OS keystore.</p>
+                </div>
+
+                <div class="form-group">
+                  <label>Provider</label>
+                  <div class="form-select">
+                    <span>Groq · whisper-large-v3</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>API key</label>
+                  <input class="form-input populated" type="text" value="gsk_••••••••••••••••••••••••YJ7K" readonly />
+                  <p class="form-help">
+                    Find your key at <a href="#">console.groq.com/keys</a>. Klarvo stores it in your OS keystore — never in plaintext.
+                  </p>
+                </div>
+
+                <div class="button-row">
+                  <button class="button button-secondary">Skip — set up later</button>
+                  <button class="button button-primary">Continue →</button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── Notes ───── -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Notes &amp; Open Items</h2>
+      </div>
+
+      <div class="notes">
+        <strong>v1 visual continuity adopted in this revision:</strong>
+        <ul>
+          <li><strong>Waveform = 5 pill-shaped bars</strong> (border-radius 9999, fully-rounded ends) — verbatim from v1 <code>FloatingBar.tsx::Waveform</code>. Replaces the 64-vertical-line rendering.</li>
+          <li><strong>Klarvo K-logo</strong> as brand-anchor inside the pill — verbatim from v1.</li>
+          <li><strong>Abort button</strong> (red square, next to logo) — verbatim from v1 <code>cancelRecording()</code>. Visible during Recording / Live-Preview only. Discards audio, no paste. <em>Cancellation in Cleanup-Done / Processing / Error states is not offered (matches v1).</em></li>
+          <li><strong>Mode badge</strong> (Hold / AutoStop) at right edge — verbatim from v1.</li>
+        </ul>
+
+        <strong style="margin-top: var(--s-3); display: block;">Style assertions still open:</strong>
+        <ul>
+          <li>Pill Bar live-preview internal layout (text-above-strip vs side-by-side) — anchored to Step-7 §2.5.8 pattern, exact rendering TBD per implementation Story.</li>
+          <li>Live-Preview max-size 480×84 — placeholder per Step-7 anchor. Verify in implementation.</li>
+          <li>Settings sidebar 220px width — KaraFun-anchored, needs validation at 960×720.</li>
+          <li>Pill-Tag (provider badge) using `info`-tinted background — semantics-fit needs review.</li>
+          <li>Form-input `populated` state border is `success` — alternative is neutral border + ✓ icon. Step-12 (UX Patterns) decision.</li>
+          <li>Should abort be available during Processing state too (cancel API call)? v1 says no. MVP keeps v1 behavior; backlog item if user request emerges.</li>
+        </ul>
+      </div>
+
+      <div class="android-note">
+        <h3>Android Bubble — not mocked here</h3>
+        Android Bubble shares the same state-machine (Step-7 §2.5.7) but renders via Compose Material3 with platform-native gestures and visibility rules. HTML mockups would misrepresent the actual surface. Concrete Bubble visuals deferred to the Android implementation Story.
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Bars are now inline in markup; no JS needed for static mockup. -->
+
+</body>
+</html>
