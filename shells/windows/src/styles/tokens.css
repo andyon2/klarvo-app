@@ -1,0 +1,34 @@
+/* Auto-generated from design-tokens.toml — DO NOT EDIT MANUALLY */
+/* Regenerate: cargo xtask gen-tokens */
+
+:root {
+  /* Surface */
+  --klarvo-color-surface-bg: #0F1715;
+  --klarvo-color-surface-dim: #4A5851;
+  --klarvo-color-surface-elevated: #1F2926;
+  --klarvo-color-surface-muted: #7A8A85;
+  --klarvo-color-surface-surface: #161E1C;
+  --klarvo-color-surface-text: #E8EFEC;
+
+  /* Roles */
+  --klarvo-color-action: #14B8A6;
+  --klarvo-color-activity: #FBBF24;
+  --klarvo-color-danger: #EF4444;
+  --klarvo-color-info: #60A5FA;
+  --klarvo-color-success: #34D399;
+  --klarvo-color-warm: #FB923C;
+
+  /* Overlay */
+  --klarvo-color-overlay-bg: rgba(13, 15, 20, 0.92);
+
+  /* Timing */
+  --klarvo-timing-fast: 150ms;
+  --klarvo-timing-medium: 250ms;
+  --klarvo-timing-slow: 400ms;
+
+  /* Radius */
+  --klarvo-radius-lg: 12px;
+  --klarvo-radius-md: 8px;
+  --klarvo-radius-pill: 9999px;
+  --klarvo-radius-sm: 4px;
+}

@@ -1,0 +1,33 @@
+# Klarvo Design Tokens — single source of truth
+# Generator: cargo xtask gen-tokens
+# Outputs: shells/windows/src/styles/tokens.css
+
+[color.surface]
+bg       = "#0F1715"   # Page background, deepest layer
+surface  = "#161E1C"   # Card / panel surface
+elevated = "#1F2926"   # Modal / floating surface
+text     = "#E8EFEC"   # Primary text
+muted    = "#7A8A85"   # Secondary text, hints
+dim      = "#4A5851"   # Tertiary text, disabled state
+
+[color.role]
+action   = "#14B8A6"   # Teal — primary CTA, active nav, focus rings, waveform
+activity = "#FBBF24"   # Amber — busy/processing/loading states
+success  = "#34D399"   # Emerald — completion, "done", positive state
+info     = "#60A5FA"   # Sky Blue — informational, links, hotkey-badges
+warm     = "#FB923C"   # Orange — statistic highlights, accent contrast
+danger   = "#EF4444"   # Red — destructive, errors, abort button
+
+[color.overlay]
+bg = "rgba(13, 15, 20, 0.92)"   # Pill Bar + Bubble background
+
+[timing]
+fast   = "150ms"   # Hover, focus ring, instant feedback
+medium = "250ms"   # Component appear/disappear, Pill Bar fade
+slow   = "400ms"   # Cross-screen transitions, Live-Preview grow
+
+[radius]
+sm   = "4px"
+md   = "8px"
+lg   = "12px"
+pill = "9999px"   # Pill Bar bars, pill-shaped elements

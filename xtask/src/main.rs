@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 
 mod bindings_drift;
+mod gen_tokens;
 mod generate_bindings;
 mod lint_events;
 mod manifest_strict;
@@ -39,6 +40,8 @@ fn main() -> ExitCode {
             .unwrap_or_else(manifest_strict::run),
         Some("bindings-drift") => reject_unexpected_flags("bindings-drift", &args[1..])
             .unwrap_or_else(bindings_drift::run),
+        Some("gen-tokens") => reject_unexpected_flags("gen-tokens", &args[1..])
+            .unwrap_or_else(gen_tokens::run),
         Some(cmd) if cmd.starts_with("--") => {
             // Unknown flag without a subcommand — exit non-zero so CI tooling notices typos.
             eprintln!("xtask: unknown flag '{cmd}'");
@@ -71,6 +74,7 @@ fn print_help() {
     println!("  verify-release      G2 release-hardening gate (forbidden features, tracing-subscriber sentinel, android cross-compile)");
     println!("  manifest-strict     Pre-commit gate: validates bad-input fixtures against parse_from_str (FR32)");
     println!("  bindings-drift      Drift-Check: failt wenn shells/windows/src/bindings/index.ts nicht synchron mit generate-bindings-Output ist");
+    println!("  gen-tokens          CSS Custom Properties aus design-tokens.toml generieren → shells/windows/src/styles/tokens.css");
     println!();
     println!("Flags:");
     println!("  --skip-cross-compile  Skip aarch64-linux-android cross-compile check in verify-release (local-dev only; MUST NOT be set in CI)");

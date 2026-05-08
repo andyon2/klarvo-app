@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <link rel="stylesheet" href="styles/tokens.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -11,22 +12,22 @@
     }
     #pill {
       width: 320px; height: 48px;
-      background: rgba(13, 15, 20, 0.85);
+      background: var(--klarvo-color-overlay-bg);
       border-radius: 24px;
       display: flex;
       align-items: center;
       gap: 8px;
       padding: 0 10px;
       opacity: 1;
-      transition: opacity 300ms ease-out;
+      transition: opacity var(--klarvo-timing-medium) ease-out;
     }
     #pill.fade-out { opacity: 0; }
 
-    /* K-Logo: verbatim v1 KlarvoLogo (24×24 rounded, Teal #14B8A6, white K) */
+    /* K-Logo: verbatim v1 KlarvoLogo (24×24 rounded, color: --klarvo-color-action, white K) */
     #k-logo {
       width: 24px; height: 24px;
       border-radius: 6px;
-      background: #14B8A6;
+      background: var(--klarvo-color-action);
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -49,11 +50,11 @@
       min-width: 0;
     }
 
-    /* Individual pill-shaped bars — Trust-Anchor Teal #14B8A6 (v1 verbatim) */
+    /* Individual pill-shaped bars — color: --klarvo-color-action (v1 trust-anchor teal) */
     .bar {
       flex: 1;
-      border-radius: 9999px;
-      background: #14B8A6;
+      border-radius: var(--klarvo-radius-pill);
+      background: var(--klarvo-color-action);
       opacity: 0.85;
       height: 4px;
       min-height: 4px;
@@ -80,7 +81,7 @@
     #abort-square {
       width: 10px; height: 10px;
       border-radius: 1px;
-      background: rgba(248, 113, 113, 0.9);
+      background: var(--klarvo-color-danger);
       opacity: 0.85;
     }
   </style>
