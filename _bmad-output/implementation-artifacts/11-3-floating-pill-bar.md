@@ -2,7 +2,7 @@
 name: Story 11.3 — Floating Pill Bar (Drag + Position-Persistence + Size + Mode-Badge)
 epic: 11
 story_number: "11.3"
-status: backlog
+status: done
 dependencies:
   - "11.2"  # design-token foundation done; pill-bar.html uses var(--klarvo-*), tokens.css committed
 inputDocuments:
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.3: Floating Pill Bar — Drag, Position-Persistence, Mode-Dependent Size, Mode-Badge
 
-Status: backlog
+Status: done
 
 ## Story
 
