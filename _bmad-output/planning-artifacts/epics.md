@@ -2341,7 +2341,8 @@ Vollständige Umsetzung der UX-Spec §2.5 Pill-Bar-State-Machine auf Windows (C1
 **Dependencies:** Story 9.6 (Pill-Bar-Overlay-Infrastructure: PillBar Rust-Struct, `tauri.conf.json`-Deklaration, EventBus-Subscriber-Task), UX-Spec §2.5.2 V1-Visual-Continuity-Decisions (2026-05-07), `pill-bar-ux-decisions.md` (accepted 2026-05-03).
 
 **Implementation Notes:**
-- Pre-Decisions (Shape=A, Drag=A, Waveform=B, AutoHide=B aus `pill-bar-ux-decisions.md`) bleiben unverändert für alle Stories.
+- Pre-Decisions Shape=A, Waveform=B, AutoHide=B aus `pill-bar-ux-decisions.md` bleiben unverändert.
+- **Drag=A ist ÜBERHOLT (2026-05-08):** Story 11.3 implementiert Drag + Position-Persistence (override durch Epic-11-Scope-Expansion + UX-Spec line 1488). UX-Spec §C1 "Drag: not supported" ist stale.
 - `cancel_recording`-Command + Capability bereits in 11.1 implementiert — keine Änderung nötig.
 - Token-Foundation (11.2) ist Prerequisite für 11.3–11.6; keine Story darf vor 11.2 starten.
 - Pill Bar bleibt plain HTML/CSS/Canvas (kein React, kein shadcn) — zu leichtgewichtig für Framework-Overhead.
@@ -2350,7 +2351,7 @@ Vollständige Umsetzung der UX-Spec §2.5 Pill-Bar-State-Machine auf Windows (C1
 **Story-Sequenz:**
 - **11.1** (done): Visual Overhaul + Abort-Button-Backend (5 Pill-Bars, K-Logo, `cancel_recording`)
 - **11.2** (done): Token Foundation minimal — `design-tokens.toml` + xtask CSS-Generator + `pill-bar.html` refactor auf `var(--klarvo-*)`
-- **11.3** (backlog): Floating Pill Bar — Drag, Position-Persistence, mode-dependent Size (~480×84 LivePreview), Mode-Badge
+- **11.3** (done): Floating Pill Bar — Drag, Position-Persistence, mode-dependent Size (~480×84 LivePreview), Mode-Badge
 - **11.4** (backlog): LivePreview-State — §2.5.8, Text + Side-Strip-Waveform (8 Bars), Live-Update per `pill_bar.live_preview_chunk`-Event
 - **11.5** (backlog): CleanupDone-Morph + FadeOut — Text morpht auf Cleanup-Ergebnis, success-edge border, cross-state FadeOut
 - **11.6** (backlog): Error-State in Pill Bar — named cause-message per §J-D/P-Named-Failure, danger-border, kein Abort-Button
