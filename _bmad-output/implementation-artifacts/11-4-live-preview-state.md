@@ -2,7 +2,7 @@
 name: Story 11.4 — LivePreview-State (Text + Side-Strip-Waveform + Live-Update)
 epic: 11
 story_number: "11.4"
-status: review
+status: done
 dependencies:
   - "11.3"  # LP-size-infra (480×84), enter_live_preview JS-listener + .live-preview class, LIVE_PREVIEW_WIDTH/HEIGHT constants
 inputDocuments:
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.4: LivePreview-State — Text + Side-Strip-Waveform + Live-Update
 
-Status: review
+Status: done
 
 ## Story
 
@@ -366,3 +366,31 @@ Empfohlen als zwei Commits:
 feat(11.4): Event::LivePreviewChunk + session emit + pill_bar.rs handler
 feat(11.4): pill-bar LP text + side-strip waveform — HTML/CSS/JS
 ```
+
+## Review Findings
+
+### Pass 1 (2026-05-08, 3 Layer: Blind Hunter ✓, Acceptance Auditor ✓, Edge Case Hunter ✗ failed)
+
+0 Patches, 0 Decisions, 3 Defers, ~14 dismissed.
+
+- [x] [Review][Defer] LP-Emit vor Delivery-Success-Check — Text wird angezeigt, auch wenn Paste später fehlschlägt [`klarvo-shell-orchestrator/src/session.rs:341-349`] — deferred, by-design (Phase-1 Verbatim-passthrough; Error-State + Fail-Visualisierung kommt in Story 11.6)
+- [x] [Review][Defer] `emit_to`-Ordering `enter_live_preview` → `live_preview_chunk` formal nicht garantiert [`shells/windows/src-tauri/src/overlay/pill_bar.rs:208-210`] — deferred, Tauri-Per-Window-IPC-Channel ist sequenziell in Praxis; Spec-Tech-Note dokumentiert Annahme. Bei Bruch = einmaliger Frame-Glitch
+- [x] [Review][Defer] Resize-vor-Class-Swap kann One-Frame Layout-Flash erzeugen (Recording-Layout in 480×84 vor `.live-preview` greift) [`shells/windows/src-tauri/src/overlay/pill_bar.rs:204-210`] — deferred, Visual-Polish; Fix erfordert Order-Inversion (CSS-Klasse vor Resize) und damit Spec-Deviation. Im Smoke-Test verifizieren
+
+**Auditor-Outcome (Pass 1):** Alle 9 ACs (AC-1 bis AC-9) sind 1:1 spec-konform implementiert. Zwei Out-of-Scope-Touches (bridge.rs EventMirror-Filter, initial `updateSbars()` Boot-Call) sind defensiv-notwendig bzw. konsistent.
+
+**Blind-Hunter-Outcome (Pass 1):** 17 Findings, 3 als Defer eskaliert, Rest dismissed.
+
+**Edge-Case-Hunter-Outcome (Pass 1):** Skill-Invocation hat den Subagent nach Skill-Tool-Call vorzeitig terminiert (1-3 Tool-Uses, kein Output). Erkanntes Subagent-Skill-Limitation. Pass-2 daher manuell vom Coordinator durchgeführt.
+
+### Pass 2 (2026-05-08, manueller Edge-Case-Walk Achsen A–G)
+
+3 Patches applied, 0 Decisions, 0 zusätzliche Defers (die 3 Pass-1-Defers durch Walk bestätigt).
+
+- [x] [Review][Patch] EC-1 Empty-Text-Guard — `text_to_deliver = Some("")` triggert sonst LP-Resize + leere Anzeige [`klarvo-shell-orchestrator/src/session.rs:344-360`] — fixed: `if session_active && !text.is_empty()` gate vor `event_bus.emit`
+- [x] [Review][Patch] EC-2 Stale-Session-LP-Suppression — Toggle stop-then-start race konnte stale LP-Text vom alten pipeline_task auf neue Pill-Bar laden [`klarvo-shell-orchestrator/src/session.rs:264-272 + 344-360`] — fixed: `session_counter: Arc<AtomicU64>` auf `SessionOrchestrator`, snapshot via `fetch_add(1)` vor `pipeline_task`-spawn, self-filter im Task vor LP-emit. Delivery-Pfad bleibt unberührt (User bekommt Transcript trotzdem)
+- [x] [Review][Patch] EC-3 emit_to inside if-let-window — defensive Konsistenz mit RecordingStarted-Arm [`shells/windows/src-tauri/src/overlay/pill_bar.rs:203-216`] — fixed: alle window-related side-effects inside `if let Some(win) = app.get_webview_window(...)`, `tracing::debug!` auf else-branch
+
+**Achsen-Sweep:** A (extreme inputs) — A1 patched, A2-A7 clean. B (race conditions) — B1/B2/B5 confirm Pass-1-Defers, B6/B7 patched (EC-2). C (state transitions) — C5 patched (EC-3), C1-C4 clean. D (DOM/CSS) — clean. E (failure semantics) — clean (alle fail-soft konsistent). F (cross-file consistency) — F1/F2 are pre-existing project-wide patterns, dismissed. G (spec-boundary) — clean.
+
+**Compile-Verify:** `cargo check -p klarvo-core -p klarvo-shell-orchestrator` clean; `cargo check -p klarvo-windows-shell --lib` clean (host); 27/27 orchestrator-Tests grün. Cross-compile (`--target x86_64-pc-windows-gnu`) blocked durch pre-existing whisper-rs-sys C-header-Issue (nicht durch 11.4-Patches induziert).
