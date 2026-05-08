@@ -402,21 +402,34 @@ fn main() {
             // orchestrator-internal; the `settings.changed` listener (Step 10b) is
             // the single writer, so the set_recording_mode_slot1 Command does not
             // need direct access via tauri::State.
-            debug_assert!(app.manage(orch));
-            debug_assert!(app.manage(Arc::new(config.clone())));
-            debug_assert!(app.manage(Arc::clone(&keystore)));
-            debug_assert!(app.manage(Arc::clone(&emitter)));
-            debug_assert!(app.manage(Arc::clone(&clock)));
-            debug_assert!(app.manage(settings));
-            debug_assert!(app.manage(
+            // Note: `debug_assert!(app.manage(...))` would only execute the manage
+            // call in debug builds — in release the entire macro body is a no-op
+            // and the state slot would be missing. Always run `manage` first, then
+            // assert the boolean separately.
+            let inserted_orch = app.manage(orch); debug_assert!(inserted_orch);
+            let inserted_config = app.manage(Arc::new(config.clone())); debug_assert!(inserted_config);
+            let inserted_keystore = app.manage(Arc::clone(&keystore)); debug_assert!(inserted_keystore);
+            let inserted_emitter = app.manage(Arc::clone(&emitter)); debug_assert!(inserted_emitter);
+            let inserted_clock = app.manage(Arc::clone(&clock)); debug_assert!(inserted_clock);
+            // Read slot-1/slot-2 combos before `settings` is moved into Tauri-managed
+            // state — Step 11b below cannot reach the moved-out value.
+            let slot1_combo_pre_manage = settings.hotkey_slot1_combo().unwrap_or_default();
+            let slot2_combo_pre_manage = settings.hotkey_slot2_combo().unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "hotkey_slot2_combo read failed; slot 2 not registered");
+                None
+            });
+            let inserted_settings = app.manage(settings); debug_assert!(inserted_settings);
+            let inserted_history = app.manage(
                 klarvo_windows_shell::commands::history::HistoryStoreState(history_store)
-            ));
+            );
+            debug_assert!(inserted_history);
             // Story 9.5: ExportState — log_dir mirrors the path used by init_tracing above
             let log_dir_for_export = log_dir.clone();
-            debug_assert!(app.manage(klarvo_windows_shell::commands::telemetry::ExportState {
+            let inserted_export = app.manage(klarvo_windows_shell::commands::telemetry::ExportState {
                 log_dir: log_dir_for_export,
                 in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            }));
+            });
+            debug_assert!(inserted_export);
             // Snapshot the boot-time locale separately because `i18n_table` is
             // moved into managed state below; the listener (Step 10c) owns its
             // own freshly-loaded copy on every locale change.
@@ -438,7 +451,7 @@ fn main() {
             {
                 use std::str::FromStr;
                 let mode_arc_listener = Arc::clone(&recording_mode_arc);
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                         if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot1.mode") {
                             if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
@@ -467,7 +480,7 @@ fn main() {
             {
                 use std::str::FromStr;
                 let mode_arc_slot2_listener = Arc::clone(&recording_mode_arc_slot2);
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                         if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot2.mode") {
                             if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
@@ -504,7 +517,7 @@ fn main() {
             // upstream (review P2).
             {
                 let app_handle = app.handle().clone();
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     let payload: serde_json::Value =
                         match serde_json::from_str(event.payload()) {
                             Ok(v) => v,
@@ -541,13 +554,10 @@ fn main() {
             // Only registered when configured and not identical to slot-1 (backend guard D-2).
             // Re-registration after settings-write is deferred to next boot (Dev Notes §kein-live-re-register).
             {
-                let slot2_combo = settings.hotkey_slot2_combo().unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "hotkey_slot2_combo read failed; slot 2 not registered");
-                    None
-                });
+                let slot2_combo = slot2_combo_pre_manage;
 
                 if let Some(ref combo2) = slot2_combo {
-                    let slot1_combo = settings.hotkey_slot1_combo().unwrap_or_default();
+                    let slot1_combo = slot1_combo_pre_manage;
                     // P3 (Code-Review-Closure 2026-05-05): compare parsed Shortcuts so
                     // case / modifier-order / whitespace differences cannot let two
                     // colliding combos slip through and cause a silent OS-level
@@ -579,7 +589,7 @@ fn main() {
             let event_bus_rx_mirror = event_bus.subscribe();
             let event_bus_rx_notification = event_bus.subscribe();
             let event_bus_rx_pill_bar = event_bus.subscribe();
-            debug_assert!(app.manage(Arc::clone(&event_bus)));
+            let inserted_event_bus = app.manage(Arc::clone(&event_bus)); debug_assert!(inserted_event_bus);
 
             // Step 12a: Tray icon with recording-state indicator (fail-soft per AC-F —
             // asset decode or builder errors log and skip; the app continues without

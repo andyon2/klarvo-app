@@ -237,7 +237,7 @@
 
     if (tauriEvent) {
       // Waveform tick: update bins + redraw 5 bars
-      tauriEvent.listen('pill_bar.waveform_tick', (evt) => {
+      tauriEvent.listen('pill_bar:waveform_tick', (evt) => {
         const payload = evt?.payload;
         if (payload && Array.isArray(payload.bins)) {
           const incoming = payload.bins;
@@ -255,7 +255,7 @@
       });
 
       // Show: clear fade-out + live-preview classes, reset bars
-      tauriEvent.listen('pill_bar.show', () => {
+      tauriEvent.listen('pill_bar:show', () => {
         pill.classList.remove('fade-out');
         pill.classList.remove('live-preview');
         lpText.textContent = '';
@@ -265,17 +265,17 @@
       });
 
       // Fade-out: CSS transition; Rust hides window after 300ms (FADE_OUT_MS constant)
-      tauriEvent.listen('pill_bar.fade_out', () => {
+      tauriEvent.listen('pill_bar:fade_out', () => {
         pill.classList.add('fade-out');
       });
 
       // Live-Preview: resize already done by Rust before this event fires
-      tauriEvent.listen('pill_bar.enter_live_preview', () => {
+      tauriEvent.listen('pill_bar:enter_live_preview', () => {
         pill.classList.add('live-preview');
       });
 
       // Live-Preview chunk: update text area
-      tauriEvent.listen('pill_bar.live_preview_chunk', (evt) => {
+      tauriEvent.listen('pill_bar:live_preview_chunk', (evt) => {
         const payload = evt?.payload;
         if (payload && typeof payload.text === 'string') {
           lpText.textContent = payload.text;

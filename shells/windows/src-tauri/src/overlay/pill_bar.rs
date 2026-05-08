@@ -176,7 +176,7 @@ fn handle_event<R: tauri::Runtime>(
                     tracing::warn!(error = %e, "pill-bar show failed");
                 }
             }
-            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.show", ());
+            let _ = app.emit_to(WINDOW_LABEL, "pill_bar:show", ());
         }
         Event::RecordingCompleted { .. } => {
             schedule_fade_and_hide(app, fade_epoch, "natural");
@@ -191,7 +191,7 @@ fn handle_event<R: tauri::Runtime>(
             let bins: Vec<f32> = ring.iter().copied().collect();
             let _ = app.emit_to(
                 WINDOW_LABEL,
-                "pill_bar.waveform_tick",
+                "pill_bar:waveform_tick",
                 WaveformPayload { bins, ts_ms },
             );
         }
@@ -210,8 +210,8 @@ fn handle_event<R: tauri::Runtime>(
                 if let Err(e) = win.set_size(LogicalSize::new(LIVE_PREVIEW_WIDTH, LIVE_PREVIEW_HEIGHT)) {
                     tracing::warn!(error = %e, "pill-bar LP resize failed");
                 }
-                let _ = app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ());
-                let _ = app.emit_to(WINDOW_LABEL, "pill_bar.live_preview_chunk", LivePreviewPayload { text, ts_ms });
+                let _ = app.emit_to(WINDOW_LABEL, "pill_bar:enter_live_preview", ());
+                let _ = app.emit_to(WINDOW_LABEL, "pill_bar:live_preview_chunk", LivePreviewPayload { text, ts_ms });
             } else {
                 tracing::debug!("LivePreviewChunk dropped: pill-bar window not available");
             }
@@ -231,7 +231,7 @@ fn schedule_fade_and_hide<R: tauri::Runtime>(
     fade_epoch: &Arc<AtomicU64>,
     path_label: &'static str,
 ) {
-    let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
+    let _ = app.emit_to(WINDOW_LABEL, "pill_bar:fade_out", ());
     let app_clone = app.clone();
     let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
     let epoch_clone = Arc::clone(fade_epoch);
@@ -251,13 +251,13 @@ fn schedule_fade_and_hide<R: tauri::Runtime>(
 /// Story 11.3: LP-resize test trigger; wired to pipeline in 11.4.
 #[tauri::command]
 #[specta::specta]
-pub async fn dev_pill_bar_enter_live_preview<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
+pub async fn dev_pill_bar_enter_live_preview(
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
         win.set_size(LogicalSize::new(LIVE_PREVIEW_WIDTH, LIVE_PREVIEW_HEIGHT))
             .map_err(|e| e.to_string())?;
-        app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ())
+        app.emit_to(WINDOW_LABEL, "pill_bar:enter_live_preview", ())
             .map_err(|e| e.to_string())?;
     }
     Ok(())

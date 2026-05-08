@@ -3,8 +3,8 @@
 //! Two types live here:
 //!
 //! - [`TauriErrorEmitter`] — implements the `klarvo_core::event::ErrorEmitter` trait,
-//!   forwarding errors to the frontend via `app_handle.emit("app.error", ...)`.
-//!   Emits [`"app.error"`] — ADR-0009 §SD-1.
+//!   forwarding errors to the frontend via `app_handle.emit("app:error", ...)`.
+//!   Emits [`"app:error"`] — ADR-0009 §SD-1.
 //!   Key-Forwarding only — does not translate or validate i18n keys.
 //!   Frontend resolves keys via its i18n-stack (ADR-0009 §SD-2).
 //!
@@ -25,11 +25,11 @@ use klarvo_core::event::{ErrorEmitter, Event};
 // Shared payload
 // ---------------------------------------------------------------------------
 
-/// Payload for the `"app.error"` Tauri frontend event.
+/// Payload for the `"app:error"` Tauri frontend event.
 ///
 /// Used by both [`TauriErrorEmitter::emit_error`] and the `ErrorEmitted`
 /// variant arm of [`EventMirror::mirror_event`] so the frontend always sees
-/// the same shape on `"app.error"` regardless of emission path.
+/// the same shape on `"app:error"` regardless of emission path.
 #[derive(Debug, Clone, Serialize)]
 pub struct AppErrorEventPayload {
     pub key: String,
@@ -78,12 +78,12 @@ pub struct RecordingDeliveredPayload {
 // ---------------------------------------------------------------------------
 
 /// Shell implementation of [`ErrorEmitter`] that pushes errors to the Tauri
-/// frontend via `app_handle.emit("app.error", ...)`.
+/// frontend via `app_handle.emit("app:error", ...)`.
 ///
 /// Generic over `R: tauri::Runtime` so the same type works with `Wry` in
 /// production and `MockRuntime` in tests (idiomatic Tauri v2 extension pattern).
 ///
-/// Emits [`"app.error"`] — ADR-0009 §SD-1.
+/// Emits [`"app:error"`] — ADR-0009 §SD-1.
 /// Key-Forwarding only — does not translate or validate i18n keys.
 /// Frontend resolves keys via its i18n-stack (ADR-0009 §SD-2).
 pub struct TauriErrorEmitter<R: tauri::Runtime> {
@@ -100,7 +100,7 @@ impl<R: tauri::Runtime> TauriErrorEmitter<R> {
 impl<R: tauri::Runtime> ErrorEmitter for TauriErrorEmitter<R> {
     async fn emit_error(&self, key: &str, ts_ms: u64) {
         let payload = AppErrorEventPayload { key: key.to_string(), ts_ms };
-        if let Err(e) = self.app_handle.emit("app.error", &payload) {
+        if let Err(e) = self.app_handle.emit("app:error", &payload) {
             tracing::error!(error = %e, key = key, "failed to emit app.error event to frontend");
         }
     }
@@ -154,29 +154,29 @@ impl<R: tauri::Runtime> EventMirror<R> {
         let result = match event {
             Event::RecordingStarted { ts_ms } => self
                 .app_handle
-                .emit("recording.started", &RecordingStartedPayload { ts_ms }),
+                .emit("recording:started", &RecordingStartedPayload { ts_ms }),
             Event::RecordingStopped { ts_ms } => self
                 .app_handle
-                .emit("recording.stopped", &RecordingStoppedPayload { ts_ms }),
+                .emit("recording:stopped", &RecordingStoppedPayload { ts_ms }),
             Event::RecordingCompleted { ts_ms } => self
                 .app_handle
-                .emit("recording.completed", &RecordingCompletedPayload { ts_ms }),
+                .emit("recording:completed", &RecordingCompletedPayload { ts_ms }),
             Event::PipelineStageStarted { stage_type, ts_ms } => self.app_handle.emit(
-                "pipeline.stage_started",
+                "pipeline:stage_started",
                 &PipelineStageStartedPayload { stage_type, ts_ms },
             ),
             Event::PipelineStageCompleted { stage_type, ts_ms } => self.app_handle.emit(
-                "pipeline.stage_completed",
+                "pipeline:stage_completed",
                 &PipelineStageCompletedPayload { stage_type, ts_ms },
             ),
-            // ErrorEmitted maps to "app.error" — same wire-name as TauriErrorEmitter.
-            // Frontend uses a single listen("app.error", ...) for both paths (ADR-0009 §SD-1).
+            // ErrorEmitted maps to "app:error" — same wire-name as TauriErrorEmitter.
+            // Frontend uses a single listen("app:error", ...) for both paths (ADR-0009 §SD-1).
             Event::ErrorEmitted { error_key, ts_ms } => self
                 .app_handle
-                .emit("app.error", &AppErrorEventPayload { key: error_key, ts_ms }),
+                .emit("app:error", &AppErrorEventPayload { key: error_key, ts_ms }),
             Event::RecordingDelivered { ts_ms, text } => self
                 .app_handle
-                .emit("recording.delivered", &RecordingDeliveredPayload { ts_ms, text }),
+                .emit("recording:delivered", &RecordingDeliveredPayload { ts_ms, text }),
             // RecordingAborted: pill-bar fades via its own subscriber; main WebView has no consumer yet.
             Event::RecordingAborted { .. } => return,
             // AudioLevel is consumed by PillBar overlay only — not mirrored to main WebView.
