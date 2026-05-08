@@ -365,3 +365,7 @@ Wenn Phase-2 User-visible Stream-Error-UX verlangt (z. B. „Mikrofon-Verbindung
 - Story 3.3 AC-E — Orchestrator-Error-Emission-Sites
 - Story 3.7 Technical Notes §CpalAudioSource-Error-Model — Anchor dieser Amendment
 - `memory/project_no_remote_telemetry` — tracing-Log-Audience-Policy
+
+## Amendment — 2026-05-09: event-name `app.error` → `app:error`
+
+Per ADR-0002 Amendment 2 (Tauri 2.10 `IllegalEventName`), the wire-name `"app.error"` referenced throughout this ADR's §Decision and §Implementation is migrated to `"app:error"` (commit `30630d3`). Code sites, doc-comments, and the `AppErrorEvent` specta-derive `event_name`-attribute have all been updated. The ADR text above retains the original `"app.error"` for historical context — the authoritative wire-name in code is now colon-notation.

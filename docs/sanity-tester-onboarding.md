@@ -25,26 +25,40 @@ Zwei Wege:
 **Option A — Binary vom Entwickler erhalten**
 
 ```
-klarvo.exe  (Einzeldatei, direkt ausführbar)
+klarvo-windows-shell.exe  (Einzeldatei, direkt ausführbar)
 ```
 
 **Option B — Lokal bauen** (setzt Rust-Toolchain + Windows-Build-Tools voraus):
 
+Das Repo muss auf Windows-NTFS liegen — UNC-Pfade auf das WSL-FS funktionieren nicht zuverlässig (Cross-FS-Lock-Probleme). Empfohlener Klon-Pfad: `D:\dev\klarvo-v2\`.
+
 ```powershell
-# im Repo-Wurzelverzeichnis
+git clone -b master https://github.com/andyon2/klarvo-app.git D:\dev\klarvo-v2
+cd D:\dev\klarvo-v2
 cargo build -p klarvo-windows-shell --release
 ```
 
-Ausgabepfad: `shells/windows/src-tauri/target/release/klarvo.exe`
+Ausgabepfad: `D:\dev\klarvo-v2\target\release\klarvo-windows-shell.exe`
+
+Für schnelleren Smoke-Test ist auch ein **Debug-Build** akzeptabel (Linker <1 Min statt 5-15 Min):
+
+```powershell
+cargo build -p klarvo-windows-shell
+# Ausgabepfad: D:\dev\klarvo-v2\target\debug\klarvo-windows-shell.exe
+```
+
+Funktional identisch, nur etwas langsamer zur Laufzeit.
 
 > Hinweis: Das v1-Build-Skript `scripts/sync-and-build.ps1` baut die alte v1-Shell —
 > für Phase-2-Tests bitte Option B oder eine vorgefertigte Binary verwenden.
+> Der Default-Branch des GitHub-Repos (`main`) enthält noch v1-Stand; `git clone`
+> ohne `-b master` zieht v1, nicht v2.
 
 ---
 
 ### Schritt 2 — Erster App-Start (ohne config.toml)
 
-1. `klarvo.exe` doppelklicken (kein Installer, kein Setup-Wizard)
+1. `klarvo-windows-shell.exe` doppelklicken (kein Installer, kein Setup-Wizard)
 2. Die App startet mit **Standard-Werten**:
 
 | Einstellung | Phase-1-Default |
@@ -119,7 +133,7 @@ output_language = "de"
 ### Schritt 6 — App-Neustart, deutsche UI prüfen
 
 1. Klarvo beenden: Rechtsklick im Tray → **Exit**
-2. `klarvo.exe` erneut starten
+2. `klarvo-windows-shell.exe` erneut starten
 3. Rechtsklick im Tray → Kontextmenü zeigt jetzt:
 
 ```

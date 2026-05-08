@@ -310,3 +310,9 @@ Neuer Wortlaut (Implementation-aligned):
 **Phase-2-B-Implikation:** 2.B.A2 (Second-Hotkey-Slot) erbt Pre-Validation-Modell für Slot-2-Akquisition: identische Sequenz mit `hotkey.slot2.combo`. AtomicI32-Probe-ID-Counter ist global (ein Counter für beide Slots) — Concurrent-Probe-Sicherheit gilt cross-slot. Story-Spec für 2.B.A2 muss explizit auf diesen Amendment-Block referenzieren.
 
 **Cross-Refs:** Story 2.A.C2 §Code-Review-Closure (Patches P10/P11/P12 + Defer W1); `epic-phase-2-a-retro-2026-05-01.md` AI-4; `feedback_adr_amendment_convention` (Amendment-Convention).
+
+## Amendment 3 — 2026-05-09: event-name `settings.changed` → `settings:changed`
+
+Per ADR-0002 Amendment 2 (Tauri 2.10 `IllegalEventName`), the wire-name `"settings.changed"` mandated by Amendment 2 above is migrated to `"settings:changed"` (commit `30630d3`). The Tauri runtime rejects event names containing `.`; the migration applies to backend `app.emit*` / `app.listen` call-sites, the `SettingsChangedEvent` specta-derive `event_name`-attribute (`commands/settings.rs`), and frontend `tauriEvent.listen(...)` consumers (`shells/windows/src/index.html`).
+
+**Out of scope:** the SQLite-key dot-namespacing (Sub-Decision 1 — `hotkey.slot1.combo`, `ui.language`, etc.) is unaffected. Those are payload data inside the `SettingsChangedEvent`, not Tauri event names.

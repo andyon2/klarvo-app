@@ -70,3 +70,27 @@ Beim Scaffold in Phase 0 gegen `2.0.0-rc.24` pinnen. Bei stable-2.0-Release: sep
 
 **Updated Smoke-Test-Plan Schritt 2 (supersedes original §Smoke-Test-Plan):**
 > 1 Event-Type mit `#[tauri_specta(event_name = "recording.test")]` (or similar dot-notation) registrieren. `#[serde(rename)]` erfüllt die Anforderung NICHT — betrifft nur Payload-Feld-Keys, nicht die Event-NAME-Konstante.
+
+## Amendment 2 — 2026-05-09: Tauri 2.10 `IllegalEventName` — migration from dot- to colon-notation
+
+**Finding:** Tauri 2.10.x rejects event names containing `.` at runtime with `IllegalEventName`. Permitted characters are `[a-zA-Z0-9-/:_]`. The first ever Windows release-build of v2 (2026-05-08, prior to this amendment) panicked on the very first `app.listen("settings.changed", ...)` call inside the Tauri `setup` closure. Linux `cargo check` and unit tests do not exercise the runtime event-name validator, so the breakage was masked.
+
+**Correction supersedes Amendment 1's "dot-notation" policy:** every event must carry an explicit colon-notation name `<domain>:<event>`.
+
+**Migrated wire-names** (commit `30630d3`, 2026-05-09):
+- `app.error` → `app:error`
+- `app.ready` → `app:ready`
+- `recording.{started,stopped,completed,delivered}` → `recording:{...}`
+- `pipeline.{stage_started,stage_completed}` → `pipeline:{...}`
+- `settings.changed` → `settings:changed`
+- `pill_bar.{show,fade_out,waveform_tick,enter_live_preview,live_preview_chunk}` → `pill_bar:{...}`
+
+**Out of scope for this amendment:** Error-keys carried as event payload (e.g. `error.config.parse_failed`, `error.hotkey.parse_failed`, `error.audio.start_failed`) are payload data, **not Tauri event names** — they remain in dot-notation. The migration touches only the wire-name constants passed to `app.emit*` / `app.listen` / `#[tauri_specta(event_name = ...)]`.
+
+**G1-Lint target update:** the `xtask lint-events` rule that previously required `.` in `event_name = "…"` values must now require `:` instead (validation regex must reject `.` in event names; payload keys are unaffected because they don't go through the Tauri-event-name validator).
+
+**Cross-references:**
+- ADR-0009 §Implementation registered `app.error`; the AppErrorEvent specta-derive on `bridge.rs` now carries `event_name = "app:error"`.
+- ADR-0013 Amendment 2 mandated dot-notation for `settings.changed`; that amendment is itself superseded by this one.
+
+**Source of finding:** `panic.message=called Result::unwrap() on an Err value: IllegalEventName("settings.changed") at tauri-2.10.3/src/app.rs:1114` during first Windows release-build smoke-test (logfile `%APPDATA%\Klarvo\logs\klarvo.2026-05-08.log`).

@@ -55,7 +55,7 @@ Gliederung nach thematischen Buckets — **keine 1:1-Bucket-zu-Epic-Kopplung**, 
 - **Source**: PRD L155 (`explicitlyOutOfScope`: "Floating Pill Bar with waveform/drag/shapes (Phase 2)"), PRD L179 (Umfang Phase 1: "keine Floating Pill Bar"), Product-Brief §Scope MVP-enthalten "komplette Floating Pill Bar (Windows)"
 - **Description**: Persistente Floating-Window-UI während Recording, die Waveform visualisiert und per Drag positionierbar ist. **UX-Spec Decisions abgeschlossen 2026-05-07** in `_bmad-output/planning-artifacts/ux-design-specification.md` §2.5 + Surface-Adaptation: 5-Pill-Bars Waveform (verbatim aus v1), K-Logo + roter Abort-Button, mode-dependent Größe (320×48 Waveform / ~480×84 Live-Preview), Position-Persistence per Monitor-Signature, nicht user-resizable in Waveform-Mode. Mockup: `_bmad-output/planning-artifacts/ux-design-directions.html`.
 - **Dependencies**: UX-Spec done. Pre-Decisions in `_bmad-output/planning-artifacts/pill-bar-ux-decisions.md` müssen vor Story-Writing als ADR re-affirmed werden (Live-Preview-Mode war dort nicht vorhergesehen)
-- **Status**: Ready-for-Story-Writing
+- **Status**: **Story-File erstellt 2026-05-08** → `_bmad-output/implementation-artifacts/11-3-floating-pill-bar.md`. Drag=A override confirmed Andy 2026-05-08.
 
 ### Pill Bar HTML Re-Implementation
 
@@ -358,6 +358,20 @@ Gliederung nach thematischen Buckets — **keine 1:1-Bucket-zu-Epic-Kopplung**, 
 - **Description**: Commercial-Tier-Payment via Lemon Squeezy. P1-Label aus Brief ist grob — welcher P1-Meilenstein löst es aus?
 - **Dependencies**: Lizenz-System (MVP-Closure-Kandidat)
 - **Status**: Blocked-by-Lizenz-Timing-Decision
+
+### Frontend `error.unknown`-Toast bei Boot
+
+- **Source**: Erster Windows-Smoke-Test 2026-05-09, Screenshot in `/home/andyon2/claude-images/shot_20260509_004858.png` + `shot_20260509_004909.png`
+- **Description**: Beim ersten App-Start zeigen Settings-Tab und History-Tab je einen roten Error-Toast mit dem rohen i18n-Key `error.unknown` (statt einer übersetzten Fehlermeldung). Backend-Logs sind clean — kein `app:error`-Emit aus dem Backend, kein Panic, kein Tauri-State-Lookup-Fehler. Symptom ist also rein Frontend-intern: ein IPC-Call beim React-Mount (`get_user_settings`, `get_history`, oder ein Setup-Listener) wirft einen Error, der im JS-catch landet, von `errorToToast(e)` nicht klassifiziert wird, und auf den Sentinel-Key `error.unknown` fällt. Diagnose-Pfad: WebView-DevTools (Strg+Shift+I im App-Fenster) → Console-Tab → JS-Stack-Trace lokalisiert den werfenden IPC-Call; danach gezielter Fix der Error-Surface oder der `errorToToast`-Klassifikation.
+- **Dependencies**: Keine. Standalone-Story.
+- **Status**: Ready-for-Story-Writing
+
+### `debug_assert!(<call-with-side-effect>)`-Lint
+
+- **Source**: Erster Windows-Release-Build 2026-05-08/09 (commit `30630d3` fixt 9 Stellen `debug_assert!(app.manage(...))` in `shells/windows/src-tauri/src/main.rs`); Memory `feedback_release_build_blind_spot`
+- **Description**: Repo-weiter Lint, der `debug_assert!(<expr>)` zurückweist wenn `<expr>` einen Side-Effect enthält (Method-Call, Function-Call mit `&mut self`, etc.). Hintergrund: in Release-Builds ist `debug_assert!` no-op → der Side-Effect wird **nicht** ausgeführt. Im konkreten Fall führte das dazu, dass `app.manage()` für 9 State-Slots im Release nie aufgerufen wurde, alles `state::<...>()`-Lookups paniciten beim Boot. Implementation-Optionen: (a) clippy-internal Check (würde upstream-PR brauchen), (b) eigener xtask-Lint analog zu `lint_events.rs`, (c) syn-basierter Walker im xtask. Pragmatischer Scope für eine Story: xtask-basierter Lint als CI-Gate.
+- **Dependencies**: Keine. Standalone-Story.
+- **Status**: Ready-for-Story-Writing
 
 ---
 
