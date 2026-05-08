@@ -2,7 +2,7 @@
 name: Story 11.4 — LivePreview-State (Text + Side-Strip-Waveform + Live-Update)
 epic: 11
 story_number: "11.4"
-status: done
+status: review
 dependencies:
   - "11.3"  # LP-size-infra (480×84), enter_live_preview JS-listener + .live-preview class, LIVE_PREVIEW_WIDTH/HEIGHT constants
 inputDocuments:
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.4: LivePreview-State — Text + Side-Strip-Waveform + Live-Update
 
-Status: done
+Status: review
 
 ## Story
 
