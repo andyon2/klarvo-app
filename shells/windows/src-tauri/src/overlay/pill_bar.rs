@@ -200,6 +200,15 @@ fn handle_event<R: tauri::Runtime>(
             // ends the current session, does not start a new one.
             schedule_fade_and_hide(app, fade_epoch, "abort");
         }
+        Event::LivePreviewChunk { text, ts_ms } => {
+            if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
+                if let Err(e) = win.set_size(LogicalSize::new(LIVE_PREVIEW_WIDTH, LIVE_PREVIEW_HEIGHT)) {
+                    tracing::warn!(error = %e, "pill-bar LP resize failed");
+                }
+            }
+            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.enter_live_preview", ());
+            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.live_preview_chunk", LivePreviewPayload { text, ts_ms });
+        }
         _ => {}
     }
 }
@@ -250,5 +259,11 @@ pub async fn dev_pill_bar_enter_live_preview<R: tauri::Runtime>(
 #[derive(Debug, Clone, Serialize)]
 struct WaveformPayload {
     bins: Vec<f32>,
+    ts_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LivePreviewPayload {
+    text: String,
     ts_ms: u64,
 }

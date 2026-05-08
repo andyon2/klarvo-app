@@ -73,6 +73,16 @@ pub enum Event {
     /// into 64-bin ring buffer; not forwarded to main WebView by EventMirror).
     /// `rms` is 0.0..=1.0 (same range as `AudioEvent::Level`).
     AudioLevel { rms: f32, ts_ms: u64 },
+    /// STT partial result emitted by the shell orchestrator after the pipeline
+    /// produces text but before delivery (paste). Shell emits
+    /// `pill_bar.live_preview_chunk` to the frontend on this event.
+    ///
+    /// Phase-1: emitted once after single-shot pipeline completes (text =
+    /// Verbatim-passthrough = final STT output). Phase-2+: emitted per chunk
+    /// while recording continues.
+    ///
+    /// `text` is the raw STT output — not an i18n key.
+    LivePreviewChunk { text: String, ts_ms: u64 },
 }
 
 impl Event {

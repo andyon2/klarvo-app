@@ -341,6 +341,15 @@ impl SessionOrchestrator {
             // focused by the time Pill-Bar handles the event.
             let mut focus_restored = false;
 
+            // LivePreview: emit before delivery so the Pill Bar shows the text
+            // before focus shifts to the target window (AC-2 ordering invariant).
+            if let Some(ref text) = text_to_deliver {
+                event_bus.emit(Event::LivePreviewChunk {
+                    text: text.clone(),
+                    ts_ms: clock.now_ms(),
+                });
+            }
+
             if let Some(text) = text_to_deliver {
                 match registry.output(&output_target_id) {
                     Some(target) => {

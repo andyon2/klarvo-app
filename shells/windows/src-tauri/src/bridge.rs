@@ -182,6 +182,8 @@ impl<R: tauri::Runtime> EventMirror<R> {
             // AudioLevel is consumed by PillBar overlay only — not mirrored to main WebView.
             // High-frequency (~15.6Hz) and the main WebView has no consumer.
             Event::AudioLevel { .. } => return,
+            // LivePreviewChunk is consumed by PillBar overlay only — not mirrored to main WebView.
+            Event::LivePreviewChunk { .. } => return,
         };
         if let Err(e) = result {
             tracing::warn!(error = %e, "EventMirror failed to emit event to frontend");
