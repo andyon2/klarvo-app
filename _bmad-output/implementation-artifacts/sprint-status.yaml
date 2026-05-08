@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-08 (Story 11.1 pill-bar-html-reimpl → review)"
+last_updated: "2026-05-08 (Story 11.1 pill-bar-html-reimpl → done; code-review-pass: 2 patches + 1 deferred)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -233,4 +233,4 @@ development_status:
   # Floating Pill Bar + weitere Follow-Ups (11.2+).
   # ============================================================
   epic-11: in-progress
-  11-1-pill-bar-html-reimpl: review  # story-file: epic-11-1-pill-bar-html-reimpl.md
+  11-1-pill-bar-html-reimpl: done  # story-file: epic-11-1-pill-bar-html-reimpl.md; code-review-closure 2026-05-08 (2 patches applied: doc-drift + helper-extraction; D2/Test-coverage deferred as 11.1-DF2)

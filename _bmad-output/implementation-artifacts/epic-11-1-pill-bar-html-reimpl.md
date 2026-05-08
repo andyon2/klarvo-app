@@ -2,7 +2,7 @@
 name: Story 11.1 — Pill Bar HTML Re-Implementation
 epic: 11
 story_number: "11.1"
-status: review
+status: done
 dependencies:
   - "9-6-pill-bar"  # Pill-Bar-Overlay-Infrastructure (PillBar Rust-Struct, tauri.conf.json, EventBus-Subscriber-Task)
 inputDocuments:
@@ -14,7 +14,7 @@ inputDocuments:
 
 # Story 11.1: Pill Bar HTML Re-Implementation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -545,3 +545,12 @@ All 6 ACs implemented in one session (2026-05-08):
 ## Change Log
 
 - 2026-05-08: Story 11.1 implementation — `Event::RecordingAborted` backend + `cancel_recording` Tauri command + `capabilities/pill-bar.json` + Pill-Bar visual overhaul (5 pill-shaped bars, K-Logo, Abort-Button). Bindings regenerated.
+
+### Review Findings
+
+_Code-review pass 2026-05-08. Parallel review-agents abgebrochen (Skill-Tool-Limit in Subagents); Single-Reviewer-Pass durch Andy's Session covering Acceptance / Edge-Case / Adversarial layers. Verifizierte Test-Plan-Claims: cargo check (core, orchestrator, workspace minus windows-shell), cargo xtask bindings-drift OK, cargo test -p klarvo-shell-orchestrator 27/27 ok, cross-compile core+orchestrator MinGW OK._
+
+- [x] [Review][Patch] Extract `schedule_fade_and_hide(app, fade_epoch, path_label)` Helper — `pill_bar.rs:121-138` (RecordingCompleted) und `:154-172` (RecordingAborted) sind bis auf den Log-Label-String identische 17-Zeilen-Blöcke (fade_out emit + epoch-snapshot + spawn(sleep+hide+epoch-check)). Applied: helper extracted at `pill_bar.rs:153-173`, call-sites pass `"natural"` / `"abort"` als `path_label` für tracing-disambiguation.
+- [x] [Review][Patch] Event-Enum Lifecycle-Doc-Drift — `klarvo-core/src/event/bus.rs:14-26` Doc-Comment behauptet "fixed three-event sequence: Started → Stopped → Completed". RecordingAborted ist 4. Terminal-Event und überspringt Stopped/Completed. Applied: Lifecycle-Block restructured in zwei Pfade (natural 3-event + abort 2-event) plus subscriber-idempotency-Hinweis für Race-Worst-Case.
+- [x] [Review][Defer] Test-Coverage-Gap für `cancel_recording` — keine Unit-Tests in dieser Story; Pattern für Tests existiert (`shutdown_while_recording_aborts_and_no_stopped_event` in session_tests.rs:235ff). Decision D2 = Option 2 (defer als Follow-Up-Story — Scope-Creep auf abgeschlossener Story vermeiden). Tracked in deferred-work.md als 11.1-DF2.
+- [x] [Review][Defer] MinGW cross-compile baseline failure auf `whisper-rs-sys` — `cargo check --target x86_64-pc-windows-gnu --lib -p klarvo-windows-shell` schlägt fehl (size_of mismatch via Linux-glibc bindings). `klarvo-core` und `klarvo-shell-orchestrator` MinGW-clean. Pre-existing seit Story 10.1, nicht durch 11.1 eingeführt — deferred.

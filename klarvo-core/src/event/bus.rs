@@ -14,7 +14,9 @@ use crate::i18n;
 ///
 /// # Recording lifecycle
 ///
-/// A push-to-talk cycle emits a fixed three-event sequence:
+/// A push-to-talk cycle has two terminal paths — natural completion and abort.
+///
+/// **Natural path (3 events):**
 ///
 /// 1. [`Event::RecordingStarted`] — audio capture began (`AudioSource::start`
 ///    returned `Ok`). Subscribers reflect "user is recording" state.
@@ -24,6 +26,19 @@ use crate::i18n;
 /// 3. [`Event::RecordingCompleted`] — pipeline task finished, regardless of
 ///    outcome (delivered, no-speech, or error). Subscribers reflecting end-to-end
 ///    completion (tray idle, "Klarvo ready" UI) consume this event.
+///
+/// **Abort path (Pill-Bar abort button — Story 11.1):**
+///
+/// 1. [`Event::RecordingStarted`] — as above.
+/// 2. [`Event::RecordingAborted`] — user cancelled. Pipeline task is hard-cancelled;
+///    audio buffer is discarded; no STT, no paste. `RecordingStopped` and
+///    `RecordingCompleted` are **not** emitted on this path (no meaningful audio
+///    boundary, no pipeline outcome).
+///
+/// **Subscriber idempotency:** Because the abort path can race with a pipeline that
+/// already emitted `RecordingCompleted`, subscribers may observe both terminal events
+/// for the same session in worst-case ordering. Treat both as equivalent "session
+/// ended" signals and make handling idempotent (no double-fade, no double-icon-set).
 #[derive(Debug, Clone)]
 pub enum Event {
     /// Audio capture has started after a successful `AudioSource::start`.

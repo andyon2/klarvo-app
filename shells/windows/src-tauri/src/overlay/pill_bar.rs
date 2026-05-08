@@ -119,23 +119,7 @@ fn handle_event<R: tauri::Runtime>(
             let _ = app.emit_to(WINDOW_LABEL, "pill_bar.show", ());
         }
         Event::RecordingCompleted { .. } => {
-            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
-            let app_clone = app.clone();
-            let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
-            let epoch_clone = Arc::clone(fade_epoch);
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(FADE_OUT_MS)).await;
-                // Stale-hide guard: if a new recording started within the fade
-                // window the epoch advanced; do nothing in that case.
-                if epoch_clone.load(Ordering::SeqCst) != epoch_snapshot {
-                    return;
-                }
-                if let Some(win) = app_clone.get_webview_window(WINDOW_LABEL) {
-                    if let Err(e) = win.hide() {
-                        tracing::warn!(error = %e, "pill-bar hide failed");
-                    }
-                }
-            });
+            schedule_fade_and_hide(app, fade_epoch, "natural");
         }
         Event::AudioLevel { rms, ts_ms } => {
             // NaN/Inf at the source would propagate through `clamp` and serialize
@@ -152,26 +136,40 @@ fn handle_event<R: tauri::Runtime>(
             );
         }
         Event::RecordingAborted { .. } => {
-            // Fade out identically to RecordingCompleted.
-            // No epoch bump needed — abort ends the current session, does not start a new one.
-            let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
-            let app_clone = app.clone();
-            let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
-            let epoch_clone = Arc::clone(fade_epoch);
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(FADE_OUT_MS)).await;
-                if epoch_clone.load(Ordering::SeqCst) != epoch_snapshot {
-                    return; // New recording started within the 300ms fade window — no-op.
-                }
-                if let Some(win) = app_clone.get_webview_window(WINDOW_LABEL) {
-                    if let Err(e) = win.hide() {
-                        tracing::warn!(error = %e, "pill-bar hide failed (abort path)");
-                    }
-                }
-            });
+            // Fade out identically to RecordingCompleted. No epoch bump — abort
+            // ends the current session, does not start a new one.
+            schedule_fade_and_hide(app, fade_epoch, "abort");
         }
         _ => {}
     }
+}
+
+/// Emit `pill_bar.fade_out` and schedule a `win.hide()` after `FADE_OUT_MS`.
+///
+/// The hide is gated on a `fade_epoch` snapshot: if a new recording starts within
+/// the fade window (which bumps the epoch), the scheduled hide no-ops so the
+/// freshly-shown pill-bar is not torn down. `path_label` is included in any
+/// hide-failure warning to distinguish natural-completion from abort paths.
+fn schedule_fade_and_hide<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    fade_epoch: &Arc<AtomicU64>,
+    path_label: &'static str,
+) {
+    let _ = app.emit_to(WINDOW_LABEL, "pill_bar.fade_out", ());
+    let app_clone = app.clone();
+    let epoch_snapshot = fade_epoch.load(Ordering::SeqCst);
+    let epoch_clone = Arc::clone(fade_epoch);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(FADE_OUT_MS)).await;
+        if epoch_clone.load(Ordering::SeqCst) != epoch_snapshot {
+            return;
+        }
+        if let Some(win) = app_clone.get_webview_window(WINDOW_LABEL) {
+            if let Err(e) = win.hide() {
+                tracing::warn!(error = %e, path = path_label, "pill-bar hide failed");
+            }
+        }
+    });
 }
 
 #[derive(Debug, Clone, Serialize)]
