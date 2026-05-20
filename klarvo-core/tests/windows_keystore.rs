@@ -42,7 +42,7 @@ impl Drop for TestKeystoreScope {
             let target = format!("{}/{}", self.app_id, key);
             let target_wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
             // ignore errors — Drop must never panic
-            let _ = unsafe { CredDeleteW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, 0) };
+            let _ = unsafe { CredDeleteW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, Some(0)) };
         }
     }
 }
@@ -117,7 +117,7 @@ async fn target_name_prefix_convention() {
     let target_wide: Vec<u16> = target_name.encode_utf16().chain(std::iter::once(0)).collect();
     let mut cred_ptr: *mut CREDENTIALW = std::ptr::null_mut();
     unsafe {
-        CredReadW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, 0, &mut cred_ptr)
+        CredReadW(PCWSTR(target_wide.as_ptr()), CRED_TYPE_GENERIC, Some(0), &mut cred_ptr)
             .expect("direct CredReadW with {app_id}/{key} TargetName should succeed");
         CredFree(cred_ptr as _);
     }
