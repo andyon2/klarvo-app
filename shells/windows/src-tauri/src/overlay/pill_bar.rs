@@ -216,6 +216,13 @@ fn handle_event<R: tauri::Runtime>(
                 tracing::debug!("LivePreviewChunk dropped: pill-bar window not available");
             }
         }
+        Event::CleanupDone { text, ts_ms } => {
+            if let Some(_win) = app.get_webview_window(WINDOW_LABEL) {
+                let _ = app.emit_to(WINDOW_LABEL, "pill_bar:cleanup_done", CleanupDonePayload { text, ts_ms });
+            } else {
+                tracing::debug!("CleanupDone dropped: pill-bar window not available");
+            }
+        }
         _ => {}
     }
 }
@@ -271,6 +278,12 @@ struct WaveformPayload {
 
 #[derive(Debug, Clone, Serialize)]
 struct LivePreviewPayload {
+    text: String,
+    ts_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CleanupDonePayload {
     text: String,
     ts_ms: u64,
 }

@@ -382,6 +382,15 @@ impl SessionOrchestrator {
                 }
             }
 
+            if let Some(ref text) = text_to_deliver {
+                if session_active && !text.is_empty() {
+                    event_bus.emit(Event::CleanupDone {
+                        text: text.clone(),
+                        ts_ms: clock.now_ms(),
+                    });
+                }
+            }
+
             if let Some(text) = text_to_deliver {
                 match registry.output(&output_target_id) {
                     Some(target) => {

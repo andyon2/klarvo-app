@@ -83,6 +83,17 @@ pub enum Event {
     ///
     /// `text` is the raw STT output — not an i18n key.
     LivePreviewChunk { text: String, ts_ms: u64 },
+
+    /// Cleanup pipeline stage completed; shell emits `pill_bar:cleanup_done` to
+    /// frontend for the CleanupDone-State morph.
+    ///
+    /// Phase-1: emitted once after single-shot pipeline completes; `text` =
+    /// Verbatim-passthrough = raw STT output (identical to `LivePreviewChunk.text`).
+    /// Phase-2+: emitted once after the filter stage transforms the full STT output;
+    /// `text` is the filter-transformed result and differs from `LivePreviewChunk`.
+    ///
+    /// `text` is NOT an i18n key — it is the cleaned transcript payload.
+    CleanupDone { text: String, ts_ms: u64 },
 }
 
 impl Event {
