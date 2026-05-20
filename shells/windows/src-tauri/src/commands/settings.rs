@@ -44,10 +44,10 @@ pub struct UserSettings {
 
 /// Event payload emitted on every successful settings write (AC-5 + AC-6).
 ///
-/// Frontend listeners (A8-Sub, C2, C3) subscribe to `"settings:changed"`.
+/// Frontend listeners (A8-Sub, C2, C3) subscribe to `"settings.changed"`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[serde(rename_all = "camelCase")]
-#[tauri_specta(event_name = "settings:changed")]
+#[tauri_specta(event_name = "settings.changed")]
 pub struct SettingsChangedEvent {
     pub key: String,
     pub new_value: String,
@@ -59,7 +59,7 @@ pub struct SettingsChangedEvent {
 
 /// Shell implementation of `klarvo_core::settings::SettingsEmitter`.
 ///
-/// Calls `app_handle.emit("settings:changed", ...)` on every settings write.
+/// Calls `app_handle.emit("settings.changed", ...)` on every settings write.
 /// Generic over `R: tauri::Runtime` for MockRuntime compatibility in tests.
 pub struct TauriSettingsEmitter<R: tauri::Runtime> {
     app_handle: tauri::AppHandle<R>,
@@ -74,7 +74,7 @@ impl<R: tauri::Runtime> TauriSettingsEmitter<R> {
 impl<R: tauri::Runtime> klarvo_core::settings::SettingsEmitter for TauriSettingsEmitter<R> {
     fn emit_settings_changed(&self, key: &str, new_value: &str) {
         let event = SettingsChangedEvent { key: key.into(), new_value: new_value.into() };
-        if let Err(e) = self.app_handle.emit("settings:changed", &event) {
+        if let Err(e) = self.app_handle.emit("settings.changed", &event) {
             tracing::warn!(error = %e, key, "failed to emit settings.changed event");
         }
     }

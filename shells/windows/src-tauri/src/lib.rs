@@ -49,7 +49,7 @@ fn ping(name: String) -> String {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type, Event)]
-#[tauri_specta(event_name = "app:ready")]
+#[tauri_specta(event_name = "app.ready")]
 pub struct AppReady {
     pub session_id: String,
 }

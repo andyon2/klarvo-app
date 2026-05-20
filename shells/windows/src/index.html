@@ -244,7 +244,7 @@
           let cancelled = false;
           let unlisten = null;
           tauriEvent
-            .listen("settings:changed", (evt) => {
+            .listen("settings.changed", (evt) => {
               const payload = evt?.payload;
               if (payload && payload.key === "hotkey.slot1.mode" && typeof payload.newValue === "string") {
                 setForm((f) => ({ ...f, hotkeySlot1Mode: payload.newValue }));
@@ -269,7 +269,7 @@
           let cancelled = false;
           let unlisten = null;
           tauriEvent
-            .listen("settings:changed", (evt) => {
+            .listen("settings.changed", (evt) => {
               const payload = evt?.payload;
               // AC-5: filter exclusively on "ui.language" — do not react to axis-2/axis-3 keys.
               if (!payload || payload.key !== "ui.language" || typeof payload.newValue !== "string") {
