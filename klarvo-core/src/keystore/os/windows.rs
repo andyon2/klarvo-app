@@ -154,7 +154,7 @@ impl KeyStore for WindowsKeystore {
             cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
             CredWriteW(&cred, 0)
         }
-        .map_err(|e| backend_unavailable_err(e))
+        .map_err(backend_unavailable_err)
     }
 
     /// Delete a key from the Windows Credential Manager.
