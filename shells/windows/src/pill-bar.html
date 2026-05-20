@@ -14,6 +14,7 @@
       width: 100%; height: 100%;
       background: var(--klarvo-color-overlay-bg);
       border-radius: 24px;
+      border: 1px solid transparent;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -23,6 +24,23 @@
       transition: opacity var(--klarvo-timing-medium) ease-out;
     }
     #pill.fade-out { opacity: 0; }
+
+    /* CleanupDone: success-edge border at 30% alpha */
+    #pill.cleanup-done {
+      border-color: color-mix(in srgb, var(--klarvo-color-success) 30%, transparent);
+    }
+    /* CleanupDone: abort button hidden */
+    #pill.cleanup-done #abort-btn { display: none; }
+
+    /* Fade-Pulse animation on lp-text at CleanupDone morph */
+    @keyframes lp-morph-pulse {
+      0%   { opacity: 1; }
+      40%  { opacity: 0.15; }
+      100% { opacity: 1; }
+    }
+    .lp-morph-pulse {
+      animation: lp-morph-pulse var(--klarvo-timing-fast) ease;
+    }
 
     /* K-Logo: verbatim v1 KlarvoLogo (24×24 rounded, color: var(--klarvo-color-action), white K) */
     #k-logo {
@@ -254,10 +272,11 @@
         }
       });
 
-      // Show: clear fade-out + live-preview classes, reset bars
+      // Show: clear fade-out + live-preview + cleanup-done classes, reset bars
       tauriEvent.listen('pill_bar:show', () => {
         pill.classList.remove('fade-out');
         pill.classList.remove('live-preview');
+        pill.classList.remove('cleanup-done');
         lpText.textContent = '';
         bins.fill(0);
         updateBars();
@@ -279,6 +298,19 @@
         const payload = evt?.payload;
         if (payload && typeof payload.text === 'string') {
           lpText.textContent = payload.text;
+        }
+      });
+
+      // CleanupDone: morph to success state with fade-pulse animation
+      tauriEvent.listen('pill_bar:cleanup_done', (evt) => {
+        const payload = evt?.payload;
+        if (payload && typeof payload.text === 'string') {
+          lpText.textContent = payload.text;
+          // Retrigger animation (handles rapid successive calls)
+          lpText.classList.remove('lp-morph-pulse');
+          void lpText.offsetWidth;  // force reflow to restart CSS animation
+          lpText.classList.add('lp-morph-pulse');
+          pill.classList.add('cleanup-done');
         }
       });
     }
