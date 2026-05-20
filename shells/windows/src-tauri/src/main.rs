@@ -451,7 +451,7 @@ fn main() {
             {
                 use std::str::FromStr;
                 let mode_arc_listener = Arc::clone(&recording_mode_arc);
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                         if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot1.mode") {
                             if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
@@ -480,7 +480,7 @@ fn main() {
             {
                 use std::str::FromStr;
                 let mode_arc_slot2_listener = Arc::clone(&recording_mode_arc_slot2);
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                         if payload.get("key").and_then(|v| v.as_str()) == Some("hotkey.slot2.mode") {
                             if let Some(new_value) = payload.get("newValue").and_then(|v| v.as_str()) {
@@ -517,7 +517,7 @@ fn main() {
             // upstream (review P2).
             {
                 let app_handle = app.handle().clone();
-                app.listen("settings.changed", move |event| {
+                app.listen("settings:changed", move |event| {
                     let payload: serde_json::Value =
                         match serde_json::from_str(event.payload()) {
                             Ok(v) => v,

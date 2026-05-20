@@ -62,8 +62,8 @@ export const commands = {
 
 /** Events */
 export const events = {
-	appReady: makeEvent<AppReady>("app.ready"),
-	settingsChanged: makeEvent<SettingsChangedEvent>("settings.changed"),
+	appReady: makeEvent<AppReady>("app:ready"),
+	settingsChanged: makeEvent<SettingsChangedEvent>("settings:changed"),
 };
 
 /* Types */
@@ -141,7 +141,7 @@ export type HistoryEntryDto = {
 /**
  *  Event payload emitted on every successful settings write (AC-5 + AC-6).
  * 
- *  Frontend listeners (A8-Sub, C2, C3) subscribe to `"settings.changed"`.
+ *  Frontend listeners (A8-Sub, C2, C3) subscribe to `"settings:changed"`.
  */
 export type SettingsChangedEvent = {
 	key: string,
