@@ -13,6 +13,12 @@ compile_error!("shells/windows requires Windows target");
 fn main() {
     use std::sync::Arc;
 
+    // Story 12.2 AC-1/AC-2: Pre-tracing boot-stage markers.
+    // Written synchronously before any tracing-subscriber is initialised so that
+    // silent init failures (Hypotheses 1-4 from the story) leave a deterministic
+    // breadcrumb in %APPDATA%\Klarvo\diag\boot-marker.txt.
+    klarvo_core::telemetry::diag::write_boot_marker("Stage 0", "main() entered");
+
     // Logging-Init (before Step 0): install rolling-file tracing subscriber so
     // all subsequent tracing! calls land in %APPDATA%\Klarvo\logs\.
     //
@@ -24,10 +30,21 @@ fn main() {
     let log_dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d).join("Klarvo").join("logs"))
         .unwrap_or_else(|_| std::env::temp_dir().join("Klarvo").join("logs"));
-    let tracing_guard = std::sync::Arc::new(std::sync::Mutex::new(
-        klarvo_core::telemetry::logging::init_tracing(&log_dir),
-    ));
+    klarvo_core::telemetry::diag::write_boot_marker(
+        "Stage 1",
+        &format!("log_dir resolved = {}", log_dir.display()),
+    );
+    let tracing_result = klarvo_core::telemetry::logging::init_tracing(&log_dir);
+    klarvo_core::telemetry::diag::write_boot_marker(
+        "Stage 2",
+        &format!(
+            "init_tracing called, returned {}",
+            if tracing_result.is_some() { "Some" } else { "None" }
+        ),
+    );
+    let tracing_guard = std::sync::Arc::new(std::sync::Mutex::new(tracing_result));
     klarvo_core::telemetry::logging::install_panic_hook();
+    klarvo_core::telemetry::diag::write_boot_marker("Stage 3", "install_panic_hook done");
 
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
@@ -110,6 +127,7 @@ fn main() {
 
     let specta_builder = klarvo_windows_shell::specta_builder();
 
+    klarvo_core::telemetry::diag::write_boot_marker("Stage 4", "Tauri app.build() entered");
     let app = tauri::Builder::default()
         // Story 9.4: native OS toast notifications on recording.delivered + session errors.
         .plugin(tauri_plugin_notification::init())
@@ -722,6 +740,7 @@ fn main() {
         }
     };
     let exit_guard = std::sync::Arc::clone(&tracing_guard);
+    klarvo_core::telemetry::diag::write_boot_marker("Stage 5", "Tauri app.run() entered");
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             // Use `try_state` to avoid a second panic in the exit handler if Setup

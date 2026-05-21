@@ -13,7 +13,7 @@ inputDocuments:
 
 # Story 12.2: Pipeline Smoke-Test Diagnose-Recovery
 
-Status: **ready-for-dev**
+Status: **in-progress**
 
 ## Story
 
@@ -117,11 +117,45 @@ Sprint-Status `12-1-production-pipeline-wire-up` Kommentar wird ergänzt: `(func
 
 ## Definition of Done
 
-- [ ] AC-1: Pre-Tracing-Marker schreibt synchron
-- [ ] AC-2: 4+ Boot-Stage-Marker an `main.rs`-Stellen
+- [x] AC-1: Pre-Tracing-Marker schreibt synchron
+- [x] AC-2: 4+ Boot-Stage-Marker an `main.rs`-Stellen (6 Stages implementiert)
 - [ ] AC-3: Smoke-Test mit Diagnose durchgeführt, Outputs gesichert
 - [ ] AC-4: `## Diagnostic Findings` in Story-File ergänzt
 - [ ] AC-5: Audio → STT → Text-Paste funktioniert; Diagnose-Code-Entscheidung dokumentiert
-- [ ] AC-6: Sprint-Status 12.1-Annotation ergänzt
-- [ ] Windows-Cross-Compile-Check vor Story-Closure (`cargo check --target x86_64-pc-windows-gnu` — siehe memory `feedback_windows_cross_compile_verify`)
+- [x] AC-6: Sprint-Status 12.1-Annotation ergänzt (`functional verification via 12.2`)
+- [x] Windows-Cross-Compile-Check vor Story-Closure (`cargo check --target x86_64-pc-windows-gnu` — klarvo-core clean; klarvo-windows-shell whisper-rs-sys vorbestehend)
 - [ ] Clippy-Gate grün auf Windows-CI
+
+## Tasks/Subtasks
+
+- [x] **T1 — diag.rs Modul** (AC-1): `klarvo_core::telemetry::diag::write_boot_marker` implementiert mit Append-Mode-Write, Fallback-Pfad und `eprintln!` als Last-Resort. 5 Unit-Tests: creates file, appends, timestamp-format, parent-dir-auto-create, fallback-no-panic.
+- [x] **T2 — main.rs Call-Sites** (AC-2): 6 Stage-Marker in `shells/windows/src-tauri/src/main.rs` — Stage 0 (main entered), Stage 1 (log_dir resolved), Stage 2 (init_tracing Some/None), Stage 3 (panic hook done), Stage 4 (Tauri build entered), Stage 5 (Tauri run entered). `init_tracing`-Rückgabe wurde aus dem `Arc::new(Mutex::new(...))` extrahiert um den `Some/None`-Wert zu capturen.
+- [x] **T3 — AC-6 Sprint-Status**: 12-1-Kommentar von "deferred to 12.2" zu "via 12.2" umformuliert.
+- [ ] **T4 — Smoke-Test** (AC-3): Windows-Release-Build + Install + Smoke-Run → Marker-Datei auslesen. **USER HALT: Requires Windows action.**
+- [ ] **T5 — Diagnostic Findings** (AC-4): Section ins Story-File eintragen nach T4.
+- [ ] **T6 — Fix + Verification** (AC-5): Je nach Befund aus T4/T5.
+
+## File List
+
+- `klarvo-core/src/telemetry/diag.rs` — new
+- `klarvo-core/src/telemetry/mod.rs` — modified (added `pub mod diag`)
+- `shells/windows/src-tauri/src/main.rs` — modified (6 Stage-Marker)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — modified (12-2 in-progress, 12-1 annotation)
+
+## Dev Agent Record
+
+### Implementation Notes
+
+**2026-05-21 — AC-1/AC-2 abgeschlossen:**
+
+- `write_boot_marker(stage, detail)` schreibt per `OpenOptions::append(true).create(true)` synchron in `%APPDATA%\Klarvo\diag\boot-marker.txt`. Kein Tracing-Crate-Import, kein Buffer.
+- Fallback-Chain: APPDATA-Pfad → `temp_dir()\Klarvo\diag\...` → `temp_dir()\klarvo-diag-fallback.txt` → `eprintln!`.
+- `init_tracing`-Aufruf in `main.rs` refactored: Rückgabe in `tracing_result` zwischen Stage-1- und Stage-2-Marker gecaptured, dann erst in `Arc<Mutex<Option<...>>>` gewrapped. Das ist die kritische Änderung: vorher war das Ergebnis von `init_tracing` nie sichtbar ohne Tracing selbst.
+- `klarvo-core` Windows cross-compile: clean. `whisper-rs-sys`-Fehler in `klarvo-windows-shell` ist vorbestehend (identische Errors auch ohne meine Änderungen per `git stash`-Verifikation).
+- Alle 5 Unit-Tests + kompletter Test-Suite (127 Core-Tests) grün, keine Regressions.
+
+**Offene Punkte (HALT):** AC-3 erfordert Windows-Release-Build und physischen Smoke-Run. Marker-Datei-Pfad: `%APPDATA%\Klarvo\diag\boot-marker.txt`.
+
+## Change Log
+
+- 2026-05-21: AC-1/AC-2/AC-6 implemented — `diag.rs` new module, 6 Stage-Markers in `main.rs`, Sprint-Status 12-1 annotation updated

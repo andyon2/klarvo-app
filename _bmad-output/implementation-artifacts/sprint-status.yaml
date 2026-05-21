@@ -252,5 +252,5 @@ development_status:
   # Further plugins (DeepSeek, Polished) go into separate stories as needed.
   # ============================================================
   epic-12: in-progress
-  12-1-production-pipeline-wire-up: done  # story-file: epic-12-1-production-pipeline-wire-up.md; manifest+groq-register+shell-dep+forcing-sentinel-test; impl 2026-05-21; code-review-closure 2026-05-21 (1 decision accepted-as-is + 1 patch P1-vacuous-pass-guard + 2 defers DF1/DF2); functional verification deferred to 12.2
-  12-2-pipeline-smoke-test-recovery: ready-for-dev  # story-file: epic-12-2-pipeline-smoke-test-recovery.md; pre-tracing diagnostic markers + smoke-test re-run + 12.1 functional verification; created 2026-05-21 after 6-commit smoke-test loop terminated at 0-byte-log
+  12-1-production-pipeline-wire-up: done  # story-file: epic-12-1-production-pipeline-wire-up.md; manifest+groq-register+shell-dep+forcing-sentinel-test; impl 2026-05-21; code-review-closure 2026-05-21 (1 decision accepted-as-is + 1 patch P1-vacuous-pass-guard + 2 defers DF1/DF2); functional verification via 12.2
+  12-2-pipeline-smoke-test-recovery: in-progress  # story-file: epic-12-2-pipeline-smoke-test-recovery.md; pre-tracing diagnostic markers + smoke-test re-run + 12.1 functional verification; created 2026-05-21 after 6-commit smoke-test loop terminated at 0-byte-log
