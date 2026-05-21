@@ -15,11 +15,18 @@ fn main() {
 
     // Logging-Init (before Step 0): install rolling-file tracing subscriber so
     // all subsequent tracing! calls land in %APPDATA%\Klarvo\logs\.
-    // `_tracing_guard` keeps the non-blocking writer alive until main() returns.
+    //
+    // Tauri v2's `app.run(...)` ends via internal `process::exit`, which skips
+    // Rust's Drop chains. Without explicit drop in the `RunEvent::Exit` handler
+    // below, the non_blocking writer's buffer is never flushed and short-session
+    // logs are lost. Capture the guard in an Arc<Mutex<Option<…>>> so the
+    // run-loop closure can take ownership and drop it at exit time.
     let log_dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d).join("Klarvo").join("logs"))
         .unwrap_or_else(|_| std::env::temp_dir().join("Klarvo").join("logs"));
-    let _tracing_guard = klarvo_core::telemetry::logging::init_tracing(&log_dir);
+    let tracing_guard = std::sync::Arc::new(std::sync::Mutex::new(
+        klarvo_core::telemetry::logging::init_tracing(&log_dir),
+    ));
     klarvo_core::telemetry::logging::install_panic_hook();
 
     use klarvo_core::audio::vad::RmsVad;
@@ -708,11 +715,14 @@ fn main() {
             // sits in the writer's mpsc channel and never reaches the
             // rolling-file (loses the most diagnostically valuable line
             // when boot fails). Story-6.1 review patch P2.
-            drop(_tracing_guard);
+            if let Ok(mut g) = tracing_guard.lock() {
+                let _ = g.take();
+            }
             std::process::exit(1);
         }
     };
-    app.run(|app_handle, event| {
+    let exit_guard = std::sync::Arc::clone(&tracing_guard);
+    app.run(move |app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             // Use `try_state` to avoid a second panic in the exit handler if Setup
             // failed before `app.manage(orch)` ran — preserves the original boot error.
@@ -720,6 +730,13 @@ fn main() {
                 tauri::async_runtime::block_on(async move {
                     orch.shutdown().await;
                 });
+            }
+            // Tauri v2's run-loop ends via internal `process::exit`, which skips
+            // Drop chains. Explicit drop here flushes the non_blocking tracing
+            // writer's buffer so the rolling-file actually contains this session's
+            // logs (otherwise: 0-byte file on short sessions).
+            if let Ok(mut g) = exit_guard.lock() {
+                let _ = g.take();
             }
         }
     });
