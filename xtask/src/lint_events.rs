@@ -2,8 +2,9 @@
 //!
 //! # Sub-Passes
 //!
-//! 1. **G1 (existing):** Enforce `#[tauri_specta(event_name = "…")]` dot-notation on all
-//!    `#[derive(Event)]` items. Policy: ADR-0002 + Amendment 1.
+//! 1. **G1 (existing):** Enforce `#[tauri_specta(event_name = "…")]` colon-notation on all
+//!    `#[derive(Event)]` items. Policy: ADR-0002 Amendment 2 (dot-notation rejected by
+//!    Tauri 2.10.x at runtime with `IllegalEventName`; colon-notation is the only valid form).
 //! 2. **G3-Sub-Lint A:** User-facing-string detection. `klarvo-core` and `klarvo-plugins/*`
 //!    must not contain plain-text strings in `user_message: Some(…)` positions; only valid
 //!    i18n keys are allowed (ref: `memory/project_i18n_core_contract.md`).
@@ -162,13 +163,13 @@ fn scan_item_g1(
     *events_scanned += 1;
 
     match extract_event_name(attrs) {
-        Some(name) if name.contains('.') => { /* OK */ }
+        Some(name) if name.contains(':') => { /* OK */ }
         Some(name) => violations.push(format!(
-            "{}:{line} — event `{ident_str}` has name {name:?} without `.` (dot-notation required; ADR-0002 Amendment 1)",
+            "{}:{line} — event `{ident_str}` has name {name:?} without `:` (colon-notation required; ADR-0002 Amendment 2)",
             path.display()
         )),
         None => violations.push(format!(
-            "{}:{line} — event `{ident_str}` is missing `#[tauri_specta(event_name = \"…\")]` (ADR-0002 Amendment 1; kebab-case default breaks dot-notation policy)",
+            "{}:{line} — event `{ident_str}` is missing `#[tauri_specta(event_name = \"…\")]` (ADR-0002 Amendment 2; kebab-case default breaks colon-notation policy)",
             path.display()
         )),
     }
@@ -877,6 +878,7 @@ fn is_excluded(path: &Path, workspace_root: &Path) -> bool {
         name,
         "target"
             | ".git"
+            | ".claude"
             | "node_modules"
             | "dist"
             | "_bmad"
@@ -940,11 +942,11 @@ mod tests {
     // ── G1 tests (unchanged) ─────────────────────────────────────────────
 
     #[test]
-    fn ok_with_dot_notation() {
+    fn ok_with_colon_notation() {
         let (events, v) = scan_g1(
             r#"
             #[derive(tauri_specta::Event)]
-            #[tauri_specta(event_name = "recording.started")]
+            #[tauri_specta(event_name = "recording:started")]
             struct RecordingStarted;
             "#,
         );
@@ -957,7 +959,7 @@ mod tests {
         let (events, v) = scan_g1(
             r#"
             #[derive(Clone, Debug, Event)]
-            #[tauri_specta(event_name = "app.ready")]
+            #[tauri_specta(event_name = "app:ready")]
             struct AppReady;
             "#,
         );
@@ -979,7 +981,7 @@ mod tests {
     }
 
     #[test]
-    fn fails_without_dot() {
+    fn fails_without_colon() {
         let (events, v) = scan_g1(
             r#"
             #[derive(Event)]
@@ -1012,7 +1014,7 @@ mod tests {
         let (events, v) = scan_g1(
             r#"
             #[derive(tauri_specta::Event)]
-            #[tauri_specta(event_name = "recording.phase")]
+            #[tauri_specta(event_name = "recording:phase")]
             enum RecordingPhase { Start, Stop }
             "#,
         );
