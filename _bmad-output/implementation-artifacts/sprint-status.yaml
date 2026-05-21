@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-21 (12.1 + 11.5 code-review-closure: 12.1 = 1 decision-accepted + 1 patch + 2 defers; 11.5 = clean review + 2 defers)"
+last_updated: "2026-05-21 (12.2 story-spec created: pipeline-smoke-test-diagnose-recovery, ready-for-dev; 12.1 functional verification deferred to 12.2)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -246,8 +246,11 @@ development_status:
   # Epic 12: Production Integration — Pipeline Wire-Up
   # Closes the gap between Story-AC-"done" and Production-Funktionalität.
   # Variante A selected 2026-05-21: STT=groq + Cleanup=verbatim.
-  # Story 12.1 is the only planned story; further plugins (DeepSeek, Polished)
-  # go into separate stories as needed.
+  # Story 12.1 is Spec-/Code-Review-done but functional Smoke-Test failed
+  # (2026-05-21 smoke-test session: 6 fix-commits b004fec→6368c5c, but final
+  # state is 0-byte tracing-log; functional verification deferred to 12.2).
+  # Further plugins (DeepSeek, Polished) go into separate stories as needed.
   # ============================================================
   epic-12: in-progress
-  12-1-production-pipeline-wire-up: done  # story-file: epic-12-1-production-pipeline-wire-up.md; manifest+groq-register+shell-dep+forcing-sentinel-test; impl 2026-05-21; code-review-closure 2026-05-21 (1 decision accepted-as-is + 1 patch P1-vacuous-pass-guard + 2 defers DF1/DF2)
+  12-1-production-pipeline-wire-up: done  # story-file: epic-12-1-production-pipeline-wire-up.md; manifest+groq-register+shell-dep+forcing-sentinel-test; impl 2026-05-21; code-review-closure 2026-05-21 (1 decision accepted-as-is + 1 patch P1-vacuous-pass-guard + 2 defers DF1/DF2); functional verification deferred to 12.2
+  12-2-pipeline-smoke-test-recovery: ready-for-dev  # story-file: epic-12-2-pipeline-smoke-test-recovery.md; pre-tracing diagnostic markers + smoke-test re-run + 12.1 functional verification; created 2026-05-21 after 6-commit smoke-test loop terminated at 0-byte-log
