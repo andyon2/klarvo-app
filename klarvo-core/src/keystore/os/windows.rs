@@ -79,6 +79,35 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// Decode a Credential Manager blob to a String.
+///
+/// Heuristic for encoding detection:
+/// - If blob length is even AND any second-byte-of-pair is `\0`, treat as UTF-16-LE.
+///   This is the encoding Windows-native tools (`cmdkey`, `New-StoredCredential`, etc.)
+///   use when writing generic credentials.
+/// - Otherwise decode as UTF-8 (Klarvo's own `set()` writes UTF-8 via `String::as_bytes()`).
+///
+/// Trailing whitespace and NUL bytes (from UTF-16 terminator or copy-paste artifacts)
+/// are stripped — API-key style values never contain leading/trailing whitespace.
+fn decode_credential_blob(blob: &[u8]) -> String {
+    let looks_utf16 = !blob.is_empty()
+        && blob.len() % 2 == 0
+        && blob.chunks_exact(2).any(|chunk| chunk[1] == 0);
+
+    let raw = if looks_utf16 {
+        let u16s: Vec<u16> = blob
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&u16s)
+    } else {
+        String::from_utf8_lossy(blob).into_owned()
+    };
+
+    raw.trim_matches(|c: char| c.is_whitespace() || c == '\0')
+        .to_string()
+}
+
 fn key_not_found_err(key: &str) -> AppError {
     debug_assert!(i18n::is_key(keys::KEY_NOT_FOUND));
     AppError {
@@ -125,7 +154,7 @@ impl KeyStore for WindowsKeystore {
                         cred.CredentialBlob,
                         cred.CredentialBlobSize as usize,
                     );
-                    let s = String::from_utf8_lossy(blob).into_owned();
+                    let s = decode_credential_blob(blob);
                     CredFree(cred_ptr as _);
                     s
                 };
@@ -171,5 +200,59 @@ impl KeyStore for WindowsKeystore {
             Err(e) if is_not_found(&e) => Ok(()), // idempotent — key already absent
             Err(e) => Err(backend_unavailable_err(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::decode_credential_blob;
+
+    #[test]
+    fn utf8_ascii_roundtrip() {
+        // Klarvo's own set() writes UTF-8. ASCII-only blob → UTF-8 decode path.
+        let blob = b"gsk_abcdef1234";
+        assert_eq!(decode_credential_blob(blob), "gsk_abcdef1234");
+    }
+
+    #[test]
+    fn utf16_le_from_cmdkey() {
+        // cmdkey on Windows writes UTF-16-LE. "gsk_" → 0x67 0x00 0x73 0x00 0x6B 0x00 0x5F 0x00
+        let blob: &[u8] = &[0x67, 0x00, 0x73, 0x00, 0x6B, 0x00, 0x5F, 0x00];
+        assert_eq!(decode_credential_blob(blob), "gsk_");
+    }
+
+    #[test]
+    fn utf16_le_with_trailing_nul_terminator() {
+        // cmdkey often stores a NUL-terminator at the end. "gsk\0" in UTF-16-LE.
+        let blob: &[u8] = &[0x67, 0x00, 0x73, 0x00, 0x6B, 0x00, 0x00, 0x00];
+        assert_eq!(decode_credential_blob(blob), "gsk");
+    }
+
+    #[test]
+    fn strips_trailing_newline_utf8() {
+        // Copy-paste artifact: trailing \n in UTF-8-stored value.
+        let blob = b"gsk_abcdef\n";
+        assert_eq!(decode_credential_blob(blob), "gsk_abcdef");
+    }
+
+    #[test]
+    fn strips_trailing_whitespace_utf16() {
+        // UTF-16-LE encoding of "gsk_x " (trailing space).
+        let blob: &[u8] = &[
+            0x67, 0x00, 0x73, 0x00, 0x6B, 0x00, 0x5F, 0x00, 0x78, 0x00, 0x20, 0x00,
+        ];
+        assert_eq!(decode_credential_blob(blob), "gsk_x");
+    }
+
+    #[test]
+    fn empty_blob() {
+        assert_eq!(decode_credential_blob(&[]), "");
+    }
+
+    #[test]
+    fn odd_length_blob_falls_back_to_utf8() {
+        // Odd length cannot be UTF-16. Should decode as UTF-8.
+        let blob = b"abc";
+        assert_eq!(decode_credential_blob(blob), "abc");
     }
 }
