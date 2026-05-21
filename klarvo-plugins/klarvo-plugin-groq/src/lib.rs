@@ -291,6 +291,16 @@ fn map_reqwest_error(e: reqwest::Error) -> AppError {
         // Covers: is_connect() (DNS/TCP/TLS), is_request() without status, other transport errors.
         (keys::NETWORK, true)
     };
+    tracing::warn!(
+        target: "klarvo.stt.transport",
+        error_key = key,
+        is_connect = e.is_connect(),
+        is_timeout = e.is_timeout(),
+        is_request = e.is_request(),
+        error = %e,
+        error_debug = ?e,
+        "STT transport error detail"
+    );
     debug_assert!(i18n::is_key(key));
     AppError {
         kind: AppErrorKind::UpstreamUnavailable,
