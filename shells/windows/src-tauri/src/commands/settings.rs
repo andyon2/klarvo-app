@@ -133,20 +133,20 @@ pub async fn set_hotkey_slot1(
         message: format!("failed to read slot-2 combo for D-2 conflict check: {}", e.message),
         user_message: Some("error.internal".into()),
         retryable: true,
-    })? {
-        if !slot2.is_empty() {
-            let collides = match (Shortcut::from_str(&combo), Shortcut::from_str(&slot2)) {
-                (Ok(a), Ok(b)) => a == b,
-                _ => combo == slot2,
-            };
-            if collides {
-                return Err(AppError {
-                    kind: AppErrorKind::Configuration,
-                    message: format!("hotkey slot-1 combo identical to slot-2: {combo}"),
-                    user_message: Some("error.settings.hotkey.slot_conflict".into()),
-                    retryable: false,
-                });
-            }
+    })?
+        && !slot2.is_empty()
+    {
+        let collides = match (Shortcut::from_str(&combo), Shortcut::from_str(&slot2)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => combo == slot2,
+        };
+        if collides {
+            return Err(AppError {
+                kind: AppErrorKind::Configuration,
+                message: format!("hotkey slot-1 combo identical to slot-2: {combo}"),
+                user_message: Some("error.settings.hotkey.slot_conflict".into()),
+                retryable: false,
+            });
         }
     }
 

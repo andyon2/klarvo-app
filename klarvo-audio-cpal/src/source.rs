@@ -37,7 +37,7 @@ impl Drop for CpalGuard {
     fn drop(&mut self) {
         // Set the slot to None before the stream drops, so error-callback sees
         // a closed channel and downstream receivers get RecvError::Closed.
-        *self.tx_slot.lock().unwrap() = None;
+        *self.tx_slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 
@@ -102,7 +102,7 @@ impl AudioSource for CpalAudioSource {
                     },
                     move |err| {
                         tracing::warn!(target: "klarvo.audio.device", "capture error: {err}");
-                        *slot_err.lock().unwrap() = None;
+                        *slot_err.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     },
                     None,
                 )
@@ -124,7 +124,7 @@ impl AudioSource for CpalAudioSource {
                     },
                     move |err| {
                         tracing::warn!(target: "klarvo.audio.device", "capture error: {err}");
-                        *slot_err.lock().unwrap() = None;
+                        *slot_err.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     },
                     None,
                 )
@@ -162,7 +162,7 @@ fn flush_chunks(
     resampler: &Arc<Mutex<Resampler>>,
     pending: &Arc<Mutex<(Vec<f32>, u64)>>,
 ) {
-    let mut guard = pending.lock().unwrap();
+    let mut guard = pending.lock().unwrap_or_else(|e| e.into_inner());
     let (buf, buf_ts) = &mut *guard;
 
     if buf.is_empty() {
@@ -170,7 +170,7 @@ fn flush_chunks(
     }
     buf.extend_from_slice(mono);
 
-    let chunk_size = resampler.lock().unwrap().chunk_size();
+    let chunk_size = resampler.lock().unwrap_or_else(|e| e.into_inner()).chunk_size();
 
     while buf.len() >= chunk_size {
         let chunk: Vec<f32> = buf.drain(..chunk_size).collect();
@@ -178,7 +178,7 @@ fn flush_chunks(
         // Next chunk's start ts is current elapsed when this one flushes.
         // (approximation; real chunk-start is within one callback interval)
 
-        let resampled = match resampler.lock().unwrap().process(&chunk) {
+        let resampled = match resampler.lock().unwrap_or_else(|e| e.into_inner()).process(&chunk) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!(target: "klarvo.audio.device", "resample error: {e}");
@@ -186,7 +186,7 @@ fn flush_chunks(
             }
         };
 
-        let slot_guard = slot.lock().unwrap();
+        let slot_guard = slot.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(sender) = &*slot_guard {
             let rms = compute_rms(&resampled);
             let data: Arc<[f32]> = resampled.into();

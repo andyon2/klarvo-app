@@ -97,6 +97,7 @@ pub struct SessionOrchestrator {
 
 impl SessionOrchestrator {
     /// Construct a new `SessionOrchestrator` with fully injected dependencies.
+    #[allow(clippy::too_many_arguments, reason = "DI constructor; 13 injected deps reflect the orchestrator's bootstrap surface — a config-struct refactor is tracked as a separate story")]
     pub fn new(
         registry: Arc<PluginRegistry>,
         manifest: Arc<PipelineManifest>,
@@ -195,8 +196,8 @@ impl SessionOrchestrator {
 
         // Idle: snapshot mode for the active slot at press-time (ADR-0012 Amendment 2).
         let press_mode = match slot {
-            HotkeySlot::One => self.mode.read().await.clone(),
-            HotkeySlot::Two => self.mode_slot2.read().await.clone(),
+            HotkeySlot::One => *self.mode.read().await,
+            HotkeySlot::Two => *self.mode_slot2.read().await,
         };
 
         let (tx, rx) = tokio::sync::broadcast::channel::<AudioEvent>(DEFAULT_AUDIOEVENT_CAPACITY);
@@ -373,22 +374,24 @@ impl SessionOrchestrator {
             //   new session's pill-bar.
             let session_active =
                 session_counter_for_task.load(Ordering::SeqCst) == session_id;
-            if let Some(ref text) = text_to_deliver {
-                if session_active && !text.is_empty() {
-                    event_bus.emit(Event::LivePreviewChunk {
-                        text: text.clone(),
-                        ts_ms: clock.now_ms(),
-                    });
-                }
+            if let Some(ref text) = text_to_deliver
+                && session_active
+                && !text.is_empty()
+            {
+                event_bus.emit(Event::LivePreviewChunk {
+                    text: text.clone(),
+                    ts_ms: clock.now_ms(),
+                });
             }
 
-            if let Some(ref text) = text_to_deliver {
-                if session_active && !text.is_empty() {
-                    event_bus.emit(Event::CleanupDone {
-                        text: text.clone(),
-                        ts_ms: clock.now_ms(),
-                    });
-                }
+            if let Some(ref text) = text_to_deliver
+                && session_active
+                && !text.is_empty()
+            {
+                event_bus.emit(Event::CleanupDone {
+                    text: text.clone(),
+                    ts_ms: clock.now_ms(),
+                });
             }
 
             if let Some(text) = text_to_deliver {

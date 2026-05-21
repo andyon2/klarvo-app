@@ -212,7 +212,7 @@ impl PipelineStage for Groq {
             error_key = last_error.as_ref().and_then(|e| e.user_message.as_deref()).unwrap_or("unknown"),
             "STT retries exhausted"
         );
-        Err(last_error.expect("retryable arm assigned last_error"))
+        Err(last_error.unwrap_or_else(|| unreachable!("retryable arm always assigns last_error before loop exits")))
     }
 
     fn stage_type(&self) -> &'static str {
