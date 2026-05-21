@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-21 (12.1 Production Pipeline Wire-Up code-review-closure: 1 decision accepted-as-is + 1 patch + 2 defers)"
+last_updated: "2026-05-21 (12.1 + 11.5 code-review-closure: 12.1 = 1 decision-accepted + 1 patch + 2 defers; 11.5 = clean review + 2 defers)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -239,7 +239,7 @@ development_status:
   11-2-token-foundation: done            # story-file: 11-2-token-foundation.md; design-tokens.toml + xtask gen-tokens + pill-bar.html var(--klarvo-*); committed def57c6 2026-05-08
   11-3-floating-pill-bar: done         # Drag, Position-Persistence, mode-dependent Size (~480×84 LivePreview), Mode-Badge; committed 3de9eb7+7e6e32f 2026-05-08
   11-4-live-preview-state: done  # §2.5.8 LivePreview-State: Text + Side-Strip-Waveform (8 Bars), Live-Update per Event; story-file: 11-4-live-preview-state.md; impl committed 5edd984+893cc4b 2026-05-08; code-review-closure 2026-05-08 (3 EC-patches: empty-text-guard + session-stale-LP-suppression + emit_to-window-gating)
-  11-5-cleanup-done-fadeout: review   # CleanupDone-Morph (text→result, success-border) + cross-state FadeOut; depends on 11.4; story-file: 11-5-cleanup-done-fadeout.md
+  11-5-cleanup-done-fadeout: done   # CleanupDone-Morph (text→result, success-border) + cross-state FadeOut; depends on 11.4; story-file: 11-5-cleanup-done-fadeout.md; code-review-closure 2026-05-21 (clean review, all ACs satisfied, 2 defers DF1/DF2)
   11-6-error-state: backlog            # Named Error-State per §J-D/P-Named-Failure, danger-border, kein Abort; depends on 11.4
 
   # ============================================================

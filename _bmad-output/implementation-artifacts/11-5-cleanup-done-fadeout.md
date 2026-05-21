@@ -2,7 +2,7 @@
 name: Story 11.5 — CleanupDone-Morph + FadeOut
 epic: 11
 story_number: "11.5"
-status: review
+status: done
 dependencies:
   - "11.4"  # LP-state infra (.live-preview class, #lp-area, #lp-text, LivePreviewChunk event)
 inputDocuments:
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.5: CleanupDone-Morph + FadeOut
 
-Status: review
+Status: done
 
 ## Story
 
@@ -363,3 +363,10 @@ claude-sonnet-4-6
 - `shells/windows/src-tauri/src/overlay/pill_bar.rs` — handle_event Arm + CleanupDonePayload Struct
 - `shells/windows/src-tauri/src/bridge.rs` — CleanupDone return-Arm für exhaustive match
 - `shells/windows/src/pill-bar.html` — CSS cleanup-done state + JS listener + show-reset
+
+### Review Findings
+
+Code-Review-Pass 2026-05-21 (Blind Hunter + Edge Case Hunter + Acceptance Auditor). Acceptance Auditor: "All ACs satisfied." Alle ACs grün, `cargo check` Dreifach 0/0.
+
+- [x] [Review][Defer] **11.5-DF1 — Phase-2 leerer Filter-Output → kein CleanupDone-State** [`klarvo-shell-orchestrator/src/session.rs:386-391`] — Guard `!text.is_empty()` skippt Emit wenn Phase-2-Filter (z.B. Polished) den STT-Output komplett wegfiltert. Pill bleibt im LP-State mit Stale-Text, fadet ohne success-border aus → User bekommt kein Cleanup-Erfolgs-Signal. Defer-Reason: out-of-scope für Phase-1 (Verbatim-passthrough hat nie empty); UX-Decision für Phase-2 (CleanupDone mit empty text emittieren? Eigener Empty-State?) gehört zu Story 11.6 (Error-State) oder eigener Phase-2-Story.
+- [x] [Review][Defer] **11.5-DF2 — `pill_bar:cleanup_done` ohne vorhergehendes `pill_bar:enter_live_preview` (Broadcast-Lagged-Race)** [`shells/windows/src/pill-bar.html:305-315`] — Wenn Broadcast-Bus Lagged + LP wird gedroppt aber CleanupDone durchkommt: green border erscheint auf 320×48-Pill ohne LP-Area (lp-area `display: none`), Text unsichtbar. Defensive-Fix `if (!pill.classList.contains('live-preview')) pill.classList.add(...)` würde zusätzlich Window-Resize-Koordination brauchen (spec line 113: "Kein Resize" für cleanup_done). Defer-Reason: extremely rare Race in Klarvo-Setup (LP+CleanupDone synchron im Session-Task, kein await dazwischen — entweder beide arrivieren oder beide missen); Fix-Cost-vs-Real-User-Pain disproportional. Re-evaluieren wenn echtes Broadcast-Lagging beobachtet wird.
