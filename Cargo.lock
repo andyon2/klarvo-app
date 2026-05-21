@@ -2664,6 +2664,7 @@ dependencies = [
  "async-trait",
  "klarvo-audio-cpal",
  "klarvo-core",
+ "klarvo-plugin-groq",
  "klarvo-plugin-verbatim",
  "klarvo-plugin-whisper-local",
  "klarvo-shell-orchestrator",

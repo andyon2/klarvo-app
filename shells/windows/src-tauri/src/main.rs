@@ -49,9 +49,11 @@ fn main() {
     fn build_plugin_registry(
         settings: &klarvo_core::settings::Settings,
         output_language: &str,
+        keystore: std::sync::Arc<dyn KeyStore>,
     ) -> klarvo_core::registry::PluginRegistry {
         let mut registry = klarvo_core::registry::bootstrap();
         klarvo_plugin_verbatim::register(&mut registry);
+        klarvo_plugin_groq::register(&mut registry, keystore);
 
         // Whisper-local: conditional on model_path plugin-setting (ADR-0014 D-1).
         // If not configured → no-op (manifest drives STT plugin selection).
@@ -364,7 +366,7 @@ fn main() {
                     "en".to_string()
                 }
             };
-            let registry = Arc::new(build_plugin_registry(&settings, &output_language));
+            let registry = Arc::new(build_plugin_registry(&settings, &output_language, Arc::clone(&keystore)));
 
             // EventBus constructed here (before Step 9) so SessionOrchestrator can emit
             // recording-lifecycle events (Started/Stopped/Completed). Managed as State

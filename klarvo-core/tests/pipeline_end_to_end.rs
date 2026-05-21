@@ -1,17 +1,29 @@
 #![allow(clippy::disallowed_methods)]
 
-use std::sync::Arc;
-
 use klarvo_core::error::AppErrorKind;
-use klarvo_core::manifest::{parse_embedded, parse_from_str};
+use klarvo_core::manifest::parse_from_str;
 use klarvo_core::pipeline::{self, StageData};
 use klarvo_core::pipeline::executor::keys;
 use klarvo_core::registry::PluginRegistry;
 
+/// Passthrough behavior test — uses an explicit passthrough manifest via `parse_from_str`
+/// so this test is independent of the embedded production manifest.
+///
+/// The embedded manifest no longer contains a passthrough stage (it has stt + cleanup
+/// since Story 12.1). This test preserves coverage of the passthrough executor-arm.
 #[tokio::test]
-async fn embedded_passthrough_manifest_preserves_input() {
+#[cfg(feature = "stage-passthrough")]
+async fn passthrough_manifest_preserves_input() {
     let registry = PluginRegistry::new();
-    let manifest = parse_embedded().expect("embedded manifest parses");
+    let manifest = parse_from_str(
+        r#"
+schema_version = 1
+
+[[pipeline.stages]]
+type = "passthrough"
+"#,
+    )
+    .expect("passthrough manifest parses");
 
     let input = "äh also das ist, ähm, der Verbatim-Test mit Umlauten.";
     let result = pipeline::run_pipeline(&manifest, &registry, StageData::Text(input.to_string()))

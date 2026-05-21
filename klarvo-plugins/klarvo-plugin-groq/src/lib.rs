@@ -317,3 +317,15 @@ fn classify_http_error(status: reqwest::StatusCode, body_excerpt: &str) -> AppEr
         retryable,
     }
 }
+
+/// Register the Groq STT plugin under [`ID`] in `registry`.
+///
+/// Called once at app-boot by `build_plugin_registry` in the Windows shell.
+/// `key_store` is held by the `Groq` instance for lazy API-key resolution at
+/// `transcribe()`-call-time (see module-level doc).
+pub fn register(
+    registry: &mut klarvo_core::registry::PluginRegistry,
+    key_store: std::sync::Arc<dyn klarvo_core::keystore::KeyStore>,
+) {
+    registry.register_stt(ID, std::sync::Arc::new(Groq::new(key_store)));
+}
