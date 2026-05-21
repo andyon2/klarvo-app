@@ -91,7 +91,7 @@ fn to_wide(s: &str) -> Vec<u16> {
 /// are stripped — API-key style values never contain leading/trailing whitespace.
 fn decode_credential_blob(blob: &[u8]) -> String {
     let looks_utf16 = !blob.is_empty()
-        && blob.len() % 2 == 0
+        && blob.len().is_multiple_of(2)
         && blob.chunks_exact(2).any(|chunk| chunk[1] == 0);
 
     let raw = if looks_utf16 {
