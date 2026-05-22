@@ -316,3 +316,15 @@ Neuer Wortlaut (Implementation-aligned):
 Per ADR-0002 Amendment 2 (Tauri 2.10 `IllegalEventName`), the wire-name `"settings.changed"` mandated by Amendment 2 above is migrated to `"settings:changed"` (commit `30630d3`). The Tauri runtime rejects event names containing `.`; the migration applies to backend `app.emit*` / `app.listen` call-sites, the `SettingsChangedEvent` specta-derive `event_name`-attribute (`commands/settings.rs`), and frontend `tauriEvent.listen(...)` consumers (`shells/windows/src/index.html`).
 
 **Out of scope:** the SQLite-key dot-namespacing (Sub-Decision 1 — `hotkey.slot1.combo`, `ui.language`, etc.) is unaffected. Those are payload data inside the `SettingsChangedEvent`, not Tauri event names.
+
+## Amendment 4 — 2026-05-22: `audio.device_id` defer superseded by `audio.input_device`
+
+**Line 187 reconciliation (Story 12.3):** The Story-B2-defer placeholder `audio.device_id` at line 187 is superseded. The implemented key is **`audio.input_device`**, matching the `architecture.md:520` namespace reservation.
+
+**Value type: device NAME, not ID.** cpal exposes devices as `Device` objects without stable platform IDs. The closest Windows analog is the `IMMDevice::GetId()` endpoint-GUID, which changes on unplug/replug, driver updates, and audio-stack resets. v1 used device names (`audio_device: Option<String>` in `src-tauri/src/config/mod.rs:531`); v1 users (= Andy) have not reported confusion. Name-collisions (two devices with identical names) are rare enough to accept v1-equivalent silent-pick-first behaviour.
+
+**Semantics:** `None` means "use OS-default device" (key absent from DB); `Some(name)` means "use this named device, fall back to OS-default if not found" (logged at WARN in `klarvo-audio-cpal`).
+
+**Accessor surface:** `Settings::audio_input_device()` → `Result<Option<String>, AppError>`; `Settings::set_audio_input_device(val: Option<String>)` — `None` deletes the key, `Some(name)` upserts with type `"string"`. Pattern mirrors `hotkey_slot2_combo()` / `clear_hotkey_slot2_combo()`.
+
+**Remaining line-187 defers:** `audio.sample_rate` and `audio.channels` overrides (sample-rate/channels configuration) are still deferred to Phase-2+ as originally noted.
