@@ -37,9 +37,9 @@ use commands::telemetry::export_debug_zip_cmd;
 use overlay::pill_bar::dev_pill_bar_enter_live_preview;
 use commands::settings::{
     SettingsChangedEvent, get_plugin_setting, get_recording_mode_slot1, get_user_settings,
-    reload_locale, set_dictionary_language, set_hotkey_slot1, set_hotkey_slot2,
-    set_output_language, set_output_target, set_plugin_setting,
-    set_recording_mode_slot1, set_recording_mode_slot2, set_ui_language,
+    list_audio_input_devices, reload_locale, set_audio_input_device, set_dictionary_language,
+    set_hotkey_slot1, set_hotkey_slot2, set_output_language, set_output_target,
+    set_plugin_setting, set_recording_mode_slot1, set_recording_mode_slot2, set_ui_language,
 };
 
 #[tauri::command]
