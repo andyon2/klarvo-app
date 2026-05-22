@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 #[tokio::test]
 async fn mock_emits_exact_chunk_count() {
     let (tx, mut rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut mock = MockAudioSource::with_synthetic_chunks(3, 1024, 64);
     let _handle = mock.start(config).await.unwrap();
 
@@ -29,7 +29,7 @@ async fn mock_emits_exact_chunk_count() {
 #[tokio::test]
 async fn mock_early_drop_stops_emission() {
     let (tx, mut rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut mock = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let handle = mock.start(config).await.unwrap();
 

@@ -125,6 +125,7 @@
         hotkeySlot1Mode: "hold",
         hotkeySlot2Combo: "",   // null/undefined from backend → empty string
         hotkeySlot2Mode: "hold",
+        audioInputDevice: "",   // "" = OS-default (None on backend)
       };
 
       const RECORDING_MODE_OPTIONS = [
@@ -157,6 +158,8 @@
         const [form, setForm] = useState(FORM_DEFAULTS);
         // D-2 conflict-validation state: true when slot2 combo === slot1 combo (non-empty)
         const [slot2Conflict, setSlot2Conflict] = useState(false);
+        // Story 12.3 AC-10: available audio input devices (fetched on mount + refresh)
+        const [availableDevices, setAvailableDevices] = useState([]);
         // P14 (Code-Review-Closure 2026-05-05): the previous persistent inline
         // "Active after restart" hint was replaced by a one-shot success toast
         // emitted from handleSave when the slot-2 combo actually changed.
@@ -212,6 +215,7 @@
 
         // AC-8: load on mount — no flash of empty content (loading spinner while async runs)
         useEffect(() => {
+          loadDevices();
           invoke("get_user_settings")
             .then((s) => {
               setForm({
@@ -223,6 +227,7 @@
                 hotkeySlot1Mode: s.hotkeySlot1Mode ?? FORM_DEFAULTS.hotkeySlot1Mode,
                 hotkeySlot2Combo: s.hotkeySlot2Combo ?? "",
                 hotkeySlot2Mode: s.hotkeySlot2Mode ?? FORM_DEFAULTS.hotkeySlot2Mode,
+                audioInputDevice: s.audioInputDevice ?? "",
               });
               // P6/P14: snapshot the persisted slot-2 combo so handleSave can detect
               // an actual change vs. a save where slot-2 is untouched.
@@ -235,7 +240,7 @@
               setToast(errorToToast(e));
             })
             .finally(() => setLoading(false));
-        }, []);
+        }, [loadDevices]);
 
         // AC-10: settings.changed listener — keep dropdown in sync when mode changes
         // from other sources (e.g. future CLI or another shell instance).
@@ -300,6 +305,13 @@
           };
         }, []);
 
+        // Story 12.3 AC-10: fetch available devices from cpal host.
+        const loadDevices = useCallback(() => {
+          invoke("list_audio_input_devices")
+            .then((devices) => setAvailableDevices(devices || []))
+            .catch(() => setAvailableDevices([]));
+        }, []);
+
         // D-2 conflict check: P8 (Code-Review-Closure 2026-05-05) trims so that
         // leading/trailing whitespace ("Ctrl+Z " vs "Ctrl+Z") cannot bypass the
         // inline UI guard. Backend has its own normalized comparison.
@@ -331,6 +343,9 @@
             // Slot-2: send null to clear (D-3), or the combo string to set
             await invoke("set_hotkey_slot2", { combo: newSlot2 });
             await invoke("set_recording_mode_slot2", { mode: form.hotkeySlot2Mode });
+            // Story 12.3: audio device — "" → null (OS-default), non-empty → named device
+            const audioDevice = form.audioInputDevice.length > 0 ? form.audioInputDevice : null;
+            await invoke("set_audio_input_device", { device: audioDevice });
             // P14: one-shot toast only when the slot-2 combo changed (set, cleared,
             // or replaced). The success-toast queue auto-dismisses, replacing the
             // previous persistent inline-hint that lived until × Clear.
@@ -467,6 +482,30 @@
                 },
                   RECORDING_MODE_OPTIONS.map((o) => h("option", { key: o.value, value: o.value }, o.label))
                 ),
+              ),
+
+              // Story 12.3 AC-10: audio input device row
+              h("div", { className: "field" },
+                h("label", null, "Microphone"),
+                h("div", { style: { display: "flex", gap: 8 } },
+                  h("select", {
+                    value: form.audioInputDevice,
+                    onChange: patch("audioInputDevice"),
+                    disabled: loading || saving,
+                    style: { flex: 1 },
+                  },
+                    h("option", { value: "" }, "Auto (OS Default)"),
+                    availableDevices.map((name) => h("option", { key: name, value: name }, name))
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: "btn-secondary",
+                    style: { padding: "8px 12px", flexShrink: 0 },
+                    disabled: loading || saving,
+                    onClick: loadDevices,
+                    title: "Refresh device list",
+                  }, "↺")
+                )
               ),
 
               h("div", { className: "actions" },

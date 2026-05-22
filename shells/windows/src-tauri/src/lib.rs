@@ -85,6 +85,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             export_debug_zip_cmd,
             // Story 11.1: Pill-Bar abort button
             cancel_recording,
+            // Story 12.3: Audio input device selection
+            list_audio_input_devices,
+            set_audio_input_device,
         ]);
     // Story 11.3: LP-resize test trigger (Windows-only; overlay module is cfg-gated)
     #[cfg(target_os = "windows")]

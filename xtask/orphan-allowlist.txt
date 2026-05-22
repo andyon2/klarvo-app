@@ -78,3 +78,14 @@ settings.hotkey.slot2.placeholder
 
 # settings.recording_mode.slot2.label: shells/windows/src/index.html SettingsPanel Slot-2-Mode-Label. Story 8.1.
 settings.recording_mode.slot2.label
+
+# ── Story 12.3: Audio Input Device Selection ──────────────────────────────────
+
+# settings.audio.input_device.label: shells/windows/src/index.html SettingsPanel Microphone-Row-Label. Story 12.3.
+settings.audio.input_device.label
+
+# settings.audio.input_device.refresh: shells/windows/src/index.html SettingsPanel Refresh-Button-Label. Story 12.3.
+settings.audio.input_device.refresh
+
+# settings.audio.input_device.auto: shells/windows/src/index.html SettingsPanel Auto-Option-Label. Story 12.3.
+settings.audio.input_device.auto

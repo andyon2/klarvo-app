@@ -58,7 +58,7 @@ async fn e2e_groq_happy_path() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 
@@ -93,7 +93,7 @@ async fn e2e_groq_upstream_5xx_propagates() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 
@@ -124,7 +124,7 @@ async fn e2e_groq_key_not_configured_propagates() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 
@@ -162,7 +162,7 @@ async fn e2e_dictation_with_output_target() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 
@@ -204,7 +204,7 @@ async fn e2e_groq_transient_5xx_recovers() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 
@@ -239,7 +239,7 @@ async fn e2e_groq_auth_failure_short_circuits() {
     let manifest = parse_from_str(MANIFEST_GROQ_VERBATIM).expect("manifest must parse");
 
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(3, 1024, 0);
     let _handle = source.start(config).await.unwrap();
 

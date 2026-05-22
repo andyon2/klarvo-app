@@ -310,6 +310,18 @@ fn main() {
             // Step 4: Audio source (CpalAudioSource, WASAPI)
             let audio = make_audio_source();
 
+            // Step 4b: Audio input device Arc — fail-soft (None = OS-default on any DB error).
+            let audio_device_arc: Arc<tokio::sync::RwLock<Option<String>>> = {
+                let device = match settings.audio_input_device() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "audio_input_device read failed; defaulting to OS-default (None)");
+                        None
+                    }
+                };
+                Arc::new(tokio::sync::RwLock::new(device))
+            };
+
             // Step 5: Paste backend (Win32 SendInput Ctrl+V)
             let paste: Arc<dyn klarvo_core::output::PasteBackend> = Arc::new(WinSendInputPasteBackend);
 
@@ -395,6 +407,8 @@ fn main() {
                 Arc::clone(&recording_mode_arc_slot2),
                 focus_capture,
                 Arc::clone(&history_store),
+                Arc::clone(&audio_device_arc),
+                Arc::new(klarvo_audio_cpal::device_exists),
             );
 
             // Step 10: State management — all slots must be registered before Step 11
@@ -507,6 +521,29 @@ fn main() {
                                     }
                                 }
                             }
+                        }
+                    }
+                });
+            }
+
+            // Step 10b-audio: settings.changed listener — keeps audio_device_arc in sync
+            // when set_audio_input_device writes a new value (Story 12.3 AC-8).
+            // Empty string → None (OS-default); any other value → Some(name).
+            // Next-press semantics: running session is never interrupted.
+            {
+                let audio_device_arc_listener = Arc::clone(&audio_device_arc);
+                app.listen("settings:changed", move |event| {
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                        if payload.get("key").and_then(|v| v.as_str()) == Some("audio.input_device") {
+                            let new_device = payload
+                                .get("newValue")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|s| s.to_string());
+                            let arc = Arc::clone(&audio_device_arc_listener);
+                            tauri::async_runtime::spawn(async move {
+                                *arc.write().await = new_device;
+                            });
                         }
                     }
                 });

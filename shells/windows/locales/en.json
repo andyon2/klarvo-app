@@ -63,5 +63,10 @@
   "tray.menu.exit": "Exit",
   "tray.language_switcher.label": "Language",
   "tray.language.en": "English",
-  "tray.language.de": "Deutsch"
+  "tray.language.de": "Deutsch",
+  "settings.audio.input_device.label": "Microphone",
+  "settings.audio.input_device.refresh": "Refresh",
+  "settings.audio.input_device.auto": "Auto (OS Default)",
+  "error.settings.audio.device_not_found": "The selected microphone is not available. Please choose another device.",
+  "toast.audio.device_fallback": "Configured microphone not found. Falling back to OS default."
 }

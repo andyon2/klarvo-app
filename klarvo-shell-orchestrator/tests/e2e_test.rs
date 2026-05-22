@@ -98,6 +98,8 @@ fn make_test_orchestrator_real_pipeline(
         mode_arc_slot2,
         Arc::new(NullFocusCapture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus)

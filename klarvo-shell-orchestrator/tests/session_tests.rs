@@ -87,6 +87,8 @@ fn make_orchestrator_with_mode(
         mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus, focus_capture, history_backend)
@@ -166,6 +168,8 @@ fn make_orchestrator_with_modes(
         mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     (orch, output_target, paste_backend, error_emitter, event_bus, focus_capture, history_backend)
@@ -760,6 +764,8 @@ async fn focus_restored_after_deliver_error() {
         mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     orch.on_press(HotkeySlot::One).await;
@@ -845,6 +851,8 @@ async fn focus_restored_after_paste_error() {
         mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::new(klarvo_core::history::NullHistoryBackend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     orch.on_press(HotkeySlot::One).await;
@@ -946,6 +954,8 @@ async fn history_not_saved_on_deliver_error() {
         mode_arc_slot2,
         Arc::clone(&focus_capture) as Arc<dyn klarvo_core::output::FocusCapture>,
         Arc::clone(&history_backend) as Arc<dyn klarvo_core::history::HistoryBackend>,
+        Arc::new(tokio::sync::RwLock::new(None::<String>)),
+        Arc::new(|_name: &str| true),
     );
 
     orch.on_press(HotkeySlot::One).await;

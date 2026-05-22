@@ -341,6 +341,28 @@ impl Settings {
         self.set_raw("hotkey.slot2.mode", &mode.to_string(), "string")
     }
 
+    // --- Audio input device accessor (Story 12.3) ---
+
+    /// Returns `Ok(None)` when no device is configured — `None` means "use OS-default".
+    /// Value is a device NAME (not ID); see ADR-0013 Amendment 4 for rationale.
+    pub fn audio_input_device(&self) -> Result<Option<String>, AppError> {
+        self.get_raw("audio.input_device")
+    }
+
+    /// Persist the audio input device name.
+    ///
+    /// `None` → deletes the key (next session will use OS-default).
+    /// `Some(name)` → validates + upserts; empty-string is rejected by `validate_setting_value`.
+    pub fn set_audio_input_device(&self, val: Option<String>) -> Result<(), AppError> {
+        match val {
+            None => self.delete_raw("audio.input_device"),
+            Some(ref name) => {
+                validate_setting_value("audio.input_device", name)?;
+                self.set_raw("audio.input_device", name, "string")
+            }
+        }
+    }
+
     // --- Pill-Bar position accessors (Story 11.3) ---
 
     /// Stored position of the pill-bar window (logical pixels, last user-dragged position).
@@ -1036,6 +1058,34 @@ mod tests {
             ).unwrap();
         }
         let err = s.recording_mode_slot1().unwrap_err();
+        assert!(matches!(err.kind, AppErrorKind::Validation));
+    }
+
+    #[test]
+    fn audio_input_device_returns_none_when_not_set() {
+        let s = Settings::in_memory(noop()).unwrap();
+        assert_eq!(s.audio_input_device().unwrap(), None);
+    }
+
+    #[test]
+    fn audio_input_device_set_get_roundtrip() {
+        let s = Settings::in_memory(noop()).unwrap();
+        s.set_audio_input_device(Some("Headset Microphone".to_string())).unwrap();
+        assert_eq!(s.audio_input_device().unwrap(), Some("Headset Microphone".to_string()));
+    }
+
+    #[test]
+    fn audio_input_device_clear_returns_none() {
+        let s = Settings::in_memory(noop()).unwrap();
+        s.set_audio_input_device(Some("Headset Microphone".to_string())).unwrap();
+        s.set_audio_input_device(None).unwrap();
+        assert_eq!(s.audio_input_device().unwrap(), None);
+    }
+
+    #[test]
+    fn audio_input_device_rejects_empty_string() {
+        let s = Settings::in_memory(noop()).unwrap();
+        let err = s.set_audio_input_device(Some(String::new())).unwrap_err();
         assert!(matches!(err.kind, AppErrorKind::Validation));
     }
 }

@@ -40,6 +40,8 @@ pub struct UserSettings {
     pub hotkey_slot2_combo: Option<String>,
     /// Slot-2 recording mode; `"hold"` when not set.
     pub hotkey_slot2_mode: String,
+    /// Configured audio input device name; `None` means "use OS-default" (Story 12.3 AC-1).
+    pub audio_input_device: Option<String>,
 }
 
 /// Event payload emitted on every successful settings write (AC-5 + AC-6).
@@ -216,6 +218,7 @@ pub fn get_user_settings(
         hotkey_slot1_mode: settings.recording_mode_slot1()?.to_string(),
         hotkey_slot2_combo: settings.hotkey_slot2_combo()?,
         hotkey_slot2_mode: settings.recording_mode_slot2()?.to_string(),
+        audio_input_device: settings.audio_input_device()?,
     })
 }
 
@@ -330,6 +333,41 @@ pub fn get_plugin_setting(
     settings: tauri::State<'_, Settings>,
 ) -> Result<Option<String>, AppError> {
     settings.get_plugin_setting(&plugin_id, &key)
+}
+
+// --- Audio input device (Story 12.3) ---
+
+/// List enumerable input device names from the default audio host.
+///
+/// Returns `Ok(Vec::new())` on host-enumeration failure (fail-soft, AC-4).
+#[tauri::command]
+#[specta::specta]
+pub fn list_audio_input_devices() -> Result<Vec<String>, AppError> {
+    Ok(klarvo_audio_cpal::list_input_devices())
+}
+
+/// Set or clear the configured audio input device.
+///
+/// `None` → clears the setting (next session uses OS-default).
+/// `Some(name)` → validates the name is currently enumerable, then persists.
+/// Fires `settings:changed` with key `audio.input_device` on success.
+#[tauri::command]
+#[specta::specta]
+pub fn set_audio_input_device(
+    device: Option<String>,
+    settings: tauri::State<'_, Settings>,
+) -> Result<(), AppError> {
+    if let Some(ref name) = device {
+        if !klarvo_audio_cpal::device_exists(name) {
+            return Err(AppError {
+                kind: klarvo_core::error::AppErrorKind::Configuration,
+                message: format!("audio device '{name}' not found in current host enumeration"),
+                user_message: Some("error.settings.audio.device_not_found".into()),
+                retryable: false,
+            });
+        }
+    }
+    settings.set_audio_input_device(device)
 }
 
 // --- Locale-Reload (Story 2.A.C3) ---

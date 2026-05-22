@@ -51,8 +51,29 @@ unsafe impl Sync for CpalGuard {}
 impl AudioSource for CpalAudioSource {
     async fn start(&mut self, config: CaptureConfig) -> Result<CaptureHandle, AudioError> {
         let host = cpal::default_host();
-        let device =
-            host.default_input_device().ok_or(AudioError::DeviceUnavailable)?;
+
+        // Resolve device: named lookup with OS-default fallback.
+        let device = match config.device.as_deref() {
+            None => host.default_input_device().ok_or(AudioError::DeviceUnavailable)?,
+            Some(requested) => {
+                let found = host
+                    .input_devices()
+                    .map_err(|e| AudioError::DeviceConfigError { msg: e.to_string() })?
+                    .find(|d| d.name().ok().as_deref() == Some(requested));
+                match found {
+                    Some(d) => d,
+                    None => {
+                        tracing::warn!(
+                            target: "klarvo.audio.device",
+                            requested = %requested,
+                            fallback = "os-default",
+                            "configured audio device not found; falling back to OS default"
+                        );
+                        host.default_input_device().ok_or(AudioError::DeviceUnavailable)?
+                    }
+                }
+            }
+        };
 
         let default_cfg = device
             .default_input_config()
@@ -62,19 +83,16 @@ impl AudioSource for CpalAudioSource {
         let hw_rate = default_cfg.sample_rate().0;
         let hw_channels = default_cfg.channels() as usize;
 
-        // Visibility: cpal picks the OS default input device — there is no
-        // user-facing mic-selection setting in v2 yet (v1 had one). Logging
-        // the picked device + native config lets the user verify the OS
-        // routing matches what they expect; mismatch produces silent capture
-        // → VAD never sees speech → outcome=empty.
         let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
+        let selection_mode = if config.device.is_some() { "configured" } else { "OS default" };
         tracing::info!(
             target: "klarvo.audio.device",
             device = %device_name,
             sample_rate = hw_rate,
             channels = hw_channels,
             sample_format = ?sample_format,
-            "audio input device selected (OS default)"
+            selection = selection_mode,
+            "audio input device selected"
         );
 
         let stream_config = cpal::StreamConfig {

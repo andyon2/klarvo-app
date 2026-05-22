@@ -93,11 +93,19 @@ pub struct SessionOrchestrator {
     /// transcript pasted; only the visual feedback is suppressed for the
     /// detached old task.
     session_counter: Arc<AtomicU64>,
+    /// Configured audio input device name (AC-7). `None` → use OS-default.
+    /// Written by the `settings:changed` listener in main.rs on `audio.input_device`.
+    /// Read per-press to populate `CaptureConfig.device`.
+    audio_device: Arc<tokio::sync::RwLock<Option<String>>>,
+    /// Platform-injected device-existence check (Story 12.3 R1: closure-injection
+    /// keeps the orchestrator platform-neutral — avoids a direct dep on klarvo-audio-cpal).
+    /// Returns `true` if the named device is enumerable on the current host.
+    device_check_fn: Arc<dyn Fn(&str) -> bool + Send + Sync>,
 }
 
 impl SessionOrchestrator {
     /// Construct a new `SessionOrchestrator` with fully injected dependencies.
-    #[allow(clippy::too_many_arguments, reason = "DI constructor; 13 injected deps reflect the orchestrator's bootstrap surface — a config-struct refactor is tracked as a separate story")]
+    #[allow(clippy::too_many_arguments, reason = "DI constructor; 15 injected deps reflect the orchestrator's bootstrap surface — a config-struct refactor is tracked as a separate story")]
     pub fn new(
         registry: Arc<PluginRegistry>,
         manifest: Arc<PipelineManifest>,
@@ -112,6 +120,8 @@ impl SessionOrchestrator {
         mode_slot2: Arc<tokio::sync::RwLock<RecordingMode>>,
         focus_capture: Arc<dyn FocusCapture>,
         history_backend: Arc<dyn HistoryBackend>,
+        audio_device: Arc<tokio::sync::RwLock<Option<String>>>,
+        device_check_fn: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     ) -> Self {
         Self {
             registry,
@@ -129,6 +139,8 @@ impl SessionOrchestrator {
             focus_capture,
             history_backend,
             session_counter: Arc::new(AtomicU64::new(0)),
+            audio_device,
+            device_check_fn,
         }
     }
 
@@ -210,9 +222,26 @@ impl SessionOrchestrator {
         // Story 9.6 AC-2: second subscriber for Pill-Bar level tap; created
         // before tx moves into CaptureConfig so no Level event is missed.
         let level_rx = tx.subscribe();
+
+        // Story 12.3 AC-7/AC-9: read configured device name and pre-flight check.
+        let configured_device = self.audio_device.read().await.clone();
+        if let Some(ref name) = configured_device {
+            if !(self.device_check_fn)(name) {
+                tracing::warn!(
+                    target: "klarvo.audio.device",
+                    requested = %name,
+                    "configured device not found at session start; OS-default fallback active"
+                );
+                self.error_emitter
+                    .emit_error("toast.audio.device_fallback", self.clock.now_ms())
+                    .await;
+            }
+        }
+
         let config = CaptureConfig {
             sample_rate: 16_000,
             channels: 1,
+            device: configured_device,
             events: tx,
         };
 

@@ -28,6 +28,11 @@ pub struct CaptureConfig {
     pub sample_rate: u32,
     /// Advisory channel-count. Impls downmix to mono if possible.
     pub channels: u16,
+    /// Advisory device name. `None` means "implementation chooses OS-default".
+    /// `Some(name)` means "use this named device". Impls SHOULD fall back to
+    /// OS-default if the name is not found, logging at WARN level on miss.
+    /// `None` is the default; no existing callers are broken by adding this field.
+    pub device: Option<String>,
     /// Broadcast-sender; AudioSource publishes AudioEvent variants here.
     ///
     /// Caller constructs the channel via

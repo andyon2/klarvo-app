@@ -27,7 +27,7 @@ plugin_id = "verbatim"
 #[tokio::test]
 async fn capture_session_happy_path() {
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     let mut source = MockAudioSource::with_synthetic_chunks(5, 1024, 64);
     let _handle = source.start(config).await.unwrap();
 
@@ -95,7 +95,7 @@ type = "passthrough"
 #[tokio::test]
 async fn capture_session_closed_mid_speech() {
     let (tx, rx) = broadcast::channel(DEFAULT_AUDIOEVENT_CAPACITY);
-    let config = CaptureConfig { sample_rate: 16_000, channels: 1, events: tx };
+    let config = CaptureConfig { sample_rate: 16_000, channels: 1, device: None, events: tx };
     // chunk_interval_ms=0: emit as fast as possible (yield_now between chunks)
     let mut source = MockAudioSource::with_synthetic_chunks(2, 1024, 0);
     let _handle = source.start(config).await.unwrap();
