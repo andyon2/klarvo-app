@@ -82,6 +82,13 @@ pub async fn run_pipeline(
     registry: &PluginRegistry,
     input: StageData,
 ) -> Result<StageData, AppError> {
+    tracing::info!(
+        target: "klarvo.pipeline",
+        stages = manifest.pipeline.stages.len(),
+        input_type = input.type_name(),
+        "pipeline run starting"
+    );
+
     // Boot-Time-Check-1: Type-Chaining-Compat-Check.
     // Runs independently of registry-state so manifest-authoring-errors surface even when
     // plugins are missing.
@@ -166,7 +173,21 @@ pub async fn run_pipeline(
 
     // Runtime-Dispatch: both boot-checks passed — all type-chains and plugin lookups are valid.
     let mut data = input;
-    for stage in &manifest.pipeline.stages {
+    for (idx, stage) in manifest.pipeline.stages.iter().enumerate() {
+        let stage_kind: &str = match stage {
+            #[cfg(feature = "stage-passthrough")]
+            PipelineStageType::Passthrough => "passthrough",
+            #[cfg(feature = "stage-stt")]
+            PipelineStageType::Stt { .. } => "stt",
+            #[cfg(feature = "stage-cleanup")]
+            PipelineStageType::Cleanup { .. } => "cleanup",
+        };
+        tracing::info!(
+            target: "klarvo.pipeline",
+            stage_index = idx,
+            stage_type = stage_kind,
+            "stage executing"
+        );
         data = match stage {
             #[cfg(feature = "stage-passthrough")]
             PipelineStageType::Passthrough => data,

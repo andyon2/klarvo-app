@@ -6,6 +6,8 @@
 //! boot even though `init_tracing` returned Some. There is no existing unit/integration
 //! test that proves the happy path — this fills the gap.
 
+#![allow(clippy::disallowed_methods)]
+
 use std::fs;
 use std::time::Duration;
 

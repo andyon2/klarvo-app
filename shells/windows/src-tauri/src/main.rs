@@ -13,14 +13,8 @@ compile_error!("shells/windows requires Windows target");
 fn main() {
     use std::sync::Arc;
 
-    // Story 12.2 AC-1/AC-2: Pre-tracing boot-stage markers.
-    // Written synchronously before any tracing-subscriber is initialised so that
-    // silent init failures (Hypotheses 1-4 from the story) leave a deterministic
-    // breadcrumb in %APPDATA%\Klarvo\diag\boot-marker.txt.
-    klarvo_core::telemetry::diag::write_boot_marker("Stage 0", "main() entered");
-
-    // Logging-Init (before Step 0): install rolling-file tracing subscriber so
-    // all subsequent tracing! calls land in %APPDATA%\Klarvo\logs\.
+    // Logging-Init: install rolling-file tracing subscriber so all subsequent
+    // tracing! calls land in %APPDATA%\Klarvo\logs\.
     //
     // Tauri v2's `app.run(...)` ends via internal `process::exit`, which skips
     // Rust's Drop chains. Without explicit drop in the `RunEvent::Exit` handler
@@ -30,61 +24,9 @@ fn main() {
     let log_dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d).join("Klarvo").join("logs"))
         .unwrap_or_else(|_| std::env::temp_dir().join("Klarvo").join("logs"));
-    klarvo_core::telemetry::diag::write_boot_marker(
-        "Stage 1",
-        &format!("log_dir resolved = {}", log_dir.display()),
-    );
     let tracing_result = klarvo_core::telemetry::logging::init_tracing(&log_dir);
-    klarvo_core::telemetry::diag::write_boot_marker(
-        "Stage 2",
-        &format!(
-            "init_tracing called, returned {}",
-            if tracing_result.is_some() { "Some" } else { "None" }
-        ),
-    );
-
-    // Stage 2a (Story 12.2 follow-up): emit a tracing event immediately so we can
-    // tell whether the global subscriber actually flushes ANY events to disk. If
-    // Stage 2a marker appears but klarvo.*.log stays 0 bytes, the issue is in the
-    // worker thread / file pipeline, not in the subscriber registration.
-    tracing::error!(
-        target: "klarvo.diag",
-        "boot smoke event: if you see this line in klarvo.*.log, tracing pipeline is alive"
-    );
-    klarvo_core::telemetry::diag::write_boot_marker(
-        "Stage 2a",
-        "tracing::error! emitted post-init (smoke test)",
-    );
-
-    // Stage 2b: snapshot existing log files BEFORE the writer starts producing more.
-    // Multi-file presence (DAILY rotation across UTC midnight) would mean the
-    // user is inspecting the wrong filename — the marker tells us what exists.
-    match std::fs::read_dir(&log_dir) {
-        Ok(entries) => {
-            let listing: Vec<String> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    let len = e.metadata().map(|m| m.len()).unwrap_or(0);
-                    format!("{name} ({len}B)")
-                })
-                .collect();
-            klarvo_core::telemetry::diag::write_boot_marker(
-                "Stage 2b",
-                &format!("log_dir contents: [{}]", listing.join(", ")),
-            );
-        }
-        Err(e) => {
-            klarvo_core::telemetry::diag::write_boot_marker(
-                "Stage 2b",
-                &format!("log_dir read_dir failed: {e}"),
-            );
-        }
-    }
-
     let tracing_guard = std::sync::Arc::new(std::sync::Mutex::new(tracing_result));
     klarvo_core::telemetry::logging::install_panic_hook();
-    klarvo_core::telemetry::diag::write_boot_marker("Stage 3", "install_panic_hook done");
 
     use klarvo_core::audio::vad::RmsVad;
     use klarvo_core::event::{EventBus, DEFAULT_EVENT_BUS_CAPACITY};
@@ -167,7 +109,6 @@ fn main() {
 
     let specta_builder = klarvo_windows_shell::specta_builder();
 
-    klarvo_core::telemetry::diag::write_boot_marker("Stage 4", "Tauri app.build() entered");
     let app = tauri::Builder::default()
         // Story 9.4: native OS toast notifications on recording.delivered + session errors.
         .plugin(tauri_plugin_notification::init())
@@ -761,6 +702,19 @@ fn main() {
                 }
             }
 
+            // Bootstrap-complete summary. One unconditional INFO line per boot
+            // so the rolling-file log is non-empty on every successful start —
+            // happy-path observability + a known anchor line that subsequent
+            // session events can be correlated against.
+            let stage_count = manifest.pipeline.stages.len();
+            tracing::info!(
+                target: "klarvo.bootstrap",
+                manifest_stages = stage_count,
+                output_target = %config.output_target_id,
+                ui_language = %config.ui_language,
+                "bootstrap complete"
+            );
+
             Ok(())
         })
         .build(tauri::generate_context!());
@@ -780,13 +734,9 @@ fn main() {
         }
     };
     let exit_guard = std::sync::Arc::clone(&tracing_guard);
-    klarvo_core::telemetry::diag::write_boot_marker("Stage 5", "Tauri app.run() entered");
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            klarvo_core::telemetry::diag::write_boot_marker(
-                "Stage 6",
-                "RunEvent::Exit fired",
-            );
+            tracing::info!(target: "klarvo.bootstrap", "shutdown begin");
             // Use `try_state` to avoid a second panic in the exit handler if Setup
             // failed before `app.manage(orch)` ran — preserves the original boot error.
             if let Some(orch) = app_handle.try_state::<SessionOrchestrator>() {
@@ -794,10 +744,6 @@ fn main() {
                     orch.shutdown().await;
                 });
             }
-            klarvo_core::telemetry::diag::write_boot_marker(
-                "Stage 7",
-                "orch.shutdown returned (pre-guard-drop)",
-            );
             // Tauri v2's run-loop ends via internal `process::exit`, which skips
             // Drop chains. Explicit drop here flushes the non_blocking tracing
             // writer's buffer so the rolling-file actually contains this session's
@@ -805,10 +751,6 @@ fn main() {
             if let Ok(mut g) = exit_guard.lock() {
                 let _ = g.take();
             }
-            klarvo_core::telemetry::diag::write_boot_marker(
-                "Stage 8",
-                "WorkerGuard taken from Mutex (drop should have flushed)",
-            );
         }
     });
 }

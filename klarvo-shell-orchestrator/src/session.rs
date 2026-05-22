@@ -180,6 +180,12 @@ impl SessionOrchestrator {
                         ..
                     } = prev {
                         self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
+                        tracing::info!(
+                            target: "klarvo.session",
+                            ?slot,
+                            cause = "toggle-stop",
+                            "recording stopped"
+                        );
                         drop(capture_handle);
                         drop(pipeline_task);
                         drop(level_tap_task);
@@ -221,6 +227,12 @@ impl SessionOrchestrator {
         };
 
         self.event_bus.emit(Event::RecordingStarted { ts_ms: self.clock.now_ms() });
+        tracing::info!(
+            target: "klarvo.session",
+            ?slot,
+            mode = ?press_mode,
+            "recording started"
+        );
 
         // Story 9.6 AC-2: spawn level-tap task that forwards `AudioEvent::Level`
         // values onto the EventBus as `Event::AudioLevel` for the Pill-Bar overlay.
@@ -321,10 +333,26 @@ impl SessionOrchestrator {
             // (tray state-pull, A3 Pill-Bar) can rely on the contract.
             if press_mode == RecordingMode::AutoStop {
                 event_bus.emit(Event::RecordingStopped { ts_ms: clock.now_ms() });
+                tracing::info!(
+                    target: "klarvo.session",
+                    cause = "auto-stop",
+                    "recording stopped"
+                );
             }
 
             // Extract delivery text, if any. Non-Text variants and empty results
             // skip delivery; errors emit a toast.
+            let pipeline_outcome = match &result {
+                Ok(Some(StageData::Text(t))) => format!("text({} chars)", t.len()),
+                Ok(Some(_)) => "non-text-variant".to_string(),
+                Ok(None) => "empty".to_string(),
+                Err(e) => format!("error({:?})", e.kind),
+            };
+            tracing::info!(
+                target: "klarvo.session",
+                outcome = %pipeline_outcome,
+                "pipeline finished"
+            );
             let text_to_deliver = match result {
                 Ok(Some(StageData::Text(t))) => Some(t),
                 Ok(Some(_)) => None, // Audio variant not expected at pipeline output
@@ -397,6 +425,13 @@ impl SessionOrchestrator {
             if let Some(text) = text_to_deliver {
                 match registry.output(&output_target_id) {
                     Some(target) => {
+                        tracing::info!(
+                            target: "klarvo.session",
+                            output_target = %output_target_id,
+                            text_len = text.len(),
+                            mode = ?press_mode,
+                            "delivery dispatched"
+                        );
                         if let Err(e) = target.deliver(&text).await {
                             error_emitter
                                 .emit_error(
@@ -466,6 +501,7 @@ impl SessionOrchestrator {
             // return to idle state. Distinct from RecordingStopped (audio-capture
             // termination) per the recording-lifecycle contract on `Event`.
             event_bus.emit(Event::RecordingCompleted { ts_ms: clock.now_ms() });
+            tracing::info!(target: "klarvo.session", "session completed");
         });
 
         // Re-acquire state lock to transition to Recording.
@@ -595,6 +631,12 @@ impl SessionOrchestrator {
             ..
         } = prev {
             self.event_bus.emit(Event::RecordingStopped { ts_ms: self.clock.now_ms() });
+            tracing::info!(
+                target: "klarvo.session",
+                ?slot,
+                cause = "release",
+                "recording stopped"
+            );
             // Level-tap-task self-terminates once the broadcast channel closes
             // (drop(capture_handle) below). Detach the JoinHandle so the closure
             // happens asynchronously in the background.

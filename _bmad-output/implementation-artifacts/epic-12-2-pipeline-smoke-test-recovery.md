@@ -1,6 +1,6 @@
 ---
 story: 12.2
-status: ready-for-dev
+status: done
 epic: 12
 inputDocuments:
   - _bmad-output/implementation-artifacts/epic-12-1-production-pipeline-wire-up.md
@@ -13,7 +13,7 @@ inputDocuments:
 
 # Story 12.2: Pipeline Smoke-Test Diagnose-Recovery
 
-Status: **in-progress**
+Status: **done**
 
 ## Story
 
@@ -128,19 +128,26 @@ Sprint-Status `12-1-production-pipeline-wire-up` Kommentar wird ergänzt: `(func
 
 ## Tasks/Subtasks
 
-- [x] **T1 — diag.rs Modul** (AC-1): `klarvo_core::telemetry::diag::write_boot_marker` implementiert mit Append-Mode-Write, Fallback-Pfad und `eprintln!` als Last-Resort. 5 Unit-Tests: creates file, appends, timestamp-format, parent-dir-auto-create, fallback-no-panic.
-- [x] **T2 — main.rs Call-Sites** (AC-2): 6 Stage-Marker in `shells/windows/src-tauri/src/main.rs` — Stage 0 (main entered), Stage 1 (log_dir resolved), Stage 2 (init_tracing Some/None), Stage 3 (panic hook done), Stage 4 (Tauri build entered), Stage 5 (Tauri run entered). `init_tracing`-Rückgabe wurde aus dem `Arc::new(Mutex::new(...))` extrahiert um den `Some/None`-Wert zu capturen.
-- [x] **T3 — AC-6 Sprint-Status**: 12-1-Kommentar von "deferred to 12.2" zu "via 12.2" umformuliert.
-- [ ] **T4 — Smoke-Test** (AC-3): Windows-Release-Build + Install + Smoke-Run → Marker-Datei auslesen. **USER HALT: Requires Windows action.**
-- [ ] **T5 — Diagnostic Findings** (AC-4): Section ins Story-File eintragen nach T4.
-- [ ] **T6 — Fix + Verification** (AC-5): Je nach Befund aus T4/T5.
+- [x] **T1 — diag.rs Modul** (AC-1): `klarvo_core::telemetry::diag::write_boot_marker` implementiert (initialer Run). Nach AC-5-Closure entfernt (Modul war nur Diagnose-Tool, Aufgabe erfüllt).
+- [x] **T2 — main.rs Call-Sites** (AC-2): 6 Stage-Marker initial + 5 weitere (2a/2b/6/7/8) im Diagnose-Verlauf. Alle nach Closure entfernt; ersetzt durch unbedingten `tracing::info!` „bootstrap complete" und „shutdown begin".
+- [x] **T3 — AC-6 Sprint-Status**: 12-1-Kommentar von "deferred to 12.2" zu "via 12.2".
+- [x] **T4 — Smoke-Test** (AC-3): 2026-05-22 Windows-Release-Build mit allen Stage-Markern. Marker-Datei zeigt Stages 0-5 vollständig; init_tracing returnt Some; alle 6 Boot-Stages durchlaufen.
+- [x] **T5 — Diagnostic Findings** (AC-4): Section unten ergänzt — Root-Cause war Observability-Lücke, nicht Boot-Crash.
+- [x] **T6 — Fix + Verification** (AC-5): Diagnose-Marker aufgeräumt; Lifecycle-INFO-Logs an Boot/Session/Pipeline. Verifiziert durch Integration-Test `init_tracing_writes_events.rs`.
 
 ## File List
 
-- `klarvo-core/src/telemetry/diag.rs` — new
-- `klarvo-core/src/telemetry/mod.rs` — modified (added `pub mod diag`)
-- `shells/windows/src-tauri/src/main.rs` — modified (6 Stage-Marker)
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` — modified (12-2 in-progress, 12-1 annotation)
+**Während Diagnose erstellt + dann wieder entfernt:**
+- `klarvo-core/src/telemetry/diag.rs` — created (initial), deleted (closure)
+- Stage-0..8-Marker in `shells/windows/src-tauri/src/main.rs` — added, removed
+
+**Final-State:**
+- `klarvo-core/src/telemetry/mod.rs` — `pub mod diag` wieder entfernt
+- `shells/windows/src-tauri/src/main.rs` — Stage-Marker raus; `tracing::info!` „bootstrap complete" + „shutdown begin"
+- `klarvo-shell-orchestrator/src/session.rs` — 6× `tracing::info!` an Session-Lifecycle: recording started/stopped/completed, pipeline finished, delivery dispatched
+- `klarvo-core/src/pipeline/executor.rs` — 2× `tracing::info!` an Pipeline-Lifecycle: run starting, stage executing
+- `klarvo-core/tests/init_tracing_writes_events.rs` — new (Integration-Test, schließt die Test-Lücke)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 12-2 done
 
 ## Dev Agent Record
 
@@ -154,8 +161,33 @@ Sprint-Status `12-1-production-pipeline-wire-up` Kommentar wird ergänzt: `(func
 - `klarvo-core` Windows cross-compile: clean. `whisper-rs-sys`-Fehler in `klarvo-windows-shell` ist vorbestehend (identische Errors auch ohne meine Änderungen per `git stash`-Verifikation).
 - Alle 5 Unit-Tests + kompletter Test-Suite (127 Core-Tests) grün, keine Regressions.
 
-**Offene Punkte (HALT):** AC-3 erfordert Windows-Release-Build und physischen Smoke-Run. Marker-Datei-Pfad: `%APPDATA%\Klarvo\diag\boot-marker.txt`.
+**2026-05-22 — AC-3/AC-4/AC-5 (Diagnose-Verlauf + Closure):**
+
+Smoke-Test-Run mit Stage-0..5-Markern: alle 6 Stages durchlaufen, `init_tracing` returnt Some, **klarvo.*.log trotzdem 0 Bytes**.
+
+Diagnose-Runde 2 (Stages 2a/2b/6/7/8 + Integration-Test `init_tracing_writes_events.rs`):
+- 2a: unbedingtes `tracing::error!` direkt nach `init_tracing` — feuert auf disk
+- Integration-Test: `init_tracing` ist auf Linux Debug+Release korrekt; Test passt auf Windows ebenfalls
+- Boot-Marker Stage 0-5 + Smoke-Event landen in Files
+
+**Root-Cause:** Die ursprüngliche Annahme „Boot-Crash vor Tracing-Init" war falsch. Tracing-Pipeline funktioniert vollständig. Die Codebase emittiert auf dem Happy-Path KEINE INFO+-Events — alle 50+ `tracing::*`-Calls liegen in `Err`-/Lag-/Fail-Soft-Branches. Eine erfolgreiche Boot+Session erzeugt 0 INFO+-Events, also bleibt der Log 0 Bytes.
+
+**Fix:** Diagnose-Marker komplett aufgeräumt; ein unbedingtes `tracing::info!` „bootstrap complete" + 6 `tracing::info!` an Session-Lifecycle (Recording-Start/Stop/Completed, Pipeline-Run/Stage, Delivery) hinzugefügt.
+
+## Diagnostic Findings (AC-4)
+
+1. **Hypothese „Silent-Fail vor Tracing-Init" falsifiziert.** Alle 6 Boot-Stages der Original-Markersequenz landen synchron im Diag-File; `init_tracing` returnt Some; Subscriber wird global installiert; Worker-Thread spawnt.
+
+2. **Hypothese „Macros release-time disabled" falsifiziert.** `cargo tree -i tracing -e features` zeigt nur `default`/`attributes`/`std` Features — kein `release_max_level_*`-Feature im Tree. Auf Linux-Release: Integration-Test passt, File hat Content.
+
+3. **Hypothese „Worker-Thread kann nicht auf Disk schreiben" falsifiziert.** Integration-Test `init_tracing_writes_events.rs` passt auf User's Windows-Release-Umgebung — `tracing-appender` schreibt korrekt; Permissions/Antivirus/Path sind kein Problem.
+
+4. **Tatsächliche Ursache (verifiziert):** Smoke-Event aus Stage 2a ist die EINZIGE Zeile im Log nach vollem Boot + Session — exakt 134 Bytes. Codebase-Grep über `tracing::(info|warn|error)!` zeigt: alle Call-Sites in `main.rs`/`session.rs`/`executor.rs`/Plugins liegen in Error-Branches. Happy-Path → 0 Events → 0-Byte-Log. Das ist nicht ein Bug von Tracing, sondern eine Observability-Lücke der Codebase.
+
+5. **Sekundäre Erkenntnis (Test-Lücke):** Es gab keinen Test, der die Happy-Path-Branch von `init_tracing` verifiziert (existierender Test prüft nur Error-Branch via uncreateable dir). Diese Lücke war der Grund, warum vorherige Sessions Annahmen über die Tracing-Pipeline nicht falsifizieren konnten und in Diagnose-Schleifen festsaßen. Lücke geschlossen mit `init_tracing_writes_events.rs`.
 
 ## Change Log
 
-- 2026-05-21: AC-1/AC-2/AC-6 implemented — `diag.rs` new module, 6 Stage-Markers in `main.rs`, Sprint-Status 12-1 annotation updated
+- 2026-05-21: Diagnostic-Pass 1 — `diag.rs` neu, 6 Stage-Markers in `main.rs`, Sprint-Status 12-1 annotation.
+- 2026-05-22: Diagnostic-Pass 2 — Stages 2a/2b/6/7/8, Integration-Test `init_tracing_writes_events.rs`.
+- 2026-05-22: Closure — Root-Cause Observability-Lücke; Stage-Marker komplett raus; Lifecycle-INFO-Logs an Boot+Session+Pipeline.
