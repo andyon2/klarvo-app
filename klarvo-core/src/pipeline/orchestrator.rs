@@ -66,10 +66,24 @@ pub async fn run_capture_session(
     let mut last_chunk_ts_ms: u64 = 0;
     let mut last_chunk_len: usize = 0;
 
+    // Diagnostic counters: surface "why was this session empty?" on the Ok(None)
+    // path. Zero samples means audio source never delivered; samples-seen with
+    // max_rms below VAD threshold means mic-input too quiet.
+    let mut samples_seen: usize = 0;
+    let mut max_rms: f32 = 0.0;
+
     loop {
         match receiver.recv().await {
             Ok(AudioEvent::Samples { data, ts_ms }) => {
                 let samples: &[f32] = data.as_ref();
+                samples_seen += 1;
+                if !samples.is_empty() {
+                    let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
+                    let rms = (sum_sq / samples.len() as f32).sqrt();
+                    if rms > max_rms {
+                        max_rms = rms;
+                    }
+                }
                 let decision =
                     vad.process(samples, ts_ms).await.map_err(AppError::from)?;
 
@@ -139,9 +153,17 @@ pub async fn run_capture_session(
                         run_pipeline(manifest, registry, StageData::Audio(buffer)).await?;
                     return Ok(Some(result));
                 }
-                // Closed-before-SpeechStart: accidental hotkey-trigger.
-                // Accidental hotkey-trigger (release before any speech detected) is a
-                // normal-path, not an error. Caller swallows Ok(None) silently.
+                // Closed-before-SpeechStart: VAD never detected speech.
+                // Either an accidental hotkey-trigger (very short press) OR the
+                // mic input never exceeded the VAD threshold (gain too low,
+                // wrong device, muted). Log diagnostic counters so the user
+                // can tell the two apart from the rolling-file log.
+                tracing::info!(
+                    target: "klarvo.audio.capture",
+                    samples_seen,
+                    max_rms = max_rms,
+                    "capture closed without speech detection (Ok(None))"
+                );
                 return Ok(None);
             }
         }
