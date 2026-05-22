@@ -351,17 +351,31 @@ pub fn list_audio_input_devices() -> Result<Vec<String>, AppError> {
 /// `None` → clears the setting (next session uses OS-default).
 /// `Some(name)` → validates the name is currently enumerable, then persists.
 /// Fires `settings:changed` with key `audio.input_device` on success.
+///
+/// Review P5: `device_exists` calls into `cpal::default_host().input_devices()`,
+/// which performs synchronous WASAPI/COM enumeration. The Tauri IPC dispatcher
+/// is async, so wrap the blocking call in `spawn_blocking` to keep the dispatch
+/// worker free for other commands while enumeration is in flight.
 #[tauri::command]
 #[specta::specta]
-pub fn set_audio_input_device(
+pub async fn set_audio_input_device(
     device: Option<String>,
     settings: tauri::State<'_, Settings>,
 ) -> Result<(), AppError> {
-    if let Some(ref name) = device {
-        if !klarvo_audio_cpal::device_exists(name) {
+    if let Some(name) = device.clone() {
+        let exists = tokio::task::spawn_blocking(move || klarvo_audio_cpal::device_exists(&name))
+            .await
+            .map_err(|e| AppError {
+                kind: klarvo_core::error::AppErrorKind::Internal,
+                message: format!("device_exists task join failed: {e}"),
+                user_message: Some("error.unknown".into()),
+                retryable: true,
+            })?;
+        if !exists {
+            let requested = device.as_deref().unwrap_or("");
             return Err(AppError {
                 kind: klarvo_core::error::AppErrorKind::Configuration,
-                message: format!("audio device '{name}' not found in current host enumeration"),
+                message: format!("audio device '{requested}' not found in current host enumeration"),
                 user_message: Some("error.settings.audio.device_not_found".into()),
                 retryable: false,
             });

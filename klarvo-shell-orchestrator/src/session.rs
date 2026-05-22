@@ -224,9 +224,17 @@ impl SessionOrchestrator {
         let level_rx = tx.subscribe();
 
         // Story 12.3 AC-7/AC-9: read configured device name and pre-flight check.
+        // Review P4: `device_check_fn` calls into cpal::default_host().input_devices(),
+        // which performs synchronous WASAPI/COM enumeration (50-500ms on Windows).
+        // Run on a blocking thread so the async runtime worker isn't stalled per press.
         let configured_device = self.audio_device.read().await.clone();
         if let Some(ref name) = configured_device {
-            if !(self.device_check_fn)(name) {
+            let check_fn = Arc::clone(&self.device_check_fn);
+            let name_owned = name.clone();
+            let exists = tokio::task::spawn_blocking(move || check_fn(&name_owned))
+                .await
+                .unwrap_or(false);
+            if !exists {
                 tracing::warn!(
                     target: "klarvo.audio.device",
                     requested = %name,

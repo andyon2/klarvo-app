@@ -64,9 +64,6 @@
   "tray.language_switcher.label": "Sprache",
   "tray.language.en": "English",
   "tray.language.de": "Deutsch",
-  "settings.audio.input_device.label": "Mikrofon",
-  "settings.audio.input_device.refresh": "Aktualisieren",
-  "settings.audio.input_device.auto": "Automatisch (OS-Standard)",
   "error.settings.audio.device_not_found": "Das ausgewählte Mikrofon ist nicht verfügbar. Bitte wähle ein anderes Gerät.",
   "toast.audio.device_fallback": "Konfiguriertes Mikrofon nicht gefunden. Verwende OS-Standard als Fallback."
 }

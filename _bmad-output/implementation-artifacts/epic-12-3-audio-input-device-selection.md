@@ -1,6 +1,6 @@
 ---
 story: 12.3
-status: ready-for-dev
+status: review
 epic: 12
 inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md (§Settings-Namespaces line 520 — `audio.input_device` reserved; §Event-Naming line 498 — `audio.device-changed` event reserved)
@@ -110,18 +110,17 @@ Given the existing SettingsPanel in `shells/windows/src/index.html`, when the us
 1. A `<select>` dropdown populated from `list_audio_input_devices()` plus an explicit "Auto (OS-Default)" option (value=empty / `None`) at the top.
 2. A refresh button labeled `settings.audio.input_device.refresh` next to the dropdown that re-runs `list_audio_input_devices()` and updates the options.
 3. The currently-persisted value (from `UserSettings.audioInputDevice`) is pre-selected on panel mount.
-4. On selection-change, `set_audio_input_device(value)` is called; on success, no UI confirmation (consistent with other settings); on error (e.g. `error.settings.audio.device_not_found`), the existing error-display surface is used.
+4. On Save, `set_audio_input_device(value)` is called as part of the atomic `handleSave` flow alongside the other settings; selection-change updates form-state only. On success no UI confirmation (consistent with sibling fields); on error (e.g. `error.settings.audio.device_not_found`) the existing error-display surface is used. (Code-review-closure 2026-05-22: wording aligned with Hotkey/Language/Output-Target sibling-field pattern after Andy's D1 decision.)
 5. The settings:changed listener already in the panel does NOT need a new branch (re-reading via `get_user_settings()` on mount + on-success is sufficient given the next-press semantics).
 
 **AC-11 — i18n Keys (Locale-Files):**
 Given `shells/windows/locales/en.json` and `de.json`, the following keys are added with English + German translations:
-- `settings.audio.input_device.label` — UI label for the dropdown
-- `settings.audio.input_device.refresh` — refresh button label
-- `settings.audio.input_device.auto` — "Auto (OS-Default)" dropdown option label
-- `error.settings.audio.device_not_found` — write-time validation error
+- `error.settings.audio.device_not_found` — write-time validation error (rendered by toast layer from `AppError.userMessage`)
 - `toast.audio.device_fallback` — fallback toast text (use placeholder substitution for device-name)
 
 German translations follow existing tone (see `error.audio.device_unavailable`). Coverage-gate (Story 4.X) will fail CI if a key is missing in either file.
+
+Code-review-closure 2026-05-22 (Andy's D2 decision): the originally-planned 3 UI label keys (`settings.audio.input_device.{label,refresh,auto}`) were removed — the SettingsPanel JSX renders hardcoded English strings, consistent with the rest of the inline-React panel which has no `t()` wiring yet. Full i18n migration lands with Phase-2-B Vite+React+i18n toolchain rebuild. The 2 keys above remain because they are emitted from backend code paths (`AppError.user_message` + `ErrorEmitter::emit_error`) and translated by the existing toast layer, not by the SettingsPanel.
 
 **AC-12 — Cross-Compile Verify (Build):**
 Given the developer is on WSL/Linux, when they run `cargo check --target x86_64-pc-windows-gnu -p klarvo-windows-shell -p klarvo-audio-cpal -p klarvo-shell-orchestrator -p klarvo-core` after implementing this story, then the build succeeds without errors (warnings are acceptable). Linux-only `cargo check` does not exercise the Windows-shell code path; the cross-compile check is required by `feedback_windows_cross_compile_verify`.
@@ -248,6 +247,28 @@ v1 used names; v1 users (= Andy) have not reported confusion from this. Name-col
 - [ ] **T11 — Manual Smoke Test on Windows Release-Build** (DoD)
   - [ ] Per the three-step manual test in §Definition of Done
   - [ ] Document outcome in this story's Dev Agent Record section
+
+### Review Findings
+
+Adversarial Multi-Layer-Review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) — 2026-05-22. Black-Screen-Smoke-Test war Trigger. Alle 10 Patches angewendet (P10 NEU entdeckt während Patch-Anwendung: `klarvo-audio-cpal` dep war unter Windows-only cfg-target → Linux-Workspace-Build broken).
+
+- [x] [Review][Patch] **P10 (NEU) — `klarvo-audio-cpal` dep aus `[target.'cfg(target_os = "windows")']` rausgezogen** [`shells/windows/src-tauri/Cargo.toml:44`] — `commands/settings.rs` ruft `klarvo_audio_cpal::list_input_devices()` und `device_exists()` unconditional auf; dep war aber Windows-cfg-gated → `cargo check -p klarvo-windows-shell` failed auf Linux. Dep in reguläre `[dependencies]` verschoben. klarvo-audio-cpal compiled cross-platform clean. Verifiziert: `cargo check --workspace --lib` grün.
+- [x] [Review][Patch] **P1 — TDZ-ReferenceError → BLACK SCREEN gefixt** [`shells/windows/src/index.html:217-228`] — `const loadDevices = useCallback(...)` Block vor die Mount-`useEffect` verschoben (von Line 309 nach Line 219); Deps-Array `[loadDevices]` bleibt. Erste-Render-TDZ kann nicht mehr triggern.
+- [x] [Review][Patch] **P2 — `delete_raw` Clear-Path emittiert jetzt `settings:changed` mit empty value** [`klarvo-core/src/settings/mod.rs:362-374`] — `set_audio_input_device(None)` ruft `emit_or_warn(&*self.emitter, "audio.input_device", "")` nach `delete_raw(...)` auf. Neuer Test `audio_input_device_clear_emits_settings_changed_with_empty_value` verifiziert beide Emit-Events (set + clear). Listener in main.rs:539-547 parsed empty-string → None korrekt → `audio_device_arc` reactive-update auf Clear funktioniert jetzt ohne App-Restart.
+- [x] [Review][Patch] **P3 — UI reconciled stale `form.audioInputDevice` mit `availableDevices`** [`shells/windows/src/index.html:506-512`] — synthetisches `<option>` mit Label `<name> (not currently available)` wird gerendert wenn die persistierte Device nicht in der aktuellen Enumeration ist. User sieht die echte React-State-Wahl statt browser-fallback-Lüge auf erstes Option.
+- [x] [Review][Patch] **P4 — `device_check_fn` läuft jetzt in `tokio::task::spawn_blocking`** [`klarvo-shell-orchestrator/src/session.rs:230-237`] — Per-Press WASAPI-COM-Enumeration blockt Tokio-Worker nicht mehr; `Arc::clone(&self.device_check_fn)` + `name.clone()` für owned-data-Transfer ins blocking-Thread; `.await.unwrap_or(false)` für fail-soft-Fallback.
+- [x] [Review][Patch] **P5 — Tauri `set_audio_input_device` auf `async` + `spawn_blocking`** [`shells/windows/src-tauri/src/commands/settings.rs:343-373`] — Command-Signatur jetzt `pub async fn`; `device_exists`-Call in `spawn_blocking` mit join-error-handling als `AppError`. IPC-Dispatcher bleibt während WASAPI-Enumeration frei.
+- [x] [Review][Patch] **P6 — tauri-specta TS-Bindings regeneriert** [`shells/windows/src/bindings/index.ts`] — `cargo xtask generate-bindings` erfolgreich; neue Einträge: `listAudioInputDevices`, `setAudioInputDevice`, `UserSettings.audioInputDevice`. `xtask bindings-drift` grün.
+- [x] [Review][Patch] **P7 — Story-Frontmatter-Status synchronisiert** [`epic-12-3-audio-input-device-selection.md:3`] — `status: ready-for-dev` → `status: review`.
+- [x] [Review][Patch] **P8 (resolved from D1) — AC-10.4 wording an Sibling-Field-Pattern angepasst** [`epic-12-3-audio-input-device-selection.md:113`] — AC-10 step 4 umgeschrieben: "On Save, `set_audio_input_device(value)` is called as part of the atomic `handleSave` flow ...". Implementation unverändert (on-Save-Persistence konsistent mit Hotkey/Language/Output-Target).
+- [x] [Review][Patch] **P9 (resolved from D2) — 3 dead i18n-Keys + Allowlist-Einträge entfernt** [`shells/windows/locales/en.json` + `de.json` + `xtask/orphan-allowlist.txt`] — `settings.audio.input_device.{label,refresh,auto}` aus beiden Locale-Files + 3 Allowlist-Blöcken entfernt. Behalten: `error.settings.audio.device_not_found` + `toast.audio.device_fallback` (Backend-emittiert, Toast-Layer rendert). AC-11 mit D2-Decision-Notiz aktualisiert. `xtask lint-events` grün.
+- [x] [Review][Defer] **DF1 — Duplicate Device-Names werden nicht disambiguiert** [`klarvo-audio-cpal/src/lib.rs:9-13` + `index.html:498`] — Zwei USB-Devices mit identischem Namen ("Microphone (USB Audio)") führen zu React duplicate-key-warning + non-deterministischer cpal-Auswahl. Defer-Reason: Story Non-Goals explizit: "Disambiguation of duplicate device names ('Headset (1)' vs 'Headset (2)') — pre-existing v1-equivalent silent-pick-first".
+- [x] [Review][Defer] **DF2 — AC-12: `klarvo-windows-shell`-Cross-Compile übersprungen** [`cargo check --target x86_64-pc-windows-gnu`] — Story-Dev hat `klarvo-windows-shell` aus dem Cross-Compile-Set gestrichen wegen pre-existing whisper-rs-sys-MinGW-Overflow. AC-12 listet die Crate aber explizit. Defer-Reason: pre-existing whisper-rs-sys-Issue (cf. 12.1-DF2), nicht durch 12.3 verursacht.
+- [x] [Review][Defer] **DF3 — Boot-Time-Check für stale audio.input_device fehlt** [`shells/windows/src-tauri/src/main.rs:313-323`] — `audio_device_arc` wird beim Boot aus Settings ohne `device_exists`-Check geladen; User sieht keine Indikation bis erster Hotkey-Press einen Fallback-Toast feuert. UX-Polish. Defer-Reason: Per-Press-Toast (AC-9) ist die spezifizierte UX, Boot-Time-Indikator wäre Phase-2-Polish.
+- [x] [Review][Defer] **DF4 — cpal-Host-Enumeration-Fehler returned silent leeres `Vec`** [`klarvo-audio-cpal/src/lib.rs:9-13`] — `unwrap_or_default()` schluckt Host-Init-Failures; User sieht nur "Auto" im Dropdown ohne Error-Toast. Defer-Reason: by-design "fail-soft per `feedback_scaffold_fail_soft_pattern`" (Story AC-4). Diagnostic-Log könnte ergänzt werden, aber separate UX-Story.
+- [x] [Review][Defer] **DF5 — `validate_setting_value` rejected Control-Chars in Device-Namen** [`klarvo-core/src/settings/mod.rs:493-510`] — cpal-Device-Namen kommen vom OS und können in Edge-Cases Unicode-Marks enthalten (RTL/LTR, U+200F). `validate_setting_value` rejected mit `AppErrorKind::Validation`. Defer-Reason: extrem selten, kein konkreter Bug-Report, low-priority Polish.
+- [x] [Review][Defer] **DF6 — Toast-Rate-Limit fehlt; Toast-Fatigue bei permanent fehlendem Device** [`klarvo-shell-orchestrator/src/session.rs:228-239`] — User mit unplugged-Device sieht auf JEDEM Press einen Fallback-Toast (100x/Tag bei Power-User). Defer-Reason: UX-Polish (per-session-suppression oder auto-clear-to-None), nicht-blocking.
+- [x] [Review][Defer] **DF7 — `cpal::Device::name()` Err schluckt Device aus Liste UND blockiert Re-Selektion** [`klarvo-audio-cpal/src/lib.rs:10`] — `filter_map(|d| d.name().ok())` droppt Devices mit Name-Lookup-Fehler still; persistierter Name kann dann nicht mehr re-selektiert werden. Defer-Reason: pre-existing cpal-Pattern, extrem selten.
 
 ## Dev Notes
 

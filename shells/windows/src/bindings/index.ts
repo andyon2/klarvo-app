@@ -58,6 +58,25 @@ export const commands = {
 	 *  EventBus subscriber.
 	 */
 	cancelRecording: () => typedError<null, null>(__TAURI_INVOKE("cancel_recording")),
+	/**
+	 *  List enumerable input device names from the default audio host.
+	 * 
+	 *  Returns `Ok(Vec::new())` on host-enumeration failure (fail-soft, AC-4).
+	 */
+	listAudioInputDevices: () => typedError<string[], AppError>(__TAURI_INVOKE("list_audio_input_devices")),
+	/**
+	 *  Set or clear the configured audio input device.
+	 * 
+	 *  `None` → clears the setting (next session uses OS-default).
+	 *  `Some(name)` → validates the name is currently enumerable, then persists.
+	 *  Fires `settings:changed` with key `audio.input_device` on success.
+	 * 
+	 *  Review P5: `device_exists` calls into `cpal::default_host().input_devices()`,
+	 *  which performs synchronous WASAPI/COM enumeration. The Tauri IPC dispatcher
+	 *  is async, so wrap the blocking call in `spawn_blocking` to keep the dispatch
+	 *  worker free for other commands while enumeration is in flight.
+	 */
+	setAudioInputDevice: (device: string | null) => typedError<null, AppError>(__TAURI_INVOKE("set_audio_input_device", { device })),
 };
 
 /** Events */
@@ -166,6 +185,8 @@ export type UserSettings = {
 	hotkeySlot2Combo: string | null,
 	// Slot-2 recording mode; `"hold"` when not set.
 	hotkeySlot2Mode: string,
+	// Configured audio input device name; `None` means "use OS-default" (Story 12.3 AC-1).
+	audioInputDevice: string | null,
 };
 
 /* Tauri Specta runtime */

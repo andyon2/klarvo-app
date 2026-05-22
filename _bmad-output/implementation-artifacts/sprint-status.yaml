@@ -60,7 +60,7 @@
 #   Naming-Schema neue Story-Files: `epic-{N}-{title-kebab}.md`.
 
 generated: 2026-04-29
-last_updated: "2026-05-22 (12.3 review: audio-input-device-selection impl done — commits 0c16ba9+c68063c; T1-T10 complete; T11 (Windows smoke test) deferred to Andy; R1 resolved via closure-injection)"
+last_updated: "2026-05-22 (12.3 code-review-closure: 10 Patches applied — P10 NEU klarvo-audio-cpal dep aus Windows-cfg, P1 TDZ-Black-Screen-Fix, P2 emit-on-clear, P3 stale-form-reconcile, P4+P5 spawn_blocking, P6 bindings-regen, P7 frontmatter-sync, P8 AC-10.4 wording, P9 dead-i18n-keys raus; 7 Defers DF1-DF7. Status bleibt review bis Andy T11 Windows-Smoke-Test re-runt.)"
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system

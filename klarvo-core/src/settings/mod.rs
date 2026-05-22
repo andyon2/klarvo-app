@@ -353,9 +353,19 @@ impl Settings {
     ///
     /// `None` → deletes the key (next session will use OS-default).
     /// `Some(name)` → validates + upserts; empty-string is rejected by `validate_setting_value`.
+    ///
+    /// Both paths emit `settings:changed`; on the `None` path the emitted value is the
+    /// empty string. Without the empty-string emit on clear, shell-side listeners that
+    /// mirror this setting into an `Arc<RwLock<Option<String>>>` would never observe
+    /// the user clearing back to OS-default and continue using the stale device name
+    /// until next app boot (review of story 12.3, P2).
     pub fn set_audio_input_device(&self, val: Option<String>) -> Result<(), AppError> {
         match val {
-            None => self.delete_raw("audio.input_device"),
+            None => {
+                self.delete_raw("audio.input_device")?;
+                emit_or_warn(&*self.emitter, "audio.input_device", "");
+                Ok(())
+            }
             Some(ref name) => {
                 validate_setting_value("audio.input_device", name)?;
                 self.set_raw("audio.input_device", name, "string")
@@ -1087,5 +1097,21 @@ mod tests {
         let s = Settings::in_memory(noop()).unwrap();
         let err = s.set_audio_input_device(Some(String::new())).unwrap_err();
         assert!(matches!(err.kind, AppErrorKind::Validation));
+    }
+
+    // Review P2: clearing must emit `settings:changed` with empty value so shell-side
+    // listeners that mirror the setting into an Arc<RwLock<Option<String>>> observe
+    // the reset back to OS-default. Without this, the orchestrator's audio_device_arc
+    // would stay pinned to the previously-set device name until next app boot.
+    #[test]
+    fn audio_input_device_clear_emits_settings_changed_with_empty_value() {
+        let emitter = recording_emitter();
+        let s = Settings::in_memory(emitter.clone()).unwrap();
+        s.set_audio_input_device(Some("Headset Microphone".to_string())).unwrap();
+        s.set_audio_input_device(None).unwrap();
+        let events = emitter.0.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0], ("audio.input_device".to_string(), "Headset Microphone".to_string()));
+        assert_eq!(events[1], ("audio.input_device".to_string(), String::new()));
     }
 }

@@ -213,6 +213,15 @@
           };
         }, []);
 
+        // Story 12.3 AC-10: fetch available devices from cpal host.
+        // Declared BEFORE the mount-useEffect so the dep-array `[loadDevices]`
+        // (and the body call below) cannot hit a TDZ ReferenceError during render.
+        const loadDevices = useCallback(() => {
+          invoke("list_audio_input_devices")
+            .then((devices) => setAvailableDevices(devices || []))
+            .catch(() => setAvailableDevices([]));
+        }, []);
+
         // AC-8: load on mount — no flash of empty content (loading spinner while async runs)
         useEffect(() => {
           loadDevices();
@@ -303,13 +312,6 @@
             cancelled = true;
             if (unlisten) unlisten();
           };
-        }, []);
-
-        // Story 12.3 AC-10: fetch available devices from cpal host.
-        const loadDevices = useCallback(() => {
-          invoke("list_audio_input_devices")
-            .then((devices) => setAvailableDevices(devices || []))
-            .catch(() => setAvailableDevices([]));
         }, []);
 
         // D-2 conflict check: P8 (Code-Review-Closure 2026-05-05) trims so that
@@ -495,7 +497,15 @@
                     style: { flex: 1 },
                   },
                     h("option", { value: "" }, "Auto (OS Default)"),
-                    availableDevices.map((name) => h("option", { key: name, value: name }, name))
+                    availableDevices.map((name) => h("option", { key: name, value: name }, name)),
+                    // P3: when the persisted device is not in the current enumeration
+                    // (unplugged / driver gone), surface it as a synthetic option so the
+                    // UI does not silently fall back to the first option in DOM and lie
+                    // about the actual React-state value the next Save would send.
+                    form.audioInputDevice && !availableDevices.includes(form.audioInputDevice)
+                      ? h("option", { key: "__klarvo_stale__", value: form.audioInputDevice },
+                          `${form.audioInputDevice} (not currently available)`)
+                      : null
                   ),
                   h("button", {
                     type: "button",
