@@ -62,6 +62,21 @@ impl AudioSource for CpalAudioSource {
         let hw_rate = default_cfg.sample_rate().0;
         let hw_channels = default_cfg.channels() as usize;
 
+        // Visibility: cpal picks the OS default input device — there is no
+        // user-facing mic-selection setting in v2 yet (v1 had one). Logging
+        // the picked device + native config lets the user verify the OS
+        // routing matches what they expect; mismatch produces silent capture
+        // → VAD never sees speech → outcome=empty.
+        let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
+        tracing::info!(
+            target: "klarvo.audio.device",
+            device = %device_name,
+            sample_rate = hw_rate,
+            channels = hw_channels,
+            sample_format = ?sample_format,
+            "audio input device selected (OS default)"
+        );
+
         let stream_config = cpal::StreamConfig {
             channels: default_cfg.channels(),
             sample_rate: default_cfg.sample_rate(),
