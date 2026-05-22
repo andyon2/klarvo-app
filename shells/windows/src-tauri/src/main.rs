@@ -42,6 +42,46 @@ fn main() {
             if tracing_result.is_some() { "Some" } else { "None" }
         ),
     );
+
+    // Stage 2a (Story 12.2 follow-up): emit a tracing event immediately so we can
+    // tell whether the global subscriber actually flushes ANY events to disk. If
+    // Stage 2a marker appears but klarvo.*.log stays 0 bytes, the issue is in the
+    // worker thread / file pipeline, not in the subscriber registration.
+    tracing::error!(
+        target: "klarvo.diag",
+        "boot smoke event: if you see this line in klarvo.*.log, tracing pipeline is alive"
+    );
+    klarvo_core::telemetry::diag::write_boot_marker(
+        "Stage 2a",
+        "tracing::error! emitted post-init (smoke test)",
+    );
+
+    // Stage 2b: snapshot existing log files BEFORE the writer starts producing more.
+    // Multi-file presence (DAILY rotation across UTC midnight) would mean the
+    // user is inspecting the wrong filename — the marker tells us what exists.
+    match std::fs::read_dir(&log_dir) {
+        Ok(entries) => {
+            let listing: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+                    format!("{name} ({len}B)")
+                })
+                .collect();
+            klarvo_core::telemetry::diag::write_boot_marker(
+                "Stage 2b",
+                &format!("log_dir contents: [{}]", listing.join(", ")),
+            );
+        }
+        Err(e) => {
+            klarvo_core::telemetry::diag::write_boot_marker(
+                "Stage 2b",
+                &format!("log_dir read_dir failed: {e}"),
+            );
+        }
+    }
+
     let tracing_guard = std::sync::Arc::new(std::sync::Mutex::new(tracing_result));
     klarvo_core::telemetry::logging::install_panic_hook();
     klarvo_core::telemetry::diag::write_boot_marker("Stage 3", "install_panic_hook done");
@@ -743,6 +783,10 @@ fn main() {
     klarvo_core::telemetry::diag::write_boot_marker("Stage 5", "Tauri app.run() entered");
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            klarvo_core::telemetry::diag::write_boot_marker(
+                "Stage 6",
+                "RunEvent::Exit fired",
+            );
             // Use `try_state` to avoid a second panic in the exit handler if Setup
             // failed before `app.manage(orch)` ran — preserves the original boot error.
             if let Some(orch) = app_handle.try_state::<SessionOrchestrator>() {
@@ -750,6 +794,10 @@ fn main() {
                     orch.shutdown().await;
                 });
             }
+            klarvo_core::telemetry::diag::write_boot_marker(
+                "Stage 7",
+                "orch.shutdown returned (pre-guard-drop)",
+            );
             // Tauri v2's run-loop ends via internal `process::exit`, which skips
             // Drop chains. Explicit drop here flushes the non_blocking tracing
             // writer's buffer so the rolling-file actually contains this session's
@@ -757,6 +805,10 @@ fn main() {
             if let Ok(mut g) = exit_guard.lock() {
                 let _ = g.take();
             }
+            klarvo_core::telemetry::diag::write_boot_marker(
+                "Stage 8",
+                "WorkerGuard taken from Mutex (drop should have flushed)",
+            );
         }
     });
 }
