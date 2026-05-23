@@ -120,17 +120,41 @@ impl AudioSource for CpalAudioSource {
         // Capture session-start for ts_ms derivation (ADR-0006-A1: FIRST in callback).
         let session_start = Instant::now();
 
+        // DIAGNOSTIC (Story 12.3 silent-capture investigation, remove after triage):
+        // log raw cpal max + post-downmix max for the first N callbacks per session,
+        // so we can localise where zeros enter the pipeline.
+        let diag_counter: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+        const DIAG_LOG_CALLBACKS: u32 = 20;
+
         let stream = match sample_format {
             SampleFormat::F32 => {
                 let slot = Arc::clone(&tx_slot);
                 let slot_err = Arc::clone(&tx_slot);
                 let res = Arc::clone(&resampler);
                 let pend = Arc::clone(&pending);
+                let diag = Arc::clone(&diag_counter);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         let ts_ms = session_start.elapsed().as_millis() as u64;
                         let mono = downmix(data, hw_channels);
+                        {
+                            let mut n = diag.lock().unwrap_or_else(|e| e.into_inner());
+                            if *n < DIAG_LOG_CALLBACKS {
+                                let raw_max = data.iter().fold(0.0_f32, |a, &b| a.max(b.abs()));
+                                let mono_max = mono.iter().fold(0.0_f32, |a, &b| a.max(b.abs()));
+                                tracing::info!(
+                                    target: "klarvo.audio.diag",
+                                    callback = *n,
+                                    raw_len = data.len(),
+                                    raw_max = raw_max,
+                                    mono_len = mono.len(),
+                                    mono_max = mono_max,
+                                    "cpal callback (f32)"
+                                );
+                                *n += 1;
+                            }
+                        }
                         flush_chunks(&mono, ts_ms, &slot, &res, &pend);
                     },
                     move |err| {
@@ -195,6 +219,10 @@ fn flush_chunks(
     resampler: &Arc<Mutex<Resampler>>,
     pending: &Arc<Mutex<(Vec<f32>, u64)>>,
 ) {
+    // DIAGNOSTIC (Story 12.3 silent-capture investigation, remove after triage).
+    static DIAG_CHUNK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    const DIAG_LOG_CHUNKS: u32 = 20;
+
     let mut guard = pending.lock().unwrap_or_else(|e| e.into_inner());
     let (buf, buf_ts) = &mut *guard;
 
@@ -211,6 +239,8 @@ fn flush_chunks(
         // Next chunk's start ts is current elapsed when this one flushes.
         // (approximation; real chunk-start is within one callback interval)
 
+        let pre_resample_max = chunk.iter().fold(0.0_f32, |a, &b| a.max(b.abs()));
+
         let resampled = match resampler.lock().unwrap_or_else(|e| e.into_inner()).process(&chunk) {
             Ok(v) => v,
             Err(e) => {
@@ -218,6 +248,20 @@ fn flush_chunks(
                 return;
             }
         };
+
+        let post_resample_max = resampled.iter().fold(0.0_f32, |a, &b| a.max(b.abs()));
+        let n = DIAG_CHUNK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < DIAG_LOG_CHUNKS {
+            tracing::info!(
+                target: "klarvo.audio.diag",
+                chunk = n,
+                pre_resample_len = chunk.len(),
+                pre_resample_max = pre_resample_max,
+                post_resample_len = resampled.len(),
+                post_resample_max = post_resample_max,
+                "flush_chunks resample step"
+            );
+        }
 
         let slot_guard = slot.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(sender) = &*slot_guard {

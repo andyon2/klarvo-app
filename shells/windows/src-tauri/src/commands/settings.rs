@@ -340,10 +340,24 @@ pub fn get_plugin_setting(
 /// List enumerable input device names from the default audio host.
 ///
 /// Returns `Ok(Vec::new())` on host-enumeration failure (fail-soft, AC-4).
+///
+/// Runs on `spawn_blocking`: `cpal::Host::input_devices()` performs synchronous
+/// WASAPI/COM enumeration. The Tauri IPC dispatcher thread initialises COM as
+/// STA (for WebView2); cpal's WASAPI backend requires MTA, so calling sync on
+/// the dispatcher returns `RPC_E_CHANGED_MODE` and the enumeration silently
+/// fails → empty dropdown. Mirrors `set_audio_input_device`'s `device_exists`
+/// wrap below.
 #[tauri::command]
 #[specta::specta]
-pub fn list_audio_input_devices() -> Result<Vec<String>, AppError> {
-    Ok(klarvo_audio_cpal::list_input_devices())
+pub async fn list_audio_input_devices() -> Result<Vec<String>, AppError> {
+    tokio::task::spawn_blocking(klarvo_audio_cpal::list_input_devices)
+        .await
+        .map_err(|e| AppError {
+            kind: klarvo_core::error::AppErrorKind::Internal,
+            message: format!("list_input_devices task join failed: {e}"),
+            user_message: Some("error.unknown".into()),
+            retryable: true,
+        })
 }
 
 /// Set or clear the configured audio input device.
