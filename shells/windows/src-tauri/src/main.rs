@@ -60,6 +60,7 @@ fn main() {
         let mut registry = klarvo_core::registry::bootstrap();
         klarvo_plugin_verbatim::register(&mut registry);
         klarvo_plugin_groq::register(&mut registry, keystore);
+        klarvo_plugin_clipboard::register(&mut registry);
 
         // Whisper-local: conditional on model_path plugin-setting (ADR-0014 D-1).
         // If not configured → no-op (manifest drives STT plugin selection).
