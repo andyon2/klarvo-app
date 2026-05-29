@@ -423,6 +423,99 @@ pub fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
 }
 
 // ---------------------------------------------------------------------------
+// Pipeline decision logic (pure — characterization-tested before extraction)
+// ---------------------------------------------------------------------------
+//
+// These functions hold the branch decisions that `stop_and_process_pipeline`
+// used to inline. Pulling them out lets the decision matrix be unit-tested and
+// snapshotted *before* the STT->guard->LLM->sanitize core moves into
+// `process_audio` (Task 2.2). They take primitives only — no locks, no
+// `AppState`, no `AppHandle` — so they are order-independent at the call site.
+
+/// Whether the pipeline runs fully offline for *dictation*, i.e. skips the LLM
+/// cleanup network call. True only when STT is local AND the LLM is not local;
+/// when the LLM is also local, cleanup runs offline via llama.cpp and is kept.
+pub fn is_offline(stt_provider: &str, llm_provider: &str) -> bool {
+    stt_provider == "local" && llm_provider != "local"
+}
+
+/// Reason to skip the pipeline *before* transcription, based on recording
+/// length and loudness. `None` means "proceed to STT".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SilenceSkip {
+    /// Recording shorter than the configured minimum.
+    TooShort,
+    /// RMS below the (mode-dependent) silence threshold.
+    Silent,
+}
+
+/// Decides whether a recording is too short or too silent to transcribe.
+///
+/// `rms` is `None` when the WAV could not be measured (invalid samples); the
+/// loudness check is then skipped, matching the original `if let Some` guard.
+pub fn silence_skip(
+    duration_ms: u64,
+    min_recording_ms: u64,
+    rms: Option<f32>,
+    silence_threshold: f32,
+) -> Option<SilenceSkip> {
+    if duration_ms < min_recording_ms {
+        return Some(SilenceSkip::TooShort);
+    }
+    if let Some(rms) = rms {
+        if rms < silence_threshold {
+            return Some(SilenceSkip::Silent);
+        }
+    }
+    None
+}
+
+/// Reason to skip the pipeline *after* transcription, when the transcript is a
+/// Whisper hallucination rather than real speech. `None` means "proceed".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostSttSkip {
+    /// Transcript is an echo of the conditioning prompt.
+    PromptEcho,
+    /// Transcript matches the known-hallucination blocklist.
+    Blocklist,
+}
+
+/// Detects post-STT hallucinations. Order matches the original pipeline:
+/// prompt-echo first, then the blocklist.
+pub fn post_stt_skip(transcript: &str, stt_hint: &str) -> Option<PostSttSkip> {
+    if is_prompt_echo(transcript, stt_hint) {
+        return Some(PostSttSkip::PromptEcho);
+    }
+    if is_hallucination(transcript) {
+        return Some(PostSttSkip::Blocklist);
+    }
+    None
+}
+
+/// Which cleanup path the transcript takes after the guards pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmPath {
+    /// Offline dictation: emit the raw transcript, no LLM call.
+    OfflineRaw,
+    /// Command mode: rewrite the selected text using the spoken command.
+    Command,
+    /// Normal dictation: LLM cleanup of the transcript.
+    Cleanup,
+}
+
+/// Selects the cleanup path. Command mode always requires an LLM call (even
+/// offline), so a present selection wins over the offline flag.
+pub fn select_llm_path(offline: bool, has_selected_text: bool) -> LlmPath {
+    if offline && !has_selected_text {
+        LlmPath::OfflineRaw
+    } else if has_selected_text {
+        LlmPath::Command
+    } else {
+        LlmPath::Cleanup
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline entry points
 // ---------------------------------------------------------------------------
 
@@ -837,26 +930,38 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Silence detection ---
     // If the recording is very short (<500ms) or essentially silent, skip the
     // STT/LLM pipeline. This matches Wispr Flow's "nothing said" behaviour.
-    if duration_ms < adv.min_recording_ms as u64 {
-        log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-        return;
-    }
-
-    // Check RMS of the raw WAV samples. If the audio is near-silent, abort.
     // Whisper mode uses a lower threshold since the audio has been amplified.
     let silence_threshold = if whisper_mode {
         adv.whisper_mode_threshold
     } else {
         adv.silence_threshold
     };
-    if let Some(rms) = compute_wav_rms(&wav_bytes) {
-        log::debug!("[pipeline] audio RMS = {rms:.5} (threshold={silence_threshold})");
-        if rms < silence_threshold {
-            log::info!("[pipeline] audio is silent (rms={rms:.5}), skipping");
+    // Measure RMS only when the recording is long enough, matching the original
+    // guard order (too-short returns before any RMS work or log).
+    let rms = if duration_ms < adv.min_recording_ms as u64 {
+        None
+    } else {
+        let measured = compute_wav_rms(&wav_bytes);
+        if let Some(rms) = measured {
+            log::debug!("[pipeline] audio RMS = {rms:.5} (threshold={silence_threshold})");
+        }
+        measured
+    };
+    match silence_skip(duration_ms, adv.min_recording_ms as u64, rms, silence_threshold) {
+        Some(SilenceSkip::TooShort) => {
+            log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
             let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
             return;
         }
+        Some(SilenceSkip::Silent) => {
+            log::info!(
+                "[pipeline] audio is silent (rms={:.5}), skipping",
+                rms.unwrap_or(0.0)
+            );
+            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            return;
+        }
+        None => {}
     }
 
     // --- Collect config + dictionary (release locks before await points) ---
@@ -935,7 +1040,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         // not "local", skip the cleanup step (no network call, raw text
         // goes straight to paste). When llm_provider is "local", cleanup
         // runs offline via llama.cpp — no internet needed.
-        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
 
         (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline, hint_for_check)
     };
@@ -979,25 +1084,24 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         stripped
     };
 
-    // --- Whisper hallucination guard ---
+    // --- Whisper hallucination guards ---
     // Whisper sometimes echoes the conditioning prompt instead of transcribing
-    // actual speech (common with ambient noise but no words). Detect this by
-    // checking if the transcription is composed entirely of prompt fragments.
-    if is_prompt_echo(&raw_text, &stt_hint_text) {
-        log::info!(
-            "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
-        );
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-        return;
-    }
-
-    // --- Blocklist guard ---
-    // Filter known Whisper training-data hallucinations (e.g. "ZDF 2020",
-    // "Thank you for watching") that slip through the prompt-echo check.
-    if is_hallucination(&raw_text) {
-        log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-        return;
+    // actual speech (prompt-echo), or emits known training-data phrases like
+    // "ZDF 2020" / "Thank you for watching" (blocklist). Both are skipped here.
+    match post_stt_skip(&raw_text, &stt_hint_text) {
+        Some(PostSttSkip::PromptEcho) => {
+            log::info!(
+                "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
+            );
+            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            return;
+        }
+        Some(PostSttSkip::Blocklist) => {
+            log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
+            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            return;
+        }
+        None => {}
     }
 
     // --- Check Command Mode ---
@@ -1022,15 +1126,16 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     };
 
     // --- LLM step ---
-    // Skip the entire cleanup step in offline mode (stt_priority[0] == "local").
-    // Command Mode still requires an LLM call even offline, so we only skip
-    // for normal dictation.
-    if !offline_mode || selected_text.is_some() {
+    // Command Mode still requires an LLM call even offline, so a present
+    // selection wins over the offline flag; only normal offline dictation skips
+    // cleanup entirely. The `cleaning` event fires for every non-offline path.
+    let llm_path = select_llm_path(offline_mode, selected_text.is_some());
+    if !matches!(llm_path, LlmPath::OfflineRaw) {
         let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
     }
 
     let mut llm_ms: Option<u64> = None;
-    let cleanup_result = if offline_mode && selected_text.is_none() {
+    let cleanup_result = if matches!(llm_path, LlmPath::OfflineRaw) {
         // Offline dictation: return raw transcript without any LLM call.
         log::info!("[pipeline] Offline mode: skipping LLM cleanup");
         llm::CleanupResult {
@@ -1815,9 +1920,9 @@ mod tests {
     /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
     /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
     ///
-    /// This test verifies the extraction logic in `stop_and_process_pipeline`
-    /// by replicating it directly -- the full pipeline cannot be unit-tested
-    /// without a Tauri `AppHandle`.
+    /// Exercises the real `is_offline` decision helper that
+    /// `stop_and_process_pipeline` now calls (previously these tests replicated
+    /// the expression inline, which gave false security).
     #[test]
     fn test_offline_flag_true_when_stt_local_and_llm_cloud() {
         let cfg = AppConfig {
@@ -1825,7 +1930,7 @@ mod tests {
             llm_provider: "deepseek".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(offline, "offline flag should be true when stt=local but llm!=local");
     }
 
@@ -1838,7 +1943,7 @@ mod tests {
             llm_provider: "local".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline, "offline flag should be false when both stt and llm are local");
     }
 
@@ -1850,7 +1955,7 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local" && cfg.llm_provider != "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline, "offline flag should be false when stt_provider != 'local'");
     }
 
@@ -1862,7 +1967,7 @@ mod tests {
             openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = cfg.stt_provider == "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline);
     }
 
@@ -1870,8 +1975,148 @@ mod tests {
     #[test]
     fn test_offline_flag_false_by_default() {
         let cfg = AppConfig::default();
-        let offline = cfg.stt_provider == "local";
+        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline, "default config should not be in offline mode");
+    }
+
+    // -----------------------------------------------------------------------
+    // Decision logic (Task 2.2 net): silence_skip / post_stt_skip /
+    // select_llm_path. These pin the branch decisions that
+    // `stop_and_process_pipeline` routes through, so the upcoming `process_audio`
+    // extraction cannot silently change them.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_silence_skip_too_short() {
+        assert_eq!(
+            silence_skip(100, 500, Some(0.5), 0.01),
+            Some(SilenceSkip::TooShort)
+        );
+    }
+
+    #[test]
+    fn test_silence_skip_at_minimum_is_not_too_short() {
+        // duration == min is allowed (strict `<`), and loud enough -> proceed.
+        assert_eq!(silence_skip(500, 500, Some(0.5), 0.01), None);
+    }
+
+    #[test]
+    fn test_silence_skip_silent() {
+        assert_eq!(
+            silence_skip(1000, 500, Some(0.005), 0.01),
+            Some(SilenceSkip::Silent)
+        );
+    }
+
+    #[test]
+    fn test_silence_skip_loud_enough_proceeds() {
+        assert_eq!(silence_skip(1000, 500, Some(0.02), 0.01), None);
+    }
+
+    #[test]
+    fn test_silence_skip_unmeasurable_rms_proceeds() {
+        // None RMS (invalid WAV) skips the loudness check, matching the original
+        // `if let Some(rms)` guard.
+        assert_eq!(silence_skip(1000, 500, None, 0.01), None);
+    }
+
+    #[test]
+    fn test_silence_skip_too_short_precedes_silent() {
+        // Too-short wins even when the audio is also silent.
+        assert_eq!(
+            silence_skip(100, 500, Some(0.0), 0.01),
+            Some(SilenceSkip::TooShort)
+        );
+    }
+
+    const TEST_STT_HINT: &str =
+        "Voice dictation in English. Proper punctuation, capitalization, and spelling.";
+
+    #[test]
+    fn test_post_stt_skip_real_speech_proceeds() {
+        assert_eq!(
+            post_stt_skip("Please send me the report by Friday", TEST_STT_HINT),
+            None
+        );
+    }
+
+    #[test]
+    fn test_post_stt_skip_prompt_echo() {
+        assert_eq!(
+            post_stt_skip(TEST_STT_HINT, TEST_STT_HINT),
+            Some(PostSttSkip::PromptEcho)
+        );
+    }
+
+    #[test]
+    fn test_post_stt_skip_blocklist() {
+        assert_eq!(
+            post_stt_skip("Thank you for watching", TEST_STT_HINT),
+            Some(PostSttSkip::Blocklist)
+        );
+    }
+
+    #[test]
+    fn test_select_llm_path_offline_dictation() {
+        assert_eq!(select_llm_path(true, false), LlmPath::OfflineRaw);
+    }
+
+    #[test]
+    fn test_select_llm_path_command_wins_over_offline() {
+        // A selection forces an LLM call even offline.
+        assert_eq!(select_llm_path(true, true), LlmPath::Command);
+        assert_eq!(select_llm_path(false, true), LlmPath::Command);
+    }
+
+    #[test]
+    fn test_select_llm_path_normal_cleanup() {
+        assert_eq!(select_llm_path(false, false), LlmPath::Cleanup);
+    }
+
+    /// Golden master of the full decision matrix. A change here means a branch
+    /// decision moved — review it deliberately, never blind-accept the snapshot.
+    #[test]
+    fn test_decision_matrix_snapshot() {
+        let mut out = String::new();
+
+        out.push_str("# silence_skip(duration_ms, min_recording_ms, rms, threshold)\n");
+        let silence_cases: [(u64, u64, Option<f32>, f32); 6] = [
+            (100, 500, Some(0.5), 0.01),
+            (500, 500, Some(0.5), 0.01),
+            (1000, 500, Some(0.005), 0.01),
+            (1000, 500, Some(0.02), 0.01),
+            (1000, 500, None, 0.01),
+            (100, 500, Some(0.0), 0.01),
+        ];
+        for (d, m, r, t) in silence_cases {
+            out.push_str(&format!(
+                "  ({d}, {m}, {r:?}, {t}) -> {:?}\n",
+                silence_skip(d, m, r, t)
+            ));
+        }
+
+        out.push_str("\n# post_stt_skip(transcript, hint)\n");
+        let post_cases: [&str; 4] = [
+            "Please send me the report by Friday",
+            TEST_STT_HINT,
+            "",
+            "Thank you for watching",
+        ];
+        for txt in post_cases {
+            out.push_str(&format!("  {txt:?} -> {:?}\n", post_stt_skip(txt, TEST_STT_HINT)));
+        }
+
+        out.push_str("\n# select_llm_path(offline, has_selected_text)\n");
+        for offline in [false, true] {
+            for has_sel in [false, true] {
+                out.push_str(&format!(
+                    "  (offline={offline}, has_sel={has_sel}) -> {:?}\n",
+                    select_llm_path(offline, has_sel)
+                ));
+            }
+        }
+
+        insta::assert_snapshot!(out);
     }
 
     /// `resolve_stt_provider` for "groq" returns a GroqWhisper instance.

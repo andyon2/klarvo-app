@@ -1,0 +1,23 @@
+---
+source: src/pipeline.rs
+expression: out
+---
+# silence_skip(duration_ms, min_recording_ms, rms, threshold)
+  (100, 500, Some(0.5), 0.01) -> Some(TooShort)
+  (500, 500, Some(0.5), 0.01) -> None
+  (1000, 500, Some(0.005), 0.01) -> Some(Silent)
+  (1000, 500, Some(0.02), 0.01) -> None
+  (1000, 500, None, 0.01) -> None
+  (100, 500, Some(0.0), 0.01) -> Some(TooShort)
+
+# post_stt_skip(transcript, hint)
+  "Please send me the report by Friday" -> None
+  "Voice dictation in English. Proper punctuation, capitalization, and spelling." -> Some(PromptEcho)
+  "" -> Some(Blocklist)
+  "Thank you for watching" -> Some(Blocklist)
+
+# select_llm_path(offline, has_selected_text)
+  (offline=false, has_sel=false) -> Cleanup
+  (offline=false, has_sel=true) -> Command
+  (offline=true, has_sel=false) -> OfflineRaw
+  (offline=true, has_sel=true) -> Command
