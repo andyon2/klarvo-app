@@ -79,7 +79,7 @@ use tauri::tray::TrayIconEvent;
 
 
 // Re-export pipeline helpers so `commands/` modules can reach them.
-pub use pipeline::{resolve_cleanup_provider, resolve_stt_provider};
+pub use pipeline::{resolve_cleanup_provider, resolve_providers, resolve_stt_provider};
 #[cfg(desktop)]
 pub use pipeline::register_hotkey;
 
@@ -286,8 +286,7 @@ impl AppState {
         app_data_dir: PathBuf,
         history_db: rusqlite::Connection,
     ) -> Self {
-        let stt = resolve_stt_provider(&cfg, &app_data_dir);
-        let cleanup = resolve_cleanup_provider(&cfg);
+        let (stt, cleanup) = resolve_providers(&cfg, &app_data_dir);
 
         // Compute the initial license status from the cached key + timestamp.
         let initial_license_status = if !cfg.license_key.is_empty() {

@@ -53,6 +53,20 @@ pub fn resolve_stt_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> 
     }
 }
 
+/// Resolves both providers from a single config in one call.
+///
+/// Pure convenience wrapper over [`resolve_stt_provider`] +
+/// [`resolve_cleanup_provider`] so the three live consumers (boot,
+/// `save_settings`, `clear_api_key`) share one resolve site. No locks, no
+/// persistence, no `AppState` — order-independent at every call site.
+/// Note: `resolve_cleanup_provider` does not take `app_data_dir`.
+pub fn resolve_providers(
+    cfg: &AppConfig,
+    app_data_dir: &std::path::Path,
+) -> (Arc<dyn SttProvider>, Arc<dyn CleanupProvider>) {
+    (resolve_stt_provider(cfg, app_data_dir), resolve_cleanup_provider(cfg))
+}
+
 /// Builds a `LocalWhisperProvider` with the platform-appropriate model path.
 ///
 /// ## Path convention by platform

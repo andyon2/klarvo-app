@@ -9,7 +9,7 @@ use crate::config::{self, save_config, AppConfig, HotkeyMode};
 use crate::license::LicensedFeature;
 use crate::require_license;
 use crate::llm::{self, CleanupStyle};
-use crate::pipeline::{resolve_cleanup_provider, resolve_stt_provider};
+use crate::pipeline::resolve_providers;
 use crate::stt::{self};
 use crate::{ApiKeyStatus, AppState, SettingsView};
 use crate::mask_api_key;
@@ -489,8 +489,7 @@ pub async fn save_settings(
     let new_cfg = merge_settings(existing, patch);
 
     // Resolve providers from the new config before persisting.
-    let new_stt = resolve_stt_provider(&new_cfg, &inner.app_data_dir);
-    let new_cleanup = resolve_cleanup_provider(&new_cfg);
+    let (new_stt, new_cleanup) = resolve_providers(&new_cfg, &inner.app_data_dir);
 
     // Persist to disk.
     save_config(&inner.app_data_dir, &new_cfg)
@@ -966,8 +965,7 @@ pub async fn clear_api_key(
 
     // Resolve new providers *before* persisting so we can surface any error
     // to the caller early (though resolve_* is currently infallible).
-    let new_stt     = resolve_stt_provider(&cfg, &inner.app_data_dir);
-    let new_cleanup = resolve_cleanup_provider(&cfg);
+    let (new_stt, new_cleanup) = resolve_providers(&cfg, &inner.app_data_dir);
 
     // Persist to disk.
     save_config(&inner.app_data_dir, &cfg)
