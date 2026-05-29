@@ -2496,4 +2496,295 @@ mod tests {
             "No keys at all → Groq-Llama Default must not fire, llm_provider stays deepseek"
         );
     }
+
+    // ---------------------------------------------------------------------------
+    // Golden-Master / Characterization Test: AppConfig Full-Field Roundtrip
+    //
+    // PURPOSE: Characterization test that nails down the CURRENT save/load
+    // behaviour for every field in AppConfig. If any field silently drops,
+    // renames, or transforms during a save→load cycle this test catches it.
+    //
+    // The test characterizes the REAL save/load path: save_config writes JSON
+    // to disk, load_config reads + migrates + validates + returns the struct.
+    //
+    // KNOWN ROUNDTRIP ANOMALIES (IST-Verhalten, not bugs to fix here):
+    //
+    // 1. `stt_priority` / `llm_priority` (deprecated):
+    //    Cannot be set to a non-empty Vec and roundtripped cleanly.
+    //    Reason: load_config's migration logic promotes stt_priority[0] to
+    //    stt_provider when stt_provider == default ("groq"), then clears the
+    //    list. Setting stt_provider to non-default suppresses migration, but
+    //    then the list still survives on disk while stt_priority remains
+    //    ignored by all production code. In this test both are set to empty
+    //    Vec (the safe value) and verified to stay empty.
+    //
+    // 2. `insert_and_send` (deprecated global flag):
+    //    When insert_and_send = true AND all hotkey_slots have
+    //    insert_and_send = false, load_config migrates: it sets every slot's
+    //    insert_and_send = true and clears the global flag to false.
+    //    Result: the loaded struct differs from the saved struct.
+    //    In this test we set insert_and_send = false to bypass the migration
+    //    and characterize the clean case. The migration path is separately
+    //    tested in test_insert_and_send_migration_to_slots.
+    //
+    // 3. `hotkey_slots` (empty Vec triggers migration):
+    //    An empty hotkey_slots Vec triggers migration from the legacy flat
+    //    hotkey/hotkey_mode fields. We always set a non-empty slots vec.
+    //
+    // 4. API key env-var fallback:
+    //    load_config overwrites groq_api_key, deepseek_api_key, openai_api_key,
+    //    anthropic_api_key, turso_url, turso_token from env vars when the
+    //    saved value is empty. All API key fields here are set to non-empty
+    //    test strings so the fallback logic is bypassed.
+    //
+    // 5. LLM auto-fallback:
+    //    load_config auto-switches llm_provider when the chosen provider has
+    //    no key. We set llm_provider = "deepseek" with a non-empty
+    //    deepseek_api_key, so no switch fires.
+    //
+    // 6. `device_id`:
+    //    AppConfig::default() generates a fresh UUID each call. When we
+    //    explicitly set device_id = "test-device-uuid" and save/load, the
+    //    exact string is preserved (no re-generation on load). This is correct.
+    // ---------------------------------------------------------------------------
+
+    /// Constructs an AppConfig with every field set to a non-default value and
+    /// verifies that save_config → load_config returns a byte-for-byte identical
+    /// struct. Any field that silently drops or transforms will cause an assertion
+    /// failure, identifying fragility in the persistence layer.
+    #[test]
+    fn test_appconfig_golden_master_full_field_roundtrip() {
+        let dir = temp_dir();
+
+        // Build a config where every field is explicitly set to a non-default
+        // value so that no field can hide behind a default.
+        let original = AppConfig {
+            // --- API keys (non-empty so env-var fallback is bypassed) ---
+            groq_api_key: "gsk-golden-master-groq".to_string(),
+            deepseek_api_key: "sk-ds-golden-master".to_string(),
+            openai_api_key: "sk-openai-golden-master".to_string(),
+            anthropic_api_key: "sk-ant-golden-master".to_string(),
+            openrouter_api_key: "sk-or-golden-master".to_string(),
+
+            // --- Providers (non-default to suppress migration side-effects) ---
+            // stt_provider = "local" (default is "groq")
+            // llm_provider = "deepseek" with key set → no auto-fallback fires
+            stt_provider: "local".to_string(),
+            llm_provider: "deepseek".to_string(),
+
+            // --- Deprecated lists (kept empty: non-empty triggers migration that
+            // clears them, making a roundtrip impossible). ---
+            stt_priority: Vec::new(),
+            llm_priority: Vec::new(),
+
+            // --- Core settings ---
+            language: "de".to_string(),
+            cleanup_style: CleanupStyle::Verbatim,
+            hotkey: "ctrl+alt+x".to_string(),           // non-default
+            hotkey_mode: HotkeyMode::Toggle,             // non-default (default = Hold)
+
+            // Non-empty slots vec prevents hotkey migration from firing.
+            hotkey_slots: vec![
+                HotkeySlot {
+                    hotkey: "ctrl+alt+x".to_string(),
+                    mode: HotkeyMode::Toggle,
+                    insert_and_send: true,
+                },
+                HotkeySlot {
+                    hotkey: "ctrl+alt+y".to_string(),
+                    mode: HotkeyMode::AutoStop,
+                    insert_and_send: false,
+                },
+            ],
+
+            audio_device: Some("Golden Master Mic".to_string()),
+            stt_model: "whisper-large-v3".to_string(),
+            custom_prompt: "Golden master custom prompt.".to_string(),
+
+            profiles: vec![
+                AppProfile {
+                    name: "Browser".to_string(),
+                    app_pattern: "chrome".to_string(),
+                    cleanup_style: CleanupStyle::Chat,
+                    language: "en".to_string(),
+                    custom_prompt: "Be concise.".to_string(),
+                },
+                AppProfile {
+                    name: "Terminal".to_string(),
+                    app_pattern: "powershell".to_string(),
+                    cleanup_style: CleanupStyle::Verbatim,
+                    language: "de".to_string(),
+                    custom_prompt: String::new(),
+                },
+            ],
+
+            autostart: true,
+            whisper_mode: true,
+            command_hotkey: "ctrl+shift+g".to_string(),
+            output_language: "en".to_string(),
+
+            snippets: vec![
+                TextSnippet {
+                    name: "sig".to_string(),
+                    content: "Viele Grüße,\nAndy".to_string(),
+                },
+                TextSnippet {
+                    name: "addr".to_string(),
+                    content: "Teststraße 1, 12345 Berlin".to_string(),
+                },
+            ],
+
+            voice_notes_hotkey: "ctrl+shift+v".to_string(),
+            webhook_url: "https://golden.example.com/hook".to_string(),
+
+            // Non-empty so env-var fallback is bypassed.
+            turso_url: "libsql://golden-master.turso.io".to_string(),
+            turso_token: "golden-turso-jwt-token".to_string(),
+
+            device_id: "golden-master-device-uuid-1234".to_string(),
+
+            bubble_size: 1.5,
+            bubble_opacity: 0.5,
+
+            advanced: AdvancedSettings {
+                stt_prompt_de: "Custom DE prompt golden master.".to_string(),
+                stt_prompt_en: "Custom EN prompt golden master.".to_string(),
+                stt_prompt_auto: "Custom auto prompt golden master.".to_string(),
+                stt_temperature: 0.3,
+                llm_system_prompt_polished: "Polished system prompt.".to_string(),
+                llm_system_prompt_verbatim: "Verbatim system prompt.".to_string(),
+                llm_system_prompt_chat: "Chat system prompt.".to_string(),
+                llm_command_mode_prompt: "Command mode prompt.".to_string(),
+                llm_temperature: 0.7,
+                llm_max_tokens: 1024,
+                llm_model_deepseek: "deepseek-chat".to_string(),
+                llm_model_openai: "gpt-4o".to_string(),
+                llm_model_anthropic: "claude-3-5-sonnet".to_string(),
+                llm_model_groq: "llama3-70b-8192".to_string(),
+                chunk_threshold: 1200,
+                chunk_target_size: 900,
+                silence_threshold: 0.01,
+                whisper_mode_threshold: 0.002,
+                min_recording_ms: 750,
+                whisper_mode_gain: 5.0,
+                auto_paste: false,
+                paste_delay_ms: 100,
+                auto_capitalize: false,
+                webhook_headers: r#"{"X-Custom-Header": "golden"}"#.to_string(),
+                webhook_timeout_secs: 30,
+                log_level: "debug".to_string(),
+                ui_scale: "large".to_string(),
+            },
+
+            local_whisper_model: "base-q5_1".to_string(),
+            local_whisper_gpu: false,
+
+            license_key: "GOLDEN-MASTER-LICENSE-KEY".to_string(),
+            license_validated_at: 1_700_000_000,
+            license_source: "hmac".to_string(),
+            ls_instance_id: "golden-ls-instance-uuid".to_string(),
+            ls_last_validated_at: 1_700_001_000,
+
+            // insert_and_send = false: if set to true while ALL slots have
+            // insert_and_send = false, load_config migrates (propagates to slots
+            // and clears this flag), making roundtrip impossible.
+            // The migration path is covered by test_insert_and_send_migration_to_slots.
+            insert_and_send: false,
+
+            autostop_silence_secs: 3.5,
+            auto_mode_silence_secs: 4.0,
+            bar_x: Some(200.0),
+            bar_y: Some(800.0),
+
+            bubble_recording_mode: "toggle".to_string(),
+            bubble_tap_mode: "autostop".to_string(),
+            bubble_tap_auto_send: true,
+            bubble_tap_silence_secs: 1.5,
+            bubble_long_press_mode: "auto".to_string(),
+            bubble_long_press_auto_send: true,
+            bubble_long_press_silence_secs: 2.5,
+
+            onboarding: OnboardingState {
+                completed: true,
+                skipped: false,
+                current_step: 5,
+                mode: "cloud".to_string(),
+                language: "de".to_string(),
+                track: "expert".to_string(),
+            },
+
+            voice_command_enabled: true,
+            first_install_at: 1_710_000_000,
+            feedback_webhook_url: "https://golden.example.com/feedback".to_string(),
+        };
+
+        save_config(dir.path(), &original).expect("save_config must succeed");
+        let loaded = load_config(dir.path());
+
+        assert_eq!(
+            loaded, original,
+            "Full AppConfig roundtrip (save→load) must preserve every field exactly. \
+            A failure here means a field was silently dropped, renamed, or transformed \
+            during persistence. Check the golden master anomalies documented above \
+            the test for known load_config side-effects."
+        );
+    }
+
+    /// Characterization test: documents the `insert_and_send` migration side-effect.
+    ///
+    /// When the global `insert_and_send = true` flag is saved and ALL slots have
+    /// `insert_and_send = false`, load_config propagates the flag to all slots
+    /// and clears the global field to false. This is an intentional migration but
+    /// means the loaded struct DIFFERS from the saved struct on the first load
+    /// after migration. Subsequent loads are clean.
+    #[test]
+    fn test_insert_and_send_migration_to_slots() {
+        let dir = temp_dir();
+
+        // Save with global insert_and_send = true, slots both false.
+        let before_migration = AppConfig {
+            insert_and_send: true,
+            // Use a non-empty stt_provider + deepseek key to suppress other migrations.
+            stt_provider: "openai".to_string(),
+            llm_provider: "openai".to_string(),
+            openai_api_key: "sk-openai-test".to_string(),
+            hotkey_slots: vec![
+                HotkeySlot {
+                    hotkey: "ctrl+shift+d".to_string(),
+                    mode: HotkeyMode::Hold,
+                    insert_and_send: false, // will be migrated to true
+                },
+                HotkeySlot {
+                    hotkey: String::new(),
+                    mode: HotkeyMode::Hold,
+                    insert_and_send: false, // will be migrated to true
+                },
+            ],
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &before_migration).expect("save must succeed");
+
+        let loaded = load_config(dir.path());
+
+        // After migration: global flag cleared, all slots set to true.
+        assert!(
+            !loaded.insert_and_send,
+            "Migration must clear global insert_and_send flag"
+        );
+        assert!(
+            loaded.hotkey_slots.iter().all(|s| s.insert_and_send),
+            "Migration must propagate insert_and_send=true to all slots"
+        );
+
+        // The loaded struct differs from the saved struct (this is the documented
+        // anomaly: one-way migration produces a different struct on first load).
+        assert_ne!(
+            loaded, before_migration,
+            "First load after insert_and_send migration produces a different struct (expected)"
+        );
+
+        // Second load must be idempotent (no further migration).
+        let loaded2 = load_config(dir.path());
+        assert_eq!(loaded2, loaded, "Second load must be idempotent after migration");
+    }
 }

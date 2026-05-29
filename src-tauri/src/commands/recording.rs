@@ -401,14 +401,15 @@ mod tests {
     use crate::config::AppConfig;
     use crate::test_helpers::{make_state, temp_dir};
 
-    /// `is_offline_mode` returns `true` when the first STT priority is "local".
+    /// `is_offline_mode` returns `true` when `stt_provider` is "local".
     #[test]
     fn test_is_offline_mode_local_first() {
         let dir = temp_dir();
         let state = make_state(&dir);
         {
             let mut cfg = state.config.lock().unwrap();
-            cfg.stt_priority = vec!["local".to_string(), "groq".to_string()];
+            // Production code reads stt_provider (not the deprecated stt_priority list).
+            cfg.stt_provider = "local".to_string();
         }
         assert!(is_offline_mode(&state));
     }
@@ -438,15 +439,15 @@ mod tests {
         assert!(!is_offline_mode(&state));
     }
 
-    /// `active_stt_provider_id` returns `"local"` when "local" appears in the
-    /// priority list and no cloud key is configured before it.
+    /// `active_stt_provider_id` returns `"local"` when `stt_provider` is "local".
     #[test]
     fn test_active_stt_provider_id_local() {
         let dir = temp_dir();
         let state = make_state(&dir);
         {
             let mut cfg = state.config.lock().unwrap();
-            cfg.stt_priority = vec!["local".to_string()];
+            // Production code reads stt_provider directly (not the deprecated stt_priority list).
+            cfg.stt_provider = "local".to_string();
             cfg.groq_api_key = String::new();
         }
         assert_eq!(active_stt_provider_id(&state), "local");
