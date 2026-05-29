@@ -101,6 +101,236 @@ pub fn apply_autostart(enabled: bool) {
 pub fn apply_autostart(_enabled: bool) {}
 
 // ---------------------------------------------------------------------------
+// SettingsPatch + merge_settings (seam for unit testing)
+// ---------------------------------------------------------------------------
+
+/// All fields that `save_settings` can write.  Fields that are always
+/// preserved from `existing` (e.g. `command_hotkey`, license fields) are NOT
+/// included here.
+///
+/// `Default` is implemented manually (see below) to make partial fixtures
+/// ergonomic in tests:
+/// `SettingsPatch { groq_api_key: "key".into(), ..SettingsPatch::default() }`.
+pub struct SettingsPatch {
+    pub groq_api_key: String,
+    pub deepseek_api_key: String,
+    pub language: String,
+    pub cleanup_style: crate::llm::CleanupStyle,
+    pub hotkey: String,
+    pub hotkey_mode: crate::config::HotkeyMode,
+    pub audio_device: Option<String>,
+    pub stt_model: Option<String>,
+    pub custom_prompt: Option<String>,
+    pub autostart: Option<bool>,
+    pub whisper_mode: Option<bool>,
+    pub openai_api_key: Option<String>,
+    pub anthropic_api_key: Option<String>,
+    pub output_language: Option<String>,
+    pub webhook_url: Option<String>,
+    pub turso_url: Option<String>,
+    pub turso_token: Option<String>,
+    pub bubble_size: Option<f32>,
+    pub bubble_opacity: Option<f32>,
+    pub local_whisper_model: Option<String>,
+    pub local_whisper_gpu: Option<bool>,
+    pub stt_provider: Option<String>,
+    pub llm_provider: Option<String>,
+    pub insert_and_send: Option<bool>,
+    pub autostop_silence_secs: Option<f32>,
+    pub auto_mode_silence_secs: Option<f32>,
+    pub hotkey_slot2: Option<String>,
+    pub hotkey_mode_slot2: Option<String>,
+    pub insert_and_send_slot1: Option<bool>,
+    pub insert_and_send_slot2: Option<bool>,
+    pub bubble_recording_mode: Option<String>,
+    pub bubble_tap_mode: Option<String>,
+    pub bubble_tap_auto_send: Option<bool>,
+    pub bubble_tap_silence_secs: Option<f32>,
+    pub bubble_long_press_mode: Option<String>,
+    pub bubble_long_press_auto_send: Option<bool>,
+    pub bubble_long_press_silence_secs: Option<f32>,
+    pub openrouter_api_key: Option<String>,
+}
+
+impl Default for SettingsPatch {
+    fn default() -> Self {
+        SettingsPatch {
+            groq_api_key: String::new(),
+            deepseek_api_key: String::new(),
+            language: String::new(),
+            cleanup_style: crate::llm::CleanupStyle::Polished,
+            hotkey: String::new(),
+            hotkey_mode: crate::config::HotkeyMode::Hold,
+            audio_device: None,
+            stt_model: None,
+            custom_prompt: None,
+            autostart: None,
+            whisper_mode: None,
+            openai_api_key: None,
+            anthropic_api_key: None,
+            output_language: None,
+            webhook_url: None,
+            turso_url: None,
+            turso_token: None,
+            bubble_size: None,
+            bubble_opacity: None,
+            local_whisper_model: None,
+            local_whisper_gpu: None,
+            stt_provider: None,
+            llm_provider: None,
+            insert_and_send: None,
+            autostop_silence_secs: None,
+            auto_mode_silence_secs: None,
+            hotkey_slot2: None,
+            hotkey_mode_slot2: None,
+            insert_and_send_slot1: None,
+            insert_and_send_slot2: None,
+            bubble_recording_mode: None,
+            bubble_tap_mode: None,
+            bubble_tap_auto_send: None,
+            bubble_tap_silence_secs: None,
+            bubble_long_press_mode: None,
+            bubble_long_press_auto_send: None,
+            bubble_long_press_silence_secs: None,
+            openrouter_api_key: None,
+        }
+    }
+}
+
+/// Pure function: merges `patch` into `existing` and returns the resulting
+/// `AppConfig`.
+///
+/// This is the **production** merge logic extracted from `save_settings`
+/// (lines 218-338 of the original).  The body is copied verbatim — no logic
+/// changes.  `save_settings` delegates to this function.
+///
+/// Deliberately not `pub(crate)` so test modules in this file can access it
+/// directly without a `super::` import.
+pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
+    AppConfig {
+        groq_api_key: if patch.groq_api_key.is_empty() {
+            existing.groq_api_key
+        } else {
+            patch.groq_api_key.clone()
+        },
+        deepseek_api_key: if patch.deepseek_api_key.is_empty() {
+            existing.deepseek_api_key
+        } else {
+            patch.deepseek_api_key.clone()
+        },
+        language: patch.language,
+        cleanup_style: patch.cleanup_style,
+        hotkey: patch.hotkey.clone(),
+        hotkey_mode: patch.hotkey_mode,
+        audio_device: patch.audio_device,
+        stt_model: patch.stt_model.unwrap_or(existing.stt_model),
+        custom_prompt: patch.custom_prompt.unwrap_or(existing.custom_prompt),
+        profiles: existing.profiles,
+        autostart: patch.autostart.unwrap_or(existing.autostart),
+        whisper_mode: patch.whisper_mode.unwrap_or(existing.whisper_mode),
+        command_hotkey: existing.command_hotkey,
+        openai_api_key: match patch.openai_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.openai_api_key,
+        },
+        anthropic_api_key: match patch.anthropic_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.anthropic_api_key,
+        },
+        openrouter_api_key: match patch.openrouter_api_key {
+            Some(ref k) if !k.is_empty() => k.clone(),
+            _ => existing.openrouter_api_key,
+        },
+        stt_provider: patch.stt_provider.unwrap_or(existing.stt_provider),
+        llm_provider: patch.llm_provider.unwrap_or(existing.llm_provider),
+        // deprecated fields: ignore the incoming values, preserve what was on disk
+        // so old config.json files round-trip cleanly
+        stt_priority: existing.stt_priority,
+        llm_priority: existing.llm_priority,
+        // Build the updated hotkey_slots:
+        // - Slot 0 is always updated from the `hotkey` / `hotkey_mode` parameters
+        //   (backward-compatible with any frontend that doesn't know about slots).
+        // - Slot 1 is updated only when `hotkey_slot2` is supplied; otherwise the
+        //   existing value is preserved so a settings save never silently wipes it.
+        hotkey_slots: {
+            let mut slots = existing.hotkey_slots.clone();
+
+            // Ensure the Vec is at least 2 elements long.
+            while slots.len() < 2 {
+                slots.push(crate::config::HotkeySlot {
+                    hotkey: String::new(),
+                    mode: crate::config::HotkeyMode::Hold,
+                    insert_and_send: false,
+                });
+            }
+
+            // Slot 0 -- always updated from the `hotkey` / `hotkey_mode` params.
+            slots[0].hotkey = patch.hotkey.clone();
+            slots[0].mode = patch.hotkey_mode;
+            if let Some(v) = patch.insert_and_send_slot1 {
+                slots[0].insert_and_send = v;
+            }
+
+            // Slot 1 -- updated only when the caller explicitly passes a value.
+            if let Some(ref h2) = patch.hotkey_slot2 {
+                slots[1].hotkey = h2.clone();
+            }
+            if let Some(ref m2_str) = patch.hotkey_mode_slot2 {
+                slots[1].mode = m2_str.parse().unwrap_or(crate::config::HotkeyMode::Hold);
+            }
+            if let Some(v) = patch.insert_and_send_slot2 {
+                slots[1].insert_and_send = v;
+            }
+
+            slots
+        },
+        output_language: patch.output_language.unwrap_or(existing.output_language),
+        snippets: existing.snippets,
+        voice_notes_hotkey: existing.voice_notes_hotkey,
+        webhook_url: patch.webhook_url.unwrap_or(existing.webhook_url),
+        turso_url: match patch.turso_url {
+            Some(ref u) if !u.is_empty() => u.clone(),
+            Some(ref u) if u.is_empty() => String::new(), // explicitly cleared
+            _ => existing.turso_url,
+        },
+        turso_token: match patch.turso_token {
+            Some(ref t) if !t.is_empty() => t.clone(),
+            _ => existing.turso_token,
+        },
+        device_id: existing.device_id,
+        bubble_size: patch.bubble_size.unwrap_or(existing.bubble_size),
+        bubble_opacity: patch.bubble_opacity.unwrap_or(existing.bubble_opacity),
+        advanced: existing.advanced,
+        local_whisper_model: patch.local_whisper_model.unwrap_or(existing.local_whisper_model),
+        local_whisper_gpu: patch.local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
+        license_key: existing.license_key,
+        license_validated_at: existing.license_validated_at,
+        license_source: existing.license_source,
+        ls_instance_id: existing.ls_instance_id,
+        ls_last_validated_at: existing.ls_last_validated_at,
+        bar_x: existing.bar_x,
+        bar_y: existing.bar_y,
+        insert_and_send: patch.insert_and_send.unwrap_or(existing.insert_and_send),
+        autostop_silence_secs: patch.autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
+        auto_mode_silence_secs: patch.auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
+        bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
+        bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
+        bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
+        bubble_tap_silence_secs: patch.bubble_tap_silence_secs
+            .unwrap_or(existing.bubble_tap_silence_secs),
+        bubble_long_press_mode: patch.bubble_long_press_mode.unwrap_or(existing.bubble_long_press_mode),
+        bubble_long_press_auto_send: patch.bubble_long_press_auto_send
+            .unwrap_or(existing.bubble_long_press_auto_send),
+        bubble_long_press_silence_secs: patch.bubble_long_press_silence_secs
+            .unwrap_or(existing.bubble_long_press_silence_secs),
+        onboarding: existing.onboarding,
+        voice_command_enabled: existing.voice_command_enabled,
+        first_install_at: existing.first_install_at,
+        feedback_webhook_url: existing.feedback_webhook_url,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -212,130 +442,51 @@ pub async fn save_settings(
         }
     }
 
-    // Build updated config. Empty API key strings preserve the existing key
-    // so the user can change other settings without re-entering keys.
+    // Build updated config by delegating to the pure merge function.
+    // Empty API key strings preserve the existing key so the user can change
+    // other settings without re-entering keys.
     let existing = crate::lock!(inner.config)?.clone();
-    let new_cfg = AppConfig {
-        groq_api_key: if groq_api_key.is_empty() {
-            existing.groq_api_key
-        } else {
-            groq_api_key.clone()
-        },
-        deepseek_api_key: if deepseek_api_key.is_empty() {
-            existing.deepseek_api_key
-        } else {
-            deepseek_api_key.clone()
-        },
+    let patch = SettingsPatch {
+        groq_api_key,
+        deepseek_api_key,
         language,
         cleanup_style,
-        hotkey: hotkey.clone(),
+        hotkey,
         hotkey_mode,
         audio_device,
-        stt_model: stt_model.unwrap_or(existing.stt_model),
-        custom_prompt: custom_prompt.unwrap_or(existing.custom_prompt),
-        profiles: existing.profiles,
-        autostart: autostart.unwrap_or(existing.autostart),
-        whisper_mode: whisper_mode.unwrap_or(existing.whisper_mode),
-        command_hotkey: existing.command_hotkey,
-        openai_api_key: match openai_api_key {
-            Some(ref k) if !k.is_empty() => k.clone(),
-            _ => existing.openai_api_key,
-        },
-        anthropic_api_key: match anthropic_api_key {
-            Some(ref k) if !k.is_empty() => k.clone(),
-            _ => existing.anthropic_api_key,
-        },
-        openrouter_api_key: match openrouter_api_key {
-            Some(ref k) if !k.is_empty() => k.clone(),
-            _ => existing.openrouter_api_key,
-        },
-        stt_provider: stt_provider.unwrap_or(existing.stt_provider),
-        llm_provider: llm_provider.unwrap_or(existing.llm_provider),
-        // deprecated fields: ignore the incoming values, preserve what was on disk
-        // so old config.json files round-trip cleanly
-        stt_priority: existing.stt_priority,
-        llm_priority: existing.llm_priority,
-        // Build the updated hotkey_slots:
-        // - Slot 0 is always updated from the `hotkey` / `hotkey_mode` parameters
-        //   (backward-compatible with any frontend that doesn't know about slots).
-        // - Slot 1 is updated only when `hotkey_slot2` is supplied; otherwise the
-        //   existing value is preserved so a settings save never silently wipes it.
-        hotkey_slots: {
-            let mut slots = existing.hotkey_slots.clone();
-
-            // Ensure the Vec is at least 2 elements long.
-            while slots.len() < 2 {
-                slots.push(crate::config::HotkeySlot {
-                    hotkey: String::new(),
-                    mode: crate::config::HotkeyMode::Hold,
-                    insert_and_send: false,
-                });
-            }
-
-            // Slot 0 -- always updated from the `hotkey` / `hotkey_mode` params.
-            slots[0].hotkey = hotkey.clone();
-            slots[0].mode = hotkey_mode;
-            if let Some(v) = insert_and_send_slot1 {
-                slots[0].insert_and_send = v;
-            }
-
-            // Slot 1 -- updated only when the caller explicitly passes a value.
-            if let Some(ref h2) = hotkey_slot2 {
-                slots[1].hotkey = h2.clone();
-            }
-            if let Some(ref m2_str) = hotkey_mode_slot2 {
-                slots[1].mode = m2_str.parse().unwrap_or(crate::config::HotkeyMode::Hold);
-            }
-            if let Some(v) = insert_and_send_slot2 {
-                slots[1].insert_and_send = v;
-            }
-
-            slots
-        },
-        output_language: output_language.unwrap_or(existing.output_language),
-        snippets: existing.snippets,
-        voice_notes_hotkey: existing.voice_notes_hotkey,
-        webhook_url: webhook_url.unwrap_or(existing.webhook_url),
-        turso_url: match turso_url {
-            Some(ref u) if !u.is_empty() => u.clone(),
-            Some(ref u) if u.is_empty() => String::new(), // explicitly cleared
-            _ => existing.turso_url,
-        },
-        turso_token: match turso_token {
-            Some(ref t) if !t.is_empty() => t.clone(),
-            _ => existing.turso_token,
-        },
-        device_id: existing.device_id,
-        bubble_size: bubble_size.unwrap_or(existing.bubble_size),
-        bubble_opacity: bubble_opacity.unwrap_or(existing.bubble_opacity),
-        advanced: existing.advanced,
-        local_whisper_model: local_whisper_model.unwrap_or(existing.local_whisper_model),
-        local_whisper_gpu: local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
-        license_key: existing.license_key,
-        license_validated_at: existing.license_validated_at,
-        license_source: existing.license_source,
-        ls_instance_id: existing.ls_instance_id,
-        ls_last_validated_at: existing.ls_last_validated_at,
-        bar_x: existing.bar_x,
-        bar_y: existing.bar_y,
-        insert_and_send: insert_and_send.unwrap_or(existing.insert_and_send),
-        autostop_silence_secs: autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
-        auto_mode_silence_secs: auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
-        bubble_recording_mode: bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
-        bubble_tap_mode: bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
-        bubble_tap_auto_send: bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
-        bubble_tap_silence_secs: bubble_tap_silence_secs
-            .unwrap_or(existing.bubble_tap_silence_secs),
-        bubble_long_press_mode: bubble_long_press_mode.unwrap_or(existing.bubble_long_press_mode),
-        bubble_long_press_auto_send: bubble_long_press_auto_send
-            .unwrap_or(existing.bubble_long_press_auto_send),
-        bubble_long_press_silence_secs: bubble_long_press_silence_secs
-            .unwrap_or(existing.bubble_long_press_silence_secs),
-        onboarding: existing.onboarding,
-        voice_command_enabled: existing.voice_command_enabled,
-        first_install_at: existing.first_install_at,
-        feedback_webhook_url: existing.feedback_webhook_url,
+        stt_model,
+        custom_prompt,
+        autostart,
+        whisper_mode,
+        openai_api_key,
+        anthropic_api_key,
+        output_language,
+        webhook_url,
+        turso_url,
+        turso_token,
+        bubble_size,
+        bubble_opacity,
+        local_whisper_model,
+        local_whisper_gpu,
+        stt_provider,
+        llm_provider,
+        insert_and_send,
+        autostop_silence_secs,
+        auto_mode_silence_secs,
+        hotkey_slot2,
+        hotkey_mode_slot2,
+        insert_and_send_slot1,
+        insert_and_send_slot2,
+        bubble_recording_mode,
+        bubble_tap_mode,
+        bubble_tap_auto_send,
+        bubble_tap_silence_secs,
+        bubble_long_press_mode,
+        bubble_long_press_auto_send,
+        bubble_long_press_silence_secs,
+        openrouter_api_key,
     };
+    let new_cfg = merge_settings(existing, patch);
 
     // Resolve providers from the new config before persisting.
     let new_stt = resolve_stt_provider(&new_cfg, &inner.app_data_dir);
@@ -845,7 +996,8 @@ pub async fn clear_api_key(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{load_config, save_config, AppConfig};
+    use crate::config::{load_config, save_config, AppConfig, HotkeyMode, HotkeySlot};
+    use crate::llm::CleanupStyle;
 
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().expect("tempdir creation failed")
@@ -1144,5 +1296,421 @@ mod tests {
         assert_eq!(loaded.openai_api_key, "oai_testkey");
         assert_eq!(loaded.anthropic_api_key, "ant_testkey");
         assert_eq!(loaded.openrouter_api_key, "or_testkey");
+    }
+
+    // -----------------------------------------------------------------------
+    // Characterization tests for merge_settings (Task 2.1, Phase 2)
+    //
+    // These tests call the PRODUCTION `merge_settings` function, not a copy.
+    // They characterize the CURRENT behaviour -- anomalies are intentionally
+    // preserved as-is. Each anomaly is named A1-A5 matching the briefing.
+    //
+    // DO NOT correct anomalies here. The purpose is to nail down the existing
+    // behaviour so future refactoring can detect regressions.
+    // -----------------------------------------------------------------------
+
+    use super::{merge_settings, SettingsPatch};
+
+    /// Helper: a non-default `existing` config with all common fields set to
+    /// distinct sentinel values so we can verify which ones survive a patch.
+    fn existing_with_sentinels() -> AppConfig {
+        AppConfig {
+            groq_api_key: "existing-groq".to_string(),
+            deepseek_api_key: "existing-deepseek".to_string(),
+            openai_api_key: "existing-openai".to_string(),
+            anthropic_api_key: "existing-anthropic".to_string(),
+            openrouter_api_key: "existing-openrouter".to_string(),
+            language: "de".to_string(),
+            cleanup_style: CleanupStyle::Verbatim,
+            hotkey: "ctrl+shift+x".to_string(),
+            hotkey_mode: HotkeyMode::Toggle,
+            stt_model: Some("whisper-large-v3".to_string()).unwrap_or_default(),
+            custom_prompt: "existing-prompt".to_string(),
+            autostart: true,
+            whisper_mode: true,
+            output_language: "en".to_string(),
+            webhook_url: "https://existing.webhook".to_string(),
+            turso_url: "libsql://existing.turso.io".to_string(),
+            turso_token: "existing-turso-token".to_string(),
+            bubble_size: 1.5,
+            bubble_opacity: 0.5,
+            local_whisper_model: "base".to_string(),
+            local_whisper_gpu: false,
+            stt_provider: "openai".to_string(),
+            llm_provider: "anthropic".to_string(),
+            insert_and_send: true,
+            autostop_silence_secs: 5.0,
+            auto_mode_silence_secs: 6.0,
+            bubble_recording_mode: "toggle".to_string(),
+            bubble_tap_mode: "autostop".to_string(),
+            bubble_tap_auto_send: true,
+            bubble_tap_silence_secs: 3.0,
+            bubble_long_press_mode: "auto".to_string(),
+            bubble_long_press_auto_send: true,
+            bubble_long_press_silence_secs: 4.0,
+            // Fields never touched by merge_settings:
+            command_hotkey: "ctrl+shift+e".to_string(),
+            voice_notes_hotkey: "ctrl+shift+n".to_string(),
+            device_id: "existing-device-id".to_string(),
+            license_key: "existing-license".to_string(),
+            license_validated_at: 9999,
+            license_source: "hmac".to_string(),
+            ls_instance_id: "existing-ls-id".to_string(),
+            ls_last_validated_at: 8888,
+            bar_x: Some(100.0),
+            bar_y: Some(200.0),
+            hotkey_slots: vec![
+                HotkeySlot { hotkey: "ctrl+shift+x".to_string(), mode: HotkeyMode::Toggle, insert_and_send: false },
+                HotkeySlot { hotkey: "ctrl+shift+y".to_string(), mode: HotkeyMode::Hold, insert_and_send: true },
+            ],
+            ..AppConfig::default()
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Happy Path: fully populated patch replaces all settable fields
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_merge_settings_happy_path_full_patch() {
+        let existing = existing_with_sentinels();
+        let patch = SettingsPatch {
+            groq_api_key: "new-groq".to_string(),
+            deepseek_api_key: "new-deepseek".to_string(),
+            language: "en".to_string(),
+            cleanup_style: CleanupStyle::Chat,
+            hotkey: "ctrl+shift+q".to_string(),
+            hotkey_mode: HotkeyMode::AutoStop,
+            audio_device: Some("Microphone XYZ".to_string()),
+            stt_model: Some("whisper-small".to_string()),
+            custom_prompt: Some("new-prompt".to_string()),
+            autostart: Some(false),
+            whisper_mode: Some(false),
+            openai_api_key: Some("new-openai".to_string()),
+            anthropic_api_key: Some("new-anthropic".to_string()),
+            output_language: Some("de".to_string()),
+            webhook_url: Some("https://new.webhook".to_string()),
+            turso_url: Some("libsql://new.turso.io".to_string()),
+            turso_token: Some("new-turso-token".to_string()),
+            bubble_size: Some(2.0),
+            bubble_opacity: Some(0.9),
+            local_whisper_model: Some("small".to_string()),
+            local_whisper_gpu: Some(true),
+            stt_provider: Some("local".to_string()),
+            llm_provider: Some("deepseek".to_string()),
+            insert_and_send: Some(false),
+            autostop_silence_secs: Some(1.5),
+            auto_mode_silence_secs: Some(2.5),
+            hotkey_slot2: Some("ctrl+shift+z".to_string()),
+            hotkey_mode_slot2: Some("toggle".to_string()),
+            insert_and_send_slot1: Some(true),
+            insert_and_send_slot2: Some(false),
+            bubble_recording_mode: Some("auto".to_string()),
+            bubble_tap_mode: Some("hold".to_string()),
+            bubble_tap_auto_send: Some(false),
+            bubble_tap_silence_secs: Some(1.0),
+            bubble_long_press_mode: Some("toggle".to_string()),
+            bubble_long_press_auto_send: Some(false),
+            bubble_long_press_silence_secs: Some(1.5),
+            openrouter_api_key: Some("new-openrouter".to_string()),
+        };
+
+        let result = merge_settings(existing, patch);
+
+        assert_eq!(result.groq_api_key, "new-groq");
+        assert_eq!(result.deepseek_api_key, "new-deepseek");
+        assert_eq!(result.language, "en");
+        assert_eq!(result.cleanup_style, CleanupStyle::Chat);
+        assert_eq!(result.hotkey, "ctrl+shift+q");
+        assert_eq!(result.hotkey_mode, HotkeyMode::AutoStop);
+        assert_eq!(result.audio_device, Some("Microphone XYZ".to_string()));
+        assert_eq!(result.stt_model, "whisper-small");
+        assert_eq!(result.custom_prompt, "new-prompt");
+        assert!(!result.autostart);
+        assert!(!result.whisper_mode);
+        assert_eq!(result.openai_api_key, "new-openai");
+        assert_eq!(result.anthropic_api_key, "new-anthropic");
+        assert_eq!(result.openrouter_api_key, "new-openrouter");
+        assert_eq!(result.output_language, "de");
+        assert_eq!(result.webhook_url, "https://new.webhook");
+        assert_eq!(result.turso_url, "libsql://new.turso.io");
+        assert_eq!(result.turso_token, "new-turso-token");
+        assert!((result.bubble_size - 2.0).abs() < f32::EPSILON);
+        assert!((result.bubble_opacity - 0.9).abs() < f32::EPSILON);
+        assert_eq!(result.local_whisper_model, "small");
+        assert!(result.local_whisper_gpu);
+        assert_eq!(result.stt_provider, "local");
+        assert_eq!(result.llm_provider, "deepseek");
+        assert!(!result.insert_and_send);
+        assert!((result.autostop_silence_secs - 1.5).abs() < f32::EPSILON);
+        assert!((result.auto_mode_silence_secs - 2.5).abs() < f32::EPSILON);
+        assert_eq!(result.hotkey_slots[0].hotkey, "ctrl+shift+q");
+        assert_eq!(result.hotkey_slots[0].mode, HotkeyMode::AutoStop);
+        assert!(result.hotkey_slots[0].insert_and_send);
+        assert_eq!(result.hotkey_slots[1].hotkey, "ctrl+shift+z");
+        assert_eq!(result.hotkey_slots[1].mode, HotkeyMode::Toggle);
+        assert!(!result.hotkey_slots[1].insert_and_send);
+        assert_eq!(result.bubble_recording_mode, "auto");
+        assert_eq!(result.bubble_tap_mode, "hold");
+        assert!(!result.bubble_tap_auto_send);
+        assert!((result.bubble_tap_silence_secs - 1.0).abs() < f32::EPSILON);
+        assert_eq!(result.bubble_long_press_mode, "toggle");
+        assert!(!result.bubble_long_press_auto_send);
+        assert!((result.bubble_long_press_silence_secs - 1.5).abs() < f32::EPSILON);
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty-Key-Preserve: empty string preserves existing groq/deepseek keys
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_merge_settings_empty_groq_key_preserves_existing() {
+        let existing = AppConfig {
+            groq_api_key: "existing-groq".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            groq_api_key: String::new(), // empty → preserve existing
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        assert_eq!(result.groq_api_key, "existing-groq",
+            "empty groq_api_key in patch must preserve existing key");
+    }
+
+    #[test]
+    fn test_merge_settings_empty_deepseek_key_preserves_existing() {
+        let existing = AppConfig {
+            deepseek_api_key: "existing-deepseek".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            deepseek_api_key: String::new(),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        assert_eq!(result.deepseek_api_key, "existing-deepseek",
+            "empty deepseek_api_key in patch must preserve existing key");
+    }
+
+    /// `Some("")` for openai/anthropic/openrouter preserves existing key
+    /// (match-guard `if !k.is_empty()` falls through to the `_` arm).
+    #[test]
+    fn test_merge_settings_some_empty_optional_key_preserves_existing() {
+        let existing = AppConfig {
+            openai_api_key: "existing-openai".to_string(),
+            anthropic_api_key: "existing-anthropic".to_string(),
+            openrouter_api_key: "existing-openrouter".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            openai_api_key: Some(String::new()),
+            anthropic_api_key: Some(String::new()),
+            openrouter_api_key: Some(String::new()),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        assert_eq!(result.openai_api_key, "existing-openai",
+            "Some(\"\") for openai_api_key must preserve existing key");
+        assert_eq!(result.anthropic_api_key, "existing-anthropic",
+            "Some(\"\") for anthropic_api_key must preserve existing key");
+        assert_eq!(result.openrouter_api_key, "existing-openrouter",
+            "Some(\"\") for openrouter_api_key must preserve existing key");
+    }
+
+    // -----------------------------------------------------------------------
+    // A1: turso_token NOT clearable via Some(""), but turso_url IS
+    // -----------------------------------------------------------------------
+
+    /// A1a: `turso_token: Some("")` falls through to `_ => existing.turso_token`
+    /// (match arm `Some(ref t) if !t.is_empty()` does not match; there is no
+    /// explicit empty-clear arm unlike turso_url). Token is NOT cleared.
+    #[test]
+    fn test_anomaly_a1_turso_token_some_empty_not_clearable() {
+        let existing = AppConfig {
+            turso_token: "existing-token".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            turso_token: Some(String::new()), // intended to clear, but won't
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        // ANOMALY: token is NOT cleared; existing value survives.
+        assert_eq!(result.turso_token, "existing-token",
+            "A1: turso_token Some(\"\") does NOT clear existing token (anomaly, not a bug fix)");
+    }
+
+    /// A1b: `turso_url: Some("")` IS cleared because there is an explicit
+    /// `Some(ref u) if u.is_empty() => String::new()` arm.
+    #[test]
+    fn test_anomaly_a1_turso_url_some_empty_is_clearable() {
+        let existing = AppConfig {
+            turso_url: "libsql://existing.turso.io".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            turso_url: Some(String::new()), // explicitly cleared
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        // Correct (asymmetric from token): url IS cleared.
+        assert_eq!(result.turso_url, "",
+            "A1: turso_url Some(\"\") clears the URL (asymmetric with turso_token)");
+    }
+
+    // -----------------------------------------------------------------------
+    // A2: audio_device overwrites unconditionally (None sets to None)
+    // -----------------------------------------------------------------------
+
+    /// A2: `audio_device: None` in patch sets result to `None`, discarding any
+    /// existing device selection. Unlike `.unwrap_or(existing.X)` fields, this
+    /// field uses direct assignment without a fallback.
+    #[test]
+    fn test_anomaly_a2_audio_device_none_overwrites_existing() {
+        let existing = AppConfig {
+            audio_device: Some("Existing Microphone".to_string()),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            audio_device: None, // no device in patch → wipes existing selection
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        // ANOMALY: existing device is discarded; result is None (system default).
+        assert_eq!(result.audio_device, None,
+            "A2: audio_device=None in patch overwrites existing (no unwrap_or fallback)");
+    }
+
+    // -----------------------------------------------------------------------
+    // A3: hotkey_mode_slot2 unknown string → HotkeyMode::Hold (silent)
+    // -----------------------------------------------------------------------
+
+    /// A3: An unrecognised `hotkey_mode_slot2` string is silently mapped to
+    /// `HotkeyMode::Hold` via `.parse().unwrap_or(HotkeyMode::Hold)`.
+    /// No error is returned to the caller.
+    #[test]
+    fn test_anomaly_a3_hotkey_mode_slot2_unknown_string_becomes_hold() {
+        let existing = AppConfig::default();
+        let patch = SettingsPatch {
+            hotkey: "ctrl+shift+d".to_string(),
+            hotkey_slot2: Some("ctrl+shift+e".to_string()),
+            hotkey_mode_slot2: Some("nonexistent_mode".to_string()), // unknown
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        // ANOMALY: unknown mode is silently swallowed; slot 1 mode = Hold.
+        assert_eq!(result.hotkey_slots[1].mode, HotkeyMode::Hold,
+            "A3: unknown hotkey_mode_slot2 string maps silently to Hold (no error propagated)");
+    }
+
+    // -----------------------------------------------------------------------
+    // A4: fields never touched by merge_settings (always from existing)
+    // -----------------------------------------------------------------------
+
+    /// A4: A fully-populated patch cannot change any of the "read-only-in-merge"
+    /// fields. They always come from `existing`.
+    #[test]
+    fn test_anomaly_a4_non_patchable_fields_always_from_existing() {
+        let existing = existing_with_sentinels();
+        // Patch with all settable fields populated -- does not matter what values
+        // we pick because the fields below are never read from patch.
+        let patch = SettingsPatch::default();
+
+        let result = merge_settings(existing.clone(), patch);
+
+        // These fields must always equal their `existing` values.
+        assert_eq!(result.command_hotkey, existing.command_hotkey,
+            "command_hotkey must come from existing");
+        assert_eq!(result.voice_notes_hotkey, existing.voice_notes_hotkey,
+            "voice_notes_hotkey must come from existing");
+        assert_eq!(result.snippets, existing.snippets,
+            "snippets must come from existing");
+        assert_eq!(result.profiles, existing.profiles,
+            "profiles must come from existing");
+        assert_eq!(result.advanced, existing.advanced,
+            "advanced must come from existing");
+        assert_eq!(result.license_key, existing.license_key,
+            "license_key must come from existing");
+        assert_eq!(result.license_validated_at, existing.license_validated_at,
+            "license_validated_at must come from existing");
+        assert_eq!(result.license_source, existing.license_source,
+            "license_source must come from existing");
+        assert_eq!(result.ls_instance_id, existing.ls_instance_id,
+            "ls_instance_id must come from existing");
+        assert_eq!(result.ls_last_validated_at, existing.ls_last_validated_at,
+            "ls_last_validated_at must come from existing");
+        assert_eq!(result.bar_x, existing.bar_x,
+            "bar_x must come from existing");
+        assert_eq!(result.bar_y, existing.bar_y,
+            "bar_y must come from existing");
+        assert_eq!(result.onboarding, existing.onboarding,
+            "onboarding must come from existing");
+        assert_eq!(result.voice_command_enabled, existing.voice_command_enabled,
+            "voice_command_enabled must come from existing");
+        assert_eq!(result.first_install_at, existing.first_install_at,
+            "first_install_at must come from existing");
+        assert_eq!(result.feedback_webhook_url, existing.feedback_webhook_url,
+            "feedback_webhook_url must come from existing");
+        assert_eq!(result.device_id, existing.device_id,
+            "device_id must come from existing");
+        assert_eq!(result.stt_priority, existing.stt_priority,
+            "stt_priority (deprecated) must come from existing");
+        assert_eq!(result.llm_priority, existing.llm_priority,
+            "llm_priority (deprecated) must come from existing");
+    }
+
+    // -----------------------------------------------------------------------
+    // A5: deprecated global `insert_and_send` is written by merge_settings
+    // -----------------------------------------------------------------------
+
+    /// A5: `merge_settings` still writes the deprecated global `insert_and_send`
+    /// field (Z.321 of the original) via `patch.insert_and_send.unwrap_or(existing)`.
+    ///
+    /// Note: `load_config` has a SEPARATE migration that moves
+    /// `global insert_and_send=true` into slots. That migration is NOT tested
+    /// here (it belongs to config/mod.rs tests). What we test is that the merge
+    /// step itself writes the global flag as-is.
+    #[test]
+    fn test_anomaly_a5_deprecated_global_insert_and_send_is_written() {
+        let existing = AppConfig { insert_and_send: false, ..AppConfig::default() };
+        let patch = SettingsPatch {
+            insert_and_send: Some(true),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        // ANOMALY: deprecated global flag is written by merge_settings.
+        // The load_config migration (out of scope here) will later move it to slots.
+        assert!(result.insert_and_send,
+            "A5: merge_settings writes deprecated global insert_and_send (migration handled by load_config separately)");
+    }
+
+    // -----------------------------------------------------------------------
+    // Slot behaviour: slot 1 only updated when hotkey_slot2 is Some
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_merge_settings_slot1_unchanged_when_hotkey_slot2_is_none() {
+        let existing = AppConfig {
+            hotkey_slots: vec![
+                HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold, insert_and_send: false },
+                HotkeySlot { hotkey: "ctrl+shift+e".to_string(), mode: HotkeyMode::Toggle, insert_and_send: true },
+            ],
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            hotkey: "ctrl+shift+d".to_string(),
+            hotkey_slot2: None, // not provided → slot 1 unchanged
+            hotkey_mode_slot2: None,
+            insert_and_send_slot2: None,
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        assert_eq!(result.hotkey_slots[1].hotkey, "ctrl+shift+e",
+            "slot 1 hotkey must be unchanged when hotkey_slot2 is None");
+        assert_eq!(result.hotkey_slots[1].mode, HotkeyMode::Toggle,
+            "slot 1 mode must be unchanged when hotkey_mode_slot2 is None");
+        assert!(result.hotkey_slots[1].insert_and_send,
+            "slot 1 insert_and_send must be unchanged when insert_and_send_slot2 is None");
     }
 }
