@@ -109,6 +109,30 @@ fn build_local_whisper_provider(cfg: &AppConfig, app_data_dir: &std::path::Path)
     ))
 }
 
+/// Constructs a *network* LLM cleanup provider by name with the given API key.
+///
+/// Shared by [`resolve_cleanup_provider`] (primary selection) and
+/// [`resolve_fallback_provider`] (alternative selection) so the network-provider
+/// construction — including the OpenRouter endpoint/model literals — lives in
+/// ONE place instead of being duplicated across both. `"anthropic"` and
+/// `"local"` are intentionally NOT here: anthropic is never a fallback candidate
+/// and local needs a model path, so both stay special-cased in
+/// `resolve_cleanup_provider`. Unrecognised names fall back to DeepSeek (which
+/// fails at call-time with an auth error), preserving prior behavior.
+fn cleanup_provider_for(name: &str, api_key: &str) -> Arc<dyn CleanupProvider> {
+    match name {
+        "openai" => Arc::new(llm::OpenAiCleanup::new(api_key)),
+        "groq" => Arc::new(llm::GroqCleanup::new(api_key)),
+        "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
+            api_key,
+            "https://openrouter.ai/api/v1/chat/completions",
+            "deepseek/deepseek-chat",
+        )),
+        // "deepseek" and any unrecognised value
+        _ => Arc::new(llm::DeepSeekCleanup::new(api_key)),
+    }
+}
+
 /// Selects the LLM cleanup provider based on `cfg.llm_provider`.
 ///
 /// - `"deepseek"`: DeepSeek API (primary, cheap). Requires `deepseek_api_key`.
@@ -120,14 +144,10 @@ fn build_local_whisper_provider(cfg: &AppConfig, app_data_dir: &std::path::Path)
 /// for unrecognised values, so startup always succeeds.
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
     match cfg.llm_provider.as_str() {
-        "openai" => Arc::new(llm::OpenAiCleanup::new(&cfg.openai_api_key)),
+        "openai" => cleanup_provider_for("openai", &cfg.openai_api_key),
         "anthropic" => Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key)),
-        "groq" => Arc::new(llm::GroqCleanup::new(&cfg.groq_api_key)),
-        "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
-            &cfg.openrouter_api_key,
-            "https://openrouter.ai/api/v1/chat/completions",
-            "deepseek/deepseek-chat",
-        )),
+        "groq" => cleanup_provider_for("groq", &cfg.groq_api_key),
+        "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key),
         #[cfg(target_os = "windows")]
         "local" => {
             let model_dir = std::env::var("APPDATA")
@@ -144,7 +164,7 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             Arc::new(llm::local::LocalLlmCleanup::new(model_path))
         }
         // "deepseek" and any unrecognised value
-        _ => Arc::new(llm::DeepSeekCleanup::new(&cfg.deepseek_api_key)),
+        _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key),
     }
 }
 
@@ -186,17 +206,7 @@ pub fn resolve_fallback_provider(
         if *name == primary_provider || key.is_empty() {
             continue;
         }
-        let provider: Arc<dyn CleanupProvider> = match *name {
-            "groq" => Arc::new(llm::GroqCleanup::new(*key)),
-            "openai" => Arc::new(llm::OpenAiCleanup::new(*key)),
-            "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
-                *key,
-                "https://openrouter.ai/api/v1/chat/completions",
-                "deepseek/deepseek-chat",
-            )),
-            // "deepseek" and any unrecognised value
-            _ => Arc::new(llm::DeepSeekCleanup::new(*key)),
-        };
+        let provider = cleanup_provider_for(name, key);
         return Some((provider, name));
     }
     None
@@ -526,32 +536,45 @@ pub fn select_llm_path(offline: bool, has_selected_text: bool) -> LlmPath {
 pub async fn start_recording_only(handle: AppHandle) {
     let state = handle.state::<AppState>();
 
-    if state.recorder.is_recording() {
-        return;
+    // Re-install the audio level callback BEFORE starting -- start_recording
+    // consumes it via `.take()` on the recording thread. Installing it even if
+    // we lose the gate below is harmless: the slot is overwritten next cycle.
+    #[cfg(desktop)]
+    setup_audio_level_emitter(&handle);
+
+    // The recorder's session lock is the single atomic gate: start_recording
+    // returns Err(AlreadyRecording) if a recording is already active. We rely
+    // on that instead of a racy is_recording() pre-check, so two fast presses
+    // can't both pass a check and then both clobber the foreground-window state
+    // captured below (the "toggle aborts after 30-60 min" desync, Task 2.3).
+    let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
+    match state.recorder.start_recording(device_name.as_deref()) {
+        Ok(()) => {}
+        Err(audio::AudioError::AlreadyRecording) => {
+            // A second press (or the other slot) raced us and lost. Do nothing
+            // observable: no foreground-window clobber, no error event.
+            log::debug!("[hotkey] start_recording_only: already recording, ignoring press");
+            return;
+        }
+        Err(e) => {
+            crate::emit_pipeline_state(
+                &handle,
+                PipelineEvent::error(format!("Failed to start recording: {e}")),
+            );
+            return;
+        }
     }
 
-    // Capture the foreground window BEFORE we start recording.
-    // This is the window the user was typing in -- we'll restore focus to it
-    // before pasting the result.
+    // We won the gate. Capture the foreground window now -- the window the user
+    // was typing in, which we restore focus to before pasting. Capturing here,
+    // a few ms after the device-init gate, still yields the same window: the
+    // user just pressed the hotkey and focus does not change during init.
     if let Ok(mut guard) = state.prev_foreground_hwnd.lock() {
         *guard = capture_foreground_window();
     }
     if let Ok(mut guard) = state.prev_window_title.lock() {
         *guard = capture_foreground_window_title();
         log::debug!("[hotkey] foreground window title: {:?}", *guard);
-    }
-
-    // Re-install the audio level callback before each recording.
-    #[cfg(desktop)]
-    setup_audio_level_emitter(&handle);
-
-    let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
-    if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        crate::emit_pipeline_state(
-            &handle,
-            PipelineEvent::error(format!("Failed to start recording: {e}")),
-        );
-        return;
     }
 
     *match state.recording_start.lock() {

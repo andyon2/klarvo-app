@@ -187,6 +187,32 @@ struct LiveBuffer {
     native_channels: u16,
 }
 
+/// Locks a mutex, recovering from poisoning instead of panicking.
+///
+/// The recorder's state locks (`session`, `monitor_session`, `level_callback`)
+/// are taken on the hotkey hot path; a poison (some thread panicked while
+/// holding the lock) must NOT propagate as a panic that kills the hotkey thread.
+///
+/// Recovering the inner value is sound here because the guarded `Option<…>` is
+/// only ever mutated by atomic `take`/insert (never left
+/// torn) AND the lock-held windows in `start_recording` /
+/// `stop_recording_with_gain` are panic-free between acquiring the guard and
+/// the take/insert. Keep those windows panic-free: if a future change panics
+/// there, a recovered lock could spawn a second recording over an orphaned one
+/// (the structural fix -- moving the reserve off the device-init path -- is a
+/// tracked follow-up).
+///
+/// Emits a `warn!` on EACH recovery -- `into_inner` does not clear the poison
+/// flag -- so the should-never-happen state stays visible rather than silently
+/// defaulting.
+#[cfg(desktop)]
+fn lock_recover<'a, T>(lock: &'a Mutex<T>, label: &str) -> std::sync::MutexGuard<'a, T> {
+    lock.lock().unwrap_or_else(|poisoned| {
+        log::warn!("[audio] {label} lock poisoned -- recovering inner value");
+        poisoned.into_inner()
+    })
+}
+
 impl AudioRecorder {
     /// Creates a new `AudioRecorder`. Does not open any device yet.
     pub fn new() -> Self {
@@ -265,7 +291,7 @@ impl AudioRecorder {
     /// Sets a callback that receives RMS audio levels during recording.
     pub fn set_level_callback(&self, _cb: AudioLevelCallback) {
         #[cfg(desktop)]
-        { *self.level_callback.lock().unwrap() = Some(_cb); }
+        { *lock_recover(&self.level_callback, "level_callback") = Some(_cb); }
     }
 
     /// Opens an input device and begins capturing audio on a background thread.
@@ -275,7 +301,7 @@ impl AudioRecorder {
     /// resumes automatically when `stop_recording_with_gain` is called.
     #[cfg(desktop)]
     pub fn start_recording(&self, device_name: Option<&str>) -> Result<(), AudioError> {
-        let mut guard = self.session.lock().unwrap();
+        let mut guard = lock_recover(&self.session, "session");
         if guard.is_some() {
             return Err(AudioError::AlreadyRecording);
         }
@@ -291,7 +317,7 @@ impl AudioRecorder {
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
         let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<RecordingResult, String>>();
 
-        let level_cb = self.level_callback.lock().unwrap().take();
+        let level_cb = lock_recover(&self.level_callback, "level_callback").take();
 
         // Take the silence config so the recording thread owns it.
         let silence_cfg = self.silence_config.lock().ok().and_then(|mut g| g.take());
@@ -355,7 +381,7 @@ impl AudioRecorder {
     /// so keyword detection continues between dictations.
     #[cfg(desktop)]
     pub fn stop_recording_with_gain(&self, gain: f32) -> Result<Vec<u8>, AudioError> {
-        let mut guard = self.session.lock().unwrap();
+        let mut guard = lock_recover(&self.session, "session");
         let session = guard.take().ok_or(AudioError::NotRecording)?;
 
         let _ = session.stop_tx.send(());
@@ -403,7 +429,7 @@ impl AudioRecorder {
     /// Returns `true` if a recording is currently active.
     pub fn is_recording(&self) -> bool {
         #[cfg(desktop)]
-        { self.session.lock().unwrap().is_some() }
+        { lock_recover(&self.session, "session").is_some() }
         #[cfg(mobile)]
         { false }
     }
@@ -430,7 +456,7 @@ impl AudioRecorder {
         device_name: Option<&str>,
         callback: MonitorCallback,
     ) -> Result<(), AudioError> {
-        let mut guard = self.monitor_session.lock().unwrap();
+        let mut guard = lock_recover(&self.monitor_session, "monitor");
         if guard.is_some() {
             return Err(AudioError::AlreadyMonitoring);
         }
@@ -457,7 +483,7 @@ impl AudioRecorder {
     /// Returns `NotMonitoring` if no monitor is currently running.
     #[cfg(desktop)]
     pub fn stop_monitor(&self) -> Result<(), AudioError> {
-        let mut guard = self.monitor_session.lock().unwrap();
+        let mut guard = lock_recover(&self.monitor_session, "monitor");
         let session = guard.take().ok_or(AudioError::NotMonitoring)?;
         // Signal the monitor thread to exit. Ignore send errors (thread may
         // have already exited due to a device disconnection).
@@ -468,7 +494,7 @@ impl AudioRecorder {
     /// Returns `true` if the monitor stream is currently running.
     pub fn is_monitoring(&self) -> bool {
         #[cfg(desktop)]
-        { self.monitor_session.lock().unwrap().is_some() }
+        { lock_recover(&self.monitor_session, "monitor").is_some() }
         #[cfg(mobile)]
         { false }
     }
@@ -1335,6 +1361,69 @@ mod tests {
             matches!(result, Err(AudioError::NotRecording)),
             "expected NotRecording, got: {result:?}"
         );
+    }
+
+    // --- Task 2.3 characterization net: recorder atomic-reject contract ---
+    // These pin the invariant the hotkey-caller refactor relies on: "the
+    // recorder rejects a 2nd start while one is active". Device-free -- a dummy
+    // session is inserted via throwaway channels, no cpal device involved.
+
+    /// Inserts a dummy recording session so the slot reads `Some` without
+    /// opening a real device. Only slot-occupancy matters for these tests.
+    #[cfg(desktop)]
+    fn insert_dummy_session(recorder: &AudioRecorder) {
+        let (stop_tx, _stop_rx) = std::sync::mpsc::sync_channel::<()>(1);
+        let (_result_tx, result_rx) =
+            std::sync::mpsc::channel::<Result<RecordingResult, String>>();
+        *recorder.session.lock().unwrap() = Some(RecordingSession { stop_tx, result_rx });
+    }
+
+    /// With a session already present, `start_recording` returns
+    /// `AlreadyRecording` and never touches the device -- the `is_some()` check
+    /// short-circuits before the recording thread is spawned.
+    #[cfg(desktop)]
+    #[test]
+    fn test_start_recording_rejected_when_already_recording() {
+        let recorder = AudioRecorder::new();
+        insert_dummy_session(&recorder);
+        let result = recorder.start_recording(None);
+        assert!(
+            matches!(result, Err(AudioError::AlreadyRecording)),
+            "expected AlreadyRecording, got: {result:?}"
+        );
+    }
+
+    /// `is_recording()` tracks slot occupancy: false -> true (session inserted)
+    /// -> false (session cleared).
+    #[cfg(desktop)]
+    #[test]
+    fn test_is_recording_reflects_session_presence() {
+        let recorder = AudioRecorder::new();
+        assert!(!recorder.is_recording());
+        insert_dummy_session(&recorder);
+        assert!(recorder.is_recording());
+        *recorder.session.lock().unwrap() = None;
+        assert!(!recorder.is_recording());
+    }
+
+    /// A poisoned `session` lock must not panic the caller (the hotkey hot
+    /// path). Before Task 2.3 this `.unwrap()`-ed and panicked; now it recovers
+    /// the inner value via `lock_recover`. All six session/monitor lock sites
+    /// route through that one helper, so this is representative. RED before the
+    /// fix, GREEN after.
+    #[cfg(desktop)]
+    #[test]
+    fn test_is_recording_recovers_from_poisoned_lock() {
+        let recorder = Arc::new(AudioRecorder::new());
+        let r2 = Arc::clone(&recorder);
+        // Poison the session lock by panicking while holding the guard.
+        let _ = std::thread::spawn(move || {
+            let _guard = r2.session.lock().unwrap();
+            panic!("intentional panic to poison the session lock");
+        })
+        .join();
+        // Must not panic; recovers the inner value and reports no recording.
+        assert!(!recorder.is_recording());
     }
 
     #[test]
