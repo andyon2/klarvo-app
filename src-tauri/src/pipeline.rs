@@ -861,6 +861,324 @@ pub async fn start_command_mode(handle: AppHandle) {
     let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
 }
 
+// ---------------------------------------------------------------------------
+// process_audio — the STT → guard → LLM → sanitize core (Task 2.2)
+// ---------------------------------------------------------------------------
+//
+// Everything the core needs is snapshotted into `ProcessInput` by the caller
+// (no `AppState`/`AppHandle` crosses in), and every observable side effect is
+// either emitted through `emit` or reported in `ProcessOutcome` for the caller
+// to apply. This makes the core unit-testable with fake providers while the
+// lock/metric/command-mode plumbing stays a thin shell in
+// `stop_and_process_pipeline`.
+
+/// Fully-snapshotted inputs for [`process_audio`]. Built under locks by the
+/// shell; holds no references back into `AppState`.
+pub struct ProcessInput {
+    pub wav_bytes: Vec<u8>,
+    pub language: String,
+    pub stt_provider: Arc<dyn SttProvider>,
+    pub cleanup_provider: Arc<dyn CleanupProvider>,
+    /// STT conditioning prompt (dictionary terms + hint), passed to `transcribe`.
+    pub dict_prompt: Option<String>,
+    /// Hint text alone (no dictionary terms), used by the hallucination guards.
+    pub stt_hint_text: String,
+    pub offline_mode: bool,
+    /// `Some` => command mode (rewrite this selection using the spoken command).
+    pub selected_text: Option<String>,
+    pub cleanup_style: CleanupStyle,
+    pub custom_prompt: Option<String>,
+    /// Pre-formatted (`{:?}`) name of a matched app profile, logged on the
+    /// normal-cleanup path only; `None` when no profile matched.
+    pub matched_profile_name: Option<String>,
+    pub dict_list: Option<String>,
+    pub output_lang: Option<String>,
+    pub llm_provider_name: String,
+    /// Config snapshot used solely to resolve a fallback cleanup provider.
+    pub config_for_fallback: AppConfig,
+}
+
+/// Result of [`process_audio`]. The shell applies the deferred side effects
+/// (metric increments, command-mode consumption) based on which variant
+/// returns; progress/terminal events were already emitted via `emit`.
+#[derive(Debug, PartialEq)]
+pub enum ProcessOutcome {
+    /// Stopped before producing text — a pre-LLM guard skipped it, or STT
+    /// failed (`stt_error`). The command point was NOT reached, so command mode
+    /// is left untouched.
+    Stopped { stt_error: bool },
+    /// Reached the command path but the rewrite failed. The command point WAS
+    /// reached, so command mode should be consumed.
+    CommandFailed,
+    /// Produced text to paste. `llm_error` is `true` when cleanup degraded to
+    /// raw text (the shell bumps the LLM error counter).
+    Produced {
+        cleaned_text: String,
+        raw_text: String,
+        is_command: bool,
+        stt_ms: u64,
+        llm_ms: Option<u64>,
+        prompt_tokens: Option<u32>,
+        completion_tokens: Option<u32>,
+        llm_error: bool,
+    },
+}
+
+/// Builds the user-facing warning shown when LLM cleanup fails and the raw
+/// transcript is pasted instead.
+fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
+    let short_reason = friendly_error("", &err.to_string());
+    format!(
+        "Cleanup failed — raw text inserted.{}",
+        if short_reason.is_empty() {
+            String::new()
+        } else {
+            format!(" {short_reason}")
+        }
+    )
+}
+
+/// Transcribe → strip → hallucination guards → LLM cleanup/command/offline →
+/// sanitize. Emits progress/terminal events through `emit`; returns a
+/// [`ProcessOutcome`] for the shell to act on. No locks, no `AppState`.
+pub async fn process_audio(
+    input: ProcessInput,
+    emit: &mut (dyn FnMut(PipelineEvent) + Send),
+) -> ProcessOutcome {
+    let ProcessInput {
+        wav_bytes,
+        language,
+        stt_provider,
+        cleanup_provider,
+        dict_prompt,
+        stt_hint_text,
+        offline_mode,
+        selected_text,
+        cleanup_style,
+        custom_prompt,
+        matched_profile_name,
+        dict_list,
+        output_lang,
+        llm_provider_name,
+        config_for_fallback,
+    } = input;
+
+    // --- Transcribe ---
+    emit(PipelineEvent::transcribing());
+
+    let stt_start = std::time::Instant::now();
+    let raw_text = match stt_provider
+        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .await
+    {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("[pipeline] STT transcription failed: {e}");
+            emit(PipelineEvent::error(friendly_error(
+                "Transcription failed",
+                &e.to_string(),
+            )));
+            return ProcessOutcome::Stopped { stt_error: true };
+        }
+    };
+    let stt_ms = stt_start.elapsed().as_millis() as u64;
+    log::info!("[pipeline] STT took {}ms", stt_ms);
+
+    log::debug!("[pipeline] raw transcription: {raw_text:?}");
+
+    // --- Strip leaked STT prompt fragments ---
+    // Whisper can embed parts of the conditioning prompt into the transcription
+    // output (e.g. "German and English with proper punctuation." mid-sentence).
+    // Strip these *before* the hallucination guard so the guard sees clean text.
+    let raw_text = {
+        let stripped = strip_prompt_fragments(&raw_text, &stt_hint_text);
+        if stripped != raw_text {
+            log::debug!("[pipeline] stripped prompt fragments from transcription");
+        }
+        stripped
+    };
+
+    // --- Whisper hallucination guards ---
+    // Prompt-echo (Whisper echoes the conditioning prompt) or a known
+    // training-data phrase ("ZDF 2020" / "Thank you for watching"). Both skip.
+    match post_stt_skip(&raw_text, &stt_hint_text) {
+        Some(PostSttSkip::PromptEcho) => {
+            log::info!(
+                "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
+            );
+            emit(PipelineEvent::idle());
+            return ProcessOutcome::Stopped { stt_error: false };
+        }
+        Some(PostSttSkip::Blocklist) => {
+            log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
+            emit(PipelineEvent::idle());
+            return ProcessOutcome::Stopped { stt_error: false };
+        }
+        None => {}
+    }
+
+    // --- LLM step ---
+    // Command Mode still requires an LLM call even offline, so a present
+    // selection wins over the offline flag; only normal offline dictation skips
+    // cleanup entirely. The `cleaning` event fires for every non-offline path.
+    let llm_path = select_llm_path(offline_mode, selected_text.is_some());
+    if !matches!(llm_path, LlmPath::OfflineRaw) {
+        emit(PipelineEvent::cleaning());
+    }
+
+    let mut llm_ms: Option<u64> = None;
+    let mut llm_error = false;
+    let cleanup_result = if matches!(llm_path, LlmPath::OfflineRaw) {
+        // Offline dictation: return raw transcript without any LLM call.
+        log::info!("[pipeline] Offline mode: skipping LLM cleanup");
+        llm::CleanupResult {
+            text: raw_text.clone(),
+            prompt_tokens: None,
+            completion_tokens: None,
+        }
+    } else if let Some(ref sel_text) = selected_text {
+        // Command Mode: rewrite selected text using the voice command
+        log::info!("[pipeline] command mode: rewriting with voice command");
+
+        let cmd_start = std::time::Instant::now();
+        match cleanup_provider.rewrite(sel_text, &raw_text).await {
+            Ok(r) => {
+                llm_ms = Some(cmd_start.elapsed().as_millis() as u64);
+                r
+            }
+            Err(e) => {
+                log::error!("[pipeline] command mode rewrite failed: {e}");
+                emit(PipelineEvent::error(format!("Command mode failed: {e}")));
+                return ProcessOutcome::CommandFailed;
+            }
+        }
+    } else {
+        // Normal dictation: cleanup raw transcription
+        if let Some(name) = &matched_profile_name {
+            log::info!("[pipeline] profile matched: {name}");
+        }
+
+        let cleanup_start = std::time::Instant::now();
+        let primary_result = chunked_cleanup(
+            cleanup_provider.as_ref(),
+            &raw_text,
+            cleanup_style,
+            dict_list.as_deref(),
+            custom_prompt.as_deref(),
+            output_lang.as_deref(),
+        )
+        .await;
+
+        match primary_result {
+            Ok(r) => {
+                let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+                llm_ms = Some(cleanup_ms);
+                log::info!(
+                    "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
+                    cleanup_ms,
+                    llm_provider_name,
+                    cleanup_style,
+                    raw_text.len()
+                );
+                r
+            }
+            Err(ref primary_err) if is_retryable_llm_error(primary_err) => {
+                // 429 or 5xx: try a fallback provider before giving up.
+                let fallback = resolve_fallback_provider(&config_for_fallback, &llm_provider_name);
+
+                if let Some((fallback_provider, fallback_name)) = fallback {
+                    log::info!(
+                        "[pipeline] Primary LLM provider {} failed ({primary_err}), trying fallback: {fallback_name}",
+                        llm_provider_name
+                    );
+                    match chunked_cleanup(
+                        fallback_provider.as_ref(),
+                        &raw_text,
+                        cleanup_style,
+                        dict_list.as_deref(),
+                        custom_prompt.as_deref(),
+                        output_lang.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(r) => {
+                            let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
+                            llm_ms = Some(cleanup_ms);
+                            log::info!(
+                                "[pipeline] Primary LLM provider failed ({}), fallback to {} succeeded ({}ms)",
+                                primary_err,
+                                fallback_name,
+                                cleanup_ms
+                            );
+                            r
+                        }
+                        Err(ref fallback_err) => {
+                            log::warn!(
+                                "[pipeline] Primary ({primary_err}) and fallback ({fallback_err}) both failed, using raw text"
+                            );
+                            llm_error = true;
+                            emit(PipelineEvent::warn(degrade_warn_msg(fallback_err)));
+                            llm::CleanupResult {
+                                text: raw_text.clone(),
+                                prompt_tokens: None,
+                                completion_tokens: None,
+                            }
+                        }
+                    }
+                } else {
+                    log::warn!(
+                        "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
+                    );
+                    llm_error = true;
+                    emit(PipelineEvent::warn(degrade_warn_msg(primary_err)));
+                    llm::CleanupResult {
+                        text: raw_text.clone(),
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                    }
+                }
+            }
+            Err(ref e) => {
+                // Non-retryable error (400, 401, 403, …): degrade immediately.
+                log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
+                llm_error = true;
+                emit(PipelineEvent::warn(degrade_warn_msg(e)));
+                llm::CleanupResult {
+                    text: raw_text.clone(),
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                }
+            }
+        }
+    };
+
+    let is_command = selected_text.is_some();
+    let cleaned_text = sanitize_llm_output(&cleanup_result.text);
+    log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
+
+    ProcessOutcome::Produced {
+        cleaned_text,
+        raw_text,
+        is_command,
+        stt_ms,
+        llm_ms,
+        prompt_tokens: cleanup_result.prompt_tokens,
+        completion_tokens: cleanup_result.completion_tokens,
+        llm_error,
+    }
+}
+
+/// Resets command mode: clears the active flag and discards any stored
+/// selection. Called once the pipeline has consumed (or failed) a command.
+fn consume_command_mode(state: &AppState) {
+    if let Ok(mut g) = state.command_mode_active.lock() {
+        *g = false;
+    }
+    if let Ok(mut g) = state.command_mode_selected_text.lock() {
+        let _ = g.take();
+    }
+}
+
 /// Stops the active recording and runs the full STT → LLM → paste pipeline.
 ///
 /// Does nothing (returns silently) if no recording is active.
@@ -904,6 +1222,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let wav_bytes = match state.recorder.stop_recording_with_gain(gain) {
         Ok(bytes) => bytes,
         Err(e) => {
+            log::error!("[pipeline] failed to stop recording: {e}");
             let _ = handle.emit(
                 EVENT_STATE_CHANGED,
                 PipelineEvent::error(format!("Failed to stop recording: {e}")),
@@ -964,8 +1283,14 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         None => {}
     }
 
-    // --- Collect config + dictionary (release locks before await points) ---
-    let (language, stt_provider, cleanup_provider, dict_prompt, offline_mode, stt_hint_text) = {
+    // --- Snapshot every input the core needs, releasing all locks before the
+    // await points inside process_audio (no AppState/AppHandle crosses in). ---
+    // `language` and `is_command_mode` are kept as shell-scope vars: the shell
+    // still needs them after the core returns (history entry / command-mode
+    // consumption gate).
+    let language;
+    let is_command_mode;
+    let process_input = {
         let cfg = match state.config.lock() {
             Ok(g) => g.clone(),
             Err(e) => {
@@ -1023,14 +1348,14 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             }
             _ => None,
         };
-        let prompt = stt::build_stt_prompt_with_hint(
+        let dict_prompt = stt::build_stt_prompt_with_hint(
             dict_terms.as_deref(),
             &cfg.language,
             stt_hint.as_deref(),
         );
 
         // Keep the hint text (without dictionary terms) for hallucination detection.
-        let hint_for_check = stt_hint.unwrap_or_else(|| match cfg.language.as_str() {
+        let stt_hint_text = stt_hint.unwrap_or_else(|| match cfg.language.as_str() {
             "de" => "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.".to_string(),
             "en" => "Voice dictation in English. Proper punctuation, capitalization, and spelling.".to_string(),
             _ => "Multilingual voice dictation. German and English with proper punctuation.".to_string(),
@@ -1042,160 +1367,56 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         // runs offline via llama.cpp — no internet needed.
         let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
 
-        (cfg.language.clone(), stt_prov, cleanup_prov, prompt, offline, hint_for_check)
-    };
-
-    // --- Transcribe ---
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::transcribing());
-
-    let pipeline_start = std::time::Instant::now();
-    let stt_start = std::time::Instant::now();
-    let raw_text = match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
-        .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            // Increment STT error counter before returning.
-            if let Ok(mut m) = state.feedback_metrics.lock() {
-                m.stt_error_count = m.stt_error_count.saturating_add(1);
-            }
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error(friendly_error("Transcription failed", &e.to_string())),
-            );
-            return;
-        }
-    };
-    let stt_ms = stt_start.elapsed().as_millis() as u64;
-    log::info!("[pipeline] STT took {}ms", stt_ms);
-
-    log::debug!("[pipeline] raw transcription: {raw_text:?}");
-
-    // --- Strip leaked STT prompt fragments ---
-    // Whisper can embed parts of the conditioning prompt into the transcription
-    // output (e.g. "German and English with proper punctuation." mid-sentence).
-    // Strip these *before* the hallucination guard so the guard sees clean text.
-    let raw_text = {
-        let stripped = strip_prompt_fragments(&raw_text, &stt_hint_text);
-        if stripped != raw_text {
-            log::debug!("[pipeline] stripped prompt fragments from transcription");
-        }
-        stripped
-    };
-
-    // --- Whisper hallucination guards ---
-    // Whisper sometimes echoes the conditioning prompt instead of transcribing
-    // actual speech (prompt-echo), or emits known training-data phrases like
-    // "ZDF 2020" / "Thank you for watching" (blocklist). Both are skipped here.
-    match post_stt_skip(&raw_text, &stt_hint_text) {
-        Some(PostSttSkip::PromptEcho) => {
-            log::info!(
-                "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
-            );
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-            return;
-        }
-        Some(PostSttSkip::Blocklist) => {
-            log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
-            return;
-        }
-        None => {}
-    }
-
-    // --- Check Command Mode ---
-    let is_command_mode = state
-        .command_mode_active
-        .lock()
-        .ok()
-        .map(|g| *g)
-        .unwrap_or(false);
-    let selected_text = if is_command_mode {
-        // Reset command mode flags
-        if let Ok(mut guard) = state.command_mode_active.lock() {
-            *guard = false;
-        }
-        state
-            .command_mode_selected_text
+        // Command Mode: peek the flag and clone the selection WITHOUT resetting.
+        // The reset/take is deferred to after process_audio returns, gated on
+        // whether it reached the command point — preserving the original
+        // ordering where a hallucinated command leaves the flag set.
+        is_command_mode = state
+            .command_mode_active
             .lock()
             .ok()
-            .and_then(|mut g| g.take())
-    } else {
-        None
-    };
+            .map(|g| *g)
+            .unwrap_or(false);
+        let selected_text = if is_command_mode {
+            state
+                .command_mode_selected_text
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+        } else {
+            None
+        };
 
-    // --- LLM step ---
-    // Command Mode still requires an LLM call even offline, so a present
-    // selection wins over the offline flag; only normal offline dictation skips
-    // cleanup entirely. The `cleaning` event fires for every non-offline path.
-    let llm_path = select_llm_path(offline_mode, selected_text.is_some());
-    if !matches!(llm_path, LlmPath::OfflineRaw) {
-        let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::cleaning());
-    }
-
-    let mut llm_ms: Option<u64> = None;
-    let cleanup_result = if matches!(llm_path, LlmPath::OfflineRaw) {
-        // Offline dictation: return raw transcript without any LLM call.
-        log::info!("[pipeline] Offline mode: skipping LLM cleanup");
-        llm::CleanupResult {
-            text: raw_text.clone(),
-            prompt_tokens: None,
-            completion_tokens: None,
-        }
-    } else if let Some(ref sel_text) = selected_text {
-        // Command Mode: rewrite selected text using the voice command
-        log::info!("[pipeline] command mode: rewriting with voice command");
-
-        let cmd_start = std::time::Instant::now();
-        match cleanup_provider.rewrite(sel_text, &raw_text).await {
-            Ok(r) => {
-                llm_ms = Some(cmd_start.elapsed().as_millis() as u64);
-                r
-            }
-            Err(e) => {
-                if let Ok(mut m) = state.feedback_metrics.lock() {
-                    m.llm_error_count = m.llm_error_count.saturating_add(1);
-                }
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error(format!("Command mode failed: {e}")),
-                );
-                return;
-            }
-        }
-    } else {
-        // Normal dictation: cleanup raw transcription
-        let (style, custom_prompt, llm_provider_name) = {
-            match state.config.lock() {
-                Ok(g) => {
-                    let provider_name = g.llm_provider.clone();
-                    let prev_title = state.prev_window_title.lock().ok().and_then(|t| t.clone());
-                    let matched = prev_title.as_deref().and_then(|title| {
-                        let title_lower = title.to_lowercase();
-                        g.profiles.iter().find(|p| {
-                            !p.app_pattern.is_empty()
-                                && title_lower.contains(&p.app_pattern.to_lowercase())
-                        })
-                    });
-                    if let Some(profile) = matched {
-                        log::info!("[pipeline] profile matched: {:?}", profile.name);
-                        let prompt = if profile.custom_prompt.is_empty() {
-                            let p = g.custom_prompt.clone();
-                            if p.is_empty() { None } else { Some(p) }
-                        } else {
-                            Some(profile.custom_prompt.clone())
-                        };
-                        (profile.cleanup_style, prompt, provider_name)
-                    } else {
-                        (g.cleanup_style, {
-                            let p = g.custom_prompt.clone();
-                            if p.is_empty() { None } else { Some(p) }
-                        }, provider_name)
-                    }
-                }
-                Err(_) => (CleanupStyle::Polished, None, "unknown".to_string()),
-            }
+        // Cleanup parameters (used only on the normal-dictation path), resolved
+        // from this same cfg snapshot. The "profile matched" log is deferred to
+        // process_audio so it only fires when cleanup actually runs.
+        let llm_provider_name = cfg.llm_provider.clone();
+        let prev_title = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+        let matched = prev_title.as_deref().and_then(|title| {
+            let title_lower = title.to_lowercase();
+            cfg.profiles.iter().find(|p| {
+                !p.app_pattern.is_empty() && title_lower.contains(&p.app_pattern.to_lowercase())
+            })
+        });
+        let (cleanup_style, custom_prompt, matched_profile_name) = if let Some(profile) = matched {
+            let prompt = if profile.custom_prompt.is_empty() {
+                let p = cfg.custom_prompt.clone();
+                if p.is_empty() { None } else { Some(p) }
+            } else {
+                Some(profile.custom_prompt.clone())
+            };
+            (
+                profile.cleanup_style,
+                prompt,
+                Some(format!("{:?}", profile.name)),
+            )
+        } else {
+            let p = cfg.custom_prompt.clone();
+            (
+                cfg.cleanup_style,
+                if p.is_empty() { None } else { Some(p) },
+                None,
+            )
         };
 
         let dict_list = match state.dictionary.lock() {
@@ -1206,125 +1427,93 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Err(_) => None,
         };
 
-        let output_lang = state
-            .config
-            .lock()
-            .ok()
-            .map(|c| c.output_language.clone())
-            .unwrap_or_default();
-        let output_lang_opt = if output_lang.is_empty() {
+        let output_lang = if cfg.output_language.is_empty() {
             None
         } else {
-            Some(output_lang.as_str())
+            Some(cfg.output_language.clone())
         };
 
-        let cleanup_start = std::time::Instant::now();
-        let primary_result = chunked_cleanup(
-            cleanup_provider.as_ref(),
-            &raw_text,
-            style,
-            dict_list.as_deref(),
-            custom_prompt.as_deref(),
-            output_lang_opt,
-        )
-        .await;
+        language = cfg.language.clone();
 
-        // Helper: degrade to raw text when LLM cleanup fails.
-        // Increments error counter, emits a warning event, and returns raw text.
-        let degrade_to_raw = |err: &dyn std::fmt::Display| {
-            if let Ok(mut m) = state.feedback_metrics.lock() {
-                m.llm_error_count = m.llm_error_count.saturating_add(1);
-            }
-            let short_reason = friendly_error("", &err.to_string());
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::warn(format!(
-                    "Cleanup failed — raw text inserted.{}",
-                    if short_reason.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {short_reason}")
-                    }
-                )),
-            );
-            llm::CleanupResult {
-                text: raw_text.clone(),
-                prompt_tokens: None,
-                completion_tokens: None,
-            }
-        };
-
-        match primary_result {
-            Ok(r) => {
-                let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
-                llm_ms = Some(cleanup_ms);
-                log::info!(
-                    "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
-                    cleanup_ms,
-                    llm_provider_name,
-                    style,
-                    raw_text.len()
-                );
-                r
-            }
-            Err(ref primary_err) if is_retryable_llm_error(primary_err) => {
-                // 429 or 5xx: try a fallback provider before giving up.
-                let cfg_snapshot = state.config.lock().ok().map(|g| g.clone());
-                let fallback = cfg_snapshot
-                    .as_ref()
-                    .and_then(|c| resolve_fallback_provider(c, &llm_provider_name));
-
-                if let Some((fallback_provider, fallback_name)) = fallback {
-                    log::info!(
-                        "[pipeline] Primary LLM provider {} failed ({primary_err}), trying fallback: {fallback_name}",
-                        llm_provider_name
-                    );
-                    match chunked_cleanup(
-                        fallback_provider.as_ref(),
-                        &raw_text,
-                        style,
-                        dict_list.as_deref(),
-                        custom_prompt.as_deref(),
-                        output_lang_opt,
-                    )
-                    .await
-                    {
-                        Ok(r) => {
-                            let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
-                            llm_ms = Some(cleanup_ms);
-                            log::info!(
-                                "[pipeline] Primary LLM provider failed ({}), fallback to {} succeeded ({}ms)",
-                                primary_err,
-                                fallback_name,
-                                cleanup_ms
-                            );
-                            r
-                        }
-                        Err(ref fallback_err) => {
-                            log::warn!(
-                                "[pipeline] Primary ({primary_err}) and fallback ({fallback_err}) both failed, using raw text"
-                            );
-                            degrade_to_raw(fallback_err)
-                        }
-                    }
-                } else {
-                    log::warn!(
-                        "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
-                    );
-                    degrade_to_raw(primary_err)
-                }
-            }
-            Err(ref e) => {
-                // Non-retryable error (400, 401, 403, …): degrade immediately.
-                log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
-                degrade_to_raw(e)
-            }
+        ProcessInput {
+            wav_bytes,
+            language: cfg.language.clone(),
+            stt_provider: stt_prov,
+            cleanup_provider: cleanup_prov,
+            dict_prompt,
+            stt_hint_text,
+            offline_mode: offline,
+            selected_text,
+            cleanup_style,
+            custom_prompt,
+            matched_profile_name,
+            dict_list,
+            output_lang,
+            llm_provider_name,
+            config_for_fallback: cfg,
         }
     };
 
-    let is_command = selected_text.is_some();
-    let cleaned_text = sanitize_llm_output(&cleanup_result.text);
-    log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
+    // --- Run the STT -> guard -> LLM -> sanitize core (no locks held) ---
+    let pipeline_start = std::time::Instant::now();
+    let outcome = {
+        let mut emit = |ev| {
+            let _ = handle.emit(EVENT_STATE_CHANGED, ev);
+        };
+        process_audio(process_input, &mut emit).await
+    };
+
+    // --- Apply the side effects the core deferred: metric deltas + command-mode
+    // consumption. Command mode is consumed (flag reset, selection cleared) only
+    // when the core reached the command point (Produced / CommandFailed),
+    // matching the original guard-before-reset ordering. Progress/terminal
+    // events were already emitted by process_audio. ---
+    let (cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens) =
+        match outcome {
+            ProcessOutcome::Stopped { stt_error } => {
+                if stt_error {
+                    if let Ok(mut m) = state.feedback_metrics.lock() {
+                        m.stt_error_count = m.stt_error_count.saturating_add(1);
+                    }
+                }
+                return;
+            }
+            ProcessOutcome::CommandFailed => {
+                if let Ok(mut m) = state.feedback_metrics.lock() {
+                    m.llm_error_count = m.llm_error_count.saturating_add(1);
+                }
+                consume_command_mode(&state);
+                return;
+            }
+            ProcessOutcome::Produced {
+                cleaned_text,
+                raw_text,
+                is_command,
+                stt_ms,
+                llm_ms,
+                prompt_tokens,
+                completion_tokens,
+                llm_error,
+            } => {
+                if llm_error {
+                    if let Ok(mut m) = state.feedback_metrics.lock() {
+                        m.llm_error_count = m.llm_error_count.saturating_add(1);
+                    }
+                }
+                if is_command_mode {
+                    consume_command_mode(&state);
+                }
+                (
+                    cleaned_text,
+                    raw_text,
+                    is_command,
+                    stt_ms,
+                    llm_ms,
+                    prompt_tokens,
+                    completion_tokens,
+                )
+            }
+        };
 
     // --- Record usage ---
     if let Ok(db) = state.history_db.lock() {
@@ -1352,15 +1541,15 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             log::warn!("[pipeline] Failed to record STT usage: {e}");
         }
         // LLM cost: DeepSeek input=$0.27/1M, output=$1.10/1M tokens
-        let llm_cost = (cleanup_result.prompt_tokens.unwrap_or(0) as f64 * 0.27
-            + cleanup_result.completion_tokens.unwrap_or(0) as f64 * 1.10)
+        let llm_cost = (prompt_tokens.unwrap_or(0) as f64 * 0.27
+            + completion_tokens.unwrap_or(0) as f64 * 1.10)
             / 1_000_000.0;
         if let Err(e) = history::record_usage(
             &db,
             "deepseek_cleanup",
             None,
-            cleanup_result.prompt_tokens,
-            cleanup_result.completion_tokens,
+            prompt_tokens,
+            completion_tokens,
             llm_cost,
         ) {
             log::warn!("[pipeline] Failed to record LLM usage: {e}");
@@ -2117,6 +2306,330 @@ mod tests {
         }
 
         insta::assert_snapshot!(out);
+    }
+
+    // -----------------------------------------------------------------------
+    // process_audio (Task 2.2 extraction): run end-to-end with fake providers
+    // and a capturing emitter. Pins the I/O matrix from the spec — the core is
+    // now unit-testable without a Tauri AppHandle.
+    // -----------------------------------------------------------------------
+
+    use crate::hotkey::PipelineState;
+
+    /// Fake STT: returns a fixed transcript, or an API error.
+    struct FakeStt(Result<String, ()>);
+
+    #[async_trait::async_trait]
+    impl SttProvider for FakeStt {
+        async fn transcribe(
+            &self,
+            _audio: Vec<u8>,
+            _language: &str,
+            _prompt: Option<&str>,
+        ) -> Result<String, stt::SttError> {
+            match &self.0 {
+                Ok(t) => Ok(t.clone()),
+                Err(()) => Err(stt::SttError::ApiError {
+                    status: 500,
+                    message: "stt boom".to_string(),
+                }),
+            }
+        }
+    }
+
+    enum CleanupBehavior {
+        Ok(String),
+        Retryable,
+        NonRetryable,
+    }
+
+    /// Fake cleanup provider: controls both the cleanup and rewrite outcomes.
+    struct FakeCleanup {
+        cleanup: CleanupBehavior,
+        rewrite: Result<String, ()>,
+    }
+
+    #[async_trait::async_trait]
+    impl CleanupProvider for FakeCleanup {
+        async fn cleanup(
+            &self,
+            _raw_text: &str,
+            _style: CleanupStyle,
+            _dictionary_terms: Option<&str>,
+            _custom_prompt: Option<&str>,
+        ) -> Result<llm::CleanupResult, llm::LlmError> {
+            match &self.cleanup {
+                CleanupBehavior::Ok(t) => Ok(llm::CleanupResult {
+                    text: t.clone(),
+                    prompt_tokens: Some(7),
+                    completion_tokens: Some(3),
+                }),
+                CleanupBehavior::Retryable => Err(llm::LlmError::ApiError {
+                    status: 429,
+                    message: "rate limit".to_string(),
+                }),
+                CleanupBehavior::NonRetryable => {
+                    Err(llm::LlmError::ResponseFormat("bad request".to_string()))
+                }
+            }
+        }
+
+        async fn rewrite(
+            &self,
+            _selected_text: &str,
+            _voice_command: &str,
+        ) -> Result<llm::CleanupResult, llm::LlmError> {
+            match &self.rewrite {
+                Ok(t) => Ok(llm::CleanupResult {
+                    text: t.clone(),
+                    prompt_tokens: Some(2),
+                    completion_tokens: Some(1),
+                }),
+                Err(()) => Err(llm::LlmError::ResponseFormat("rewrite boom".to_string())),
+            }
+        }
+    }
+
+    const REAL_SPEECH: &str = "Please send me the report by Friday";
+
+    fn make_input(stt: FakeStt, cleanup: FakeCleanup) -> ProcessInput {
+        ProcessInput {
+            wav_bytes: vec![0u8; 16],
+            language: "en".to_string(),
+            stt_provider: Arc::new(stt),
+            cleanup_provider: Arc::new(cleanup),
+            dict_prompt: None,
+            stt_hint_text: TEST_STT_HINT.to_string(),
+            offline_mode: false,
+            selected_text: None,
+            cleanup_style: CleanupStyle::Polished,
+            custom_prompt: None,
+            matched_profile_name: None,
+            dict_list: None,
+            output_lang: None,
+            llm_provider_name: "deepseek".to_string(),
+            config_for_fallback: AppConfig::default(),
+        }
+    }
+
+    /// Runs `process_audio`, returning the outcome and the emitted event states.
+    async fn run(input: ProcessInput) -> (ProcessOutcome, Vec<PipelineState>) {
+        let mut events: Vec<PipelineState> = Vec::new();
+        let outcome = {
+            let mut emit = |ev: PipelineEvent| events.push(ev.state);
+            process_audio(input, &mut emit).await
+        };
+        (outcome, events)
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_normal_cleanup() {
+        let input = make_input(
+            FakeStt(Ok(REAL_SPEECH.to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("Cleaned text.".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![PipelineState::Transcribing, PipelineState::Cleaning]
+        );
+        match outcome {
+            ProcessOutcome::Produced {
+                cleaned_text,
+                is_command,
+                llm_ms,
+                prompt_tokens,
+                completion_tokens,
+                llm_error,
+                ..
+            } => {
+                assert_eq!(cleaned_text, sanitize_llm_output("Cleaned text."));
+                assert!(!is_command);
+                assert!(llm_ms.is_some());
+                assert_eq!(prompt_tokens, Some(7));
+                assert_eq!(completion_tokens, Some(3));
+                assert!(!llm_error);
+            }
+            other => panic!("expected Produced, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_offline_skips_llm() {
+        let mut input = make_input(
+            FakeStt(Ok(REAL_SPEECH.to_string())),
+            // Cleanup would error if called — it must NOT be on the offline path.
+            FakeCleanup {
+                cleanup: CleanupBehavior::NonRetryable,
+                rewrite: Err(()),
+            },
+        );
+        input.offline_mode = true;
+        let (outcome, events) = run(input).await;
+        assert_eq!(events, vec![PipelineState::Transcribing]); // no Cleaning
+        match outcome {
+            ProcessOutcome::Produced {
+                cleaned_text,
+                raw_text,
+                is_command,
+                llm_ms,
+                prompt_tokens,
+                completion_tokens,
+                llm_error,
+                ..
+            } => {
+                assert_eq!(cleaned_text, sanitize_llm_output(&raw_text));
+                assert!(!is_command);
+                assert_eq!(llm_ms, None);
+                assert_eq!(prompt_tokens, None);
+                assert_eq!(completion_tokens, None);
+                assert!(!llm_error);
+            }
+            other => panic!("expected Produced, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_command_mode() {
+        let mut input = make_input(
+            FakeStt(Ok("make it formal".to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::NonRetryable,
+                rewrite: Ok("Formal rewrite.".to_string()),
+            },
+        );
+        input.selected_text = Some("hey there".to_string());
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![PipelineState::Transcribing, PipelineState::Cleaning]
+        );
+        match outcome {
+            ProcessOutcome::Produced {
+                cleaned_text,
+                is_command,
+                prompt_tokens,
+                ..
+            } => {
+                assert_eq!(cleaned_text, sanitize_llm_output("Formal rewrite."));
+                assert!(is_command);
+                assert_eq!(prompt_tokens, Some(2));
+            }
+            other => panic!("expected Produced, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_command_failure() {
+        let mut input = make_input(
+            FakeStt(Ok("make it formal".to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("unused".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        input.selected_text = Some("hey there".to_string());
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![
+                PipelineState::Transcribing,
+                PipelineState::Cleaning,
+                PipelineState::Error
+            ]
+        );
+        assert_eq!(outcome, ProcessOutcome::CommandFailed);
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_stt_failure() {
+        let input = make_input(
+            FakeStt(Err(())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("unused".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_blocklist_hallucination_skips() {
+        let input = make_input(
+            FakeStt(Ok("Thank you for watching".to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("unused".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Idle]);
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false });
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_nonretryable_degrades_to_raw() {
+        let input = make_input(
+            FakeStt(Ok(REAL_SPEECH.to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::NonRetryable,
+                rewrite: Err(()),
+            },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![
+                PipelineState::Transcribing,
+                PipelineState::Cleaning,
+                PipelineState::Warning
+            ]
+        );
+        match outcome {
+            ProcessOutcome::Produced {
+                cleaned_text,
+                raw_text,
+                llm_error,
+                prompt_tokens,
+                ..
+            } => {
+                assert!(llm_error);
+                assert_eq!(cleaned_text, sanitize_llm_output(&raw_text));
+                assert_eq!(prompt_tokens, None);
+            }
+            other => panic!("expected Produced, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_audio_retryable_no_fallback_degrades() {
+        // Default AppConfig has no API keys, so resolve_fallback_provider returns
+        // None and the pipeline degrades to raw without building a real provider.
+        let input = make_input(
+            FakeStt(Ok(REAL_SPEECH.to_string())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Retryable,
+                rewrite: Err(()),
+            },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![
+                PipelineState::Transcribing,
+                PipelineState::Cleaning,
+                PipelineState::Warning
+            ]
+        );
+        match outcome {
+            ProcessOutcome::Produced { llm_error, .. } => assert!(llm_error),
+            other => panic!("expected Produced, got {other:?}"),
+        }
     }
 
     /// `resolve_stt_provider` for "groq" returns a GroqWhisper instance.
