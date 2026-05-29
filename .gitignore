@@ -50,3 +50,9 @@ models/
 voxlit-debug.keystore
 .dev-keys/
 src-tauri/null
+
+# Agent framework + cache (large / transient; never commit)
+_bmad/
+.claude/
+shells/
+_bmad-output/runtime/

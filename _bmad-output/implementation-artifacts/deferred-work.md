@@ -1,0 +1,15 @@
+# Deferred Work
+
+Follow-ups surfaced during quick-dev runs but deliberately out of the current scope.
+
+## From Task 2.2 (pipeline decision extract), review iteration 1 — 2026-05-29
+
+- **Command-mode selection hold-window micro-delta.** After the extraction, `command_mode_active` / `command_mode_selected_text` are PEEKED+cloned before STT and only reset/`take`-n ("consumed") after `process_audio` returns. This preserves the *reset timing* (still after the post-STT guards) but widens the window during which `command_mode_selected_text` still holds its value (OLD `take()`-d it at the command point, before the LLM rewrite). Unobservable today: the `is_recording()` guard plus `start_command_mode`'s early-return-while-recording prevent re-entrancy during the window. Worth revisiting when command mode / the `is_recording` race is hardened (Task 2.3-adjacent) — ideally model command-mode state as an owned transition rather than two loosely-correlated flags. Source: `spec-2-2-pipeline-decision-extract.md` review iteration 1 (edge-case + blind reviewers).
+
+## From Task 2.3 (is_recording race + session-lock poison), review iteration 1 — 2026-05-29
+
+Surfaced by the edge-case reviewer; out of the spec's declared scope (session/monitor locks only). All in `src-tauri/src/audio/mod.rs` unless noted.
+
+- ~~**Extend poison-recovery to `level_callback`.**~~ DONE 2026-05-30 (pulled forward right after 2.3): both `level_callback.lock().unwrap()` sites (`set_level_callback`, `start_recording`'s `.take()`) now route through `lock_recover`. `silence_config`/`live_buffer` already used `.lock().ok()` (nothing to do). The recorder's hot-path state locks are now uniformly poison-recovering.
+- **Decouple the recording-start claim from device init (the deferred `SessionSlot` reserve refactor).** `start_recording` holds the `session` guard across the spawn + blocking `ready_rx.recv()` device-init window (audio/mod.rs ~294→349). This is atomic but (a) makes `is_recording()` block during init, and (b) means `lock_recover`'s recovery is only sound while that window stays panic-free — a panic there could leave an orphaned recording thread, then a recovered lock spawns a second one. Fix: acquire/commit the session slot *after* `ready_rx.recv()` (or an `Idle/Starting/Active` reserve state), so no lock is held across device I/O. This is the `SessionSlot` rewrite deliberately deferred in `spec-2-3-is-recording-race.md` Design Notes. Severity: medium (latent — no panic source in the window today). Source: edge-case reviewer Finding 3.
+- **Stale `recording_start = Some` window.** `start_recording_only` sets `recording_start` after the gate; if the task is interrupted/panics between gate-win and that write (e.g. in the bar-recreation block), the recorder is `Some`/recording while `recording_start` is `None`, so a later `stop_and_process_pipeline` reads `duration_ms = 0` → `TooShort` → silently discards a real dictation. Pre-existing (the diff did not worsen it); near-impossible trigger (the bar block only logs). Severity: low. Source: edge-case reviewer Finding 4.
