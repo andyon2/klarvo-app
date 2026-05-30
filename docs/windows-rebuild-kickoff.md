@@ -1,86 +1,62 @@
 # Windows-Rebuild & Smoke — Session-Kickoff (START HERE)
 
-**Zweck:** Orientiert eine *frische* Session auf der **Windows-Seite**, die einen Release-Build von
-`v1-ship` zieht und den aktuell offenen Smoke-/DoD-Check fährt. Self-contained — keine Chat-Historie
-nötig. Wiederverwendbar: bei jeder Persistenz-/Surface-Story, deren DoD einen echten Windows-Build
-verlangt (NFR-W / NFR-Smoke). Den Abschnitt **§4 Aktueller Auftrag** pro Story aktualisieren.
+**Zweck:** Orientiert eine Session auf der **Windows-Seite**, die einen frischen Build braucht und den
+offenen Smoke-/DoD-Check fährt. Self-contained, wiederverwendbar. Pro Story nur **§3 Aktueller Auftrag**
+aktualisieren.
 
-## Topologie (warum es diesen Schritt gibt)
+## Topologie (so läuft der Build wirklich)
 
-Quell-Repo lebt in WSL (Linux-FS); der Windows-Build läuft in deinem Windows-Klon von
-`github.com/andyon2/klarvo-app`. Sync läuft über `origin` (GitHub) per push/pull. Tauri-Runtime-Bugs,
-Windows-only-Codepfade und `rename`/`MoveFileExW`-Semantik tauchen **nur** im echten Windows-Build auf —
-Linux `cargo test` maskiert sie (Release-Build-Blind-Spot).
+Quell-Repo lebt in **WSL** (`\\wsl$\Ubuntu\…\products\klarvo`, Branch `v1-ship`) — das ist die Source of
+Truth. Der Windows-Build liest den **live WSL-Tree per robocopy** (nicht via git-pull von origin). origin
+ist nur Backup/History.
 
-## §1 Sync — den richtigen Stand holen
+## §1 Rebuild — der kanonische Weg
 
-In deinem Windows-Build-Klon:
+**Desktop-Verknüpfung „Klarvo Rebuild" doppelklicken.** Sie führt `sync-and-build.ps1` aus:
+1. robocopy: aktueller WSL-Stand (`v1-ship`) → `D:\apps\klarvo`
+2. `npm install` + `npx tauri build` (nativer Windows-Build, warmer Cache)
+3. Signieren per WSL-`rsign` → Ablage in Dropbox
 
+Fertige exe: **`D:\apps\klarvo\src-tauri\target\release\klarvo.exe`**. Fenster bleibt offen (`cmd /k`) →
+komplettes Log sichtbar.
+
+> **Signing-Falle (nicht neu erfinden):** Tauris eingebauter Signer **hängt** auf Windows/WSL. Das Script
+> umgeht das bewusst (rsign nach dem Build). Kein eigenes Build-Script mit `.env`-Signing-Key bauen.
+> `Klarvo Rebuild.lnk` = neu bauen · `klarvo.lnk` = App starten. Nicht verwechseln.
+
+## §2 Schnell-Verifikation ohne vollen Build (für reine Rust-/NFR-W-Checks)
+
+In `D:\apps\klarvo\src-tauri` auf nativer Windows-Toolchain:
 ```
-git fetch origin
-git checkout v1-ship
-git pull --ff-only origin v1-ship
-git log --oneline -3
+cargo test --lib fs::
 ```
+Trifft den echten Windows-Rename-Codepfad (`MoveFileExW`+`MOVEFILE_REPLACE_EXISTING`), den Linux nie
+kompiliert. (Falls JNI-Bridge dazwischenfunkt: `--exclude klarvo-bridge-jni`.)
 
-**Erwartung:** HEAD enthält `c1ffa79` (`fix(config): atomic state-file writes via shared save_atomic
-helper`). Wenn der Commit fehlt → Stand stimmt nicht, NICHT weiterbauen.
-
-## §2 Build
-
-Toolchain: Rust (MSVC-Toolchain), Node + npm. Tauri-CLI v2 ist über npm verdrahtet.
-
-- **Voller Release-Build (.exe/Installer):**
-  ```
-  npm install
-  npm run tauri build
-  ```
-  `beforeBuildCommand` baut zuerst das Vite/TS-Frontend (`npm run build`), dann den Rust-Release +
-  Bundle. Artefakte: `src-tauri/target/release/Klarvo.exe` und Installer unter
-  `src-tauri/target/release/bundle/` (NSIS/MSI, `targets: "all"`).
-
-- **Schnell-Verifikation ohne vollen Build** (reicht für den NFR-W-Kern unten — hier am wichtigsten):
-  ```
-  cd src-tauri
-  cargo test --lib fs::
-  ```
-  Das führt den **echten Windows-Rename-Codepfad** (`MoveFileExW`+`MOVEFILE_REPLACE_EXISTING`) aus, den
-  Linux nie kompiliert. (Falls der JNI-Bridge-Build dazwischenfunkt: `--exclude klarvo-bridge-jni` an
-  Workspace-Test-Aufrufe; `--lib` im `src-tauri`-Package sollte den Bridge-Crate aber gar nicht ziehen.)
-
-## §3 Wo die App schreibt
-
-`%APPDATA%\com.klarvo.voice\` → `config.json`, `dictionary.json`. (= `C:\Users\<du>\AppData\Roaming\com.klarvo.voice\`.)
-
-## §4 Aktueller Auftrag — Story 1.1 NFR-W Smoke (`save_atomic`)
+## §3 Aktueller Auftrag — Story 1.1 NFR-W Smoke (`save_atomic`)
 
 Story-File: `_bmad-output/implementation-artifacts/1-1-atomic-state-file-writes-via-a-shared-save-atomic-helper.md`
-(Status `review` → wird `done`, sobald dieser Smoke grün ist). Prüft: schreibt `save_atomic` auf echtem
-Windows atomar über eine *existierende* Datei, ohne Leak, mit sauberem Fehler statt Panik?
+(Status `review` → `done`, sobald grün). Frage: schreibt `save_atomic` auf echtem Windows atomar über
+eine *existierende* Datei, ohne Leak, mit sauberem Fehler statt Panik? App schreibt nach
+`%APPDATA%\com.klarvo.voice\` (`config.json`, `dictionary.json`).
 
-**Kern (deterministisch, höchster Wert):** `cargo test --lib fs::` auf der nativen Windows-Toolchain →
-alle 4 Tests grün (Replace-over-existing, kein Temp-Leak, Fehler-bei-fehlendem-Parent, Happy-Path).
+**Kern (deterministisch):** `cargo test --lib fs::` (§2) → 4 Tests grün.
 
-**App-Level (was die Unit-Tests nicht abdecken):**
-1. **Normal + Force-Kill:** API-Key + Lizenz setzen → speichern → in `com.klarvo.voice\` prüfen:
-   `config.json` vollständig & valides JSON, **keine** zufällig benannten `.tmp…`-Reste. App per
-   Task-Manager hart killen → neu öffnen → Key/Lizenz intakt, genau *eine* `config.json`.
-2. **Read-only-Ziel:** `attrib +R config.json` → in der App speichern → muss **sauber fehlschlagen**
-   (Fehler sichtbar, kein Crash, alte Datei intakt). Danach `attrib -R` → speichern geht wieder.
-3. **`dictionary.json`** analog: Wörterbuch-Wort hinzufügen → persistiert, kein Temp-Leak.
+**App-Level (was Units nicht abdecken):**
+1. **Normal + Force-Kill:** Key/Lizenz setzen → speichern → `config.json` vollständig & valides JSON,
+   **keine** zufällig benannten `.tmp…`-Reste. App hart killen → neu öffnen → Daten intakt, genau *eine* `config.json`.
+2. **Read-only-Ziel:** `attrib +R config.json` → speichern → muss **sauber fehlschlagen** (Fehler sichtbar,
+   kein Crash, alte Datei intakt). Dann `attrib -R` → geht wieder.
+3. **`dictionary.json`** analog.
 
-**Fehler-Signaturen:** Streu-`.tmp`-Dateien sammeln sich an (Leak) · `config.json` 0 Byte/abgeschnitten
-(Atomarität verletzt) · Key/Lizenz weg nach Kill (Datenverlust) · App crasht statt Fehler (read-only Fall).
+**Ehrlich:** Das ~1 ms Crash-Fenster triffst du manuell nicht (Atomarität kommt vom OS-Rename). Der
+realistische „locked"-Fall ist Defender-Real-Time-Scan (transient) — wichtig nur: Fehler wird *gemeldet*,
+nicht verschluckt. → Read-only/locked einmal beobachten, dann als `#[cfg(windows)]`-Test einfrieren
+(learn-then-encode), statt Dauer-Klick.
 
-**Ehrlich:** Das ~1 ms „Mid-Write-Crash"-Fenster triffst du manuell nicht — musst du nicht, Atomarität
-kommt vom OS-Rename. Der realistische „locked"-Fall ist Defender-Real-Time-Scan (transient) — wichtig ist
-nur, dass ein dadurch fehlgeschlagener Save *gemeldet* statt verschluckt wird.
+## §4 Zurückmelden
 
-## §5 Zurückmelden
-
-- `cargo test --lib fs::`-Ergebnis (Output-Tail) + Build-Erfolg/-Fehler.
-- App-Level-Checks 1–3: bestanden / Fehler-Signatur.
-- **Wenn alles grün:** `_bmad-output/implementation-artifacts/sprint-status.yaml` →
-  `1-1-…: done`, Story-File-Frontmatter `status: done`, committen + pushen (Frontmatter↔YAML in sync,
-  Closeout-Drift-Check). **Wenn nicht:** exakte Fehlersignatur melden, NICHT auf `done` flippen — dann
-  braucht `save_atomic` einen Folge-Fix (z. B. read-only/locked-Fehlerbehandlung).
+- `cargo test --lib fs::`-Ergebnis + App-Level 1–3.
+- **Grün:** `sprint-status.yaml` → `1-1-…: done`, Story-Frontmatter `status: done`, committen+pushen
+  (Frontmatter↔YAML in sync, Closeout-Drift-Check). **Sonst:** exakte Fehlersignatur melden, NICHT auf
+  `done` flippen → `save_atomic` braucht Folge-Fix.
