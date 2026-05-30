@@ -258,7 +258,12 @@ fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
         .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
         .collect();
 
-    if residue.len() < 5 {
+    // Only conclude "echo" if stripping the prompt is what left <5 chars. When
+    // nothing was stripped (`cleaned == trans`), a short residue just means a
+    // short utterance the user genuinely dictated ("Gast", "hi", "für") — not an
+    // echo. Without this guard the length floor silently discards real one-word
+    // dictations (smoke test 2026-05-30).
+    if cleaned != trans && residue.len() < 5 {
         return true;
     }
 
@@ -3124,6 +3129,23 @@ mod tests {
             !super::is_prompt_echo(real, hint),
             "long real text with incidental prompt-word overlap must not be flagged"
         );
+    }
+
+    /// Regression: a short single word the user genuinely dictated — absent from
+    /// the conditioning prompt — must NOT be discarded. The exact-fragment-removal
+    /// gate may only conclude "echo" when stripping the prompt is what left <5
+    /// chars; a short word that overlaps nothing was never stripped and is real
+    /// speech. Mirrors the 2026-05-30 smoke test where "Gast"/"hi"/"für" vanished
+    /// while "Berlin"/"ein Gast" passed.
+    #[test]
+    fn test_prompt_echo_short_real_word_not_flagged() {
+        let hint = "Multilingual voice dictation. German and English with proper punctuation.";
+        for word in ["Gast", "hi", "für", "Kast", "Aye"] {
+            assert!(
+                !super::is_prompt_echo(word, hint),
+                "short dictated word {word:?} (absent from the prompt) must not be flagged as echo"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------
