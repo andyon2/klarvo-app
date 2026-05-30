@@ -42,6 +42,7 @@ mod audio;
 mod commands;
 mod config;
 mod dictionary;
+mod fs;
 mod history;
 mod hotkey;
 mod license;

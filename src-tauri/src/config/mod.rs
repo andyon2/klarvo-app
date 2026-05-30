@@ -1264,7 +1264,7 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> anyhow::Result<()
     let path = app_data_dir.join(CONFIG_FILE);
     let contents = serde_json::to_string_pretty(config)?;
 
-    std::fs::write(&path, contents)?;
+    crate::fs::save_atomic(&path, contents.as_bytes())?;
 
     log::debug!("[config] Saved config to {}", path.display());
     Ok(())

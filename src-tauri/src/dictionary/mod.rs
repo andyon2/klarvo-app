@@ -149,7 +149,7 @@ pub fn save_dictionary(app_data_dir: &Path, dictionary: &Dictionary) -> anyhow::
     let path = app_data_dir.join(DICTIONARY_FILE);
     let contents = serde_json::to_string_pretty(dictionary)?;
 
-    std::fs::write(&path, contents)?;
+    crate::fs::save_atomic(&path, contents.as_bytes())?;
 
     log::debug!(
         "[dictionary] Saved {} terms to {}",
