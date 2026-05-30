@@ -1,0 +1,85 @@
+# generated: 2026-05-30
+# last_updated: 2026-05-30
+# project: klarvo
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# REMEDIATION NOTES (this sprint):
+# ================================
+# - Source: docs/robustness-audit-2026-05-30.md (Heavy Track only). See epics.md.
+# - Sprint order: Epic 1 and Epic 2 are independent surfaces (Rust desktop vs. Kotlin Android),
+#   parallelizable. Then Epic 3 (strengthen test net). Then Epic 4 (god-file depth — fenced, last;
+#   story 4-1 sequenced after Epic 1, story 4-2 independently deferrable).
+# - Heavy-Track epics run with the Test Architect (*risk / *design / *trace).
+# - Epic 2 stories are surface-class: real Android build + manual on-device test in the DoD.
+# - quick-dev-track findings (ROB-03/06/07/08/10, TEST-06..10, low-sev polish, contested) are NOT
+#   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
+
+generated: 2026-05-30
+last_updated: 2026-05-30
+project: klarvo
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1 — Config & State Persistence Hardening [gated ADR-0015]
+  epic-1: backlog
+  1-1-atomic-state-file-writes-via-a-shared-save-atomic-helper: backlog
+  1-2-backup-on-corrupt-recovery-in-load-config: backlog
+  1-3-single-writer-serialization-for-state-file-saves: backlog
+  1-4-hardened-config-migration-pre-migration-backup-error-propagation: backlog
+  1-5-migration-ladder-regression-test-history-db-open-db: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
+  epic-2: backlog
+  2-1-port-the-hallucination-filter-to-android: backlog
+  2-2-min-length-silence-pre-filter-before-the-groq-stt-call: backlog
+  2-3-sanitize-paste-text-on-all-android-paths: backlog
+  2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3 — Test Integrity: Close the False-Safety Islands
+  epic-3: backlog
+  3-1-spec-test-the-real-silero-auto-stop-path: backlog
+  3-2-execute-the-real-feedback-pi-privacy-gate-in-test: backlog
+  3-3-spec-test-the-wav-rms-computation-independently: backlog
+  3-4-independent-system-prompt-leak-detection-spec: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4 — God-File Depth Refactor (fenced, last; no behavior change)
+  epic-4: backlog
+  4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize: backlog
+  4-2-tighten-pipeline-rs-contracts-demote-test-only-pub-surface: backlog
+  epic-4-retrospective: optional
