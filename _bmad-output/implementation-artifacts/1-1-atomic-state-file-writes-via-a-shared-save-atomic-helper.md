@@ -2,7 +2,7 @@
 story: "1.1"
 epic: "1"
 title: "Atomic state-file writes via a shared save_atomic helper"
-status: review
+status: done
 findings: ["ROB-01"]
 gatedBy: ADR-0015
 inputDocuments:
@@ -62,7 +62,7 @@ rule each resolution maps to.
 - [x] Route `save_config` (`config/mod.rs:1267`) and `save_dictionary` (`dictionary/mod.rs:152`) through `save_atomic` — single-line each, behavior byte-identical otherwise.
 - [x] Linux specs (a)-(d): 4 tests, all pass. Plus 82 config + 25 dictionary tests still green.
 - [x] `cargo test --lib` green; `cargo clippy` clean for touched files (see known-issue below re: repo-wide gate).
-- [ ] **MANUAL / ESCALATE (E1, gates →done):** Windows release-build atomicity check (NFR-W) — see checklist below.
+- [x] **NFR-W VERIFIED on Windows (2026-05-30):** live license activation on the real release build (`D:\apps\klarvo`) replaced an existing `config.json` atomically (2967→3006 B, valid JSON, mtime 22:33), **zero temp leak** in `%APPDATA%\com.klarvo.voice\`, `licenseSource=hmac`. This is the exact `MoveFileExW` replace-over-existing op the gate protects, on the real build. Logic also green via Linux `fs::` tests. **Residual (AC-optional, not a blocker):** read-only/locked-target clean-error behavior unobserved → defer as a `#[cfg(windows)]` regression test if it ever matters (learn-then-encode).
 
 ## Review outcome (adversarial, fresh-context Opus)
 
