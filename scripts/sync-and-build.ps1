@@ -1,0 +1,148 @@
+# Klarvo: Sync from WSL and build for Windows
+# Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\workspace\products\klarvo\scripts\sync-and-build.ps1
+#   -Clean   force a fresh recompile of the klarvo crate (defeats cargo incremental staleness)
+
+param(
+    [switch]$Clean
+)
+
+$src = "\\wsl$\Ubuntu\home\andyon2\workspace\products\klarvo"
+$dst = "D:\apps\klarvo"
+$exe = "$dst\src-tauri\target\release\klarvo.exe"
+
+# Fail loudly: a half-finished build must NOT masquerade as success and leave the
+# previous klarvo.exe in place. That exact silent failure shipped a stale binary
+# during the Story 1.2 Windows smoke on 2026-05-31 (build error swallowed by a
+# `... | Write-Host` pipe, script printed "Done!", the old exe got smoke-tested).
+function Fail($msg) {
+    Write-Host ""
+    Write-Host "BUILD ABORTED: $msg" -ForegroundColor Red
+    Write-Host "klarvo.exe was NOT updated -- do not smoke-test, the previous binary is still in place." -ForegroundColor Red
+    [System.Environment]::Exit(1)
+}
+
+# Ensure cargo and LLVM 18 are in PATH
+$env:PATH = "C:\Program Files\LLVM\bin;C:\Users\Andi\.cargo\bin;$env:PATH"
+
+# Record the pre-build exe timestamp so we can prove a fresh build at the end.
+$exeBefore = if (Test-Path $exe) { (Get-Item $exe).LastWriteTime } else { $null }
+
+Write-Host "Syncing files from WSL..." -ForegroundColor Cyan
+
+# Sync with robocopy, excluding build artifacts and Android native libs.
+# robocopy exit codes: 0-7 = success (1 = files were copied), 8+ = real error.
+robocopy $src $dst /E /XD target node_modules .git jniLibs /XF "*.so" /NFL /NDL /NJH /NJS /NP /R:1 /W:1
+$rc = $LASTEXITCODE
+if ($rc -ge 8) { Fail "robocopy sync failed (exit $rc) -- source not mirrored to $dst." }
+
+Write-Host "Installing npm dependencies..." -ForegroundColor Cyan
+Set-Location $dst
+npm install
+if ($LASTEXITCODE -ne 0) { Fail "npm install failed (exit $LASTEXITCODE)." }
+
+# Load .env for API keys etc (Tauri dotenvy also picks these up from synced .env).
+# IMPORTANT: skip the Tauri signing secrets. If they reach the build env, `tauri
+# build` tries to sign the updater artifacts at bundle time and the built-in
+# signer hangs / fails on WSL ("incorrect updater private key password"). Signing
+# is deferred to rsign below, so these MUST NOT be present during the build.
+if (Test-Path "$dst\.env") {
+    Get-Content "$dst\.env" | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+?)\s*=\s*(.*?)\s*$') {
+            $envName = $matches[1].Trim()
+            if ($envName -in @('TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD')) {
+                return  # skip: build must stay unsigned, rsign signs afterwards
+            }
+            [System.Environment]::SetEnvironmentVariable($envName, $matches[2], "Process")
+        }
+    }
+    Write-Host "Loaded .env (Tauri signing keys deliberately skipped)" -ForegroundColor Yellow
+}
+
+# NOTE: Tauri's built-in signer hangs on Windows/WSL (confirmed 2026-03-21).
+# Signing is done AFTER the build via WSL rsign (scripts/sign-installer.sh).
+# Do NOT set TAURI_SIGNING_PRIVATE_KEY here -- it triggers the hanging signer.
+#
+# Belt-and-suspenders: the .env loader already skips these, but a key could also
+# leak in from the parent shell. Strip both before building so the bundler never
+# attempts build-time signing (the cause of the silent build failure on 2026-05-31).
+Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+
+# whisper-rs-sys: force bindgen to target Windows (not Linux)
+# Without this, clang may pick up Linux headers and generate incompatible bindings.
+$env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
+Remove-Item Env:\WHISPER_DONT_GENERATE_BINDINGS -ErrorAction SilentlyContinue
+
+# Optional: force a fresh recompile of the klarvo crate. Use when a source change
+# must land in the binary and you suspect cargo incremental kept a stale object.
+if ($Clean) {
+    Write-Host "Forcing fresh recompile (cargo clean -p klarvo)..." -ForegroundColor Cyan
+    Push-Location "$dst\src-tauri"
+    cargo clean -p klarvo
+    Pop-Location
+}
+
+# Kill any running Klarvo first: a live instance holds an exclusive lock on
+# target\release\klarvo.exe, so the linker can't overwrite it -> the build dies
+# with "failed to remove file ... (os error 5) Zugriff verweigert".
+Write-Host "Stopping any running Klarvo instances..." -ForegroundColor Cyan
+$running = Get-Process klarvo -ErrorAction SilentlyContinue
+if ($running) {
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 800   # let the OS release the file handle
+    Write-Host "  stopped $($running.Count) instance(s)." -ForegroundColor Yellow
+}
+
+Write-Host "Building Klarvo..." -ForegroundColor Cyan
+# Disable Tauri's build-time updater signing for this build. tauri.conf.json has
+# createUpdaterArtifacts:true + an updater pubkey, which forces Tauri to sign the
+# updater artifacts at bundle time and demand TAURI_SIGNING_PRIVATE_KEY. This
+# project defers signing to rsign (sign-installer.sh, below), so we override the
+# flag off here. The NSIS installer is still produced; only Tauri's own .sig
+# generation is skipped -- rsign creates the matching .sig afterwards.
+$buildOverride = "$env:TEMP\klarvo-build-override.json"
+'{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Path $buildOverride -Encoding ascii
+# Run WITHOUT piping to Write-Host: a pipe overwrites $LASTEXITCODE with Write-Host's
+# value (always 0), which is exactly how a failed build slipped through before.
+npx tauri build --config $buildOverride
+if ($LASTEXITCODE -ne 0) { Fail "tauri build failed (exit $LASTEXITCODE) -- scroll up for the compiler error." }
+
+# Prove the binary was actually produced by this run.
+if (-not (Test-Path $exe)) { Fail "tauri build returned 0 but $exe does not exist." }
+$exeAfter = (Get-Item $exe).LastWriteTime
+if ($exeBefore -and $exeAfter -le $exeBefore) {
+    Write-Host ""
+    Write-Host "NOTE: klarvo.exe timestamp is unchanged ($exeAfter)." -ForegroundColor Yellow
+    Write-Host "      Either nothing changed since the last build, or cargo reused a cached object." -ForegroundColor Yellow
+    Write-Host "      If you expected a SOURCE change to land in this build, re-run with  -Clean ." -ForegroundColor Yellow
+}
+
+# Sign the installer via WSL rsign (Tauri's signer hangs).
+# Non-fatal: the raw klarvo.exe you smoke-test does not depend on signing.
+Write-Host "Signing installer via WSL rsign..." -ForegroundColor Cyan
+wsl bash ~/workspace/products/klarvo/scripts/sign-installer.sh
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNING: signing failed (exit $LASTEXITCODE) -- installer is unsigned, but the built klarvo.exe is fine for local smoke." -ForegroundColor Yellow
+}
+
+# Copy installer to Dropbox for easy access
+$version = (Get-Content "$dst\package.json" | ConvertFrom-Json).version
+$dropboxDir = "D:\Dropbox\App Development\klarvo\releases\v$version"
+$nsisDir = "$dst\src-tauri\target\release\bundle\nsis"
+$installer = Get-ChildItem "$nsisDir\*.exe" -Exclude "*.exe.sig" | Select-Object -First 1
+
+if ($installer) {
+    New-Item -ItemType Directory -Force -Path $dropboxDir | Out-Null
+    Copy-Item "$($installer.FullName)" "$dropboxDir\"
+    Copy-Item "$($installer.FullName).sig" "$dropboxDir\" -ErrorAction SilentlyContinue
+    Write-Host "Installer copied to $dropboxDir\" -ForegroundColor Green
+} else {
+    Write-Host "WARNING: No installer found to copy" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "Done! Fresh build verified." -ForegroundColor Green
+Write-Host "  klarvo.exe : $exe" -ForegroundColor Green
+Write-Host "  built at   : $exeAfter" -ForegroundColor Green
+Write-Host "  size       : $([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB" -ForegroundColor Green
+[System.Environment]::Exit(0)
