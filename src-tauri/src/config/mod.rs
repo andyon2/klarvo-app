@@ -955,6 +955,54 @@ const CONFIG_FILE: &str = "config.json";
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Best-effort backup of a corrupt or unreadable `config.json` before
+/// `load_config` falls back to defaults (ROB-02 / ADR-0015).
+///
+/// Copies the raw on-disk bytes (`raw`) to a uniquely timestamped sibling
+/// `config.json.corrupt-<unix_ts>` via the shared atomic writer
+/// (`crate::fs::save_atomic`), so the user's keys/license/snippets stay
+/// recoverable instead of being silently overwritten on the next boot — the
+/// first-install guard in `lib.rs` would otherwise persist a fresh default over
+/// the corrupt file. The timestamped name (built by string, NOT
+/// `with_extension`) guarantees a prior backup is never overwritten.
+///
+/// Infallible by contract: a failed backup write is logged and downgraded to a
+/// warning — it must never block application startup. A human-readable warning
+/// is pushed onto `warnings` for the shell to surface (see D1 in the story).
+fn backup_corrupt_config(path: &Path, raw: &[u8], warnings: &mut Vec<String>) {
+    // Same unix-seconds pattern as the first-install stamp in lib.rs.
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup_name = format!("{CONFIG_FILE}.corrupt-{ts}");
+    let backup_path = match path.parent() {
+        Some(dir) => dir.join(&backup_name),
+        None => std::path::PathBuf::from(&backup_name),
+    };
+
+    match crate::fs::save_atomic(&backup_path, raw) {
+        Ok(()) => {
+            log::warn!("[config] Corrupt config.json backed up to {}", backup_path.display());
+            warnings.push(format!(
+                "Your settings file was unreadable and has been backed up to {backup_name}. \
+                 Settings were reset to defaults — your previous keys/license can be recovered from that file."
+            ));
+        }
+        Err(e) => {
+            // Best-effort: the original corrupt file still remains on disk; we just
+            // could not duplicate it. Never error out — boot must continue.
+            log::warn!(
+                "[config] Failed to back up corrupt config.json to {} ({e}); continuing with defaults",
+                backup_path.display()
+            );
+            warnings.push(format!(
+                "Your settings file was unreadable and could not be backed up ({e}). Settings were reset to defaults."
+            ));
+        }
+    }
+}
+
 /// Loads the configuration from `{app_data_dir}/config.json`.
 ///
 /// Returns `AppConfig::default()` if the file does not exist or cannot be
@@ -963,7 +1011,26 @@ const CONFIG_FILE: &str = "config.json";
 /// Environment variable fallback: if the loaded config has empty API keys
 /// and the corresponding env vars are set, they are used as values. This
 /// allows `.env`-based development without touching the GUI.
+///
+/// Thin wrapper over [`load_config_reporting`] for the many call sites (~55
+/// tests) that don't consume boot warnings. The single production caller
+/// (`lib.rs` setup) uses [`load_config_reporting`] directly to surface them, so
+/// in a non-test build this wrapper has no caller by design — hence the
+/// `not(test)` dead-code allowance; under `cfg(test)` it is heavily used.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn load_config(app_data_dir: &Path) -> AppConfig {
+    let mut warnings = Vec::new();
+    load_config_reporting(app_data_dir, &mut warnings)
+}
+
+/// Reporting variant of [`load_config`]: identical behaviour, but pushes any
+/// boot-time warnings (e.g. "a corrupt config was backed up") onto `warnings`
+/// so the caller can surface them to the user.
+///
+/// Kept as a separate entry point so the public `load_config(&Path) ->
+/// AppConfig` signature stays intact for existing callers/tests — structural
+/// decoupling of this body is fenced to the DEPTH-config work (ADR-0015 §5).
+pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) -> AppConfig {
     let path = app_data_dir.join(CONFIG_FILE);
 
     let mut config = match std::fs::read_to_string(&path) {
@@ -971,15 +1038,31 @@ pub fn load_config(app_data_dir: &Path) -> AppConfig {
             Ok(cfg) => cfg,
             Err(e) => {
                 log::warn!("[config] Failed to parse config.json ({e}), using defaults");
+                // Preserve the corrupt file BEFORE returning a default that the
+                // first-install guard may persist over it (AC#1/#2, ROB-02).
+                // `contents` already holds the file bytes — zero extra read.
+                backup_corrupt_config(&path, contents.as_bytes(), warnings);
                 AppConfig::default()
             }
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Absent file is NOT corruption: no backup, no warning (AC#3).
             log::info!("[config] config.json not found, using defaults");
             AppConfig::default()
         }
         Err(e) => {
             log::warn!("[config] Failed to read config.json ({e}), using defaults");
+            // Read error (e.g. non-UTF-8 / unreadable) is treated like corruption
+            // (AC#4): best-effort backup of the raw on-disk bytes. `read_to_string`
+            // failed so there is no `contents` in scope — re-read the raw bytes. If
+            // even that fails the file is truly unreadable: log and continue to
+            // defaults; never panic, never block boot.
+            match std::fs::read(&path) {
+                Ok(raw) => backup_corrupt_config(&path, &raw, warnings),
+                Err(read_err) => log::warn!(
+                    "[config] Could not read raw bytes of unreadable config.json for backup ({read_err}); continuing with defaults"
+                ),
+            }
             AppConfig::default()
         }
     };
@@ -2786,5 +2869,304 @@ mod tests {
         // Second load must be idempotent (no further migration).
         let loaded2 = load_config(dir.path());
         assert_eq!(loaded2, loaded, "Second load must be idempotent after migration");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 1.2 — Backup-on-corrupt recovery in load_config (ROB-02 / ADR-0015)
+    // -----------------------------------------------------------------------
+
+    /// Collect all `config.json.corrupt-*` backup files present in `dir`.
+    /// The `<unix_ts>` suffix is non-deterministic, so tests glob by prefix.
+    fn corrupt_backups(dir: &Path) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .expect("read dir")
+            .map(|e| e.expect("dir entry").path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("config.json.corrupt-"))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// (a) Corrupt JSON → defaults returned; exactly one timestamped backup
+    /// exists whose bytes equal the original corrupt content; warning recorded.
+    #[test]
+    fn test_corrupt_json_is_backed_up_with_warning() {
+        let dir = temp_dir();
+        let corrupt: &[u8] = br#"{ "groqApiKey": "gsk_brokenJSON_no_closing_brace "#;
+        std::fs::write(dir.path().join(CONFIG_FILE), corrupt).unwrap();
+
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        let backups = corrupt_backups(dir.path());
+        assert_eq!(backups.len(), 1, "exactly one corrupt backup expected, got {backups:?}");
+        let backed_up = std::fs::read(&backups[0]).expect("read backup");
+        assert_eq!(
+            backed_up.as_slice(),
+            corrupt,
+            "backup must contain the original corrupt bytes verbatim"
+        );
+        assert!(!warnings.is_empty(), "a user-facing warning must be recorded");
+    }
+
+    /// (b) Recoverability → a corrupt file embedding a known api-key-like
+    /// substring is preserved in the backup (real data, not just any file).
+    #[test]
+    fn test_corrupt_backup_preserves_recoverable_data() {
+        let dir = temp_dir();
+        let secret = "gsk_live_RECOVERABLE_KEY_123";
+        // Valid JSON object followed by trailing junk → serde parse error.
+        let corrupt = format!("{{\"groqApiKey\":\"{secret}\"}} <<<corrupt tail>>>");
+        std::fs::write(dir.path().join(CONFIG_FILE), corrupt.as_bytes()).unwrap();
+
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        let backups = corrupt_backups(dir.path());
+        assert_eq!(backups.len(), 1, "exactly one corrupt backup expected, got {backups:?}");
+        let backed_up = std::fs::read_to_string(&backups[0]).expect("read backup");
+        assert!(
+            backed_up.contains(secret),
+            "backup must preserve the recoverable key substring, got: {backed_up}"
+        );
+    }
+
+    /// (c) NotFound → no file present; defaults returned; NO backup created and
+    /// NO warning recorded. Deliberately asserts ABSENCE (non-tautological).
+    #[test]
+    fn test_missing_config_is_not_backed_up() {
+        let dir = temp_dir();
+        // No config.json written at all.
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        assert!(
+            corrupt_backups(dir.path()).is_empty(),
+            "an absent file must NOT create a corrupt backup"
+        );
+        assert!(warnings.is_empty(), "an absent file must NOT record a warning");
+    }
+
+    /// (d) Read error → non-UTF-8 bytes fail `read_to_string` (catch-all Err
+    /// arm); best-effort backup of the raw bytes exists; warning recorded.
+    #[test]
+    fn test_unreadable_non_utf8_config_is_backed_up() {
+        let dir = temp_dir();
+        // Invalid UTF-8 → read_to_string returns Err (kind != NotFound) → AC#4 arm.
+        let raw: &[u8] = &[0xff, 0xfe, 0x00, 0x9c, 0x80];
+        std::fs::write(dir.path().join(CONFIG_FILE), raw).unwrap();
+
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        let backups = corrupt_backups(dir.path());
+        assert_eq!(backups.len(), 1, "a read error must trigger a best-effort backup");
+        let backed_up = std::fs::read(&backups[0]).expect("read backup");
+        assert_eq!(
+            backed_up.as_slice(),
+            raw,
+            "backup must contain the raw unreadable bytes verbatim"
+        );
+        assert!(!warnings.is_empty(), "a warning must be recorded for the read error");
+    }
+
+    /// (e) ROB-02 end-to-end (AC#2) → the default returned for a corrupt file
+    /// has `first_install_at == 0` (the exact trigger of the lib.rs first-install
+    /// overwrite); after simulating that overwrite via `save_config`, the corrupt
+    /// backup STILL exists → the repairable→total-loss transition is impossible.
+    #[test]
+    fn test_rob02_backup_survives_first_install_overwrite() {
+        let dir = temp_dir();
+        let corrupt: &[u8] = br#"<<< not json at all >>>"#;
+        std::fs::write(dir.path().join(CONFIG_FILE), corrupt).unwrap();
+
+        let mut warnings = Vec::new();
+        let cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        // This is the exact condition that triggers lib.rs:717's overwrite.
+        assert_eq!(
+            cfg.first_install_at, 0,
+            "default must have first_install_at == 0 (the ROB-02 overwrite trigger)"
+        );
+
+        let backups_before = corrupt_backups(dir.path());
+        assert_eq!(backups_before.len(), 1, "corrupt backup must exist after load");
+
+        // Simulate the lib.rs:722 first-install overwrite: stamp first_install_at
+        // and persist a fresh default over the on-disk config.json.
+        let mut fresh = cfg.clone();
+        fresh.first_install_at = 1_700_000_000;
+        save_config(dir.path(), &fresh).expect("save_config (simulated first-install overwrite)");
+
+        let backups_after = corrupt_backups(dir.path());
+        assert_eq!(
+            backups_after, backups_before,
+            "corrupt backup must survive the first-install overwrite"
+        );
+    }
+
+    /// (f) No stray temps → after a corrupt-backup the dir contains only
+    /// `config.json` (rewritten fresh by the default-save during migration) plus
+    /// one `config.json.corrupt-<ts>`; no leftover `save_atomic` temp file.
+    #[test]
+    fn test_corrupt_backup_leaves_no_stray_temp_files() {
+        let dir = temp_dir();
+        let corrupt: &[u8] = br#"{ broken "#;
+        std::fs::write(dir.path().join(CONFIG_FILE), corrupt).unwrap();
+
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .map(|e| e.expect("dir entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names.len(),
+            2,
+            "expected exactly config.json + one corrupt backup, got {names:?}"
+        );
+        assert!(names.iter().any(|n| n == CONFIG_FILE), "config.json must be present");
+        assert!(
+            names.iter().any(|n| n.starts_with("config.json.corrupt-")),
+            "a corrupt backup must be present, got {names:?}"
+        );
+    }
+
+    /// (g) Truly unreadable (AC#4 inner branch) → when `config.json` cannot be
+    /// read EITHER as a string OR as raw bytes, `load_config` must fall back to
+    /// defaults WITHOUT a backup and WITHOUT a warning, and must never panic.
+    /// Pins the `Err(read_err)` arm (`load_config_reporting`, the inner branch
+    /// after `read_to_string` AND `std::fs::read` both fail) that spec (d) — where
+    /// the raw re-read SUCCEEDS — never reaches. The trigger makes `config.json` a
+    /// DIRECTORY: both reads fail with a kind that is NOT `NotFound`. Chosen over
+    /// `chmod 000` because it is root-independent (CI often runs as root, where
+    /// permission bits are bypassed and a `chmod`-based trigger silently misfires).
+    #[test]
+    fn test_truly_unreadable_config_no_backup_no_warning() {
+        let dir = temp_dir();
+        // A directory at the config path: `read_to_string` and `read` both Err
+        // with kind != NotFound → catch-all arm, then the inner `Err(read_err)`.
+        std::fs::create_dir(dir.path().join(CONFIG_FILE)).unwrap();
+
+        let mut warnings = Vec::new();
+        let cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        // Boot continues on defaults; `first_install_at` is env-fallback-independent.
+        assert_eq!(
+            cfg.first_install_at, 0,
+            "a truly-unreadable config must fall back to default (first_install_at == 0)"
+        );
+        // AC#4: NO backup for the truly-unreadable sub-branch (line is log-only).
+        assert!(
+            corrupt_backups(dir.path()).is_empty(),
+            "a file unreadable even as raw bytes must NOT create a corrupt backup"
+        );
+        // AC#4: NO warning — distinguishes this from spec (d)'s raw-read-succeeds path.
+        assert!(
+            warnings.is_empty(),
+            "the truly-unreadable sub-branch must NOT record a warning, got {warnings:?}"
+        );
+    }
+
+    /// (h) Backup-write failure (AC#5) → when `save_atomic` itself fails, the
+    /// private `backup_corrupt_config` helper must DOWNGRADE to a "could not be
+    /// backed up" warning, never panic, and never propagate an error (it returns
+    /// `()`), so boot is never blocked. Pins the `save_atomic` Err arm untouched by
+    /// specs (a)-(f). Trigger: a backup target whose PARENT directory does not
+    /// exist — `fs::tests::test_save_atomic_errors_when_parent_missing` proves
+    /// `save_atomic` errors here, and `NamedTempFile::new_in` on a missing dir fails
+    /// regardless of uid (root-independent, unlike a read-only-dir `chmod`).
+    #[test]
+    fn test_backup_write_failure_records_degraded_warning() {
+        let dir = temp_dir();
+        // Parent (`does_not_exist/`) is absent → save_atomic returns Err.
+        let unwritable = dir.path().join("does_not_exist").join(CONFIG_FILE);
+
+        let mut warnings = Vec::new();
+        // Direct call to the in-module-private helper (reachable via `use super::*`).
+        // Returning normally (no panic / unwind) exercises the infallible contract.
+        backup_corrupt_config(&unwritable, b"recoverable bytes", &mut warnings);
+
+        assert_eq!(warnings.len(), 1, "exactly one degraded warning must be recorded");
+        assert!(
+            warnings[0].contains("could not be backed up"),
+            "the DEGRADED warning must signal the failed backup (not the success text), got: {}",
+            warnings[0]
+        );
+        // The write failed → no `config.json.corrupt-*` left anywhere under the temp dir.
+        assert!(
+            corrupt_backups(dir.path()).is_empty(),
+            "a failed backup write must not leave a config.json.corrupt-* file"
+        );
+    }
+
+    /// (i) Warning content (D1 / AC#1) → on a successful corrupt-backup the
+    /// recorded warning must NAME the actual backup file so the user knows where to
+    /// recover from, and carry the `config.json.corrupt-` prefix (locking the
+    /// string-built name against a `with_extension` regression that would yield
+    /// `config.corrupt`). Specs (a)/(b)/(d) only assert the warning is non-empty —
+    /// they would still pass with a content-free or misleading message.
+    #[test]
+    fn test_corrupt_backup_warning_names_recovery_file() {
+        let dir = temp_dir();
+        let corrupt: &[u8] = br#"{ "groqApiKey": "gsk_broken "#;
+        std::fs::write(dir.path().join(CONFIG_FILE), corrupt).unwrap();
+
+        let mut warnings = Vec::new();
+        let _cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        let backups = corrupt_backups(dir.path());
+        assert_eq!(backups.len(), 1, "exactly one corrupt backup expected, got {backups:?}");
+        assert_eq!(warnings.len(), 1, "exactly one warning recorded");
+
+        let backup_name = backups[0]
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("backup file name");
+        assert!(
+            warnings[0].contains(backup_name),
+            "warning must name the actual backup file '{backup_name}' for recovery (D1), got: {}",
+            warnings[0]
+        );
+        assert!(
+            warnings[0].contains("config.json.corrupt-"),
+            "warning must carry the string-built name, not a with_extension 'config.corrupt', got: {}",
+            warnings[0]
+        );
+    }
+
+    /// (j) Valid config (false-positive guard) → a fully valid, parseable
+    /// `config.json` must produce NO corrupt backup and NO warning, and its parsed
+    /// contents must survive (not be silently defaulted). Guards against a
+    /// regression that backs up / warns unconditionally — the inverse of AC#1, for
+    /// which no prior spec asserted the happy path stays clean.
+    #[test]
+    fn test_valid_config_records_no_backup_or_warning() {
+        let dir = temp_dir();
+        // A non-default, valid config written through the real serializer.
+        let saved = AppConfig {
+            groq_api_key: "valid-sentinel-key".to_string(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &saved).expect("save valid config");
+
+        let mut warnings = Vec::new();
+        let cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        assert!(warnings.is_empty(), "a valid config must NOT record a warning, got {warnings:?}");
+        assert!(
+            corrupt_backups(dir.path()).is_empty(),
+            "a valid config must NOT create a config.json.corrupt-* backup"
+        );
+        // Non-empty key is untouched by the env-var fallback → contents truly round-tripped.
+        assert_eq!(
+            cfg.groq_api_key, "valid-sentinel-key",
+            "the valid config's contents must round-trip through load, not be defaulted"
+        );
     }
 }

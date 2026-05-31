@@ -66,7 +66,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::AtomicBool;
 
 use audio::AudioRecorder;
-use config::{load_config, save_config, AppConfig, HotkeyMode};
+use config::{load_config_reporting, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
 use license::{compute_status_from_cache, compute_status_from_cache_ls, compute_trial_status, LicenseStatus};
 use llm::{CleanupProvider, CleanupStyle};
@@ -711,7 +711,10 @@ pub fn run() {
         // Check for early-adopter migration BEFORE loading config (we need to
         // know whether the license_key field was absent in the on-disk file).
         // Load persisted config (falls back to defaults + env vars on first run).
-        let mut cfg = load_config(&app_data_dir);
+        // Use the reporting variant so a corrupt-config backup warning (ROB-02 /
+        // ADR-0015) can be surfaced once the main window is up (emitted below).
+        let mut config_warnings: Vec<String> = Vec::new();
+        let mut cfg = load_config_reporting(&app_data_dir, &mut config_warnings);
 
         // Record first install timestamp on the very first launch.
         if cfg.first_install_at == 0 {
@@ -851,6 +854,20 @@ pub fn run() {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.show();
             let _ = w.set_focus();
+        }
+
+        // Surface any boot-time config warnings (e.g. a corrupt config.json was
+        // backed up to config.json.corrupt-<ts>). Best-effort, fire-and-forget:
+        // emitted via the canonical state emitter AFTER the main window is shown so
+        // the frontend listener has the best chance of catching it. Per D1 this
+        // toast may still be lost to the boot race — the durable recovery surface is
+        // the backup file itself, not this event; reliable pull-based delivery is a
+        // deferred follow-up. No trailing `done`/`idle` emit: `warn` is message-only
+        // and the frontend treats it as transient (recordingState stays idle), which
+        // is correct at boot.
+        #[cfg(desktop)]
+        for warning in config_warnings {
+            emit_pipeline_state(app.handle(), hotkey::PipelineEvent::warn(warning));
         }
 
         Ok(())
