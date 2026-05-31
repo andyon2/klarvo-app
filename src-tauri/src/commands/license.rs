@@ -16,7 +16,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::State;
 
-use crate::config::save_config;
 use crate::license::{
     compute_status_from_cache, compute_status_from_cache_ls, compute_trial_status,
     ls_client, status_to_string, validate_key_dual_path, LicenseStatus, ValidateResult,
@@ -65,20 +64,13 @@ pub async fn validate_license(key: String, state: State<'_, AppState>) -> Result
                 *s = status.clone();
             }
             // Persist to config.
-            {
-                let inner = state.inner();
-                let _disk_guard = crate::lock!(inner.config_disk_write)?;
-                let mut cfg = crate::lock!(inner.config)?;
+            state.inner().save_config_locked("license", |cfg| {
                 cfg.license_key = key;
                 cfg.license_validated_at = validated_at;
                 cfg.license_source = "hmac".to_string();
                 cfg.ls_instance_id = String::new();
                 cfg.ls_last_validated_at = 0;
-                let cfg_clone = cfg.clone();
-                drop(cfg);
-                save_config(&inner.app_data_dir, &cfg_clone)
-                    .map_err(|e| format!("Failed to persist license: {e}"))?;
-            }
+            })?;
             Ok(status_to_string(&status))
         }
         ValidateResult::LemonSqueezy { status, instance_id } => {
@@ -88,20 +80,13 @@ pub async fn validate_license(key: String, state: State<'_, AppState>) -> Result
                 *s = status.clone();
             }
             // Persist to config.
-            {
-                let inner = state.inner();
-                let _disk_guard = crate::lock!(inner.config_disk_write)?;
-                let mut cfg = crate::lock!(inner.config)?;
+            state.inner().save_config_locked("license", |cfg| {
                 cfg.license_key = key;
                 cfg.license_validated_at = validated_at;
                 cfg.license_source = "lemon_squeezy".to_string();
                 cfg.ls_instance_id = instance_id;
                 cfg.ls_last_validated_at = validated_at;
-                let cfg_clone = cfg.clone();
-                drop(cfg);
-                save_config(&inner.app_data_dir, &cfg_clone)
-                    .map_err(|e| format!("Failed to persist license: {e}"))?;
-            }
+            })?;
             Ok(status_to_string(&status))
         }
     }
@@ -138,20 +123,13 @@ pub fn remove_license(state: State<'_, AppState>) -> Result<(), String> {
     }
 
     // Clear persisted key + all license fields.
-    {
-        let inner = state.inner();
-        let _disk_guard = crate::lock!(inner.config_disk_write)?;
-        let mut cfg = crate::lock!(inner.config)?;
+    state.inner().save_config_locked("license removal", |cfg| {
         cfg.license_key = String::new();
         cfg.license_validated_at = 0;
         cfg.license_source = String::new();
         cfg.ls_instance_id = String::new();
         cfg.ls_last_validated_at = 0;
-        let cfg_clone = cfg.clone();
-        drop(cfg);
-        save_config(&inner.app_data_dir, &cfg_clone)
-            .map_err(|e| format!("Failed to persist license removal: {e}"))?;
-    }
+    })?;
 
     Ok(())
 }
@@ -187,20 +165,13 @@ pub async fn deactivate_license(state: State<'_, AppState>) -> Result<(), String
         let mut status = crate::lock!(state.license_status)?;
         *status = compute_trial_status(first_install_at);
     }
-    {
-        let inner = state.inner();
-        let _disk_guard = crate::lock!(inner.config_disk_write)?;
-        let mut cfg = crate::lock!(inner.config)?;
+    state.inner().save_config_locked("deactivation", |cfg| {
         cfg.license_key = String::new();
         cfg.license_validated_at = 0;
         cfg.license_source = String::new();
         cfg.ls_instance_id = String::new();
         cfg.ls_last_validated_at = 0;
-        let cfg_clone = cfg.clone();
-        drop(cfg);
-        save_config(&inner.app_data_dir, &cfg_clone)
-            .map_err(|e| format!("Failed to persist deactivation: {e}"))?;
-    }
+    })?;
 
     Ok(())
 }

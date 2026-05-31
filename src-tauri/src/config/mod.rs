@@ -1341,7 +1341,12 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
 /// # Errors
 /// Returns an error if the directory cannot be created, the file cannot be
 /// written, or serialization fails.
-pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> anyhow::Result<()> {
+///
+/// Low-level writer reserved for single-threaded boot/migration (before `AppState` exists).
+/// All runtime saves MUST go through `AppState::save_config_locked`, which holds the
+/// `config_disk_write` lock across the read-modify-write cycle (ROB-04). Calling this directly
+/// from a runtime path bypasses that serialization invariant.
+pub(crate) fn save_config(app_data_dir: &Path, config: &AppConfig) -> anyhow::Result<()> {
     std::fs::create_dir_all(app_data_dir)?;
 
     let path = app_data_dir.join(CONFIG_FILE);

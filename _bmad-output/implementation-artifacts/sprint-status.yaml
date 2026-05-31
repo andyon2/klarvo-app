@@ -79,7 +79,10 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4 — God-File Depth Refactor (fenced, last; no behavior change)
-  epic-4: backlog
+  # NOTE: epic-4 is in-progress ONLY because story 4-3 was pulled forward as a one-off scope-fence
+  # exception (code-review-1.3-D1 coupling, decided 2026-05-31). 4-1/4-2 remain deferred per the fence.
+  epic-4: in-progress
   4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize: backlog
   4-2-tighten-pipeline-rs-contracts-demote-test-only-pub-surface: backlog
+  4-3-single-sanctioned-config-write-path-save-config-locked: done # Pulled forward from Epic 4 (scope-fence exception, 2026-05-31) — code-review-1.3-D1 Option 2. Extracted AppState::save_config_locked choke-point; routed all 18 prod config-save sites (corrects 1.3's "17" miscount); save_config→pub(crate); concurrency specs rebound to the real helper. 3-layer review PASS (1 import fix + 2 hygiene patches applied; Blind Hunter Medium = documented won't-fix, property now structural). 531 lib tests/0 fail, clippy clean on touched files (0 new warnings)
   epic-4-retrospective: optional

@@ -233,6 +233,28 @@ independently deferred at sprint-execution time without dragging the ADR-anticip
 `load_config` isolation with it. Do NOT implement any of this epic under remediation time-pressure
 ahead of the hardening/guardian/test work.
 
+### Story 4.3: Single sanctioned config-write path (`save_config_locked` choke-point)
+
+**[Scope-fence EXCEPTION — decided 2026-05-31, Andi]** Pulled forward ahead of Stories 1.4/1.5 as a
+one-off exception to the fence above (4.1/4.2 remain deferred). Source: code review of Story 1.3,
+decision D1 Option 2. Rationale: tightly coupled to Story 1.3, which just rewired the 18 config-save
+sites with an identical hand-written lock pattern — extracting the choke-point while the context is
+hot and the sites are uniform is far cheaper than re-loading them later.
+
+As a klarvo maintainer,
+I want a single sanctioned `AppState::save_config_locked` that is the only runtime path to persist
+`config.json`,
+So that the ROB-04 disk-write serialization invariant is enforced by structure (one choke-point, the
+lock impossible to get wrong at a call site) instead of by reviewer vigilance across 18 hand-written
+copies, and the concurrency specs bind to the real production path.
+
+**Acceptance Criteria:** see story file
+`_bmad-output/implementation-artifacts/4-3-single-sanctioned-config-write-path-save-config-locked.md`
+(helper added; all 18 sites routed; `save_config` demoted to `pub(crate)`; no behavior change; specs
+rebound to the real helper; cargo test green + clippy clean on touched files).
+**Findings covered:** code-review-1.3-D1 (deferred → pulled forward).
+**Status:** done (2026-05-31).
+
 ---
 
 ## Epic 1: Config & State Persistence Hardening

@@ -3,7 +3,7 @@
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::config::{save_config, AppProfile, TextSnippet};
+use crate::config::{AppProfile, TextSnippet};
 use crate::license::LicensedFeature;
 use crate::require_license;
 use crate::paste::{capture_foreground_window, create_paste_handler};
@@ -33,14 +33,10 @@ pub fn save_profiles(
     profiles: Vec<AppProfile>,
 ) -> Result<(), String> {
     require_license!(state, LicensedFeature::AppProfiles);
-    let inner = state.inner();
-    let _disk_guard = crate::lock!(inner.config_disk_write)?;
-    let mut cfg = crate::lock!(inner.config)?;
-    cfg.profiles = profiles;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist profiles: {e}"))
+    state
+        .inner()
+        .save_config_locked("profiles", |cfg| cfg.profiles = profiles)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -69,14 +65,10 @@ pub fn save_snippets(
     snippets: Vec<TextSnippet>,
 ) -> Result<(), String> {
     require_license!(state, LicensedFeature::Snippets);
-    let inner = state.inner();
-    let _disk_guard = crate::lock!(inner.config_disk_write)?;
-    let mut cfg = crate::lock!(inner.config)?;
-    cfg.snippets = snippets;
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist snippets: {e}"))
+    state
+        .inner()
+        .save_config_locked("snippets", |cfg| cfg.snippets = snippets)?;
+    Ok(())
 }
 
 /// Pastes snippet content into the previously focused window.
@@ -178,15 +170,11 @@ pub async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), Stri
 /// supported because a single coordinate is not useful on its own.
 #[tauri::command]
 pub fn save_bar_position(state: State<'_, AppState>, x: f64, y: f64) -> Result<(), String> {
-    let inner = state.inner();
-    let _disk_guard = crate::lock!(inner.config_disk_write)?;
-    let mut cfg = crate::lock!(inner.config)?;
-    cfg.bar_x = Some(x);
-    cfg.bar_y = Some(y);
-    let cfg_clone = cfg.clone();
-    drop(cfg);
-    save_config(&inner.app_data_dir, &cfg_clone)
-        .map_err(|e| format!("Failed to persist bar position: {e}"))
+    state.inner().save_config_locked("bar position", |cfg| {
+        cfg.bar_x = Some(x);
+        cfg.bar_y = Some(y);
+    })?;
+    Ok(())
 }
 
 /// Returns the last saved floating bar position, or `None` if no position

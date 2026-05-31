@@ -286,6 +286,34 @@ unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
 
 impl AppState {
+    /// The single sanctioned runtime path to persist `config.json`.
+    ///
+    /// Serializes the whole read-modify-write+persist cycle behind `config_disk_write` so
+    /// concurrent savers cannot clobber each other (ROB-04): acquires the disk-write lock,
+    /// applies `mutate` to the in-memory config under the `config` lock, drops the `config`
+    /// lock, writes the resulting snapshot to disk under the still-held disk-write lock, and
+    /// returns that snapshot. The `config` lock is never held across disk I/O. Callers that
+    /// need the persisted config (e.g. to re-resolve providers) use the returned value.
+    ///
+    /// Every production config save goes through this. `crate::config::save_config` is
+    /// `pub(crate)` and reserved for single-threaded boot (before this `AppState` exists);
+    /// calling it elsewhere bypasses the ROB-04 serialization invariant.
+    pub fn save_config_locked(
+        &self,
+        context: &str,
+        mutate: impl FnOnce(&mut AppConfig),
+    ) -> Result<AppConfig, String> {
+        let _disk_guard = crate::lock!(self.config_disk_write)?;
+        let snapshot = {
+            let mut cfg = crate::lock!(self.config)?;
+            mutate(&mut cfg);
+            cfg.clone()
+        };
+        crate::config::save_config(&self.app_data_dir, &snapshot)
+            .map_err(|e| format!("Failed to persist {context}: {e}"))?;
+        Ok(snapshot)
+    }
+
     pub fn new(
         cfg: AppConfig,
         dictionary: Dictionary,
@@ -841,6 +869,10 @@ pub fn run() {
                         log::warn!("[setup] Failed to auto-start voice command monitor: {e}");
                         // Reset config flag so the next launch does not attempt
                         // auto-start again (avoids a phantom-start loop).
+                        // TODO(ROB-04): if this `if false` block is ever re-enabled, route the
+                        // reset through `state.save_config_locked("voice command state", |c| ...)`
+                        // instead of holding `config` across this direct `save_config` — the
+                        // hand-written pattern below bypasses the disk-write serialization lock.
                         if let Ok(mut cfg) = state.config.lock() {
                             cfg.voice_command_enabled = false;
                             let dir = state.app_data_dir.clone();
