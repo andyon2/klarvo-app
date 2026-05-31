@@ -362,9 +362,26 @@ session, and project policy treats the Windows-release smoke as a **hard gate** 
 to `done` after NFR-W was verified on a real Windows build). Status held at `review`; the Windows smoke
 (Tasks list, last unchecked item) is the sole remaining gate to `done`. Sprint status unchanged (`review`).
 
+### NFR-W — Windows smoke (verified 2026-05-31) → DONE
+
+Verified on a real Windows release build (Andi): a corrupt `config.json` (present but unparsable) → app
+boots on defaults **and** `config.json.corrupt-<ts>` is created in `%APPDATA%\com.klarvo.voice\` containing
+all prior data intact (keys/license recoverable), with the `[config] Corrupt config.json backed up to …`
+log line present.
+
+**Why the first smoke gave a false negative:** it ran a **stale binary**. The Windows build had been
+silently failing — an `.env`-injected `TAURI_SIGNING_PRIVATE_KEY` plus `createUpdaterArtifacts: true`
+forced build-time updater signing and aborted on a wrong/absent key, while the build script swallowed the
+non-zero exit and left the previous `klarvo.exe` in place. The log showed the parse-fail line with **no**
+backup line = old code. Resolved by `createUpdaterArtifacts: false` (see
+`spec-defer-updater-signing-to-rsign.md`) + build-script success-gating, then rebuilt and re-smoked.
+
+NFR-W satisfied → status flipped `review` → **done**.
+
 ## Change Log
 
 | Date       | Change                                                                                  |
 |------------|-----------------------------------------------------------------------------------------|
 | 2026-05-31 | Implemented backup-on-corrupt recovery in `load_config` (ROB-02 / ADR-0015): `backup_corrupt_config` helper, parse/read-error wiring, `load_config_reporting` variant + wrapper, boot-time warning surfacing in `lib.rs`, 6 Linux specs. Full lib suite green (524). Status → review; Windows smoke (NFR-W) outstanding as manual E1 handoff. |
 | 2026-05-31 | Story-automator adversarial review (auto-fix): **Approved** — 0 critical / 0 high. Verified real `cargo test --lib` = **528 passed, 0 failed**; touched-files clippy clean (`config/mod.rs` 0; `lib.rs` only pre-existing `LicenseStatus`). All ACs (#1–5 + D1) implemented; code ships **10** specs (a–j), exceeding the documented 6. Corrected stale counts + File List. Status stays `review` pending manual Windows smoke (NFR-W). |
+| 2026-05-31 | NFR-W (Windows smoke) **verified** on real Windows build: corrupt `config.json` → boots on defaults + `config.json.corrupt-<ts>` created with all data intact. First smoke ran a STALE binary (silently-failing build: `.env` `TAURI_SIGNING_PRIVATE_KEY` + `createUpdaterArtifacts:true`); unblocked via `createUpdaterArtifacts:false` + `sync-and-build.ps1` success-gating. Status `review` → **done**. |
