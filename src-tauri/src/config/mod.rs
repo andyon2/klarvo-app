@@ -1003,6 +1003,57 @@ fn backup_corrupt_config(path: &Path, raw: &[u8], warnings: &mut Vec<String>) {
     }
 }
 
+/// Writes a best-effort backup of the current on-disk `config.json` to
+/// `config.json.pre-migration-<unix_ts>-<migration>` before a schema migration
+/// mutates and re-persists the config (ROB-05 / ADR-0015 §4).
+///
+/// Returns the backup filename on success so callers can embed it in
+/// user-facing warning messages. Returns `None` if the backup could not be
+/// written (logged at `warn!` but never blocks migration).
+///
+/// The caller must invoke this BEFORE calling `save_config` for the
+/// migration write. The migration name is embedded in the filename to ensure
+/// uniqueness when multiple migrations fire on the same boot.
+fn backup_pre_migration_config(app_data_dir: &Path, migration_name: &str) -> Option<String> {
+    let path = app_data_dir.join(CONFIG_FILE);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let safe_name = migration_name.replace('/', "-");
+    let backup_name = format!("{CONFIG_FILE}.pre-migration-{ts}-{safe_name}");
+    let backup_path = match path.parent() {
+        Some(dir) => dir.join(&backup_name),
+        None => app_data_dir.join(&backup_name),
+    };
+    match std::fs::read(&path) {
+        Ok(raw) => match crate::fs::save_atomic(&backup_path, &raw) {
+            Ok(()) => {
+                log::info!(
+                    "[config] Pre-migration backup written to {} (migration: {migration_name})",
+                    backup_path.display()
+                );
+                Some(backup_name)
+            }
+            Err(e) => {
+                log::warn!(
+                    "[config] Failed to write pre-migration backup to {} ({e}); \
+                     continuing with migration (migration: {migration_name})",
+                    backup_path.display()
+                );
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!(
+                "[config] Could not read config.json for pre-migration backup ({e}); \
+                 continuing with migration (migration: {migration_name})"
+            );
+            None
+        }
+    }
+}
+
 /// Loads the configuration from `{app_data_dir}/config.json`.
 ///
 /// Returns `AppConfig::default()` if the file does not exist or cannot be
@@ -1159,8 +1210,21 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         config.stt_priority.clear();
         config.llm_priority.clear();
         // Persist immediately so the next start is clean and needs no migration.
+        let backup_file = backup_pre_migration_config(app_data_dir, "sttPriority/llmPriority");
         if let Err(e) = save_config(app_data_dir, &config) {
-            log::warn!("[config] Failed to persist migrated config: {e}");
+            let location = backup_file
+                .map(|f| format!("`{f}` in your app data directory"))
+                .unwrap_or_else(|| {
+                    "your app data directory (look for config.json.pre-migration-* files)"
+                        .to_string()
+                });
+            let msg = format!(
+                "Config migration (sttPriority/llmPriority) could not be saved: {e}. \
+                 Your original config was backed up to {location} — \
+                 your keys and license are intact."
+            );
+            log::warn!("[config] {msg}");
+            warnings.push(msg);
         }
     }
 
@@ -1208,8 +1272,21 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         ];
 
         // Persist immediately so future starts skip this migration path.
+        let backup_file = backup_pre_migration_config(app_data_dir, "hotkey_slots");
         if let Err(e) = save_config(app_data_dir, &config) {
-            log::warn!("[config] Failed to persist hotkey_slots migration: {e}");
+            let location = backup_file
+                .map(|f| format!("`{f}` in your app data directory"))
+                .unwrap_or_else(|| {
+                    "your app data directory (look for config.json.pre-migration-* files)"
+                        .to_string()
+                });
+            let msg = format!(
+                "Config migration (hotkey_slots) could not be saved: {e}. \
+                 Your original config was backed up to {location} — \
+                 your keys and license are intact."
+            );
+            log::warn!("[config] {msg}");
+            warnings.push(msg);
         }
     }
 
@@ -1237,8 +1314,21 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         }
         // Clear the global flag so we no longer re-trigger this migration.
         config.insert_and_send = false;
+        let backup_file = backup_pre_migration_config(app_data_dir, "insert_and_send_per_slot");
         if let Err(e) = save_config(app_data_dir, &config) {
-            log::warn!("[config] Failed to persist insert_and_send slot migration: {e}");
+            let location = backup_file
+                .map(|f| format!("`{f}` in your app data directory"))
+                .unwrap_or_else(|| {
+                    "your app data directory (look for config.json.pre-migration-* files)"
+                        .to_string()
+                });
+            let msg = format!(
+                "Config migration (insert_and_send per-slot) could not be saved: {e}. \
+                 Your original config was backed up to {location} — \
+                 your keys and license are intact."
+            );
+            log::warn!("[config] {msg}");
+            warnings.push(msg);
         }
     }
 
@@ -2874,6 +2964,174 @@ mod tests {
         // Second load must be idempotent (no further migration).
         let loaded2 = load_config(dir.path());
         assert_eq!(loaded2, loaded, "Second load must be idempotent after migration");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 1.4 — Pre-migration backup + error propagation (ROB-05 / ADR-0015)
+    // -----------------------------------------------------------------------
+
+    /// Collect all `config.json.pre-migration-*` backup files present in `dir`.
+    fn pre_migration_backups(dir: &Path) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .expect("read dir")
+            .map(|e| e.expect("dir entry").path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("config.json.pre-migration-"))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// sttPriority/llmPriority migration writes a pre-migration backup.
+    #[test]
+    fn test_migration_backup_written_on_stt_priority_migration() {
+        let dir = temp_dir();
+        // Include hotkeySlots to suppress the hotkey_slots migration; otherwise both
+        // migrations fire and two backups are written, breaking the len()==1 assertion.
+        let legacy = r#"{
+            "sttPriority": ["openai"],
+            "llmPriority": ["anthropic"],
+            "hotkeySlots": [
+                {"hotkey": "ctrl+alt+r", "mode": "hold", "insertAndSend": false},
+                {"hotkey": "", "mode": "hold", "insertAndSend": false}
+            ]
+        }"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        let _ = load_config(dir.path());
+
+        let backups = pre_migration_backups(dir.path());
+        assert_eq!(backups.len(), 1, "exactly one pre-migration backup should be written");
+        let content = std::fs::read_to_string(&backups[0]).expect("backup must be readable");
+        assert!(
+            content.contains("sttPriority"),
+            "backup should contain the pre-migration legacy field"
+        );
+    }
+
+    /// hotkey_slots migration writes a pre-migration backup.
+    #[test]
+    fn test_migration_backup_written_on_hotkey_slots_migration() {
+        let dir = temp_dir();
+        // Suppress sttPriority migration by providing explicit provider fields.
+        let legacy = r#"{"sttProvider": "groq", "llmProvider": "deepseek", "hotkey": "ctrl+alt+r", "hotkeyMode": "toggle"}"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        let _ = load_config(dir.path());
+
+        let backups = pre_migration_backups(dir.path());
+        assert!(
+            !backups.is_empty(),
+            "pre-migration backup must be written for hotkey_slots migration"
+        );
+    }
+
+    /// insert_and_send per-slot migration writes a pre-migration backup.
+    #[test]
+    fn test_migration_backup_written_on_insert_and_send_migration() {
+        let dir = temp_dir();
+        let before = AppConfig {
+            insert_and_send: true,
+            stt_provider: "openai".to_string(),
+            llm_provider: "openai".to_string(),
+            openai_api_key: "sk-test".to_string(),
+            hotkey_slots: vec![
+                HotkeySlot {
+                    hotkey: "ctrl+shift+d".to_string(),
+                    mode: HotkeyMode::Hold,
+                    insert_and_send: false,
+                },
+                HotkeySlot {
+                    hotkey: String::new(),
+                    mode: HotkeyMode::Hold,
+                    insert_and_send: false,
+                },
+            ],
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &before).unwrap();
+
+        let _ = load_config(dir.path());
+
+        let backups = pre_migration_backups(dir.path());
+        assert!(
+            !backups.is_empty(),
+            "pre-migration backup must be written for insert_and_send migration"
+        );
+    }
+
+    /// No pre-migration backup when an already-migrated config is loaded.
+    #[test]
+    fn test_no_migration_backup_when_no_migration_runs() {
+        let dir = temp_dir();
+        // Fully-migrated config: explicit providers, non-empty hotkey_slots, no global insert_and_send.
+        let modern = r#"{
+            "sttProvider": "groq",
+            "llmProvider": "deepseek",
+            "hotkeySlots": [
+                {"hotkey": "ctrl+alt+r", "mode": "hold", "insertAndSend": false},
+                {"hotkey": "", "mode": "hold", "insertAndSend": false}
+            ]
+        }"#;
+        std::fs::write(dir.path().join("config.json"), modern.as_bytes()).unwrap();
+
+        let _ = load_config(dir.path());
+
+        let backups = pre_migration_backups(dir.path());
+        assert!(
+            backups.is_empty(),
+            "no pre-migration backup should be written when no migration runs"
+        );
+    }
+
+    /// Pre-migration backup is valid JSON containing the original on-disk state.
+    #[test]
+    fn test_migration_backup_is_valid_json() {
+        let dir = temp_dir();
+        let legacy = r#"{"sttPriority": ["openai"], "groqApiKey": "gsk-test"}"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        let _ = load_config(dir.path());
+
+        let backups = pre_migration_backups(dir.path());
+        assert!(!backups.is_empty(), "backup must exist");
+        let content = std::fs::read_to_string(&backups[0]).unwrap();
+        serde_json::from_str::<serde_json::Value>(&content)
+            .expect("backup must be valid JSON");
+        // Verify it's the pre-migration snapshot (legacy field still present).
+        assert!(content.contains("sttPriority"), "backup must preserve pre-migration fields");
+        assert!(content.contains("gsk-test"), "backup must preserve user data (api key)");
+    }
+
+    /// Migration write failure is propagated to the warnings vec (Linux only).
+    #[test]
+    #[cfg(unix)]
+    fn test_migration_write_error_propagated_to_warnings() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = temp_dir();
+        // Legacy config that triggers the hotkey_slots migration.
+        let legacy =
+            r#"{"sttProvider": "groq", "llmProvider": "deepseek", "hotkey": "ctrl+alt+r"}"#;
+        std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
+
+        // Make the directory read-only so save_config (and the backup write) fail.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let mut warnings: Vec<String> = Vec::new();
+        let _ = load_config_reporting(dir.path(), &mut warnings);
+
+        // Restore permissions so TempDir can clean up on drop.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("migration") && w.contains("could not be saved")),
+            "migration write failure must be propagated to warnings; got: {warnings:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
