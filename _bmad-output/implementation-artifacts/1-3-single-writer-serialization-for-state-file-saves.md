@@ -286,7 +286,7 @@ claude-sonnet-4-6
 #### Completion Notes List
 
 - Added `config_disk_write: Mutex<()>` to `AppState` struct and initializer in `lib.rs`.
-- Updated all 17 production `save_config` call sites in `commands/` (settings.rs ×9, misc.rs ×3, license.rs ×4, voice_command.rs ×2) to hold `_disk_guard` across the read-modify-write cycle.
+- Updated all 18 production `save_config` call sites in `commands/` (settings.rs ×9, misc.rs ×3, license.rs ×4, voice_command.rs ×2 = **18**) to hold `_disk_guard` across the read-modify-write cycle. (Corrected 2026-05-31 during Story 4.3: this note originally said "17" — an arithmetic slip; 9+3+4+2 = 18. The code always guarded all of them; only the count was wrong.)
 - Fixed `save_advanced_settings` to drop the `config` lock before disk I/O (was incorrectly holding it across the write).
 - Fixed `voice_command.rs` stop-path to drop `config` lock before disk I/O (same anti-pattern).
 - Added 2 new specs: Spec A (concurrent race — bar-drag cannot erase API key) and Spec B (config lock free during I/O). Both pass.
@@ -305,7 +305,7 @@ claude-sonnet-4-6
 ### Review Findings
 
 _Code review 2026-05-31 (bmad-code-review; 3 adversarial layers — Blind Hunter / Edge Case
-Hunter / Acceptance Auditor). **Verified clean:** all 6 ACs satisfied; 17 guarded production
+Hunter / Acceptance Auditor). **Verified clean:** all 6 ACs satisfied; 18 guarded production
 call sites confirmed (settings ×9, misc ×3, license ×4, voice_command ×2); lock-ordering
 globally consistent (`config_disk_write` → `config`, no inversion anywhere); no re-entrant
 self-deadlock; production config.json write-site coverage is complete. Findings below are
@@ -323,7 +323,7 @@ hardening, not AC failures._
   `barrier.wait()`) and never observes the disk lock. Resolution options: (a) accept
   pattern-characterization tests as-is — invoking the real `#[tauri::command]` async fns needs
   an AppHandle/State harness; (b) extract a shared `save_config_locked(state, |cfg| …)` helper
-  that all 17 sites delegate to and that the tests bind to — also closes the "`Mutex<()>`
+  that all 18 sites delegate to and that the tests bind to — also closes the "`Mutex<()>`
   invariant is not compile-enforced" gap; (c) minimal — harden Spec B's assertion (observe the
   disk lock, not `config`) + add a symmetric-ordering/negative case, leave the binding gap.
   [blind+edge+auditor]
@@ -360,7 +360,7 @@ clippy clean on touched files):**
   dropped (it now *observes the disk lock*, not just `config`). Added
   `test_disk_write_lock_serializes_concurrent_saves_bar_first` — the symmetric/negative-control
   ordering (bar-save wins the lock first). **Option 2 (shared `save_config_locked` helper so the
-  17 sites bind structurally + the invariant becomes compile-enforced) deferred to a follow-up
+  18 sites bind structurally + the invariant becomes compile-enforced) deferred to a follow-up
   story** — see `deferred-work.md` (Epic 4 candidate; to be formalized via `bmad-create-story`,
   not improvised). Residual until then: a future edit dropping a guard from a real command would
   still not be caught by these tests (production is verified correct *now*).
