@@ -1054,6 +1054,33 @@ fn backup_pre_migration_config(app_data_dir: &Path, migration_name: &str) -> Opt
     }
 }
 
+/// Builds the user-facing warning shown when a migration's `save_config` fails.
+///
+/// `backup_file` is the filename returned by [`backup_pre_migration_config`]
+/// (`None` if the pre-migration backup itself could not be written). The
+/// message deliberately says "a backup … before the migration" rather than
+/// "your original config": when several migrations chain on a single boot,
+/// each backup captures the on-disk state immediately before *that* migration,
+/// so only the first backup of the chain is the literal pre-upgrade file.
+/// Keys and license survive in every backup regardless — they live in no
+/// migrated field — which is what the reassurance refers to.
+fn migration_save_warning(
+    migration_label: &str,
+    error: &impl std::fmt::Display,
+    backup_file: Option<String>,
+) -> String {
+    let location = backup_file
+        .map(|f| format!("`{f}` in your app data directory"))
+        .unwrap_or_else(|| {
+            "your app data directory (look for config.json.pre-migration-* files)".to_string()
+        });
+    format!(
+        "Config migration ({migration_label}) could not be saved: {error}. \
+         A backup of your config was saved to {location} before the migration — \
+         your keys and license are intact."
+    )
+}
+
 /// Loads the configuration from `{app_data_dir}/config.json`.
 ///
 /// Returns `AppConfig::default()` if the file does not exist or cannot be
@@ -1212,17 +1239,7 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         // Persist immediately so the next start is clean and needs no migration.
         let backup_file = backup_pre_migration_config(app_data_dir, "sttPriority/llmPriority");
         if let Err(e) = save_config(app_data_dir, &config) {
-            let location = backup_file
-                .map(|f| format!("`{f}` in your app data directory"))
-                .unwrap_or_else(|| {
-                    "your app data directory (look for config.json.pre-migration-* files)"
-                        .to_string()
-                });
-            let msg = format!(
-                "Config migration (sttPriority/llmPriority) could not be saved: {e}. \
-                 Your original config was backed up to {location} — \
-                 your keys and license are intact."
-            );
+            let msg = migration_save_warning("sttPriority/llmPriority", &e, backup_file);
             log::warn!("[config] {msg}");
             warnings.push(msg);
         }
@@ -1274,17 +1291,7 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         // Persist immediately so future starts skip this migration path.
         let backup_file = backup_pre_migration_config(app_data_dir, "hotkey_slots");
         if let Err(e) = save_config(app_data_dir, &config) {
-            let location = backup_file
-                .map(|f| format!("`{f}` in your app data directory"))
-                .unwrap_or_else(|| {
-                    "your app data directory (look for config.json.pre-migration-* files)"
-                        .to_string()
-                });
-            let msg = format!(
-                "Config migration (hotkey_slots) could not be saved: {e}. \
-                 Your original config was backed up to {location} — \
-                 your keys and license are intact."
-            );
+            let msg = migration_save_warning("hotkey_slots", &e, backup_file);
             log::warn!("[config] {msg}");
             warnings.push(msg);
         }
@@ -1316,17 +1323,7 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         config.insert_and_send = false;
         let backup_file = backup_pre_migration_config(app_data_dir, "insert_and_send_per_slot");
         if let Err(e) = save_config(app_data_dir, &config) {
-            let location = backup_file
-                .map(|f| format!("`{f}` in your app data directory"))
-                .unwrap_or_else(|| {
-                    "your app data directory (look for config.json.pre-migration-* files)"
-                        .to_string()
-                });
-            let msg = format!(
-                "Config migration (insert_and_send per-slot) could not be saved: {e}. \
-                 Your original config was backed up to {location} — \
-                 your keys and license are intact."
-            );
+            let msg = migration_save_warning("insert_and_send per-slot", &e, backup_file);
             log::warn!("[config] {msg}");
             warnings.push(msg);
         }
@@ -3112,9 +3109,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = temp_dir();
-        // Legacy config that triggers the hotkey_slots migration.
-        let legacy =
-            r#"{"sttProvider": "groq", "llmProvider": "deepseek", "hotkey": "ctrl+alt+r"}"#;
+        // Legacy config that triggers the hotkey_slots migration, carrying a
+        // secret so we can assert AC-4 (keys survive a failed migration save).
+        let legacy = r#"{"sttProvider": "groq", "llmProvider": "deepseek", "hotkey": "ctrl+alt+r", "groqApiKey": "gsk-survival-test"}"#;
         std::fs::write(dir.path().join("config.json"), legacy.as_bytes()).unwrap();
 
         // Make the directory read-only so save_config (and the backup write) fail.
@@ -3131,6 +3128,16 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("migration") && w.contains("could not be saved")),
             "migration write failure must be propagated to warnings; got: {warnings:?}"
+        );
+
+        // AC-4: the on-disk config.json must still hold the user's keys/license
+        // after a failed migration save — save_config never overwrote the
+        // in-place file, so the pre-migration original (with the secret) stays.
+        let on_disk = std::fs::read_to_string(dir.path().join("config.json"))
+            .expect("config.json must still be readable after a failed migration save");
+        assert!(
+            on_disk.contains("gsk-survival-test"),
+            "keys/license must survive a failed migration save on disk; got: {on_disk}"
         );
     }
 
