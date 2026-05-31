@@ -56,3 +56,5 @@ _bmad/
 .claude/
 shells/
 _bmad-output/runtime/
+_bmad-output/story-automator/
+.claude/.story-automator-active
