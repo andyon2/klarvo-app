@@ -220,6 +220,11 @@ pub struct AppState {
     pub last_recording: Mutex<Option<Vec<u8>>>,
     /// Full persisted configuration (includes API keys).
     pub config: Mutex<AppConfig>,
+    /// Serializes the read-modify-write+persist cycle for config.json.
+    /// All callers must hold this lock across the entire cycle (read → modify →
+    /// clone → disk write) so no concurrent saver can clobber a prior write.
+    /// The `config` Mutex is dropped before the disk write; this lock stays held.
+    pub config_disk_write: Mutex<()>,
     /// User's custom word list -- injected into STT prompt and LLM system prompt.
     pub dictionary: Mutex<Dictionary>,
     /// Path to the app-data directory for persisting config and dictionary.
@@ -309,6 +314,7 @@ impl AppState {
             recording_start: Mutex::new(None),
             last_recording: Mutex::new(None),
             config: Mutex::new(cfg),
+            config_disk_write: Mutex::new(()),
             dictionary: Mutex::new(dictionary),
             app_data_dir,
             prev_foreground_hwnd: Mutex::new(None),

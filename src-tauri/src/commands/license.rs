@@ -67,6 +67,7 @@ pub async fn validate_license(key: String, state: State<'_, AppState>) -> Result
             // Persist to config.
             {
                 let inner = state.inner();
+                let _disk_guard = crate::lock!(inner.config_disk_write)?;
                 let mut cfg = crate::lock!(inner.config)?;
                 cfg.license_key = key;
                 cfg.license_validated_at = validated_at;
@@ -89,6 +90,7 @@ pub async fn validate_license(key: String, state: State<'_, AppState>) -> Result
             // Persist to config.
             {
                 let inner = state.inner();
+                let _disk_guard = crate::lock!(inner.config_disk_write)?;
                 let mut cfg = crate::lock!(inner.config)?;
                 cfg.license_key = key;
                 cfg.license_validated_at = validated_at;
@@ -138,6 +140,7 @@ pub fn remove_license(state: State<'_, AppState>) -> Result<(), String> {
     // Clear persisted key + all license fields.
     {
         let inner = state.inner();
+        let _disk_guard = crate::lock!(inner.config_disk_write)?;
         let mut cfg = crate::lock!(inner.config)?;
         cfg.license_key = String::new();
         cfg.license_validated_at = 0;
@@ -186,6 +189,7 @@ pub async fn deactivate_license(state: State<'_, AppState>) -> Result<(), String
     }
     {
         let inner = state.inner();
+        let _disk_guard = crate::lock!(inner.config_disk_write)?;
         let mut cfg = crate::lock!(inner.config)?;
         cfg.license_key = String::new();
         cfg.license_validated_at = 0;

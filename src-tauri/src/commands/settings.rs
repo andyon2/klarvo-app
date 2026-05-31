@@ -445,6 +445,7 @@ pub async fn save_settings(
     // Build updated config by delegating to the pure merge function.
     // Empty API key strings preserve the existing key so the user can change
     // other settings without re-entering keys.
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let existing = crate::lock!(inner.config)?.clone();
     let patch = SettingsPatch {
         groq_api_key,
@@ -497,6 +498,13 @@ pub async fn save_settings(
 
     // Update in-memory config.
     *crate::lock!(inner.config)? = new_cfg;
+
+    // Release the disk-write lock now: the read-modify-write+memory cycle is complete.
+    // The hotkey re-registration and autostart OS-registry write below do NOT touch
+    // config.json, so holding the global save-serialization lock across them would needlessly
+    // block concurrent savers (e.g. a high-frequency bar-drag save). Mirrors the block-scoped
+    // guard discipline in `set_hotkey_slot`.
+    drop(_disk_guard);
 
     // Hot-reload providers based on priority lists.
     *crate::write_lock!(inner.stt_provider)? = new_stt;
@@ -620,9 +628,13 @@ pub fn save_advanced_settings(
     }
 
     let inner = state.inner();
-    let mut cfg = crate::lock!(inner.config)?;
-    cfg.advanced = settings;
-    save_config(&inner.app_data_dir, &cfg)
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
+    let cfg_clone = {
+        let mut cfg = crate::lock!(inner.config)?;
+        cfg.advanced = settings;
+        cfg.clone()
+    };
+    save_config(&inner.app_data_dir, &cfg_clone)
         .map_err(|e| format!("Failed to save advanced settings: {e}"))?;
     Ok(())
 }
@@ -658,6 +670,7 @@ pub async fn update_api_keys(
     let inner = state.inner();
 
     {
+        let _disk_guard = crate::lock!(inner.config_disk_write)?;
         let mut cfg = crate::lock!(inner.config)?;
 
         if let Some(ref key) = groq_api_key {
@@ -669,7 +682,7 @@ pub async fn update_api_keys(
 
         // Persist updated config.
         let cfg_clone = cfg.clone();
-        drop(cfg); // release lock before I/O
+        drop(cfg); // release config lock before I/O (disk_guard still held)
         save_config(&inner.app_data_dir, &cfg_clone)
             .map_err(|e| format!("Failed to persist API keys: {e}"))?;
     }
@@ -694,6 +707,7 @@ pub async fn update_api_keys(
 #[tauri::command]
 pub fn set_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.language = language;
     let cfg_clone = cfg.clone();
@@ -706,6 +720,7 @@ pub fn set_language(state: State<'_, AppState>, language: String) -> Result<(), 
 #[tauri::command]
 pub fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Result<(), String> {
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.cleanup_style = style;
     let cfg_clone = cfg.clone();
@@ -721,6 +736,7 @@ pub fn set_cleanup_style(state: State<'_, AppState>, style: CleanupStyle) -> Res
 #[tauri::command]
 pub fn set_output_language(state: State<'_, AppState>, language: String) -> Result<(), String> {
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.output_language = language;
     let cfg_clone = cfg.clone();
@@ -759,6 +775,7 @@ pub async fn set_hotkey(
 
     let inner = state.inner();
     {
+        let _disk_guard = crate::lock!(inner.config_disk_write)?;
         let mut cfg = crate::lock!(inner.config)?;
 
         // Ensure the Vec is at least (idx + 1) elements long.
@@ -876,10 +893,11 @@ pub fn set_onboarding_state(
     onboarding_state: crate::config::OnboardingState,
 ) -> Result<(), String> {
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.onboarding = onboarding_state;
     let cfg_clone = cfg.clone();
-    drop(cfg); // release lock before I/O
+    drop(cfg);
     save_config(&inner.app_data_dir, &cfg_clone)
         .map_err(|e| format!("Failed to save onboarding state: {e}"))
 }
@@ -948,6 +966,7 @@ pub async fn clear_api_key(
 ) -> Result<(), String> {
     let inner = state.inner();
 
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?.clone();
 
     match provider.as_str() {
@@ -996,6 +1015,7 @@ pub async fn clear_api_key(
 mod tests {
     use crate::config::{load_config, save_config, AppConfig, HotkeyMode, HotkeySlot};
     use crate::llm::CleanupStyle;
+    use std::sync::Arc;
 
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().expect("tempdir creation failed")
@@ -1710,5 +1730,222 @@ mod tests {
             "slot 1 mode must be unchanged when hotkey_mode_slot2 is None");
         assert!(result.hotkey_slots[1].insert_and_send,
             "slot 1 insert_and_send must be unchanged when insert_and_send_slot2 is None");
+    }
+
+    // -----------------------------------------------------------------------
+    // ROB-04 / Story 1.3: disk-write serialization
+    // -----------------------------------------------------------------------
+
+    /// Spec A — concurrent bar-drag and API-key save: both writes are serialized
+    /// by `config_disk_write` so the final on-disk config contains BOTH the new
+    /// API key AND the new bar position, regardless of which thread acquires the
+    /// disk-write lock first.
+    ///
+    /// Scenario: Thread A saves a new groq_api_key; Thread B saves a bar position.
+    /// A std::sync::Barrier forces both threads to start simultaneously so the
+    /// race window is maximised. With `config_disk_write` serializing the
+    /// read-modify-write cycle, B's read cannot happen between A's read and A's
+    /// write — it either completes before A starts reading, or starts reading after
+    /// A has already updated both disk and memory.
+    #[test]
+    fn test_disk_write_lock_serializes_concurrent_saves() {
+        use crate::dictionary::Dictionary;
+        use crate::AppState;
+
+        let dir = temp_dir();
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let cfg = AppConfig {
+            groq_api_key: "initial-key".to_string(),
+            ..AppConfig::default()
+        };
+        // Write initial state to disk so load_config works at the end.
+        save_config(dir.path(), &cfg).unwrap();
+
+        let state = Arc::new(AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db));
+
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        // Thread A: acquires disk-write lock FIRST, then waits for B to be ready,
+        // then writes the new API key.
+        let state_a = Arc::clone(&state);
+        let barrier_a = Arc::clone(&barrier);
+        let h_a = std::thread::spawn(move || {
+            let _disk_guard = state_a.config_disk_write.lock().unwrap();
+            barrier_a.wait(); // A holds disk lock; signal B to start racing
+            let cfg_clone = {
+                let mut cfg = state_a.config.lock().unwrap();
+                cfg.groq_api_key = "new-key".to_string();
+                cfg.clone()
+            };
+            save_config(&state_a.app_data_dir, &cfg_clone).unwrap();
+            *state_a.config.lock().unwrap() = cfg_clone;
+        });
+
+        // Thread B: waits for the barrier (starts at same time as A releases it),
+        // then contends for the disk-write lock. Because A holds it, B blocks until
+        // A's full write completes. B then reads the updated config (with "new-key")
+        // and saves bar position on top of it.
+        let state_b = Arc::clone(&state);
+        let barrier_b = Arc::clone(&barrier);
+        let h_b = std::thread::spawn(move || {
+            barrier_b.wait(); // synchronize with A
+            let _disk_guard = state_b.config_disk_write.lock().unwrap();
+            let cfg_clone = {
+                let mut cfg = state_b.config.lock().unwrap();
+                cfg.bar_x = Some(123.0);
+                cfg.bar_y = Some(456.0);
+                cfg.clone()
+            };
+            save_config(&state_b.app_data_dir, &cfg_clone).unwrap();
+        });
+
+        h_a.join().unwrap();
+        h_b.join().unwrap();
+
+        let final_cfg = load_config(dir.path());
+        assert_eq!(final_cfg.groq_api_key, "new-key",
+            "API key must survive: disk-write lock prevents bar-drag from clobbering it");
+        assert_eq!(final_cfg.bar_x, Some(123.0),
+            "bar_x must be persisted by thread B");
+        assert_eq!(final_cfg.bar_y, Some(456.0),
+            "bar_y must be persisted by thread B");
+    }
+
+    /// Spec A (reverse ordering) — symmetric case of
+    /// `test_disk_write_lock_serializes_concurrent_saves`: here the bar-position save acquires
+    /// the disk-write lock FIRST and the API-key save contends behind it. AC5 requires that
+    /// *either* ordering leaves BOTH the new key and the new bar position on disk. This is the
+    /// branch the forward test cannot exercise (it pins the key-save to win the lock), so it is
+    /// the negative-control complement: if serialization only worked in one direction, this test
+    /// would fail.
+    #[test]
+    fn test_disk_write_lock_serializes_concurrent_saves_bar_first() {
+        use crate::dictionary::Dictionary;
+        use crate::AppState;
+
+        let dir = temp_dir();
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let cfg = AppConfig {
+            groq_api_key: "initial-key".to_string(),
+            ..AppConfig::default()
+        };
+        save_config(dir.path(), &cfg).unwrap();
+
+        let state = Arc::new(AppState::new(cfg, Dictionary::new(), dir.path().to_path_buf(), db));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        // Thread B (bar position) acquires the disk-write lock FIRST, then writes both disk and
+        // memory before releasing it.
+        let state_b = Arc::clone(&state);
+        let barrier_b = Arc::clone(&barrier);
+        let h_b = std::thread::spawn(move || {
+            let _disk_guard = state_b.config_disk_write.lock().unwrap();
+            barrier_b.wait(); // B holds disk lock; signal A to start contending
+            let cfg_clone = {
+                let mut cfg = state_b.config.lock().unwrap();
+                cfg.bar_x = Some(123.0);
+                cfg.bar_y = Some(456.0);
+                cfg.clone()
+            };
+            save_config(&state_b.app_data_dir, &cfg_clone).unwrap();
+            *state_b.config.lock().unwrap() = cfg_clone;
+        });
+
+        // Thread A (API key) blocks on the disk-write lock until B's full cycle completes, then
+        // reads the bar-updated config and writes the key on top of it.
+        let state_a = Arc::clone(&state);
+        let barrier_a = Arc::clone(&barrier);
+        let h_a = std::thread::spawn(move || {
+            barrier_a.wait(); // synchronize with B
+            let _disk_guard = state_a.config_disk_write.lock().unwrap();
+            let cfg_clone = {
+                let mut cfg = state_a.config.lock().unwrap();
+                cfg.groq_api_key = "new-key".to_string();
+                cfg.clone()
+            };
+            save_config(&state_a.app_data_dir, &cfg_clone).unwrap();
+        });
+
+        h_b.join().unwrap();
+        h_a.join().unwrap();
+
+        let final_cfg = load_config(dir.path());
+        assert_eq!(final_cfg.groq_api_key, "new-key",
+            "API key written by the later thread must be present");
+        assert_eq!(final_cfg.bar_x, Some(123.0),
+            "bar_x written by the earlier thread must survive the later key write");
+        assert_eq!(final_cfg.bar_y, Some(456.0),
+            "bar_y written by the earlier thread must survive the later key write");
+    }
+
+    /// Spec B — `save_advanced_settings` pattern: the `config` lock is dropped before the
+    /// disk-guarded write, while `config_disk_write` remains held.
+    ///
+    /// The earlier form of this test was tautological: it only checked that `config` was
+    /// lockable *after* the writer had already dropped it (the drop is sequenced before the
+    /// writer's `barrier.wait()`), which holds regardless of the discipline under test. This
+    /// version pins the observation window with two barrier syncs so the reader inspects the
+    /// lock state at the exact moment the writer holds `_disk_guard` with `config` already
+    /// dropped, and asserts BOTH properties: `config` is free (not held across I/O) AND
+    /// `config_disk_write` is genuinely held — so "config free" cannot be a false pass from the
+    /// writer simply having finished.
+    #[test]
+    fn test_advanced_settings_config_not_held_during_disk_write() {
+        use crate::config::AdvancedSettings;
+        use crate::dictionary::Dictionary;
+        use crate::AppState;
+
+        let dir = temp_dir();
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        let state = Arc::new(AppState::new(
+            AppConfig::default(),
+            Dictionary::new(),
+            dir.path().to_path_buf(),
+            db,
+        ));
+        save_config(dir.path(), &AppConfig::default()).unwrap();
+
+        // One cyclic barrier, waited twice: [1] writer has dropped config (still holds the disk
+        // guard) → reader inspects; [2] reader done inspecting → writer proceeds to the write.
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        let state_writer = Arc::clone(&state);
+        let barrier_writer = Arc::clone(&barrier);
+        let h_writer = std::thread::spawn(move || {
+            let _disk_guard = state_writer.config_disk_write.lock().unwrap();
+            let cfg_clone = {
+                let mut cfg = state_writer.config.lock().unwrap();
+                cfg.advanced = AdvancedSettings {
+                    llm_system_prompt_polished: "custom".to_string(),
+                    ..AdvancedSettings::default()
+                };
+                cfg.clone()
+            }; // config lock DROPPED here; _disk_guard STILL held
+            barrier_writer.wait(); // [1] reader may now inspect the lock state
+            barrier_writer.wait(); // [2] hold the disk guard until the reader is done
+            save_config(&state_writer.app_data_dir, &cfg_clone).unwrap();
+            // _disk_guard drops here
+        });
+
+        let state_reader = Arc::clone(&state);
+        let barrier_reader = Arc::clone(&barrier);
+        let h_reader = std::thread::spawn(move || {
+            barrier_reader.wait(); // [1] writer holds disk guard, config dropped
+            // config must be FREE during the disk-guarded critical section...
+            assert!(state_reader.config.try_lock().is_ok(),
+                "config lock must be free while the disk-write lock is held (not held across I/O)");
+            // ...and the disk-write lock must genuinely BE held right now, otherwise the
+            // assertion above could pass simply because the writer had already finished.
+            assert!(state_reader.config_disk_write.try_lock().is_err(),
+                "config_disk_write must be held by the writer at this observation point");
+            barrier_reader.wait(); // [2] release the writer to perform the disk write
+        });
+
+        h_writer.join().unwrap();
+        h_reader.join().unwrap();
+
+        let final_cfg = load_config(dir.path());
+        assert_eq!(final_cfg.advanced.llm_system_prompt_polished, "custom",
+            "advanced settings must be persisted");
     }
 }

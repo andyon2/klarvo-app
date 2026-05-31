@@ -50,9 +50,26 @@ pub fn toggle_voice_command_mode(app: AppHandle) -> Result<bool, String> {
         // (or the app is hard-killed), the next launch won't auto-start.
         {
             let inner = state.inner();
-            if let Ok(mut cfg) = lock!(inner.config) {
-                cfg.voice_command_enabled = false;
-                let _ = save_config(&inner.app_data_dir, &cfg);
+            match inner.config_disk_write.lock() {
+                Ok(_disk_guard) => {
+                    if let Ok(mut cfg) = lock!(inner.config) {
+                        cfg.voice_command_enabled = false;
+                        let cfg_clone = cfg.clone();
+                        drop(cfg);
+                        let _ = save_config(&inner.app_data_dir, &cfg_clone);
+                    } else {
+                        log::warn!(
+                            "[voice_command_cmd] config lock poisoned; skipped persisting \
+                             voice_command_enabled=false (auto-start preference may be stale)"
+                        );
+                    }
+                }
+                Err(_) => {
+                    log::warn!(
+                        "[voice_command_cmd] config_disk_write poisoned; skipped persisting \
+                         voice_command_enabled=false (auto-start preference may be stale)"
+                    );
+                }
             }
         }
 
@@ -92,9 +109,12 @@ pub fn toggle_voice_command_mode(app: AppHandle) -> Result<bool, String> {
 
         // Persist: user turned it on.
         let inner = state.inner();
+        let _disk_guard = crate::lock!(inner.config_disk_write)?;
         let mut cfg = lock!(inner.config)?;
         cfg.voice_command_enabled = true;
-        save_config(&inner.app_data_dir, &cfg)
+        let cfg_clone = cfg.clone();
+        drop(cfg);
+        save_config(&inner.app_data_dir, &cfg_clone)
             .map_err(|e| format!("Failed to save config: {e}"))?;
 
         log::info!("[voice_command_cmd] Monitor started, preference saved as enabled");

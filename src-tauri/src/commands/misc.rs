@@ -34,6 +34,7 @@ pub fn save_profiles(
 ) -> Result<(), String> {
     require_license!(state, LicensedFeature::AppProfiles);
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.profiles = profiles;
     let cfg_clone = cfg.clone();
@@ -69,6 +70,7 @@ pub fn save_snippets(
 ) -> Result<(), String> {
     require_license!(state, LicensedFeature::Snippets);
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.snippets = snippets;
     let cfg_clone = cfg.clone();
@@ -177,6 +179,7 @@ pub async fn sync_history(state: State<'_, AppState>) -> Result<(u32, u32), Stri
 #[tauri::command]
 pub fn save_bar_position(state: State<'_, AppState>, x: f64, y: f64) -> Result<(), String> {
     let inner = state.inner();
+    let _disk_guard = crate::lock!(inner.config_disk_write)?;
     let mut cfg = crate::lock!(inner.config)?;
     cfg.bar_x = Some(x);
     cfg.bar_y = Some(y);
