@@ -853,4 +853,131 @@ mod tests {
         let shown = is_tip_shown(&conn, "onboarding_hotkey").unwrap();
         assert!(shown);
     }
+
+    // --- Migration ladder regression tests ---
+
+    /// OLD pre-migration `history` schema — the state before ANY of open_db's five
+    /// ALTER migrations (is_note, app_name, uuid, device_id, synced) ran.
+    /// Shared verbatim by both ladder tests so the precondition cannot drift apart.
+    const OLD_SCHEMA_DDL: &str = "CREATE TABLE history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            text       TEXT NOT NULL,
+            raw_text   TEXT,
+            style      TEXT NOT NULL DEFAULT 'polished',
+            language   TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_history_created_at ON history(created_at DESC);";
+
+    #[test]
+    fn test_open_db_runs_migration_ladder() {
+        // Verify that open_db() correctly upgrades an OLD pre-migration schema.
+        // The OLD schema lacks is_note, app_name, uuid, device_id, synced columns —
+        // all five must be present after open_db() runs, and the pre-existing row
+        // must be UUID-backfilled (with its data intact) and a UNIQUE index created.
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("history.db");
+
+        let row_id: i64;
+        {
+            // Build the OLD schema in a real file (open_db requires a file, not in-memory).
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(OLD_SCHEMA_DDL).unwrap();
+            // Precondition guard, coupled by construction to the DB we actually migrate:
+            // the OLD schema must genuinely lack uuid BEFORE open_db() runs, otherwise the
+            // post-migration assertions below would be tautological.
+            assert!(
+                conn.prepare("SELECT uuid FROM history LIMIT 0").is_err(),
+                "precondition: OLD schema must not have uuid before migration"
+            );
+            // Insert with bare SQL — add_entry() requires uuid/device_id columns.
+            conn.execute(
+                "INSERT INTO history (text, style, language) VALUES (?1, ?2, ?3)",
+                params!["Migration test entry", "verbatim", "en"],
+            )
+            .unwrap();
+            row_id = conn.last_insert_rowid();
+            // conn drops here, releasing the file lock before open_db() is called.
+        }
+
+        // Call the REAL open_db() migration ladder (AC-1).
+        let conn = open_db(dir.path()).unwrap();
+
+        // AC-2: All five migrated columns must exist after migration.
+        for col in ["is_note", "app_name", "uuid", "device_id", "synced"] {
+            let sql = format!("SELECT {} FROM history LIMIT 0", col);
+            assert!(
+                conn.prepare(&sql).is_ok(),
+                "{} column must exist after open_db migration",
+                col
+            );
+        }
+
+        // Data survival: the pre-existing row must be preserved verbatim and neither
+        // dropped nor duplicated by a stray table-recreate. This is precisely the
+        // "silently corrupting an existing user's history" failure the story guards against.
+        let row_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            row_count, 1,
+            "migration must preserve exactly the pre-existing row"
+        );
+        let (text, style, language): (String, String, String) = conn
+            .query_row(
+                "SELECT text, style, language FROM history WHERE id = ?1",
+                params![row_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(text, "Migration test entry", "row text must survive migration");
+        assert_eq!(style, "verbatim", "row style must survive migration");
+        assert_eq!(language, "en", "row language must survive migration");
+
+        // AC-3: The pre-existing row must have been UUID-backfilled.
+        let uuid_val: Option<String> = conn
+            .query_row(
+                "SELECT uuid FROM history WHERE id = ?1",
+                params![row_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let uuid_str = uuid_val.expect("uuid must not be NULL after backfill");
+        assert_eq!(uuid_str.len(), 36, "uuid must be 36-char v4 format");
+        assert_eq!(&uuid_str[8..9], "-", "uuid hyphen at position 8");
+        assert_eq!(&uuid_str[13..14], "-", "uuid hyphen at position 13");
+        assert_eq!(&uuid_str[18..19], "-", "uuid hyphen at position 18");
+        assert_eq!(&uuid_str[23..24], "-", "uuid hyphen at position 23");
+
+        // AC-4: The index on uuid must exist AND be UNIQUE. PRAGMA index_list returns
+        // the `unique` flag in column 2 — assert it, not just the index name, so a
+        // regression to a non-unique index (the cross-device sync dedup contract) is caught.
+        let mut stmt = conn.prepare("PRAGMA index_list(history)").unwrap();
+        let uuid_index_unique: Option<bool> = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(1)?, row.get::<_, i64>(2)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .find(|(name, _)| name == "idx_history_uuid")
+            .map(|(_, unique)| unique == 1);
+        assert_eq!(
+            uuid_index_unique,
+            Some(true),
+            "idx_history_uuid must exist and be UNIQUE after open_db migration"
+        );
+    }
+
+    #[test]
+    fn test_open_db_migration_ladder_is_non_tautological() {
+        // Pre-condition guard: confirms the OLD schema truly lacks uuid BEFORE any migration.
+        // This test does NOT call open_db — it proves the pre-condition is genuine so the
+        // main migration test is not accidentally asserting on an already-migrated schema.
+        // Uses the SAME OLD_SCHEMA_DDL as the main test so the two cannot drift apart.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(OLD_SCHEMA_DDL).unwrap();
+        let has_uuid = conn.prepare("SELECT uuid FROM history LIMIT 0").is_ok();
+        assert!(
+            !has_uuid,
+            "old schema must not have uuid column — pre-condition guard for migration ladder test"
+        );
+    }
 }
