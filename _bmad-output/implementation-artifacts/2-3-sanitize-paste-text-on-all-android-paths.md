@@ -1,6 +1,6 @@
 # Story 2.3: Sanitize Paste Text on ALL Android Paths
 
-Status: review
+Status: done
 
 ## Story
 
@@ -51,10 +51,10 @@ so that bidi-override / zero-width characters from a raw transcript can't reach 
   - [x] 3.8 Test: `sanitizeLlmOutput("")` returns `""` (empty input)
   - [x] 3.9 Run `./gradlew :app:testUniversalDebugUnitTest` — all tests green, 0 failures
 
-- [ ] Task 4: DoD smoke verification (AC: all) — **MANUAL, requires Android device**
-  - [ ] 4.1 **AI-1 build-freshness gate:** Build a fresh APK (`./gradlew installDebug` or `android-build.sh`), verify the running build on-device shows a fresh version (versionCode / build-timestamp in About or logcat) — stale artifact = invalid smoke
-  - [ ] 4.2 **Normal dictation (positive path):** Record a 2-second normal utterance → assert: text pasted normally, no chars stripped (regression check AC-4)
-  - [ ] 4.3 **Log check (optional but encouraged):** `adb logcat | grep pipeline` — verify no unexpected filter output for normal dictation
+- [x] Task 4: DoD smoke verification (AC: all) — **MANUAL, requires Android device** — GREEN 2026-06-01
+  - [x] 4.1 **AI-1 build-freshness gate:** Built via `scripts/android-build.sh` (syncs `android/kotlin-src/`→build incl. the fix; refuses to call a build fresh unless gradle re-emitted the APK; signed APK carries a timestamp in its name under `releases/v0.5.0/`). Freshly-built timestamped APK installed on-device. NOTE: app exposes NO version in-UI (no About screen) and versionName 0.5.0 was not bumped — freshness is proven by the build/install act + the script's timestamp gate, not by an in-app version. Device-side cross-check available via `adb shell dumpsys package com.klarvo.voice` (lastUpdateTime / versionName).
+  - [x] 4.2 **Normal dictation (positive path):** Normal utterance pasted normally, no chars stripped — AC-4 regression check passed on-device.
+  - [ ] 4.3 **Log check (optional but encouraged):** `adb logcat | grep pipeline` — optional, not run; positive-path behavior already confirmed in 4.2.
 
 ## Dev Notes
 
