@@ -928,6 +928,34 @@ class KlarvoOverlayService : Service() {
             return
         }
 
+        // Pre-STT filter: discard mini-taps and silent recordings before the Groq API call.
+        // Mirrors Rust pipeline.rs::silence_skip (DIV-02).
+        when (val preFilter = SilencePreFilter.check(wavBytes)) {
+            is SilencePreFilter.FilterResult.TooShort -> {
+                KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${preFilter.durationMs}ms < ${SilencePreFilter.MIN_RECORDING_MS}ms)")
+                handler.post {
+                    showToast("Recording too short")
+                    autoLoopActive = false
+                    val prev = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev)
+                }
+                return
+            }
+            is SilencePreFilter.FilterResult.Silent -> {
+                KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=${preFilter.rms} < ${SilencePreFilter.SILENCE_THRESHOLD})")
+                handler.post {
+                    showToast("No speech detected")
+                    autoLoopActive = false
+                    val prev = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev)
+                }
+                return
+            }
+            SilencePreFilter.FilterResult.Pass -> { /* proceed to STT */ }
+        }
+
         // Persist WAV to disk before any network call so audio survives an app kill or
         // transient network failure.  The file is cleaned up after a successful STT call.
         val pendingWavFile = savePendingWav(wavBytes)

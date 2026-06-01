@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-01 # Story 2.1 created (ready-for-dev)
+last_updated: 2026-06-01 # Story 2.2 implementation complete → review
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
   # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
   epic-2: in-progress
   2-1-port-the-hallucination-filter-to-android: done
-  2-2-min-length-silence-pre-filter-before-the-groq-stt-call: backlog
+  2-2-min-length-silence-pre-filter-before-the-groq-stt-call: review
   2-3-sanitize-paste-text-on-all-android-paths: backlog
   2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: backlog
   epic-2-retrospective: optional
