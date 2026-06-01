@@ -19,7 +19,6 @@ cd "$(dirname "$0")/.."
 
 GEN_ANDROID="src-tauri/gen/android"
 APP_DIR="$GEN_ANDROID/app"
-ADB="$ANDROID_HOME/platform-tools/adb"
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
@@ -30,6 +29,7 @@ fail() {
     printf "║  SMOKE FAILED: %-51s║\n" "$1"
     echo "║  Keine neue APK auf dem Gerät.                                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
+    read -rsp $'\nTaste druecken zum Schliessen...' -n1 || true
     exit 1
 }
 trap 'fail "Unerwarteter Fehler in Zeile $LINENO"' ERR
@@ -135,7 +135,13 @@ APK_BEFORE_TS=0
 
 BUILD_START=$(date +%s)
 cd "$GEN_ANDROID"
-./gradlew :app:assembleUniversalDebug --quiet
+./gradlew :app:assembleUniversalDebug \
+    -x :app:rustBuildUniversalDebug \
+    -x :app:rustBuildArm64Debug \
+    -x :app:rustBuildArmDebug \
+    -x :app:rustBuildX86Debug \
+    -x :app:rustBuildX86_64Debug \
+    --quiet
 cd -
 BUILD_END=$(date +%s)
 BUILD_SECS=$((BUILD_END - BUILD_START))
@@ -161,7 +167,18 @@ ok "APK: $APK_PATH (${APK_MB} MB)"
 # ---------------------------------------------------------------------------
 step "adb install"
 
-${ADB} -s "$DEVICE_SERIAL" install -r "$APK_PATH"
+INSTALL_OUT=$(${ADB} -s "$DEVICE_SERIAL" install -r "$APK_PATH" 2>&1) || true
+if echo "$INSTALL_OUT" | grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE"; then
+    warn "Signatur-Konflikt — alte App wird deinstalliert (Daten gehen verloren)"
+    ${ADB} -s "$DEVICE_SERIAL" uninstall com.klarvo.voice || true
+    ${ADB} -s "$DEVICE_SERIAL" install "$APK_PATH"
+elif echo "$INSTALL_OUT" | grep -q "INSTALL_FAILED_USER_RESTRICTED"; then
+    echo "$INSTALL_OUT"
+    fail "Handy hat Installation abgebrochen — Bestaetigungs-Dialog am Geraet pruefen und nochmal starten"
+elif echo "$INSTALL_OUT" | grep -q "INSTALL_FAILED\|Error\|error"; then
+    echo "$INSTALL_OUT"
+    fail "adb install gescheitert"
+fi
 ok "Installiert auf $DEVICE_SERIAL"
 
 # ---------------------------------------------------------------------------
@@ -196,3 +213,4 @@ echo "║  1. App auf dem Gerät öffnen                                     ║
 echo "║  2. Phantom-Phrase sprechen → kein Paste, Toast erscheint        ║"
 echo "║  3. Echten Satz sprechen → Paste erfolgt normal                  ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
+read -rsp $'\nTaste druecken zum Schliessen...' -n1 || true

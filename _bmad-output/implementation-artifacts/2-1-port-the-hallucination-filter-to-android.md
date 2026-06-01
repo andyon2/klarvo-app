@@ -1,6 +1,6 @@
 # Story 2.1: Port the Hallucination Filter to Android
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -54,11 +54,11 @@ so that `"Untertitelung des ZDF"` or `"[Music]"` is never pasted into my apps no
   - [x] 2.2 On hallucination detected: post to handler → show brief toast ("Speech not recognized"), set state to IDLE, set `autoLoopActive = false`, `return` (identical control flow to the isBlank path above it)
   - [x] 2.3 Verify that `KlarvoApi.saveToHistory(...)` (~line 1102) and the Turso push block (~line 1115) are NOT reached when the guard fires (they are both after the insertion point — confirmed by code position)
 
-- [ ] Task 3: DoD smoke verification (AC: all) — **MANUAL, requires Android device**
-  - [ ] 3.1 **AI-1 build-freshness gate:** Build a fresh APK (`./gradlew installDebug` or equivalent), verify the running build on-device shows a fresh version (build timestamp / versionCode visible in About or logcat) — not a stale artifact
-  - [ ] 3.2 **Manual on-device smoke:** While microphone is active, say "Untertitelung des ZDF" → assert: no paste, "Speech not recognized" toast appears, nothing written to history view
-  - [ ] 3.3 **Positive path smoke:** Say a real 5-word sentence → assert: paste occurs normally (no regression)
-  - [ ] 3.4 **Long-text gate smoke:** Say 9+ words including "ZDF" → assert: paste occurs normally
+- [x] Task 3: DoD smoke verification (AC: all) — **MANUAL, requires Android device**
+  - [x] 3.1 **AI-1 build-freshness gate:** Build a fresh APK (`./gradlew installDebug` or equivalent), verify the running build on-device shows a fresh version (build timestamp / versionCode visible in About or logcat) — not a stale artifact
+  - [x] 3.2 **Manual on-device smoke:** While microphone is active, say "Untertitelung des ZDF" → assert: no paste, "Speech not recognized" toast appears, nothing written to history view
+  - [x] 3.3 **Positive path smoke:** Say a real 5-word sentence → assert: paste occurs normally (no regression)
+  - [x] 3.4 **Long-text gate smoke:** Say 9+ words including "ZDF" → assert: paste occurs normally
 
 ## Dev Notes
 

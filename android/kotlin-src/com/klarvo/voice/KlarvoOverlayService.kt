@@ -917,7 +917,6 @@ class KlarvoOverlayService : Service() {
 
     private fun processAudio(wavBytes: ByteArray) {
         val t0 = System.currentTimeMillis()
-
         if (wavBytes.isEmpty()) {
             handler.post {
                 showToast("No audio recorded")

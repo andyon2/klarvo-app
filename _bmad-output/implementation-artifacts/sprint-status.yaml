@@ -64,7 +64,7 @@ development_status:
 
   # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
   epic-2: in-progress
-  2-1-port-the-hallucination-filter-to-android: in-progress
+  2-1-port-the-hallucination-filter-to-android: done
   2-2-min-length-silence-pre-filter-before-the-groq-stt-call: backlog
   2-3-sanitize-paste-text-on-all-android-paths: backlog
   2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: backlog
