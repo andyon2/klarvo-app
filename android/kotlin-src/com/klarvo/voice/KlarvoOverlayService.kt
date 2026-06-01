@@ -156,6 +156,9 @@ class KlarvoOverlayService : Service() {
     private var longPressAutoSend = false
     private var tapSilenceSecs = 2.0f
     private var longPressSilenceSecs = 2.0f
+    // Mode-level silence durations (AUTO/AUTOSTOP use these, parity with desktop pipeline.rs:640/704).
+    private var autostopSilenceSecs = 2.0f
+    private var autoModeSilenceSecs = 2.0f
 
     /**
      * Tracks which gesture started the current recording session.
@@ -352,6 +355,8 @@ class KlarvoOverlayService : Service() {
             longPressAutoSend = false
             tapSilenceSecs = config.bubbleTapSilenceSecs
             longPressSilenceSecs = config.bubbleLongPressSilenceSecs
+            autostopSilenceSecs = config.autostopSilenceSecs
+            autoModeSilenceSecs = config.autoModeSilenceSecs
             KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend")
         } else {
             KlarvoLogger.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
@@ -793,11 +798,20 @@ class KlarvoOverlayService : Service() {
             else        -> tapMode  // "tap" or null (auto-loop restart)
         }
 
-        // Select silence threshold for this gesture.
-        val activeSilenceSecs = when (activeGesture) {
-            "longpress" -> longPressSilenceSecs
-            else        -> tapSilenceSecs
+        // Select the silence duration by the ACTIVE MODE, mirroring desktop
+        // (pipeline.rs:640 AUTOSTOP→autostop_silence_secs, :704 AUTO→auto_mode_silence_secs)
+        // and the shared settings UI, which binds the silence slider to those mode-level fields.
+        // The bubble per-gesture values apply only to non-auto modes (HOLD/TOGGLE), where no
+        // silence auto-stop is wired anyway.
+        val activeSilenceSecs = when (activeMode) {
+            RecordingMode.AUTO     -> autoModeSilenceSecs
+            RecordingMode.AUTOSTOP -> autostopSilenceSecs
+            else -> when (activeGesture) {
+                "longpress" -> longPressSilenceSecs
+                else        -> tapSilenceSecs
+            }
         }
+        KlarvoLogger.d(TAG, "[pipeline] silence window: mode=$activeMode → ${activeSilenceSecs}s")
 
         val recorder = KlarvoAudioRecorder(
             context = this,

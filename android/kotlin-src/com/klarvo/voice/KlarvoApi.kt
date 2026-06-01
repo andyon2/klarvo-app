@@ -55,6 +55,12 @@ object KlarvoApi {
         val bubbleLongPressMode: String = "hold",
         val bubbleLongPressAutoSend: Boolean = false,
         val bubbleLongPressSilenceSecs: Float = 2.0f,
+        // Mode-level silence durations (parity with desktop pipeline.rs:640/704 and the shared
+        // settings UI, which binds the silence slider to autoModeSilenceSecs / autostopSilenceSecs).
+        // AUTO mode uses autoModeSilenceSecs, AUTOSTOP uses autostopSilenceSecs; the bubble
+        // per-gesture values above apply only to non-auto bubble modes (HOLD/TOGGLE).
+        val autostopSilenceSecs: Float = 2.0f,
+        val autoModeSilenceSecs: Float = 2.0f,
         // LLM provider selection: "deepseek" (default), "groq", "openai", or "openrouter"
         val llmProvider: String = "deepseek",
         val openaiApiKey: String = "",
@@ -228,6 +234,10 @@ object KlarvoApi {
             val bubbleLongPressMode = json.optString("bubbleLongPressMode", "hold")
             val bubbleLongPressAutoSend = json.optBoolean("bubbleLongPressAutoSend", false)
             val bubbleLongPressSilenceSecs = json.optDouble("bubbleLongPressSilenceSecs", 2.0).toFloat()
+            // Mode-level silence durations (camelCase keys written by Rust). AUTO/AUTOSTOP read
+            // these; the bubble per-gesture values apply only to non-auto modes. See readConfig docstring.
+            val autostopSilenceSecs = json.optDouble("autostopSilenceSecs", 2.0).toFloat()
+            val autoModeSilenceSecs = json.optDouble("autoModeSilenceSecs", 2.0).toFloat()
             val llmProvider = json.optString("llmProvider", "deepseek")
             val openaiApiKey = json.optString("openaiApiKey", "")
             val openrouterApiKey = json.optString("openrouterApiKey", "")
@@ -267,6 +277,7 @@ object KlarvoApi {
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
+                autostopSilenceSecs, autoModeSilenceSecs,
                 resolvedLlmProvider, openaiApiKey, openrouterApiKey,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
                 sttProvider, customPrompt, dictionaryTerms
