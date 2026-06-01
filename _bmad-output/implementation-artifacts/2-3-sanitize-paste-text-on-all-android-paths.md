@@ -173,6 +173,18 @@ Note: The bidi-override fallback path (Path A/B/C) cannot be triggered determini
 - Precedent — object pattern: `android/kotlin-src/com/klarvo/voice/HallucinationFilter.kt` (Story 2.1)
 - Precedent — test infrastructure: `android/kotlin-test/com/klarvo/voice/SilencePreFilterTest.kt` (Story 2.2)
 
+## Review Findings
+
+_Code review 2026-06-01 (3 adversarial layers — Blind Hunter, Edge Case Hunter, Acceptance Auditor; Opus 4.8). Acceptance Auditor: all 4 ACs PASS, gen-mirror byte-identical, AI-2 binding confirmed, status correctly `review`. Outcome: 1 patch, 4 deferred, 6 dismissed as noise._
+
+- [x] [Review][Patch] `cleanupLocal` model-load-failure returns raw transcript — a 4th unsanitized paste path the story missed [android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:552] — When `LocalLlmInference.load()` fails, `cleanupLocal` does `return text` (RAW) **without throwing**, so it never reaches the wrapped `catch (e: Exception)` at `KlarvoOverlayService.kt:1116` (Path A). The raw value flows `result`→`finalText`→`copyToClipboard`+paste. A bidi-override in the transcript reaches the target field on the local-cleanup branch whenever the MNN model can't load (missing/corrupt model dir, OOM). The story's own Dev Notes diagram labels this branch "SAFE (sanitized)" — incorrect for the load-fail sub-path. Violates AC-1 / AC-3 ("ALL paths"). Fix: `return sanitizeLlmOutput(text)` at line 552 (consistent with the sanitized return at line 563), + byte-identical gen-mirror sync. Found by Edge Case Hunter (reviewer verified first-hand); predicted by Blind Hunter ("the next raw-return path will be forgotten — the success path already appears forgotten").
+- [x] [Review][Defer] Single-egress sanitize chokepoint vs. N per-branch call sites [KlarvoOverlayService.kt:1108-1155] — deferred, architectural. Desktop sanitizes once centrally (`pipeline.rs:1184`); Android wraps per branch (now 4 sites incl. the fix). Source-fix at :552 closes the leak without the refactor; a chokepoint is a larger design change with double-sanitize risk. Backlog.
+- [x] [Review][Defer] Sanitizer set omits other C0/C1 controls, DEL, U+2028/2029/0085/180E/Hangul fillers [KlarvoApi.kt:609-642] — deferred, exact parity with Rust `sanitize_llm_output`; expanding the set requires changing Rust too (ADR-0016 parity mandate). Backlog (cross-platform).
+- [x] [Review][Defer] ANSI malformed-sequence handling (non-letter CSI final e.g. `ESC[3~`; bare `ESC[` at end-of-string silently discards trailing text) [KlarvoApi.kt:616-625] — deferred, pre-existing, parity with Rust. Backlog.
+- [x] [Review][Defer] Legitimate RTL text (Arabic/Hebrew) may be altered by bidi-mark/isolate stripping (U+200E/200F/2066-2069) [KlarvoApi.kt:631] — deferred, exact parity with desktop (affects both platforms equally); cross-platform product decision, not introduced here. Backlog.
+
+**Dismissed (6, noise / false-positive / verified-safe):** (1) `private→internal` API-widening — sanctioned by spec (AI-2 binding, Dev Notes "Why internal Visibility"); (2) LLM *input* not sanitized — out of threat model, scope is output-to-clipboard; prompt-injection handled by sandwich-defense system prompts; (3) surrogate-pair corruption — stripped ranges don't overlap U+D800–DFFF, so pairs hit the `else` branch and pass through unchanged; (4) test-coverage nits — 12 tests already additive over the 6 spec'd; (5) "without cleanup" toast wording — "cleanup" = LLM filler-removal, not char-sanitization; (6) idempotency assertion — no double-sanitize path exists (verified).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -189,12 +201,13 @@ None.
 - Task 2: All three raw-fallback returns in KlarvoOverlayService.kt replaced with `KlarvoApi.sanitizeLlmOutput(transcript)`. Path A = local-cleanup `catch (e: Exception)`, Path B = cloud-cleanup `catch (e: IOException)`, Path C = `else` branch when `llmProvider == null`. Both success paths (`result` at line ~1115 and ~1134) are untouched — no double-sanitize introduced. Identical changes applied to build-target mirror.
 - Task 3: Created `SanitizePathsTest.kt` (12 tests) calling `KlarvoApi.sanitizeLlmOutput()` directly (AI-2 binding — no copy of char-stripping logic in tests). Covers: bidi-override U+202E stripped, all bidi variant class, zero-width U+200B stripped, all zero-width variants, ANSI ESC sequence stripped, lone ESC stripped, null byte U+0000 stripped, normal English/German preserved, punctuation preserved, empty string, mixed content. Canonical at `android/kotlin-test/`, byte-identical mirror at `src-tauri/gen/.../test/`. `./gradlew :app:testUniversalDebugUnitTest` result: BUILD SUCCESSFUL, 54 total tests (12 SanitizePaths + 18 SilencePreFilter + 24 HallucinationFilter), 0 failures, 0 errors.
 - Task 4: Manual DoD smoke — requires Android device. Owed before marking done (surface-class hard-gate). Status set to review pending smoke.
+- ✅ Resolved review finding [High]: `cleanupLocal` model-load-failure 4th unsanitized path — `KlarvoApi.kt:552` `return text` → `return sanitizeLlmOutput(text)` in canonical + gen-mirror. All paths (3 in KlarvoOverlayService + model-load-fail in cleanupLocal) now sanitized before text reaches clipboard. BUILD SUCCESSFUL, 0 failures.
 
 ### File List
 
-- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` (modified — `private` to `internal` for `sanitizeLlmOutput`)
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` (modified — `private` to `internal` for `sanitizeLlmOutput`; model-load-failure path fixed: `return text` → `return sanitizeLlmOutput(text)`)
 - `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (modified — 3 fallback paths: `transcript` to `KlarvoApi.sanitizeLlmOutput(transcript)`)
-- `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoApi.kt` (modified — build-target mirror, same visibility change)
+- `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoApi.kt` (modified — build-target mirror, same visibility change + model-load-failure fix)
 - `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoOverlayService.kt` (modified — build-target mirror, same 3 fallback path changes)
 - `android/kotlin-test/com/klarvo/voice/SanitizePathsTest.kt` (created — canonical 12-test JVM unit test, AI-2 binding)
 - `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SanitizePathsTest.kt` (created — byte-identical build-target mirror)
@@ -202,3 +215,4 @@ None.
 ## Change Log
 
 - 2026-06-01: Story 2.3 implemented (DIV-03 fix). `sanitizeLlmOutput` visibility `private` to `internal`; all 3 raw-fallback paste paths in KlarvoOverlayService.kt now apply sanitization before `finalText`; 12 JVM tests added in SanitizePathsTest.kt (AI-2 binding); 54 total JVM tests pass, 0 failures. Task 4 on-device smoke owed (surface-class gate).
+- 2026-06-01: Addressed code review finding [High]: `cleanupLocal` model-load-failure 4th unsanitized path fixed — `return text` → `return sanitizeLlmOutput(text)` at KlarvoApi.kt:552 + byte-identical gen-mirror sync. BUILD SUCCESSFUL, all tests pass.

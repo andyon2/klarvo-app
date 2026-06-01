@@ -549,7 +549,7 @@ object KlarvoApi {
             val configPath = java.io.File(modelDir, "config.json").absolutePath
             if (!LocalLlmInference.load(configPath)) {
                 KlarvoLogger.w(CLEANUP_TAG, "[cleanupLocal] Failed to load local model, returning raw text")
-                return text
+                return sanitizeLlmOutput(text)
             }
         }
 
