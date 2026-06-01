@@ -13,6 +13,37 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# --- Argument parsing -------------------------------------------------------
+#   --clean   force a fresh recompile (defeats cargo/gradle incremental
+#             staleness), mirrors sync-and-build.ps1 -Clean. Use when a SOURCE
+#             change MUST land in the APK and you suspect a cached object/class.
+CLEAN=0
+for arg in "$@"; do
+    case "$arg" in
+        --clean) CLEAN=1 ;;
+        *) echo "Unbekanntes Argument: $arg (erlaubt: --clean)"; exit 2 ;;
+    esac
+done
+
+# --- Fail loudly ------------------------------------------------------------
+# A half-finished build must NOT masquerade as success. The signed APK carries a
+# fresh timestamp in its NAME even when gradle/cargo silently reused stale
+# objects -- so a swallowed error would look like a brand-new build. We stamp the
+# unsigned APK before/after the build and refuse to call it fresh unless the
+# timestamp actually advanced. (Same lesson as the Windows stale-binary smoke
+# failure, Story 1.2, 2026-05-31.)
+fail() {
+    echo ""
+    echo "────────────────────────────────────────────────────────────"
+    echo "  ANDROID-BUILD ABGEBROCHEN: $*"
+    echo "  Es wurde KEINE neue APK erzeugt. Die zuletzt im Release-"
+    echo "  Ordner liegende Datei ist NICHT dieser Build -- nicht aufs"
+    echo "  Gerät schieben, nicht smoke-testen."
+    echo "────────────────────────────────────────────────────────────"
+    exit 1
+}
+trap 'fail "Unerwarteter Fehler (Zeile $LINENO) -- siehe Ausgabe oben."' ERR
+
 GEN_ANDROID="src-tauri/gen/android"
 
 # ---------------------------------------------------------------------------
@@ -200,26 +231,66 @@ export CMAKE_GENERATOR_aarch64_linux_android="Ninja"
 # 9. Build
 # ---------------------------------------------------------------------------
 VERSION=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed 's/.*"\([0-9.]*\)".*/\1/')
+
+# The unsigned APK this build is expected to (re)produce. We stamp it before and
+# after to prove the build actually re-emitted it (the freshness gate).
+APK_IN="$GEN_ANDROID/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+apk_before=$( [ -f "$APK_IN" ] && stat -c %Y "$APK_IN" || echo 0 )
+
+if [ "$CLEAN" -eq 1 ]; then
+    echo "[clean] --clean: cargo clean -p klarvo + drop stale unsigned APK"
+    ( cd src-tauri && cargo clean -p klarvo ) || true
+    rm -f "$APK_IN"
+    apk_before=0
+fi
+
 echo "[build] Starting Android build v${VERSION}..."
-npx tauri android build --target aarch64
+npx tauri android build --target aarch64 \
+    || fail "tauri android build fehlgeschlagen (Exit $?) -- scroll hoch zum Compiler-/Gradle-Fehler."
+
+# Prove this run actually produced a fresh unsigned APK.
+[ -f "$APK_IN" ] || fail "tauri-Build lief durch, aber $APK_IN existiert nicht."
+apk_after=$(stat -c %Y "$APK_IN")
+if [ "$apk_after" -le "$apk_before" ]; then
+    echo ""
+    echo "[warn] Unsigned-APK-Zeitstempel UNVERÄNDERT -- gradle/cargo hat inkrementell"
+    echo "       nichts neu gebaut. Entweder hat sich seit dem letzten Build nichts"
+    echo "       geändert, oder ein Objekt/Class wurde aus dem Cache wiederverwendet."
+    echo "       Soll eine QUELLÄNDERUNG in diesem Build landen: erneut mit  --clean ."
+fi
 
 # ---------------------------------------------------------------------------
-# 10. Sign + deploy
+# 10. Sign + deploy + verify
 # ---------------------------------------------------------------------------
-APK_IN="$GEN_ANDROID/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
 APK_ALIGNED="/tmp/klarvo-aligned.apk"
 TIMESTAMP=$(date +%Y%m%d-%H%M)
 APK_DIR="/mnt/d/Dropbox/App Development/klarvo/releases/v${VERSION}"
-mkdir -p "$APK_DIR"
+mkdir -p "$APK_DIR" || fail "Release-Ordner nicht anlegbar: $APK_DIR (ist D:/Dropbox gemountet?)."
 APK_OUT="$APK_DIR/Klarvo-v${VERSION}-${TIMESTAMP}.apk"
 
 echo "[sign] Aligning and signing APK..."
-"$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED"
+"$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$APK_IN" "$APK_ALIGNED" \
+    || fail "zipalign fehlgeschlagen."
 "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
     --ks voxlit-debug.keystore \
     --ks-pass pass:dikta123 \
     --key-pass pass:dikta123 \
     --out "$APK_OUT" \
-    "$APK_ALIGNED"
+    "$APK_ALIGNED" \
+    || fail "apksigner sign fehlgeschlagen."
 
-echo "[done] APK ready at: $APK_OUT"
+# --- Checkup: signed APK must exist, be non-empty, and verify ---------------
+[ -s "$APK_OUT" ] || fail "Signiertes APK fehlt oder ist 0 Byte: $APK_OUT"
+"$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$APK_OUT" \
+    || fail "apksigner verify schlug fehl -- APK ist nicht gültig signiert."
+
+size_mb=$(awk "BEGIN{printf \"%.1f\", $(stat -c %s "$APK_OUT")/1048576}")
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  BUILD OK (Android) — frisch verifiziert."
+echo "  APK     : $APK_OUT"
+echo "  Version : v${VERSION}"
+echo "  gebaut  : $(date -d @"$apk_after" '+%Y-%m-%d %H:%M:%S')"
+echo "  Größe   : ${size_mb} MB"
+echo "  signiert: ja (apksigner verify bestanden)"
+echo "════════════════════════════════════════════════════════════"
