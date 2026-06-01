@@ -1047,6 +1047,18 @@ class KlarvoOverlayService : Service() {
                 return
             }
 
+            if (HallucinationFilter.isHallucination(transcript)) {
+                KlarvoLogger.d(TAG, "[pipeline] hallucination filtered: '${transcript.take(60)}'")
+                handler.post {
+                    showToast("Speech not recognized")
+                    autoLoopActive = false
+                    val prev = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev)
+                }
+                return
+            }
+
             // Tracks LLM cleanup latency for feedback metrics.
             // Remains null when cleanup is skipped or fails (no key, exception).
             var llmLatencyMs: Long? = null
