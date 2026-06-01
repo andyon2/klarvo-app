@@ -63,15 +63,26 @@ object SilencePreFilter {
             val dataSize = buf.getInt(40)  // bytes in data chunk
             if (dataSize <= 0) return 0.0f
             val sampleCount = dataSize / 2  // 16-bit mono: 2 bytes per sample
+            // Patch 3: guard degenerate sampleCount == 0 (e.g. dataSize == 1, odd byte).
+            // Returns 0.0f for parity with Rust compute_wav_rms returning Some(0.0) for
+            // empty samples, instead of producing sqrt(0.0 / 0) = NaN.
+            if (sampleCount == 0) return 0.0f
             var sumSq = 0.0
             val dataOffset = 44
+            // Patch 2: track the count of samples actually summed (loop may break early
+            // on a truncated buffer where header dataSize > bytes present).
+            var samplesRead = 0
             for (i in 0 until sampleCount) {
                 val pos = dataOffset + i * 2
                 if (pos + 1 >= wavBytes.size) break
                 val sample = buf.getShort(pos).toFloat() / 32768f
                 sumSq += sample * sample
+                samplesRead++
             }
-            sqrt(sumSq / sampleCount).toFloat()
+            // Divide by samplesRead (not header-claimed sampleCount) to avoid
+            // understating RMS on truncated buffers.
+            if (samplesRead == 0) return 0.0f
+            sqrt(sumSq / samplesRead).toFloat()
         } catch (e: Exception) {
             null
         }

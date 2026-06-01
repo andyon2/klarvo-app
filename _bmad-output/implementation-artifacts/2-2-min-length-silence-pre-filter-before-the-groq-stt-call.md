@@ -1,6 +1,6 @@
 # Story 2.2: Min-Length / Silence Pre-Filter Before the Groq STT Call
 
-Status: review
+Status: review — code-review PASS (3 layers, 3 patches applied); BLOCKED on `done` only by Task 4 on-device smoke (surface-class hard-gate)
 
 ## Story
 
@@ -231,8 +231,9 @@ line ~954: transcribeWithRetry / LocalWhisperInference    [STT call — not reac
 
 2. **Integration smoke on device** (NFR-Smoke, Task 4) — the only way to verify the filter fires on the real `processAudio()` path before the Groq call.
 
-**Test file location** (same pattern established by Story 2.1 for `HallucinationFilterTest.kt`):
-- `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt`
+**Test file location** (same pattern established by Story 2.1 for `HallucinationFilterTest.kt` — the canonical, version-controlled copy lives under `android/kotlin-test/` and is mirrored byte-identically into the gitignored `gen/` build target):
+- Canonical (tracked): `android/kotlin-test/com/klarvo/voice/SilencePreFilterTest.kt`
+- Build-target mirror (gitignored): `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt`
 
 The test infrastructure exists: `src-tauri/gen/android/app/src/test/java/` + `testImplementation("junit:junit:4.13.2")` in `app/build.gradle.kts` (created during Story 2.1). Gradle test task: `:app:testUniversalDebugUnitTest`.
 
@@ -260,7 +261,7 @@ Note: `encodeWav` is a package-level function in `KlarvoApi.kt` — import it or
 - **Build-target copy:** `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/SilencePreFilter.kt`
 - **Modified source:** `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt`
 - **Modified build-target:** `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoOverlayService.kt`
-- **New test file** (build-target only, no android/kotlin-test/ equivalent): `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt`
+- **New test file** (canonical tracked copy + gitignored build-target mirror, parity with Story 2.1's `HallucinationFilterTest.kt`): `android/kotlin-test/com/klarvo/voice/SilencePreFilterTest.kt` (tracked) AND `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt` (mirror)
 
 ### WAV Format Reference (for computeDurationMs / computeWavRms)
 
@@ -330,8 +331,22 @@ claude-sonnet-4-6
 - src-tauri/gen/android/app/src/main/java/com/klarvo/voice/SilencePreFilter.kt (created — build-target mirror)
 - android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt (modified — pre-STT filter inserted)
 - src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoOverlayService.kt (modified — build-target mirror)
-- src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt (created)
+- android/kotlin-test/com/klarvo/voice/SilencePreFilterTest.kt (created — canonical version-controlled test, parity with Story 2.1's HallucinationFilterTest)
+- src-tauri/gen/android/app/src/test/java/com/klarvo/voice/SilencePreFilterTest.kt (created — gitignored build-target mirror)
+
+## Review Findings
+
+_Code review 2026-06-01 (3 adversarial layers: Blind Hunter, Edge Case Hunter, Acceptance Auditor; Opus 4.8). All 4 ACs verified PASS; Rust `silence_skip` / `compute_wav_rms` parity confirmed on every reachable path. 1 decision-needed, 3 patch, 3 defer, 7 dismissed. No blocking correctness bug reachable through the production `encodeWav` data flow._
+
+- [ ] [Review][Decision] AUTO-loop self-terminates on a silent/short segment — the new TooShort/Silent branches set `autoLoopActive = false`, mirroring the existing `wavBytes.isEmpty()` guard; in AUTO mode a natural pause that yields a sub-threshold segment ends the loop instead of continuing. Intended (parity with empty-audio kill) or should auto-loop skip the segment and keep listening? [KlarvoOverlayService.kt:934-955]
+- [ ] [Review][Patch] Strengthen the weak "RMS at threshold" test — `wavWithRmsAtThreshold_isPass` builds amplitude 0.005 which (16-bit quantization, /32768) measures ≈0.004974, i.e. just *below* threshold, and only asserts `!is TooShort` (a tautology for a 1000ms WAV). Rename + assert the real classification (the `<` boundary is already covered from both sides by the 0.004→Silent and 0.006→Pass tests). [SilencePreFilterTest.kt]
+- [ ] [Review][Patch] `computeWavRms` divides by header-claimed sampleCount, not the count actually summed — a truncated WAV (header dataSize > bytes present) breaks the loop early but divides by the full `sampleCount`, understating RMS → false Silent. Divide by the summed count. Unreachable via `encodeWav` (header always matches buffer) but a strict-parity/robustness gap; add an odd-/short-chunk test. [SilencePreFilter.kt:130-149]
+- [ ] [Review][Patch] `dataSize == 1` yields `sqrt(0.0/0) = NaN` → `NaN < threshold` is false → Pass, whereas Rust gives `Some(0.0)` → Silent — strict-parity divergence on a degenerate odd-byte chunk. Guard `if (sampleCount == 0) return 0.0f`. Unreachable via `encodeWav` (always even dataSize). [SilencePreFilter.kt:130-149]
+- [x] [Review][Defer] No RIFF/WAVE/`data`-chunk magic + no channel/bit-depth validation — fixed 44-byte offsets assume canonical mono-16-bit `encodeWav` output; defensive hardening beyond this story's parity scope. [SilencePreFilter.kt] — deferred, robustness backlog
+- [x] [Review][Defer] `prev = currentState` captured asynchronously inside `handler.post` (potential TOCTOU on state) — pre-existing pattern shared by the existing `wavBytes.isEmpty()` guard, not introduced by this change. [KlarvoOverlayService.kt:934-955] — deferred, pre-existing
+- [x] [Review][Defer] gen-mirror `KlarvoOverlayService.kt` carries 3 pre-existing `[DIAG]` `Log.e` lines absent from the canonical source — pre-existing drift in the gitignored build target, this story's filter block is byte-identical in both. [src-tauri/gen/...] — deferred, pre-existing
 
 ## Change Log
 
 - 2026-06-01: Story implemented (Tasks 1-3). Created SilencePreFilter.kt (new Kotlin object, mirrors Rust silence_skip), 15 JVM unit tests (all pass), integrated pre-STT filter into KlarvoOverlayService.processAudio() with toast feedback and logging. Both source and build-target copies updated. Task 4 (on-device smoke) is manual — requires Android device.
+- 2026-06-01: Code review (3 adversarial layers, Opus 4.8). Canonical test mirrored to `android/kotlin-test/` (was gen-only / unversioned). Findings: 1 decision-needed (auto-loop), 3 patch (test honesty + 2 strict-parity hardening in computeWavRms), 3 defer, 7 dismissed. No blocking bug.
