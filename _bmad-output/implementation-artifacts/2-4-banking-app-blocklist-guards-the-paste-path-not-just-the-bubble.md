@@ -185,6 +185,27 @@ The Rust desktop pipeline does not have an equivalent banking-app guard — this
 - Precedent — dual-edit sync: Stories 2.1, 2.2, 2.3 (canonical `android/kotlin-src/` + gen mirror)
 - Build freshness gate: `scripts/android-build.sh`
 
+## Review Findings
+
+_Code review 2026-06-01 (3 adversarial layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor, Opus 4.8). Verdict: **PASS** — all 4 ACs satisfied, gen-mirror byte-identical, AI-2 binding correct, 58 JVM tests green. 1 parity patch recommended, 2 deferred, rest dismissed as refuted/accepted._
+
+### Patch
+
+- [x] [Review][Patch] Banking-block path does not reset `autoLoopActive` — parity gap. Every other terminal path (937/952/963/986/1025/1043/1063/1083/1095/1265) sets `autoLoopActive = false`; the new block (1194-1200) is the sole exception. The AUTO loop DOES halt (the `return@post` precedes the restart at :1248), so no functional break — but the flag is left stale until the next IDLE/PROCESSING tap. Add `autoLoopActive = false` inside the guard for consistency with all siblings. [KlarvoOverlayService.kt:1194-1200]
+
+### Deferred (pre-existing, out of scope — logged to deferred-work.md)
+
+- [x] [Review][Defer] Pending auto-send Enter not cancelled on block — `handler.postDelayed({ performEnter() }, 150)` from a prior AUTO segment is not cancelled by the guard; its Enter keystroke can land in the focused app. Narrow (~150ms window) and pre-existing to auto-send, orthogonal to the paste-path guard. [KlarvoOverlayService.kt:1238-1240]
+- [x] [Review][Defer] Banking-app detection latency / defaults-open — the guard acts correctly on `bankingAppActive`, but the upstream detection that sets it can lag the real foreground switch; the guard cannot close that gap. Upstream/pre-existing (same field drives the existing bubble guard). [KlarvoOverlayService.kt:389-407]
+
+### Dismissed (refuted / accepted)
+
+- **"Data loss when blocked"** (Blind, High) — REFUTED: `KlarvoApi.saveToHistory` runs at :1155, before the paste block; the transcript is persisted, not lost. Not pasting into the banking app is the intended behavior.
+- **In-lambda TOCTOU / unsynchronized `bankingAppActive` / force-reset-to-IDLE / layout double-apply / `internal` visibility** (Blind, High×3 + Med×2) — REFUTED by the code-reading layers + verified: the write site at :393 is also `handler.post` (main looper), the block mirrors the sibling pattern at 1226-1228, 58 JVM tests compile & pass, gen-mirror byte-identical.
+- **Hardcoded English toast / i18n** (Blind, Med) — matches the existing Android toast convention ("Inserted:", "Copied:"); the Android shell has no locale layer (Rust desktop only).
+- **`shouldBlockPaste` pure pass-through + idempotency tests** (Blind, Med/Low) — ACCEPTED tradeoff: the AI-2-sanctioned extraction; real integration coverage is the on-device smoke (Task 3). Discussed and approved at GATE 1.
+- **Orphaned delegation comment** at ~:1379 — harmless documentation.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -202,6 +223,7 @@ _No blocking issues encountered._
 - **Task 2:** `BankingGuardTest.kt` with 4 tests calls `BankingGuard.shouldBlockPaste()` directly (AI-2 binding). No Android context needed. The AC-4 IDLE-transition + toast side effect requires Android runtime and is covered by on-device smoke (Task 3) as documented in Dev Notes.
 - **Task 2.6:** `./gradlew :app:testUniversalDebugUnitTest` — **58 tests total, 0 failures, 0 errors** (BankingGuardTest: 4, HallucinationFilterTest: 24, SilencePreFilterTest: 18, SanitizePathsTest: 12).
 - **Task 3:** MANUAL on-device smoke — not yet performed. Story is in `review` status pending on-device verification (surface-class hard-gate per Epic-1-Retro AI-1).
+- **Review Patch applied 2026-06-01:** Added `autoLoopActive = false` inside banking guard block in `handler.post` paste lambda — parity with all other terminal paths (937/952/963/986/1025/1043/1063/1083/1095/1265). Both canonical and gen-mirror updated, byte-identical. 58 JVM tests, 0 failures.
 
 ### File List
 
@@ -217,3 +239,4 @@ _No blocking issues encountered._
 ## Change Log
 
 - 2026-06-01: DIV-04 fix — extracted `BankingGuard` object, added paste-path guard to `handler.post` lambda in `KlarvoOverlayService`, wrote 4 JVM unit tests; 58 JVM tests green (0 failures). On-device smoke (Task 3) remains for Andi to perform before marking done.
+- 2026-06-01: Review patch — added `autoLoopActive = false` to banking guard block for parity with all other terminal paths; both canonical + gen-mirror updated, byte-identical; 58 JVM tests green.

@@ -1193,6 +1193,7 @@ class KlarvoOverlayService : Service() {
                 // nothing reaches the clipboard or the accessibility paste path.
                 if (BankingGuard.shouldBlockPaste(bankingAppActive)) {
                     showToast("Paste blocked — banking app active.")
+                    autoLoopActive = false
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
