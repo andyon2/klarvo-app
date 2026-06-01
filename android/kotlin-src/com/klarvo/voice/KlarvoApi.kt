@@ -606,7 +606,7 @@ object KlarvoApi {
      * Removes: ANSI escape sequences, null bytes, Unicode bidirectional
      * overrides/embeddings, and zero-width characters.
      */
-    private fun sanitizeLlmOutput(text: String): String {
+    internal fun sanitizeLlmOutput(text: String): String {
         val sb = StringBuilder(text.length)
         var i = 0
         while (i < text.length) {

@@ -1115,7 +1115,7 @@ class KlarvoOverlayService : Service() {
                     result
                 } catch (e: Exception) {
                     KlarvoLogger.w(TAG, "Local cleanup failed -- using raw transcript", e)
-                    transcript
+                    KlarvoApi.sanitizeLlmOutput(transcript)
                 }
             } else {
                 val llmProvider = KlarvoApi.resolveLlmProvider(config)
@@ -1137,7 +1137,7 @@ class KlarvoOverlayService : Service() {
                         KlarvoApi.updateFeedbackMetrics(this) { m ->
                             m.copy(llmErrorCount = m.llmErrorCount + 1)
                         }
-                        transcript
+                        KlarvoApi.sanitizeLlmOutput(transcript)
                     }
                 } else {
                     KlarvoLogger.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
@@ -1146,7 +1146,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Text pasted without cleanup (no LLM key configured).")
                     }
-                    transcript
+                    KlarvoApi.sanitizeLlmOutput(transcript)
                 }
             }
 
