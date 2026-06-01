@@ -1,6 +1,6 @@
 # Story 2.2: Min-Length / Silence Pre-Filter Before the Groq STT Call
 
-Status: review — code-review PASS (3 layers, 3 patches applied); BLOCKED on `done` only by Task 4 on-device smoke (surface-class hard-gate)
+Status: done — code-review PASS (3 layers, 3 patches); on-device smoke 2026-06-01 all 4 ACs green (TooShort/Silent/Positive + auto-loop)
 
 ## Story
 

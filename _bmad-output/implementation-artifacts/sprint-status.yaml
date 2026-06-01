@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-01 # Story 2.2 code-review PASS → stays review (on-device smoke owed)
+last_updated: 2026-06-01 # Story 2.2 done (on-device smoke green)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
   # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
   epic-2: in-progress
   2-1-port-the-hallucination-filter-to-android: done
-  2-2-min-length-silence-pre-filter-before-the-groq-stt-call: review # Code-review PASS 2026-06-01 (3 adversarial layers, Opus 4.8): all 4 ACs PASS, Rust silence_skip/compute_wav_rms parity verified on every reachable path. GATE-2 fix: canonical test mirrored to android/kotlin-test/ (was gen-only/unversioned). 3 patches applied (test-honesty: tautological threshold test → real just-below/just-above asserts; computeWavRms now divides by samplesRead not header-claimed count; sampleCount==0 NaN-guard → Some(0.0) parity), 18 JVM tests/0 fail. 1 decision dismissed (auto-loop terminates on silent/short segment = intended, mirrors empty-audio kill; verify in smoke). 3 deferred (no WAV-magic/channel validation; async-prev TOCTOU pre-existing; gen-mirror [DIAG] drift). 7 dismissed noise. STAYS review — Task 4 on-device smoke (TooShort/Silent/Positive + AUTO-loop check, AI-1 build-freshness) owed before done (surface-class hard-gate).
+  2-2-min-length-silence-pre-filter-before-the-groq-stt-call: done # On-device smoke 2026-06-01: all 4 ACs green (TooShort/Silent/Positive + auto-loop ends on silent segment = confirmed acceptable). Code-review PASS 2026-06-01 (3 adversarial layers, Opus 4.8): all 4 ACs PASS, Rust silence_skip/compute_wav_rms parity verified on every reachable path. GATE-2 fix: canonical test mirrored to android/kotlin-test/ (was gen-only/unversioned). 3 patches applied (test-honesty: tautological threshold test → real just-below/just-above asserts; computeWavRms now divides by samplesRead not header-claimed count; sampleCount==0 NaN-guard → Some(0.0) parity), 18 JVM tests/0 fail. 1 decision dismissed (auto-loop terminates on silent/short segment = intended, mirrors empty-audio kill; verify in smoke). 3 deferred (no WAV-magic/channel validation; async-prev TOCTOU pre-existing; gen-mirror [DIAG] drift). 7 dismissed noise. STAYS review — Task 4 on-device smoke (TooShort/Silent/Positive + AUTO-loop check, AI-1 build-freshness) owed before done (surface-class hard-gate).
   2-3-sanitize-paste-text-on-all-android-paths: backlog
   2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: backlog
   epic-2-retrospective: optional
