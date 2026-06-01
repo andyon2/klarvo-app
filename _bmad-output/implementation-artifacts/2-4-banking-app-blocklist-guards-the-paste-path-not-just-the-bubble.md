@@ -1,6 +1,6 @@
 # Story 2.4: Banking-App Blocklist Guards the Paste Path, Not Just the Bubble
 
-Status: review
+Status: done
 
 ## Story
 
@@ -41,10 +41,10 @@ so that a pipeline that started before I switched to my banking app doesn't past
   - [x] 2.5 Test: state transitions correctly to IDLE even when paste is blocked (AC-4 side effect — idle cleanup not skipped; NOTE: IDLE transition tested via shouldBlockPaste contract; toast + state machine covered by on-device smoke as documented in Dev Notes AI-2 binding)
   - [x] 2.6 Run `./gradlew :app:testUniversalDebugUnitTest` — all tests green, 0 failures
 
-- [ ] Task 3: DoD smoke verification (AC: all) — **MANUAL, requires Android device**
-  - [ ] 3.1 **AI-1 build-freshness gate:** Build via `scripts/android-build.sh` (produces a timestamped APK under `releases/v0.5.0/`). The freshly-built APK must be installed; freshness is proven by the build+install act + the script's timestamp gate. Cross-check via `adb shell dumpsys package com.klarvo.voice` (`lastUpdateTime`).
-  - [ ] 3.2 **Normal dictation (positive path):** Normal utterance pasted normally into a non-banking app — AC-3 regression confirmed.
-  - [ ] 3.3 **Banking guard smoke:** Start a recording, switch to a banking app (e.g., N26 or any app in the blocklist) before the pipeline completes OR while it is processing. Verify: (a) nothing is pasted into the banking app, (b) a toast appears indicating paste was blocked, (c) app returns to idle state correctly.
+- [x] Task 3: DoD smoke verification (AC: all) — **MANUAL, requires Android device** — GREEN 2026-06-01 (Andi, on-device)
+  - [x] 3.1 **AI-1 build-freshness gate:** Build via `scripts/android-build.sh` (produces a timestamped APK under `releases/v0.5.0/`). The freshly-built APK must be installed; freshness is proven by the build+install act + the script's timestamp gate. Cross-check via `adb shell dumpsys package com.klarvo.voice` (`lastUpdateTime`).
+  - [x] 3.2 **Normal dictation (positive path):** Normal utterance pasted normally into a non-banking app — AC-3 regression confirmed.
+  - [x] 3.3 **Banking guard smoke:** Start a recording, switch to a banking app (e.g., N26 or any app in the blocklist) before the pipeline completes OR while it is processing. Verify: (a) nothing is pasted into the banking app, (b) a toast appears indicating paste was blocked, (c) app returns to idle state correctly.
 
 ## Dev Notes
 
@@ -222,7 +222,7 @@ _No blocking issues encountered._
 - **Task 1.3:** `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoOverlayService.kt` and `BankingGuard.kt` both byte-identical to canonical sources (verified via `diff`).
 - **Task 2:** `BankingGuardTest.kt` with 4 tests calls `BankingGuard.shouldBlockPaste()` directly (AI-2 binding). No Android context needed. The AC-4 IDLE-transition + toast side effect requires Android runtime and is covered by on-device smoke (Task 3) as documented in Dev Notes.
 - **Task 2.6:** `./gradlew :app:testUniversalDebugUnitTest` — **58 tests total, 0 failures, 0 errors** (BankingGuardTest: 4, HallucinationFilterTest: 24, SilencePreFilterTest: 18, SanitizePathsTest: 12).
-- **Task 3:** MANUAL on-device smoke — not yet performed. Story is in `review` status pending on-device verification (surface-class hard-gate per Epic-1-Retro AI-1).
+- **Task 3:** MANUAL on-device smoke — **GREEN 2026-06-01** (Andi, on-device): AI-1 build-freshness (fresh APK via `scripts/android-build.sh`), positive-path normal dictation (AC-3 regression), and the banking-guard scenario (paste blocked + toast + clean Idle) all confirmed. Surface-class hard-gate satisfied → Status `done`.
 - **Review Patch applied 2026-06-01:** Added `autoLoopActive = false` inside banking guard block in `handler.post` paste lambda — parity with all other terminal paths (937/952/963/986/1025/1043/1063/1083/1095/1265). Both canonical and gen-mirror updated, byte-identical. 58 JVM tests, 0 failures.
 
 ### File List
@@ -240,3 +240,4 @@ _No blocking issues encountered._
 
 - 2026-06-01: DIV-04 fix — extracted `BankingGuard` object, added paste-path guard to `handler.post` lambda in `KlarvoOverlayService`, wrote 4 JVM unit tests; 58 JVM tests green (0 failures). On-device smoke (Task 3) remains for Andi to perform before marking done.
 - 2026-06-01: Review patch — added `autoLoopActive = false` to banking guard block for parity with all other terminal paths; both canonical + gen-mirror updated, byte-identical; 58 JVM tests green.
+- 2026-06-01: On-device smoke GREEN (Andi) — fresh APK, positive-path + banking-guard scenario confirmed; Status → `done`. Closes Epic 2 (2.1–2.4 all done).

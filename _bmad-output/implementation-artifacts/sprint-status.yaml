@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-01 # Story 2.4 created (ready-for-dev)
+last_updated: 2026-06-01 # Story 2.4 done (on-device smoke green) → Epic 2 complete
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -63,11 +63,11 @@ development_status:
   epic-1-retrospective: done # 2026-06-01 — first retro of the remediation ledger; 4 action items (AI-1 build-freshness hard-gate + AI-2 bind-tests-to-real-paths → Epic 2 DoD/writing; AI-3 keep 6 deferred tracked, boot-warning center = home for 3; AI-4 open Windows gates → next canonical build). Sequencing: Epic 2 → Epic 3 → Epic 4. No epic-update needed (Epic 2 independent surface).
 
   # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
-  epic-2: in-progress
+  epic-2: done # All 4 stories done (2-1..2-4), on-device smoke green 2026-06-01. Retro optional. Next per sequencing: Epic 3 (test-integrity).
   2-1-port-the-hallucination-filter-to-android: done
   2-2-min-length-silence-pre-filter-before-the-groq-stt-call: done # On-device smoke 2026-06-01: all 4 ACs green (TooShort/Silent/Positive + auto-loop ends on silent segment = confirmed acceptable). Code-review PASS 2026-06-01 (3 adversarial layers, Opus 4.8): all 4 ACs PASS, Rust silence_skip/compute_wav_rms parity verified on every reachable path. GATE-2 fix: canonical test mirrored to android/kotlin-test/ (was gen-only/unversioned). 3 patches applied (test-honesty: tautological threshold test → real just-below/just-above asserts; computeWavRms now divides by samplesRead not header-claimed count; sampleCount==0 NaN-guard → Some(0.0) parity), 18 JVM tests/0 fail. 1 decision dismissed (auto-loop terminates on silent/short segment = intended, mirrors empty-audio kill; verify in smoke). 3 deferred (no WAV-magic/channel validation; async-prev TOCTOU pre-existing; gen-mirror [DIAG] drift). 7 dismissed noise. STAYS review — Task 4 on-device smoke (TooShort/Silent/Positive + AUTO-loop check, AI-1 build-freshness) owed before done (surface-class hard-gate).
   2-3-sanitize-paste-text-on-all-android-paths: done # On-device smoke GREEN 2026-06-01: AI-1 build-freshness (scripts/android-build.sh timestamped APK; app has NO in-UI version/About screen — freshness proven by the build+install act + the script's timestamp gate, not by a version number) + positive-path normal dictation (AC-4 regression) confirmed. Code-review PASS 2026-06-01 (3 adversarial layers, Opus 4.8): all 4 ACs satisfied, gen-mirror byte-identical, AI-2 test binding to real KlarvoApi.sanitizeLlmOutput confirmed. 1 patch applied (dc377f3): review found a 4th unsanitized paste path the story missed — cleanupLocal returned raw text on MNN model-load-failure WITHOUT throwing, bypassing the wrapped catch → finalText → clipboard; now sanitizes on all return paths. 54 JVM tests/0 fail. 4 deferred to deferred-work.md (chokepoint refactor; broader control-char set; ANSI malformed-seq; RTL legitimacy — all parity-with-Rust/pre-existing), 6 dismissed.
-  2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: review # Review patch applied 2026-06-01: autoLoopActive=false parity; 58 JVM tests green. Task 3 on-device smoke remains for Andi.
+  2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: done # On-device smoke GREEN 2026-06-01 (Andi): AI-1 build-freshness (fresh APK via scripts/android-build.sh) + positive-path normal dictation (AC-3) + banking-guard scenario (recording started, switched to banking app pre-pipeline-end → paste blocked, toast shown, app returned to Idle) all confirmed. Code-review PASS 2026-06-01 (3 adversarial layers, Opus 4.8): all 4 ACs satisfied, gen-mirror byte-identical, AI-2 binding to real BankingGuard.shouldBlockPaste confirmed; Blind-Hunter high-claims (data-loss, TOCTOU, thread-safety) independently refuted (saveToHistory@1155 precedes paste; bankingAppActive write@393 is main-looper). 1 patch applied (9c036b6): autoLoopActive=false parity in the guard block (sole terminal path missing it). 58 JVM tests/0 fail. 2 deferred to deferred-work.md (pending auto-send Enter not cancelled on block; banking-detection latency — both pre-existing/out-of-scope), rest dismissed.
   epic-2-retrospective: optional
 
   # Epic 3 — Test Integrity: Close the False-Safety Islands
