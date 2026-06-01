@@ -1188,6 +1188,17 @@ class KlarvoOverlayService : Service() {
             val capturedTranscript  = transcript
             val capturedFinalText   = finalText
             handler.post {
+                // DIV-04 fix: abort paste if a banking/security app is focused at paste time.
+                // The pipeline may have started before the app-switch; this guard ensures
+                // nothing reaches the clipboard or the accessibility paste path.
+                if (BankingGuard.shouldBlockPaste(bankingAppActive)) {
+                    showToast("Paste blocked — banking app active.")
+                    val prev = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev)
+                    return@post
+                }
+
                 copyToClipboard(finalText)
 
                 val pasted = KlarvoAccessibilityService.instance != null
@@ -1364,6 +1375,9 @@ class KlarvoOverlayService : Service() {
         }
         throw lastException!!
     }
+
+    // shouldBlockPaste delegates to BankingGuard (see BankingGuard.kt) so that
+    // unit tests can reach the real decision site without an Android context (AI-2).
 
     /**
      * Deletes pending WAV files older than 7 days.
