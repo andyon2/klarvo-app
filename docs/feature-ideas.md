@@ -183,3 +183,47 @@ korrigiert meine frühere Überzeichnung:
 4. Offline/Local-Cleanup-Modus: gibt es da überhaupt einen Cleanup-Diff zu zeigen, oder
    nur im LLM-Pfad? (Offline-Pfad pastet teils raw → kein Diff.)
 5. Verhältnis zu "Confirm-before-Paste" — wird daraus implizit ein Edit-vor-Paste-Flow?
+
+---
+
+## Single-Instance-Lock (nur eine Klarvo-Instanz gleichzeitig)
+
+- **Status:** `idea`
+- **Erfasst:** 2026-06-01
+- **Herkunft:** Gerettet aus einem verwaisten v2-Traceability-Artefakt
+  (`phase-2-hardening-proposal.md` Item H1, urspr. 2026-05-04 via bmad-tea). Der Rest des
+  Artefakts (v2-Coverage-Matrizen gegen abgebrochenen v2-Code) wurde verworfen
+  ([[v1-resume-pivot]]); nur dieses Item ist v1-relevant.
+
+### Was es ist
+Verhindern, dass eine zweite Klarvo-Instanz parallel startet: beim Zweitstart das laufende
+Fenster fokussieren und den neuen Prozess beenden — kein Doppelbetrieb.
+
+### Warum das zählt — schließt ein Loch in Epic 1
+Zwei Instanzen brechen genau die Garantien, die Epic 1 gerade eingezogen hat:
+- **Story 1.3 (Single-Writer-Config-Serialisierung):** der Lock ist *prozessintern* — über
+  zwei Prozesse hinweg greift er NICHT. Zwei Instanzen = zwei Writer auf dieselbe
+  `config.json`, die 1.3-Serialisierung ist umgangen.
+- **Story 1.5 / History-DB:** zwei Prozesse auf derselben SQLite-`history.db` → Lock-Conflicts.
+- **Surface:** Double-Paste, Hotkey-Race auf dem Tray (beide greifen denselben globalen Hotkey).
+
+Single-Instance ist damit kein reines Komfort-Feature, sondern die *prozessübergreifende*
+Klammer um die prozessinternen Locks aus Epic 1.
+
+### Code-Realität (2026-06-01)
+Verifiziert: v1 hat **kein** Single-Instance-Handling (keine Logik, nichts in `Cargo.toml`).
+v1 ist **Tauri 2** → `tauri-plugin-single-instance` **2.x** passt direkt (kein Custom-Mutex):
+`single_instance::init` am Builder + Zweitstart-Fokus-Event an das laufende Fenster.
+
+### Skizze für eine spätere Story
+- Smoke: zwei Instanzen starten; die zweite beendet sich (`exit_code != 0`, loggt
+  „already running"), die erste bleibt funktional.
+- i18n-Key `app.single_instance.already_running` registrieren (G3 lint-events).
+- Aufwand laut v2-Schätzung ~1 dev-day inkl. PR + manuellem Smoke. **Surface-Story →
+  Windows-Release-Build-Smoke im DoD** [[smoke-test-dod-gate]].
+- Scope zunächst **Desktop/Windows**; Android läuft als single Activity/Service, „zweite
+  Instanz" ist dort anders gelagert.
+
+### Offene Fragen
+1. Zweitstart soll das Fenster ggf. aus dem Tray holen (falls „im Hintergrund weiterlaufen"
+   geplant), nicht nur den Prozess killen.
