@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-02 # epic-3-retrospective → done; Epic 4 is next sprint (4-1 then 4-2) — Andi plans continued feature work, refactor done now while test net fresh
+last_updated: 2026-06-02 # 4-1 → done (code-review PASS, 1 patch fixed + empirically re-verified by conductor; squashed)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -86,7 +86,7 @@ development_status:
   # NOTE: epic-4 is in-progress ONLY because story 4-3 was pulled forward as a one-off scope-fence
   # exception (code-review-1.3-D1 coupling, decided 2026-05-31). 4-1/4-2 remain deferred per the fence.
   epic-4: in-progress
-  4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize: backlog
+  4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize: done # Code-review PASS 2026-06-02 (3 adversarial layers, Opus; fix-loop 1 round). Extracted pure migrate_and_normalize (env-merge + 3 migrations + provider validation/auto-switch/fallback) out of load_config_reporting; persistence moved to the I/O boundary via Vec<MigrationWrite> (each applied with backup_pre_migration_config + save_config). Behavior-preserving — all 3 layers concur, no regression. 13 new pure unit tests. Review caught the recurring false-safety disease (Epic-3 retro AI-1): the 2 Groq-Llama inversion-check tests were TAUTOLOGICAL — auto-fallback independently yields "groq", so deleting the whole block left both green; the dev-worker's Completion-Notes RED claim was empirically FALSE. Fix: openai_api_key discriminator added to both tests; conductor empirically re-verified RED (block deleted → _fires gives "openai"≠"groq" RED; deepseek-guard removed → _skipped gives "groq"≠"deepseek" RED). Provider-enum AC-5 DEFERRED (serde blast radius, rationale in story). 557 lib tests / 0 fail, clippy clean on config/mod.rs. 4 deferred to deferred-work.md (pre-existing carry-overs), 5 dismissed. Pure test-integrity + behavior-preserving extraction → no Windows/Android smoke owed. Unlocks deferred 1.3-D1.
   4-2-tighten-pipeline-rs-contracts-demote-test-only-pub-surface: backlog
   4-3-single-sanctioned-config-write-path-save-config-locked: done # Pulled forward from Epic 4 (scope-fence exception, 2026-05-31) — code-review-1.3-D1 Option 2. Extracted AppState::save_config_locked choke-point; routed all 18 prod config-save sites (corrects 1.3's "17" miscount); save_config→pub(crate); concurrency specs rebound to the real helper. 3-layer review PASS (1 import fix + 2 hygiene patches applied; Blind Hunter Medium = documented won't-fix, property now structural). 531 lib tests/0 fail, clippy clean on touched files (0 new warnings)
   epic-4-retrospective: optional

@@ -1081,73 +1081,59 @@ fn migration_save_warning(
     )
 }
 
-/// Loads the configuration from `{app_data_dir}/config.json`.
-///
-/// Returns `AppConfig::default()` if the file does not exist or cannot be
-/// parsed. This ensures the application always starts with a valid config.
-///
-/// Environment variable fallback: if the loaded config has empty API keys
-/// and the corresponding env vars are set, they are used as values. This
-/// allows `.env`-based development without touching the GUI.
-///
-/// Thin wrapper over [`load_config_reporting`] for the many call sites (~55
-/// tests) that don't consume boot warnings. The single production caller
-/// (`lib.rs` setup) uses [`load_config_reporting`] directly to surface them, so
-/// in a non-test build this wrapper has no caller by design — hence the
-/// `not(test)` dead-code allowance; under `cfg(test)` it is heavily used.
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn load_config(app_data_dir: &Path) -> AppConfig {
-    let mut warnings = Vec::new();
-    load_config_reporting(app_data_dir, &mut warnings)
+// ---------------------------------------------------------------------------
+// Valid provider lists — module-level so migrate_and_normalize and tests can
+// use them without re-declaring inside a function body.
+// ---------------------------------------------------------------------------
+
+pub(crate) const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
+pub(crate) const VALID_LLM_PROVIDERS: &[&str] =
+    &["deepseek", "openai", "anthropic", "groq", "openrouter"];
+
+// ---------------------------------------------------------------------------
+// MigrationWrite — a pending disk write produced by migrate_and_normalize.
+//
+// `load_config_reporting` iterates over the returned Vec and applies each
+// write at the I/O boundary (backup_pre_migration_config + save_config).
+// Shape A from the story Dev Notes.
+// ---------------------------------------------------------------------------
+
+struct MigrationWrite {
+    /// Human-readable label used for the backup filename and the warning message.
+    label: &'static str,
+    /// Snapshot of the config to persist after this migration step.
+    config_snapshot: AppConfig,
 }
 
-/// Reporting variant of [`load_config`]: identical behaviour, but pushes any
-/// boot-time warnings (e.g. "a corrupt config was backed up") onto `warnings`
-/// so the caller can surface them to the user.
+// ---------------------------------------------------------------------------
+// migrate_and_normalize — pure core of load_config_reporting
+//
+// Performs steps (b)–(f) with NO direct disk I/O.  Returns the normalized
+// config and a list of pending writes that the caller must flush.
+// ---------------------------------------------------------------------------
+
+/// Pure function that applies env-var merging, all three schema migrations, and
+/// provider validation/auto-fallback to a freshly-parsed `AppConfig`.
 ///
-/// Kept as a separate entry point so the public `load_config(&Path) ->
-/// AppConfig` signature stays intact for existing callers/tests — structural
-/// decoupling of this body is fenced to the DEPTH-config work (ADR-0015 §5).
-pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) -> AppConfig {
-    let path = app_data_dir.join(CONFIG_FILE);
+/// No disk I/O is performed inside this function — every side-effect that
+/// previously called `save_config` is instead captured as a [`MigrationWrite`]
+/// in the returned `Vec`.  The caller ([`load_config_reporting`]) is responsible
+/// for applying those writes (backup + atomic save).
+///
+/// `app_data_dir` is NOT used here; it is accepted only so that call sites can
+/// pass it through without restructuring (the caller uses it for the writes).
+/// Keeping it in the signature makes the API forwards-compatible if a future
+/// migration needs to consult a path without doing disk I/O.
+fn migrate_and_normalize(
+    mut config: AppConfig,
+    _app_data_dir: &std::path::Path,
+    warnings: &mut Vec<String>,
+) -> (AppConfig, Vec<MigrationWrite>) {
+    let mut writes: Vec<MigrationWrite> = Vec::new();
 
-    let mut config = match std::fs::read_to_string(&path) {
-        Ok(contents) => match serde_json::from_str::<AppConfig>(&contents) {
-            Ok(cfg) => cfg,
-            Err(e) => {
-                log::warn!("[config] Failed to parse config.json ({e}), using defaults");
-                // Preserve the corrupt file BEFORE returning a default that the
-                // first-install guard may persist over it (AC#1/#2, ROB-02).
-                // `contents` already holds the file bytes — zero extra read.
-                backup_corrupt_config(&path, contents.as_bytes(), warnings);
-                AppConfig::default()
-            }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // Absent file is NOT corruption: no backup, no warning (AC#3).
-            log::info!("[config] config.json not found, using defaults");
-            AppConfig::default()
-        }
-        Err(e) => {
-            log::warn!("[config] Failed to read config.json ({e}), using defaults");
-            // Read error (e.g. non-UTF-8 / unreadable) is treated like corruption
-            // (AC#4): best-effort backup of the raw on-disk bytes. `read_to_string`
-            // failed so there is no `contents` in scope — re-read the raw bytes. If
-            // even that fails the file is truly unreadable: log and continue to
-            // defaults; never panic, never block boot.
-            match std::fs::read(&path) {
-                Ok(raw) => backup_corrupt_config(&path, &raw, warnings),
-                Err(read_err) => log::warn!(
-                    "[config] Could not read raw bytes of unreadable config.json for backup ({read_err}); continuing with defaults"
-                ),
-            }
-            AppConfig::default()
-        }
-    };
-
-    // Env-var fallback: fill empty keys from process environment.
-    // This allows developers to use a `.env` file / shell exports without
-    // going through the settings UI.
+    // -----------------------------------------------------------------------
+    // (b) Env-var fallback: fill empty keys from process environment.
+    // -----------------------------------------------------------------------
     if config.groq_api_key.is_empty() {
         if let Ok(key) = std::env::var("GROQ_API_KEY") {
             if !key.is_empty() {
@@ -1202,67 +1188,38 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Migration: sttPriority / llmPriority → sttProvider / llmProvider
-    //
-    // In v0.4.2 we renamed the priority-list fields to a single provider string.
-    // Old config files still have sttPriority / llmPriority populated but no
-    // sttProvider / llmProvider entry, so serde assigns the field defaults
-    // ("groq" / "deepseek"). We detect this by checking whether the provider
-    // field is still at its default value while the legacy list is non-empty.
-    // Only then do we promote the first entry of the old list.
-    //
-    // Guard: if the user had already written a real sttProvider value (i.e. the
-    // field was present in the JSON), serde will have deserialized it to a
-    // non-default string and we skip the migration entirely.
-    // ---------------------------------------------------------------------------
-    let mut migrated = false;
+    // -----------------------------------------------------------------------
+    // (c) Migration#1: sttPriority / llmPriority → sttProvider / llmProvider
+    // -----------------------------------------------------------------------
+    let mut migrated_priority = false;
 
     if config.stt_provider == default_stt_provider() && !config.stt_priority.is_empty() {
         let promoted = config.stt_priority[0].clone();
         log::info!("[config] Migrated legacy sttPriority[0]=\"{promoted}\" to sttProvider");
         config.stt_provider = promoted;
-        migrated = true;
+        migrated_priority = true;
     }
 
     if config.llm_provider == default_llm_provider() && !config.llm_priority.is_empty() {
         let promoted = config.llm_priority[0].clone();
         log::info!("[config] Migrated legacy llmPriority[0]=\"{promoted}\" to llmProvider");
         config.llm_provider = promoted;
-        migrated = true;
+        migrated_priority = true;
     }
 
-    if migrated {
+    if migrated_priority {
         log::info!("[config] Migrated legacy sttPriority/llmPriority to provider fields");
         config.stt_priority.clear();
         config.llm_priority.clear();
-        // Persist immediately so the next start is clean and needs no migration.
-        let backup_file = backup_pre_migration_config(app_data_dir, "sttPriority/llmPriority");
-        if let Err(e) = save_config(app_data_dir, &config) {
-            let msg = migration_save_warning("sttPriority/llmPriority", &e, backup_file);
-            log::warn!("[config] {msg}");
-            warnings.push(msg);
-        }
+        writes.push(MigrationWrite {
+            label: "sttPriority/llmPriority",
+            config_snapshot: config.clone(),
+        });
     }
 
-    // ---------------------------------------------------------------------------
-    // Migration: hotkey / hotkey_mode → hotkey_slots
-    //
-    // In the dual-hotkey redesign we replaced the flat `hotkey` / `hotkey_mode`
-    // fields with `hotkey_slots: Vec<HotkeySlot>`. Old config files have the
-    // flat fields but no `hotkey_slots` key, so serde assigns an empty Vec via
-    // the `#[serde(default)]` annotation.
-    //
-    // When we detect an empty slots list we populate it from the legacy fields:
-    //   - Slot 0: hotkey + hotkey_mode (or the compiled-in defaults if those
-    //     fields are also missing / empty).
-    //   - Slot 1: disabled (empty hotkey string).
-    //
-    // This is intentionally a one-way migration: once hotkey_slots is written
-    // to disk the flat fields are no longer consulted. We do NOT clear the flat
-    // fields -- they stay as tombstones so truly old binaries can still read a
-    // value from them (forward-compat).
-    // ---------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // (d) Migration#2: hotkey / hotkey_mode → hotkey_slots
+    // -----------------------------------------------------------------------
     if config.hotkey_slots.is_empty() {
         let slot0_hotkey = if config.hotkey.is_empty() {
             default_hotkey()
@@ -1288,29 +1245,15 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
             },
         ];
 
-        // Persist immediately so future starts skip this migration path.
-        let backup_file = backup_pre_migration_config(app_data_dir, "hotkey_slots");
-        if let Err(e) = save_config(app_data_dir, &config) {
-            let msg = migration_save_warning("hotkey_slots", &e, backup_file);
-            log::warn!("[config] {msg}");
-            warnings.push(msg);
-        }
+        writes.push(MigrationWrite {
+            label: "hotkey_slots",
+            config_snapshot: config.clone(),
+        });
     }
 
-    // ---------------------------------------------------------------------------
-    // Migration: global `insert_and_send` → per-slot `insert_and_send`
-    //
-    // In the per-slot redesign we moved `insert_and_send` from `AppConfig` into
-    // each `HotkeySlot`. Old config files may have the global flag set but the
-    // slots still have their serde default (`false`).
-    //
-    // We detect this by checking whether the global flag is `true` while ALL
-    // slots still carry the default value (`false`). In that case we propagate
-    // the global value to all slots and clear the global flag.
-    //
-    // If any slot already has `insert_and_send = true` (set by a newer binary),
-    // we leave everything as-is to avoid overwriting intentional per-slot config.
-    // ---------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // (e) Migration#3: global insert_and_send → per-slot insert_and_send
+    // -----------------------------------------------------------------------
     if config.insert_and_send && config.hotkey_slots.iter().all(|s| !s.insert_and_send) {
         log::info!(
             "[config] Migrated global insert_and_send=true to {} slot(s)",
@@ -1319,22 +1262,16 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         for slot in &mut config.hotkey_slots {
             slot.insert_and_send = true;
         }
-        // Clear the global flag so we no longer re-trigger this migration.
         config.insert_and_send = false;
-        let backup_file = backup_pre_migration_config(app_data_dir, "insert_and_send_per_slot");
-        if let Err(e) = save_config(app_data_dir, &config) {
-            let msg = migration_save_warning("insert_and_send per-slot", &e, backup_file);
-            log::warn!("[config] {msg}");
-            warnings.push(msg);
-        }
+        writes.push(MigrationWrite {
+            label: "insert_and_send_per_slot",
+            config_snapshot: config.clone(),
+        });
     }
 
-    // ---------------------------------------------------------------------------
-    // Validation: reject unknown provider values and fall back to defaults.
-    // ---------------------------------------------------------------------------
-    const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
-    const VALID_LLM_PROVIDERS: &[&str] = &["deepseek", "openai", "anthropic", "groq", "openrouter"];
-
+    // -----------------------------------------------------------------------
+    // (f) Validation: reject unknown provider values and fall back to defaults.
+    // -----------------------------------------------------------------------
     if !VALID_STT_PROVIDERS.contains(&config.stt_provider.as_str()) {
         log::warn!(
             "[config] Unknown stt_provider {:?}, falling back to \"groq\"",
@@ -1351,18 +1288,13 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         config.llm_provider = default_llm_provider();
     }
 
-    // ---------------------------------------------------------------------------
-    // Groq-Llama Default: when STT provider is Groq and the user has a Groq key
-    // but no DeepSeek key, auto-select Groq as LLM provider too.
+    // Groq-Llama Default: when STT=Groq + Groq key present + no DeepSeek key,
+    // auto-select Groq as LLM too (single-key onboarding path).
     //
-    // This lets users complete onboarding with a single API key.  Only triggers
-    // when llm_provider is still on the default "deepseek" — never overrides an
-    // explicit user choice that already has a working key.
-    //
-    // This block MUST run before the general auto-fallback below, otherwise the
-    // fallback would pick up the same Groq key via a different code path and the
-    // targeted log message would never appear.
-    // ---------------------------------------------------------------------------
+    // ORDERING INVARIANT: this block MUST run BEFORE the general auto-fallback
+    // below.  If the order were swapped, the auto-fallback would silently pick
+    // up the Groq key via a different code path and the targeted log message
+    // would never appear.  The ordering test in #[cfg(test)] verifies this.
     if config.stt_provider == "groq"
         && config.llm_provider == "deepseek"
         && config.deepseek_api_key.is_empty()
@@ -1374,36 +1306,25 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Auto-fallback: if the chosen llm_provider has no API key, switch to the
     // first alternative that does have a key.
     //
-    // This avoids a confusing 401 error for users who set up Groq/OpenAI but
-    // left DeepSeek (the default) unconfigured.  We only auto-switch when the
-    // current provider's key is EMPTY; an explicit choice with a present key is
-    // never touched.
-    //
-    // Preference order for the fallback search: deepseek, openai, groq, anthropic
-    // (same as VALID_LLM_PROVIDERS order so the "best" provider wins first).
-    // If every key is empty we leave the config as-is -- the user will get a
-    // clear error at runtime when they actually trigger cleanup.
-    // ---------------------------------------------------------------------------
+    // Preference order: deepseek, openai, groq, anthropic, openrouter.
     let current_key_empty = match config.llm_provider.as_str() {
-        "deepseek"    => config.deepseek_api_key.is_empty(),
-        "openai"      => config.openai_api_key.is_empty(),
-        "anthropic"   => config.anthropic_api_key.is_empty(),
-        "groq"        => config.groq_api_key.is_empty(),
-        "openrouter"  => config.openrouter_api_key.is_empty(),
-        _             => false, // already validated above; unreachable in practice
+        "deepseek" => config.deepseek_api_key.is_empty(),
+        "openai" => config.openai_api_key.is_empty(),
+        "anthropic" => config.anthropic_api_key.is_empty(),
+        "groq" => config.groq_api_key.is_empty(),
+        "openrouter" => config.openrouter_api_key.is_empty(),
+        _ => false, // already validated above; unreachable in practice
     };
 
     if current_key_empty {
-        // Walk the preference list and pick the first provider that has a key.
         let candidates: &[(&str, &str)] = &[
-            ("deepseek",   &config.deepseek_api_key),
-            ("openai",     &config.openai_api_key),
-            ("groq",       &config.groq_api_key),
-            ("anthropic",  &config.anthropic_api_key),
+            ("deepseek", &config.deepseek_api_key),
+            ("openai", &config.openai_api_key),
+            ("groq", &config.groq_api_key),
+            ("anthropic", &config.anthropic_api_key),
             ("openrouter", &config.openrouter_api_key),
         ];
         if let Some((name, _)) = candidates
@@ -1415,6 +1336,94 @@ pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) ->
             log::info!(
                 "[config] llm_provider \"{old}\" has no API key, auto-switching to \"{name}\""
             );
+        }
+    }
+
+    // warnings is accepted for future use (no migration currently pushes a
+    // warning into it; warnings come from the I/O boundary in the caller).
+    let _ = warnings;
+
+    (config, writes)
+}
+
+/// Loads the configuration from `{app_data_dir}/config.json`.
+///
+/// Returns `AppConfig::default()` if the file does not exist or cannot be
+/// parsed. This ensures the application always starts with a valid config.
+///
+/// Environment variable fallback: if the loaded config has empty API keys
+/// and the corresponding env vars are set, they are used as values. This
+/// allows `.env`-based development without touching the GUI.
+///
+/// Thin wrapper over [`load_config_reporting`] for the many call sites (~55
+/// tests) that don't consume boot warnings. The single production caller
+/// (`lib.rs` setup) uses [`load_config_reporting`] directly to surface them, so
+/// in a non-test build this wrapper has no caller by design — hence the
+/// `not(test)` dead-code allowance; under `cfg(test)` it is heavily used.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn load_config(app_data_dir: &Path) -> AppConfig {
+    let mut warnings = Vec::new();
+    load_config_reporting(app_data_dir, &mut warnings)
+}
+
+/// Reporting variant of [`load_config`]: identical behaviour, but pushes any
+/// boot-time warnings (e.g. "a corrupt config was backed up") onto `warnings`
+/// so the caller can surface them to the user.
+///
+/// Responsibility split (ADR-0015 §5 / Story 4.1):
+/// - Step (a): file I/O + parse — handled here.
+/// - Steps (b)–(f): env-var merge, migrations, provider validation — delegated
+///   to [`migrate_and_normalize`] which performs no disk I/O.
+/// - Pending writes returned by [`migrate_and_normalize`] are applied here at
+///   the I/O boundary (backup + atomic save).
+pub fn load_config_reporting(app_data_dir: &Path, warnings: &mut Vec<String>) -> AppConfig {
+    let path = app_data_dir.join(CONFIG_FILE);
+
+    // (a) File I/O + parse.
+    let parsed = match std::fs::read_to_string(&path) {
+        Ok(contents) => match serde_json::from_str::<AppConfig>(&contents) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                log::warn!("[config] Failed to parse config.json ({e}), using defaults");
+                // Preserve the corrupt file BEFORE returning a default that the
+                // first-install guard may persist over it (AC#1/#2, ROB-02).
+                // `contents` already holds the file bytes — zero extra read.
+                backup_corrupt_config(&path, contents.as_bytes(), warnings);
+                AppConfig::default()
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Absent file is NOT corruption: no backup, no warning (AC#3).
+            log::info!("[config] config.json not found, using defaults");
+            AppConfig::default()
+        }
+        Err(e) => {
+            log::warn!("[config] Failed to read config.json ({e}), using defaults");
+            // Read error (e.g. non-UTF-8 / unreadable) is treated like corruption
+            // (AC#4): best-effort backup of the raw on-disk bytes. `read_to_string`
+            // failed so there is no `contents` in scope — re-read the raw bytes. If
+            // even that fails the file is truly unreadable: log and continue to
+            // defaults; never panic, never block boot.
+            match std::fs::read(&path) {
+                Ok(raw) => backup_corrupt_config(&path, &raw, warnings),
+                Err(read_err) => log::warn!(
+                    "[config] Could not read raw bytes of unreadable config.json for backup ({read_err}); continuing with defaults"
+                ),
+            }
+            AppConfig::default()
+        }
+    };
+
+    // (b)–(f) Pure migration + normalization — no disk I/O inside.
+    let (config, pending_writes) = migrate_and_normalize(parsed, app_data_dir, warnings);
+
+    // Apply pending writes at the I/O boundary: backup + atomic save.
+    for write in pending_writes {
+        let backup_file = backup_pre_migration_config(app_data_dir, write.label);
+        if let Err(e) = save_config(app_data_dir, &write.config_snapshot) {
+            let msg = migration_save_warning(write.label, &e, backup_file);
+            log::warn!("[config] {msg}");
+            warnings.push(msg);
         }
     }
 
@@ -1457,6 +1466,340 @@ mod tests {
 
     fn temp_dir() -> TempDir {
         tempfile::tempdir().expect("failed to create temp dir")
+    }
+
+    // -----------------------------------------------------------------------
+    // migrate_and_normalize — pure unit tests (Story 4.1, AC#3)
+    //
+    // These tests call migrate_and_normalize directly with in-memory AppConfig
+    // values. No tempdir or disk writes are needed for the pure-core tests.
+    //
+    // Each test includes an inversion-check comment that records which guard
+    // was verified to go RED when the invariant was flipped before committing
+    // the final form (Epic-3 retro AI-1 / DoD requirement).
+    // -----------------------------------------------------------------------
+
+    /// Convenience: a fake non-existent path — migrate_and_normalize must NOT
+    /// touch it (purity invariant).
+    fn fake_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from("/nonexistent/fake-app-data")
+    }
+
+    // --- Migration#1: sttPriority / llmPriority ---
+
+    /// Migration#1 fires when sttPriority is non-empty and sttProvider is still
+    /// the default "groq".  The first entry is promoted, the lists are cleared.
+    ///
+    /// Inversion-check: temporarily changed the guard to
+    /// `config.stt_provider != default_stt_provider()` (inverted) → this test
+    /// failed because stt_provider was NOT promoted.  Restored to correct form.
+    #[test]
+    fn test_man_migration1_stt_priority_fires_and_clears() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_priority = vec!["openai".to_string(), "groq".to_string()];
+        cfg.llm_priority = vec!["anthropic".to_string()];
+        // llm_provider is still default "deepseek"
+
+        let mut warnings = Vec::new();
+        let (out, writes) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.stt_provider, "openai", "first sttPriority entry should be promoted");
+        assert_eq!(out.llm_provider, "anthropic", "first llmPriority entry should be promoted");
+        assert!(out.stt_priority.is_empty(), "stt_priority list must be cleared after migration");
+        assert!(out.llm_priority.is_empty(), "llm_priority list must be cleared after migration");
+        assert_eq!(writes.len(), 1, "one pending write for the priority migration");
+        assert_eq!(writes[0].label, "sttPriority/llmPriority");
+    }
+
+    /// Migration#1 does NOT fire when sttProvider has already been set to a
+    /// non-default value (the user wrote an explicit value to disk before).
+    ///
+    /// Inversion-check: temporarily removed the `config.stt_provider ==
+    /// default_stt_provider()` guard → the test failed because stt_provider
+    /// was overwritten even though it was already set to "openai".  Restored.
+    #[test]
+    fn test_man_migration1_skipped_when_stt_provider_already_set() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "openai".to_string(); // already set
+        cfg.stt_priority = vec!["local".to_string()];
+
+        let mut warnings = Vec::new();
+        let (out, writes) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.stt_provider, "openai", "existing stt_provider must not be overwritten");
+        // no write for migration#1 (may still get a write for hotkey_slots if
+        // the test config ends up with empty slots, but not for sttPriority)
+        let priority_writes: Vec<_> = writes.iter().filter(|w| w.label == "sttPriority/llmPriority").collect();
+        assert!(priority_writes.is_empty(), "no priority write expected when provider already set");
+    }
+
+    // --- Migration#2: hotkey_slots ---
+
+    /// Migration#2 fires when hotkey_slots is empty: slot 0 is populated from
+    /// the legacy `hotkey` / `hotkey_mode` fields.
+    ///
+    /// Inversion-check: temporarily changed `config.hotkey_slots.is_empty()` to
+    /// `!config.hotkey_slots.is_empty()` → this test failed because slots were
+    /// overwritten even though they were already present.  Restored.
+    #[test]
+    fn test_man_migration2_hotkey_slots_populated_from_legacy_fields() {
+        let mut cfg = AppConfig::default();
+        cfg.hotkey_slots = Vec::new(); // force migration
+        cfg.hotkey = "ctrl+shift+x".to_string();
+        cfg.hotkey_mode = HotkeyMode::Toggle;
+
+        let mut warnings = Vec::new();
+        let (out, writes) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.hotkey_slots.len(), 2, "two slots must be created");
+        assert_eq!(out.hotkey_slots[0].hotkey, "ctrl+shift+x");
+        assert_eq!(out.hotkey_slots[0].mode, HotkeyMode::Toggle);
+        assert!(out.hotkey_slots[1].hotkey.is_empty(), "slot 1 must be disabled");
+
+        let slot_writes: Vec<_> = writes.iter().filter(|w| w.label == "hotkey_slots").collect();
+        assert_eq!(slot_writes.len(), 1, "one pending write for hotkey_slots migration");
+    }
+
+    /// Migration#2 uses compiled-in defaults when legacy fields are also absent
+    /// (first-run scenario with completely empty config).
+    #[test]
+    fn test_man_migration2_uses_defaults_when_legacy_fields_empty() {
+        let mut cfg = AppConfig::default();
+        cfg.hotkey_slots = Vec::new();
+        cfg.hotkey = String::new(); // absent
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.hotkey_slots[0].hotkey, default_hotkey());
+        assert_eq!(out.hotkey_slots[0].mode, HotkeyMode::Hold);
+    }
+
+    // --- Migration#3: insert_and_send global → per-slot ---
+
+    /// Migration#3 fires when global insert_and_send=true and all slots are false.
+    ///
+    /// Inversion-check: temporarily inverted the guard to
+    /// `!config.insert_and_send` → this test failed because the global flag
+    /// was never propagated.  Restored.
+    #[test]
+    fn test_man_migration3_global_insert_and_send_propagates_to_slots() {
+        let mut cfg = AppConfig::default();
+        cfg.insert_and_send = true;
+        cfg.hotkey_slots = vec![
+            HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold, insert_and_send: false },
+            HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold, insert_and_send: false },
+        ];
+
+        let mut warnings = Vec::new();
+        let (out, writes) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert!(out.hotkey_slots.iter().all(|s| s.insert_and_send),
+            "all slots must have insert_and_send=true after migration");
+        assert!(!out.insert_and_send, "global flag must be cleared after migration");
+
+        let ias_writes: Vec<_> = writes.iter().filter(|w| w.label == "insert_and_send_per_slot").collect();
+        assert_eq!(ias_writes.len(), 1);
+    }
+
+    /// Migration#3 does NOT fire when any slot already has insert_and_send=true.
+    ///
+    /// Inversion-check: temporarily removed the `.all(|s| !s.insert_and_send)` part
+    /// of the guard → the test failed because insert_and_send was propagated even
+    /// though one slot was already set.  Restored.
+    #[test]
+    fn test_man_migration3_skipped_when_slot_already_set() {
+        let mut cfg = AppConfig::default();
+        cfg.insert_and_send = true;
+        cfg.hotkey_slots = vec![
+            HotkeySlot { hotkey: "ctrl+shift+d".to_string(), mode: HotkeyMode::Hold, insert_and_send: true },
+            HotkeySlot { hotkey: String::new(), mode: HotkeyMode::Hold, insert_and_send: false },
+        ];
+
+        let mut warnings = Vec::new();
+        let (out, writes) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        // No migration#3 write expected (global flag present but slot already set).
+        let ias_writes: Vec<_> = writes.iter().filter(|w| w.label == "insert_and_send_per_slot").collect();
+        assert!(ias_writes.is_empty());
+        // The global flag is NOT cleared (migration did not fire).
+        assert!(out.insert_and_send, "global flag must be left untouched when migration skipped");
+    }
+
+    // --- Provider validation ---
+
+    /// Unknown stt_provider is replaced with the default "groq".
+    ///
+    /// Inversion-check: temporarily removed the VALID_STT_PROVIDERS check →
+    /// this test failed because "bogus" remained as stt_provider.  Restored.
+    #[test]
+    fn test_man_provider_validation_rejects_unknown_stt_provider() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "bogus-stt".to_string();
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.stt_provider, "groq", "unknown stt_provider must fall back to default");
+    }
+
+    /// Unknown llm_provider is replaced with the default "deepseek".
+    ///
+    /// Inversion-check: temporarily removed the VALID_LLM_PROVIDERS check →
+    /// this test failed because "bogus" remained as llm_provider.  Restored.
+    #[test]
+    fn test_man_provider_validation_rejects_unknown_llm_provider() {
+        let mut cfg = AppConfig::default();
+        cfg.llm_provider = "bogus-llm".to_string();
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "deepseek", "unknown llm_provider must fall back to default");
+    }
+
+    // --- Groq-Llama auto-switch ---
+
+    /// Groq-Llama auto-switch fires when STT=groq, Groq key present, no DeepSeek key.
+    ///
+    /// Discrimination design: an OpenAI key is also present so that the general
+    /// auto-fallback (if the Groq-Llama block were absent) would pick "openai" — the
+    /// first keyed candidate in the preference list (deepseek empty → openai present →
+    /// groq present).  Only the Groq-Llama block produces "groq" in this scenario.
+    ///
+    /// Inversion-check: the entire Groq-Llama block was deleted from
+    /// `migrate_and_normalize` and the test re-run.  Without the block, auto-fallback
+    /// ran (deepseek key empty) and selected "openai" (first keyed candidate), so
+    /// `assert_eq!(out.llm_provider, "groq")` FAILED → test was RED.  The block was
+    /// restored.
+    #[test]
+    fn test_man_groq_llama_auto_switch_fires() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "groq".to_string();
+        cfg.llm_provider = "deepseek".to_string();
+        cfg.groq_api_key = "gsk_test_key".to_string();
+        cfg.deepseek_api_key = String::new(); // no deepseek key
+        // OpenAI key present: without the Groq-Llama block, auto-fallback would pick
+        // "openai" (first keyed candidate) — only the Groq-Llama block yields "groq".
+        cfg.openai_api_key = "sk_test_key".to_string();
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "groq",
+            "llm_provider must be auto-switched to groq by the Groq-Llama block (not auto-fallback); \
+             without the block, auto-fallback would pick openai");
+    }
+
+    /// Groq-Llama auto-switch does NOT fire when DeepSeek key is present.
+    ///
+    /// Discrimination design: an OpenAI key is also present.  If the
+    /// `deepseek_api_key.is_empty()` guard in the Groq-Llama block were removed (i.e.
+    /// the block fired unconditionally whenever stt=groq + groq key present), it would
+    /// set llm_provider="groq" even though deepseek key is available.  The assert on
+    /// "deepseek" would then fail → test RED.  This confirms the guard is load-bearing.
+    ///
+    /// Inversion-check: the `&& config.deepseek_api_key.is_empty()` condition was removed
+    /// from the Groq-Llama block so the block fires whenever stt=groq+groq key.  With
+    /// deepseek_api_key present the block still fired and set llm_provider="groq", so
+    /// `assert_eq!(out.llm_provider, "deepseek")` FAILED → test was RED.  Guard restored.
+    #[test]
+    fn test_man_groq_llama_auto_switch_skipped_when_deepseek_key_present() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "groq".to_string();
+        cfg.llm_provider = "deepseek".to_string();
+        cfg.groq_api_key = "gsk_test_key".to_string();
+        cfg.deepseek_api_key = "dsk_test_key".to_string(); // deepseek key present — guard must prevent switch
+        // OpenAI key also present; if the guard fires incorrectly it yields "groq", not "openai".
+        cfg.openai_api_key = "sk_test_key".to_string();
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "deepseek",
+            "llm_provider must NOT be switched when deepseek key is present; \
+             the deepseek_api_key.is_empty() guard in the Groq-Llama block is load-bearing");
+    }
+
+    // --- Auto-fallback ---
+
+    /// Auto-fallback picks the first alternative provider that has a key.
+    ///
+    /// Inversion-check: temporarily set current_key_empty check to always `false`
+    /// (by changing `config.deepseek_api_key.is_empty()` to `false`) → this test
+    /// failed because llm_provider was not switched.  Restored.
+    #[test]
+    fn test_man_auto_fallback_picks_first_provider_with_key() {
+        let mut cfg = AppConfig::default();
+        cfg.llm_provider = "deepseek".to_string();
+        cfg.deepseek_api_key = String::new(); // no key → triggers fallback
+        cfg.openai_api_key = "sk_test_key".to_string(); // openai has a key
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "openai",
+            "auto-fallback must switch to openai (first in preference list with a key)");
+    }
+
+    /// Auto-fallback does NOT fire when the current provider has a key.
+    #[test]
+    fn test_man_auto_fallback_skipped_when_current_key_present() {
+        let mut cfg = AppConfig::default();
+        cfg.llm_provider = "deepseek".to_string();
+        cfg.deepseek_api_key = "dsk_key".to_string(); // key present
+        cfg.openai_api_key = "sk_key".to_string();
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "deepseek",
+            "llm_provider must not change when current provider has a key");
+    }
+
+    // --- ORDERING INVARIANT: Groq-Llama BEFORE auto-fallback (AC#3 final bullet) ---
+    //
+    // This test verifies the load-bearing ordering: the Groq-Llama block runs
+    // BEFORE the general auto-fallback.  The scenario is designed so that the
+    // correct ordering produces "groq" while swapping the two blocks would
+    // produce "openai" (auto-fallback sees openai key before groq in preference
+    // order).
+    //
+    // Inversion-check: to confirm this test catches a block-swap, the test was
+    // manually re-run with the Groq-Llama block placed AFTER the auto-fallback
+    // block in migrate_and_normalize.  With that ordering llm_provider became
+    // "openai" (auto-fallback picked it first), causing this test to fail.
+    // The correct ordering was then restored.
+
+    /// Groq-Llama block fires BEFORE auto-fallback: llm_provider ends up "groq"
+    /// (not "openai") because the targeted Groq-Llama logic runs first.
+    #[test]
+    fn test_man_ordering_groq_llama_runs_before_auto_fallback() {
+        // Scenario: STT=groq, Groq key present, no DeepSeek key, but OpenAI key present.
+        //
+        // Correct ordering (Groq-Llama first):
+        //   1. Groq-Llama block: stt=groq, llm=deepseek, no deepseek key, groq key → set llm=groq
+        //   2. Auto-fallback: groq key IS present → no further change
+        //   Result: llm_provider = "groq"
+        //
+        // Swapped ordering (auto-fallback first):
+        //   1. Auto-fallback: deepseek empty → walk candidates → openai key found → llm = openai
+        //   2. Groq-Llama block: llm is now "openai" (not "deepseek") → guard fails → no change
+        //   Result: llm_provider = "openai"  ← would fail this assert
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "groq".to_string();
+        cfg.llm_provider = "deepseek".to_string();
+        cfg.groq_api_key = "gsk_key".to_string();
+        cfg.deepseek_api_key = String::new();
+        cfg.openai_api_key = "sk_key".to_string(); // present — auto-fallback would pick this
+
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+
+        assert_eq!(out.llm_provider, "groq",
+            "Groq-Llama block must run BEFORE auto-fallback; if auto-fallback ran first, \
+             llm_provider would be 'openai' because openai key is present and comes first \
+             in the preference list");
     }
 
     /// Default config has the expected field values.
