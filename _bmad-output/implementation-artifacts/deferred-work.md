@@ -109,3 +109,11 @@ All low-severity, gated on a clean machine-written fixture and/or production pat
 - **Kotlin synthetic amplitude has no clamp** (`* 32767f`) vs Rust path: a future `amplitude > 1.0` vector wraps to a negative Short in Kotlin only. No such vector today.
 - **`SilencePreFilter` audioFormat guard assumes a canonical 44-byte header** (fmt at offset 20) and checks only `audioFormat==1`, not bits==16 / channels==1: a WAV with a pre-fmt chunk (JUNK/LIST), 24-bit, or stereo PCM would misparse. Pre-existing limitation — Android `encodeWav` (KlarvoApi.kt:1039) always emits canonical 16-bit mono PCM, so unreachable in production. The guard is no worse than the surrounding parser.
 - **`make_float_wav` doc comment says "audioFormat = 3"** — Edge Case Hunter claims hound writes WAVE_FORMAT_EXTENSIBLE (0xFFFE) for 32-bit float. **Unverified**; zero behavioral impact (hound reads its own output back; Rust float32 test green). Verify + correct the comment if touching this helper again.
+
+## Deferred from: code review of story-3.2 (2026-06-02)
+
+Low severity, does not block Story 3.2 — the gate logic and AC-4 inversion property are guarded and empirically verified.
+
+> NOTE: a second item (`send_feedback` call-site binding not regression-protected) was originally deferred here, then **un-deferred at GATE 3 (Andi, 2026-06-02) and closed in-story** (Story 3.2 Tasks 4–5): extracted `send_feedback_inner` (the gate→build→POST seam) + 2 wiremock wire specs that pass `include_dictation` into the seam; empirically verified (flag flip → both wire specs RED). It is therefore no longer a deferral.
+
+- **11-positional-arg payload builders have no compile-time slot safety** (`commands/feedback.rs`: `build_feedback_payload` ~158, and now also `send_feedback_inner` ~237): 6+ of the args are `String`/`Option<String>`; a caller transposition (e.g. `category`/`message`, or `version`/`os`/`platform`) compiles silently. `#[allow(clippy::too_many_arguments)]` suppresses the lint (sanctioned by the "clippy clean on touched files" DoD). Each has a single verified caller today, so per the premature-abstraction guard a shared param-struct/builder is not forced now. Revisit if a third caller appears or if Epic-4 touches this file. Severity: low.

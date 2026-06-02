@@ -141,6 +141,129 @@ struct FeedbackPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Payload builder (pure, no I/O — testable seam for the privacy gate)
+// ---------------------------------------------------------------------------
+
+/// Builds a [`FeedbackPayload`] from `include_dictation`, a metrics snapshot,
+/// and the scalar form fields.
+///
+/// This is a pure data-transformation function: no network I/O, no lock
+/// acquisition, no async. The `include_dictation` gate lives here so it can
+/// be exercised in unit tests without spawning an HTTP client.
+///
+/// `version` and `os` are computed by the caller (usually from
+/// `env!("CARGO_PKG_VERSION")` and `std::env::consts::OS`) so that this
+/// function has no implicit dependencies.
+#[allow(clippy::too_many_arguments)]
+fn build_feedback_payload(
+    include_dictation: bool,
+    metrics: &FeedbackMetrics,
+    category: String,
+    message: String,
+    email: Option<String>,
+    context_area: String,
+    area: Option<String>,
+    version: String,
+    os: String,
+    license_status: String,
+    platform: String,
+) -> FeedbackPayload {
+    FeedbackPayload {
+        category,
+        message,
+        email,
+        context_area,
+        area,
+        version,
+        os,
+        license_status,
+        platform,
+        // Metrics
+        stt_latency_ms: metrics.last_stt_latency_ms,
+        llm_latency_ms: metrics.last_llm_latency_ms,
+        total_latency_ms: metrics.last_total_latency_ms,
+        last_target_app: metrics.last_target_app.clone(),
+        last_dictation_at: metrics.last_dictation_at.clone(),
+        stt_error_count: metrics.stt_error_count,
+        llm_error_count: metrics.llm_error_count,
+        paste_error_count: metrics.paste_error_count,
+        // Opt-in dictation sample — THE GATE
+        raw_text: if include_dictation { metrics.last_raw_text.clone() } else { None },
+        cleaned_text: if include_dictation { metrics.last_cleaned_text.clone() } else { None },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Network seam (injectable for tests)
+// ---------------------------------------------------------------------------
+
+/// POSTs a [`FeedbackPayload`] to the given URL using the provided client.
+///
+/// Extracted from `send_feedback` so that integration tests can supply a
+/// `reqwest::Client` pointed at a `wiremock::MockServer` without touching a
+/// live network. The `#[tauri::command]` wrapper remains a thin delegator.
+///
+/// Returns `Err` when the request fails (network error, timeout) or when the
+/// server responds with a non-2xx status.
+async fn post_feedback_to_url(
+    client: &reqwest::Client,
+    url: &str,
+    payload: &FeedbackPayload,
+) -> Result<(), String> {
+    let resp = client
+        .post(url)
+        .json(payload)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send feedback: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Webhook returned status {}", resp.status()));
+    }
+
+    Ok(())
+}
+
+/// Core of `send_feedback`: builds the payload and posts it to the webhook.
+///
+/// Extracted so that wire-path integration tests can drive the entire
+/// gate→build→POST chain end-to-end without a Tauri `State`. The
+/// `#[tauri::command]` reads `State`, builds the client, and delegates here.
+///
+/// A hardcoded `include_dictation` value or an arg-swap inside THIS function
+/// will be caught by the wire tests, which pass the flag into this seam.
+#[allow(clippy::too_many_arguments)]
+async fn send_feedback_inner(
+    client: &reqwest::Client,
+    webhook_url: &str,
+    include_dictation: bool,
+    metrics: &FeedbackMetrics,
+    category: String,
+    message: String,
+    email: Option<String>,
+    context_area: String,
+    area: Option<String>,
+    license_status: String,
+    platform: String,
+) -> Result<(), String> {
+    let payload = build_feedback_payload(
+        include_dictation,
+        metrics,
+        category,
+        message,
+        email,
+        context_area,
+        area,
+        env!("CARGO_PKG_VERSION").to_string(),
+        std::env::consts::OS.to_string(),
+        license_status,
+        platform,
+    );
+    post_feedback_to_url(client, webhook_url, &payload).await
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -254,42 +377,21 @@ pub async fn send_feedback(
 
     let platform = if cfg!(mobile) { "mobile" } else { "desktop" };
 
-    let payload = FeedbackPayload {
+    let client = reqwest::Client::new();
+    send_feedback_inner(
+        &client,
+        &webhook_url,
+        include_dictation,
+        &metrics,
         category,
         message,
         email,
         context_area,
         area,
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        os: std::env::consts::OS.to_string(),
         license_status,
-        platform: platform.to_string(),
-        // Metrics
-        stt_latency_ms: metrics.last_stt_latency_ms,
-        llm_latency_ms: metrics.last_llm_latency_ms,
-        total_latency_ms: metrics.last_total_latency_ms,
-        last_target_app: metrics.last_target_app.clone(),
-        last_dictation_at: metrics.last_dictation_at.clone(),
-        stt_error_count: metrics.stt_error_count,
-        llm_error_count: metrics.llm_error_count,
-        paste_error_count: metrics.paste_error_count,
-        // Opt-in dictation sample
-        raw_text: if include_dictation { metrics.last_raw_text.clone() } else { None },
-        cleaned_text: if include_dictation { metrics.last_cleaned_text.clone() } else { None },
-    };
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(&webhook_url)
-        .json(&payload)
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to send feedback: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Webhook returned status {}", resp.status()));
-    }
+        platform.to_string(),
+    )
+    .await?;
 
     // Reset cumulative error counters on successful submission.
     // Desktop: in-memory. Mobile: rewrite the JSON file.
@@ -320,7 +422,7 @@ pub async fn send_feedback(
 
 #[cfg(test)]
 mod tests {
-    use super::{FeedbackMetrics, FeedbackPayload};
+    use super::{build_feedback_payload, FeedbackMetrics, FeedbackPayload};
 
     // --- FeedbackMetrics tests ---
 
@@ -457,38 +559,217 @@ mod tests {
         assert!(json.contains("\"cleanedText\":null"));
     }
 
-    /// When include_dictation is false, raw/cleaned text stay None.
-    /// (Behaviour verified via the payload construction in send_feedback --
-    /// this test checks the serialization side stays consistent.)
-    #[test]
-    fn test_payload_no_dictation_sample_when_not_requested() {
-        let payload = FeedbackPayload {
-            category: "question".to_string(),
-            message: "How does X work?".to_string(),
-            email: None,
-            context_area: "home".to_string(),
-            area: None,
-            version: "0.5.0".to_string(),
-            os: "windows".to_string(),
-            license_status: "trial".to_string(),
-            platform: "desktop".to_string(),
-            stt_latency_ms: Some(400),
-            llm_latency_ms: Some(800),
-            total_latency_ms: Some(1300),
-            last_target_app: Some("Notepad".to_string()),
-            last_dictation_at: Some("2026-03-30T10:00:00Z".to_string()),
-            stt_error_count: 0,
-            llm_error_count: 0,
-            paste_error_count: 0,
-            // Simulates include_dictation == false
-            raw_text: None,
-            cleaned_text: None,
-        };
+    // ---------------------------------------------------------------------------
+    // Privacy-gate specs (TEST-02) — these call the REAL build_feedback_payload
+    // so an inverted gate would cause a test failure, not a silent leak.
+    // ---------------------------------------------------------------------------
 
-        let json = serde_json::to_string(&payload).expect("serialization must not fail");
-        assert!(json.contains("\"rawText\":null"));
-        assert!(json.contains("\"cleanedText\":null"));
-        // Metrics should still be present
-        assert!(json.contains("\"sttLatencyMs\":400"));
+    /// Helper: a FeedbackMetrics that contains real text in both text fields.
+    fn metrics_with_text() -> FeedbackMetrics {
+        FeedbackMetrics {
+            last_raw_text: Some("hello world".to_string()),
+            last_cleaned_text: Some("Hello, world.".to_string()),
+            last_stt_latency_ms: Some(400),
+            ..FeedbackMetrics::default()
+        }
+    }
+
+    /// Helper: call build_feedback_payload with the given flag and the
+    /// provided metrics — scalar args filled with test-appropriate defaults.
+    fn call_gate(include_dictation: bool, metrics: &FeedbackMetrics) -> FeedbackPayload {
+        build_feedback_payload(
+            include_dictation,
+            metrics,
+            "question".to_string(),
+            "How does X work?".to_string(),
+            None,
+            "home".to_string(),
+            None,
+            "0.5.0".to_string(),
+            "linux".to_string(),
+            "trial".to_string(),
+            "desktop".to_string(),
+        )
+    }
+
+    /// GATE OFF: when include_dictation is false, both text fields must be None
+    /// even when metrics contains real text.
+    ///
+    /// Inversion guard: if the condition were `if !include_dictation { ... }`
+    /// instead of `if include_dictation { ... }`, raw_text would be
+    /// Some("hello world") and both asserts below would FAIL — the test
+    /// actively detects the gate inversion.
+    #[test]
+    fn spec_privacy_gate_excludes_text_when_not_requested() {
+        let metrics = metrics_with_text();
+        let payload = call_gate(false, &metrics);
+        assert!(
+            payload.raw_text.is_none(),
+            "raw_text must be None when include_dictation=false (gate not inverted)"
+        );
+        assert!(
+            payload.cleaned_text.is_none(),
+            "cleaned_text must be None when include_dictation=false (gate not inverted)"
+        );
+        // Sanity-check: non-text metrics still flow through the gate
+        assert_eq!(payload.stt_latency_ms, Some(400));
+    }
+
+    /// GATE ON: when include_dictation is true, both text fields carry the
+    /// exact values from the metrics struct.
+    #[test]
+    fn spec_privacy_gate_includes_text_when_requested() {
+        let metrics = metrics_with_text();
+        let payload = call_gate(true, &metrics);
+        assert_eq!(
+            payload.raw_text,
+            Some("hello world".to_string()),
+            "raw_text must equal metrics.last_raw_text when include_dictation=true"
+        );
+        assert_eq!(
+            payload.cleaned_text,
+            Some("Hello, world.".to_string()),
+            "cleaned_text must equal metrics.last_cleaned_text when include_dictation=true"
+        );
+    }
+
+    /// GATE ON with absent metrics: when include_dictation is true but metrics
+    /// has no text, the payload fields stay None — no panic on missing data.
+    #[test]
+    fn spec_privacy_gate_excludes_text_when_metrics_has_none() {
+        let metrics = FeedbackMetrics::default(); // last_raw_text / last_cleaned_text == None
+        let payload = call_gate(true, &metrics);
+        assert!(
+            payload.raw_text.is_none(),
+            "raw_text must be None when metrics.last_raw_text is None"
+        );
+        assert!(
+            payload.cleaned_text.is_none(),
+            "cleaned_text must be None when metrics.last_cleaned_text is None"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Wire-path integration specs — drive send_feedback_inner end-to-end
+    // against a wiremock server.
+    //
+    // CRITICAL: These tests pass include_dictation into send_feedback_inner
+    // (the seam that also calls build_feedback_payload), NOT into
+    // build_feedback_payload directly. A hardcoded flag or arg-swap INSIDE
+    // send_feedback_inner (or in its call to build_feedback_payload) will
+    // therefore cause the assertions to fail, closing Defer #1.
+    // ---------------------------------------------------------------------------
+
+    /// Wire spec: with include_dictation=false passed to send_feedback_inner,
+    /// the POSTed JSON body must have rawText and cleanedText as JSON null,
+    /// even when the metrics contain real text.
+    ///
+    /// Inversion guard: if send_feedback_inner were to hardcode `true` or
+    /// swap the include_dictation arg, rawText/cleanedText would be non-null
+    /// and both asserts below would FAIL.
+    #[tokio::test]
+    async fn spec_wire_gate_off_body_has_no_dictation_text() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/feedback"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let metrics = metrics_with_text();
+        let client = reqwest::Client::new();
+        let url = format!("{}/feedback", server.uri());
+
+        // Pass the flag to the SEAM — not to build_feedback_payload directly.
+        super::send_feedback_inner(
+            &client,
+            &url,
+            false, // include_dictation = OFF
+            &metrics,
+            "problem".to_string(),
+            "test message".to_string(),
+            None,
+            "home".to_string(),
+            None,
+            "trial".to_string(),
+            "desktop".to_string(),
+        )
+        .await
+        .expect("send_feedback_inner must succeed against mock server");
+
+        // Capture what was actually POSTed to the wire
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1, "exactly one POST must have been made");
+        let body: serde_json::Value =
+            serde_json::from_slice(&requests[0].body).expect("body must be valid JSON");
+
+        assert!(
+            body["rawText"].is_null(),
+            "rawText must be null on the wire when include_dictation=false, got: {}",
+            body["rawText"]
+        );
+        assert!(
+            body["cleanedText"].is_null(),
+            "cleanedText must be null on the wire when include_dictation=false, got: {}",
+            body["cleanedText"]
+        );
+    }
+
+    /// Wire spec: with include_dictation=true passed to send_feedback_inner,
+    /// the POSTed JSON body must carry the metrics' raw and cleaned text
+    /// verbatim on the wire.
+    #[tokio::test]
+    async fn spec_wire_gate_on_body_carries_dictation_text() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/feedback"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let metrics = metrics_with_text();
+        let client = reqwest::Client::new();
+        let url = format!("{}/feedback", server.uri());
+
+        // Pass the flag to the SEAM — not to build_feedback_payload directly.
+        super::send_feedback_inner(
+            &client,
+            &url,
+            true, // include_dictation = ON
+            &metrics,
+            "problem".to_string(),
+            "test message".to_string(),
+            None,
+            "home".to_string(),
+            None,
+            "trial".to_string(),
+            "desktop".to_string(),
+        )
+        .await
+        .expect("send_feedback_inner must succeed against mock server");
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1, "exactly one POST must have been made");
+        let body: serde_json::Value =
+            serde_json::from_slice(&requests[0].body).expect("body must be valid JSON");
+
+        assert_eq!(
+            body["rawText"].as_str(),
+            Some("hello world"),
+            "rawText must carry metrics.last_raw_text on the wire when include_dictation=true"
+        );
+        assert_eq!(
+            body["cleanedText"].as_str(),
+            Some("Hello, world."),
+            "cleanedText must carry metrics.last_cleaned_text on the wire when include_dictation=true"
+        );
     }
 }
