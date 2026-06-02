@@ -1,0 +1,11 @@
+# Team override for bmad-retrospective.
+# Committed via the _bmad/custom/ exception in the repo .gitignore so it survives
+# `bmad update` and stays reviewable. Merges onto the base customize.toml per BMad
+# structural rules: persistent_facts append, so the base
+# "file:{project-root}/**/project-context.md" glob is preserved alongside this.
+
+[workflow]
+
+persistent_facts = [
+  "At every epic retrospective, check _bmad-output/project-context.md for drift against its sources of truth: the team CLAUDE.md (~/workspace/teams/klarvo/CLAUDE.md), the ADRs in docs/adr/, and the pinned versions in src-tauri/Cargo.toml + package.json. If any consolidated rule, gate, stack version, or invariant has changed, raise a SMART action item to re-run bmad-generate-project-context to re-sync the file. project-context.md is a manually-regenerated consolidation — BMAD never auto-syncs it, so it drifts silently unless this check is performed.",
+]

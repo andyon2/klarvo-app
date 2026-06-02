@@ -52,7 +52,11 @@ voxlit-debug.keystore
 src-tauri/null
 
 # Agent framework + cache (large / transient; never commit)
-_bmad/
+# Exception: _bmad/custom/ is our team override layer — committed so our
+# customizations survive `bmad update` and stay reviewable. (*.user.toml stays
+# local via _bmad/custom/.gitignore.) The disposable base install stays ignored.
+_bmad/*
+!_bmad/custom/
 .claude/
 shells/
 _bmad-output/runtime/
