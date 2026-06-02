@@ -410,7 +410,7 @@ pub fn strip_prompt_fragments(text: &str, stt_hint: &str) -> String {
 ///
 /// Returns `None` if the WAV cannot be parsed (should not happen since we
 /// encoded it ourselves, but we handle it gracefully).
-pub fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
+pub(crate) fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
     let cursor = std::io::Cursor::new(wav_bytes);
     let mut reader = match hound::WavReader::new(cursor) {
         Ok(r) => r,
@@ -450,7 +450,7 @@ pub fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
 /// Whether the pipeline runs fully offline for *dictation*, i.e. skips the LLM
 /// cleanup network call. True only when STT is local AND the LLM is not local;
 /// when the LLM is also local, cleanup runs offline via llama.cpp and is kept.
-pub fn is_offline(stt_provider: &str, llm_provider: &str) -> bool {
+pub(crate) fn is_offline(stt_provider: &str, llm_provider: &str) -> bool {
     stt_provider == "local" && llm_provider != "local"
 }
 
@@ -468,7 +468,7 @@ pub enum SilenceSkip {
 ///
 /// `rms` is `None` when the WAV could not be measured (invalid samples); the
 /// loudness check is then skipped, matching the original `if let Some` guard.
-pub fn silence_skip(
+pub(crate) fn silence_skip(
     duration_ms: u64,
     min_recording_ms: u64,
     rms: Option<f32>,
@@ -497,7 +497,7 @@ pub enum PostSttSkip {
 
 /// Detects post-STT hallucinations. Order matches the original pipeline:
 /// prompt-echo first, then the blocklist.
-pub fn post_stt_skip(transcript: &str, stt_hint: &str) -> Option<PostSttSkip> {
+pub(crate) fn post_stt_skip(transcript: &str, stt_hint: &str) -> Option<PostSttSkip> {
     if is_prompt_echo(transcript, stt_hint) {
         return Some(PostSttSkip::PromptEcho);
     }
@@ -520,7 +520,7 @@ pub enum LlmPath {
 
 /// Selects the cleanup path. Command mode always requires an LLM call (even
 /// offline), so a present selection wins over the offline flag.
-pub fn select_llm_path(offline: bool, has_selected_text: bool) -> LlmPath {
+pub(crate) fn select_llm_path(offline: bool, has_selected_text: bool) -> LlmPath {
     if offline && !has_selected_text {
         LlmPath::OfflineRaw
     } else if has_selected_text {
@@ -900,6 +900,18 @@ pub async fn start_command_mode(handle: AppHandle) {
 // lock/metric/command-mode plumbing stays a thin shell in
 // `stop_and_process_pipeline`.
 
+/// Groups the two STT conditioning fields so the type system enforces their
+/// co-presence instead of a doc-comment. Both are built together at the
+/// construction site in `stop_and_process_pipeline` and destructured together
+/// in `process_audio`.
+pub struct SttPromptPair {
+    /// Combined STT conditioning prompt (dictionary terms + hint text), passed
+    /// to `transcribe`. `None` when no dictionary terms or hint are configured.
+    pub dict_prompt: Option<String>,
+    /// Hint text alone (no dictionary terms), used by the hallucination guards.
+    pub stt_hint_text: String,
+}
+
 /// Fully-snapshotted inputs for [`process_audio`]. Built under locks by the
 /// shell; holds no references back into `AppState`.
 pub struct ProcessInput {
@@ -907,10 +919,9 @@ pub struct ProcessInput {
     pub language: String,
     pub stt_provider: Arc<dyn SttProvider>,
     pub cleanup_provider: Arc<dyn CleanupProvider>,
-    /// STT conditioning prompt (dictionary terms + hint), passed to `transcribe`.
-    pub dict_prompt: Option<String>,
-    /// Hint text alone (no dictionary terms), used by the hallucination guards.
-    pub stt_hint_text: String,
+    /// STT conditioning prompt pair; groups `dict_prompt` + `stt_hint_text` so
+    /// consistency is type-enforced rather than doc-enforced.
+    pub stt_prompt: SttPromptPair,
     pub offline_mode: bool,
     /// `Some` => command mode (rewrite this selection using the spoken command).
     pub selected_text: Option<String>,
@@ -978,8 +989,7 @@ pub async fn process_audio(
         language,
         stt_provider,
         cleanup_provider,
-        dict_prompt,
-        stt_hint_text,
+        stt_prompt: SttPromptPair { dict_prompt, stt_hint_text },
         offline_mode,
         selected_text,
         cleanup_style,
@@ -1468,8 +1478,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             language: cfg.language.clone(),
             stt_provider: stt_prov,
             cleanup_provider: cleanup_prov,
-            dict_prompt,
-            stt_hint_text,
+            stt_prompt: SttPromptPair { dict_prompt, stt_hint_text },
             offline_mode: offline,
             selected_text,
             cleanup_style,
@@ -1496,52 +1505,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // when the core reached the command point (Produced / CommandFailed),
     // matching the original guard-before-reset ordering. Progress/terminal
     // events were already emitted by process_audio. ---
-    let (cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens) =
-        match outcome {
-            ProcessOutcome::Stopped { stt_error } => {
-                if stt_error {
-                    if let Ok(mut m) = state.feedback_metrics.lock() {
-                        m.stt_error_count = m.stt_error_count.saturating_add(1);
-                    }
-                }
-                return;
-            }
-            ProcessOutcome::CommandFailed => {
-                if let Ok(mut m) = state.feedback_metrics.lock() {
-                    m.llm_error_count = m.llm_error_count.saturating_add(1);
-                }
-                consume_command_mode(&state);
-                return;
-            }
-            ProcessOutcome::Produced {
-                cleaned_text,
-                raw_text,
-                is_command,
-                stt_ms,
-                llm_ms,
-                prompt_tokens,
-                completion_tokens,
-                llm_error,
-            } => {
-                if llm_error {
-                    if let Ok(mut m) = state.feedback_metrics.lock() {
-                        m.llm_error_count = m.llm_error_count.saturating_add(1);
-                    }
-                }
-                if is_command_mode {
-                    consume_command_mode(&state);
-                }
-                (
-                    cleaned_text,
-                    raw_text,
-                    is_command,
-                    stt_ms,
-                    llm_ms,
-                    prompt_tokens,
-                    completion_tokens,
-                )
-            }
-        };
+    let Some((cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens)) =
+        deliver_outcome(outcome, &state, is_command_mode)
+    else {
+        return;
+    };
 
     // --- Record usage ---
     if let Ok(db) = state.history_db.lock() {
@@ -1804,6 +1772,73 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         PipelineEvent::done(cleaned_text, raw_text)
     };
     let _ = handle.emit(EVENT_STATE_CHANGED, done_event);
+}
+
+/// Applies the deferred side effects from a [`ProcessOutcome`] and extracts the
+/// produced fields for the caller to continue with usage recording, paste, and
+/// history.
+///
+/// Returns `None` on `Stopped` / `CommandFailed` (the caller should return
+/// immediately); returns `Some(...)` on `Produced` with the text and timing
+/// fields ready for the post-pipeline steps.
+///
+/// Invariants maintained:
+/// - `stt_error_count` is incremented on `Stopped { stt_error: true }`.
+/// - `llm_error_count` is incremented on `CommandFailed` and on `Produced {
+///   llm_error: true }`.
+/// - `consume_command_mode` is called on `CommandFailed` and on `Produced`
+///   when `is_command_mode` is `true`.
+#[allow(clippy::type_complexity)] // Tuple mirrors ProcessOutcome::Produced fields; a named struct is a follow-up refactor
+fn deliver_outcome(
+    outcome: ProcessOutcome,
+    state: &AppState,
+    is_command_mode: bool,
+) -> Option<(String, String, bool, u64, Option<u64>, Option<u32>, Option<u32>)> {
+    match outcome {
+        ProcessOutcome::Stopped { stt_error } => {
+            if stt_error {
+                if let Ok(mut m) = state.feedback_metrics.lock() {
+                    m.stt_error_count = m.stt_error_count.saturating_add(1);
+                }
+            }
+            None
+        }
+        ProcessOutcome::CommandFailed => {
+            if let Ok(mut m) = state.feedback_metrics.lock() {
+                m.llm_error_count = m.llm_error_count.saturating_add(1);
+            }
+            consume_command_mode(state);
+            None
+        }
+        ProcessOutcome::Produced {
+            cleaned_text,
+            raw_text,
+            is_command,
+            stt_ms,
+            llm_ms,
+            prompt_tokens,
+            completion_tokens,
+            llm_error,
+        } => {
+            if llm_error {
+                if let Ok(mut m) = state.feedback_metrics.lock() {
+                    m.llm_error_count = m.llm_error_count.saturating_add(1);
+                }
+            }
+            if is_command_mode {
+                consume_command_mode(state);
+            }
+            Some((
+                cleaned_text,
+                raw_text,
+                is_command,
+                stt_ms,
+                llm_ms,
+                prompt_tokens,
+                completion_tokens,
+            ))
+        }
+    }
 }
 
 /// Toggle-mode hotkey handler: press once to start, press again to stop + process.
@@ -2426,8 +2461,10 @@ mod tests {
             language: "en".to_string(),
             stt_provider: Arc::new(stt),
             cleanup_provider: Arc::new(cleanup),
-            dict_prompt: None,
-            stt_hint_text: TEST_STT_HINT.to_string(),
+            stt_prompt: SttPromptPair {
+                dict_prompt: None,
+                stt_hint_text: TEST_STT_HINT.to_string(),
+            },
             offline_mode: false,
             selected_text: None,
             cleanup_style: CleanupStyle::Polished,
