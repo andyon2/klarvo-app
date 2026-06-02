@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-02 # Story 3.3 → done (code-review PASS, fix-loop converged)
+last_updated: 2026-06-02 # Story 3.1 → done (code-review PASS, fix-loop 1 round)
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -72,7 +72,7 @@ development_status:
 
   # Epic 3 — Test Integrity: Close the False-Safety Islands
   epic-3: in-progress
-  3-1-spec-test-the-real-silero-auto-stop-path: backlog
+  3-1-spec-test-the-real-silero-auto-stop-path: done # Code-review PASS 2026-06-02 (3 adversarial layers, Opus; fix-loop 1 round). 540 Rust tests / 0 fail. Extracted process_vad_step seam from recording_thread (TEST-01 closed: 6 dead run_silence_state_machine tests + RMS helper deleted). Review caught a NEW false-safety island: the stop-priority test was tautological (`let fired=false; assert!(!fired)`, never called the seam) — DECISION (a): deleted it, stop-priority documented as a recording_thread loop-ordering property out of the per-chunk seam's scope (not unit-covered). 2 patches: hangover-timing now pinned (premature-fire regression would fail) + mid-pause hysteresis suppression (replaces deleted counter-reset test) + empty/sub-512-chunk no-progress path. 5 spec tests drive the REAL Silero state machine via process_vad_step. clippy clean on touched code (pre-existing type_complexity @702 out of scope). Pure test-integrity → no Windows/Android smoke owed.
   3-2-execute-the-real-feedback-pi-privacy-gate-in-test: backlog
   3-3-spec-test-the-wav-rms-computation-independently: done # Code-review PASS 2026-06-02 (3 adversarial layers, Opus 4.8; fix-loop 1 round). 541 Rust + 59 JVM tests / 0 fail. Shared JSON fixture read at runtime by BOTH Rust parametric spec + Kotlin WavRmsVectorsTest (AI-1 parity down-payment). insta snapshot removed. F2 resolved Option B: float32 Rust↔Kotlin asymmetry lifted into the fixture as first-class data (expected_rms_kotlin:null + divergence_reason), no id-hardcode. F1/F3 comment-honesty patches applied. 1 production change (SilencePreFilter audioFormat guard, float32→null) — behavior-neutral (encodeWav always emits audioFormat=1), GATE-2-ratified, no on-device smoke owed. ~8 low-sev items → deferred-work.md.
   3-4-independent-system-prompt-leak-detection-spec: backlog

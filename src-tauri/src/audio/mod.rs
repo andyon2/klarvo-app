@@ -926,6 +926,12 @@ fn recording_thread(
 
         'outer: loop {
             // Check stop signal (non-blocking).
+            //
+            // Stop-priority is enforced HERE, in the outer loop, before any
+            // chunk is drained.  The per-chunk `process_vad_step` seam operates
+            // on individual chunks and has no visibility of the stop channel, so
+            // this ordering guarantee is intentionally NOT covered by the
+            // per-chunk spec tests.
             match stop_rx.try_recv() {
                 Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'outer,
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -967,20 +973,18 @@ fn recording_thread(
                         } else {
                             mono_chunk
                         };
-                        let new_state = vad.feed(&vad_input);
 
+                        // Delegate to the extracted seam for testable edge-detect logic.
                         // Fire callback exactly once on Speaking → Silence transition.
                         // The VAD's hysteresis hangover (~608 ms default) ensures we
                         // don't fire prematurely on brief pauses mid-sentence.
-                        if prev_state == SpeechState::Speaking
-                            && new_state == SpeechState::Silence
-                            && !fired
-                        {
-                            fired = true;
+                        let (new_prev, new_fired, callback_fired) =
+                            process_vad_step(&mut vad, &vad_input, prev_state, fired);
+                        if callback_fired {
                             (cfg.callback)();
                         }
-
-                        prev_state = new_state;
+                        prev_state = new_prev;
+                        fired = new_fired;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'outer,
@@ -1018,6 +1022,38 @@ fn recording_thread(
     }));
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// VAD auto-stop seam — extracted for unit-testability (Story 3.1)
+// ---------------------------------------------------------------------------
+
+/// Processes a single VAD step and applies the Speaking→Silence edge-detect logic.
+///
+/// This is the core auto-stop decision extracted from `recording_thread` so that
+/// the logic can be unit-tested without a real cpal device or `mpsc` channels.
+///
+/// Returns `(new_prev_state, new_fired, callback_fired_this_step)`:
+/// - `new_prev_state`: the current `SpeechState` to carry into the next call.
+/// - `new_fired`: updated `fired` flag (once set to `true`, stays `true`).
+/// - `callback_fired_this_step`: `true` if the callback was triggered this step.
+///
+/// The production loop in `recording_thread` delegates to this function so that
+/// any regression in the edge-detect logic breaks the spec tests.
+#[cfg(desktop)]
+pub(crate) fn process_vad_step(
+    vad: &mut SileroVad,
+    chunk: &[f32],
+    prev_state: SpeechState,
+    fired: bool,
+) -> (SpeechState, bool, bool) {
+    let new_state = vad.feed(chunk);
+
+    if prev_state == SpeechState::Speaking && new_state == SpeechState::Silence && !fired {
+        (new_state, true, true)
+    } else {
+        (new_state, fired, false)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1562,145 +1598,252 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Silence-detection state-machine characterization
+    // Spec tests for the real Silero VAD auto-stop seam (Story 3.1)
     //
-    // The actual detection loop lives inside `recording_thread` (not
-    // unit-testable without a real cpal device).  We replicate its *exact*
-    // logic here as a local helper and drive it with synthetic RMS sequences.
-    // If the production loop is ever refactored, these tests will catch drift.
+    // These tests drive the production `process_vad_step` function that
+    // `recording_thread` now delegates to. Unlike the deleted
+    // `run_silence_state_machine` tests (which pinned a dead RMS-counting
+    // heuristic), these tests cover the REAL Speaking→Silence edge-detect
+    // with the actual Silero hysteresis state machine.
+    //
+    // Each test uses `advance_state` to drive the VAD into a known state
+    // without relying on ONNX model output variability. Then it calls
+    // `process_vad_step` with a zero-energy chunk (energy_floor is not
+    // set here; `advance_state` drives state directly). This mirrors the
+    // pattern used in `vad/mod.rs` tests.
+    //
+    // Since `process_vad_step` calls `vad.feed()` internally, tests pass
+    // a pre-classified chunk at the right energy level. For simplicity,
+    // tests use a silent chunk (all zeros) for silence frames and a chunk
+    // with a constant 0.9 value for speech-level frames. The VAD's
+    // `energy_floor` default (0.0) means energy_ok=true for any non-zero
+    // chunk.
     // -----------------------------------------------------------------------
 
-    /// Mirrors the silence-detection state machine in `recording_thread`.
+    /// Helper: create a SileroVad with minimal hangover for fast tests.
     ///
-    /// Returns (callback_fired: bool, consecutive_silent_chunks_at_end: usize).
-    fn run_silence_state_machine(
-        rms_values: &[f32],
-        threshold: f32,
-        silent_chunks_required: usize,
-    ) -> (bool, usize) {
-        let mut consecutive_silent_chunks = 0usize;
-        let mut has_seen_speech = false;
+    /// Uses `hangover_ms = 64` (≈2 VAD frames at 32ms each). The VAD
+    /// requires `min_onset_frames` consecutive speech frames before entering
+    /// Speaking state (default = 3).
+    #[cfg(desktop)]
+    fn make_fast_vad() -> crate::vad::SileroVad {
+        let cfg = crate::vad::VadConfig {
+            hangover_ms: 64,
+            energy_floor: 0.0, // accept all frames regardless of energy
+            ..crate::vad::VadConfig::default()
+        };
+        crate::vad::SileroVad::with_config(cfg).expect("VAD must init for tests")
+    }
+
+    /// Drive `vad.advance_state` into Speaking state.
+    ///
+    /// Sends `min_onset_frames` (default=3) high-probability frames so the
+    /// hysteresis state machine transitions to Speaking.
+    #[cfg(desktop)]
+    fn drive_vad_to_speaking(vad: &mut crate::vad::SileroVad) {
+        // Default onset_threshold = 0.5; we use 0.9 (well above).
+        for _ in 0..5 {
+            vad.advance_state(0.9, true);
+        }
+        assert_eq!(
+            vad.current_speech_state(),
+            SpeechState::Speaking,
+            "VAD must be in Speaking state after driving with high-prob frames"
+        );
+    }
+
+    /// A speech→silence edge fires the auto-stop callback exactly once.
+    ///
+    /// Covers AC-1 (seam is callable) and AC-2 (edge-detect fires on real
+    /// Silero state machine).
+    #[cfg(desktop)]
+    #[test]
+    fn spec_vad_autostop_fires_on_speech_silence_edge() {
+        let mut vad = make_fast_vad();
+        vad.reset();
+        drive_vad_to_speaking(&mut vad);
+
+        let mut prev_state = SpeechState::Speaking;
+        let mut fired = false;
+        let mut callback_count = 0usize;
+
+        // Feed silence frames (all-zeros → energy_ok depends on energy_floor=0.0,
+        // and prob from feed() will be near 0 for silent input).
+        // hangover_ms=64 → ceil(64/32)=2 hangover frames, then Silence.
+        // Feed enough frames to cross the Speaking→Silence edge.
+        let silent_chunk = vec![0.0f32; 512]; // 32ms at 16kHz
+        for _ in 0..10 {
+            let (new_prev, new_fired, cb_fired) =
+                process_vad_step(&mut vad, &silent_chunk, prev_state, fired);
+            if cb_fired {
+                callback_count += 1;
+            }
+            prev_state = new_prev;
+            fired = new_fired;
+        }
+
+        assert!(fired, "auto-stop must have fired on Speaking→Silence edge");
+        assert_eq!(callback_count, 1, "callback must fire exactly once on the edge");
+    }
+
+    /// Pure silence without prior speech never fires the auto-stop.
+    ///
+    /// The VAD starts in Silence state; without a Speaking→Silence edge
+    /// there is no transition to detect. Parity with deleted test
+    /// `characterize_silence_loop_no_fire_without_prior_speech`.
+    #[cfg(desktop)]
+    #[test]
+    fn spec_vad_autostop_no_fire_without_prior_speech() {
+        let mut vad = make_fast_vad();
+        vad.reset();
+
+        let mut prev_state = SpeechState::Silence;
         let mut fired = false;
 
-        for &rms in rms_values {
-            if rms >= threshold {
-                has_seen_speech = true;
-                consecutive_silent_chunks = 0;
-            } else if has_seen_speech {
-                consecutive_silent_chunks += 1;
-            }
-
-            if has_seen_speech && consecutive_silent_chunks >= silent_chunks_required && !fired {
-                fired = true;
-            }
+        let silent_chunk = vec![0.0f32; 512];
+        for _ in 0..20 {
+            let (new_prev, new_fired, cb_fired) =
+                process_vad_step(&mut vad, &silent_chunk, prev_state, fired);
+            assert!(
+                !cb_fired,
+                "callback must not fire when VAD never entered Speaking"
+            );
+            prev_state = new_prev;
+            fired = new_fired;
         }
 
-        (fired, consecutive_silent_chunks)
+        assert!(!fired, "fired flag must remain false without prior speech");
     }
 
-    /// N consecutive chunks below threshold (with prior speech) fires the callback.
-    #[test]
-    fn characterize_silence_loop_fires_after_n_silent_chunks() {
-        // Simulate: 5 speech chunks above threshold, then 3 silent chunks.
-        // With silent_chunks_required = 3, callback must fire.
-        let threshold = 0.01_f32;
-        let required = 3;
-
-        let mut rms_values = vec![0.05f32; 5]; // speech
-        rms_values.extend(vec![0.005f32; 3]);  // silence
-
-        let (fired, _) = run_silence_state_machine(&rms_values, threshold, required);
-        assert!(fired, "callback must fire after {required} consecutive silent chunks");
-    }
-
-    /// Chunks above threshold never fire the callback.
-    #[test]
-    fn characterize_silence_loop_no_fire_when_above_threshold() {
-        let threshold = 0.01_f32;
-        let required = 3;
-
-        // All chunks above threshold -- should never fire.
-        let rms_values = vec![0.05f32; 20];
-        let (fired, silent_count) = run_silence_state_machine(&rms_values, threshold, required);
-
-        assert!(!fired, "callback must not fire when all chunks are above threshold");
-        assert_eq!(silent_count, 0, "silent counter must stay 0 when all chunks are loud");
-    }
-
-    /// A single loud chunk between silent chunks resets the counter to 0.
-    #[test]
-    fn characterize_silence_loop_loud_chunk_resets_counter() {
-        let threshold = 0.01_f32;
-        let required = 5; // high threshold so it doesn't fire prematurely
-
-        // Speech → 3 silent → 1 loud → 2 more silent
-        let mut rms_values = vec![0.05f32; 3]; // speech
-        rms_values.extend(vec![0.005f32; 3]);  // 3 silent
-        rms_values.push(0.05f32);              // loud chunk (resets counter)
-        rms_values.extend(vec![0.005f32; 2]);  // 2 more silent
-
-        let (fired, final_count) = run_silence_state_machine(&rms_values, threshold, required);
-        assert!(!fired, "callback must not fire: counter was reset by loud chunk");
-        // After reset the counter only accumulated 2, not 5.
-        assert_eq!(final_count, 2, "counter should be 2 after reset + 2 silent chunks");
-    }
-
-    /// Speech chunks followed by silence with required=1 fires immediately.
-    #[test]
-    fn characterize_silence_loop_fires_at_minimum_required_one() {
-        let threshold = 0.01_f32;
-        let required = 1;
-
-        let mut rms_values = vec![0.05f32; 3]; // speech
-        rms_values.push(0.005f32);             // exactly 1 silent chunk
-
-        let (fired, _) = run_silence_state_machine(&rms_values, threshold, required);
-        assert!(fired, "callback must fire after exactly 1 silent chunk when required=1");
-    }
-
-    /// Pure silence before any speech never fires the callback.
+    /// Callback fires exactly once even when many silence frames follow the edge.
     ///
-    /// This guards the "wait for speech first" logic: ambient noise in a quiet
-    /// room must not trigger auto-stop before the user has started speaking.
+    /// Also verifies hangover behaviour: the callback must NOT fire during the
+    /// hangover window (while the VAD is still in Speaking due to hysteresis),
+    /// only on the exact Speaking→Silence transition.
+    ///
+    /// Parity with deleted test `characterize_silence_loop_fires_exactly_once`.
+    #[cfg(desktop)]
     #[test]
-    fn characterize_silence_loop_no_fire_without_prior_speech() {
-        let threshold = 0.01_f32;
-        let required = 3;
+    fn spec_vad_autostop_fires_exactly_once() {
+        let mut vad = make_fast_vad();
+        vad.reset();
+        drive_vad_to_speaking(&mut vad);
 
-        // Only silent chunks -- no speech chunk ever seen.
-        let rms_values = vec![0.005f32; 10];
-        let (fired, _) = run_silence_state_machine(&rms_values, threshold, required);
-        assert!(!fired, "callback must NOT fire when there has been no speech yet");
-    }
-
-    /// Callback fires exactly once even when more silent chunks follow.
-    #[test]
-    fn characterize_silence_loop_fires_exactly_once() {
-        let threshold = 0.01_f32;
-        let required = 2;
-
-        // Speech → 10 silent chunks (well beyond required=2).
-        let mut rms_values = vec![0.05f32; 2];
-        rms_values.extend(vec![0.005f32; 10]);
-
-        // We track how many times the callback *would* fire by counting
-        // manually (the production code uses the `fired` flag to guard this).
-        let mut consecutive_silent_chunks = 0usize;
-        let mut has_seen_speech = false;
-        let mut fire_count = 0usize;
-
-        for &rms in &rms_values {
-            if rms >= threshold {
-                has_seen_speech = true;
-                consecutive_silent_chunks = 0;
-            } else if has_seen_speech {
-                consecutive_silent_chunks += 1;
+        let mut prev_state = SpeechState::Speaking;
+        let mut fired = false;
+        let mut callback_count = 0usize;
+        // hangover_ms=64 → ceil(64/32)=2 hangover frames.  The VAD stays
+        // in Speaking during those 2 frames; the edge fires only on frame 3.
+        // We verify that the callback does NOT fire during the hangover window.
+        let mut fired_before_hangover_expiry = false;
+        let silent_chunk = vec![0.0f32; 512];
+        // Feed 50 silence frames — well beyond the 2-frame hangover.
+        for frame_idx in 0..50usize {
+            let (new_prev, new_fired, cb_fired) =
+                process_vad_step(&mut vad, &silent_chunk, prev_state, fired);
+            if cb_fired {
+                callback_count += 1;
+                // hangover_frames=2; the edge can only fire once the VAD
+                // reports Silence, which is after the hangover expires.
+                // Frames 0 and 1 must still be Speaking (hangover active).
+                if frame_idx < 2 {
+                    fired_before_hangover_expiry = true;
+                }
             }
-            if has_seen_speech && consecutive_silent_chunks >= required && fire_count == 0 {
-                fire_count += 1;
-            }
+            prev_state = new_prev;
+            fired = new_fired;
         }
 
-        assert_eq!(fire_count, 1, "callback must fire exactly once, not {fire_count} times");
+        assert!(
+            !fired_before_hangover_expiry,
+            "callback must not fire during the hangover window (premature fire would be a regression)"
+        );
+        assert_eq!(
+            callback_count, 1,
+            "callback must fire exactly once regardless of how many silence frames follow"
+        );
+    }
+
+    /// A mid-pause (brief speech frame between silence frames) suppresses
+    /// a premature auto-stop fire.
+    ///
+    /// Replaces the coverage lost when `characterize_silence_loop_loud_chunk_resets_counter`
+    /// was deleted: a speech frame during the hangover window must resume
+    /// Speaking state and prevent the fire from happening prematurely.
+    #[cfg(desktop)]
+    #[test]
+    fn spec_vad_autostop_mid_pause_suppresses_premature_fire() {
+        let mut vad = make_fast_vad();
+        vad.reset();
+        drive_vad_to_speaking(&mut vad);
+
+        let mut prev_state = SpeechState::Speaking;
+        let mut fired = false;
+        let silent_chunk = vec![0.0f32; 512];
+
+        // Feed 1 silence frame — VAD enters hangover (still Speaking).
+        let (new_prev, new_fired, cb_fired) =
+            process_vad_step(&mut vad, &silent_chunk, prev_state, fired);
+        assert!(!cb_fired, "no fire after first silence frame (hangover active)");
+        prev_state = new_prev;
+        fired = new_fired;
+
+        // Feed a speech frame: prob=0.9 via advance_state, then pass a
+        // speech-energy chunk so feed() keeps the state in Speaking.
+        // advance_state resumes Speaking from hangover when above_offset.
+        vad.advance_state(0.9, true);
+        assert_eq!(
+            vad.current_speech_state(),
+            SpeechState::Speaking,
+            "VAD must return to Speaking after speech frame during hangover"
+        );
+        // process_vad_step with a speech chunk should stay in Speaking — no fire.
+        let speech_chunk = vec![0.9f32; 512];
+        let (new_prev2, new_fired2, cb_fired2) =
+            process_vad_step(&mut vad, &speech_chunk, prev_state, fired);
+        assert!(!cb_fired2, "no fire: speech frame resumed Speaking, suppressing premature auto-stop");
+        prev_state = new_prev2;
+        fired = new_fired2;
+
+        // Now drive to real silence (enough frames to exhaust hangover).
+        let mut total_fires = 0usize;
+        for _ in 0..10 {
+            let (new_prev3, new_fired3, cb_fired3) =
+                process_vad_step(&mut vad, &silent_chunk, prev_state, fired);
+            if cb_fired3 {
+                total_fires += 1;
+            }
+            prev_state = new_prev3;
+            fired = new_fired3;
+        }
+
+        assert_eq!(total_fires, 1, "exactly one fire after full silence following mid-pause");
+    }
+
+    /// Empty / sub-512-sample chunk produces no Silero frame and returns
+    /// state unchanged — no spurious fire.
+    ///
+    /// Covers the no-progress path reachable from the resampler when the
+    /// downsampled output is shorter than one VAD frame (e.g. very short
+    /// native chunk at high sample rate).
+    #[cfg(desktop)]
+    #[test]
+    fn spec_vad_autostop_no_progress_on_empty_chunk() {
+        let mut vad = make_fast_vad();
+        vad.reset();
+        drive_vad_to_speaking(&mut vad);
+
+        // Pass an empty chunk: feed() buffers 0 samples → no complete frame
+        // → state is unchanged (Speaking).
+        let (new_state, new_fired, cb_fired) =
+            process_vad_step(&mut vad, &[], SpeechState::Speaking, false);
+
+        assert_eq!(
+            new_state,
+            SpeechState::Speaking,
+            "state must be unchanged when chunk has no complete VAD frame"
+        );
+        assert!(!new_fired, "fired must remain false on empty chunk");
+        assert!(!cb_fired, "callback must not fire on empty chunk");
     }
 }
