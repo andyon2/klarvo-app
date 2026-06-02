@@ -64,3 +64,48 @@ Surfaced by the 3-layer review (Blind + Edge + Auditor, Opus 4.8). Both real but
 
 - **Pending auto-send Enter not cancelled on banking block.** `handler.postDelayed({ performEnter() }, 150)` (auto-send) is queued after a successful paste; the banking guard blocks the *current* segment's paste but does not cancel an already-queued Enter from a prior AUTO segment. A prior segment's Enter keystroke can therefore land in whatever app is focused (potentially a banking app) within the ~150ms window. Narrow timing + pre-existing to the auto-send feature, orthogonal to the DIV-04 paste/clipboard guard. Defense-in-depth: re-check `bankingAppActive` inside the `performEnter` lambda, or cancel pending auto-send callbacks on block. Source: code review of Story 2.4, Edge Case Hunter. [KlarvoOverlayService.kt:1238-1240]
 - **Banking-app detection latency / defaults-open.** The guard correctly acts on `bankingAppActive` at paste time, but the upstream accessibility-based detection that *sets* that field can lag the actual foreground switch (or never fire), in which case the guard reads `false` and paste proceeds. The guard cannot close this detection gap; it is upstream and pre-existing (the same field drives the existing bubble-visibility guard). A detection-correctness/timeliness hardening pass is the right home. Source: code review of Story 2.4, Blind + Edge Hunters. [KlarvoOverlayService.kt:389-407]
+
+## Cross-platform parity net (Rust↔Kotlin drift detection) — Epic-2 retro AI-2, 2026-06-02
+
+ADR-0016 *mandates* behavioral parity between the Rust core and the Android Kotlin port, but enforces it
+only by convention (a developer re-implements Rust logic in Kotlin by hand). Nothing turns a test red when
+one side changes and the other does not. **Epic 2 produced concrete drift instances, not hypotheticals:**
+
+- `computeWavRms` divided by the header-*claimed* sample count where Rust divides by the count actually read
+  (Story 2.2 review fix).
+- `sampleCount==0` → `NaN` on Kotlin vs. `Some(0.0)` on Rust (Story 2.2 parity fix).
+- `sanitizeLlmOutput` char-set held "exact parity with Rust" **by hand** — char-set expansion explicitly
+  requires "Rust must change in lockstep" (Story 2.3 deferred items).
+- Pre-Epic-2: the silence-field divergence (`759087f`) — Android read only `bubbleTapSilenceSecs`, ignoring
+  `auto_mode_silence_secs` / `autostop_silence_secs` that desktop+UI use.
+
+**The net (two parts):** (a) **golden vectors** — a language-neutral fixture file (input → expected output)
+that BOTH the Rust tests and the JVM tests run, so any drift in a shared behavior (hallucination filter,
+silence pre-filter, `sanitizeLlmOutput`, WAV-RMS, banking guard) turns a test red; (b) **config-key
+contract** — the set of config keys both sides read must match (catches the `759087f` class).
+
+**Decision (Andi, 2026-06-02 retro):** Deliberately **NOT** a 5th Epic-3 scope story — it is new capability,
+not an audited TEST-0x finding, and is bigger than one story (a cross-language test harness is small infra).
+Bolting it into Epic 3 would break that epic's finding-traceability. Instead:
+
+1. **Down-payment in Story 3.3 (AI-1, separate from this deferral):** author the 3.3 WAV-RMS vectors as a
+   shared language-neutral fixture + a thin Kotlin consumer test. Proves the pattern, closes the exact 2.2
+   divisor drift, near-zero extra cost (3.3 writes those vectors anyway).
+2. **Full net = post-Epic-3 story**, formalized via `bmad-create-story` when scoped. Likely an **ADR-0016
+   amendment** that operationalizes the parity mandate the ADR already asserts. Severity: medium (latent —
+   every drift instance so far was caught by review and fixed; no active user-facing leak). Source: Epic 2
+   retrospective (`epic-2-retro-2026-06-02.md`) AI-2; supersedes the looser "1 story after Epic 2" framing in
+   the project memory.
+
+## Deferred from: code review of story-3.3 (2026-06-02)
+
+All low-severity, gated on a clean machine-written fixture and/or production paths Android never reaches. None block Story 3.3.
+
+- **Kotlin minimal JSON parser robustness** (`WavRmsVectorsTest.kt`): escape handling appends the raw next char (`\n`→`n`, no `\uXXXX`), the number tokenizer accepts `+`/`-` anywhere in the run, and a trailing backslash indexes past end-of-string (`StringIndexOutOfBounds`). Safe for the committed machine-generated fixture; would mis-parse a hand-edited malformed JSON. Add a 1-char EOF bounds guard + tighter number charset if the fixture ever becomes hand-edited.
+- **`bits_per_sample==32` conflates float and 32-bit-int PCM** (both `make_float_wav`/`build_vector_wav` in pipeline.rs and `buildVectorWav` in Kotlin): a future `sample_format:"int"` + `bits:32` vector would be silently encoded as IEEE float. Symmetric on both sides, so cross-platform comparison wouldn't catch it. No such vector exists today.
+- **`raw_bytes` range validation**: Rust uses `as_u64().unwrap() as u8` (panics on non-int, truncates ≥256), Kotlin `asInt().toByte()`. Constrain fixture bytes to 0..255 + assert range in both builders before any future raw-byte vector ≥128.
+- **Fixture path resolution** (`WavRmsVectorsTest.kt` `firstOrNull { exists() }` over 4 relative guesses): depends on Gradle CWD = `:app` module dir; first existing match wins. Prefer a stable anchor (env var / classpath resource) if CI invocation changes.
+- **`tested >= 7` is a self-referential count**, not an assertion that RMS-001..007 are each present — a deleted-and-replaced vector passes undetected. Assert the specific expected IDs.
+- **Kotlin synthetic amplitude has no clamp** (`* 32767f`) vs Rust path: a future `amplitude > 1.0` vector wraps to a negative Short in Kotlin only. No such vector today.
+- **`SilencePreFilter` audioFormat guard assumes a canonical 44-byte header** (fmt at offset 20) and checks only `audioFormat==1`, not bits==16 / channels==1: a WAV with a pre-fmt chunk (JUNK/LIST), 24-bit, or stereo PCM would misparse. Pre-existing limitation — Android `encodeWav` (KlarvoApi.kt:1039) always emits canonical 16-bit mono PCM, so unreachable in production. The guard is no worse than the surrounding parser.
+- **`make_float_wav` doc comment says "audioFormat = 3"** — Edge Case Hunter claims hound writes WAVE_FORMAT_EXTENSIBLE (0xFFFE) for 32-bit float. **Unverified**; zero behavioral impact (hound reads its own output back; Rust float32 test green). Verify + correct the comment if touching this helper again.

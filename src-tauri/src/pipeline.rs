@@ -3270,10 +3270,18 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Characterization tests for compute_wav_rms
+    // Spec tests for compute_wav_rms
     //
-    // Golden Master for the WAV-level RMS check used in stop_and_process_pipeline
-    // to detect whether the recording contains audible speech.
+    // Closed-form parametric specs driven by the shared JSON fixture at
+    // test-fixtures/wav-rms-vectors.json (repo root). The fixture is the
+    // single source of truth for both Rust and Kotlin consumers.
+    //
+    // The insta golden-master snapshot (compute_wav_rms_sine_tone) has been
+    // removed in favour of a tolerance assertion (AC-2). The snapshot file
+    // src-tauri/src/snapshots/klarvo_lib__pipeline__tests__compute_wav_rms_sine_tone.snap
+    // has been deleted.
+    //
+    // Story 3.3: Spec-Test the WAV-RMS Computation Independently
     // -----------------------------------------------------------------------
 
     /// Builds a minimal 16kHz mono 16-bit PCM WAV buffer from f32 samples.
@@ -3298,77 +3306,201 @@ mod tests {
         cursor.into_inner()
     }
 
-    /// compute_wav_rms of a silence WAV must return Some(0.0).
+    /// Builds a 16kHz mono float32 WAV buffer from f32 samples.
     ///
-    /// A silence WAV (all i16 zeros) round-trips through int normalisation and
-    /// should produce exactly 0.0 -- not None, not a small epsilon.
+    /// Used for RMS-007 (float32 path in compute_wav_rms). The hound spec uses
+    /// SampleFormat::Float / 32 bits — audioFormat = 3 in the WAV header.
+    fn make_float_wav(samples: &[f32]) -> Vec<u8> {
+        use std::io::Cursor;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut cursor = Cursor::new(Vec::new());
+        let mut writer = hound::WavWriter::new(&mut cursor, spec).unwrap();
+        for &s in samples {
+            writer.write_sample(s).unwrap();
+        }
+        writer.finalize().unwrap();
+        cursor.into_inner()
+    }
+
+    /// Loads the shared WAV-RMS test vectors from test-fixtures/wav-rms-vectors.json.
+    ///
+    /// CARGO_MANIFEST_DIR points to src-tauri/; parent is the workspace root
+    /// where test-fixtures/ lives.
+    fn load_wav_rms_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let fixture_path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/wav-rms-vectors.json");
+        let content = std::fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", fixture_path.display(), e));
+        serde_json::from_str::<Vec<serde_json::Value>>(&content)
+            .expect("wav-rms-vectors.json must be valid JSON array")
+    }
+
+    /// Builds the WAV bytes for a test vector from its wav_encoding specification.
+    fn build_vector_wav(encoding: &serde_json::Value) -> Vec<u8> {
+        let enc_type = encoding["type"].as_str().expect("wav_encoding must have 'type'");
+        match enc_type {
+            "raw_bytes" => {
+                let bytes = encoding["bytes"].as_array().expect("raw_bytes must have 'bytes'");
+                bytes.iter().map(|b| b.as_u64().unwrap() as u8).collect()
+            }
+            "synthetic" => {
+                let sample_rate = encoding["sample_rate"].as_u64().unwrap_or(16000) as u32;
+                let duration_ms = encoding["duration_ms"].as_u64().unwrap_or(0);
+                let amplitude = encoding["amplitude"].as_f64().unwrap_or(0.0) as f32;
+                let bits = encoding["bits_per_sample"].as_u64().unwrap_or(16);
+                let sample_format = encoding.get("sample_format").and_then(|v| v.as_str()).unwrap_or("int");
+                let n_samples = (sample_rate as u64 * duration_ms / 1000) as usize;
+                if sample_format == "float" || bits == 32 {
+                    let samples = vec![amplitude; n_samples];
+                    make_float_wav(&samples)
+                } else {
+                    let samples = vec![amplitude; n_samples];
+                    make_wav(&samples)
+                }
+            }
+            "sine" => {
+                let sample_rate = encoding["sample_rate"].as_u64().unwrap_or(16000) as u32;
+                let duration_ms = encoding["duration_ms"].as_u64().unwrap_or(1000);
+                let freq = encoding["freq_hz"].as_f64().unwrap_or(440.0) as f32;
+                let amplitude = encoding["amplitude"].as_f64().unwrap_or(1.0) as f32;
+                let n_samples = (sample_rate as u64 * duration_ms / 1000) as usize;
+                let sr = sample_rate as f32;
+                let samples: Vec<f32> = (0..n_samples)
+                    .map(|i| amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / sr).sin())
+                    .collect();
+                make_wav(&samples)
+            }
+            other => panic!("Unknown wav_encoding type: {other}"),
+        }
+    }
+
+    /// Parametric spec test: iterates all vectors from test-fixtures/wav-rms-vectors.json
+    /// and asserts compute_wav_rms against expected_rms / tolerance.
+    ///
+    /// This is the single authoritative test for the Rust side. Named individual
+    /// spec_* tests below are readable aliases for the same vectors but delegate
+    /// their correctness claim to this parametric driver.
     #[test]
-    fn characterize_compute_wav_rms_silence_is_zero() {
+    fn spec_wav_rms_vectors_json() {
+        let vectors = load_wav_rms_vectors();
+        for v in &vectors {
+            let id = v["id"].as_str().unwrap_or("?");
+            let wav = build_vector_wav(&v["wav_encoding"]);
+            let result = compute_wav_rms(&wav);
+            let expected_rms = &v["expected_rms"];
+            if expected_rms.is_null() {
+                assert!(
+                    result.is_none(),
+                    "[{id}] expected None but got {result:?}"
+                );
+            } else {
+                let expected = expected_rms.as_f64().unwrap() as f32;
+                let tolerance = v["tolerance"].as_f64().unwrap_or(1e-3) as f32;
+                let rms = result.unwrap_or_else(|| panic!("[{id}] expected Some({expected}) but got None"));
+                assert!(
+                    (rms - expected).abs() <= tolerance,
+                    "[{id}] RMS {rms:.6} not within {tolerance:.1e} of expected {expected:.6}"
+                );
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Named spec wrappers for readability — each exercises a specific vector
+    // scenario with hardcoded constants for clarity. The authoritative
+    // expected values are defined in test-fixtures/wav-rms-vectors.json and
+    // verified by the parametric `spec_wav_rms_vectors_json` test above.
+    // These wrappers bind to the real compute_wav_rms call site (AI-2 mandate).
+    // -----------------------------------------------------------------------
+
+    /// RMS-001 / RMS-002: invalid / empty bytes → None  (AC-1)
+    #[test]
+    fn spec_compute_wav_rms_invalid_bytes_returns_none() {
+        // RMS-001: empty slice
+        assert!(compute_wav_rms(&[]).is_none(), "empty byte slice must return None");
+        // RMS-002: garbage bytes that parse as non-WAV
+        let garbage: &[u8] = b"this is not a WAV file at all!";
+        assert!(compute_wav_rms(garbage).is_none(), "invalid WAV bytes must return None");
+    }
+
+    /// RMS-003: silence WAV (all-zero i16 samples) → Some(0.0)  (AC-1)
+    #[test]
+    fn spec_compute_wav_rms_silence_is_zero() {
         let wav = make_wav(&vec![0.0f32; 1600]); // 100 ms of silence
-        let rms = compute_wav_rms(&wav);
-        assert!(rms.is_some(), "compute_wav_rms must return Some(...) for a valid WAV");
-        let rms = rms.unwrap();
+        let rms = compute_wav_rms(&wav).expect("silence WAV must return Some(...)");
         assert_eq!(rms, 0.0, "silence WAV must produce RMS = 0.0, got {rms}");
     }
 
-    /// compute_wav_rms of a sine-tone WAV must be approximately 1/sqrt(2).
+    /// RMS-004: full-scale 440 Hz sine → RMS ≈ 1/√2  (AC-1)
     ///
-    /// We use a 440 Hz sine at full scale (amplitude 1.0).  The i16 quantisation
-    /// introduces a tiny error, so we use a loose 1e-3 tolerance.
+    /// Replaces the removed insta snapshot. The closed-form tolerance assertion
+    /// is the contract; the snapshot file has been deleted (AC-2).
     #[test]
-    fn characterize_compute_wav_rms_sine_tone_snapshot() {
+    fn spec_compute_wav_rms_sine_tone() {
         let n = 16_000usize;
         let freq = 440.0f32;
         let sr = 16_000.0f32;
         let samples: Vec<f32> = (0..n)
             .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / sr).sin())
             .collect();
-
         let wav = make_wav(&samples);
         let rms = compute_wav_rms(&wav).expect("sine WAV must parse successfully");
-
         let expected = 1.0_f32 / 2.0_f32.sqrt(); // ≈ 0.70710678
         assert!(
             (rms - expected).abs() < 1e-3,
-            "sine-tone WAV RMS should be ≈{expected:.5}, got {rms:.5}"
+            "sine-tone RMS should be ≈{expected:.5} (1/√2), got {rms:.5}"
         );
-
-        // Snapshot: locks in the concrete value so any change to the i16
-        // quantisation or normalisation path is immediately visible.
-        insta::assert_debug_snapshot!("compute_wav_rms_sine_tone", rms);
     }
 
-    /// compute_wav_rms of an invalid byte slice returns None.
-    #[test]
-    fn characterize_compute_wav_rms_invalid_bytes_returns_none() {
-        let garbage: &[u8] = b"this is not a WAV file at all!";
-        let result = compute_wav_rms(garbage);
-        assert!(result.is_none(), "invalid WAV bytes must return None, got {result:?}");
-    }
-
-    /// compute_wav_rms of an empty byte slice returns None.
-    #[test]
-    fn characterize_compute_wav_rms_empty_bytes_returns_none() {
-        let result = compute_wav_rms(&[]);
-        assert!(result.is_none(), "empty byte slice must return None");
-    }
-
-    /// compute_wav_rms is above threshold for a typical speech-level signal.
+    /// RMS-005: constant amplitude 0.3 (speech level) → RMS ≈ 0.3  (AC-1)
     ///
-    /// In production, the silence threshold is 0.005.  A signal with amplitude
-    /// 0.3 (typical speech level in a dictation recording) must produce an RMS
-    /// well above that threshold.
+    /// Replaces the previous `rms > threshold` assertion with a closed-form
+    /// tolerance check. The authoritative expected value (0.3 ± 1e-3) is also
+    /// defined in test-fixtures/wav-rms-vectors.json (RMS-005) and verified by
+    /// the parametric `spec_wav_rms_vectors_json` test.
     #[test]
-    fn characterize_compute_wav_rms_speech_level_above_default_threshold() {
-        // Constant 0.3 amplitude -- RMS = 0.3.
-        let samples = vec![0.3f32; 3200]; // 200 ms
+    fn spec_compute_wav_rms_speech_level() {
+        let samples = vec![0.3f32; 3200]; // 200 ms constant amplitude
         let wav = make_wav(&samples);
         let rms = compute_wav_rms(&wav).expect("speech-level WAV must parse");
-
-        let default_threshold = 0.005_f32;
         assert!(
-            rms > default_threshold,
-            "speech-level RMS ({rms:.4}) must exceed default silence threshold ({default_threshold})"
+            (rms - 0.3_f32).abs() < 1e-3,
+            "speech-level RMS should be ≈0.3, got {rms:.6}"
+        );
+    }
+
+    /// RMS-006: WAV with 0-sample data chunk → Some(0.0), NOT None  (AC-1)
+    #[test]
+    fn spec_compute_wav_rms_empty_data_chunk_is_some_zero() {
+        let wav = make_wav(&[]); // valid header, 0 samples written
+        let result = compute_wav_rms(&wav);
+        assert_eq!(
+            result,
+            Some(0.0),
+            "WAV with empty data chunk must return Some(0.0), got {result:?}"
+        );
+    }
+
+    /// RMS-007: float32 WAV, constant 0.5 → RMS ≈ 0.5  (AC-3)
+    ///
+    /// Tests the SampleFormat::Float path in compute_wav_rms.
+    #[test]
+    fn spec_compute_wav_rms_float32_path() {
+        let n = (16_000usize * 100) / 1000; // 100 ms at 16kHz
+        let samples = vec![0.5f32; n];
+        let wav = make_float_wav(&samples);
+        let rms = compute_wav_rms(&wav).expect("float32 WAV must parse successfully");
+        assert!(
+            (rms - 0.5_f32).abs() < 1e-4,
+            "float32 constant-0.5 WAV RMS should be ≈0.5, got {rms:.6}"
         );
     }
 

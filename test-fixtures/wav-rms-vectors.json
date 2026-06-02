@@ -1,0 +1,53 @@
+[
+  {
+    "id": "RMS-001",
+    "description": "empty byte slice — not a WAV at all",
+    "wav_encoding": {"type": "raw_bytes", "bytes": []},
+    "expected_rms": null,
+    "tolerance": null
+  },
+  {
+    "id": "RMS-002",
+    "description": "invalid bytes — not a WAV header",
+    "wav_encoding": {"type": "raw_bytes", "bytes": [116, 104, 105, 115, 32, 105, 115, 32, 110, 111, 116, 32, 97, 32, 87, 65, 86]},
+    "expected_rms": null,
+    "tolerance": null
+  },
+  {
+    "id": "RMS-003",
+    "description": "silence WAV — 100ms, all-zero i16 samples, 16kHz mono",
+    "wav_encoding": {"type": "synthetic", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration_ms": 100, "amplitude": 0.0},
+    "expected_rms": 0.0,
+    "tolerance": 0.0
+  },
+  {
+    "id": "RMS-004",
+    "description": "full-scale 440Hz sine, 1.0 amplitude, 1s, 16kHz mono — RMS = 1/sqrt(2)",
+    "wav_encoding": {"type": "sine", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration_ms": 1000, "freq_hz": 440.0, "amplitude": 1.0},
+    "expected_rms": 0.7071067811865476,
+    "tolerance": 1e-3
+  },
+  {
+    "id": "RMS-005",
+    "description": "constant amplitude 0.3 (speech level), 200ms, 16kHz mono — RMS ≈ 0.3",
+    "wav_encoding": {"type": "synthetic", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration_ms": 200, "amplitude": 0.3},
+    "expected_rms": 0.3,
+    "tolerance": 1e-3
+  },
+  {
+    "id": "RMS-006",
+    "description": "WAV with valid header but zero data chunk (0 samples) — must return Some(0.0) not None",
+    "wav_encoding": {"type": "synthetic", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration_ms": 0, "amplitude": 0.0},
+    "expected_rms": 0.0,
+    "tolerance": 0.0
+  },
+  {
+    "id": "RMS-007",
+    "description": "float32 WAV, constant amplitude 0.5, 100ms, 16kHz mono — RMS ≈ 0.5",
+    "wav_encoding": {"type": "synthetic", "sample_rate": 16000, "channels": 1, "bits_per_sample": 32, "sample_format": "float", "duration_ms": 100, "amplitude": 0.5},
+    "expected_rms": 0.5,
+    "tolerance": 1e-4,
+    "expected_rms_kotlin": null,
+    "divergence_reason": "Kotlin SilencePreFilter.computeWavRms only handles audioFormat=1 (16-bit PCM); float32 WAVs have audioFormat=3. The audioFormat guard (added in Story 3.3) causes Kotlin to return null. Rust's compute_wav_rms correctly returns Some(0.5) via its SampleFormat::Float path. This asymmetry is intentional and documented."
+  }
+]

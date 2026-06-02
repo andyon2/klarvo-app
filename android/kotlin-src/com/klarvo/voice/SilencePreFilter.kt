@@ -60,6 +60,12 @@ object SilencePreFilter {
         if (wavBytes.size < 44) return null
         return try {
             val buf = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
+            // audioFormat: bytes 20-21, little-endian. PCM = 1, float = 3.
+            // This implementation only handles 16-bit PCM (audioFormat == 1).
+            // Return null for unsupported formats (matches Rust's None-on-parse-error
+            // semantics for non-i16 formats not explicitly supported here).
+            val audioFormat = buf.getShort(20).toInt()
+            if (audioFormat != 1) return null
             val dataSize = buf.getInt(40)  // bytes in data chunk
             if (dataSize <= 0) return 0.0f
             val sampleCount = dataSize / 2  // 16-bit mono: 2 bytes per sample
