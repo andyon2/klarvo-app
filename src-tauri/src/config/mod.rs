@@ -447,7 +447,11 @@ pub struct OnboardingState {
 ///
 /// All fields have defaults via `Default` so a partially-written or
 /// absent config file always yields a usable value.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+// `Debug` is implemented manually below (NOT derived) so the plaintext
+// secret fields never appear in `{:?}`/`{:#?}` output. `Serialize`,
+// `Deserialize`, `Clone`, and `PartialEq` are left derived so the on-disk
+// `config.json` shape and Android JSON reads stay byte-identical.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     /// Groq API key (used for both STT and LLM providers).
@@ -796,6 +800,35 @@ pub struct AppConfig {
     /// through the Settings UI.
     #[serde(default, rename = "feedbackWebhookUrl")]
     pub feedback_webhook_url: String,
+}
+
+/// Redacting `Debug` impl for `AppConfig`.
+///
+/// The secret fields (5 provider API keys + `turso_token`) are
+/// rendered through a set/unset marker so their VALUES never reach any
+/// `{:?}`/`{:#?}` sink (a future log line, `dbg!`, or panic context). A few
+/// genuinely useful non-secret fields are shown verbatim; everything else is
+/// omitted via `.finish_non_exhaustive()` (shown as `..`), which is safe by
+/// default — any field added later is hidden unless explicitly listed here.
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Reveals configured-ness only — never the value, length, or a prefix.
+        let r = |s: &str| if s.is_empty() { "<unset>" } else { "<set>" };
+        f.debug_struct("AppConfig")
+            // --- secret fields, redacted ---
+            .field("groq_api_key", &r(&self.groq_api_key))
+            .field("deepseek_api_key", &r(&self.deepseek_api_key))
+            .field("openai_api_key", &r(&self.openai_api_key))
+            .field("anthropic_api_key", &r(&self.anthropic_api_key))
+            .field("openrouter_api_key", &r(&self.openrouter_api_key))
+            .field("turso_token", &r(&self.turso_token))
+            // --- a few useful non-secret fields, verbatim ---
+            .field("language", &self.language)
+            .field("cleanup_style", &self.cleanup_style)
+            .field("stt_provider", &self.stt_provider)
+            .field("llm_provider", &self.llm_provider)
+            .finish_non_exhaustive()
+    }
 }
 
 fn default_stt_provider() -> String {
@@ -1466,6 +1499,55 @@ mod tests {
 
     fn temp_dir() -> TempDir {
         tempfile::tempdir().expect("failed to create temp dir")
+    }
+
+    // -----------------------------------------------------------------------
+    // Debug redaction — forcing-sentinel against re-deriving Debug
+    // -----------------------------------------------------------------------
+
+    /// The manual `Debug` impl must never leak any secret VALUE. This test sets
+    /// each of the 6 secret fields to a distinct sentinel and asserts none of
+    /// the sentinels appears in either `{:?}` or `{:#?}`, while the redaction
+    /// marker `<set>` is present (proving the redacting path actually ran).
+    ///
+    /// Turns RED if `Debug` is re-derived on `AppConfig` or if a new
+    /// un-redacted secret field is added to the explicitly-listed set.
+    #[test]
+    fn debug_redacts_secrets() {
+        let mut c = AppConfig::default();
+        c.groq_api_key = "SENTINEL_GROQ_aaa".to_string();
+        c.deepseek_api_key = "SENTINEL_DEEPSEEK_bbb".to_string();
+        c.openai_api_key = "SENTINEL_OPENAI_ccc".to_string();
+        c.anthropic_api_key = "SENTINEL_ANTHROPIC_ddd".to_string();
+        c.openrouter_api_key = "SENTINEL_OPENROUTER_eee".to_string();
+        c.turso_token = "SENTINEL_TURSO_ggg".to_string();
+
+        let sentinels = [
+            "SENTINEL_GROQ_aaa",
+            "SENTINEL_DEEPSEEK_bbb",
+            "SENTINEL_OPENAI_ccc",
+            "SENTINEL_ANTHROPIC_ddd",
+            "SENTINEL_OPENROUTER_eee",
+            "SENTINEL_TURSO_ggg",
+        ];
+
+        let compact = format!("{c:?}");
+        let pretty = format!("{c:#?}");
+
+        for s in sentinels {
+            assert!(
+                !compact.contains(s),
+                "secret value {s:?} leaked in {{:?}} output: {compact}"
+            );
+            assert!(
+                !pretty.contains(s),
+                "secret value {s:?} leaked in {{:#?}} output: {pretty}"
+            );
+        }
+
+        // Redaction marker proves the secret fields were rendered (not omitted).
+        assert!(compact.contains("<set>"), "redaction marker missing in {{:?}}: {compact}");
+        assert!(pretty.contains("<set>"), "redaction marker missing in {{:#?}}: {pretty}");
     }
 
     // -----------------------------------------------------------------------
