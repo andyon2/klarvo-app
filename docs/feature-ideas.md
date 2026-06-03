@@ -9,7 +9,7 @@
 
 ## Live-Cleanup-Preview ("Wispr-Flow-Style Vorschaufenster")
 
-- **Status:** `idea`
+- **Status:** `scoping` abgeschlossen → **ENTSCHEIDUNG 2026-06-03 ganz unten** (ready für Story-Breakdown). ⚠️ Alle Abschnitte zwischen hier und der Entscheidung sind der **Erkundungs-Trail**; die finale Bauform steht unten und supersedet das „Sizing" + die „Offene Fragen".
 - **Erfasst:** 2026-05-30
 - **Inspiration:** Wispr Flow — Overlay zeigt während/nach der Aufnahme das Transkript
   mit sichtbar durchgestrichenen Füllwörtern/Korrekturen ("um", "Friday I mean",
@@ -183,6 +183,96 @@ korrigiert meine frühere Überzeichnung:
 4. Offline/Local-Cleanup-Modus: gibt es da überhaupt einen Cleanup-Diff zu zeigen, oder
    nur im LLM-Pfad? (Offline-Pfad pastet teils raw → kein Diff.)
 5. Verhältnis zu "Confirm-before-Paste" — wird daraus implizit ein Edit-vor-Paste-Flow?
+
+> ⚠️ **Das „Sizing" und diese „Offenen Fragen" sind SUPERSEDED durch die Entscheidung unten (2026-06-03).**
+
+### Deep-Research-Befund (2026-06-03) — „Brauchen wir Groq überhaupt noch?" → ja
+Andy fragte, ob ein lokales Modell (Google **Gemma 3n**) Groq/Whisper-large-v3 ersetzen
+könnte. Deep-Research-Harness (5 Winkel, 20 Quellen, 25 Claims adversarisch verifiziert,
+22 bestätigt, 3 gekippt). Verdikt: **Groq überlebt.**
+- **Gemma 3n fällt am Streaming durch.** Audio-Encoder ist heute **batch-only, ≤30s-Clips**;
+  echtes Low-Latency-Streaming explizit deferred („follow-up"), Stand Juni 2026 **nicht
+  ausgeliefert** (Verifier prüften das Jahr seither). Keine Interim-Resultate → kein Live-Feed.
+  *Nuance (Claim gekippt):* NICHT hart auf 30s gedeckelt — Chunking-Workarounds existieren;
+  es kann nur nicht **streamen**. Außerdem **keine benchmarkte DE/EN-WER** — nur „high-quality".
+- **Streaming-native Alternative existiert:** sherpa-onnx Zipformer/RNN-T-Transducer, echte
+  Interim-Resultate, RTF ~0,06–0,15 auf 1–2 CPU-Kernen, offizielle Rust-Crate (v1.13.2,
+  Mai 2026), direkt aus Tauri aufrufbar.
+- **ABER Deutsch ist die Wand:** kein DE-Modell im k2-fsa-Streaming-Katalog; Kyutai=EN/FR,
+  Moonshine-v2-STT=EN-only. Einziger DE-Kandidat: Community **Banafo „Kroko ASR"** (EN/FR/DE),
+  Qualität unverifiziert, Lizenz CC-BY-SA/Commercial-Split.
+- **NVIDIA Parakeet/Canary** = DE+EN erstklassig, aber **batch** (NeMo-Streaming experimentell,
+  ~14,8s, degeneriert nach 20–40s) → nur Kandidat für späteren all-local FINAL-Pass (Config B),
+  nicht für den Live-Tier.
+- Quellen: developers.googleblog.com/en/introducing-gemma-3n-developer-guide ·
+  ai.google.dev/gemma/docs/capabilities/audio · k2-fsa.github.io/sherpa (online-transducer) ·
+  docs.rs/sherpa-onnx · kyutai.org/stt · arxiv 2602.12241 (Moonshine v2) ·
+  arxiv 2509.14128 (Parakeet/Canary) · huggingface.co/Banafo/Kroko-ASR.
+
+### ⭐ ENTSCHEIDUNG (2026-06-03) — Orientierungs-Preview, Pausen-getriggert, Groq-only
+Zwei Reframings kippten das Bild:
+1. **Preview = Quality-of-Life-/Orientierungs-Feature, NICHT akkuratheits-kritisch.** Groq
+   liefert am Ende eh den korrekten Text → Genauigkeit der Preview egal → **Deutsch-Risiko
+   fällt komplett weg**.
+2. Deep-Research (oben) → lokales Modell bringt unter diesen Anforderungen nichts.
+
+**Gewählte Bauform — „Text bei Pausen" (Minimal, Groq-only):**
+- Modi: **Toggle + Hold** (nicht Auto/AutoStop — die pasten/stoppen bereits).
+- Während Sprache: Waveform fürs „läuft"-Gefühl (existiert).
+- Bei Pause ≥ Schwelle: **Segment-seit-letzter-Pause → Groq → an akkumulierende Preview
+  anhängen**; Aufnahme läuft weiter (kein Stop, kein Paste pro Segment).
+- Finish (Loslassen / 2. Tap / Shortcut): Segmente zusammenfügen + Cleanup + **einmal pasten**.
+- **Gratis-Bonus:** Segmente sind bei Pausen schon ge-Groqt → beim Finish fast alles
+  transkribiert → **End-Latenz ~null** (der Stop→Paste-Beat verschwindet bei langen Diktaten).
+- Ganze Preview = **opt-in-Anzeigeelement** (Settings-Toggle).
+- **Verworfen/geparkt:** kein lokales Streaming-Modell, kein sherpa-onnx/Kroko, **kein Spike**.
+  Streaming-Transducer bleibt geparkte Option NUR falls je „fließender Text *während* des
+  Sprechens" gewünscht (dann Config A + Kroko-DE-Spike).
+
+**Regler-Restruktur (Andy):** vier Pro-Modus-`*_silence_secs`-Werte → **zwei allgemeine Regler
+in der Shortcut-Sektion** (raus aus den Einzelmodus-Festlegungen):
+- **Regler A — Hold + Toggle — Preview-Pause:** Dauer bis Preview-Flush. **NEU** (Hold/Toggle
+  hatten keine Pausen-Erkennung). Reine Anzeige; stoppt/sendet nichts.
+- **Regler B — Auto + Auto-Stop — Send/Stop-Pause:** Dauer bis gesendet (Auto: Segment raus +
+  weiter) und/oder gestoppt (AutoStop: Ende). Bestehend; Merge verlustfrei (beide Defaults
+  heute 2,0s).
+- Die beiden sind **divers**: A timed die Preview, B timed die Aktion.
+- Android-Bubble-Gesten-Werte (`bubble_tap/long_press_silence_secs`) = eigene Baustelle,
+  out-of-scope (Android später).
+- Trade-off von A (dem Nutzer in die Hand gegeben): kurz = responsiver + mehr Groq-Calls +
+  kürzerer Kontext pro Segment; lang = träger + weniger Calls + besserer Kontext.
+
+**Implementierungs-Skizze (kleiner Epic, kein Architektur-Doc, evtl. 1 ADR Delta-Flush):**
+- Backend: Silence-Callback in Toggle/Hold der **flusht statt stoppt**; **Delta-Snapshot**-
+  Primitive (nur neues Audio seit letzter Pause — `snapshot_wav()` liefert heute nur ganzen
+  Puffer) → Groq → Preview-Chunk-Event. Reuse Auto-Mode-Segment-Pfad, ohne Stop/Paste/Loop.
+- Frontend: Preview-Chunks in erweiterter Pill-Bar **akkumulieren** (v0 RTL-Span @
+  `FloatingBar.tsx` + v2 `Event::LivePreviewChunk` als Referenz-Muster; beide nicht direkt
+  übernehmbar — v0=Poll-Re-Transcribe deaktiviert, v2=anderer Shell).
+- Config: zwei allgemeine Regler + Migration der vier alten Werte; Settings-Toggle für Preview.
+- DoD: Windows-Release-Build + manueller Press-to-Paste-Smoke-Test [[smoke-test-dod-gate]].
+
+### Offene Entscheidungen für die Story-Session (bewusst lösen, nicht erraten)
+Das WAS/WARUM oben ist entschieden. Diese Detail-Forks sind es noch nicht — sie gehören in
+`bmad-create-story` / `bmad-create-epics-and-stories`:
+1. **Preview-Inhalt:** pro-Segment **raw** Groq (kein per-Segment-Cleanup); Cleanup nur einmal
+   beim Finish. (Implizit aus „Genauigkeit egal" + Andys Verbatim-Default
+   [[polished-designschwaeche]] — sollte explizit bestätigt werden.)
+2. **Finish-Paste:** Segmente **konkatenieren** (haben wir schon, = End-Latenz-Bonus) vs.
+   ganzen Puffer nochmal Groqen. Konkatenieren bevorzugt — ABER Integration mit der bestehenden
+   `process_audio` (erwartet *einen* wav-Blob) + `chunked_cleanup` + Profiles/Command-Mode muss
+   geklärt werden. **Load-bearing.**
+3. **Cross-Platform-Falle (Config-Restruktur):** Zusammenlegen/Umbenennen der `*_silence_secs`-
+   Keys berührt geteilte Config — Android liest `auto_mode_silence_secs`/`autostop_silence_secs`
+   ([[android_silence_field_divergence]]). **Vor dem Umbau Android-Konsumenten verifizieren**,
+   sonst stiller Android-Breakage. Migration der alten `config.json`-Keys mitdenken.
+4. **Offline-Mode:** im Offline/Local-Cleanup-Pfad gibt es kein Groq → kann der Pausen-Flush da
+   überhaupt feuern, oder ist die Preview dort deaktiviert/nutzt lokales STT? Klären.
+5. **Bar-Expand-UX:** wie sieht die erweiterte Pill-Bar aus (Größe/Position/scrollbar, manuell
+   vs. auto-expand)? Nicht designt — ggf. kurze UX-Runde.
+6. **Preview nach Finish:** bleibt stehen (Review) oder verschwindet mit dem done-pop?
+7. **Auto/AutoStop bewusst OHNE Preview:** die pasten pro Segment — kein Preview-Feed dort
+   (sonst doppelt). Scope-Grenze explizit halten.
 
 ---
 
