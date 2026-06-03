@@ -244,6 +244,44 @@ pub async fn ensure_bar_window(
 }
 
 // ---------------------------------------------------------------------------
+// Build provenance
+// ---------------------------------------------------------------------------
+
+/// Build provenance for the About screen. Used to verify a rebuild actually
+/// shipped (stale-binary detection): `built_epoch` changes on every recompile,
+/// even from an uncommitted working tree, so a stale binary shows an old stamp.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildInfo {
+    pub version: String,
+    pub git_hash: String,
+    pub built_epoch: u64,
+}
+
+/// Returns version + git short hash + build timestamp.
+///
+/// The timestamp is the mtime of THIS running executable, read at runtime —
+/// the true write/link time of the binary. Unlike a build-script-captured time
+/// (which Cargo caches, and which a mtime-preserving sync like robocopy can
+/// leave stale), a binary that was never re-linked honestly reports its old
+/// mtime. That is exactly the stale-rebuild case we want to surface.
+#[tauri::command]
+pub fn get_build_info() -> BuildInfo {
+    let built_epoch = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        git_hash: env!("KLARVO_BUILD_HASH").to_string(),
+        built_epoch,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------
 

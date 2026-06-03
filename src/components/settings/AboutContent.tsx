@@ -194,6 +194,24 @@ interface AboutContentProps {
 }
 
 export function AboutContent({ appVersion, onRestartOnboarding }: AboutContentProps) {
+  // Build provenance: a stamp that changes on every recompile, so a stale
+  // binary (silent build failure) is immediately visible here.
+  const [buildStamp, setBuildStamp] = useState<string | null>(null);
+  useEffect(() => {
+    if (isPreviewMode) return;
+    (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const info = await invoke<{ version: string; gitHash: string; builtEpoch: number }>("get_build_info");
+        const dt = new Date(info.builtEpoch * 1000);
+        const when = Number.isNaN(dt.getTime()) ? "?" : dt.toLocaleString();
+        setBuildStamp(`Build ${info.gitHash} · ${when}`);
+      } catch {
+        setBuildStamp(null);
+      }
+    })();
+  }, []);
+
   return (
     <div className="flex flex-col gap-5">
       {/* Updates — desktop only */}
@@ -208,6 +226,9 @@ export function AboutContent({ appVersion, onRestartOnboarding }: AboutContentPr
         <p className="text-xs font-medium text-klarvo-muted">
           Klarvo{appVersion ? ` v${appVersion}` : ""}
         </p>
+        {buildStamp && (
+          <p className="text-[10px] text-klarvo-dim font-mono">{buildStamp}</p>
+        )}
         <p className="text-[11px] text-klarvo-dim">Voice dictation you own.</p>
         <p className="text-[11px] text-klarvo-dim">by Andreas Nolte</p>
         <div className="flex items-center gap-2 mt-0.5">

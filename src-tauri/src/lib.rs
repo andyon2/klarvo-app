@@ -998,6 +998,7 @@ pub fn run() {
             commands::misc::ensure_bar_window,
             commands::misc::get_log_dir_path,
             commands::misc::read_recent_logs,
+            commands::misc::get_build_info,
             // License
             commands::license::validate_license,
             commands::license::get_license_status,
