@@ -252,27 +252,45 @@ in der Shortcut-Sektion** (raus aus den Einzelmodus-Festlegungen):
 - Config: zwei allgemeine Regler + Migration der vier alten Werte; Settings-Toggle für Preview.
 - DoD: Windows-Release-Build + manueller Press-to-Paste-Smoke-Test [[smoke-test-dod-gate]].
 
-### Offene Entscheidungen für die Story-Session (bewusst lösen, nicht erraten)
-Das WAS/WARUM oben ist entschieden. Diese Detail-Forks sind es noch nicht — sie gehören in
-`bmad-create-story` / `bmad-create-epics-and-stories`:
-1. **Preview-Inhalt:** pro-Segment **raw** Groq (kein per-Segment-Cleanup); Cleanup nur einmal
-   beim Finish. (Implizit aus „Genauigkeit egal" + Andys Verbatim-Default
-   [[polished-designschwaeche]] — sollte explizit bestätigt werden.)
-2. **Finish-Paste:** Segmente **konkatenieren** (haben wir schon, = End-Latenz-Bonus) vs.
-   ganzen Puffer nochmal Groqen. Konkatenieren bevorzugt — ABER Integration mit der bestehenden
-   `process_audio` (erwartet *einen* wav-Blob) + `chunked_cleanup` + Profiles/Command-Mode muss
-   geklärt werden. **Load-bearing.**
-3. **Cross-Platform-Falle (Config-Restruktur):** Zusammenlegen/Umbenennen der `*_silence_secs`-
-   Keys berührt geteilte Config — Android liest `auto_mode_silence_secs`/`autostop_silence_secs`
-   ([[android_silence_field_divergence]]). **Vor dem Umbau Android-Konsumenten verifizieren**,
-   sonst stiller Android-Breakage. Migration der alten `config.json`-Keys mitdenken.
-4. **Offline-Mode:** im Offline/Local-Cleanup-Pfad gibt es kein Groq → kann der Pausen-Flush da
-   überhaupt feuern, oder ist die Preview dort deaktiviert/nutzt lokales STT? Klären.
-5. **Bar-Expand-UX:** wie sieht die erweiterte Pill-Bar aus (Größe/Position/scrollbar, manuell
-   vs. auto-expand)? Nicht designt — ggf. kurze UX-Runde.
-6. **Preview nach Finish:** bleibt stehen (Review) oder verschwindet mit dem done-pop?
-7. **Auto/AutoStop bewusst OHNE Preview:** die pasten pro Segment — kein Preview-Feed dort
-   (sonst doppelt). Scope-Grenze explizit halten.
+### ✅ ENTSCHIEDEN (2026-06-03, Story-Session) — alle 7 Detail-Forks aufgelöst
+Aufgelöst gegen den **aktuellen** v1-Code (Code-Reality-Audit, nicht 4-Tage-Memory). Fünf
+autonom mit Begründung entschieden, zwei (#2, #5) von Andy. Diese Resolutions sind der Input
+für `bmad-create-epics-and-stories`.
+
+1. **Preview-Inhalt — ENTSCHIEDEN: pro-Segment raw Groq, kein Per-Segment-Cleanup; Cleanup nur
+   1× beim Finish.** `chunked_cleanup` arbeitet eh auf Text post-stop (`llm/mod.rs:1297`),
+   unberührt. Deckt sich mit „Genauigkeit egal" + Verbatim-Default [[polished-designschwaeche]].
+2. **Finish-Paste — ENTSCHIEDEN (Andy): Variante B — Wegwerf-Preview, Finish re-Groqt.** Die
+   Preview ist reine Orientierung und fließt **NIE** in die Ausgabe; beim Finish läuft der
+   heutige Pfad **unverändert** (ganzer WAV → `process_audio` → paste). *Auflösung eines
+   Widerspruchs in der Notiz:* „Genauigkeit egal" UND „End-Latenz ~null durch Konkatenieren"
+   schließen sich aus — Konkatenieren würde die Segment-STTs zum Endergebnis machen
+   (Deutsch-Risiko zurück). B wählt den Reframe + Qualitäts-Erhalt. **Kosten: ~2× Groq-STT**
+   (Segmente während + ganzer Puffer am Ende), **kein** End-Latenz-Bonus. Variante A
+   (Konkatenieren, ~1× Groq, Finish-Latenz ~0, aber größerer Build + Genauigkeits-Risiko) ist
+   dokumentierter **Fast-Follow**, falls 2× im realen Gebrauch nervt. Der Finish-Pfad wird im
+   MVP **nicht angefasst** → die Preview ist maximal entkoppelt.
+3. **Config/Android — ENTSCHIEDEN: kein bestehender Key wird umbenannt/entfernt.** Regler B
+   (Send/Stop-Pause) = **ein** UI-Slider, schreibt weiter **beide** bestehenden Keys
+   `auto_mode_silence_secs` + `autostop_silence_secs` (heute beide Default 2,0). Regler A
+   (Preview-Pause) = **ein neuer Key** `preview_pause_silence_secs` (Default 2,0). **Null
+   Migration, null Android-Risiko** — Android liest genau diese zwei Keys mode-zentrisch
+   (`KlarvoOverlayService.kt:807-808`, bestätigt [[android_silence_field_divergence]]); der neue
+   Key ist desktop-only und Android ignoriert ihn. Umbenennen/Mergen wäre stiller
+   Android-Breakage → vermieden.
+4. **Offline-Mode — ENTSCHIEDEN: Preview im Offline/Local-STT-Pfad deaktiviert** (kein Flush).
+   `is_offline()` = `stt_provider=="local"` → dort gibt es keinen Groq-Call (`pipeline.rs:450`).
+   „Groq-only"-Feature ⇒ kein Preview ohne Groq. Waveform-Feedback bleibt.
+5. **Bar-Expand-UX — ENTSCHIEDEN (Andy): Variante 1 — Auto-Expand-Panel, scrollbar.** Pill wächst
+   beim ersten Chunk nach unten zu einem scrollbaren Textpanel (feste Max-Höhe), auto-scrollt zum
+   Neuesten; ganzer Text nachlesbar — passt zum Use-Case „langes Diktat mitlesen". Mockups
+   gerendert (`FloatingBar.tsx`-getreu). Verworfen: 2 (Tail-Ticker, verliert Älteres), 3 (RTL
+   einzeilig, zu wenig sichtbar).
+6. **Preview nach Finish — ENTSCHIEDEN: verschwindet mit dem done-pop** (Default; überschreibbar
+   falls Review-Verbleib gewünscht). Konsistent mit heutigem done-pop; der Text ist eh in der
+   Ziel-App.
+7. **Auto/AutoStop bewusst OHNE Preview — ENTSCHIEDEN (Scope-Grenze).** Die pasten pro Segment →
+   ein Preview-Feed dort würde doppeln. Preview ausschließlich in Toggle + Hold.
 
 ---
 
