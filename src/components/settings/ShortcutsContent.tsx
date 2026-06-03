@@ -325,7 +325,7 @@ export function ShortcutsContent({
                     <input
                       type="range"
                       min={1.0}
-                      max={4.0}
+                      max={5.0}
                       step={0.1}
                       value={localSilenceSecs}
                       onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
@@ -408,7 +408,7 @@ export function ShortcutsContent({
                         <input
                           type="range"
                           min={1.0}
-                          max={4.0}
+                          max={5.0}
                           step={0.1}
                           value={localSilenceSecs}
                           onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
@@ -496,7 +496,7 @@ export function ShortcutsContent({
                   <input
                     type="range"
                     min={1.0}
-                    max={4.0}
+                    max={5.0}
                     step={0.1}
                     value={localBubbleTapSilenceSecs}
                     onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
@@ -554,7 +554,7 @@ export function ShortcutsContent({
                   <input
                     type="range"
                     min={1.0}
-                    max={4.0}
+                    max={5.0}
                     step={0.1}
                     value={localBubbleLongPressSilenceSecs}
                     onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
