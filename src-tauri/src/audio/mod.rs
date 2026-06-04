@@ -108,6 +108,24 @@ struct SilenceConfig {
     callback: SilenceCallback,
 }
 
+/// Repeatable silence-flush config for the live-preview path (Story 5.1).
+///
+/// Unlike `SilenceConfig` (which fires the callback **once** on the first
+/// Speaking→Silence transition), `PreviewFlushConfig` fires its callback on
+/// EVERY Speaking→Silence edge. The `fired` one-shot gate in the existing
+/// recording thread is intentionally NOT applied to this path.
+#[cfg(desktop)]
+pub(crate) struct PreviewFlushConfig {
+    /// Same semantics as `SilenceConfig::threshold`: forwarded to
+    /// `VadConfig::energy_floor` so frames below this amplitude are skipped.
+    pub threshold: f32,
+    /// Post-speech silence duration before firing (seconds). Forwarded to
+    /// `VadConfig::hangover_ms` for the preview VAD instance.
+    pub duration_secs: f32,
+    /// The closure to call on EACH Speaking→Silence transition. Must be Send.
+    pub callback: Box<dyn Fn() + Send + 'static>,
+}
+
 #[cfg(desktop)]
 /// Everything the recording thread needs to know so it can stop cleanly.
 struct RecordingSession {
@@ -177,6 +195,17 @@ pub struct AudioRecorder {
     /// normal recording and monitoring can coexist without device conflicts.
     #[cfg(desktop)]
     monitor_session: Mutex<Option<MonitorSession>>,
+    /// Optional repeatable preview-flush config. Fires on EVERY Speaking→Silence
+    /// edge during Toggle/Hold recording (unlike `silence_config` which fires once).
+    /// Desktop only; installed before `start_recording_only`, cleared by
+    /// `clear_preview_flush_config`.
+    #[cfg(desktop)]
+    preview_flush_config: Mutex<Option<PreviewFlushConfig>>,
+    /// Tracks the sample-count boundary of the last delta snapshot.
+    /// Advanced by `delta_snapshot_wav`; reset to 0 by `reset_delta_marker`
+    /// (called on recording start and stop). Desktop only.
+    #[cfg(desktop)]
+    delta_marker: Mutex<usize>,
 }
 
 #[cfg(desktop)]
@@ -231,6 +260,10 @@ impl AudioRecorder {
             silence_config: Mutex::new(None),
             #[cfg(desktop)]
             monitor_session: Mutex::new(None),
+            #[cfg(desktop)]
+            preview_flush_config: Mutex::new(None),
+            #[cfg(desktop)]
+            delta_marker: Mutex::new(0),
         }
     }
 
@@ -325,6 +358,13 @@ impl AudioRecorder {
         if let Ok(mut lb) = self.live_buffer.lock() {
             lb.samples.clear();
         }
+        // Reset the delta marker so the new session starts from position 0.
+        // Mirrors Story 5.1 Task 3.4: reset after live_buffer clear.
+        self.reset_delta_marker();
+
+        // Take the preview-flush config so the recording thread can own it.
+        let preview_flush_cfg = self.preview_flush_config.lock().ok().and_then(|mut g| g.take());
+
         let live_buf = Arc::clone(&self.live_buffer);
 
         let device_name_owned = device_name.map(|s| s.to_string());
@@ -335,7 +375,7 @@ impl AudioRecorder {
             // - Post-ready errors (e.g. VAD init): sent via result_tx before returning Err
             // The return value is only Err if there is a logic bug (both channels
             // have already been signalled), so we just log it here.
-            if let Err(e) = recording_thread(stop_rx, ready_tx, result_tx, level_cb, silence_cfg, device_name_owned.as_deref(), live_buf) {
+            if let Err(e) = recording_thread(stop_rx, ready_tx, result_tx, level_cb, silence_cfg, preview_flush_cfg, device_name_owned.as_deref(), live_buf) {
                 log::error!("[audio] recording thread error (unexpected): {e}");
             }
         });
@@ -424,6 +464,107 @@ impl AudioRecorder {
     #[cfg(mobile)]
     pub fn snapshot_wav(&self) -> Option<Vec<u8>> {
         None
+    }
+
+    /// Returns a WAV snapshot of only the audio captured since the last delta
+    /// marker, advancing the marker to the current buffer end.
+    ///
+    /// Returns `None` when there are no new samples since the last flush
+    /// (zero-length delta guard, AC-2 NFR1).
+    ///
+    /// Unlike `snapshot_wav()` (which returns the whole `live_buffer`), this
+    /// method slices `live_buffer.samples[marker..]` so each successive call
+    /// covers only the NEW audio — keeping preview STT cost at ~1× not N×.
+    ///
+    /// # Inversion guard
+    /// Comment out `*marker = live_buffer.samples.len()` → second call's delta
+    /// overlaps first call's delta → `spec_delta_snapshot_disjoint_union` RED.
+    #[cfg(desktop)]
+    pub fn delta_snapshot_wav(&self) -> Option<Vec<u8>> {
+        // Copy delta samples and advance marker under the lock, then encode
+        // outside it. Encoding under the hot lock would stall the cpal append
+        // thread (per-pause real-time jitter). The defensive min() prevents a
+        // stale marker from exceeding the current buffer length.
+        let (delta_samples, sample_rate, channels) = {
+            let lb = self.live_buffer.lock().ok()?;
+            let mut marker = self.delta_marker.lock().ok()?;
+            let current_len = lb.samples.len();
+            // Defensive bound: marker should never exceed current_len, but
+            // guard against any out-of-sync state (e.g. a reset race).
+            let safe_marker = (*marker).min(current_len);
+            if current_len <= safe_marker {
+                return None; // No new audio since last flush.
+            }
+            // Copy the delta slice so the locks can be released before encoding.
+            let delta = lb.samples[safe_marker..].to_vec();
+            // Advance the marker so the next delta starts where this one ended.
+            *marker = current_len;
+            (delta, lb.native_sample_rate, lb.native_channels)
+        };
+        encode_to_wav(&delta_samples, sample_rate, channels).ok()
+    }
+
+    #[cfg(mobile)]
+    pub fn delta_snapshot_wav(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Resets the delta marker to 0. Called on recording start (after
+    /// `live_buffer` is cleared) so every new session starts from position 0.
+    pub fn reset_delta_marker(&self) {
+        #[cfg(desktop)]
+        if let Ok(mut marker) = self.delta_marker.lock() {
+            *marker = 0;
+        }
+    }
+
+    /// Installs a repeatable preview-flush callback that fires on EVERY
+    /// Speaking→Silence edge during Toggle/Hold recording.
+    ///
+    /// Unlike `set_silence_callback` (one-shot), this callback fires repeatedly.
+    /// Call this BEFORE `start_recording` so the recording thread picks it up.
+    pub fn set_preview_flush_config(
+        &self,
+        _duration_secs: f32,
+        _threshold: f32,
+        _callback: Box<dyn Fn() + Send + 'static>,
+    ) {
+        #[cfg(desktop)]
+        {
+            let cfg = PreviewFlushConfig {
+                threshold: _threshold,
+                duration_secs: _duration_secs,
+                callback: _callback,
+            };
+            if let Ok(mut guard) = self.preview_flush_config.lock() {
+                *guard = Some(cfg);
+            }
+        }
+    }
+
+    /// Removes any installed preview-flush config.
+    pub fn clear_preview_flush_config(&self) {
+        #[cfg(desktop)]
+        if let Ok(mut guard) = self.preview_flush_config.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Returns `true` if a preview-flush config is currently installed.
+    /// Used in tests to verify `set_preview_flush_config` took effect.
+    pub fn has_preview_flush_config(&self) -> bool {
+        #[cfg(desktop)]
+        {
+            self.preview_flush_config
+                .lock()
+                .ok()
+                .map(|g| g.is_some())
+                .unwrap_or(false)
+        }
+        #[cfg(mobile)]
+        {
+            false
+        }
     }
 
     /// Returns `true` if a recording is currently active.
@@ -663,12 +804,14 @@ pub fn query_input_format(device_name: Option<&str>) -> Result<(u32, u16), Audio
 /// and fires the callback (once) when silence has lasted the required number
 /// of chunks.  The stop signal always takes priority -- if the main thread
 /// sends a stop while waiting for silence, the thread exits normally.
+#[allow(clippy::too_many_arguments)] // Story 5.1 added preview_flush_cfg (8th param); grouping into a struct is a deferred refactor
 fn recording_thread(
     stop_rx: std::sync::mpsc::Receiver<()>,
     ready_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
     result_tx: std::sync::mpsc::Sender<Result<RecordingResult, String>>,
     level_cb: Option<AudioLevelCallback>,
     silence_cfg: Option<SilenceConfig>,
+    preview_flush_cfg: Option<PreviewFlushConfig>,
     device_name: Option<&str>,
     live_buffer: Arc<Mutex<LiveBuffer>>,
 ) -> Result<(), AudioError> {
@@ -1003,6 +1146,93 @@ fn recording_thread(
             }
 
             // Small sleep to avoid busy-waiting (5 ms -- well within 66 ms chunk).
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    } else if let Some(preview_cfg) = preview_flush_cfg {
+        // Repeatable preview-flush loop (Story 5.1, AC-4, AR2).
+        //
+        // Used for Toggle/Hold with live_preview_enabled=true. Unlike the one-shot
+        // silence_cfg path, this fires the callback on EVERY Speaking->Silence edge
+        // so each pause boundary produces a new delta-snapshot transcription.
+        //
+        // Deliberately separate from the silence_cfg branch: Toggle/Hold do NOT
+        // install a stop-on-silence callback. Only the preview flush fires here;
+        // recording continues uninterrupted until the user releases the key.
+        let hangover_ms = (preview_cfg.duration_secs * 1000.0) as u32;
+        let vad_config = VadConfig {
+            energy_floor: preview_cfg.threshold,
+            hangover_ms: hangover_ms.max(200),
+            ..VadConfig::default()
+        };
+        let mut vad = SileroVad::with_config(vad_config).map_err(|e| {
+            let msg = format!("VAD initialisation failed (preview path): {e}");
+            let _ = result_tx.send(Err(msg));
+            e
+        })?;
+        vad.reset();
+
+        let mut prev_state = SpeechState::Silence;
+
+        'preview_outer: loop {
+            match stop_rx.try_recv() {
+                Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'preview_outer,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+
+            loop {
+                match samples_chunk_rx.try_recv() {
+                    Ok(chunk) => {
+                        let mono_chunk = if native_channels > 1 {
+                            let ch = native_channels as usize;
+                            (0..chunk.len() / ch)
+                                .map(|i| {
+                                    let sum: f32 =
+                                        (0..ch).map(|c| chunk[i * ch + c]).sum();
+                                    sum / ch as f32
+                                })
+                                .collect::<Vec<f32>>()
+                        } else {
+                            chunk
+                        };
+
+                        let vad_input = if native_sample_rate != 16_000 {
+                            let ratio = native_sample_rate as f32 / 16_000.0;
+                            let out_len = (mono_chunk.len() as f32 / ratio) as usize;
+                            (0..out_len)
+                                .map(|i| {
+                                    let src = (i as f32 * ratio) as usize;
+                                    mono_chunk[src.min(mono_chunk.len() - 1)]
+                                })
+                                .collect::<Vec<f32>>()
+                        } else {
+                            mono_chunk
+                        };
+
+                        // Feed VAD -- pass `fired=false` always so the
+                        // Speaking->Silence edge fires on EVERY transition
+                        // (not just the first one). This is the repeatable-
+                        // callback mechanism for live preview.
+                        let (new_prev, _new_fired, callback_fired) =
+                            process_vad_step(&mut vad, &vad_input, prev_state, false);
+                        if callback_fired {
+                            (preview_cfg.callback)();
+                        }
+                        prev_state = new_prev;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'preview_outer,
+                }
+            }
+
+            // Drain RMS channel for health.
+            loop {
+                match rms_rx.try_recv() {
+                    Ok(_) => {}
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'preview_outer,
+                }
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     } else {
@@ -1845,5 +2075,161 @@ mod tests {
         );
         assert!(!new_fired, "fired must remain false on empty chunk");
         assert!(!cb_fired, "callback must not fire on empty chunk");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.1 — AC-2: delta_snapshot_wav (AR1)
+    //
+    // Verifies the delta-snapshot primitive on a synthetic sample stream:
+    //   - two consecutive deltas are disjoint (no overlap)
+    //   - together they cover the full buffer (NFR1 ~1x not Nx)
+    //   - a zero-length delta returns None (no-op flush guard)
+    //
+    // Inversion guard: comment out `*marker = current_len` in delta_snapshot_wav
+    // → second delta includes samples from the first delta
+    // → `spec_delta_snapshot_disjoint_union` goes RED.
+    // -----------------------------------------------------------------------
+
+    /// Helper: decode WAV bytes back to i16 samples for comparison.
+    fn decode_wav_samples(wav: &[u8]) -> Vec<i16> {
+        let cursor = Cursor::new(wav.to_vec());
+        let mut reader = hound::WavReader::new(cursor).expect("valid WAV");
+        reader.samples::<i16>().map(|s| s.unwrap()).collect()
+    }
+
+    /// AC-2: two consecutive delta snapshots are disjoint and their union
+    /// equals the full live_buffer.
+    ///
+    /// Inversion: comment out `*marker = current_len` → second delta repeats
+    /// first delta samples → assert_eq!(second_decoded, second_half) FAILS.
+    #[cfg(desktop)]
+    #[test]
+    fn spec_delta_snapshot_disjoint_union() {
+        let recorder = AudioRecorder::new();
+
+        // Simulate two chunks of audio written into the live_buffer.
+        // First half: samples all 0.1; second half: samples all 0.5.
+        // Distinct values allow us to verify disjointness.
+        let first_half: Vec<f32> = vec![0.1f32; 1600]; // 100 ms at 16 kHz
+        let second_half: Vec<f32> = vec![0.5f32; 800];  // 50 ms at 16 kHz
+
+        // Manually populate live_buffer (bypasses cpal) to test delta_snapshot_wav.
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.native_sample_rate = 16_000;
+            lb.native_channels = 1;
+            lb.samples.extend_from_slice(&first_half);
+        }
+
+        // First delta: should cover [0..1600].
+        let delta1_wav = recorder.delta_snapshot_wav()
+            .expect("first delta must return Some when buffer has samples");
+        let delta1_decoded = decode_wav_samples(&delta1_wav);
+
+        // The first 1600 f32 samples at 16 kHz native rate should pass through
+        // encode_to_wav unchanged (no resampling needed). The i16 values are
+        // clipped/scaled 0.1*32767 ≈ 3276.
+        assert!(!delta1_decoded.is_empty(), "first delta WAV must have samples");
+        // All decoded samples should be near 0.1 * i16::MAX
+        let expected_i16_first = (0.1_f32 * i16::MAX as f32) as i16;
+        for &s in &delta1_decoded {
+            assert!(
+                (s - expected_i16_first).abs() <= 2,
+                "first delta must contain only first-half samples, got {s}"
+            );
+        }
+
+        // Add second half to the buffer.
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.samples.extend_from_slice(&second_half);
+        }
+
+        // Second delta: should cover [1600..2400] only (disjoint from first).
+        let delta2_wav = recorder.delta_snapshot_wav()
+            .expect("second delta must return Some");
+        let delta2_decoded = decode_wav_samples(&delta2_wav);
+
+        assert!(!delta2_decoded.is_empty(), "second delta WAV must have samples");
+        let expected_i16_second = (0.5_f32 * i16::MAX as f32) as i16;
+        for &s in &delta2_decoded {
+            assert!(
+                (s - expected_i16_second).abs() <= 2,
+                "second delta must contain only second-half samples (disjoint), got {s}"
+            );
+        }
+
+        // Together delta1+delta2 samples must cover the full buffer.
+        // delta1 has 1600 samples, delta2 has 800 — together = 2400 = full buffer.
+        assert_eq!(
+            delta1_decoded.len() + delta2_decoded.len(),
+            first_half.len() + second_half.len(),
+            "union of both deltas must equal full buffer length (NFR1)"
+        );
+    }
+
+    /// AC-2: a zero-length delta (no new samples since last flush) returns None.
+    ///
+    /// Inversion: add 1 sample before calling → delta_snapshot_wav returns Some
+    /// → the `assert!(result.is_none())` FAILS.
+    #[cfg(desktop)]
+    #[test]
+    fn spec_delta_snapshot_empty_returns_none() {
+        let recorder = AudioRecorder::new();
+
+        // Empty live_buffer with reset marker → no new audio.
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.native_sample_rate = 16_000;
+            lb.native_channels = 1;
+            lb.samples.clear();
+        }
+        recorder.reset_delta_marker();
+
+        let result = recorder.delta_snapshot_wav();
+        assert!(
+            result.is_none(),
+            "delta_snapshot_wav must return None when no new samples exist"
+        );
+
+        // Consume one delta fully, then call again with no further additions.
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.samples.extend_from_slice(&[0.2f32; 800]);
+        }
+        let first = recorder.delta_snapshot_wav();
+        assert!(first.is_some(), "first call with samples must return Some");
+
+        // No more samples added → second call returns None.
+        let second = recorder.delta_snapshot_wav();
+        assert!(
+            second.is_none(),
+            "delta_snapshot_wav must return None after marker catches up to buffer end"
+        );
+    }
+
+    /// AC-6 (mode-scope, recorder level): Auto/AutoStop paths do NOT install a
+    /// preview_flush_config on the recorder.
+    ///
+    /// This test verifies the recorder-side absence of the config when
+    /// `set_preview_flush_config` is never called (as is the case for Auto/AutoStop,
+    /// which call `start_autostop_recording` / `start_auto_recording` instead of
+    /// `maybe_install_preview_flush`).
+    ///
+    /// Inversion: call `set_preview_flush_config(...)` before `has_preview_flush_config()`
+    /// → `has_preview_flush_config()` returns `true` → `assert!(!recorder.has_preview_flush_config())`
+    /// FAILS (RED).
+    #[cfg(desktop)]
+    #[test]
+    fn spec_auto_autostop_no_preview_flush_config_installed() {
+        // A freshly created recorder (simulating the state after start_autostop_recording
+        // or start_auto_recording — neither calls set_preview_flush_config).
+        let recorder = AudioRecorder::new();
+
+        assert!(
+            !recorder.has_preview_flush_config(),
+            "Auto/AutoStop path must NOT install a preview_flush_config on the recorder \
+             (only Toggle/Hold with live_preview_enabled=true install one)"
+        );
     }
 }

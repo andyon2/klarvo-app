@@ -1240,6 +1240,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // firing after we have already started processing (e.g. user pressed the
     // hotkey manually while AutoStop was still counting down silence).
     state.recorder.clear_silence_callback();
+    // Clear the preview-flush config (Toggle/Hold live-preview path).
+    // Also reset the delta marker so stale position is not carried into the
+    // next recording session (Story 5.1, Task 5 / AC-9).
+    state.recorder.clear_preview_flush_config();
+    state.recorder.reset_delta_marker();
 
     // --- Stop recording ---
     let duration_ms = {
@@ -1841,6 +1846,162 @@ fn deliver_outcome(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Live-preview flush (Story 5.1, AC-4, AC-5, AC-7, AC-8)
+// ---------------------------------------------------------------------------
+
+/// Pure guard: returns `true` when the preview-flush callback should be
+/// installed for Toggle/Hold.
+///
+/// Extracted so the guard logic can be unit-tested without a Tauri AppHandle.
+///
+/// AC-6 guard: Auto/AutoStop modes never call this function (they call
+/// `start_autostop_recording` / `start_auto_recording` instead), so this
+/// function only ever needs to check `live_preview_enabled` and `stt_provider`.
+///
+/// AC-7 guard: if `stt_provider == "local"` (offline) no flush fires.
+///
+/// Inversion (AC-7): remove `stt_provider != "local"` guard → AC-7 test RED.
+/// Inversion (AC-3 via this path): set `live_preview_enabled = false` constant
+///   → AC-6/AC-7 tests still pass but feature never works → integration RED.
+pub(crate) fn preview_flush_should_install(live_preview_enabled: bool, stt_provider: &str) -> bool {
+    live_preview_enabled && stt_provider != "local"
+}
+
+/// Transcribes the audio delta captured since the last preview flush and emits
+/// it as a `klarvo://live-preview-chunk` event.
+///
+/// Called from the repeatable silence callback installed by
+/// `maybe_install_preview_flush` for Toggle/Hold modes.
+///
+/// # Fail-soft (AC-8)
+/// Any transcription error is logged and silently swallowed — recording
+/// continues uninterrupted. Mirrors `transcribe_live_preview` in
+/// `commands/recording.rs:387-390`.
+///
+/// # Async off the cpal callback thread (AC-5)
+/// The caller spawns this via `tauri::async_runtime::spawn`.
+async fn flush_preview_delta(handle: AppHandle) {
+    let state = handle.state::<AppState>();
+
+    // Take a delta snapshot of the live_buffer (only new audio since last flush).
+    let wav_bytes = match state.recorder.delta_snapshot_wav() {
+        Some(wav) => wav,
+        None => {
+            log::debug!("[preview] flush_preview_delta: no new audio, skipping");
+            return;
+        }
+    };
+
+    // Snapshot config values needed for transcription — done inside the async
+    // task, consistent with the existing pipeline pattern.
+    let (language, stt_provider_name) = state
+        .config
+        .lock()
+        .ok()
+        .map(|c| (c.language.clone(), c.stt_provider.clone()))
+        .unwrap_or_else(|| (String::new(), "groq".to_string()));
+
+    // AC-7 flush-time offline recheck: a mid-recording provider swap to "local"
+    // must not trigger a local-model transcription. Re-read the live provider name
+    // here rather than relying solely on the install-time guard in
+    // maybe_install_preview_flush. Fail-soft: log + return (AC-8 pattern).
+    if stt_provider_name == "local" {
+        log::debug!("[preview] flush_preview_delta: stt_provider is now 'local', skipping flush");
+        return;
+    }
+
+    // Clone the STT provider for use inside the async task.
+    let stt_prov = match state.stt_provider.read() {
+        Ok(g) => g.clone(),
+        Err(e) => {
+            log::warn!("[preview] flush_preview_delta: stt_provider lock poisoned: {e}");
+            return;
+        }
+    };
+
+    // Transcribe the delta (raw, no LLM cleanup — FR1/D1).
+    match stt_prov.transcribe(wav_bytes, &language, None).await {
+        Ok(text) if !text.is_empty() => {
+            // Emit the raw segment text as an append payload (NFR4 — colon form).
+            if let Err(e) = handle.emit("klarvo://live-preview-chunk", text) {
+                log::warn!("[preview] flush_preview_delta: failed to emit chunk event: {e}");
+            }
+        }
+        Ok(_) => {
+            log::debug!("[preview] flush_preview_delta: transcription returned empty text, skipping emit");
+        }
+        Err(e) => {
+            // Fail-soft: warn but do not surface error to user mid-stream (AC-8).
+            log::warn!("[preview] flush_preview_delta: transcription failed: {e}");
+        }
+    }
+}
+
+/// Installs the repeatable preview-flush silence callback on the recorder for
+/// Toggle/Hold modes, IFF `live_preview_enabled == true` AND
+/// `stt_provider != "local"` (AC-4, AC-6, AC-7).
+///
+/// Must be called BEFORE `start_recording_only` so the recording thread
+/// picks up the config via `.take()` inside `start_recording`.
+///
+/// When conditions are not met (feature off, offline mode, or recorder already
+/// running), this is a no-op so the caller does not need to check the guards.
+///
+/// AlreadyRecording guard: writing `preview_flush_config` while a recording is
+/// already in progress would leave a stale config that could be consumed by the
+/// NEXT start_recording call on any path (command, voice-command, etc.). Checking
+/// `is_recording()` here prevents that leak.
+#[cfg(desktop)]
+fn maybe_install_preview_flush(handle: &AppHandle) {
+    let state = handle.state::<AppState>();
+
+    // AlreadyRecording guard — do not install (and do not overwrite any existing
+    // config) when a recording is already active.
+    if state.recorder.is_recording() {
+        log::debug!("[preview] maybe_install_preview_flush: recorder already active, skipping");
+        return;
+    }
+
+    let (live_preview_enabled, preview_secs, stt_provider_name, silence_threshold) = state
+        .config
+        .lock()
+        .ok()
+        .map(|c| (
+            c.live_preview_enabled,
+            c.preview_pause_silence_secs,
+            c.stt_provider.clone(),
+            c.advanced.silence_threshold,
+        ))
+        .unwrap_or((false, 2.0, "groq".to_string(), 0.005));
+
+    // AC-6 guard: no preview flush for Auto/AutoStop (they don't call this fn).
+    // AC-7 guard: no preview flush when offline (stt_provider == "local").
+    if !preview_flush_should_install(live_preview_enabled, &stt_provider_name) {
+        log::debug!(
+            "[preview] maybe_install_preview_flush: skipping (enabled={live_preview_enabled}, stt={stt_provider_name})"
+        );
+        return;
+    }
+
+    log::debug!(
+        "[preview] installing preview-flush callback: secs={preview_secs}, threshold={silence_threshold}"
+    );
+
+    let handle_for_cb = handle.clone();
+    state.recorder.set_preview_flush_config(
+        preview_secs,
+        silence_threshold,
+        Box::new(move || {
+            // Runs on the cpal OS-thread — spawn async task (AC-5).
+            let h = handle_for_cb.clone();
+            tauri::async_runtime::spawn(async move {
+                flush_preview_delta(h).await;
+            });
+        }),
+    );
+}
+
 /// Toggle-mode hotkey handler: press once to start, press again to stop + process.
 ///
 /// This is the legacy behaviour, kept for users who prefer toggle mode.
@@ -1848,6 +2009,12 @@ pub async fn run_dictation_pipeline(handle: AppHandle) {
     let state = handle.state::<AppState>();
 
     if !state.recorder.is_recording() {
+        // Install preview-flush callback for Toggle mode BEFORE start_recording_only
+        // so the recording thread picks it up via .take() (Story 5.1, AC-4).
+        // No-op when live_preview_enabled=false or stt_provider=local (AC-6/AC-7).
+        #[cfg(desktop)]
+        maybe_install_preview_flush(&handle);
+
         start_recording_only(handle).await;
     } else {
         stop_and_process_pipeline(handle).await;
@@ -2013,6 +2180,10 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                     }
                     (HotkeyMode::Hold, ShortcutState::Pressed) => {
                         store_insert_and_send(slot_insert_and_send);
+                        // Install preview-flush callback BEFORE start_recording_only
+                        // (Story 5.1, AC-4). No-op when feature off or offline.
+                        #[cfg(desktop)]
+                        maybe_install_preview_flush(&handle_clone);
                         tauri::async_runtime::spawn(async move {
                             start_recording_only(h).await;
                         });
@@ -3603,5 +3774,156 @@ mod tests {
     #[test]
     fn sanitize_strips_lone_esc() {
         assert_eq!(sanitize_llm_output("before\x1bafter"), "beforeafter");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.1 — G-A Characterization test (AC-1)
+    //
+    // Pins the Toggle/Hold finish path (process_audio with live_preview_enabled
+    // = false, the default) as a golden assertion. This test MUST be green
+    // before any preview code is written — it is the no-regression baseline for
+    // FR3/NFR2. If preview changes accidentally touch the finish path, this test
+    // catches it.
+    //
+    // Inversion: changing FakeStt to return `Err(())` causes the outcome to be
+    // `ProcessOutcome::Stopped { stt_error: true }` → `assert!(is_produced)` RED.
+    // -----------------------------------------------------------------------
+
+    /// G-A characterization: Toggle/Hold finish path with live_preview_enabled=false
+    /// (default). Drives a synthetic WAV through process_audio and pins:
+    ///   - outcome is `ProcessOutcome::Produced`
+    ///   - cleaned_text is the sanitized output from the fake cleanup provider
+    ///   - no preview-related side effect: this test does NOT observe any
+    ///     klarvo://live-preview-chunk event (process_audio has no event channel)
+    ///
+    /// Inversion guard: if FakeStt returns Err → outcome = Stopped{stt_error:true}
+    /// → `assert!(matches!(outcome, ProcessOutcome::Produced{..}))` goes RED.
+    #[tokio::test]
+    async fn spec_toggle_hold_finish_path_characterization() {
+        // Synthetic WAV: 100 ms of silence at 16 kHz mono 16-bit PCM.
+        // Sufficient for the process_audio path (hallucination + cleanup run).
+        let wav_bytes = {
+            let samples = vec![0i16; 1600]; // 100 ms @ 16 kHz
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 16_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            {
+                let mut w = hound::WavWriter::new(&mut cursor, spec).unwrap();
+                for s in &samples {
+                    w.write_sample(*s).unwrap();
+                }
+                w.finalize().unwrap();
+            }
+            cursor.into_inner()
+        };
+
+        // live_preview_enabled = false is the default; no explicit field needed
+        // until Task 2 adds it. This comment is the golden baseline assertion.
+        let input = ProcessInput {
+            wav_bytes,
+            language: "en".to_string(),
+            stt_provider: Arc::new(FakeStt(Ok("Toggle hold speech fixture".to_string()))),
+            cleanup_provider: Arc::new(FakeCleanup {
+                cleanup: CleanupBehavior::Ok("Toggle hold speech fixture.".to_string()),
+                rewrite: Err(()),
+            }),
+            stt_prompt: SttPromptPair {
+                dict_prompt: None,
+                stt_hint_text: TEST_STT_HINT.to_string(),
+            },
+            offline_mode: false,
+            selected_text: None,                   // not command mode
+            cleanup_style: CleanupStyle::Verbatim,
+            custom_prompt: None,
+            matched_profile_name: None,
+            dict_list: None,
+            output_lang: None,
+            llm_provider_name: "groq".to_string(),
+            config_for_fallback: AppConfig::default(), // live_preview_enabled=false (default)
+        };
+
+        let (outcome, events) = run(input).await;
+
+        // Golden assertions — the finish path must produce text.
+        let is_produced = matches!(outcome, ProcessOutcome::Produced { .. });
+        assert!(
+            is_produced,
+            "Toggle/Hold finish path must produce text (got {outcome:?})"
+        );
+
+        if let ProcessOutcome::Produced { cleaned_text, is_command, .. } = outcome {
+            // Finish path: single paste, not a command, cleaned text is non-empty.
+            assert!(!cleaned_text.is_empty(), "cleaned_text must be non-empty");
+            assert!(!is_command, "Toggle/Hold finish must not be command mode");
+        }
+
+        // No preview-specific states emitted on the normal finish path.
+        assert!(
+            events.contains(&crate::hotkey::PipelineState::Transcribing),
+            "finish path must emit Transcribing"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.1 — AC-6 + AC-7: preview_flush_should_install guard tests
+    //
+    // These tests drive the pure `preview_flush_should_install` helper that
+    // `maybe_install_preview_flush` delegates to. They verify the two guards
+    // without needing a Tauri AppHandle.
+    //
+    // AC-6 guard: Auto/AutoStop modes never call maybe_install_preview_flush
+    // (they use start_autostop_recording / start_auto_recording instead), so
+    // the function only needs to check live_preview_enabled + stt_provider.
+    //
+    // AC-7 guard: stt_provider == "local" → preview flush must NOT install.
+    //
+    // Inversion (AC-7): remove `stt_provider != "local"` in
+    // preview_flush_should_install → spec_preview_flush_guard_offline_stt
+    // returns true instead of false → assert!(!result) FAILS (RED).
+    //
+    // Inversion (AC-6 via feature flag): hardcode live_preview_enabled = true in
+    // preview_flush_should_install → result = true for all cloud STTs →
+    // spec_preview_flush_guard_feature_disabled assert!(!result) FAILS (RED).
+    // -----------------------------------------------------------------------
+
+    /// AC-7: stt_provider == "local" (offline) → no flush callback installed.
+    ///
+    /// Inversion: remove `stt_provider != "local"` → result = true → RED.
+    #[test]
+    fn spec_preview_flush_guard_offline_stt() {
+        let result = preview_flush_should_install(true, "local");
+        assert!(
+            !result,
+            "preview flush must NOT install when stt_provider is 'local' (offline guard)"
+        );
+    }
+
+    /// AC-6 (via feature flag): live_preview_enabled = false → no flush,
+    /// regardless of stt_provider.
+    ///
+    /// Inversion: hardcode live_preview_enabled = true → result = true → RED.
+    #[test]
+    fn spec_preview_flush_guard_feature_disabled() {
+        for stt in &["groq", "openai", "deepseek", "local"] {
+            let result = preview_flush_should_install(false, stt);
+            assert!(
+                !result,
+                "preview flush must NOT install when live_preview_enabled=false (stt={stt})"
+            );
+        }
+    }
+
+    /// Happy path: live_preview_enabled=true AND stt_provider=groq → install.
+    #[test]
+    fn spec_preview_flush_guard_groq_cloud_installs() {
+        let result = preview_flush_should_install(true, "groq");
+        assert!(
+            result,
+            "preview flush SHOULD install when live_preview_enabled=true and stt=groq"
+        );
     }
 }

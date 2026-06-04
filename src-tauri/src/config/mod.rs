@@ -698,6 +698,19 @@ pub struct AppConfig {
     #[serde(default = "default_auto_mode_silence_secs")]
     pub auto_mode_silence_secs: f32,
 
+    /// When `true`, the pause-triggered preview flush is active for Toggle/Hold.
+    /// Default: `false` (preview is opt-in, gates the feature until Story 5.3 wires the UI).
+    ///
+    /// Inversion guard: remove `#[serde(default)]` → loading JSON without this key
+    /// fails deserialization → `spec_live_preview_config_fields_default` goes RED.
+    #[serde(default)]
+    pub live_preview_enabled: bool,
+
+    /// Seconds of post-speech silence before a preview flush fires (Regler A, FR8).
+    /// Applied in Toggle/Hold only. Default: 2.0 seconds.
+    #[serde(default = "default_preview_pause_silence_secs")]
+    pub preview_pause_silence_secs: f32,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -899,6 +912,10 @@ fn default_auto_mode_silence_secs() -> f32 {
     2.0
 }
 
+fn default_preview_pause_silence_secs() -> f32 {
+    2.0
+}
+
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
 }
@@ -961,6 +978,8 @@ impl Default for AppConfig {
             insert_and_send: false,
             autostop_silence_secs: default_autostop_silence_secs(),
             auto_mode_silence_secs: default_auto_mode_silence_secs(),
+            live_preview_enabled: false,
+            preview_pause_silence_secs: default_preview_pause_silence_secs(),
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
@@ -2004,6 +2023,8 @@ mod tests {
             insert_and_send: true,
             autostop_silence_secs: 1.5,
             auto_mode_silence_secs: 3.0,
+            live_preview_enabled: false,
+            preview_pause_silence_secs: 2.0,
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
@@ -3293,6 +3314,8 @@ mod tests {
 
             autostop_silence_secs: 3.5,
             auto_mode_silence_secs: 4.0,
+            live_preview_enabled: true,
+            preview_pause_silence_secs: 1.5,
             bar_x: Some(200.0),
             bar_y: Some(800.0),
 
@@ -3862,6 +3885,63 @@ mod tests {
         assert_eq!(
             cfg.groq_api_key, "valid-sentinel-key",
             "the valid config's contents must round-trip through load, not be defaulted"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.1 — AC-3: live_preview_enabled + preview_pause_silence_secs
+    //
+    // Verifies that both new fields read their serde defaults when the keys are
+    // absent from the JSON, and that NO extra migration write fires (additive
+    // #[serde(default)] -- NFR3).
+    //
+    // Inversion guard: remove `#[serde(default)]` from `live_preview_enabled`
+    // → serde_json::from_str errors on a JSON missing the key
+    // → `assert!(result.is_ok())` goes RED.
+    // -----------------------------------------------------------------------
+
+    /// AC-3: loading a JSON without `live_preview_enabled` or
+    /// `preview_pause_silence_secs` reads the correct defaults.
+    /// No extra migration write fires (additive serde defaults, no version bump).
+    #[test]
+    fn spec_live_preview_config_fields_default() {
+        // Serialize a default config, then strip the two new fields to simulate
+        // an existing on-disk config.json that was written before Story 5.1.
+        let default_cfg = AppConfig::default();
+        let mut json: serde_json::Value = serde_json::to_value(&default_cfg).unwrap();
+
+        // Remove the new fields to simulate a pre-5.1 config.json.
+        json.as_object_mut().unwrap().remove("live_preview_enabled");
+        json.as_object_mut().unwrap().remove("preview_pause_silence_secs");
+
+        let stripped_json = serde_json::to_string(&json).unwrap();
+
+        // Deserializing without the fields must succeed and fill in defaults.
+        let result: Result<AppConfig, _> = serde_json::from_str(&stripped_json);
+        assert!(
+            result.is_ok(),
+            "Deserializing JSON without new fields must succeed, got: {:?}",
+            result.err()
+        );
+
+        let cfg = result.unwrap();
+
+        // Default values.
+        assert!(!cfg.live_preview_enabled, "live_preview_enabled default must be false");
+        assert!(
+            (cfg.preview_pause_silence_secs - 2.0_f32).abs() < f32::EPSILON,
+            "preview_pause_silence_secs default must be 2.0, got {}",
+            cfg.preview_pause_silence_secs
+        );
+
+        // Confirm no migration write is triggered: migrate_and_normalize must not
+        // produce any MigrationWrite entries for these fields (they have no migration).
+        let mut warnings_buf: Vec<String> = Vec::new();
+        let (_, writes) = migrate_and_normalize(cfg.clone(), &std::path::PathBuf::from("/tmp"), &mut warnings_buf);
+        assert!(
+            writes.is_empty(),
+            "No migration write must fire for the two new preview fields ({} writes)",
+            writes.len()
         );
     }
 }

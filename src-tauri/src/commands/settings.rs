@@ -313,6 +313,10 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
         insert_and_send: patch.insert_and_send.unwrap_or(existing.insert_and_send),
         autostop_silence_secs: patch.autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
         auto_mode_silence_secs: patch.auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
+        // 5.1: preview fields are read-only in this story (no patch fields yet).
+        // Story 5.3 will add `live_preview_enabled` and `preview_pause_silence_secs` to SettingsPatch.
+        live_preview_enabled: existing.live_preview_enabled,
+        preview_pause_silence_secs: existing.preview_pause_silence_secs,
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
