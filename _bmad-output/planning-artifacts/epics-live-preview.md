@@ -66,6 +66,13 @@ acceptance criteria**, not just unit-green. Surface/UI stories require a **Windo
   settings section replaces the two per-mode controls and writes **both existing** keys
   `auto_mode_silence_secs` **and** `autostop_silence_secs` to the **same** value. **No key is
   renamed or removed.**
+- **FR10 (D8 — Darstellungsform, added 2026-06-05)** — The preview panel's **display form is
+  user-selectable via curated presets** — **Compact / Comfortable / Wide** — in the preview
+  Settings section, stored in a **new** enum config key `preview_panel_form` (default
+  **`comfortable`**, which reproduces the shipped 5-2 look exactly). Each preset maps to a coherent
+  appearance set (panel width + screen-cap) in `FloatingBar.tsx`; **no raw-pixel sliders** (Andy's
+  choice 2026-06-05). Desktop-only (the preview is Groq-only desktop). Full *layout* variants (other
+  mockup forms) are explicitly **out of scope** here — parked as a later 5-6/backlog idea.
 
 ### NonFunctional Requirements
 
@@ -128,6 +135,7 @@ acceptance criteria**, not just unit-green. Surface/UI stories require a **Windo
 - **FR7** → Epic 5 (Story 5.2) — preview clears with done-pop
 - **FR8** → Epic 5 (Story 5.3) — Regler A new key `preview_pause_silence_secs`
 - **FR9** → Epic 5 (Story 5.4) — Regler B one slider → both existing keys (separable / deferral seam)
+- **FR10** → Epic 5 (Story 5.5) — preview display-form presets (Compact/Comfortable/Wide), default comfortable = shipped look
 
 All NFR1–NFR6 and AR1–AR5 are cross-cutting within Epic 5 (see per-story ACs).
 
@@ -163,9 +171,14 @@ long-parked "Live-Overlay" feature.
   FR9 one slider writes both existing `auto_mode_silence_secs` + `autostop_silence_secs`; **no
   key rename/removal**, Android unaffected (NFR3, ADR-0016). Independent of 5.1–5.3 — can ship,
   defer, or drop without touching the preview. Covers FR9, NFR3.
+- **5.5 — Settings: Preview display-form presets (Compact/Comfortable/Wide)** *(added 2026-06-05;
+  depends on 5.3's preview Settings section)*. FR10 enum key `preview_panel_form` (default
+  `comfortable` = shipped look) via the sanctioned `save_config` path (ADR-0015); `FloatingBar.tsx`
+  reads it and selects the form's width + screen-cap. No raw px-sliders, no layout variants. Surface
+  story → Windows smoke. Covers FR10.
 
 **Dependency flow:** 5.1 → 5.2; 5.3 parallel to 5.2 (independent surfaces); 5.4 fully
-independent. No story depends on a *later* story.
+independent; **5.5 → after 5.3** (plugs into its Settings section). No story depends on a *later* story.
 
 ## Epic 5: Live-Cleanup-Preview
 
@@ -323,3 +336,39 @@ So that the Shortcut settings are simpler — without breaking any platform that
 **Then** it displays one defined value (the larger of the two) and writing re-unifies both — documented behavior, not a silent pick.
 
 **DoD:** Config-surface story → **Windows release build + manual smoke**: move the slider, confirm both keys change in `config.json`, confirm Auto + AutoStop still silence-stop at the new value. `cargo test` for the write-both behavior.
+
+### Story 5.5: Settings — Preview display-form presets (Compact/Comfortable/Wide)
+
+*Added 2026-06-05 after the 5-2 Windows smoke: a single hardcoded `PANEL_WIDTH` is the right default
+but Andy wants the form selectable. Decision (Andy): curated presets, NOT raw-pixel sliders, NOT full
+layout variants. Depends on Story 5.3's preview Settings section.*
+
+As a user,
+I want to pick the live-preview's display form from a few curated presets (Compact / Comfortable / Wide),
+So that I can size the read-along panel to my taste without fiddling with raw pixels.
+
+**Acceptance Criteria:**
+
+**Given** `AppConfig`
+**When** Story 5.5 ships
+**Then** a new enum-style key `preview_panel_form` (values `"compact" | "comfortable" | "wide"`) exists with a serde default of `"comfortable"`
+**And** the default is additive — a config without the key reads `"comfortable"`, triggers **no migration write**, and reproduces the **exact** shipped 5-2 look (width 320, screen-cap 320) — zero behavior change for existing users (NFR2)
+**And** an unknown/garbage value falls back to `"comfortable"` (fail-soft, no panic).
+
+**Given** the preview Settings section (built by Story 5.3)
+**When** the user picks a display form (segmented/radio control labeled e.g. "Darstellung")
+**Then** `preview_panel_form` is written via the single sanctioned `save_config` write path (ADR-0015 / Story 4-3 — no second writer)
+**And** the control shows the three presets with the current one selected.
+
+**Given** `FloatingBar.tsx` currently hardcodes `PANEL_WIDTH` (and `PANEL_ABS_MAX`)
+**When** Story 5.5 ships
+**Then** those constants are replaced by a form→appearance map (each preset = a coherent width + screen-cap pair; `comfortable` == today's 320/320)
+**And** the bar reads `preview_panel_form` (via `getSettings` on mount + the settings-changed path) so a changed preset applies to the **next** preview open without an app restart.
+
+**Given** the preview is disabled, or the active mode is Auto/AutoStop (no preview there)
+**When** any form is selected
+**Then** there is **no** visual or behavioral effect (the form only sizes the Toggle/Hold preview panel) — FR4/FR6 boundaries unchanged.
+
+**Open for create-story / dev to finalize:** the exact width + screen-cap numbers per preset (illustrative: Compact ≈ 260/240, Comfortable = 320/320, Wide ≈ 400/400); whether a preset also varies font-size/line-height (density) or width-only. Default MUST equal the shipped look.
+
+**DoD:** Surface story → **Windows release build + manual smoke**: cycle all three presets, confirm the panel renders at each width and `comfortable` is byte-identical to the shipped look; confirm the choice persists across a relaunch. `tsc` build + `cargo test` (config field default + fail-soft). Desktop-only — **no Android change** (preview is Groq-only desktop).

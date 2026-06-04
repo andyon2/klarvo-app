@@ -395,14 +395,20 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
                     let ht = (10.0 * scale) as i32;
                     crate::set_window_region_pill(h, w, ht);
                 } else if shape == "panel" {
-                    // Live-preview expanded card (Story 5.2). Dimensions MUST match
-                    // FloatingBar.tsx PANEL_WIDTH / PANEL_HEIGHT, and the radius MUST
-                    // match the wrapper's CSS borderRadius when isPanelOpen (14), or
-                    // the OS-region vs CSS-shape gap shows as the white-line artifact.
-                    let w = (220.0 * scale) as i32; // PANEL_WIDTH
-                    let ht = (196.0 * scale) as i32; // PANEL_HEIGHT
-                    let r = (14.0 * scale) as i32; // card corner radius
-                    crate::set_window_region_round_rect(h, w, ht, r);
+                    // Live-preview expanded card (Story 5.2). The panel height is
+                    // DYNAMIC — it auto-grows upward with the accumulated preview
+                    // text (5.2 cosmetic revision) — so the region must match the
+                    // window's ACTUAL size rather than a hardcoded constant. The
+                    // frontend always awaits setSize before calling this, so
+                    // inner_size() already reflects the new dimensions. The radius
+                    // MUST equal the wrapper's CSS borderRadius when isPanelOpen
+                    // (14) or the OS-region vs CSS-shape gap shows as the white line.
+                    if let Ok(size) = bar.inner_size() {
+                        let w = size.width as i32;
+                        let ht = size.height as i32;
+                        let r = (14.0 * scale) as i32; // card corner radius
+                        crate::set_window_region_round_rect(h, w, ht, r);
+                    }
                 } else {
                     let w = (200.0 * scale) as i32;
                     let ht = (36.0 * scale) as i32;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
@@ -29,12 +29,18 @@ const PILL_WIDTH = 200;
 const PILL_WIDTH_CLIPBOARD = 220;
 const PILL_HEIGHT = 36;
 
-/** Max-height of the expanded preview panel (logical px). */
-const PANEL_MAX_HEIGHT = 160;
-/** Width of the bar when the preview panel is open. */
-const PANEL_WIDTH = 220;
-/** Full height of bar+panel when preview is active. */
-const PANEL_HEIGHT = PILL_HEIGHT + PANEL_MAX_HEIGHT; // 196
+/** Width of the bar when the preview panel is open. Wider than the idle pill so
+ *  the preview text gets a comfortable reading measure (~50 chars/line) instead
+ *  of fragmenting flowing speech into stubby 4-word lines. Single source of
+ *  truth: the window size, the OS region (via inner_size), and the hidden
+ *  measure probe all follow this one constant. */
+const PANEL_WIDTH = 320;
+/** Absolute upper bound for the preview text box (logical px), regardless of
+ *  screen size — about 13 lines of 11px/1.5 text. Beyond this the box scrolls. */
+const PANEL_ABS_MAX = 320;
+/** Minimum gap kept between the upward-growing panel's top edge and the top of
+ *  the screen, so the box never runs off the display. */
+const SCREEN_TOP_MARGIN = 12;
 
 // ---------------------------------------------------------------------------
 // Inline style reset + keyframes
@@ -223,11 +229,16 @@ export default function FloatingBar() {
   const [showDone, setShowDone] = useState(false);
   const [clipboardOnly, setClipboardOnly] = useState(false);
   const [livePreview, setLivePreview] = useState(""); // push sink for klarvo://live-preview-chunk events
+  const [panelHeight, setPanelHeight] = useState(0); // measured preview-box height (logical px); grows with text
+  const [panelScrolls, setPanelScrolls] = useState(false); // true once capped → scroll + top fade
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewPanelRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null); // hidden probe: measures text height at the final panel width
+  const panelHeightRef = useRef(0); // mirrors panelHeight for the mount-once drag handlers
+  const isPanelOpenRef = useRef(false); // mirrors isPanelOpen for the mount-once drag handlers
 
   // Stored logical position of the bar's top-left corner after drags.
   const barX = useRef<number | null>(null);
@@ -242,6 +253,10 @@ export default function FloatingBar() {
   const isIdle = !isPillVisible && !collapsing;
 
   const isDone = showDone && !isActive;
+
+  // Panel is open when recording and preview text is present (AC-2, AC-3).
+  // The box sits ABOVE the pill and grows upward (5.2 cosmetic revision).
+  const isPanelOpen = isRecording && livePreview.length > 0;
 
   // --- Load stored position on mount, fall back to screen-center-bottom ---
   useEffect(() => {
@@ -296,21 +311,52 @@ export default function FloatingBar() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // --- Auto-scroll preview panel to newest text (AC-2) ---
+  // --- Auto-scroll preview panel to newest text (only matters once capped) ---
   useEffect(() => {
     if (previewPanelRef.current) {
       previewPanelRef.current.scrollTop = previewPanelRef.current.scrollHeight;
     }
   }, [livePreview]);
 
+  // --- Measure the preview text height and size the box so it GROWS UPWARD with
+  //     the text instead of scrolling (5.2 cosmetic revision). A hidden probe
+  //     mirrors the panel's text box at the final PANEL_WIDTH, so the measurement
+  //     never depends on the live window width (no resize feedback loop). The
+  //     height is capped to the lesser of an absolute bound and the room above the
+  //     pill, so the upward growth never leaves the screen; past the cap the box
+  //     scrolls and shows the top fade. ---
+  useLayoutEffect(() => {
+    if (!isPanelOpen) {
+      setPanelHeight(0);
+      setPanelScrolls(false);
+      return;
+    }
+    const el = measureRef.current;
+    if (!el) return;
+    const content = el.offsetHeight; // text box height at the final width
+    const room = barY.current != null ? barY.current - SCREEN_TOP_MARGIN : PANEL_ABS_MAX;
+    const maxH = Math.max(0, Math.min(PANEL_ABS_MAX, room));
+    const capped = content > maxH;
+    setPanelHeight(capped ? maxH : content);
+    setPanelScrolls(capped);
+  }, [livePreview, isPanelOpen]);
+
+  // Mirror panel geometry into refs so the mount-once drag handlers can convert
+  // the dragged window top-left back to the pill anchor (the panel grows upward,
+  // so the window top-left is panelHeight above the pill when open).
+  useEffect(() => {
+    panelHeightRef.current = panelHeight;
+    isPanelOpenRef.current = isPanelOpen;
+  });
+
   // --- Show / hide the Tauri window based on pill visibility ---
   const pillWidth = (isDone && clipboardOnly) ? PILL_WIDTH_CLIPBOARD : PILL_WIDTH;
 
-  // Compute active dimensions: expand to PANEL_WIDTH × PANEL_HEIGHT when panel is open (AC-3).
-  // isPanelOpen is defined in the render section below; forward-declare equivalent here for the effect.
-  const isPanelOpenForEffect = isRecording && livePreview.length > 0;
-  const activePillWidth = isPanelOpenForEffect ? PANEL_WIDTH : pillWidth;
-  const activePillHeight = isPanelOpenForEffect ? PANEL_HEIGHT : PILL_HEIGHT;
+  // Compute active dimensions: expand to PANEL_WIDTH and (pill + measured text)
+  // height when the panel is open (AC-3). The height is dynamic — it tracks
+  // panelHeight so the box grows upward as text accumulates.
+  const activePillWidth = isPanelOpen ? PANEL_WIDTH : pillWidth;
+  const activePillHeight = isPanelOpen ? PILL_HEIGHT + panelHeight : PILL_HEIGHT;
 
   useEffect(() => {
     const win = getCurrentWebviewWindow();
@@ -325,11 +371,15 @@ export default function FloatingBar() {
         // Shape the OS window region to match the actual size: the tall preview
         // "panel" card when open (else the region stays pill-sized and clips the
         // panel + right edge), the "pill" otherwise. Radius matches the CSS below.
-        await setBarShape(isPanelOpenForEffect ? "panel" : "pill").catch((e) => console.error("[bar] setBarShape failed:", e));
+        await setBarShape(isPanelOpen ? "panel" : "pill").catch((e) => console.error("[bar] setBarShape failed:", e));
         // Guard: skip setPosition during an active drag so the window doesn't
         // teleport to stale barX/barY mid-drag when a preview chunk arrives (AC-4).
         if (barX.current != null && barY.current != null && dragRef.current == null) {
-          await win.setPosition(new LogicalPosition(barX.current, barY.current));
+          // The pill is anchored at (barX, barY). When the panel is open the box
+          // grows UPWARD, so the window's top-left rises by panelHeight while the
+          // pill stays put (5.2 cosmetic revision).
+          const winTop = isPanelOpen ? barY.current - panelHeight : barY.current;
+          await win.setPosition(new LogicalPosition(barX.current, winTop));
         }
         try {
           await win.show();
@@ -346,8 +396,9 @@ export default function FloatingBar() {
       }
       // Hiding is handled by the collapse animation handler below.
     })();
-  // isPanelOpenForEffect (via activePillWidth/activePillHeight) drives panel expand/collapse
-  // resize transitions in addition to the original isPillVisible/pillWidth triggers (AC-3).
+  // isPanelOpen (via activePillWidth/activePillHeight, which tracks panelHeight)
+  // drives panel expand/grow/collapse resize transitions in addition to the
+  // original isPillVisible/pillWidth triggers (AC-3).
   }, [isPillVisible, activePillWidth, activePillHeight]);
 
   // --- Trigger collapse animation then hide ---
@@ -492,9 +543,13 @@ export default function FloatingBar() {
         const scale = (await win.scaleFactor()) || 1;
         const lx = pos.x / scale;
         const ly = pos.y / scale;
+        // When the panel is open the window top-left sits panelHeight above the
+        // pill (upward growth); store the PILL anchor so reposition math stays
+        // consistent across open/closed transitions.
+        const pillY = isPanelOpenRef.current ? ly + panelHeightRef.current : ly;
         barX.current = lx;
-        barY.current = ly;
-        saveBarPosition(lx, ly).catch((e) => console.error("[bar] saveBarPosition failed:", e));
+        barY.current = pillY;
+        saveBarPosition(lx, pillY).catch((e) => console.error("[bar] saveBarPosition failed:", e));
       }).catch((e) => console.error("[bar] outerPosition failed:", e));
     }
     window.addEventListener("mousemove", onMouseMove);
@@ -533,20 +588,46 @@ export default function FloatingBar() {
     ? "bar-collapse 180ms ease-in forwards"
     : "bar-expand 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards";
 
-  // Panel is open when recording and preview text is present (AC-2, AC-3).
-  const isPanelOpen = isRecording && livePreview.length > 0;
-
   return (
     <>
       <style>{RESET_CSS}</style>
-      {/* Outer wrapper: flex-column so the pill row and panel stack vertically.
-          overflow: "hidden" is moved here so the rounded corners clip both layers.
+      {/* Hidden probe: measures the preview text height at the FINAL panel width
+          so the box can size itself without a window-width feedback loop. Mirrors
+          the panel's text styling exactly (font, line-height, padding, wrap). */}
+      <div
+        ref={measureRef}
+        aria-hidden
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          visibility: "hidden",
+          pointerEvents: "none",
+          width: PANEL_WIDTH,
+          boxSizing: "border-box",
+          padding: "6px 10px",
+          fontSize: 11,
+          lineHeight: 1.5,
+          letterSpacing: "0.01em",
+          overflowWrap: "anywhere",
+          whiteSpace: "normal",
+          fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        }}
+      >
+        {livePreview}
+      </div>
+      {/* Outer wrapper: flex-column so the panel and pill row stack vertically.
+          The panel is the FIRST child (top) and the pill row the LAST (bottom);
+          justifyContent: flex-end pins the pill to the bottom so a transient
+          undersized window clips the OLDEST panel text, never the pill control.
+          overflow: "hidden" clips both layers to the rounded corners; the
           animation applies to the whole bar including any open panel. */}
       <div
         onMouseDown={handleMouseDown}
         style={{
           width: "100%",
           height: "100%",
+          justifyContent: "flex-end",
           // Pill = stadium (9999 clamps to half-height = 18). Open panel = rounded
           // CARD (14): a tall stadium would curve the text panel's sides. This value
           // MUST equal the "panel" region radius in set_bar_shape (Rust), else the
@@ -565,6 +646,50 @@ export default function FloatingBar() {
           animation: pillAnimation,
         }}
       >
+        {/* Preview panel: accumulates live-preview chunks ABOVE the pill row and
+            grows UPWARD with the text (5.2 cosmetic revision). Height is the
+            measured text height (panelHeight), capped so it never leaves the
+            screen; only past the cap does it scroll (panelScrolls) with a top
+            fade. As the first flex child it renders on top of the pill row.
+            WebView2 globally hides ::-webkit-scrollbar via RESET_CSS — a scoped
+            style tag re-enables the thin teal thumb for the panel. */}
+        {isPanelOpen && (
+          <>
+            <style>{`
+              #preview-panel::-webkit-scrollbar { display: block !important; width: 4px !important; }
+              #preview-panel::-webkit-scrollbar-thumb { background: rgba(42,195,168,0.35); border-radius: 9999px; }
+            `}</style>
+            <div
+              id="preview-panel"
+              ref={previewPanelRef}
+              style={{
+                flexShrink: 0,
+                height: panelHeight,
+                overflowY: panelScrolls ? "auto" : "hidden",
+                overflowX: "hidden",
+                padding: "6px 10px",
+                fontSize: 11,
+                color: "rgba(220,220,220,0.88)",
+                lineHeight: 1.5,
+                letterSpacing: "0.01em",
+                // Top fade for scrolled-off text — only when the box is capped
+                // and actually scrolling, so a short, fully-visible preview keeps
+                // its first line crisp.
+                WebkitMaskImage: panelScrolls ? "linear-gradient(to bottom, transparent 0%, black 18%)" : undefined,
+                maskImage: panelScrolls ? "linear-gradient(to bottom, transparent 0%, black 18%)" : undefined,
+                // Thin scroll indicator via CSS Scrollbars spec (non-WebKit)
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(42,195,168,0.35) transparent",
+                // Wrap long unbroken tokens (URLs, identifiers) so they don't
+                // clip off the right edge of the panel.
+                overflowWrap: "anywhere",
+              }}
+            >
+              {livePreview}
+            </div>
+          </>
+        )}
+
         {/* Pill row: logo + content. When the panel is CLOSED the row fills the
             whole (bordered) wrapper via flex:1 so the content stays vertically
             centred exactly like the pre-5.2 single-pill div — a fixed PILL_HEIGHT
@@ -664,46 +789,6 @@ export default function FloatingBar() {
             <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
           )}
         </div>
-
-        {/* Preview panel: accumulates live-preview chunks below the pill row (AC-2, UX-DR1).
-            Only visible when isPanelOpen (recording + livePreview non-empty).
-            The panel sits outside the pill's row so it is never clipped by it.
-            Top-fade via mask-image; thin teal scrollbar via CSS Scrollbars spec.
-            WebView2 globally hides ::-webkit-scrollbar via RESET_CSS line 43 —
-            override locally with a scoped style tag so the panel thumb is visible. */}
-        {isPanelOpen && (
-          <>
-            <style>{`
-              #preview-panel::-webkit-scrollbar { display: block !important; width: 4px !important; }
-              #preview-panel::-webkit-scrollbar-thumb { background: rgba(42,195,168,0.35); border-radius: 9999px; }
-            `}</style>
-            <div
-              id="preview-panel"
-              ref={previewPanelRef}
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                overflowX: "hidden",
-                padding: "6px 10px",
-                fontSize: 11,
-                color: "rgba(220,220,220,0.88)",
-                lineHeight: 1.5,
-                letterSpacing: "0.01em",
-                // Top fade for scrolled-off text (UX-DR1)
-                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
-                maskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
-                // Thin scroll indicator via CSS Scrollbars spec (non-WebKit)
-                scrollbarWidth: "thin",
-                scrollbarColor: "rgba(42,195,168,0.35) transparent",
-                // Wrap long unbroken tokens (URLs, identifiers) so they don't
-                // clip off the right edge of the panel (AC-7 visual hardening).
-                overflowWrap: "anywhere",
-              }}
-            >
-              {livePreview}
-            </div>
-          </>
-        )}
       </div>
     </>
   );

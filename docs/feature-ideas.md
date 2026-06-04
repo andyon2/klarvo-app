@@ -292,6 +292,21 @@ für `bmad-create-epics-and-stories`.
 7. **Auto/AutoStop bewusst OHNE Preview — ENTSCHIEDEN (Scope-Grenze).** Die pasten pro Segment →
    ein Preview-Feed dort würde doppeln. Preview ausschließlich in Toggle + Hold.
 
+### 🔧 Nachtrag (2026-06-05, nach 5-2-Windows-Smoke) — Panel-Form revidiert + Presets-Story 5-5
+
+Fork #5 (Variante 1) ist gebaut (Story 5-2), aber die **Bauform wurde nach dem Smoke revidiert**
+(Andys Kosmetik-Wünsche): das Panel wächst jetzt **nach OBEN** über die Pill (Pill bleibt Anker),
+**auto-höht mit dem Text** statt fester scrollbarer Max-Höhe, und **cappt am Bildschirmrand** (erst
+dann Scroll + Top-Fade). Breite nach erstem Smoke 220→**320** getunt (zu schmale Lesebreite zerhackte
+den Fließtext). → AC-2/AC-3 von 5-2 sind in diese Richtung revidiert (siehe Story-File 5-2 „Cosmetic
+Revision").
+
+**NEUE ENTSCHEIDUNG (Andy, 2026-06-05): Darstellungsform wird user-wählbar — via kuratierte PRESETS,
+nicht Roh-Pixel-Slider.** Drei Formen **Kompakt / Komfortabel / Breit** (Enum-Config-Feld), Default
+**Komfortabel = ausgelieferte 320er-Form** (kein Bruch). Verworfen: nackte px-Slider (zu fummelig),
+volle Layout-Varianten/andere Mockup-Formen (eigener UX-Pass, später separat). → **neue Story 5-5**
+(hängt an 5-3's Settings-Sektion); FR10. Volle Layout-Varianten bleiben als 5-6/Backlog-Idee offen.
+
 ---
 
 ## Single-Instance-Lock (nur eine Klarvo-Instanz gleichzeitig)
