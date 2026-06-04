@@ -549,6 +549,29 @@ pub fn set_window_region_pill(hwnd: isize, width: i32, height: i32) {
     }
 }
 
+/// Sets the window region to a rounded rectangle with an EXPLICIT corner radius
+/// (physical px; caller applies the scale factor). Used for the live-preview panel
+/// (Story 5.2), which is a tall rounded *card* — not a pill/stadium — so its corner
+/// radius must be independent of the window height. The radius passed here MUST equal
+/// the CSS `borderRadius` the WebView renders for the expanded bar, or the gap between
+/// the OS region and the CSS shape shows as the "white line" artifact.
+#[cfg(target_os = "windows")]
+pub fn set_window_region_round_rect(hwnd: isize, width: i32, height: i32, radius: i32) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+
+    unsafe {
+        // CreateRoundRectRgn's corner ellipse = 2*radius → corner radius = `radius`.
+        // Clamp so the ellipse never exceeds the rect dimensions.
+        let ell_w = (radius * 2).min(width);
+        let ell_h = (radius * 2).min(height);
+        let rgn = CreateRoundRectRgn(0, 0, width, height, ell_w, ell_h);
+        if !rgn.is_invalid() {
+            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
+        }
+    }
+}
+
 #[cfg(desktop)]
 /// Sets up the audio-level callback that emits events to the frontend.
 pub fn setup_audio_level_emitter(handle: &AppHandle) {

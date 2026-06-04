@@ -29,6 +29,13 @@ const PILL_WIDTH = 200;
 const PILL_WIDTH_CLIPBOARD = 220;
 const PILL_HEIGHT = 36;
 
+/** Max-height of the expanded preview panel (logical px). */
+const PANEL_MAX_HEIGHT = 160;
+/** Width of the bar when the preview panel is open. */
+const PANEL_WIDTH = 220;
+/** Full height of bar+panel when preview is active. */
+const PANEL_HEIGHT = PILL_HEIGHT + PANEL_MAX_HEIGHT; // 196
+
 // ---------------------------------------------------------------------------
 // Inline style reset + keyframes
 // ---------------------------------------------------------------------------
@@ -215,11 +222,12 @@ export default function FloatingBar() {
   const [levels, setLevels] = useState<number[]>(new Array(20).fill(0));
   const [showDone, setShowDone] = useState(false);
   const [clipboardOnly, setClipboardOnly] = useState(false);
-  // const [livePreview, setLivePreview] = useState(""); // disabled: re-enable when preview becomes opt-in
+  const [livePreview, setLivePreview] = useState(""); // push sink for klarvo://live-preview-chunk events
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewPanelRef = useRef<HTMLDivElement>(null);
 
   // Stored logical position of the bar's top-left corner after drags.
   const barX = useRef<number | null>(null);
@@ -274,8 +282,35 @@ export default function FloatingBar() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
+  // --- Live preview push listener (Story 5.2, AC-1, AC-7) ---
+  // Backend emits klarvo://live-preview-chunk only when live_preview_enabled == true.
+  // Guard: skip empty chunks (AC-7, fail-soft from Story 5.1 AC-8).
+  useEffect(() => {
+    const unlisten = listen<string>("klarvo://live-preview-chunk", (event) => {
+      const chunk = event.payload.trim();
+      // Guard: skip empty and whitespace-only chunks (AC-7 hardening — backend
+      // filters strictly-empty strings, but leading/trailing whitespace can still
+      // produce a blank panel open).
+      if (chunk) setLivePreview((prev) => prev ? prev + " " + chunk : chunk);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  // --- Auto-scroll preview panel to newest text (AC-2) ---
+  useEffect(() => {
+    if (previewPanelRef.current) {
+      previewPanelRef.current.scrollTop = previewPanelRef.current.scrollHeight;
+    }
+  }, [livePreview]);
+
   // --- Show / hide the Tauri window based on pill visibility ---
   const pillWidth = (isDone && clipboardOnly) ? PILL_WIDTH_CLIPBOARD : PILL_WIDTH;
+
+  // Compute active dimensions: expand to PANEL_WIDTH × PANEL_HEIGHT when panel is open (AC-3).
+  // isPanelOpen is defined in the render section below; forward-declare equivalent here for the effect.
+  const isPanelOpenForEffect = isRecording && livePreview.length > 0;
+  const activePillWidth = isPanelOpenForEffect ? PANEL_WIDTH : pillWidth;
+  const activePillHeight = isPanelOpenForEffect ? PANEL_HEIGHT : PILL_HEIGHT;
 
   useEffect(() => {
     const win = getCurrentWebviewWindow();
@@ -283,11 +318,17 @@ export default function FloatingBar() {
       if (isPillVisible) {
         // Resize and shape first so the window has correct dimensions before
         // showing (guards against the "white line" bug where the window appears
-        // before its shape mask is applied).
-        console.log(`[bar] showing pill: ${pillWidth}x${PILL_HEIGHT}`);
-        await win.setSize(new LogicalSize(pillWidth, PILL_HEIGHT));
-        await setBarShape("pill").catch((e) => console.error("[bar] setBarShape failed:", e));
-        if (barX.current != null && barY.current != null) {
+        // before its shape mask is applied — AC-3 shape-guard ordering preserved:
+        // setSize → setBarShape → setPosition → show).
+        console.log(`[bar] showing pill: ${activePillWidth}x${activePillHeight}`);
+        await win.setSize(new LogicalSize(activePillWidth, activePillHeight));
+        // Shape the OS window region to match the actual size: the tall preview
+        // "panel" card when open (else the region stays pill-sized and clips the
+        // panel + right edge), the "pill" otherwise. Radius matches the CSS below.
+        await setBarShape(isPanelOpenForEffect ? "panel" : "pill").catch((e) => console.error("[bar] setBarShape failed:", e));
+        // Guard: skip setPosition during an active drag so the window doesn't
+        // teleport to stale barX/barY mid-drag when a preview chunk arrives (AC-4).
+        if (barX.current != null && barY.current != null && dragRef.current == null) {
           await win.setPosition(new LogicalPosition(barX.current, barY.current));
         }
         try {
@@ -305,7 +346,9 @@ export default function FloatingBar() {
       }
       // Hiding is handled by the collapse animation handler below.
     })();
-  }, [isPillVisible, pillWidth]);
+  // isPanelOpenForEffect (via activePillWidth/activePillHeight) drives panel expand/collapse
+  // resize transitions in addition to the original isPillVisible/pillWidth triggers (AC-3).
+  }, [isPillVisible, activePillWidth, activePillHeight]);
 
   // --- Trigger collapse animation then hide ---
   // When the bar transitions from visible to idle we play bar-collapse first.
@@ -341,12 +384,17 @@ export default function FloatingBar() {
       setState(newState);
 
       if (newState === "recording") {
+        // Clear any stale preview text from a previous recording so the panel
+        // starts clean (covers cancel→idle, error, and any non-done exit path).
+        setLivePreview("");
         // Safety net: ensure the bar window is healthy before the user sees
         // recording feedback. Runs fire-and-forget so it never blocks the UI.
         ensureBarWindow().catch((e) => console.error("[bar] pre-recording recovery failed:", e));
       }
 
       if (newState === "done") {
+        // Clear live preview so no panel text lingers after done pop (AC-5, FR7).
+        setLivePreview("");
         const isClipboardOnly = !!payload.clipboardOnly;
         setClipboardOnly(isClipboardOnly);
         setShowDone(true);
@@ -485,24 +533,31 @@ export default function FloatingBar() {
     ? "bar-collapse 180ms ease-in forwards"
     : "bar-expand 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards";
 
+  // Panel is open when recording and preview text is present (AC-2, AC-3).
+  const isPanelOpen = isRecording && livePreview.length > 0;
+
   return (
     <>
       <style>{RESET_CSS}</style>
+      {/* Outer wrapper: flex-column so the pill row and panel stack vertically.
+          overflow: "hidden" is moved here so the rounded corners clip both layers.
+          animation applies to the whole bar including any open panel. */}
       <div
         onMouseDown={handleMouseDown}
         style={{
           width: "100%",
           height: "100%",
-          borderRadius: 9999,
+          // Pill = stadium (9999 clamps to half-height = 18). Open panel = rounded
+          // CARD (14): a tall stadium would curve the text panel's sides. This value
+          // MUST equal the "panel" region radius in set_bar_shape (Rust), else the
+          // OS-region vs CSS-shape mismatch shows as the white-line artifact.
+          borderRadius: isPanelOpen ? 14 : 9999,
           background: "rgba(25,25,25,0.96)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
           border: `1px solid ${borderColor}`,
           display: "flex",
-          alignItems: "center",
-          gap: 6,
-          paddingLeft: 10,
-          paddingRight: 10,
+          flexDirection: "column",
           cursor: "move",
           fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
           userSelect: "none",
@@ -510,89 +565,145 @@ export default function FloatingBar() {
           animation: pillAnimation,
         }}
       >
+        {/* Pill row: logo + content. When the panel is CLOSED the row fills the
+            whole (bordered) wrapper via flex:1 so the content stays vertically
+            centred exactly like the pre-5.2 single-pill div — a fixed PILL_HEIGHT
+            here left the content ~2px low because the wrapper's 1px border shrinks
+            its content box below PILL_HEIGHT. When the panel is OPEN the row is
+            pinned to PILL_HEIGHT so the panel below gets the remaining height. */}
+        <div
+          style={{
+            flexShrink: 0,
+            ...(isPanelOpen ? { height: PILL_HEIGHT } : { flex: 1 }),
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            paddingLeft: 10,
+            paddingRight: 10,
+          }}
+        >
+          {/* Klarvo logo -- always visible as brand anchor */}
+          <KlarvoLogo />
 
-        {/* Klarvo logo -- always visible as brand anchor */}
-        <KlarvoLogo />
+          {/* Recording: stop button + waveform + mode badge */}
+          {isRecording && (
+            <>
+              <StopButton onClick={() => { cancelRecording().catch((e) => console.error("[bar] cancelRecording failed:", e)); }} />
+              <Waveform levels={levels} />
+              <span
+                style={{
+                  fontSize: 10,
+                  color: "#808385",
+                  flexShrink: 0,
+                  letterSpacing: "0.02em",
+                  lineHeight: 1,
+                }}
+              >
+                {hotkeyModeLabel(hotkeyMode)}
+              </span>
+            </>
+          )}
 
-        {/* Recording: stop button + waveform or live preview + mode badge */}
-        {isRecording && (
-          <>
-            <StopButton onClick={() => { cancelRecording().catch((e) => console.error("[bar] cancelRecording failed:", e)); }} />
-            <Waveform levels={levels} />
-            <span
+          {/* Processing: spinner + label */}
+          {isProcessing && (
+            <div
               style={{
-                fontSize: 10,
-                color: "#808385",
-                flexShrink: 0,
-                letterSpacing: "0.02em",
-                lineHeight: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flex: 1,
+                minWidth: 0,
               }}
             >
-              {hotkeyModeLabel(hotkeyMode)}
-            </span>
+              <Spinner color={accentColor} />
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "#AAACAD",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {state === "transcribing" ? "Transcribing..." : "Cleaning up..."}
+              </span>
+            </div>
+          )}
+
+          {/* Done: check icon + label (or clipboard hint) */}
+          {isDone && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flex: 1,
+                minWidth: 0,
+                animation: "done-pop 280ms cubic-bezier(0.34,1.56,0.64,1) forwards",
+              }}
+            >
+              {clipboardOnly ? (
+                <>
+                  <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1 }}>📋</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#FFA344", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+                    In Clipboard
+                  </span>
+                </>
+              ) : (
+                <>
+                  <CheckIcon color={accentColor} />
+                  <span style={{ fontSize: 11, color: "#4ADE80", letterSpacing: "0.01em" }}>Done</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Error */}
+          {isError && (
+            <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
+          )}
+        </div>
+
+        {/* Preview panel: accumulates live-preview chunks below the pill row (AC-2, UX-DR1).
+            Only visible when isPanelOpen (recording + livePreview non-empty).
+            The panel sits outside the pill's row so it is never clipped by it.
+            Top-fade via mask-image; thin teal scrollbar via CSS Scrollbars spec.
+            WebView2 globally hides ::-webkit-scrollbar via RESET_CSS line 43 —
+            override locally with a scoped style tag so the panel thumb is visible. */}
+        {isPanelOpen && (
+          <>
+            <style>{`
+              #preview-panel::-webkit-scrollbar { display: block !important; width: 4px !important; }
+              #preview-panel::-webkit-scrollbar-thumb { background: rgba(42,195,168,0.35); border-radius: 9999px; }
+            `}</style>
+            <div
+              id="preview-panel"
+              ref={previewPanelRef}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                overflowX: "hidden",
+                padding: "6px 10px",
+                fontSize: 11,
+                color: "rgba(220,220,220,0.88)",
+                lineHeight: 1.5,
+                letterSpacing: "0.01em",
+                // Top fade for scrolled-off text (UX-DR1)
+                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
+                maskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
+                // Thin scroll indicator via CSS Scrollbars spec (non-WebKit)
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(42,195,168,0.35) transparent",
+                // Wrap long unbroken tokens (URLs, identifiers) so they don't
+                // clip off the right edge of the panel (AC-7 visual hardening).
+                overflowWrap: "anywhere",
+              }}
+            >
+              {livePreview}
+            </div>
           </>
         )}
-
-        {/* Processing: spinner + label */}
-        {isProcessing && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <Spinner color={accentColor} />
-            <span
-              style={{
-                fontSize: 11,
-                color: "#AAACAD",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                letterSpacing: "0.01em",
-              }}
-            >
-              {state === "transcribing" ? "Transcribing..." : "Cleaning up..."}
-            </span>
-          </div>
-        )}
-
-        {/* Done: check icon + label (or clipboard hint) */}
-        {isDone && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              flex: 1,
-              minWidth: 0,
-              animation: "done-pop 280ms cubic-bezier(0.34,1.56,0.64,1) forwards",
-            }}
-          >
-            {clipboardOnly ? (
-              <>
-                <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1 }}>📋</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#FFA344", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-                  In Clipboard
-                </span>
-              </>
-            ) : (
-              <>
-                <CheckIcon color={accentColor} />
-                <span style={{ fontSize: 11, color: "#4ADE80", letterSpacing: "0.01em" }}>Done</span>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Error */}
-        {isError && (
-          <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
-        )}
-
       </div>
     </>
   );

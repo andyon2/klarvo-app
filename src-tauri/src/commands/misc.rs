@@ -394,6 +394,15 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
                     let w = (80.0 * scale) as i32;
                     let ht = (10.0 * scale) as i32;
                     crate::set_window_region_pill(h, w, ht);
+                } else if shape == "panel" {
+                    // Live-preview expanded card (Story 5.2). Dimensions MUST match
+                    // FloatingBar.tsx PANEL_WIDTH / PANEL_HEIGHT, and the radius MUST
+                    // match the wrapper's CSS borderRadius when isPanelOpen (14), or
+                    // the OS-region vs CSS-shape gap shows as the white-line artifact.
+                    let w = (220.0 * scale) as i32; // PANEL_WIDTH
+                    let ht = (196.0 * scale) as i32; // PANEL_HEIGHT
+                    let r = (14.0 * scale) as i32; // card corner radius
+                    crate::set_window_region_round_rect(h, w, ht, r);
                 } else {
                     let w = (200.0 * scale) as i32;
                     let ht = (36.0 * scale) as i32;

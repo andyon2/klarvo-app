@@ -505,7 +505,7 @@ export async function getFillerStats(): Promise<{ word: string; count: number }[
 
 // --- Bar shape ---
 
-export async function setBarShape(_shape: "idle" | "pill"): Promise<void> {
+export async function setBarShape(_shape: "idle" | "pill" | "panel"): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("set_bar_shape", { shape: _shape });
 }
