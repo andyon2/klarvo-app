@@ -2,7 +2,7 @@
 story: "5.5"
 epic: "5"
 title: "Settings — Preview display-form presets (Compact/Comfortable/Wide)"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["5.3"]
 buildsOn: ["5.3"]
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 5.5: Settings — Preview display-form presets (Compact/Comfortable/Wide)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -490,3 +490,4 @@ None.
 - 2026-06-05: AC-4 reactive-update fix applied (code-review directive) — added `isPanelOpen` closed→open refresh of `previewPanelForm` via `getSettings()` in FloatingBar.tsx; added `PANEL_WIDTH` to `useLayoutEffect` deps. 568 Rust tests still green, 0 TS errors. Status: review.
 - 2026-06-05: 1st Windows smoke (Andy) found the preview panel clipped at the TOP on the FIRST chunk, self-correcting on the next chunk. Root cause (pre-existing from the 5-2 grow-upward logic, not 5-5-specific, but blocking the 5-5 smoke): the window-resize `useEffect` fires once in the pre-measure render (`panelHeight === 0`, sizes the window to pill height while the panel is already in the DOM) and once after measurement; both are async Tauri IPC sequences, and the stale pre-measure one can land last, leaving the window too short — the wrapper is `justify:flex-end` + `overflow:hidden`, so a too-short window clips the panel's TOP until the next chunk's resize. Fix (round 1): guard the resize effect to skip the pre-measure transient (`if (isPanelOpen && panelHeight === 0) return;`) so only the correct measured resize is applied. `npm run build` green (tsc + vite). Status: review (re-smoke owed on Windows).
 - 2026-06-05: 2nd Windows smoke (Andy) — round-1 fixed **comfortable** but **wide** still clipped on the first-ever chunk per app launch (heals on the next chunk, never recurs). Sharper root cause: the FIRST pill→panel expansion after a launch is "cold" — the OS window under-applies the height of that first async `setSize`, worse for the bigger 200→400 (Wide) jump, leaving the window shorter than `PILL_HEIGHT + panelHeight` → top-clip (probe measures at a FIXED `PANEL_WIDTH-2` while the real `#preview-panel` fills the live window width). Fix (round 2): added `geomTick` — a state bumped on the next animation frame and again ~120ms after the panel opens, included in the resize effect's deps, so the resize (`setSize`/`setBarShape`/`setPosition`) re-fires and the window converges to the correct geometry without waiting for another chunk. Idempotent for warm opens. `npm run build` green (tsc + vite). Status: review (re-smoke owed on Windows).
+- 2026-06-05: 3rd Windows smoke (Andy) **GREEN** ("grün") — Wide first chunk now renders full height immediately, comfortable still clean, all 3 presets render at distinct widths, persistence OK. Surface DoD met. **Status: done.** Commits: df46789 (feature + AC-4 fix) + 102d51d (smoke-fix r1) + ca902f4 (smoke-fix r2) + this status flip, all local on v1-ship (Epic 5 unpushed).
