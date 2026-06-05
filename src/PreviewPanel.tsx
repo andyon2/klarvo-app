@@ -102,33 +102,34 @@ export default function PreviewPanel(): React.ReactElement {
 
       const geom = previewGeometry(widthPreset, "small");
 
-      // Compute clampedMaxHeight: min(geom.maxHeight, room above pill).
-      // Screen clamp so the window never runs off the top (AR3).
+      const W = geom.width;
+
+      // Compute clampedMaxHeight + horizontal clamp — both from the same monitor query (AR3).
+      // [Review-fix: original code clamped only the vertical axis; horizontal clamp is now
+      //  applied in the same monitor block — single IPC call, consistent scale factor.]
       let clampedMaxH = geom.maxHeight;
+      const pillCenterX = pillX + PILL_WIDTH / 2;
+      let previewLeft = pillCenterX - W / 2; // will be clamped below if monitor available
       try {
         const monitor = await monitorFromPoint(pillX, pillY) ?? await currentMonitor();
         if (monitor) {
           const scale = monitor.scaleFactor || 1;
-          // Use workArea for taskbar-aware clamping.
-          const workAreaTop = monitor.workArea
-            ? monitor.workArea.position.y / scale
-            : monitor.position.y / scale;
+          const wa = monitor.workArea ?? { position: monitor.position, size: monitor.size };
+          // Vertical clamp: how much room is above the pill?
+          const workAreaTop = wa.position.y / scale;
           const room = (pillY - GAP) - (workAreaTop + 12);
           clampedMaxH = Math.max(40, Math.min(geom.maxHeight, room));
+          // Horizontal clamp: keep preview within [screenLeft+12, screenRight-W-12] (AC-1/AR3).
+          const screenLeft = wa.position.x / scale;
+          const screenRight = (wa.position.x + wa.size.width) / scale;
+          previewLeft = Math.max(screenLeft + 12, Math.min(previewLeft, screenRight - W - 12));
         }
       } catch (e) {
-        console.warn("[preview] monitor clamp failed, using unclipped height:", e);
+        console.warn("[preview] monitor clamp failed, using unclipped geometry:", e);
       }
       clampedMaxHeightRef.current = clampedMaxH;
 
-      const W = geom.width;
       const H = clampedMaxH;
-
-      // Center the preview over the pill, clamping to screen edges.
-      // preview.left = pillCenterX - W/2
-      // preview.top  = pillY - GAP - H
-      const pillCenterX = pillX + PILL_WIDTH / 2;
-      const previewLeft = pillCenterX - W / 2;
       const previewTop = pillY - GAP - H;
 
       // Sequence: setSize → set_preview_shape (region) → setPosition → show.
@@ -185,15 +186,27 @@ export default function PreviewPanel(): React.ReactElement {
       const chunk = event.payload.trim();
       if (!chunk) return;
 
+      // Append chunk SYNCHRONOUSLY before any await — preserves arrival order on the
+      // single-threaded event loop and prevents later chunks (which skip the show gate)
+      // from committing their setLivePreview before the first chunk's post-await append.
+      // [Review-fix: async-gap — chunk was appended AFTER await runShowSequence(), causing
+      //  (a) out-of-order render for concurrent chunks, (b) stale-repopulate if recording ends
+      //  mid-await, (c) orphan show() after hide() from the done-handler.]
+      setLivePreview((prev) => (prev ? prev + " " + chunk : chunk));
+
       // Show-once geometry sequence: runs exactly once per recording cycle.
       // No resize/reposition per chunk — NFR1.
       // Inversion: moving setSize here re-introduces R3/R4 cold-expansion clip.
       if (!showOnceRef.current) {
         showOnceRef.current = true;
         await runShowSequence();
+        // Post-await re-check: if recording ended while the multi-IPC sequence was in
+        // flight, hide the window so it is not left visible/empty after the done-handler.
+        if (!isRecordingRef.current) {
+          const win = getCurrentWebviewWindow();
+          win.hide().catch((e) => console.warn("[preview] post-show hide (stale cycle):", e));
+        }
       }
-
-      setLivePreview((prev) => (prev ? prev + " " + chunk : chunk));
     });
     return () => { unlisten.then((fn) => fn()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -458,6 +458,13 @@ and the 6.1 carried-forward inversions (click-through, CloseRequested) are confi
   - [ ] 11.4 Windows smoke via `scripts/sync-and-build.ps1` — run surface-smoke-checklist traps
     #3/#4/#5 + full manual AC-8 scenario
 
+### Review Findings (code-review 2026-06-05, Opus 4.8 — 3 adversarial layers)
+
+- [x] [Review][Patch] Async-gap in the first-chunk path — append out-of-order + stale-repopulate + orphan-show [src/PreviewPanel.tsx:181-200] (blind+edge, High). In the `klarvo://live-preview-chunk` listener the first chunk sets `showOnceRef.current = true` then `await runShowSequence()` and only calls `setLivePreview(...)` AFTER the await. Three consequences while the multi-IPC show sequence is in flight: (a) later chunks (which skip the show gate and append immediately) commit their `setLivePreview` BEFORE the first chunk's post-await append → opening words render out of order; (b) if recording ends during the await, the post-await `setLivePreview` repopulates `livePreview` AFTER the `done`-handler already cleared it → defeats the AC-4 R1 guard via the async gap; (c) `runShowSequence`'s `await win.show()` can fire AFTER the state-changed handler's `win.hide()` → window left visible (transparent/empty) until next cycle. **Fix:** append the chunk synchronously BEFORE the `await` (preserves arrival order on the single-threaded event loop), and after `await runShowSequence()` re-check `if (!isRecordingRef.current)` → `win.hide()` and skip. One coherent change resolves all three.
+- [x] [Review][Patch] Horizontal screen-edge clamp missing — comment overclaims, AC-1/AR3 gap [src/PreviewPanel.tsx:127-132] (blind+edge+auditor, Medium). `previewLeft = pillCenterX - W/2` is used raw in `setPosition`, but the comment says "clamping to screen edges" and AC-1 requires the AR3 screen clamp. Only the vertical axis (`clampedMaxH`) is clamped. A `wide` (400px) preview centered over a pill near the left/right edge runs off-screen. **Fix:** inside the existing monitor block derive logical bounds `screenLeft = workArea.position.x / scale`, `screenRight = (workArea.position.x + workArea.size.width) / scale`, then clamp `previewLeft` into `[screenLeft + 12, screenRight - W - 12]`; correct the misleading comment. Mirror the vertical clamp's `/scale` logical conversion already present.
+- [x] [Review][Defer] `monitorFromPoint` receives logical px but the API resolves against physical screen coords [src/PreviewPanel.tsx:109] — deferred, smoke/multi-monitor refinement. Single-monitor @1.0 scale: logical==physical → correct. Wrong-monitor selection only manifests on multi-monitor / HiDPI offsets; `?? currentMonitor()` masks (returns focused-window monitor). Smoke-verify item: test preview clamp on a multi-monitor / fractional-scale setup; refine by converting pill coords to physical before `monitorFromPoint` once scale is known.
+- [x] [Review][Defer] `room <= 0` floors `clampedMaxH` to 40 but `previewTop = pillY - GAP - 40` may still overlap the pill / clip at top [src/PreviewPanel.tsx:116-117,132] — deferred, smoke verification. Only reachable when the pill sits near the top of the work area. Smoke-verify item: drag pill near the screen top, confirm preview does not overlap/clip.
+
 ## Dev Notes
 
 ### Key files to touch
@@ -733,16 +740,18 @@ claude-sonnet-4-6
 - `previewGeometry(widthPreset, "small")` helper: scale factor k=fontPx/11 with BASE_WIDTH compact/comfortable/wide (260/320/400) and BASE_MAX_HEIGHT=600.
 - State/refs: `isRecordingRef` (R1 stale-chunk guard), `showOnceRef` (show-once gate), `clampedMaxHeightRef`, `pillXRef`/`pillYRef`, `previewPanelRef`.
 - `onStateChanged` subscription: arms isRecordingRef on "recording", clears+hides on done/idle/error, resets showOnceRef.
-- `live-preview-chunk` listener: R1 guard first, then show-once geometry sequence (calls `runShowSequence` exactly once per cycle), then appends chunk.
-- `runShowSequence`: reads `getBarPosition()` (skips cycle if null), reads `getSettings().previewPanelForm` reactively (Trap #3 — NOT mount-only), computes clampedMaxHeight via `monitorFromPoint`/`workArea`, executes sequence `setSize → setPreviewShape → setPosition → show`.
+- `live-preview-chunk` listener: R1 guard first, then chunk appended SYNCHRONOUSLY before show-once await (review-fix High), then show-once geometry sequence + post-await isRecording re-check (review-fix High: orphan-show guard).
+- `runShowSequence`: reads `getBarPosition()` (skips cycle if null), reads `getSettings().previewPanelForm` reactively (Trap #3 — NOT mount-only), computes clampedMaxHeight + horizontal screen-edge clamp (review-fix Medium) in single monitor query, executes sequence `setSize → setPreviewShape → setPosition → show`.
 - Auto-scroll effect + `useLayoutEffect` overflow detection (setPanelScrolls when scrollHeight > clampedMaxHeight).
 - FloatingBar `live-preview-chunk` listener body replaced with short-circuit `return` (AC-7). Dead code NOT deleted (Story 6.5).
 - R11 invariant: CARD_RADIUS=14 in CSS borderRadius matches set_preview_shape r=(14.0*scale) as i32.
 - Inversion comments placed at all three key inversion points (NFR1, R1, R11).
+- ✅ Resolved review finding [High]: Async-gap — chunk now appended synchronously before await; post-await orphan-show guard added (isRecordingRef re-check → win.hide()).
+- ✅ Resolved review finding [Medium]: Horizontal screen-edge clamp — previewLeft now clamped into [screenLeft+12, screenRight-W-12] via workArea bounds, same monitor block as vertical clamp; misleading comment corrected.
 - `cargo check --target x86_64-pc-windows-gnu`: only pre-existing ort-sys/whisper-rs/llama-cpp-sys build-script failures, no new Rust E-codes.
 - `cargo test --lib`: 572 passed / 0 failed.
 - `tsc --noEmit`: clean.
-- `npm run build`: green (PreviewPanel-DboxQAbV.js 3.82 kB).
+- `npm run build`: green (PreviewPanel-Bu4ScR93.js 4.02 kB).
 - BLOCKED on Task 11.4: Windows smoke (surface-class hard gate) — requires Andi on Windows with `scripts/sync-and-build.ps1`. Story stays in "review" until smoke confirmed green.
 
 ### File List
@@ -758,3 +767,4 @@ claude-sonnet-4-6
 ### Change Log
 
 - 2026-06-05: Story 6.2 implemented — PreviewPanel full wiring (subscriptions, show-once geometry, CSS card render), `set_preview_shape` Rust command + TS wrapper, FloatingBar preview path disabled (AC-7). 572 Rust tests green, tsc clean, vite build green. Blocked on Windows smoke (surface-class DoD, Task 11.4).
+- 2026-06-05: Addressed code review findings — 2 items resolved (Date: 2026-06-05). [High] Async-gap fixed: chunk appended synchronously before await + post-await orphan-show guard. [Medium] Horizontal screen-edge clamp added: previewLeft clamped via workArea bounds in single monitor query. 572 tests/0 fail, tsc/vite green.
