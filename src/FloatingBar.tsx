@@ -393,6 +393,17 @@ export default function FloatingBar() {
     const win = getCurrentWebviewWindow();
     (async () => {
       if (isPillVisible) {
+        // Skip the pre-measure transient: when the first chunk opens the panel,
+        // this effect first runs with panelHeight === 0 (height not measured yet)
+        // and would size the window to pill height while the panel is already in
+        // the DOM. Because each resize is an async Tauri IPC sequence, that stale
+        // pill-height resize can land AFTER the correct one and leave the panel
+        // clipped at the top (the wrapper is justify:flex-end + overflow:hidden,
+        // so a too-short window clips the panel's top, not the pill) until the
+        // next chunk triggers a fresh resize. The measure useLayoutEffect sets
+        // panelHeight a tick later and re-triggers this effect with the real
+        // height, which applies the only correct resize. (Story 5.5 smoke fix.)
+        if (isPanelOpen && panelHeight === 0) return;
         // Resize and shape first so the window has correct dimensions before
         // showing (guards against the "white line" bug where the window appears
         // before its shape mask is applied — AC-3 shape-guard ordering preserved:
