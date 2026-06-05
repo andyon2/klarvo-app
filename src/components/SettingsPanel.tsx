@@ -154,10 +154,10 @@ export function SettingsPanel({
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [localInsertAndSendSlot1, setLocalInsertAndSendSlot1] = useState(loadedSettings?.insertAndSendSlot1 ?? false);
   const [localInsertAndSendSlot2, setLocalInsertAndSendSlot2] = useState(loadedSettings?.insertAndSendSlot2 ?? false);
-  const [localSilenceSecs, setLocalSilenceSecs] = useState(() => {
-    const mode = loadedSettings?.hotkeyMode ?? "hold";
-    if (mode === "auto") return loadedSettings?.autoModeSilenceSecs ?? 2.0;
-    return loadedSettings?.autostopSilenceSecs ?? 2.0;
+  const [localSendStopPauseSecs, setLocalSendStopPauseSecs] = useState(() => {
+    const autostop = loadedSettings?.autostopSilenceSecs ?? 2.0;
+    const auto = loadedSettings?.autoModeSilenceSecs ?? 2.0;
+    return Math.max(autostop, auto);  // AC-4: display the larger of two diverged values
   });
   const [bubbleTab, setBubbleTab] = useState<0 | 1>(0);
   const [localBubbleTapMode, setLocalBubbleTapMode] = useState<HotkeyMode>((loadedSettings?.bubbleTapMode ?? "toggle") as HotkeyMode);
@@ -273,12 +273,9 @@ export function SettingsPanel({
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
       setLocalInsertAndSendSlot1(loadedSettings.insertAndSendSlot1 ?? false);
       setLocalInsertAndSendSlot2(loadedSettings.insertAndSendSlot2 ?? false);
-      const mode = loadedSettings.hotkeyMode ?? "hold";
-      if (mode === "auto") {
-        setLocalSilenceSecs(loadedSettings.autoModeSilenceSecs ?? 2.0);
-      } else {
-        setLocalSilenceSecs(loadedSettings.autostopSilenceSecs ?? 2.0);
-      }
+      const autostop = loadedSettings.autostopSilenceSecs ?? 2.0;
+      const auto = loadedSettings.autoModeSilenceSecs ?? 2.0;
+      setLocalSendStopPauseSecs(Math.max(autostop, auto));
       setLocalHotkeySlot2(loadedSettings.hotkeySlot2 ?? "");
       setLocalHotkeyModeSlot2(loadedSettings.hotkeyModeSlot2 ?? "hold");
       setLocalBubbleTapMode((loadedSettings.bubbleTapMode ?? "toggle") as HotkeyMode);
@@ -341,8 +338,7 @@ export function SettingsPanel({
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
       localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
       localInsertAndSendSlot2 !== (loadedSettings.insertAndSendSlot2 ?? false) ||
-      ((localHotkeyMode === "autostop" || localHotkeyModeSlot2 === "autostop") && localSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0)) ||
-      ((localHotkeyMode === "auto" || localHotkeyModeSlot2 === "auto") && localSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0)) ||
+      localSendStopPauseSecs !== Math.max(loadedSettings.autostopSilenceSecs ?? 2.0, loadedSettings.autoModeSilenceSecs ?? 2.0) ||
       localHotkeySlot2 !== (loadedSettings.hotkeySlot2 ?? "") ||
       localHotkeyModeSlot2 !== (loadedSettings.hotkeyModeSlot2 ?? "hold") ||
       groqKey.trim() !== "" ||
@@ -371,7 +367,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, localSttProvider,
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSendStopPauseSecs, localHotkeySlot2, localHotkeyModeSlot2,
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
@@ -473,8 +469,9 @@ export function SettingsPanel({
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
     try {
-      const autostopSecs = localHotkeyMode === "autostop" ? localSilenceSecs : null;
-      const autoModeSecs = localHotkeyMode === "auto" ? localSilenceSecs : null;
+      // AC-1: Regler B writes BOTH keys unconditionally to the same value
+      const autostopSecs = localSendStopPauseSecs;
+      const autoModeSecs = localSendStopPauseSecs;
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
@@ -530,7 +527,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localSendStopPauseSecs, localHotkeySlot2, localHotkeyModeSlot2,
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     advancedSettings, localSilenceThreshold,
@@ -675,7 +672,7 @@ export function SettingsPanel({
                 localHotkeyMode={localHotkeyMode} setLocalHotkeyMode={handleHotkeyModeChange}
                 localHotkeySlot2={localHotkeySlot2} setLocalHotkeySlot2={setLocalHotkeySlot2}
                 localHotkeyModeSlot2={localHotkeyModeSlot2} setLocalHotkeyModeSlot2={setLocalHotkeyModeSlot2}
-                localSilenceSecs={localSilenceSecs} setLocalSilenceSecs={setLocalSilenceSecs}
+                localSendStopPauseSecs={localSendStopPauseSecs} setLocalSendStopPauseSecs={setLocalSendStopPauseSecs}
                 localInsertAndSendSlot1={localInsertAndSendSlot1} setLocalInsertAndSendSlot1={setLocalInsertAndSendSlot1}
                 localInsertAndSendSlot2={localInsertAndSendSlot2} setLocalInsertAndSendSlot2={setLocalInsertAndSendSlot2}
                 hotkeyTab={hotkeyTab} setHotkeyTab={setHotkeyTab}

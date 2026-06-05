@@ -167,9 +167,9 @@ export interface ShortcutsContentProps {
   setLocalHotkeySlot2: (v: string) => void;
   localHotkeyModeSlot2: HotkeyMode;
   setLocalHotkeyModeSlot2: (v: HotkeyMode) => void;
-  // Shared silence duration (autostop / auto modes)
-  localSilenceSecs: number;
-  setLocalSilenceSecs: (v: number) => void;
+  // Consolidated Send/Stop-Pause slider (Regler B — writes both autostop + auto keys)
+  localSendStopPauseSecs: number;
+  setLocalSendStopPauseSecs: (v: number) => void;
   // Insert & Send toggles per slot
   localInsertAndSendSlot1: boolean;
   setLocalInsertAndSendSlot1: (v: boolean | ((prev: boolean) => boolean)) => void;
@@ -225,7 +225,7 @@ export interface ShortcutsContentProps {
 export function ShortcutsContent({
   localHotkey, setLocalHotkey, localHotkeyMode, setLocalHotkeyMode,
   localHotkeySlot2, setLocalHotkeySlot2, localHotkeyModeSlot2, setLocalHotkeyModeSlot2,
-  localSilenceSecs, setLocalSilenceSecs,
+  localSendStopPauseSecs, setLocalSendStopPauseSecs,
   localInsertAndSendSlot1, setLocalInsertAndSendSlot1,
   localInsertAndSendSlot2: _localInsertAndSendSlot2, setLocalInsertAndSendSlot2: _setLocalInsertAndSendSlot2,
   hotkeyTab, setHotkeyTab,
@@ -234,7 +234,7 @@ export function ShortcutsContent({
   localBubbleTapSilenceSecs, setLocalBubbleTapSilenceSecs,
   localBubbleLongPressMode, setLocalBubbleLongPressMode,
   localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs,
-  loadedSettings, onHotkeyChange, onHotkeyModeChange,
+  loadedSettings: _loadedSettings, onHotkeyChange, onHotkeyModeChange,
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
   localLivePreviewEnabled, setLocalLivePreviewEnabled, localPreviewPauseSilenceSecs, setLocalPreviewPauseSilenceSecs,
   localPreviewPanelForm, setLocalPreviewPanelForm,
@@ -298,12 +298,7 @@ export function ShortcutsContent({
                       key={value}
                       onClick={() => {
                         handleHotkeyModeChange(value);
-                        // When switching modes, load the appropriate silence default from persisted settings
-                        if (value === "auto") {
-                          setLocalSilenceSecs(loadedSettings?.autoModeSilenceSecs ?? 2.0);
-                        } else if (value === "autostop") {
-                          setLocalSilenceSecs(loadedSettings?.autostopSilenceSecs ?? 2.0);
-                        }
+                        // localSendStopPauseSecs is not mode-dependent — no re-init needed here
                       }}
                       title={tooltip}
                       className={[
@@ -325,27 +320,7 @@ export function ShortcutsContent({
                 {localHotkeyMode === "auto" && "Continuous — restarts after each silence gap"}
               </p>
 
-              {(localHotkeyMode === "autostop" || localHotkeyMode === "auto") && (
-                <>
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className={LABEL_CLS}>Silence Duration</span>
-                      <span className="text-xs font-mono text-klarvo-primary">{localSilenceSecs.toFixed(1)}s</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1.0}
-                      max={5.0}
-                      step={0.1}
-                      value={localSilenceSecs}
-                      onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                      className="w-full accent-klarvo-primary"
-                    />
-                    <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
-                  </div>
 
-                </>
-              )}
 
             </>
           )}
@@ -408,32 +383,32 @@ export function ShortcutsContent({
                     {localHotkeyModeSlot2 === "auto" && "Continuous — restarts after each silence gap"}
                   </p>
 
-                  {(localHotkeyModeSlot2 === "autostop" || localHotkeyModeSlot2 === "auto") && (
-                    <>
-                      <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex items-center justify-between">
-                          <span className={LABEL_CLS}>Silence Duration</span>
-                          <span className="text-xs font-mono text-klarvo-primary">{localSilenceSecs.toFixed(1)}s</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={1.0}
-                          max={5.0}
-                          step={0.1}
-                          value={localSilenceSecs}
-                          onChange={(e) => setLocalSilenceSecs(parseFloat(e.target.value))}
-                          className="w-full accent-klarvo-primary"
-                        />
-                        <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
-                      </div>
-
-                    </>
-                  )}
                 </div>
               )}
 
             </>
           )}
+
+          {/* --- Send/Stop-Pause (Regler B) --- */}
+          <div className="flex flex-col gap-3 border-t border-klarvo-border/30 pt-3 mt-1">
+            <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Auto Modes</span>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className={LABEL_CLS}>Send/Stop-Pause</span>
+                <span className="text-xs font-mono text-klarvo-primary">{localSendStopPauseSecs.toFixed(1)}s</span>
+              </div>
+              <input
+                type="range"
+                min={1.0}
+                max={5.0}
+                step={0.1}
+                value={localSendStopPauseSecs}
+                onChange={(e) => setLocalSendStopPauseSecs(parseFloat(e.target.value))}
+                className="w-full accent-klarvo-primary"
+              />
+              <p className="text-[11px] text-klarvo-muted">Sets the pause duration for Auto and Auto Stop modes.</p>
+            </div>
+          </div>
 
           {/* --- Live Preview --- */}
           <div className="flex flex-col gap-3 border-t border-klarvo-border/30 pt-3 mt-1">

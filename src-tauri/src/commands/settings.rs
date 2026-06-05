@@ -1937,4 +1937,63 @@ mod tests {
         assert_eq!(on_disk.groq_api_key, "k", "on-disk config must match memory");
         assert_eq!(on_disk.output_language, "en");
     }
+
+    /// AC-6 (Story 5.4): The Send/Stop-Pause consolidation writes BOTH silence keys
+    /// to the same value in a single save — and merging `None` for both preserves
+    /// distinct existing values (the consolidation lives in the TS layer, not here).
+    ///
+    /// Inversion check (Epic-4-retro AI-1 — reviewer-verified, NOT self-attested):
+    ///   Change one `Some(3.5)` → `Some(3.0)` →
+    ///   `(result.auto_mode_silence_secs - 3.5).abs() < f32::EPSILON` goes RED.
+    ///   Verified RED: 3.0 - 3.5 = -0.5, not within EPSILON — documented in
+    ///   Completion Notes.
+    #[test]
+    fn spec_send_stop_pause_writes_both_keys() {
+        // AC-6: Merging the same value into BOTH keys → both fields equal in result
+        let existing = AppConfig {
+            autostop_silence_secs: 2.0,
+            auto_mode_silence_secs: 2.0,
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            autostop_silence_secs: Some(3.5),
+            auto_mode_silence_secs: Some(3.5),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing, patch);
+        assert!(
+            (result.autostop_silence_secs - 3.5).abs() < f32::EPSILON,
+            "autostop_silence_secs should be 3.5, got {}",
+            result.autostop_silence_secs
+        );
+        assert!(
+            (result.auto_mode_silence_secs - 3.5).abs() < f32::EPSILON,
+            "auto_mode_silence_secs should be 3.5, got {}",
+            result.auto_mode_silence_secs
+        );
+
+        // AC-6 (None branch): passing None for both preserves distinct existing values.
+        // This verifies that the consolidation is enforced in the TS save call, not here.
+        let existing2 = AppConfig {
+            autostop_silence_secs: 1.5,
+            auto_mode_silence_secs: 4.0,
+            ..AppConfig::default()
+        };
+        let patch_none = SettingsPatch {
+            autostop_silence_secs: None,
+            auto_mode_silence_secs: None,
+            ..SettingsPatch::default()
+        };
+        let result2 = merge_settings(existing2, patch_none);
+        assert!(
+            (result2.autostop_silence_secs - 1.5).abs() < f32::EPSILON,
+            "None autostop patch must preserve existing 1.5, got {}",
+            result2.autostop_silence_secs
+        );
+        assert!(
+            (result2.auto_mode_silence_secs - 4.0).abs() < f32::EPSILON,
+            "None auto patch must preserve existing 4.0, got {}",
+            result2.auto_mode_silence_secs
+        );
+    }
 }
