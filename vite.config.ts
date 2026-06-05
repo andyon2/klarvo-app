@@ -15,11 +15,16 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    // When launched via `tauri dev`, TAURI_DEV_HOST is set and we use port 1420
-    // (Tauri expects this). For standalone `npm run preview` we use 1422 to
-    // avoid conflicts with both Tauri (1420) and its HMR websocket (1421).
-    port: host ? 1420 : 1422,
-    strictPort: !!host,
+    // Tauri expects the frontend dev server on a fixed port (devUrl=1420 in
+    // tauri.conf.json). `tauri dev` runs `npm run dev` WITHOUT setting
+    // TAURI_DEV_HOST (that is only set for `tauri dev --host` mobile/network dev),
+    // so the port must NOT be keyed on it — doing so made `tauri dev` serve on
+    // 1422 while Tauri waited on 1420, so the native app window never launched.
+    // Always 1420; the standalone `npm run preview` browser harness overrides to
+    // 1422 via its own `--port 1422` flag. strictPort: fail loudly on a port
+    // conflict instead of silently serving a port Tauri isn't watching.
+    port: 1420,
+    strictPort: true,
     host: host || false,
     hmr: host
       ? {
