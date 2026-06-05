@@ -7,7 +7,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -1868,6 +1868,57 @@ pub(crate) fn preview_flush_should_install(live_preview_enabled: bool, stt_provi
     live_preview_enabled && stt_provider != "local"
 }
 
+/// Maximum number of concurrent in-flight preview flushes (AC-4, Story 5.7).
+///
+/// Value 1 serializes flushes: the default pause threshold (2.0 s) is much
+/// greater than sub-1 s Groq latency, so a second flush before the first
+/// completes implies an unusually short back-to-back pause. Skipping it is
+/// safe — the skipped audio is retained in the live_buffer delta (the delta
+/// marker is NOT advanced for skipped flushes, NFR1).
+pub(crate) const MAX_PREVIEW_IN_FLIGHT: u8 = 1;
+
+/// RAII guard that releases the in-flight preview slot when dropped.
+///
+/// Constructed by `try_acquire_preview_slot` on success. Dropping this guard
+/// decrements the atomic counter via `fetch_sub`, so the slot is always
+/// released — even if the async task panics or returns early.
+///
+/// # Panic-safety
+/// `Drop` runs even if the spawned async task panics (Tokio catches panics
+/// at the task boundary and drops the `JoinHandle`). The counter is decremented
+/// before the panic propagates, ensuring subsequent pause boundaries can spawn.
+pub(crate) struct PreviewSlotGuard {
+    counter: Arc<AtomicU8>,
+}
+
+impl Drop for PreviewSlotGuard {
+    fn drop(&mut self) {
+        // Release the slot. Paired 1:1 with the successful CAS in
+        // try_acquire_preview_slot — cannot underflow.
+        self.counter.fetch_sub(1, Ordering::Release);
+    }
+}
+
+/// Attempts to acquire the in-flight preview slot (compare-and-swap, lock-free).
+///
+/// Returns `Some(PreviewSlotGuard)` if the slot was free (counter 0→1 CAS
+/// succeeded). Returns `None` if a flush is already in flight — the caller
+/// should skip the excess flush (coalesce into the in-flight one).
+///
+/// The returned guard releases the slot automatically when dropped (RAII).
+/// This is the **production seam** for the in-flight cap. Unit tests call this
+/// function directly so that removing or breaking the seam makes the tests RED.
+///
+/// Inversion (AC-4): remove the `compare_exchange` block and always return
+/// `Some(...)` → the cap is bypassed → N concurrent callbacks all spawn tasks
+/// → `spec_preview_in_flight_cap` assertion fires RED.
+pub(crate) fn try_acquire_preview_slot(counter: &Arc<AtomicU8>) -> Option<PreviewSlotGuard> {
+    counter
+        .compare_exchange(0, MAX_PREVIEW_IN_FLIGHT, Ordering::AcqRel, Ordering::Relaxed)
+        .ok()
+        .map(|_| PreviewSlotGuard { counter: counter.clone() })
+}
+
 /// Transcribes the audio delta captured since the last preview flush and emits
 /// it as a `klarvo://live-preview-chunk` event.
 ///
@@ -1988,15 +2039,43 @@ fn maybe_install_preview_flush(handle: &AppHandle) {
         "[preview] installing preview-flush callback: secs={preview_secs}, threshold={silence_threshold}"
     );
 
+    // In-flight cap (AC-4, Story 5.7): serialize preview flushes — at most one
+    // Groq call in flight at a time. A fresh Arc is created per recording cycle;
+    // it is owned solely by the callback closure (not stored in PreviewFlushConfig)
+    // and drops naturally when the closure is dropped on clear_preview_flush_config.
+    //
+    // The CAS is performed via `try_acquire_preview_slot` (the testable seam).
+    // Releasing the slot is handled by `PreviewSlotGuard`'s `Drop` impl —
+    // panic-safe: the slot is freed even if flush_preview_delta panics.
+    //
+    // MAX_PREVIEW_IN_FLIGHT = 1 (see const definition above).
+    // Inversion (AC-4): break try_acquire_preview_slot → concurrent callbacks
+    // all spawn → spec_preview_in_flight_cap assertion fires RED.
+    let in_flight = Arc::new(AtomicU8::new(0));
+
     let handle_for_cb = handle.clone();
     state.recorder.set_preview_flush_config(
         preview_secs,
         silence_threshold,
         Box::new(move || {
-            // Runs on the cpal OS-thread — spawn async task (AC-5).
+            // In-flight cap (AC-4): acquire the slot via the testable seam.
+            // The CAS is lock-free (nanoseconds) — safe on the cpal real-time
+            // audio callback thread (Mutex::lock is forbidden there).
+            let Some(_guard) = try_acquire_preview_slot(&in_flight) else {
+                // A flush is already in flight — skip (coalesce into the in-flight one).
+                // The delta marker is NOT advanced for skipped flushes, so the
+                // skipped audio is included in the next successful flush (NFR1, AC-5).
+                log::debug!("[preview] in-flight cap hit — skipping excess flush");
+                return;
+            };
+            // Slot acquired. Spawn the async flush. `_guard` (PreviewSlotGuard)
+            // is moved into the async block so it is dropped after flush completes —
+            // or after the task panics — releasing the slot in both cases.
             let h = handle_for_cb.clone();
             tauri::async_runtime::spawn(async move {
+                let _slot = _guard; // holds the slot until this block exits
                 flush_preview_delta(h).await;
+                // Slot released here by PreviewSlotGuard::drop (panic-safe RAII).
             });
         }),
     );
@@ -3926,4 +4005,73 @@ mod tests {
             "preview flush SHOULD install when live_preview_enabled=true and stt=groq"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Story 5.7 — AC-4: in-flight cap via the production seam
+    //
+    // This test exercises `try_acquire_preview_slot` — the REAL production
+    // seam used by `maybe_install_preview_flush`. Removing or breaking the
+    // seam function makes this test compile-fail or produce wrong results
+    // (true binding, not a mock / inline reimplementation).
+    //
+    // Inversion (AC-4): break `try_acquire_preview_slot` (e.g. always return
+    //   Some) → all N calls succeed → spawn_count > 1 → assert_eq FAILS (RED).
+    // -----------------------------------------------------------------------
+
+    /// AC-4: the in-flight cap allows at most 1 concurrent flush.
+    ///
+    /// Simulates N rapid pause-edge callbacks via the production seam
+    /// `try_acquire_preview_slot`. Only the first should succeed (guard held);
+    /// the rest return None and are skipped.
+    ///
+    /// Inversion (AC-4): break `try_acquire_preview_slot` to always return Some
+    /// → all N callbacks succeed → `assert_eq!(spawn_count, 1)` FAILS (RED).
+    #[test]
+    fn spec_preview_in_flight_cap() {
+        let counter = Arc::new(AtomicU8::new(0));
+        // Count how many "spawns" the cap would allow for N rapid callbacks.
+        let mut spawn_count = 0u32;
+        // Hold guards here to keep them alive (simulating in-flight tasks).
+        let mut held_guards: Vec<PreviewSlotGuard> = Vec::new();
+
+        // Simulate N rapid pause-edge callbacks (like a pause flood).
+        // All fire before any in-flight task completes (guards not dropped yet).
+        for _ in 0..5 {
+            // Inversion (AC-4): if try_acquire_preview_slot always returns Some →
+            // all 5 callbacks spawn → assert_eq!(spawn_count, 1) FAILS (RED).
+            match try_acquire_preview_slot(&counter) {
+                Some(guard) => {
+                    spawn_count += 1;
+                    held_guards.push(guard);
+                }
+                None => {
+                    // Cap hit: skip (mirrors the closure in maybe_install_preview_flush).
+                }
+            }
+        }
+
+        assert_eq!(
+            spawn_count, 1,
+            "in-flight cap must allow exactly 1 spawn when all callbacks fire before the first completes"
+        );
+        assert_eq!(
+            counter.load(Ordering::Relaxed), MAX_PREVIEW_IN_FLIGHT,
+            "counter must equal MAX_PREVIEW_IN_FLIGHT (one task in flight) after N rapid callbacks"
+        );
+
+        // Simulate the in-flight task completing (drop the guard — RAII releases the slot).
+        held_guards.clear();
+        assert_eq!(
+            counter.load(Ordering::Relaxed), 0,
+            "counter must be 0 after the in-flight task completes (RAII slot release)"
+        );
+
+        // Next pause boundary fires: slot should be acquirable again.
+        let second_guard = try_acquire_preview_slot(&counter);
+        assert!(
+            second_guard.is_some(),
+            "after first task completes, the next pause boundary must be allowed to spawn"
+        );
+    }
+
 }

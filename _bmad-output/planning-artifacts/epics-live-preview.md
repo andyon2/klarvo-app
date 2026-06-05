@@ -176,9 +176,17 @@ long-parked "Live-Overlay" feature.
   `comfortable` = shipped look) via the sanctioned `save_config` path (ADR-0015); `FloatingBar.tsx`
   reads it and selects the form's width + screen-cap. No raw px-sliders, no layout variants. Surface
   story → Windows smoke. Covers FR10.
+- **5.7 — Hardening: preview-flush stale-chunk guard + in-flight backpressure** *(added 2026-06-05;
+  depends on 5.1's backend flush + 5.2's frontend listener — both done)*. Closes the carried-forward
+  **5.1-C2** review defer (out-of-order / no-backpressure flushes) **and** its 5.2 face (late chunks
+  bleeding across recordings). Frontend session-token / `isRecording` guard in the chunk listener +
+  backend in-flight cap on `flush_preview_delta`. Surface story (touches FloatingBar) → Windows smoke.
+  Not a new FR — a robustness hardening of the shipped feature (NFR1 cost + no-stale-bleed). *(5-6 stays
+  reserved for the parked full-layout-variants backlog idea.)*
 
 **Dependency flow:** 5.1 → 5.2; 5.3 parallel to 5.2 (independent surfaces); 5.4 fully
-independent; **5.5 → after 5.3** (plugs into its Settings section). No story depends on a *later* story.
+independent; **5.5 → after 5.3** (plugs into its Settings section); **5.7 → after 5.1 + 5.2** (hardens
+their shipped flush/listener). No story depends on a *later* story.
 
 ## Epic 5: Live-Cleanup-Preview
 
@@ -372,3 +380,50 @@ So that I can size the read-along panel to my taste without fiddling with raw pi
 **Open for create-story / dev to finalize:** the exact width + screen-cap numbers per preset (illustrative: Compact ≈ 260/240, Comfortable = 320/320, Wide ≈ 400/400); whether a preset also varies font-size/line-height (density) or width-only. Default MUST equal the shipped look.
 
 **DoD:** Surface story → **Windows release build + manual smoke**: cycle all three presets, confirm the panel renders at each width and `comfortable` is byte-identical to the shipped look; confirm the choice persists across a relaunch. `tsc` build + `cargo test` (config field default + fail-soft). Desktop-only — **no Android change** (preview is Groq-only desktop).
+
+### Story 5.7: Hardening — preview-flush stale-chunk guard + in-flight backpressure
+
+*Added 2026-06-05 from the Epic-5 retro carry-forward. Closes the tracked **5.1-C2** review defer
+and its 5.2 face — see `deferred-work.md` "From code review of story-5.1 (2026-06-04)" (Concurrent /
+out-of-order preview flushes + no backpressure) and "From code review of story-5.2 (2026-06-04)"
+(Concurrent / out-of-order / late preview-flush chunks bleed across recordings). The race is **real
+but never reproduced** (default 2.0 s pause ≫ sub-1 s Groq latency makes overlap rare) and low-severity
+(preview is orientation-only / throwaway, Variant B). This story applies **defensive guards on both
+layers**; the DoD verifies the happy path is unregressed rather than gating on reproducing the rare
+race. Depends on Stories 5.1 (backend `flush_preview_delta`) and 5.2 (frontend chunk listener), both done.*
+
+As a developer hardening the shipped live preview,
+I want stale/out-of-cycle preview chunks dropped at the listener and concurrent backend flushes capped,
+So that a late chunk can never bleed into the wrong recording and a flurry of short pauses can never launch unbounded concurrent Groq calls — without changing the normal preview experience.
+
+**Acceptance Criteria:**
+
+**Given** today's normal live-preview behavior (Toggle/Hold, one recording, current-cycle chunks append and render per Story 5.2)
+**When** the hardening is added
+**Then** the in-cycle happy path is pinned as the no-regression baseline (backend: a test exercising the real flush-spawn path; frontend: the Story-5.2 Windows happy-path smoke) and stays green — the guards drop **only** stale/excess chunks, **never** a legitimate current-cycle chunk (FR2/NFR2, the L3 G-A "characterization-before-touching-code" guard).
+
+**Given** Auto-Loop, or a finished Toggle/Hold cycle, where a `klarvo://live-preview-chunk` from cycle N is emitted **after** cycle N's `done` or **after** cycle N+1 has already started (the async `flush_preview_delta` emits only after the Groq round-trip — `pipeline.rs:1925-1927`)
+**When** the chunk arrives at the frontend listener (`FloatingBar.tsx:288-294`, which today appends unconditionally)
+**Then** the listener **drops** it via a session-token or `isRecording`-ref guard, so the stale chunk neither re-populates a just-cleared `livePreview` nor bleeds into the next recording's fresh buffer
+**And** Story 5.2's recording-entry `setLivePreview("")` reset is preserved (the guard closes the in-flight-after-reset hole the reset alone could not).
+
+**Given** a normal current-cycle chunk arriving during its own active recording
+**When** the guarded listener processes it
+**Then** it appends and renders exactly as today — the guard is a pass-through for in-cycle chunks (no regression to 5.2's accumulation / auto-grow / auto-scroll).
+
+**Given** a flurry of short speech pauses in Toggle/Hold with Preview enabled, each Speaking→Silence edge spawning an independent `tauri::async_runtime::spawn(flush_preview_delta)` (`pipeline.rs:1977`) with no in-flight cap today
+**When** multiple flushes would be in flight at once
+**Then** concurrent in-flight flushes are **capped** (in-flight guard / serialization) so a pause-flood cannot launch unbounded concurrent Groq calls
+**And** an excess flush is cleanly coalesced or skipped — acceptable because the preview is orientation-only/throwaway
+**And** a unit test asserts the cap holds under N rapid pause triggers.
+
+**Given** the in-flight cap coalesces or skips an excess flush
+**When** the delta marker is managed
+**Then** NFR1 is preserved — no double STT cost and no marker corruption (a skipped delta is either dropped or folded into the next flush, never double-transcribed)
+**And** a unit test on the delta marker under capped/skipped flushes asserts deltas stay disjoint (no re-transcribe of already-marked audio).
+
+**Given** Preview disabled (default), or `stt_provider == "local"` (offline), or Auto/AutoStop mode
+**When** the hardening ships
+**Then** those paths are unchanged — the guards are no-ops there (FR4/FR5/FR6 boundaries intact, NFR2).
+
+**DoD:** Surface story (touches `FloatingBar.tsx` + the flush spawn path) → **Windows release build + manual smoke** per `docs/surface-smoke-checklist.md`: (1) happy path — a normal Toggle/Hold multi-pause dictation still accumulates, renders, auto-scrolls and clears on done; (2) the stale-bleed scenario — an Auto-Loop / rapid finish-then-restart sequence shows **no** leftover preview text bleeding into the next recording. Backend: Linux `cargo test` (in-flight cap + delta-marker integrity) + `clippy` clean on touched files. Frontend: `tsc` / `npm run build`. Empirical inversion check at writing time per the Epic-4-retro control (flip a guard → the relevant test goes RED), reviewer-verified at code review (not self-attested). Desktop-only — **no Android change** (preview is Groq-only desktop).

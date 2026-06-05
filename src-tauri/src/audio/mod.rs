@@ -114,6 +114,13 @@ struct SilenceConfig {
 /// Speaking→Silence transition), `PreviewFlushConfig` fires its callback on
 /// EVERY Speaking→Silence edge. The `fired` one-shot gate in the existing
 /// recording thread is intentionally NOT applied to this path.
+///
+/// The in-flight cap (AC-4, Story 5.7) is enforced by the callback closure
+/// itself via `try_acquire_preview_slot` — the `Arc<AtomicU8>` counter is
+/// owned by the closure, not by this struct. Dropping `PreviewFlushConfig`
+/// drops the closure, which drops the Arc; the slot is already released by
+/// the RAII `PreviewSlotGuard` before the spawned task exits, so there is
+/// no stale-count leak to the next recording.
 #[cfg(desktop)]
 pub(crate) struct PreviewFlushConfig {
     /// Same semantics as `SilenceConfig::threshold`: forwarded to
@@ -123,6 +130,8 @@ pub(crate) struct PreviewFlushConfig {
     /// `VadConfig::hangover_ms` for the preview VAD instance.
     pub duration_secs: f32,
     /// The closure to call on EACH Speaking→Silence transition. Must be Send.
+    /// The closure owns the `Arc<AtomicU8>` in-flight counter and calls
+    /// `try_acquire_preview_slot` to enforce the cap (AC-4).
     pub callback: Box<dyn Fn() + Send + 'static>,
 }
 
@@ -523,6 +532,10 @@ impl AudioRecorder {
     ///
     /// Unlike `set_silence_callback` (one-shot), this callback fires repeatedly.
     /// Call this BEFORE `start_recording` so the recording thread picks it up.
+    ///
+    /// The in-flight cap counter (AC-4, Story 5.7) is owned by the `callback`
+    /// closure — the caller (`maybe_install_preview_flush`) creates the Arc and
+    /// captures it in the closure. No separate parameter is needed here.
     pub fn set_preview_flush_config(
         &self,
         _duration_secs: f32,
@@ -543,6 +556,12 @@ impl AudioRecorder {
     }
 
     /// Removes any installed preview-flush config.
+    ///
+    /// Dropping the `PreviewFlushConfig` here drops the callback closure,
+    /// which in turn drops the `Arc<AtomicU8>` in-flight counter captured
+    /// by the closure. Any spawned async task that holds a `PreviewSlotGuard`
+    /// will release the slot via its `Drop` impl when it completes —
+    /// no explicit counter reset is needed (Story 5.7, AC-4 / RAII guard).
     pub fn clear_preview_flush_config(&self) {
         #[cfg(desktop)]
         if let Ok(mut guard) = self.preview_flush_config.lock() {
@@ -2230,6 +2249,187 @@ mod tests {
             !recorder.has_preview_flush_config(),
             "Auto/AutoStop path must NOT install a preview_flush_config on the recorder \
              (only Toggle/Hold with live_preview_enabled=true install one)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.7 — AC-1: G-A characterisation test
+    //
+    // Pins the in-cycle happy path BEFORE any guard code is added (L3 rule).
+    // Exercises the flush-spawn path via the PreviewFlushConfig callback:
+    //   - a freshly populated live_buffer has new audio (in-cycle)
+    //   - the callback invokes delta_snapshot_wav() and gets Some(wav)
+    //   - the delta marker advances so a second call returns None
+    //
+    // This test must be GREEN before Task 2/3 guard code is added.
+    //
+    // Inversion (characterisation): clear the live_buffer before the callback
+    // fires → delta_snapshot_wav() returns None → assert!(wav.is_some()) FAILS.
+    // -----------------------------------------------------------------------
+
+    /// AC-1: the preview flush-spawn path (callback invocation) returns Some(wav)
+    /// for an in-cycle call (new audio present since last marker advance).
+    ///
+    /// Inversion: populate zero samples → delta_snapshot_wav returns None →
+    /// assert!(wav.is_some()) FAILS (RED).
+    #[cfg(desktop)]
+    #[test]
+    fn spec_ga_flush_spawn_in_cycle_happy_path() {
+        let recorder = AudioRecorder::new();
+
+        // Simulate an in-cycle recording: fill live_buffer with 100 ms of audio.
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.native_sample_rate = 16_000;
+            lb.native_channels = 1;
+            lb.samples.extend_from_slice(&[0.3f32; 1600]);
+        }
+
+        // Simulate what the PreviewFlushConfig callback closure does:
+        // call delta_snapshot_wav() to take the new-audio delta.
+        let wav = recorder.delta_snapshot_wav();
+        assert!(
+            wav.is_some(),
+            "in-cycle flush must return Some(wav) when buffer has new samples"
+        );
+        let wav_bytes = wav.unwrap();
+        assert!(!wav_bytes.is_empty(), "in-cycle WAV payload must be non-empty");
+
+        // After the callback, the delta marker has advanced: no new audio →
+        // a second call returns None (delta exhausted, not double-transcribed).
+        let wav2 = recorder.delta_snapshot_wav();
+        assert!(
+            wav2.is_none(),
+            "second flush without new audio must return None (marker advanced, NFR1 preserved)"
+        );
+
+        // Verify the config install / callback wire-up is sound:
+        // installing a callback and querying has_preview_flush_config() returns true.
+        let recorder2 = AudioRecorder::new();
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let called_clone = called.clone();
+        recorder2.set_preview_flush_config(2.0, 0.005, Box::new(move || {
+            called_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+        }));
+        assert!(
+            recorder2.has_preview_flush_config(),
+            "has_preview_flush_config must be true after set_preview_flush_config"
+        );
+        // Invoke the callback directly (simulates cpal VAD edge).
+        if let Ok(guard) = recorder2.preview_flush_config.lock() {
+            if let Some(cfg) = guard.as_ref() {
+                (cfg.callback)();
+            }
+        }
+        assert!(
+            called.load(std::sync::atomic::Ordering::Relaxed),
+            "callback must fire when invoked from the preview_flush_config guard"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.7 — AC-5: delta marker integrity under in-flight cap
+    //
+    // Verifies that when a flush is SKIPPED by the in-flight cap, the delta
+    // marker is NOT advanced. The skipped audio must be included in the next
+    // successful flush (NFR1 — no re-transcription, no audio loss).
+    //
+    // Test is in audio/mod.rs (not pipeline.rs) because `live_buffer` is a
+    // private field of AudioRecorder — only accessible in the same module.
+    //
+    // This test calls the REAL `try_acquire_preview_slot` seam from pipeline.rs
+    // (via `crate::pipeline`). Removing or breaking the seam makes this test
+    // fail to compile or produce wrong results — TRUE binding.
+    //
+    // Inversion (AC-5): call delta_snapshot_wav() inside the cap-skip branch
+    // (i.e., when try_acquire_preview_slot returns None) → pause_2 audio is
+    // consumed early → delta_2 is empty → d1_len + d2_len < full buffer → RED.
+    // -----------------------------------------------------------------------
+
+    /// AC-5: delta marker is NOT advanced for skipped (capped) flushes.
+    ///
+    /// Drives the REAL `try_acquire_preview_slot` seam.
+    ///
+    /// Inversion: call delta_snapshot_wav() in the cap-skip branch →
+    /// the skipped delta is lost → combined length < full buffer → RED.
+    #[cfg(desktop)]
+    #[test]
+    fn spec_delta_marker_integrity_under_cap() {
+        use crate::pipeline::try_acquire_preview_slot;
+        use std::sync::atomic::AtomicU8;
+
+        let recorder = AudioRecorder::new();
+
+        // Fill the live_buffer with two "pauses" worth of audio.
+        // pause_1: 50 ms at 16 kHz = 800 samples.
+        // pause_2: another 800 samples added later.
+        let pause_1: Vec<f32> = vec![0.2f32; 800];
+        let pause_2: Vec<f32> = vec![0.4f32; 800];
+
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.native_sample_rate = 16_000;
+            lb.native_channels = 1;
+            lb.samples.extend_from_slice(&pause_1);
+        }
+
+        let counter = Arc::new(AtomicU8::new(0));
+
+        // ---- Callback 1: slot acquired via production seam → flush fires → marker advances. ----
+        let guard_1 = try_acquire_preview_slot(&counter);
+        assert!(guard_1.is_some(), "first flush callback must acquire the slot (cap not yet hit)");
+
+        // Simulate flush_preview_delta running: take the delta.
+        let delta_1 = recorder.delta_snapshot_wav();
+        assert!(
+            delta_1.is_some(),
+            "flush 1 must have audio (pause_1 samples present)"
+        );
+        // Drop guard → RAII releases the slot (counter → 0).
+        drop(guard_1);
+
+        // ---- Add pause_2 audio. ----
+        {
+            let mut lb = recorder.live_buffer.lock().unwrap();
+            lb.samples.extend_from_slice(&pause_2);
+        }
+
+        // ---- Callback 2 fires and takes the slot. ----
+        let guard_2 = try_acquire_preview_slot(&counter);
+        assert!(guard_2.is_some(), "second flush callback must acquire the slot");
+
+        // ---- Callback 3 fires concurrently (cap hit — production seam returns None). ----
+        // Inversion (AC-5): call recorder.delta_snapshot_wav() here (advance
+        // marker in the skip branch) → pause_2 audio is lost from flush 2 → RED.
+        let guard_3 = try_acquire_preview_slot(&counter);
+        assert!(
+            guard_3.is_none(),
+            "third flush callback must be capped (slot already held by flush 2)"
+        );
+        // The skipped callback must NOT advance the marker — no delta_snapshot_wav()
+        // call here mirrors the `return` in the real closure's skip branch.
+
+        // ---- Flush 2 completes: take its delta (must cover pause_2). ----
+        let delta_2 = recorder.delta_snapshot_wav();
+        assert!(
+            delta_2.is_some(),
+            "flush 2 must cover pause_2 audio (marker was NOT advanced by skipped flush 3)"
+        );
+        drop(guard_2); // release the slot
+
+        // ---- Verify disjoint union covers the full buffer (NFR1). ----
+        let decode_len = |wav: &[u8]| -> usize {
+            let cursor = Cursor::new(wav.to_vec());
+            let mut reader = hound::WavReader::new(cursor).expect("valid WAV");
+            reader.samples::<i16>().count()
+        };
+        let d1_len = decode_len(&delta_1.unwrap());
+        let d2_len = decode_len(&delta_2.unwrap());
+
+        assert_eq!(
+            d1_len + d2_len,
+            pause_1.len() + pause_2.len(),
+            "union of delta_1 + delta_2 must equal full buffer (NFR1 — no re-transcribe, no loss)"
         );
     }
 }

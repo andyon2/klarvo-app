@@ -306,11 +306,29 @@ export default function FloatingBar() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // --- Live preview push listener (Story 5.2, AC-1, AC-7) ---
+  // --- Stale-chunk guard ref (Story 5.7, AC-2) ---
+  // `isRecordingRef` mirrors the live `isRecording` boolean. The chunk listener
+  // is registered once (empty dep array) so its closure captures a stale value
+  // of `isRecording`. A ref updated in a separate useEffect is always live.
+  //
+  // Inversion (AC-2): remove `if (!isRecordingRef.current) return;` in the
+  // listener below → a stale post-done chunk re-populates livePreview after
+  // the done-pop clears it → text bleeds back into the idle/next-cycle panel.
+  const isRecordingRef = useRef(false);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  // --- Live preview push listener (Story 5.2, AC-1; hardened Story 5.7, AC-2, AC-3) ---
   // Backend emits klarvo://live-preview-chunk only when live_preview_enabled == true.
-  // Guard: skip empty chunks (AC-7, fail-soft from Story 5.1 AC-8).
+  // Guard 1 (AC-2): isRecordingRef drops stale/out-of-cycle chunks (see ref above for rationale).
+  // Guard 2: skip empty and whitespace-only chunks (AC-7 hardening).
   useEffect(() => {
     const unlisten = listen<string>("klarvo://live-preview-chunk", (event) => {
+      // AC-2 stale-chunk guard — see isRecordingRef comment block above for rationale.
+      // Inversion: remove this line → stale post-done chunk re-populates livePreview
+      // after done-pop → text flickers back → AC-2 RED.
+      if (!isRecordingRef.current) return;
       const chunk = event.payload.trim();
       // Guard: skip empty and whitespace-only chunks (AC-7 hardening — backend
       // filters strictly-empty strings, but leading/trailing whitespace can still
