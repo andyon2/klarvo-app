@@ -210,6 +210,11 @@ export interface ShortcutsContentProps {
   setLocalPasteDelayMs: (v: number) => void;
   localAutoCapitalize: boolean;
   setLocalAutoCapitalize: (v: boolean) => void;
+  // Live Preview toggle (desktop only)
+  localLivePreviewEnabled: boolean;
+  setLocalLivePreviewEnabled: (v: boolean) => void;
+  localPreviewPauseSilenceSecs: number;
+  setLocalPreviewPauseSilenceSecs: (v: number) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -228,6 +233,7 @@ export function ShortcutsContent({
   localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs,
   loadedSettings, onHotkeyChange, onHotkeyModeChange,
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
+  localLivePreviewEnabled, setLocalLivePreviewEnabled, localPreviewPauseSilenceSecs, setLocalPreviewPauseSilenceSecs,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -424,6 +430,46 @@ export function ShortcutsContent({
 
             </>
           )}
+
+          {/* --- Live Preview --- */}
+          <div className="flex flex-col gap-3 border-t border-klarvo-border/30 pt-3 mt-1">
+            <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Live Preview</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className={LABEL_CLS}>Live Preview</span>
+                <span className="text-[11px] text-klarvo-muted">Show raw transcription while you dictate in Toggle/Hold mode.</span>
+              </div>
+              <button
+                role="switch"
+                aria-checked={localLivePreviewEnabled}
+                onClick={() => setLocalLivePreviewEnabled(!localLivePreviewEnabled)}
+                className={[
+                  "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                  localLivePreviewEnabled ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+                ].join(" ")}
+              >
+                <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localLivePreviewEnabled ? "translate-x-4" : ""].join(" ")} />
+              </button>
+            </div>
+            {localLivePreviewEnabled && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className={LABEL_CLS}>Preview Pause</span>
+                  <span className="text-xs font-mono text-klarvo-primary">{localPreviewPauseSilenceSecs.toFixed(1)}s</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={5.0}
+                  step={0.1}
+                  value={localPreviewPauseSilenceSecs}
+                  onChange={(e) => setLocalPreviewPauseSilenceSecs(parseFloat(e.target.value))}
+                  className="w-full accent-klarvo-primary"
+                />
+                <p className="text-[11px] text-klarvo-muted">Short = more responsive, more Groq calls, less context per segment. Long = less responsive, fewer calls, better context.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

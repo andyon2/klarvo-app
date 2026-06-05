@@ -150,6 +150,8 @@ pub struct SettingsPatch {
     pub bubble_long_press_auto_send: Option<bool>,
     pub bubble_long_press_silence_secs: Option<f32>,
     pub openrouter_api_key: Option<String>,
+    pub live_preview_enabled: Option<bool>,
+    pub preview_pause_silence_secs: Option<f32>,
 }
 
 impl Default for SettingsPatch {
@@ -193,6 +195,8 @@ impl Default for SettingsPatch {
             bubble_long_press_auto_send: None,
             bubble_long_press_silence_secs: None,
             openrouter_api_key: None,
+            live_preview_enabled: None,
+            preview_pause_silence_secs: None,
         }
     }
 }
@@ -313,10 +317,10 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
         insert_and_send: patch.insert_and_send.unwrap_or(existing.insert_and_send),
         autostop_silence_secs: patch.autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
         auto_mode_silence_secs: patch.auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),
-        // 5.1: preview fields are read-only in this story (no patch fields yet).
-        // Story 5.3 will add `live_preview_enabled` and `preview_pause_silence_secs` to SettingsPatch.
-        live_preview_enabled: existing.live_preview_enabled,
-        preview_pause_silence_secs: existing.preview_pause_silence_secs,
+        live_preview_enabled: patch.live_preview_enabled
+            .unwrap_or(existing.live_preview_enabled),
+        preview_pause_silence_secs: patch.preview_pause_silence_secs
+            .unwrap_or(existing.preview_pause_silence_secs),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
@@ -406,6 +410,8 @@ pub async fn save_settings(
     bubble_long_press_auto_send: Option<bool>,
     bubble_long_press_silence_secs: Option<f32>,
     openrouter_api_key: Option<String>,
+    live_preview_enabled: Option<bool>,
+    preview_pause_silence_secs: Option<f32>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -488,6 +494,8 @@ pub async fn save_settings(
         bubble_long_press_auto_send,
         bubble_long_press_silence_secs,
         openrouter_api_key,
+        live_preview_enabled,
+        preview_pause_silence_secs,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -585,6 +593,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
         voice_command_enabled: cfg.voice_command_enabled,
         feedback_webhook_url: cfg.feedback_webhook_url,
+        live_preview_enabled: cfg.live_preview_enabled,
+        preview_pause_silence_secs: cfg.preview_pause_silence_secs,
     })
 }
 
@@ -1371,6 +1381,8 @@ mod tests {
             bubble_long_press_auto_send: Some(false),
             bubble_long_press_silence_secs: Some(1.5),
             openrouter_api_key: Some("new-openrouter".to_string()),
+            live_preview_enabled: Some(true),
+            preview_pause_silence_secs: Some(1.0),
         };
 
         let result = merge_settings(existing, patch);
@@ -1787,6 +1799,56 @@ mod tests {
             assert_eq!(final_cfg.bar_x, Some(7.0), "bar_x survived the round");
             assert_eq!(final_cfg.language, "de", "language survived the round");
         }
+    }
+
+    /// AC-5: `merge_settings` round-trip for `live_preview_enabled` and
+    /// `preview_pause_silence_secs`.
+    ///
+    /// Inversion check (must be verified empirically at writing time):
+    ///   - Change `Some(true)` → `Some(false)` → `assert!(result.live_preview_enabled)` goes RED.
+    ///   - Change `None` patch → `Some(false)` for the "preserve existing" case → "existing
+    ///     value preserved" assert goes RED.
+    ///   Both were verified RED before committing this test.
+    #[test]
+    fn spec_live_preview_settings_patch_round_trip() {
+        // AC-5: patch Some(true) / Some(1.5) round-trips correctly
+        let existing = AppConfig {
+            live_preview_enabled: false,
+            preview_pause_silence_secs: 2.0,
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            live_preview_enabled: Some(true),
+            preview_pause_silence_secs: Some(1.5),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing.clone(), patch);
+        assert!(result.live_preview_enabled, "Some(true) patch must set live_preview_enabled = true");
+        assert!(
+            (result.preview_pause_silence_secs - 1.5).abs() < f32::EPSILON,
+            "Some(1.5) patch must set preview_pause_silence_secs = 1.5"
+        );
+
+        // AC-5: patch None preserves existing value
+        let existing2 = AppConfig {
+            live_preview_enabled: true,
+            preview_pause_silence_secs: 3.0,
+            ..AppConfig::default()
+        };
+        let patch_none = SettingsPatch {
+            live_preview_enabled: None,
+            preview_pause_silence_secs: None,
+            ..SettingsPatch::default()
+        };
+        let result2 = merge_settings(existing2.clone(), patch_none);
+        assert!(
+            result2.live_preview_enabled,
+            "None patch must preserve existing live_preview_enabled = true"
+        );
+        assert!(
+            (result2.preview_pause_silence_secs - 3.0).abs() < f32::EPSILON,
+            "None patch must preserve existing preview_pause_silence_secs = 3.0"
+        );
     }
 
     /// `save_config_locked` updates the in-memory config AND the on-disk file to the

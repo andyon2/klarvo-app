@@ -81,6 +81,8 @@ const MOCK_SETTINGS: AppSettings = {
   bubbleLongPressAutoSend: false,
   bubbleLongPressSilenceSecs: 2.0,
   voiceCommandEnabled: false,
+  livePreviewEnabled: false,
+  previewPauseSilenceSecs: 2.0,
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -282,6 +284,8 @@ export async function saveSettings(
   bubbleLongPressMode?: string | null,
   bubbleLongPressAutoSend?: boolean | null,
   bubbleLongPressSilenceSecs?: number | null,
+  livePreviewEnabled?: boolean | null,
+  previewPauseSilenceSecs?: number | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -323,6 +327,8 @@ export async function saveSettings(
     bubbleLongPressMode: bubbleLongPressMode ?? null,
     bubbleLongPressAutoSend: bubbleLongPressAutoSend ?? null,
     bubbleLongPressSilenceSecs: bubbleLongPressSilenceSecs ?? null,
+    livePreviewEnabled: livePreviewEnabled ?? null,
+    previewPauseSilenceSecs: previewPauseSilenceSecs ?? null,
   });
 }
 

@@ -196,6 +196,10 @@ pub struct SettingsView {
     /// Webhook URL for in-app feedback submissions (plain, not a secret).
     /// Empty string = feedback feature disabled.
     pub feedback_webhook_url: String,
+    /// Whether live-preview is enabled (opt-in, default false).
+    pub live_preview_enabled: bool,
+    /// Silence duration (seconds) that triggers a preview flush in Toggle/Hold mode.
+    pub preview_pause_silence_secs: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -1176,6 +1180,8 @@ mod tests {
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
             feedback_webhook_url: String::new(),
+            live_preview_enabled: false,
+            preview_pause_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1233,6 +1239,8 @@ mod tests {
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
             feedback_webhook_url: String::new(),
+            live_preview_enabled: false,
+            preview_pause_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1284,6 +1292,8 @@ mod tests {
             bubble_long_press_silence_secs: 2.0,
             voice_command_enabled: false,
             feedback_webhook_url: String::new(),
+            live_preview_enabled: false,
+            preview_pause_silence_secs: 2.0,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

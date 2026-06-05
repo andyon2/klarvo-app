@@ -76,6 +76,10 @@ export interface AppSettings {
   // Voice Command Mode: activate dictation by voice trigger ("Klarvo toggle").
   // Desktop-only, requires a Groq API key.
   voiceCommandEnabled: boolean;
+  /** Whether live preview is enabled (opt-in, default false). Desktop only. */
+  livePreviewEnabled: boolean;
+  /** Silence duration (seconds) that triggers a preview flush in Toggle/Hold. */
+  previewPauseSilenceSecs: number;
 }
 
 // A per-application recording profile.
