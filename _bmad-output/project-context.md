@@ -1,7 +1,7 @@
 ---
 project_name: 'klarvo'
 user_name: 'Andi'
-date: '2026-06-02'
+date: '2026-06-05'
 sections_completed:
   [
     'technology_stack',
@@ -13,7 +13,7 @@ sections_completed:
     'anti_patterns',
   ]
 status: 'complete'
-rule_count: 27
+rule_count: 28
 optimized_for_llm: true
 ---
 
@@ -59,7 +59,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Testing Rules
 
 - **Tests are inline `#[cfg(test)]` modules**, not a separate `tests/` tree. Snapshot tests use `insta`; snapshots live in `src-tauri/src/snapshots/`. Accept with `cargo insta review`.
-- **Linux `cargo test` + lint do NOT satisfy the DoD for surface/UI stories.** Hard gate: a real **Windows release build + manual press-to-paste smoke** is required. (`cargo check` and Linux tests mask Tauri-runtime bugs and Windows-only code paths.)
+- **Linux `cargo test` + lint do NOT satisfy the DoD for surface/UI stories.** Hard gate: a real **Windows release build + manual press-to-paste smoke** is required. (`cargo check` and Linux tests mask Tauri-runtime bugs and Windows-only code paths.) **Before the smoke, run the applicable items of `docs/surface-smoke-checklist.md`** — the running ledger of traps that are green on Linux (camelCase config keys, Settings resync-`useEffect`, FloatingBar separate-window reactivity, window-geometry/region clip, event push-wiring). Mechanical check, not a self-attestation (Epic-5 retro AI-1).
 - **Android changes require an on-device smoke** via `scripts/android-smoke.sh` before a story is done.
 - **Bind tests to the real code paths/files they cover**, not to a parallel mock — divergence otherwise goes undetected (Epic-1 lesson; a real paste-path leak was caught this way).
 
