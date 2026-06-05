@@ -284,6 +284,8 @@ export function SettingsPanel({
       setLocalBubbleLongPressAutoSend(loadedSettings.bubbleLongPressAutoSend ?? false);
       setLocalBubbleLongPressSilenceSecs(loadedSettings.bubbleLongPressSilenceSecs ?? 2.0);
       setLocalVoiceCommandEnabled(loadedSettings.voiceCommandEnabled ?? false);
+      setLocalLivePreviewEnabled(loadedSettings.livePreviewEnabled ?? false);
+      setLocalPreviewPauseSilenceSecs(loadedSettings.previewPauseSilenceSecs ?? 2.0);
     }
   }, [loadedSettings]);
 
