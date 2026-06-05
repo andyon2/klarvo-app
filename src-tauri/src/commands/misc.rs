@@ -243,6 +243,48 @@ pub async fn ensure_bar_window(
     }
 }
 
+/// Ensures the standalone preview window exists and is responsive.
+///
+/// Returns `true` if the window had to be recreated, `false` if it was already
+/// alive and responding. Unlike `ensure_bar_window`, no saved position is
+/// needed: the preview position is derived from the pill anchor at show-time
+/// (Story 6.2), not persisted in config.
+///
+/// Desktop-only: the preview window concept does not apply to mobile.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn ensure_preview_window(
+    app: tauri::AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<bool, String> {
+    // Check if the preview window handle exists and responds to is_visible().
+    if let Some(preview) = app.get_webview_window("preview") {
+        match preview.is_visible() {
+            Ok(_) => {
+                log::debug!("[preview] ensure_preview_window: window exists and responds");
+                return Ok(false); // No recreation needed
+            }
+            Err(e) => {
+                log::warn!("[preview] ensure_preview_window: window exists but not responding: {e}");
+                // Fall through to recreation
+            }
+        }
+    } else {
+        log::warn!("[preview] ensure_preview_window: window not found, recreating");
+    }
+
+    match crate::create_preview_window(&app) {
+        Ok(_) => {
+            log::info!("[preview] ensure_preview_window: recreated");
+            Ok(true)
+        }
+        Err(e) => {
+            log::error!("[preview] ensure_preview_window: failed to recreate: {e}");
+            Err(format!("Failed to recreate preview window: {e}"))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Build provenance
 // ---------------------------------------------------------------------------

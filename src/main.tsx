@@ -15,12 +15,15 @@ if (!isPreviewMode) {
   label = getCurrentWindow().label;
 }
 
-// FloatingBar is a Tauri-only concept (separate overlay window).
+// FloatingBar and PreviewPanel are Tauri-only concepts (separate overlay windows).
 // In preview mode we always render the main App.
 let Root: React.ComponentType;
 if (label === "bar" && !isPreviewMode) {
   const { default: FloatingBar } = await import("./FloatingBar");
   Root = FloatingBar;
+} else if (label === "preview" && !isPreviewMode) {
+  const { default: PreviewPanel } = await import("./PreviewPanel");
+  Root = PreviewPanel;
 } else {
   Root = App;
 }

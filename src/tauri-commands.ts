@@ -1034,3 +1034,15 @@ export async function ensureBarWindow(): Promise<boolean> {
   if (isPreviewMode) return false;
   return invoke<boolean>("ensure_bar_window");
 }
+
+// --- Preview window recovery ---
+
+/**
+ * Ensures the standalone preview window exists and is in a valid state.
+ * Returns true when the window was recreated, false when it was already healthy.
+ * Desktop-only: returns false on Android/preview.
+ */
+export async function ensurePreviewWindow(): Promise<boolean> {
+  if (isPreviewMode) return false;
+  return invoke<boolean>("ensure_preview_window");
+}

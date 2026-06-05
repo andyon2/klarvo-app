@@ -735,6 +735,56 @@ pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
 }
 
 // ---------------------------------------------------------------------------
+// Preview window creation
+// ---------------------------------------------------------------------------
+
+/// Creates the standalone transparent, click-through `"preview"` window.
+///
+/// The window starts as a 1×1 hidden stub; Story 6.2 resizes it to the
+/// computed `clampedMaxHeight × width` geometry on the first live-preview
+/// chunk. No position is set here — 6.2 derives the position from the pill
+/// anchor on first show.
+///
+/// Accepts any `Manager<R>` implementor (`App`, `AppHandle`, etc.) so this
+/// function can be called from both the `setup` closure and from recovery
+/// commands that only have access to an `AppHandle`.
+#[cfg(desktop)]
+pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
+    app: &M,
+) -> Result<(), Box<dyn std::error::Error>> {
+    #[allow(unused_mut)]
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        app,
+        "preview",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("")
+    .inner_size(1.0, 1.0)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .focused(false);
+
+    // Remove window shadow so only the CSS-rendered content is visible.
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.shadow(false);
+    }
+
+    let preview = builder.build()?;
+
+    // Make the window click-through: cursor events pass to whatever is behind it.
+    // Fail-soft: if the call fails the window still renders, just not click-through.
+    if let Err(e) = preview.set_ignore_cursor_events(true) {
+        log::warn!("[preview] set_ignore_cursor_events failed: {e}");
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tauri entry point
 // ---------------------------------------------------------------------------
 
@@ -871,6 +921,12 @@ pub fn run() {
             log::warn!("[setup] Could not create floating bar: {e}");
         }
 
+        // --- Standalone preview window (transparent, click-through, always-on-top) ---
+        #[cfg(target_os = "windows")]
+        if let Err(e) = create_preview_window(app) {
+            log::warn!("[setup] Could not create preview window: {e}");
+        }
+
         // --- Desktop-only setup: audio level emitter + global hotkey ---
         #[cfg(desktop)]
         {
@@ -947,8 +1003,8 @@ pub fn run() {
         builder = builder.on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let label = window.label();
-                // Bar window: always prevent close (it should always exist).
-                if label == "bar" {
+                // Bar and preview windows: always prevent close (they should always exist).
+                if label == "bar" || label == "preview" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
@@ -1025,6 +1081,8 @@ pub fn run() {
             commands::misc::get_bar_position,
             #[cfg(desktop)]
             commands::misc::ensure_bar_window,
+            #[cfg(desktop)]
+            commands::misc::ensure_preview_window,
             commands::misc::get_log_dir_path,
             commands::misc::read_recent_logs,
             commands::misc::get_build_info,
