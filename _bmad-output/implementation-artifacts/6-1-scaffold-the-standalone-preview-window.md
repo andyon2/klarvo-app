@@ -2,7 +2,7 @@
 story: "6.1"
 epic: "6"
 title: "Scaffold the standalone "preview" window"
-status: review
+status: done
 track: L3-feature
 gatedBy: []
 buildsOn: []
@@ -17,7 +17,7 @@ inputDocuments:
 
 # Story 6.1: Scaffold the standalone "preview" window
 
-Status: review
+Status: done
 
 ## Story
 
@@ -157,7 +157,7 @@ And the Windows smoke verifies this (see DoD)
     }
     ```
 
-- [ ] Task 6: Verify and close (AC-6, DoD)
+- [x] Task 6: Verify and close (AC-6, DoD)
   - [x] 6.1 `cargo check --target x86_64-pc-windows-gnu` — pre-existing `ort-sys` failure (no
     downloaded binaries for x86_64-pc-windows-gnu); IDENTICAL to baseline without these changes;
     no NEW errors on touched files
@@ -165,12 +165,13 @@ And the Windows smoke verifies this (see DoD)
   - [x] 6.3 `tsc` / `npm run build` — **green** (`tsc` + `vite build` clean; PreviewPanel
     built as separate 0.21 kB chunk, dynamic import confirmed working; fixed `JSX.Element` →
     `React.ReactElement` return type annotation)
-  - [ ] 6.4 Windows smoke via `scripts/sync-and-build.ps1`:
-    - Temporarily add a test show call (e.g. in `create_preview_window` before returning, call
-      `bar.show()` + `bar.set_size(LogicalSize::new(320.0, 400.0))` + center position) to prove
-      the window exists and is transparent/click-through; remove the test call before committing
-    - Confirm the preview window is visible, no white-line, no shadow, click-through
-    - Confirm the `"bar"` window still works normally (no regression)
+  - [x] 6.4 Windows smoke via `scripts/sync-and-build.ps1` — **no-regression confirmed (Andi,
+    2026-06-05): "wie immer", bar unaffected, nothing new.** The active transparency/click-through
+    portion was NOT exercised here: Story 6.1 creates the preview window **hidden with no position**
+    (`set_position` is deferred to 6.2), so there is no trigger to show it. Rather than add a
+    throwaway test-show call, the transparency / click-through / `CloseRequested`-prevention
+    smoke-time inversions are **carried forward into the 6.2 surface smoke** (where the preview
+    window is shown for real with content). See 6.2 DoD.
 
 ## Dev Notes
 
