@@ -67,6 +67,13 @@ export default function PreviewPanel(): React.ReactElement {
   // Ref for the scrollable card element (auto-scroll + overflow detection).
   const previewPanelRef = useRef<HTMLDivElement>(null);
 
+  // Lifecycle trace (forwarded to Klarvo.log via the console bridge) — proves the
+  // preview window's JS actually ran and subscribed. If "[preview] mounted" is
+  // absent from the log, the webview never initialized (e.g. zero-size surface).
+  useEffect(() => {
+    console.log("[preview] PreviewPanel mounted + subscriptions attached");
+  }, []);
+
   // ---------------------------------------------------------------------------
   // show sequence — geometry computed once per cycle (AC-1, AC-2, AC-6)
   // ---------------------------------------------------------------------------
@@ -154,6 +161,7 @@ export default function PreviewPanel(): React.ReactElement {
   useEffect(() => {
     const unlisten = onStateChanged((payload) => {
       const s = payload.state as string;
+      console.log(`[preview] state-changed: ${s}`);
       if (s === "recording") {
         // Arm for the next cycle.
         isRecordingRef.current = true;
@@ -182,9 +190,15 @@ export default function PreviewPanel(): React.ReactElement {
     const unlisten = listen<string>("klarvo://live-preview-chunk", async (event) => {
       // R1 stale-chunk guard (AC-4).
       // Inversion: remove this → stale post-done chunk repopulates livePreview.
-      if (!isRecordingRef.current) return;
+      if (!isRecordingRef.current) {
+        console.log("[preview] chunk dropped (not recording — R1 guard)");
+        return;
+      }
       const chunk = event.payload.trim();
       if (!chunk) return;
+      if (!showOnceRef.current) {
+        console.log("[preview] first chunk received → running show sequence");
+      }
 
       // Append chunk SYNCHRONOUSLY before any await — preserves arrival order on the
       // single-threaded event loop and prevents later chunks (which skip the show gate)

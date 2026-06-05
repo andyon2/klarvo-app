@@ -790,6 +790,7 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
         log::warn!("[preview] set_ignore_cursor_events failed: {e}");
     }
 
+    log::info!("[setup] preview window created (hidden, 400x600)");
     Ok(())
 }
 
@@ -1087,6 +1088,7 @@ pub fn run() {
             commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
             commands::misc::set_preview_shape,
+            commands::misc::frontend_log,
             commands::misc::save_bar_position,
             commands::misc::get_bar_position,
             #[cfg(desktop)]

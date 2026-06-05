@@ -487,3 +487,23 @@ pub fn set_preview_shape(handle: AppHandle) -> Result<(), String> {
     let _ = handle; // suppress unused on non-Windows
     Ok(())
 }
+
+/// Receives a `console.*` line forwarded from any frontend window and writes it
+/// to the Rust log file (`Klarvo.log`).
+///
+/// The `"bar"` and `"preview"` overlay windows are transparent / click-through /
+/// tiny, so their webview devtools cannot be opened interactively — their
+/// `console.*` output is otherwise invisible. This bridge makes it land in the
+/// same log file as the Rust side, the only console we can inspect for those
+/// windows (and remotely from WSL during Windows smokes).
+///
+/// Local-only: writes to the on-disk log, never the network (BYOK / no-telemetry).
+#[tauri::command]
+pub fn frontend_log(label: String, level: String, message: String) {
+    match level.as_str() {
+        "error" => log::error!("[fe:{label}] {message}"),
+        "warn" => log::warn!("[fe:{label}] {message}"),
+        "debug" => log::debug!("[fe:{label}] {message}"),
+        _ => log::info!("[fe:{label}] {message}"),
+    }
+}
