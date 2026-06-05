@@ -2,7 +2,7 @@
 story: "5.2"
 epic: "5"
 title: "Frontend — auto-expand preview panel (Variant 1)"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["5.1"]
 buildsOn: ["5.1"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 5.2: Frontend — auto-expand preview panel (Variant 1)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -457,3 +457,7 @@ Andi's three cosmetic tweaks (given in this session), implemented. This **revise
 **Files:** `src/FloatingBar.tsx` (frontend) + `src-tauri/src/commands/misc.rs` (`set_bar_shape "panel"` → dynamic `inner_size()`). `npm run build` PASS. The Rust change is inside `#[cfg(target_os = "windows")]` (not Linux-compilable here) but was **already Windows-compiled+verified on Andi's screenshot-build** — the dynamic-height box hugged the text, which is impossible if the `inner_size` region path failed to compile/run. Only the later `PANEL_WIDTH` 220→320 (TS const) is unbuilt.
 
 **Owed before `done`:** Windows release build (`scripts/sync-and-build.ps1`) + manual multi-pause Toggle smoke — confirm: (a) box grows UPWARD above the pill, (b) it grows line-by-line with text (no scrollbar) for short/medium passages, (c) very long text caps at the screen and switches to scroll-with-top-fade, (d) drag while open keeps the pill anchored, (e) finish → single paste + panel clears, (f) `livePreviewEnabled=false` → bar unchanged.
+
+## DONE 2026-06-05 — Andy sign-off (good-enough)
+
+Andy signed off after the grow-upward / auto-height / `PANEL_WIDTH`=320 revision: **"passt erstmal. noch nicht perfekt, reicht mir aber für done."** This is a deliberate good-enough close, **not pixel-perfect** — residual cosmetic polish is consciously accepted; no specific imperfections were enumerated. Further appearance tuning is now a *user-facing* concern via the new **Story 5-5** (display-form presets), not a 5-2 reopen. One defer stays tracked: **5.1-C2** late-chunk race (Auto-Loop cycle bleed), not reproduced in any smoke. Epic 5 remains in-progress (5-3/5-4/5-5 backlog).
