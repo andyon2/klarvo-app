@@ -603,9 +603,13 @@ export default function FloatingBar() {
           left: 0,
           visibility: "hidden",
           pointerEvents: "none",
-          width: PANEL_WIDTH,
+          // Minus the wrapper's 1px border on each side: the real #preview-panel
+          // lives INSIDE the bordered card, so its text wraps at PANEL_WIDTH-2.
+          // Measuring at the full PANEL_WIDTH under-counts the line count by up to
+          // one line → panelHeight too short → the last line gets clipped.
+          width: PANEL_WIDTH - 2,
           boxSizing: "border-box",
-          padding: "6px 10px",
+          padding: "8px 14px",
           fontSize: 11,
           lineHeight: 1.5,
           letterSpacing: "0.01em",
@@ -667,7 +671,9 @@ export default function FloatingBar() {
                 height: panelHeight,
                 overflowY: panelScrolls ? "auto" : "hidden",
                 overflowX: "hidden",
-                padding: "6px 10px",
+                // Must mirror the measure probe (width PANEL_WIDTH-2, same padding)
+                // exactly, or the measured height won't match the rendered text.
+                padding: "8px 14px",
                 fontSize: 11,
                 color: "rgba(220,220,220,0.88)",
                 lineHeight: 1.5,
@@ -703,8 +709,11 @@ export default function FloatingBar() {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            paddingLeft: 10,
-            paddingRight: 10,
+            // When the panel is open the card has a 14px corner radius; pad the
+            // pill row to 14 so the logo (left) and mode badge (right) clear the
+            // rounded corners. Closed pill keeps its accepted 10px inset.
+            paddingLeft: isPanelOpen ? 14 : 10,
+            paddingRight: isPanelOpen ? 14 : 10,
           }}
         >
           {/* Klarvo logo -- always visible as brand anchor */}
