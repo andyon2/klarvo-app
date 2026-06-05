@@ -29,18 +29,23 @@ const PILL_WIDTH = 200;
 const PILL_WIDTH_CLIPBOARD = 220;
 const PILL_HEIGHT = 36;
 
-/** Width of the bar when the preview panel is open. Wider than the idle pill so
- *  the preview text gets a comfortable reading measure (~50 chars/line) instead
- *  of fragmenting flowing speech into stubby 4-word lines. Single source of
- *  truth: the window size, the OS region (via inner_size), and the hidden
- *  measure probe all follow this one constant. */
-const PANEL_WIDTH = 320;
-/** Absolute upper bound for the preview text box (logical px), regardless of
- *  screen size — about 13 lines of 11px/1.5 text. Beyond this the box scrolls. */
-const PANEL_ABS_MAX = 320;
 /** Minimum gap kept between the upward-growing panel's top edge and the top of
  *  the screen, so the box never runs off the display. */
 const SCREEN_TOP_MARGIN = 12;
+
+/** Appearance lookup for each preview display-form preset (FR10/D8).
+ *  "comfortable" MUST equal the old hardcoded PANEL_WIDTH/PANEL_ABS_MAX values
+ *  so existing users see no visual change (NFR2). */
+const FORM_APPEARANCES: Record<string, { width: number; screenCap: number }> = {
+  compact:     { width: 260, screenCap: 240 },
+  comfortable: { width: 320, screenCap: 320 }, // shipped 5-2 look — do NOT change
+  wide:        { width: 400, screenCap: 400 },
+};
+const DEFAULT_FORM = "comfortable";
+
+function getFormAppearance(form: string): { width: number; screenCap: number } {
+  return FORM_APPEARANCES[form] ?? FORM_APPEARANCES[DEFAULT_FORM];
+}
 
 // ---------------------------------------------------------------------------
 // Inline style reset + keyframes
@@ -233,6 +238,7 @@ export default function FloatingBar() {
   const [panelScrolls, setPanelScrolls] = useState(false); // true once capped → scroll + top fade
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
+  const [previewPanelForm, setPreviewPanelForm] = useState<string>(DEFAULT_FORM);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewPanelRef = useRef<HTMLDivElement>(null);
@@ -280,10 +286,13 @@ export default function FloatingBar() {
     })();
   }, []);
 
-  // --- Load hotkey mode from settings on mount, update on hotkey events ---
+  // --- Load hotkey mode + preview panel form from settings on mount ---
   useEffect(() => {
     getSettings()
-      .then((s) => setHotkeyMode(s.hotkeyMode))
+      .then((s) => {
+        setHotkeyMode(s.hotkeyMode);
+        setPreviewPanelForm(s.previewPanelForm ?? DEFAULT_FORM);
+      })
       .catch((e) => console.warn("[bar] getSettings failed (non-critical):", e));
   }, []);
 
@@ -318,6 +327,31 @@ export default function FloatingBar() {
     }
   }, [livePreview]);
 
+  // --- Re-read previewPanelForm on panel closed→open transition (AC-4) ---
+  // The bar window is created once at startup and never re-mounts when the user
+  // opens/closes the Settings panel (that is a view-toggle inside the main window).
+  // A mount-only getSettings() therefore freezes previewPanelForm at startup-time.
+  // Re-reading on the closed→open transition ensures that a preset saved in Settings
+  // is applied to the next preview open without requiring an app restart.
+  const prevIsPanelOpenRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = prevIsPanelOpenRef.current;
+    prevIsPanelOpenRef.current = isPanelOpen;
+    if (!wasOpen && isPanelOpen) {
+      // Panel just opened: refresh the display-form preset from settings.
+      getSettings()
+        .then((s) => setPreviewPanelForm(s.previewPanelForm ?? DEFAULT_FORM))
+        .catch((e) => console.warn("[bar] getSettings (panel-open refresh) failed:", e));
+    }
+  }, [isPanelOpen]);
+
+  // --- Show / hide the Tauri window based on pill visibility ---
+  const pillWidth = (isDone && clipboardOnly) ? PILL_WIDTH_CLIPBOARD : PILL_WIDTH;
+
+  // Derive appearance values from the display-form preset (Story 5.5, AC-4).
+  // "comfortable" resolves to the old hardcoded 320/320 constants (NFR2 regression guard).
+  const { width: PANEL_WIDTH, screenCap: PANEL_ABS_MAX } = getFormAppearance(previewPanelForm);
+
   // --- Measure the preview text height and size the box so it GROWS UPWARD with
   //     the text instead of scrolling (5.2 cosmetic revision). A hidden probe
   //     mirrors the panel's text box at the final PANEL_WIDTH, so the measurement
@@ -339,7 +373,7 @@ export default function FloatingBar() {
     const capped = content > maxH;
     setPanelHeight(capped ? maxH : content);
     setPanelScrolls(capped);
-  }, [livePreview, isPanelOpen]);
+  }, [livePreview, isPanelOpen, PANEL_ABS_MAX, PANEL_WIDTH]);
 
   // Mirror panel geometry into refs so the mount-once drag handlers can convert
   // the dragged window top-left back to the pill anchor (the panel grows upward,
@@ -348,9 +382,6 @@ export default function FloatingBar() {
     panelHeightRef.current = panelHeight;
     isPanelOpenRef.current = isPanelOpen;
   });
-
-  // --- Show / hide the Tauri window based on pill visibility ---
-  const pillWidth = (isDone && clipboardOnly) ? PILL_WIDTH_CLIPBOARD : PILL_WIDTH;
 
   // Compute active dimensions: expand to PANEL_WIDTH and (pill + measured text)
   // height when the panel is open (AC-3). The height is dynamic — it tracks

@@ -152,6 +152,7 @@ pub struct SettingsPatch {
     pub openrouter_api_key: Option<String>,
     pub live_preview_enabled: Option<bool>,
     pub preview_pause_silence_secs: Option<f32>,
+    pub preview_panel_form: Option<String>,
 }
 
 impl Default for SettingsPatch {
@@ -197,6 +198,7 @@ impl Default for SettingsPatch {
             openrouter_api_key: None,
             live_preview_enabled: None,
             preview_pause_silence_secs: None,
+            preview_panel_form: None,
         }
     }
 }
@@ -321,6 +323,8 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.live_preview_enabled),
         preview_pause_silence_secs: patch.preview_pause_silence_secs
             .unwrap_or(existing.preview_pause_silence_secs),
+        preview_panel_form: patch.preview_panel_form
+            .unwrap_or(existing.preview_panel_form),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
@@ -412,6 +416,7 @@ pub async fn save_settings(
     openrouter_api_key: Option<String>,
     live_preview_enabled: Option<bool>,
     preview_pause_silence_secs: Option<f32>,
+    preview_panel_form: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -496,6 +501,7 @@ pub async fn save_settings(
         openrouter_api_key,
         live_preview_enabled,
         preview_pause_silence_secs,
+        preview_panel_form,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -595,6 +601,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         feedback_webhook_url: cfg.feedback_webhook_url,
         live_preview_enabled: cfg.live_preview_enabled,
         preview_pause_silence_secs: cfg.preview_pause_silence_secs,
+        preview_panel_form: cfg.preview_panel_form.clone(),
     })
 }
 
@@ -1383,6 +1390,7 @@ mod tests {
             openrouter_api_key: Some("new-openrouter".to_string()),
             live_preview_enabled: Some(true),
             preview_pause_silence_secs: Some(1.0),
+            preview_panel_form: Some("compact".to_string()),
         };
 
         let result = merge_settings(existing, patch);
@@ -1427,6 +1435,7 @@ mod tests {
         assert_eq!(result.bubble_long_press_mode, "toggle");
         assert!(!result.bubble_long_press_auto_send);
         assert!((result.bubble_long_press_silence_secs - 1.5).abs() < f32::EPSILON);
+        assert_eq!(result.preview_panel_form, "compact");
     }
 
     // -----------------------------------------------------------------------
@@ -1848,6 +1857,41 @@ mod tests {
         assert!(
             (result2.preview_pause_silence_secs - 3.0).abs() < f32::EPSILON,
             "None patch must preserve existing preview_pause_silence_secs = 3.0"
+        );
+    }
+
+    /// AC-2 (Story 5.5): `merge_settings` round-trip for `preview_panel_form`.
+    ///
+    /// Inversion check (must be verified empirically — do NOT self-attest):
+    ///   Change `Some("compact".to_string())` → `Some("wide".to_string())` →
+    ///   `assert_eq!(result.preview_panel_form, "compact")` goes RED.
+    ///   Verified RED: "wide" != "compact" — documented in Completion Notes.
+    #[test]
+    fn spec_preview_panel_form_patch_round_trip() {
+        // AC-2: Some("compact") round-trips to "compact" in merged config.
+        let existing = AppConfig {
+            preview_panel_form: "comfortable".to_string(),
+            ..AppConfig::default()
+        };
+        let patch = SettingsPatch {
+            preview_panel_form: Some("compact".to_string()),
+            ..SettingsPatch::default()
+        };
+        let result = merge_settings(existing.clone(), patch);
+        assert_eq!(
+            result.preview_panel_form, "compact",
+            "Some(\"compact\") patch must set preview_panel_form = \"compact\""
+        );
+
+        // AC-2: None preserves the existing value.
+        let patch_none = SettingsPatch {
+            preview_panel_form: None,
+            ..SettingsPatch::default()
+        };
+        let result2 = merge_settings(existing.clone(), patch_none);
+        assert_eq!(
+            result2.preview_panel_form, "comfortable",
+            "None patch must preserve existing preview_panel_form = \"comfortable\""
         );
     }
 

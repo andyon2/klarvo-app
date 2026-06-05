@@ -711,6 +711,14 @@ pub struct AppConfig {
     #[serde(default = "default_preview_pause_silence_secs")]
     pub preview_pause_silence_secs: f32,
 
+    /// Display form preset for the live-preview panel (FR10/D8).
+    /// Values: `"compact"` | `"comfortable"` | `"wide"`.  Unknown values fall
+    /// back to `"comfortable"` in `FloatingBar.tsx` — the backend stores the raw
+    /// string without validation so it is forward-compatible with future presets.
+    /// Default: `"comfortable"` (reproduces the shipped 5-2 look, width=320/cap=320).
+    #[serde(default = "default_preview_panel_form")]
+    pub preview_panel_form: String,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -916,6 +924,10 @@ fn default_preview_pause_silence_secs() -> f32 {
     2.0
 }
 
+fn default_preview_panel_form() -> String {
+    "comfortable".to_string()
+}
+
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
 }
@@ -980,6 +992,7 @@ impl Default for AppConfig {
             auto_mode_silence_secs: default_auto_mode_silence_secs(),
             live_preview_enabled: false,
             preview_pause_silence_secs: default_preview_pause_silence_secs(),
+            preview_panel_form: default_preview_panel_form(),
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
@@ -2025,6 +2038,7 @@ mod tests {
             auto_mode_silence_secs: 3.0,
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
+            preview_panel_form: "comfortable".to_string(),
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
@@ -3316,6 +3330,7 @@ mod tests {
             auto_mode_silence_secs: 4.0,
             live_preview_enabled: true,
             preview_pause_silence_secs: 1.5,
+            preview_panel_form: "comfortable".to_string(),
             bar_x: Some(200.0),
             bar_y: Some(800.0),
 
@@ -3889,30 +3904,33 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Story 5.1 — AC-3: live_preview_enabled + preview_pause_silence_secs
+    // Story 5.1 + Story 5.5 — AC-3 (5.1) + AC-1 (5.5):
+    //   live_preview_enabled + preview_pause_silence_secs + preview_panel_form
     //
-    // Verifies that both new fields read their serde defaults when the keys are
+    // Verifies that all three fields read their serde defaults when the keys are
     // absent from the JSON, and that NO extra migration write fires (additive
-    // #[serde(default)] -- NFR3).
+    // #[serde(default)] -- NFR2).
     //
     // Inversion guard: remove `#[serde(default)]` from `live_preview_enabled`
     // → serde_json::from_str errors on a JSON missing the key
     // → `assert!(result.is_ok())` goes RED.
     // -----------------------------------------------------------------------
 
-    /// AC-3: loading a JSON without `live_preview_enabled` or
-    /// `preview_pause_silence_secs` reads the correct defaults.
+    /// AC-3 (Story 5.1) + AC-1 (Story 5.5): loading a JSON without
+    /// `live_preview_enabled`, `preview_pause_silence_secs`, or
+    /// `preview_panel_form` reads the correct defaults.
     /// No extra migration write fires (additive serde defaults, no version bump).
     #[test]
     fn spec_live_preview_config_fields_default() {
-        // Serialize a default config, then strip the two new fields to simulate
-        // an existing on-disk config.json that was written before Story 5.1.
+        // Serialize a default config, then strip the three fields to simulate
+        // an existing on-disk config.json written before Story 5.1/5.5.
         let default_cfg = AppConfig::default();
         let mut json: serde_json::Value = serde_json::to_value(&default_cfg).unwrap();
 
-        // Remove the new fields to simulate a pre-5.1 config.json.
+        // Remove the fields to simulate a pre-5.1/pre-5.5 config.json.
         json.as_object_mut().unwrap().remove("live_preview_enabled");
         json.as_object_mut().unwrap().remove("preview_pause_silence_secs");
+        json.as_object_mut().unwrap().remove("preview_panel_form");
 
         let stripped_json = serde_json::to_string(&json).unwrap();
 
@@ -3933,6 +3951,12 @@ mod tests {
             "preview_pause_silence_secs default must be 2.0, got {}",
             cfg.preview_pause_silence_secs
         );
+        // AC-1 (Story 5.5): preview_panel_form default must be "comfortable".
+        assert_eq!(
+            cfg.preview_panel_form, "comfortable",
+            "preview_panel_form default must be 'comfortable', got {:?}",
+            cfg.preview_panel_form
+        );
 
         // Confirm no migration write is triggered: migrate_and_normalize must not
         // produce any MigrationWrite entries for these fields (they have no migration).
@@ -3940,7 +3964,7 @@ mod tests {
         let (_, writes) = migrate_and_normalize(cfg.clone(), &std::path::PathBuf::from("/tmp"), &mut warnings_buf);
         assert!(
             writes.is_empty(),
-            "No migration write must fire for the two new preview fields ({} writes)",
+            "No migration write must fire for the new preview fields ({} writes)",
             writes.len()
         );
     }

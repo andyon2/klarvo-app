@@ -72,6 +72,7 @@ export interface SettingsPanelProps {
     bubbleTapSilenceSecs?: number | null, bubbleLongPressMode?: string | null,
     bubbleLongPressAutoSend?: boolean | null, bubbleLongPressSilenceSecs?: number | null,
     livePreviewEnabled?: boolean | null, previewPauseSilenceSecs?: number | null,
+    previewPanelForm?: string | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -174,6 +175,9 @@ export function SettingsPanel({
   );
   const [localPreviewPauseSilenceSecs, setLocalPreviewPauseSilenceSecs] = useState(
     loadedSettings?.previewPauseSilenceSecs ?? 2.0
+  );
+  const [localPreviewPanelForm, setLocalPreviewPanelForm] = useState(
+    loadedSettings?.previewPanelForm ?? "comfortable"
   );
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
@@ -286,6 +290,7 @@ export function SettingsPanel({
       setLocalVoiceCommandEnabled(loadedSettings.voiceCommandEnabled ?? false);
       setLocalLivePreviewEnabled(loadedSettings.livePreviewEnabled ?? false);
       setLocalPreviewPauseSilenceSecs(loadedSettings.previewPauseSilenceSecs ?? 2.0);
+      setLocalPreviewPanelForm(loadedSettings.previewPanelForm ?? "comfortable");
     }
   }, [loadedSettings]);
 
@@ -358,7 +363,8 @@ export function SettingsPanel({
     || (advancedSettings !== null && advancedSettings.pasteDelayMs !== localPasteDelayMs)
     || (advancedSettings !== null && advancedSettings.autoCapitalize !== localAutoCapitalize)
     || (loadedSettings?.livePreviewEnabled ?? false) !== localLivePreviewEnabled
-    || (loadedSettings?.previewPauseSilenceSecs ?? 2.0) !== localPreviewPauseSilenceSecs;
+    || (loadedSettings?.previewPauseSilenceSecs ?? 2.0) !== localPreviewPauseSilenceSecs
+    || (loadedSettings?.previewPanelForm ?? "comfortable") !== localPreviewPanelForm;
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -370,7 +376,7 @@ export function SettingsPanel({
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
     advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
-    localLivePreviewEnabled, localPreviewPauseSilenceSecs,
+    localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
   ]);
 
   // --- useCallback handlers ---
@@ -484,6 +490,7 @@ export function SettingsPanel({
         localBubbleTapSilenceSecs, localBubbleLongPressMode,
         localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
         localLivePreviewEnabled, localPreviewPauseSilenceSecs,
+        localPreviewPanelForm,
       );
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
@@ -528,7 +535,7 @@ export function SettingsPanel({
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     advancedSettings, localSilenceThreshold,
     openrouterKey,
-    localLivePreviewEnabled, localPreviewPauseSilenceSecs,
+    localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     onSave,
   ]);
 
@@ -694,6 +701,8 @@ export function SettingsPanel({
                 setLocalLivePreviewEnabled={setLocalLivePreviewEnabled}
                 localPreviewPauseSilenceSecs={localPreviewPauseSilenceSecs}
                 setLocalPreviewPauseSilenceSecs={setLocalPreviewPauseSilenceSecs}
+                localPreviewPanelForm={localPreviewPanelForm}
+                setLocalPreviewPanelForm={setLocalPreviewPanelForm}
               />
             )}
             {activeCategory === "license" && (

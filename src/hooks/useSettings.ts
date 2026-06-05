@@ -85,6 +85,7 @@ export function useSettings() {
     newBubbleTapSilenceSecs?: number | null, newBubbleLongPressMode?: string | null,
     newBubbleLongPressAutoSend?: boolean | null, newBubbleLongPressSilenceSecs?: number | null,
     newLivePreviewEnabled?: boolean | null, newPreviewPauseSilenceSecs?: number | null,
+    newPreviewPanelForm?: string | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -99,6 +100,7 @@ export function useSettings() {
       newBubbleTapSilenceSecs ?? null, newBubbleLongPressMode ?? null,
       newBubbleLongPressAutoSend ?? null, newBubbleLongPressSilenceSecs ?? null,
       newLivePreviewEnabled ?? null, newPreviewPauseSilenceSecs ?? null,
+      newPreviewPanelForm ?? null,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);

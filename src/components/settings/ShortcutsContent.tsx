@@ -215,6 +215,9 @@ export interface ShortcutsContentProps {
   setLocalLivePreviewEnabled: (v: boolean) => void;
   localPreviewPauseSilenceSecs: number;
   setLocalPreviewPauseSilenceSecs: (v: number) => void;
+  // Live Preview display form preset (desktop only)
+  localPreviewPanelForm: string;
+  setLocalPreviewPanelForm: (v: string) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -234,6 +237,7 @@ export function ShortcutsContent({
   loadedSettings, onHotkeyChange, onHotkeyModeChange,
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
   localLivePreviewEnabled, setLocalLivePreviewEnabled, localPreviewPauseSilenceSecs, setLocalPreviewPauseSilenceSecs,
+  localPreviewPanelForm, setLocalPreviewPanelForm,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -452,22 +456,47 @@ export function ShortcutsContent({
               </button>
             </div>
             {localLivePreviewEnabled && (
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className={LABEL_CLS}>Preview Pause</span>
-                  <span className="text-xs font-mono text-klarvo-primary">{localPreviewPauseSilenceSecs.toFixed(1)}s</span>
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className={LABEL_CLS}>Preview Pause</span>
+                    <span className="text-xs font-mono text-klarvo-primary">{localPreviewPauseSilenceSecs.toFixed(1)}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={5.0}
+                    step={0.1}
+                    value={localPreviewPauseSilenceSecs}
+                    onChange={(e) => setLocalPreviewPauseSilenceSecs(parseFloat(e.target.value))}
+                    className="w-full accent-klarvo-primary"
+                  />
+                  <p className="text-[11px] text-klarvo-muted">Short = more responsive, more Groq calls, less context per segment. Long = less responsive, fewer calls, better context.</p>
                 </div>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={5.0}
-                  step={0.1}
-                  value={localPreviewPauseSilenceSecs}
-                  onChange={(e) => setLocalPreviewPauseSilenceSecs(parseFloat(e.target.value))}
-                  className="w-full accent-klarvo-primary"
-                />
-                <p className="text-[11px] text-klarvo-muted">Short = more responsive, more Groq calls, less context per segment. Long = less responsive, fewer calls, better context.</p>
-              </div>
+                {/* Display Form preset picker (AC-5) */}
+                <div className="flex flex-col gap-1.5">
+                  <span className={LABEL_CLS}>Darstellung</span>
+                  <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
+                    {(["compact", "comfortable", "wide"] as const).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => setLocalPreviewPanelForm(preset)}
+                        className={[
+                          "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                          localPreviewPanelForm === preset
+                            ? "bg-klarvo-primary/15 text-klarvo-primary"
+                            : "text-klarvo-dim hover:text-klarvo-muted",
+                        ].join(" ")}
+                      >
+                        {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-klarvo-muted">
+                    Changes the width of the preview panel.
+                  </p>
+                </div>
+              </>
             )}
           </div>
         </div>

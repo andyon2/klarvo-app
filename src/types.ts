@@ -80,6 +80,8 @@ export interface AppSettings {
   livePreviewEnabled: boolean;
   /** Silence duration (seconds) that triggers a preview flush in Toggle/Hold. */
   previewPauseSilenceSecs: number;
+  /** Display form preset for the live-preview panel. "compact" | "comfortable" | "wide". Desktop only. */
+  previewPanelForm: string;
 }
 
 // A per-application recording profile.

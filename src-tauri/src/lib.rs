@@ -200,6 +200,8 @@ pub struct SettingsView {
     pub live_preview_enabled: bool,
     /// Silence duration (seconds) that triggers a preview flush in Toggle/Hold mode.
     pub preview_pause_silence_secs: f32,
+    /// Display form preset for the live-preview panel ("compact" | "comfortable" | "wide").
+    pub preview_panel_form: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1184,7 @@ mod tests {
             feedback_webhook_url: String::new(),
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
+            preview_panel_form: "comfortable".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1241,6 +1244,7 @@ mod tests {
             feedback_webhook_url: String::new(),
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
+            preview_panel_form: "comfortable".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1294,6 +1298,7 @@ mod tests {
             feedback_webhook_url: String::new(),
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
+            preview_panel_form: "comfortable".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
