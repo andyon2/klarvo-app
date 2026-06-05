@@ -2,7 +2,7 @@
 story: "6.2"
 epic: "6"
 title: "Move live preview into the window (CSS-grow, scale geometry)"
-status: review
+status: in-progress
 track: L3-feature
 gatedBy: ["6.1"]
 buildsOn: ["6.1"]
@@ -17,7 +17,11 @@ inputDocuments:
 
 # Story 6.2: Move live preview into the window (CSS-grow, scale geometry)
 
-Status: review
+Status: in-progress
+
+### Smoke Findings (Windows smoke 2026-06-06 — Andi: "keine Preview-Box mehr, nur Pill")
+
+- [ ] [Smoke][Fix-applied, re-smoke pending] Preview window never appears — 1×1 stub blocked the WebView2 JS/event bridge [src-tauri/src/lib.rs create_preview_window]. Root cause by elimination: build fresh (6.2 deployed, klarvo.exe 00:06 > e08bf56), config OK (livePreviewEnabled, barX/barY saved, previewPanelForm=wide), window created (no startup error), routing correct, `set_preview_shape` registered + fail-soft (no throw), geometry on-screen. The identically-created `"bar"` window receives the same global `handle.emit` events and works → the ONLY difference is the preview window's `inner_size(1.0, 1.0)`. A near-zero WebView2 surface does not run the JS/event bridge, so PreviewPanel never attaches its listeners → never receives `state-changed`/`live-preview-chunk` → `runShowSequence` (which would resize the window) never fires → chicken-and-egg deadlock, window stays 1×1/invisible. Matches 6.1's own deferred-work note (cursor-events / `.visible(false)` revisit in 6.2). **Fix:** create the preview window HIDDEN at a real size (`.inner_size(400.0, 600.0)` + `.visible(false)`) instead of 1×1-visible — webview initializes + JS runs while hidden; `runShowSequence` resizes to exact geometry + `show()` on first chunk. cargo check --lib clean. **Re-smoke required to confirm (Andi).**
 
 ## Story
 

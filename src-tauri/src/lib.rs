@@ -759,7 +759,16 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
         WebviewUrl::App("index.html".into()),
     )
     .title("")
-    .inner_size(1.0, 1.0)
+    // Create the window HIDDEN at a real size — NOT a 1×1 visible stub.
+    // A near-zero (1×1) WebView2 surface fails to initialize the JS/event bridge,
+    // so PreviewPanel never attaches its listeners and runShowSequence (which would
+    // resize the window) never fires — a chicken-and-egg deadlock where the window
+    // never shows (Story 6.2 smoke regression). A real-sized `.visible(false)` window
+    // initializes the webview + runs JS while hidden; Story 6.2 resizes + shows it on
+    // the first live-preview chunk. Size is the max preset (wide 400 × maxHeight 600);
+    // runShowSequence overrides it with the exact geometry before showing.
+    .inner_size(400.0, 600.0)
+    .visible(false)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
