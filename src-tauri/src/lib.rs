@@ -1077,6 +1077,7 @@ pub fn run() {
             commands::misc::sync_history,
             commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
+            commands::misc::set_preview_shape,
             commands::misc::save_bar_position,
             commands::misc::get_bar_position,
             #[cfg(desktop)]

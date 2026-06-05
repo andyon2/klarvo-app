@@ -320,20 +320,16 @@ export default function FloatingBar() {
   }, [isRecording]);
 
   // --- Live preview push listener (Story 5.2, AC-1; hardened Story 5.7, AC-2, AC-3) ---
-  // Backend emits klarvo://live-preview-chunk only when live_preview_enabled == true.
-  // Guard 1 (AC-2): isRecordingRef drops stale/out-of-cycle chunks (see ref above for rationale).
-  // Guard 2: skip empty and whitespace-only chunks (AC-7 hardening).
+  // Story 6.2: preview moved to the "preview" window (PreviewPanel.tsx).
+  // This listener is intentionally disabled — it no longer appends chunks to the pill's
+  // livePreview state. Dead code (state variables, panel render) cleaned up in Story 6.5.
+  // Since livePreview in FloatingBar never grows, isPanelOpen = isRecording && livePreview.length > 0
+  // is always false → setBarShape("panel") never fires → pill stays at PILL_WIDTH × PILL_HEIGHT.
   useEffect(() => {
-    const unlisten = listen<string>("klarvo://live-preview-chunk", (event) => {
-      // AC-2 stale-chunk guard — see isRecordingRef comment block above for rationale.
-      // Inversion: remove this line → stale post-done chunk re-populates livePreview
-      // after done-pop → text flickers back → AC-2 RED.
-      if (!isRecordingRef.current) return;
-      const chunk = event.payload.trim();
-      // Guard: skip empty and whitespace-only chunks (AC-7 hardening — backend
-      // filters strictly-empty strings, but leading/trailing whitespace can still
-      // produce a blank panel open).
-      if (chunk) setLivePreview((prev) => prev ? prev + " " + chunk : chunk);
+    const unlisten = listen<string>("klarvo://live-preview-chunk", (_event) => {
+      // Story 6.2: preview moved to the "preview" window (PreviewPanel.tsx).
+      // This listener is intentionally disabled. Dead code cleaned up in Story 6.5.
+      return;
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);

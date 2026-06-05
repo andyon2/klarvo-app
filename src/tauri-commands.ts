@@ -519,6 +519,11 @@ export async function setBarShape(_shape: "idle" | "pill" | "panel"): Promise<vo
   await invoke("set_bar_shape", { shape: _shape });
 }
 
+export async function setPreviewShape(): Promise<void> {
+  if (isPreviewMode) return;
+  await invoke("set_preview_shape");
+}
+
 // --- Live preview ---
 
 export async function transcribeLivePreview(): Promise<string> {

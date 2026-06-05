@@ -462,3 +462,28 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
     let _ = (handle, shape); // suppress unused warnings on non-Windows
     Ok(())
 }
+
+/// Applies a rounded-rect OS window region to the "preview" window.
+/// Called once per show (size is already set before this is called).
+/// `#[cfg(target_os = "windows")]` body only; no-op on other platforms.
+#[tauri::command]
+pub fn set_preview_shape(handle: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        if let Some(preview) = handle.get_webview_window("preview") {
+            let scale = preview.scale_factor().unwrap_or(1.0);
+            if let Ok(hwnd) = preview.hwnd() {
+                let h = hwnd.0 as isize;
+                if let Ok(size) = preview.inner_size() {
+                    let w = size.width as i32;
+                    let ht = size.height as i32;
+                    let r = (14.0 * scale) as i32;
+                    crate::set_window_region_round_rect(h, w, ht, r);
+                }
+            }
+        }
+    }
+    let _ = handle; // suppress unused on non-Windows
+    Ok(())
+}
