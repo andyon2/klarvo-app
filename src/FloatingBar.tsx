@@ -389,6 +389,26 @@ export default function FloatingBar() {
   const activePillWidth = isPanelOpen ? PANEL_WIDTH : pillWidth;
   const activePillHeight = isPanelOpen ? PILL_HEIGHT + panelHeight : PILL_HEIGHT;
 
+  // Re-assert window geometry shortly after the panel opens. The FIRST pill→panel
+  // expansion after an app launch is "cold": the bigger the size jump, the more
+  // the OS window can under-apply the height of that first async setSize, leaving
+  // the window shorter than PILL_HEIGHT + panelHeight. The wrapper is flex-column
+  // + justify:flex-end + overflow:hidden, so a too-short window pushes the panel
+  // UP and out the top → the first preview chunk renders top-clipped until the
+  // next chunk triggers a fresh resize that heals it (observed worst at the Wide
+  // preset = the largest 200→PANEL_WIDTH jump). Bumping geomTick on the next frame
+  // and again ~120ms later re-runs the resize effect below with the correct final
+  // dimensions, forcing the window to converge without waiting for another chunk.
+  // Idempotent: when the geometry is already correct, re-applying setSize is a
+  // no-op. (Story 5.5 smoke fix, round 2.)
+  const [geomTick, setGeomTick] = useState(0);
+  useEffect(() => {
+    if (!isPanelOpen) return;
+    const raf = requestAnimationFrame(() => setGeomTick((t) => t + 1));
+    const late = setTimeout(() => setGeomTick((t) => t + 1), 120);
+    return () => { cancelAnimationFrame(raf); clearTimeout(late); };
+  }, [isPanelOpen]);
+
   useEffect(() => {
     const win = getCurrentWebviewWindow();
     (async () => {
@@ -440,8 +460,9 @@ export default function FloatingBar() {
     })();
   // isPanelOpen (via activePillWidth/activePillHeight, which tracks panelHeight)
   // drives panel expand/grow/collapse resize transitions in addition to the
-  // original isPillVisible/pillWidth triggers (AC-3).
-  }, [isPillVisible, activePillWidth, activePillHeight]);
+  // original isPillVisible/pillWidth triggers (AC-3). geomTick re-asserts the
+  // geometry shortly after open so a cold first-expansion converges (smoke fix).
+  }, [isPillVisible, activePillWidth, activePillHeight, geomTick]);
 
   // --- Trigger collapse animation then hide ---
   // When the bar transitions from visible to idle we play bar-collapse first.
