@@ -2,7 +2,7 @@
 story: "5.3"
 epic: "5"
 title: "Settings — opt-in Preview toggle + Preview-Pause slider (Regler A)"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["5.1"]
 buildsOn: ["5.1"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 5.3: Settings — opt-in Preview toggle + Preview-Pause slider (Regler A)
 
-Status: review
+Status: done
 
 ## Story
 
