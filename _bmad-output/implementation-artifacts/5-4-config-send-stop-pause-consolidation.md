@@ -2,7 +2,7 @@
 story: "5.4"
 epic: "5"
 title: "Config — Send/Stop-Pause consolidation (Regler B)"
-status: review
+status: done
 track: L3-feature
 gatedBy: []
 buildsOn: []
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 5.4: Config — Send/Stop-Pause consolidation (Regler B)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -365,6 +365,8 @@ claude-sonnet-4-6
 **Build results:** 569 Rust lib tests / 0 fail; `npm run build` (tsc + vite) PASS; clippy: 0 new warnings on `settings.rs`.
 
 **Smoke (Task 4.4 + 4.5):** Requires Windows release build via `scripts/sync-and-build.ps1` + manual verification that moving the slider writes both `autostopSilenceSecs` AND `autoModeSilenceSecs` (camelCase) to the same value in `%APPDATA%\com.klarvo.voice\config.json`.
+
+**Windows smoke GREEN 2026-06-05 (Andy "grün"):** Surface-DoD met — the consolidated Send/Stop-Pause slider writes both camelCase keys to the same value, Save clears (no stuck-dirty), Auto + AutoStop stop at the new pause. Status review → done. Closes Epic 5 (5-1..5-5 all done).
 
 ### File List
 
