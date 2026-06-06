@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all Klarvo windows",
-  "windows": ["main", "bar"],
+  "windows": ["main", "bar", "preview"],
   "permissions": [
     "core:default",
     "core:window:allow-close",

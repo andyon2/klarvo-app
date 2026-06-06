@@ -6,7 +6,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
-import { currentMonitor, monitorFromPoint } from "@tauri-apps/api/window";
+import { currentMonitor } from "@tauri-apps/api/window";
 import {
   getSettings,
   getBarPosition,
@@ -118,7 +118,11 @@ export default function PreviewPanel(): React.ReactElement {
       const pillCenterX = pillX + PILL_WIDTH / 2;
       let previewLeft = pillCenterX - W / 2; // will be clamped below if monitor available
       try {
-        const monitor = await monitorFromPoint(pillX, pillY) ?? await currentMonitor();
+        // NOTE: monitorFromPoint() is incompatible in this Tauri JS version
+        // (rejects with "monitor_from_point missing required key x"), which
+        // skipped the whole clamp block. currentMonitor() is reliable and the
+        // preview always sits next to the pill on the active monitor.
+        const monitor = await currentMonitor();
         if (monitor) {
           const scale = monitor.scaleFactor || 1;
           const wa = monitor.workArea ?? { position: monitor.position, size: monitor.size };
@@ -180,6 +184,7 @@ export default function PreviewPanel(): React.ReactElement {
         }
       }
     });
+    unlisten.then(() => console.log("[preview] state-changed listener REGISTERED"));
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
@@ -222,6 +227,7 @@ export default function PreviewPanel(): React.ReactElement {
         }
       }
     });
+    unlisten.then(() => console.log("[preview] live-preview-chunk listener REGISTERED"));
     return () => { unlisten.then((fn) => fn()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

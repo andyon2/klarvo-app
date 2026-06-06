@@ -507,6 +507,7 @@ export default function FloatingBar() {
   useEffect(() => {
     const unlisten = onStateChanged((payload) => {
       const newState = payload.state as RecordingState;
+      console.log(`[bar] state-changed: ${newState}`); // bridged to Klarvo.log for overlay observability
       // Warning is transient — don't change bar state, pipeline continues to "done".
       if (newState === "warning") return;
       setState(newState);

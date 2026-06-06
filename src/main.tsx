@@ -34,6 +34,10 @@ if (label === "bar" && !isPreviewMode) {
   Root = App;
 }
 
+// The overlay-window listen() subscriptions each return an unlisten cleanup
+// (`return () => unlisten.then(fn => fn())`), so StrictMode's dev-only double-mount
+// is handled correctly. (The preview's "no events" bug was a capability + geometry
+// issue, not a StrictMode double-subscribe — see create_preview_window.)
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <Root />

@@ -177,16 +177,26 @@ pub fn save_bar_position(state: State<'_, AppState>, x: f64, y: f64) -> Result<(
     Ok(())
 }
 
+/// Saved floating-bar position. Serialized as a JSON object `{ "x", "y" }`
+/// so the frontend can read `.x` / `.y` directly. (A bare tuple would
+/// serialize to a JSON array `[x, y]`, where `.x` is `undefined` -> the
+/// preview show-sequence then computed NaN and `set_position` rejected null.)
+#[derive(serde::Serialize)]
+pub struct BarPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
 /// Returns the last saved floating bar position, or `None` if no position
 /// has been saved yet (first run or after a config reset).
 ///
 /// The frontend uses this to restore the bar to its previous position on
 /// startup instead of the default center-bottom placement.
 #[tauri::command]
-pub fn get_bar_position(state: State<'_, AppState>) -> Result<Option<(f64, f64)>, String> {
+pub fn get_bar_position(state: State<'_, AppState>) -> Result<Option<BarPosition>, String> {
     let cfg = crate::lock!(state.inner().config)?;
     Ok(match (cfg.bar_x, cfg.bar_y) {
-        (Some(x), Some(y)) => Some((x, y)),
+        (Some(x), Some(y)) => Some(BarPosition { x, y }),
         _ => None,
     })
 }

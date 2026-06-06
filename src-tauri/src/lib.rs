@@ -759,16 +759,26 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
         WebviewUrl::App("index.html".into()),
     )
     .title("")
-    // Create the window HIDDEN at a real size — NOT a 1×1 visible stub.
-    // A near-zero (1×1) WebView2 surface fails to initialize the JS/event bridge,
-    // so PreviewPanel never attaches its listeners and runShowSequence (which would
-    // resize the window) never fires — a chicken-and-egg deadlock where the window
-    // never shows (Story 6.2 smoke regression). A real-sized `.visible(false)` window
-    // initializes the webview + runs JS while hidden; Story 6.2 resizes + shows it on
-    // the first live-preview chunk. Size is the max preset (wide 400 × maxHeight 600);
-    // runShowSequence overrides it with the exact geometry before showing.
+    // Create the window VISIBLE at a real size.
+    //   - NOT 1×1: a near-zero WebView2 surface never initializes the JS/event bridge
+    //     (PreviewPanel never mounts, listeners never register).
+    //   - Created visible (no `.visible(false)`): a window resident from startup is
+    //     guaranteed to have mounted + registered its state-changed / live-preview-chunk
+    //     listeners before the first recording, so the first chunk is never missed. It is
+    //     fully transparent + click-through and renders nothing until there is preview
+    //     text, so a resident empty window is invisible and non-interactive to the user.
+    //
+    // (History: the preview "received no events" bug was NOT a hidden-window throttle —
+    //  it was a missing capability ("preview" absent from capabilities/default.json
+    //  windows) that denied core:event:allow-listen, plus a tuple-vs-object serialization
+    //  bug in get_bar_position that made runShowSequence compute NaN. Once both were
+    //  fixed, a hidden window was observed to receive events fine across recording cycles.
+    //  The window is left resident-visible because it is the verified-working config and
+    //  reverting to `.visible(false)` would re-risk first-cycle webview-init timing.)
+    //
+    // runShowSequence sets the exact size/region/position on the first chunk.
+    // Size is the max preset (wide 400 × maxHeight 600).
     .inner_size(400.0, 600.0)
-    .visible(false)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
@@ -790,7 +800,7 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
         log::warn!("[preview] set_ignore_cursor_events failed: {e}");
     }
 
-    log::info!("[setup] preview window created (hidden, 400x600)");
+    log::info!("[setup] preview window created (transparent, 400x600, shown on first chunk)");
     Ok(())
 }
 
