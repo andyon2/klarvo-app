@@ -41,7 +41,7 @@ This epic **re-designs** the surface (it does not refactor it):
 4. Preview presentation is driven by a **single scale factor** `k = fontPx / 11`: width presets and
    the height limit are defined at the small font and scale with the chosen font size.
 
-**FRs covered:** FR1–FR10 · **NFRs:** NFR1–NFR6 · **AR:** AR1–AR5 · **UX:** UX-DR1
+**FRs covered:** FR1–FR13 · **NFRs:** NFR1–NFR6 · **AR:** AR1–AR5 · **UX:** UX-DR1
 
 ## Requirements Inventory
 
@@ -67,6 +67,17 @@ native to this epic.
 - **FR9** — The preview **follows the pill on drag** (via `klarvo://bar-moved`); only the **pill**
   position is persisted, the preview position is always derived.
 - **FR10** — **Recovery for both windows** (`ensure_bar_window` + new `ensure_preview_window`).
+- **FR11** — Preview **text appearance** settings (preview-only): text **color** + **brightness/opacity**,
+  and **font-family** choice. Pure-CSS; no geometry/`k` impact. (Motivation: on a dark background the
+  default `rgba(220,220,220,0.88)` text reads as dim/non-pure-white and is easy to miss.)
+- **FR12** — Preview **card (box) appearance** settings (preview-only): **background color** +
+  **background opacity**, **backdrop-blur** strength. Pure-CSS.
+- **FR13** — Preview **border appearance** settings (preview-only): border **color** +
+  **brightness/opacity**, **line thickness**, and **corner radius**. (Motivation: default
+  `1px rgba(42,195,168,0.25)` is a barely-visible thin line on dark pages.) Color/opacity/thickness
+  are pure-CSS; **corner radius is the exception** — it is coupled to the OS window region via
+  `set_preview_shape` (R11: region radius MUST equal CSS `borderRadius` or a white-line artifact
+  appears), so a configurable radius also touches Rust + must preserve the R11 invariant.
 
 ### NonFunctional Requirements
 
@@ -112,6 +123,7 @@ native to this epic.
 | FR6, FR7(full), NFR5 | 6.3 |
 | FR9, NFR4 | 6.4 |
 | FR1, NFR2, AR4, AR5 | 6.5 |
+| FR11, FR12, FR13, NFR5, NFR6 | 6.6 |
 
 ## Epic List
 
@@ -123,7 +135,7 @@ structural: the geometry is **static per recording**, so the race class that bro
 **cannot exist**. Standalone: builds only on existing v1 recording/pipeline/FloatingBar surfaces;
 enables no future epic but retires the bar's geometry debt and unblocks the parked 5-7.
 
-**FRs covered:** FR1–FR10 · **NFRs:** NFR1–NFR6 · **AR:** AR1–AR5 · **UX:** UX-DR1
+**FRs covered:** FR1–FR13 · **NFRs:** NFR1–NFR6 · **AR:** AR1–AR5 · **UX:** UX-DR1
 
 **Planned story decomposition** (full ACs below):
 
@@ -144,9 +156,17 @@ enables no future epic but retires the bar's geometry debt and unblocks the park
 - **6.5 — Pill fully static + cleanup** *(depends on 6.2 + 6.4)*. Delete the dead grow code; pill one
   fixed size, region once; clipboard-done re-laid-out to fit the fixed width; remove
   `set_bar_shape("panel")` + screenCap remnants; reconcile/park 5-7. Covers FR1, NFR2, AR4, AR5.
+- **6.6 — Preview-box appearance customization** *(depends on 6.2; parallel with 6.3/6.4)*. User-facing
+  Settings to style the preview box so it stays legible on any background: **text** color/brightness/
+  font-family (FR11), **box** background color/opacity/blur (FR12), **border** color/brightness/
+  thickness/radius (FR13). Mostly pure-CSS + new camelCase config keys (NFR5) read reactively in the
+  separate preview window (Trap #3, separate-window reactivity); **corner radius is the one Rust-coupled
+  value** (R11: `set_preview_shape` region radius must track CSS radius). Distinct risk class from 6.3
+  (which is geometry/`k`-coupled); split out deliberately. Covers FR11, FR12, FR13, NFR5, NFR6.
 
-**Dependency flow:** 6.1 → 6.2; **6.3 and 6.4 parallel after 6.2**; **6.5 after 6.2 + 6.4**. No story
-depends on a later story. After **6.2** the geometry race class (R3/R4/R5/R6/R10/R11) is already gone.
+**Dependency flow:** 6.1 → 6.2; **6.3, 6.4 and 6.6 parallel after 6.2**; **6.5 after 6.2 + 6.4**. No
+story depends on a later story. After **6.2** the geometry race class (R3/R4/R5/R6/R10/R11) is already
+gone. (6.6 was added 2026-06-06 — preview-box appearance, split from 6.3's font-size axis by risk class.)
 
 **Working decisions (defaults from the spec, confirmable at story time):** pill stays at width 200
 with the clipboard-done state re-laid-out to fit (not widening to 220); the preview window is created
