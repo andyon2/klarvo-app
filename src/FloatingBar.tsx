@@ -556,8 +556,17 @@ export default function FloatingBar() {
       // Scale RMS to visual range. Typical speech RMS is 0.01–0.1.
       // Multiplier of 10 maps 0.1 RMS to full scale (1.0).
       // Power of 0.4 compresses the range so quiet speech is still visible.
-      const raw = Math.min(1, event.payload.level * 10);
-      const boosted = Math.pow(raw, 0.4);
+      //
+      // Noise gate: the 0.4-power compression also amplifies the noise floor
+      // (RMS ~0.002 background hum → ~30% bar height = visible idle wiggle). Gate
+      // anything below NOISE_FLOOR to a flat bar so steady background noise reads
+      // as silence; real speech (RMS ≥ 0.01) sits above it and still scales. This
+      // is purely visual — it does not affect the recording/preview activation
+      // threshold (which Andi confirmed is fine).
+      const NOISE_FLOOR = 0.006;
+      const level = event.payload.level;
+      const boosted =
+        level <= NOISE_FLOOR ? 0 : Math.pow(Math.min(1, level * 10), 0.4);
       setLevels((prev) => [...prev.slice(1), boosted]);
     });
     return () => { unlisten.then((fn) => fn()); };
