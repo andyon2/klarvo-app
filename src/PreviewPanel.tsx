@@ -280,10 +280,11 @@ export default function PreviewPanel(): React.ReactElement {
       }}>
         {livePreview && (
           <>
-            <style>{`
-              #preview-card::-webkit-scrollbar { display: block !important; width: 4px !important; }
-              #preview-card::-webkit-scrollbar-thumb { background: rgba(42,195,168,0.35); border-radius: 9999px; }
-            `}</style>
+            {/* No visible scrollbar: the window is click-through (set_ignore_cursor_events),
+                so the wheel acts on the app behind — a scrollbar would be a false affordance.
+                Overflow is handled by auto-scroll-to-newest (Task 7.1) + the top-fade mask
+                below, so the latest text is always in view without any manual scroll. The
+                global `::-webkit-scrollbar { display:none }` rule keeps it hidden. */}
             <div
               id="preview-card"
               ref={previewPanelRef}
@@ -309,8 +310,7 @@ export default function PreviewPanel(): React.ReactElement {
                 color: "rgba(220,220,220,0.88)",
                 fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
                 overflowWrap: "anywhere",
-                scrollbarWidth: "thin",
-                scrollbarColor: "rgba(42,195,168,0.35) transparent",
+                scrollbarWidth: "none", // hidden — see comment above (click-through = no manual scroll)
                 userSelect: "none",
                 cursor: "default",
               }}
