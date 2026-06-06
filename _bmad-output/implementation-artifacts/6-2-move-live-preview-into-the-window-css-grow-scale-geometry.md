@@ -2,7 +2,7 @@
 story: "6.2"
 epic: "6"
 title: "Move live preview into the window (CSS-grow, scale geometry)"
-status: in-progress
+status: done
 track: L3-feature
 gatedBy: ["6.1"]
 buildsOn: ["6.1"]
@@ -17,7 +17,7 @@ inputDocuments:
 
 # Story 6.2: Move live preview into the window (CSS-grow, scale geometry)
 
-Status: in-progress
+Status: done
 
 ### Smoke Findings (Windows smoke 2026-06-06 — Andi: "keine Preview-Box mehr, nur Pill")
 
@@ -26,7 +26,9 @@ Status: in-progress
   2. **`get_bar_position` serialization** — once events flowed, the log showed `set_position: invalid type: null, expected f64`. The command returned `Option<(f64,f64)>` → JSON array `[x,y]`; the TS wrapper + PreviewPanel read `saved.x`/`saved.y` → `undefined` → NaN → `LogicalPosition(NaN)` serializes to null → `set_position` rejects. This path had never run before because #1 blocked all chunks. (Note: the story's own Dev Notes assumed `getBarPosition` returns `{x,y}` — the bug was baked into the contract assumption.) **Fix:** return a named `BarPosition { x, y }` struct.
   - Secondary: `monitorFromPoint()` incompatible in this Tauri JS version (`monitor_from_point missing required key x`) → threw → skipped the whole screen-clamp block. Switched to `currentMonitor()`.
   - The earlier "hidden-window throttle" theory was **wrong** — once the capability was fixed, a hidden window was observed receiving events fine across cycles. Window left resident-visible (transparent + click-through) as the verified-working config.
-  - **Verified (Andi, Windows dev build):** box appears on first chunk and re-appears across two consecutive recording cycles; log shows clean `shown: 400x600 at (562, 230)` with no `runShowSequence failed`. Committed 0a11e0d. cargo check + tsc --noEmit clean. **Remaining for done: AC-8 release-build smoke (tested so far only via `dev.ps1` debug build — see [[release_build_blind_spot]]).**
+  - **Verified (Andi, Windows dev build):** box appears on first chunk and re-appears across two consecutive recording cycles; log shows clean `shown: 400x600 at (562, 230)` with no `runShowSequence failed`. Committed 0a11e0d. cargo check + tsc --noEmit clean.
+  - **AC-8 RELEASE-BUILD SMOKE GREEN (Andi, 2026-06-06, `sync-and-build.ps1`):** all 7 points pass — text grows upward / no top-clip on first chunk; caps + scrolls (window doesn't grow); hides on done/idle with no stale bleed; pill stays 200×36 across Compact/Comfortable/Wide; click-through; no white-line at corners (R11); CloseRequested prevented + hidden (6.1 carry-forward confirmed).
+- [x] [Smoke][RESOLVED — release smoke 2026-06-06, Andi] Scrollbar vs click-through false affordance. At the cap a 4px scrollbar appeared, inviting a scroll the user can never do (window is click-through → wheel acts on the app behind). **Fix (e39e92e):** removed the scrollbar (scrollbarWidth: none + global `::-webkit-scrollbar display:none`); overflow handled by auto-scroll-to-newest + top-fade. Verified by Andi.
 
 ## Story
 
@@ -464,8 +466,8 @@ and the 6.1 carried-forward inversions (click-through, CloseRequested) are confi
     (pre-existing `ort-sys` failure for GNU target is known-pre-existing, not caused by this story)
   - [x] 11.2 `cargo test` (Linux) — green, no regressions
   - [x] 11.3 `tsc` / `npm run build` — green
-  - [ ] 11.4 Windows smoke via `scripts/sync-and-build.ps1` — run surface-smoke-checklist traps
-    #3/#4/#5 + full manual AC-8 scenario
+  - [x] 11.4 Windows smoke via `scripts/sync-and-build.ps1` — all 7 AC-8 points GREEN (Andi, 2026-06-06);
+    one smoke finding (scrollbar false-affordance) found + fixed e39e92e + re-verified
 
 ### Review Findings (code-review 2026-06-05, Opus 4.8 — 3 adversarial layers)
 
