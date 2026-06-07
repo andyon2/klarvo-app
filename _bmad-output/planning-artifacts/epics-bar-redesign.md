@@ -23,6 +23,8 @@ note: >
 
 ## Overview
 
+> **Resume (2026-06-07):** see `WAYPOINT.md` at repo root. Story 6-6 (preview appearance, redesigned) is functionally complete & confirmed on the real build; it is blocked only by a **cosmetic corner artifact** (bottom-left of the preview box renders rough). Next BMAD action = fix that corner **observe-first** (region + backdrop-filter already ruled out — do not retry; see `project-context.md` rule 29), routed through a fresh `bmad-dev-story`/`bmad-quick-dev` worker — **or** consciously defer it and start `6-3` (font-size = Increment B of the same panel).
+
 Four geometry fix-attempts on the single-window FloatingBar failed (the last made it worse and was
 reverted). Root cause, confirmed by the deep-dive (`docs/deep-dive-bar-subsystem.md`): the bar is
 **one window** that re-measures → resizes → reshapes → repositions itself on **every preview chunk**

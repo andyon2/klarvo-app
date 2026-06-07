@@ -117,6 +117,12 @@ Andi's real-build smoke: the in-panel live card reflected changes, but **clickin
 
 **Why both reviews missed it:** the first-pass Acceptance Auditor and the redesign review both verified `SettingsPanel`'s `onSave` call + the `saveSettings` signature/invoke, but neither traced the intermediate `useSettings` hook that is the *actual* `onSave`. No automated test exercises the hook chain → Linux-green, dead on device. Lesson → memory `feedback-surface-feature-operable-ux` (verify the FULL chain to the real IPC call, including intermediate hooks/wrappers, not just the first and last hop).
 
+### SMOKE FINDING (cosmetic, OPEN) — corner artifact blocks `done`
+
+Save now works (confirmed by Andi). The remaining blocker: on the real Windows build the preview box's **bottom-left corner renders rough/jagged**; top corners are clean (asymmetric). Everything else in the redesign (themes / colour pickers / opacity / font dropdown / live card / Save + persistence) is confirmed working on the real build.
+
+- [ ] [Smoke][OPEN] **Corner artifact — bottom-left of the preview box renders rough.** **Ruled out as causes (PROVEN — do NOT retry):** GDI window region `set_preview_shape` (a *freshly created* no-region window still showed it — verified via Klarvo.log process-start at 15:53) and `backdrop-filter: blur` (disabled, still rough). Code baseline = commit `0406104` (both speculative experiments reverted). **Next attempt is observe-first** (zoomed capture / one-flip repro → name the cause → exactly one change), per `project-context.md` rule 29 + the conductor's GATE 4 — NOT another guess→build→test cycle. See `WAYPOINT.md`.
+
 ## Change Log
 
 - 2026-06-07: (redesign) SMOKE FINDING (High, Andi) — Save reset all appearance to defaults. Fix: forward the 7 fields through `handleSaveSettings` in `src/hooks/useSettings.ts` (signature + `saveSettings` call); the hook was the untraced 3rd hop both reviews missed. tsc/vite green. Re-smoke required before done.
