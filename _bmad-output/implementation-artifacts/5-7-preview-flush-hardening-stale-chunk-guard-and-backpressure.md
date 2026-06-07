@@ -2,12 +2,12 @@
 story: "5.7"
 epic: "5"
 title: "Hardening — preview-flush stale-chunk guard + in-flight backpressure"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["5.1", "5.2"]
 buildsOn: ["5.1", "5.2"]
 enabledBy: []
-status_note: "2026-06-05: review → in-progress (3 patches) → review (code cleared, inversion RED-verified, clippy clean). Windows smoke (5.4/5.5/5.6) owed before done."
+status_note: "2026-06-07: DONE — Andi confirmed Windows smoke green / no longer blocking. The smoke blocker was the pre-existing 5-2/5-5 grow-upward top-clip (not 5-7), since fixed by Epic 6 (6-2 window port + 6-6 inset card). Code was review-cleared earlier (commit e71d1c0, Opus 3-layer, inversion RED-verified, clippy clean, 572 tests). 2026-06-05: review → in-progress (3 patches) → review (code cleared, inversion RED-verified, clippy clean)."
 inputDocuments:
   - _bmad-output/planning-artifacts/epics-live-preview.md
   - _bmad-output/project-context.md
@@ -19,7 +19,7 @@ inputDocuments:
 
 # Story 5.7: Hardening — preview-flush stale-chunk guard + in-flight backpressure
 
-Status: review
+Status: done
 
 ## Story
 
