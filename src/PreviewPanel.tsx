@@ -358,7 +358,7 @@ export default function PreviewPanel(): React.ReactElement {
   useLayoutEffect(() => {
     if (!previewPanelRef.current) return;
     const contentH = previewPanelRef.current.scrollHeight;
-    if (contentH > clampedMaxHeightRef.current) {
+    if (contentH > previewPanelRef.current.clientHeight + 1) {
       setPanelScrolls(true);
     }
   }, [livePreview]);
