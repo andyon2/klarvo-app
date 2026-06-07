@@ -109,9 +109,18 @@ Code review 2026-06-07 (Opus 4.8, focused adversarial+edge pass on the 420-line 
 - [x] [Review][Dismiss] Theme-then-edit normalizes alpha `0.40`→`0.4` — identical color, harmless.
 - [x] [Review][Patch] Stale comment referenced a non-existent `previewAppearance.test.ts` — corrected inline by conductor (no test runner in project).
 
+### SMOKE FINDING (High) — save chain broke; both automated reviews missed it
+
+Andi's real-build smoke: the in-panel live card reflected changes, but **clicking Save reset every appearance field to defaults** (config.json stayed at pure defaults after save). Root cause: the save chain has a **third hop** — `SettingsPanel.onSave` → `settings.handleSaveSettings` (`src/hooks/useSettings.ts`) → `saveSettings`. `handleSaveSettings`'s signature stopped at `newPreviewPanelForm` and its `saveSettings(...)` forwarding call stopped at `newPreviewPanelForm ?? null`, so the 7 appearance args from SettingsPanel were silently dropped (extra JS positional args) → `saveSettings` got `undefined` → sent `null` → `merge_settings` kept `existing` (defaults). Then `handleSaveSettings` does `getSettings()` + `setLoadedSettings`, whose resync `useEffect` snapped the sliders back to the (still-default) values = the visible reset.
+
+- [x] [Smoke][Patch] **Forward the 7 preview-appearance fields through `handleSaveSettings`** (`src/hooks/useSettings.ts`) — added to both the hook signature and the `saveSettings(...)` call, in the same order as `saveSettings`'s params (after `previewPanelForm`). tsc/vite green. **Re-smoke required.**
+
+**Why both reviews missed it:** the first-pass Acceptance Auditor and the redesign review both verified `SettingsPanel`'s `onSave` call + the `saveSettings` signature/invoke, but neither traced the intermediate `useSettings` hook that is the *actual* `onSave`. No automated test exercises the hook chain → Linux-green, dead on device. Lesson → memory `feedback-surface-feature-operable-ux` (verify the FULL chain to the real IPC call, including intermediate hooks/wrappers, not just the first and last hop).
+
 ## Change Log
 
-- 2026-06-07: (redesign) Code review (Opus 4.8) — behaviorally clean, no High/Med; 2 Low dismissed + 1 comment-hygiene fix. tsc/vite re-verified green. Status stays review pending Task-7.3 Windows smoke.
+- 2026-06-07: (redesign) SMOKE FINDING (High, Andi) — Save reset all appearance to defaults. Fix: forward the 7 fields through `handleSaveSettings` in `src/hooks/useSettings.ts` (signature + `saveSettings` call); the hook was the untraced 3rd hop both reviews missed. tsc/vite green. Re-smoke required before done.
+- 2026-06-07: (redesign) Code review (Opus 4.8) — flagged behaviorally clean (WRONG: missed the useSettings save-hop High bug, caught only in human smoke); 2 Low dismissed + 1 comment-hygiene fix. tsc/vite green. Status stays review pending Task-7.3 Windows smoke.
 - 2026-06-07: (redesign) Implemented by claude-sonnet-4-6 — themes + visual pickers + live card; frontend-only; 574 Rust tests/tsc/vite green. BLOCKED on Windows smoke (Task 7.3).
 - 2026-06-07: Story REDESIGNED (Andi feedback on real-build smoke) — raw rgba/hex text inputs replaced by themes + visual pickers + in-panel live preview; font-family → dropdown; appearance scope only (font-size folded to re-scoped 6.3, Increment B, same panel). Plumbing from first pass (`c61534d`) reused unchanged. Status reset ready-for-dev.
 - 2026-06-07: (first pass) Code review (Opus 4.8) 2 patch / 2 defer / 9 dismissed — superseded by redesign; the two patches (state-driven card, `|| default` string guard) remain in `c61534d` and are kept.
