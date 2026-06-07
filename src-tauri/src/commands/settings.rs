@@ -153,6 +153,14 @@ pub struct SettingsPatch {
     pub live_preview_enabled: Option<bool>,
     pub preview_pause_silence_secs: Option<f32>,
     pub preview_panel_form: Option<String>,
+    // Story 6.6 preview appearance fields.
+    pub preview_text_color: Option<String>,
+    pub preview_bg_color: Option<String>,
+    pub preview_bg_blur: Option<u8>,
+    pub preview_border_color: Option<String>,
+    pub preview_border_width: Option<u8>,
+    pub preview_border_radius: Option<u8>,
+    pub preview_font_family: Option<String>,
 }
 
 impl Default for SettingsPatch {
@@ -199,6 +207,13 @@ impl Default for SettingsPatch {
             live_preview_enabled: None,
             preview_pause_silence_secs: None,
             preview_panel_form: None,
+            preview_text_color: None,
+            preview_bg_color: None,
+            preview_bg_blur: None,
+            preview_border_color: None,
+            preview_border_width: None,
+            preview_border_radius: None,
+            preview_font_family: None,
         }
     }
 }
@@ -325,6 +340,20 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.preview_pause_silence_secs),
         preview_panel_form: patch.preview_panel_form
             .unwrap_or(existing.preview_panel_form),
+        preview_text_color: patch.preview_text_color
+            .unwrap_or(existing.preview_text_color),
+        preview_bg_color: patch.preview_bg_color
+            .unwrap_or(existing.preview_bg_color),
+        preview_bg_blur: patch.preview_bg_blur
+            .unwrap_or(existing.preview_bg_blur),
+        preview_border_color: patch.preview_border_color
+            .unwrap_or(existing.preview_border_color),
+        preview_border_width: patch.preview_border_width
+            .unwrap_or(existing.preview_border_width),
+        preview_border_radius: patch.preview_border_radius
+            .unwrap_or(existing.preview_border_radius),
+        preview_font_family: patch.preview_font_family
+            .unwrap_or(existing.preview_font_family),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
@@ -417,6 +446,14 @@ pub async fn save_settings(
     live_preview_enabled: Option<bool>,
     preview_pause_silence_secs: Option<f32>,
     preview_panel_form: Option<String>,
+    // Story 6.6 preview appearance.
+    preview_text_color: Option<String>,
+    preview_bg_color: Option<String>,
+    preview_bg_blur: Option<u8>,
+    preview_border_color: Option<String>,
+    preview_border_width: Option<u8>,
+    preview_border_radius: Option<u8>,
+    preview_font_family: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -502,6 +539,13 @@ pub async fn save_settings(
         live_preview_enabled,
         preview_pause_silence_secs,
         preview_panel_form,
+        preview_text_color,
+        preview_bg_color,
+        preview_bg_blur,
+        preview_border_color,
+        preview_border_width,
+        preview_border_radius,
+        preview_font_family,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -602,6 +646,13 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         live_preview_enabled: cfg.live_preview_enabled,
         preview_pause_silence_secs: cfg.preview_pause_silence_secs,
         preview_panel_form: cfg.preview_panel_form.clone(),
+        preview_text_color: cfg.preview_text_color.clone(),
+        preview_bg_color: cfg.preview_bg_color.clone(),
+        preview_bg_blur: cfg.preview_bg_blur,
+        preview_border_color: cfg.preview_border_color.clone(),
+        preview_border_width: cfg.preview_border_width,
+        preview_border_radius: cfg.preview_border_radius,
+        preview_font_family: cfg.preview_font_family.clone(),
     })
 }
 
@@ -1391,6 +1442,13 @@ mod tests {
             live_preview_enabled: Some(true),
             preview_pause_silence_secs: Some(1.0),
             preview_panel_form: Some("compact".to_string()),
+            preview_text_color: None,
+            preview_bg_color: None,
+            preview_bg_blur: None,
+            preview_border_color: None,
+            preview_border_width: None,
+            preview_border_radius: None,
+            preview_font_family: None,
         };
 
         let result = merge_settings(existing, patch);
@@ -1995,5 +2053,80 @@ mod tests {
             "None auto patch must preserve existing 4.0, got {}",
             result2.auto_mode_silence_secs
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 6.6 — AC-2: SettingsPatch round-trip for preview appearance fields.
+    //
+    // Inversion guard: change `Some("rgba(1,2,3,0.5)")` → `Some("wrong")`
+    // → `assert_eq!(result.preview_text_color, "rgba(1,2,3,0.5)")` goes RED.
+    // -----------------------------------------------------------------------
+
+    /// AC-2 (Story 6.6): mutating a preview appearance field via patch round-trips
+    /// correctly; None patch preserves the existing value.
+    #[test]
+    fn spec_preview_appearance_settings_patch_round_trip() {
+        let existing = AppConfig {
+            preview_text_color: "rgba(220,220,220,0.88)".to_string(),
+            preview_bg_color: "rgba(25,25,25,0.96)".to_string(),
+            preview_bg_blur: 12,
+            preview_border_color: "rgba(42,195,168,0.25)".to_string(),
+            preview_border_width: 1,
+            preview_border_radius: 14,
+            preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
+            ..AppConfig::default()
+        };
+
+        // Mutate all seven fields.
+        let patch = SettingsPatch {
+            preview_text_color: Some("rgba(255,255,255,1.0)".to_string()),
+            preview_bg_color: Some("rgba(0,0,0,0.8)".to_string()),
+            preview_bg_blur: Some(0),
+            preview_border_color: Some("rgba(255,0,0,1.0)".to_string()),
+            preview_border_width: Some(3),
+            preview_border_radius: Some(8),
+            preview_font_family: Some("monospace".to_string()),
+            ..SettingsPatch::default()
+        };
+
+        let result = merge_settings(existing.clone(), patch);
+
+        assert_eq!(
+            result.preview_text_color, "rgba(255,255,255,1.0)",
+            "patched preview_text_color must be rgba(255,255,255,1.0)"
+        );
+        assert_eq!(
+            result.preview_bg_color, "rgba(0,0,0,0.8)",
+            "patched preview_bg_color must be rgba(0,0,0,0.8)"
+        );
+        assert_eq!(result.preview_bg_blur, 0, "patched preview_bg_blur must be 0");
+        assert_eq!(
+            result.preview_border_color, "rgba(255,0,0,1.0)",
+            "patched preview_border_color must be rgba(255,0,0,1.0)"
+        );
+        assert_eq!(result.preview_border_width, 3, "patched preview_border_width must be 3");
+        assert_eq!(result.preview_border_radius, 8, "patched preview_border_radius must be 8");
+        assert_eq!(
+            result.preview_font_family, "monospace",
+            "patched preview_font_family must be monospace"
+        );
+
+        // None patch must preserve existing values.
+        let patch_none = SettingsPatch {
+            preview_text_color: None,
+            preview_bg_color: None,
+            preview_bg_blur: None,
+            preview_border_color: None,
+            preview_border_width: None,
+            preview_border_radius: None,
+            preview_font_family: None,
+            ..SettingsPatch::default()
+        };
+        let result2 = merge_settings(existing, patch_none);
+        assert_eq!(
+            result2.preview_text_color, "rgba(220,220,220,0.88)",
+            "None patch must preserve existing preview_text_color"
+        );
+        assert_eq!(result2.preview_border_radius, 14, "None patch must preserve existing preview_border_radius");
     }
 }

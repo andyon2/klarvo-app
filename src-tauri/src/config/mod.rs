@@ -719,6 +719,41 @@ pub struct AppConfig {
     #[serde(default = "default_preview_panel_form")]
     pub preview_panel_form: String,
 
+    // --- Preview box appearance fields (Story 6.6 / FR11-FR13) ---
+    // All values are CSS strings or small integers. Defaults match the
+    // hardcoded values in PreviewPanel.tsx so existing users see no change.
+
+    /// Preview text color: CSS color string. Default: `"rgba(220,220,220,0.88)"`.
+    #[serde(default = "default_preview_text_color")]
+    pub preview_text_color: String,
+
+    /// Preview background color: CSS color string (may include opacity).
+    /// Default: `"rgba(25,25,25,0.96)"`.
+    #[serde(default = "default_preview_bg_color")]
+    pub preview_bg_color: String,
+
+    /// Preview backdrop-blur radius in px (0 = no blur). Default: `12`.
+    #[serde(default = "default_preview_bg_blur")]
+    pub preview_bg_blur: u8,
+
+    /// Preview border color: CSS color string. Default: `"rgba(42,195,168,0.25)"`.
+    #[serde(default = "default_preview_border_color")]
+    pub preview_border_color: String,
+
+    /// Preview border thickness in px. Default: `1`.
+    #[serde(default = "default_preview_border_width")]
+    pub preview_border_width: u8,
+
+    /// Preview corner radius in px. MUST match `set_preview_shape` radius (R11).
+    /// Default: `14`.
+    #[serde(default = "default_preview_border_radius")]
+    pub preview_border_radius: u8,
+
+    /// Preview font family: CSS font-family string.
+    /// Default: `"'Inter', system-ui, -apple-system, sans-serif"`.
+    #[serde(default = "default_preview_font_family")]
+    pub preview_font_family: String,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -928,6 +963,29 @@ fn default_preview_panel_form() -> String {
     "comfortable".to_string()
 }
 
+// Story 6.6 preview appearance defaults (must match PreviewPanel.tsx hardcodes).
+fn default_preview_text_color() -> String {
+    "rgba(220,220,220,0.88)".to_string()
+}
+fn default_preview_bg_color() -> String {
+    "rgba(25,25,25,0.96)".to_string()
+}
+fn default_preview_bg_blur() -> u8 {
+    12
+}
+fn default_preview_border_color() -> String {
+    "rgba(42,195,168,0.25)".to_string()
+}
+fn default_preview_border_width() -> u8 {
+    1
+}
+fn default_preview_border_radius() -> u8 {
+    14
+}
+fn default_preview_font_family() -> String {
+    "'Inter', system-ui, -apple-system, sans-serif".to_string()
+}
+
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
 }
@@ -993,6 +1051,13 @@ impl Default for AppConfig {
             live_preview_enabled: false,
             preview_pause_silence_secs: default_preview_pause_silence_secs(),
             preview_panel_form: default_preview_panel_form(),
+            preview_text_color: default_preview_text_color(),
+            preview_bg_color: default_preview_bg_color(),
+            preview_bg_blur: default_preview_bg_blur(),
+            preview_border_color: default_preview_border_color(),
+            preview_border_width: default_preview_border_width(),
+            preview_border_radius: default_preview_border_radius(),
+            preview_font_family: default_preview_font_family(),
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
@@ -2039,6 +2104,13 @@ mod tests {
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
             preview_panel_form: "comfortable".to_string(),
+            preview_text_color: default_preview_text_color(),
+            preview_bg_color: default_preview_bg_color(),
+            preview_bg_blur: default_preview_bg_blur(),
+            preview_border_color: default_preview_border_color(),
+            preview_border_width: default_preview_border_width(),
+            preview_border_radius: default_preview_border_radius(),
+            preview_font_family: default_preview_font_family(),
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
@@ -3331,6 +3403,13 @@ mod tests {
             live_preview_enabled: true,
             preview_pause_silence_secs: 1.5,
             preview_panel_form: "comfortable".to_string(),
+            preview_text_color: default_preview_text_color(),
+            preview_bg_color: default_preview_bg_color(),
+            preview_bg_blur: default_preview_bg_blur(),
+            preview_border_color: default_preview_border_color(),
+            preview_border_width: default_preview_border_width(),
+            preview_border_radius: default_preview_border_radius(),
+            preview_font_family: default_preview_font_family(),
             bar_x: Some(200.0),
             bar_y: Some(800.0),
 
@@ -3965,6 +4044,114 @@ mod tests {
         assert!(
             writes.is_empty(),
             "No migration write must fire for the new preview fields ({} writes)",
+            writes.len()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 6.6 — AC-1, AC-6:
+    //   seven preview appearance fields (previewTextColor, previewBgColor,
+    //   previewBgBlur, previewBorderColor, previewBorderWidth, previewBorderRadius,
+    //   previewFontFamily)
+    //
+    // Verifies: serde default fallback when keys are absent, camelCase JSON keys,
+    // round-trip serialisation, and no migration write.
+    //
+    // Inversion guard: remove `#[serde(default = "default_preview_text_color")]`
+    // from `preview_text_color` → serde errors on missing key
+    // → `assert!(result.is_ok())` goes RED (proving the guard is load-bearing).
+    // -----------------------------------------------------------------------
+
+    /// AC-1 + AC-6 (Story 6.6): all seven appearance fields read their serde
+    /// defaults when the keys are absent, camelCase keys are present in JSON,
+    /// and round-trip serialisation preserves exact values.
+    #[test]
+    fn spec_preview_appearance_config_fields_default() {
+        let default_cfg = AppConfig::default();
+        let mut json: serde_json::Value = serde_json::to_value(&default_cfg).unwrap();
+
+        // Confirm camelCase keys are present in the serialised output.
+        let obj = json.as_object().unwrap();
+        assert!(
+            obj.contains_key("previewTextColor"),
+            "expected camelCase key 'previewTextColor', got snake-case or absent"
+        );
+        assert!(
+            obj.contains_key("previewBgColor"),
+            "expected camelCase key 'previewBgColor'"
+        );
+        assert!(
+            obj.contains_key("previewBgBlur"),
+            "expected camelCase key 'previewBgBlur'"
+        );
+        assert!(
+            obj.contains_key("previewBorderColor"),
+            "expected camelCase key 'previewBorderColor'"
+        );
+        assert!(
+            obj.contains_key("previewBorderWidth"),
+            "expected camelCase key 'previewBorderWidth'"
+        );
+        assert!(
+            obj.contains_key("previewBorderRadius"),
+            "expected camelCase key 'previewBorderRadius'"
+        );
+        assert!(
+            obj.contains_key("previewFontFamily"),
+            "expected camelCase key 'previewFontFamily'"
+        );
+
+        // Strip the seven new keys to simulate a pre-6.6 on-disk config.json.
+        let obj_mut = json.as_object_mut().unwrap();
+        obj_mut.remove("previewTextColor");
+        obj_mut.remove("previewBgColor");
+        obj_mut.remove("previewBgBlur");
+        obj_mut.remove("previewBorderColor");
+        obj_mut.remove("previewBorderWidth");
+        obj_mut.remove("previewBorderRadius");
+        obj_mut.remove("previewFontFamily");
+
+        let stripped_json = serde_json::to_string(&json).unwrap();
+
+        // Deserialising without the fields must succeed and fill in defaults.
+        let result: Result<AppConfig, _> = serde_json::from_str(&stripped_json);
+        assert!(
+            result.is_ok(),
+            "Deserializing JSON without appearance fields must succeed, got: {:?}",
+            result.err()
+        );
+        let cfg = result.unwrap();
+
+        assert_eq!(
+            cfg.preview_text_color, "rgba(220,220,220,0.88)",
+            "preview_text_color default must be rgba(220,220,220,0.88)"
+        );
+        assert_eq!(
+            cfg.preview_bg_color, "rgba(25,25,25,0.96)",
+            "preview_bg_color default must be rgba(25,25,25,0.96)"
+        );
+        assert_eq!(cfg.preview_bg_blur, 12, "preview_bg_blur default must be 12");
+        assert_eq!(
+            cfg.preview_border_color, "rgba(42,195,168,0.25)",
+            "preview_border_color default must be rgba(42,195,168,0.25)"
+        );
+        assert_eq!(cfg.preview_border_width, 1, "preview_border_width default must be 1");
+        assert_eq!(cfg.preview_border_radius, 14, "preview_border_radius default must be 14");
+        assert_eq!(
+            cfg.preview_font_family, "'Inter', system-ui, -apple-system, sans-serif",
+            "preview_font_family default must match the shipped PreviewPanel.tsx value"
+        );
+
+        // No migration write must fire for additive serde defaults.
+        let mut warnings_buf: Vec<String> = Vec::new();
+        let (_, writes) = migrate_and_normalize(
+            cfg.clone(),
+            &std::path::PathBuf::from("/tmp"),
+            &mut warnings_buf,
+        );
+        assert!(
+            writes.is_empty(),
+            "No migration write must fire for the new appearance fields ({} writes)",
             writes.len()
         );
     }

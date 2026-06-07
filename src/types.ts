@@ -82,6 +82,21 @@ export interface AppSettings {
   previewPauseSilenceSecs: number;
   /** Display form preset for the live-preview panel. "compact" | "comfortable" | "wide". Desktop only. */
   previewPanelForm: string;
+  // Story 6.6 preview appearance fields.
+  /** Preview text appearance: CSS color string (e.g. "rgba(220,220,220,0.88)"). */
+  previewTextColor: string;
+  /** Preview box background: CSS color string (may include opacity). */
+  previewBgColor: string;
+  /** Preview box backdrop-blur radius in px (0 = no blur). */
+  previewBgBlur: number;
+  /** Preview border color: CSS color string. */
+  previewBorderColor: string;
+  /** Preview border thickness in px. */
+  previewBorderWidth: number;
+  /** Preview corner radius in px. MUST match set_preview_shape radius (R11). */
+  previewBorderRadius: number;
+  /** Preview font family: CSS font-family string (e.g. "'Inter', system-ui, sans-serif"). */
+  previewFontFamily: string;
 }
 
 // A per-application recording profile.

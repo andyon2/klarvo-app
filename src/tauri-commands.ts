@@ -84,6 +84,14 @@ const MOCK_SETTINGS: AppSettings = {
   livePreviewEnabled: false,
   previewPauseSilenceSecs: 2.0,
   previewPanelForm: "comfortable",
+  // Story 6.6 preview appearance defaults (must match Rust defaults and PreviewPanel.tsx hardcodes).
+  previewTextColor: "rgba(220,220,220,0.88)",
+  previewBgColor: "rgba(25,25,25,0.96)",
+  previewBgBlur: 12,
+  previewBorderColor: "rgba(42,195,168,0.25)",
+  previewBorderWidth: 1,
+  previewBorderRadius: 14,
+  previewFontFamily: "'Inter', system-ui, -apple-system, sans-serif",
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -288,6 +296,14 @@ export async function saveSettings(
   livePreviewEnabled?: boolean | null,
   previewPauseSilenceSecs?: number | null,
   previewPanelForm?: string | null,
+  // Story 6.6 preview appearance.
+  previewTextColor?: string | null,
+  previewBgColor?: string | null,
+  previewBgBlur?: number | null,
+  previewBorderColor?: string | null,
+  previewBorderWidth?: number | null,
+  previewBorderRadius?: number | null,
+  previewFontFamily?: string | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -332,6 +348,13 @@ export async function saveSettings(
     livePreviewEnabled: livePreviewEnabled ?? null,
     previewPauseSilenceSecs: previewPauseSilenceSecs ?? null,
     previewPanelForm: previewPanelForm ?? null,
+    previewTextColor: previewTextColor ?? null,
+    previewBgColor: previewBgColor ?? null,
+    previewBgBlur: previewBgBlur ?? null,
+    previewBorderColor: previewBorderColor ?? null,
+    previewBorderWidth: previewBorderWidth ?? null,
+    previewBorderRadius: previewBorderRadius ?? null,
+    previewFontFamily: previewFontFamily ?? null,
   });
 }
 
@@ -519,9 +542,9 @@ export async function setBarShape(_shape: "idle" | "pill" | "panel"): Promise<vo
   await invoke("set_bar_shape", { shape: _shape });
 }
 
-export async function setPreviewShape(): Promise<void> {
+export async function setPreviewShape(radius: number): Promise<void> {
   if (isPreviewMode) return;
-  await invoke("set_preview_shape");
+  await invoke("set_preview_shape", { radius });
 }
 
 // --- Live preview ---

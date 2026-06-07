@@ -475,9 +475,16 @@ pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
 
 /// Applies a rounded-rect OS window region to the "preview" window.
 /// Called once per show (size is already set before this is called).
+/// `radius` is the CSS border-radius in logical px (Story 6.6: AC-4 / R11).
+/// It MUST equal the CSS `borderRadius` applied to the preview card or a
+/// white-line corner artifact appears on Windows.
+///
+/// Inversion (smoke-time): pass radius=8 while CSS uses borderRadius=14
+/// → white-line gap at corners → RED.
+///
 /// `#[cfg(target_os = "windows")]` body only; no-op on other platforms.
 #[tauri::command]
-pub fn set_preview_shape(handle: AppHandle) -> Result<(), String> {
+pub fn set_preview_shape(handle: AppHandle, radius: i32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use tauri::Manager;
@@ -488,13 +495,13 @@ pub fn set_preview_shape(handle: AppHandle) -> Result<(), String> {
                 if let Ok(size) = preview.inner_size() {
                     let w = size.width as i32;
                     let ht = size.height as i32;
-                    let r = (14.0 * scale) as i32;
+                    let r = (radius as f64 * scale) as i32;
                     crate::set_window_region_round_rect(h, w, ht, r);
                 }
             }
         }
     }
-    let _ = handle; // suppress unused on non-Windows
+    let _ = (handle, radius); // suppress unused on non-Windows
     Ok(())
 }
 

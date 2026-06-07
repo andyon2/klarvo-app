@@ -218,6 +218,21 @@ export interface ShortcutsContentProps {
   // Live Preview display form preset (desktop only)
   localPreviewPanelForm: string;
   setLocalPreviewPanelForm: (v: string) => void;
+  // Story 6.6 preview appearance fields (desktop only)
+  localPreviewTextColor: string;
+  setLocalPreviewTextColor: (v: string) => void;
+  localPreviewBgColor: string;
+  setLocalPreviewBgColor: (v: string) => void;
+  localPreviewBgBlur: number;
+  setLocalPreviewBgBlur: (v: number) => void;
+  localPreviewBorderColor: string;
+  setLocalPreviewBorderColor: (v: string) => void;
+  localPreviewBorderWidth: number;
+  setLocalPreviewBorderWidth: (v: number) => void;
+  localPreviewBorderRadius: number;
+  setLocalPreviewBorderRadius: (v: number) => void;
+  localPreviewFontFamily: string;
+  setLocalPreviewFontFamily: (v: string) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -238,6 +253,13 @@ export function ShortcutsContent({
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
   localLivePreviewEnabled, setLocalLivePreviewEnabled, localPreviewPauseSilenceSecs, setLocalPreviewPauseSilenceSecs,
   localPreviewPanelForm, setLocalPreviewPanelForm,
+  localPreviewTextColor, setLocalPreviewTextColor,
+  localPreviewBgColor, setLocalPreviewBgColor,
+  localPreviewBgBlur, setLocalPreviewBgBlur,
+  localPreviewBorderColor, setLocalPreviewBorderColor,
+  localPreviewBorderWidth, setLocalPreviewBorderWidth,
+  localPreviewBorderRadius, setLocalPreviewBorderRadius,
+  localPreviewFontFamily, setLocalPreviewFontFamily,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -470,6 +492,102 @@ export function ShortcutsContent({
                   <p className="text-[11px] text-klarvo-muted">
                     Changes the width of the preview panel.
                   </p>
+                </div>
+                {/* Appearance sub-section (Story 6.6 / FR11-FR13) */}
+                <div className="flex flex-col gap-1.5">
+                  <span className={LABEL_CLS}>Appearance</span>
+                  {/* Text Color */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Text color</span>
+                    <input
+                      type="text"
+                      value={localPreviewTextColor}
+                      onChange={(e) => setLocalPreviewTextColor(e.target.value)}
+                      placeholder="rgba(220,220,220,0.88)"
+                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
+                    />
+                  </div>
+                  {/* Background Color */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Bg color</span>
+                    <input
+                      type="text"
+                      value={localPreviewBgColor}
+                      onChange={(e) => setLocalPreviewBgColor(e.target.value)}
+                      placeholder="rgba(25,25,25,0.96)"
+                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
+                    />
+                  </div>
+                  {/* Bg Blur */}
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Bg blur</span>
+                      <span className="text-xs font-mono text-klarvo-primary">{localPreviewBgBlur}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      step={1}
+                      value={localPreviewBgBlur}
+                      onChange={(e) => setLocalPreviewBgBlur(parseInt(e.target.value, 10))}
+                      className="w-full accent-klarvo-primary"
+                    />
+                  </div>
+                  {/* Border Color */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Border color</span>
+                    <input
+                      type="text"
+                      value={localPreviewBorderColor}
+                      onChange={(e) => setLocalPreviewBorderColor(e.target.value)}
+                      placeholder="rgba(42,195,168,0.25)"
+                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
+                    />
+                  </div>
+                  {/* Border Width */}
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Border thickness</span>
+                      <span className="text-xs font-mono text-klarvo-primary">{localPreviewBorderWidth}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={5}
+                      step={1}
+                      value={localPreviewBorderWidth}
+                      onChange={(e) => setLocalPreviewBorderWidth(parseInt(e.target.value, 10))}
+                      className="w-full accent-klarvo-primary"
+                    />
+                  </div>
+                  {/* Corner Radius */}
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Corner radius</span>
+                      <span className="text-xs font-mono text-klarvo-primary">{localPreviewBorderRadius}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={24}
+                      step={1}
+                      value={localPreviewBorderRadius}
+                      onChange={(e) => setLocalPreviewBorderRadius(parseInt(e.target.value, 10))}
+                      className="w-full accent-klarvo-primary"
+                    />
+                  </div>
+                  {/* Font Family */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Font family</span>
+                    <input
+                      type="text"
+                      value={localPreviewFontFamily}
+                      onChange={(e) => setLocalPreviewFontFamily(e.target.value)}
+                      placeholder="'Inter', system-ui, sans-serif"
+                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
+                    />
+                  </div>
                 </div>
               </>
             )}

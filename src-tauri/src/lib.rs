@@ -202,6 +202,21 @@ pub struct SettingsView {
     pub preview_pause_silence_secs: f32,
     /// Display form preset for the live-preview panel ("compact" | "comfortable" | "wide").
     pub preview_panel_form: String,
+    // Story 6.6 preview appearance fields.
+    /// Preview text color: CSS color string.
+    pub preview_text_color: String,
+    /// Preview background color: CSS color string.
+    pub preview_bg_color: String,
+    /// Preview backdrop-blur radius in px.
+    pub preview_bg_blur: u8,
+    /// Preview border color: CSS color string.
+    pub preview_border_color: String,
+    /// Preview border thickness in px.
+    pub preview_border_width: u8,
+    /// Preview corner radius in px (must match set_preview_shape radius, R11).
+    pub preview_border_radius: u8,
+    /// Preview font family: CSS font-family string.
+    pub preview_font_family: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,6 +1280,13 @@ mod tests {
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
             preview_panel_form: "comfortable".to_string(),
+            preview_text_color: "rgba(220,220,220,0.88)".to_string(),
+            preview_bg_color: "rgba(25,25,25,0.96)".to_string(),
+            preview_bg_blur: 12,
+            preview_border_color: "rgba(42,195,168,0.25)".to_string(),
+            preview_border_width: 1,
+            preview_border_radius: 14,
+            preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1325,6 +1347,13 @@ mod tests {
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
             preview_panel_form: "comfortable".to_string(),
+            preview_text_color: "rgba(220,220,220,0.88)".to_string(),
+            preview_bg_color: "rgba(25,25,25,0.96)".to_string(),
+            preview_bg_blur: 12,
+            preview_border_color: "rgba(42,195,168,0.25)".to_string(),
+            preview_border_width: 1,
+            preview_border_radius: 14,
+            preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1379,6 +1408,13 @@ mod tests {
             live_preview_enabled: false,
             preview_pause_silence_secs: 2.0,
             preview_panel_form: "comfortable".to_string(),
+            preview_text_color: "rgba(220,220,220,0.88)".to_string(),
+            preview_bg_color: "rgba(25,25,25,0.96)".to_string(),
+            preview_bg_blur: 12,
+            preview_border_color: "rgba(42,195,168,0.25)".to_string(),
+            preview_border_width: 1,
+            preview_border_radius: 14,
+            preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

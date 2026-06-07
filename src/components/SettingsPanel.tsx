@@ -73,6 +73,10 @@ export interface SettingsPanelProps {
     bubbleLongPressAutoSend?: boolean | null, bubbleLongPressSilenceSecs?: number | null,
     livePreviewEnabled?: boolean | null, previewPauseSilenceSecs?: number | null,
     previewPanelForm?: string | null,
+    previewTextColor?: string | null, previewBgColor?: string | null,
+    previewBgBlur?: number | null, previewBorderColor?: string | null,
+    previewBorderWidth?: number | null, previewBorderRadius?: number | null,
+    previewFontFamily?: string | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -178,6 +182,28 @@ export function SettingsPanel({
   );
   const [localPreviewPanelForm, setLocalPreviewPanelForm] = useState(
     loadedSettings?.previewPanelForm ?? "comfortable"
+  );
+  // Story 6.6 preview appearance state vars.
+  const [localPreviewTextColor, setLocalPreviewTextColor] = useState(
+    loadedSettings?.previewTextColor ?? "rgba(220,220,220,0.88)"
+  );
+  const [localPreviewBgColor, setLocalPreviewBgColor] = useState(
+    loadedSettings?.previewBgColor ?? "rgba(25,25,25,0.96)"
+  );
+  const [localPreviewBgBlur, setLocalPreviewBgBlur] = useState(
+    loadedSettings?.previewBgBlur ?? 12
+  );
+  const [localPreviewBorderColor, setLocalPreviewBorderColor] = useState(
+    loadedSettings?.previewBorderColor ?? "rgba(42,195,168,0.25)"
+  );
+  const [localPreviewBorderWidth, setLocalPreviewBorderWidth] = useState(
+    loadedSettings?.previewBorderWidth ?? 1
+  );
+  const [localPreviewBorderRadius, setLocalPreviewBorderRadius] = useState(
+    loadedSettings?.previewBorderRadius ?? 14
+  );
+  const [localPreviewFontFamily, setLocalPreviewFontFamily] = useState(
+    loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif"
   );
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
@@ -288,6 +314,15 @@ export function SettingsPanel({
       setLocalLivePreviewEnabled(loadedSettings.livePreviewEnabled ?? false);
       setLocalPreviewPauseSilenceSecs(loadedSettings.previewPauseSilenceSecs ?? 2.0);
       setLocalPreviewPanelForm(loadedSettings.previewPanelForm ?? "comfortable");
+      // Story 6.6 — Trap #2: ALL new settings fields MUST appear here or the Save
+      // button stays dirty forever after a save (isDirty sees stale local state).
+      setLocalPreviewTextColor(loadedSettings.previewTextColor ?? "rgba(220,220,220,0.88)");
+      setLocalPreviewBgColor(loadedSettings.previewBgColor ?? "rgba(25,25,25,0.96)");
+      setLocalPreviewBgBlur(loadedSettings.previewBgBlur ?? 12);
+      setLocalPreviewBorderColor(loadedSettings.previewBorderColor ?? "rgba(42,195,168,0.25)");
+      setLocalPreviewBorderWidth(loadedSettings.previewBorderWidth ?? 1);
+      setLocalPreviewBorderRadius(loadedSettings.previewBorderRadius ?? 14);
+      setLocalPreviewFontFamily(loadedSettings.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif");
     }
   }, [loadedSettings]);
 
@@ -360,7 +395,14 @@ export function SettingsPanel({
     || (advancedSettings !== null && advancedSettings.autoCapitalize !== localAutoCapitalize)
     || (loadedSettings?.livePreviewEnabled ?? false) !== localLivePreviewEnabled
     || (loadedSettings?.previewPauseSilenceSecs ?? 2.0) !== localPreviewPauseSilenceSecs
-    || (loadedSettings?.previewPanelForm ?? "comfortable") !== localPreviewPanelForm;
+    || (loadedSettings?.previewPanelForm ?? "comfortable") !== localPreviewPanelForm
+    || (loadedSettings?.previewTextColor ?? "rgba(220,220,220,0.88)") !== localPreviewTextColor
+    || (loadedSettings?.previewBgColor ?? "rgba(25,25,25,0.96)") !== localPreviewBgColor
+    || (loadedSettings?.previewBgBlur ?? 12) !== localPreviewBgBlur
+    || (loadedSettings?.previewBorderColor ?? "rgba(42,195,168,0.25)") !== localPreviewBorderColor
+    || (loadedSettings?.previewBorderWidth ?? 1) !== localPreviewBorderWidth
+    || (loadedSettings?.previewBorderRadius ?? 14) !== localPreviewBorderRadius
+    || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily;
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -373,6 +415,8 @@ export function SettingsPanel({
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
     advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
+    localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily,
   ]);
 
   // --- useCallback handlers ---
@@ -488,6 +532,10 @@ export function SettingsPanel({
         localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
         localLivePreviewEnabled, localPreviewPauseSilenceSecs,
         localPreviewPanelForm,
+        localPreviewTextColor, localPreviewBgColor,
+        localPreviewBgBlur, localPreviewBorderColor,
+        localPreviewBorderWidth, localPreviewBorderRadius,
+        localPreviewFontFamily,
       );
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
@@ -533,6 +581,8 @@ export function SettingsPanel({
     advancedSettings, localSilenceThreshold,
     openrouterKey,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
+    localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily,
     onSave,
   ]);
 
@@ -700,6 +750,20 @@ export function SettingsPanel({
                 setLocalPreviewPauseSilenceSecs={setLocalPreviewPauseSilenceSecs}
                 localPreviewPanelForm={localPreviewPanelForm}
                 setLocalPreviewPanelForm={setLocalPreviewPanelForm}
+                localPreviewTextColor={localPreviewTextColor}
+                setLocalPreviewTextColor={setLocalPreviewTextColor}
+                localPreviewBgColor={localPreviewBgColor}
+                setLocalPreviewBgColor={setLocalPreviewBgColor}
+                localPreviewBgBlur={localPreviewBgBlur}
+                setLocalPreviewBgBlur={setLocalPreviewBgBlur}
+                localPreviewBorderColor={localPreviewBorderColor}
+                setLocalPreviewBorderColor={setLocalPreviewBorderColor}
+                localPreviewBorderWidth={localPreviewBorderWidth}
+                setLocalPreviewBorderWidth={setLocalPreviewBorderWidth}
+                localPreviewBorderRadius={localPreviewBorderRadius}
+                setLocalPreviewBorderRadius={setLocalPreviewBorderRadius}
+                localPreviewFontFamily={localPreviewFontFamily}
+                setLocalPreviewFontFamily={setLocalPreviewFontFamily}
               />
             )}
             {activeCategory === "license" && (

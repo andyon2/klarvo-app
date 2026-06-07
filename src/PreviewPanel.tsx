@@ -23,7 +23,9 @@ const FONT_PX = { small: 11, medium: 13, large: 15 } as const;
 const BASE_WIDTH = { compact: 260, comfortable: 320, wide: 400 } as const;
 const BASE_MAX_HEIGHT = 600;
 const GAP = 8; // px between preview bottom and pill top
-const CARD_RADIUS = 14; // matches set_preview_shape + CSS borderRadius (R11)
+// CARD_RADIUS constant removed (Story 6.6): replaced by cardAppearance.borderRadius
+// (React state, set via setCardAppearance in runShowSequence). Both CSS borderRadius
+// and set_preview_shape use the same fresh appr value to satisfy the R11 invariant.
 const PILL_WIDTH = 200;
 
 function previewGeometry(
@@ -56,6 +58,19 @@ export default function PreviewPanel(): React.ReactElement {
   // One-shot gate: set to true after the first-chunk geometry sequence runs,
   // cleared on recording-end so geometry re-runs next cycle.
   const showOnceRef = useRef(false);
+
+  // Story 6.6: appearance driven by React state so the first/single chunk render
+  // gets the correct values (ref mutation never triggers a re-render — was the bug).
+  // Initialized to the same defaults as the Rust serde defaults.
+  const [cardAppearance, setCardAppearance] = useState({
+    textColor:    "rgba(220,220,220,0.88)",
+    bgColor:      "rgba(25,25,25,0.96)",
+    bgBlur:       12,
+    borderColor:  "rgba(42,195,168,0.25)",
+    borderWidth:  1,
+    borderRadius: 14,
+    fontFamily:   "'Inter', system-ui, -apple-system, sans-serif",
+  });
 
   // Max height in logical px set during the show sequence; used for cap/scroll logic.
   const clampedMaxHeightRef = useRef(BASE_MAX_HEIGHT);
@@ -97,15 +112,42 @@ export default function PreviewPanel(): React.ReactElement {
       const pillX = pillXRef.current!;
       const pillY = pillYRef.current!;
 
-      // Read widthPreset reactively (NOT from mount-time state — separate-window rule).
-      // Trap #3: a mount-only getSettings() freezes on app-start value.
+      // Read all reactive settings: widthPreset + appearance (Trap #3 — single getSettings call).
+      // NOT from mount-time state — this window never re-mounts when Settings saves.
       let widthPreset = "comfortable";
+      // Build appr as a local const so setCardAppearance, setPreviewShape, and the log
+      // all use the SAME freshly-read object — no stale ref, no async state lag.
+      // String fields use || (empty string "" is falsy → falls back to default).
+      // Numeric fields use ?? (0 is a valid value and must not fall back).
+      let appr = {
+        textColor:    "rgba(220,220,220,0.88)",
+        bgColor:      "rgba(25,25,25,0.96)",
+        bgBlur:       12,
+        borderColor:  "rgba(42,195,168,0.25)",
+        borderWidth:  1,
+        borderRadius: 14,
+        fontFamily:   "'Inter', system-ui, -apple-system, sans-serif",
+      };
       try {
         const s = await getSettings();
         widthPreset = s.previewPanelForm ?? "comfortable";
+        // Story 6.6: build appr from the just-read settings so CSS and
+        // set_preview_shape both use the latest saved values (Finding 1+2).
+        appr = {
+          textColor:    s.previewTextColor    || "rgba(220,220,220,0.88)",
+          bgColor:      s.previewBgColor      || "rgba(25,25,25,0.96)",
+          bgBlur:       s.previewBgBlur       ?? 12,
+          borderColor:  s.previewBorderColor  || "rgba(42,195,168,0.25)",
+          borderWidth:  s.previewBorderWidth  ?? 1,
+          borderRadius: s.previewBorderRadius ?? 14,
+          fontFamily:   s.previewFontFamily   || "'Inter', system-ui, -apple-system, sans-serif",
+        };
       } catch (e) {
-        console.warn("[preview] getSettings failed, using comfortable:", e);
+        console.warn("[preview] getSettings failed, using defaults:", e);
       }
+      // Drive React state from the fresh appr BEFORE the show sequence so the DOM
+      // has the correct appearance by the time show() reveals the window.
+      setCardAppearance(appr);
 
       const geom = previewGeometry(widthPreset, "small");
 
@@ -146,13 +188,14 @@ export default function PreviewPanel(): React.ReactElement {
       // Sequence: setSize → set_preview_shape (region) → setPosition → show.
       // Order is CRITICAL: region must be applied after size is set (inner_size() in
       // Rust reads the actual size after setSize returns). Show must be last.
-      // Inversion (R11): changing borderRadius to 28 while leaving Rust r=14 → white-line gap → RED.
+      // Inversion (R11): passing a different radius to setPreviewShape vs CSS borderRadius
+      // → white-line corner artifact on Windows → proves the coupling is load-bearing.
       await win.setSize(new LogicalSize(W, H));
-      await setPreviewShape();
+      await setPreviewShape(appr.borderRadius);
       await win.setPosition(new LogicalPosition(previewLeft, previewTop));
       await win.show();
 
-      console.log(`[preview] shown: ${W}x${H} at (${previewLeft.toFixed(0)}, ${previewTop.toFixed(0)})`);
+      console.log(`[preview] shown: ${W}x${H} at (${previewLeft.toFixed(0)}, ${previewTop.toFixed(0)}) appearance={textColor:${appr.textColor},bgColor:${appr.bgColor},bgBlur:${appr.bgBlur},borderColor:${appr.borderColor},borderWidth:${appr.borderWidth},borderRadius:${appr.borderRadius},fontFamily:${appr.fontFamily}}`);
     } catch (e) {
       console.error("[preview] runShowSequence failed:", e);
       showOnceRef.current = false; // allow retry on next chunk
@@ -260,8 +303,9 @@ export default function PreviewPanel(): React.ReactElement {
   // The card grows upward as text accumulates; when it fills clampedMaxH the
   // window does not resize — scrolling takes over.
   //
-  // R11 invariant: borderRadius: CARD_RADIUS (14) MUST match set_preview_shape's
-  // r = (14.0 * scale) as i32 — deviation = white-line corner artifact.
+  // R11 invariant: borderRadius from cardAppearance state MUST match the radius
+  // passed to set_preview_shape (both derived from the same fresh appr object in
+  // runShowSequence). Story 6.6 replaced the old CARD_RADIUS=14 hardcode.
   return (
     <>
       <style>{`
@@ -289,11 +333,18 @@ export default function PreviewPanel(): React.ReactElement {
               id="preview-card"
               ref={previewPanelRef}
               style={{
-                background: "rgba(25,25,25,0.96)",
-                backdropFilter: "blur(12px)",
-                WebkitBackdropFilter: "blur(12px)",
-                border: "1px solid rgba(42,195,168,0.25)",
-                borderRadius: CARD_RADIUS,
+                // Story 6.6: all seven appearance values come from cardAppearance state
+                // (set via setCardAppearance(appr) in runShowSequence before show()).
+                // State-driven: setCardAppearance triggers a re-render, so the DOM is
+                // correct on the first/single chunk — ref mutation never would have done that.
+                background: cardAppearance.bgColor,
+                backdropFilter: `blur(${cardAppearance.bgBlur}px)`,
+                WebkitBackdropFilter: `blur(${cardAppearance.bgBlur}px)`,
+                border: `${cardAppearance.borderWidth}px solid ${cardAppearance.borderColor}`,
+                // R11 invariant: borderRadius MUST equal the radius passed to setPreviewShape.
+                // Inversion (smoke-time): set CSS borderRadius to a different value than the
+                // Rust region radius → white-line corner artifact → RED.
+                borderRadius: cardAppearance.borderRadius,
                 overflow: "hidden",
                 overflowY: panelScrolls ? "auto" : "hidden",
                 // Top-fade when scrolled (oldest lines fade out at top).
@@ -307,8 +358,8 @@ export default function PreviewPanel(): React.ReactElement {
                 fontSize: 11,
                 lineHeight: 1.5,
                 letterSpacing: "0.01em",
-                color: "rgba(220,220,220,0.88)",
-                fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                color: cardAppearance.textColor,
+                fontFamily: cardAppearance.fontFamily,
                 overflowWrap: "anywhere",
                 scrollbarWidth: "none", // hidden — see comment above (click-through = no manual scroll)
                 userSelect: "none",
