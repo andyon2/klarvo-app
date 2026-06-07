@@ -217,6 +217,8 @@ pub struct SettingsView {
     pub preview_border_radius: u8,
     /// Preview font family: CSS font-family string.
     pub preview_font_family: String,
+    /// Preview font size: "small" | "medium" | "large".
+    pub preview_font_size: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,6 +1289,7 @@ mod tests {
             preview_border_width: 1,
             preview_border_radius: 14,
             preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
+            preview_font_size: "small".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("groqApiKeyMasked"), "expected camelCase key");
@@ -1354,6 +1357,7 @@ mod tests {
             preview_border_width: 1,
             preview_border_radius: 14,
             preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
+            preview_font_size: "small".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(
@@ -1415,6 +1419,7 @@ mod tests {
             preview_border_width: 1,
             preview_border_radius: 14,
             preview_font_family: "'Inter', system-ui, -apple-system, sans-serif".to_string(),
+            preview_font_size: "small".to_string(),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(

@@ -77,6 +77,7 @@ export interface SettingsPanelProps {
     previewBgBlur?: number | null, previewBorderColor?: string | null,
     previewBorderWidth?: number | null, previewBorderRadius?: number | null,
     previewFontFamily?: string | null,
+    previewFontSize?: string | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -205,6 +206,9 @@ export function SettingsPanel({
   const [localPreviewFontFamily, setLocalPreviewFontFamily] = useState(
     loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif"
   );
+  const [localPreviewFontSize, setLocalPreviewFontSize] = useState(
+    loadedSettings?.previewFontSize ?? "small"
+  );
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
   const [localAutoPaste, setLocalAutoPaste] = useState(true);
@@ -323,6 +327,8 @@ export function SettingsPanel({
       setLocalPreviewBorderWidth(loadedSettings.previewBorderWidth ?? 1);
       setLocalPreviewBorderRadius(loadedSettings.previewBorderRadius ?? 14);
       setLocalPreviewFontFamily(loadedSettings.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif");
+      // Story 6.3 — Trap #2: previewFontSize MUST be here or Save stays dirty forever.
+      setLocalPreviewFontSize(loadedSettings.previewFontSize ?? "small");
     }
   }, [loadedSettings]);
 
@@ -402,7 +408,8 @@ export function SettingsPanel({
     || (loadedSettings?.previewBorderColor ?? "rgba(42,195,168,0.25)") !== localPreviewBorderColor
     || (loadedSettings?.previewBorderWidth ?? 1) !== localPreviewBorderWidth
     || (loadedSettings?.previewBorderRadius ?? 14) !== localPreviewBorderRadius
-    || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily;
+    || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily
+    || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize;
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -416,7 +423,7 @@ export function SettingsPanel({
     advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
-    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
   ]);
 
   // --- useCallback handlers ---
@@ -536,6 +543,7 @@ export function SettingsPanel({
         localPreviewBgBlur, localPreviewBorderColor,
         localPreviewBorderWidth, localPreviewBorderRadius,
         localPreviewFontFamily,
+        localPreviewFontSize,
       );
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
@@ -582,7 +590,7 @@ export function SettingsPanel({
     openrouterKey,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
-    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
     onSave,
   ]);
 
@@ -764,6 +772,8 @@ export function SettingsPanel({
                 setLocalPreviewBorderRadius={setLocalPreviewBorderRadius}
                 localPreviewFontFamily={localPreviewFontFamily}
                 setLocalPreviewFontFamily={setLocalPreviewFontFamily}
+                localPreviewFontSize={localPreviewFontSize}
+                setLocalPreviewFontSize={setLocalPreviewFontSize}
               />
             )}
             {activeCategory === "license" && (

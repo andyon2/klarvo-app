@@ -71,6 +71,9 @@ export default function PreviewPanel(): React.ReactElement {
     borderRadius: 14,
     fontFamily:   "'Inter', system-ui, -apple-system, sans-serif",
   });
+  // Story 6.3: fontPx from previewGeometry, reactive via runShowSequence.
+  // Default = FONT_PX.small = 11. Typed as number to accept 11/13/15.
+  const [cardFontPx, setCardFontPx] = useState<number>(FONT_PX.small);
 
   // Max height in logical px set during the show sequence; used for cap/scroll logic.
   const clampedMaxHeightRef = useRef(BASE_MAX_HEIGHT);
@@ -115,6 +118,9 @@ export default function PreviewPanel(): React.ReactElement {
       // Read all reactive settings: widthPreset + appearance (Trap #3 — single getSettings call).
       // NOT from mount-time state — this window never re-mounts when Settings saves.
       let widthPreset = "comfortable";
+      // Story 6.3: fontSize from config; declared in outer scope so the catch block
+      // can use the fallback without re-declaring.
+      let fontSize: "small" | "medium" | "large" = "small";
       // Build appr as a local const so setCardAppearance, setPreviewShape, and the log
       // all use the SAME freshly-read object — no stale ref, no async state lag.
       // String fields use || (empty string "" is falsy → falls back to default).
@@ -131,6 +137,8 @@ export default function PreviewPanel(): React.ReactElement {
       try {
         const s = await getSettings();
         widthPreset = s.previewPanelForm ?? "comfortable";
+        // Story 6.3: read fontSize from the same getSettings call (Trap #3).
+        fontSize = (s.previewFontSize || "small") as "small" | "medium" | "large";
         // Story 6.6: build appr from the just-read settings so CSS and
         // set_preview_shape both use the latest saved values (Finding 1+2).
         appr = {
@@ -144,12 +152,16 @@ export default function PreviewPanel(): React.ReactElement {
         };
       } catch (e) {
         console.warn("[preview] getSettings failed, using defaults:", e);
+        // fontSize falls back to "small" (declared above the try block).
       }
       // Drive React state from the fresh appr BEFORE the show sequence so the DOM
       // has the correct appearance by the time show() reveals the window.
       setCardAppearance(appr);
 
-      const geom = previewGeometry(widthPreset, "small");
+      // Story 6.3: pass fontSize to previewGeometry (replaces the hardcoded "small").
+      const geom = previewGeometry(widthPreset, fontSize);
+      // Story 6.3: store fontPx in state so the card render uses geom.fontPx (not hardcoded 11).
+      setCardFontPx(geom.fontPx);
 
       const W = geom.width;
 
@@ -364,7 +376,8 @@ export default function PreviewPanel(): React.ReactElement {
                   ? "linear-gradient(to bottom, transparent 0%, black 18%)"
                   : undefined,
                 padding: "8px 14px",
-                fontSize: 11,
+                // Story 6.3: fontPx from previewGeometry via cardFontPx state (replaces hardcoded 11).
+                fontSize: cardFontPx,
                 lineHeight: 1.5,
                 letterSpacing: "0.01em",
                 color: cardAppearance.textColor,

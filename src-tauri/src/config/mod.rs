@@ -754,6 +754,12 @@ pub struct AppConfig {
     #[serde(default = "default_preview_font_family")]
     pub preview_font_family: String,
 
+    /// Preview font size: "small" | "medium" | "large". Default = "small".
+    /// camelCase JSON key = "previewFontSize".
+    /// MUST NOT trigger a migration write (serde default is sufficient).
+    #[serde(default = "default_preview_font_size")]
+    pub preview_font_size: String,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -985,6 +991,9 @@ fn default_preview_border_radius() -> u8 {
 fn default_preview_font_family() -> String {
     "'Inter', system-ui, -apple-system, sans-serif".to_string()
 }
+fn default_preview_font_size() -> String {
+    "small".to_string()
+}
 
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
@@ -1058,6 +1067,7 @@ impl Default for AppConfig {
             preview_border_width: default_preview_border_width(),
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
+            preview_font_size: default_preview_font_size(),
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
@@ -2111,6 +2121,7 @@ mod tests {
             preview_border_width: default_preview_border_width(),
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
+            preview_font_size: default_preview_font_size(),
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
@@ -3410,6 +3421,7 @@ mod tests {
             preview_border_width: default_preview_border_width(),
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
+            preview_font_size: default_preview_font_size(),
             bar_x: Some(200.0),
             bar_y: Some(800.0),
 
@@ -4154,5 +4166,43 @@ mod tests {
             "No migration write must fire for the new appearance fields ({} writes)",
             writes.len()
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 6.3 — AC-1:
+    //   previewFontSize config field with serde default "small", camelCase key.
+    //
+    // Inversion guard: remove `#[serde(default = "default_preview_font_size")]`
+    // from `preview_font_size` → serde errors on missing key
+    // → `assert!(result.is_ok())` goes RED (proving the guard is load-bearing).
+    // -----------------------------------------------------------------------
+
+    /// AC-1 (Story 6.3): `previewFontSize` deserializes with serde default "small",
+    /// camelCase JSON key is present in serialized output, no migration write fires.
+    #[test]
+    fn spec_preview_font_size_config_field_default() {
+        let default_cfg = AppConfig::default();
+        let mut json: serde_json::Value = serde_json::to_value(&default_cfg).unwrap();
+
+        // AC-1: camelCase key present in serialized output.
+        assert!(
+            json.as_object().unwrap().contains_key("previewFontSize"),
+            "expected camelCase key 'previewFontSize' (NOT 'preview_font_size')"
+        );
+
+        // Strip the key to simulate a pre-6.3 config.json.
+        json.as_object_mut().unwrap().remove("previewFontSize");
+        let stripped = serde_json::to_string(&json).unwrap();
+
+        // Must deserialize without error and fill in the default.
+        let result: Result<AppConfig, _> = serde_json::from_str(&stripped);
+        assert!(result.is_ok(), "Deserializing without previewFontSize must succeed");
+        let cfg = result.unwrap();
+        assert_eq!(cfg.preview_font_size, "small", "default must be 'small'");
+
+        // No migration write must fire.
+        let mut warnings: Vec<String> = Vec::new();
+        let (_, writes) = migrate_and_normalize(cfg, &std::path::PathBuf::from("/tmp"), &mut warnings);
+        assert!(writes.is_empty(), "No migration write for preview_font_size");
     }
 }

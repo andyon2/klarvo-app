@@ -161,6 +161,7 @@ pub struct SettingsPatch {
     pub preview_border_width: Option<u8>,
     pub preview_border_radius: Option<u8>,
     pub preview_font_family: Option<String>,
+    pub preview_font_size: Option<String>,
 }
 
 impl Default for SettingsPatch {
@@ -214,6 +215,7 @@ impl Default for SettingsPatch {
             preview_border_width: None,
             preview_border_radius: None,
             preview_font_family: None,
+            preview_font_size: None,
         }
     }
 }
@@ -354,6 +356,8 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.preview_border_radius),
         preview_font_family: patch.preview_font_family
             .unwrap_or(existing.preview_font_family),
+        preview_font_size: patch.preview_font_size
+            .unwrap_or(existing.preview_font_size),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
@@ -454,6 +458,7 @@ pub async fn save_settings(
     preview_border_width: Option<u8>,
     preview_border_radius: Option<u8>,
     preview_font_family: Option<String>,
+    preview_font_size: Option<String>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -546,6 +551,7 @@ pub async fn save_settings(
         preview_border_width,
         preview_border_radius,
         preview_font_family,
+        preview_font_size,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -653,6 +659,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         preview_border_width: cfg.preview_border_width,
         preview_border_radius: cfg.preview_border_radius,
         preview_font_family: cfg.preview_font_family.clone(),
+        preview_font_size: cfg.preview_font_size.clone(),
     })
 }
 
@@ -1449,6 +1456,7 @@ mod tests {
             preview_border_width: None,
             preview_border_radius: None,
             preview_font_family: None,
+            preview_font_size: None,
         };
 
         let result = merge_settings(existing, patch);

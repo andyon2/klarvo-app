@@ -92,6 +92,7 @@ const MOCK_SETTINGS: AppSettings = {
   previewBorderWidth: 1,
   previewBorderRadius: 14,
   previewFontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+  previewFontSize: "small",
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -304,6 +305,7 @@ export async function saveSettings(
   previewBorderWidth?: number | null,
   previewBorderRadius?: number | null,
   previewFontFamily?: string | null,
+  previewFontSize?: string | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -355,6 +357,7 @@ export async function saveSettings(
     previewBorderWidth: previewBorderWidth ?? null,
     previewBorderRadius: previewBorderRadius ?? null,
     previewFontFamily: previewFontFamily ?? null,
+    previewFontSize: previewFontSize ?? null,
   });
 }
 

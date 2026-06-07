@@ -13,6 +13,10 @@ import {
   DEFAULT_FONT_FAMILY,
 } from "./previewAppearance";
 
+// Story 6.3: font-size → px mapping for the live preview card.
+// Mirrors the FONT_PX constant in PreviewPanel.tsx (do not rename keys).
+const FONT_PX_MAP: Record<string, number> = { small: 11, medium: 13, large: 15 };
+
 // --- Shortcut Recorder -------------------------------------------------------
 
 function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: string) => void }) {
@@ -243,6 +247,8 @@ export interface ShortcutsContentProps {
   setLocalPreviewBorderRadius: (v: number) => void;
   localPreviewFontFamily: string;
   setLocalPreviewFontFamily: (v: string) => void;
+  localPreviewFontSize: string;
+  setLocalPreviewFontSize: (v: string) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -270,6 +276,7 @@ export function ShortcutsContent({
   localPreviewBorderWidth, setLocalPreviewBorderWidth,
   localPreviewBorderRadius, setLocalPreviewBorderRadius,
   localPreviewFontFamily, setLocalPreviewFontFamily,
+  localPreviewFontSize, setLocalPreviewFontSize,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -480,30 +487,7 @@ export function ShortcutsContent({
                   />
                   <p className="text-[11px] text-klarvo-muted">Short = more responsive, more Groq calls, less context per segment. Long = less responsive, fewer calls, better context.</p>
                 </div>
-                {/* Display Form preset picker (AC-5) */}
-                <div className="flex flex-col gap-1.5">
-                  <span className={LABEL_CLS}>Darstellung</span>
-                  <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                    {(["compact", "comfortable", "wide"] as const).map((preset) => (
-                      <button
-                        key={preset}
-                        onClick={() => setLocalPreviewPanelForm(preset)}
-                        className={[
-                          "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                          localPreviewPanelForm === preset
-                            ? "bg-klarvo-primary/15 text-klarvo-primary"
-                            : "text-klarvo-dim hover:text-klarvo-muted",
-                        ].join(" ")}
-                      >
-                        {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-klarvo-muted">
-                    Changes the width of the preview panel.
-                  </p>
-                </div>
-                {/* Appearance sub-section (Story 6.6 redesign / FR11-FR13) */}
+                {/* Appearance sub-section (Story 6.6 redesign / FR11-FR13; font-size + Darstellung moved here in 6.3) */}
                 <div className="flex flex-col gap-2">
                   <span className={LABEL_CLS}>Appearance</span>
 
@@ -520,9 +504,10 @@ export function ShortcutsContent({
                       borderRadius: `${localPreviewBorderRadius}px`,
                       color: localPreviewTextColor || DEFAULT_TEXT_COLOR,
                       fontFamily: localPreviewFontFamily || DEFAULT_FONT_FAMILY,
+                      fontSize: FONT_PX_MAP[localPreviewFontSize] ?? 11,
                       padding: "8px 12px",
                     }}
-                    className="text-xs leading-relaxed"
+                    className="leading-relaxed"
                   >
                     <div className="font-medium">Live-Vorschau</div>
                     <div className="opacity-80">Transcribed text appears here…</div>
@@ -726,6 +711,56 @@ export function ShortcutsContent({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Font-size picker (Story 6.3 Increment B).
+                      Klein/Mittel/Groß maps to small/medium/large.
+                      Affects card geometry (k-scaling) — placed with display controls. */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>Schriftgröße</span>
+                    <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
+                      {(["small", "medium", "large"] as const).map((size) => (
+                        <button
+                          key={size}
+                          onClick={() => setLocalPreviewFontSize(size)}
+                          className={[
+                            "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                            localPreviewFontSize === size
+                              ? "bg-klarvo-primary/15 text-klarvo-primary"
+                              : "text-klarvo-dim hover:text-klarvo-muted",
+                          ].join(" ")}
+                        >
+                          {size === "small" ? "Klein" : size === "medium" ? "Mittel" : "Groß"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-klarvo-muted">
+                      Skaliert Breite, Höhe und Schrift der Vorschau proportional.
+                    </p>
+                  </div>
+
+                  {/* Display Form preset picker (AC-5 / Story 5.5) — shifted below font-size (Story 6.3) */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className={LABEL_CLS}>Darstellung</span>
+                    <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
+                      {(["compact", "comfortable", "wide"] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          onClick={() => setLocalPreviewPanelForm(preset)}
+                          className={[
+                            "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                            localPreviewPanelForm === preset
+                              ? "bg-klarvo-primary/15 text-klarvo-primary"
+                              : "text-klarvo-dim hover:text-klarvo-muted",
+                          ].join(" ")}
+                        >
+                          {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-klarvo-muted">
+                      Changes the width of the preview panel.
+                    </p>
                   </div>
                 </div>
               </>

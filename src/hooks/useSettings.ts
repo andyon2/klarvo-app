@@ -90,6 +90,7 @@ export function useSettings() {
     newPreviewBgBlur?: number | null, newPreviewBorderColor?: string | null,
     newPreviewBorderWidth?: number | null, newPreviewBorderRadius?: number | null,
     newPreviewFontFamily?: string | null,
+    newPreviewFontSize?: string | null,
   ) => {
     await saveSettings(
       groqKey, deepseekKey, lang, style, newHotkey, newHotkeyMode, newAudioDevice,
@@ -109,6 +110,7 @@ export function useSettings() {
       newPreviewBgBlur ?? null, newPreviewBorderColor ?? null,
       newPreviewBorderWidth ?? null, newPreviewBorderRadius ?? null,
       newPreviewFontFamily ?? null,
+      newPreviewFontSize ?? null,
     );
     const updated = await getSettings();
     setLoadedSettings(updated);

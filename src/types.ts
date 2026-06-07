@@ -97,6 +97,8 @@ export interface AppSettings {
   previewBorderRadius: number;
   /** Preview font family: CSS font-family string (e.g. "'Inter', system-ui, sans-serif"). */
   previewFontFamily: string;
+  /** Preview font size: "small" | "medium" | "large". camelCase key: previewFontSize. */
+  previewFontSize: string;
 }
 
 // A per-application recording profile.
