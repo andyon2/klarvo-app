@@ -2,7 +2,7 @@
 story: "6.4"
 epic: "6"
 title: "Couple the preview to pill drag"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["6.2"]
 buildsOn: ["6.2"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 6.4: Couple the preview to pill drag
 
-Status: review
+Status: done
 
 ## Story
 
@@ -246,7 +246,7 @@ And inversion for AC-3: removing the `setPosition` call in the `bar-moved` liste
     - **No new config key** → Trap #1/#2 not applicable. ✅
     - **No Settings field** → Trap #2 not applicable. ✅
     - **No geometry change at show-time** → Trap #4 not applicable. ✅
-  - [ ] 4.5 Windows smoke (real release build, `sync-and-build.ps1`) — PENDING (requires Andi on Windows):
+  - [x] 4.5 Windows smoke (real release build, `sync-and-build.ps1`) — GREEN 2026-06-08 (Andi: "ja, klappt"):
     - Start recording with preview enabled.
     - Drag pill while preview is showing → preview follows, centered.
     - Release → preview snaps to final position.
@@ -434,3 +434,7 @@ No debug issues — straightforward JS-only implementation.
   rAF-on-unmount near-impossible + caught no-op; dead isPanelOpenRef branch = intentional onMouseUp
   mirror, 6.5 cleans up). Code already committed 49bbbf5. BLOCKED on AC-6 Windows release smoke
   (surface-class hard gate, Andi) — Status flips to done after smoke GREEN.
+- 2026-06-08: AC-6 Windows release smoke GREEN (Andi: "ja, klappt") — drag-couples-preview
+  confirmed on real build. Story → DONE. (Separate pre-existing bug surfaced during smoke —
+  preview box stops showing new text once at the height cap / no scroll-to-newest — is NOT 6.4's
+  scope; tracked separately.)
