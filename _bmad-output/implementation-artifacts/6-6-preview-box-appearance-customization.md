@@ -2,7 +2,7 @@
 story: "6.6"
 epic: "6"
 title: "Preview-box appearance — themes + visual pickers + live in-panel preview (redesign)"
-status: ready-for-dev
+status: done
 track: L3-feature
 gatedBy: ["6.2"]
 buildsOn: ["6.2"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 6.6: Preview-box appearance — themes + visual pickers + live in-panel preview (REDESIGN)
 
-Status: review
+Status: done
 
 ## Why this is a redesign
 
@@ -117,16 +117,18 @@ Andi's real-build smoke: the in-panel live card reflected changes, but **clickin
 
 **Why both reviews missed it:** the first-pass Acceptance Auditor and the redesign review both verified `SettingsPanel`'s `onSave` call + the `saveSettings` signature/invoke, but neither traced the intermediate `useSettings` hook that is the *actual* `onSave`. No automated test exercises the hook chain → Linux-green, dead on device. Lesson → memory `feedback-surface-feature-operable-ux` (verify the FULL chain to the real IPC call, including intermediate hooks/wrappers, not just the first and last hop).
 
-### SMOKE FINDING (cosmetic, OPEN) — corner artifact blocks `done`
+### SMOKE FINDING (cosmetic) — corner artifact — RESOLVED 2026-06-07 (commit `201dd3e`)
 
-Save now works (confirmed by Andi). The remaining blocker: on the real Windows build the preview box's **bottom-left corner renders rough/jagged**; top corners are clean (asymmetric). Everything else in the redesign (themes / colour pickers / opacity / font dropdown / live card / Save + persistence) is confirmed working on the real build.
+Save works (confirmed by Andi). The corner artifact — preview box's bottom-left/right border rendering rough/clipped, asymmetric to clean top corners — is **RESOLVED**. Everything else in the redesign (themes / colour pickers / opacity / font dropdown / live card / Save + persistence) confirmed working on the real build.
 
-- [ ] [Smoke][OPEN] **Corner artifact — bottom-left of the preview box renders rough.** **Ruled out as causes (PROVEN — do NOT retry):** GDI window region `set_preview_shape` (a *freshly created* no-region window still showed it — verified via Klarvo.log process-start at 15:53) and `backdrop-filter: blur` (disabled, still rough). Code baseline = commit `0406104` (both speculative experiments reverted). **Next attempt is observe-first** (zoomed capture / one-flip repro → name the cause → exactly one change), per `project-context.md` rule 29 + the conductor's GATE 4 — NOT another guess→build→test cycle. See `WAYPOINT.md`.
+- [x] [Smoke][RESOLVED] **Corner artifact — bottom border clipped at fractional DPI.** **True root cause** (the "rough corner / GDI region" theory was *disproven* — region-independent): the preview card is stretch-aligned + bottom-anchored in a full-window flex wrapper, so its right/bottom border sat exactly on the window content boundary and got clipped at fractional DPI (dpr 1.5375) — the teal border did not close on the right/bottom edges. **Fix** (`201dd3e`): a 2px uniform padding on the wrapper gives all four borders room inside the window (and inside the `set_preview_shape` region); uniform (not right/bottom-only) preserves pill-centering and avoids the R11 card/region corner-coincidence (white-line case). **Verified objectively on Windows** (debug build via vite HMR — frontend identical to release for a CSS-only change): CDP-pinned the box open, DPI-aware capture, counted teal-border px per edge. Inversion confirmed diagnosis+fix: `padding:0` → TOP 100% / LEFT 100% / BOTTOM 0% / RIGHT 0%; `padding:2` → all four edges 100%. (Earlier ruled-out causes, do-not-retry: GDI region `set_preview_shape` + `backdrop-filter: blur`.)
 
 ## Change Log
 
 - 2026-06-07: (redesign) SMOKE FINDING (High, Andi) — Save reset all appearance to defaults. Fix: forward the 7 fields through `handleSaveSettings` in `src/hooks/useSettings.ts` (signature + `saveSettings` call); the hook was the untraced 3rd hop both reviews missed. tsc/vite green. Re-smoke required before done.
 - 2026-06-07: (redesign) Code review (Opus 4.8) — flagged behaviorally clean (WRONG: missed the useSettings save-hop High bug, caught only in human smoke); 2 Low dismissed + 1 comment-hygiene fix. tsc/vite green. Status stays review pending Task-7.3 Windows smoke.
+- 2026-06-07: Corner artifact RESOLVED (commit `201dd3e`) — last open defect. True cause = stretch-aligned card border clipped at fractional DPI (not GDI region); fix = 2px uniform wrapper padding, objectively pixel-verified on Windows (all four edges 100% border coverage, inversion confirmed). Story → done.
+- 2026-06-08: Doc-drift cleanup — story file had drifted (frontmatter `ready-for-dev`, body `Status: review`, OPEN smoke section) while sprint-status already said `done` and the corner fix `201dd3e` had landed after the stale WAYPOINT note. Synced both status fields → done, closed the smoke finding, reconciled WAYPOINT. No code change.
 - 2026-06-07: (redesign) Implemented by claude-sonnet-4-6 — themes + visual pickers + live card; frontend-only; 574 Rust tests/tsc/vite green. BLOCKED on Windows smoke (Task 7.3).
 - 2026-06-07: Story REDESIGNED (Andi feedback on real-build smoke) — raw rgba/hex text inputs replaced by themes + visual pickers + in-panel live preview; font-family → dropdown; appearance scope only (font-size folded to re-scoped 6.3, Increment B, same panel). Plumbing from first pass (`c61534d`) reused unchanged. Status reset ready-for-dev.
 - 2026-06-07: (first pass) Code review (Opus 4.8) 2 patch / 2 defer / 9 dismissed — superseded by redesign; the two patches (state-driven card, `|| default` string guard) remain in `c61534d` and are kept.

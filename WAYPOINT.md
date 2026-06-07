@@ -35,4 +35,6 @@ This session built a working **Windows-screen-capture-from-WSL** capability — 
 
 ## Consistency
 
-Tree clean at HEAD; `sprint-status.yaml` `6-6 = review` (correct). No BMAD parsed contract was changed this session. The earlier WAYPOINT claim "GDI region ruled out / backdrop-filter ruled out" is now superseded by the stronger objective finding above (right/bottom-border-missing = flush-edge clipping, region-independent).
+Tree clean at HEAD; `sprint-status.yaml` `6-6 = done` and the 6-6 story file (frontmatter + body) is synced to `done` as of 2026-06-08 (the corner fix `201dd3e` landed after this waypoint's first draft, leaving the story file stale at `review`; now reconciled). No BMAD parsed contract was changed. The earlier WAYPOINT claim "GDI region ruled out / backdrop-filter ruled out" is superseded by the stronger objective finding above (right/bottom-border-missing = flush-edge clipping, region-independent).
+
+> NOTE 2026-06-08: This waypoint described the 6-6 corner artifact as the live concern. It is RESOLVED (`201dd3e`, pixel-verified). Since then: Story 5-7 → done + Epic 5 re-closed; Story 6-3 (font-size axis) full conductor cycle → done (smoke GREEN). Open in Epic 6: 6-4, 6-5 (backlog).
