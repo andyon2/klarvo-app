@@ -421,3 +421,16 @@ No debug issues — straightforward JS-only implementation.
   during drag + final emit on drag-end); PreviewPanel.tsx listens and calls setPosition only
   (cachedMonitorRef + previewWidthRef avoid per-drag IPC, NFR1 preserved). JS-only, no Rust,
   no new config key, no capability change. tsc exit 0, vite clean, 575 Rust tests/0 fail.
+- 2026-06-08: CODE-REVIEW PASS (Opus 4.8, 3 adversarial layers — Blind Hunter / Edge Case Hunter /
+  Acceptance Auditor; fix-loop 0 rounds, 0 patch). Acceptance Auditor: AC-1…AC-5 all satisfied
+  (centering/clamp formula identical to runShowSequence; colon-form event; no Rust/Android; no
+  setSize/setPreviewShape/show — NFR1 held). Two High flags REFUTED against real code: (1) Blind
+  Hunter "showOnceRef latches true forever" → FALSE, reset to false on every cycle end
+  (PreviewPanel.tsx:247) so the AC-4 guard is correct; (2) "coordinate-basis divergence d.winX+dx
+  vs lx" → same logical space (both pos.x/scale), the final emit is the intended sub-pixel
+  snap-to-settled (AC-2/AC-6 "no teleport"). 1 finding DEFERRED → deferred-work.md: cachedMonitorRef
+  not invalidated on cross-monitor drag mid-recording (spec-sanctioned no-per-drag-IPC tradeoff per
+  AC-3). Rest dismissed (NaN guarded upstream; global emit = established pattern, throttled 1/frame;
+  rAF-on-unmount near-impossible + caught no-op; dead isPanelOpenRef branch = intentional onMouseUp
+  mirror, 6.5 cleans up). Code already committed 49bbbf5. BLOCKED on AC-6 Windows release smoke
+  (surface-class hard gate, Andi) — Status flips to done after smoke GREEN.
