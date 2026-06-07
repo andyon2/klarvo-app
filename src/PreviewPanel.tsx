@@ -82,6 +82,17 @@ export default function PreviewPanel(): React.ReactElement {
   const pillXRef = useRef<number | null>(null);
   const pillYRef = useRef<number | null>(null);
 
+  // Story 6.4 (AC-3): cached monitor bounds from runShowSequence — reused for drag repositioning.
+  // Updated once per show sequence; monitors don't change during a drag (avoids per-drag IPC).
+  const cachedMonitorRef = useRef<{
+    screenLeft: number;
+    screenRight: number;
+  } | null>(null);
+
+  // Story 6.4 (AC-3): preview width from the last runShowSequence call — reused in bar-moved handler.
+  // Default matches BASE_WIDTH.comfortable so the ref is always safe to dereference.
+  const previewWidthRef = useRef<number>(BASE_WIDTH.comfortable);
+
   // Ref for the scrollable card element (auto-scroll + overflow detection).
   const previewPanelRef = useRef<HTMLDivElement>(null);
 
@@ -164,6 +175,8 @@ export default function PreviewPanel(): React.ReactElement {
       setCardFontPx(geom.fontPx);
 
       const W = geom.width;
+      // Story 6.4 (AC-3): persist W for drag repositioning (no re-call of previewGeometry per drag).
+      previewWidthRef.current = W;
 
       // Compute clampedMaxHeight + horizontal clamp — both from the same monitor query (AR3).
       // [Review-fix: original code clamped only the vertical axis; horizontal clamp is now
@@ -188,6 +201,8 @@ export default function PreviewPanel(): React.ReactElement {
           const screenLeft = wa.position.x / scale;
           const screenRight = (wa.position.x + wa.size.width) / scale;
           previewLeft = Math.max(screenLeft + 12, Math.min(previewLeft, screenRight - W - 12));
+          // Story 6.4 (AC-3): cache monitor bounds for drag repositioning (no per-drag IPC).
+          cachedMonitorRef.current = { screenLeft, screenRight };
         }
       } catch (e) {
         console.warn("[preview] monitor clamp failed, using unclipped geometry:", e);
@@ -283,6 +298,47 @@ export default function PreviewPanel(): React.ReactElement {
       }
     });
     unlisten.then(() => console.log("[preview] live-preview-chunk listener REGISTERED"));
+    return () => { unlisten.then((fn) => fn()); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Story 6.4: klarvo://bar-moved — reposition preview when pill is dragged (AC-3, AC-4)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const unlisten = listen<{ x: number; y: number }>("klarvo://bar-moved", (event) => {
+      // AC-4: only reposition when the preview is currently showing.
+      // Inversion (AC-4 dev-time): remove this guard → setPosition fires on a hidden window
+      // → log shows spurious bar-moved setPosition calls before first show → RED.
+      if (!showOnceRef.current) return;
+
+      const { x: pillX, y: pillY } = event.payload;
+      // Update stored pill anchor so future runShowSequence calls (next cycle) use the
+      // dragged-to position, not the position at recording start.
+      pillXRef.current = pillX;
+      pillYRef.current = pillY;
+
+      const W = previewWidthRef.current;
+      const H = clampedMaxHeightRef.current;
+      const pillCenterX = pillX + PILL_WIDTH / 2;
+      let previewLeft = pillCenterX - W / 2;
+
+      // Apply horizontal screen clamp from cached monitor bounds — no new IPC per drag event.
+      const m = cachedMonitorRef.current;
+      if (m) {
+        previewLeft = Math.max(m.screenLeft + 12, Math.min(previewLeft, m.screenRight - W - 12));
+      }
+      const previewTop = pillY - GAP - H;
+
+      // setPosition ONLY — no setSize, no setPreviewShape, no show() (NFR1 preserved).
+      // Inversion (AC-3 smoke-time): remove this call → preview stays at show-time position
+      // while pill moves → RED.
+      const win = getCurrentWebviewWindow();
+      win.setPosition(new LogicalPosition(previewLeft, previewTop)).catch(
+        (e) => console.warn("[preview] bar-moved setPosition failed:", e)
+      );
+    });
+    unlisten.then(() => console.log("[preview] bar-moved listener REGISTERED"));
     return () => { unlisten.then((fn) => fn()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import type { RecordingState, HotkeyMode } from "./types";
@@ -594,6 +594,8 @@ export default function FloatingBar() {
   // Tauri's startDragging() and data-tauri-drag-region don't work reliably
   // on transparent decorationless WebView2 windows. We implement drag manually.
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
+  // Story 6.4: pending rAF ID for throttled bar-moved emit — cancel stale before scheduling new.
+  const dragRafRef = useRef<number | null>(null);
 
   function handleMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
@@ -619,8 +621,25 @@ export default function FloatingBar() {
       const dy = e.screenY - d.startY;
       const win = getCurrentWebviewWindow();
       win.setPosition(new LogicalPosition(d.winX + dx, d.winY + dy)).catch((e) => console.warn("[bar] setPosition during drag:", e));
+      // Story 6.4 (AC-1): throttled bar-moved emit — one rAF at a time.
+      if (dragRafRef.current !== null) cancelAnimationFrame(dragRafRef.current);
+      const pillX = d.winX + dx;
+      // Post-6.2: isPanelOpenRef.current is always false (pill never grows), so pillY = winY + dy.
+      // Mirroring the same isPanelOpenRef/panelHeightRef logic as onMouseUp for consistency.
+      const pillY = isPanelOpenRef.current ? d.winY + dy + panelHeightRef.current : d.winY + dy;
+      dragRafRef.current = requestAnimationFrame(() => {
+        dragRafRef.current = null;
+        emit("klarvo://bar-moved", { x: pillX, y: pillY }).catch(
+          (e) => console.warn("[bar] bar-moved emit failed:", e)
+        );
+      });
     }
     function onMouseUp() {
+      // Story 6.4 (AC-2, 1.5): cancel any pending rAF before emitting the final settled position.
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
       const d = dragRef.current;
       if (!d) return;
       dragRef.current = null;
@@ -637,6 +656,11 @@ export default function FloatingBar() {
         barX.current = lx;
         barY.current = pillY;
         saveBarPosition(lx, pillY).catch((e) => console.error("[bar] saveBarPosition failed:", e));
+        // Story 6.4 (AC-2): emit the settled position once more so the preview snaps to
+        // the exact final anchor (same values as saveBarPosition — no divergence).
+        emit("klarvo://bar-moved", { x: lx, y: pillY }).catch(
+          (e) => console.warn("[bar] bar-moved final emit failed:", e)
+        );
       }).catch((e) => console.error("[bar] outerPosition failed:", e));
     }
     window.addEventListener("mousemove", onMouseMove);
