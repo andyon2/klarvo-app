@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { HotkeyMode, AppSettings } from "../../types";
 import { isDesktop } from "../../platform";
 import { LABEL_CLS } from "../ui";
+import {
+  rgbaToHexOpacity,
+  hexOpacityToRgba,
+  PREVIEW_THEMES,
+  PREVIEW_FONTS,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_BG_COLOR,
+  DEFAULT_BORDER_COLOR,
+  DEFAULT_FONT_FAMILY,
+} from "./previewAppearance";
 
 // --- Shortcut Recorder -------------------------------------------------------
 
@@ -493,32 +503,127 @@ export function ShortcutsContent({
                     Changes the width of the preview panel.
                   </p>
                 </div>
-                {/* Appearance sub-section (Story 6.6 / FR11-FR13) */}
-                <div className="flex flex-col gap-1.5">
+                {/* Appearance sub-section (Story 6.6 redesign / FR11-FR13) */}
+                <div className="flex flex-col gap-2">
                   <span className={LABEL_CLS}>Appearance</span>
+
+                  {/* Task 5 — Live preview card (AC-1).
+                      Driven directly from localPreview* state — updates on every control change
+                      before and independent of Save. Pure in-window, no cross-window IPC.
+                      Inversion: hardcode style here → card stops reflecting local state → RED. */}
+                  <div
+                    style={{
+                      background: localPreviewBgColor || DEFAULT_BG_COLOR,
+                      backdropFilter: `blur(${localPreviewBgBlur}px)`,
+                      WebkitBackdropFilter: `blur(${localPreviewBgBlur}px)`,
+                      border: `${localPreviewBorderWidth}px solid ${localPreviewBorderColor || DEFAULT_BORDER_COLOR}`,
+                      borderRadius: `${localPreviewBorderRadius}px`,
+                      color: localPreviewTextColor || DEFAULT_TEXT_COLOR,
+                      fontFamily: localPreviewFontFamily || DEFAULT_FONT_FAMILY,
+                      padding: "8px 12px",
+                    }}
+                    className="text-xs leading-relaxed"
+                  >
+                    <div className="font-medium">Live-Vorschau</div>
+                    <div className="opacity-80">Transcribed text appears here…</div>
+                  </div>
+
+                  {/* Task 2 — Theme presets (AC-2).
+                      Three one-click legible looks; clicking sets ALL appearance fields at once.
+                      Live card (above) reflects the theme instantly via the same local state. */}
+                  <div className="flex gap-1">
+                    {PREVIEW_THEMES.map((theme) => (
+                      <button
+                        key={theme.label}
+                        onClick={() => {
+                          setLocalPreviewTextColor(theme.textColor);
+                          setLocalPreviewBgColor(theme.bgColor);
+                          setLocalPreviewBgBlur(theme.bgBlur);
+                          setLocalPreviewBorderColor(theme.borderColor);
+                          setLocalPreviewBorderWidth(theme.borderWidth);
+                          setLocalPreviewBorderRadius(theme.borderRadius);
+                        }}
+                        className="flex-1 py-1 rounded-md text-xs font-medium text-klarvo-muted hover:text-klarvo-text bg-klarvo-bg border border-klarvo-border/60 hover:border-klarvo-primary/40 transition-all duration-100 whitespace-nowrap"
+                      >
+                        {theme.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Task 3 — Color pickers + opacity sliders (AC-3).
+                      Text color, bg color, and border color each use a native <input type="color">
+                      (hex) paired with an opacity slider (0–100%), composed to rgba via helpers.
+                      No raw rgba/hex text entry remains for these three fields.
+                      Inversion (AC-6): malformed rgba fed to rgbaToHexOpacity → falls back to
+                      default hex/opacity (NaN-guarded in previewAppearance.ts), never #NaN. */}
+
                   {/* Text Color */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Text color</span>
-                    <input
-                      type="text"
-                      value={localPreviewTextColor}
-                      onChange={(e) => setLocalPreviewTextColor(e.target.value)}
-                      placeholder="rgba(220,220,220,0.88)"
-                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
-                    />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Text color</span>
+                      <span className="text-xs font-mono text-klarvo-primary">
+                        {rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).hex}
+                        onChange={(e) => {
+                          const { opacityPct } = rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88);
+                          setLocalPreviewTextColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_TEXT_COLOR));
+                        }}
+                        className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}
+                        onChange={(e) => {
+                          const { hex } = rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88);
+                          setLocalPreviewTextColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_TEXT_COLOR));
+                        }}
+                        className="flex-1 accent-klarvo-primary"
+                      />
+                    </div>
                   </div>
+
                   {/* Background Color */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Bg color</span>
-                    <input
-                      type="text"
-                      value={localPreviewBgColor}
-                      onChange={(e) => setLocalPreviewBgColor(e.target.value)}
-                      placeholder="rgba(25,25,25,0.96)"
-                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
-                    />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Bg color</span>
+                      <span className="text-xs font-mono text-klarvo-primary">
+                        {rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).hex}
+                        onChange={(e) => {
+                          const { opacityPct } = rgbaToHexOpacity(localPreviewBgColor, "#191919", 96);
+                          setLocalPreviewBgColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_BG_COLOR));
+                        }}
+                        className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}
+                        onChange={(e) => {
+                          const { hex } = rgbaToHexOpacity(localPreviewBgColor, "#191919", 96);
+                          setLocalPreviewBgColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_BG_COLOR));
+                        }}
+                        className="flex-1 accent-klarvo-primary"
+                      />
+                    </div>
                   </div>
-                  {/* Bg Blur */}
+
+                  {/* Bg Blur (existing range slider, kept as-is) */}
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-klarvo-muted">Bg blur</span>
@@ -534,18 +639,41 @@ export function ShortcutsContent({
                       className="w-full accent-klarvo-primary"
                     />
                   </div>
+
                   {/* Border Color */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-klarvo-muted min-w-[90px]">Border color</span>
-                    <input
-                      type="text"
-                      value={localPreviewBorderColor}
-                      onChange={(e) => setLocalPreviewBorderColor(e.target.value)}
-                      placeholder="rgba(42,195,168,0.25)"
-                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
-                    />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-klarvo-muted">Border color</span>
+                      <span className="text-xs font-mono text-klarvo-primary">
+                        {rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).hex}
+                        onChange={(e) => {
+                          const { opacityPct } = rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25);
+                          setLocalPreviewBorderColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_BORDER_COLOR));
+                        }}
+                        className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}
+                        onChange={(e) => {
+                          const { hex } = rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25);
+                          setLocalPreviewBorderColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_BORDER_COLOR));
+                        }}
+                        className="flex-1 accent-klarvo-primary"
+                      />
+                    </div>
                   </div>
-                  {/* Border Width */}
+
+                  {/* Border Width (existing range slider, kept as-is) */}
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-klarvo-muted">Border thickness</span>
@@ -561,7 +689,8 @@ export function ShortcutsContent({
                       className="w-full accent-klarvo-primary"
                     />
                   </div>
-                  {/* Corner Radius */}
+
+                  {/* Corner Radius (existing range slider, kept as-is) */}
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-klarvo-muted">Corner radius</span>
@@ -577,16 +706,26 @@ export function ShortcutsContent({
                       className="w-full accent-klarvo-primary"
                     />
                   </div>
-                  {/* Font Family */}
+
+                  {/* Task 4 — Curated font-family dropdown (AC-4).
+                      Selecting maps label → concrete CSS stack stored in localPreviewFontFamily.
+                      No free-text font input remains. */}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] text-klarvo-muted min-w-[90px]">Font family</span>
-                    <input
-                      type="text"
-                      value={localPreviewFontFamily}
+                    <select
+                      value={
+                        PREVIEW_FONTS.find((f) => f.stack === localPreviewFontFamily)?.stack
+                        ?? PREVIEW_FONTS[0].stack
+                      }
                       onChange={(e) => setLocalPreviewFontFamily(e.target.value)}
-                      placeholder="'Inter', system-ui, sans-serif"
-                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text font-mono"
-                    />
+                      className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text"
+                    >
+                      {PREVIEW_FONTS.map((f) => (
+                        <option key={f.label} value={f.stack}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </>
