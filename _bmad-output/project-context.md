@@ -13,7 +13,7 @@ sections_completed:
     'anti_patterns',
   ]
 status: 'complete'
-rule_count: 28
+rule_count: 29
 optimized_for_llm: true
 ---
 
@@ -80,6 +80,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ### Critical Don't-Miss Rules
 
 - **Release-Build blind spot.** `cargo check` + Linux tests are green while Tauri runtime, Windows-only paths, and signing are still broken. Treat "compiles on Linux" as nearly zero signal for surface features.
+- **Never make the user the rendering oracle ("ich bin die Test-Maschine").** For a visual / rendering / geometry defect that is only observable on the real build (transparent windows, OS compositing, DPI, native widgets, separate-window paint): do **NOT** change app code on a hypothesis and have the user build + test to find out — that turns the user into the test machine and burns a whole build cycle per guess. Instead: (1) first get the defect into something **you** can observe or deterministically isolate — a self-contained reproduction the user flips through once, a zoomed screenshot, instrumented logging of the computed geometry/styles — and **name the cause**; (2) only then change app code, **once**; (3) if you genuinely cannot observe it and have no isolated cause, **say so and request the one specific observation you need** — never iterate blind. A failed surface smoke re-enters the gated dev flow (`bmad-dev-story` / `bmad-quick-dev`); it is **never** hot-patched from the bare main loop. (Born 2026-06-07: the Epic-6 preview-corner artifact was debugged via repeated guess→build→test cycles — exactly this anti-pattern. Memory `feedback-surface-feature-operable-ux`.)
 - **BYOK is non-negotiable — no remote telemetry.** No Sentry, no analytics calls. Logging is local files + a user-triggered zip export only. Do not add network calls that phone home.
 - **Never hardcode API/license keys.** Dev keys live in `.dev-keys/` (gitignored). License validation is offline HMAC + LemonSqueezy.
 - **State-file writes are single-writer + atomic** (write-temp-then-rename, one owner). Don't add a second writer to a config/state file. See ADR-0015.
