@@ -2,7 +2,7 @@
 story: "6.3"
 epic: "6"
 title: "Font-size axis — previewFontSize config + Settings picker + k-scaling (Increment B)"
-status: ready-for-dev
+status: done
 track: L3-feature
 gatedBy: ["6.2", "6.6"]
 buildsOn: ["6.2", "6.6"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 6.3: Font-size axis — previewFontSize config + Settings picker + k-scaling (Increment B)
 
-Status: review
+Status: done
 
 ## Context
 
@@ -296,7 +296,7 @@ And inversion for AC-5: while testing, the dev can temporarily hard-code `fontSi
   - [x] 8.1 `cargo test --lib` — 575 passed; 0 failed. New test `spec_preview_font_size_config_field_default` PASSES. No regression in `spec_preview_appearance_config_fields_default`.
   - [x] 8.2 `cargo check --target x86_64-pc-windows-gnu` — no new Rust errors from klarvo_lib; pre-existing whisper-rs/ggml MinGW C build failures are unchanged.
   - [x] 8.3 `tsc --noEmit` + `npm run build` — TypeScript exit 0; Vite build clean (✓ built in 7.26s).
-  - [ ] 8.4 Windows settings-smoke (Andi, real build) — OPEN, gate for done:
+  - [x] 8.4 Windows settings-smoke (Andi, real build) — GREEN 2026-06-07 ("passt"):
     - Open Settings → Shortcuts → preview section
     - Klein/Mittel/Groß picker is visible and styled correctly
     - Pick Groß → live card in Settings shows larger text immediately (before Save)
@@ -477,3 +477,4 @@ No debug log issues — all changes were mechanically straightforward following 
 
 - 2026-06-07: Story 6.3 implemented — previewFontSize config field (Rust+TS), Klein/Mittel/Groß picker in Settings appearance panel, live card fontSize, and k-scaling in PreviewPanel. 575 tests/0 fail, tsc+vite green. Windows smoke pending.
 - 2026-06-07: Code-review PASS (Opus 4.8, 3 adversarial layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). CLEAN — 0 patch, 0 decision-needed, 2 defer, 5 dismiss. All 3 named traps (camelCase `previewFontSize` / resync-useEffect SettingsPanel:305 / separate-window reactivity via same getSettings() call) auditor-verified satisfied with evidence. 5 dismissed = Blind Hunter false positives refuted by the two repo-access layers (string fallbacks exist, FONT_PX imported + tsc green, /tmp test Linux-only, inline-fontSize intentional, runShowSequence reactivity correct). 2 deferred → deferred-work.md (FONT_PX_MAP duplication = story-sanctioned micro-refactor; card-width not clamped to work-area at wide+large ~545px = largely pre-existing geometry, negligible desktop trigger). No fix-loop needed. Status stays `review` — surface-class story, AC-8 Windows smoke (GATE 4) is the real final gate.
+- 2026-06-07: AC-8 Windows smoke GREEN (Andi, "passt") → Story DONE. Picker visible in the appearance panel, live card scales, config.json shows `"previewFontSize"`, preview box opens larger/smaller per pick (k-scaling), pill never resizes. Both status fields flipped to done.
