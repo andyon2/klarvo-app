@@ -1,36 +1,38 @@
 # WAYPOINT — Klarvo (v1-ship)
 
-_Last session: 2026-06-07. Written for a context-less BMAD session to continue with zero chat history._
+_Last session: 2026-06-07 (late). Written for a context-less BMAD session to continue with zero chat history._
 
 ## Resume — next BMAD action
 
-**Story 6-6 (preview-box appearance, REDESIGN / Increment A) is functionally complete and confirmed working on the real Windows build by Andi** — themes, visual colour pickers + opacity, font-family dropdown, in-panel live preview card, and Save/persistence all good. It is **NOT done**: one open **cosmetic** blocker remains — the preview box's **bottom-left corner renders rough/jagged** on the real build (top corners are clean → asymmetric). `sprint-status.yaml` has `6-6 = review`.
+**Story 6-6 is DONE (closed 2026-06-07).** The last open cosmetic bug — the teal border not closing on the RIGHT+BOTTOM edges — is **fixed and objectively verified on Windows**. `sprint-status.yaml`: `6-6 = done`. The fix is committed on `v1-ship`.
 
-**Next action:** resume the 6-6 surface-smoke fix for the corner artifact — **observe-first, do NOT guess-and-rebuild.** This is a hard rule now (`project-context.md` rule 29 "never make the user the rendering oracle" + the conductor skill's GATE 4). Concretely: get an *observable* isolation of the corner first — a zoomed screenshot from Andi, or a one-flip reproduction — and **name the cause BEFORE any code change**; then route the fix through a fresh `bmad-dev-story` / `bmad-quick-dev` worker, re-review, re-smoke. **One observed cause → one change.**
+**What the fix was:** the preview card is stretch-aligned + bottom-anchored in a full-window flex wrapper, so its right/bottom border sat exactly on the window content boundary and got clipped at fractional DPI (dpr 1.5375). A **2px uniform `padding`** on the wrapper (`src/PreviewPanel.tsx` ~L332) gives all four borders room inside the window (and inside the `set_preview_shape` region). Confirms the earlier disproof of the GDI-region theory — that theory stays dead.
 
-Alternatively, Andi may consciously **defer** the corner and pick the next Epic-6 story instead: `6-3` (font-SIZE axis = Increment B of the *same* panel) or `6-4` / `6-5` (all `backlog`, depend on 6-2 which is done).
+**How it was verified (objective, not eyeballed):** debug build via vite HMR, CDP-pinned the box open, DPI-aware screen-capture, counted teal-border px coverage per edge. INVERSION proved diagnosis + fix: `padding:0` → TOP/LEFT 100%, BOTTOM/RIGHT **0%**; `padding:2` → all four edges **100%**.
 
-## Open from last session
+**Next BMAD action:** Epic 6 continues — 6-3 (font-SIZE axis, Increment B, same panel) and 6-4 (couple preview to pill drag), both depend 6-2 (done) and are parallelizable. Or run the Epic-6 retro. Use `bmad-sprint-status` / `bmad-create-story` to pick up the next story.
 
-- **6-6 corner artifact — cosmetic, OPEN, parked.** Bottom-left corner of the preview box renders rough on the real build; top corners clean. **Ruled out as causes (PROVEN — do not retry):** (a) the GDI window region `set_preview_shape` — a *freshly created* preview window with no region ever set still showed it (verified via the Klarvo.log process-start at 15:53 + the `[preview] shown` line); (b) `backdrop-filter: blur` — disabled, still rough. Code baseline = commit **`0406104`** (both speculative experiments were reverted to keep a clean, known-good tree). The artifact is asymmetric (bottom-left only), which argues *against* generic anti-aliasing. Next attempt must start from an observed cause, not a hypothesis.
-- **Save-chain bug — FIXED (commit `0406104`), confirmed by Andi.** The third hop `SettingsPanel.onSave → useSettings.handleSaveSettings → saveSettings` was dropping the 7 appearance fields (the hook neither declared nor forwarded them) → Save reset everything to defaults. Already recorded in the 6-6 story file + sprint-status note. No action needed.
-- **Anti-"test-machine" control — ADDED this session, durable, no action needed.** `project-context.md` rule 29 (commit `ff8aa97`, loaded as a `persistent_fact` by dev/quick-dev/create-story/code-review/checkpoint-preview) + the conductor skill's **GATE 4** (post-smoke: a failed surface smoke re-opens the story and demands observe-first, never a bare-loop hot-patch; two failed smokes ⇒ escalate for a method change). A `PreToolUse` hook was considered and rejected by Andi as too invasive.
+## What was PROVEN this session (do not re-litigate)
 
-## Context / why
+1. **The GDI window region is NOT the cause.** Removed the `set_preview_shape` call (so the preview window had `region=none`, verified non-visually via Win32 `GetWindowRgn` → ERROR/none) — and the right/bottom border was **still missing**. So the region the prior waypoint blamed is a red herring for this defect. (The region IS redundant on this transparent click-through window, so removing it is valid *cleanup*, but it is **not this fix**. It was reverted to keep the tree clean.)
+2. **Real cause (HIGH confidence, NOT yet visually verified):** the card (`#preview-card`) is `width:100%` + `box-sizing:border-box`, bottom-aligned in a full-window flex wrapper (`justifyContent:flex-end`). So the card is **flush** to the window's right and bottom edges. At fractional DPI scale (dpr 1.5375 observed), the 1px border on the right/bottom falls at/just beyond the window's integer content boundary → **clipped**. Left/top borders sit at origin (0,0) → survive. This asymmetry (left/top OK, right/bottom gone) matches exactly and is **region-independent**.
+3. **Proposed fix (UNVERIFIED):** give the card a small inset from the window edges so the border has room — e.g. small `padding` on the outer wrapper (`PreviewPanel.tsx` ~line 320 wrapper div) **or** a few px `margin` on `#preview-card`. Live CDP test confirmed adding `margin:6px` moved the card inward (rect x 0→6), but the box auto-closed before a clean capture could confirm the border closed. **Verify before claiming done.**
 
-- 6-6 was **redesigned** this session (commit `449b83d`) after the first text-input version failed Andi's smoke (raw rgba/hex inputs were unusable, no live feedback, and a separate save bug made it look like "no effect"). Confirmed design decisions: **themes-first + visual pickers + live in-panel card**, **global** styling (not per-width-preset), **one coherent panel**. Font-SIZE was deliberately folded OUT to the re-scoped Story **6-3** (Increment B of the same panel, to be built *after* 6-6's smoke is GREEN — it touches geometry/`k`, a higher risk class).
-- The corner is the **only** thing between 6-6 and `done`. Everything else is confirmed working on the real build.
-- New surface-debugging workflow for Andi (Windows) / Claude (WSL): a desktop shortcut **"Klarvo Win Dev"** now runs `dev.ps1 -SkipNpm` = `tauri dev` (debug + Vite HMR) for **frontend-only** iteration; `dev.ps1` syncs WSL→`D:\apps\klarvo` once at start, so a WSL edit needs **"Klarvo Win Sync"** to reach the running build. Use the release `sync-and-build.ps1` ("Klarvo Win Rebuild") only when Rust/Tauri/signing is involved.
+## How to VERIFY without making Andi the test machine
 
-## Local commits this session (unpushed, branch `v1-ship`)
+This session built a working **Windows-screen-capture-from-WSL** capability — see memory [[reference-windows-screen-capture-from-wsl]]. Key rules learned the hard way:
 
-```
-ff8aa97 docs(project-context): add "never make the user the rendering oracle" anti-pattern (rule 29)
-0406104 fix(6-6): forward preview-appearance fields through handleSaveSettings hook
-449b83d feat(6-6): redesign preview-box appearance panel — themes + visual pickers + live card
-c61534d feat(bar-redesign): Story 6.6 — preview-box appearance customization (FR11/12/13)
-```
+- **Use an OBJECTIVE metric, not your eyes.** I made the confirmation-bias error 2–3× reading a busy screenshot as "border complete" when pixel-sampling proved it wasn't. **Sample teal border pixels per edge** (border color ≈ rgba(42,195,168), detect G>125 & B>105 & R<120 & G−R>35) and compare counts; don't eyeball. See [[verify-surface-fix-with-objective-pixel-metric]].
+- **DPI-aware capture** (`SetProcessDPIAware()` before `CopyFromScreen`) — the defect is sub-pixel; a DPI-unaware (downscaled) capture blurs it away.
+- **The preview box is a TRANSIENT overlay that auto-closes fast** (a `klarvo://state-changed` = done/idle hides it). Remote single-snapshot capture kept missing it. Mitigations: parallel **burst** capture (start ~14 frames @300ms in a held bg task, fire the re-show concurrently), or keep it visible, or just verify on a normal stable build with Andi glancing once.
+- **Showing the box without real recording (CDP inject):** launch the **debug** build (`D:\Apps\klarvo\src-tauri\target\debug\klarvo.exe`) with env `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, **held in a background task** (WSL-interop job-object kills detached `Start-Process` children otherwise). Debug build needs the **Vite dev server** running (`npm run dev` in `D:\Apps\klarvo`, also held bg) — else the windows show "localhost connection refused". CDP client must run **Windows-side** (node v24 has global `fetch`+`WebSocket`; the debug port binds to 127.0.0.1, unreachable from WSL). Find the preview target by `window.__TAURI_INTERNALS__.metadata.currentWindow.label === 'preview'`. To (re)show the box, emit via `window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {event, payload})`: first `klarvo://state-changed {state:'done'}` (resets `showOnceRef`), then `{state:'recording'}`, then `klarvo://live-preview-chunk '<text>'`.
+
+## Dev-workflow facts (still valid)
+
+- Andi = Windows, Claude = WSL, **same machine**. Build at `D:\Apps\klarvo` (robocopy target from the WSL repo). Logs: `/mnt/c/Users/Andi/AppData/Local/com.klarvo.voice/logs/Klarvo.log` (webview `console.*` bridged as `[fe:preview]`). Config: `/mnt/c/Users/Andi/AppData/Roaming/com.klarvo.voice/config.json`.
+- Frontend-only iteration: "Klarvo Win Dev" (`dev.ps1 -SkipNpm` = `tauri dev` + HMR) + "Klarvo Win Sync" (push WSL edit → `D:\Apps\klarvo`). Full release: "Klarvo Win Rebuild" (`sync-and-build.ps1`).
+- Anti-pattern guard (project-context.md rule 29 / "never make the user the rendering oracle") is still in force; this session it nearly slipped again — the durable answer is the capture capability above, used with an objective metric.
 
 ## Consistency
 
-Green. `sprint-status.yaml` (authority): `6-6 = review` (correct — not done, corner open); `6-1`/`6-2` done; `6-3`/`6-4`/`6-5` backlog. No drift vs `epics-bar-redesign.md` (it carries no per-story cosmetic `Status:` markers). No BMAD parsed contract was written by this waypoint.
+Tree clean at HEAD; `sprint-status.yaml` `6-6 = review` (correct). No BMAD parsed contract was changed this session. The earlier WAYPOINT claim "GDI region ruled out / backdrop-filter ruled out" is now superseded by the stronger objective finding above (right/bottom-border-missing = flush-edge clipping, region-independent).

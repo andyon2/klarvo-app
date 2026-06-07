@@ -321,6 +321,15 @@ export default function PreviewPanel(): React.ReactElement {
         width: "100%", height: "100%",
         display: "flex", flexDirection: "column",
         justifyContent: "flex-end", // card grows upward from bottom
+        // Story 6.6 border-clip fix: the card is stretch-aligned + bottom-anchored, so
+        // without this inset its right/bottom border sits exactly on the window content
+        // boundary and gets clipped at fractional DPI (objectively measured: left ~79 teal
+        // px, right ~10, bottom ~16). A small uniform pad keeps all four borders inside the
+        // window — and inside the set_preview_shape region — so they render in full. Uniform
+        // (not right/bottom-only) preserves horizontal centering on the pill and avoids any
+        // card/region corner coincidence (the R11 white-line case). ~2px is imperceptible
+        // vs the pill but >1 physical px at every DPI scale we see (dpr 1.25–2.0).
+        padding: 2,
       }}>
         {livePreview && (
           <>
