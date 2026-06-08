@@ -10,7 +10,12 @@ not a claim someone makes.
 > press-to-paste smoke (the `project-context.md` testing rule). Run this list *before* the smoke,
 > as part of writing the code — each item is a known trap that Linux-green hides.
 
-## The traps (each one shipped at least once in Epic 5)
+> **Epic 6 update (2026-06-08):** the re-architecture epic re-confirmed traps #1–#5 *and* added
+> trap #6 (multi-hop save-chain forwarding) — a class that both automated review layers missed
+> because they verified the chain's endpoints but not its middle hop. The ledger grows by exactly
+> this mechanism: every new smoke-only bug class gets appended.
+
+## The traps (each one shipped at least once in Epic 5 or 6)
 
 1. **camelCase config keys.** `AppConfig` uses `serde(rename_all = "camelCase")` → the JSON key is
    `livePreviewEnabled`, **not** `live_preview_enabled`. A wrong-case key is **silently ignored**
@@ -41,12 +46,24 @@ not a claim someone makes.
    subscribed (re-enabled as a push sink, not a re-enabled poller). A green unit test does not prove
    the event reaches the window. (Epic 5, Story 5-1/5-2 — `klarvo://live-preview-chunk`.)
 
+6. **Multi-hop save/plumbing chains — trace the whole chain, not just the endpoints.** When a
+   surface story adds a config field, it is plumbed through a long chain
+   (`config → patch → merge → save_config_locked → getSettings → SettingsView → TS type → MOCK →
+   SettingsPanel state/resync/isDirty → onSave → useSettings.handleSaveSettings → saveSettings →
+   PreviewPanel reactive read`). A field can be declared correctly at **both ends** (the panel's
+   `onSave` and the `saveSettings` signature) yet be **dropped in an intermediate hop** — in Epic 6
+   the `useSettings.handleSaveSettings` hook neither declared nor forwarded the 7 appearance args, so
+   Save silently nulled them → merge kept defaults → every appearance setting reset on save. **Both
+   automated review layers missed it** because they checked the endpoints and never traced the middle
+   hop; Linux-green never sees it. For any new config field, walk the *entire* chain end-to-end and
+   confirm each hop forwards the field. (Epic 6, Story 6-6 — appearance reset-on-save.)
+
 ## How to use it
 
 - **At create-story / dev time:** for a surface story, copy the applicable items into the story's
   DoD as explicit pre-smoke checks. Not every item applies to every story — pick the ones the
-  story's surface touches (new config key → #1/#3; new Settings numeric → #2; bar geometry → #4;
-  new event → #5).
+  story's surface touches (new config key → #1/#3/#6; new Settings numeric → #2; bar geometry → #4;
+  new event → #5; any new config field plumbed through the Settings save chain → #6).
 - **The checklist is mechanical, not a self-attestation.** "I checked #1" is worth nothing; the
   value is in actually verifying the on-disk key spelling, the resync list membership, the reactive
   re-read, the region match. Same lesson as reviewer-inversion: the control has teeth only when the
