@@ -95,8 +95,7 @@ const LICENSED_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
 const GRACE_PERIOD_SECS: u64 = 48 * 60 * 60;
 
 /// Trial duration from first install.
-// TODO(launch): Reset to 14 days before public launch
-const TRIAL_DURATION_SECS: u64 = 60 * 24 * 60 * 60; // 60 days for Early Access
+const TRIAL_DURATION_SECS: u64 = 14 * 24 * 60 * 60; // 14 days
 
 /// Unix timestamp of the trial epoch: 2025-01-01T00:00:00Z.
 ///
@@ -964,6 +963,28 @@ mod tests {
                 "Active trial must allow {feature:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_compute_trial_status_14_day_boundary() {
+        let now = current_unix_timestamp();
+        const FOURTEEN_DAYS: u64 = 14 * 24 * 60 * 60;
+        // Just inside the 14-day window (1h before expiry) -> still active.
+        // Tight probes pin the constant to ~14d, not just a 5–15d band, so an
+        // off-by-a-day constant error (e.g. 13d) is caught, not only a 60d one.
+        let within = compute_trial_status(now - (FOURTEEN_DAYS - 3600));
+        assert!(
+            matches!(within, LicenseStatus::Trial { .. }),
+            "1h before the 14-day boundary must be Trial, got {within:?}"
+        );
+        // Just past the 14-day window (1h after expiry) -> Unlicensed.
+        // Inversion check: a regression to any duration != ~14d flips one of
+        // these two assertions RED.
+        let expired = compute_trial_status(now - (FOURTEEN_DAYS + 3600));
+        assert!(
+            matches!(expired, LicenseStatus::Unlicensed),
+            "1h after the 14-day boundary must be Unlicensed, got {expired:?}"
+        );
     }
 
     #[test]

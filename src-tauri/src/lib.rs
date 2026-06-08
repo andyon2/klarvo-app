@@ -1560,12 +1560,12 @@ mod tests {
 
     #[test]
     fn test_trial_expired() {
-        // 61 days ago — beyond the 60-day EA trial window
+        // 30 days ago — well beyond the 14-day trial window
         let past_trial = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
-            .saturating_sub(61 * 24 * 60 * 60);
+            .saturating_sub(30 * 24 * 60 * 60);
         let dir = temp_dir();
         let cfg = AppConfig { first_install_at: past_trial, ..AppConfig::default() };
         let db = rusqlite::Connection::open_in_memory().unwrap();

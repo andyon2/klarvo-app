@@ -118,6 +118,17 @@ fn build_client() -> Result<reqwest::Client, LsApiError> {
         .map_err(LsApiError::Network)
 }
 
+/// Whether a LemonSqueezy `test_mode` key must be rejected.
+///
+/// Test-mode keys are issued by LS test mode and must never unlock a public
+/// release build, but they stay usable in debug builds so developers can test
+/// the activation flow without a paid live key. Pure and side-effect-free so
+/// the launch-critical decision is unit-testable independent of the build
+/// profile; production wires `is_release = !cfg!(debug_assertions)`.
+fn rejects_test_mode(test_mode: bool, is_release: bool) -> bool {
+    test_mode && is_release
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -168,13 +179,11 @@ pub async fn activate(license_key: &str, instance_name: &str) -> Result<LsActiva
         .ok_or_else(|| LsApiError::Api("Missing license_key in activate response".to_string()))?;
 
     // Reject test-mode activations in production builds.
-    // TODO(launch): Re-enable before public release!
-    // #[cfg(not(debug_assertions))]
-    // if lk.test_mode {
-    //     return Err(LsApiError::Api(
-    //         "Test-mode license keys are not accepted in production builds".to_string(),
-    //     ));
-    // }
+    if rejects_test_mode(lk.test_mode, !cfg!(debug_assertions)) {
+        return Err(LsApiError::Api(
+            "Test-mode license keys are not accepted in production builds".to_string(),
+        ));
+    }
 
     Ok(LsActivateResult {
         instance_id: instance.id,
@@ -219,15 +228,13 @@ pub async fn validate(license_key: &str, instance_id: &str) -> Result<bool, LsAp
     }
 
     // Reject test-mode keys in production builds.
-    // TODO(launch): Re-enable before public release!
-    // #[cfg(not(debug_assertions))]
-    // if let Some(lk) = &body.license_key {
-    //     if lk.test_mode {
-    //         return Err(LsApiError::Api(
-    //             "Test-mode license keys are not accepted in production builds".to_string(),
-    //         ));
-    //     }
-    // }
+    if let Some(lk) = &body.license_key {
+        if rejects_test_mode(lk.test_mode, !cfg!(debug_assertions)) {
+            return Err(LsApiError::Api(
+                "Test-mode license keys are not accepted in production builds".to_string(),
+            ));
+        }
+    }
 
     Ok(true)
 }
@@ -277,8 +284,11 @@ mod tests {
     // ---- helpers -----------------------------------------------------------
 
     /// Parse a raw JSON string as `ActivateResponse` and run the same
-    /// production logic as `activate()`, but without any HTTP call.
-    fn parse_activate(json: &str) -> Result<LsActivateResult, LsApiError> {
+    /// production logic as `activate()` — including the real `rejects_test_mode`
+    /// gate — but without any HTTP call. `is_release` is threaded explicitly
+    /// (instead of reading `cfg!(debug_assertions)`) so the release reject path
+    /// is exercisable under `cargo test`, which always runs in debug.
+    fn parse_activate(json: &str, is_release: bool) -> Result<LsActivateResult, LsApiError> {
         let body: ActivateResponse = serde_json::from_str(json)
             .map_err(|e| LsApiError::Api(e.to_string()))?;
 
@@ -296,6 +306,12 @@ mod tests {
             .license_key
             .ok_or_else(|| LsApiError::Api("Missing license_key".to_string()))?;
 
+        if rejects_test_mode(lk.test_mode, is_release) {
+            return Err(LsApiError::Api(
+                "Test-mode license keys are not accepted in production builds".to_string(),
+            ));
+        }
+
         Ok(LsActivateResult {
             instance_id: instance.id,
             activation_usage: lk.activation_usage.unwrap_or(0),
@@ -303,12 +319,20 @@ mod tests {
         })
     }
 
-    fn parse_validate(json: &str) -> Result<bool, LsApiError> {
+    fn parse_validate(json: &str, is_release: bool) -> Result<bool, LsApiError> {
         let body: ValidateResponse = serde_json::from_str(json)
             .map_err(|e| LsApiError::Api(e.to_string()))?;
 
         if !body.valid {
             return Ok(false);
+        }
+
+        if let Some(lk) = &body.license_key {
+            if rejects_test_mode(lk.test_mode, is_release) {
+                return Err(LsApiError::Api(
+                    "Test-mode license keys are not accepted in production builds".to_string(),
+                ));
+            }
         }
         Ok(true)
     }
@@ -343,7 +367,7 @@ mod tests {
             }
         }"#;
 
-        let result = parse_activate(json).expect("activate should succeed");
+        let result = parse_activate(json, true).expect("activate should succeed");
         assert_eq!(result.instance_id, "550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(result.activation_usage, 1);
         assert_eq!(result.activation_limit, 3);
@@ -363,7 +387,7 @@ mod tests {
             }
         }"#;
 
-        let err = parse_activate(json).expect_err("should fail with limit error");
+        let err = parse_activate(json, true).expect_err("should fail with limit error");
         match err {
             LsApiError::Api(msg) => assert!(
                 msg.contains("activation limit"),
@@ -385,7 +409,7 @@ mod tests {
             }
         }"#;
 
-        let result = parse_validate(json).expect("validate should succeed");
+        let result = parse_validate(json, true).expect("validate should succeed");
         assert!(result, "key should be valid");
     }
 
@@ -397,7 +421,7 @@ mod tests {
             "license_key": null
         }"#;
 
-        let result = parse_validate(json).expect("parse should not fail");
+        let result = parse_validate(json, true).expect("parse should not fail");
         assert!(!result, "key should be invalid");
     }
 
@@ -425,5 +449,67 @@ mod tests {
             ),
             other => panic!("expected Api error, got: {other}"),
         }
+    }
+
+    // ---- test-mode reject (launch gate) ------------------------------------
+
+    #[test]
+    fn test_rejects_test_mode_truth_table() {
+        // Only a test-mode key in a release build is rejected.
+        assert!(rejects_test_mode(true, true), "test-mode + release must reject");
+        // Inversion guards: flipping the && to || would turn any of these RED.
+        assert!(!rejects_test_mode(false, true), "live key + release must accept");
+        assert!(!rejects_test_mode(true, false), "test-mode + debug must accept");
+        assert!(!rejects_test_mode(false, false), "live key + debug must accept");
+    }
+
+    #[test]
+    fn test_activate_rejects_test_mode_in_release() {
+        let json = r#"{
+            "activated": true,
+            "instance": { "id": "id-1", "name": "Andy-Desktop" },
+            "license_key": {
+                "status": "active",
+                "activation_usage": 1,
+                "activation_limit": 3,
+                "test_mode": true
+            }
+        }"#;
+
+        let err = parse_activate(json, true).expect_err("test-mode key must be rejected in release");
+        match err {
+            LsApiError::Api(msg) => assert!(
+                msg.contains("Test-mode"),
+                "unexpected error message: {msg}"
+            ),
+            other => panic!("expected Api error, got: {other}"),
+        }
+
+        // Same key is accepted in a debug build so devs can test the flow.
+        parse_activate(json, false).expect("test-mode key must be accepted in debug");
+    }
+
+    #[test]
+    fn test_validate_rejects_test_mode_in_release() {
+        let json = r#"{
+            "valid": true,
+            "license_key": {
+                "status": "active",
+                "test_mode": true
+            }
+        }"#;
+
+        let err = parse_validate(json, true).expect_err("test-mode key must be rejected in release");
+        match err {
+            LsApiError::Api(msg) => assert!(
+                msg.contains("Test-mode"),
+                "unexpected error message: {msg}"
+            ),
+            other => panic!("expected Api error, got: {other}"),
+        }
+
+        // Same key is accepted in a debug build.
+        let ok = parse_validate(json, false).expect("test-mode key must be accepted in debug");
+        assert!(ok, "debug validate should return true");
     }
 }
