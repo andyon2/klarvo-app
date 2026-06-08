@@ -35,6 +35,7 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
   webhookTimeoutSecs: 10,
   logLevel: "info",
   uiScale: "medium",
+  expertMode: false,
 };
 
 type ActiveSection = "home" | "stt" | "llm" | "audio" | "system";
@@ -55,6 +56,11 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("home");
+  // Expert mode (settings.expertMode) gates raw internal tuning knobs (audio thresholds,
+  // chunking, STT temperature). It is a persisted AdvancedSettings field, so toggling it
+  // behaves like any other setting: it marks the panel dirty (→ Save button) and survives
+  // navigation + app restart. Off by default; footguns stay hidden until deliberately enabled.
+  const expertMode = settings.expertMode;
   // Subsections within the LLM section: free subsections open by default, paid ones closed.
   const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({
     llmParams: true,   // "Model & Parameters" -- free, default open
@@ -220,7 +226,8 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
         </span>
       </button>
 
-      {/* Audio */}
+      {/* Audio -- entirely raw VAD tuning knobs; only surfaced in expert mode */}
+      {expertMode && (
       <button
         type="button"
         onClick={() => setActiveSection("audio")}
@@ -243,6 +250,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           <ChevronRight />
         </span>
       </button>
+      )}
 
       {/* System */}
       <button
@@ -313,13 +321,15 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Klarvo License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
           <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
         </div>
-        <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
-          <div className="flex flex-col gap-0.5">
-            <span className={LABEL_CLS}>STT Temperature</span>
-            <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+        {expertMode && (
+          <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
+            <div className="flex flex-col gap-0.5">
+              <span className={LABEL_CLS}>STT Temperature</span>
+              <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
+            </div>
+            <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => { if (isPaid) set("sttTemperature", parseFloat(e.target.value) || 0); }} disabled={!isPaid} className={numberInputCls} />
           </div>
-          <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => { if (isPaid) set("sttTemperature", parseFloat(e.target.value) || 0); }} disabled={!isPaid} className={numberInputCls} />
-        </div>
+        )}
       </div>
     </div>
   );
@@ -365,14 +375,18 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
             <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
             <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
-            <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
-            <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
-          </div>
+          {expertMode && (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
+                <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
+                <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -487,6 +501,24 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
             <option value="warn">warn</option>
             <option value="error">error</option>
           </select>
+        </div>
+        {/* Expert mode -- reveals raw internal tuning knobs (audio thresholds, chunking, STT temperature) */}
+        <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-klarvo-border/40">
+          <div className="flex flex-col gap-0.5">
+            <span className={LABEL_CLS}>Expert mode</span>
+            <span className={hintCls}>Reveals raw audio thresholds, chunking and STT temperature. Wrong values can stop recording or transcription — only enable if you know what they do.</span>
+          </div>
+          <button
+            role="switch"
+            aria-checked={expertMode}
+            onClick={() => set("expertMode", !expertMode)}
+            className={[
+              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+              expertMode ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+            ].join(" ")}
+          >
+            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", expertMode ? "translate-x-4" : ""].join(" ")} />
+          </button>
         </div>
       </div>
     );

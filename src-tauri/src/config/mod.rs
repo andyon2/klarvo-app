@@ -164,6 +164,14 @@ pub struct AdvancedSettings {
     /// Default: `"medium"` (100%).
     #[serde(default = "default_ui_scale")]
     pub ui_scale: String,
+
+    // --- Expert mode ---
+
+    /// When true, the Advanced settings UI surfaces raw internal tuning knobs
+    /// (audio thresholds, chunking, STT temperature). Purely a UI-visibility
+    /// flag — it gates no backend behavior. Off by default.
+    #[serde(default = "default_expert_mode")]
+    pub expert_mode: bool,
 }
 
 fn default_stt_prompt_de() -> String {
@@ -238,6 +246,10 @@ fn default_ui_scale() -> String {
     "medium".to_string()
 }
 
+fn default_expert_mode() -> bool {
+    false
+}
+
 impl Default for AdvancedSettings {
     fn default() -> Self {
         AdvancedSettings {
@@ -268,6 +280,7 @@ impl Default for AdvancedSettings {
             webhook_timeout_secs: default_webhook_timeout_secs(),
             log_level: default_log_level(),
             ui_scale: default_ui_scale(),
+            expert_mode: default_expert_mode(),
         }
     }
 }
@@ -3392,6 +3405,7 @@ mod tests {
                 webhook_timeout_secs: 30,
                 log_level: "debug".to_string(),
                 ui_scale: "large".to_string(),
+                expert_mode: true,
             },
 
             local_whisper_model: "base-q5_1".to_string(),

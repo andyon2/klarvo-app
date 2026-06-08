@@ -199,6 +199,9 @@ export interface AdvancedSettings {
   webhookTimeoutSecs: number;
   logLevel: string;
   uiScale: string;
+  /** When true, the Advanced UI surfaces raw internal tuning knobs (audio
+   *  thresholds, chunking, STT temperature). UI-visibility flag only. */
+  expertMode: boolean;
 }
 
 // Style display metadata.

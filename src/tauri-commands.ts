@@ -123,6 +123,7 @@ const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
   webhookTimeoutSecs: 10,
   logLevel: "info",
   uiScale: "medium",
+  expertMode: false,
 };
 
 const MOCK_HISTORY: HistoryEntry[] = [
