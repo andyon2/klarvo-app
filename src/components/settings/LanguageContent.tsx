@@ -27,7 +27,7 @@ export const OUTPUT_LANGUAGES = [
 
 // --- Props ------------------------------------------------------------------
 
-export interface AppearanceLanguageContentProps {
+export interface LanguageContentProps {
   localLang: string;
   handleLangChange: (lang: string) => void;
   localOutputLanguage: string;
@@ -36,19 +36,23 @@ export interface AppearanceLanguageContentProps {
 
 // --- Component --------------------------------------------------------------
 
-export function AppearanceLanguageContent({
+/**
+ * Language settings: dictation language + output translation.
+ *
+ * Split out of the former "Appearance & Language" section — that section
+ * carried zero appearance controls (those now live in AppearanceContent), so
+ * this is now an honest, language-only section.
+ */
+export function LanguageContent({
   localLang,
   handleLangChange,
   localOutputLanguage,
   handleOutputLanguageChange,
-}: AppearanceLanguageContentProps) {
+}: LanguageContentProps) {
   return (
     <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
 
-      {/* Language section */}
       <div className="flex flex-col gap-2.5">
-        <span className="text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest">Language</span>
-
         <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
           <span className={LABEL_CLS_M}>Dictation language</span>
           <select

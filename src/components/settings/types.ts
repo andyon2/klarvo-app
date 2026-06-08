@@ -2,7 +2,8 @@ export type SettingsCategory =
   | "home"
   | "recording-audio"
   | "ai-providers"
-  | "appearance-language"
+  | "appearance"
+  | "language"
   | "shortcuts"
   | "license"
   | "dictionary"
@@ -33,15 +34,22 @@ export const SETTINGS_CATEGORIES: SettingsCategoryDef[] = [
     iconColor: "#818CF8",
   },
   {
-    id: "appearance-language",
-    label: "Appearance & Language",
-    subtitle: "Language, output translation",
+    id: "appearance",
+    label: "Appearance",
+    subtitle: "Live preview look & behavior",
     iconColor: "#34D399",
+    desktopOnly: true,
+  },
+  {
+    id: "language",
+    label: "Language",
+    subtitle: "Dictation & translation language",
+    iconColor: "#22D3EE",
   },
   {
     id: "shortcuts",
     label: "Shortcuts",
-    subtitle: "Hotkeys, bubble controls",
+    subtitle: "Hotkeys, modes, paste behavior",
     iconColor: "#F59E0B",
   },
   {

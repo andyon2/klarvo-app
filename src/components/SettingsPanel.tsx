@@ -26,7 +26,8 @@ import { SETTINGS_CATEGORIES } from "./settings/types";
 import { SettingsHome } from "./settings/SettingsHome";
 import { SettingsSubPageHeader } from "./settings/SettingsSubPageHeader";
 import { RecordingAudioContent } from "./settings/RecordingAudioContent";
-import { AppearanceLanguageContent } from "./settings/AppearanceLanguageContent";
+import { AppearanceContent } from "./settings/AppearanceContent";
+import { LanguageContent } from "./settings/LanguageContent";
 import { AiProvidersContent } from "./settings/AiProvidersContent";
 import { ShortcutsContent } from "./settings/ShortcutsContent";
 import { LicenseSection } from "./settings/LicenseSettings";
@@ -159,11 +160,11 @@ export function SettingsPanel({
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [localInsertAndSendSlot1, setLocalInsertAndSendSlot1] = useState(loadedSettings?.insertAndSendSlot1 ?? false);
   const [localInsertAndSendSlot2, setLocalInsertAndSendSlot2] = useState(loadedSettings?.insertAndSendSlot2 ?? false);
-  const [localSendStopPauseSecs, setLocalSendStopPauseSecs] = useState(() => {
-    const autostop = loadedSettings?.autostopSilenceSecs ?? 2.0;
-    const auto = loadedSettings?.autoModeSilenceSecs ?? 2.0;
-    return Math.max(autostop, auto);  // AC-4: display the larger of two diverged values
-  });
+  // Split sliders (formerly a single coupled "Send/Stop-Pause"): each binds to
+  // its own backend key. AutoStop and Auto are different modes with different
+  // silence semantics, so they get independent values.
+  const [localAutostopSilenceSecs, setLocalAutostopSilenceSecs] = useState(loadedSettings?.autostopSilenceSecs ?? 2.0);
+  const [localAutoModeSilenceSecs, setLocalAutoModeSilenceSecs] = useState(loadedSettings?.autoModeSilenceSecs ?? 2.0);
   const [bubbleTab, setBubbleTab] = useState<0 | 1>(0);
   const [localBubbleTapMode, setLocalBubbleTapMode] = useState<HotkeyMode>((loadedSettings?.bubbleTapMode ?? "toggle") as HotkeyMode);
   const [localBubbleTapAutoSend, setLocalBubbleTapAutoSend] = useState(loadedSettings?.bubbleTapAutoSend ?? false);
@@ -303,9 +304,8 @@ export function SettingsPanel({
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
       setLocalInsertAndSendSlot1(loadedSettings.insertAndSendSlot1 ?? false);
       setLocalInsertAndSendSlot2(loadedSettings.insertAndSendSlot2 ?? false);
-      const autostop = loadedSettings.autostopSilenceSecs ?? 2.0;
-      const auto = loadedSettings.autoModeSilenceSecs ?? 2.0;
-      setLocalSendStopPauseSecs(Math.max(autostop, auto));
+      setLocalAutostopSilenceSecs(loadedSettings.autostopSilenceSecs ?? 2.0);
+      setLocalAutoModeSilenceSecs(loadedSettings.autoModeSilenceSecs ?? 2.0);
       setLocalHotkeySlot2(loadedSettings.hotkeySlot2 ?? "");
       setLocalHotkeyModeSlot2(loadedSettings.hotkeyModeSlot2 ?? "hold");
       setLocalBubbleTapMode((loadedSettings.bubbleTapMode ?? "toggle") as HotkeyMode);
@@ -379,7 +379,8 @@ export function SettingsPanel({
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
       localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
       localInsertAndSendSlot2 !== (loadedSettings.insertAndSendSlot2 ?? false) ||
-      localSendStopPauseSecs !== Math.max(loadedSettings.autostopSilenceSecs ?? 2.0, loadedSettings.autoModeSilenceSecs ?? 2.0) ||
+      localAutostopSilenceSecs !== (loadedSettings.autostopSilenceSecs ?? 2.0) ||
+      localAutoModeSilenceSecs !== (loadedSettings.autoModeSilenceSecs ?? 2.0) ||
       localHotkeySlot2 !== (loadedSettings.hotkeySlot2 ?? "") ||
       localHotkeyModeSlot2 !== (loadedSettings.hotkeyModeSlot2 ?? "hold") ||
       groqKey.trim() !== "" ||
@@ -416,7 +417,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, localSttProvider,
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSendStopPauseSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localAutostopSilenceSecs, localAutoModeSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
@@ -520,9 +521,9 @@ export function SettingsPanel({
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
     try {
-      // AC-1: Regler B writes BOTH keys unconditionally to the same value
-      const autostopSecs = localSendStopPauseSecs;
-      const autoModeSecs = localSendStopPauseSecs;
+      // Split sliders: each key gets its own value (no longer coupled).
+      const autostopSecs = localAutostopSilenceSecs;
+      const autoModeSecs = localAutoModeSilenceSecs;
       await onSave(
         groqKey.trim(), deepseekKey.trim(), localLang, localStyle, localHotkey, localHotkeyMode,
         localAudioDevice, localSttModel, localCustomPrompt, localAutostart, localWhisperMode,
@@ -583,7 +584,7 @@ export function SettingsPanel({
     localSttModel, localCustomPrompt, localAutostart, localWhisperMode, openaiKey, anthropicKey,
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
-    localInsertAndSendSlot1, localInsertAndSendSlot2, localSendStopPauseSecs, localHotkeySlot2, localHotkeyModeSlot2,
+    localInsertAndSendSlot1, localInsertAndSendSlot2, localAutostopSilenceSecs, localAutoModeSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
     localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
     localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
     advancedSettings, localSilenceThreshold,
@@ -730,9 +731,9 @@ export function SettingsPanel({
                 localHotkeyMode={localHotkeyMode} setLocalHotkeyMode={handleHotkeyModeChange}
                 localHotkeySlot2={localHotkeySlot2} setLocalHotkeySlot2={setLocalHotkeySlot2}
                 localHotkeyModeSlot2={localHotkeyModeSlot2} setLocalHotkeyModeSlot2={setLocalHotkeyModeSlot2}
-                localSendStopPauseSecs={localSendStopPauseSecs} setLocalSendStopPauseSecs={setLocalSendStopPauseSecs}
+                localAutostopSilenceSecs={localAutostopSilenceSecs} setLocalAutostopSilenceSecs={setLocalAutostopSilenceSecs}
+                localAutoModeSilenceSecs={localAutoModeSilenceSecs} setLocalAutoModeSilenceSecs={setLocalAutoModeSilenceSecs}
                 localInsertAndSendSlot1={localInsertAndSendSlot1} setLocalInsertAndSendSlot1={setLocalInsertAndSendSlot1}
-                localInsertAndSendSlot2={localInsertAndSendSlot2} setLocalInsertAndSendSlot2={setLocalInsertAndSendSlot2}
                 hotkeyTab={hotkeyTab} setHotkeyTab={setHotkeyTab}
                 bubbleTab={bubbleTab} setBubbleTab={setBubbleTab}
                 localBubbleTapMode={localBubbleTapMode} setLocalBubbleTapMode={setLocalBubbleTapMode}
@@ -752,28 +753,6 @@ export function SettingsPanel({
                 setLocalPasteDelayMs={setLocalPasteDelayMs}
                 localAutoCapitalize={localAutoCapitalize}
                 setLocalAutoCapitalize={setLocalAutoCapitalize}
-                localLivePreviewEnabled={localLivePreviewEnabled}
-                setLocalLivePreviewEnabled={setLocalLivePreviewEnabled}
-                localPreviewPauseSilenceSecs={localPreviewPauseSilenceSecs}
-                setLocalPreviewPauseSilenceSecs={setLocalPreviewPauseSilenceSecs}
-                localPreviewPanelForm={localPreviewPanelForm}
-                setLocalPreviewPanelForm={setLocalPreviewPanelForm}
-                localPreviewTextColor={localPreviewTextColor}
-                setLocalPreviewTextColor={setLocalPreviewTextColor}
-                localPreviewBgColor={localPreviewBgColor}
-                setLocalPreviewBgColor={setLocalPreviewBgColor}
-                localPreviewBgBlur={localPreviewBgBlur}
-                setLocalPreviewBgBlur={setLocalPreviewBgBlur}
-                localPreviewBorderColor={localPreviewBorderColor}
-                setLocalPreviewBorderColor={setLocalPreviewBorderColor}
-                localPreviewBorderWidth={localPreviewBorderWidth}
-                setLocalPreviewBorderWidth={setLocalPreviewBorderWidth}
-                localPreviewBorderRadius={localPreviewBorderRadius}
-                setLocalPreviewBorderRadius={setLocalPreviewBorderRadius}
-                localPreviewFontFamily={localPreviewFontFamily}
-                setLocalPreviewFontFamily={setLocalPreviewFontFamily}
-                localPreviewFontSize={localPreviewFontSize}
-                setLocalPreviewFontSize={setLocalPreviewFontSize}
               />
             )}
             {activeCategory === "license" && (
@@ -802,8 +781,34 @@ export function SettingsPanel({
                 onRestartOnboarding={onRestartOnboarding}
               />
             )}
-            {activeCategory === "appearance-language" && (
-              <AppearanceLanguageContent
+            {activeCategory === "appearance" && (
+              <AppearanceContent
+                localLivePreviewEnabled={localLivePreviewEnabled}
+                setLocalLivePreviewEnabled={setLocalLivePreviewEnabled}
+                localPreviewPauseSilenceSecs={localPreviewPauseSilenceSecs}
+                setLocalPreviewPauseSilenceSecs={setLocalPreviewPauseSilenceSecs}
+                localPreviewPanelForm={localPreviewPanelForm}
+                setLocalPreviewPanelForm={setLocalPreviewPanelForm}
+                localPreviewTextColor={localPreviewTextColor}
+                setLocalPreviewTextColor={setLocalPreviewTextColor}
+                localPreviewBgColor={localPreviewBgColor}
+                setLocalPreviewBgColor={setLocalPreviewBgColor}
+                localPreviewBgBlur={localPreviewBgBlur}
+                setLocalPreviewBgBlur={setLocalPreviewBgBlur}
+                localPreviewBorderColor={localPreviewBorderColor}
+                setLocalPreviewBorderColor={setLocalPreviewBorderColor}
+                localPreviewBorderWidth={localPreviewBorderWidth}
+                setLocalPreviewBorderWidth={setLocalPreviewBorderWidth}
+                localPreviewBorderRadius={localPreviewBorderRadius}
+                setLocalPreviewBorderRadius={setLocalPreviewBorderRadius}
+                localPreviewFontFamily={localPreviewFontFamily}
+                setLocalPreviewFontFamily={setLocalPreviewFontFamily}
+                localPreviewFontSize={localPreviewFontSize}
+                setLocalPreviewFontSize={setLocalPreviewFontSize}
+              />
+            )}
+            {activeCategory === "language" && (
+              <LanguageContent
                 localLang={localLang}
                 handleLangChange={handleLangChange}
                 localOutputLanguage={localOutputLanguage}
