@@ -622,12 +622,11 @@ pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
     saved_x: Option<f64>,
     saved_y: Option<f64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // The window starts at idle size but the frontend expands it to pill size
-    // when active. Position calculations must use the PILL height so the
-    // expanded bar doesn't overlap the taskbar.
-    let bar_width = 80.0_f64;
-    let bar_height = 10.0_f64;
-    let pill_height = 36.0_f64;
+    // The window is created at full pill size (200×36 logical px). The pill region
+    // is set once here — the frontend never calls setSize or setBarShape.
+    // Position calculations use bar_height directly (= pill height = 36).
+    let bar_width = 200.0_f64;  // PILL_WIDTH
+    let bar_height = 36.0_f64;  // PILL_HEIGHT
 
     #[allow(unused_mut)]
     let mut builder = tauri::WebviewWindowBuilder::new(
@@ -707,7 +706,7 @@ pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
                 let work_left = work_area.left as f64 / scale;
 
                 let x = work_left + (work_w - bar_width) / 2.0;
-                let y = work_bottom - pill_height - 8.0;
+                let y = work_bottom - bar_height - 8.0;
 
                 log::info!(
                     "[bar] SPI_GETWORKAREA -> work_area=({},{},{},{}) scale={scale:.2}, placing at ({x:.1}, {y:.1})",
@@ -735,7 +734,7 @@ pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
             let offset_y = monitor_pos.y as f64 / scale;
             let x = offset_x + (screen_w - bar_width) / 2.0;
             // 60 px: conservative estimate for taskbar height at common DPI settings.
-            let y = offset_y + screen_h - pill_height - 60.0;
+            let y = offset_y + screen_h - bar_height - 60.0;
             log::info!(
                 "[bar] monitor fallback: screen={screen_w}x{screen_h} scale={scale:.2} \
                  offset=({offset_x},{offset_y}), placing at ({x:.1}, {y:.1})"
