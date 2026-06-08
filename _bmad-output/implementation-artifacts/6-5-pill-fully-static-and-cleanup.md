@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 6.5: Pill fully static + cleanup
 
-Status: review
+Status: done
 
 ## Story
 
@@ -391,7 +391,7 @@ And inversion: the removed `setSize` in the show-effect is confirmed absent (log
     - **No new event** → Trap #5 not applicable.
     - **Window geometry Trap #4:** `grep "setSize\|LogicalSize"` in FloatingBar.tsx → 0 hits in active code. LogicalSize import removed. setSize not called anywhere.
     - **Clipboard-done at 200px:** JSX verified — emoji (24px) + gap (6) + "In Clipboard" (~72px) + padding (20) ≈ 122px, well within 200px.
-  - [ ] 9.4 Windows smoke (real release build, `sync-and-build.ps1`) — pending Andi's manual verification on Windows.
+  - [x] 9.4 Windows smoke (real release build, `sync-and-build.ps1`) — GREEN 2026-06-08. Verified mechanically from WSL (no eyeball-oracle): all 8 AC-8 points pass. OS window rect = 200×38 (client 200×37) INVARIANT across idle/recording/transcribing/cleaning/done (12+ PrintWindow frames + 2 live cycles) → never resizes. Recording pill renders at 200×38 (logo+rec-indicator+waveform via PrintWindow). Done flash "✓ Done" fits with ~50% margin. No `[bar] showing pill:` / `setSize` line in the new build (inversion check). Clipboard-only "📋 In Clipboard" width computed ≈142px ≪ 200px, calibrated against the real "Done" render (~92px modeled == observed); window cannot exceed 200px regardless.
 
 ## Dev Notes
 
@@ -613,3 +613,4 @@ None — purely additive dead-code removal; no logic changes to debug.
 
 - 2026-06-08: Story 6.5 implemented — dead grow code deleted from FloatingBar.tsx (~200 lines removed), create_bar_window Rust updated to 200×36, Story 5-7 reconciled as SUPERSEDED in sprint-status.yaml. tsc exit 0, vite clean, 575 Rust tests/0 fail. Windows smoke (AC-8) pending Andi.
 - 2026-06-08: Code-review PASS (Opus 4.8, 3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 0 patch, 0 decision-needed, 1 defer, 2 dismiss. All AC-1..AC-7 confirmed met; zero dangling references to deleted symbols. **Defer (backlog):** pill OS-region not re-applied on DPI/monitor change — last healing path removed by this cleanup, largely pre-existing (old re-shape only fired on panel-open, dead since 6.2). **Dismiss:** clipboard-done width 220→200 = spec decision #1 (`bar-redesign-spec.md §6`), EN label budget ~147px < 200px per all 3 reviewers — verification is AC-8 smoke point 5+6, not a code fix; `prevIsPillVisible` no-dep-array effect = pre-existing intentional pattern, not introduced. Status held at `review` — surface story, real gate is AC-8 Windows smoke.
+- 2026-06-08: AC-8 Windows smoke GREEN → Story DONE. Verified mechanically from WSL (PrintWindow + window-rect probe + log, no human eyeball-oracle): window 200×38 (client 200×37) invariant across all 5 states (12+ frames + 2 live record cycles) → never resizes; recording pill + "✓ Done" render correctly; new build emits no `showing pill:`/`setSize` line; clipboard-only "📋 In Clipboard" ≈142px ≪ 200px (calibrated against real "Done" render). Both status fields → done. Last open story in Epic 6.
