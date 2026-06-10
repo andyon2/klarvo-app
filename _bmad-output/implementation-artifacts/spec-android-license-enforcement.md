@@ -136,3 +136,34 @@ context:
 
 - The core-fix inversion + trial-boundary + LS-branch cases (Linux-runnable).
   [`mod.rs:1204`](../../src-tauri/src/license/mod.rs#L1204)
+
+## On-Device Smoke Result — 2026-06-10 (GREEN, Andy gate passed)
+
+Real device (WiFi adb, `100.112.41.70`), Claude-driven from WSL. Full
+`android-build.sh --clean` (fresh `libklarvo_lib.so` carrying the new export
+`Java_com_klarvo_voice_LicenseValidator_nativeComputeStatus`, verified via
+`llvm-nm` on the installed APK) → `android-smoke.sh` (debug, debuggable APK,
+24 JVM tests green, versionName gate passed).
+
+Method: four `config.json` variants pushed via `adb push /data/local/tmp` +
+`run-as cp` into `/data/data/com.klarvo.voice/`, `am force-stop` between each
+(cache invalidation), one human dictation gesture per state, gate decision read
+from logcat line `[license] Not licensed/trial -- alternative providers gated`
+(tag `KlarvoApi`).
+
+| State | config | Expected | logcat verdict | Paste |
+|-------|--------|----------|----------------|-------|
+| a | garbage key + `firstInstallAt` 2020 (trial expired) | UNLICENSED, deepseek→groq | gate line present ✓ | came ✓ |
+| b | blank key + trial expired | UNLICENSED, deepseek→groq | gate line present ✓ | came ✓ |
+| c | valid key `KLARVO-MFXG-…` | LICENSED, deepseek kept | no gate line ✓ | came ✓ |
+| d | blank key + trial active (~10d) | LICENSED (trial) | no gate line ✓ | came ✓ |
+
+JNI confirmed live: `LicenseValidator: Native library libklarvo_lib loaded for
+license validation` in every round (no fail-safe-deny artifact). Device config
+restored to original afterward.
+
+**Testability note:** the trial clock uses `effectiveFirstInstall =
+config.firstInstallAt if >0 else OS firstInstallTime` — the config value wins, so
+trial-expired is reproducible by pushing a backdated `firstInstallAt` without
+touching OS install time. This is what made a 4-state on-device smoke possible
+without reinstall/time-travel (verification symmetry satisfied).
