@@ -75,7 +75,13 @@ object KlarvoApi {
         // Optional custom LLM cleanup prompt (empty = use built-in default).
         val customPrompt: String = "",
         // Comma-separated domain-specific terms for STT/cleanup hinting (e.g. "Klarvo,Tauri").
-        val dictionaryTerms: String = ""
+        val dictionaryTerms: String = "",
+        // License enforcement (Android-computed; populated by readConfig).
+        // licenseValidatedAt: from config.json (Unix seconds, 0 if absent).
+        // firstInstallAt: the EFFECTIVE trial start = config.json value if synced
+        // from desktop, else the Android-owned SharedPreferences timestamp.
+        val licenseValidatedAt: Long = 0L,
+        val firstInstallAt: Long = 0L
     )
 
     /**
@@ -147,20 +153,23 @@ object KlarvoApi {
     }
 
     /**
-     * Checks whether the current config represents a licensed (paid) user.
+     * Whether the current config represents a user allowed to use paid features
+     * (Licensed, or an unexpired Trial / GracePeriod).
      *
-     * For LS keys: licenseSource == "lemon_squeezy" && lsInstanceId is not empty.
-     * For HMAC keys: licenseSource == "hmac" && licenseKey is not empty.
-     *
-     * This is a local-only check (no API call). The actual validation happened
-     * on the desktop app via Tauri/Rust -- Android reads the cached result from config.json.
+     * Delegates to [LicenseValidator], which reuses the Rust HMAC/trial logic over
+     * JNI -- so a non-blank-but-invalid key no longer "passes" (the prior bug) and
+     * the trial is honored. `config.firstInstallAt` is the effective trial start
+     * computed in [readConfig]. Local-only, no network call.
      */
     fun isLicensed(config: Config): Boolean {
-        return when (config.licenseSource) {
-            "lemon_squeezy" -> config.lsInstanceId.isNotBlank()
-            "hmac"          -> config.licenseKey.isNotBlank()
-            else            -> false
-        }
+        return LicenseValidator.isAllowed(
+            config.licenseKey,
+            config.licenseSource,
+            config.lsInstanceId,
+            config.lsLastValidatedAt,
+            config.licenseValidatedAt,
+            config.firstInstallAt
+        )
     }
 
     /**
@@ -247,6 +256,8 @@ object KlarvoApi {
             val licenseSource = json.optString("licenseSource", "")
             val lsInstanceId = json.optString("lsInstanceId", "")
             val lsLastValidatedAt = json.optLong("lsLastValidatedAt", 0L)
+            val licenseValidatedAt = json.optLong("licenseValidatedAt", 0L)
+            val firstInstallAtJson = json.optLong("firstInstallAt", 0L)
             val sttProvider = json.optString("sttProvider", "groq")
             val customPrompt = json.optString("customPrompt", "")
             // Dictionary terms live in dictionary.json, NOT in config.json.
@@ -270,17 +281,54 @@ object KlarvoApi {
 
             KlarvoLogger.d(TAG, "readConfig: bubbleTapMode=$bubbleTapMode, bubbleLongPressMode=$bubbleLongPressMode, llmProvider=$resolvedLlmProvider, sttProvider=$sttProvider, json has keys: ${json.keys().asSequence().filter { it.contains("bubble", ignoreCase = true) }.toList()}")
 
+            // --- License gate (Android enforcement; reuses Rust status via JNI) ---
+            // config.json's firstInstallAt is desktop-written (ADR-0015 single-writer);
+            // Android must not write config.json. For Android-only installs the trial
+            // clock uses the OS package install time -- it survives "Clear data" (only an
+            // uninstall resets it), needs no write at all, and is available immediately
+            // (no dependency on config.json existing). A synced desktop firstInstallAt
+            // (>0) wins so the trial timeline is shared across the user's devices.
+            val androidInstallAt: Long = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime / 1000L
+            } catch (e: Exception) {
+                System.currentTimeMillis() / 1000L
+            }
+            val effectiveFirstInstall = if (firstInstallAtJson > 0L) firstInstallAtJson else androidInstallAt
+
+            val licensed = LicenseValidator.isAllowed(
+                licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
+                licenseValidatedAt, effectiveFirstInstall
+            )
+
+            // Free tier = Groq only. When not allowed, strip the alternative-provider
+            // keys and force Groq so the existing resolution can only use the free path.
+            // (Forcing the provider STRING alone is insufficient: resolveLlmProvider's
+            // fallback chain would re-select a paid provider that still has a key.)
+            // Both gates use an allowlist (Groq is the only free provider), not a
+            // denylist, so any future paid provider is gated by default. Local whisper
+            // (OfflineMode) is a separate, deferred gate -- left untouched.
+            val gatedDeepseek = if (licensed) deepseekKey else ""
+            val gatedOpenai = if (licensed) openaiApiKey else ""
+            val gatedOpenrouter = if (licensed) openrouterApiKey else ""
+            val gatedLlmProvider = if (licensed) resolvedLlmProvider else "groq"
+            val sttIsAlternative = sttProvider != "groq" && sttProvider != "local"
+            val gatedSttProvider = if (!licensed && sttIsAlternative) "groq" else sttProvider
+            if (!licensed && (resolvedLlmProvider != "groq" || sttIsAlternative)) {
+                KlarvoLogger.i(TAG, "[license] Not licensed/trial -- alternative providers gated, falling back to free Groq tier")
+            }
+
             // Require a Groq key for cloud STT, but allow "local" sttProvider without any key.
-            if (sttProvider != "local" && groqKey.isBlank()) null
+            if (gatedSttProvider != "local" && groqKey.isBlank()) null
             else Config(
-                groqKey, deepseekKey, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
+                groqKey, gatedDeepseek, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
                 bubbleSize, bubbleOpacity, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
                 autostopSilenceSecs, autoModeSilenceSecs,
-                resolvedLlmProvider, openaiApiKey, openrouterApiKey,
+                gatedLlmProvider, gatedOpenai, gatedOpenrouter,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
-                sttProvider, customPrompt, dictionaryTerms
+                gatedSttProvider, customPrompt, dictionaryTerms,
+                licenseValidatedAt, effectiveFirstInstall
             )
         } catch (e: Exception) {
             null

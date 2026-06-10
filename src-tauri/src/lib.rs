@@ -68,7 +68,7 @@ use std::sync::atomic::AtomicBool;
 use audio::AudioRecorder;
 use config::{load_config_reporting, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
-use license::{compute_status_from_cache, compute_status_from_cache_ls, compute_trial_status, LicenseStatus};
+use license::{compute_cached_status, LicenseStatus};
 use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
@@ -346,15 +346,16 @@ impl AppState {
         let (stt, cleanup) = resolve_providers(&cfg, &app_data_dir);
 
         // Compute the initial license status from the cached key + timestamp.
-        let initial_license_status = if !cfg.license_key.is_empty() {
-            if cfg.license_source == "lemon_squeezy" {
-                compute_status_from_cache_ls(&cfg.ls_instance_id, cfg.ls_last_validated_at)
-            } else {
-                compute_status_from_cache(&cfg.license_key, cfg.license_validated_at)
-            }
-        } else {
-            compute_trial_status(cfg.first_install_at)
-        };
+        // Shared with the Android JNI license bridge via `compute_cached_status`
+        // so the two platforms can never diverge (ADR-0016).
+        let initial_license_status = compute_cached_status(
+            &cfg.license_key,
+            &cfg.license_source,
+            &cfg.ls_instance_id,
+            cfg.ls_last_validated_at,
+            cfg.license_validated_at,
+            cfg.first_install_at,
+        );
 
         log::info!("[license] Initial status: {initial_license_status:?}");
 

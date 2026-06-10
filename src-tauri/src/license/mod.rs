@@ -36,6 +36,11 @@
 
 pub mod ls_client;
 
+// JNI bridge so the Android Kotlin layer reuses this exact license logic
+// instead of reimplementing HMAC/trial math (the registration is
+// unconditional; the module body is gated to Android via an inner attribute).
+pub mod jni;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
@@ -385,6 +390,35 @@ pub fn compute_trial_status(first_install_at: u64) -> LicenseStatus {
         LicenseStatus::Trial { until: trial_end }
     } else {
         LicenseStatus::Unlicensed
+    }
+}
+
+/// Computes the offline license status from cached config fields.
+///
+/// This is the single source of truth for the boot-time status determination
+/// (desktop `AppState::new`) AND the Android JNI license bridge — so the two
+/// platforms can never diverge (ADR-0016). It mirrors the desktop boot branch:
+/// the HMAC-cache path for `hmac` keys, the Lemon Squeezy cache path for
+/// `lemon_squeezy` keys, otherwise the 14-day trial from `first_install_at`.
+///
+/// No network access: online (re)validation lives in the command/`ls_client`
+/// layer, never here.
+pub fn compute_cached_status(
+    license_key: &str,
+    license_source: &str,
+    ls_instance_id: &str,
+    ls_last_validated_at: u64,
+    license_validated_at: u64,
+    first_install_at: u64,
+) -> LicenseStatus {
+    if !license_key.is_empty() {
+        if license_source == "lemon_squeezy" {
+            compute_status_from_cache_ls(ls_instance_id, ls_last_validated_at)
+        } else {
+            compute_status_from_cache(license_key, license_validated_at)
+        }
+    } else {
+        compute_trial_status(first_install_at)
     }
 }
 
@@ -1161,6 +1195,76 @@ mod tests {
             status,
             LicenseStatus::Unlicensed,
             "Empty instance_id must yield Unlicensed"
+        );
+    }
+
+    // --- compute_cached_status (shared desktop-boot + Android-JNI path) ---
+
+    #[test]
+    fn test_cached_status_garbage_key_is_unlicensed() {
+        // THE core Android fix: a non-blank but invalid HMAC key must NOT pass.
+        let now = current_unix_timestamp();
+        let status = compute_cached_status("INVALID-KEY-0000", "hmac", "", 0, now, 0);
+        assert_eq!(
+            status,
+            LicenseStatus::Unlicensed,
+            "Garbage hmac key must yield Unlicensed (was wrongly treated as licensed on Android)"
+        );
+    }
+
+    #[test]
+    fn test_cached_status_active_trial() {
+        let now = current_unix_timestamp();
+        let five_days_ago = now - 5 * SECS_PER_DAY;
+        let status = compute_cached_status("", "", "", 0, 0, five_days_ago);
+        assert!(
+            matches!(status, LicenseStatus::Trial { .. }),
+            "Within 14 days of install must be Trial, got {status:?}"
+        );
+    }
+
+    #[test]
+    fn test_cached_status_expired_trial_is_unlicensed() {
+        let now = current_unix_timestamp();
+        let fifteen_days_ago = now - 15 * SECS_PER_DAY;
+        let status = compute_cached_status("", "", "", 0, 0, fifteen_days_ago);
+        assert_eq!(
+            status,
+            LicenseStatus::Unlicensed,
+            "Past the 14-day trial must be Unlicensed"
+        );
+    }
+
+    #[test]
+    fn test_cached_status_no_key_no_install_is_unlicensed() {
+        let status = compute_cached_status("", "", "", 0, 0, 0);
+        assert_eq!(status, LicenseStatus::Unlicensed);
+    }
+
+    #[test]
+    fn test_cached_status_valid_permanent_key_is_licensed() {
+        // byte 0 = 0x02 => permanent (mirrors test_valid_key_is_accepted).
+        let key = generate_license_key(&[0x02, 0x02, 0x03, 0x04, 0x05, 0x06]);
+        let now = current_unix_timestamp();
+        let status = compute_cached_status(&key, "hmac", "", 0, now, 0);
+        assert_eq!(
+            status,
+            LicenseStatus::Licensed,
+            "Valid permanent key validated just now must be Licensed"
+        );
+    }
+
+    #[test]
+    fn test_cached_status_lemon_squeezy_source_uses_ls_cache() {
+        // A lemon_squeezy source routes to the LS cache path: a fresh instance +
+        // timestamp must be Licensed, proving the source switch is honored.
+        let now = current_unix_timestamp();
+        let status =
+            compute_cached_status("anykey", "lemon_squeezy", "instance-123", now, 0, 0);
+        assert_eq!(
+            status,
+            LicenseStatus::Licensed,
+            "Fresh LS cache must be Licensed via the lemon_squeezy branch"
         );
     }
 }
