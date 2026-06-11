@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-06-08
+# last_updated: 2026-06-10
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-08
+last_updated: 2026-06-10
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -102,3 +102,14 @@ development_status:
   6-5-pill-fully-static-and-cleanup: done
   6-6-preview-box-appearance-customization: done
   epic-6-retrospective: done
+
+  # Epic 7 — Cross-Platform Config-Contract Parity [gated ADR-0016 Amendment 1] (drift remediation; core-output stories carry *risk/*design + golden-vectors)
+  epic-7: backlog
+  7-1-android-chunking-parity-core-output: backlog
+  7-2-android-live-auto-stop-gate-parity: backlog
+  7-3-android-stt-conditioning-and-model-selection: backlog
+  7-4-android-output-guards-prompt-echo-and-fragment-strip: backlog
+  7-5-android-llm-routing-contract-hygiene: backlog
+  7-6-desktop-back-port-whole-word-hallucination-match-and-m12: backlog
+  7-7-golden-vector-parity-net-and-dead-config-lock: backlog
+  epic-7-retrospective: optional

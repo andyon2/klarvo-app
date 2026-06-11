@@ -62,3 +62,48 @@ Feature-Parität mit marginalem Nutzen, die die Duplikation vertiefen würde —
 1. Commit zusammen mit ADR-0015 + Audit-Doc.
 2. Heavy-Track-Epic „Android Sicherheits-Wächter" (gated by dieser ADR): Stories für DIV-01/05, DIV-03, DIV-04, DIV-02 mit Test Architect `*risk`/`*design`.
 3. DIV-06..14 erhalten **keine** Stories — sie sind durch diese ADR als akzeptierte Asymmetrie geschlossen.
+
+---
+
+## Amendment 1 (2026-06-10) — chirurgische Linienverschiebung nach A/B-Drift-Audit
+
+> Ergänzt die Decision, ersetzt sie nicht. Punkt 3 der „Next Action" oben galt für die
+> DIV-01..14-Liste des Robustheits-Audits; dieses Amendment re-adjudiziert sechs dieser
+> Einträge auf Basis eines breiteren, verifizierten Audits.
+
+**Auslöser:** `docs/cross-platform-drift-audit.md` (verifizierter A/B-Lauf Fable 5 vs Opus 4.8)
+fand Divergenzen, die DIV-01..14 nicht adjudiziert hat — insbesondere **Kern-Output-Determinismus-Drift**
+(H2 UTF-8-Bytes vs UTF-16-Code-Units beim Chunking; H1/H17 Auto-Stop-Energie-Gate liest `silenceThreshold`
+nicht) und **settable-but-silently-dead Config-Keys** (surface-operable Traps). Die Originallinie wurde
+auf einer unvollständigen Liste gezogen (C1 + H2 fand erst dieser Lauf).
+
+**Reframe:** Die ursprüngliche Decision wog die Divergenzen als *Feature-Paritäts-ROI*. Für
+*Kern-Output-Determinismus* und *Config-Contract-Integrität* gilt diese Abwägung nicht: dieselbe Config +
+derselbe Input erzeugt nachweislich anderen Diktat-Output, bzw. ein gesetzter Nutzer-Wert verpufft still.
+Das ist Notwehr an Datenintegrität/Erwartungstreue, kein Feature.
+
+**Härten-Klasse erweitert (chirurgisch) — neu in Stories (Epic 7, `epics-cross-platform-parity.md`):**
+- Kern-Output: H2 (Chunking-Längeneinheit), H13/L4 (Join/Operator), M8; H1/H17/Recall#1/M1-3/M4/L1
+  (Auto-Stop-Gate + Pre-STT-Schwellen).
+- STT-Konditionierung (**übersteuert DIV-08**): H3 + Recall#5; H9/H10/L3 (Model-/Temp-Reads).
+- Output-Guards (**übersteuert DIV-11**): H6 (prompt-echo), H7 (fragment-strip).
+- Routing-Contract-Hygiene: M9/M10/M11/M13/M16/L5.
+- Gegenrichtung (Desktop ist die falsche Seite): H14 — Androids Whole-Word-Match nach Rust zurückportieren.
+- Struktureller Wächter: Golden-Vektor-Paritäts-Netz (C1-proper) gegen künftige Drift.
+
+**Weiterhin bewusst akzeptiert — aber → `docs/backlog.md`, NICHT hard-won't-fix:** Die ROI-Begründung der
+Original-Decision bleibt für reine Feature-Ports gültig; sie wandern in den Backlog (sichtbar, nicht als Bug
+re-gefiled, nicht verloren):
+- **DIV-06** (H12 Provider-Fallback), **DIV-07** (H4 outputLanguage), **DIV-09** (H11 Local-Cleanup-Prompt),
+  **DIV-10** (L7 Voice-Command), **DIV-13** (H16 OpenAI-STT), **DIV-14** (M5 VAD-Statemachine).
+- Feature-Ports: C2 (Whisper-Mode), H5 (Anthropic), H8 (Mic-Wahl), H15 (Per-App-Profiles), M14 (Webhook),
+  Recall#4 (Live-Preview), M6 (WAV-Float), M15 (Desktop-STT-Retry).
+
+**Offene Decision:** M12 (Dictionary-in-Chat-Style) — Gegenrichtung, kanonische Seite ist Produktfrage.
+Als `OPEN-DECISION` im Backlog geführt; in Story 7.6 zu lösen.
+
+**Rationale-Erhalt:** Die Linie bewegt sich nur dort, wo Drift den *Kern-Output* verfälscht oder einen
+*gesetzten Config-Wert still verschluckt*. Das ~2000-LOC-Duplikat wächst minimal und gezielt; die
+strategische Dedup-Antwort bleibt v2.
+
+**Quellen:** `docs/cross-platform-drift-audit.md`; `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md`.
