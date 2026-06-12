@@ -153,18 +153,20 @@ and `license/jni.rs:20-24` convention),
 
 ## Tasks / Subtasks
 
-- [ ] **Task 0 — Pre-dev Test-Architect gate (REQUIRED, before any code)** — run `*risk` then `*design`
-  on this story. The central decision `*design` must settle: **how the async Groq network request runs
-  from a JNI context with no Tokio runtime** (see Dev Notes → "The central architectural question").
-  Do not start Task 1 until `*design` has fixed the runtime approach + the JNI surface shape.
+- [x] **Task 0 — Pre-dev Test-Architect gate (DONE 2026-06-12)** — `*risk`/`*design` complete:
+  `_bmad-output/test-artifacts/test-design-epic-7-story-7-3.md`. The BLOCK risk (R-001, async request
+  over a no-Tokio JNI context) is **resolved → Weg A** (throwaway current-thread runtime + `block_on`,
+  see Dev Notes → "The central architectural question — DECIDED"). Remaining gate is a *proof*, not a
+  decision: the Task 1 P0 integration test must show Weg A runs over the bridge.
 - [ ] **Task 1 — Define the Rust JNI surface for the Groq STT request** (AC1)
   - [ ] Add the new `#[no_mangle] Java_com_klarvo_voice_*` function(s) (new module e.g.
         `stt/groq_jni.rs` or extend `stt/jni_bridge.rs`), `#![cfg(target_os = "android")]`.
   - [ ] Inputs Kotlin must pass: WAV bytes (base64 or direct byte[]), api key, language, dictionary
         terms, `customPrompt`, `sttModel`, temperature — i.e. everything `build_form` +
         `build_stt_prompt_with_hint` need. Mirror the license-bridge param-marshalling convention.
-  - [ ] Run the request via the runtime approach decided in Task 0; return transcript or a structured
-        error string (fail-soft, panic-safe).
+  - [ ] Run the request via **Weg A** (Task 0 decision): a per-call `tokio::runtime::Builder::new_current_thread()`
+        `.block_on(WhisperStt::transcribe(...))`; return transcript or a structured error string (fail-soft,
+        panic-safe). The first integration test on this is the R-001 proof gate.
 - [ ] **Task 2 — Expose the guards over JNI** (AC2, AC3, AC4)
   - [ ] JNI functions for `is_hallucination`, `is_prompt_echo`, `strip_prompt_fragments`, and the
         silence/duration pre-filter (`silence_skip` + `compute_wav_rms`).
@@ -205,21 +207,31 @@ and `license/jni.rs:20-24` convention),
 
 ## Dev Notes
 
-### The central architectural question (settle in `*design` before coding)
+### The central architectural question — DECIDED 2026-06-12 (Weg A)
 
 The proven JNI pattern on this codebase (license `22553bc`, `src-tauri/src/license/jni.rs`) and the
 existing `stt/jni_bridge.rs` are both **pure / blocking**: a `#[no_mangle]` fn marshals args, calls
 shared Rust, returns a string. **The Groq STT request is different — it is an async `reqwest` network
 call**, and the existing bridge explicitly notes: *"From JNI there is no Tokio runtime available"*
 (`stt/jni_bridge.rs:24-29`), which is why local whisper uses a `transcribe_blocking` helper.
+`GroqWhisper`/`WhisperStt::transcribe` is `async fn` (`stt/mod.rs:82, 268`) over `reqwest`.
 
-`GroqWhisper`/`WhisperStt::transcribe` is `async fn` (`stt/mod.rs:82, 268`) over `reqwest`. So the
-network call must either (a) get a blocking entry point (build a small `reqwest::blocking` path or
-`block_on` a scoped runtime inside the JNI fn), or (b) reuse a managed runtime. This is the #1 risk and
-the primary `*design` decision. Note: `reqwest` MUST keep `default-features = false` + `rustls-tls`
-(no native OpenSSL) — do not pull `reqwest::blocking` if it drags incompatible features; verify the
-feature set. Android already links the Rust cdylib, so reqwest-over-JNI is feasible; the question is
-*shape*, not *possibility*.
+**DECISION (Andi, 2026-06-12) — Weg A: build a throwaway current-thread Tokio runtime inside the JNI
+function and `block_on` the existing async `WhisperStt::transcribe`.** Reuse the existing async request
+code unchanged; do NOT build a parallel `reqwest::blocking` path (that would re-duplicate the request in
+Rust, against the consolidation goal — Weg C, rejected). Do NOT stand up a process-wide managed runtime
+(Weg B, rejected: per-call runtime cost is negligible vs. a network round-trip, not worth the shared
+lifecycle). Constraints to honor:
+- `reqwest` MUST stay `default-features = false` + `rustls-tls` — Weg A needs no new reqwest feature
+  (the async client already in `Cargo.toml:25` is reused as-is). Confirm no new TLS feature creeps in.
+- The runtime is **current-thread** (`tokio::runtime::Builder::new_current_thread().enable_all()`),
+  created and dropped per call — isolated, no shared state.
+- **ANR is already handled by the call site:** Kotlin invokes transcription from a background `Thread`
+  (`KlarvoOverlayService.kt:897/1072`, `transcribeWithRetry` at `:1347`), not the UI thread. The JNI
+  call inherits that background thread, so `block_on` does not freeze the overlay. Keep it that way —
+  do not move the call onto the main thread.
+- **The gate is now "prove, not design":** the first P0 integration test (Task 1) IS the proof that
+  Weg A works over the bridge. If it fails there, escalate before proceeding — do not iterate blind.
 
 ### Files to MODIFY (read fully before changing — current state documented)
 
