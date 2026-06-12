@@ -107,3 +107,39 @@ Als `OPEN-DECISION` im Backlog geführt; in Story 7.6 zu lösen.
 strategische Dedup-Antwort bleibt v2.
 
 **Quellen:** `docs/cross-platform-drift-audit.md`; `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md`.
+
+---
+
+## Amendment 2 (2026-06-12) — STT-Pfad: Konsolidierung statt chirurgischem Kotlin-Port
+
+> Ergänzt Decision + Amendment 1, ersetzt sie nicht. Betrifft NUR den STT-Pfad; für alle
+> anderen Rows gilt Amendment 1 unverändert.
+
+**Auslöser:** `docs/dictation-quality-android-vs-desktop-2026-06-12.md`. Die Prämisse
+"Phone = local Whisper" ist FALSCH — beide Plattformen fahren denselben Groq-Engine
+(`whisper-large-v3-turbo`; verifiziert: Phone-Config `sttProvider=groq`, Code-Dispatch,
+46/46 Runtime-Läufe `provider=groq`). Der reale, **gestärkte** Befund ist die
+Zwei-Strang-Drift: zwei getrennte STT-Request-Implementierungen (Rust `GroqWhisper` +
+Kotlin `KlarvoApi.transcribe`) gegen denselben Endpoint mit nachweislich unterschiedlichen
+Parametern — und Guard-Twins, die in **entgegengesetzte Richtungen** divergiert sind (Rust
+hat den H14-Substring-Bug, Kotlin hat den Whole-Word-Fix).
+
+**Linienverschiebung (nur STT-Pfad):** Für den STT-Request + dessen Output-Guards + den
+Pre-STT-Silence-Filter gilt ab jetzt **Konsolidierung in den Rust-Kern via JNI**
+(**ADR-0017**, Hard-Rule: geteilte STT-/Guard-Logik nur in Rust, Kotlin-Nachbau verboten),
+NICHT mehr der per-row Kotlin-Port aus Amendment 1. Die betroffenen Epic-7-Rows (alt 7.3
+STT-Conditioning H3/Recall#5/H9/H10/L3, alt 7.4 Output-Guards H6/H7, Silence-Teil von 7.2
+Recall#1/M1-read, H14) verschmelzen in eine Konsolidierungs-Story (neu 7.3); die
+Kotlin-Twins (`KlarvoApi.transcribe`/`buildMultipartBody`, `HallucinationFilter.kt`,
+`SilencePreFilter.kt`) werden gelöscht. Dazu neue Halluzinations-Härtung aus dem
+Evidence-Run: Stockphrase-Blocklist-Familie auch für Long-Clip-Trailing-Ghosts (≤8-Wort-Gate
+fällt), Groq `verbose_json` + Konfidenz-Drop, Cleanup-no-invent.
+
+**Unverändert (Amendment 1 gilt weiter):** Live-Autostop-VAD-Gate (7.2, geschmälert —
+Realtime-Audio über JNI ist bewusst NICHT im Scope), Chunking (7.1) und LLM-Routing (7.5)
+bleiben platform-lokale per-row-Parität. 7.6 schrumpft auf die offene M12-Decision (H14
+wird von der Konsolidierung miterledigt). Das Golden-Vektor-Netz (7.7) bleibt und pinnt
+zusätzlich den Shared-STT-Vertrag.
+
+**Quellen:** `docs/dictation-quality-android-vs-desktop-2026-06-12.md`;
+`_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-12.md`; ADR-0017.

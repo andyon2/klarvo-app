@@ -1,0 +1,7 @@
+# Native routing hook for bmad-sprint-status (consumed via persistent_facts).
+# Lean directive only (R4/R7): functional core, rationale as pointers — no inline evidence.
+[workflow]
+
+persistent_facts = [
+  "ROUTING (2026-06-12, post-correct-course): Epic 7 ist re-geschnitten (sprint-change-proposal-2026-06-12.md + ADR-0017). Nächste Aktion: `bmad-create-story` 7-3 (shared-core-stt-request-and-guard-path-via-jni) ZUERST — Test-Architect *risk/*design, kreuzt die JNI-Grenze. 7-1 ist unabhängig (parallelisierbar); 7-7 zuletzt. Story-Quelle: epics-cross-platform-parity.md (re-scoped Fassung). Re-Eval: sobald 7-3 done ist, diese Direktive auf den Rest-Strang verschlanken oder entfernen.",
+]

@@ -45,6 +45,24 @@ sides' current behavior is golden-vector-locked, not changed.
 
 ---
 
+## STT re-scope 2026-06-12 — deliberate deferrals + tooling
+
+Source: `sprint-change-proposal-2026-06-12.md` + ADR-0017 (shared-core STT path).
+
+- **ADR-0017 consolidation extension — VAD gate:** moving the live auto-stop VAD gate into the
+  Rust core over JNI (realtime frame stream, ~31 Hz). Deliberately deferred — large lift,
+  speech-truncation risk; the felt problem (text hallucination) doesn't touch it. Story 7.2 narrows
+  the gap in Kotlin instead.
+- **ADR-0017 consolidation extension — chunking/LLM path:** extending the "shared logic only in
+  Rust" Hard Rule beyond STT (chunking, LLM routing). Deferred; 7.1/7.5 fix per-row, 7.7 pins
+  against re-drift. Candidate for a future decision (or v2).
+- **TOOLING — `scripts/dictation-quality-audit.py`:** commit the `raw_text` hallucination-marker
+  detectors from `docs/dictation-quality-android-vs-desktop-2026-06-12.md` as a repo tool; run
+  manually on a cadence (monthly / pre-release — needs the phone over adb/Tailscale, no cloud cron).
+  Quality-layer sibling of the 7.7 parity net. Attached to Story 7.7.
+
+---
+
 ## Other deferred work
 
 ### License (from B1, `sprint-change-proposal` predecessor work)
