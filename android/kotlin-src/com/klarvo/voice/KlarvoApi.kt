@@ -821,14 +821,24 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
      * @param text Input text to split
      * @return List of trimmed, non-empty chunks
      */
+    /**
+     * True when a chunk carries no cleanable content — only punctuation and/or
+     * whitespace (e.g. a lone "." orphaned from a silent tail). Such fragments
+     * must never become a standalone chunk: the LLM replies conversationally
+     * ("I don't see any text to clean up. You've only provided a period…") and
+     * that prose would leak into the user's output (history id=3041).
+     *
+     * Mirror of Rust `is_trivial_chunk` in src-tauri/src/llm/mod.rs.
+     */
+    fun isTrivialChunk(chunk: String): Boolean = chunk.none { it.isLetterOrDigit() }
+
     fun splitIntoChunks(text: String): List<String> {
-        val chunks = mutableListOf<String>()
+        val ranges = mutableListOf<Pair<Int, Int>>()
         var start = 0
 
         while (start < text.length) {
             if (text.length - start <= CHUNK_TARGET_SIZE) {
-                val tail = text.substring(start).trim()
-                if (tail.isNotEmpty()) chunks.add(tail)
+                ranges.add(start to text.length)
                 break
             }
 
@@ -852,16 +862,43 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
                 i++
             }
 
-            val splitAt = bestSplit ?: (start + CHUNK_TARGET_SIZE).coerceAtMost(text.length)
-            val chunk = text.substring(start, splitAt).trim()
-            if (chunk.isNotEmpty()) chunks.add(chunk)
+            // Fallback (no boundary found): never split between a surrogate pair
+            // (the char-index analog of Rust's UTF-8 char-boundary floor).
+            var splitAt = bestSplit ?: (start + CHUNK_TARGET_SIZE).coerceAtMost(text.length)
+            while (splitAt > start && splitAt < text.length && text[splitAt].isLowSurrogate()) {
+                splitAt--
+            }
+            ranges.add(start to splitAt)
 
             // Advance past the split point, skipping leading whitespace.
             start = splitAt
             while (start < text.length && text[start].isWhitespace()) start++
         }
 
-        return chunks
+        // Materialize: trim, drop empties, and fold any trivial fragment into its
+        // predecessor (widen the previous range's end) so it stays attached rather
+        // than reaching the LLM as a lone chunk.
+        val merged = mutableListOf<Pair<Int, Int>>()
+        for ((s, e) in ranges) {
+            if (text.substring(s, e).trim().isEmpty()) continue
+            if (isTrivialChunk(text.substring(s, e))) {
+                val last = merged.lastOrNull()
+                if (last != null) {
+                    merged[merged.size - 1] = last.first to e
+                    continue
+                }
+            }
+            merged.add(s to e)
+        }
+
+        // A leading trivial fragment has no predecessor to fold backward into; fold
+        // it FORWARD into the next chunk so a trivial chunk never stands alone.
+        if (merged.size >= 2 && isTrivialChunk(text.substring(merged[0].first, merged[0].second))) {
+            val first = merged.removeAt(0)
+            merged[0] = first.first to merged[0].second
+        }
+
+        return merged.map { (s, e) -> text.substring(s, e).trim() }
     }
 
     /**
@@ -889,6 +926,13 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         dictionaryTerms: String? = null,
         customInstructions: String? = null
     ): String {
+        // Trivial whole-input guard: content-free input (e.g. a lone ".") must
+        // never reach the LLM — it would reply conversationally and that prose
+        // would leak into the user's output. Pass it through verbatim.
+        if (isTrivialChunk(text)) {
+            return text
+        }
+
         if (text.length <= CHUNK_THRESHOLD) {
             return cleanup(text, provider, style, dictionaryTerms, customInstructions)
         }
@@ -903,7 +947,13 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val executor = Executors.newFixedThreadPool(4)
         try {
             val futures = chunks.map { chunk ->
-                executor.submit(Callable { cleanup(chunk, provider, style, dictionaryTerms, customInstructions) })
+                // A trivial chunk (punctuation/whitespace only) is short-circuited to
+                // verbatim passthrough rather than sent to the LLM — defense-in-depth
+                // behind splitIntoChunks' fold, so a meta-refusal can never be joined in.
+                executor.submit(Callable {
+                    if (isTrivialChunk(chunk)) chunk
+                    else cleanup(chunk, provider, style, dictionaryTerms, customInstructions)
+                })
             }
 
             // Collect results -- if any Future throws, we fall through to the catch block.

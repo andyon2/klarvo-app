@@ -1,0 +1,35 @@
+[
+  {
+    "id": "CHUNK-001-orphan-ascii-trailing-period",
+    "description": "Long comma-only tail with a trailing period must not orphan '.' into its own chunk. Pure ASCII so it triggers IDENTICALLY under Rust byte-counting and Kotlin char-counting (the canonical cross-platform regression guard).",
+    "triggers_prefix_on": [
+      "rust-byte",
+      "kotlin-char"
+    ],
+    "input": "Dies ist ein erster einleitender Satz der absichtlich lang genug gemacht wurde damit seine Satzgrenze jenseits der halben Zielgroesse liegt und somit zuverlaessig als erste Trenngrenze gefunden wird hier. wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wort, wo.",
+    "expect_no_trivial_chunk": true,
+    "expect_last_chunk_ends_with": ".",
+    "expect_cleanup_output_contains_upper": "WORT"
+  },
+  {
+    "id": "CHUNK-002-leading-trivial-folds-forward",
+    "description": "A leading punctuation-only run (360 '!') has no predecessor to fold backward into; it must fold FORWARD into the first real chunk, never stand alone. ASCII -> triggers on both platforms.",
+    "triggers_prefix_on": [
+      "rust-byte",
+      "kotlin-char"
+    ],
+    "input": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! echte Woerter zum Aufraeumen hier drin und noch etwas mehr text dazu.",
+    "expect_no_trivial_chunk": true
+  },
+  {
+    "id": "CHUNK-003-id3041-real-transcript",
+    "description": "Real history id=3041 transcript that leaked the LLM meta-refusal on Desktop. NOTE char/byte divergence: 568 UTF-16 chars vs 573 UTF-8 bytes -> orphans the trailing '.' under Rust byte-split (pre-fix RED) but is a near-miss under Kotlin char-split (would not orphan pre-fix). The post-fix invariant (no trivial chunk) holds on BOTH; documents the cross-platform counting asymmetry.",
+    "triggers_prefix_on": [
+      "rust-byte"
+    ],
+    "input": "Eine andere Idee hatte ich, dass ich je Session übergreifend arbeite in meinen Projekten und letztlich einzelne Session-Diskurien nicht ganz so entscheidend sind, wie die Dateien und die Statusdateien gespeichert werden. aber, und das ist so ein bisschen tricky, ich merke, dass ich zurzeit immer mehr auch auf die Memory-Funktion von Claude zurückgreife, weil dort einfach wichtige Sachen gespeichert werden, um in der nächsten Session weiterzumachen und da weiß ich gerade nicht, ob die innerhalb eines Projekt-Ordners liegt oder außerhalb in dem Root-Claude-Ordner.",
+    "expect_no_trivial_chunk": true,
+    "expect_last_chunk_ends_with": "Root-Claude-Ordner.",
+    "expect_cleanup_output_contains_upper": "ROOT-CLAUDE-ORDNER"
+  }
+]

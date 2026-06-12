@@ -1239,16 +1239,32 @@ const CHUNK_THRESHOLD: usize = 400;
 /// because we split on sentence boundaries to preserve context.
 const CHUNK_TARGET_SIZE: usize = 350;
 
+/// True when a chunk carries no cleanable content — only punctuation and/or
+/// whitespace (e.g. a lone `"."` orphaned from a silent tail). Such fragments
+/// must never become a standalone chunk: the LLM replies conversationally to
+/// them ("I don't see any text to clean up. You've only provided a period…")
+/// and that prose would leak into the user's output (history id=3041).
+fn is_trivial_chunk(chunk: &str) -> bool {
+    !chunk.chars().any(|c| c.is_alphanumeric())
+}
+
 /// Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).
 /// Each chunk targets ~`CHUNK_TARGET_SIZE` characters but won't break mid-sentence.
+///
+/// Two safety properties beyond naive sentence-splitting:
+/// - The byte-offset fallback (used when no boundary is found in the window) is
+///   floored to a UTF-8 char boundary, so slicing can never panic on multibyte text.
+/// - A trivial fragment (see [`is_trivial_chunk`]) is folded back into its
+///   predecessor instead of being emitted standalone, so a trailing `.` stays
+///   attached to its sentence and never reaches the LLM on its own.
 fn split_into_chunks(text: &str) -> Vec<&str> {
-    let mut chunks = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut start = 0;
     let bytes = text.as_bytes();
 
     while start < text.len() {
         if text.len() - start <= CHUNK_TARGET_SIZE {
-            chunks.push(text[start..].trim());
+            ranges.push((start, text.len()));
             break;
         }
 
@@ -1274,11 +1290,15 @@ fn split_into_chunks(text: &str) -> Vec<&str> {
             }
         }
 
-        let split_at = best_split.unwrap_or((start + CHUNK_TARGET_SIZE).min(text.len()));
-        let chunk = text[start..split_at].trim();
-        if !chunk.is_empty() {
-            chunks.push(chunk);
+        // Fallback (no boundary found): a raw byte offset that may land inside a
+        // multibyte char. Floor it to the nearest char boundary so the slices
+        // below cannot panic. Boundary hits (`i + 1` after an ASCII `.`/`!`/`?`,
+        // or a `\n` index) are already on char boundaries.
+        let mut split_at = best_split.unwrap_or((start + CHUNK_TARGET_SIZE).min(text.len()));
+        while split_at > start && !text.is_char_boundary(split_at) {
+            split_at -= 1;
         }
+        ranges.push((start, split_at));
         start = split_at;
         // Skip whitespace/newlines between chunks
         while start < text.len() && text.as_bytes()[start].is_ascii_whitespace() {
@@ -1286,7 +1306,32 @@ fn split_into_chunks(text: &str) -> Vec<&str> {
         }
     }
 
-    chunks
+    // Materialize: trim, drop empties, and fold any trivial fragment into its
+    // predecessor (widen the previous range's end) so it stays attached rather
+    // than reaching the LLM as a lone chunk.
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (s, e) in ranges {
+        if text[s..e].trim().is_empty() {
+            continue;
+        }
+        if is_trivial_chunk(&text[s..e]) {
+            if let Some(last) = merged.last_mut() {
+                last.1 = e;
+                continue;
+            }
+        }
+        merged.push((s, e));
+    }
+
+    // A leading trivial fragment has no predecessor to fold backward into; fold
+    // it FORWARD into the next chunk instead, so a trivial chunk never stands
+    // alone regardless of position (keeps the "stays attached" invariant total).
+    if merged.len() >= 2 && is_trivial_chunk(&text[merged[0].0..merged[0].1]) {
+        let first = merged.remove(0);
+        merged[0].0 = first.0;
+    }
+
+    merged.into_iter().map(|(s, e)| text[s..e].trim()).collect()
 }
 
 /// Cleans up text using the given provider. For long texts (>{CHUNK_THRESHOLD}
@@ -1302,6 +1347,19 @@ pub async fn chunked_cleanup(
     custom_prompt: Option<&str>,
     output_language: Option<&str>,
 ) -> Result<CleanupResult, LlmError> {
+    // Trivial whole-input guard: text with no alphanumeric content (e.g. a lone
+    // "." from a silent tail) must never reach the LLM — it would reply
+    // conversationally and that prose would leak into the user's output. Pass it
+    // through verbatim instead (an error here would degrade the whole dictation
+    // to raw text via the `?` in the chunk loop below).
+    if is_trivial_chunk(raw_text) {
+        return Ok(CleanupResult {
+            text: raw_text.to_string(),
+            prompt_tokens: None,
+            completion_tokens: None,
+        });
+    }
+
     // Short text: single call
     if raw_text.len() < CHUNK_THRESHOLD {
         return provider.cleanup_with_translation(raw_text, style, dictionary_terms, custom_prompt, output_language).await;
@@ -1314,10 +1372,25 @@ pub async fn chunked_cleanup(
 
     log::info!("[chunked_cleanup] splitting {} chars into {} chunks", raw_text.len(), chunks.len());
 
-    // Fire all chunks in parallel
+    // Fire all chunks in parallel. A trivial chunk (punctuation/whitespace only)
+    // is short-circuited to verbatim passthrough rather than sent to the LLM —
+    // defense-in-depth behind split_into_chunks' fold, so a meta-refusal can
+    // never be concatenated even if a trivial chunk arises on another path.
     let futures: Vec<_> = chunks
         .iter()
-        .map(|chunk| provider.cleanup_with_translation(chunk, style, dictionary_terms, custom_prompt, output_language))
+        .map(|chunk| async move {
+            if is_trivial_chunk(chunk) {
+                Ok(CleanupResult {
+                    text: (*chunk).to_string(),
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                })
+            } else {
+                provider
+                    .cleanup_with_translation(chunk, style, dictionary_terms, custom_prompt, output_language)
+                    .await
+            }
+        })
         .collect();
 
     let results = futures::future::join_all(futures).await;
@@ -1864,5 +1937,127 @@ mod tests {
         assert!(result.text.contains("THIS IS A TEST"));
         // Token usage should be summed across chunks
         assert!(result.prompt_tokens.unwrap() > 10, "tokens should be summed");
+    }
+
+    // --- Cross-platform chunking parity (shared fixture) ---
+    //
+    // Driven by test-fixtures/chunking-cleanup-vectors.json (repo root) — the
+    // SAME fixture the Kotlin `ChunkingVectorsTest` consumes, so Rust
+    // `split_into_chunks` and Kotlin `splitIntoChunks` cannot silently drift on
+    // this contract. Born from the history id=3041 meta-refusal leak.
+
+    fn load_chunking_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/chunking-cleanup-vectors.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content).expect("chunking-cleanup-vectors.json must be a JSON array")
+    }
+
+    #[test]
+    fn spec_chunking_vectors_split_invariants() {
+        // Independent triviality predicate — must NOT call the production
+        // `is_trivial_chunk`, or flipping that guard would also blind this test
+        // (the SUT must not judge itself).
+        let looks_trivial = |c: &str| !c.chars().any(|ch| ch.is_alphanumeric());
+        let vectors = load_chunking_vectors();
+        assert!(!vectors.is_empty(), "fixture must not be empty");
+        for v in &vectors {
+            let id = v["id"].as_str().unwrap_or("?");
+            let input = v["input"].as_str().expect("vector needs input");
+            let chunks = split_into_chunks(input);
+            if v["expect_no_trivial_chunk"].as_bool().unwrap_or(false) {
+                for (i, c) in chunks.iter().enumerate() {
+                    assert!(
+                        !looks_trivial(c),
+                        "[{id}] chunk {i} is a lone trivial fragment (would draw an LLM refusal): {c:?}"
+                    );
+                }
+            }
+            if let Some(suffix) = v["expect_last_chunk_ends_with"].as_str() {
+                let last = chunks.last().copied().unwrap_or("");
+                assert!(
+                    last.ends_with(suffix),
+                    "[{id}] last chunk must end with {suffix:?}, got: {last:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_split_fallback_is_char_boundary_safe() {
+        // The leading ASCII byte shifts every following 2-byte 'ü' to an ODD
+        // byte offset, so the fallback offset (start + CHUNK_TARGET_SIZE = 350,
+        // even) lands INSIDE a 'ü'. Pre-fix, `text[start..350]` panicked.
+        let text = format!("a{}", "ü".repeat(300)); // 601 bytes, no ". "/"\n"
+        let chunks = split_into_chunks(&text); // must not panic
+        assert!(!chunks.is_empty());
+        let reassembled: String = chunks.concat();
+        assert_eq!(reassembled, text, "no bytes lost across a char-boundary split");
+    }
+
+    /// Mirrors the real failure: the provider replies conversationally to a
+    /// content-free input (e.g. a lone "."), and cleans real text by uppercasing.
+    struct RefusingOnTrivialProvider;
+
+    #[async_trait::async_trait]
+    impl CleanupProvider for RefusingOnTrivialProvider {
+        async fn cleanup(
+            &self,
+            raw_text: &str,
+            _style: CleanupStyle,
+            _dictionary_terms: Option<&str>,
+            _custom_prompt: Option<&str>,
+        ) -> Result<CleanupResult, LlmError> {
+            let text = if raw_text.chars().any(|c| c.is_alphanumeric()) {
+                raw_text.to_uppercase()
+            } else {
+                "I apologize, but I don't see any text to clean up. You've only \
+                 provided a period. Could you please provide the actual \
+                 speech-to-text output you'd like me to clean?"
+                    .to_string()
+            };
+            Ok(CleanupResult { text, prompt_tokens: Some(1), completion_tokens: Some(1) })
+        }
+    }
+
+    #[tokio::test]
+    async fn spec_chunking_vectors_no_meta_refusal() {
+        for v in &load_chunking_vectors() {
+            let id = v["id"].as_str().unwrap_or("?");
+            let input = v["input"].as_str().expect("vector needs input");
+            let provider = RefusingOnTrivialProvider;
+            let result = chunked_cleanup(&provider, input, CleanupStyle::Verbatim, None, None, None)
+                .await
+                .unwrap();
+            assert!(
+                !result.text.contains("I apologize")
+                    && !result.text.to_lowercase().contains("only provided a period"),
+                "[{id}] meta-refusal leaked into cleaned output: {:?}",
+                result.text
+            );
+            if let Some(needle) = v["expect_cleanup_output_contains_upper"].as_str() {
+                assert!(
+                    result.text.to_uppercase().contains(needle),
+                    "[{id}] real dictation missing from cleaned output (expected {needle:?}): {:?}",
+                    result.text
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chunked_cleanup_whole_input_trivial_passthrough() {
+        // A degenerate whole-input "." (e.g. a fully silent capture) must pass
+        // through verbatim, never hitting the provider's refusal branch.
+        let provider = RefusingOnTrivialProvider;
+        let result = chunked_cleanup(&provider, ".", CleanupStyle::Verbatim, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(result.text, ".");
+        assert!(result.prompt_tokens.is_none(), "no provider call → no tokens");
     }
 }
