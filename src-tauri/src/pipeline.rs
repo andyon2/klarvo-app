@@ -19,7 +19,7 @@ use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
 use crate::paste::{
     capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
 };
-use crate::stt::{self, is_hallucination, SttProvider};
+use crate::stt::{self, is_hallucination, strip_stockphrase_ghosts, SttProvider};
 use crate::sync;
 use crate::{AppState, friendly_error};
 
@@ -231,7 +231,7 @@ pub fn resolve_fallback_provider(
 ///    texts and measures how many transcription words appear in the hint.
 ///    If ≥60% overlap AND the transcription is short (≤30 words), it's
 ///    likely a hallucination with slight word variation.
-fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
+pub(crate) fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
     let trans = transcription.trim().to_lowercase();
     let hint = stt_hint.trim().to_lowercase();
 
@@ -1191,7 +1191,11 @@ pub async fn process_audio(
     };
 
     let is_command = selected_text.is_some();
-    let cleaned_text = sanitize_llm_output(&cleanup_result.text);
+    // AC7: strip stockphrase ghosts AFTER LLM cleanup.
+    // Cleanup can rationalize a recognizable ghost ("Klinge") into a convincing
+    // full stockphrase ("Kleinschreibung"), turning detectable junk into fluent junk.
+    let sanitized = sanitize_llm_output(&cleanup_result.text);
+    let cleaned_text = strip_stockphrase_ghosts(&sanitized);
     log::debug!("[pipeline] cleaned text: {cleaned_text:?}");
 
     ProcessOutcome::Produced {

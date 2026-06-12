@@ -27,7 +27,7 @@ use thiserror::Error;
 
 // Sub-modules
 pub mod hallucination;
-pub use hallucination::is_hallucination;
+pub use hallucination::{is_hallucination, strip_stockphrase_ghosts};
 
 pub mod local_whisper;
 #[cfg(any(target_os = "windows", target_os = "android"))]
@@ -37,6 +37,9 @@ pub mod model_manager;
 
 #[cfg(target_os = "android")]
 pub mod jni_bridge;
+
+#[cfg(target_os = "android")]
+pub mod groq_jni;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -140,10 +143,93 @@ pub fn build_stt_prompt_with_hint(
 // Shared response types (both Groq and OpenAI return identical JSON)
 // ---------------------------------------------------------------------------
 
-/// Successful transcription response (OpenAI-compatible format).
+/// Successful transcription response (`response_format=json`).
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
     text: String,
+}
+
+/// Successful transcription response (`response_format=verbose_json`).
+///
+/// Groq returns the `text` field plus an optional `segments` array with
+/// per-segment metadata. Fields that may not be present are `Option` so
+/// the parser tolerates both legacy and extended responses (AC6 fail-soft).
+#[derive(Debug, Deserialize)]
+struct VerboseTranscriptionResponse {
+    text: String,
+    #[serde(default)]
+    segments: Vec<TranscriptionSegment>,
+}
+
+/// A single segment in a `verbose_json` response.
+///
+/// All confidence fields are `Option` — the API may omit them (or add new ones
+/// in future). A missing field is treated as "not low confidence" (fail-open).
+#[derive(Debug, Deserialize)]
+struct TranscriptionSegment {
+    /// Segment text content.
+    text: String,
+    /// Probability of no speech. High (>0.6) → likely silence/noise → drop.
+    #[serde(default)]
+    no_speech_prob: Option<f64>,
+    /// Ratio of output token length to input audio length. Very low (<0.1) or
+    /// very high (>2.4) can indicate hallucination loops.
+    #[serde(default)]
+    compression_ratio: Option<f64>,
+    /// Average log-probability of tokens. Very low (<-1.0) → low confidence → drop.
+    #[serde(default)]
+    avg_logprob: Option<f64>,
+}
+
+impl TranscriptionSegment {
+    /// Returns `true` if this segment should be dropped based on confidence
+    /// thresholds (AC6).
+    ///
+    /// ## Thresholds (golden-vector seeds, locked by 7.7 parity net)
+    ///
+    /// - `no_speech_prob > 0.6`: segment is more likely silence than speech.
+    /// - `compression_ratio < 0.1`: near-empty output for audio length (silence drop).
+    /// - `avg_logprob < -1.0`: very low token confidence.
+    ///
+    /// Missing fields are treated as "not low confidence" (fail-open: do NOT drop).
+    /// This is intentional: unknown fields preserve the segment, not discard it.
+    pub fn should_drop(&self) -> bool {
+        if let Some(nsp) = self.no_speech_prob {
+            if nsp > 0.6 {
+                return true;
+            }
+        }
+        if let Some(cr) = self.compression_ratio {
+            if cr < 0.1 {
+                return true;
+            }
+        }
+        if let Some(alp) = self.avg_logprob {
+            if alp < -1.0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Extracts the transcribed text from a `verbose_json` response, dropping
+/// low-confidence segments (AC6).
+///
+/// Segments are joined by a single space. If all segments are dropped, returns
+/// an empty string (pipeline will treat it as empty and skip paste).
+fn extract_verbose_text(resp: VerboseTranscriptionResponse) -> String {
+    if resp.segments.is_empty() {
+        // No segments — fall back to the top-level `text` field (fail-soft).
+        return resp.text.trim().to_string();
+    }
+    resp.segments
+        .into_iter()
+        .filter(|s| !s.should_drop())
+        .map(|s| s.text.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Error response returned by OpenAI-compatible APIs.
@@ -237,7 +323,9 @@ impl WhisperStt {
         let mut form = multipart::Form::new()
             .part("file", part)
             .text("model", self.model.clone())
-            .text("response_format", "json")
+            // AC6: verbose_json returns per-segment confidence metadata used for
+            // segment drop (no_speech_prob / compression_ratio / avg_logprob).
+            .text("response_format", "verbose_json")
             .text("temperature", self.temperature.to_string());
 
         if !language.is_empty() {
@@ -300,15 +388,44 @@ impl SttProvider for WhisperStt {
             });
         }
 
-        let result: TranscriptionResponse = response.json().await?;
+        // AC6: parse verbose_json response with both-shape tolerance.
+        // We attempt verbose_json first (the new format). If the `segments` field
+        // is absent (plain json response or future API change), serde still succeeds
+        // because `segments` has `#[serde(default)]` → empty Vec.
+        // Both shapes have a top-level `text` field which is the final fallback.
+        let body = response.bytes().await?;
 
-        if result.text.is_empty() {
-            return Err(SttError::ResponseFormat(
-                "API returned empty text field".to_string(),
-            ));
-        }
+        let text = if let Ok(verbose) = serde_json::from_slice::<VerboseTranscriptionResponse>(&body) {
+            // Verbose response (or plain json that deserializes with empty segments).
+            let t = extract_verbose_text(verbose);
+            if t.is_empty() {
+                // All segments dropped or empty text field — treat as no speech.
+                log::debug!("[stt] all segments dropped or empty after verbose_json parse");
+                return Err(SttError::ResponseFormat(
+                    "API returned empty text after segment confidence filter".to_string(),
+                ));
+            }
+            t
+        } else {
+            // Fallback: try legacy plain json shape (future-compat / fail-soft).
+            match serde_json::from_slice::<TranscriptionResponse>(&body) {
+                Ok(r) => {
+                    if r.text.is_empty() {
+                        return Err(SttError::ResponseFormat(
+                            "API returned empty text field".to_string(),
+                        ));
+                    }
+                    r.text.trim().to_string()
+                }
+                Err(e) => {
+                    return Err(SttError::ResponseFormat(format!(
+                        "Cannot parse STT response (tried verbose_json and json): {e}"
+                    )));
+                }
+            }
+        };
 
-        Ok(result.text.trim().to_string())
+        Ok(text)
     }
 }
 
@@ -710,5 +827,128 @@ mod tests {
         let stt = OpenAiWhisper::new("key").with_temperature(0.3);
         let form = stt.build_form(vec![0u8; 128], "en", None);
         assert!(form.is_ok(), "build_form should succeed with non-zero temperature");
+    }
+
+    // --- AC6: verbose_json + confidence-drop golden-vector fixtures ---
+    // These are SEEDS for the 7.7 parity net. The thresholds (no_speech_prob > 0.6,
+    // compression_ratio < 0.1, avg_logprob < -1.0) are defined in TranscriptionSegment::should_drop.
+
+    #[test]
+    fn test_ac6_segment_drop_high_no_speech_prob() {
+        // no_speech_prob > 0.6 → segment is likely silence/noise → drop.
+        let seg = TranscriptionSegment {
+            text: "ZDF 2020".to_string(),
+            no_speech_prob: Some(0.85),
+            compression_ratio: None,
+            avg_logprob: None,
+        };
+        assert!(seg.should_drop(), "high no_speech_prob must trigger drop");
+    }
+
+    #[test]
+    fn test_ac6_segment_drop_low_compression_ratio() {
+        // compression_ratio < 0.1 → near-empty output → drop.
+        let seg = TranscriptionSegment {
+            text: "...".to_string(),
+            no_speech_prob: None,
+            compression_ratio: Some(0.05),
+            avg_logprob: None,
+        };
+        assert!(seg.should_drop(), "low compression_ratio must trigger drop");
+    }
+
+    #[test]
+    fn test_ac6_segment_drop_low_avg_logprob() {
+        // avg_logprob < -1.0 → very low token confidence → drop.
+        let seg = TranscriptionSegment {
+            text: "amara.org".to_string(),
+            no_speech_prob: None,
+            compression_ratio: None,
+            avg_logprob: Some(-1.5),
+        };
+        assert!(seg.should_drop(), "low avg_logprob must trigger drop");
+    }
+
+    #[test]
+    fn test_ac6_segment_keep_good_confidence() {
+        // All confidence values within acceptable range → keep.
+        let seg = TranscriptionSegment {
+            text: "Ich brauche die Unterlagen bis Freitag.".to_string(),
+            no_speech_prob: Some(0.05),
+            compression_ratio: Some(1.5),
+            avg_logprob: Some(-0.3),
+        };
+        assert!(!seg.should_drop(), "good confidence segment must be kept");
+    }
+
+    #[test]
+    fn test_ac6_segment_missing_fields_fail_open() {
+        // Missing confidence fields → do NOT drop (fail-open: unknown = keep).
+        let seg = TranscriptionSegment {
+            text: "Bitte send mir die Unterlagen.".to_string(),
+            no_speech_prob: None,
+            compression_ratio: None,
+            avg_logprob: None,
+        };
+        assert!(!seg.should_drop(), "missing confidence fields must not cause drop");
+    }
+
+    #[test]
+    fn test_ac6_extract_verbose_text_drops_low_confidence() {
+        // A response with one good segment and one bad segment → only good text returned.
+        let resp = VerboseTranscriptionResponse {
+            text: "Bitte schick mir die Datei ZDF".to_string(),
+            segments: vec![
+                TranscriptionSegment {
+                    text: "Bitte schick mir die Datei".to_string(),
+                    no_speech_prob: Some(0.05),
+                    compression_ratio: Some(1.2),
+                    avg_logprob: Some(-0.2),
+                },
+                TranscriptionSegment {
+                    text: "ZDF".to_string(),
+                    no_speech_prob: Some(0.9),  // high → drop
+                    compression_ratio: None,
+                    avg_logprob: None,
+                },
+            ],
+        };
+        let result = extract_verbose_text(resp);
+        assert_eq!(result, "Bitte schick mir die Datei", "low-confidence segment must be dropped");
+    }
+
+    #[test]
+    fn test_ac6_extract_verbose_text_both_shapes_tolerated() {
+        // A plain-json-like verbose response (no segments) falls back to top-level text.
+        let resp = VerboseTranscriptionResponse {
+            text: "Fallback text".to_string(),
+            segments: vec![],  // empty segments = plain json shape
+        };
+        let result = extract_verbose_text(resp);
+        assert_eq!(result, "Fallback text", "empty segments must fall back to top-level text");
+    }
+
+    #[test]
+    fn test_ac6_no_speech_prob_boundary_exactly_06_is_kept() {
+        // Boundary: exactly 0.6 is NOT dropped (> 0.6, not >=).
+        let seg = TranscriptionSegment {
+            text: "Grenzfall".to_string(),
+            no_speech_prob: Some(0.6),
+            compression_ratio: None,
+            avg_logprob: None,
+        };
+        assert!(!seg.should_drop(), "exactly 0.6 no_speech_prob must be kept (boundary check)");
+    }
+
+    #[test]
+    fn test_ac6_avg_logprob_boundary_exactly_minus1_is_kept() {
+        // Boundary: exactly -1.0 is NOT dropped (< -1.0, not <=).
+        let seg = TranscriptionSegment {
+            text: "Grenzfall".to_string(),
+            no_speech_prob: None,
+            compression_ratio: None,
+            avg_logprob: Some(-1.0),
+        };
+        assert!(!seg.should_drop(), "exactly -1.0 avg_logprob must be kept (boundary check)");
     }
 }

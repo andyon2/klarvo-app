@@ -542,46 +542,6 @@ object KlarvoApi {
     }
 
     /**
-     * Transcribes WAV audio using Groq Whisper API.
-     * Sends multipart/form-data POST to Groq's transcription endpoint.
-     *
-     * @param wavBytes Raw WAV file bytes
-     * @param apiKey   Groq API key
-     * @param language Language code (e.g. "de", "en") or empty for auto-detect
-     * @return Transcribed text
-     * @throws IOException on network or API errors
-     */
-    fun transcribe(wavBytes: ByteArray, apiKey: String, language: String): String {
-        val boundary = "----KlarvoBoundary" + System.currentTimeMillis()
-        val url = URL("https://api.groq.com/openai/v1/audio/transcriptions")
-        val conn = url.openConnection() as HttpURLConnection
-
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 30_000
-        conn.setRequestProperty("Authorization", "Bearer $apiKey")
-        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-
-        val body = buildMultipartBody(boundary, wavBytes, language)
-        conn.setRequestProperty("Content-Length", body.size.toString())
-
-        conn.outputStream.use { it.write(body) }
-
-        val responseCode = conn.responseCode
-        if (responseCode != 200) {
-            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
-            throw IOException("Groq STT failed: HTTP $responseCode -- $errorBody")
-        }
-
-        val responseText = conn.inputStream.bufferedReader().readText()
-        val json = JSONObject(responseText)
-        // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
-        // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
-        return json.getString("text").trim()
-    }
-
-    /**
      * Cleans up dictation text using the local MNN LLM model (offline).
      * Uses the same system prompts as the cloud cleanup methods.
      *
@@ -958,46 +918,6 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         } finally {
             executor.shutdown()
         }
-    }
-
-    // --- Helpers ---
-
-    private fun buildMultipartBody(boundary: String, wavBytes: ByteArray, language: String): ByteArray {
-        val out = ByteArrayOutputStream()
-        val writer = PrintWriter(OutputStreamWriter(out, Charsets.UTF_8), true)
-
-        // model field
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-        writer.append("whisper-large-v3-turbo\r\n")
-        writer.flush()
-
-        // response_format field
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
-        writer.append("json\r\n")
-        writer.flush()
-
-        // language field (skip if empty -- Whisper auto-detects)
-        if (language.isNotBlank()) {
-            writer.append("--$boundary\r\n")
-            writer.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n")
-            writer.append("$language\r\n")
-            writer.flush()
-        }
-
-        // audio file field
-        writer.append("--$boundary\r\n")
-        writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
-        writer.append("Content-Type: audio/wav\r\n\r\n")
-        writer.flush()
-
-        out.write(wavBytes)
-
-        writer.append("\r\n--$boundary--\r\n")
-        writer.flush()
-
-        return out.toByteArray()
     }
 
     // --- Feedback Metrics ---

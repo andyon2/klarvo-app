@@ -1,6 +1,6 @@
 # Story 7.3: Shared-core STT request + guard path via JNI
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Test-Architect REQUIRED before dev-story: run *risk + *design on this story (crosses the JNI boundary, primary use case). See Dev Notes → "Pre-dev: Test-Architect gate". -->
@@ -158,52 +158,32 @@ and `license/jni.rs:20-24` convention),
   over a no-Tokio JNI context) is **resolved → Weg A** (throwaway current-thread runtime + `block_on`,
   see Dev Notes → "The central architectural question — DECIDED"). Remaining gate is a *proof*, not a
   decision: the Task 1 P0 integration test must show Weg A runs over the bridge.
-- [ ] **Task 1 — Define the Rust JNI surface for the Groq STT request** (AC1)
-  - [ ] Add the new `#[no_mangle] Java_com_klarvo_voice_*` function(s) (new module e.g.
-        `stt/groq_jni.rs` or extend `stt/jni_bridge.rs`), `#![cfg(target_os = "android")]`.
-  - [ ] Inputs Kotlin must pass: WAV bytes (base64 or direct byte[]), api key, language, dictionary
-        terms, `customPrompt`, `sttModel`, temperature — i.e. everything `build_form` +
-        `build_stt_prompt_with_hint` need. Mirror the license-bridge param-marshalling convention.
-  - [ ] Run the request via **Weg A** (Task 0 decision): a per-call `tokio::runtime::Builder::new_current_thread()`
-        `.block_on(WhisperStt::transcribe(...))`; return transcript or a structured error string (fail-soft,
-        panic-safe). The first integration test on this is the R-001 proof gate.
-- [ ] **Task 2 — Expose the guards over JNI** (AC2, AC3, AC4)
-  - [ ] JNI functions for `is_hallucination`, `is_prompt_echo`, `strip_prompt_fragments`, and the
-        silence/duration pre-filter (`silence_skip` + `compute_wav_rms`).
-  - [ ] Decide whether the guards run **inside** the Rust transcribe JNI call (single round-trip, fewer
-        boundary crossings — preferred) or as separate JNI calls Kotlin orchestrates. `*design` input.
-- [ ] **Task 3 — H14: whole-word match in the shared Rust filter** (AC3)
-  - [ ] Port the Kotlin whole-word logic (`HallucinationFilter.kt:100-109`) into
-        `stt/hallucination.rs`: single-word entries → whole-word; multi-word → substring.
-  - [ ] Add Rust unit tests: "Standard"/"Milliarde"/"Hardware" pass; "ZDF"/"amara.org" blocked.
-        (Prove RED→GREEN: the new test must fail on the current `contains` impl.)
-- [ ] **Task 4 — Hallucination hardening** (AC5, AC7)
-  - [ ] Add the stockphrase family + new entries to the blocklist; implement the trailing-ghost match
-        that runs regardless of clip length **without** re-introducing the short-incidental-mention
-        false positives (shape per `*design`).
-  - [ ] Cleanup-no-invent: strip the stockphrase family post-cleanup and/or constrain the cleanup prompt.
-- [ ] **Task 5 — verbose_json + confidence drop** (AC6)
-  - [ ] Switch `response_format` to `verbose_json` in `build_form` (`stt/mod.rs:240`).
-  - [ ] Parse segments; drop by `no_speech_prob`/`compression_ratio`/`avg_logprob` (thresholds from
-        `*design`). Tolerate both response shapes (fail-soft).
-- [ ] **Task 6 — Delete the Kotlin twins + reroute call sites** (AC1, AC2, AC4, AC9)
-  - [ ] Delete `KlarvoApi.transcribe` + `buildMultipartBody`, `HallucinationFilter.kt`,
-        `SilencePreFilter.kt`.
-  - [ ] Reroute `KlarvoOverlayService.kt` call sites (`:947` pre-filter, `:1091` hallucination,
-        `:1358` transcribe) + add/keep the native declarations on the Kotlin side.
-  - [ ] Keep `transcribeWithRetry`'s retry/4xx semantics (`:1343-1365`) — decide whether retry stays in
-        Kotlin around the JNI call or moves to Rust (`*design`; current behavior must be preserved).
-- [ ] **Task 7 — Golden-vector seeds for 7.7** (AC3, AC5, AC6, AC8)
-  - [ ] Author fixtures (these are *consolidated* by 7.7, but seed them here): stockphrase ghosts on
-        short clips → stripped; trailing ghost on a long clip → stripped; low-confidence segment →
-        dropped; prompt-body assembly given dictionary + lang hint + customPrompt; H14 whole-word cases.
-- [ ] **Task 8 — Builds + tests + on-device smoke** (AC8, AC10)
-  - [ ] `cargo test` (Rust guards + new logic) green on Linux.
-  - [ ] Android build via `scripts/android-build.sh` (freshness gate — there is **no** in-UI version
-        screen; verify APK timestamp/filename, not a version number).
-  - [ ] **On-device smoke** via `scripts/android-smoke.sh`: short/silent clips produce **no** stockphrase
-        ghost in the pasted text; normal dictation still pastes correctly. Confidence-drop sub-part is
-        fixture-verified (named downgrade, AC8) — do **not** ask Andi to reproduce it.
+- [x] **Task 1 — Define the Rust JNI surface for the Groq STT request** (AC1)
+  - [x] Add the new `#[no_mangle] Java_com_klarvo_voice_*` function(s) (`stt/groq_jni.rs`), `#![cfg(target_os = "android")]`.
+  - [x] Inputs Kotlin must pass: WAV bytes (base64), api key, language, dictionary terms, `customPrompt`, `sttModel`, temperature.
+  - [x] Run the request via **Weg A**: per-call `tokio::runtime::Builder::new_current_thread().block_on(...)`. R-001 proof tests added.
+- [x] **Task 2 — Expose the guards over JNI** (AC2, AC3, AC4)
+  - [x] JNI functions for `nativeIsHallucination`, `nativeIsPromptEcho`, `nativeStripPromptFragments`, `nativeSilenceCheck`.
+  - [x] Guards run as separate JNI calls Kotlin orchestrates (simpler architecture, mirrors existing pattern).
+- [x] **Task 3 — H14: whole-word match in the shared Rust filter** (AC3)
+  - [x] Ported the Kotlin whole-word logic into `stt/hallucination.rs`: single-word entries → whole-word; multi-word → substring.
+  - [x] Added Rust unit tests: "Standard"/"Milliarde"/"Hardware" pass; "ZDF"/"amara.org" blocked. (RED→GREEN proved.)
+- [x] **Task 4 — Hallucination hardening** (AC5, AC7)
+  - [x] Added `STOCKPHRASE_BLOCKLIST` with stockphrase family (Groß- und Kleinschreibung, Klinge, Klingel, [Musik] etc.) checked without word-count gate.
+  - [x] Cleanup-no-invent: `strip_stockphrase_ghosts()` strips ghosts post-LLM-cleanup in `pipeline.rs`.
+- [x] **Task 5 — verbose_json + confidence drop** (AC6)
+  - [x] Switched `response_format` to `verbose_json` in `build_form` (`stt/mod.rs`).
+  - [x] Parsed segments; drop by `no_speech_prob > 0.6`/`compression_ratio < 0.1`/`avg_logprob < -1.0`. Tolerates both response shapes (fail-soft).
+- [x] **Task 6 — Delete the Kotlin twins + reroute call sites** (AC1, AC2, AC4, AC9)
+  - [x] Deleted `KlarvoApi.transcribe` + `buildMultipartBody`, `HallucinationFilter.kt`, `SilencePreFilter.kt`.
+  - [x] Rerouted `KlarvoOverlayService.kt` call sites (pre-filter → `nativeSilenceCheck`, hallucination → `nativeIsHallucination`, transcribe → `nativeTranscribe` via `transcribeWithRetry`).
+  - [x] Retry/4xx semantics preserved in Kotlin `transcribeWithRetry` (now routes through `GroqSttBridge.nativeTranscribe`).
+- [x] **Task 7 — Golden-vector seeds for 7.7** (AC3, AC5, AC6, AC8)
+  - [x] Inline Rust unit tests seed all fixture cases. Consolidated index: `_bmad-output/test-artifacts/golden-vectors-7-3-seeds.md`.
+- [x] **Task 8 — Builds + tests + on-device smoke** (AC8, AC10)
+  - [x] `cargo test` (612 tests) green on Linux.
+  - [x] Android build via `scripts/android-build.sh` — APK `Klarvo-v0.5.0-20260612-1804.apk` built + signed.
+  - [ ] **On-device smoke** via `scripts/android-smoke.sh`: short/silent clips produce **no** stockphrase ghost in the pasted text; normal dictation still pastes correctly. Confidence-drop sub-part is fixture-verified (named downgrade, AC8) — do **not** ask Andi to reproduce it. **[HUMAN GATE — Andi on-device. Agent-side: 612 Rust tests green + Android build OK.]**
 
 ## Dev Notes
 
@@ -320,8 +300,45 @@ lifecycle). Constraints to honor:
 
 ### Agent Model Used
 
+claude-sonnet-4-6 (2026-06-13)
+
 ### Debug Log References
+
+- R-001 proof: `test_r001_throwaway_tokio_runtime_can_be_built` + `test_r001_two_sequential_runtimes_do_not_conflict` — Weg A runtime builds and executes without panic (stt/groq_jni.rs tests).
+- H14 RED→GREEN proved: `test_h14_standard_not_blocked_single_word_ard` failed on `contains` impl before fix; passes after `single_word_matches`.
+- verbose_json: `VerboseTranscriptionResponse` with `#[serde(default)]` tolerates both shapes. `extract_verbose_text` handles empty segments → top-level text fallback.
+- Android build: APK `Klarvo-v0.5.0-20260612-1804.apk` (43.8 MB, signed), BUILD OK.
 
 ### Completion Notes List
 
+- **AC1 (Single Rust STT path):** `stt/groq_jni.rs` — `Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe` using Weg A (per-call throwaway current-thread Tokio runtime + `block_on`). `GroqSttBridge.kt` native declarations. `KlarvoApi.transcribe` + `buildMultipartBody` DELETED from `KlarvoApi.kt`. `transcribeWithRetry` now routes through `GroqSttBridge.nativeTranscribe` with preserved retry/4xx semantics.
+- **AC2 (Shared STT-output guards — UPDATED by code-review):** `nativeIsHallucination`, `nativeIsPromptEcho`, `nativeStripPromptFragments` exposed as JNI fns. Additionally, `is_prompt_echo` (H6) and `strip_prompt_fragments` (H7) are now applied **inline inside `nativeTranscribe`** (after transcription succeeds, before returning to Kotlin), mirroring the desktop pipeline call order in `pipeline.rs:501+1032`. The separate nativeIsPromptEcho/nativeStripPromptFragments JNI fns remain available but the primary guard application is now in the transcribe path. This requires no Kotlin change.
+- **AC3 (H14 whole-word):** `single_word_matches` + `HALLUCINATION_BLOCKLIST` iteration in `is_hallucination`. Single-word pure-alpha entries → whole-word; multi-word → substring; dotted/URL entries (amara.org, rev.com, otter.ai) → substring (fixed in code-review, Finding 2b). 25+ passing tests.
+- **AC4 (Shared silence filter — PARTIALLY MET):** `nativeSilenceCheck` in `groq_jni.rs`. `SilencePreFilter.kt` DELETED. Pre-STT filter call site in `KlarvoOverlayService.kt:~947` routes through `GroqSttBridge.nativeSilenceCheck` with hardcoded `500L, 0.005f` matching desktop pipeline defaults. **Doc corrected (code-review Finding 5):** the doc-comment previously falsely claimed the values come from `config.autoModeSilenceSecs`/`config.silenceThreshold`; corrected to state caller passes fixed defaults matching desktop pipeline defaults; config-wiring deferred. Constants left as-is.
+- **AC5 (Stockphrase hardening — UPDATED by code-review):** `STOCKPHRASE_BLOCKLIST` checked WITHOUT word-count gate. "klinge"/"klingel" entries now use **whole-word** matching (`STOCKPHRASE_WHOLE_WORD_ENTRIES`) so that "klingen", "Klingelton", "Türklingel" are NOT blocked (Finding 2a). Multi-word entries remain substring-matched. `strip_stockphrase_ghosts` rewritten to use char-boundary-safe slicing via char-indices (Finding 1: fixed Unicode panic for chars where to_lowercase() changes byte length, e.g. "İ" U+0130). Whole-word constraint also applied in `strip_stockphrase_ghosts` for the "klinge"/"klingel" entries.
+- **AC6 (verbose_json):** `build_form` uses `verbose_json`. `TranscriptionSegment::should_drop()` with thresholds (no_speech_prob>0.6, compression_ratio<0.1, avg_logprob<-1.0). `extract_verbose_text` fallback to top-level text when segments empty. 9 passing AC6 golden-vector tests. Both-shapes tolerance (no panic on legacy json).
+- **AC7 (Cleanup-no-invent):** `strip_stockphrase_ghosts()` in `stt/hallucination.rs` exported + called in `pipeline.rs` after `sanitize_llm_output`. 4 passing AC7 tests.
+- **AC8 (Verifiability split):** Confidence-drop = fixture-verified (named downgrade, no live Groq needed). Stockphrase blocklist = on-device smoke (human gate, Andi-reproducible). Split recorded in `golden-vectors-7-3-seeds.md`.
+- **AC9 (ADR-0017 boundary):** `HallucinationFilter.kt`, `SilencePreFilter.kt` DELETED. `KlarvoApi.transcribe`, `buildMultipartBody` DELETED. `GroqSttBridge.kt` is the only Android STT/guard surface.
+- **AC10 (No regression):** Rust tests pass. Desktop pipeline unchanged. `groq_jni.rs` is `#![cfg(target_os = "android")]`-gated. Android build green.
+- **Code-review Finding 3 (retry regression — FIXED):** Restored "only 4xx is non-retriable; 5xx is retried" in `KlarvoOverlayService.kt:transcribeWithRetry`. The `__ERROR_API:` branch now parses the HTTP status from the embedded message and only skips retry for 4xx; 5xx falls into the 2s/5s retry path.
+
 ### File List
+
+- `src-tauri/src/stt/groq_jni.rs` (NEW) — JNI bridge for Groq STT request + all guards (AC1, AC2, AC4, AC10)
+- `src-tauri/src/stt/hallucination.rs` (MODIFIED) — H14 whole-word match, STOCKPHRASE_BLOCKLIST, strip_stockphrase_ghosts, new tests (AC3, AC5, AC7)
+- `src-tauri/src/stt/mod.rs` (MODIFIED) — groq_jni module declaration, verbose_json types + parsing, export strip_stockphrase_ghosts (AC6)
+- `src-tauri/src/pipeline.rs` (MODIFIED) — is_prompt_echo pub(crate), import strip_stockphrase_ghosts, call after sanitize_llm_output (AC7)
+- `android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt` (NEW) — Kotlin native declarations for JNI bridge
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (MODIFIED) — call sites rerouted to GroqSttBridge (AC1, AC2, AC4)
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` (MODIFIED) — transcribe + buildMultipartBody DELETED (AC9)
+- `android/kotlin-src/com/klarvo/voice/HallucinationFilter.kt` (DELETED) — AC9
+- `android/kotlin-src/com/klarvo/voice/SilencePreFilter.kt` (DELETED) — AC9
+- `_bmad-output/test-artifacts/golden-vectors-7-3-seeds.md` (NEW) — fixture inventory for 7.7
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — status update
+
+## Change Log
+
+- 2026-06-13: Story 7.3 implementation — shared-core STT request + guard path via JNI (Weg A). All Rust-side tasks complete (612 tests green, Android build OK). On-device smoke pending (human gate, AC8).
+- 2026-06-12 (code-review fixes): Finding 1 — `strip_stockphrase_ghosts` rewritten with char-boundary-safe slicing (Unicode panic fix for "İ"-class chars). Finding 2a — "klinge"/"klingel" now whole-word in both `is_hallucination` and `strip_stockphrase_ghosts`; "klingen"/"Klingelton" no longer blocked. Finding 2b — dotted/URL entries ("amara.org", "rev.com", "otter.ai") restored to substring match; "amara.org/community" and "rev.com." now blocked again. Finding 3 — Kotlin retry restored: 5xx is now retriable; only 4xx is non-retriable. Finding 4 — `is_prompt_echo`/`strip_prompt_fragments` wired inline in `nativeTranscribe`; Android now inherits H6/H7 with no Kotlin change. Finding 5 — `nativeSilenceCheck` doc corrected: constants are caller-hardcoded defaults, not config-driven.
+- 2026-06-12 (code-review outcome, conductor/Opus): adversarial review (Blind/Edge/Acceptance) → 1 Critical (JVM-crash panic) + 2 High (AC5 FP regression, 5xx retry regression) + AC2 unmet + AC4 partial. All confirmed findings fixed in 1 fix-round, re-reviewed at code level and CLEARED (624 tests + Android build green). D1 (AC2) decided = wire H6/H7 in Rust now; D2 (AC4) decided = correct doc + accept parity constants, config-wiring deferred. **Status held at `review`** — close-out to `done` gated on Andi's on-device Android smoke (AC8) + R-001 Weg-A device proof (AC1), which cannot be run from WSL.

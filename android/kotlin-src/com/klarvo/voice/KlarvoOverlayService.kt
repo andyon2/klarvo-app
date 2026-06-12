@@ -943,31 +943,40 @@ class KlarvoOverlayService : Service() {
         }
 
         // Pre-STT filter: discard mini-taps and silent recordings before the Groq API call.
-        // Mirrors Rust pipeline.rs::silence_skip (DIV-02).
-        when (val preFilter = SilencePreFilter.check(wavBytes)) {
-            is SilencePreFilter.FilterResult.TooShort -> {
-                KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${preFilter.durationMs}ms < ${SilencePreFilter.MIN_RECORDING_MS}ms)")
-                handler.post {
-                    showToast("Recording too short")
-                    autoLoopActive = false
-                    val prev = currentState
-                    setState(RecordingState.IDLE)
-                    adjustLayoutForState(RecordingState.IDLE, prev)
+        // Delegates to the shared Rust silence_skip via GroqSttBridge (ADR-0017, AC4).
+        // Config values read here use defaults matching the Rust pipeline defaults
+        // (minRecordingMs=500, silenceThreshold=0.005) so the filter runs before the full
+        // config read below. These match KlarvoApi.AppConfig defaults.
+        run {
+            val wavBase64ForFilter = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+            val silenceResult = GroqSttBridge.nativeSilenceCheck(wavBase64ForFilter, 500L, 0.005f)
+            when {
+                silenceResult.startsWith("TooShort:") -> {
+                    val durationMs = silenceResult.removePrefix("TooShort:").toLongOrNull() ?: 0L
+                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${durationMs}ms < 500ms)")
+                    handler.post {
+                        showToast("Recording too short")
+                        autoLoopActive = false
+                        val prev = currentState
+                        setState(RecordingState.IDLE)
+                        adjustLayoutForState(RecordingState.IDLE, prev)
+                    }
+                    return
                 }
-                return
-            }
-            is SilencePreFilter.FilterResult.Silent -> {
-                KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=${preFilter.rms} < ${SilencePreFilter.SILENCE_THRESHOLD})")
-                handler.post {
-                    showToast("No speech detected")
-                    autoLoopActive = false
-                    val prev = currentState
-                    setState(RecordingState.IDLE)
-                    adjustLayoutForState(RecordingState.IDLE, prev)
+                silenceResult.startsWith("Silent:") -> {
+                    val rms = silenceResult.removePrefix("Silent:").toFloatOrNull() ?: 0f
+                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=$rms < 0.005)")
+                    handler.post {
+                        showToast("No speech detected")
+                        autoLoopActive = false
+                        val prev = currentState
+                        setState(RecordingState.IDLE)
+                        adjustLayoutForState(RecordingState.IDLE, prev)
+                    }
+                    return
                 }
-                return
+                else -> { /* "Pass" — proceed to STT */ }
             }
-            SilencePreFilter.FilterResult.Pass -> { /* proceed to STT */ }
         }
 
         // Persist WAV to disk before any network call so audio survives an app kill or
@@ -1069,7 +1078,15 @@ class KlarvoOverlayService : Service() {
                 }
                 result
             } else {
-                transcribeWithRetry(wavBytes, config.groqApiKey, config.language, pendingWavFile)
+                transcribeWithRetry(
+                    wavBytes,
+                    config.groqApiKey,
+                    config.language,
+                    "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
+                    config.dictionaryTerms,
+                    config.customPrompt,
+                    pendingWavFile
+                )
             }
             val tStt = System.currentTimeMillis()
             KlarvoLogger.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
@@ -1088,8 +1105,10 @@ class KlarvoOverlayService : Service() {
                 return
             }
 
-            if (HallucinationFilter.isHallucination(transcript)) {
-                KlarvoLogger.d(TAG, "[pipeline] hallucination filtered: '${transcript.take(60)}'")
+            // Hallucination guard via shared Rust (ADR-0017, AC2).
+            // Replaces HallucinationFilter.isHallucination() — same logic, single Rust source.
+            if (GroqSttBridge.nativeIsHallucination(transcript)) {
+                KlarvoLogger.d(TAG, "[pipeline] hallucination filtered (Rust): '${transcript.take(60)}'")
                 handler.post {
                     showToast("Speech not recognized")
                     autoLoopActive = false
@@ -1340,41 +1359,98 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
-     * Calls KlarvoApi.transcribe() with up to 2 retries (delays: 2 s, 5 s) for network errors.
-     * 4xx HTTP errors are NOT retried (bad request / auth failure -- retrying won't help).
-     * If all attempts fail the IOException propagates and the pending WAV is kept on disk.
+     * Transcribes [wavBytes] via the shared Rust Groq STT path (GroqSttBridge.nativeTranscribe)
+     * with up to 2 retries (delays: 2 s, 5 s) for network errors.
+     *
+     * Retry contract preserved from the old KlarvoApi.transcribe path:
+     * - 4xx HTTP errors are NOT retried (bad request / auth failure).
+     * - Network errors (all other failures) are retried up to 2 times.
+     *
+     * ADR-0017: KlarvoApi.transcribe + buildMultipartBody deleted; this method
+     * now calls GroqSttBridge.nativeTranscribe which runs the shared Rust WhisperStt path.
      */
     private fun transcribeWithRetry(
         wavBytes: ByteArray,
         apiKey: String,
         language: String,
+        sttModel: String,
+        dictionaryTerms: String,
+        customPrompt: String,
         pendingWavFile: File?
     ): String {
+        val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
         val retryDelaysMs = listOf(2_000L, 5_000L)
-        var lastException: IOException? = null
+        var lastErrorMsg: String? = null
 
         for (attempt in 0..retryDelaysMs.size) {
-            try {
-                return KlarvoApi.transcribe(wavBytes, apiKey, language)
-            } catch (e: IOException) {
-                // Do not retry client errors (4xx) -- they signal a bad request or invalid key.
-                val msg = e.message ?: ""
-                val is4xx = Regex("HTTP (4\\d\\d)").containsMatchIn(msg)
-                if (is4xx) {
-                    KlarvoLogger.w(TAG, "[stt-retry] 4xx error -- not retrying: $msg")
-                    throw e
+            val result = GroqSttBridge.nativeTranscribe(
+                wavBase64 = wavBase64,
+                apiKey = apiKey,
+                language = language,
+                dictionaryTerms = dictionaryTerms,
+                customPrompt = customPrompt,
+                sttModel = sttModel,
+                temperature = 0.0f
+            )
+
+            when {
+                // Success: non-error, non-empty result.
+                !result.startsWith("__ERROR_") -> return result
+
+                // Empty audio — not retriable.
+                result == "__ERROR_EMPTY_AUDIO__" -> {
+                    KlarvoLogger.w(TAG, "[stt-retry] empty audio error -- not retrying")
+                    throw IOException("Groq STT: empty audio")
                 }
-                lastException = e
-                if (attempt < retryDelaysMs.size) {
-                    val delay = retryDelaysMs[attempt]
-                    KlarvoLogger.w(TAG, "[stt-retry] attempt $attempt failed ($msg), retrying in ${delay}ms")
-                    Thread.sleep(delay)
-                } else {
-                    KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted, pending WAV kept: ${pendingWavFile?.name}", e)
+
+                // API error: only 4xx is non-retriable (bad request / invalid key / quota).
+                // 5xx (server error / overload) falls through to the retry path below.
+                result.startsWith("__ERROR_API:") -> {
+                    val msg = result.removeSurrounding("__ERROR_API:", "__")
+                    // Parse the HTTP status from the embedded "HTTP <status>: ..." message.
+                    val statusCode = Regex("HTTP (\\d{3})").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    val is4xx = statusCode != null && statusCode in 400..499
+                    if (is4xx) {
+                        KlarvoLogger.w(TAG, "[stt-retry] 4xx API error -- not retrying: $msg")
+                        throw IOException("Groq STT failed: $msg")
+                    } else {
+                        // 5xx or unparseable status — treat as retriable (mirror network retry path).
+                        lastErrorMsg = msg
+                        if (attempt < retryDelaysMs.size) {
+                            val delay = retryDelaysMs[attempt]
+                            KlarvoLogger.w(TAG, "[stt-retry] 5xx/server error (attempt $attempt, $msg), retrying in ${delay}ms")
+                            Thread.sleep(delay)
+                        } else {
+                            KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted (5xx), pending WAV kept: ${pendingWavFile?.name}")
+                        }
+                    }
+                }
+
+                // Network error — retriable.
+                result.startsWith("__ERROR_NETWORK:") -> {
+                    val msg = result.removeSurrounding("__ERROR_NETWORK:", "__")
+                    lastErrorMsg = msg
+                    if (attempt < retryDelaysMs.size) {
+                        val delay = retryDelaysMs[attempt]
+                        KlarvoLogger.w(TAG, "[stt-retry] attempt $attempt failed ($msg), retrying in ${delay}ms")
+                        Thread.sleep(delay)
+                    } else {
+                        KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted, pending WAV kept: ${pendingWavFile?.name}")
+                    }
+                }
+
+                // Unknown error code — treat as network error, retriable.
+                else -> {
+                    lastErrorMsg = result
+                    if (attempt < retryDelaysMs.size) {
+                        val delay = retryDelaysMs[attempt]
+                        KlarvoLogger.w(TAG, "[stt-retry] unknown error ($result), retrying in ${delay}ms")
+                        Thread.sleep(delay)
+                    }
                 }
             }
         }
-        throw lastException!!
+        throw IOException("Groq STT failed after retries: $lastErrorMsg")
     }
 
     // shouldBlockPaste delegates to BankingGuard (see BankingGuard.kt) so that

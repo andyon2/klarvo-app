@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-06-12
+# last_updated: 2026-06-13
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-12
+last_updated: 2026-06-13
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -107,7 +107,7 @@ development_status:
   epic-7: in-progress
   7-1-android-chunking-parity-core-output: backlog
   7-2-android-live-auto-stop-vad-gate-parity: backlog
-  7-3-shared-core-stt-request-and-guard-path-via-jni: ready-for-dev
+  7-3-shared-core-stt-request-and-guard-path-via-jni: review
   7-5-android-llm-routing-contract-hygiene: backlog
   7-6-m12-open-product-decision-dictionary-in-chat-style: backlog
   7-7-golden-vector-parity-net-and-dead-config-lock: backlog
