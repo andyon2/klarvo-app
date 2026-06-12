@@ -1,6 +1,6 @@
 # Story 7.3: Shared-core STT request + guard path via JNI
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Test-Architect REQUIRED before dev-story: run *risk + *design on this story (crosses the JNI boundary, primary use case). See Dev Notes → "Pre-dev: Test-Architect gate". -->
@@ -342,3 +342,4 @@ claude-sonnet-4-6 (2026-06-13)
 - 2026-06-13: Story 7.3 implementation — shared-core STT request + guard path via JNI (Weg A). All Rust-side tasks complete (612 tests green, Android build OK). On-device smoke pending (human gate, AC8).
 - 2026-06-12 (code-review fixes): Finding 1 — `strip_stockphrase_ghosts` rewritten with char-boundary-safe slicing (Unicode panic fix for "İ"-class chars). Finding 2a — "klinge"/"klingel" now whole-word in both `is_hallucination` and `strip_stockphrase_ghosts`; "klingen"/"Klingelton" no longer blocked. Finding 2b — dotted/URL entries ("amara.org", "rev.com", "otter.ai") restored to substring match; "amara.org/community" and "rev.com." now blocked again. Finding 3 — Kotlin retry restored: 5xx is now retriable; only 4xx is non-retriable. Finding 4 — `is_prompt_echo`/`strip_prompt_fragments` wired inline in `nativeTranscribe`; Android now inherits H6/H7 with no Kotlin change. Finding 5 — `nativeSilenceCheck` doc corrected: constants are caller-hardcoded defaults, not config-driven.
 - 2026-06-12 (code-review outcome, conductor/Opus): adversarial review (Blind/Edge/Acceptance) → 1 Critical (JVM-crash panic) + 2 High (AC5 FP regression, 5xx retry regression) + AC2 unmet + AC4 partial. All confirmed findings fixed in 1 fix-round, re-reviewed at code level and CLEARED (624 tests + Android build green). D1 (AC2) decided = wire H6/H7 in Rust now; D2 (AC4) decided = correct doc + accept parity constants, config-wiring deferred. **Status held at `review`** — close-out to `done` gated on Andi's on-device Android smoke (AC8) + R-001 Weg-A device proof (AC1), which cannot be run from WSL.
+- 2026-06-12 (GATE 4 GREEN, close-out): on-device Android smoke + R-001 Weg-A device proof PASSED (Andi). Short/silent clips produce no stockphrase ghost; normal dictation pastes correctly; JNI transcribe round-trip clean, no crash. Story → **done**.
