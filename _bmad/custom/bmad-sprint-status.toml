@@ -3,5 +3,5 @@
 [workflow]
 
 persistent_facts = [
-  "ROUTING (2026-06-12): Epic 7 läuft. Story 7-3 (shared-core STT via JNI) = DONE (6c2fea2). Bare-Cascade landet nun korrekt auf 7-1 — kein parked/live-Konflikt (Epics 1–6 done). Reihenfolge: 7-1 (chunking, unabhängig/parallelisierbar) → 7-2/7-5/7-6 → 7-7 ZULETZT (golden-vector parity net; konsolidiert die Seed-Fixtures _bmad-output/test-artifacts/golden-vectors-7-3-seeds.md + golden-vectors-chunking-cleanup-seeds.md — chunking-cleanup-Sub-Pfad schon beidseitig gefixt 6c376df, nicht doppeln). Nächste Aktion: bmad-create-story 7-1. Epic-7-Retro optional/deferred. Re-Eval: sobald 7-1 done. Details: Memory project_story_7_3_stt_jni_runtime_decision.md.",
+  "ROUTING (2026-06-13): Epic 7 ⏸ PARKED (sprint-change-proposal-2026-06-13.md) — bare Cascade IGNORIEREN, NICHT nach 7-1 routen. LIVE STRAND = Epic 8 (Desktop Studio-Dark-Visual-Overhaul) → danach Epic 9 (Android Overhaul + Bubble-Interaktion). Nächste Aktion: bmad-create-epics-and-stories für Epics 8/9 (UX-Input = docs/design/overhaul/SPEC-studio-dark-overhaul.md + 00..04; Epic 9 startet mit ADR Bubble View+Canvas vs ComposeView). Epic 7 resume (nach Epic 9): 7-1 zuerst, 7-7 ZULETZT (lockt 7.1–7.6). Re-Eval: nach Epic 9. Details: Memory project_v1_feature_roadmap.md + sprint-change-proposal-2026-06-13.md.",
 ]

@@ -26,6 +26,8 @@ note: >
 
 # klarvo - Epic Breakdown (Cross-Platform Config-Contract Parity · Epic 7)
 
+> **⏸ PARKED 2026-06-13** (`sprint-change-proposal-2026-06-13.md`): deferred zugunsten des Studio-Dark-Visual-Overhauls (Epics 8/9). 7-3 bleibt done. Beim Wiederaufnehmen: 7-1 (unabhängig) zuerst, **7-7 als Capstone ZULETZT** (lockt 7.1–7.6). Re-Eval: nach Epic 9.
+
 ## Overview
 
 **Brownfield drift remediation.** ADR-0016 Amendment 1 (2026-06-10) moves the parity line
