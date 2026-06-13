@@ -62,3 +62,6 @@ shells/
 _bmad-output/runtime/
 _bmad-output/story-automator/
 .claude/.story-automator-active
+
+# Design handoff package (local only — contains screenshots with personal dictation content)
+design-handoff/
