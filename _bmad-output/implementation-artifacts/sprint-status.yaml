@@ -115,6 +115,23 @@ development_status:
 
   # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD] — LIVE STRAND
   epic-8: backlog
+  8-1-token-and-type-foundation: backlog
+  8-2-settings-form-system-home-and-sub-pages: backlog
+  8-3-floatingbar-re-skin: backlog
+  8-4-live-cleanup-preview-re-skin: backlog
+  8-5-main-window-history-re-skin: backlog
+  8-6-onboarding-re-skin: backlog
+  epic-8-retrospective: optional
 
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]
   epic-9: backlog
+  9-1-adr-android-bubble-rendering-tech: backlog
+  9-2-android-token-theme-source-and-fonts: backlog
+  9-3-bubble-idle-re-skin-responsive-sizing-anchoring: backlog
+  9-4-bubble-state-harness: backlog
+  9-5-bubble-state-sequence-listening-panel-waveform: backlog
+  9-6-keyboard-collapse-via-a11y-service: backlog
+  9-7-short-press-gesture-modes-mirror-desktop: backlog
+  9-8-long-press-popover-menu: backlog
+  9-9-in-app-recording-state-re-skin: backlog
+  epic-9-retrospective: optional
