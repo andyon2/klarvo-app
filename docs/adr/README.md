@@ -35,3 +35,4 @@ Die globale Sequenz wird fortgeführt: **0001–0014** dokumentieren die (seit P
 | [0015](0015-state-file-write-convention.md) | Schreib-/Recovery-Konvention für State-Dateien (atomar + Backup) | Accepted |
 | [0016](0016-android-path-parity-strategy.md) | Android-Pfad-Paritäts-Strategie — Linie + Wächter-Ausnahmen (A1 2026-06-10, A2 2026-06-12) | Accepted |
 | [0017](0017-shared-core-stt-path.md) | Shared-Core STT-Pfad — ein Rust-STT-Request + Guards über JNI (Hard Rule) | Accepted |
+| [0018](0018-android-bubble-rendering-tech.md) | Android Bubble Rendering Tech — View+Canvas vs ComposeView | Accepted |
