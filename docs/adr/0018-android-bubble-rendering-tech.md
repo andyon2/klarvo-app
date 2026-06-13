@@ -19,13 +19,15 @@ animations and a long-press popover menu.
 - `KlarvoOverlayService.kt` (~1482 LOC): `Service` that adds the view to `WindowManager` via
   `TYPE_APPLICATION_OVERLAY` (`SYSTEM_ALERT_WINDOW`). The service owns the touch handler, drag
   logic, mode switching, config loading, and the full audio/STT/LLM pipeline.
-- **No Jetpack Compose dependency exists anywhere in the build** (`build.gradle.kts`: zero
-  `androidx.compose.*` entries). `minSdk = 24`.
+- **No Jetpack Compose dependency exists anywhere in the build** (zero `androidx.compose.*` entries
+  in the Tauri-generated `src-tauri/gen/android/app/build.gradle.kts` — the `android/` tree itself
+  contains no Gradle files; sources are copied into the gen project by `scripts/android-build.sh`).
+  `minSdk = 24`.
 
 **The open question:** The new Epic 9 bubble states require a multi-element, vertically-stacked
 **listening panel** that must:
-1. lay out a grab handle, K-logo + amber live-dot, a 5-bar RMS waveform, a timer, and a red stop
-   button in a constrained vertical arrangement;
+1. lay out a grab handle, K-logo + amber live-dot, a 5-bar RMS waveform, a timer, a red stop
+   button, and a live raw transcript area in a constrained vertical arrangement;
 2. run spring-enter (240ms `cubic-bezier(.34,1.56,.64,1)`) and state-transition animations (120ms
    micro, 180ms state, 320ms panel);
 3. render responsive to RMS amplitude values streamed from the audio thread.
@@ -95,16 +97,33 @@ maintenance. The existing bar layout in `drawRecordingBar()` demonstrates the pa
 | Overlay-service compatibility | Proven (FloatingBubbleView works today) | Requires testing; documented gotchas with IME + focus |
 | 9.4 harness (state injection) | Public setState() method or debug broadcast | Compose state holder injection |
 | Build blast radius | Zero | Medium-high (composeOptions block, compilerExtension version pinning) |
-| Risk of overlay-service regression | Negligible (no change to view attachment) | Unknown; must be validated |
+| Risk of overlay-service regression | Low for view attachment; moderate for state-machine migration (tap-dispatch, silence guard, all exhaustive `when` sites must be updated) | Unknown; must be validated |
 | Estimated extra stories to handle infra | 0 | ~1 dedicated Compose-infra setup story |
 
 **Numbered sub-decisions:**
 
-1. The new Epic 9 state sequence (`idle / recording / transcribing / done`) replaces
-   `IDLE / RECORDING / RECORDING_PTT / PROCESSING` as the canonical state enum in
-   `FloatingBubbleView`. The old states are remapped: `PROCESSING` → `transcribing`; `RECORDING_PTT`
-   is retired (the distinction between bar-mode and circular-mode recording is replaced by the unified
-   listening panel).
+1. The new Epic 9 state sequence (Kotlin enum members `IDLE / RECORDING / TRANSCRIBING / DONE`)
+   replaces `IDLE / RECORDING / RECORDING_PTT / PROCESSING` as the canonical state enum in both
+   `FloatingBubbleView` and `KlarvoOverlayService`. This is a **state-machine migration**, not a
+   cosmetic rename. Key facts that make it non-trivial:
+
+   - `RECORDING_PTT` is currently the active recording state for **3 of 4 input modes**: PTT
+     (`KlarvoOverlayService.kt:847`) and the `else` branch covering TOGGLE/AUTOSTOP/AUTO (`:856`).
+     Only HOLD mode uses `RECORDING` (the bar). Retiring it requires redesigning how all four input
+     modes map onto the new unified `RECORDING` state.
+   - It gates real control flow: a dedicated `RECORDING_PTT ->` branch in the tap handler
+     (`KlarvoOverlayService.kt:742–755`) with per-mode stop logic, and the silence-detection guard
+     `if (currentState != RECORDING && currentState != RECORDING_PTT) return` (`:866`). Both must
+     be rewritten.
+   - The new sequence also **adds** a terminal `DONE` state with no current analog (after
+     transcription completes, before returning to `IDLE`), removing one member and adding another —
+     touching every exhaustive `when` over the enum, including the `setState()` dispatch at
+     `KlarvoOverlayService.kt:1297–1311` and the `bubbleView.alpha` `when` immediately below it.
+   - There are ~13 references to `RECORDING_PTT` across the two files.
+
+   Approximate remapping: `PROCESSING` → `TRANSCRIBING`; `RECORDING_PTT` retired into `RECORDING`
+   (all modes); `DONE` is new with no predecessor. The listening panel renders in both `RECORDING`
+   and `TRANSCRIBING` states (sub-decision #2).
 2. The listening panel is rendered as a new `drawListeningPanel()` helper in `FloatingBubbleView`,
    called from `onDraw()` in the `recording` and `transcribing` states. Panel element positions are
    computed from the view's current width/height at draw time.
@@ -129,11 +148,18 @@ maintenance. The existing bar layout in `drawRecordingBar()` demonstrates the pa
   the required spring motion; same mechanism extends to the panel enter/collapse.
 - **Full RMS waveform reuse**: `drawWaveformBarsInZone()` and the `amplitude` field are already
   wired from the audio thread; no new data channel needed.
-- **Incremental scope**: each Epic 9 story modifies `FloatingBubbleView` and `KlarvoOverlayService`
-  only — the entire change surface is two known files.
+- **Bounded change surface**: each Epic 9 story modifies `FloatingBubbleView` and
+  `KlarvoOverlayService` (plus the Tauri-generated `src-tauri/gen/android/app/build.gradle.kts`
+  if any build configuration changes). No other files are expected to be affected.
 
 ### Negative
 
+- **State-machine migration is non-trivial**: retiring `RECORDING_PTT` and adding `DONE` is a
+  service-level state-machine rewrite. The tap-dispatch `when` branch (`KlarvoOverlayService.kt:742–755`),
+  the silence-detection guard (`:866`), the mode→state mapping for PTT/TOGGLE/AUTOSTOP/AUTO (`:847`,
+  `:856`), and every exhaustive `when` over the enum (including `setState()` at `:1297–1311`) must
+  all be updated consistently. The new `DONE` state has no current analog and must be woven in without
+  breaking the audio/STT pipeline transitions.
 - **Listening panel layout is coordinate math**: laying out 6 elements (grab handle, K+amber-dot row,
   waveform, timer, stop button, transcript area) in `onDraw()` requires explicit position arithmetic.
   More verbose than a Compose `Column` but bounded in scope (fixed composition, one-time authoring).
@@ -155,24 +181,36 @@ maintenance. The existing bar layout in `drawRecordingBar()` demonstrates the pa
 ### Verifiability Symmetry — Story 9.4 Harness (AC3)
 
 Under View+Canvas, the bubble state is set via the public `state` property on `FloatingBubbleView`
-(already public: `var state: State = State.IDLE`). The overlay service already routes all state
-changes through `setState()` in `KlarvoOverlayService`.
+(already public after migration: `var state: State = State.IDLE`, where `State` is the new
+`IDLE/RECORDING/TRANSCRIBING/DONE` enum). The overlay service routes all state changes through
+`setState()` in `KlarvoOverlayService`.
+
+**Forward-looking prerequisite (Story 9.4):** The current `setState()` is `private` and typed over
+the old `RecordingState` enum. Story 9.4 must migrate the enum to the new `State` type and expose
+(or route) the receiver before the broadcast harness can operate against the new state strings.
+This is not a defect — it is a sequencing dependency; Story 9.4 should not assume a drop-in.
 
 The **Story 9.4 bubble state harness** will use this mechanism:
 
 1. A debug broadcast receiver (`com.klarvo.voice.DEBUG_SET_STATE`) registered in
    `KlarvoOverlayService` only in debug builds (`BuildConfig.DEBUG`). It accepts an intent extra
-   `"state"` (string: `"idle"`, `"recording"`, `"transcribing"`, `"done"`) and calls `setState()`
-   directly.
+   `"state"` (string token: `"idle"`, `"recording"`, `"transcribing"`, `"done"`) and calls
+   `setState()` directly. Note: the intent strings are lowercase debug tokens; the Kotlin enum
+   members are `IDLE / RECORDING / TRANSCRIBING / DONE` (uppercase, per Kotlin convention). The
+   broadcast receiver must include a string→enum mapping (`when (extra) { "idle" -> State.IDLE … }`).
 2. A second extra `"rms"` (float 0.0–1.0) injects a synthetic `bubbleView.amplitude` value so the
-   waveform is exercisable without live audio.
+   waveform is exercisable without live audio. This extra is only meaningful in the `recording` and
+   `transcribing` states (which render `drawListeningPanel()`); it has no visual effect in `idle`
+   or `done`.
 3. A third extra `"transcript"` (string) injects synthetic raw-transcript text into the listening
-   panel for 9.4 / 9.5 development.
+   panel for 9.4 / 9.5 development. Similarly meaningful only in panel-bearing states.
 
-This makes **all four states reachable by Andi on-device** via `adb shell am broadcast` without
-requiring live microphone input, a real STT response, or a network call — satisfying the
-verifiability-symmetry principle: the same state space the agent can reach in tests is also
-reachable by the human tester.
+This makes **all four states settable and observable by Andi on-device** via `adb shell am broadcast`
+without requiring live microphone input, a real STT response, or a network call — satisfying the
+verifiability-symmetry principle. All four state transitions are reachable; the `rms`/`transcript`
+extras exercise the visual detail of the panel-bearing states (`recording`/`transcribing`), while
+`idle` and `done` have their own non-panel visuals (bubble and post-transcription flash,
+respectively).
 
 Example (run from WSL):
 ```sh

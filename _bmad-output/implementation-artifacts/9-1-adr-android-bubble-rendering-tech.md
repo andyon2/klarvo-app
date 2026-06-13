@@ -1,6 +1,6 @@
 # Story 9.1: ADR — Android Bubble Rendering Tech (Precursor Gate)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -195,3 +195,4 @@ claude-sonnet-4-6 (story-context pass, 2026-06-14)
 ## Change Log
 
 - 2026-06-14: ADR-0018 written and committed. Decision: extend View+Canvas (Option A). Rationale: ComposeView requires LifecycleOwner infrastructure not present in overlay Service context; blast-radius unacceptable. View+Canvas: OvershootInterpolator already covers spring motion; waveform bars reusable; one-time coordinate math for listening panel is bounded. 9.4 harness: debug broadcast via adb. (claude-sonnet-4-6)
+- 2026-06-14: Code-review (3 adversarial layers, Opus) — Andi ratified Option A at GATE 2. All 8 factual claims about the existing codebase VERIFIED. Confirmed findings (P1 HIGH + P2 MEDIUM) applied: ADR now honestly dimensions the `RECORDING_PTT` retirement as a state-machine migration (tap-dispatch, silence guard, exhaustive `when`-sites, new `DONE`), corrects build-file location (Tauri-generated gradle), and tightens enum-naming / harness-coverage / panel-element consistency. Decision and Status unchanged. Re-review clean → done.
