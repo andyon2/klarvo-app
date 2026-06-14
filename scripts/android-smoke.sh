@@ -94,6 +94,13 @@ DST="$APP_DIR/src/main/java/com/klarvo/voice"
 cp "$SRC"/*.kt "$DST/"
 ok "$(ls -1 "$SRC"/*.kt | wc -l) Produktions-Dateien kopiert"
 
+# Font-Ressourcen (Geist + Geist Mono)
+FONT_SRC="android/res-font"
+FONT_DST="$APP_DIR/src/main/res/font"
+mkdir -p "$FONT_DST"
+cp "$FONT_SRC"/*.ttf "$FONT_DST/"
+ok "$(ls -1 "$FONT_SRC"/*.ttf | wc -l) Font-Dateien kopiert"
+
 # Test-Quellen (git-tracked in android/kotlin-test/)
 TEST_SRC="android/kotlin-test/com/klarvo/voice"
 TEST_DST="$APP_DIR/src/test/java/com/klarvo/voice"

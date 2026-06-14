@@ -62,6 +62,15 @@ cp "$SRC"/*.kt "$DST/"
 echo "[sync] Done: $(ls -1 "$SRC"/*.kt | wc -l) files copied"
 
 # ---------------------------------------------------------------------------
+# 1b. Font resources (Geist + Geist Mono)
+# ---------------------------------------------------------------------------
+FONT_DST="$GEN_ANDROID/app/src/main/res/font"
+mkdir -p "$FONT_DST"
+echo "[sync] Copying font resources from android/res-font/ to gen/android/"
+cp android/res-font/*.ttf "$FONT_DST/"
+echo "[sync] Done: $(ls -1 android/res-font/*.ttf | wc -l) font files copied"
+
+# ---------------------------------------------------------------------------
 # 2. accessibility_service_config.xml
 # ---------------------------------------------------------------------------
 XML_DST="$GEN_ANDROID/app/src/main/res/xml"
