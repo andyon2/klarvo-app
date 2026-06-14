@@ -65,10 +65,15 @@ echo "[sync] Done: $(ls -1 "$SRC"/*.kt | wc -l) files copied"
 # 1b. Font resources (Geist + Geist Mono)
 # ---------------------------------------------------------------------------
 FONT_DST="$GEN_ANDROID/app/src/main/res/font"
+FONT_SRC="android/res-font"
 mkdir -p "$FONT_DST"
 echo "[sync] Copying font resources from android/res-font/ to gen/android/"
-cp android/res-font/*.ttf "$FONT_DST/"
-echo "[sync] Done: $(ls -1 android/res-font/*.ttf | wc -l) font files copied"
+shopt -s nullglob
+FONT_FILES=("$FONT_SRC"/*.ttf)
+shopt -u nullglob
+[ "${#FONT_FILES[@]}" -gt 0 ] || fail "keine Fonts in $FONT_SRC/ — TTF-Dateien fehlen."
+cp "${FONT_FILES[@]}" "$FONT_DST/"
+echo "[sync] Done: ${#FONT_FILES[@]} font files copied"
 
 # ---------------------------------------------------------------------------
 # 2. accessibility_service_config.xml

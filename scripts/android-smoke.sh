@@ -102,7 +102,18 @@ if [ "$(device_count)" -eq 0 ]; then
     fail "Kein Gerät gefunden"
 fi
 DEVICES=$(device_count)
-DEVICE_SERIAL=$(${ADB} devices 2>/dev/null | grep "device$" | head -1 | awk '{print $1}')
+# Finding 4 fix: prefer the pinned KLARVO_ADB_TARGET transport (:5555) when
+# present and online, rather than blindly taking head -1 (order-dependent with
+# coexisting stale ephemeral transports). Warn when more than one device is in
+# 'device' state and no explicit target is set, instead of silently picking first.
+if [ -n "$KLARVO_ADB_TARGET" ] && ${ADB} devices 2>/dev/null | grep -q "^${KLARVO_ADB_TARGET}[[:space:]].*device$"; then
+    DEVICE_SERIAL="$KLARVO_ADB_TARGET"
+elif [ "$DEVICES" -gt 1 ]; then
+    warn "Mehrere Geräte verbunden ($DEVICES) und KLARVO_ADB_TARGET nicht online — nehme erstes (setze KLARVO_ADB_TARGET=<serial> für Eindeutigkeit)"
+    DEVICE_SERIAL=$(${ADB} devices 2>/dev/null | grep "device$" | head -1 | awk '{print $1}')
+else
+    DEVICE_SERIAL=$(${ADB} devices 2>/dev/null | grep "device$" | head -1 | awk '{print $1}')
+fi
 ok "Gerät: $DEVICE_SERIAL"
 
 # ---------------------------------------------------------------------------
@@ -119,8 +130,12 @@ ok "$(ls -1 "$SRC"/*.kt | wc -l) Produktions-Dateien kopiert"
 FONT_SRC="android/res-font"
 FONT_DST="$APP_DIR/src/main/res/font"
 mkdir -p "$FONT_DST"
-cp "$FONT_SRC"/*.ttf "$FONT_DST/"
-ok "$(ls -1 "$FONT_SRC"/*.ttf | wc -l) Font-Dateien kopiert"
+shopt -s nullglob
+FONT_FILES=("$FONT_SRC"/*.ttf)
+shopt -u nullglob
+[ "${#FONT_FILES[@]}" -gt 0 ] || fail "keine Fonts in $FONT_SRC/ — TTF-Dateien fehlen."
+cp "${FONT_FILES[@]}" "$FONT_DST/"
+ok "${#FONT_FILES[@]} Font-Dateien kopiert"
 
 # Test-Quellen (git-tracked in android/kotlin-test/)
 TEST_SRC="android/kotlin-test/com/klarvo/voice"

@@ -36,24 +36,54 @@ PIN_TARGET="${KLARVO_ADB_TARGET:-$PIN_HOST:5555}"
 [ -x "$ADB" ] || { echo "FEHLER: adb nicht gefunden: $ADB"; exit 1; }
 
 # Bare Port -> Tailscale-IP davor; volle "host:port"-Eingabe wird verbatim genutzt.
+#
+# Finding 1 fix: error goes to stderr + return 2 (not exit in subshell, which would
+# only kill the subshell and capture the error text into the caller's variable).
+# Finding 5 fix: "host:port" path also validates the port portion (last colon field)
+# with the same numeric check — rejects IPv6 (multiple colons) + malformed forms.
 to_addr() {
     case "$1" in
-        *:*) printf '%s' "$1" ;;
-        *)   printf '%s:%s' "$PIN_HOST" "$1" ;;
+        *:*)
+            # Split on last colon: everything before is host, after is port.
+            local host port
+            host="${1%:*}"
+            port="${1##*:}"
+            # Reject multiple-colon forms (bare IPv6, ip:port:extra, etc.)
+            case "$host" in
+                *:*) echo "FEHLER: Ungültiges Format (mehrere Doppelpunkte): '$1' — bitte 'ip:port' eingeben." >&2; return 2 ;;
+            esac
+            # Reject empty host (e.g. input ':5555')
+            case "$host" in
+                '') echo "FEHLER: Host darf nicht leer sein: '$1'" >&2; return 2 ;;
+            esac
+            # Reject empty port or non-numeric port
+            case "$port" in
+                '') echo "FEHLER: Port darf nicht leer sein: '$1'" >&2; return 2 ;;
+                *[!0-9]*) echo "FEHLER: Port nicht numerisch: '$port' in '$1'" >&2; return 2 ;;
+            esac
+            printf '%s' "$1" ;;
+        *)
+            # Reject empty bare-port input
+            case "$1" in
+                '') echo "FEHLER: Port darf nicht leer sein." >&2; return 2 ;;
+                *[!0-9]*) echo "FEHLER: Port nicht numerisch: '$1'" >&2; return 2 ;;
+            esac
+            printf '%s:%s' "$PIN_HOST" "$1" ;;
     esac
 }
 
 # --- Connect-Port beziehen: Argument ODER interaktiv erfragen ---------------
 if [ $# -ge 1 ]; then
-    EPHEMERAL="$(to_addr "$1")"
+    EPHEMERAL="$(to_addr "$1")" || exit 2
 else
     echo "Handy: Entwickleroptionen → 'Drahtloses Debugging' → Port hinter der IP ablesen."
     read -rp "Connect-Port (z.B. 39555), oder volle ip:port: " PORTIN
     [ -n "$PORTIN" ] || { echo "FEHLER: kein Port eingegeben."; exit 2; }
-    EPHEMERAL="$(to_addr "$PORTIN")"
+    EPHEMERAL="$(to_addr "$PORTIN")" || exit 2
 fi
 
-connected() { "$ADB" devices | grep -q "device$"; }
+# Finding 3 fix: scope the check to $EPHEMERAL transport, not just any device.
+connected() { "$ADB" devices | grep -q "^${EPHEMERAL}[[:space:]].*device$"; }
 
 # --- 1. Verbinden (bei Bedarf vorher koppeln) ------------------------------
 echo ""
@@ -65,11 +95,26 @@ if ! echo "$OUT" | grep -qiE 'connected'; then
     echo "      Verbindung fehlgeschlagen — Gerät evtl. noch nicht mit diesem PC gekoppelt."
     read -rp "      Pairing nötig? Pair-Port eingeben (Enter = überspringen): " PAIRIN
     if [ -n "$PAIRIN" ]; then
-        PAIRADDR="$(to_addr "$PAIRIN")"
+        PAIRADDR="$(to_addr "$PAIRIN")" || exit 2
         read -rp "      6-stelliger Pairing-Code (aus 'Gerät mit Code koppeln'): " PCODE
-        "$ADB" pair "$PAIRADDR" "$PCODE"
+        # Finding 4 fix: capture and check pair output; surface failure clearly.
+        PAIR_OUT=$("$ADB" pair "$PAIRADDR" "$PCODE" 2>&1)
+        echo "      pair: $PAIR_OUT"
+        if ! echo "$PAIR_OUT" | grep -qiE 'successfully paired|bereits gekoppelt'; then
+            echo "" >&2
+            echo "FEHLER: Pairing fehlgeschlagen (falscher/abgelaufener Code?)." >&2
+            echo "        Ausgabe: $PAIR_OUT" >&2
+            exit 1
+        fi
         echo "[1b]  connect $EPHEMERAL (nach Pairing) …"
-        "$ADB" connect "$EPHEMERAL"
+        CONN_OUT=$("$ADB" connect "$EPHEMERAL" 2>&1)
+        echo "      $CONN_OUT"
+        if ! echo "$CONN_OUT" | grep -qiE 'connected'; then
+            echo "" >&2
+            echo "FEHLER: Verbindung nach Pairing fehlgeschlagen." >&2
+            echo "        Ausgabe: $CONN_OUT" >&2
+            exit 1
+        fi
     fi
 fi
 
@@ -78,13 +123,38 @@ connected || { echo ""; echo "FEHLER: kein Gerät verbunden. Port prüfen (ände
 # --- 2. Auf Festport 5555 pinnen -------------------------------------------
 echo ""
 echo "[2/3] tcpip 5555 (auf Festport pinnen) …"
-"$ADB" tcpip 5555
+# Finding 1 fix: capture adb exit status BEFORE the echo (echo always exits 0,
+# so testing $? after the echo was always 0 — the numeric guard was dead).
+TCPIP_OUT=$("$ADB" -s "$EPHEMERAL" tcpip 5555 2>&1)
+TCPIP_RC=$?
+echo "      $TCPIP_OUT"
+if [ $TCPIP_RC -ne 0 ] || echo "$TCPIP_OUT" | grep -qiE 'error|failed|cannot'; then
+    echo "" >&2
+    echo "FEHLER: 'adb tcpip 5555' fehlgeschlagen — Port 5555 NICHT gesetzt." >&2
+    echo "        Ausgabe: $TCPIP_OUT" >&2
+    exit 1
+fi
 sleep 2
+
+# Finding 3 fix: disconnect ephemeral transport before final connect, so only
+# the stable :5555 transport remains (prevents android-smoke.sh from picking the
+# stale ephemeral entry via blind 'grep device$ | head -1').
+echo "      [disconnect ephemeral $EPHEMERAL]"
+"$ADB" disconnect "$EPHEMERAL" >/dev/null 2>&1 || true
 
 # --- 3. Stabile Tailscale-Adresse verifizieren -----------------------------
 echo ""
 echo "[3/3] connect $PIN_TARGET (stabile Tailscale-Adresse) …"
-"$ADB" connect "$PIN_TARGET" 2>&1 | sed 's/^/      /'
+# Finding 2 fix: check final connect and gate the success banner on a real verify.
+FINAL_OUT=$("$ADB" connect "$PIN_TARGET" 2>&1)
+echo "      $FINAL_OUT"
+if ! echo "$FINAL_OUT" | grep -qiE 'connected'; then
+    echo "" >&2
+    echo "FEHLER: Finale Verbindung zu $PIN_TARGET fehlgeschlagen." >&2
+    echo "        Ausgabe: $FINAL_OUT" >&2
+    echo "        Handy-Zustand prüfen: PIN-Transport eventuell noch nicht bereit?" >&2
+    exit 1
+fi
 
 echo ""
 echo "Verbundene Geräte:"

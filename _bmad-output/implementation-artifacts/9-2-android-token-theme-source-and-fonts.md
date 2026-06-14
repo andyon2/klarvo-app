@@ -87,17 +87,17 @@ And on-device smoke confirms the app launches (no crash on startup) with the new
   - [x] 3.2 Add the same sync step to `scripts/android-smoke.sh` immediately after the Kotlin sources sync step (line ~94 area) so smoke builds also get fonts
   - [x] 3.3 Verify the gen-dir sync step correctly handles re-runs (idempotent: re-copying the same files over is fine)
 
-- [ ] **Task 4: Verify the build end-to-end** (AC: 4, 6 + DoD)
-  - [ ] 4.1 Run `scripts/android-build.sh` — must succeed without error
-  - [ ] 4.2 Verify APK freshness via the build script's timestamp gate output (look for "BUILD OK (Android)")
-  - [ ] 4.3 Install and launch the app on device — verify no crash at startup (logcat output clean)
-  - [ ] 4.4 Verify the font resources are present in the installed APK: `adb shell cmd package list packages | grep klarvo` to confirm install, then optionally `unzip -l <apk-path> | grep "res/font"` to confirm font files shipped
-  - [ ] 4.5 There is no smoke step to visually verify font rendering in this story — the first consumer of `R.font.geist_*` will be Story 9.5+ when text is drawn in the bubble panel; this story's DoD is APK-launch + resource presence, not visual rendering of Geist text
+- [x] **Task 4: Verify the build end-to-end** (AC: 4, 6 + DoD)
+  - [x] 4.1 Run `scripts/android-build.sh` — must succeed without error
+  - [x] 4.2 Verify APK freshness via the build script's timestamp gate output (look for "BUILD OK (Android)")
+  - [x] 4.3 Install and launch the app on device — verify no crash at startup (logcat output clean)
+  - [x] 4.4 Verify the font resources are present in the installed APK: `adb shell cmd package list packages | grep klarvo` to confirm install, then optionally `unzip -l <apk-path> | grep "res/font"` to confirm font files shipped
+  - [x] 4.5 There is no smoke step to visually verify font rendering in this story — the first consumer of `R.font.geist_*` will be Story 9.5+ when text is drawn in the bubble panel; this story's DoD is APK-launch + resource presence, not visual rendering of Geist text
 
-- [ ] **Task 5: Commit** (AC: all)
-  - [ ] 5.1 Stage only: `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` (new), `android/res-font/*.ttf` (new, 6 files), `scripts/android-build.sh` (modified), `scripts/android-smoke.sh` (modified)
-  - [ ] 5.2 Never `git add .` — verify staged files only (no `.gitignore`, no gen/ artifacts)
-  - [ ] 5.3 Commit message: `feat(android): 9-2 Studio-Dark token source + Geist font resources`
+- [x] **Task 5: Commit** (AC: all)
+  - [x] 5.1 Stage only: `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` (new), `android/res-font/*.ttf` (new, 6 files), `scripts/android-build.sh` (modified), `scripts/android-smoke.sh` (modified)
+  - [x] 5.2 Never `git add .` — verify staged files only (no `.gitignore`, no gen/ artifacts)
+  - [x] 5.3 Commit message: `feat(android): 9-2 Studio-Dark token source + Geist font resources`
 
 ## Dev Notes
 
@@ -310,7 +310,15 @@ claude-sonnet-4-6 (story-context pass, 2026-06-14)
 - **Task 1 DONE:** `KlarvoTheme.kt` created as a Kotlin `object` with 18 `const val` integer constants (15 primary + 3 alpha/glass variants). Uses raw `0xFF….toInt()` form — direct `Paint.color` assignment, no `android.graphics.Color` import needed, works on minSdk 24. Doc-comment covers color semantics (DT5) + no-blur glass-ring convention (AC5). FloatingBubbleView.kt NOT touched (correct — 9.3+ scope).
 - **Task 2 DONE:** Downloaded Geist v1.7.2 from `github.com/vercel/geist-font/releases`. Extracted 6 TTF files: `geist_regular.ttf` (123 KB), `geist_medium.ttf` (125 KB), `geist_semibold.ttf` (125 KB), `geist_bold.ttf` (126 KB), `geist_mono_regular.ttf` (145 KB), `geist_mono_medium.ttf` (146 KB). All in range 50–500 KB. No network fetch at runtime (bundled). New tracked directory `android/res-font/` created.
 - **Task 3 DONE:** Font sync block added to `android-build.sh` (section 1b, after Kotlin sources, before accessibility XML). Same block added to `android-smoke.sh` (after Kotlin sources sync, step 2). Pattern: `mkdir -p` + `cp *.ttf` — idempotent. Font sync against real `gen/android/app/src/main/res/font/` tested and confirmed (6 files synced). Both scripts pass `bash -n` syntax check.
-- **Task 4 PENDING:** on-device build + smoke is Andi's gate (requires `scripts/android-build.sh` on Windows + device). All agent-observable prerequisites are verified (files in place, scripts syntactically valid, font-sync to gen/ confirmed).
+- **Task 4 DONE:** GATE 4 on-device smoke GREEN (Andi, 2026-06-14): android-smoke build/tests passed, app launches without crash, dictation works.
+- **Task 5 DONE:** Committed as `e46b228` — `feat(android): 9-2 Studio-Dark token source + Geist font resources`.
+- **Review follow-up DONE (2026-06-14, 6 findings fixed in adb-pin.sh + story bookkeeping):**
+  - F1: to_addr() error now writes to stderr + uses `return 2`; callers use `|| exit 2` pattern.
+  - F2: `adb -s "$EPHEMERAL" tcpip 5555` and `adb connect "$PIN_TARGET"` both checked; success banner gated on verified `connected` in FINAL_OUT.
+  - F3: `adb disconnect "$EPHEMERAL"` added after successful tcpip pin, before final connect.
+  - F4: `adb pair` and post-pair connect output captured + checked; pair failure exits with clear error.
+  - F5: host:port path splits on last colon, validates port numeric, rejects multi-colon forms (IPv6/malformed).
+  - F6: Task 4 + Task 5 checkboxes set to [x] (bookkeeping reconciled with Change Log + commit evidence).
 
 ### File List
 
@@ -323,8 +331,13 @@ claude-sonnet-4-6 (story-context pass, 2026-06-14)
 - `android/res-font/geist_mono_medium.ttf` — **new** — Geist Mono Medium 500 (146 KB)
 - `scripts/android-build.sh` — **modified** — added font sync step (section 1b)
 - `scripts/android-smoke.sh` — **modified** — added font sync step (after Kotlin sources sync)
+- `scripts/adb-pin.sh` — **modified** — 5 hardening fixes: to_addr stderr+return 2, host:port port-validation+multi-colon reject, tcpip+final-connect checked, ephemeral disconnect, pair output checked; 4 further fixes: TCPIP_RC captured before echo (dead $? guard), empty host+port rejection in to_addr, connected() scoped to $EPHEMERAL
+- `scripts/android-smoke.sh` — **modified** (additional) — Finding 4: device selection prefers KLARVO_ADB_TARGET when online, warns on multi-device instead of silently head -1
 
 ## Change Log
 
 - 2026-06-14: Story implemented — KlarvoTheme.kt (18 color constants), Geist v1.7.2 fonts (6 TTF files), font sync steps added to android-build.sh + android-smoke.sh. Task 4 (on-device build) is Andi's gate.
 - 2026-06-14: Code-review (Opus, 3 layers) cleared — no actionable findings. Conductor pre-verified compile-time risks mechanically: real kotlinc 2.0.21 (jvm-target 17) compiles KlarvoTheme.kt with correct ARGB int constants; real aapt2 (build-tools 35) accepts all 6 fonts as valid res/font/ resources. GATE 4 on-device smoke GREEN (Andi): android-smoke build/tests passed, app launches without crash, dictation works. Status → done.
+- 2026-06-14: Applied confirmed review findings (3 script hardening fixes): (1) android-build.sh + android-smoke.sh: nullglob + count-check before font cp (empty/missing res-font/ now fails with clear message, not cryptic trap); (2) adb-pin.sh: `adb -s "$EPHEMERAL" tcpip 5555` — prevents multi-device ambiguity; (3) adb-pin.sh to_addr: numeric validation for bare-port arg rejects non-numeric input with clear error. All three scripts pass bash -n syntax check.
+- 2026-06-14: Applied 6 further confirmed review findings — all in adb-pin.sh (findings 1–5) + story bookkeeping (finding 6): F1 to_addr error→stderr+return 2 / F2 tcpip+final-connect checked / F3 ephemeral disconnect before final connect / F4 pair output checked / F5 host:port path port-validates + rejects multi-colon / F6 Task 4+5 checkboxes reconciled. Script passes bash -n.
+- 2026-06-14: Applied 4 further confirmed review findings (second review pass): (1) adb-pin.sh dead $? guard — TCPIP_RC captured before echo so numeric check tests adb exit code, not echo's; (2) adb-pin.sh to_addr empty host + empty port now rejected in both ip:port branch and bare-port branch; (3) adb-pin.sh connected() scoped to $EPHEMERAL transport (grep anchored to transport serial); (4) android-smoke.sh device selection prefers KLARVO_ADB_TARGET when online, warns on multiple devices instead of silently head -1. Both scripts pass bash -n.
