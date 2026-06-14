@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-06-14
+# last_updated: 2026-06-15
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-14
+last_updated: 2026-06-15
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -116,7 +116,7 @@ development_status:
   # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD] — LIVE STRAND
   epic-8: in-progress
   8-1-token-and-type-foundation: done
-  8-2-settings-form-system-home-and-sub-pages: backlog
+  8-2-settings-form-system-home-and-sub-pages: done
   8-3-floatingbar-re-skin: backlog
   8-4-live-cleanup-preview-re-skin: backlog
   8-5-main-window-history-re-skin: backlog

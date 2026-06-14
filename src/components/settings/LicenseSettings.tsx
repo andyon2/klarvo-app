@@ -98,8 +98,8 @@ function LicenseKeyInput({
           onClick={onActivate}
           disabled={loading || !value.trim()}
           className={[
-            "rounded-lg font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary",
-            "hover:bg-klarvo-primary/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+            "rounded-lg font-medium bg-klarvo-teal/10 border border-klarvo-teal/20 text-klarvo-teal",
+            "hover:bg-klarvo-teal/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
             isMobile ? "px-4 py-2.5 text-sm" : "px-3 py-2 text-xs",
           ].join(" ")}
         >
@@ -205,7 +205,7 @@ export function LicenseSection({ licenseStatus, licenseSource, onValidate, onRem
         className={[
           "self-start transition-colors disabled:opacity-40",
           isMobile ? "text-sm" : "text-[11px]",
-          confirmRemove ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning",
+          confirmRemove ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber",
         ].join(" ")}
       >
         {confirmRemove ? "Click again to confirm removal" : "Remove License"}
@@ -217,7 +217,7 @@ export function LicenseSection({ licenseStatus, licenseSource, onValidate, onRem
           className={[
             "self-start transition-colors disabled:opacity-40",
             isMobile ? "text-sm" : "text-[11px]",
-            confirmDeactivate ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning",
+            confirmDeactivate ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber",
           ].join(" ")}
         >
           {licenseLoading ? "Deactivating..." : confirmDeactivate ? "Click again to confirm" : "Deactivate License (free device slot)"}
@@ -233,7 +233,7 @@ export function LicenseSection({ licenseStatus, licenseSource, onValidate, onRem
       {isLicensed && (
         <>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-success/20 text-klarvo-success">
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 6L9 17l-5-5" />
               </svg>
@@ -249,7 +249,7 @@ export function LicenseSection({ licenseStatus, licenseSource, onValidate, onRem
       {isTrial && (
         <>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/15 text-blue-400">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-teal/15 text-klarvo-teal">
               {trialBadgeLabel}
             </span>
           </div>
@@ -277,15 +277,15 @@ export function LicenseSection({ licenseStatus, licenseSource, onValidate, onRem
       {isGrace && (
         <>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-400">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-amber/20 text-klarvo-amber">
               Grace Period
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/15 text-blue-400">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-klarvo-teal/15 text-klarvo-teal">
               {trialBadgeLabel}
             </span>
           </div>
           {licenseStatus.graceUntil && (
-            <p className={isMobile ? "text-sm text-yellow-400/80" : "text-xs text-yellow-400/80"}>
+            <p className={isMobile ? "text-sm text-klarvo-amber/80" : "text-xs text-klarvo-amber/80"}>
               License expires on {formatGraceDate(licenseStatus.graceUntil)}
             </p>
           )}

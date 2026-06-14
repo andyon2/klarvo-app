@@ -84,6 +84,7 @@
 
   /* --- Semantic (AC #1) --- */
   --color-klarvo-danger:    #EE6F63;
+  --color-klarvo-danger-hi: #F4877C;
   --color-klarvo-success:   #4FC58A;
 
   /* --- Backward-compat aliases (Task 1.2 — removed surface-by-surface in 8.2–8.6) --- */
@@ -250,8 +251,42 @@ html, body, #root {
   }
 
   /* --- Task 5.3: Focus ring (AC #3) --- */
-  .focus-klarvo {
+  /* Qualified with :focus-visible so ring only shows on keyboard focus,
+     not on mouse click. Applied as bare class; variant prefix not needed. */
+  .focus-klarvo:focus-visible {
     box-shadow: 0 0 0 3px rgba(41,199,172,.28);
     outline: none;
+  }
+  /* Mouse-focus affordance: text/number inputs (and other controls) tint their
+     border on plain :focus so a mouse click shows the active field, while the
+     full keyboard ring above stays :focus-visible-only. */
+  .focus-klarvo:focus {
+    border-color: var(--color-klarvo-teal);
+    outline: none;
+  }
+
+  /* --- Story 8.2: KSlider styled range track and thumb --- */
+  .k-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 9999px;
+    outline: none;
+    cursor: pointer;
+  }
+  .k-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: var(--color-klarvo-teal);
+    cursor: pointer;
+    transition: transform var(--motion-micro) var(--ease-standard);
+  }
+  .k-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+  .k-slider:focus-visible {
+    box-shadow: 0 0 0 3px rgba(41,199,172,.28);
   }
 }

@@ -84,7 +84,7 @@ function UpdateChecker() {
         {status === "available" ? (
           <button
             onClick={handleInstall}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-teal/10 border border-klarvo-teal/20 text-klarvo-teal hover:bg-klarvo-teal/15 transition-colors"
           >
             Install v{updateVersion}
           </button>
@@ -244,7 +244,7 @@ export function AboutContent({ appVersion, onRestartOnboarding }: AboutContentPr
         {onRestartOnboarding && (
           <button
             onClick={onRestartOnboarding}
-            className="mt-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10 hover:text-amber-400 transition-colors text-left"
+            className="mt-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-bg border border-klarvo-amber/30 text-klarvo-amber/80 hover:bg-klarvo-amber/10 hover:text-klarvo-amber transition-colors text-left"
           >
             Onboarding wiederholen
           </button>

@@ -2,7 +2,7 @@
 
 export function StatusDot({ active }: { active: boolean }) {
   return (
-    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-klarvo-primary" : "bg-klarvo-dim"}`} />
+    <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-klarvo-teal" : "bg-klarvo-dim"}`} />
   );
 }
 
@@ -46,7 +46,7 @@ export function FillerStatsChart({ entries }: { entries: FillerEntry[] }) {
           <span className="text-[11px] text-klarvo-muted w-16 shrink-0 font-mono truncate">{word}</span>
           <div className="flex-1 bg-klarvo-elevated/60 rounded-full h-1.5 overflow-hidden">
             <div
-              className="h-full bg-orange-500/50 rounded-full transition-all duration-300"
+              className="h-full bg-klarvo-amber/50 rounded-full transition-all duration-300"
               style={{ width: `${Math.round((count / max) * 100)}%` }}
             />
           </div>
@@ -101,7 +101,7 @@ export function HighlightedText({ text, query, className }: { text: string; quer
     <p className={className}>
       {prefix}{parts.map((p, i) =>
         p.highlight
-          ? <mark key={i} className="bg-klarvo-primary/30 text-klarvo-accent rounded-sm px-0.5">{p.text}</mark>
+          ? <mark key={i} className="bg-klarvo-teal/30 text-klarvo-teal-hi rounded-sm px-0.5">{p.text}</mark>
           : <span key={i}>{p.text}</span>
       )}{suffix}
     </p>
@@ -121,14 +121,14 @@ export function StatCard({ label, value, sub }: { label: string; value: string; 
 }
 
 // Shared CSS class strings for form inputs, used across Settings panels.
-export const INPUT_CLS = "w-full bg-klarvo-surface border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors";
+export const INPUT_CLS = "w-full bg-klarvo-surface border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus-klarvo transition-colors";
 export const LABEL_CLS = "text-xs text-klarvo-muted";
 export const SECTION_TITLE_CLS = "text-[11px] font-semibold text-klarvo-muted uppercase tracking-widest";
 
 // Mobile-aware variants -- one size larger on touch screens.
 const _mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 export const INPUT_CLS_M = _mobile
-  ? "w-full bg-klarvo-surface border border-klarvo-border/60 rounded-lg px-3 py-2.5 text-sm text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors"
+  ? "w-full bg-klarvo-surface border border-klarvo-border/60 rounded-lg px-3 py-2.5 text-sm text-klarvo-text placeholder:text-klarvo-dim focus-klarvo transition-colors"
   : INPUT_CLS;
 export const LABEL_CLS_M = _mobile ? "text-sm text-klarvo-muted" : LABEL_CLS;
 export const SECTION_TITLE_CLS_M = _mobile ? "text-xs font-semibold text-klarvo-muted uppercase tracking-widest" : SECTION_TITLE_CLS;

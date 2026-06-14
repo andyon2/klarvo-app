@@ -25,53 +25,53 @@ export const SETTINGS_CATEGORIES: SettingsCategoryDef[] = [
     id: "recording-audio",
     label: "Recording & Audio",
     subtitle: "STT, model, microphone",
-    iconColor: "#2AC3A8",
+    iconColor: "#29C7AC", // klarvo-teal
   },
   {
     id: "ai-providers",
     label: "AI & Providers",
     subtitle: "API keys, cleanup, profiles",
-    iconColor: "#818CF8",
+    iconColor: "#57DDC7", // klarvo-teal-hi
   },
   {
     id: "appearance",
     label: "Appearance",
     subtitle: "Live preview look & behavior",
-    iconColor: "#34D399",
+    iconColor: "#4FC58A", // klarvo-success
     desktopOnly: true,
   },
   {
     id: "language",
     label: "Language",
     subtitle: "Dictation & translation language",
-    iconColor: "#22D3EE",
+    iconColor: "#57DDC7", // klarvo-teal-hi
   },
   {
     id: "shortcuts",
     label: "Shortcuts",
     subtitle: "Hotkeys, modes, paste behavior",
-    iconColor: "#F59E0B",
+    iconColor: "#E9A24C", // klarvo-amber
   },
   {
     id: "license",
     label: "License",
-    iconColor: "#FFA344",
+    iconColor: "#E9A24C", // klarvo-amber
   },
   {
     id: "dictionary",
     label: "Dictionary",
-    iconColor: "#60A5FA",
+    iconColor: "#29C7AC", // klarvo-teal
   },
   {
     id: "advanced",
     label: "Advanced",
     subtitle: "Prompts, audio, webhooks, sync",
-    iconColor: "#94A3B8",
+    iconColor: "#A4A9AC", // klarvo-muted
   },
   {
     id: "about",
     label: "About",
     subtitle: "Version, updates, links",
-    iconColor: "#6B7280",
+    iconColor: "#6F7479", // klarvo-dim
   },
 ];

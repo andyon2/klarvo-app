@@ -5,6 +5,7 @@ import { CloseIcon, LockIcon } from "../icons";
 import { StatusDot, INPUT_CLS, INPUT_CLS_M, LABEL_CLS_M } from "../ui";
 import { MobileTextarea } from "../MobileTextarea";
 import { saveProfiles } from "../../tauri-commands";
+import { KSelect } from "./FormControls";
 
 // --- Props -------------------------------------------------------------------
 
@@ -63,7 +64,7 @@ export function AiProvidersContent({
   setSaveMsg,
 }: AiProvidersContentProps) {
   const TrialBadge = () => (
-    <span className="text-[10px] font-semibold uppercase tracking-wider bg-klarvo-primary/15 text-klarvo-primary px-1.5 py-0.5 rounded border border-klarvo-primary/25">
+    <span className="text-[10px] font-semibold uppercase tracking-wider bg-klarvo-teal/15 text-klarvo-teal px-1.5 py-0.5 rounded border border-klarvo-teal/25">
       Trial
     </span>
   );
@@ -86,12 +87,12 @@ export function AiProvidersContent({
             placeholder={groqOk ? loadedSettings!.groqApiKeyMasked : "gsk_..."}
             value={groqKey}
             onChange={(e) => { setGroqKey(e.target.value); setApiKeyErrors((p) => ({ ...p, groq: null })); }}
-            className={INPUT_CLS_M}
+            className={`${INPUT_CLS_M} font-geist-mono`}
           />
           {apiKeyValidating["groq"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
-          {apiKeyErrors["groq"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["groq"]}</span>}
+          {apiKeyErrors["groq"] && <span className="text-[11px] text-klarvo-amber">{apiKeyErrors["groq"]}</span>}
           {groqOk && (
-            <button type="button" onClick={() => onApiKeyRemoveClick("groq")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["groq"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
+            <button type="button" onClick={() => onApiKeyRemoveClick("groq")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["groq"] ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber"}`}>
               {apiKeyConfirmRemove["groq"] ? "Click again to confirm removal" : "Remove Key"}
             </button>
           )}
@@ -110,12 +111,12 @@ export function AiProvidersContent({
             placeholder={deepseekOk ? loadedSettings!.deepseekApiKeyMasked : "sk-..."}
             value={deepseekKey}
             onChange={(e) => { setDeepseekKey(e.target.value); setApiKeyErrors((p) => ({ ...p, deepseek: null })); }}
-            className={INPUT_CLS_M}
+            className={`${INPUT_CLS_M} font-geist-mono`}
           />
           {apiKeyValidating["deepseek"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
-          {apiKeyErrors["deepseek"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["deepseek"]}</span>}
+          {apiKeyErrors["deepseek"] && <span className="text-[11px] text-klarvo-amber">{apiKeyErrors["deepseek"]}</span>}
           {deepseekOk && (
-            <button type="button" onClick={() => onApiKeyRemoveClick("deepseek")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["deepseek"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
+            <button type="button" onClick={() => onApiKeyRemoveClick("deepseek")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["deepseek"] ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber"}`}>
               {apiKeyConfirmRemove["deepseek"] ? "Click again to confirm removal" : "Remove Key"}
             </button>
           )}
@@ -134,12 +135,12 @@ export function AiProvidersContent({
             placeholder={openaiOk ? loadedSettings!.openaiApiKeyMasked : "sk-..."}
             value={openaiKey}
             onChange={(e) => { setOpenaiKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openai: null })); }}
-            className={INPUT_CLS_M}
+            className={`${INPUT_CLS_M} font-geist-mono`}
           />
           {apiKeyValidating["openai"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
-          {apiKeyErrors["openai"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["openai"]}</span>}
+          {apiKeyErrors["openai"] && <span className="text-[11px] text-klarvo-amber">{apiKeyErrors["openai"]}</span>}
           {openaiOk && (
-            <button type="button" onClick={() => onApiKeyRemoveClick("openai")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openai"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
+            <button type="button" onClick={() => onApiKeyRemoveClick("openai")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openai"] ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber"}`}>
               {apiKeyConfirmRemove["openai"] ? "Click again to confirm removal" : "Remove Key"}
             </button>
           )}
@@ -158,12 +159,12 @@ export function AiProvidersContent({
             placeholder={anthropicOk ? loadedSettings!.anthropicApiKeyMasked : "sk-ant-..."}
             value={anthropicKey}
             onChange={(e) => { setAnthropicKey(e.target.value); setApiKeyErrors((p) => ({ ...p, anthropic: null })); }}
-            className={INPUT_CLS_M}
+            className={`${INPUT_CLS_M} font-geist-mono`}
           />
           {apiKeyValidating["anthropic"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
-          {apiKeyErrors["anthropic"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["anthropic"]}</span>}
+          {apiKeyErrors["anthropic"] && <span className="text-[11px] text-klarvo-amber">{apiKeyErrors["anthropic"]}</span>}
           {anthropicOk && (
-            <button type="button" onClick={() => onApiKeyRemoveClick("anthropic")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["anthropic"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
+            <button type="button" onClick={() => onApiKeyRemoveClick("anthropic")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["anthropic"] ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber"}`}>
               {apiKeyConfirmRemove["anthropic"] ? "Click again to confirm removal" : "Remove Key"}
             </button>
           )}
@@ -182,12 +183,12 @@ export function AiProvidersContent({
             placeholder={openrouterOk ? loadedSettings!.openrouterApiKeyMasked : "sk-or-..."}
             value={openrouterKey}
             onChange={(e) => { setOpenrouterKey(e.target.value); setApiKeyErrors((p) => ({ ...p, openrouter: null })); }}
-            className={INPUT_CLS_M}
+            className={`${INPUT_CLS_M} font-geist-mono`}
           />
           {apiKeyValidating["openrouter"] && <span className="text-[11px] text-klarvo-muted">Validating...</span>}
-          {apiKeyErrors["openrouter"] && <span className="text-[11px] text-klarvo-warning">{apiKeyErrors["openrouter"]}</span>}
+          {apiKeyErrors["openrouter"] && <span className="text-[11px] text-klarvo-amber">{apiKeyErrors["openrouter"]}</span>}
           {openrouterOk && (
-            <button type="button" onClick={() => onApiKeyRemoveClick("openrouter")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openrouter"] ? "text-klarvo-danger hover:text-red-300" : "text-klarvo-warning/80 hover:text-klarvo-warning"}`}>
+            <button type="button" onClick={() => onApiKeyRemoveClick("openrouter")} className={`self-start transition-colors ${isMobile ? "text-sm" : "text-[11px]"} ${apiKeyConfirmRemove["openrouter"] ? "text-klarvo-danger hover:text-klarvo-danger-hi" : "text-klarvo-amber/80 hover:text-klarvo-amber"}`}>
               {apiKeyConfirmRemove["openrouter"] ? "Click again to confirm removal" : "Remove Key"}
             </button>
           )}
@@ -225,7 +226,7 @@ export function AiProvidersContent({
               className={[
                 "border rounded-lg font-medium transition-colors",
                 "bg-transparent border-klarvo-border/60 text-klarvo-muted",
-                "hover:border-klarvo-border-active hover:text-klarvo-text",
+                "hover:border-klarvo-border-2 hover:text-klarvo-text",
                 isMobile ? "px-4 min-h-[44px] text-sm" : "px-3 py-1.5 text-xs",
               ].join(" ")}
             >
@@ -303,30 +304,28 @@ export function AiProvidersContent({
                   className={INPUT_CLS}
                 />
                 <div className="flex gap-2">
-                  <select
+                  <KSelect
                     value={p.cleanupStyle}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       const next = [...profiles];
-                      next[i] = { ...next[i], cleanupStyle: e.target.value as CleanupStyle };
+                      next[i] = { ...next[i], cleanupStyle: v as CleanupStyle };
                       setProfiles(next);
                     }}
-                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 cursor-pointer"
-                  >
-                    {STYLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                  <select
+                    options={STYLE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+                  />
+                  <KSelect
                     value={p.language}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       const next = [...profiles];
-                      next[i] = { ...next[i], language: e.target.value };
+                      next[i] = { ...next[i], language: v };
                       setProfiles(next);
                     }}
-                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 cursor-pointer"
-                  >
-                    <option value="">Auto</option>
-                    <option value="de">DE</option>
-                    <option value="en">EN</option>
-                  </select>
+                    options={[
+                      { value: "", label: "Auto" },
+                      { value: "de", label: "DE" },
+                      { value: "en", label: "EN" },
+                    ]}
+                  />
                 </div>
                 <input
                   type="text"
@@ -352,7 +351,7 @@ export function AiProvidersContent({
               {profiles.length > 0 && (
                 <button
                   onClick={() => saveProfiles(profiles).then(() => setSaveMsg("Profiles saved")).catch((e) => setSaveMsg(String(e)))}
-                  className="px-3 py-2 rounded-lg text-xs font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15 transition-colors"
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-klarvo-teal/10 border border-klarvo-teal/20 text-klarvo-teal hover:bg-klarvo-teal/15 transition-colors"
                 >
                   Save Profiles
                 </button>

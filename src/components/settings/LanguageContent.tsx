@@ -1,5 +1,6 @@
 import { isMobile } from "../../platform";
 import { LABEL_CLS_M } from "../ui";
+import { KSelect } from "./FormControls";
 
 // --- Language options --------------------------------------------------------
 
@@ -55,28 +56,24 @@ export function LanguageContent({
       <div className="flex flex-col gap-2.5">
         <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
           <span className={LABEL_CLS_M}>Dictation language</span>
-          <select
-            value={localLang}
-            onChange={(e) => handleLangChange(e.target.value)}
-            className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
+          <div className={isMobile ? "w-full" : ""}>
+            <KSelect
+              value={localLang}
+              onChange={handleLangChange}
+              options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+            />
+          </div>
         </div>
 
         <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
           <span className={LABEL_CLS_M}>Translate to</span>
-          <select
-            value={localOutputLanguage}
-            onChange={(e) => handleOutputLanguageChange(e.target.value)}
-            className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-          >
-            {OUTPUT_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
+          <div className={isMobile ? "w-full" : ""}>
+            <KSelect
+              value={localOutputLanguage}
+              onChange={handleOutputLanguageChange}
+              options={OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+            />
+          </div>
         </div>
       </div>
 

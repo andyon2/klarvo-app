@@ -100,7 +100,7 @@ export function SettingsRow({ category, onClick, showBadge }: SettingsRowProps) 
     >
       {/* Coloured icon badge */}
       <span
-        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+        className="w-8 h-8 rounded-klarvo-md flex items-center justify-center shrink-0"
         style={{
           backgroundColor: `${category.iconColor}26`, // ~15% opacity (hex 26 = 38/255 ≈ 15%)
           color: category.iconColor,
@@ -124,7 +124,7 @@ export function SettingsRow({ category, onClick, showBadge }: SettingsRowProps) 
       {/* Badge + chevron */}
       <span className="flex items-center gap-2 shrink-0">
         {showActualBadge && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border bg-klarvo-primary/15 text-klarvo-primary border-klarvo-primary/25">
+          <span className="px-1.5 py-0.5 rounded-klarvo-md text-[10px] font-semibold uppercase tracking-wide border bg-klarvo-teal/15 text-klarvo-teal border-klarvo-teal/25">
             {category.badge}
           </span>
         )}
