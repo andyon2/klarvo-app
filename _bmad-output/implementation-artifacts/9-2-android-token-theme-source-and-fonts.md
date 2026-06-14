@@ -1,6 +1,6 @@
 # Story 9.2: Android Token/Theme Source + Fonts (Foundation)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -327,3 +327,4 @@ claude-sonnet-4-6 (story-context pass, 2026-06-14)
 ## Change Log
 
 - 2026-06-14: Story implemented — KlarvoTheme.kt (18 color constants), Geist v1.7.2 fonts (6 TTF files), font sync steps added to android-build.sh + android-smoke.sh. Task 4 (on-device build) is Andi's gate.
+- 2026-06-14: Code-review (Opus, 3 layers) cleared — no actionable findings. Conductor pre-verified compile-time risks mechanically: real kotlinc 2.0.21 (jvm-target 17) compiles KlarvoTheme.kt with correct ARGB int constants; real aapt2 (build-tools 35) accepts all 6 fonts as valid res/font/ resources. GATE 4 on-device smoke GREEN (Andi): android-smoke build/tests passed, app launches without crash, dictation works. Status → done.

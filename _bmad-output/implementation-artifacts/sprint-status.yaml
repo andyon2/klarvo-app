@@ -126,7 +126,7 @@ development_status:
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]
   epic-9: in-progress
   9-1-adr-android-bubble-rendering-tech: done
-  9-2-android-token-theme-source-and-fonts: review
+  9-2-android-token-theme-source-and-fonts: done
   9-3-bubble-idle-re-skin-responsive-sizing-anchoring: backlog
   9-4-bubble-state-harness: backlog
   9-5-bubble-state-sequence-listening-panel-waveform: backlog
