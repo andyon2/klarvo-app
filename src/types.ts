@@ -83,7 +83,7 @@ export interface AppSettings {
   /** Display form preset for the live-preview panel. "compact" | "comfortable" | "wide". Desktop only. */
   previewPanelForm: string;
   // Story 6.6 preview appearance fields.
-  /** Preview text appearance: CSS color string (e.g. "rgba(220,220,220,0.88)"). */
+  /** Preview text appearance: CSS color string (e.g. "rgba(236,238,239,0.95)"). */
   previewTextColor: string;
   /** Preview box background: CSS color string (may include opacity). */
   previewBgColor: string;
@@ -95,7 +95,7 @@ export interface AppSettings {
   previewBorderWidth: number;
   /** Preview corner radius in px. MUST match set_preview_shape radius (R11). */
   previewBorderRadius: number;
-  /** Preview font family: CSS font-family string (e.g. "'Inter', system-ui, sans-serif"). */
+  /** Preview font family: CSS font-family string (e.g. "'Geist Mono', ui-monospace, 'Cascadia Code', monospace"). */
   previewFontFamily: string;
   /** Preview font size: "small" | "medium" | "large". camelCase key: previewFontSize. */
   previewFontSize: string;

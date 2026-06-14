@@ -736,12 +736,12 @@ pub struct AppConfig {
     // All values are CSS strings or small integers. Defaults match the
     // hardcoded values in PreviewPanel.tsx so existing users see no change.
 
-    /// Preview text color: CSS color string. Default: `"rgba(220,220,220,0.88)"`.
+    /// Preview text color: CSS color string. Default: `"rgba(236,238,239,0.95)"` (klarvo-text #ECEEEF @ 95%).
     #[serde(default = "default_preview_text_color")]
     pub preview_text_color: String,
 
     /// Preview background color: CSS color string (may include opacity).
-    /// Default: `"rgba(25,25,25,0.96)"`.
+    /// Default: `"rgba(22,24,26,0.96)"` (klarvo-surface #16181A @ 96%).
     #[serde(default = "default_preview_bg_color")]
     pub preview_bg_color: String,
 
@@ -749,7 +749,7 @@ pub struct AppConfig {
     #[serde(default = "default_preview_bg_blur")]
     pub preview_bg_blur: u8,
 
-    /// Preview border color: CSS color string. Default: `"rgba(42,195,168,0.25)"`.
+    /// Preview border color: CSS color string. Default: `"rgba(41,199,172,0.25)"` (klarvo-teal #29C7AC @ 25%).
     #[serde(default = "default_preview_border_color")]
     pub preview_border_color: String,
 
@@ -763,7 +763,7 @@ pub struct AppConfig {
     pub preview_border_radius: u8,
 
     /// Preview font family: CSS font-family string.
-    /// Default: `"'Inter', system-ui, -apple-system, sans-serif"`.
+    /// Default: `"'Geist Mono', ui-monospace, 'Cascadia Code', monospace"` (Studio-Dark raw-transcript font).
     #[serde(default = "default_preview_font_family")]
     pub preview_font_family: String,
 
@@ -982,18 +982,18 @@ fn default_preview_panel_form() -> String {
     "comfortable".to_string()
 }
 
-// Story 6.6 preview appearance defaults (must match PreviewPanel.tsx hardcodes).
+// Story 6.6/8.4 preview appearance defaults (Studio-Dark tokens; must match PreviewPanel.tsx and previewAppearance.ts).
 fn default_preview_text_color() -> String {
-    "rgba(220,220,220,0.88)".to_string()
+    "rgba(236,238,239,0.95)".to_string()
 }
 fn default_preview_bg_color() -> String {
-    "rgba(25,25,25,0.96)".to_string()
+    "rgba(22,24,26,0.96)".to_string()
 }
 fn default_preview_bg_blur() -> u8 {
     12
 }
 fn default_preview_border_color() -> String {
-    "rgba(42,195,168,0.25)".to_string()
+    "rgba(41,199,172,0.25)".to_string()
 }
 fn default_preview_border_width() -> u8 {
     1
@@ -1002,7 +1002,7 @@ fn default_preview_border_radius() -> u8 {
     14
 }
 fn default_preview_font_family() -> String {
-    "'Inter', system-ui, -apple-system, sans-serif".to_string()
+    "'Geist Mono', ui-monospace, 'Cascadia Code', monospace".to_string()
 }
 fn default_preview_font_size() -> String {
     "small".to_string()
@@ -4149,23 +4149,23 @@ mod tests {
         let cfg = result.unwrap();
 
         assert_eq!(
-            cfg.preview_text_color, "rgba(220,220,220,0.88)",
-            "preview_text_color default must be rgba(220,220,220,0.88)"
+            cfg.preview_text_color, "rgba(236,238,239,0.95)",
+            "preview_text_color default must be Studio-Dark klarvo-text rgba(236,238,239,0.95)"
         );
         assert_eq!(
-            cfg.preview_bg_color, "rgba(25,25,25,0.96)",
-            "preview_bg_color default must be rgba(25,25,25,0.96)"
+            cfg.preview_bg_color, "rgba(22,24,26,0.96)",
+            "preview_bg_color default must be Studio-Dark klarvo-surface rgba(22,24,26,0.96)"
         );
         assert_eq!(cfg.preview_bg_blur, 12, "preview_bg_blur default must be 12");
         assert_eq!(
-            cfg.preview_border_color, "rgba(42,195,168,0.25)",
-            "preview_border_color default must be rgba(42,195,168,0.25)"
+            cfg.preview_border_color, "rgba(41,199,172,0.25)",
+            "preview_border_color default must be Studio-Dark klarvo-teal rgba(41,199,172,0.25)"
         );
         assert_eq!(cfg.preview_border_width, 1, "preview_border_width default must be 1");
         assert_eq!(cfg.preview_border_radius, 14, "preview_border_radius default must be 14");
         assert_eq!(
-            cfg.preview_font_family, "'Inter', system-ui, -apple-system, sans-serif",
-            "preview_font_family default must match the shipped PreviewPanel.tsx value"
+            cfg.preview_font_family, "'Geist Mono', ui-monospace, 'Cascadia Code', monospace",
+            "preview_font_family default must be Studio-Dark Geist Mono stack"
         );
 
         // No migration write must fire for additive serde defaults.

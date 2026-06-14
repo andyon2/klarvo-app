@@ -10,10 +10,11 @@
 // Defaults (mirrors PreviewPanel.tsx / AppConfig defaults)
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_TEXT_COLOR   = "rgba(220,220,220,0.88)";
-export const DEFAULT_BG_COLOR     = "rgba(25,25,25,0.96)";
-export const DEFAULT_BORDER_COLOR = "rgba(42,195,168,0.25)";
-export const DEFAULT_FONT_FAMILY  = "'Inter', system-ui, -apple-system, sans-serif";
+// Story 8.4: Studio-Dark tokens (klarvo-text #ECEEEF@95%, klarvo-surface #16181A@96%, klarvo-teal #29C7AC@25%).
+export const DEFAULT_TEXT_COLOR   = "rgba(236,238,239,0.95)";
+export const DEFAULT_BG_COLOR     = "rgba(22,24,26,0.96)";
+export const DEFAULT_BORDER_COLOR = "rgba(41,199,172,0.25)";
+export const DEFAULT_FONT_FAMILY  = "'Geist Mono', ui-monospace, 'Cascadia Code', monospace";
 
 // ---------------------------------------------------------------------------
 // Task 1 — rgba ↔ hex / opacity helpers
@@ -102,11 +103,15 @@ export interface PreviewTheme {
  */
 export const PREVIEW_THEMES: PreviewTheme[] = [
   {
+    // Story 8.4: Studio-Dark defaults (klarvo-text #ECEEEF, klarvo-surface #16181A, klarvo-teal #29C7AC@25%).
+    // Conductor 2026-06-15: kept the prior legible opacities (text .95 / bg .96) rather than dropping to
+    // .88/.92 — AC#3's 88% is the legibility FLOOR, not a target, and this is a reading surface; only the
+    // hex was re-skinned, opacity behavior unchanged (no legibility regression vs the pre-8.4 panel).
     label: "Dark",
-    textColor:    "rgba(220,220,220,0.95)",
-    bgColor:      "rgba(20,20,20,0.92)",
+    textColor:    "rgba(236,238,239,0.95)",
+    bgColor:      "rgba(22,24,26,0.96)",
     bgBlur:       12,
-    borderColor:  "rgba(100,100,100,0.40)",
+    borderColor:  "rgba(41,199,172,0.25)",
     borderWidth:  1,
     borderRadius: 14,
   },
@@ -141,6 +146,8 @@ export interface PreviewFont {
 }
 
 export const PREVIEW_FONTS: PreviewFont[] = [
+  // Story 8.4: Geist Mono is the new default (UX-DR3 — raw dictation text in mono; bundled via @font-face from 8-1).
+  { label: "Geist Mono", stack: "'Geist Mono', ui-monospace, 'Cascadia Code', monospace" },
   { label: "Inter",      stack: "'Inter', system-ui, -apple-system, sans-serif" },
   { label: "System UI",  stack: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
   { label: "Serif",      stack: "Georgia, 'Times New Roman', Times, serif" },

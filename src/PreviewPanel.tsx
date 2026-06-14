@@ -63,13 +63,13 @@ export default function PreviewPanel(): React.ReactElement {
   // gets the correct values (ref mutation never triggers a re-render — was the bug).
   // Initialized to the same defaults as the Rust serde defaults.
   const [cardAppearance, setCardAppearance] = useState({
-    textColor:    "rgba(220,220,220,0.88)",
-    bgColor:      "rgba(25,25,25,0.96)",
+    textColor:    "rgba(236,238,239,0.95)",
+    bgColor:      "rgba(22,24,26,0.96)",
     bgBlur:       12,
-    borderColor:  "rgba(42,195,168,0.25)",
+    borderColor:  "rgba(41,199,172,0.25)",
     borderWidth:  1,
     borderRadius: 14,
-    fontFamily:   "'Inter', system-ui, -apple-system, sans-serif",
+    fontFamily:   "'Geist Mono', ui-monospace, 'Cascadia Code', monospace",
   });
   // Story 6.3: fontPx from previewGeometry, reactive via runShowSequence.
   // Default = FONT_PX.small = 11. Typed as number to accept 11/13/15.
@@ -137,13 +137,13 @@ export default function PreviewPanel(): React.ReactElement {
       // String fields use || (empty string "" is falsy → falls back to default).
       // Numeric fields use ?? (0 is a valid value and must not fall back).
       let appr = {
-        textColor:    "rgba(220,220,220,0.88)",
-        bgColor:      "rgba(25,25,25,0.96)",
+        textColor:    "rgba(236,238,239,0.95)",
+        bgColor:      "rgba(22,24,26,0.96)",
         bgBlur:       12,
-        borderColor:  "rgba(42,195,168,0.25)",
+        borderColor:  "rgba(41,199,172,0.25)",
         borderWidth:  1,
         borderRadius: 14,
-        fontFamily:   "'Inter', system-ui, -apple-system, sans-serif",
+        fontFamily:   "'Geist Mono', ui-monospace, 'Cascadia Code', monospace",
       };
       try {
         const s = await getSettings();
@@ -153,13 +153,13 @@ export default function PreviewPanel(): React.ReactElement {
         // Story 6.6: build appr from the just-read settings so CSS and
         // set_preview_shape both use the latest saved values (Finding 1+2).
         appr = {
-          textColor:    s.previewTextColor    || "rgba(220,220,220,0.88)",
-          bgColor:      s.previewBgColor      || "rgba(25,25,25,0.96)",
+          textColor:    s.previewTextColor    || "rgba(236,238,239,0.95)",
+          bgColor:      s.previewBgColor      || "rgba(22,24,26,0.96)",
           bgBlur:       s.previewBgBlur       ?? 12,
-          borderColor:  s.previewBorderColor  || "rgba(42,195,168,0.25)",
+          borderColor:  s.previewBorderColor  || "rgba(41,199,172,0.25)",
           borderWidth:  s.previewBorderWidth  ?? 1,
           borderRadius: s.previewBorderRadius ?? 14,
-          fontFamily:   s.previewFontFamily   || "'Inter', system-ui, -apple-system, sans-serif",
+          fontFamily:   s.previewFontFamily   || "'Geist Mono', ui-monospace, 'Cascadia Code', monospace",
         };
       } catch (e) {
         console.warn("[preview] getSettings failed, using defaults:", e);

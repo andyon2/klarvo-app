@@ -85,13 +85,14 @@ const MOCK_SETTINGS: AppSettings = {
   previewPauseSilenceSecs: 2.0,
   previewPanelForm: "comfortable",
   // Story 6.6 preview appearance defaults (must match Rust defaults and PreviewPanel.tsx hardcodes).
-  previewTextColor: "rgba(220,220,220,0.88)",
-  previewBgColor: "rgba(25,25,25,0.96)",
+  // Story 8.4: updated to Studio-Dark tokens (klarvo-text #ECEEEF@88%, klarvo-surface #16181A@92%, klarvo-teal #29C7AC@25%).
+  previewTextColor: "rgba(236,238,239,0.95)",
+  previewBgColor: "rgba(22,24,26,0.96)",
   previewBgBlur: 12,
-  previewBorderColor: "rgba(42,195,168,0.25)",
+  previewBorderColor: "rgba(41,199,172,0.25)",
   previewBorderWidth: 1,
   previewBorderRadius: 14,
-  previewFontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+  previewFontFamily: "'Geist Mono', ui-monospace, 'Cascadia Code', monospace",
   previewFontSize: "small",
 };
 

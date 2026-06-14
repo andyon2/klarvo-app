@@ -187,16 +187,16 @@ export function SettingsPanel({
   );
   // Story 6.6 preview appearance state vars.
   const [localPreviewTextColor, setLocalPreviewTextColor] = useState(
-    loadedSettings?.previewTextColor ?? "rgba(220,220,220,0.88)"
+    loadedSettings?.previewTextColor ?? "rgba(236,238,239,0.95)"
   );
   const [localPreviewBgColor, setLocalPreviewBgColor] = useState(
-    loadedSettings?.previewBgColor ?? "rgba(25,25,25,0.96)"
+    loadedSettings?.previewBgColor ?? "rgba(22,24,26,0.96)"
   );
   const [localPreviewBgBlur, setLocalPreviewBgBlur] = useState(
     loadedSettings?.previewBgBlur ?? 12
   );
   const [localPreviewBorderColor, setLocalPreviewBorderColor] = useState(
-    loadedSettings?.previewBorderColor ?? "rgba(42,195,168,0.25)"
+    loadedSettings?.previewBorderColor ?? "rgba(41,199,172,0.25)"
   );
   const [localPreviewBorderWidth, setLocalPreviewBorderWidth] = useState(
     loadedSettings?.previewBorderWidth ?? 1
@@ -205,7 +205,7 @@ export function SettingsPanel({
     loadedSettings?.previewBorderRadius ?? 14
   );
   const [localPreviewFontFamily, setLocalPreviewFontFamily] = useState(
-    loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif"
+    loadedSettings?.previewFontFamily ?? "'Geist Mono', ui-monospace, 'Cascadia Code', monospace"
   );
   const [localPreviewFontSize, setLocalPreviewFontSize] = useState(
     loadedSettings?.previewFontSize ?? "small"
@@ -320,13 +320,13 @@ export function SettingsPanel({
       setLocalPreviewPanelForm(loadedSettings.previewPanelForm ?? "comfortable");
       // Story 6.6 — Trap #2: ALL new settings fields MUST appear here or the Save
       // button stays dirty forever after a save (isDirty sees stale local state).
-      setLocalPreviewTextColor(loadedSettings.previewTextColor ?? "rgba(220,220,220,0.88)");
-      setLocalPreviewBgColor(loadedSettings.previewBgColor ?? "rgba(25,25,25,0.96)");
+      setLocalPreviewTextColor(loadedSettings.previewTextColor ?? "rgba(236,238,239,0.95)");
+      setLocalPreviewBgColor(loadedSettings.previewBgColor ?? "rgba(22,24,26,0.96)");
       setLocalPreviewBgBlur(loadedSettings.previewBgBlur ?? 12);
-      setLocalPreviewBorderColor(loadedSettings.previewBorderColor ?? "rgba(42,195,168,0.25)");
+      setLocalPreviewBorderColor(loadedSettings.previewBorderColor ?? "rgba(41,199,172,0.25)");
       setLocalPreviewBorderWidth(loadedSettings.previewBorderWidth ?? 1);
       setLocalPreviewBorderRadius(loadedSettings.previewBorderRadius ?? 14);
-      setLocalPreviewFontFamily(loadedSettings.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif");
+      setLocalPreviewFontFamily(loadedSettings.previewFontFamily ?? "'Geist Mono', ui-monospace, 'Cascadia Code', monospace");
       // Story 6.3 — Trap #2: previewFontSize MUST be here or Save stays dirty forever.
       setLocalPreviewFontSize(loadedSettings.previewFontSize ?? "small");
     }
@@ -403,13 +403,13 @@ export function SettingsPanel({
     || (loadedSettings?.livePreviewEnabled ?? false) !== localLivePreviewEnabled
     || (loadedSettings?.previewPauseSilenceSecs ?? 2.0) !== localPreviewPauseSilenceSecs
     || (loadedSettings?.previewPanelForm ?? "comfortable") !== localPreviewPanelForm
-    || (loadedSettings?.previewTextColor ?? "rgba(220,220,220,0.88)") !== localPreviewTextColor
-    || (loadedSettings?.previewBgColor ?? "rgba(25,25,25,0.96)") !== localPreviewBgColor
+    || (loadedSettings?.previewTextColor ?? "rgba(236,238,239,0.95)") !== localPreviewTextColor
+    || (loadedSettings?.previewBgColor ?? "rgba(22,24,26,0.96)") !== localPreviewBgColor
     || (loadedSettings?.previewBgBlur ?? 12) !== localPreviewBgBlur
-    || (loadedSettings?.previewBorderColor ?? "rgba(42,195,168,0.25)") !== localPreviewBorderColor
+    || (loadedSettings?.previewBorderColor ?? "rgba(41,199,172,0.25)") !== localPreviewBorderColor
     || (loadedSettings?.previewBorderWidth ?? 1) !== localPreviewBorderWidth
     || (loadedSettings?.previewBorderRadius ?? 14) !== localPreviewBorderRadius
-    || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily
+    || (loadedSettings?.previewFontFamily ?? "'Geist Mono', ui-monospace, 'Cascadia Code', monospace") !== localPreviewFontFamily
     || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize;
     setIsDirty(dirty);
   }, [
