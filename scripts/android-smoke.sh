@@ -65,22 +65,43 @@ if [ ! -x "$ADB" ]; then
     fail "adb nicht gefunden: $ADB"
 fi
 
-# Gerät prüfen
-DEVICES=$(${ADB} devices 2>/dev/null | grep -c "device$" || true)
-if [ "$DEVICES" -eq 0 ]; then
+# Gerät prüfen — vor dem Aufgeben selbst per Tailscale verbinden.
+#
+# Android 11+ "Drahtloses Debugging" vergibt einen ZUFÄLLIGEN Connect-Port, der
+# sich bei jedem Toggle/Neustart ändert -> manuelles IP:Port-Tippen jedes Mal.
+# Gegenmittel: das Handy einmalig mit `adb tcpip 5555` auf den Festport 5555
+# pinnen (siehe Anleitung unten). Danach ist die STABILE Tailscale-IP:5555 ohne
+# erneutes Pairing erreichbar, und dieser Auto-Connect "geht einfach an".
+# Ziel überschreibbar:  KLARVO_ADB_TARGET=<ip>:<port> scripts/android-smoke.sh
+KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-100.112.41.70:5555}"
+
+device_count() { ${ADB} devices 2>/dev/null | grep -c "device$" || true; }
+
+if [ "$(device_count)" -eq 0 ] && [ -n "$KLARVO_ADB_TARGET" ]; then
+    info "Kein Gerät verbunden — Tailscale-Auto-Connect: $KLARVO_ADB_TARGET"
+    ${ADB} connect "$KLARVO_ADB_TARGET" >/dev/null 2>&1 || true
+fi
+
+if [ "$(device_count)" -eq 0 ]; then
     echo ""
-    echo "  Kein Android-Gerät erreichbar. Optionen:"
+    echo "  Kein Android-Gerät erreichbar. Auto-Connect auf $KLARVO_ADB_TARGET schlug fehl."
     echo ""
-    echo "  USB:   USB-Debugging in Entwickleroptionen aktivieren."
-    echo "         In WSL2: Windows-adb muss laufen (Android Studio öffnen reicht)."
-    echo "         Dann: ${ADB} devices"
+    echo "  Wahrscheinlich lauscht das Handy auf einem ZUFÄLLIGEN Wireless-Debug-Port"
+    echo "  (Android 11+). Einmalig auf Festport 5555 pinnen:"
     echo ""
-    echo "  WiFi:  'Drahtloses Debugging' auf dem Handy aktivieren."
-    echo "         Einmalig pairen:  ${ADB} pair <ip>:<pair-port>"
-    echo "         Verbinden:        ${ADB} connect <ip>:5555"
+    echo "    1. Handy: 'Drahtloses Debugging' → IP-Adresse & Port ablesen"
+    echo "    2. ${ADB} pair <ip>:<pair-port>       (PIN aus 'Gerät mit Code koppeln')"
+    echo "    3. ${ADB} connect <ip>:<connect-port>"
+    echo "    4. ${ADB} tcpip 5555                   (pinnt auf Festport 5555)"
+    echo ""
+    echo "  Danach reicht künftig der Auto-Connect. Nach Handy-NEUSTART Schritt 1-4"
+    echo "  wiederholen. Anderes Ziel: KLARVO_ADB_TARGET=<ip>:<port> setzen."
+    echo ""
+    echo "  USB-Alternative: USB-Debugging an, Windows-adb läuft (Android Studio offen)."
     echo ""
     fail "Kein Gerät gefunden"
 fi
+DEVICES=$(device_count)
 DEVICE_SERIAL=$(${ADB} devices 2>/dev/null | grep "device$" | head -1 | awk '{print $1}')
 ok "Gerät: $DEVICE_SERIAL"
 
