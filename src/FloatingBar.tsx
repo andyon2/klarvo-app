@@ -73,14 +73,14 @@ function KlarvoLogo() {
         width: 24,
         height: 24,
         borderRadius: 6,
-        background: "#14B8A6",
+        background: "#29C7AC",      // klarvo-teal (was #14B8A6)
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontWeight: 700,
         fontSize: 14,
-        color: "#fff",
+        color: "#05201B",           // klarvo-on-teal (was #fff)
         lineHeight: 1,
       }}
     >
@@ -112,7 +112,7 @@ function Waveform({ levels }: { levels: number[] }) {
             style={{
               flex: 1,
               borderRadius: 9999,
-              background: "rgba(42,195,168,0.85)",
+              background: "rgba(41,199,172,0.9)",  // klarvo-teal @ 90% (was rgba(42,195,168,0.85))
               height: heightPx,
               // No animation or transition: bars respond instantly to the
               // 15 Hz audio-level events from the Rust backend.
@@ -186,7 +186,7 @@ function StopButton({ onClick }: { onClick: () => void }) {
           width: 8,
           height: 8,
           borderRadius: 1,
-          background: "rgba(248,113,113,0.9)",
+          background: "rgba(238,111,99,0.9)",   // klarvo-danger @ 90% (was rgba(248,113,113,0.9))
         }}
       />
     </div>
@@ -498,21 +498,21 @@ export default function FloatingBar() {
   // Render: expanded pill (recording / processing / done / error / collapsing)
   // ---------------------------------------------------------------------------
 
-  const accentColor = isRecording ? "#2AC3A8"
-    : isProcessing ? "#FFA344"
-    : (isDone && clipboardOnly) ? "#FFA344"
-    : isDone ? "#4ADE80"
-    : "#FF7369";
+  const accentColor = isRecording ? "#29C7AC"            // klarvo-teal (was #2AC3A8)
+    : isProcessing ? "#29C7AC"                           // klarvo-teal (DT5: not amber; was #FFA344)
+    : (isDone && clipboardOnly) ? "#E9A24C"              // klarvo-amber (was #FFA344)
+    : isDone ? "#4FC58A"                                 // klarvo-success (was #4ADE80)
+    : "#EE6F63";                                         // klarvo-danger (was #FF7369)
 
-  const borderColor = isRecording ? "rgba(42,195,168,0.25)"
-    : isProcessing ? "rgba(255,163,68,0.2)"
-    : (isDone && clipboardOnly) ? "rgba(255,163,68,0.25)"
-    : isDone ? "rgba(74,222,128,0.25)"
-    : "rgba(255,115,105,0.2)";
+  const borderColor = isRecording ? "rgba(41,199,172,0.25)"          // klarvo-teal @ 25% (was rgba(42,195,168,0.25))
+    : isProcessing ? "rgba(41,199,172,0.15)"                          // klarvo-teal @ 15% (DT5: not amber; was rgba(255,163,68,0.2))
+    : (isDone && clipboardOnly) ? "rgba(233,162,76,0.25)"             // klarvo-amber @ 25% (was rgba(255,163,68,0.25))
+    : isDone ? "rgba(79,197,138,0.25)"                                // klarvo-success @ 25% (was rgba(74,222,128,0.25))
+    : "rgba(238,111,99,0.20)";                                        // klarvo-danger @ 20% (was rgba(255,115,105,0.2))
 
   const pillAnimation = collapsing
     ? "bar-collapse 180ms ease-in forwards"
-    : "bar-expand 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards";
+    : "bar-expand 240ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards"; // --motion-enter 240ms (was 220ms)
 
   return (
     <>
@@ -528,14 +528,15 @@ export default function FloatingBar() {
           height: "100%",
           justifyContent: "flex-end",
           borderRadius: 9999,
-          background: "rgba(25,25,25,0.96)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
+          background: "rgba(22,24,26,0.72)",                                               // klarvo-surface @ 72% (was rgba(25,25,25,0.96))
+          backdropFilter: "blur(16px)",                                                    // spec: backdrop-blur 16px (was 12px)
+          WebkitBackdropFilter: "blur(16px)",                                              // spec: backdrop-blur 16px (was 12px)
           border: `1px solid ${borderColor}`,
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,.055)",                             // inset hairline only — the spec'd outer 0 8px 28px elevation can't paint outside the 200×36 window region (clipped to invisibility); real elevation needs a follow-up window-geometry story
           display: "flex",
           flexDirection: "column",
           cursor: "move",
-          fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+          fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif",                      // Geist (was Inter; bundled via 8.1)
           userSelect: "none",
           overflow: "hidden",
           animation: pillAnimation,
@@ -557,16 +558,28 @@ export default function FloatingBar() {
           {/* Klarvo logo -- always visible as brand anchor */}
           <KlarvoLogo />
 
-          {/* Recording: stop button + waveform + mode badge */}
+          {/* Recording: amber tally-light + stop button + waveform + mode badge */}
           {isRecording && (
             <>
+              {/* Amber tally dot — recording only (DT5: amber = live/listening) */}
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: 9999,
+                background: "#E9A24C",   // klarvo-amber
+                flexShrink: 0,
+              }} />
               <StopButton onClick={() => { cancelRecording().catch((e) => console.error("[bar] cancelRecording failed:", e)); }} />
               <Waveform levels={levels} />
               <span
                 style={{
                   fontSize: 10,
-                  color: "#808385",
+                  color: "#6F7479",   // klarvo-dim (was #808385)
                   flexShrink: 0,
+                  maxWidth: 64,             // bound the badge so a long mode label can't clip itself or collapse the flex:1 waveform inside the fixed 200px pill
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                   letterSpacing: "0.02em",
                   lineHeight: 1,
                 }}
@@ -591,7 +604,7 @@ export default function FloatingBar() {
               <span
                 style={{
                   fontSize: 11,
-                  color: "#AAACAD",
+                  color: "#A4A9AC",    // klarvo-muted (was #AAACAD)
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -618,14 +631,16 @@ export default function FloatingBar() {
               {clipboardOnly ? (
                 <>
                   <span style={{ fontSize: 13, flexShrink: 0, lineHeight: 1 }}>📋</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#FFA344", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#E9A24C", letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+                    {/* klarvo-amber (was #FFA344) */}
                     In Clipboard
                   </span>
                 </>
               ) : (
                 <>
                   <CheckIcon color={accentColor} />
-                  <span style={{ fontSize: 11, color: "#4ADE80", letterSpacing: "0.01em" }}>Done</span>
+                  <span style={{ fontSize: 11, color: "#4FC58A", letterSpacing: "0.01em" }}>Done</span>
+                  {/* klarvo-success (was #4ADE80) */}
                 </>
               )}
             </div>
@@ -633,7 +648,8 @@ export default function FloatingBar() {
 
           {/* Error */}
           {isError && (
-            <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
+            // klarvo-danger (was #FF7369)
+            <span style={{ fontSize: 11, color: "#EE6F63", flex: 1, letterSpacing: "0.01em" }}>Error</span>
           )}
         </div>
       </div>
