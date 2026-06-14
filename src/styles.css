@@ -132,6 +132,14 @@
   /* Easing */
   --ease-standard: cubic-bezier(.2,0,0,1);
   --ease-spring:   cubic-bezier(.34,1.56,.64,1);
+
+  /* Story 8.5: RecordButton glow colors — DERIVED from the brand color tokens via
+     color-mix so the button glow never drifts from --color-klarvo-* (AC#5: no inline
+     hex/rgba in covered roles). Geometry (blur radius) stays per-state at the call site. */
+  --glow-danger:     color-mix(in srgb, var(--color-klarvo-danger) 30%, transparent);
+  --glow-amber:      color-mix(in srgb, var(--color-klarvo-amber)  20%, transparent);
+  --glow-teal:       color-mix(in srgb, var(--color-klarvo-teal)   20%, transparent);
+  --glow-teal-hover: color-mix(in srgb, var(--color-klarvo-teal)   30%, transparent);
 }
 
 /* Task 5.5 — NFR5: collapse all transitions when user prefers reduced motion */
