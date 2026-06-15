@@ -222,6 +222,10 @@ class KlarvoOverlayService : Service() {
             val rms = intent.getFloatExtra(EXTRA_RMS, -1f)
             val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
             handler.post {
+                if (!::bubbleView.isInitialized) {
+                    KlarvoLogger.w(TAG, "[harness] bubbleView not ready")
+                    return@post
+                }
                 val newState = when (stateToken.lowercase()) {
                     "idle"         -> RecordingState.IDLE
                     "recording"    -> RecordingState.RECORDING
@@ -271,6 +275,19 @@ class KlarvoOverlayService : Service() {
         override fun run() {
             checkKeyboardVisibility()
             handler.postDelayed(this, KEYBOARD_CHECK_INTERVAL)
+        }
+    }
+
+    /**
+     * Runnable that completes the DONE→IDLE flash after 800ms.
+     * Named so it can be cancelled if a new recording starts before the delay fires
+     * (AUTO mode, re-record, or harness) — preventing a stale callback from forcing
+     * IDLE while a fresh recording is already live.
+     */
+    private val doneFlashRunnable = Runnable {
+        if (currentState == RecordingState.DONE) {
+            setState(RecordingState.IDLE)
+            adjustLayoutForState(RecordingState.IDLE, RecordingState.DONE)
         }
     }
 
@@ -330,6 +347,7 @@ class KlarvoOverlayService : Service() {
         instance = null
         handler.removeCallbacks(keyboardCheckRunnable)
         handler.removeCallbacks(longPressRunnable)
+        handler.removeCallbacks(doneFlashRunnable)
         try {
             unregisterReceiver(notificationActionReceiver)
         } catch (e: Exception) {
@@ -1461,14 +1479,12 @@ class KlarvoOverlayService : Service() {
 
                 // DONE flash: briefly show checkmark before returning to IDLE.
                 // Only the success path gets the DONE state; error paths go straight to IDLE.
+                // Cancel any prior pending flash before scheduling a new one (defensive).
                 val prevForDone = currentState
                 setState(RecordingState.DONE)
                 adjustLayoutForState(RecordingState.DONE, prevForDone)
-                handler.postDelayed({
-                    val prev2 = currentState  // should still be DONE
-                    setState(RecordingState.IDLE)
-                    adjustLayoutForState(RecordingState.IDLE, prev2)
-                }, 800L)
+                handler.removeCallbacks(doneFlashRunnable)
+                handler.postDelayed(doneFlashRunnable, 800L)
 
                 // Auto-send (press Enter) if configured for this gesture.
                 val shouldAutoSend = when (gesture) {
