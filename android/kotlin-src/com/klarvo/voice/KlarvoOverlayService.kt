@@ -75,6 +75,12 @@ class KlarvoOverlayService : Service() {
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
+        // Transparent padding around the visual squircle (as a fraction of the visual size) so the
+        // soft drop shadow + outer ring render without being clipped by the overlay window bounds.
+        // Floored so the window always meets the ≥48dp touch target even at the smallest size.
+        private const val SHADOW_PAD_FRACTION = 0.22f
+        private const val MIN_SHADOW_PAD_DP   = 8
+
         /** Live reference used by KlarvoAccessibilityService for paste. */
         var instance: KlarvoOverlayService? = null
     }
@@ -146,11 +152,6 @@ class KlarvoOverlayService : Service() {
     private var bubbleStartY = 0
     private var isDragging = false
     private var dragThresholdPx = 0f
-
-    // Bubble opacity (0.0..1.0). Applied to bubbleView.alpha when state is IDLE.
-    // During RECORDING / PROCESSING the bubble is always fully opaque.
-    // Loaded from config.json; defaults to 0.85 if config is unavailable.
-    private var bubbleOpacity = 0.85f
 
     // Per-gesture recording modes: tap and long-press are configured independently.
     private var tapMode = RecordingMode.TOGGLE
@@ -457,14 +458,27 @@ class KlarvoOverlayService : Service() {
      * Nav-bar clearance: 56px fixed constant (AR5d). Do NOT use WindowInsetsCompat or
      * env(safe-area-inset-bottom) — those are unreliable for overlay Services on API 24+.
      */
+    /**
+     * Overlay-window size (px) for a given visual bubble size: the visual squircle plus transparent
+     * shadow padding on every side. FloatingBubbleView draws the squircle centered, so the padding
+     * is the room the soft shadow + outer ring need — without it they clip at the window edge (a
+     * hard square cutoff, worst at large manual sizes). Always ≥48dp, so it also satisfies the
+     * touch-target requirement (AC4). Single source of truth for ALL window-size math (set + snap +
+     * save + keyboard) so they never diverge.
+     */
+    private fun bubbleWindowPx(visualDp: Int): Int {
+        val dm = resources.displayMetrics
+        val padDp = maxOf(MIN_SHADOW_PAD_DP, (visualDp * SHADOW_PAD_FRACTION).toInt())
+        return ((visualDp + 2 * padDp) * dm.density).toInt()
+    }
+
     fun adjustBubbleForKeyboard(keyboardHeightPx: Int) {
         handler.post {
             if (!isBubbleVisible || !::bubbleView.isInitialized) return@post
             val (_, screenH) = getScreenDimensions()
-            val dm = resources.displayMetrics
-            // Use the window height (≥48dp touch target) so the window's real bottom edge
-            // clears the keyboard, not just the smaller visual circle.
-            val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+            // Use the full window height (incl. shadow padding) so the real bottom edge clears
+            // the keyboard, not just the smaller visual squircle.
+            val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
             val maxY = screenH - keyboardHeightPx - NAV_BAR_CLEARANCE_PX - windowPx
             if (bubbleParams.y > maxY) {
                 if (preKeyboardY == null) {
@@ -566,15 +580,17 @@ class KlarvoOverlayService : Service() {
     private fun setupBubble() {
         bubbleView = FloatingBubbleView(this)
 
-        // Load opacity from config.json (written by the Tauri/React settings UI).
-        // bubbleSize scale factor is superseded by computeVisualSizeDp() as of Story 9.3.
+        // bubbleSize scale factor is superseded by computeVisualSizeDp() as of Story 9.3;
+        // idle opacity is fixed at 1.0 (canon) as of the 9.3 polish pass.
         val config = KlarvoApi.readConfig(this)
-        bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
         // Responsive size formula: clamp(36, 0.11 × min(screenW_dp, screenH_dp), 44)
         val sizeDp = computeVisualSizeDp(config)
         bubbleView.setBubbleSize(sizeDp)
-        bubbleView.alpha = bubbleOpacity
+        // Idle bubble renders fully opaque to match the canon (.ab-bubble.idle has no opacity
+        // reduction). The legacy 0.85 translucency washed the solid teal-gradient squircle out,
+        // especially on light backgrounds. (Story 9.3 polish.)
+        bubbleView.alpha = 1.0f
 
         val (screenW, screenH) = getScreenDimensions()
         val dm        = resources.displayMetrics
@@ -582,10 +598,9 @@ class KlarvoOverlayService : Service() {
         val bubblePx  = (sizeDp * dp).toInt()
         val marginPx  = (8 * dp).toInt()  // 8dp snap margin (tighter than startup default)
 
-        // Touch-target expansion: LayoutParams must be ≥ 48dp to meet touch-target requirement.
-        // The visual circle (bubbleSizeDp) may be smaller; FloatingBubbleView draws it centered.
-        val touchTargetDp = maxOf(sizeDp, 48)
-        val touchTargetPx = (touchTargetDp * dp).toInt()
+        // Window = visual squircle + shadow padding (always ≥48dp touch target). The squircle is
+        // drawn centered; the padding gives the soft shadow + outer ring room (no clipping).
+        val touchTargetPx = bubbleWindowPx(sizeDp)
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         // AC9 (Story 9.3): when edge-snap is OFF restore the raw saved X; when ON use saved side.
@@ -690,9 +705,7 @@ class KlarvoOverlayService : Service() {
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
         val dp           = resources.displayMetrics.density
         val visualDp     = bubbleView.getBubbleSizeDp()
-        val bubblePx     = (visualDp * dp).toInt()
-        val touchTargetDp = maxOf(visualDp, 48)
-        val touchTargetPx = (touchTargetDp * dp).toInt()
+        val touchTargetPx = bubbleWindowPx(visualDp)   // visual + shadow padding (≥48dp)
         val barPx         = (FloatingBubbleView.BAR_WIDTH_DP * dp).toInt()
 
         when {
@@ -783,9 +796,9 @@ class KlarvoOverlayService : Service() {
                                 // 8dp margin from edge for a clean overlay feel.
                                 val (screenW, _) = getScreenDimensions()
                                 val dm = resources.displayMetrics
-                                // WindowManager positions the window (windowPx wide), not the visual
-                                // circle. All edge/midpoint math must use the window width.
-                                val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+                                // WindowManager positions the window (windowPx wide, incl. shadow
+                                // padding), not the visual squircle. All edge/midpoint math uses it.
+                                val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
                                 val marginPx = (8 * dm.density).toInt()
                                 val midScreen = screenW / 2
                                 bubbleParams.x = if (bubbleParams.x + windowPx / 2 < midScreen) {
@@ -821,10 +834,9 @@ class KlarvoOverlayService : Service() {
 
     private fun savePosition(x: Int, y: Int) {
         val (screenW, _) = getScreenDimensions()
-        val dm = resources.displayMetrics
-        // Side detection uses the window width (≥48dp touch target), matching WindowManager
+        // Side detection uses the full window width (incl. shadow padding), matching WindowManager
         // placement logic so left/right classification agrees with edge-snap math.
-        val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+        val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
         val side = if (x + windowPx / 2 < screenW / 2) "left" else "right"
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putInt(PREF_X, x)
@@ -1444,11 +1456,7 @@ class KlarvoOverlayService : Service() {
             RecordingState.RECORDING_PTT -> FloatingBubbleView.State.RECORDING_PTT
             RecordingState.PROCESSING    -> FloatingBubbleView.State.PROCESSING
         }
-        bubbleView.alpha = when (newState) {
-            RecordingState.IDLE -> bubbleOpacity
-            RecordingState.RECORDING, RecordingState.RECORDING_PTT,
-            RecordingState.PROCESSING -> 1.0f
-        }
+        bubbleView.alpha = 1.0f  // all states fully opaque (idle matches canon — see setupBubble)
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f
             // Re-read config so bubble size/opacity changes from Settings take effect
@@ -1467,13 +1475,11 @@ class KlarvoOverlayService : Service() {
     private fun reloadBubbleAppearance() {
         val config = KlarvoApi.readConfig(this) ?: return
         val newSizeDp = computeVisualSizeDp(config)
-        bubbleOpacity = config.bubbleOpacity
         bubbleView.setBubbleSize(newSizeDp)
-        bubbleView.alpha = bubbleOpacity
+        bubbleView.alpha = 1.0f  // idle fully opaque (canon); legacy bubbleOpacity no longer dims it
 
-        // Touch-target expansion: keep LayoutParams in sync with the visual size
-        val touchTargetDp = maxOf(newSizeDp, 48)
-        val touchTargetPx = (touchTargetDp * resources.displayMetrics.density).toInt()
+        // Keep window (visual + shadow padding) in sync with the (possibly changed) visual size
+        val touchTargetPx = bubbleWindowPx(newSizeDp)
         bubbleParams.width  = touchTargetPx
         bubbleParams.height = touchTargetPx
 

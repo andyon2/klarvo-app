@@ -74,6 +74,13 @@ class FloatingBubbleView(context: Context) : View(context) {
         private const val BTN_RADIUS_FRACTION = 0.35f
     }
 
+    init {
+        // Software layer so BlurMaskFilter (the soft drop shadow) actually renders — it is a
+        // no-op under hardware acceleration. The bubble is tiny and redraws rarely, so the
+        // software-layer cost is negligible. (Story 9.3 polish: clean edges + soft shadow.)
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
     // --- App icon (kept for 9.4+ states; not used in IDLE since 9.3 re-skin) ---
     private val appIconDrawable: Drawable? =
         ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
@@ -239,13 +246,21 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
-        val heightPx = (bubbleSizeDp * density).toInt()
-        val widthPx = when (state) {
-            // Bar mode only for tap-to-record; PTT stays circular
-            State.RECORDING -> (BAR_WIDTH_DP * density).toInt()
-            else            -> heightPx  // square == circle
+        if (state == State.RECORDING) {
+            // Bar mode (WRAP_CONTENT window): compute our own size.
+            val heightPx = (bubbleSizeDp * density).toInt()
+            setMeasuredDimension((BAR_WIDTH_DP * density).toInt(), heightPx)
+        } else {
+            // IDLE / RECORDING_PTT / PROCESSING: the window LayoutParams are an EXACT size
+            // (visual squircle + shadow padding, set by KlarvoOverlayService.bubbleWindowPx()).
+            // FILL it so the canvas/software-layer bitmap includes the padding — otherwise the
+            // soft shadow + outer ring clip at the view edge (the square cutoff). The squircle
+            // itself is drawn at bubbleSizeDp, centered, by onDraw.
+            setMeasuredDimension(
+                MeasureSpec.getSize(widthMeasureSpec),
+                MeasureSpec.getSize(heightMeasureSpec)
+            )
         }
-        setMeasuredDimension(widthPx, heightPx)
     }
 
     // --- Touch zone helpers (used by KlarvoOverlayService) ---
@@ -302,12 +317,17 @@ class FloatingBubbleView(context: Context) : View(context) {
                 val cornerPx = side * 0.30f
                 squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
 
-                // Shadow: rounded-rect slightly offset downward, slightly smaller
+                // Soft drop shadow (canon: 0 6px 18px rgba(0,0,0,.5)). A BlurMaskFilter gives a
+                // smooth shadow instead of a hard grey squircle (which showed as a dirty edge on
+                // light backgrounds). Needs the software layer (set in init). Radius + offset
+                // scale with the bubble size.
+                shadowPaint.maskFilter = BlurMaskFilter(side * 0.14f, BlurMaskFilter.Blur.NORMAL)
+                val shadowDy = side * 0.06f
                 val shadowRect = RectF(
-                    squircleRect.left  + 1f,
-                    squircleRect.top   + side * 0.06f,
-                    squircleRect.right - 1f,
-                    squircleRect.bottom + side * 0.06f
+                    squircleRect.left,
+                    squircleRect.top    + shadowDy,
+                    squircleRect.right,
+                    squircleRect.bottom + shadowDy
                 )
                 canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
 
@@ -326,18 +346,19 @@ class FloatingBubbleView(context: Context) : View(context) {
                 )
                 canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
 
-                // Faint teal ring (~3dp, ~12% alpha TealBg) — inset by half strokeWidth.
-                // This is a SUBTLE accent on the teal fill, not the primary color. (AC1 / DT5)
-                val ringStrokePx = 3f * density
+                // Faint teal accent ring — drawn OUTSIDE the fill edge (canon: 0 0 0 3px
+                // rgba(.13) spread), so it never overlaps the gradient and creates an inner seam.
+                // Very subtle; the vibrant fill + soft shadow carry the look.
+                val ringStrokePx = 2f * density
                 idleRingPaint.strokeWidth = ringStrokePx
                 val ringHalf = ringStrokePx / 2f
                 val ringRect = RectF(
-                    squircleRect.left   + ringHalf,
-                    squircleRect.top    + ringHalf,
-                    squircleRect.right  - ringHalf,
-                    squircleRect.bottom - ringHalf
+                    squircleRect.left   - ringHalf,
+                    squircleRect.top    - ringHalf,
+                    squircleRect.right  + ringHalf,
+                    squircleRect.bottom + ringHalf
                 )
-                canvas.drawRoundRect(ringRect, cornerPx - ringHalf, cornerPx - ringHalf, idleRingPaint)
+                canvas.drawRoundRect(ringRect, cornerPx + ringHalf, cornerPx + ringHalf, idleRingPaint)
 
                 // Dark "K" centered in the squircle.
                 // textSize ≈ 0.85 × visualRadius  (canon: 17px on 40px box = 0.85 × 20px radius)
