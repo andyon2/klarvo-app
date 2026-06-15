@@ -14,15 +14,17 @@ import androidx.core.content.ContextCompat
  * All rendering via Canvas -- no asset files needed.
  *
  * States:
- *   IDLE          -- white circle + Klarvo app launcher icon
+ *   IDLE          -- teal "K" letter + glass ring (4dp Teal stroke on dark Surface fill)
  *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark]
  *                    Used for tap-to-record where the user needs cancel/confirm buttons.
- *   RECORDING_PTT -- circular bubble, scaled up + red, waveform inside.
+ *   RECORDING_PTT -- circular bubble, scaled up + Danger color, waveform inside.
  *                    Used for push-to-talk: user just holds and releases, no bar needed.
- *   PROCESSING    -- amber circle + rotating arc spinner
+ *   PROCESSING    -- Teal circle + rotating arc spinner
  *
  * Size:
- *   Call setBubbleSize(dp) to resize the bubble at runtime.
+ *   Call setBubbleSize(dp) to resize the bubble at runtime (controls the visual radius).
+ *   The WindowManager LayoutParams may be larger than bubbleSizeDp (touch-target expansion
+ *   to ≥48dp); the visual circle is drawn centered within the larger touch-target bounds.
  *   In RECORDING state the view widens to BAR_WIDTH_DP; height stays at bubbleSizeDp.
  *   In RECORDING_PTT state the view stays circular but animates scale via scaleX/scaleY.
  *
@@ -31,6 +33,11 @@ import androidx.core.content.ContextCompat
  *   - Right ~25% of width -> confirm zone (checkmark button)
  *   - Middle               -> waveform (no action)
  *   KlarvoOverlayService reads isTouchInCancelZone() / isTouchInConfirmZone() to route taps.
+ *
+ * Color semantics (DT5 — binding rule):
+ *   KlarvoTheme.Teal   = brand / processing / focus-ring / idle "K"
+ *   KlarvoTheme.Danger = stop / recording / cancel button
+ *   No amber in IDLE — amber = recording tally (Story 9.5+ scope).
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
@@ -63,14 +70,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         private const val BTN_RADIUS_FRACTION = 0.35f
     }
 
-    // --- Colours ---
-    private val colorIdleBackground = Color.parseColor("#F5F5F5")  // light grey/white
-    private val colorRecordingBar   = Color.parseColor("#EF4444")  // red
-    private val colorCancelBtn      = Color.parseColor("#CC2222")  // darker red for X circle
-    private val colorConfirmBtn     = Color.parseColor("#22C55E")  // green for checkmark circle
-    private val colorProcessing     = Color.parseColor("#F59E0B")  // amber
-
-    // --- App icon ---
+    // --- App icon (kept for 9.4+ states; not used in IDLE since 9.3 re-skin) ---
     private val appIconDrawable: Drawable? =
         ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
 
@@ -80,7 +80,7 @@ class FloatingBubbleView(context: Context) : View(context) {
     }
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#33000000")
+        color = KlarvoTheme.ShadowColor
     }
     private val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -98,6 +98,26 @@ class FloatingBubbleView(context: Context) : View(context) {
     }
     private val btnPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+    }
+
+    // --- Idle re-skin paints (Story 9.3 — teal "K" + glass ring) ---
+    // idleCirclePaint: dark Surface fill (simulates glass — no RenderEffect blur, AR5/DT4)
+    private val idleCirclePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.Surface
+    }
+    // idleRingPaint: 4dp Teal stroke ring; strokeWidth is set in onDraw after density is known
+    private val idleRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = KlarvoTheme.Teal
+        strokeCap = Paint.Cap.BUTT
+    }
+    // kLetterPaint: bold "K" in Teal; textSize and center alignment set in onDraw
+    private val kLetterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.Teal
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
     }
 
     // --- Bar animation (drives waveform bars in both RECORDING and RECORDING_PTT) ---
@@ -251,44 +271,65 @@ class FloatingBubbleView(context: Context) : View(context) {
 
         when (state) {
             State.IDLE -> {
+                // Touch-target expansion: the view may be larger than the visual bubble.
+                // bubbleSizeDp controls the visual radius; the view is sized to the touch target.
+                // Draw centered within the touch-target bounds.
+                val density = resources.displayMetrics.density
+                val visualRadius = (bubbleSizeDp * density) / 2f
                 val cx = w / 2f
                 val cy = h / 2f
-                val radius = minOf(cx, cy)
-                canvas.drawCircle(cx, cy + radius * 0.06f, radius * 0.92f, shadowPaint)
-                circlePaint.color = colorIdleBackground
-                canvas.drawCircle(cx, cy, radius, circlePaint)
-                drawIdleIcon(canvas, cx, cy, radius)
+
+                // Shadow (slightly offset downward for depth)
+                canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
+
+                // Dark Surface fill (glass effect without blur — AR5/DT4)
+                canvas.drawCircle(cx, cy, visualRadius, idleCirclePaint)
+
+                // 4dp Teal ring, inset by half stroke width so ring is fully inside circle bounds
+                val ringStrokePx = 4f * density
+                idleRingPaint.strokeWidth = ringStrokePx
+                val ringStrokeHalf = ringStrokePx / 2f
+                canvas.drawCircle(cx, cy, visualRadius - ringStrokeHalf, idleRingPaint)
+
+                // Teal "K" centered in the bubble; +0.22f*radius baseline correction for capital letter
+                kLetterPaint.textSize = visualRadius * 0.65f
+                canvas.drawText("K", cx, cy + visualRadius * 0.22f, kLetterPaint)
             }
             State.RECORDING -> {
                 drawRecordingBar(canvas, w, h)
             }
             State.RECORDING_PTT -> {
                 // Circular bubble -- stays same size as IDLE, scale animation via scaleX/scaleY.
-                // Drawn red with waveform bars centered inside.
+                // Drawn Danger (red/stop) with waveform bars centered inside.
+                // Use the same visual radius derivation as IDLE so the circle diameter never
+                // grows to fill the touch-target window when leaving IDLE.
                 val cx = w / 2f
                 val cy = h / 2f
-                val radius = minOf(cx, cy)
+                val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
                 // Shadow (slightly offset downward for depth)
-                canvas.drawCircle(cx, cy + radius * 0.06f, radius * 0.92f, shadowPaint)
-                // Red filled circle
-                circlePaint.color = colorRecordingBar
-                canvas.drawCircle(cx, cy, radius, circlePaint)
+                canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
+                // Danger filled circle (stop/recording — DT5)
+                circlePaint.color = KlarvoTheme.Danger
+                canvas.drawCircle(cx, cy, visualRadius, circlePaint)
                 // Waveform bars inside the circle.
-                // Half-height limit: 70% of radius so bars are tall and clearly visible.
+                // Half-height limit: 70% of visual radius so bars are tall and clearly visible.
                 // The bar draws ±halfHeight from center, so this is nearly full diameter.
-                val waveHalfH = radius * 0.70f
-                // Left/right bounds: 75% of radius each side for a wide waveform footprint.
-                val waveLeft  = cx - radius * 0.75f
-                val waveRight = cx + radius * 0.75f
+                val waveHalfH = visualRadius * 0.70f
+                // Left/right bounds: 75% of visual radius each side for a wide waveform footprint.
+                val waveLeft  = cx - visualRadius * 0.75f
+                val waveRight = cx + visualRadius * 0.75f
                 drawWaveformBarsInZone(canvas, waveLeft, waveRight, cx, cy, waveHalfH)
             }
             State.PROCESSING -> {
                 val cx = w / 2f
                 val cy = h / 2f
-                val radius = minOf(cx, cy)
-                circlePaint.color = colorProcessing
-                canvas.drawCircle(cx, cy, radius, circlePaint)
-                drawSpinner(canvas, cx, cy, radius)
+                // Use the same visual radius derivation as IDLE so the circle diameter never
+                // grows to fill the touch-target window when leaving IDLE.
+                val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
+                // Teal fill (brand/processing — DT5; NOT amber)
+                circlePaint.color = KlarvoTheme.Teal
+                canvas.drawCircle(cx, cy, visualRadius, circlePaint)
+                drawSpinner(canvas, cx, cy, visualRadius)
             }
         }
     }
@@ -350,8 +391,8 @@ class FloatingBubbleView(context: Context) : View(context) {
     private fun drawRecordingBar(canvas: Canvas, w: Float, h: Float) {
         val radius = h / 2f
 
-        // Background pill (red)
-        circlePaint.color = colorRecordingBar
+        // Background pill (Danger = stop/recording — DT5)
+        circlePaint.color = KlarvoTheme.Danger
         canvas.drawRoundRect(RectF(0f, 0f, w, h), radius, radius, circlePaint)
 
         val btnRadius = h * BTN_RADIUS_FRACTION
@@ -359,14 +400,14 @@ class FloatingBubbleView(context: Context) : View(context) {
         // --- Cancel button (X, left) ---
         val cancelCx = h / 2f   // center is half a bubble-height from left
         val cancelCy = h / 2f
-        btnPaint.color = colorCancelBtn
+        btnPaint.color = KlarvoTheme.Danger
         canvas.drawCircle(cancelCx, cancelCy, btnRadius, btnPaint)
         drawXMark(canvas, cancelCx, cancelCy, btnRadius * 0.5f)
 
         // --- Confirm button (checkmark, right) ---
         val confirmCx = w - h / 2f
         val confirmCy = h / 2f
-        btnPaint.color = colorConfirmBtn
+        btnPaint.color = KlarvoTheme.TealHi
         canvas.drawCircle(confirmCx, confirmCy, btnRadius, btnPaint)
         drawCheckMark(canvas, confirmCx, confirmCy, btnRadius * 0.55f)
 

@@ -50,6 +50,11 @@ class KlarvoOverlayService : Service() {
         private const val PREFS_NAME    = "klarvo_bubble_prefs"
         private const val PREF_X        = "bubble_x"
         private const val PREF_Y        = "bubble_y"
+        private const val PREF_SIDE     = "bubble_side"  // "left" or "right"
+
+        // Keyboard jump-up: fixed nav-bar clearance in px (AR5d — do NOT use WindowInsetsCompat
+        // or env(safe-area-inset-bottom); those are unreliable for overlay Services on API 24+)
+        private const val NAV_BAR_CLEARANCE_PX = 56
 
         /** SharedPreference key: if true the bubble is always visible, not just when keyboard is open. */
         const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
@@ -169,6 +174,13 @@ class KlarvoOverlayService : Service() {
 
     // Auto-mode loop: true while the auto-loop is active (records, processes, repeats)
     private var autoLoopActive = false
+
+    /**
+     * Remembered Y position before a keyboard jump-up so we can restore it when the keyboard
+     * closes in always-visible mode. Null when the bubble has not been moved for the keyboard.
+     * Never written by savePosition() — a keyboard-shifted Y must not become the resting position.
+     */
+    private var preKeyboardY: Int? = null
 
     // Long-press / push-to-talk state
     private var longPressTriggered = false
@@ -407,14 +419,60 @@ class KlarvoOverlayService : Service() {
     }
 
     private fun applyKeyboardState(isOpen: Boolean) {
-        if (alwaysVisible) return
+        if (alwaysVisible) {
+            // In always-visible mode we never show/hide, but we still need to restore the
+            // bubble's Y position when the keyboard closes after a jump-up.
+            if (!isOpen) {
+                val saved = preKeyboardY
+                if (saved != null && isBubbleVisible && ::bubbleView.isInitialized) {
+                    preKeyboardY = null
+                    bubbleParams.y = saved
+                    updateBubbleLayout()
+                } else {
+                    preKeyboardY = null
+                }
+            }
+            return
+        }
         if (isOpen == keyboardVisible) return
 
         keyboardVisible = isOpen
         if (isOpen) {
             showBubble()
-        } else if (currentState == RecordingState.IDLE) {
-            hideBubble()
+        } else {
+            // Keyboard closed: clear any remembered pre-keyboard Y (not always-visible path,
+            // so the bubble is about to be hidden; no restore needed).
+            preKeyboardY = null
+            if (currentState == RecordingState.IDLE) {
+                hideBubble()
+            }
+        }
+    }
+
+    /**
+     * Adjusts the bubble Y position upward if the keyboard would cover it.
+     * Called by KlarvoAccessibilityService when the IME window bounds are known,
+     * and by the reflection fallback path with the IMM-reported height.
+     *
+     * Nav-bar clearance: 56px fixed constant (AR5d). Do NOT use WindowInsetsCompat or
+     * env(safe-area-inset-bottom) — those are unreliable for overlay Services on API 24+.
+     */
+    fun adjustBubbleForKeyboard(keyboardHeightPx: Int) {
+        handler.post {
+            if (!isBubbleVisible || !::bubbleView.isInitialized) return@post
+            val (_, screenH) = getScreenDimensions()
+            val dm = resources.displayMetrics
+            // Use the window height (≥48dp touch target) so the window's real bottom edge
+            // clears the keyboard, not just the smaller visual circle.
+            val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+            val maxY = screenH - keyboardHeightPx - NAV_BAR_CLEARANCE_PX - windowPx
+            if (bubbleParams.y > maxY) {
+                if (preKeyboardY == null) {
+                    preKeyboardY = bubbleParams.y
+                }
+                bubbleParams.y = maxY.coerceAtLeast(0)
+                updateBubbleLayout()
+            }
         }
     }
 
@@ -426,6 +484,10 @@ class KlarvoOverlayService : Service() {
             val method = imm.javaClass.getMethod("getInputMethodWindowVisibleHeight")
             val height = method.invoke(imm) as Int
             applyKeyboardState(height > 0)
+            // Reflection fallback: also apply keyboard jump-up with the reported height
+            if (height > 0) {
+                adjustBubbleForKeyboard(height)
+            }
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "getInputMethodWindowVisibleHeight reflection failed: ${e.message}")
         }
@@ -504,28 +566,40 @@ class KlarvoOverlayService : Service() {
     private fun setupBubble() {
         bubbleView = FloatingBubbleView(this)
 
-        // Load bubble size and opacity from config.json (written by the Tauri/React settings UI).
-        // Falls back to defaults if the config is not yet available (first launch).
+        // Load opacity from config.json (written by the Tauri/React settings UI).
+        // bubbleSize scale factor is superseded by computeVisualSizeDp() as of Story 9.3.
         val config = KlarvoApi.readConfig(this)
-        val sizeScale = config?.bubbleSize ?: 1.0f
         bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
-        val sizeDp = (BASE_BUBBLE_SIZE_DP * sizeScale).toInt().coerceAtLeast(24)
+        // Responsive size formula: clamp(36, 0.11 × min(screenW_dp, screenH_dp), 44)
+        val sizeDp = computeVisualSizeDp()
         bubbleView.setBubbleSize(sizeDp)
         bubbleView.alpha = bubbleOpacity
 
         val (screenW, screenH) = getScreenDimensions()
-        val dp        = resources.displayMetrics.density
+        val dm        = resources.displayMetrics
+        val dp        = dm.density
         val bubblePx  = (sizeDp * dp).toInt()
-        val marginPx  = (16 * dp).toInt()
+        val marginPx  = (8 * dp).toInt()  // 8dp snap margin (tighter than startup default)
 
+        // Touch-target expansion: LayoutParams must be ≥ 48dp to meet touch-target requirement.
+        // The visual circle (bubbleSizeDp) may be smaller; FloatingBubbleView draws it centered.
+        val touchTargetDp = maxOf(sizeDp, 48)
+        val touchTargetPx = (touchTargetDp * dp).toInt()
+
+        // Restore position using saved side (left/right) rather than raw pixel X.
+        // This ensures the bubble lands on the correct edge after screen rotation or reinstall.
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedX = prefs.getInt(PREF_X, screenW - bubblePx - marginPx)
+        val savedSide = prefs.getString(PREF_SIDE, "right") ?: "right"
+        // WindowManager positions the window (touchTargetPx wide), not the visual circle.
+        // Use touchTargetPx for edge placement so the window fits within the screen edge.
+        val defaultX = if (savedSide == "left") marginPx else screenW - touchTargetPx - marginPx
+        val savedX = prefs.getInt(PREF_X, defaultX)
         val savedY = prefs.getInt(PREF_Y, screenH / 2)
 
         bubbleParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            touchTargetPx,
+            touchTargetPx,
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -554,6 +628,23 @@ class KlarvoOverlayService : Service() {
         }
     }
 
+    /**
+     * Computes the visual bubble size in dp using the responsive formula:
+     *   visualDp = clamp(36, (0.11 × min(screenW_dp, screenH_dp)).toInt(), 44)
+     *
+     * This supersedes the old BASE_BUBBLE_SIZE_DP × config.bubbleSize formula as of Story 9.3.
+     * The bubbleSize config scale factor is no longer applied to the visual size (it becomes a
+     * no-op). Document here so Story 9.5+ is aware. The config field is intentionally not
+     * removed — it may be repurposed or restored in a future story.
+     */
+    private fun computeVisualSizeDp(): Int {
+        val dm = resources.displayMetrics
+        val screenWdp = dm.widthPixels / dm.density
+        val screenHdp = dm.heightPixels / dm.density
+        val rawDp = (0.11f * minOf(screenWdp, screenHdp)).toInt()
+        return rawDp.coerceIn(36, 44)
+    }
+
     // --- WindowManager layout update ---
 
     /**
@@ -570,40 +661,52 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
-     * Adjusts the WindowManager LayoutParams width to match the current view state.
+     * Adjusts the WindowManager LayoutParams to match the current view state.
      *
-     * IDLE / PROCESSING  -> WRAP_CONTENT (square = bubble diameter)
-     * RECORDING          -> WRAP_CONTENT (the view's onMeasure returns BAR_WIDTH_DP)
-     *
-     * WRAP_CONTENT is sufficient because FloatingBubbleView.onMeasure returns different
-     * dimensions depending on state. We just need to force a layout pass after the state
-     * change so WindowManager picks up the new measured size.
+     * IDLE / PROCESSING  -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
+     *                       FloatingBubbleView draws the smaller visual circle centered within.
+     * RECORDING          -> WRAP_CONTENT (onMeasure returns BAR_WIDTH_DP × bubbleSizeDp)
+     * RECORDING_PTT      -> explicit touchTargetPx (same as IDLE; scale animation via scaleX/Y)
      *
      * Also keeps the bar center aligned with the original bubble center:
      * when expanding from circle to bar we shift x left by half the extra width so
      * the center stays in place.
      */
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
-        val dp       = resources.displayMetrics.density
-        val bubblePx = (bubbleView.getBubbleSizeDp() * dp).toInt()
-        val barPx    = (FloatingBubbleView.BAR_WIDTH_DP * dp).toInt()
+        val dp           = resources.displayMetrics.density
+        val visualDp     = bubbleView.getBubbleSizeDp()
+        val bubblePx     = (visualDp * dp).toInt()
+        val touchTargetDp = maxOf(visualDp, 48)
+        val touchTargetPx = (touchTargetDp * dp).toInt()
+        val barPx         = (FloatingBubbleView.BAR_WIDTH_DP * dp).toInt()
 
         when {
             newState == RecordingState.RECORDING && previousState == RecordingState.IDLE -> {
                 // Expand: shift left so bubble center stays under finger
-                val extraW = barPx - bubblePx
-                bubbleParams.x = (bubbleParams.x - extraW / 2).coerceAtLeast(0)
+                // Center of touch-target was at (bubbleParams.x + touchTargetPx/2);
+                // bar center should stay there: new x = oldCenter - barPx/2
+                val oldCenterX = bubbleParams.x + touchTargetPx / 2
+                bubbleParams.x = (oldCenterX - barPx / 2).coerceAtLeast(0)
             }
             newState != RecordingState.RECORDING && previousState == RecordingState.RECORDING -> {
-                // Collapse: shift right to restore original center position
-                val extraW = barPx - bubblePx
-                bubbleParams.x += extraW / 2
+                // Collapse: restore center position
+                val oldCenterX = bubbleParams.x + barPx / 2
+                bubbleParams.x = (oldCenterX - touchTargetPx / 2).coerceAtLeast(0)
             }
         }
 
-        // WRAP_CONTENT in both directions; onMeasure drives the actual size
-        bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
-        bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+        when (newState) {
+            RecordingState.RECORDING -> {
+                // Bar mode: let onMeasure drive the size
+                bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
+                bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+            }
+            else -> {
+                // IDLE / RECORDING_PTT / PROCESSING: explicit touch-target dimensions
+                bubbleParams.width  = touchTargetPx
+                bubbleParams.height = touchTargetPx
+            }
+        }
 
         updateBubbleLayout()
     }
@@ -658,6 +761,21 @@ class KlarvoOverlayService : Service() {
                 if (event.action == MotionEvent.ACTION_UP) {
                     when {
                         isDragging -> {
+                            // Edge-snap: slide to nearest horizontal edge on drag release.
+                            // 8dp margin from edge for a clean overlay feel.
+                            val (screenW, _) = getScreenDimensions()
+                            val dm = resources.displayMetrics
+                            // WindowManager positions the window (windowPx wide), not the visual
+                            // circle. All edge/midpoint math must use the window width.
+                            val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+                            val marginPx = (8 * dm.density).toInt()
+                            val midScreen = screenW / 2
+                            bubbleParams.x = if (bubbleParams.x + windowPx / 2 < midScreen) {
+                                marginPx              // snap left
+                            } else {
+                                screenW - windowPx - marginPx  // snap right
+                            }
+                            updateBubbleLayout()
                             savePosition(bubbleParams.x, bubbleParams.y)
                         }
                         pushToTalkActive -> {
@@ -683,9 +801,16 @@ class KlarvoOverlayService : Service() {
     }
 
     private fun savePosition(x: Int, y: Int) {
+        val (screenW, _) = getScreenDimensions()
+        val dm = resources.displayMetrics
+        // Side detection uses the window width (≥48dp touch target), matching WindowManager
+        // placement logic so left/right classification agrees with edge-snap math.
+        val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+        val side = if (x + windowPx / 2 < screenW / 2) "left" else "right"
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putInt(PREF_X, x)
             .putInt(PREF_Y, y)
+            .putString(PREF_SIDE, side)
             .apply()
     }
 
@@ -1316,13 +1441,23 @@ class KlarvoOverlayService : Service() {
     /**
      * Re-reads bubble size, opacity, and recording controls from config.json.
      * Called on every return to IDLE so Settings changes take effect after the next dictation.
+     *
+     * Bubble visual size uses the responsive formula (computeVisualSizeDp) as of Story 9.3;
+     * config.bubbleSize scale factor is no longer applied here.
      */
     private fun reloadBubbleAppearance() {
         val config = KlarvoApi.readConfig(this) ?: return
-        val newSizeDp = (BASE_BUBBLE_SIZE_DP * config.bubbleSize).toInt().coerceAtLeast(24)
+        val newSizeDp = computeVisualSizeDp()
         bubbleOpacity = config.bubbleOpacity
         bubbleView.setBubbleSize(newSizeDp)
         bubbleView.alpha = bubbleOpacity
+
+        // Touch-target expansion: keep LayoutParams in sync with the visual size
+        val touchTargetDp = maxOf(newSizeDp, 48)
+        val touchTargetPx = (touchTargetDp * resources.displayMetrics.density).toInt()
+        bubbleParams.width  = touchTargetPx
+        bubbleParams.height = touchTargetPx
+
         updateBubbleLayout()
         loadBubbleControls()
         updateNotification()
