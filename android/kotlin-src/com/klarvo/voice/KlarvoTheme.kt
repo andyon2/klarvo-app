@@ -47,6 +47,12 @@ object KlarvoTheme {
     const val TealBg      = 0x1F29C7AC.toInt()
     // AmberBg: ~12% alpha amber — ring inner fill background (recording state)
     const val AmberBg     = 0x1FE9A24C.toInt()
+    // AmberLine: ~32% alpha amber — top border accent (recording panel; matches --k-amber-line = rgba(233,162,76,0.32))
+    const val AmberLine   = 0x52E9A24C.toInt()
+    // AmberHi: bright amber highlight — pulse ring / bar highlight
+    const val AmberHi     = 0xFFF4BA72.toInt()
+    // DangerBg: ~12% alpha danger — stop-button background (matches --k-danger-bg convention)
+    const val DangerBg    = 0x1FEE6F63.toInt()
     // ShadowColor: 20% black — drop shadow
     const val ShadowColor = 0x33000000.toInt()
 }

@@ -136,6 +136,11 @@ class KlarvoOverlayService : Service() {
     /** Tracks whether the bubble view is currently attached to WindowManager. */
     private var isBubbleVisible = false
 
+    // Listening panel (Story 9.5): second TYPE_APPLICATION_OVERLAY window shown during recording/transcribing.
+    private var panelView: ListeningPanelView? = null
+    private var panelParams: WindowManager.LayoutParams? = null
+    private var panelVisible = false
+
     // Keyboard detection
     private var keyboardVisible = false
 
@@ -257,11 +262,8 @@ class KlarvoOverlayService : Service() {
             }
         }
         // F3: reset amplitude when rms is absent so each harness broadcast starts clean.
-        if (rms >= 0f) {
-            bubbleView.amplitude = rms.coerceIn(0f, 1f)
-        } else {
-            bubbleView.amplitude = 0f
-        }
+        val coercedRms = if (rms >= 0f) rms.coerceIn(0f, 1f) else 0f
+        bubbleView.amplitude = coercedRms
         if (transcript != null) debugTranscript = transcript
         // F1-A: force the bubble visible for harness use before setting state.
         // F2: capture previous state so adjustLayoutForState gets correct geometry.
@@ -269,6 +271,32 @@ class KlarvoOverlayService : Service() {
         forceShowBubbleForHarness()
         setState(newState)
         adjustLayoutForState(newState, previousState)
+
+        // Story 9.5: sync listening panel to harness state.
+        when (newState) {
+            RecordingState.RECORDING -> {
+                if (!panelVisible) {
+                    showListeningPanel(ListeningPanelView.State.RECORDING)
+                    // F4: guard timer start on actual successful attach
+                    if (panelVisible) panelView?.startTimer()
+                }
+                panelView?.amplitude = coercedRms
+                panelView?.rawTranscript = debugTranscript
+            }
+            RecordingState.TRANSCRIBING -> {
+                if (!panelVisible) {
+                    showListeningPanel(ListeningPanelView.State.TRANSCRIBING)
+                } else {
+                    panelView?.stopTimer()
+                    panelView?.panelState = ListeningPanelView.State.TRANSCRIBING
+                    panelView?.invalidate()
+                }
+            }
+            RecordingState.IDLE, RecordingState.DONE -> {
+                hideListeningPanel()
+            }
+        }
+
         KlarvoLogger.d(TAG, "[harness] state → $newState (rms=$rms, transcript=${transcript?.take(30)})")
     }
 
@@ -340,6 +368,8 @@ class KlarvoOverlayService : Service() {
      */
     private val doneFlashRunnable = Runnable {
         if (currentState == RecordingState.DONE) {
+            // Story 9.5: hide listening panel before returning to IDLE.
+            hideListeningPanel()
             setState(RecordingState.IDLE)
             adjustLayoutForState(RecordingState.IDLE, RecordingState.DONE)
         }
@@ -432,6 +462,8 @@ class KlarvoOverlayService : Service() {
         }
         audioRecorder?.releaseImmediately()
         audioRecorder = null
+        // F3: release panel window + its Handler + ValueAnimators on teardown
+        hideListeningPanel()
         super.onDestroy()
         if (::bubbleView.isInitialized && isBubbleVisible) {
             try {
@@ -1143,7 +1175,12 @@ class KlarvoOverlayService : Service() {
 
         val recorder = KlarvoAudioRecorder(
             context = this,
-            onAmplitude = { amplitude -> handler.post { bubbleView.amplitude = amplitude } },
+            onAmplitude = { amplitude ->
+                handler.post {
+                    bubbleView.amplitude = amplitude
+                    panelView?.amplitude = amplitude
+                }
+            },
             silenceSecs = activeSilenceSecs
         )
 
@@ -1181,6 +1218,11 @@ class KlarvoOverlayService : Service() {
                 setState(RecordingState.RECORDING)
             }
         }
+
+        // Story 9.5: show listening panel when recording starts.
+        showListeningPanel(ListeningPanelView.State.RECORDING)
+        // F4: start timer only if panel was actually attached (panelVisible set inside showListeningPanel)
+        if (panelVisible) panelView?.startTimer()
     }
 
     /**
@@ -1231,6 +1273,8 @@ class KlarvoOverlayService : Service() {
         if (previousState == RecordingState.RECORDING && wasBarMode) {
             adjustLayoutForState(RecordingState.IDLE, previousState)
         }
+        // Story 9.5: hide listening panel on cancel.
+        hideListeningPanel()
     }
 
     /**
@@ -1248,6 +1292,13 @@ class KlarvoOverlayService : Service() {
             adjustLayoutForState(RecordingState.TRANSCRIBING, previousState)
         }
 
+        // Story 9.5: transition panel to TRANSCRIBING (keep visible, change appearance).
+        panelView?.let { panel ->
+            panel.stopTimer()
+            panel.panelState = ListeningPanelView.State.TRANSCRIBING
+            panel.invalidate()
+        }
+
         Thread {
             val wavBytes = recorder.stop()
             processAudio(wavBytes)
@@ -1262,6 +1313,7 @@ class KlarvoOverlayService : Service() {
             handler.post {
                 showToast("No audio recorded")
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1284,6 +1336,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Recording too short")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1296,6 +1349,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("No speech detected")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1320,6 +1374,7 @@ class KlarvoOverlayService : Service() {
             handler.post {
                 showToast("No API keys configured. Please open Klarvo and add your Groq key in Settings.")
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1359,6 +1414,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Whisper model not downloaded. Please download in Settings.")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1377,6 +1433,7 @@ class KlarvoOverlayService : Service() {
                         handler.post {
                             showToast("Failed to load Whisper model")
                             autoLoopActive = false
+                            hideListeningPanel()
                             val prev = currentState
                             setState(RecordingState.IDLE)
                             adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1397,6 +1454,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Transcription failed")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1425,6 +1483,7 @@ class KlarvoOverlayService : Service() {
                 handler.post {
                     showToast("No speech detected")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1439,6 +1498,7 @@ class KlarvoOverlayService : Service() {
                 handler.post {
                     showToast("Speech not recognized")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1540,6 +1600,7 @@ class KlarvoOverlayService : Service() {
                 if (BankingGuard.shouldBlockPaste(bankingAppActive)) {
                     showToast("Paste blocked — banking app active.")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1615,9 +1676,88 @@ class KlarvoOverlayService : Service() {
             handler.post {
                 showToast("Error: ${e.message?.take(80)}$savedMsg")
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
+            }
+        }
+    }
+
+    // --- Listening panel helpers (Story 9.5) ---
+
+    /**
+     * Creates and attaches the listening panel overlay window.
+     * Must be called on the main thread. No-op if panel is already visible.
+     */
+    private fun showListeningPanel(initialState: ListeningPanelView.State) {
+        if (panelVisible) {
+            // Update state if already visible (e.g. RECORDING→TRANSCRIBING without hide/show)
+            panelView?.panelState = initialState
+            panelView?.invalidate()
+            return
+        }
+        val panel = ListeningPanelView(this)
+        panel.panelState = initialState
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = android.view.Gravity.BOTTOM
+        }
+        // Wire stop-button touch on the panel itself.
+        // F1: return true on ACTION_DOWN when inside the stop button so the gesture stream is
+        // captured and the subsequent ACTION_UP arrives. Without consuming ACTION_DOWN the view
+        // receives no ACTION_UP (Android touch-cancel rule).
+        panel.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    // Capture gesture only when the down lands on the stop button
+                    panel.isTouchOnStopButton(event.x, event.y)
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (panel.isTouchOnStopButton(event.x, event.y)) {
+                        handler.post { stopAndProcessRecording() }
+                        true
+                    } else false
+                }
+                else -> false
+            }
+        }
+        try {
+            windowManager.addView(panel, params)
+            panelView    = panel
+            panelParams  = params
+            panelVisible = true
+            KlarvoLogger.d(TAG, "[panel] shown (state=$initialState)")
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[panel] addView failed", e)
+        }
+    }
+
+    /**
+     * Removes the listening panel overlay window with a 320ms slide-down collapse animation.
+     * If called mid-collapse (e.g. a new show is requested), the in-flight animation is cancelled
+     * and the window is removed immediately so state stays consistent (F9).
+     *
+     * Must be called on the main thread. No-op if panel is not visible.
+     */
+    private fun hideListeningPanel() {
+        if (!panelVisible) return
+        val panel = panelView ?: return
+        // Mark not visible immediately so re-entrant calls (e.g. from onDestroy) are no-ops
+        panelVisible = false
+        panelView    = null
+        panelParams  = null
+        panel.hideWithAnimation {
+            try {
+                windowManager.removeView(panel)
+                KlarvoLogger.d(TAG, "[panel] hidden")
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[panel] removeView failed (already removed?)", e)
             }
         }
     }
