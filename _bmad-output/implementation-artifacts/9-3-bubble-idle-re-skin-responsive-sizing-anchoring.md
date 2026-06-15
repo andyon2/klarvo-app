@@ -1,6 +1,6 @@
 # Story 9.3: Bubble Idle Re-Skin + Responsive Sizing + Anchoring
 
-Status: review
+Status: done
 
 ## Story
 
@@ -370,3 +370,4 @@ claude-sonnet-4-6 (story-context pass, 2026-06-15)
 - 2026-06-15: Story context created (claude-sonnet-4-6). Baseline analysis: FloatingBubbleView.kt (478 LOC), KlarvoOverlayService.kt (1482 LOC), KlarvoTheme.kt (9.2 foundation). No edge-snap exists today; no keyboard-height adjustment. Touch-target expansion pattern documented. Color semantics (DT5) enforced.
 - 2026-06-15: Implementation complete (claude-sonnet-4-6). FloatingBubbleView: IDLE re-skin (teal K + glass ring), all colors migrated to KlarvoTheme (DT5). KlarvoOverlayService: computeVisualSizeDp() responsive formula, touch-target expansion (≥48dp LayoutParams), edge-snap on drag release, PREF_SIDE side-memory, adjustBubbleForKeyboard() with NAV_BAR_CLEARANCE_PX=56. KlarvoAccessibilityService: notifyKeyboardState() extracts IME height via getBoundsInScreen(), calls adjustBubbleForKeyboard(). Kotlin compile: exit 0. JVM unit tests: exit 0. Status → review.
 - 2026-06-15: Code-review (Opus, 3 layers) + conductor close-out (worker base impl folded into the single story commit) → 3 patches applied (AC2 PTT/PROCESSING circle now uses visual radius, not touch-box; all window-positioning math uses window width not visual px; keyboard jump-up restores prior Y on hide in always-visible mode), 3 deferred (pre-existing: hidden-API IME-height, no onConfigurationChanged/rotation, drag-Y not clamped to bottom), 4 dismissed. Compile + 24 JVM tests green; android-smoke build/install GREEN on device (v0.5.0, AI-1 gate). On-device visual render remains the human gate (secure keyguard blocks agent capture). Status stays review pending Andi's on-device visual smoke.
+- 2026-06-15: Andi on-device visual smoke GREEN (idle re-skin teal-K + glass ring, responsive size, edge-snap, remembered-side, keyboard jump-up all confirmed on device). Status → done.
