@@ -1,6 +1,6 @@
 # Story 9.5: Bubble State Sequence + Listening Panel + Waveform
 
-Status: done
+Status: review
 
 ## Story
 
@@ -365,3 +365,4 @@ claude-sonnet-4-6 (story-creation, 2026-06-15)
   - F9: hideListeningPanel() now calls panel.hideWithAnimation{ removeView } — 320ms LinearInterpolator translationY slide-down. hideWithAnimation() handles mid-collapse re-show by cancelling and calling onDone immediately. panelVisible/panelView cleared synchronously before animation starts so re-entrant calls are no-ops.
   - Build: BUILD SUCCESSFUL (emulator-smoke compile). JVM tests: 60/60 pass (HallucinationFilter 24, SilencePreFilter 18, SanitizationTest 12, BankingGuard 4, WavRms 1, Chunking 1). Harness smoke: recording→transcribing→done→idle — [panel] shown/hidden logged correctly on emulator-5554.
 - 2026-06-15 — Epic-conductor close-out → **done** (sole committer; folded 3 worker commits via reset --soft + one clean commit). GATE-4 fidelity GREEN (IST-vs-SOLL, canon-anchored) for recording/transcribing/done on emulator-5554; AR5a respected; amber correctly absent in transcribing. Reversible decision recorded: listening panel built as a SEPARATE TYPE_APPLICATION_OVERLAY window (over ADR-0018's literal "draw inside FloatingBubbleView" wording) — blast-radius medium for 9-6/9-8 (overlay topology), flagged for early human review. Deferred visual-nuance residuals (caret, panel top-shadow, per-bar rest heights, pulse-ring scale) + locale "Cleaning…"→"Bereinigt…" → Andi's morning gate / locale pass. | epic-conductor (Opus)
+- 2026-06-15 — **REOPENED done→review.** The emulator GATE-4 GREEN was a FALSE-GREEN: on Andi's real Xiaomi/MIUI the RECORDING state shows TWO overlay windows (listening panel + the old FloatingBubbleView RECORDING bar) — broken. The 9.4 harness is also dead on MIUI (broadcast not delivered), so emulator verification did not transfer. Real defect + fix-spec (not a one-liner: PTT touch-stream, setState alpha reset, missing panel Cancel) documented in `docs/postmortem-2026-06-15-epic-conductor.md`. Fix + real-device verification owed before 9-5 can truthfully be done. | Andi + Claude (conductor postmortem)
