@@ -62,6 +62,18 @@ class KlarvoOverlayService : Service() {
         /** BroadcastReceiver actions. */
         const val ACTION_TOGGLE_BUBBLE = "com.klarvo.voice.TOGGLE_BUBBLE"
 
+        // Debug harness — registered only in debug builds (BuildConfig.DEBUG).
+        // Drive all four bubble states on-device without live audio/network:
+        //   adb connect 100.112.41.70:5555
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state idle
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.7 --es transcript "Hello world"
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state transcribing --ef rms 0.2 --es transcript "Hello world"
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state done
+        private const val ACTION_DEBUG_SET_STATE = "com.klarvo.voice.DEBUG_SET_STATE"
+        private const val EXTRA_STATE      = "state"       // "idle"|"recording"|"transcribing"|"done"
+        private const val EXTRA_RMS        = "rms"         // Float 0.0–1.0 (synthetic amplitude)
+        private const val EXTRA_TRANSCRIPT = "transcript"  // String (synthetic raw text)
+
         // Keyboard detection: poll InputMethodManager at this interval (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
 
@@ -111,7 +123,7 @@ class KlarvoOverlayService : Service() {
         }
     }
 
-    private enum class RecordingState { IDLE, RECORDING, RECORDING_PTT, PROCESSING }
+    private enum class RecordingState { IDLE, RECORDING, TRANSCRIBING, DONE }
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var windowManager: WindowManager
@@ -192,6 +204,42 @@ class KlarvoOverlayService : Service() {
      */
     private var pushToTalkActive = false
 
+    /**
+     * Synthetic transcript injected by the debug harness broadcast.
+     * Stored for use by the listening-panel render in Story 9.5; ignored in 9.4.
+     */
+    private var debugTranscript: String = ""
+
+    /**
+     * Debug-only broadcast receiver — drives the bubble through all four states on demand
+     * without live audio or network. Only registered when BuildConfig.DEBUG == true.
+     * See ACTION_DEBUG_SET_STATE constants for adb commands.
+     */
+    private val debugStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_DEBUG_SET_STATE) return
+            val stateToken = intent.getStringExtra(EXTRA_STATE) ?: return
+            val rms = intent.getFloatExtra(EXTRA_RMS, -1f)
+            val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
+            handler.post {
+                val newState = when (stateToken.lowercase()) {
+                    "idle"         -> RecordingState.IDLE
+                    "recording"    -> RecordingState.RECORDING
+                    "transcribing" -> RecordingState.TRANSCRIBING
+                    "done"         -> RecordingState.DONE
+                    else -> {
+                        KlarvoLogger.w(TAG, "DEBUG_SET_STATE: unknown token '$stateToken'")
+                        return@post
+                    }
+                }
+                if (rms >= 0f) bubbleView.amplitude = rms.coerceIn(0f, 1f)
+                if (transcript != null) debugTranscript = transcript
+                setState(newState)
+                KlarvoLogger.d(TAG, "[harness] state → $newState (rms=$rms, transcript=${transcript?.take(30)})")
+            }
+        }
+    }
+
     private val longPressRunnable = Runnable {
         if (!isDragging && currentState == RecordingState.IDLE) {
             longPressTriggered = true
@@ -253,6 +301,18 @@ class KlarvoOverlayService : Service() {
             registerReceiver(notificationActionReceiver, filter)
         }
 
+        // Debug harness: register state-override receiver only in debug builds.
+        // Allows driving all four bubble states on-device without live audio/network.
+        if (BuildConfig.DEBUG) {
+            val debugFilter = IntentFilter(ACTION_DEBUG_SET_STATE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(debugStateReceiver, debugFilter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(debugStateReceiver, debugFilter)
+            }
+            KlarvoLogger.d(TAG, "[harness] debug broadcast receiver registered")
+        }
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -274,6 +334,13 @@ class KlarvoOverlayService : Service() {
             unregisterReceiver(notificationActionReceiver)
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "Failed to unregister notificationActionReceiver (already unregistered?)", e)
+        }
+        if (BuildConfig.DEBUG) {
+            try {
+                unregisterReceiver(debugStateReceiver)
+            } catch (e: IllegalArgumentException) {
+                KlarvoLogger.w(TAG, "[harness] debugStateReceiver already unregistered", e)
+            }
         }
         audioRecorder?.releaseImmediately()
         audioRecorder = null
@@ -693,10 +760,10 @@ class KlarvoOverlayService : Service() {
     /**
      * Adjusts the WindowManager LayoutParams to match the current view state.
      *
-     * IDLE / PROCESSING  -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
-     *                       FloatingBubbleView draws the smaller visual circle centered within.
-     * RECORDING          -> WRAP_CONTENT (onMeasure returns BAR_WIDTH_DP × bubbleSizeDp)
-     * RECORDING_PTT      -> explicit touchTargetPx (same as IDLE; scale animation via scaleX/Y)
+     * IDLE / TRANSCRIBING / DONE -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
+     *                               FloatingBubbleView draws the smaller visual circle centered.
+     * RECORDING (bar/HOLD mode)  -> WRAP_CONTENT (onMeasure returns BAR_WIDTH_DP × bubbleSizeDp)
+     * RECORDING (circular modes) -> explicit touchTargetPx (scale animation via scaleX/Y)
      *
      * Also keeps the bar center aligned with the original bubble center:
      * when expanding from circle to bar we shift x left by half the extra width so
@@ -710,14 +777,14 @@ class KlarvoOverlayService : Service() {
 
         when {
             newState == RecordingState.RECORDING && previousState == RecordingState.IDLE -> {
-                // Expand: shift left so bubble center stays under finger
-                // Center of touch-target was at (bubbleParams.x + touchTargetPx/2);
-                // bar center should stay there: new x = oldCenter - barPx/2
+                // Expand to bar: shift left so bubble center stays under finger.
+                // Only called from HOLD tap mode (circular RECORDING sets EXACT window directly).
                 val oldCenterX = bubbleParams.x + touchTargetPx / 2
                 bubbleParams.x = (oldCenterX - barPx / 2).coerceAtLeast(0)
             }
-            newState != RecordingState.RECORDING && previousState == RecordingState.RECORDING -> {
-                // Collapse: restore center position
+            newState != RecordingState.RECORDING && previousState == RecordingState.RECORDING
+                    && bubbleView.width > bubbleView.height -> {
+                // Collapse from bar: restore center position
                 val oldCenterX = bubbleParams.x + barPx / 2
                 bubbleParams.x = (oldCenterX - touchTargetPx / 2).coerceAtLeast(0)
             }
@@ -725,12 +792,18 @@ class KlarvoOverlayService : Service() {
 
         when (newState) {
             RecordingState.RECORDING -> {
-                // Bar mode: let onMeasure drive the size
-                bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
-                bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                if (previousState == RecordingState.IDLE && tapMode == RecordingMode.HOLD && !pushToTalkActive) {
+                    // Bar mode (HOLD tap): let onMeasure drive the size
+                    bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
+                    bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                } else {
+                    // Circular mode (PTT / TOGGLE / AUTOSTOP / AUTO): explicit touch-target
+                    bubbleParams.width  = touchTargetPx
+                    bubbleParams.height = touchTargetPx
+                }
             }
             else -> {
-                // IDLE / RECORDING_PTT / PROCESSING: explicit touch-target dimensions
+                // IDLE / TRANSCRIBING / DONE: explicit touch-target dimensions
                 bubbleParams.width  = touchTargetPx
                 bubbleParams.height = touchTargetPx
             }
@@ -878,43 +951,31 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                when (tapMode) {
-                    RecordingMode.HOLD -> {
-                        when {
-                            bubbleView.isTouchInCancelZone(touchX)  -> cancelRecording()
-                            bubbleView.isTouchInConfirmZone(touchX) -> stopAndProcessRecording()
-                            // Middle zone tap: ignore
-                        }
-                    }
-                    RecordingMode.TOGGLE, RecordingMode.AUTOSTOP -> {
-                        stopAndProcessRecording()
-                    }
-                    RecordingMode.AUTO -> {
+                // Unified RECORDING handler covers both HOLD (bar) and circular modes.
+                // pushToTalkActive: finger still held → ignore taps, release handles it.
+                if (pushToTalkActive) return
+                when {
+                    // HOLD bar mode: route by touch zone
+                    tapMode == RecordingMode.HOLD && bubbleView.isTouchInCancelZone(touchX) -> cancelRecording()
+                    tapMode == RecordingMode.HOLD && bubbleView.isTouchInConfirmZone(touchX) -> stopAndProcessRecording()
+                    tapMode == RecordingMode.HOLD -> { /* middle zone tap: ignore */ }
+                    // Circular modes (TOGGLE/AUTOSTOP/AUTO/PTT non-held): tap stops recording
+                    tapMode == RecordingMode.AUTO -> {
                         autoLoopActive = false
                         stopAndProcessRecording()
                     }
+                    else -> stopAndProcessRecording()  // TOGGLE, AUTOSTOP
                 }
             }
-            RecordingState.RECORDING_PTT -> {
-                if (!pushToTalkActive) {
-                    // Not actual PTT -- this is TOGGLE/AUTOSTOP/AUTO using circular visual
-                    when (tapMode) {
-                        RecordingMode.TOGGLE, RecordingMode.AUTOSTOP -> stopAndProcessRecording()
-                        RecordingMode.AUTO -> {
-                            autoLoopActive = false
-                            stopAndProcessRecording()
-                        }
-                        else -> { /* HOLD PTT: ignore taps, release handles it */ }
-                    }
-                }
-                // If pushToTalkActive: ignore taps, finger release handles it
-            }
-            RecordingState.PROCESSING -> {
-                // Stop auto-loop so the cycle doesn't repeat after this processing finishes.
+            RecordingState.TRANSCRIBING -> {
+                // Stop auto-loop so the cycle doesn't repeat after transcribing finishes.
                 if (autoLoopActive) {
                     autoLoopActive = false
-                    KlarvoLogger.d(TAG, "Auto-loop deactivated by tap during processing")
+                    KlarvoLogger.d(TAG, "Auto-loop deactivated by tap during transcribing")
                 }
+            }
+            RecordingState.DONE -> {
+                // Placeholder state: no user action during the 800ms DONE flash.
             }
         }
     }
@@ -998,18 +1059,15 @@ class KlarvoOverlayService : Service() {
         val previousState = currentState
 
         when {
-            pushToTalkActive -> {
-                // PTT mode: bubble stays circular (no bar expansion), just turns red + scales up.
-                setState(RecordingState.RECORDING_PTT)
-            }
-            activeMode == RecordingMode.HOLD -> {
-                // HOLD: expand to bar with cancel/confirm buttons
+            activeMode == RecordingMode.HOLD && !pushToTalkActive -> {
+                // HOLD tap mode: expand to bar with cancel/confirm buttons.
                 setState(RecordingState.RECORDING)
                 adjustLayoutForState(RecordingState.RECORDING, previousState)
             }
             else -> {
-                // TOGGLE / AUTOSTOP / AUTO: red circle, no bar
-                setState(RecordingState.RECORDING_PTT)
+                // PTT (pushToTalkActive=true) + TOGGLE/AUTOSTOP/AUTO: circular form, no bar.
+                // The pushToTalkActive flag still controls stop-on-release vs. tap-to-stop.
+                setState(RecordingState.RECORDING)
             }
         }
     }
@@ -1019,7 +1077,7 @@ class KlarvoOverlayService : Service() {
      * Must be called on the main thread.
      */
     private fun onSilenceTriggered() {
-        if (currentState != RecordingState.RECORDING && currentState != RecordingState.RECORDING_PTT) return
+        if (currentState != RecordingState.RECORDING) return
 
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -1055,9 +1113,11 @@ class KlarvoOverlayService : Service() {
         }.start()
 
         val previousState = currentState
+        // Detect bar mode: width > height means the WRAP_CONTENT bar is currently shown.
+        val wasBarMode = bubbleView.width > bubbleView.height
         setState(RecordingState.IDLE)
-        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
-        if (previousState == RecordingState.RECORDING) {
+        // Only adjust layout if we were in bar mode (HOLD tap), not circular mode.
+        if (previousState == RecordingState.RECORDING && wasBarMode) {
             adjustLayoutForState(RecordingState.IDLE, previousState)
         }
     }
@@ -1071,10 +1131,10 @@ class KlarvoOverlayService : Service() {
         audioRecorder = null
 
         val previousState = currentState
-        setState(RecordingState.PROCESSING)
-        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
-        if (previousState == RecordingState.RECORDING) {
-            adjustLayoutForState(RecordingState.PROCESSING, previousState)
+        setState(RecordingState.TRANSCRIBING)
+        // Only adjust layout if we were in bar mode (HOLD tap), not circular mode.
+        if (previousState == RecordingState.RECORDING && bubbleView.width > bubbleView.height) {
+            adjustLayoutForState(RecordingState.TRANSCRIBING, previousState)
         }
 
         Thread {
@@ -1399,9 +1459,16 @@ class KlarvoOverlayService : Service() {
                     }
                 }.start()
 
-                val prev = currentState
-                setState(RecordingState.IDLE)
-                adjustLayoutForState(RecordingState.IDLE, prev)
+                // DONE flash: briefly show checkmark before returning to IDLE.
+                // Only the success path gets the DONE state; error paths go straight to IDLE.
+                val prevForDone = currentState
+                setState(RecordingState.DONE)
+                adjustLayoutForState(RecordingState.DONE, prevForDone)
+                handler.postDelayed({
+                    val prev2 = currentState  // should still be DONE
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev2)
+                }, 800L)
 
                 // Auto-send (press Enter) if configured for this gesture.
                 val shouldAutoSend = when (gesture) {
@@ -1451,10 +1518,10 @@ class KlarvoOverlayService : Service() {
     private fun setState(newState: RecordingState) {
         currentState   = newState
         bubbleView.state = when (newState) {
-            RecordingState.IDLE          -> FloatingBubbleView.State.IDLE
-            RecordingState.RECORDING     -> FloatingBubbleView.State.RECORDING
-            RecordingState.RECORDING_PTT -> FloatingBubbleView.State.RECORDING_PTT
-            RecordingState.PROCESSING    -> FloatingBubbleView.State.PROCESSING
+            RecordingState.IDLE        -> FloatingBubbleView.State.IDLE
+            RecordingState.RECORDING   -> FloatingBubbleView.State.RECORDING
+            RecordingState.TRANSCRIBING -> FloatingBubbleView.State.TRANSCRIBING
+            RecordingState.DONE        -> FloatingBubbleView.State.DONE
         }
         bubbleView.alpha = 1.0f  // all states fully opaque (idle matches canon — see setupBubble)
         if (newState == RecordingState.IDLE) {

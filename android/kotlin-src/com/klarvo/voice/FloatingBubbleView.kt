@@ -17,27 +17,26 @@ import androidx.core.content.ContextCompat
  *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
  *                    Canon: .ab-bubble.idle — background: linear-gradient(150deg, TealHi, TealLo)
  *                    NOT a dark Surface fill; NOT a teal "K". See Story 9.3 AC1/AC2.
- *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark]
- *                    Used for tap-to-record where the user needs cancel/confirm buttons.
- *   RECORDING_PTT -- circular bubble, scaled up + Danger color, waveform inside.
- *                    Used for push-to-talk: user just holds and releases, no bar needed.
- *   PROCESSING    -- Teal circle + rotating arc spinner
+ *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark] (HOLD mode)
+ *                    OR circular Danger form with waveform (all other modes).
+ *   TRANSCRIBING  -- Teal squircle + rotating arc spinner (was PROCESSING)
+ *   DONE          -- Teal squircle + white checkmark (placeholder; Story 9.5 animates)
  *
  * Size:
  *   Call setBubbleSize(dp) to resize the bubble at runtime (controls the visual radius).
  *   The WindowManager LayoutParams may be larger than bubbleSizeDp (touch-target expansion
  *   to ≥48dp); the visual circle is drawn centered within the larger touch-target bounds.
- *   In RECORDING state the view widens to BAR_WIDTH_DP; height stays at bubbleSizeDp.
- *   In RECORDING_PTT state the view stays circular but animates scale via scaleX/scaleY.
+ *   In RECORDING state (bar mode, HOLD only) the view widens to BAR_WIDTH_DP; height stays
+ *   at bubbleSizeDp. In RECORDING state (circular mode) scaleX/scaleY animation is used.
  *
- * Touch zones in RECORDING bar:
+ * Touch zones in RECORDING bar (HOLD mode only):
  *   - Left ~25% of width  -> cancel zone  (X button)
  *   - Right ~25% of width -> confirm zone (checkmark button)
  *   - Middle               -> waveform (no action)
  *   KlarvoOverlayService reads isTouchInCancelZone() / isTouchInConfirmZone() to route taps.
  *
  * Color semantics (DT5 — binding rule):
- *   KlarvoTheme.Teal        = brand / processing / focus-ring
+ *   KlarvoTheme.Teal        = brand / transcribing / focus-ring
  *   KlarvoTheme.OnTeal      = dark "K" letter on teal fill (IDLE only)
  *   KlarvoTheme.TealBg      = ~12% alpha faint ring (IDLE glass-ring accent)
  *   KlarvoTheme.Danger      = stop / recording / cancel button
@@ -45,7 +44,7 @@ import androidx.core.content.ContextCompat
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
-    enum class State { IDLE, RECORDING, RECORDING_PTT, PROCESSING }
+    enum class State { IDLE, RECORDING, TRANSCRIBING, DONE }
 
     var state: State = State.IDLE
         set(value) {
@@ -138,7 +137,7 @@ class FloatingBubbleView(context: Context) : View(context) {
     // Reusable RectF for squircle drawing to avoid allocation in onDraw
     private val squircleRect = RectF()
 
-    // --- Bar animation (drives waveform bars in both RECORDING and RECORDING_PTT) ---
+    // --- Bar animation (drives waveform bars in RECORDING state, both bar and circular modes) ---
     private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 600
         repeatMode = ValueAnimator.REVERSE
@@ -202,17 +201,16 @@ class FloatingBubbleView(context: Context) : View(context) {
         barAnimator.cancel()
         rotationAnimator.cancel()
         when (state) {
-            State.RECORDING     -> barAnimator.start()
-            State.RECORDING_PTT -> {
+            State.RECORDING -> {
                 barAnimator.start()
-                // Cancel any in-progress scale-down, then animate scale-up
+                // Circular recording mode (non-HOLD): animate scale-up for tactile feedback.
+                // Bar mode (HOLD) does not use scale animation (bar expands instead).
                 pttScaleDownAnimator.cancel()
-                // Read current scale so the animator starts from wherever we are
                 pttScaleUpAnimator.setFloatValues(scaleX, 1.3f)
                 pttScaleUpAnimator.start()
             }
-            State.PROCESSING -> {
-                // If we just left PTT, scale back down
+            State.TRANSCRIBING -> {
+                // Reset scale if we came from RECORDING circular mode
                 if (scaleX != 1.0f) {
                     pttScaleUpAnimator.cancel()
                     pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
@@ -220,8 +218,8 @@ class FloatingBubbleView(context: Context) : View(context) {
                 }
                 rotationAnimator.start()
             }
-            State.IDLE -> {
-                // Ensure scale is reset (e.g. cancel was called directly from PTT)
+            State.DONE, State.IDLE -> {
+                // Ensure scale is reset
                 if (scaleX != 1.0f) {
                     pttScaleUpAnimator.cancel()
                     pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
@@ -251,11 +249,12 @@ class FloatingBubbleView(context: Context) : View(context) {
             val heightPx = (bubbleSizeDp * density).toInt()
             setMeasuredDimension((BAR_WIDTH_DP * density).toInt(), heightPx)
         } else {
-            // IDLE / RECORDING_PTT / PROCESSING: the window LayoutParams are an EXACT size
+            // IDLE / TRANSCRIBING / DONE: the window LayoutParams are an EXACT size
             // (visual squircle + shadow padding, set by KlarvoOverlayService.bubbleWindowPx()).
             // FILL it so the canvas/software-layer bitmap includes the padding — otherwise the
             // soft shadow + outer ring clip at the view edge (the square cutoff). The squircle
             // itself is drawn at bubbleSizeDp, centered, by onDraw.
+            // RECORDING (circular form): window is also EXACT (touch-target); scale via scaleX/Y.
             setMeasuredDimension(
                 MeasureSpec.getSize(widthMeasureSpec),
                 MeasureSpec.getSize(heightMeasureSpec)
@@ -368,31 +367,31 @@ class FloatingBubbleView(context: Context) : View(context) {
                 canvas.drawText("K", cx, textCy, kLetterPaint)
             }
             State.RECORDING -> {
-                drawRecordingBar(canvas, w, h)
+                // HOLD mode (bar): KlarvoOverlayService sets RECORDING + adjustLayoutForState
+                // to WRAP_CONTENT width — onMeasure returns BAR_WIDTH_DP × bubbleSizeDp.
+                // All other modes (TOGGLE/AUTOSTOP/AUTO/PTT): window stays EXACT touch-target;
+                // draw a circular Danger form with waveform bars (scale animation via scaleX/Y).
+                if (width > height) {
+                    // Bar mode: wide window → draw pill bar
+                    drawRecordingBar(canvas, w, h)
+                } else {
+                    // Circular mode: square window → draw Danger circle with waveform
+                    val cx = w / 2f
+                    val cy = h / 2f
+                    val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
+                    // Shadow (slightly offset downward for depth)
+                    canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
+                    // Danger filled circle (stop/recording — DT5)
+                    circlePaint.color = KlarvoTheme.Danger
+                    canvas.drawCircle(cx, cy, visualRadius, circlePaint)
+                    // Waveform bars inside the circle
+                    val waveHalfH = visualRadius * 0.70f
+                    val waveLeft  = cx - visualRadius * 0.75f
+                    val waveRight = cx + visualRadius * 0.75f
+                    drawWaveformBarsInZone(canvas, waveLeft, waveRight, cx, cy, waveHalfH)
+                }
             }
-            State.RECORDING_PTT -> {
-                // Circular bubble -- stays same size as IDLE, scale animation via scaleX/scaleY.
-                // Drawn Danger (red/stop) with waveform bars centered inside.
-                // Use the same visual radius derivation as IDLE so the circle diameter never
-                // grows to fill the touch-target window when leaving IDLE.
-                val cx = w / 2f
-                val cy = h / 2f
-                val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
-                // Shadow (slightly offset downward for depth)
-                canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
-                // Danger filled circle (stop/recording — DT5)
-                circlePaint.color = KlarvoTheme.Danger
-                canvas.drawCircle(cx, cy, visualRadius, circlePaint)
-                // Waveform bars inside the circle.
-                // Half-height limit: 70% of visual radius so bars are tall and clearly visible.
-                // The bar draws ±halfHeight from center, so this is nearly full diameter.
-                val waveHalfH = visualRadius * 0.70f
-                // Left/right bounds: 75% of visual radius each side for a wide waveform footprint.
-                val waveLeft  = cx - visualRadius * 0.75f
-                val waveRight = cx + visualRadius * 0.75f
-                drawWaveformBarsInZone(canvas, waveLeft, waveRight, cx, cy, waveHalfH)
-            }
-            State.PROCESSING -> {
+            State.TRANSCRIBING -> {
                 val cx = w / 2f
                 val cy = h / 2f
                 // Use the same visual radius derivation as IDLE so the size never
@@ -400,13 +399,25 @@ class FloatingBubbleView(context: Context) : View(context) {
                 val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
                 val side = visualRadius * 2f
                 // Rounded-square (squircle) form: same as IDLE — canon cornerRadius = 0.30 × side.
-                // AC2: no circle↔square morph across idle and processing.
                 val cornerPx = side * 0.30f
                 squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
-                // Teal fill (brand/processing — DT5; NOT amber)
+                // Teal fill (brand/transcribing — DT5; NOT amber)
                 circlePaint.color = KlarvoTheme.Teal
                 canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)
                 drawSpinner(canvas, cx, cy, visualRadius)
+            }
+            State.DONE -> {
+                val cx = w / 2f
+                val cy = h / 2f
+                val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
+                val side = visualRadius * 2f
+                val cornerPx = side * 0.30f
+                squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
+                // Teal squircle (same as IDLE / TRANSCRIBING base form)
+                circlePaint.color = KlarvoTheme.Teal
+                canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)
+                // White checkmark centered — placeholder for Story 9.5 animated transition
+                drawCheckMark(canvas, cx, cy, visualRadius * 0.35f)
             }
         }
     }
@@ -579,7 +590,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
     }
 
-    // --- PROCESSING: rotating arc spinner ---
+    // --- TRANSCRIBING: rotating arc spinner ---
 
     private fun drawSpinner(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
         val spinRadius = radius * 0.55f

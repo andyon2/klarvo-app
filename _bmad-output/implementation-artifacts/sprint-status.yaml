@@ -46,8 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-15
-project: klarvo
+last_updated: 2026-06-15project: klarvo
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -128,7 +127,7 @@ development_status:
   9-1-adr-android-bubble-rendering-tech: done
   9-2-android-token-theme-source-and-fonts: done
   9-3-bubble-idle-re-skin-responsive-sizing-anchoring: done
-  9-4-bubble-state-harness: backlog
+  9-4-bubble-state-harness: in-progress
   9-5-bubble-state-sequence-listening-panel-waveform: backlog
   9-6-keyboard-collapse-via-a11y-service: backlog
   9-7-short-press-gesture-modes-mirror-desktop: backlog
