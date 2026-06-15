@@ -335,3 +335,4 @@ claude-sonnet-4-6 (implementation, 2026-06-15)
 |------|--------|--------|
 | 2026-06-15 | Enum migration (RECORDING_PTT→RECORDING, PROCESSING→TRANSCRIBING, DONE new); debug broadcast receiver; DONE placeholder visual; 60 JVM tests PASS, Debug APK built. On-device smoke pending Andi gate. | claude-sonnet-4-6 |
 | 2026-06-15 | Code-review fixes: (1) DONE→IDLE flash hoisted to named `doneFlashRunnable` with state-guard + removeCallbacks in onDestroy; (2) bubbleView lateinit guard added to debugStateReceiver handler.post. 60/60 JVM tests PASS, Kotlin compile clean. | claude-sonnet-4-6 |
+| 2026-06-15 | On-device smoke fix: debug receiver changed from RECEIVER_NOT_EXPORTED → RECEIVER_EXPORTED on Tiramisu+ (adb shell runs as shell UID 2000, not app UID — NOT_EXPORTED silently dropped all harness broadcasts). Comment updated. 60/60 JVM tests PASS, BUILD SUCCESSFUL. | claude-sonnet-4-6 |

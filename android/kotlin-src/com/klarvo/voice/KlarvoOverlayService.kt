@@ -320,10 +320,14 @@ class KlarvoOverlayService : Service() {
 
         // Debug harness: register state-override receiver only in debug builds.
         // Allows driving all four bubble states on-device without live audio/network.
+        // RECEIVER_EXPORTED is intentional on Tiramisu+: adb shell am broadcast runs as shell
+        // UID (2000), not the app UID — RECEIVER_NOT_EXPORTED would silently drop those
+        // broadcasts. This is safe because the entire block is gated by BuildConfig.DEBUG;
+        // release APKs never register this receiver at all (AC4).
         if (BuildConfig.DEBUG) {
             val debugFilter = IntentFilter(ACTION_DEBUG_SET_STATE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(debugStateReceiver, debugFilter, RECEIVER_NOT_EXPORTED)
+                registerReceiver(debugStateReceiver, debugFilter, RECEIVER_EXPORTED)
             } else {
                 registerReceiver(debugStateReceiver, debugFilter)
             }
