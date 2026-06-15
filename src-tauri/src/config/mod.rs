@@ -632,6 +632,16 @@ pub struct AppConfig {
     #[serde(default = "default_bubble_opacity")]
     pub bubble_opacity: f32,
 
+    /// Android bubble size in dp (manual override). 0 = Auto (responsive formula).
+    /// Range: 32..72 when set manually. Only used on Android; ignored on desktop.
+    #[serde(default)]
+    pub bubble_size_dp: i32,
+
+    /// Whether the Android bubble snaps to the nearest screen edge on drag release.
+    /// Default: true (= canon snap + remembered-side behaviour).
+    #[serde(default = "default_bubble_edge_snap")]
+    pub bubble_edge_snap: bool,
+
     /// Fine-grained advanced settings for power users.
     /// Defaults to `AdvancedSettings::default()` so existing config files
     /// without this field load correctly.
@@ -966,6 +976,10 @@ fn default_bubble_opacity() -> f32 {
     0.85
 }
 
+fn default_bubble_edge_snap() -> bool {
+    true
+}
+
 fn default_autostop_silence_secs() -> f32 {
     2.0
 }
@@ -1059,6 +1073,8 @@ impl Default for AppConfig {
             device_id: default_device_id(),
             bubble_size: default_bubble_size(),
             bubble_opacity: default_bubble_opacity(),
+            bubble_size_dp: 0,
+            bubble_edge_snap: default_bubble_edge_snap(),
             advanced: AdvancedSettings::default(),
             local_whisper_model: default_local_whisper_model(),
             local_whisper_gpu: default_local_whisper_gpu(),
@@ -2114,6 +2130,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
             local_whisper_model: "tiny-q5_1".to_string(),
             local_whisper_gpu: false,
             license_key: String::new(),
@@ -3376,6 +3394,8 @@ mod tests {
 
             bubble_size: 1.5,
             bubble_opacity: 0.5,
+            bubble_size_dp: 48,
+            bubble_edge_snap: false,
 
             advanced: AdvancedSettings {
                 stt_prompt_de: "Custom DE prompt golden master.".to_string(),

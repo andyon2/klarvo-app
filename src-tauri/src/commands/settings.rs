@@ -162,6 +162,9 @@ pub struct SettingsPatch {
     pub preview_border_radius: Option<u8>,
     pub preview_font_family: Option<String>,
     pub preview_font_size: Option<String>,
+    // Story 9.3 bubble size + snap controls.
+    pub bubble_size_dp: Option<i32>,
+    pub bubble_edge_snap: Option<bool>,
 }
 
 impl Default for SettingsPatch {
@@ -216,6 +219,8 @@ impl Default for SettingsPatch {
             preview_border_radius: None,
             preview_font_family: None,
             preview_font_size: None,
+            bubble_size_dp: None,
+            bubble_edge_snap: None,
         }
     }
 }
@@ -323,6 +328,8 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
         device_id: existing.device_id,
         bubble_size: patch.bubble_size.unwrap_or(existing.bubble_size),
         bubble_opacity: patch.bubble_opacity.unwrap_or(existing.bubble_opacity),
+        bubble_size_dp: patch.bubble_size_dp.unwrap_or(existing.bubble_size_dp),
+        bubble_edge_snap: patch.bubble_edge_snap.unwrap_or(existing.bubble_edge_snap),
         advanced: existing.advanced,
         local_whisper_model: patch.local_whisper_model.unwrap_or(existing.local_whisper_model),
         local_whisper_gpu: patch.local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
@@ -459,6 +466,9 @@ pub async fn save_settings(
     preview_border_radius: Option<u8>,
     preview_font_family: Option<String>,
     preview_font_size: Option<String>,
+    // Story 9.3 bubble size + snap controls.
+    bubble_size_dp: Option<i32>,
+    bubble_edge_snap: Option<bool>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -552,6 +562,8 @@ pub async fn save_settings(
         preview_border_radius,
         preview_font_family,
         preview_font_size,
+        bubble_size_dp,
+        bubble_edge_snap,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -632,6 +644,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         device_id: cfg.device_id,
         bubble_size: cfg.bubble_size,
         bubble_opacity: cfg.bubble_opacity,
+        bubble_size_dp: cfg.bubble_size_dp,
+        bubble_edge_snap: cfg.bubble_edge_snap,
         local_whisper_model: cfg.local_whisper_model,
         local_whisper_gpu: cfg.local_whisper_gpu,
         insert_and_send_slot1: cfg.hotkey_slots.first().map(|s| s.insert_and_send).unwrap_or(false),
@@ -1457,6 +1471,8 @@ mod tests {
             preview_border_radius: None,
             preview_font_family: None,
             preview_font_size: None,
+            bubble_size_dp: Some(48),
+            bubble_edge_snap: Some(false),
         };
 
         let result = merge_settings(existing, patch);
@@ -1502,6 +1518,8 @@ mod tests {
         assert!(!result.bubble_long_press_auto_send);
         assert!((result.bubble_long_press_silence_secs - 1.5).abs() < f32::EPSILON);
         assert_eq!(result.preview_panel_form, "compact");
+        assert_eq!(result.bubble_size_dp, 48);
+        assert!(!result.bubble_edge_snap);
     }
 
     // -----------------------------------------------------------------------

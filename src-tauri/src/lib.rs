@@ -159,6 +159,10 @@ pub struct SettingsView {
     pub bubble_size: f32,
     /// Android bubble opacity (0.3..1.0). Default: 0.85.
     pub bubble_opacity: f32,
+    /// Android bubble manual size in dp. 0 = Auto (responsive formula). Range 32..72 when set.
+    pub bubble_size_dp: i32,
+    /// Whether the Android bubble edge-snaps on drag release. Default: true.
+    pub bubble_edge_snap: bool,
     /// GGML model variant for offline STT (e.g. `"base"`, `"tiny-q5_1"`).
     pub local_whisper_model: String,
     /// Whether GPU acceleration (CUDA) is enabled for local whisper.
@@ -1262,6 +1266,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1330,6 +1336,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1392,6 +1400,8 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,

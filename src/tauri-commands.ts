@@ -66,6 +66,8 @@ const MOCK_SETTINGS: AppSettings = {
   deviceId: "preview-device-0000",
   bubbleSize: 56,
   bubbleOpacity: 90,
+  bubbleSizeDp: 0,
+  bubbleEdgeSnap: true,
   localWhisperModel: "small",
   localWhisperGpu: false,
   insertAndSendSlot1: false,
@@ -307,6 +309,9 @@ export async function saveSettings(
   previewBorderRadius?: number | null,
   previewFontFamily?: string | null,
   previewFontSize?: string | null,
+  // Story 9.3 bubble size + snap controls.
+  bubbleSizeDp?: number | null,
+  bubbleEdgeSnap?: boolean | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -359,6 +364,8 @@ export async function saveSettings(
     previewBorderRadius: previewBorderRadius ?? null,
     previewFontFamily: previewFontFamily ?? null,
     previewFontSize: previewFontSize ?? null,
+    bubbleSizeDp: bubbleSizeDp ?? null,
+    bubbleEdgeSnap: bubbleEdgeSnap ?? null,
   });
 }
 

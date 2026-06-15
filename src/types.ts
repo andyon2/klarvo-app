@@ -54,6 +54,10 @@ export interface AppSettings {
   deviceId: string;
   bubbleSize: number;
   bubbleOpacity: number;
+  /** Android bubble manual size in dp. 0 = Auto (responsive formula). Range 32..72 when set. */
+  bubbleSizeDp: number;
+  /** Whether the Android bubble edge-snaps on drag release. Default: true. */
+  bubbleEdgeSnap: boolean;
   localWhisperModel: string;
   localWhisperGpu: boolean;
   // Recording behaviour extensions.

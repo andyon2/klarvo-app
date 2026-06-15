@@ -212,6 +212,11 @@ export interface ShortcutsContentProps {
   setLocalPasteDelayMs: (v: number) => void;
   localAutoCapitalize: boolean;
   setLocalAutoCapitalize: (v: boolean) => void;
+  // Story 9.3: bubble size slider (0 = Auto) and edge-snap toggle (mobile only)
+  localBubbleSizeDp: number;
+  setLocalBubbleSizeDp: (v: number) => void;
+  localBubbleEdgeSnap: boolean;
+  setLocalBubbleEdgeSnap: (v: boolean) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -230,6 +235,7 @@ export function ShortcutsContent({
   localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs,
   loadedSettings: _loadedSettings, onHotkeyChange, onHotkeyModeChange,
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
+  localBubbleSizeDp, setLocalBubbleSizeDp, localBubbleEdgeSnap, setLocalBubbleEdgeSnap,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -431,6 +437,7 @@ export function ShortcutsContent({
 
       {/* --- Bubble Controls -- mobile only --- */}
       {!isDesktop && (
+        <>
         <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
           {/* Tab bar: Tap / Long Press */}
           <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 self-start">
@@ -570,6 +577,73 @@ export function ShortcutsContent({
             </>
           )}
         </div>
+
+        {/* --- Bubble Appearance (size + snap) --- */}
+        <div className="flex flex-col gap-3 pt-3 border-t border-klarvo-border/30 mt-1">
+          <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Bubble Appearance</span>
+
+          {/* Size control: Auto toggle + manual slider */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className={LABEL_CLS}>Bubble Size</span>
+                <span className="text-[11px] text-klarvo-muted">
+                  {localBubbleSizeDp === 0 ? "Auto (responsive)" : `${localBubbleSizeDp} dp`}
+                </span>
+              </div>
+              <button
+                role="switch"
+                aria-checked={localBubbleSizeDp === 0}
+                onClick={() => setLocalBubbleSizeDp(localBubbleSizeDp === 0 ? 40 : 0)}
+                className={[
+                  "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                  localBubbleSizeDp === 0 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+                ].join(" ")}
+                title={localBubbleSizeDp === 0 ? "Auto: tap to set manual size" : "Manual: tap to restore Auto"}
+              >
+                <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localBubbleSizeDp === 0 ? "translate-x-4" : ""].join(" ")} />
+              </button>
+            </div>
+            {localBubbleSizeDp > 0 && (
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between text-[11px] text-klarvo-dim">
+                  <span>32 dp</span>
+                  <span className="font-mono text-klarvo-primary">{localBubbleSizeDp} dp</span>
+                  <span>72 dp</span>
+                </div>
+                <input
+                  type="range"
+                  min={32}
+                  max={72}
+                  step={1}
+                  value={localBubbleSizeDp}
+                  onChange={(e) => setLocalBubbleSizeDp(parseInt(e.target.value, 10))}
+                  className="w-full accent-klarvo-primary"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Edge-snap toggle */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={LABEL_CLS}>Snap to screen edge</span>
+              <span className="text-[11px] text-klarvo-muted">Slide bubble to nearest edge on release.</span>
+            </div>
+            <button
+              role="switch"
+              aria-checked={localBubbleEdgeSnap}
+              onClick={() => setLocalBubbleEdgeSnap(!localBubbleEdgeSnap)}
+              className={[
+                "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
+                localBubbleEdgeSnap ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
+              ].join(" ")}
+            >
+              <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localBubbleEdgeSnap ? "translate-x-4" : ""].join(" ")} />
+            </button>
+          </div>
+        </div>
+        </>
       )}
       {/* --- Paste & Behavior --- */}
       <div className="flex flex-col gap-3 pl-4 pb-3 pt-3 border-t border-klarvo-border/30 mt-1">

@@ -572,7 +572,7 @@ class KlarvoOverlayService : Service() {
         bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
         // Responsive size formula: clamp(36, 0.11 × min(screenW_dp, screenH_dp), 44)
-        val sizeDp = computeVisualSizeDp()
+        val sizeDp = computeVisualSizeDp(config)
         bubbleView.setBubbleSize(sizeDp)
         bubbleView.alpha = bubbleOpacity
 
@@ -587,15 +587,24 @@ class KlarvoOverlayService : Service() {
         val touchTargetDp = maxOf(sizeDp, 48)
         val touchTargetPx = (touchTargetDp * dp).toInt()
 
-        // Restore position using saved side (left/right) rather than raw pixel X.
-        // This ensures the bubble lands on the correct edge after screen rotation or reinstall.
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedSide = prefs.getString(PREF_SIDE, "right") ?: "right"
-        // WindowManager positions the window (touchTargetPx wide), not the visual circle.
-        // Use touchTargetPx for edge placement so the window fits within the screen edge.
-        val defaultX = if (savedSide == "left") marginPx else screenW - touchTargetPx - marginPx
-        val savedX = prefs.getInt(PREF_X, defaultX)
-        val savedY = prefs.getInt(PREF_Y, screenH / 2)
+        // AC9 (Story 9.3): when edge-snap is OFF restore the raw saved X; when ON use saved side.
+        val savedX: Int
+        val savedY: Int
+        if (config?.bubbleEdgeSnap != false) {
+            // Restore position using saved side (left/right) rather than raw pixel X.
+            // This ensures the bubble lands on the correct edge after screen rotation or reinstall.
+            val savedSide = prefs.getString(PREF_SIDE, "right") ?: "right"
+            // WindowManager positions the window (touchTargetPx wide), not the visual circle.
+            // Use touchTargetPx for edge placement so the window fits within the screen edge.
+            val defaultX = if (savedSide == "left") marginPx else screenW - touchTargetPx - marginPx
+            savedX = prefs.getInt(PREF_X, defaultX)
+        } else {
+            // Edge-snap OFF: restore the raw drop X the user last placed the bubble at.
+            val defaultX = screenW - touchTargetPx - marginPx
+            savedX = prefs.getInt(PREF_X, defaultX)
+        }
+        savedY = prefs.getInt(PREF_Y, screenH / 2)
 
         bubbleParams = WindowManager.LayoutParams(
             touchTargetPx,
@@ -637,7 +646,13 @@ class KlarvoOverlayService : Service() {
      * no-op). Document here so Story 9.5+ is aware. The config field is intentionally not
      * removed — it may be repurposed or restored in a future story.
      */
-    private fun computeVisualSizeDp(): Int {
+    private fun computeVisualSizeDp(cfg: KlarvoApi.Config? = null): Int {
+        // AC8 (Story 9.3): when bubbleSizeDp > 0 the user has set a manual size — use it directly.
+        // 0 = Auto: fall back to the responsive formula from AC3.
+        // Uses the provided config first, then falls back to the cached config.
+        val effectiveCfg = cfg ?: cachedConfig
+        val manual = effectiveCfg?.bubbleSizeDp ?: 0
+        if (manual > 0) return manual.coerceIn(32, 72)
         val dm = resources.displayMetrics
         val screenWdp = dm.widthPixels / dm.density
         val screenHdp = dm.heightPixels / dm.density
@@ -761,21 +776,25 @@ class KlarvoOverlayService : Service() {
                 if (event.action == MotionEvent.ACTION_UP) {
                     when {
                         isDragging -> {
-                            // Edge-snap: slide to nearest horizontal edge on drag release.
-                            // 8dp margin from edge for a clean overlay feel.
-                            val (screenW, _) = getScreenDimensions()
-                            val dm = resources.displayMetrics
-                            // WindowManager positions the window (windowPx wide), not the visual
-                            // circle. All edge/midpoint math must use the window width.
-                            val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
-                            val marginPx = (8 * dm.density).toInt()
-                            val midScreen = screenW / 2
-                            bubbleParams.x = if (bubbleParams.x + windowPx / 2 < midScreen) {
-                                marginPx              // snap left
-                            } else {
-                                screenW - windowPx - marginPx  // snap right
+                            // AC9 (Story 9.3): edge-snap gated behind config.bubbleEdgeSnap.
+                            // Default = true (canon snap + remembered-side). When OFF: raw drop X persists.
+                            if (cachedConfig?.bubbleEdgeSnap != false) {
+                                // Edge-snap: slide to nearest horizontal edge on drag release.
+                                // 8dp margin from edge for a clean overlay feel.
+                                val (screenW, _) = getScreenDimensions()
+                                val dm = resources.displayMetrics
+                                // WindowManager positions the window (windowPx wide), not the visual
+                                // circle. All edge/midpoint math must use the window width.
+                                val windowPx = (maxOf(bubbleView.getBubbleSizeDp(), 48) * dm.density).toInt()
+                                val marginPx = (8 * dm.density).toInt()
+                                val midScreen = screenW / 2
+                                bubbleParams.x = if (bubbleParams.x + windowPx / 2 < midScreen) {
+                                    marginPx              // snap left
+                                } else {
+                                    screenW - windowPx - marginPx  // snap right
+                                }
+                                updateBubbleLayout()
                             }
-                            updateBubbleLayout()
                             savePosition(bubbleParams.x, bubbleParams.y)
                         }
                         pushToTalkActive -> {
@@ -1447,7 +1466,7 @@ class KlarvoOverlayService : Service() {
      */
     private fun reloadBubbleAppearance() {
         val config = KlarvoApi.readConfig(this) ?: return
-        val newSizeDp = computeVisualSizeDp()
+        val newSizeDp = computeVisualSizeDp(config)
         bubbleOpacity = config.bubbleOpacity
         bubbleView.setBubbleSize(newSizeDp)
         bubbleView.alpha = bubbleOpacity

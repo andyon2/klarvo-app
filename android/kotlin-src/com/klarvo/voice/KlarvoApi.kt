@@ -46,6 +46,10 @@ object KlarvoApi {
         val deviceId: String,
         val bubbleSize: Float = 1.0f,
         val bubbleOpacity: Float = 0.85f,
+        // Manual bubble size in dp. 0 = Auto (responsive formula). Range 32..72 when set.
+        val bubbleSizeDp: Int = 0,
+        // Whether to snap the bubble to the nearest screen edge on drag release. Default: true.
+        val bubbleEdgeSnap: Boolean = true,
         // Kept for backwards compatibility -- no longer used in overlay logic.
         val bubbleRecordingMode: String = "hold",
         // Per-gesture recording controls (tap and long-press independently configured).
@@ -234,6 +238,8 @@ object KlarvoApi {
             val deviceId = json.optString("deviceId", "")
             val bubbleSize = json.optDouble("bubbleSize", 1.0).toFloat()
             val bubbleOpacity = json.optDouble("bubbleOpacity", 0.85).toFloat()
+            val bubbleSizeDp = json.optInt("bubbleSizeDp", 0)
+            val bubbleEdgeSnap = json.optBoolean("bubbleEdgeSnap", true)
             // Rust serializes with camelCase (rename_all on AppConfig struct).
             val bubbleRecordingMode = json.optString("bubbleRecordingMode", "hold")
             // Per-gesture controls (tap and long-press independently configured).
@@ -321,7 +327,7 @@ object KlarvoApi {
             if (gatedSttProvider != "local" && groqKey.isBlank()) null
             else Config(
                 groqKey, gatedDeepseek, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
-                bubbleSize, bubbleOpacity, bubbleRecordingMode,
+                bubbleSize, bubbleOpacity, bubbleSizeDp, bubbleEdgeSnap, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
                 autostopSilenceSecs, autoModeSilenceSecs,
