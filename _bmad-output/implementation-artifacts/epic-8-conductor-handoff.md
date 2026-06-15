@@ -70,5 +70,11 @@ macht den Merge. Findet der Smoke ein Problem → siehe „Resume bei Problem" u
 - **8-4:** konditionale „bump-if-unchanged"-Preview-Migration für bestehende User (nicht autonom am ADR-0015-Config-Pfad gemacht).
 - **8-6 / DT1:** `docs/backlog.md` → „Epic 8 — DT1 token-closure residual" (AdvancedSettingsPanel-Badge-Palette braucht Per-Kategorie-Farbentscheidung; MobileTextarea/ThemeSwitcher; Alias-Layer-Sweep).
 
+## ⚠️ FIDELITY-GAP (Andi-Befund 2026-06-15, nach Smoke)
+Die Re-Skin-Schicht stimmt, aber **trifft die Mockup-Treue noch nicht** (Tiefe/Elevation, Mikro-Motion,
+Status-Dots fehlen). Vollständige Analyse + Punchlist + empfohlener „Studio-Dark Fidelity-Pass":
+**`epic-8-fidelity-gaps.md`** (gleicher Ordner). Eine frische Session führt den Pass aus.
+
 ## Nach dem Merge (Andys Entscheidung, vom Conductor bewusst NICHT gemacht)
-`epic-8 → done` flippen + `bmad-retrospective` für Epic 8.
+`epic-8 → done` flippen + `bmad-retrospective` für Epic 8. (Retro hätte hier echtes Futter: die
+Re-Skin-vs-Mockup-Treue-Lücke + der Conductor-decision-gate-Befund.)
