@@ -63,6 +63,36 @@ Source: `sprint-change-proposal-2026-06-12.md` + ADR-0017 (shared-core STT path)
 
 ---
 
+## Epic 8 (Studio-Dark) — DT1 token-closure residual
+
+Source: Story 8-6 review (2026-06-15). AC#3's closing DT1 grep gate was specified "zero covered-role
+hits across ALL of `src/`", but that over-reaches Epic 8's actual surface scope. **The five Epic-8
+desktop surfaces (FloatingBar, Settings [SettingsPanel + settings/*], Live-Preview, Main-Window/History,
+Onboarding) ARE migrated and verified clean** of covered-role inline hex (the only inline hex left on a
+surface is FloatingBar's value-correct literals — the documented 8-3 carve-out residual). AC#3 was
+re-scoped to "the Epic-8 desktop surfaces" with this entry as the homing record (conductor, not an
+inline Dev-Notes wave-away). Remaining DT1 work, all in **non-Epic-8-surface files**:
+
+- **`AdvancedSettingsPanel.tsx` category-badge palette** (lines 185/210/238/263): four category icon
+  badges use ad-hoc hex — `#14b8a6` (old teal, STT), `#8b5cf6` (purple, Text-Cleanup), `#f59e0b`
+  (old amber, Audio), `#6b7280` (gray, System). Migrating needs a **per-category color decision**:
+  teal/amber map to `klarvo-teal`/`klarvo-amber`, but **purple and gray have no Studio-Dark token** —
+  pick canonical accents for those category roles, or collapse to a teal/amber/neutral scheme. Hidden
+  expert/power-user panel, not on the Epic-8 surface list. Migrate as one coherent change (don't
+  partially tokenize 2 of 4).
+- **`MobileTextarea.tsx:54`** `bg-[#0a0a0b]` (canvas role; canonical `klarvo-bg-deep` is `#0A0B0C`) —
+  mobile component (Epic 9 territory), trivially `bg-klarvo-bg-deep` when that surface is touched.
+- **`ThemeSwitcher.tsx`** still carries legacy `Inter` + old teal — not an Epic-8 surface.
+- **DT1 alias-layer closure:** the back-compat aliases from 8-1 still have live consumers
+  (`klarvo-primary` ×9, `klarvo-warning` ×2, `klarvo-warm` ×2). Inline a sweep to the canonical
+  `klarvo-teal`/`klarvo-amber` names and drop the aliases once consumers are zero.
+- **Per-user preview rgba duplication:** the preview color-picker stores user-editable `rgba()` and
+  cannot reference `var()` tokens; the duplicated literals across ~6 files have call-out comments only,
+  no lint guard (DT1 SSOT spirit). Optional: a lint/grep CI guard so the Studio-Dark hex can't silently
+  drift. (8-6 already pulled the AppearanceContent fallback args to canonical.)
+
+---
+
 ## Other deferred work
 
 ### License (from B1, `sprint-change-proposal` predecessor work)

@@ -192,9 +192,9 @@ function StepDots({ current, total }: { current: number; total: number }) {
           className={[
             "rounded-full transition-all duration-300",
             i === current
-              ? "w-4 h-1.5 bg-klarvo-primary"
+              ? "w-4 h-1.5 bg-klarvo-teal"
               : i < current
-              ? "w-1.5 h-1.5 bg-klarvo-primary/40"
+              ? "w-1.5 h-1.5 bg-klarvo-teal/40"
               : "w-1.5 h-1.5 bg-klarvo-elevated",
           ].join(" ")}
         />
@@ -218,10 +218,10 @@ function previewOr(disabled: boolean): boolean {
 
 const BTN_PRIMARY = [
   "w-full rounded-xl py-2.5 px-6 text-sm font-medium",
-  "bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary",
-  "hover:bg-klarvo-primary/20 hover:border-klarvo-primary/40",
+  "bg-klarvo-teal/15 border border-klarvo-teal/30 text-klarvo-teal",
+  "hover:bg-klarvo-teal/20 hover:border-klarvo-teal/40",
   "disabled:opacity-40 disabled:cursor-not-allowed",
-  "transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-klarvo-primary/40",
+  "transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-klarvo-teal/40",
 ].join(" ");
 
 // ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ function ApiKeyField({
           <button
             type="button"
             onClick={() => openExternalUrl(magicLinkUrl).catch(console.error)}
-            className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors"
+            className="flex items-center gap-1 text-xs text-klarvo-amber hover:text-klarvo-amber-hi transition-colors"
           >
             {magicLinkLabel ?? "Key erstellen"}
             <ExternalLinkIcon />
@@ -282,11 +282,11 @@ function ApiKeyField({
           spellCheck={false}
           className={[
             "flex-1 bg-klarvo-bg border rounded-lg px-3 py-2",
-            "text-sm text-klarvo-text font-mono placeholder:text-klarvo-dim",
-            "focus:outline-none focus:border-klarvo-primary/40 focus:ring-1 focus:ring-klarvo-primary/20",
+            "text-sm text-klarvo-text font-geist-mono placeholder:text-klarvo-dim",
+            "focus:outline-none focus:border-klarvo-teal/40 focus:ring-1 focus:ring-klarvo-teal/20",
             "transition-colors duration-150",
             validationState === "valid"
-              ? "border-klarvo-primary/50"
+              ? "border-klarvo-teal/50"
               : validationState === "invalid"
               ? "border-klarvo-danger/50"
               : "border-klarvo-border/60",
@@ -308,7 +308,7 @@ function ApiKeyField({
         )}
       </div>
       {validationState === "valid" && (
-        <div className="flex items-center gap-1.5 text-xs text-klarvo-primary">
+        <div className="flex items-center gap-1.5 text-xs text-klarvo-teal">
           <CheckCircleIcon className="w-3.5 h-3.5" />
           <span>Key funktioniert</span>
         </div>
@@ -383,9 +383,9 @@ function StepWelcome({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
 
       {/* Animated mic with pulse ring */}
       <div className="relative flex items-center justify-center">
-        <span className="absolute w-24 h-24 rounded-full bg-klarvo-primary/10 animate-ping" style={{ animationDuration: "2s" }} />
-        <span className="absolute w-20 h-20 rounded-full bg-klarvo-primary/10 animate-ping" style={{ animationDuration: "2s", animationDelay: "0.5s" }} />
-        <div className="relative w-16 h-16 rounded-2xl bg-klarvo-primary/15 border border-klarvo-primary/30 flex items-center justify-center text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.18)]">
+        <span className="absolute w-24 h-24 rounded-full bg-klarvo-teal/10 animate-ping" style={{ animationDuration: "2s" }} />
+        <span className="absolute w-20 h-20 rounded-full bg-klarvo-teal/10 animate-ping" style={{ animationDuration: "2s", animationDelay: "0.5s" }} />
+        <div className="relative w-16 h-16 rounded-2xl bg-klarvo-teal/15 border border-klarvo-teal/30 flex items-center justify-center text-klarvo-teal shadow-[0_0_40px_rgba(41,199,172,0.18)]">
           <div className="w-8 h-8">
             <MicIconLarge />
           </div>
@@ -436,20 +436,20 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
           className={[
             "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-150",
             selected === "cloud"
-              ? "border-klarvo-primary/50 bg-klarvo-primary/8"
+              ? "border-klarvo-teal/50 bg-klarvo-teal/8"
               : "border-klarvo-border/60 bg-klarvo-bg hover:border-klarvo-border/60",
           ].join(" ")}
         >
-          <div className={`flex items-center gap-2 ${selected === "cloud" ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
+          <div className={`flex items-center gap-2 ${selected === "cloud" ? "text-klarvo-teal" : "text-klarvo-muted"}`}>
             <CloudIcon className="w-5 h-5" />
             <span className="text-sm font-semibold text-klarvo-text">Cloud</span>
             {selected === "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-klarvo-amber bg-klarvo-amber/10 border border-klarvo-amber/20 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
             {selected !== "cloud" && (
-              <span className="ml-auto text-[10px] font-medium text-amber-400/60 bg-amber-400/5 border border-amber-400/20 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-[10px] font-medium text-klarvo-amber/60 bg-klarvo-amber/5 border border-klarvo-amber/20 rounded-full px-2 py-0.5">
                 empfohlen
               </span>
             )}
@@ -457,7 +457,7 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
           <ul className="flex flex-col gap-1">
             {["Beste Qualität", "API-Key benötigt", "Groq kostenlos (mit Limit)"].map((b) => (
               <li key={b} className="text-[11px] text-klarvo-dim flex items-start gap-1.5">
-                <span className="text-klarvo-primary/60 mt-0.5">•</span>
+                <span className="text-klarvo-teal/60 mt-0.5">•</span>
                 {b}
               </li>
             ))}
@@ -472,11 +472,11 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
             className={[
               "flex flex-col gap-3 p-4 rounded-xl border text-left transition-all duration-150",
               selected === "offline"
-                ? "border-klarvo-primary/50 bg-klarvo-primary/8"
+                ? "border-klarvo-teal/50 bg-klarvo-teal/8"
                 : "border-klarvo-border/60 bg-klarvo-bg hover:border-klarvo-border/60",
             ].join(" ")}
           >
-            <div className={`flex items-center gap-2 ${selected === "offline" ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
+            <div className={`flex items-center gap-2 ${selected === "offline" ? "text-klarvo-teal" : "text-klarvo-muted"}`}>
               <ShieldIcon className="w-5 h-5" />
               <span className="text-sm font-semibold text-klarvo-text">Offline</span>
             </div>
@@ -490,7 +490,7 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
             </ul>
           </button>
         ) : (
-          <div className="flex flex-col gap-3 p-4 rounded-xl border border-klarvo-border/40 bg-[#0e0e10] opacity-50 cursor-not-allowed">
+          <div className="flex flex-col gap-3 p-4 rounded-xl border border-klarvo-border/40 bg-klarvo-bg opacity-50 cursor-not-allowed">
             <div className="flex items-center gap-2 text-klarvo-dim">
               <ShieldIcon className="w-5 h-5" />
               <span className="text-sm font-semibold text-klarvo-dim">Offline</span>
@@ -510,7 +510,7 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
             className={[
               "flex items-center px-4 py-3 rounded-xl border text-sm font-medium text-left transition-all duration-150",
               track === "expert"
-                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                ? "border-klarvo-teal/50 bg-klarvo-teal/8 text-klarvo-teal"
                 : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/80 hover:text-klarvo-text",
             ].join(" ")}
           >
@@ -522,7 +522,7 @@ function StepMode({ selected, onSelect, track, onTrackSelect, onNext }: {
             className={[
               "flex items-center px-4 py-3 rounded-xl border text-sm font-medium text-left transition-all duration-150",
               track === "beginner"
-                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                ? "border-klarvo-teal/50 bg-klarvo-teal/8 text-klarvo-teal"
                 : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/80 hover:text-klarvo-text",
             ].join(" ")}
           >
@@ -652,8 +652,8 @@ function PermAllStep({ onNext }: { onNext: () => void }) {
         Fehlt etwas? Android fragt automatisch beim nächsten Start.
       </p>
 
-      <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 px-4 py-3 flex flex-col gap-1">
-        <p className="text-xs font-medium text-amber-400/80">Xiaomi, OnePlus, OPPO, Vivo</p>
+      <div className="rounded-xl bg-klarvo-amber/5 border border-klarvo-amber/20 px-4 py-3 flex flex-col gap-1">
+        <p className="text-xs font-medium text-klarvo-amber/80">Xiaomi, OnePlus, OPPO, Vivo</p>
         <p className="text-xs text-klarvo-dim leading-relaxed">
           Aktiviere „Autostart" für Klarvo in den Geräte-Einstellungen, damit der Diktat-Button zuverlässig im Hintergrund läuft.
         </p>
@@ -756,16 +756,16 @@ function StepSttKeyBeginner1({ onNext }: { onNext: () => void }) {
       <div className="rounded-xl border border-klarvo-border/50 bg-klarvo-surface/30 overflow-hidden">
         <div className="flex flex-col divide-y divide-klarvo-border/40">
           <div className="flex items-start gap-3 px-4 py-3">
-            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">1</span>
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-teal/15 border border-klarvo-teal/30 text-klarvo-teal text-[11px] font-bold flex items-center justify-center mt-0.5">1</span>
             <p className="text-sm text-klarvo-text">Öffne die Groq-Seite und melde dich an (Google oder GitHub)</p>
           </div>
           <div className="flex items-start gap-3 px-4 py-3">
-            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">2</span>
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-teal/15 border border-klarvo-teal/30 text-klarvo-teal text-[11px] font-bold flex items-center justify-center mt-0.5">2</span>
             <p className="text-sm text-klarvo-text">Klicke auf <strong>API Keys</strong> → <strong>Create API Key</strong></p>
           </div>
           <div className="flex items-start gap-3 px-4 py-3">
-            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary text-[11px] font-bold flex items-center justify-center mt-0.5">3</span>
-            <p className="text-sm text-klarvo-text">Kopiere den Schlüssel (beginnt mit <code className="text-xs bg-klarvo-surface/60 px-1 py-0.5 rounded font-mono">gsk_</code>)</p>
+            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-klarvo-teal/15 border border-klarvo-teal/30 text-klarvo-teal text-[11px] font-bold flex items-center justify-center mt-0.5">3</span>
+            <p className="text-sm text-klarvo-text">Kopiere den Schlüssel (beginnt mit <code className="text-xs bg-klarvo-surface/60 px-1 py-0.5 rounded font-geist-mono">gsk_</code>)</p>
           </div>
         </div>
       </div>
@@ -779,7 +779,7 @@ function StepSttKeyBeginner1({ onNext }: { onNext: () => void }) {
       >
         {linkClicked ? (
           <>
-            <CheckCircleIcon className="w-4 h-4 text-klarvo-primary" />
+            <CheckCircleIcon className="w-4 h-4 text-klarvo-teal" />
             <span>Groq-Seite geöffnet</span>
           </>
         ) : (
@@ -794,7 +794,7 @@ function StepSttKeyBeginner1({ onNext }: { onNext: () => void }) {
       {!linkClicked && (
         <button
           onClick={onNext}
-          className="text-xs text-amber-400/70 hover:text-amber-400 transition-colors text-center"
+          className="text-xs text-klarvo-amber/70 hover:text-klarvo-amber transition-colors text-center"
         >
           Schon erledigt? Weiter →
         </button>
@@ -916,7 +916,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
             <p className="text-xs text-klarvo-dim">488 MB — gute Qualität, schnell</p>
           </div>
           {downloadState === "done" && (
-            <CheckCircleIcon className="w-5 h-5 text-klarvo-primary" />
+            <CheckCircleIcon className="w-5 h-5 text-klarvo-teal" />
           )}
         </div>
 
@@ -924,7 +924,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
           <div className="flex flex-col gap-1.5">
             <div className="h-1.5 bg-klarvo-surface rounded-full overflow-hidden">
               <div
-                className="h-full bg-klarvo-primary/70 rounded-full transition-all duration-300"
+                className="h-full bg-klarvo-teal/70 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
@@ -939,7 +939,7 @@ function StepModelDownload({ onNext }: { onNext: () => void }) {
         {downloadState === "idle" && (
           <button
             onClick={startDownload}
-            className="w-full rounded-lg py-2 text-sm font-medium bg-klarvo-primary/15 border border-klarvo-primary/30 text-klarvo-primary hover:bg-klarvo-primary/20 transition-all"
+            className="w-full rounded-lg py-2 text-sm font-medium bg-klarvo-teal/15 border border-klarvo-teal/30 text-klarvo-teal hover:bg-klarvo-teal/20 transition-all"
           >
             Jetzt herunterladen
           </button>
@@ -1052,7 +1052,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
         </div>
 
         <div className="rounded-xl bg-klarvo-bg border border-klarvo-border/60 p-5 flex flex-col items-center gap-4 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-klarvo-primary/10 border border-klarvo-primary/20 flex items-center justify-center text-klarvo-primary">
+          <div className="w-14 h-14 rounded-2xl bg-klarvo-teal/10 border border-klarvo-teal/20 flex items-center justify-center text-klarvo-teal">
             <MicIconSm className="w-7 h-7" />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -1090,18 +1090,18 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
             "transition-all duration-200 focus:outline-none",
             "disabled:cursor-not-allowed disabled:opacity-60",
             isRecording
-              ? "bg-klarvo-danger/20 text-klarvo-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
+              ? "bg-klarvo-danger/20 text-klarvo-danger shadow-[0_0_40px_var(--glow-danger)]"
               : isBusy
-              ? "bg-klarvo-warning/15 text-klarvo-warning"
-              : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:bg-klarvo-primary/20",
+              ? "bg-klarvo-amber/15 text-klarvo-amber"
+              : "bg-klarvo-teal/15 text-klarvo-teal shadow-[0_0_40px_var(--glow-teal)] hover:bg-klarvo-teal/20",
           ].join(" ")}
         >
           <span className={[
             "absolute inset-0 rounded-full border-2 transition-colors",
-            isRecording ? "border-klarvo-danger/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
+            isRecording ? "border-klarvo-danger/40" : isBusy ? "border-klarvo-amber/30" : "border-klarvo-teal/25",
           ].join(" ")} />
           {isRecording && (
-            <span className="absolute inset-0 rounded-full border-2 border-red-400 opacity-40 animate-ping" />
+            <span className="absolute inset-0 rounded-full border-2 border-klarvo-danger opacity-40 animate-ping" />
           )}
           {isBusy ? (
             <SpinnerIcon className="w-8 h-8" />
@@ -1114,7 +1114,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
 
         <p className={[
           "text-xs font-medium text-center max-w-xs",
-          testState === "error" ? "text-klarvo-danger" : testState === "done" ? "text-klarvo-primary" : isBusy ? "text-klarvo-warning" : "text-klarvo-dim",
+          testState === "error" ? "text-klarvo-danger" : testState === "done" ? "text-klarvo-teal" : isBusy ? "text-klarvo-amber" : "text-klarvo-dim",
         ].join(" ")}>
           {statusText[testState]}
         </p>
@@ -1132,7 +1132,7 @@ function StepTestDictation({ language, cleanupStyle, onNext }: {
       {isDesktop && (
         <div className="rounded-xl bg-klarvo-surface/30 border border-klarvo-border/30 px-4 py-3">
           <p className="text-xs text-klarvo-dim">
-            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-klarvo-elevated border border-klarvo-border-active text-[11px] font-mono text-klarvo-muted">Ctrl+Shift+D</kbd> zum Diktieren — Klarvo fügt den Text direkt ein.
+            Im Alltag: Drücke <kbd className="inline-flex items-center px-1.5 py-0.5 rounded bg-klarvo-elevated border border-klarvo-border-active text-[11px] font-geist-mono text-klarvo-muted">Ctrl+Shift+D</kbd> zum Diktieren — Klarvo fügt den Text direkt ein.
           </p>
         </div>
       )}
@@ -1185,13 +1185,13 @@ function StepLanguage({ language, onLanguageChange, onNext }: {
             className={[
               "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-150",
               language === opt.value
-                ? "border-klarvo-primary/50 bg-klarvo-primary/8 text-klarvo-primary"
+                ? "border-klarvo-teal/50 bg-klarvo-teal/8 text-klarvo-teal"
                 : "border-klarvo-border/60 bg-klarvo-bg text-klarvo-muted hover:border-klarvo-border/60 hover:text-klarvo-muted",
             ].join(" ")}
           >
             {opt.label}
             {language === opt.value && (
-              <CheckCircleIcon className="w-4 h-4 text-klarvo-primary" />
+              <CheckCircleIcon className="w-4 h-4 text-klarvo-teal" />
             )}
           </button>
         ))}
@@ -1215,7 +1215,7 @@ function SummaryRow({ label, value, positive }: { label: string; value: string; 
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs text-klarvo-dim">{label}</span>
-      <span className={`text-xs font-medium ${positive === false ? "text-klarvo-dim" : positive === true ? "text-klarvo-primary" : "text-klarvo-muted"}`}>
+      <span className={`text-xs font-medium ${positive === false ? "text-klarvo-dim" : positive === true ? "text-klarvo-teal" : "text-klarvo-muted"}`}>
         {value}
       </span>
     </div>
@@ -1233,7 +1233,7 @@ function StepDone({ mode, language, onFinish }: {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center text-center gap-5">
         {/* Animated checkmark */}
-        <div className="w-16 h-16 rounded-full bg-klarvo-primary/15 border border-klarvo-primary/30 flex items-center justify-center text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.18)]">
+        <div className="w-16 h-16 rounded-full bg-klarvo-teal/15 border border-klarvo-teal/30 flex items-center justify-center text-klarvo-teal shadow-[0_0_40px_rgba(41,199,172,0.18)]">
           <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 40, strokeDashoffset: 0 }}>
             <polyline points="20 6 9 17 4 12" />
           </svg>
@@ -1467,11 +1467,8 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
 
   return (
     <div
-      className="min-h-screen bg-[#09090b] flex flex-col items-center justify-center px-6 py-8"
-      style={{
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-        ...(isMobile ? { paddingBottom: "env(safe-area-inset-bottom, 40px)" } : {}),
-      }}
+      className="min-h-screen bg-klarvo-bg-deep flex flex-col items-center justify-center px-6 py-8 font-geist"
+      style={isMobile ? { paddingBottom: "env(safe-area-inset-bottom, 40px)" } : undefined}
     >
       <div
         className={[
@@ -1508,7 +1505,7 @@ export default function Onboarding({ onComplete, initialState }: OnboardingProps
           {effectiveStepId !== "welcome" && effectiveStepId !== "done" && (
             <button
               onClick={effectiveStepId.startsWith("stt-key") ? () => advance() : handleSkip}
-              className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors"
+              className="text-xs text-klarvo-amber/60 hover:text-klarvo-amber transition-colors"
             >
               {effectiveStepId.startsWith("stt-key") ? "Key später eintragen" : "Überspringen"}
             </button>

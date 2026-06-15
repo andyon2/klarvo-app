@@ -120,7 +120,7 @@ development_status:
   8-3-floatingbar-re-skin: done
   8-4-live-cleanup-preview-re-skin: done
   8-5-main-window-history-re-skin: done
-  8-6-onboarding-re-skin: backlog
+  8-6-onboarding-re-skin: done
   epic-8-retrospective: optional
 
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]

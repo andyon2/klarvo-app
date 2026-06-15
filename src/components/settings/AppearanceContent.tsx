@@ -150,15 +150,15 @@ export function AppearanceContent({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Text color</span>
                 <span className="text-xs font-mono text-klarvo-teal">
-                  {rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}%
+                  {rgbaToHexOpacity(localPreviewTextColor, "#ECEEEF", 88).opacityPct}%
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).hex}
+                  value={rgbaToHexOpacity(localPreviewTextColor, "#ECEEEF", 88).hex}
                   onChange={(e) => {
-                    const { opacityPct } = rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88);
+                    const { opacityPct } = rgbaToHexOpacity(localPreviewTextColor, "#ECEEEF", 88);
                     setLocalPreviewTextColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_TEXT_COLOR));
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
@@ -168,9 +168,9 @@ export function AppearanceContent({
                     min={0}
                     max={100}
                     step={1}
-                    value={rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}
+                    value={rgbaToHexOpacity(localPreviewTextColor, "#ECEEEF", 88).opacityPct}
                     onChange={(v) => {
-                      const { hex } = rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88);
+                      const { hex } = rgbaToHexOpacity(localPreviewTextColor, "#ECEEEF", 88);
                       setLocalPreviewTextColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_TEXT_COLOR));
                     }}
                   />
@@ -183,15 +183,15 @@ export function AppearanceContent({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Bg color</span>
                 <span className="text-xs font-mono text-klarvo-teal">
-                  {rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}%
+                  {rgbaToHexOpacity(localPreviewBgColor, "#16181A", 96).opacityPct}%
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).hex}
+                  value={rgbaToHexOpacity(localPreviewBgColor, "#16181A", 96).hex}
                   onChange={(e) => {
-                    const { opacityPct } = rgbaToHexOpacity(localPreviewBgColor, "#191919", 96);
+                    const { opacityPct } = rgbaToHexOpacity(localPreviewBgColor, "#16181A", 96);
                     setLocalPreviewBgColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_BG_COLOR));
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
@@ -201,9 +201,9 @@ export function AppearanceContent({
                     min={0}
                     max={100}
                     step={1}
-                    value={rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}
+                    value={rgbaToHexOpacity(localPreviewBgColor, "#16181A", 96).opacityPct}
                     onChange={(v) => {
-                      const { hex } = rgbaToHexOpacity(localPreviewBgColor, "#191919", 96);
+                      const { hex } = rgbaToHexOpacity(localPreviewBgColor, "#16181A", 96);
                       setLocalPreviewBgColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_BG_COLOR));
                     }}
                   />
@@ -231,15 +231,15 @@ export function AppearanceContent({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Border color</span>
                 <span className="text-xs font-mono text-klarvo-teal">
-                  {rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}%
+                  {rgbaToHexOpacity(localPreviewBorderColor, "#29C7AC", 25).opacityPct}%
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).hex}
+                  value={rgbaToHexOpacity(localPreviewBorderColor, "#29C7AC", 25).hex}
                   onChange={(e) => {
-                    const { opacityPct } = rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25);
+                    const { opacityPct } = rgbaToHexOpacity(localPreviewBorderColor, "#29C7AC", 25);
                     setLocalPreviewBorderColor(hexOpacityToRgba(e.target.value, opacityPct, DEFAULT_BORDER_COLOR));
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
@@ -249,9 +249,9 @@ export function AppearanceContent({
                     min={0}
                     max={100}
                     step={1}
-                    value={rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}
+                    value={rgbaToHexOpacity(localPreviewBorderColor, "#29C7AC", 25).opacityPct}
                     onChange={(v) => {
-                      const { hex } = rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25);
+                      const { hex } = rgbaToHexOpacity(localPreviewBorderColor, "#29C7AC", 25);
                       setLocalPreviewBorderColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_BORDER_COLOR));
                     }}
                   />
