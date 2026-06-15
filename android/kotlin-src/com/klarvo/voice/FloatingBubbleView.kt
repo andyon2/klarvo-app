@@ -14,7 +14,9 @@ import androidx.core.content.ContextCompat
  * All rendering via Canvas -- no asset files needed.
  *
  * States:
- *   IDLE          -- teal "K" letter + glass ring (4dp Teal stroke on dark Surface fill)
+ *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
+ *                    Canon: .ab-bubble.idle — background: linear-gradient(150deg, TealHi, TealLo)
+ *                    NOT a dark Surface fill; NOT a teal "K". See Story 9.3 AC1/AC2.
  *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark]
  *                    Used for tap-to-record where the user needs cancel/confirm buttons.
  *   RECORDING_PTT -- circular bubble, scaled up + Danger color, waveform inside.
@@ -35,8 +37,10 @@ import androidx.core.content.ContextCompat
  *   KlarvoOverlayService reads isTouchInCancelZone() / isTouchInConfirmZone() to route taps.
  *
  * Color semantics (DT5 — binding rule):
- *   KlarvoTheme.Teal   = brand / processing / focus-ring / idle "K"
- *   KlarvoTheme.Danger = stop / recording / cancel button
+ *   KlarvoTheme.Teal        = brand / processing / focus-ring
+ *   KlarvoTheme.OnTeal      = dark "K" letter on teal fill (IDLE only)
+ *   KlarvoTheme.TealBg      = ~12% alpha faint ring (IDLE glass-ring accent)
+ *   KlarvoTheme.Danger      = stop / recording / cancel button
  *   No amber in IDLE — amber = recording tally (Story 9.5+ scope).
  */
 class FloatingBubbleView(context: Context) : View(context) {
@@ -100,25 +104,32 @@ class FloatingBubbleView(context: Context) : View(context) {
         style = Paint.Style.FILL
     }
 
-    // --- Idle re-skin paints (Story 9.3 — teal "K" + glass ring) ---
-    // idleCirclePaint: dark Surface fill (simulates glass — no RenderEffect blur, AR5/DT4)
-    private val idleCirclePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // --- Idle re-skin paints (Story 9.3 — teal-gradient squircle + dark K, canon-anchored) ---
+    // idleFillPaint: teal LinearGradient fill (TealHi→TealLo at ~150°).
+    // The LinearGradient shader is rebuilt in onDraw whenever the box size is known (see below),
+    // because the shader coordinates depend on the view's pixel dimensions.
+    private val idleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = KlarvoTheme.Surface
+        // shader is set dynamically in onDraw after we know the squircle dimensions
     }
-    // idleRingPaint: 4dp Teal stroke ring; strokeWidth is set in onDraw after density is known
+    // idleRingPaint: ~3dp faint teal ring at ~12% alpha (TealBg) — "dezenter Glas-Ring".
+    // This is a SUBTLE accent, NOT the bubble's primary color. strokeWidth set in onDraw.
     private val idleRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = KlarvoTheme.Teal
+        color = KlarvoTheme.TealBg    // 0x1F29C7AC — ~12% alpha teal
         strokeCap = Paint.Cap.BUTT
     }
-    // kLetterPaint: bold "K" in Teal; textSize and center alignment set in onDraw
+    // kLetterPaint: dark "K" in OnTeal (#05201B) — NOT teal, NOT white.
+    // Canon: color: var(--k-on-teal). textSize set in onDraw.
     private val kLetterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = KlarvoTheme.Teal
+        color = KlarvoTheme.OnTeal    // 0xFF05201B — dark on teal
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
+
+    // Reusable RectF for squircle drawing to avoid allocation in onDraw
+    private val squircleRect = RectF()
 
     // --- Bar animation (drives waveform bars in both RECORDING and RECORDING_PTT) ---
     private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -272,28 +283,68 @@ class FloatingBubbleView(context: Context) : View(context) {
         when (state) {
             State.IDLE -> {
                 // Touch-target expansion: the view may be larger than the visual bubble.
-                // bubbleSizeDp controls the visual radius; the view is sized to the touch target.
+                // bubbleSizeDp controls the visual side length; the view is sized to the touch target.
                 // Draw centered within the touch-target bounds.
+                //
+                // Canon: .ab-bubble.idle — background: linear-gradient(150deg, TealHi, TealLo)
+                //   border-radius: 12px on a 40px box → cornerRadius ≈ 0.30 × side
+                //   color: var(--k-on-teal) — dark "K" on teal fill
+                //   ring: box-shadow 0 0 0 3px rgba(41,199,172,.13) — faint teal accent ~3dp
+                // Shape: rounded-square (squircle), NOT circle. See AC2 / MANIFEST C1.
                 val density = resources.displayMetrics.density
-                val visualRadius = (bubbleSizeDp * density) / 2f
+                val side = bubbleSizeDp * density            // visual side in px
+                val visualRadius = side / 2f                 // "radius" = half the side
                 val cx = w / 2f
                 val cy = h / 2f
 
-                // Shadow (slightly offset downward for depth)
-                canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
+                // --- Squircle rect (centered in the touch-target view) ---
+                // cornerRadius = 0.30 × side  (canon: 12px / 40px box)
+                val cornerPx = side * 0.30f
+                squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
 
-                // Dark Surface fill (glass effect without blur — AR5/DT4)
-                canvas.drawCircle(cx, cy, visualRadius, idleCirclePaint)
+                // Shadow: rounded-rect slightly offset downward, slightly smaller
+                val shadowRect = RectF(
+                    squircleRect.left  + 1f,
+                    squircleRect.top   + side * 0.06f,
+                    squircleRect.right - 1f,
+                    squircleRect.bottom + side * 0.06f
+                )
+                canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
 
-                // 4dp Teal ring, inset by half stroke width so ring is fully inside circle bounds
-                val ringStrokePx = 4f * density
+                // Teal-gradient fill: LinearGradient at ~150° (top-left → bottom-right).
+                // Rebuild shader each draw pass; squircleRect coordinates may change when
+                // bubbleSizeDp is updated (responsive sizing). Allocation is acceptable here
+                // since the bubble size only changes at setup / orientation change, not per frame.
+                val gradX0 = squircleRect.left
+                val gradY0 = squircleRect.top
+                val gradX1 = squircleRect.right
+                val gradY1 = squircleRect.bottom
+                idleFillPaint.shader = LinearGradient(
+                    gradX0, gradY0, gradX1, gradY1,
+                    KlarvoTheme.TealHi, KlarvoTheme.TealLo,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
+
+                // Faint teal ring (~3dp, ~12% alpha TealBg) — inset by half strokeWidth.
+                // This is a SUBTLE accent on the teal fill, not the primary color. (AC1 / DT5)
+                val ringStrokePx = 3f * density
                 idleRingPaint.strokeWidth = ringStrokePx
-                val ringStrokeHalf = ringStrokePx / 2f
-                canvas.drawCircle(cx, cy, visualRadius - ringStrokeHalf, idleRingPaint)
+                val ringHalf = ringStrokePx / 2f
+                val ringRect = RectF(
+                    squircleRect.left   + ringHalf,
+                    squircleRect.top    + ringHalf,
+                    squircleRect.right  - ringHalf,
+                    squircleRect.bottom - ringHalf
+                )
+                canvas.drawRoundRect(ringRect, cornerPx - ringHalf, cornerPx - ringHalf, idleRingPaint)
 
-                // Teal "K" centered in the bubble; +0.22f*radius baseline correction for capital letter
-                kLetterPaint.textSize = visualRadius * 0.65f
-                canvas.drawText("K", cx, cy + visualRadius * 0.22f, kLetterPaint)
+                // Dark "K" centered in the squircle.
+                // textSize ≈ 0.85 × visualRadius  (canon: 17px on 40px box = 0.85 × 20px radius)
+                // Vertical center: drawText baseline = cy - (ascent+descent)/2 centers the glyph.
+                kLetterPaint.textSize = visualRadius * 0.85f
+                val textCy = cy - (kLetterPaint.ascent() + kLetterPaint.descent()) / 2f
+                canvas.drawText("K", cx, textCy, kLetterPaint)
             }
             State.RECORDING -> {
                 drawRecordingBar(canvas, w, h)
@@ -323,12 +374,17 @@ class FloatingBubbleView(context: Context) : View(context) {
             State.PROCESSING -> {
                 val cx = w / 2f
                 val cy = h / 2f
-                // Use the same visual radius derivation as IDLE so the circle diameter never
+                // Use the same visual radius derivation as IDLE so the size never
                 // grows to fill the touch-target window when leaving IDLE.
                 val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
+                val side = visualRadius * 2f
+                // Rounded-square (squircle) form: same as IDLE — canon cornerRadius = 0.30 × side.
+                // AC2: no circle↔square morph across idle and processing.
+                val cornerPx = side * 0.30f
+                squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
                 // Teal fill (brand/processing — DT5; NOT amber)
                 circlePaint.color = KlarvoTheme.Teal
-                canvas.drawCircle(cx, cy, visualRadius, circlePaint)
+                canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)
                 drawSpinner(canvas, cx, cy, visualRadius)
             }
         }

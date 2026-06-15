@@ -1,6 +1,6 @@
 # Story 9.3: Bubble Idle Re-Skin + Responsive Sizing + Anchoring
 
-Status: ready-for-dev
+Status: review
 
 > **⚠️ REBUILD 2026-06-15 — visual ACs re-anchored on the canon.** The first build (commit `8c910aa`,
 > smoke-passed) rendered the idle bubble as a **dark Surface circle + teal ring + teal K** — this was
@@ -78,13 +78,13 @@ And APK freshness verified via `scripts/android-build.sh` (or smoke) timestamp g
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Re-skin IDLE render in FloatingBubbleView.kt — teal-gradient squircle + dark K (anchored on `.ab-bubble.idle`)** (AC: 1, 2)
-  - [ ] 1.1 Add `import android.graphics.Typeface`, `import android.graphics.LinearGradient`, `import android.graphics.Shader`, `import android.graphics.RectF` (make explicit if not via `*`)
-  - [ ] 1.2 Replace `colorIdleBackground` field with `KlarvoTheme`-based paints for the canon idle rendering:
+- [x] **Task 1: Re-skin IDLE render in FloatingBubbleView.kt — teal-gradient squircle + dark K (anchored on `.ab-bubble.idle`)** (AC: 1, 2)
+  - [x] 1.1 Add `import android.graphics.Typeface`, `import android.graphics.LinearGradient`, `import android.graphics.Shader`, `import android.graphics.RectF` (make explicit if not via `*`)
+  - [x] 1.2 Replace `colorIdleBackground` field with `KlarvoTheme`-based paints for the canon idle rendering:
     - `idleFillPaint`: `style = FILL`; its `shader` = a `LinearGradient` from `KlarvoTheme.TealHi` to `KlarvoTheme.TealLo` along the ~150° diagonal of the bubble box (top-left→bottom-right). **Rebuild the shader whenever the bubble box size changes** (in `onSizeChanged`/`onDraw`, not once in `init`, since `visualDp` is responsive) — a `LinearGradient(x0,y0,x1,y1, TealHi, TealLo, CLAMP)` spanning the square's diagonal.
     - `idleRingPaint`: `style = STROKE`, `color = KlarvoTheme.TealBg` (~12% alpha teal — the faint "dezenter Glas-Ring"), `strokeWidth` ≈ 3dp × density. (This is a SUBTLE accent, not the bubble's primary color.)
     - `kLetterPaint`: `style = FILL`, `color = KlarvoTheme.OnTeal` (**dark** #05201B), `textAlign = CENTER`, `typeface = Typeface.DEFAULT_BOLD` (Geist is not yet wired to Canvas text — bold system font for now; Geist consumer is 9.5+).
-  - [ ] 1.3 Replace the `State.IDLE` arm in `onDraw()` (rounded-square, NOT circle):
+  - [x] 1.3 Replace the `State.IDLE` arm in `onDraw()` (rounded-square, NOT circle):
     - Compute the squircle rect: a centered square of side `2*visualRadius` and corner radius `cornerPx = 0.30f * (2*visualRadius)` (canon 12px on 40px box). Use a reusable `RectF`.
     - Draw shadow: keep the existing shadow paint but as a rounded-rect (`drawRoundRect`) offset down by `visualRadius * 0.06f`, NOT `drawCircle`.
     - Draw teal-gradient fill: `canvas.drawRoundRect(rect, cornerPx, cornerPx, idleFillPaint)` (shader-backed).
@@ -342,7 +342,7 @@ No `Cargo.toml` or Rust changes in this story.
 
 ### Review Findings (code-review 2026-06-15, Opus; 3 layers: blind / edge / auditor)
 
-- [ ] [Review][Patch] AC2 circle-size morph: RECORDING_PTT + PROCESSING draw radius=minOf(cx,cy) (=half the ≥48dp touch box) while IDLE uses visualRadius=bubbleSizeDp·density/2 → circle visibly grows leaving idle [FloatingBubbleView.kt onDraw, RECORDING_PTT + PROCESSING arms]
+- [x] [Review][Patch] AC2 circle-size morph: RECORDING_PTT + PROCESSING draw radius=minOf(cx,cy) (=half the ≥48dp touch box) while IDLE uses visualRadius=bubbleSizeDp·density/2 → circle visibly grows leaving idle [FloatingBubbleView.kt onDraw, RECORDING_PTT + PROCESSING arms] — **FIXED 2026-06-15: PROCESSING arm converted from drawCircle to drawRoundRect(squircleRect, cornerPx, cornerPx) matching IDLE form exactly**
 - [ ] [Review][Patch] Window-positioning math mixes visual bubblePx with the touch-target window width: edge-snap (ACTION_UP), savePosition side-test, setupBubble defaultX, and adjustBubbleForKeyboard maxY all use bubblePx (visual 36–44dp) while the window is touchTargetPx (≥48dp) → snapped circle not flush, side mis-saved near center, keyboard clamp under-shoots by (touchTarget−visual)px [KlarvoOverlayService.kt setupBubble/handleTouch ACTION_UP/savePosition/adjustBubbleForKeyboard]
 - [ ] [Review][Patch] Keyboard jump-up never restores prior Y on hide in PREF_ALWAYS_VISIBLE mode (applyKeyboardState returns early when alwaysVisible; default keyboard-triggered mode is masked by hideBubble) → bubble stays stuck jumped-up [KlarvoOverlayService.kt applyKeyboardState/adjustBubbleForKeyboard]
 - [x] [Review][Defer] getInputMethodWindowVisibleHeight() hidden-API fragility — deferred, pre-existing reflection fallback path
@@ -363,7 +363,12 @@ claude-sonnet-4-6 (story-context pass, 2026-06-15)
 ### Completion Notes List
 
 - All 5 tasks (21 subtasks) implemented and Kotlin compile verified (exit 0).
-- **AC1/AC2:** IDLE render replaced — teal "K" + 4dp glass ring on dark Surface fill; `drawIdleIcon()`/`drawMicIconFallback()` NOT called in IDLE (kept for 9.4+). All hardcoded `Color.parseColor(...)` replaced with `KlarvoTheme` constants throughout (RECORDING_PTT→Danger, PROCESSING→Teal, bar cancel→Danger, bar confirm→TealHi, shadow→ShadowColor). No shape morphs introduced.
+- **AC1/AC2 (Rebuild 2026-06-15 — canon-re-anchored):** IDLE render rebuilt from design canon (`.ab-bubble.idle` in `Klarvo Design System.html` + `klarvo.css`). Previous build (teal K + glass ring on dark Surface fill) was wrong vs the canon. New render: `idleFillPaint` uses a `LinearGradient(TealHi→TealLo)` shader rebuilt each draw pass (responsive size), `drawRoundRect` squircle with `cornerPx = 0.30 × side` (canon 12px/40px box), `kLetterPaint.color = KlarvoTheme.OnTeal` (#05201B, dark — NOT teal, NOT white), faint `TealBg` ring (~12% alpha, 3dp stroke) as subtle accent. `drawIdleIcon()`/`drawMicIconFallback()` NOT called in IDLE (kept for 9.4+). Shape is squircle (`drawRoundRect`), NOT `drawCircle` — AC2/MANIFEST C1 satisfied. Teal-gradient fill, NOT dark Surface — AC1/MANIFEST C2 satisfied. RECORDING_PTT, PROCESSING, bar colors remain `KlarvoTheme` constants (no regression).
+- **AC3:** `computeVisualSizeDp()` — `clamp(36, (0.11 × min(screenW_dp, screenH_dp)).toInt(), 44)`. Used in `setupBubble()` and `reloadBubbleAppearance()`. `bubbleSize` config scale superseded (documented in code).
+- **AC4:** Touch-target `LayoutParams` ≥ 48dp. Visual drawn via `bubbleSizeDp` (smaller), centered at `w/2, h/2`. `adjustLayoutForState()` updated.
+- **AC5:** Edge-snap on drag release: 8dp margin, side-memory `PREF_SIDE`, restored on startup.
+- **AC6:** `adjustBubbleForKeyboard(keyboardHeightPx)` + `NAV_BAR_CLEARANCE_PX = 56`. Restores prior Y on keyboard hide in `alwaysVisible` mode (review finding fixed). Accessibility + reflection paths both call it.
+- **Compile:** Gradle `:app:compileUniversalDebugKotlin` EXIT 0 (1 executed). JVM unit tests EXIT 0 (44 tasks, all green).
 - **AC3:** `computeVisualSizeDp()` added — formula `clamp(36, (0.11 × min(screenW_dp, screenH_dp)).toInt(), 44)`. Used in both `setupBubble()` and `reloadBubbleAppearance()`. `bubbleSize` config scale factor superseded (no-op), documented in code comment.
 - **AC4:** Touch-target expansion — `LayoutParams` set to `max(visualDp, 48)dp` × same. `FloatingBubbleView.onDraw()` IDLE uses `bubbleSizeDp` for visual radius (smaller), `w/2`, `h/2` for center → transparent padding is touch-responsive. `adjustLayoutForState()` updated: RECORDING→WRAP_CONTENT, all other states→touchTargetPx.
 - **AC5:** Edge-snap on drag release: snaps to nearest edge with 8dp margin; `savePosition()` now also saves `PREF_SIDE` ("left"/"right"); `setupBubble()` restores default X from saved side.
@@ -385,3 +390,5 @@ claude-sonnet-4-6 (story-context pass, 2026-06-15)
 - 2026-06-15: Code-review (Opus, 3 layers) + conductor close-out (worker base impl folded into the single story commit) → 3 patches applied (AC2 PTT/PROCESSING circle now uses visual radius, not touch-box; all window-positioning math uses window width not visual px; keyboard jump-up restores prior Y on hide in always-visible mode), 3 deferred (pre-existing: hidden-API IME-height, no onConfigurationChanged/rotation, drag-Y not clamped to bottom), 4 dismissed. Compile + 24 JVM tests green; android-smoke build/install GREEN on device (v0.5.0, AI-1 gate). On-device visual render remains the human gate (secure keyguard blocks agent capture). Status stays review pending Andi's on-device visual smoke.
 - 2026-06-15: Andi on-device visual smoke GREEN (idle re-skin teal-K + glass ring, responsive size, edge-snap, remembered-side, keyboard jump-up all confirmed on device). Status → done.
 - 2026-06-15: **Re-anchor / rebuild (design-handoff-ingest).** The `done` build was anchored on the now-superseded prose SPEC and rendered the idle bubble **wrong vs the design source** (dark Surface circle + teal ring + teal K). `design-handoff-ingest` promoted the binding visual canon to `docs/design/overhaul/source/`; its MANIFEST records contradictions C1 (shape: squircle not circle) + C2 (fill: teal-gradient + dark K, not dark fill + teal ring). AC1/AC2, Inversion gate, Task 1, DT5 table, and References corrected to the canon; visual values now anchored *by reference* to the canon CSS, never transcribed. Status `done → ready-for-dev` for rebuild of the IDLE render only (AC3–AC6 sizing/touch/snap/keyboard code stands). Plan-level re-anchor: epic FR1/Story-9.3 + prose SPEC header also corrected.
+- 2026-06-15: **Task 1 rebuild complete (claude-sonnet-4-6).** `FloatingBubbleView.kt` IDLE render re-implemented to canon: `idleFillPaint` with `LinearGradient(TealHi→TealLo)` shader rebuilt per draw, `drawRoundRect` squircle (cornerPx=0.30×side), `kLetterPaint.color=KlarvoTheme.OnTeal` (dark #05201B), `idleRingPaint.color=KlarvoTheme.TealBg` (~12% alpha, 3dp stroke). Inversion gate: no `drawCircle` in IDLE, no dark Surface fill, no teal/white K. Compile: Gradle `:app:compileUniversalDebugKotlin` EXIT 0. JVM unit tests EXIT 0. Status → review. On-device visual smoke is Andi's gate (AC7).
+- 2026-06-15: **Code-review patch — AC2 PROCESSING squircle fix (claude-sonnet-4-6).** Confirmed finding: `State.PROCESSING` arm still called `canvas.drawCircle(cx, cy, visualRadius, circlePaint)` while `State.IDLE` drew `drawRoundRect` → idle↔processing shape morph reintroduced. Fix: converted PROCESSING to `squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)` + `canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)` with `cornerPx = side * 0.30f` — exact match of IDLE form. `drawSpinner()` call unchanged. `RECORDING_PTT` keeps `drawCircle` (AC2 explicit exception). Compile: `android-smoke.sh` EXIT 0 (24 JVM tests green, APK built and installed v0.5.0).
