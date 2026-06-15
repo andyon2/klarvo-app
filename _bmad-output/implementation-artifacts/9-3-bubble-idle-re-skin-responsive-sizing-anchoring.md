@@ -1,6 +1,15 @@
 # Story 9.3: Bubble Idle Re-Skin + Responsive Sizing + Anchoring
 
-Status: done
+Status: ready-for-dev
+
+> **⚠️ REBUILD 2026-06-15 — visual ACs re-anchored on the canon.** The first build (commit `8c910aa`,
+> smoke-passed) rendered the idle bubble as a **dark Surface circle + teal ring + teal K** — this was
+> transcribed from the now-superseded prose SPEC and is **wrong vs the design source**. The binding canon
+> (`docs/design/overhaul/source/`, `.ab-bubble.idle` in the HTML + `klarvo.css`) renders a **teal-gradient
+> squircle + dark "K" + faint teal ring**. AC1/AC2, the DT5 table, Task 1, and References below are corrected
+> to the canon. The responsive-size / touch-target / edge-snap / keyboard ACs (AC3–AC6) were correct and
+> stand; their built code is fine — only the IDLE *render* (fill, shape, glyph color) must be rebuilt.
+> See `docs/design/overhaul/source/MANIFEST.md` contradictions C1 (shape) + C2 (fill).
 
 ## Story
 
@@ -10,18 +19,21 @@ so that it's reachable and unobtrusive.
 
 ## Acceptance Criteria
 
-**AC1 — Teal "K" + glass ring replaces old white/icon idle rendering:**
+**AC1 — Teal-gradient squircle + dark "K" replaces old white/icon idle rendering (anchored on canon `.ab-bubble.idle`):**
 Given the bubble is in idle state
 When it is shown on screen
-Then `FloatingBubbleView` draws a teal "K" letter centered in the bubble using `KlarvoTheme.Teal` (not the current white circle + app icon)
-And a 4dp glass ring is drawn around the circle edge using a solid `KlarvoTheme.Surface` fill + a 4dp `KlarvoTheme.Teal` ring stroke (no `RenderEffect` blur — constraint AR5/DT4)
+Then `FloatingBubbleView` fills the idle bubble with a **teal gradient** — a `LinearGradient` shader from `KlarvoTheme.TealHi` (#57DDC7) to `KlarvoTheme.TealLo` (#1B9C88) at roughly 150° (top-left→bottom-right) — matching the canon `background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo))`
+And a **dark "K"** is drawn centered on the teal fill using `KlarvoTheme.OnTeal` (#05201B), bold weight (matching `color: var(--k-on-teal)`) — NOT a teal "K", NOT a white "K"
+And a **subtle teal ring** is drawn as the "dezenter Glas-Ring" — a thin (~3dp) low-alpha teal stroke (`KlarvoTheme.TealBg` ~12% alpha, matching the canon spread ring `0 0 0 3px rgba(41,199,172,.13)`) just outside the fill — it is a faint accent ON the teal fill, NOT the primary color of the bubble
 And the old `colorIdleBackground` (#F5F5F5 white), `drawIdleIcon()`, and `drawMicIconFallback()` methods are no longer rendered in IDLE state
+And the idle bubble is **NOT** a dark `KlarvoTheme.Surface` fill (the "glass = solid Surface + ring" rule applies to the listening *panels* in 9.5, not to the bubble idle, which the canon renders as a solid teal-gradient surface — see MANIFEST C2)
 
-**AC2 — Same bubble form across all states (no circle↔bar morph in idle):**
+**AC2 — Same bubble form across all states = rounded-square / squircle (NOT a circle), no morph:**
 Given any state (idle / recording / processing)
 When the bubble is visible
-Then it stays in **circular** form during idle and processing — RECORDING bar mode (`BAR_WIDTH_DP = 220`) continues to work exactly as today for HOLD mode
-And no new shape changes are introduced: the spec says "same form — no circle↔square morph"; the existing bar for RECORDING is out of scope for this story
+Then the idle/processing bubble is drawn as a **rounded square (squircle)** with a corner radius of **12dp-equivalent** (canon `border-radius: 12px` on the 40px box ≈ `0.30 × visual size`) using `canvas.drawRoundRect(...)` — NOT `canvas.drawCircle(...)`
+And the **same rounded-square form** is used across idle and processing (no circle↔square morph) — RECORDING bar mode (`BAR_WIDTH_DP = 220`) continues to work exactly as today for HOLD mode
+And no new shape changes are introduced beyond switching the idle/processing render from circle to the canon squircle; the existing bar for RECORDING is out of scope for this story
 
 **AC3 — Responsive size: visual = clamp(36dp, 0.11 × min(screenW, screenH)dp, 44dp):**
 Given varying screen sizes
@@ -60,23 +72,24 @@ And the bubble appears on field focus showing the teal "K" + glass ring idle sta
 And drag, snap, and position memory work as expected on-device
 And APK freshness verified via `scripts/android-build.sh` (or smoke) timestamp gate
 
-**Inversion (must-fail gate):** A submission that still uses `drawIdleIcon()` / `drawMicIconFallback()` for the IDLE render path, or that uses `Color.parseColor("#F5F5F5")` as the idle background, must not pass review. A submission that ignores touch-target expansion (always drawing the same size as the touch area) must not pass review. A submission that saves the raw drag X without edge-snapping must not pass review.
+**Inversion (must-fail gate):** A submission whose idle bubble is **not** a teal-gradient fill (e.g. a dark `KlarvoTheme.Surface` fill with the teal only on the ring), or whose "K" is **not** dark `OnTeal` (e.g. a teal or white K), or that draws the idle bubble as a **circle** (`drawCircle`) rather than the canon rounded-square/squircle, must not pass review (these are exactly the C1/C2 drift). A submission that still uses `drawIdleIcon()` / `drawMicIconFallback()` for the IDLE render path, or `Color.parseColor("#F5F5F5")` as the idle background, must not pass. A submission that ignores touch-target expansion (always drawing the same size as the touch area) must not pass. A submission that saves the raw drag X without edge-snapping must not pass.
 
 **DoD:** On-device smoke that the bubble appears correctly (teal K + ring), correct size on a real phone, drag/snap/side-memory work; APK freshness verified.
 
 ## Tasks / Subtasks
 
-- [x] **Task 1: Re-skin IDLE render in FloatingBubbleView.kt** (AC: 1, 2)
-  - [x] 1.1 Add `import android.graphics.Typeface` and `import android.graphics.Paint.Align` (already imported via `*` but make explicit if needed)
-  - [x] 1.2 Replace `colorIdleBackground` field with `KlarvoTheme`-based paints for the new idle rendering:
-    - `idleCirclePaint`: `style = FILL`, `color = KlarvoTheme.Surface` (the glass fill — solid dark surface, not real blur)
-    - `idleRingPaint`: `style = STROKE`, `color = KlarvoTheme.Teal`, `strokeWidth` = 4dp × density (computed in `onDraw` or `init`)
-    - `kLetterPaint`: `style = FILL`, `color = KlarvoTheme.Teal`, `textAlign = CENTER`, `typeface = Typeface.DEFAULT_BOLD` (Geist is not yet wired to Canvas text — use bold system font for now; Geist font consumer is Story 9.5+)
-  - [x] 1.3 Replace the `State.IDLE` arm in `onDraw()`:
-    - Draw shadow: `canvas.drawCircle(cx, cy + radius * 0.06f, radius * 0.92f, shadowPaint)` (keep existing shadow paint)
-    - Draw surface fill: `canvas.drawCircle(cx, cy, radius, idleCirclePaint)` (dark surface)
-    - Draw teal ring: `canvas.drawCircle(cx, cy, radius - ringStrokeHalf, idleRingPaint)` (stroke inset by half stroke width so ring is fully inside the circle bounds)
-    - Draw "K": set `kLetterPaint.textSize = radius * 0.65f`; `canvas.drawText("K", cx, cy + radius * 0.22f, kLetterPaint)` (the +0.22f baseline correction centers the capital letter visually; tune as needed)
+- [ ] **Task 1: Re-skin IDLE render in FloatingBubbleView.kt — teal-gradient squircle + dark K (anchored on `.ab-bubble.idle`)** (AC: 1, 2)
+  - [ ] 1.1 Add `import android.graphics.Typeface`, `import android.graphics.LinearGradient`, `import android.graphics.Shader`, `import android.graphics.RectF` (make explicit if not via `*`)
+  - [ ] 1.2 Replace `colorIdleBackground` field with `KlarvoTheme`-based paints for the canon idle rendering:
+    - `idleFillPaint`: `style = FILL`; its `shader` = a `LinearGradient` from `KlarvoTheme.TealHi` to `KlarvoTheme.TealLo` along the ~150° diagonal of the bubble box (top-left→bottom-right). **Rebuild the shader whenever the bubble box size changes** (in `onSizeChanged`/`onDraw`, not once in `init`, since `visualDp` is responsive) — a `LinearGradient(x0,y0,x1,y1, TealHi, TealLo, CLAMP)` spanning the square's diagonal.
+    - `idleRingPaint`: `style = STROKE`, `color = KlarvoTheme.TealBg` (~12% alpha teal — the faint "dezenter Glas-Ring"), `strokeWidth` ≈ 3dp × density. (This is a SUBTLE accent, not the bubble's primary color.)
+    - `kLetterPaint`: `style = FILL`, `color = KlarvoTheme.OnTeal` (**dark** #05201B), `textAlign = CENTER`, `typeface = Typeface.DEFAULT_BOLD` (Geist is not yet wired to Canvas text — bold system font for now; Geist consumer is 9.5+).
+  - [ ] 1.3 Replace the `State.IDLE` arm in `onDraw()` (rounded-square, NOT circle):
+    - Compute the squircle rect: a centered square of side `2*visualRadius` and corner radius `cornerPx = 0.30f * (2*visualRadius)` (canon 12px on 40px box). Use a reusable `RectF`.
+    - Draw shadow: keep the existing shadow paint but as a rounded-rect (`drawRoundRect`) offset down by `visualRadius * 0.06f`, NOT `drawCircle`.
+    - Draw teal-gradient fill: `canvas.drawRoundRect(rect, cornerPx, cornerPx, idleFillPaint)` (shader-backed).
+    - Draw faint ring: `canvas.drawRoundRect(insetRect, cornerPx, cornerPx, idleRingPaint)` — inset by half the ring stroke so it sits just inside/around the fill edge.
+    - Draw dark "K": set `kLetterPaint.textSize ≈ visualRadius * 0.85f` (canon font-size 17px on a 40px box ≈ 0.42× box ≈ 0.85× radius); `canvas.drawText("K", cx, cy - (kLetterPaint.ascent()+kLetterPaint.descent())/2f, kLetterPaint)` (proper vertical centering via font metrics).
   - [x] 1.4 Remove (or leave unused but do NOT call in IDLE): `drawIdleIcon()`, `drawMicIconFallback()`, `appIconDrawable`. Keep the `appIconDrawable` field and helper methods if removing them would require restructuring — just stop calling them from IDLE `onDraw`. Do not delete them in this story (9.4+ may or may not need them).
   - [x] 1.5 Remove `colorIdleBackground`, `colorRecordingBar`, `colorCancelBtn`, `colorConfirmBtn`, `colorProcessing` fields — replace with `KlarvoTheme` constants directly in the paint setup:
     - `circlePaint` in RECORDING_PTT: use `KlarvoTheme.Danger` (red/stop per DT5 semantics)
@@ -223,8 +236,9 @@ And APK freshness verified via `scripts/android-build.sh` (or smoke) timestamp g
 
 | Context | Color | Token |
 |---------|-------|-------|
-| Idle fill (glass surface) | `#16181A` | `KlarvoTheme.Surface` |
-| Idle ring + "K" letter | `#29C7AC` | `KlarvoTheme.Teal` |
+| Idle fill (teal gradient) | `#57DDC7 → #1B9C88` @150° | `KlarvoTheme.TealHi → TealLo` (LinearGradient shader) |
+| Idle "K" letter (dark, on teal) | `#05201B` | `KlarvoTheme.OnTeal` |
+| Idle ring (faint accent, ~3dp) | `rgba(41,199,172,.13)` | `KlarvoTheme.TealBg` (~12% alpha) |
 | Shadow | `0x33000000` | `KlarvoTheme.ShadowColor` |
 | Processing spinner | `#29C7AC` | `KlarvoTheme.Teal` (brand/processing — NOT amber) |
 | Recording bar/circle | `#EE6F63` | `KlarvoTheme.Danger` (stop/recording) |
@@ -316,9 +330,8 @@ No `Cargo.toml` or Rust changes in this story.
 ### References
 
 - [Source: epics-visual-overhaul.md, Story 9.3] — ACs, DoD (FR1, FR7, AR5c/d)
-- [Source: docs/design/overhaul/SPEC-studio-dark-overhaul.md, "Bubble States"] — idle: "Teal-K, dezenter Glas-Ring", responsive formula, same form no morph
-- [Source: docs/design/overhaul/SPEC-studio-dark-overhaul.md, "⚠️ Machbarkeits-Constraints"] — no backdrop-blur (#3); touch targets ≥48dp; 56px nav-bar clearance (#4)
-- [Source: docs/design/overhaul/SPEC-studio-dark-overhaul.md, "DT4"] — glass ring = 4dp ring (not blur); DT5 color semantics
+- **[CANON — binding visual source] docs/design/overhaul/source/MANIFEST.md** — the anchor; `.ab-bubble.idle` (in `Klarvo Design System.html`) + `assets/klarvo.css` = the render/value truth. Render the SOLL: `node ~/.claude/skills/design-handoff-ingest/render-surface.mjs --html "docs/design/overhaul/source/Klarvo Design System.html" --selector ".ab-bubble.idle" --out /tmp/soll.png --scale 6`. Contradictions C1 (shape: squircle not circle) + C2 (fill: teal-gradient + dark K, not dark fill + teal ring).
+- [Narrative context only — SUPERSEDED for visual values] docs/design/overhaul/SPEC-studio-dark-overhaul.md — responsive formula, "same form no morph", no-backdrop-blur (#3), touch targets ≥48dp, 56px nav-bar clearance (#4). **Do NOT read fill/shape/color values here — they drifted; read the canon CSS.**
 - [Source: android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt] — Full baseline (478 LOC); state enum, onDraw structure, drawIdleIcon, hardcoded colors
 - [Source: android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt] — setupBubble(), handleTouch(), savePosition(), adjustLayoutForState(), getScreenDimensions(); no edge-snap today
 - [Source: android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt] — Created 9.2; all tokens const val Int, ready for paint.color assignment
@@ -371,3 +384,4 @@ claude-sonnet-4-6 (story-context pass, 2026-06-15)
 - 2026-06-15: Implementation complete (claude-sonnet-4-6). FloatingBubbleView: IDLE re-skin (teal K + glass ring), all colors migrated to KlarvoTheme (DT5). KlarvoOverlayService: computeVisualSizeDp() responsive formula, touch-target expansion (≥48dp LayoutParams), edge-snap on drag release, PREF_SIDE side-memory, adjustBubbleForKeyboard() with NAV_BAR_CLEARANCE_PX=56. KlarvoAccessibilityService: notifyKeyboardState() extracts IME height via getBoundsInScreen(), calls adjustBubbleForKeyboard(). Kotlin compile: exit 0. JVM unit tests: exit 0. Status → review.
 - 2026-06-15: Code-review (Opus, 3 layers) + conductor close-out (worker base impl folded into the single story commit) → 3 patches applied (AC2 PTT/PROCESSING circle now uses visual radius, not touch-box; all window-positioning math uses window width not visual px; keyboard jump-up restores prior Y on hide in always-visible mode), 3 deferred (pre-existing: hidden-API IME-height, no onConfigurationChanged/rotation, drag-Y not clamped to bottom), 4 dismissed. Compile + 24 JVM tests green; android-smoke build/install GREEN on device (v0.5.0, AI-1 gate). On-device visual render remains the human gate (secure keyguard blocks agent capture). Status stays review pending Andi's on-device visual smoke.
 - 2026-06-15: Andi on-device visual smoke GREEN (idle re-skin teal-K + glass ring, responsive size, edge-snap, remembered-side, keyboard jump-up all confirmed on device). Status → done.
+- 2026-06-15: **Re-anchor / rebuild (design-handoff-ingest).** The `done` build was anchored on the now-superseded prose SPEC and rendered the idle bubble **wrong vs the design source** (dark Surface circle + teal ring + teal K). `design-handoff-ingest` promoted the binding visual canon to `docs/design/overhaul/source/`; its MANIFEST records contradictions C1 (shape: squircle not circle) + C2 (fill: teal-gradient + dark K, not dark fill + teal ring). AC1/AC2, Inversion gate, Task 1, DT5 table, and References corrected to the canon; visual values now anchored *by reference* to the canon CSS, never transcribed. Status `done → ready-for-dev` for rebuild of the IDLE render only (AC3–AC6 sizing/touch/snap/keyboard code stands). Plan-level re-anchor: epic FR1/Story-9.3 + prose SPEC header also corrected.

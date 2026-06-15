@@ -103,9 +103,11 @@ IDs are native to this track. Categories: **DT** = design-token/system (the shar
 
 ### Functional / Interaction Requirements (Android bubble — Epic 9; feature work)
 
-- **FR1** — Bubble **idle**: one form across all states (**no** circle↔square morph) — teal "K" +
-  subtle glass ring; **responsive size** `visual = clamp(36dp, 0.11 × min(screenW,screenH)dp, 44dp)`,
-  touch target `max(visual, 48dp)` via transparent padding.
+- **FR1** — Bubble **idle**: one form across all states (**no** circle↔square morph) — a **teal-gradient
+  squircle** (rounded square, not a circle) with a **dark "K"** centered, plus a subtle teal ring; **responsive
+  size** `visual = clamp(36dp, 0.11 × min(screenW,screenH)dp, 44dp)`, touch target `max(visual, 48dp)` via
+  transparent padding. *Visual values are anchored on the canon `docs/design/overhaul/source/` (`.ab-bubble.idle`
+  in the HTML + `klarvo.css`), NOT transcribed here — read fill/shape/colors there.*
 - **FR2** — **recording**: keyboard **collapses**, a **Klarvo-owned panel** rises (grab handle, K +
   **amber** live-dot + reactive waveform from RMS levels + timer + red stop). Live **raw** transcript
   runs multiline in the panel. Footer: "keyboard paused · returns on insert".
@@ -559,8 +561,9 @@ So that it's reachable and unobtrusive.
 
 **Given** a focused field + open keyboard
 **When** the bubble shows idle
-**Then** it renders the teal "K" + 4dp glass ring using tokens; the **same form** is used across states
-(no circle↔square morph).
+**Then** it renders a **teal-gradient squircle** (rounded square, 12px-equivalent corner radius — NOT a circle)
+with a **dark "K"** (OnTeal) centered and a subtle teal ring, per the canon `.ab-bubble.idle`
+(`docs/design/overhaul/source/`); the **same form** is used across states (no circle↔square morph).
 
 **Given** varying screen sizes
 **When** sized

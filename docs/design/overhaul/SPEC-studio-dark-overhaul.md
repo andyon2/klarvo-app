@@ -1,11 +1,12 @@
 # Handoff: Klarvo Visual Overhaul — „Studio Dark" + Android Dictation-Bubble
 
-> **Provenienz / Tracking-Hinweis.** Diese Datei ist die getrackte Kopie des Cloud-Web-Design-Agent-Outputs
-> (high-fidelity Design-Spec, finale Tokens) und dient als UX-Design-Input für die Overhaul-Epics. Die
-> begleitenden **HTML/CSS-Referenzprototypen** (`Klarvo Visual Redesign.html`, `Klarvo Android Bubble.html`,
-> `assets/klarvo.css`) und die **Ist-Zustand-Screenshots** liegen bewusst nur lokal im gitignorierten Paket
-> `design-handoff/` (zu schwer / Referenz, nicht zum Kopieren). Werte hier (Hex, Spacing, Radii, Motion) sind
-> verbindlich. Begleit-Kontext: `00-original-prompt.md` … `04-constraints.md` im selben Verzeichnis.
+> **⚠️ SUPERSEDED FÜR VISUAL-WERTE (2026-06-15).** Diese Prosa-Datei ist **NICHT** mehr die verbindliche
+> Quelle für Visual-Werte (Hex/Radii/Fill/Form). Verbindlicher Kanon = der getrackte HTML-Render + CSS unter
+> **`docs/design/overhaul/source/`** (siehe dessen `MANIFEST.md`). Diese Transkription ist von der Render-Wahrheit
+> **gedriftet** — dokumentierter Fall: Bubble-**idle** stand hier als „dunkle Surface-Füllung + Teal-Ring + Kreis",
+> der CSS (`.ab-bubble.idle`) rendert aber eine **Teal-Gradient-Füllung (Squircle, 12px-Radius) + dunkles „K"**.
+> Diese Datei nur noch als **narrativer Kontext** (Intent, Direction, Rationale) lesen — jeden konkreten Visual-Wert
+> am Kanon-CSS verifizieren, nie von hier kopieren. (Methode: Memory `feedback_soll_anchor_external_approved_source`.)
 
 ## Overview
 Visueller Overhaul von **Klarvo** (Diktier-/Spracheingabe-Tool, BYOK, lokal-first, Dark-Identität).
