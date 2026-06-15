@@ -213,7 +213,13 @@ class KlarvoOverlayService : Service() {
     /**
      * Debug-only broadcast receiver — drives the bubble through all four states on demand
      * without live audio or network. Only registered when BuildConfig.DEBUG == true.
+     * Fast path for an already-running service process (avoids service-start overhead).
      * See ACTION_DEBUG_SET_STATE constants for adb commands.
+     *
+     * Cold-start path (dead process): DebugHarnessReceiver (manifest-declared, static) wakes
+     * the process via startForegroundService and forwards extras; onStartCommand calls
+     * applyHarnessState() once bubbleView is initialised. Keep both paths in sync via the
+     * shared applyHarnessState() helper below.
      */
     private val debugStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -222,24 +228,72 @@ class KlarvoOverlayService : Service() {
             val rms = intent.getFloatExtra(EXTRA_RMS, -1f)
             val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
             handler.post {
-                if (!::bubbleView.isInitialized) {
-                    KlarvoLogger.w(TAG, "[harness] bubbleView not ready")
-                    return@post
-                }
-                val newState = when (stateToken.lowercase()) {
-                    "idle"         -> RecordingState.IDLE
-                    "recording"    -> RecordingState.RECORDING
-                    "transcribing" -> RecordingState.TRANSCRIBING
-                    "done"         -> RecordingState.DONE
-                    else -> {
-                        KlarvoLogger.w(TAG, "DEBUG_SET_STATE: unknown token '$stateToken'")
-                        return@post
-                    }
-                }
-                if (rms >= 0f) bubbleView.amplitude = rms.coerceIn(0f, 1f)
-                if (transcript != null) debugTranscript = transcript
-                setState(newState)
-                KlarvoLogger.d(TAG, "[harness] state → $newState (rms=$rms, transcript=${transcript?.take(30)})")
+                applyHarnessState(stateToken, rms, transcript)
+            }
+        }
+    }
+
+    /**
+     * Shared harness-state application logic — called by both the dynamic debugStateReceiver
+     * (already-running process fast path) and onStartCommand (cold-start via DebugHarnessReceiver).
+     *
+     * Must be called on the main thread (handler.post from dynamic receiver; handler.post from
+     * onStartCommand). Idempotent: safe to call when the service is already in the target state.
+     */
+    private fun applyHarnessState(stateToken: String, rms: Float, transcript: String?) {
+        if (!BuildConfig.DEBUG) return
+        if (!::bubbleView.isInitialized) {
+            KlarvoLogger.w(TAG, "[harness] bubbleView not ready — cannot apply state '$stateToken'")
+            return
+        }
+        val newState = when (stateToken.lowercase()) {
+            "idle"         -> RecordingState.IDLE
+            "recording"    -> RecordingState.RECORDING
+            "transcribing" -> RecordingState.TRANSCRIBING
+            "done"         -> RecordingState.DONE
+            else -> {
+                KlarvoLogger.w(TAG, "[harness] DEBUG_SET_STATE: unknown token '$stateToken'")
+                return
+            }
+        }
+        // F3: reset amplitude when rms is absent so each harness broadcast starts clean.
+        if (rms >= 0f) {
+            bubbleView.amplitude = rms.coerceIn(0f, 1f)
+        } else {
+            bubbleView.amplitude = 0f
+        }
+        if (transcript != null) debugTranscript = transcript
+        // F1-A: force the bubble visible for harness use before setting state.
+        // F2: capture previous state so adjustLayoutForState gets correct geometry.
+        val previousState = currentState
+        forceShowBubbleForHarness()
+        setState(newState)
+        adjustLayoutForState(newState, previousState)
+        KlarvoLogger.d(TAG, "[harness] state → $newState (rms=$rms, transcript=${transcript?.take(30)})")
+    }
+
+    /**
+     * Debug-only direct-show path for the state harness.
+     * Bypasses the SHOW_DEBOUNCE_MS delay and the banking-app guard so the bubble
+     * appears synchronously on the emulator without any UI interaction.
+     *
+     * Only compiled/called in DEBUG builds (receiver is already DEBUG-gated;
+     * this helper is an extra safety so the logic never leaks into release).
+     */
+    private fun forceShowBubbleForHarness() {
+        if (!BuildConfig.DEBUG) return
+        // Cancel any pending debounced show — we want immediate attach.
+        pendingShowRunnable?.let { handler.removeCallbacks(it) }
+        pendingShowRunnable = null
+        if (!isBubbleVisible && ::bubbleView.isInitialized) {
+            try {
+                reloadBubbleAppearance()
+                windowManager.addView(bubbleView, bubbleParams)
+                isBubbleVisible = true
+                updateNotification()
+                KlarvoLogger.d(TAG, "[harness] bubble force-shown for harness")
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[harness] forceShowBubbleForHarness failed", e)
             }
         }
     }
@@ -344,6 +398,18 @@ class KlarvoOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Cold-start harness path: DebugHarnessReceiver (manifest-declared static receiver) starts
+        // the service with ACTION_DEBUG_SET_STATE when the process is dead. onCreate() runs first
+        // and initialises bubbleView, so we can safely apply the harness state here on the main
+        // thread via handler.post (gives the layout a frame to settle before we attach the bubble).
+        if (BuildConfig.DEBUG && intent?.action == ACTION_DEBUG_SET_STATE) {
+            val stateToken = intent.getStringExtra(EXTRA_STATE)
+            if (stateToken != null) {
+                val rms        = intent.getFloatExtra(EXTRA_RMS, -1f)
+                val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
+                handler.post { applyHarnessState(stateToken, rms, transcript) }
+            }
+        }
         return START_STICKY
     }
 
@@ -431,10 +497,33 @@ class KlarvoOverlayService : Service() {
     private fun startForegroundWithNotification() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            // Android 14+ (API 34+) blocks FOREGROUND_SERVICE_TYPE_MICROPHONE from background
+            // callers (e.g. BroadcastReceiver context) unless the app is in a user-visible state,
+            // even when RECORD_AUDIO is granted. In DEBUG builds the service may be cold-started
+            // via DebugHarnessReceiver (background), so we catch the SecurityException and fall
+            // back to type NONE for the initial notification. The microphone FGS type is not
+            // needed for the visual-state harness (no audio is captured). This fallback is gated
+            // to DEBUG so release builds always use the microphone type from the normal
+            // MainActivity foreground-start path.
+            if (BuildConfig.DEBUG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                try {
+                    startForeground(
+                        NOTIFICATION_ID, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    )
+                } catch (e: SecurityException) {
+                    // FOREGROUND_SERVICE_TYPE_NONE is also prohibited on targetSdk 34+.
+                    // DATA_SYNC is allowed from background under the SYSTEM_ALERT_WINDOW exemption
+                    // and does not require a user-visible state — safe for the visual harness.
+                    KlarvoLogger.d(TAG, "[harness] microphone FGS type blocked from background, using DATA_SYNC fallback: ${e.message?.take(60)}")
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                }
+            } else {
+                startForeground(
+                    NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }

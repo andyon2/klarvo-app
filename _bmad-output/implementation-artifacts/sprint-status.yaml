@@ -127,7 +127,7 @@ development_status:
   9-1-adr-android-bubble-rendering-tech: done
   9-2-android-token-theme-source-and-fonts: done
   9-3-bubble-idle-re-skin-responsive-sizing-anchoring: done
-  9-4-bubble-state-harness: review
+  9-4-bubble-state-harness: done
   9-5-bubble-state-sequence-listening-panel-waveform: backlog
   9-6-keyboard-collapse-via-a11y-service: backlog
   9-7-short-press-gesture-modes-mirror-desktop: backlog

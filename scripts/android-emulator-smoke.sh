@@ -48,6 +48,52 @@ if ls android/kotlin-test/com/klarvo/voice/*.kt >/dev/null 2>&1; then
 fi
 log "kotlin + fonts synced."
 
+# 2b. Debug harness: inject DebugHarnessReceiver via the debug source-set manifest overlay.
+#     The manifest merger merges src/debug/AndroidManifest.xml over src/main for debug variants,
+#     so the receiver lands ONLY in debug APKs and never in release (AC4).
+#
+#     This replaces the old broken sed approach (which failed because the service attributes are
+#     on separate lines) AND the old start-foreground-service approach (which failed because a
+#     dynamically-registered receiver on a dead process is silently dropped).
+#
+#     The static DebugHarnessReceiver wakes the dead process on the first broadcast and starts
+#     KlarvoOverlayService; no explicit start-foreground-service call is needed.
+DEBUG_MANIFEST_DIR="$APP_DIR/src/debug"
+mkdir -p "$DEBUG_MANIFEST_DIR"
+cat > "$DEBUG_MANIFEST_DIR/AndroidManifest.xml" <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug source-set overlay: merged over src/main only for debug builds.
+     Adds the static DebugHarnessReceiver so adb broadcasts wake a dead process.
+     Also adds dataSync to KlarvoOverlayService foregroundServiceType so the
+     service can cold-start from background (broadcast context) on API 34+ when the
+     microphone type is blocked — the DATA_SYNC fallback in startForegroundWithNotification
+     requires this to be declared in the manifest.
+     Never included in release APKs. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+    <!-- Permission required for dataSync FGS type fallback on API 34+ (harness cold-start). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <application>
+        <receiver
+            android:name=".DebugHarnessReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.klarvo.voice.DEBUG_SET_STATE" />
+            </intent-filter>
+        </receiver>
+        <!-- Extend foregroundServiceType so the DATA_SYNC fallback is allowed on API 34+
+             when starting from background broadcast context. tools:node="merge" appends
+             to the existing declaration in src/main without replacing it. -->
+        <service
+            android:name=".KlarvoOverlayService"
+            android:foregroundServiceType="microphone|dataSync"
+            tools:node="merge" />
+    </application>
+</manifest>
+EOF
+log "manifest: debug overlay written → $DEBUG_MANIFEST_DIR/AndroidManifest.xml (DebugHarnessReceiver)"
+
 # 3. Build (Rust from cache)
 log "building universal debug APK ..."
 ( cd "$GEN_ANDROID" && ./gradlew :app:assembleUniversalDebug \
@@ -72,6 +118,21 @@ echo "$OUT" | grep -q "Success" || die "adb install fehlgeschlagen: $OUT"
 "$ADB" -s "$SER" shell settings put secure enabled_accessibility_services "$PKG/$PKG.KlarvoAccessibilityService" >/dev/null 2>&1 || true
 "$ADB" -s "$SER" shell settings put secure accessibility_enabled 1 >/dev/null 2>&1 || true
 "$ADB" -s "$SER" shell dumpsys deviceidle whitelist +$PKG >/dev/null 2>&1 || true
-log "installed + permissions granted. Drive states via DEBUG_SET_STATE; screencap via exec-out."
+log "permissions granted."
+
+# 6. Debug harness: ready. Wake the service once so subsequent broadcasts hit the running
+#    dynamic receiver (fast path). Two steps needed for a freshly installed APK:
+#      a) Set app standby bucket to ACTIVE so Android doesn't rate-limit broadcasts.
+#      b) adb install sets stopped=true (Android blocks broadcasts to stopped apps).
+#         --include-stopped-packages clears that flag on the very first delivery.
+#    After the first broadcast the service is running and the dynamic receiver handles
+#    subsequent broadcasts without needing the flag.
+"$ADB" -s "$SER" shell am set-standby-bucket "$PKG" active >/dev/null 2>&1 || true
+log "harness: waking service via first idle broadcast (--include-stopped-packages clears stopped=true) ..."
+"$ADB" -s "$SER" shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state idle \
+    -p "$PKG" --include-stopped-packages >/dev/null 2>&1 || true
+sleep 2   # give onCreate + bubbleView time to initialise before first harness state
+log "harness ready. Drive states via DEBUG_SET_STATE broadcasts:"
+log "  adb -s $SER shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state idle -p $PKG"
 
 echo "$SER"
