@@ -1,6 +1,6 @@
 # Story 9.3: Bubble Idle Re-Skin + Responsive Sizing + Anchoring
 
-Status: review
+Status: in-progress
 
 > **⚠️ REBUILD 2026-06-15 — visual ACs re-anchored on the canon.** The first build (commit `8c910aa`,
 > smoke-passed) rendered the idle bubble as a **dark Surface circle + teal ring + teal K** — this was
@@ -64,6 +64,21 @@ When the bubble Y position would be covered by the keyboard
 Then the bubble Y is adjusted upward so it remains at least `NAV_BAR_CLEARANCE_PX = 56` px above the keyboard top
 And nav-bar clearance uses fixed 56px, NOT `env(safe-area-inset-bottom)` (per AR5d — that value is unreliable/0 in the Android WebView; this is native Kotlin handling its own insets)
 
+**AC8 — Manual bubble-size control in Settings (absolute dp, with "Auto" default):** *(added 2026-06-15 — user request; additive affordance, canon Auto-sizing remains the default)*
+Given the user opens the Settings panel (React `SettingsPanel.tsx`, shown in-app via the Tauri WebView on Android)
+When they adjust the bubble-size control
+Then a visible slider lets them set the idle bubble's visual size as an **absolute value in dp** within `[32, 72]` (range may exceed the canon Auto max of 44dp — this is a conscious user opt-in)
+And the **default is "Auto"**, which keeps the canon responsive formula `clamp(36, 0.11 × min(screenW,screenH)dp, 44)` (AC3) — i.e. when the user has not chosen a manual size, behaviour is unchanged from today
+And the chosen value persists in `config.json` and is read by the Kotlin overlay. **Config representation:** add a dedicated field (recommended `bubbleSizeDp: Int`, `0` = Auto, `32..72` = manual) rather than overloading the legacy `bubbleSize: Float` scale (which 9-3 already made a no-op); plumb it through `types.ts`, `useSettings`, `tauri-commands.ts`, and `KlarvoApi.kt` `Config` like the existing `bubbleSize`/`bubbleOpacity` fields
+And `computeVisualSizeDp()` returns the manual value (coerced to `[32,72]`) when set, else the responsive clamp; the touch-target stays `max(visual, 48)dp` and the squircle render scales off the visual size unchanged (no idle-render change)
+
+**AC9 — Edge-snap toggle in Settings (default ON = canon):** *(added 2026-06-15 — user request)*
+Given the Settings panel
+When the user toggles "snap bubble to screen edge" (or equivalent label) OFF
+Then on drag release the bubble **stays at the raw drop position** (no horizontal edge-snap), and the raw X/Y persist and are restored as-is on next launch
+And when the toggle is ON (the **default**, = canon snap + remembered-side from AC5) behaviour is exactly as today
+And the toggle persists via a new `bubbleEdgeSnap: Boolean = true` config field (plumbed React↔config.json↔Kotlin like the other bubble settings); the Kotlin snap block in `handleTouch` ACTION_UP and the side-based startup default in `setupBubble()` are gated behind this flag
+
 **AC7 — On-device smoke passes; APK freshness verified:**
 Given all changes are complete
 When `scripts/android-smoke.sh` is run
@@ -74,7 +89,7 @@ And APK freshness verified via `scripts/android-build.sh` (or smoke) timestamp g
 
 **Inversion (must-fail gate):** A submission whose idle bubble is **not** a teal-gradient fill (e.g. a dark `KlarvoTheme.Surface` fill with the teal only on the ring), or whose "K" is **not** dark `OnTeal` (e.g. a teal or white K), or that draws the idle bubble as a **circle** (`drawCircle`) rather than the canon rounded-square/squircle, must not pass review (these are exactly the C1/C2 drift). A submission that still uses `drawIdleIcon()` / `drawMicIconFallback()` for the IDLE render path, or `Color.parseColor("#F5F5F5")` as the idle background, must not pass. A submission that ignores touch-target expansion (always drawing the same size as the touch area) must not pass. A submission that saves the raw drag X without edge-snapping must not pass.
 
-**DoD:** On-device smoke that the bubble appears correctly (teal K + ring), correct size on a real phone, drag/snap/side-memory work; APK freshness verified.
+**DoD:** On-device smoke that the bubble appears correctly (teal-gradient squircle + dark K + faint ring), correct size on a real phone, drag/snap/side-memory work; **plus the two added user controls (AC8/AC9): a Settings slider visibly changes the idle bubble size on-device (incl. a size larger than the old default), and the edge-snap toggle OFF leaves the bubble at the raw drop position (no snap), default-ON unchanged**; APK freshness verified.
 
 ## Tasks / Subtasks
 
@@ -205,6 +220,22 @@ And APK freshness verified via `scripts/android-build.sh` (or smoke) timestamp g
   - [x] 5.1 Stage only: `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` (modified), `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (modified), and `android/kotlin-src/com/klarvo/voice/KlarvoAccessibilityService.kt` if touched
   - [x] 5.2 Never `git add .` — verify staged files only (no gen/ artifacts)
   - [x] 5.3 Commit message: `feat(android): 9-3 bubble idle re-skin + responsive sizing + anchoring`
+
+- [ ] **Task 6: Manual bubble-size control (absolute dp + Auto default)** (AC: 8)
+  - [ ] 6.1 Config field: add `bubbleSizeDp: Int = 0` (0 = Auto, 32..72 = manual) to `KlarvoApi.kt` `Config` (camelCase serde, like `bubbleSize`/`bubbleOpacity`). Do NOT remove the legacy `bubbleSize: Float` (already a no-op) — just leave it.
+  - [ ] 6.2 React: add the field to `src/types.ts`, thread it through `useSettings.ts`, `tauri-commands.ts` (default + save payload), and add a **slider control** in `SettingsPanel.tsx` near the existing (currently hidden) `localBubbleSize` state. Range 32–72dp + an "Auto" affordance (e.g. a checkbox/segment that sets the value to 0=Auto, disabling the slider). Remove the `void localBubbleSize;` suppression once it's rendered. Reuse the existing settings-row/slider styling pattern in the panel.
+  - [ ] 6.3 Kotlin: in `KlarvoOverlayService.computeVisualSizeDp()`, return `config.bubbleSizeDp.coerceIn(32,72)` when `bubbleSizeDp > 0`, else the existing responsive `clamp(36, 0.11×min, 44)`. Touch-target stays `max(visual,48)dp`. No change to `FloatingBubbleView` render (the squircle already scales off the visual size). Apply on `reloadBubbleAppearance()` so a settings change takes effect without restart.
+  - [ ] 6.4 Verify above-44dp manual sizes render the squircle + dark K correctly (cornerPx=0.30×side scales) and the touch-target/window math still centers (KlarvoOverlayService window = max(visual,48)).
+
+- [ ] **Task 7: Edge-snap toggle (default ON)** (AC: 9)
+  - [ ] 7.1 Config field: add `bubbleEdgeSnap: Boolean = true` to `KlarvoApi.kt` `Config`; thread through `types.ts`, `useSettings.ts`, `tauri-commands.ts`, and add a **toggle/switch** in `SettingsPanel.tsx` (label e.g. "Snap bubble to screen edge").
+  - [ ] 7.2 Kotlin: gate the edge-snap block in `handleTouch` ACTION_UP (`isDragging ->`, ~line 763) behind `config.bubbleEdgeSnap`. When OFF: skip the x-snap, persist the raw `bubbleParams.x` (still persist Y + `PREF_SIDE` for ON-mode compatibility, but X is the raw drop X).
+  - [ ] 7.3 Kotlin: gate the side-based startup default in `setupBubble()` (~line 593) — when snap is OFF, restore the raw saved `PREF_X` rather than recomputing from `PREF_SIDE`.
+  - [ ] 7.4 Verify toggling at runtime (no restart) takes effect on the next drag release.
+
+- [ ] **Task 8: Commit (size + snap controls)** (AC: 8, 9)
+  - [ ] 8.1 Stage only the touched files (Kotlin: `KlarvoApi.kt`, `KlarvoOverlayService.kt`; React: `types.ts`, `useSettings.ts`, `tauri-commands.ts`, `SettingsPanel.tsx`). Never `git add .`.
+  - [ ] 8.2 Commit message: `feat(android): 9-3 bubble size slider + edge-snap toggle (settings)`
 
 ## Dev Notes
 
@@ -392,3 +423,4 @@ claude-sonnet-4-6 (story-context pass, 2026-06-15)
 - 2026-06-15: **Re-anchor / rebuild (design-handoff-ingest).** The `done` build was anchored on the now-superseded prose SPEC and rendered the idle bubble **wrong vs the design source** (dark Surface circle + teal ring + teal K). `design-handoff-ingest` promoted the binding visual canon to `docs/design/overhaul/source/`; its MANIFEST records contradictions C1 (shape: squircle not circle) + C2 (fill: teal-gradient + dark K, not dark fill + teal ring). AC1/AC2, Inversion gate, Task 1, DT5 table, and References corrected to the canon; visual values now anchored *by reference* to the canon CSS, never transcribed. Status `done → ready-for-dev` for rebuild of the IDLE render only (AC3–AC6 sizing/touch/snap/keyboard code stands). Plan-level re-anchor: epic FR1/Story-9.3 + prose SPEC header also corrected.
 - 2026-06-15: **Task 1 rebuild complete (claude-sonnet-4-6).** `FloatingBubbleView.kt` IDLE render re-implemented to canon: `idleFillPaint` with `LinearGradient(TealHi→TealLo)` shader rebuilt per draw, `drawRoundRect` squircle (cornerPx=0.30×side), `kLetterPaint.color=KlarvoTheme.OnTeal` (dark #05201B), `idleRingPaint.color=KlarvoTheme.TealBg` (~12% alpha, 3dp stroke). Inversion gate: no `drawCircle` in IDLE, no dark Surface fill, no teal/white K. Compile: Gradle `:app:compileUniversalDebugKotlin` EXIT 0. JVM unit tests EXIT 0. Status → review. On-device visual smoke is Andi's gate (AC7).
 - 2026-06-15: **Code-review patch — AC2 PROCESSING squircle fix (claude-sonnet-4-6).** Confirmed finding: `State.PROCESSING` arm still called `canvas.drawCircle(cx, cy, visualRadius, circlePaint)` while `State.IDLE` drew `drawRoundRect` → idle↔processing shape morph reintroduced. Fix: converted PROCESSING to `squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)` + `canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)` with `cornerPx = side * 0.30f` — exact match of IDLE form. `drawSpinner()` call unchanged. `RECORDING_PTT` keeps `drawCircle` (AC2 explicit exception). Compile: `android-smoke.sh` EXIT 0 (24 JVM tests green, APK built and installed v0.5.0).
+- 2026-06-15: **Scope addition (Andi smoke feedback): AC8 manual size slider + AC9 edge-snap toggle.** Idle re-skin smoke "an sich läuft"; user requested (1) a Settings slider for absolute bubble size (default Auto = canon responsive formula; range 32–72dp, may exceed canon max 44dp by opt-in) and (2) a toggle to disable automatic edge-snap (default ON = canon). Both additive affordances — canon behaviour stays the default, so no canon change. Folded into 9-3 (same "Responsive Sizing + Anchoring" theme; story still open). Tasks 6–8 added; status review → in-progress. Settings UI = shared React `SettingsPanel.tsx` (Android `MainActivity : TauriActivity()` renders it in the WebView); config plumbing (bubbleSize/bubbleOpacity) already exists as the pattern.
