@@ -1,6 +1,6 @@
 # Story 9.5: Bubble State Sequence + Listening Panel + Waveform
 
-Status: review
+Status: done
 
 > **RE-FASHIONED 2026-06-16 against [ADR-0019](../../docs/adr/0019-cross-platform-design-ssot.md) + the
 > extended canon.** The previously-built approach (suppress-bubble-to-idle · red square = Send · extra
@@ -267,6 +267,7 @@ claude-sonnet-4-6
 - 2026-06-16 — **Story RE-FASHIONED (correct-course, Weg A).** Status `review`→`backlog`; ACs/Tasks rewritten to the ADR-0019 model (recording-state bubble, tap=send, red=cancel, no ✗); old build-record moved verbatim to the SUPERSEDED appendix; the panel + double-window fix marked as standing. Epic 9.5 AC updated in `epics-visual-overhaul.md`. Frontmatter↔tracker drift resolved (both `backlog`). Proposal: `sprint-change-proposal-2026-06-16.md`. | Claude (Opus)
 - 2026-06-16 — **ADR-0019 rebuild BUILT.** FloatingBubbleView: recording-state visual (teal + amber pulse-ring + send-glyph), `suppressedForPanel` no-op. KlarvoOverlayService: bubble-tap=Senden (all modes), red square=Abbrechen (cancelRecording). ListeningPanelView: ✗ button removed, "Bereinigt…" copy. Smoke: BUILD SUCCESSFUL, 24/24 JVM tests, APK installed on 100.112.41.70:5555. GATE 4 (Andi real device) open. | claude-sonnet-4-6
 - 2026-06-16 — **Code-review cleared (story-conductor, Opus; 3 parallel layers).** 2 confirmed findings fixed (1 fix round): (F1, HIGH) amber pulse-ring ran in TRANSCRIBING → tripped the must-fail inversion gate (amber = RECORDING only; AC3 + canon + ADR-0019) — gated `drawAmberPulseRings()`/`amberPulseAnimator` to RECORDING-only, teal squircle + send-glyph retained in TRANSCRIBING (AC6); (F2, MEDIUM) per-frame `Paint`/`Path` allocation in the 60fps recording hot path → hoisted to pre-allocated fields. Build green: 24/24 JVM tests, APK built, KlarvoTheme drift-gate in sync. Deferred (not blocking): real `contentDescription="Abbrechen"` absent — panel is canvas-drawn, never had a labelable view → a11y `AccessibilityNodeProvider` is its own backlog story; pulse-ring box-shadow-spread vs. stroke geometry + send-glyph centering = GATE-4 visual residual (Andi real device). Status held at `review` — GATE 4 (emulator structural assertion + Andi real-device visual) carries close-out. | story-conductor (Opus)
+- 2026-06-16 — **GATE 4 GREEN → done.** Emulator structural assertion GREEN (overlay windows: idle 1 / recording 2 = panel 1080×525 + bubble 162×162 / transcribing 2 / done 1; no double-window regress — evidence `gate4-evidence/9-5/`). Andi real-device smoke: function + interaction approved ("erstmal abgesegnet"). Minor visual finesse items noted by Andi are non-blocking polish, tracked separately. Status `review`→`done`. | story-conductor (Opus) + Andi (real-device gate)
 
 ---
 
