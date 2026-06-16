@@ -193,3 +193,19 @@ Not yet scoped into stories.
   end-dictation control should instead sit **in the preview view next to the stop button**. This would
   revisit the ADR-0019 Android interaction model — handle via correct-course / an ADR amendment if
   pursued, not an ad-hoc change. Decision pending; no action now.
+
+---
+
+## Tooling — klarvo BMAD-Version auf 6.8 ziehen (eigene, bewusste Entscheidung; NICHT jetzt)
+
+Source: BMAD-Internals-Session 2026-06-16 (Skill-Inventar-Diff klarvo 6.6.1-next.2 ↔ awos 6.8.0).
+
+klarvo läuft BMAD `6.6.1-next.2`, awos `6.8.0`. Die Versions-Differenz erzeugt Skill-Namens-Drift
+(6.8 hat Umbrella-Skills `bmad-prd`/`bmad-ux` + neue `bmad-investigate`/`bmad-spec`, die klarvo fehlen).
+Andis Instinkt war, die Versionen anzugleichen — bewusst **entkoppelt** vom Routing-Guide-Cleanup, weil:
+(a) es Cause-A (optionale Module CIS/TestArch) NICHT löst, nur die Namens-Drift; (b) ein Update **mitten
+im Conductor-Lauf riskant** ist — unsere handgebauten Conductors hängen an genau den Skill-Internas
+(On-Activation-Boilerplate, code-review-Step-Struktur, sprint-status, customize.toml-Schema), die ein
+6.6→6.8-Sprung verschieben kann. **Vorbedingung vor Durchführung:** Blast-Radius-Prüfung (was ändert
+sich an den Skills, an denen die Conductors hängen) + ein sicherer Zeitpunkt (kein laufender Epic-Lauf).
+Referenz-Mechanik: `~/.bmad/guides/bmad-internals.md`. Status: **geparkt, Decision pending.**
