@@ -279,10 +279,19 @@ re-skin. Standalone: builds on the existing v1 Android overlay; depends on no ot
   (FR6)
 - **9.9 — In-app recording state re-skin** *(after 9.2; small — D2)*. Re-skin `android-05` to the new
   language. (FR8)
+- **9.10 — Token codegen: `klarvo.css` → `KlarvoTheme.kt`** *(post-ADR-0019 insertion; sequenced
+  BEFORE the 9.5 rebuild; ADR-0019 Decision #2)*. Replace the hand-typed `KlarvoTheme.kt` (the Token-
+  Drift surface — proven by the 9.5-F6 AmberLine `.30→.32` copy-error) with a generator that projects
+  the canon `--k-*` custom properties into Kotlin token constants, plus a build/CI drift gate so
+  hand-edited values can no longer merge. Mechanical, highest leverage, cheap (ADR-0019 §Mitigations
+  ordering #1). Foundation for the 9.5 rebuild (the recording state must render against real SSOT
+  tokens, not a drifting copy).
 
 **Dependency flow:** 9.1 (gate) → 9.2 (foundation) → 9.3 → **9.4 (harness) → 9.5 (states)** →
 {9.6, 9.7, 9.8}; 9.9 after 9.2 (parallel with bubble work). The **harness-before-states** ordering is
-load-bearing (verifiability symmetry). No story depends on a later story.
+load-bearing (verifiability symmetry). **Post-ADR-0019:** 9.10 (token codegen) sequences before the
+9.5 *rebuild* (which is re-fashioned against the extended canon — `.ab-bubble.recording`, danger=cancel,
+bubble-tap=send). No story depends on a later story.
 
 ---
 
@@ -735,6 +744,46 @@ So that the app is visually consistent end-to-end.
 surface).
 
 **DoD:** on-device smoke (in-app recording visual) via the build/smoke scripts; APK freshness verified.
+
+### Story 9.10: Token codegen — `klarvo.css` → `KlarvoTheme.kt` (post-ADR-0019; before the 9.5 rebuild)
+
+As a developer maintaining two platform implementations of one design,
+I want the Android token file generated from the canon CSS rather than hand-typed,
+So that the token layer cannot structurally drift (closing the F6 class of copy-errors) and the 9.5
+rebuild renders against the real single-source-of-truth.
+
+**Acceptance Criteria:**
+
+**Given** the canon `docs/design/overhaul/source/assets/klarvo.css` holds the `--k-*` custom properties
+**When** the generator runs
+**Then** it emits `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` with every canon color token as a
+Kotlin constant, with hex `#RRGGBB` → `0xFFRRGGBB` and `rgba(r,g,b,a)` → `0xAARRGGBB` (alpha = round(a×255)),
+and **no canon-derived hex is hand-typed** anywhere in platform code.
+
+**Given** the current consumers (`FloatingBubbleView.kt`, `ListeningPanelView.kt`) reference identifiers
+like `KlarvoTheme.TextC`, `Border2`, `AmberLine`, `TealBg`
+**When** the file is regenerated
+**Then** every currently-referenced identifier still resolves with a **byte-identical color value**
+(zero visual regression) — an explicit alias map preserves non-mechanical names (e.g. `--k-text` → `TextC`).
+
+**Given** the alpha conversion
+**When** the file is generated
+**Then** `AmberLine == 0x52E9A24C`, `TealBg == 0x1F29C7AC`, `DangerBg == 0x1FEE6F63` (the F6 class is
+produced correctly by the rule, not by hand).
+
+**Given** someone hand-edits a generated token value
+**When** the build/smoke flow runs
+**Then** a **drift gate** (regenerate to temp + diff against the committed file) fails the build with a
+clear "KlarvoTheme.kt drifted from canon — re-run the generator" message.
+
+**And** canon color tokens absent from today's hand-written file (`--k-bg-deep`, `--k-hairline`,
+`--k-faint`, `--k-teal-line`, `--k-success`, `--k-info`) are added, so the file is a complete projection
+of the canon color set.
+
+**DoD:** generator + drift gate wired into `scripts/android-smoke.sh` (and `scripts/android-build.sh`)
+**before** the `kotlin-src` sync; the 60 JVM unit tests still pass; the DEBUG APK builds. **No pixel
+changes** (values are byte-identical to today) → the human visual gate is consciously downgraded to an
+optional sanity glance; the binding gate is the byte-identity assertion + the drift check (machine-verifiable).
 
 ---
 
