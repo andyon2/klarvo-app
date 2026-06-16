@@ -17,10 +17,11 @@ import androidx.core.content.ContextCompat
  *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
  *                    Canon: .ab-bubble.idle — background: linear-gradient(150deg, TealHi, TealLo)
  *                    NOT a dark Surface fill; NOT a teal "K". See Story 9.3 AC1/AC2.
- *   RECORDING     -- pill/bar shape with [X] [waveform] [checkmark] (HOLD mode)
- *                    OR circular Danger form with waveform (all other modes).
- *   TRANSCRIBING  -- Teal squircle + rotating arc spinner (was PROCESSING)
- *   DONE          -- Teal squircle + white checkmark (placeholder; Story 9.5 animates)
+ *   RECORDING     -- canon .ab-bubble.recording form: teal-gradient squircle + amber pulse-ring +
+ *                    send-glyph (paper-plane) instead of "K". Tap = Senden (ADR-0019).
+ *   TRANSCRIBING  -- same recording form (teal + amber pulse + send-glyph) — panel owns the
+ *                    spinner/label; bubble stays in send-state so tap still sends.
+ *   DONE          -- Teal squircle + white checkmark (Story 9.5)
  *
  * Size:
  *   Call setBubbleSize(dp) to resize the bubble at runtime (controls the visual radius).
@@ -37,10 +38,11 @@ import androidx.core.content.ContextCompat
  *
  * Color semantics (DT5 — binding rule):
  *   KlarvoTheme.Teal        = brand / transcribing / focus-ring
- *   KlarvoTheme.OnTeal      = dark "K" letter on teal fill (IDLE only)
+ *   KlarvoTheme.OnTeal      = dark "K" letter on teal fill (IDLE) / send-glyph stroke (RECORDING)
  *   KlarvoTheme.TealBg      = ~12% alpha faint ring (IDLE glass-ring accent)
- *   KlarvoTheme.Danger      = stop / recording / cancel button
- *   No amber in IDLE — amber = recording tally (Story 9.5+ scope).
+ *   KlarvoTheme.Danger      = cancel / abort (ADR-0019: red = Abbrechen only)
+ *   KlarvoTheme.Amber       = recording pulse-ring (RECORDING / TRANSCRIBING)
+ *   Tap in RECORDING = Senden (ADR-0019 core). Red square on panel = Abbrechen.
  */
 class FloatingBubbleView(context: Context) : View(context) {
 
@@ -63,24 +65,14 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
 
     /**
-     * Story 9.5 fix: when true, the bubble renders the static IDLE squircle and stays the small
-     * touch-target, regardless of [state]. KlarvoOverlayService.setState() sets this true for
-     * RECORDING/TRANSCRIBING — the states where the listening panel owns the UI. This prevents the
-     * bubble from drawing its OWN recording bar/circle as a SECOND overlay window for the same
-     * state (the real-device double-window defect: a stray red recording pill floating over foreign
-     * app content next to the panel). The bubble WINDOW stays alive so push-to-talk release and taps
-     * still route through KlarvoOverlayService.handleTouch(); only the VISUAL is suppressed. Because
-     * setState() drives this flag on every transition, the `alpha = 1.0f` reset there can no longer
-     * un-hide a half-suppressed visual (the old `alpha = 0` approach failed for exactly that reason).
+     * Story 9.5 (ADR-0019 rebuild): suppressedForPanel is no longer used. The bubble now renders
+     * the canon `.ab-bubble.recording` form (teal + amber pulse-ring + send-glyph) during
+     * RECORDING and TRANSCRIBING instead of a suppressed idle view. Kept as a no-op property so
+     * KlarvoOverlayService can set it without compile errors; will be cleaned up in a later story.
      */
+    @Suppress("UNUSED_PARAMETER")
     var suppressedForPanel: Boolean = false
-        set(value) {
-            if (field == value) return
-            field = value
-            updateAnimators()   // stop recording/transcribing animators + reset scale to 1.0
-            requestLayout()     // onMeasure: keep the touch-target size, never the bar width
-            invalidate()
-        }
+        set(_) { /* no-op: replaced by recording-state visual in Story 9.5 */ }
 
     /** Current bubble size in dp. Changed via setBubbleSize(). */
     private var bubbleSizeDp: Int = 56
@@ -157,6 +149,24 @@ class FloatingBubbleView(context: Context) : View(context) {
     // Reusable RectF for squircle drawing to avoid allocation in onDraw
     private val squircleRect = RectF()
 
+    // --- Pre-allocated paints and path for the 60fps RECORDING hot path (Finding 2) ---
+    // Avoids per-frame allocation in drawAmberPulseRings() and drawSendGlyph().
+    private val amberRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = KlarvoTheme.Amber
+    }
+    private val sendGlyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = KlarvoTheme.OnTeal
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        // strokeWidth is set in drawSendGlyph() because it depends on dp density
+    }
+    // sendGlyphPath geometry is static (same 24×24 SVG path always); rebuilt only when size
+    // changes, not every frame. Built lazily in drawSendGlyph() and cached by lastSendGlyphSize.
+    private val sendGlyphPath = Path()
+    private var lastSendGlyphSize = -1f   // cached size in px; -1 = not yet built
+
     // --- Bar animation (drives waveform bars in RECORDING state, both bar and circular modes) ---
     private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 600
@@ -204,6 +214,19 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * Amber pulse-ring animator — canon `@keyframes abbubblepulse` (1400ms ease-out, infinite).
+     * Drives the expanding amber ring(s) on `.ab-bubble.recording` (RECORDING + TRANSCRIBING).
+     * Value: 0.0 → 1.0 represents one full pulse cycle (0%→100% in the keyframe spec).
+     */
+    private val amberPulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+        duration = 1400
+        repeatCount = ValueAnimator.INFINITE
+        repeatMode = ValueAnimator.RESTART
+        interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+        addUpdateListener { invalidate() }
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         updateAnimators()
@@ -213,41 +236,36 @@ class FloatingBubbleView(context: Context) : View(context) {
         super.onDetachedFromWindow()
         barAnimator.cancel()
         rotationAnimator.cancel()
+        amberPulseAnimator.cancel()
         pttScaleUpAnimator.cancel()
         pttScaleDownAnimator.cancel()
     }
 
     private fun updateAnimators() {
-        barAnimator.cancel()
-        rotationAnimator.cancel()
-        if (suppressedForPanel) {
-            // Panel owns the active-state UI — keep the bubble a static idle squircle: no
-            // waveform/spinner animation, no PTT scale-up. Reset any in-flight scale to 1.0.
-            pttScaleUpAnimator.cancel()
-            pttScaleDownAnimator.cancel()
-            if (scaleX != 1.0f || scaleY != 1.0f) { scaleX = 1.0f; scaleY = 1.0f }
-            return
-        }
         when (state) {
             State.RECORDING -> {
-                barAnimator.start()
-                // Circular recording mode (non-HOLD): animate scale-up for tactile feedback.
-                // Bar mode (HOLD) does not use scale animation (bar expands instead).
+                // Canon .ab-bubble.recording: amber pulse-ring (1400ms, infinite).
+                // ADR-0019: amber = RECORDING only; TRANSCRIBING shows teal squircle + send-glyph
+                // with NO amber animation.
+                barAnimator.cancel()
+                rotationAnimator.cancel()
+                if (!amberPulseAnimator.isRunning) amberPulseAnimator.start()
+                // Tactile pop on recording start
                 pttScaleDownAnimator.cancel()
-                pttScaleUpAnimator.setFloatValues(scaleX, 1.3f)
+                pttScaleUpAnimator.setFloatValues(scaleX, 1.1f)  // subtle pop for recording form
                 pttScaleUpAnimator.start()
             }
             State.TRANSCRIBING -> {
-                // Reset scale if we came from RECORDING circular mode
-                if (scaleX != 1.0f) {
-                    pttScaleUpAnimator.cancel()
-                    pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
-                    pttScaleDownAnimator.start()
-                }
-                rotationAnimator.start()
+                // TRANSCRIBING: teal squircle + send-glyph, NO amber pulse (ADR-0019).
+                barAnimator.cancel()
+                rotationAnimator.cancel()
+                amberPulseAnimator.cancel()
             }
             State.DONE, State.IDLE -> {
-                // Ensure scale is reset
+                // Stop amber pulse + any recording animations; reset scale.
+                barAnimator.cancel()
+                amberPulseAnimator.cancel()
+                rotationAnimator.cancel()
                 if (scaleX != 1.0f) {
                     pttScaleUpAnimator.cancel()
                     pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
@@ -271,53 +289,30 @@ class FloatingBubbleView(context: Context) : View(context) {
     fun getBubbleSizeDp(): Int = bubbleSizeDp
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val density = resources.displayMetrics.density
-        if (state == State.RECORDING && !suppressedForPanel) {
-            // Bar mode (WRAP_CONTENT window): compute our own size.
-            // (Retired in practice by the Story 9.5 fix — suppressedForPanel is true in RECORDING —
-            //  but kept for any non-panel RECORDING use.)
-            val heightPx = (bubbleSizeDp * density).toInt()
-            setMeasuredDimension((BAR_WIDTH_DP * density).toInt(), heightPx)
-        } else {
-            // IDLE / TRANSCRIBING / DONE: the window LayoutParams are an EXACT size
-            // (visual squircle + shadow padding, set by KlarvoOverlayService.bubbleWindowPx()).
-            // FILL it so the canvas/software-layer bitmap includes the padding — otherwise the
-            // soft shadow + outer ring clip at the view edge (the square cutoff). The squircle
-            // itself is drawn at bubbleSizeDp, centered, by onDraw.
-            // RECORDING (circular form): window is also EXACT (touch-target); scale via scaleX/Y.
-            setMeasuredDimension(
-                MeasureSpec.getSize(widthMeasureSpec),
-                MeasureSpec.getSize(heightMeasureSpec)
-            )
-        }
+        // Story 9.5 (ADR-0019): the HOLD-tap bar is retired. All states use the EXACT touch-target
+        // window (visual squircle + shadow padding), never the wide bar. The window LayoutParams
+        // are an EXACT size set by KlarvoOverlayService.bubbleWindowPx(). FILL the measured dimensions
+        // so the canvas/software-layer bitmap includes the padding (no shadow/ring clipping).
+        setMeasuredDimension(
+            MeasureSpec.getSize(widthMeasureSpec),
+            MeasureSpec.getSize(heightMeasureSpec)
+        )
     }
 
     // --- Touch zone helpers (used by KlarvoOverlayService) ---
 
     /**
-     * Returns true if [touchX] (relative to this view's left edge) falls inside
-     * the cancel button zone on the left side of the recording bar.
-     * Only meaningful in RECORDING state.
+     * Returns false — the recording bar is retired in Story 9.5.
+     * Cancel is the red square on the panel; confirm is a tap anywhere on the recording bubble.
+     * Kept for API compatibility; callers in handleTap() are effectively dead code paths since
+     * tapMode==HOLD now also routes to the recording form (no bar expansion).
      */
-    fun isTouchInCancelZone(touchX: Float): Boolean {
-        // Suppressed (panel-owned recording): the bar isn't drawn, so its zones are inert —
-        // cancel/confirm live on the panel now.
-        if (state != State.RECORDING || suppressedForPanel) return false
-        val density = resources.displayMetrics.density
-        val barW = BAR_WIDTH_DP * density
-        return touchX < barW * 0.30f
-    }
+    fun isTouchInCancelZone(@Suppress("UNUSED_PARAMETER") touchX: Float): Boolean = false
 
     /**
-     * Returns true if [touchX] falls inside the confirm button zone on the right.
-     * Only meaningful in RECORDING state.
+     * Returns false — see isTouchInCancelZone() note above.
      */
-    fun isTouchInConfirmZone(touchX: Float): Boolean {
-        if (state != State.RECORDING || suppressedForPanel) return false
-        val density = resources.displayMetrics.density
-        val barW = BAR_WIDTH_DP * density
-        return touchX > barW * 0.70f
-    }
+    fun isTouchInConfirmZone(@Suppress("UNUSED_PARAMETER") touchX: Float): Boolean = false
 
     // --- Draw ---
 
@@ -326,13 +321,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
 
-        // Story 9.5 fix: while the listening panel owns the recording/transcribing UI, the bubble
-        // renders the static idle squircle (AC1: "the bubble stays visible as the small teal
-        // squircle above the panel") instead of its own recording bar/circle or spinner — which
-        // would be a second overlay for the same state.
-        val effectiveState = if (suppressedForPanel) State.IDLE else state
-
-        when (effectiveState) {
+        when (state) {
             State.IDLE -> {
                 // Touch-target expansion: the view may be larger than the visual bubble.
                 // bubbleSizeDp controls the visual side length; the view is sized to the touch target.
@@ -404,46 +393,54 @@ class FloatingBubbleView(context: Context) : View(context) {
                 val textCy = cy - (kLetterPaint.ascent() + kLetterPaint.descent()) / 2f
                 canvas.drawText("K", cx, textCy, kLetterPaint)
             }
-            State.RECORDING -> {
-                // HOLD mode (bar): KlarvoOverlayService sets RECORDING + adjustLayoutForState
-                // to WRAP_CONTENT width — onMeasure returns BAR_WIDTH_DP × bubbleSizeDp.
-                // All other modes (TOGGLE/AUTOSTOP/AUTO/PTT): window stays EXACT touch-target;
-                // draw a circular Danger form with waveform bars (scale animation via scaleX/Y).
-                if (width > height) {
-                    // Bar mode: wide window → draw pill bar
-                    drawRecordingBar(canvas, w, h)
-                } else {
-                    // Circular mode: square window → draw Danger circle with waveform
-                    val cx = w / 2f
-                    val cy = h / 2f
-                    val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
-                    // Shadow (slightly offset downward for depth)
-                    canvas.drawCircle(cx, cy + visualRadius * 0.06f, visualRadius * 0.92f, shadowPaint)
-                    // Danger filled circle (stop/recording — DT5)
-                    circlePaint.color = KlarvoTheme.Danger
-                    canvas.drawCircle(cx, cy, visualRadius, circlePaint)
-                    // Waveform bars inside the circle
-                    val waveHalfH = visualRadius * 0.70f
-                    val waveLeft  = cx - visualRadius * 0.75f
-                    val waveRight = cx + visualRadius * 0.75f
-                    drawWaveformBarsInZone(canvas, waveLeft, waveRight, cx, cy, waveHalfH)
-                }
-            }
-            State.TRANSCRIBING -> {
+            State.RECORDING, State.TRANSCRIBING -> {
+                // Canon .ab-bubble.recording (ADR-0019, Story 9.5):
+                //   - teal-gradient squircle (same shape as IDLE, same 40dp/r=12dp)
+                //   - amber pulse-ring (@keyframes abbubblepulse) — RECORDING only (ADR-0019)
+                //   - send-glyph (paper-plane) instead of "K" — both RECORDING and TRANSCRIBING
+                // The panel owns the spinner/label distinction.
+                // Tap = Senden; panel red square = Abbrechen.
+                val density = resources.displayMetrics.density
+                val side = bubbleSizeDp * density
+                val visualRadius = side / 2f
                 val cx = w / 2f
                 val cy = h / 2f
-                // Use the same visual radius derivation as IDLE so the size never
-                // grows to fill the touch-target window when leaving IDLE.
-                val visualRadius = (bubbleSizeDp * resources.displayMetrics.density) / 2f
-                val side = visualRadius * 2f
-                // Rounded-square (squircle) form: same as IDLE — canon cornerRadius = 0.30 × side.
                 val cornerPx = side * 0.30f
+
                 squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
-                // Teal fill (brand/transcribing — DT5; NOT amber)
-                circlePaint.color = KlarvoTheme.Teal
-                canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, circlePaint)
-                drawSpinner(canvas, cx, cy, visualRadius)
+
+                // Soft drop shadow (same as IDLE)
+                shadowPaint.maskFilter = BlurMaskFilter(side * 0.14f, BlurMaskFilter.Blur.NORMAL)
+                val shadowDy = side * 0.06f
+                val shadowRect = RectF(
+                    squircleRect.left,
+                    squircleRect.top    + shadowDy,
+                    squircleRect.right,
+                    squircleRect.bottom + shadowDy
+                )
+                canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
+
+                // Teal-gradient fill (same gradient as IDLE — canon .ab-bubble.recording reuses it)
+                idleFillPaint.shader = LinearGradient(
+                    squircleRect.left, squircleRect.top,
+                    squircleRect.right, squircleRect.bottom,
+                    KlarvoTheme.TealHi, KlarvoTheme.TealLo,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
+
+                // Amber pulse-ring: RECORDING only (ADR-0019 — amber = recording state only).
+                // In TRANSCRIBING the bubble shows teal squircle + send-glyph with no amber ring.
+                if (state == State.RECORDING) {
+                    drawAmberPulseRings(canvas, cx, cy, visualRadius)
+                }
+
+                // Send-glyph: paper-plane path, ~20dp, OnTeal stroke ~2.2dp
+                // Canon path: "m22 2-7 20-4-9-9-4 20-7z" (24×24 SVG viewBox)
+                // Shown in both RECORDING and TRANSCRIBING (AC6: recording form retained).
+                drawSendGlyph(canvas, cx, cy, side * 0.50f)
             }
+
             State.DONE -> {
                 val cx = w / 2f
                 val cy = h / 2f
@@ -626,6 +623,91 @@ class FloatingBubbleView(context: Context) : View(context) {
             val barRect = RectF(barX - barW / 2f, top, barX + barW / 2f, bottom)
             canvas.drawRoundRect(barRect, cornerR, cornerR, whitePaint)
         }
+    }
+
+    // --- RECORDING (.ab-bubble.recording): amber pulse-ring ---
+
+    /**
+     * Draws the canon `@keyframes abbubblepulse` amber rings (Story 9.5 / ADR-0019).
+     *
+     * Keyframe spec (rings in Amber rgba(233,162,76,…)):
+     *   0%/100%: ring1 = spread 2px alpha .95, ring2 = spread 4px alpha .35
+     *   70%:     ring1 = spread 3px alpha .55, ring2 = spread 15px alpha 0
+     *
+     * Two ValueAnimator-driven rings interpolated from 0→1:
+     *   - Inner ring: spread 2→3→2dp, alpha 0.95→0.55→0.95
+     *   - Outer ring: spread 4→15→4dp, alpha 0.35→0→0.35
+     */
+    private fun drawAmberPulseRings(canvas: Canvas, cx: Float, cy: Float, visualRadius: Float) {
+        val dp = resources.displayMetrics.density
+        val t = (amberPulseAnimator.animatedValue as? Float) ?: 0f
+
+        // Pulse position in keyframe space: t=0→0%, t=0.7→70%, t=1→100%
+        // Using a triangle wave: peaks at t=0.7, returns to start at t=1.
+        val phase = if (t <= 0.7f) t / 0.7f else (1f - t) / 0.3f  // 0..1..0
+
+        // Inner ring: spread 2dp (phase=0) → 3dp (phase=1), alpha 0.95→0.55
+        val innerSpread = (2f + phase * 1f) * dp
+        val innerAlpha = (0.95f - phase * 0.40f).coerceIn(0f, 1f)
+
+        // Outer ring: spread 4dp (phase=0) → 15dp (phase=1), alpha 0.35→0
+        val outerSpread = (4f + phase * 11f) * dp
+        val outerAlpha = (0.35f * (1f - phase)).coerceIn(0f, 1f)
+
+        // Reuse pre-allocated amberRingPaint — no per-frame allocation.
+        // Outer ring (drawn first, behind inner)
+        amberRingPaint.strokeWidth = outerSpread
+        amberRingPaint.alpha = (outerAlpha * 255).toInt()
+        val outerR = visualRadius + outerSpread / 2f
+        canvas.drawCircle(cx, cy, outerR, amberRingPaint)
+
+        // Inner ring
+        amberRingPaint.strokeWidth = innerSpread
+        amberRingPaint.alpha = (innerAlpha * 255).toInt()
+        val innerR = visualRadius + innerSpread / 2f
+        canvas.drawCircle(cx, cy, innerR, amberRingPaint)
+    }
+
+    // --- RECORDING (.ab-bubble.recording): send-glyph (paper-plane) ---
+
+    /**
+     * Draws the send (paper-plane) glyph centered in the squircle.
+     *
+     * Canon SVG path: "m22 2-7 20-4-9-9-4 20-7z" on a 24×24 viewBox.
+     * Stroke: OnTeal color, ~2.2dp width. Size: ~20dp × 20dp.
+     *
+     * @param size  The glyph bounding box side in px (caller passes side × 0.50f).
+     */
+    private fun drawSendGlyph(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        val dp = resources.displayMetrics.density
+
+        // Scale the 24×24 SVG path into the [size × size] bounding box.
+        // The path geometry is static — rebuild only when size changes (e.g. bubbleSizeDp update),
+        // not every frame. cx/cy are always the view centre, so we rebuild with a translate trick:
+        // build the path relative to (0,0), then draw with a canvas save/translate.
+        // This avoids both per-frame Path allocation and per-frame coordinate re-computation.
+        if (size != lastSendGlyphSize) {
+            // Rebuild path in centred coordinates (origin = centre of glyph)
+            val scale = size / 24f
+            sendGlyphPath.reset()
+            // Path points derived from "m22 2-7 20-4-9-9-4 20-7z"
+            // Absolute coords from the relative 'm': (22,2)→(15,22)→(11,13)→(2,9)→close
+            sendGlyphPath.moveTo(22f * scale - size / 2f, 2f  * scale - size / 2f)
+            sendGlyphPath.lineTo(15f * scale - size / 2f, 22f * scale - size / 2f)
+            sendGlyphPath.lineTo(11f * scale - size / 2f, 13f * scale - size / 2f)
+            sendGlyphPath.lineTo( 2f * scale - size / 2f,  9f * scale - size / 2f)
+            sendGlyphPath.close()
+            lastSendGlyphSize = size
+        }
+
+        // Reuse pre-allocated sendGlyphPaint — only strokeWidth depends on runtime dp value.
+        sendGlyphPaint.strokeWidth = 2.2f * dp
+
+        // Translate canvas so (0,0) aligns with the bubble centre, draw, then restore.
+        canvas.save()
+        canvas.translate(cx, cy)
+        canvas.drawPath(sendGlyphPath, sendGlyphPaint)
+        canvas.restore()
     }
 
     // --- TRANSCRIBING: rotating arc spinner ---

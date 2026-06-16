@@ -35,10 +35,10 @@ import kotlin.math.abs
  *   AUTOSTOP: Tap -> start, auto-stops after silence detected
  *   AUTO:     Tap -> start loop, auto-stops on silence then restarts, Tap -> stop loop
  *
- * Touch gestures in RECORDING state (bar mode, HOLD only):
- *   Tap left zone  (X button)  -> cancel: stop recording, discard audio
- *   Tap right zone (✓ button)  -> confirm: stop recording, start STT + cleanup pipeline
- *   Drag                       -> moves the bar (drag threshold still applies)
+ * Touch gestures in RECORDING state (ADR-0019 / Story 9.5):
+ *   Tap bubble          -> Senden: stopAndProcessRecording() (all modes, all gestures)
+ *   Red square (panel)  -> Abbrechen: cancelRecording() (discard audio, no paste)
+ *   Drag                -> moves the bubble (drag threshold still applies)
  */
 class KlarvoOverlayService : Service() {
 
@@ -1064,21 +1064,14 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                // Unified RECORDING handler covers both HOLD (bar) and circular modes.
+                // ADR-0019 / Story 9.5: bubble tap = Senden (stopAndProcessRecording) for ALL modes.
+                // The recording bar is retired; cancel = red square on panel (handled in panel touch listener).
                 // pushToTalkActive: finger still held → ignore taps, release handles it.
                 if (pushToTalkActive) return
-                when {
-                    // HOLD bar mode: route by touch zone
-                    tapMode == RecordingMode.HOLD && bubbleView.isTouchInCancelZone(touchX) -> cancelRecording()
-                    tapMode == RecordingMode.HOLD && bubbleView.isTouchInConfirmZone(touchX) -> stopAndProcessRecording()
-                    tapMode == RecordingMode.HOLD -> { /* middle zone tap: ignore */ }
-                    // Circular modes (TOGGLE/AUTOSTOP/AUTO/PTT non-held): tap stops recording
-                    tapMode == RecordingMode.AUTO -> {
-                        autoLoopActive = false
-                        stopAndProcessRecording()
-                    }
-                    else -> stopAndProcessRecording()  // TOGGLE, AUTOSTOP
+                if (tapMode == RecordingMode.AUTO) {
+                    autoLoopActive = false
                 }
+                stopAndProcessRecording()
             }
             RecordingState.TRANSCRIBING -> {
                 // Stop auto-loop so the cycle doesn't repeat after transcribing finishes.
@@ -1670,31 +1663,24 @@ class KlarvoOverlayService : Service() {
         ).apply {
             gravity = android.view.Gravity.BOTTOM
         }
-        // Wire stop-button touch on the panel itself.
+        // Wire the panel red-square Abbrechen button (ADR-0019 / Story 9.5 re-fashion).
         // F1: return true on ACTION_DOWN when inside the stop button so the gesture stream is
         // captured and the subsequent ACTION_UP arrives. Without consuming ACTION_DOWN the view
         // receives no ACTION_UP (Android touch-cancel rule).
+        // Semantics: red square = Abbrechen (cancelRecording); bubble tap = Senden (handled in handleTap).
         panel.setOnTouchListener { _, event ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    // Capture the gesture only when the down lands on the stop OR cancel button
-                    // (F1: without consuming ACTION_DOWN the matching ACTION_UP never arrives).
-                    panel.isTouchOnStopButton(event.x, event.y) ||
-                        panel.isTouchOnCancelButton(event.x, event.y)
+                    // Capture the gesture only when the down lands on the (Abbrechen) stop button.
+                    panel.isTouchOnStopButton(event.x, event.y)
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    when {
-                        panel.isTouchOnStopButton(event.x, event.y) -> {
-                            handler.post { stopAndProcessRecording() }
-                            true
-                        }
-                        // Story 9.5 fix: cancel (✗) on the panel discards the recording — the
-                        // affordance the retired HOLD-tap bubble bar used to provide.
-                        panel.isTouchOnCancelButton(event.x, event.y) -> {
-                            handler.post { cancelRecording() }
-                            true
-                        }
-                        else -> false
+                    if (panel.isTouchOnStopButton(event.x, event.y)) {
+                        // Red square = Abbrechen: discard audio, no paste (ADR-0019).
+                        handler.post { cancelRecording() }
+                        true
+                    } else {
+                        false
                     }
                 }
                 else -> false
