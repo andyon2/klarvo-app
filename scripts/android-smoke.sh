@@ -174,7 +174,10 @@ step "JVM-Unit-Tests"
 
 cd "$GEN_ANDROID"
 if ./gradlew :app:testUniversalDebugUnitTest --quiet 2>&1; then
-    TEST_XML=$(find app/build/test-results -name "*.xml" 2>/dev/null | head -1)
+    # -print -quit returns the first match WITHOUT closing the pipe early; `find … | head -1`
+    # trips SIGPIPE → non-zero under `set -o pipefail` → false ERR-trap failure once many result
+    # XMLs exist. (Robustness fix 2026-06-16.)
+    TEST_XML=$(find app/build/test-results -name "*.xml" -print -quit 2>/dev/null || true)
     if [ -n "$TEST_XML" ]; then
         TOTAL=$(grep -o 'tests="[0-9]*"' "$TEST_XML" | head -1 | grep -o '[0-9]*')
         FAIL=$(grep -o 'failures="[0-9]*"' "$TEST_XML" | head -1 | grep -o '[0-9]*')
