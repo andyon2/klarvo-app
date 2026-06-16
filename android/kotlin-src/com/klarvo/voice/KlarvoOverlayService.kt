@@ -120,6 +120,41 @@ class KlarvoOverlayService : Service() {
                 "auto"     -> AUTO
                 else       -> HOLD
             }
+
+            /**
+             * Selects the silence-detection duration for a recording session.
+             *
+             * Mirrors the desktop pipeline (pipeline.rs:640 AUTOSTOP→autostop_silence_secs,
+             * :704 AUTO→auto_mode_silence_secs). AUTO and AUTOSTOP use the shared mode-level
+             * fields; HOLD and TOGGLE fall back to the per-gesture values.
+             *
+             * Pure function — no Android context needed — so it is directly testable by JVM
+             * tests (AC6, Story 9-7). Behavior is byte-identical to the inline block it
+             * replaced in startRecording().
+             *
+             * @param mode           Active RecordingMode for this session.
+             * @param gesture        Gesture that started the recording ("tap", "longpress", or null).
+             * @param tapSilence     Per-gesture silence for tap (HOLD/TOGGLE only).
+             * @param longPressSilence Per-gesture silence for long-press (HOLD/TOGGLE only).
+             * @param autostopSilence Mode-level silence for AUTOSTOP.
+             * @param autoModeSilence Mode-level silence for AUTO.
+             * @return               Silence duration in seconds to pass to KlarvoAudioRecorder.
+             */
+            fun selectSilenceSecs(
+                mode: RecordingMode,
+                gesture: String?,
+                tapSilence: Float,
+                longPressSilence: Float,
+                autostopSilence: Float,
+                autoModeSilence: Float,
+            ): Float = when (mode) {
+                AUTO     -> autoModeSilence
+                AUTOSTOP -> autostopSilence
+                else -> when (gesture) {
+                    "longpress" -> longPressSilence
+                    else        -> tapSilence
+                }
+            }
         }
     }
 
@@ -1121,19 +1156,16 @@ class KlarvoOverlayService : Service() {
             else        -> tapMode  // "tap" or null (auto-loop restart)
         }
 
-        // Select the silence duration by the ACTIVE MODE, mirroring desktop
-        // (pipeline.rs:640 AUTOSTOP→autostop_silence_secs, :704 AUTO→auto_mode_silence_secs)
-        // and the shared settings UI, which binds the silence slider to those mode-level fields.
-        // The bubble per-gesture values apply only to non-auto modes (HOLD/TOGGLE), where no
-        // silence auto-stop is wired anyway.
-        val activeSilenceSecs = when (activeMode) {
-            RecordingMode.AUTO     -> autoModeSilenceSecs
-            RecordingMode.AUTOSTOP -> autostopSilenceSecs
-            else -> when (activeGesture) {
-                "longpress" -> longPressSilenceSecs
-                else        -> tapSilenceSecs
-            }
-        }
+        // Select the silence duration by the ACTIVE MODE via the pure companion function.
+        // See RecordingMode.selectSilenceSecs() for the full rationale and desktop parity ref.
+        val activeSilenceSecs = RecordingMode.selectSilenceSecs(
+            mode              = activeMode,
+            gesture           = activeGesture,
+            tapSilence        = tapSilenceSecs,
+            longPressSilence  = longPressSilenceSecs,
+            autostopSilence   = autostopSilenceSecs,
+            autoModeSilence   = autoModeSilenceSecs,
+        )
         KlarvoLogger.d(TAG, "[pipeline] silence window: mode=$activeMode → ${activeSilenceSecs}s")
 
         val recorder = KlarvoAudioRecorder(

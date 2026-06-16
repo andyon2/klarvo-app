@@ -109,6 +109,24 @@ device. Status stays `backlog` in sprint-status (no formal "parked" state); the 
 cascade away from it. **9-8 is NOT parked** — the long-press popover still needs verifying and stays
 blocked on the real-device state-driving harness (DEBUG_SET_STATE dead on HyperOS, above).
 
+## Story 9-7 follow-up — make Android silence-selection swap-safe (call-site wiring)
+
+Source: Story 9-7 code-review (story-conductor, 2026-06-16), one Medium finding accepted as residual by
+Andi at GATE 3. The AC6 regression test locks the *pure* `RecordingMode.selectSilenceSecs()` mapping,
+but the **call site** in `KlarvoOverlayService.startRecording()` passes four same-typed `Float`
+arguments (`tapSilenceSecs` / `longPressSilenceSecs` / `autostopSilenceSecs` / `autoModeSilenceSecs`).
+A swap of two of those at the call site would regress production silence-selection while every JVM test
+stays GREEN — and because the production defaults are all `2.0f`, such a swap is value-invisible until a
+user sets the fields to different values. NOTE: this is NOT the original silence-field divergence
+(wrong-field-*read*), which 9-7 DID lock; it is a new, low-probability surface introduced by the
+testability extraction itself.
+
+- **STORY — close the call-site gap.** Either (a) give the four silence durations distinct value-class
+  types so a call-site swap fails to **compile**, or (b) add a test that exercises the real
+  `startRecording()` field→param wiring (heavier — needs Android-context test infra). Option (a) is the
+  by-construction fix and is preferred. **AC:** a deliberately swapped call-site argument fails to
+  compile (a) or turns a test RED (b).
+
 ## Accessibility — canvas-drawn listening panel has no TalkBack labels
 
 Source: Story 9-5 code-review (story-conductor, 2026-06-16). AC1 / Task 2.2 said "relabel
