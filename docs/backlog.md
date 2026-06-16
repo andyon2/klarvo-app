@@ -99,6 +99,16 @@ E9 + GATE-4) now **assume** this assertion exists — this story makes it real.
   gate can't be scripted, blocks 9-6/9-8. Replace with a HyperOS-survivable trigger. Tracked in the
   postmortem; listed here so it is not conflated with the structural-assertion story above.
 
+## Story 9-6 (keyboard-collapse via a11y service) — PARKED (obsolete)
+
+Source: Andi's decision 2026-06-16 (this session). 9-6 was scoped to collapse the soft keyboard via the
+accessibility service before showing recording UI. With the new pop-up **preview window**, the preview
+simply lays *over* the keyboard — so the a11y keyboard-collapse mechanism is no longer needed. Parked,
+not won't-fixed: revisit only if the overlay-over-keyboard approach turns out insufficient on a real
+device. Status stays `backlog` in sprint-status (no formal "parked" state); the routing hook steers the
+cascade away from it. **9-8 is NOT parked** — the long-press popover still needs verifying and stays
+blocked on the real-device state-driving harness (DEBUG_SET_STATE dead on HyperOS, above).
+
 ## Accessibility — canvas-drawn listening panel has no TalkBack labels
 
 Source: Story 9-5 code-review (story-conductor, 2026-06-16). AC1 / Task 2.2 said "relabel
