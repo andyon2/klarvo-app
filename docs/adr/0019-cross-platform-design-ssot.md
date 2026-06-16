@@ -1,7 +1,8 @@
 # ADR-0019: Cross-Platform Design Single-Source-of-Truth (Tokens · Farb-Semantik · Interaktions-Parität)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-16
+**Canon-Erweiterung:** Bubble-Aufnahme-Zustand (Option A: teal + Amber-Puls-Ring + Send-Glyph) + danger=Abbrechen am 2026-06-16 in den Canon eingebaut (MANIFEST §In-repo extensions, Fingerprint `2bb99032…`).
 
 ## Context
 

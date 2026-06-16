@@ -40,6 +40,15 @@
   .ab-bubble .kt { font-weight: 700; font-size: 17px; }
   .ab-bubble.idle { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass), 0 0 0 3px rgba(41,199,172,.13); }
   .ab-bubble.done { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); }
+  /* recording: Marke bleibt teal (Form konstant) · amber Puls-Ring = live/Aufnahme (Token-Rolle amber) ·
+     Send-Glyph statt K = „antippen = senden" (Bestätigen ist NICHT rot — rot = Abbrechen, ADR-0019). */
+  .ab-bubble.recording { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); animation: abbubblepulse 1400ms ease-out infinite; }
+  .ab-bubble.recording .send { width: 20px; height: 20px; }
+  @keyframes abbubblepulse {
+    0%   { box-shadow: 0 6px 18px rgba(0,0,0,.5), 0 0 0 2px rgba(233,162,76,.95), 0 0 0 4px rgba(233,162,76,.35); }
+    70%  { box-shadow: 0 6px 18px rgba(0,0,0,.5), 0 0 0 3px rgba(233,162,76,.55), 0 0 0 15px rgba(233,162,76,0); }
+    100% { box-shadow: 0 6px 18px rgba(0,0,0,.5), 0 0 0 2px rgba(233,162,76,.95), 0 0 0 4px rgba(233,162,76,.35); }
+  }
   .ab-bubble .hit { position: absolute; inset: -4px; }
 
   /* ---- listening bar (Klarvo-owned overlay, sits above the keyboard) ---- */
@@ -270,7 +279,7 @@
     <div class="sw"><div class="chip-c" style="background:#57DDC7"></div><div class="meta"><div class="nm">teal-hi</div><div class="hx">#57DDC7</div><div class="role">Hover / Highlight</div></div></div>
     <div class="sw"><div class="chip-c" style="background:#1B9C88"></div><div class="meta"><div class="nm">teal-lo</div><div class="hx">#1B9C88</div><div class="role">pressed</div></div></div>
     <div class="sw"><div class="chip-c" style="background:#E9A24C"></div><div class="meta"><div class="nm">amber · activity</div><div class="hx">#E9A24C</div><div class="role">live / Aufnahme / Warnung</div></div></div>
-    <div class="sw"><div class="chip-c" style="background:#EE6F63"></div><div class="meta"><div class="nm">danger</div><div class="hx">#EE6F63</div><div class="role">Stop / Löschen / Fehler</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#EE6F63"></div><div class="meta"><div class="nm">danger</div><div class="hx">#EE6F63</div><div class="role">Abbrechen / Löschen / Fehler (nie Senden) — ADR-0019</div></div></div>
     <div class="sw"><div class="chip-c" style="background:#4FC58A"></div><div class="meta"><div class="nm">success</div><div class="hx">#4FC58A</div><div class="role">Erfolg (sparsam)</div></div></div>
   </div>
 
@@ -666,7 +675,7 @@
 
 <!-- ===== STATE SEQUENCE ===== -->
 <section class="wrap" data-screen-label="State-Sequenz">
-  <div class="tok-head"><h3>State-Sequenz</h3><span>tap startet → Listening-Leiste → tap stoppt → cleanup → einfügen</span></div>
+  <div class="tok-head"><h3>State-Sequenz</h3><span>tap startet → Listening-Leiste → Bubble antippen = senden (rotes Quadrat = abbrechen) → cleanup → einfügen</span></div>
 
   <div class="board dotgrid" data-screen-label="Bubble States">
     <span class="board-cap">idle → recording → transcribing → done · 1:1</span>
@@ -710,13 +719,14 @@
               <span class="livedot"></span>
               <div class="hwave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
               <span class="tm">0:06</span>
-              <button class="ab-bar-stop" aria-label="Stop"><span></span></button>
+              <button class="ab-bar-stop" aria-label="Abbrechen"><span></span></button>
             </div>
             <div class="ab-panel-text">also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan<span class="ab-bcaret"></span></div>
             <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Tastatur pausiert · kehrt beim Einfügen zurück</div>
           </div>
+          <div class="ab-bubble recording" style="bottom:230px;"><svg class="send" viewBox="0 0 24 24" fill="none" stroke="var(--k-on-teal)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg><span class="hit"></span></div>
         </div></div>
-        <div class="lbl"><b>recording</b> — Tastatur klappt ein, Klarvo-Panel rückt hoch · Roh-Text live, Stop rechts</div>
+        <div class="lbl"><b>recording</b> — Bubble bleibt sichtbar mit Amber-Puls + Send-Glyph (<b style="color:var(--k-text)">antippen = senden</b>) · rotes Quadrat = <b style="color:var(--k-danger)">abbrechen</b></div>
       </div>
 
       <!-- TRANSCRIBING -->

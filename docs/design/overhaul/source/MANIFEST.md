@@ -4,10 +4,21 @@
 Downstream (BMAD spec/story writing, epic-conductor fidelity GATE-4) anchors here — never on a prose
 transcription. The truth is the HTML render + the CSS values. Prose (incl. the README) is orientation only.
 
-- **sourceFingerprint:** `a3a5baff3ae56aa62270aa5a736972cb` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
+- **sourceFingerprint:** `2bb990323f4fa224d6062b2c24965e37` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
 - **Promoted from:** `design-handoff/design_handoff_klarvo_overhaul/` (gitignored raw inbox)
 - **Promoted on:** 2026-06-15
 - **mode:** force (first ingest — no prior canon)
+
+### In-repo extensions (provenance — ADR-0019 §5)
+
+This canon is **ahead of the original raw handoff**: the surfaces below were added/changed in-repo by a
+design decision, not by a new external download. A future re-ingest of the *old* raw inbox must NOT
+clobber these — a re-handoff has to include them.
+
+| Date | Fingerprint after | What | Decision |
+|------|-------------------|------|----------|
+| (orig) | `a3a5baff3ae56aa62270aa5a736972cb` | first external ingest | — |
+| 2026-06-16 | `2bb990323f4fa224d6062b2c24965e37` | Added **`.ab-bubble.recording`** state (teal squircle + amber pulse-ring + send-glyph = "tap to send"); relabeled the listening-panel red square **Stop → Abbrechen**; tightened the `danger` token role to "Abbrechen / Löschen / Fehler (nie Senden)"; refined the bubble state-sequence prose. | [ADR-0019](../../../adr/0019-cross-platform-design-ssot.md) — codifies danger=Abbrechen + Android send = tap-the-bubble. |
 
 ## Truth
 
