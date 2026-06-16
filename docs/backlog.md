@@ -127,6 +127,31 @@ testability extraction itself.
   by-construction fix and is preferred. **AC:** a deliberately swapped call-site argument fails to
   compile (a) or turns a test RED (b).
 
+## Epic 9 — on-device defects found 2026-06-16 (Andi real-device test, after 9-7)
+
+Source: Andi's real-device smoke 2026-06-16 (the device test I wrongly skipped at 9-7 GATE-4). Three
+findings; the first is a real functional bug, the other two Andi explicitly flagged for "later".
+
+- **BUG (real, est. Medium) — Android Auto mode does not auto-flush on silence.** Intended Auto behaviour:
+  while the user stays silent for a pause, the segment is auto-pasted and recording **keeps listening**
+  for the next utterance. Actual on-device: silence does **nothing**; only a bubble tap (= Senden) flushes
+  the segment, after which the loop continues. So the auto-loop *restart* works, but the **auto-segment-on-
+  silence** does not. Investigation (KlarvoOverlayService.kt): dispatch + loop are correctly wired
+  (`onSilenceTriggered` → AUTO → `stopAndProcessRecording()` + restart via `onProcessingComplete`); the
+  failing link is the **Silero VAD silence detection not firing on-device** — `KlarvoAudioRecorder`
+  `onSilenceDetected` (Silero VAD v5 via `android-vad` + RMS pre-gate) is never invoked. **Needs a device-
+  log observability loop** (instrument the VAD/silence path, reproduce on the Xiaomi, find why it never
+  fires) — NOT guess-and-rebuild through Andi (user-as-rendering-oracle forbidden). This is 9-7's unmet
+  DoD; 9-7 re-opened. Routing (fix inside 9-7 vs split to its own bug story) pending Andi. Also worth
+  checking whether AUTOSTOP (single auto-stop on silence) is affected — same VAD path.
+
+- **NEXT STORY — bubble must show which mode is active.** On-device, the bubble's appearance does not make
+  the current gesture mode (Hold / Toggle / AutoStop / Auto) visible at all — the user can't tell what is
+  about to happen on a tap. Andi: "müssen wir in einer nächsten Story auf jeden Fall planen." Scope a
+  story that surfaces the active mode on the bubble (a badge/affordance — note the `RecordingMode` enum
+  already carries a one-letter `badge` H/T/S/A, currently unused on the bubble surface). Cross-platform:
+  check desktop parity.
+
 ## Accessibility — canvas-drawn listening panel has no TalkBack labels
 
 Source: Story 9-5 code-review (story-conductor, 2026-06-16). AC1 / Task 2.2 said "relabel
@@ -152,6 +177,9 @@ Not yet scoped into stories.
   cleanup preview (Epics 5/6). On Android it does not work. Confirm whether it's simply unbuilt on
   Android vs. broken, then scope. (Note: 9-5's listening panel shows the live RAW transcript inside the
   panel per AC2 — distinguish that from the desktop's *cleaned* live-preview when scoping.)
+  - **Re-confirmed 2026-06-16 (Andi real-device, after 9-7):** the preview display itself does not work
+    on Android, AND the **waveform inside the preview/listening panel does not work** either. Both stay
+    "later" per Andi. Scope together with the preview-build investigation above.
 
 - **No Android Settings control for the live-preview.** Desktop exposes a preview opt-in toggle + pause
   slider (Stories 5-3 / 5-5); Android Settings has no equivalent. A parity story once the Android
