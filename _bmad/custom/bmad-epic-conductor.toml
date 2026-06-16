@@ -1,0 +1,36 @@
+# Conductor contract for THIS project.
+#
+# Read EXPLICITLY by the global bmad-epic-conductor / bmad-story-conductor skills
+# at activation. This is orchestration MECHANICS, not code-derived testing rules:
+# it lives here on purpose because (a) `bmad-generate-project-context` owns and may
+# regenerate `project-context.md` and cannot reproduce this policy from a code scan,
+# and (b) only the conductor reads it — the dev/review workers never needed it.
+# `_bmad/custom/` is never touched by the generator, so a dropped run-guard line
+# can no longer break run-isolation silently.
+#
+# Worker-facing testing POSTURE (rendering-oracle anti-pattern, surface-DoD,
+# KlarvoTheme regeneration) stays in project-context.md where the workers load it.
+
+env_flag = "BMAD_CONDUCTOR"  # exported =1 for the whole run
+
+[smoke]
+# The UNATTENDED-producible proxy surface and how to drive it (GATE-4 + E7).
+command       = "scripts/android-smoke.sh"   # build / install / drive-to-state / capture
+proxy_surface = "headless Android emulator via scripts/android-emulator.sh — install --abi arm64-v8a so the arm64-only Rust .so runs via the x86_64 image's native-bridge"
+evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
+# The real target is NOT unattended-producible — never an automated-run target:
+real_target   = "the real Xiaomi/HyperOS device: its install confirmation needs a finger and the DEBUG_SET_STATE harness is dead on HyperOS (background restrictions). It is Andi's BATCHED visual gate only."
+
+[run_guard]
+# Mechanical run-isolation (Naht 2 + Naht 4): lock + HEAD-watch + real-target detach.
+command              = "scripts/conductor-guard.sh"  # subcommands: acquire / release / expect <sha> / check-head / break
+detaches_real_target = true
+# BMAD_CONDUCTOR=1 forces android-smoke.sh to the emulator and hard-rejects any non-emulator target —
+# this is why an unattended run physically cannot install onto the real phone.
+
+[visual_oracle]
+# Two layers — the GATE-4 posture for surface stories (Naht 5).
+structural        = true   # the emulator IS a reliable STRUCTURAL oracle
+structural_method = "adb shell dumpsys window windows — assert overlay-window structure: count of APPLICATION_OVERLAY windows + their requested sizes / gravity / visibility (e.g. recording state = panel ~1080x525 bottom + idle bubble 162x162). A wrong window count/size is a real FAILED smoke, caught without a screenshot."
+pixel             = false  # NOT a pixel / aesthetic oracle
+pixel_note        = "stock Android (no HyperOS skin), software GPU, and system dialogs can force-hide overlays (mForceHideNonSystemOverlayWindow); on 2026-06-15 an emulator screenshot looked 'green' while the real Xiaomi was visibly broken. The pixel/aesthetic verdict is Andi's real-device gate, never an emulator screenshot."
