@@ -113,3 +113,24 @@ limitation of the canvas-drawn approach, NOT introduced by 9-5 — deferred rath
   `ListeningPanelView` so TalkBack exposes the Abbrechen square (`contentDescription="Abbrechen"`)
   and the live transcript/timer. Scope is the whole canvas panel, not just the red square. **AC:**
   TalkBack focuses and announces the Abbrechen control; activating it cancels recording.
+
+## Android live-preview parity + open dictation-end interaction question
+
+Source: Andi's 9-5 real-device review (2026-06-16). 9-5 function approved ("erstmal abgesegnet");
+these are **design decisions for later — NOT functional gaps in 9-5**, captured so they don't get lost.
+Not yet scoped into stories.
+
+- **Android live cleanup-preview is not working / likely not built yet.** The desktop has the live
+  cleanup preview (Epics 5/6). On Android it does not work. Confirm whether it's simply unbuilt on
+  Android vs. broken, then scope. (Note: 9-5's listening panel shows the live RAW transcript inside the
+  panel per AC2 — distinguish that from the desktop's *cleaned* live-preview when scoping.)
+
+- **No Android Settings control for the live-preview.** Desktop exposes a preview opt-in toggle + pause
+  slider (Stories 5-3 / 5-5); Android Settings has no equivalent. A parity story once the Android
+  preview itself exists.
+
+- **OPEN DESIGN DECISION — where the "end dictation" affordance lives.** 9-5 (per ADR-0019) put *Senden*
+  on the bubble (tap), with the panel's red square = *Abbrechen*. Andi is reconsidering whether the
+  end-dictation control should instead sit **in the preview view next to the stop button**. This would
+  revisit the ADR-0019 Android interaction model — handle via correct-course / an ADR amendment if
+  pursued, not an ad-hoc change. Decision pending; no action now.
