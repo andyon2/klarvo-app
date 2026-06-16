@@ -1,7 +1,16 @@
 # Postmortem + Redesign-Spec — Epic-Conductor (2026-06-15)
 
-**Status:** Lauf gestoppt durch Andi mitten in Epic 9 (nach 9-4/9-5). Kein Weiterlauf bis die unten
-beschriebenen Nähte gefixt sind. Dies ist Analyse + Spec, **kein** Umbau.
+**Status:** Lauf gestoppt durch Andi mitten in Epic 9 (nach 9-4/9-5). Dies war Analyse + Spec.
+
+**UPDATE 2026-06-16 — Conductor-Redesign GEBAUT (Nähte 1–5 in die Maschinerie gegossen):**
+- **Naht 2 + 4** mechanisch: neues `scripts/conductor-guard.sh` (`acquire`/`expect`/`check-head`/`release`/`break`/`status`) — Run-Lock (kein überlappender Lauf, exit 3), echtes Gerät per `adb disconnect` für die Lauf-Dauer abgekoppelt, HEAD-Wächter (Fremdmutation → exit 4). 7/7 Mechanik-Tests grün.
+- **Naht 2** Hosenträger: `scripts/android-smoke.sh` Env-Guard — bei `KLARVO_CONDUCTOR=1` Default-Ziel = Emulator + Hard-Reject jedes nicht-Emulator-Ziels (getestet).
+- **Naht 1** in `bmad-story-conductor` (SKILL.md): Story-Conductor faltet Worker-Commits nach JEDEM Schritt (`reset --soft <baseRef>`), konsistent — Sole-*Finalizer* statt Prosa-Bitte; Epic-Conductor (E3) = Sole-Finalizer mit Safety-Net.
+- **Naht 3** in beiden Skills: GATE-4-Evidenz dauerhaft nach `_bmad-output/implementation-artifacts/gate4-evidence/<story>/` (+ `RUN-<datum>.md` Index) statt `/tmp`.
+- **Naht 5** in beiden Skills (E9): Emulator NIE visuelles Orakel für Surface-Stories — Emulator = build/install/drive/Logik; visueller Verdict = `smoke.residualForHuman` (echtes Gerät, Andis Morgen-Gate); Emulator-Grün darf nie als „visuell verifiziert" in Commit/Report.
+- `.gitignore`: `.conductor-lock`.
+
+**NOCH OFFEN (downstream, bewusst NICHT Teil des Skill-Redesigns):** der MIUI-tote `DEBUG_SET_STATE`-Harness (Broadcast erreicht den Manifest-Receiver auf MIUI nie) — gehört als Android-Code in eine Story (blockt Andis real-device-Morgen-Gate + 9-6/9-8). Erst danach ist Epic 9 wieder voll fahrbar; davor: 9-5-Fix attended/real-device.
 
 ## Was passiert ist (Evidenz)
 

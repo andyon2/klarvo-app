@@ -65,3 +65,6 @@ _bmad-output/story-automator/
 
 # Design handoff package (local only — contains screenshots with personal dictation content)
 design-handoff/
+
+# Epic-Conductor run lock (logical run marker; never committed — Naht 4, Postmortem 2026-06-15)
+.conductor-lock
