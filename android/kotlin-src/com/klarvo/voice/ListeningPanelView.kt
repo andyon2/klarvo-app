@@ -80,6 +80,13 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         return topRowView.isTouchOnStopButton(localX, localY)
     }
 
+    /** Hit-tests whether panel-root-local coordinates land on the cancel (✗) button. */
+    fun isTouchOnCancelButton(touchX: Float, touchY: Float): Boolean {
+        val localX = touchX - topRowView.left
+        val localY = touchY - topRowView.top
+        return topRowView.isTouchOnCancelButton(localX, localY)
+    }
+
     // --- Timer ---
 
     private val handler = Handler(Looper.getMainLooper())
@@ -307,6 +314,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
         // For stop-button touch detection (screen coords not needed — panel touch listener uses view.x/y)
         private val stopBtnRect = RectF()
+        // Story 9.5 fix: cancel (✗) button — restores the cancel affordance the old HOLD-tap bubble
+        // bar had (X + ✓). With the bubble bar retired, cancel + confirm both live on the panel.
+        private val cancelBtnRect = RectF()
 
         // Bar animation (waveform)
         private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -365,6 +375,10 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         /** Returns true if the given view-local coordinates hit the stop button. */
         fun isTouchOnStopButton(viewX: Float, viewY: Float): Boolean =
             stopBtnRect.contains(viewX, viewY)
+
+        /** Returns true if the given view-local coordinates hit the cancel button. */
+        fun isTouchOnCancelButton(viewX: Float, viewY: Float): Boolean =
+            cancelBtnRect.contains(viewX, viewY)
 
         private val fillPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -437,8 +451,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                     textPaint.textSize = timerPx
                     textPaint.typeface = Typeface.MONOSPACE
                     val timerW = textPaint.measureText(timerStr)
-                    // Right side: [8dp][timerW][8dp][stopBtnSz]
-                    val rightReserved = 8 * dp + timerW + 8 * dp + stopBtnSz
+                    val cancelBtnSz = 26 * dp
+                    // Right side: [8dp][timerW][8dp][cancelBtnSz][8dp][stopBtnSz]
+                    val rightReserved = 8 * dp + timerW + 8 * dp + cancelBtnSz + 8 * dp + stopBtnSz
                     val waveRight = width.toFloat() - rightReserved
                     val waveLeft  = curX
 
@@ -455,6 +470,27 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                     val timerY = h / 2f - (timerMetrics.ascent + timerMetrics.descent) / 2f
                     canvas.drawText(timerStr, curX, timerY, textPaint)
                     curX += timerW + 8 * dp
+
+                    // ── Cancel button: 26dp × 26dp, rounded 8dp, neutral ✗ ───────
+                    // Secondary (neutral) styling vs. the red stop: Border2 outline + Muted ✗, no
+                    // fill — so the danger Stop reads as the primary action.
+                    val cancelCy  = h / 2f
+                    val cancelTop = cancelCy - cancelBtnSz / 2f
+                    cancelBtnRect.set(curX, cancelTop, curX + cancelBtnSz, cancelTop + cancelBtnSz)
+                    strokePaint.color       = KlarvoTheme.Border2
+                    strokePaint.strokeWidth = dp
+                    strokePaint.style       = Paint.Style.STROKE
+                    canvas.drawRoundRect(cancelBtnRect, 8 * dp, 8 * dp, strokePaint)
+                    // ✗ glyph: two diagonal strokes across a centered ~9dp square
+                    val xHalf = 4.5f * dp
+                    val xCx   = curX + cancelBtnSz / 2f
+                    strokePaint.color       = KlarvoTheme.Muted
+                    strokePaint.strokeWidth = 1.5f * dp
+                    strokePaint.strokeCap    = Paint.Cap.ROUND
+                    canvas.drawLine(xCx - xHalf, cancelCy - xHalf, xCx + xHalf, cancelCy + xHalf, strokePaint)
+                    canvas.drawLine(xCx - xHalf, cancelCy + xHalf, xCx + xHalf, cancelCy - xHalf, strokePaint)
+                    strokePaint.strokeCap = Paint.Cap.BUTT
+                    curX += cancelBtnSz + 8 * dp
 
                     // ── Stop button: 26dp × 26dp, rounded 8dp ────────────────────
                     val stopCy  = h / 2f
@@ -504,8 +540,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                     val labelY = h / 2f - (labelMetrics.ascent + labelMetrics.descent) / 2f
                     canvas.drawText("Cleaning…", curX, labelY, textPaint)
 
-                    // Reset stop-button rect (not visible in TRANSCRIBING)
+                    // Reset stop/cancel button rects (not visible in TRANSCRIBING)
                     stopBtnRect.setEmpty()
+                    cancelBtnRect.setEmpty()
                 }
             }
         }

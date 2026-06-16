@@ -62,6 +62,26 @@ class FloatingBubbleView(context: Context) : View(context) {
             invalidate()
         }
 
+    /**
+     * Story 9.5 fix: when true, the bubble renders the static IDLE squircle and stays the small
+     * touch-target, regardless of [state]. KlarvoOverlayService.setState() sets this true for
+     * RECORDING/TRANSCRIBING — the states where the listening panel owns the UI. This prevents the
+     * bubble from drawing its OWN recording bar/circle as a SECOND overlay window for the same
+     * state (the real-device double-window defect: a stray red recording pill floating over foreign
+     * app content next to the panel). The bubble WINDOW stays alive so push-to-talk release and taps
+     * still route through KlarvoOverlayService.handleTouch(); only the VISUAL is suppressed. Because
+     * setState() drives this flag on every transition, the `alpha = 1.0f` reset there can no longer
+     * un-hide a half-suppressed visual (the old `alpha = 0` approach failed for exactly that reason).
+     */
+    var suppressedForPanel: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            updateAnimators()   // stop recording/transcribing animators + reset scale to 1.0
+            requestLayout()     // onMeasure: keep the touch-target size, never the bar width
+            invalidate()
+        }
+
     /** Current bubble size in dp. Changed via setBubbleSize(). */
     private var bubbleSizeDp: Int = 56
 
@@ -200,6 +220,14 @@ class FloatingBubbleView(context: Context) : View(context) {
     private fun updateAnimators() {
         barAnimator.cancel()
         rotationAnimator.cancel()
+        if (suppressedForPanel) {
+            // Panel owns the active-state UI — keep the bubble a static idle squircle: no
+            // waveform/spinner animation, no PTT scale-up. Reset any in-flight scale to 1.0.
+            pttScaleUpAnimator.cancel()
+            pttScaleDownAnimator.cancel()
+            if (scaleX != 1.0f || scaleY != 1.0f) { scaleX = 1.0f; scaleY = 1.0f }
+            return
+        }
         when (state) {
             State.RECORDING -> {
                 barAnimator.start()
@@ -244,8 +272,10 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
-        if (state == State.RECORDING) {
+        if (state == State.RECORDING && !suppressedForPanel) {
             // Bar mode (WRAP_CONTENT window): compute our own size.
+            // (Retired in practice by the Story 9.5 fix — suppressedForPanel is true in RECORDING —
+            //  but kept for any non-panel RECORDING use.)
             val heightPx = (bubbleSizeDp * density).toInt()
             setMeasuredDimension((BAR_WIDTH_DP * density).toInt(), heightPx)
         } else {
@@ -270,7 +300,9 @@ class FloatingBubbleView(context: Context) : View(context) {
      * Only meaningful in RECORDING state.
      */
     fun isTouchInCancelZone(touchX: Float): Boolean {
-        if (state != State.RECORDING) return false
+        // Suppressed (panel-owned recording): the bar isn't drawn, so its zones are inert —
+        // cancel/confirm live on the panel now.
+        if (state != State.RECORDING || suppressedForPanel) return false
         val density = resources.displayMetrics.density
         val barW = BAR_WIDTH_DP * density
         return touchX < barW * 0.30f
@@ -281,7 +313,7 @@ class FloatingBubbleView(context: Context) : View(context) {
      * Only meaningful in RECORDING state.
      */
     fun isTouchInConfirmZone(touchX: Float): Boolean {
-        if (state != State.RECORDING) return false
+        if (state != State.RECORDING || suppressedForPanel) return false
         val density = resources.displayMetrics.density
         val barW = BAR_WIDTH_DP * density
         return touchX > barW * 0.70f
@@ -294,7 +326,13 @@ class FloatingBubbleView(context: Context) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
 
-        when (state) {
+        // Story 9.5 fix: while the listening panel owns the recording/transcribing UI, the bubble
+        // renders the static idle squircle (AC1: "the bubble stays visible as the small teal
+        // squircle above the panel") instead of its own recording bar/circle or spinner — which
+        // would be a second overlay for the same state.
+        val effectiveState = if (suppressedForPanel) State.IDLE else state
+
+        when (effectiveState) {
             State.IDLE -> {
                 // Touch-target expansion: the view may be larger than the visual bubble.
                 // bubbleSizeDp controls the visual side length; the view is sized to the touch target.

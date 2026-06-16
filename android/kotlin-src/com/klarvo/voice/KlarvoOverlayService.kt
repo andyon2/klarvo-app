@@ -913,45 +913,15 @@ class KlarvoOverlayService : Service() {
      * the center stays in place.
      */
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
-        val dp           = resources.displayMetrics.density
-        val visualDp     = bubbleView.getBubbleSizeDp()
+        // Story 9.5 fix: the bubble is now ALWAYS the small touch-target squircle — the listening
+        // panel owns the recording/transcribing UI. The legacy HOLD-tap "expand to bar" window is
+        // retired: it was the second overlay that, on real devices, collided with the panel (a stray
+        // recording pill floating over foreign content). Every state keeps the exact touch-target
+        // window; cancel/confirm affordances live on the panel, not on an expanded bubble bar.
+        val visualDp      = bubbleView.getBubbleSizeDp()
         val touchTargetPx = bubbleWindowPx(visualDp)   // visual + shadow padding (≥48dp)
-        val barPx         = (FloatingBubbleView.BAR_WIDTH_DP * dp).toInt()
-
-        when {
-            newState == RecordingState.RECORDING && previousState == RecordingState.IDLE -> {
-                // Expand to bar: shift left so bubble center stays under finger.
-                // Only called from HOLD tap mode (circular RECORDING sets EXACT window directly).
-                val oldCenterX = bubbleParams.x + touchTargetPx / 2
-                bubbleParams.x = (oldCenterX - barPx / 2).coerceAtLeast(0)
-            }
-            newState != RecordingState.RECORDING && previousState == RecordingState.RECORDING
-                    && bubbleView.width > bubbleView.height -> {
-                // Collapse from bar: restore center position
-                val oldCenterX = bubbleParams.x + barPx / 2
-                bubbleParams.x = (oldCenterX - touchTargetPx / 2).coerceAtLeast(0)
-            }
-        }
-
-        when (newState) {
-            RecordingState.RECORDING -> {
-                if (previousState == RecordingState.IDLE && tapMode == RecordingMode.HOLD && !pushToTalkActive) {
-                    // Bar mode (HOLD tap): let onMeasure drive the size
-                    bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
-                    bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
-                } else {
-                    // Circular mode (PTT / TOGGLE / AUTOSTOP / AUTO): explicit touch-target
-                    bubbleParams.width  = touchTargetPx
-                    bubbleParams.height = touchTargetPx
-                }
-            }
-            else -> {
-                // IDLE / TRANSCRIBING / DONE: explicit touch-target dimensions
-                bubbleParams.width  = touchTargetPx
-                bubbleParams.height = touchTargetPx
-            }
-        }
-
+        bubbleParams.width  = touchTargetPx
+        bubbleParams.height = touchTargetPx
         updateBubbleLayout()
     }
 
@@ -1204,20 +1174,12 @@ class KlarvoOverlayService : Service() {
         }
 
         audioRecorder = recorder
-        val previousState = currentState
 
-        when {
-            activeMode == RecordingMode.HOLD && !pushToTalkActive -> {
-                // HOLD tap mode: expand to bar with cancel/confirm buttons.
-                setState(RecordingState.RECORDING)
-                adjustLayoutForState(RecordingState.RECORDING, previousState)
-            }
-            else -> {
-                // PTT (pushToTalkActive=true) + TOGGLE/AUTOSTOP/AUTO: circular form, no bar.
-                // The pushToTalkActive flag still controls stop-on-release vs. tap-to-stop.
-                setState(RecordingState.RECORDING)
-            }
-        }
+        // Story 9.5 fix: all modes keep the small squircle bubble (no HOLD-tap bar expansion).
+        // The listening panel below carries the recording UI + stop/cancel; the bubble window stays
+        // alive only so PTT release / taps still reach handleTouch(). setState() suppresses the
+        // bubble's own recording visual.
+        setState(RecordingState.RECORDING)
 
         // Story 9.5: show listening panel when recording starts.
         showListeningPanel(ListeningPanelView.State.RECORDING)
@@ -1715,14 +1677,25 @@ class KlarvoOverlayService : Service() {
         panel.setOnTouchListener { _, event ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    // Capture gesture only when the down lands on the stop button
-                    panel.isTouchOnStopButton(event.x, event.y)
+                    // Capture the gesture only when the down lands on the stop OR cancel button
+                    // (F1: without consuming ACTION_DOWN the matching ACTION_UP never arrives).
+                    panel.isTouchOnStopButton(event.x, event.y) ||
+                        panel.isTouchOnCancelButton(event.x, event.y)
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    if (panel.isTouchOnStopButton(event.x, event.y)) {
-                        handler.post { stopAndProcessRecording() }
-                        true
-                    } else false
+                    when {
+                        panel.isTouchOnStopButton(event.x, event.y) -> {
+                            handler.post { stopAndProcessRecording() }
+                            true
+                        }
+                        // Story 9.5 fix: cancel (✗) on the panel discards the recording — the
+                        // affordance the retired HOLD-tap bubble bar used to provide.
+                        panel.isTouchOnCancelButton(event.x, event.y) -> {
+                            handler.post { cancelRecording() }
+                            true
+                        }
+                        else -> false
+                    }
                 }
                 else -> false
             }
@@ -1773,6 +1746,13 @@ class KlarvoOverlayService : Service() {
             RecordingState.DONE        -> FloatingBubbleView.State.DONE
         }
         bubbleView.alpha = 1.0f  // all states fully opaque (idle matches canon — see setupBubble)
+        // Story 9.5 fix: while the listening panel owns RECORDING/TRANSCRIBING, suppress the
+        // bubble's own state visual to the idle squircle so the two overlays don't both render the
+        // same state (real-device double-window defect). The bubble window stays alive for touch
+        // (PTT release / taps). Driven here on EVERY transition so DONE/IDLE restore the normal
+        // visual (DONE checkmark, then idle).
+        bubbleView.suppressedForPanel =
+            newState == RecordingState.RECORDING || newState == RecordingState.TRANSCRIBING
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f
             // Re-read config so bubble size/opacity changes from Settings take effect
