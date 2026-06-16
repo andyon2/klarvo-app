@@ -625,7 +625,13 @@ So that I see live feedback and the cleaned text lands in my field.
 **Given** recording starts
 **When** the panel rises
 **Then** a Klarvo-owned panel shows a grab handle, K + amber live-dot, a reactive RMS waveform, a timer,
-and a red stop; the footer reads "keyboard paused · returns on insert".
+and a **red square = Abbrechen** (cancel/discard, parity with desktop); the footer reads "keyboard
+paused · returns on insert".
+
+**And** the bubble stays visible in its **recording state** (`.ab-bubble.recording`: teal squircle +
+amber pulse-ring + send-glyph, NOT the idle K); **tapping the bubble = Senden** (stop → transcribe →
+paste). Confirm (bubble-tap) and Cancel (red square) are distinct affordances; **red is never the
+send/confirm action** (ADR-0019 colour-semantics rule).
 
 **Given** recording
 **When** raw text streams
