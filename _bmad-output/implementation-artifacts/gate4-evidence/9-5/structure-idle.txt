@@ -1,0 +1,4 @@
+STATE=idle — klarvo overlay windows (Window{...com.klarvo.voice} + Requested size):
+  Window #8 Window{fdb9932 u0 com.klarvo.voice}:
+    Requested w=162 h=162 mLayoutSeq=148
+    Requested w=1080 h=2400 mLayoutSeq=5
