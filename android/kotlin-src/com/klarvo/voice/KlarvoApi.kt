@@ -85,7 +85,11 @@ object KlarvoApi {
         // firstInstallAt: the EFFECTIVE trial start = config.json value if synced
         // from desktop, else the Android-owned SharedPreferences timestamp.
         val licenseValidatedAt: Long = 0L,
-        val firstInstallAt: Long = 0L
+        val firstInstallAt: Long = 0L,
+        // Energy gate threshold for VAD pre-filter. Nested under "advanced.silenceThreshold"
+        // in config.json (camelCase, parity with Rust AdvancedSettings::silence_threshold).
+        // Default 0.005 matches the Rust default_silence_threshold() in config/mod.rs:209.
+        val silenceThreshold: Float = 0.005f
     )
 
     /**
@@ -266,6 +270,15 @@ object KlarvoApi {
             val firstInstallAtJson = json.optLong("firstInstallAt", 0L)
             val sttProvider = json.optString("sttProvider", "groq")
             val customPrompt = json.optString("customPrompt", "")
+            // "advanced.silenceThreshold" is nested under the "advanced" object (camelCase,
+            // parity with Rust AdvancedSettings { silence_threshold } serialized via
+            // serde rename_all = "camelCase"). Default 0.005 matches Rust's
+            // default_silence_threshold() in src-tauri/src/config/mod.rs:209.
+            val silenceThreshold = json
+                .optJSONObject("advanced")
+                ?.optDouble("silenceThreshold", 0.005)
+                ?.toFloat()
+                ?: 0.005f
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -334,7 +347,8 @@ object KlarvoApi {
                 gatedLlmProvider, gatedOpenai, gatedOpenrouter,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
                 gatedSttProvider, customPrompt, dictionaryTerms,
-                licenseValidatedAt, effectiveFirstInstall
+                licenseValidatedAt, effectiveFirstInstall,
+                silenceThreshold
             )
         } catch (e: Exception) {
             null

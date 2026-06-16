@@ -42,7 +42,18 @@ class KlarvoAudioRecorder(
      * Seconds of continuous silence required to trigger [onSilenceDetected].
      * Defaults to 2.0s.
      */
-    private val silenceSecs: Float = 2.0f
+    private val silenceSecs: Float = 2.0f,
+    /**
+     * RMS energy gate threshold (normalized 0..1). Frames below this are treated
+     * as silence without calling the VAD model. Defaults to 0.005, which matches
+     * the Rust default_silence_threshold() in src-tauri/src/config/mod.rs:209.
+     *
+     * Set from config.json "advanced.silenceThreshold" by KlarvoOverlayService so
+     * the user's desktop slider setting is honored on Android (AC1/AC2/AC3, Story 9-11).
+     * The previous hard-coded 0.02 was 4× the desktop default, causing ~10% of quiet
+     * utterances to be missed on a typical device microphone.
+     */
+    private var energyGateThreshold: Float = DEFAULT_ENERGY_GATE_THRESHOLD
 ) {
 
     companion object {
@@ -52,10 +63,28 @@ class KlarvoAudioRecorder(
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
-        // Energy gate: RMS (normalized 0..1) below this is treated as silence without
-        // calling the VAD model. Previously this was the only silence threshold.
-        // Kept lower than the old value (0.03) to let VAD handle borderline cases.
-        private const val SILENCE_THRESHOLD = 0.02f
+        /**
+         * Default energy gate threshold (normalized RMS 0..1).
+         * Matches Rust default_silence_threshold() = 0.005 in src-tauri/src/config/mod.rs:209.
+         * The old hard-coded 0.02 was 4× the desktop default and missed quiet speech on
+         * a typical device microphone (Story 9-11 root cause). This constant is kept as the
+         * default for [energyGateThreshold] but SHOULD NOT be used directly in logic — always
+         * use the instance field [energyGateThreshold] so config overrides work (AC1/AC3).
+         */
+        const val DEFAULT_ENERGY_GATE_THRESHOLD = 0.005f
+
+        /**
+         * Pure energy-gate predicate. Extracted from [processVadFrame] so JVM unit tests can
+         * verify the gate uses the provided threshold rather than a hard-coded value (AC5a).
+         *
+         * Returns true when [normalizedRms] is at or above [threshold], meaning the frame has
+         * enough energy to be passed to the VAD model.
+         *
+         * @param normalizedRms  Per-frame RMS normalized to [0, 1] (raw RMS / 32768).
+         * @param threshold      Energy gate threshold; caller supplies the configured value.
+         */
+        fun isEnergyAboveGate(normalizedRms: Float, threshold: Float): Boolean =
+            normalizedRms >= threshold
 
         // Silero VAD requires exactly 512 samples per frame at 16 kHz (~32 ms/frame).
         private const val VAD_FRAME_SIZE = 512
@@ -68,6 +97,19 @@ class KlarvoAudioRecorder(
         // Hangover frames: VAD frames per second at 16 kHz / 512 samples = ~31.25 fps.
         // Used to convert silenceSecs into a frame count.
         private const val VAD_FRAMES_PER_SECOND = 31
+    }
+
+    init {
+        // Clamp the configured energy-gate threshold to the slider's declared range
+        // [0.001f, 0.1f] so neither failure mode is reachable:
+        //   • threshold == 0f  → normalizedRms >= 0f is always true → gate fully disabled
+        //     (reachable: desktop "Silence threshold" slider uses parseFloat(...)||0, so a
+        //     blank/invalid input yields 0).
+        //   • threshold > 1.0f → normalizedRms is coerceIn(0f,1f), so gate always closed
+        //     → isSpeechFrame always false → auto-stop silently dies.
+        // 0.001f floor keeps at least minimal filtering; 0.1f == desktop slider max.
+        // Default 0.005f is within [0.001f, 0.1f], so default behavior is unchanged.
+        energyGateThreshold = energyGateThreshold.coerceIn(0.001f, 0.1f)
     }
 
     /**
@@ -105,6 +147,15 @@ class KlarvoAudioRecorder(
     private var onsetFrames = 0
     // True once enough consecutive speech frames have been seen (onset confirmed).
     private var speechDetected = false
+
+    // --- Auto-mode silence-fire diagnostics (Story 9-7 follow-up, 2026-06-16) ---
+    // Purely observational: aggregate per ~1s window so one device repro reveals why
+    // onSilenceDetected never fires (VAD sees no speech? requiredSilentFrames too big?
+    // silentFrames keeps resetting?). No behavior change — logging only.
+    private var dbgWindowFrames = 0
+    private var dbgSpeechFrames = 0
+    private var dbgRmsMax = 0f
+    private var dbgVadTrue = 0
 
     // Rolling average for amplitude smoothing (last 3 values).
     private val amplitudeHistory = FloatArray(3) { 0f }
@@ -178,6 +229,12 @@ class KlarvoAudioRecorder(
         silenceCallbackFired = false
         onsetFrames = 0
         speechDetected = false
+        dbgWindowFrames = 0
+        dbgSpeechFrames = 0
+        dbgRmsMax = 0f
+        dbgVadTrue = 0
+        KlarvoLogger.d(TAG, "VAD config: silenceSecs=$silenceSecs requiredSilentFrames=$requiredSilentFrames " +
+            "energyGate=$energyGateThreshold onSilenceDetected=${onSilenceDetected != null}")
 
         recordingThread = Thread {
             val buf = ShortArray(bufferSize / 2)
@@ -252,12 +309,37 @@ class KlarvoAudioRecorder(
      * Now: VAD model runs on 512-sample frames with onset and hangover hysteresis.
      */
     private fun processVadFrame(frame: ShortArray) {
+        // AC4 guard: silenceCallbackFired is also checked in the start() loop, but that
+        // outer check fires only between audio buffers. Within a single buffer, feedVad()
+        // may call processVadFrame() multiple times after the first fire (remaining frames
+        // in the same batch). This inner guard ensures the callback fires at most once per
+        // session, regardless of how many frames cross the threshold in the same buffer.
+        if (silenceCallbackFired) return
+
         // Energy gate: avoid calling the ONNX model for clearly silent frames.
+        // Uses the instance energyGateThreshold (from config.json "advanced.silenceThreshold")
+        // instead of the old hard-coded 0.02 constant, so user preferences are honored (AC1/AC3).
         val rms = calculateRms(frame, frame.size)
         val normalizedRms = (rms / 32768f).coerceIn(0f, 1f)
-        val energyAboveGate = normalizedRms >= SILENCE_THRESHOLD
+        val energyAboveGate = isEnergyAboveGate(normalizedRms, energyGateThreshold)
 
-        val isSpeechFrame = energyAboveGate && (vad?.isSpeech(frame) == true)
+        val vadSpeech = vad?.isSpeech(frame) == true
+        val isSpeechFrame = energyAboveGate && vadSpeech
+
+        // --- diagnostics: aggregate per ~1s window (Story 9-7 follow-up) ---
+        dbgWindowFrames++
+        if (normalizedRms > dbgRmsMax) dbgRmsMax = normalizedRms
+        if (vadSpeech) dbgVadTrue++
+        if (isSpeechFrame) dbgSpeechFrames++
+        if (dbgWindowFrames >= VAD_FRAMES_PER_SECOND) {
+            KlarvoLogger.d(TAG, "VAD ~1s: rmsMax=${"%.3f".format(dbgRmsMax)} vadTrue=$dbgVadTrue " +
+                "speechFrames=$dbgSpeechFrames speechDetected=$speechDetected " +
+                "onsetFrames=$onsetFrames silentFrames=$silentFrames/$requiredSilentFrames")
+            dbgWindowFrames = 0
+            dbgSpeechFrames = 0
+            dbgRmsMax = 0f
+            dbgVadTrue = 0
+        }
 
         if (!speechDetected) {
             // Onset phase: accumulate consecutive speech frames.

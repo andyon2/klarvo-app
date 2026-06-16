@@ -217,6 +217,9 @@ class KlarvoOverlayService : Service() {
     // Mode-level silence durations (AUTO/AUTOSTOP use these, parity with desktop pipeline.rs:640/704).
     private var autostopSilenceSecs = 2.0f
     private var autoModeSilenceSecs = 2.0f
+    // Energy gate threshold for VAD pre-filter (AC1/AC2/AC3, Story 9-11).
+    // Read from config.json "advanced.silenceThreshold"; default matches Rust default_silence_threshold() = 0.005.
+    private var silenceThreshold = KlarvoAudioRecorder.DEFAULT_ENERGY_GATE_THRESHOLD
 
     /**
      * Tracks which gesture started the current recording session.
@@ -615,7 +618,8 @@ class KlarvoOverlayService : Service() {
             longPressSilenceSecs = config.bubbleLongPressSilenceSecs
             autostopSilenceSecs = config.autostopSilenceSecs
             autoModeSilenceSecs = config.autoModeSilenceSecs
-            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend")
+            silenceThreshold = config.silenceThreshold
+            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend, silenceThreshold=$silenceThreshold")
         } else {
             KlarvoLogger.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
         }
@@ -1176,7 +1180,8 @@ class KlarvoOverlayService : Service() {
                     panelView?.amplitude = amplitude
                 }
             },
-            silenceSecs = activeSilenceSecs
+            silenceSecs = activeSilenceSecs,
+            energyGateThreshold = silenceThreshold
         )
 
         // Wire up silence detection for AUTOSTOP / AUTO modes.

@@ -46,7 +46,8 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-16project: klarvo
+last_updated: 2026-06-16
+project: klarvo
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -134,5 +135,5 @@ development_status:
   9-8-long-press-popover-menu: backlog
   9-9-in-app-recording-state-re-skin: backlog
   9-10-token-codegen-klarvo-css-to-klarvotheme: done
-  9-11-android-honors-silence-threshold-mic-sensitivity: ready-for-dev
+  9-11-android-honors-silence-threshold-mic-sensitivity: review
   epic-9-retrospective: optional
