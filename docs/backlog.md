@@ -98,3 +98,18 @@ E9 + GATE-4) now **assume** this assertion exists — this story makes it real.
   is dead on HyperOS (background restrictions block the manifest receiver) → Andi's real-device morning
   gate can't be scripted, blocks 9-6/9-8. Replace with a HyperOS-survivable trigger. Tracked in the
   postmortem; listed here so it is not conflated with the structural-assertion story above.
+
+## Accessibility — canvas-drawn listening panel has no TalkBack labels
+
+Source: Story 9-5 code-review (story-conductor, 2026-06-16). AC1 / Task 2.2 said "relabel
+`contentDescription` to Abbrechen", but the listening panel (`ListeningPanelView`) is a custom
+`View` that draws its controls (red Abbrechen square, K-badge, waveform, timer) directly on a
+`Canvas` — there is no child `View` to carry a `contentDescription`, and there never was one to
+"relabel". The red square (and the whole panel) is therefore invisible to TalkBack. Pre-existing
+limitation of the canvas-drawn approach, NOT introduced by 9-5 — deferred rather than faked.
+
+- **STORY — give the listening panel a real accessibility surface.** Add an
+  `AccessibilityNodeProvider` / `ExploreByTouchHelper` virtual view hierarchy over
+  `ListeningPanelView` so TalkBack exposes the Abbrechen square (`contentDescription="Abbrechen"`)
+  and the live transcript/timer. Scope is the whole canvas panel, not just the red square. **AC:**
+  TalkBack focuses and announces the Abbrechen control; activating it cancels recording.
