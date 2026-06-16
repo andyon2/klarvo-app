@@ -132,18 +132,21 @@ testability extraction itself.
 Source: Andi's real-device smoke 2026-06-16 (the device test I wrongly skipped at 9-7 GATE-4). Three
 findings; the first is a real functional bug, the other two Andi explicitly flagged for "later".
 
-- **BUG (real, est. Medium) — Android Auto mode does not auto-flush on silence.** Intended Auto behaviour:
-  while the user stays silent for a pause, the segment is auto-pasted and recording **keeps listening**
-  for the next utterance. Actual on-device: silence does **nothing**; only a bubble tap (= Senden) flushes
-  the segment, after which the loop continues. So the auto-loop *restart* works, but the **auto-segment-on-
-  silence** does not. Investigation (KlarvoOverlayService.kt): dispatch + loop are correctly wired
-  (`onSilenceTriggered` → AUTO → `stopAndProcessRecording()` + restart via `onProcessingComplete`); the
-  failing link is the **Silero VAD silence detection not firing on-device** — `KlarvoAudioRecorder`
-  `onSilenceDetected` (Silero VAD v5 via `android-vad` + RMS pre-gate) is never invoked. **Needs a device-
-  log observability loop** (instrument the VAD/silence path, reproduce on the Xiaomi, find why it never
-  fires) — NOT guess-and-rebuild through Andi (user-as-rendering-oracle forbidden). This is 9-7's unmet
-  DoD; 9-7 re-opened. Routing (fix inside 9-7 vs split to its own bug story) pending Andi. Also worth
-  checking whether AUTOSTOP (single auto-stop on silence) is affected — same VAD path.
+- **RESOLVED into Story 9-11** — Android Auto mode quiet-speech miss. Initially reported as "Auto totally
+  broken"; instrumented-build device telemetry (2026-06-16) showed that was a **stale build** — Auto works
+  ~90%. The real residual: the RMS energy pre-gate is hard-coded `0.02` on Android (4× the desktop default
+  `0.005`) and ignores the user's `silence_threshold` setting, so quiet speech (mic peaks ~0.026–0.037)
+  fails the onset and merges into the next utterance. Root cause device-evidenced (`/tmp/9-7-auto-vad.log`).
+  → **Story 9-11** (Android honors `silence_threshold` + default 0.005 + multi-fire guard), being built now.
+  9-7 closed (its mode-mirroring scope was met; this was never a mode bug).
+
+- **STORY 9-12 (follow-up to 9-11) — proactive sensitivity hint.** Andi's idea: rather than chase a magic
+  threshold, make the recurring pre-filter problem **self-serviceable**. When the app detects the pattern
+  "Silero VAD reports speech but the energy pre-gate vetoes it → onset never confirms → utterance dropped/
+  merged" (exactly the `vadTrue` high / `speechFrames` low / `onsetFrames=0` signature in the device log),
+  surface a user-facing hint: *"Speech detected but discarded as too quiet — adjust the sensitivity?"* with
+  a shortcut to the slider. Precondition: **9-11** (the adjustable control must exist first). Cross-platform:
+  consider whether desktop wants the same hint. Scope as a proper story.
 
 - **NEXT STORY — bubble must show which mode is active.** On-device, the bubble's appearance does not make
   the current gesture mode (Hold / Toggle / AutoStop / Auto) visible at all — the user can't tell what is
