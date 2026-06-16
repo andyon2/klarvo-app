@@ -1,6 +1,6 @@
 # Story 9.11: Android honors the silence_threshold (mic sensitivity) setting
 
-Status: review
+Status: done
 
 ## Story
 
@@ -135,3 +135,4 @@ Diagnostic logging: updated VAD config log in `start()` from `SILENCE_THRESHOLD`
 - 2026-06-16: Story created (story-conductor, off the 9-7 on-device finding). Root cause device-evidenced.
 - 2026-06-16: Implemented AC1-AC5. Removed hard-coded SILENCE_THRESHOLD = 0.02f; wired config chain from advanced.silenceThreshold through KlarvoApi.Config → KlarvoOverlayService → KlarvoAudioRecorder constructor. Added inner silenceCallbackFired guard in processVadFrame (AC4). Added SilenceThresholdTest.kt (11 JVM tests). android-smoke.sh: 24/24 green, APK installed.
 - 2026-06-16: Code-review (story-conductor, 3 parallel reviewers — Blind/Edge/Auditor, Opus). Auditor: all ACs satisfied. **One Medium fixed in a fix-round:** the threshold was consumed UNCLAMPED — a config value of 0 (reachable via the desktop slider's `parseFloat(...) || 0` on blank input) disabled the gate entirely; a value >1.0 killed auto-stop. Fix: clamp `energyGateThreshold` to `[0.001f, 0.1f]` in the recorder `init` (default 0.005 unchanged). **Low residuals accepted (documented, not faked):** (a) the new clamp tests exercise `isEnergyAboveGate`/`coerceIn` with hand-clamped values — they do NOT go RED if the `init` clamp line is removed (clamp code verified correct by inspection; test-hardening backlogged); (b) `assertEquals(Float,Float)` without delta (compiles+passes via autobox, style nit); (c) the AC4 multi-fire guard is verified by inspection, not a dedicated test (needs VAD/AudioRecord). Conductor self-verified: forced JVM re-run (`--rerun-tasks`) = 85 tests / 0 failures incl. 13 in SilenceThresholdTest. Status stays `review` pending GATE-4 device smoke (Andi: quiet speech auto-flushes at default + slider live).
+- 2026-06-16: **GATE-4 GREEN → DONE.** Andi on the real Xiaomi: the previously-missed quiet sentence now auto-flushes on its own at default 0.005 ("ja, passt jetzt!"). Behavioral fix confirmed on the real device (this gate was genuine, not a ritual — the change has a real runtime delta). 9-11 closed.
