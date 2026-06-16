@@ -72,3 +72,29 @@ Source: `sprint-change-proposal-2026-06-12.md` + ADR-0017 (shared-core STT path)
 
 > Older per-feature deferrals tracked in `_bmad-output/implementation-artifacts/deferred-work.md` remain
 > valid; migrate them here opportunistically.
+
+---
+
+## Conductor verification — GATE-4 structural-assertion smoke (Android overlay)
+
+Source: spike 2026-06-16 (memory `reference_android_emulator_window_structure_oracle`); postmortem
+`docs/postmortem-2026-06-15-epic-conductor.md`; `project-context.md` Testing Rules (the "emulator =
+structural-not-pixel oracle" rule). The conductor skills (`bmad-epic-conductor` / `bmad-story-conductor`,
+E9 + GATE-4) now **assume** this assertion exists — this story makes it real.
+
+- **STORY — harden `scripts/android-smoke.sh` to assert overlay-window STRUCTURE at GATE-4.** Today the
+  unattended smoke drives to a state and screencaps; the emulator's *pixels* are an unreliable oracle
+  (software GPU, cold-boot SystemUI ANR, `mForceHideNonSystemOverlayWindow`, no HyperOS skin) — that is
+  why 9-5 went "emulator-green" while the real Xiaomi was broken. But the emulator reports overlay-window
+  **structure** faithfully: `adb shell dumpsys window windows` exposes each `ty=APPLICATION_OVERLAY`
+  window's requested size / gravity / visibility. Add a step that, per driven state, asserts the expected
+  window structure (e.g. recording = exactly 1 panel ~1080×525 bottom + 1 idle bubble 162×162) and FAILS
+  the smoke on a mismatch; emit `structure-<state>.txt` into the GATE-4 evidence dir. This is the machine
+  oracle that would have caught 9-5 unattended; the residual (HyperOS pixel aesthetics) stays Andi's
+  real-device gate. **AC:** a deliberately re-introduced 9-5-class regression (bubble in recording form
+  instead of idle squircle) makes the structural assertion RED on the emulator.
+
+- **RELATED-BUT-SEPARATE — real-device state-driving harness (already open).** `DEBUG_SET_STATE` broadcast
+  is dead on HyperOS (background restrictions block the manifest receiver) → Andi's real-device morning
+  gate can't be scripted, blocks 9-6/9-8. Replace with a HyperOS-survivable trigger. Tracked in the
+  postmortem; listed here so it is not conflated with the structural-assertion story above.
