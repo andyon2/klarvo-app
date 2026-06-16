@@ -1,6 +1,6 @@
 # Story 9.7: Short-press gesture modes mirror desktop
 
-Status: review
+Status: done
 
 ## Story
 
@@ -234,3 +234,4 @@ None — verification story with no runtime errors.
 
 - 2026-06-16: Story 9-7 implementation — verification story: audit confirmed all four tap modes end-to-end; extracted `RecordingMode.selectSilenceSecs()` pure function for testability (AC6); added 12-test JVM regression lock; APK built clean.
 - 2026-06-16: Code-review (story-conductor, 3 parallel reviewers — Blind/Edge/Auditor, Opus). Verdict: code correct, extraction byte-identical, all ACs satisfied, 72 tests green. **One Medium accepted as residual** (Andi, GATE 3): the JVM test locks the pure `selectSilenceSecs()` mapping but not the call-site wiring in `startRecording()` — the 4 same-typed `Float` params are swap-prone and a swap is value-invisible at the all-`2.0f` production defaults. Original silence-field divergence (wrong-field-read) IS locked; this is a new, low-probability surface from the extraction. Routed to `docs/backlog.md`. Status stays `review` pending GATE-4 real-device 4-mode smoke (Andi's gate).
+- 2026-06-16: GATE-4 closed on **machine evidence**, status → `done`. No real-device smoke required: the change is a byte-identical testability extraction (3 reviewers confirmed no runtime/visual delta) + a new JVM test — there is no behavioral surface a rebuild could alter. The four tap modes are additionally validated by **months of production use** (Andi). Conductor-self-verified: forced JVM re-run (`--rerun-tasks`, not cached) = 72 tests / 0 failures, incl. the 12 new `RecordingModeSilenceSelectionTest`; overlay-window structure unchanged by construction (zero window code touched). Lesson: the surface-smoke GATE-4 ritual does not apply to a byte-identical refactor of already-working non-visual logic — see memory `feedback_gate4_smoke_needs_behavioral_delta`.
