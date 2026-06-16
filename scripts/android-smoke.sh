@@ -75,12 +75,14 @@ fi
 # Ziel überschreibbar:  KLARVO_ADB_TARGET=<ip>:<port> scripts/android-smoke.sh
 #
 # Naht 2 (Conductor-Isolation, Postmortem 2026-06-15): In einem Conductor-Lauf
-# (KLARVO_CONDUCTOR=1) darf dieses Script NIEMALS das echte Gerät treffen — sonst
-# landet halbfertiger Lauf-Code auf Andis Telefon (so geschehen am 2026-06-15:
-# firstInstall 19:37 / lastUpdate 22:00 durch Worker). Im Conductor-Modus wird der
-# Default das Emulator-Ziel, und ein nicht-Emulator-Ziel wird weiter unten hart
-# abgelehnt (Hosenträger zur adb-disconnect-Abkopplung aus conductor-guard.sh).
-if [ "${KLARVO_CONDUCTOR:-0}" = "1" ]; then
+# (BMAD_CONDUCTOR=1; KLARVO_CONDUCTOR=1 als Alt-Name akzeptiert) darf dieses Script
+# NIEMALS das echte Gerät treffen — sonst landet halbfertiger Lauf-Code auf Andis
+# Telefon (so geschehen am 2026-06-15: firstInstall 19:37 / lastUpdate 22:00 durch
+# Worker). Im Conductor-Modus wird der Default das Emulator-Ziel, und ein
+# nicht-Emulator-Ziel wird weiter unten hart abgelehnt (Hosenträger zur
+# adb-disconnect-Abkopplung aus conductor-guard.sh).
+CONDUCTOR_MODE="${BMAD_CONDUCTOR:-${KLARVO_CONDUCTOR:-0}}"
+if [ "$CONDUCTOR_MODE" = "1" ]; then
     KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-emulator-5554}"
 else
     KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-100.112.41.70:5555}"
@@ -130,10 +132,10 @@ ok "Gerät: $DEVICE_SERIAL"
 # Naht 2: Conductor-Lauf hart auf den Emulator einzäunen. Selbst wenn ein
 # nicht-Emulator-Ziel durchrutschte (alte Verbindung, falsches Env), bricht der
 # Lauf hier ab, BEVOR etwas auf das echte Telefon installiert wird.
-if [ "${KLARVO_CONDUCTOR:-0}" = "1" ]; then
+if [ "$CONDUCTOR_MODE" = "1" ]; then
     case "$DEVICE_SERIAL" in
         emulator-*) ok "Conductor-Modus: Ziel ist Emulator — Isolation ok (Naht 2)" ;;
-        *) fail "KLARVO_CONDUCTOR=1: Ziel '$DEVICE_SERIAL' ist kein Emulator — Conductor darf NUR emulator-* installieren (Naht 2, Postmortem 2026-06-15)" ;;
+        *) fail "BMAD_CONDUCTOR=1: Ziel '$DEVICE_SERIAL' ist kein Emulator — Conductor darf NUR emulator-* installieren (Naht 2, Postmortem 2026-06-15)" ;;
     esac
 fi
 
