@@ -130,7 +130,7 @@ development_status:
   9-4-bubble-state-harness: done
   9-5-bubble-state-sequence-listening-panel-waveform: done
   9-6-keyboard-collapse-via-a11y-service: backlog
-  9-7-short-press-gesture-modes-mirror-desktop: in-progress
+  9-7-short-press-gesture-modes-mirror-desktop: done
   9-8-long-press-popover-menu: backlog
   9-9-in-app-recording-state-re-skin: backlog
   9-10-token-codegen-klarvo-css-to-klarvotheme: done
