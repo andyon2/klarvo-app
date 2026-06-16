@@ -138,7 +138,16 @@ if [ "${KLARVO_CONDUCTOR:-0}" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Kotlin-Quellen synchronisieren
+# 2. KlarvoTheme.kt Drift-Gate (vor dem Sync — Story 9-10, ADR-0019)
+# ---------------------------------------------------------------------------
+step "KlarvoTheme.kt Drift-Gate prüfen"
+
+node scripts/gen-android-theme.mjs --check \
+    || fail "KlarvoTheme.kt ist von der Canon-CSS abgedriftet — node scripts/gen-android-theme.mjs ausführen"
+ok "KlarvoTheme.kt ist in Sync mit canon klarvo.css"
+
+# ---------------------------------------------------------------------------
+# 2b. Kotlin-Quellen synchronisieren
 # ---------------------------------------------------------------------------
 step "Kotlin-Quellen synchronisieren"
 

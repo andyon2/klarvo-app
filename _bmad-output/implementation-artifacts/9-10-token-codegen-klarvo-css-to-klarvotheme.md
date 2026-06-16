@@ -1,6 +1,6 @@
 # Story 9.10: Token Codegen — `klarvo.css` → `KlarvoTheme.kt` (post-ADR-0019; before the 9.5 rebuild)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -113,64 +113,77 @@ machine-verifiable. Andi is **not** asked to verify a state he must hand-produce
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Build the generator `scripts/gen-android-theme.mjs`** (AC: 1, 2, 3, 5)
-  - [ ] 1.1 Read `docs/design/overhaul/source/assets/klarvo.css`. Parse the `--k-*` custom-property
+- [x] **Task 1: Build the generator `scripts/gen-android-theme.mjs`** (AC: 1, 2, 3, 5)
+  - [x] 1.1 Read `docs/design/overhaul/source/assets/klarvo.css`. Parse the `--k-*` custom-property
     declarations in the `:root` block. Extract only the **color** tokens (hex `#…` or `rgba(…)` values);
     skip radii (`--k-r-*`), shadows (`--k-e*`, `--k-glass`, `--k-focus`), fonts (`--k-font`, `--k-mono`),
     easing (`--k-ease`, `--k-spring`), durations (`--k-t-*`).
-  - [ ] 1.2 Name mapping: `--k-<a>-<b>-…` → PascalCase join of the hyphen-separated segments, digits kept
+  - [x] 1.2 Name mapping: `--k-<a>-<b>-…` → PascalCase join of the hyphen-separated segments, digits kept
     (`surface-2` → `Surface2`, `border-2` → `Border2`, `teal-hi` → `TealHi`, `bg-deep` → `BgDeep`,
     `on-teal` → `OnTeal`, `amber-line` → `AmberLine`, `teal-line` → `TealLine`). **Alias overrides** (one
     entry): `text` → `TextC`. Keep the alias map as an explicit, commented constant at the top of the
     generator — it is the documented exception list.
-  - [ ] 1.3 Value conversion:
+  - [x] 1.3 Value conversion:
     - `#RRGGBB` → `0xFF` + uppercase `RRGGBB` + `.toInt()`
     - `rgba(r,g,b,a)` → `0x` + 2-hex `round(a*255)` (uppercase, zero-padded) + 2-hex each of r,g,b (uppercase) + `.toInt()`
     - Assert in code: `AmberLine === 0x52E9A24C`, `TealBg === 0x1F29C7AC`, `AmberBg === 0x1FE9A24C`,
       `DangerBg === 0x1FEE6F63` (fail the generator loudly if the converter regresses).
-  - [ ] 1.4 Emit a deterministic, stable Kotlin file (fixed token ordering so diffs are minimal): a header
+  - [x] 1.4 Emit a deterministic, stable Kotlin file (fixed token ordering so diffs are minimal): a header
     block (provenance: "GENERATED from docs/design/overhaul/source/assets/klarvo.css by
     scripts/gen-android-theme.mjs — do not edit by hand; see ADR-0019"), the color-semantics doc comment
     (carry over the existing teal/amber/danger semantics comment + the Android glass-ring convention note),
     a clearly-fenced **GENERATED region** (`// ===== BEGIN GENERATED (canon colors) =====` …
     `// ===== END GENERATED =====`) with the canon-projected constants, and a separate **hand-maintained
     region** holding `ShadowColor` and the doc preamble (AC6).
-  - [ ] 1.5 Support two modes: default = **write** the file; `--check` = regenerate to a buffer and exit
+  - [x] 1.5 Support two modes: default = **write** the file; `--check` = regenerate to a buffer and exit
     non-zero (with a diff/message) if the committed file's GENERATED region differs (this is what the
     drift gate calls).
 
-- [ ] **Task 2: Regenerate `KlarvoTheme.kt` and confirm byte-identity for consumed tokens** (AC: 2, 3, 5, 6)
-  - [ ] 2.1 Run the generator to write `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt`.
-  - [ ] 2.2 Diff against the previous version: **every** currently-consumed identifier (see AC2 list) must
+- [x] **Task 2: Regenerate `KlarvoTheme.kt` and confirm byte-identity for consumed tokens** (AC: 2, 3, 5, 6)
+  - [x] 2.1 Run the generator to write `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt`.
+  - [x] 2.2 Diff against the previous version: **every** currently-consumed identifier (see AC2 list) must
     have an identical value; the only additions are the new tokens from AC5; `ShadowColor` unchanged.
     `git diff` should show only additions (new tokens) + the generated-header/fences, **no value changes**
     to existing tokens.
-  - [ ] 2.3 Grep the platform Kotlin tree for stray hand-typed canon hex outside the generated region:
+  - [x] 2.3 Grep the platform Kotlin tree for stray hand-typed canon hex outside the generated region:
     `grep -rnE "0x[0-9A-Fa-f]{8}\.toInt\(\)" android/kotlin-src/com/klarvo/voice/` — every hit must be
     inside `KlarvoTheme.kt`'s generated region (or a documented platform-derived constant). No canon color
     re-typed in `FloatingBubbleView.kt` / `ListeningPanelView.kt` / service.
 
-- [ ] **Task 3: Wire the drift gate into the build scripts** (AC: 4)
-  - [ ] 3.1 In `scripts/android-smoke.sh`, add a step **before** "2. Kotlin-Quellen synchronisieren"
+- [x] **Task 3: Wire the drift gate into the build scripts** (AC: 4)
+  - [x] 3.1 In `scripts/android-smoke.sh`, add a step **before** "2. Kotlin-Quellen synchronisieren"
     (before the `cp "$SRC"/*.kt "$DST/"`): run `node scripts/gen-android-theme.mjs --check`; on non-zero,
     `fail "KlarvoTheme.kt ist von der Canon-CSS abgedriftet — node scripts/gen-android-theme.mjs ausführen"`.
-  - [ ] 3.2 In `scripts/android-build.sh`, add the same `--check` gate before its `[sync] Copying Kotlin
+  - [x] 3.2 In `scripts/android-build.sh`, add the same `--check` gate before its `[sync] Copying Kotlin
     files` step (line ~60). Match the script's existing echo/fail style.
-  - [ ] 3.3 Confirm the gate is RED when it should be: temporarily edit one token value in `KlarvoTheme.kt`,
+  - [x] 3.3 Confirm the gate is RED when it should be: temporarily edit one token value in `KlarvoTheme.kt`,
     run the `--check`, confirm it exits non-zero with the actionable message; revert. (Inversion proof at
     writing-time — do not ship a vacuous gate.)
 
-- [ ] **Task 4: Compile + verify (no regression)** (AC: 7)
-  - [ ] 4.1 Run `scripts/android-smoke.sh` — drift gate passes (file in sync), 60/60 JVM tests pass, Kotlin
+- [x] **Task 4: Compile + verify (no regression)** (AC: 7)
+  - [x] 4.1 Run `scripts/android-smoke.sh` — drift gate passes (file in sync), 60/60 JVM tests pass, Kotlin
     compile clean, DEBUG APK builds. (adb install may hit the known Xiaomi USER_RESTRICTED constraint —
     that is Andi's optional on-device glance, not a functional blocker, since values are byte-identical.)
-  - [ ] 4.2 Confirm the byte-identity claim mechanically: the diff from Task 2.2 shows zero value changes
+  - [x] 4.2 Confirm the byte-identity claim mechanically: the diff from Task 2.2 shows zero value changes
     to consumed tokens. Record the diff summary in the Dev Agent Record.
 
-- [ ] **Task 5: Commit** (AC: all)
-  - [ ] 5.1 Stage only: `scripts/gen-android-theme.mjs` (new), `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt`,
+- [x] **Task 5: Commit** (AC: all)
+  - [x] 5.1 Stage only: `scripts/gen-android-theme.mjs` (new), `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt`,
     `scripts/android-smoke.sh`, `scripts/android-build.sh`. Never `git add .`.
-  - [ ] 5.2 Commit message: `build(android): 9-10 token codegen — generate KlarvoTheme.kt from canon klarvo.css + drift gate`
+  - [x] 5.2 Commit message: `build(android): 9-10 token codegen — generate KlarvoTheme.kt from canon klarvo.css + drift gate`
+
+### Review Findings (code review 2026-06-16 — Opus, 3-layer)
+
+Acceptance Auditor: all ACs satisfied (byte-identity confirmed, gate non-vacuous on a token edit, 26 canon color tokens → 26 constants, ShadowColor fenced out). Blind + Edge Hunter raised gate-robustness items; triaged:
+
+- [x] [Review][Patch] Drift gate is vacuous-green when GENERATED fences are missing/renamed (`'' === ''` → exit 0 on a corrupted file) [scripts/gen-android-theme.mjs:~239-243] — fail loudly if either the committed or freshly-generated GENERATED region is empty/absent.
+- [x] [Review][Patch] No completeness guard — a silently dropped consumed identifier (`:root` truncation / parse change) is caught only by kotlinc, not the gate [scripts/gen-android-theme.mjs:~139-157] — assert the AC2 consumed-identifier set is all emitted; throw on any missing.
+- [x] [Review][Defer] Parser throws on modern CSS color syntax (`rgb()`, space-separated, %, 3-/8-digit hex) [scripts/gen-android-theme.mjs:hexToArgb/rgbaToArgb] — deferred; fail-loud, not present in current canon.
+- [x] [Review][Defer] rgba alpha >1 → malformed literal [scripts/gen-android-theme.mjs:rgbaToArgb] — deferred; all canon alphas ≤1.
+- [x] [Review][Defer] `node`-absence on a build host gives an opaque failure before the sync [scripts/android-*.sh] — deferred; node is available in the build env (render-surface.mjs).
+- [x] [Review][Defer] `android-smoke.sh` mis-reports the JVM test count ("24" vs 60) [scripts/android-smoke.sh] — deferred; pre-existing harness quirk, unrelated to 9-10.
+
+Dismissed as noise (4): `Info==TealHi` (canon values genuinely equal); PascalCase name-collision (none today); box-drawing message alignment (cosmetic); echo-vs-step style (each gate matches its own host script).
 
 ## Dev Notes
 
@@ -285,22 +298,36 @@ No other files.
 
 ### Agent Model Used
 
-_(to be filled by dev-story)_
+claude-sonnet-4-6
 
 ### Debug Log References
 
-_(to be filled by dev-story)_
+- Task 2.3 finding: `ListeningPanelView.kt` line 501 contains `0x4DEE6F63.toInt()` (ad-hoc ~30% alpha danger stroke). This is NOT a canon `--k-*` token (no `--k-danger-stroke` exists in klarvo.css). It is a platform-derived ad-hoc value, comparable to `ShadowColor`. Out of scope for this story (story explicitly excludes touching ListeningPanelView.kt). Documented for future cleanup.
+- Inversion proof (Task 3.3): Tampered `Teal` from `0xFF29C7AC` → `0xFF29C7AD`; `--check` exited 1 with full drift message and diff hint. Reverted; `--check` exited 0. Gate is non-vacuous.
+- android-smoke.sh reported "24 Tests" (reads only one XML file via `-print -quit`); full count verified: `testUniversalDebugUnitTest` = 60/60 green.
 
 ### Completion Notes List
 
-_(to be filled by dev-story)_
+- Generator `scripts/gen-android-theme.mjs` built: parses canon `:root` `--k-*` color tokens (hex + rgba), converts to ARGB Kotlin `Int` literals, emits deterministic KlarvoTheme.kt with GENERATED fences + hand-maintained region.
+- `KlarvoTheme.kt` regenerated: 26 color tokens (was 21). All 21 pre-existing consumer-referenced identifiers byte-identical. 6 new tokens added: BgDeep, Hairline, Faint, TealLine, Success, Info (AC5).
+- `ShadowColor` preserved in hand-maintained region (AC6).
+- Drift gate wired into both `android-smoke.sh` (before sync step) and `android-build.sh` (before `[sync] Copying Kotlin files`).
+- Inversion-proof done at writing time (AC4 non-vacuous gate confirmed).
+- `android-smoke.sh` full run: drift gate GREEN, 60/60 JVM tests green, Kotlin compile clean, DEBUG APK built (104 MB), installed on device.
+- Byte-identity: `git diff` shows zero value changes to any existing token — only additions and structural changes (header, fences).
 
 ### File List
 
-_(to be filled by dev-story)_
+- `scripts/gen-android-theme.mjs` (new)
+- `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` (regenerated)
+- `scripts/android-smoke.sh` (drift gate added before sync step)
+- `scripts/android-build.sh` (drift gate added before sync step)
 
 ## Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-16 | Story created (post-ADR-0019 token-codegen, sequenced before the 9.5 rebuild). | bmad-create-story (Opus) |
+| 2026-06-16 | Implemented: generator + KlarvoTheme.kt regenerated + drift gate wired into both build scripts. All ACs met. Commit 9ee9761. | dev-story (claude-sonnet-4-6) |
+| 2026-06-16 | Fix pass (2 [Review][Patch] findings): (1) Drift gate vacuous-green on missing fences — replaced `(…||[''])[0]` with explicit fail-paths for both committed and generated side. (2) Completeness guard added — `CONSUMED_IDENTIFIERS` set asserted in both write and --check modes; throw if any AC2 identifier absent. Both inversions verified RED. All gates green. | dev-story (claude-sonnet-4-6) |
+| 2026-06-16 | Code review (Opus, 3-layer) cleared: all ACs satisfied, gate non-vacuous, 26 canon colors → 26 constants, byte-identity confirmed. 2 patch findings fixed, 4 deferred (deferred-work.md), 4 dismissed. No GATE-4 smoke (build-tooling, byte-identical values → no pixels; human visual gate downgraded per DoD). story-conductor close-out → done. | story-conductor (Opus) |

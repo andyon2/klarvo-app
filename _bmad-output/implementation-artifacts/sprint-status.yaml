@@ -134,5 +134,5 @@ development_status:
   9-7-short-press-gesture-modes-mirror-desktop: backlog
   9-8-long-press-popover-menu: backlog
   9-9-in-app-recording-state-re-skin: backlog
-  9-10-token-codegen-klarvo-css-to-klarvotheme: ready-for-dev
+  9-10-token-codegen-klarvo-css-to-klarvotheme: done
   epic-9-retrospective: optional

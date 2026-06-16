@@ -47,6 +47,15 @@ trap 'fail "Unerwarteter Fehler (Zeile $LINENO) -- siehe Ausgabe oben."' ERR
 GEN_ANDROID="src-tauri/gen/android"
 
 # ---------------------------------------------------------------------------
+# 0b. KlarvoTheme.kt Drift-Gate (vor dem Sync — Story 9-10, ADR-0019)
+# ---------------------------------------------------------------------------
+echo ""
+echo "[drift-gate] Checking KlarvoTheme.kt against canon klarvo.css..."
+node scripts/gen-android-theme.mjs --check \
+    || fail "KlarvoTheme.kt ist von der Canon-CSS abgedriftet — node scripts/gen-android-theme.mjs ausführen"
+echo "[drift-gate] OK — KlarvoTheme.kt is in sync with canon klarvo.css"
+
+# ---------------------------------------------------------------------------
 # 1. Kotlin sources
 # ---------------------------------------------------------------------------
 SRC="android/kotlin-src/com/klarvo/voice"
