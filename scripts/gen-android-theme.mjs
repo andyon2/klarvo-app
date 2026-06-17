@@ -166,7 +166,7 @@ const CONSUMED_IDENTIFIERS = [
   'Bg', 'Surface', 'Surface2', 'Elevated', 'Border', 'Border2',
   'TextC', 'Muted', 'Dim', 'Teal', 'TealHi', 'TealLo', 'OnTeal',
   'Amber', 'AmberHi', 'Danger', 'TealBg', 'AmberBg', 'AmberLine',
-  'DangerBg',
+  'DangerBg', 'Success', 'SuccessHi',
 ];
 
 function assertCompleteness(entries) {

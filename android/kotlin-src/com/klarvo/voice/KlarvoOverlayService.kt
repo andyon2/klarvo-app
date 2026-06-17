@@ -254,6 +254,13 @@ class KlarvoOverlayService : Service() {
     private var debugTranscript: String = ""
 
     /**
+     * Saved X position of the bubble window before expanding to the recording cluster.
+     * Restored when leaving RECORDING state (TRANSCRIBING / DONE / IDLE).
+     * Null when not currently in cluster mode.
+     */
+    private var preclusterBubbleX: Int? = null
+
+    /**
      * Debug-only broadcast receiver — drives the bubble through all four states on demand
      * without live audio or network. Only registered when BuildConfig.DEBUG == true.
      * Fast path for an already-running service process (avoids service-start overhead).
@@ -952,15 +959,29 @@ class KlarvoOverlayService : Service() {
      * the center stays in place.
      */
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
-        // Story 9.5 fix: the bubble is now ALWAYS the small touch-target squircle — the listening
-        // panel owns the recording/transcribing UI. The legacy HOLD-tap "expand to bar" window is
-        // retired: it was the second overlay that, on real devices, collided with the panel (a stray
-        // recording pill floating over foreign content). Every state keeps the exact touch-target
-        // window; cancel/confirm affordances live on the panel, not on an expanded bubble bar.
+        val dp            = resources.displayMetrics.density
         val visualDp      = bubbleView.getBubbleSizeDp()
-        val touchTargetPx = bubbleWindowPx(visualDp)   // visual + shadow padding (≥48dp)
-        bubbleParams.width  = touchTargetPx
-        bubbleParams.height = touchTargetPx
+        val touchTargetPx = bubbleWindowPx(visualDp)
+
+        if (newState == RecordingState.RECORDING) {
+            // Cluster window: visual W/H + shadow pad on each side (ADR-0019 §4′ Modell B).
+            if (preclusterBubbleX == null) preclusterBubbleX = bubbleParams.x
+            val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+            val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+            // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays fixed.
+            bubbleParams.x      = bubbleParams.x + touchTargetPx - clusterW
+            bubbleParams.width  = clusterW
+            bubbleParams.height = clusterH
+        } else {
+            // Restore single-bubble window.
+            val savedX = preclusterBubbleX
+            if (savedX != null && previousState == RecordingState.RECORDING) {
+                bubbleParams.x = savedX
+                preclusterBubbleX = null
+            }
+            bubbleParams.width  = touchTargetPx
+            bubbleParams.height = touchTargetPx
+        }
         updateBubbleLayout()
     }
 
@@ -1103,14 +1124,21 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                // ADR-0019 / Story 9.5: bubble tap = Senden (stopAndProcessRecording) for ALL modes.
-                // The recording bar is retired; cancel = red square on panel (handled in panel touch listener).
-                // pushToTalkActive: finger still held → ignore taps, release handles it.
+                // Modell B (ADR-0019 §4′): the cluster has two explicit zones.
+                // pushToTalkActive: finger still held → release handles PTT confirm.
                 if (pushToTalkActive) return
-                if (tapMode == RecordingMode.AUTO) {
-                    autoLoopActive = false
+                when {
+                    bubbleView.isTouchInConfirmZone(touchX) -> {
+                        // ➤ Send button
+                        if (tapMode == RecordingMode.AUTO) autoLoopActive = false
+                        stopAndProcessRecording()
+                    }
+                    bubbleView.isTouchInCancelZone(touchX) -> {
+                        // ✗ Cancel button
+                        cancelRecording()
+                    }
+                    // Waveform dead zone or cluster backdrop: no-op (AC2).
                 }
-                stopAndProcessRecording()
             }
             RecordingState.TRANSCRIBING -> {
                 // Stop auto-loop so the cycle doesn't repeat after transcribing finishes.
@@ -1695,34 +1723,16 @@ class KlarvoOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             gravity = android.view.Gravity.BOTTOM
         }
-        // Wire the panel red-square Abbrechen button (ADR-0019 / Story 9.5 re-fashion).
-        // F1: return true on ACTION_DOWN when inside the stop button so the gesture stream is
-        // captured and the subsequent ACTION_UP arrives. Without consuming ACTION_DOWN the view
-        // receives no ACTION_UP (Android touch-cancel rule).
-        // Semantics: red square = Abbrechen (cancelRecording); bubble tap = Senden (handled in handleTap).
-        panel.setOnTouchListener { _, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    // Capture the gesture only when the down lands on the (Abbrechen) stop button.
-                    panel.isTouchOnStopButton(event.x, event.y)
-                }
-                android.view.MotionEvent.ACTION_UP -> {
-                    if (panel.isTouchOnStopButton(event.x, event.y)) {
-                        // Red square = Abbrechen: discard audio, no paste (ADR-0019).
-                        handler.post { cancelRecording() }
-                        true
-                    } else {
-                        false
-                    }
-                }
-                else -> false
-            }
-        }
+        // Modell B (ADR-0019 §4′): panel is PASSIVE — FLAG_NOT_TOUCHABLE passes all touches
+        // through to the layers below. Cancel now lives in the cluster (bubble window).
+        // No touch listener needed.
         try {
             windowManager.addView(panel, params)
             panelView    = panel

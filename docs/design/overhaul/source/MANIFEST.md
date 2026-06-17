@@ -4,7 +4,7 @@
 Downstream (BMAD spec/story writing, epic-conductor fidelity GATE-4) anchors here — never on a prose
 transcription. The truth is the HTML render + the CSS values. Prose (incl. the README) is orientation only.
 
-- **sourceFingerprint:** `efe726c6afa3cc92aff981a2e476e14c` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
+- **sourceFingerprint:** `717d5d3879090a58db4d732f5c35208f` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
 - **Promoted from:** `design-handoff/design_handoff_klarvo_overhaul/` (gitignored raw inbox)
 - **Promoted on:** 2026-06-15
 - **mode:** force (first ingest — no prior canon)
@@ -20,6 +20,7 @@ clobber these — a re-handoff has to include them.
 | (orig) | `a3a5baff3ae56aa62270aa5a736972cb` | first external ingest | — |
 | 2026-06-16 | `2bb990323f4fa224d6062b2c24965e37` | Added **`.ab-bubble.recording`** state (teal squircle + amber pulse-ring + send-glyph = "tap to send"); relabeled the listening-panel red square **Stop → Abbrechen**; tightened the `danger` token role to "Abbrechen / Löschen / Fehler (nie Senden)"; refined the bubble state-sequence prose. | [ADR-0019](../../../adr/0019-cross-platform-design-ssot.md) — codifies danger=Abbrechen + Android send = tap-the-bubble. |
 | 2026-06-17 | `b95f86f9b480b92c3375093bc2580d9f` | **Modell B** (Andi-approved). recording ist kein Einzel-Bubble mehr: `.ab-bubble.recording` (+ `.send`, `@keyframes abbubblepulse`) **entfernt**, ersetzt durch Steuer-**`.ab-cluster`** (`.ab-cbtn.send` teal ➤ · `.hwave` amber, live · `.ab-cbtn.cancel` rot ✗) am Bubble-Platz = EIN Interaktions-Ort. `.ab-panel.rec` jetzt **passiv** (livedot/hwave/Stop entfernt → nur K·"Aufnahme"·Zeit·Text). `.ab-bubble.done` von teal → **Erfolgs-Grün + Haken**. Idle unverändert. | [ADR-0019 Amendment 2026-06-17](../../../adr/0019-cross-platform-design-ssot.md#amendment-2026-06-17--modell-b-android-aufnahme-cluster) — Cluster am Bubble-Platz, rot verlässt das Panel, Senden = ➤ (nicht Haken). |
+| 2026-06-18 | `717d5d3879090a58db4d732f5c35208f` | added `--k-success-hi` token (9-5 Modell B done-green); `KlarvoTheme.kt` regenerated (`SuccessHi = 0xFF62E0A4`). | [Story 9-5 Task 1](../../../_bmad-output/implementation-artifacts/9-5-bubble-state-sequence-listening-panel-waveform.md) — AC9. |
 | 2026-06-17 | `efe726c6afa3cc92aff981a2e476e14c` | **Modell B · transcribing-Variante B** (Andi-approved via `docs/design/overhaul/mockup-9-5-transcribing-done.html`). Neuer Surface **`.ab-bubble.proc`** (teal Squircle + `.spinner`) im transcribing-Artboard am Dock-Platz `bottom:228px`: nach ➤ Senden kollabiert der Cluster zu EINER teal Verarbeitungs-Bubble (Dock-Platz bleibt besetzt = Kontinuität). Panel-Spinner bleibt zusätzlich. done-Grün (G1) war bereits Canon — unverändert. | [ADR-0019 Amendment 2026-06-17 §4′-Addendum](../../../adr/0019-cross-platform-design-ssot.md#amendment-2026-06-17--modell-b-android-aufnahme-cluster) — transcribing = Dock-Proc-Bubble (Variante B). |
 
 ## Truth

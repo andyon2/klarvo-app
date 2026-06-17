@@ -346,8 +346,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         fun applyAnimatorsForState(state: State) {
             when (state) {
                 State.RECORDING -> {
-                    if (!barAnimator.isRunning)    barAnimator.start()
-                    if (!pulseAnimator.isRunning)  pulseAnimator.start()
+                    // Panel is passive (Modell B): no waveform, no live-dot, no moving elements here.
+                    if (barAnimator.isRunning)      barAnimator.pause()
+                    if (pulseAnimator.isRunning)    pulseAnimator.pause()
                     if (rotationAnimator.isRunning) rotationAnimator.pause()
                 }
                 State.TRANSCRIBING -> {
@@ -410,74 +411,33 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
             when (panelState) {
                 State.RECORDING -> {
-                    // ── Amber live-dot: 7dp circle ───────────────────────────────
-                    val dotR = 3.5f * dp  // 7dp diameter → 3.5dp radius
-                    val dotCx = curX + dotR
-                    val dotCy = h / 2f
+                    // Panel passive (Modell B): K-badge (already drawn above) + "Aufnahme" label + timer.
+                    // Waveform, live-dot, pulse ring, and cancel button are in the cluster (bubble window).
+                    stopBtnRect.setEmpty()
 
-                    // Pulse ring (behind dot)
-                    val pulseScale = (pulseAnimator.animatedValue as? Float) ?: 1f
-                    val pulseR = dotR * 2f * pulseScale
-                    strokePaint.color       = KlarvoTheme.Amber
-                    strokePaint.strokeWidth = dp
-                    strokePaint.alpha       = (255 * (1f - (pulseScale - 0.5f) / 0.7f).coerceIn(0f, 1f)).toInt()
-                    canvas.drawCircle(dotCx, dotCy, pulseR, strokePaint)
-                    strokePaint.alpha = 255
-
-                    // Dot fill
-                    fillPaint.color = KlarvoTheme.Amber
-                    canvas.drawCircle(dotCx, dotCy, dotR, fillPaint)
-
-                    curX = dotCx + dotR + 8 * dp
-
-                    // ── 5-bar amber waveform ──────────────────────────────────────
-                    // Determine zone between curX and timer start (approximation: right=stopBtn left - timer - gaps)
-                    val timerSp   = 10.5f
-                    val timerPx   = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, timerSp, resources.displayMetrics)
-                    // Abbrechen (red square) = 26dp; no neutral ✗ button (removed Story 9.5 re-fashion, ADR-0019).
-                    val stopBtnSz = 26 * dp
-                    val timerStr  = formatElapsedMs(recordingElapsedMs)
-                    textPaint.textSize = timerPx
-                    textPaint.typeface = Typeface.MONOSPACE
-                    val timerW = textPaint.measureText(timerStr)
-                    // Right side: [8dp][timerW][8dp][stopBtnSz]
-                    val rightReserved = 8 * dp + timerW + 8 * dp + stopBtnSz
-                    val waveRight = width.toFloat() - rightReserved
-                    val waveLeft  = curX
-
-                    drawWaveformBars(canvas, waveLeft, waveRight, h / 2f, dp)
-
-                    curX = waveRight + 8 * dp
-
-                    // ── Timer ─────────────────────────────────────────────────────
-                    textPaint.textSize  = timerPx
+                    // "Aufnahme" label
+                    val labelSp      = 11f
+                    val labelPx      = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, labelSp, resources.displayMetrics)
+                    textPaint.textSize  = labelPx
                     textPaint.typeface  = Typeface.MONOSPACE
                     textPaint.color     = KlarvoTheme.Dim
                     textPaint.textAlign = Paint.Align.LEFT
+                    val labelMetrics = textPaint.fontMetrics
+                    val labelY = h / 2f - (labelMetrics.ascent + labelMetrics.descent) / 2f
+                    canvas.drawText("Aufnahme", curX, labelY, textPaint)
+
+                    // Timer (right-aligned, Muted)
+                    val timerSp  = 10.5f
+                    val timerPx  = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, timerSp, resources.displayMetrics)
+                    val timerStr = formatElapsedMs(recordingElapsedMs)
+                    textPaint.textSize  = timerPx
+                    textPaint.typeface  = Typeface.MONOSPACE
+                    textPaint.color     = KlarvoTheme.Muted
+                    textPaint.textAlign = Paint.Align.RIGHT
                     val timerMetrics = textPaint.fontMetrics
                     val timerY = h / 2f - (timerMetrics.ascent + timerMetrics.descent) / 2f
-                    canvas.drawText(timerStr, curX, timerY, textPaint)
-                    curX += timerW + 8 * dp
-
-                    // ── Abbrechen button: 26dp × 26dp, rounded 8dp, red (DangerBg fill + Danger sq) ──
-                    // ADR-0019: red = Abbrechen only. This is the sole cancel affordance (no ✗ button).
-                    // contentDescription (accessibility): "Abbrechen"
-                    val stopCy  = h / 2f
-                    val stopTop = stopCy - stopBtnSz / 2f
-                    stopBtnRect.set(curX, stopTop, curX + stopBtnSz, stopTop + stopBtnSz)
-                    fillPaint.color = KlarvoTheme.DangerBg
-                    canvas.drawRoundRect(stopBtnRect, 8 * dp, 8 * dp, fillPaint)
-                    strokePaint.color       = 0x4DEE6F63.toInt()  // ~30% alpha danger stroke
-                    strokePaint.strokeWidth = dp
-                    canvas.drawRoundRect(stopBtnRect, 8 * dp, 8 * dp, strokePaint)
-
-                    // Inner stop square: 9dp × 9dp, cornerRadius 2dp, Danger fill
-                    val sqSz   = 9 * dp
-                    val sqLeft = curX + (stopBtnSz - sqSz) / 2f
-                    val sqTop2 = stopTop + (stopBtnSz - sqSz) / 2f
-                    val sqRect = RectF(sqLeft, sqTop2, sqLeft + sqSz, sqTop2 + sqSz)
-                    fillPaint.color = KlarvoTheme.Danger
-                    canvas.drawRoundRect(sqRect, 2 * dp, 2 * dp, fillPaint)
+                    canvas.drawText(timerStr, width.toFloat(), timerY, textPaint)
+                    textPaint.textAlign = Paint.Align.LEFT  // reset
                 }
 
                 State.TRANSCRIBING -> {

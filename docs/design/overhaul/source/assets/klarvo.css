@@ -40,6 +40,7 @@
   --k-danger:    #EE6F63;   /* delete / error (was #FF7369)                   */
   --k-danger-bg: rgba(238,111,99,0.12);
   --k-success:   #4FC58A;   /* (was #4ADE80 — slightly muted)                 */
+  --k-success-hi:#62E0A4;  /* done bubble gradient hi stop (9-5 Modell B)    */
   --k-info:      #57DDC7;
 
   /* ---- Radii ------------------------------------------------------------ */

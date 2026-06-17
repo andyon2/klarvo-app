@@ -1,6 +1,6 @@
 # Story 9.5: Bubble State Sequence + Listening Panel + Waveform
 
-Status: ready-for-dev
+Status: review
 
 > **RE-FASHIONED (2nd time) 2026-06-17 against [ADR-0019](../../docs/adr/0019-cross-platform-design-ssot.md)
 > Amendment §4′ + §4′-Addendum (Modell B).** The previously-built approach (recording-state bubble with
@@ -192,55 +192,55 @@ drives the window-structure assertion (AC10) for compile/regression only — **G
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Token — add success-hi + regen** (AC: 9)
-  - [ ] 1.1 Add `--k-success-hi: #62E0A4` to `docs/design/overhaul/source/assets/klarvo.css` (next to `--k-success`).
-  - [ ] 1.2 Re-run the 9-10 token codegen → `KlarvoTheme.kt` gains `SuccessHi`. Verify the KlarvoTheme drift-gate is green.
-  - [ ] 1.3 Re-stamp `docs/design/overhaul/source/MANIFEST.md`: new `sourceFingerprint` (`cat HTML CSS | md5sum`) + a provenance row "added `--k-success-hi` token (9-5 Modell B done-green)".
+- [x] **Task 1: Token — add success-hi + regen** (AC: 9)
+  - [x] 1.1 Add `--k-success-hi: #62E0A4` to `docs/design/overhaul/source/assets/klarvo.css` (next to `--k-success`).
+  - [x] 1.2 Re-run the 9-10 token codegen → `KlarvoTheme.kt` gains `SuccessHi`. Verify the KlarvoTheme drift-gate is green.
+  - [x] 1.3 Re-stamp `docs/design/overhaul/source/MANIFEST.md`: new `sourceFingerprint` (`cat HTML CSS | md5sum`) + a provenance row "added `--k-success-hi` token (9-5 Modell B done-green)".
 
-- [ ] **Task 2: Recording cluster in `FloatingBubbleView` + window resize** (AC: 1, 2, 3, 4, 8)
-  - [ ] 2.1 Replace the recording-bubble rendering (teal squircle + amber **pulse-ring** + send-glyph) with the
+- [x] **Task 2: Recording cluster in `FloatingBubbleView` + window resize** (AC: 1, 2, 3, 4, 8)
+  - [x] 2.1 Replace the recording-bubble rendering (teal squircle + amber **pulse-ring** + send-glyph) with the
     **cluster**: backdrop rounded-rect (r18, `0x8C141618`, static amber ring 1.5dp `AmberLine`), then
     `[➤ send]`, `[waveform]`, `[✗ cancel]` (geometry per AC1). Remove `drawAmberPulseRings()`/`amberPulseAnimator`.
-  - [ ] 2.2 Grow the bubble overlay window to cluster size on RECORDING (WindowManager LayoutParams width/x),
+  - [x] 2.2 Grow the bubble overlay window to cluster size on RECORDING (WindowManager LayoutParams width/x),
     shrink back to 40dp on TRANSCRIBING/DONE/IDLE (AC8). Keep the window-alive invariant (no retired bar window).
-  - [ ] 2.3 Draw the ➤ send glyph (paper-plane, OnTeal) and ✗ cancel glyph (Danger) per AC1; draw the cluster
+  - [x] 2.3 Draw the ➤ send glyph (paper-plane, OnTeal) and ✗ cancel glyph (Danger) per AC1; draw the cluster
     backdrop + amber ring.
-  - [ ] 2.4 Draw the amber waveform **between** the buttons (reuse `drawWaveformBarsInZone()`, RMS-driven), 18dp
+  - [x] 2.4 Draw the amber waveform **between** the buttons (reuse `drawWaveformBarsInZone()`, RMS-driven), 18dp
     zone; ensure it is the only animation in RECORDING.
-  - [ ] 2.5 Hit-test **two zones** (send / cancel) with ≥48dp targets; waveform zone non-interactive. Fix the
+  - [x] 2.5 Hit-test **two zones** (send / cancel) with ≥48dp targets; waveform zone non-interactive. Fix the
     alpha-reset path so the cluster (not idle) shows while recording.
 
-- [ ] **Task 3: Confirm/cancel wiring in `KlarvoOverlayService`** (AC: 2, 3)
-  - [ ] 3.1 Wire the cluster **➤ send** zone → `stopAndProcessRecording()`. **Remove** the standing
+- [x] **Task 3: Confirm/cancel wiring in `KlarvoOverlayService`** (AC: 2, 3)
+  - [x] 3.1 Wire the cluster **➤ send** zone → `stopAndProcessRecording()`. **Remove** the standing
     "tap-the-bubble = send" wiring (bubble-background tap no longer sends).
-  - [ ] 3.2 Wire the cluster **✗ cancel** zone → `cancelRecording()`.
-  - [ ] 3.3 Confirm composition with gesture modes (TOGGLE tap / HOLD release / AUTOSTOP / AUTO) — they still
+  - [x] 3.2 Wire the cluster **✗ cancel** zone → `cancelRecording()`.
+  - [x] 3.3 Confirm composition with gesture modes (TOGGLE tap / HOLD release / AUTOSTOP / AUTO) — they still
     start/stop; whatever stops = send; cluster ✗ = the only explicit cancel. (Per-mode nuance is 9-7 — do not expand.)
 
-- [ ] **Task 4: Panel → passive in `ListeningPanelView`** (AC: 5, 6)
-  - [ ] 4.1 Remove from the RECORDING panel: the 5-bar waveform, the amber live-dot + pulse, the red square
+- [x] **Task 4: Panel → passive in `ListeningPanelView`** (AC: 5, 6)
+  - [x] 4.1 Remove from the RECORDING panel: the 5-bar waveform, the amber live-dot + pulse, the red square
     (`stopBtnRect`/`isTouchOnStopButton` and its draw). Keep grip, K-badge, "Aufnahme", timer, transcript +
     amber caret, footer.
-  - [ ] 4.2 TRANSCRIBING panel unchanged in spirit (teal spinner 15dp + "Bereinigt…", dimmed text, Border2 top
+  - [x] 4.2 TRANSCRIBING panel unchanged in spirit (teal spinner 15dp + "Bereinigt…", dimmed text, Border2 top
     line) — verify it still matches the canon after the recording-panel edits.
 
-- [ ] **Task 5: Transcribing proc bubble + done-green + return-to-idle in `FloatingBubbleView`** (AC: 6, 7)
-  - [ ] 5.1 TRANSCRIBING: render the single **teal proc bubble** (`.ab-bubble.proc`: teal squircle + 20dp OnTeal
+- [x] **Task 5: Transcribing proc bubble + done-green + return-to-idle in `FloatingBubbleView`** (AC: 6, 7)
+  - [x] 5.1 TRANSCRIBING: render the single **teal proc bubble** (`.ab-bubble.proc`: teal squircle + 20dp OnTeal
     spinner, `spin` 900ms) at the dock spot; window shrinks to 40dp.
-  - [ ] 5.2 DONE: render `.ab-bubble.done` (gradient `SuccessHi`→`Success`, dark check polyline 20dp).
-  - [ ] 5.3 After the done flash, **restore the idle "K"** bubble (return-to-idle). Stop/clean up all
+  - [x] 5.2 DONE: render `.ab-bubble.done` (gradient `SuccessHi`→`Success`, dark check polyline 20dp).
+  - [x] 5.3 After the done flash, **restore the idle "K"** bubble (return-to-idle). Stop/clean up all
     recording/transcribing animators.
 
-- [ ] **Task 6: Locale / copy** (AC: 5, 6) — confirm "Aufnahme", "Bereinigt…", footers ("Tastatur pausiert ·
+- [x] **Task 6: Locale / copy** (AC: 5, 6) — confirm "Aufnahme", "Bereinigt…", footers ("Tastatur pausiert ·
   kehrt beim Einfügen zurück" / "Gleich fertig · Tastatur kommt gleich zurück") match canon German copy.
 
-- [ ] **Task 7: Compile + verify** (AC: all)
-  - [ ] 7.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile clean, DEBUG APK built); JVM tests pass; KlarvoTheme drift-gate green.
-  - [ ] 7.2 Emulator window-structure assertion (AC10/AC8): idle/recording/transcribing/done/idle window counts
+- [x] **Task 7: Compile + verify** (AC: all)
+  - [x] 7.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile clean, DEBUG APK built); JVM tests pass; KlarvoTheme drift-gate green.
+  - [x] 7.2 Emulator window-structure assertion (AC10/AC8): idle/recording/transcribing/done/idle window counts
     + cluster window geometry; no double-window. (Machine signal — NOT the visual gate.) Capture evidence under `gate4-evidence/9-5/`.
   - [ ] 7.3 **GATE 4 (Andi, real device):** end-to-end across modes per DoD.
 
-- [ ] **Task 8: Commit** (AC: all) — stage only touched files (`klarvo.css`, `KlarvoTheme.kt`, `FloatingBubbleView.kt`,
+- [x] **Task 8: Commit** (AC: all) — stage only touched files (`klarvo.css`, `KlarvoTheme.kt`, `FloatingBubbleView.kt`,
   `KlarvoOverlayService.kt`, `ListeningPanelView.kt`, `MANIFEST.md`, this story). Never `git add .`.
 
 ## Dev Notes
@@ -301,8 +301,43 @@ No Rust/Tauri/Desktop files. Desktop already has red=cancel (the parity target);
 - [Source: docs/postmortem-2026-06-15-epic-conductor.md] — double-window defect + traps (PTT touch-stream, alpha reset, MIUI harness dead).
 - [Source: _bmad-output/project-context.md] — minSdk 24, no Compose, never `git add .`, Android changes require on-device smoke.
 
+## Dev Agent Record (Modell B build, 2026-06-18) — claude-opus-4-8
+
+**Task 1 — Token:** Added `--k-success-hi:#62E0A4` to `klarvo.css` after `--k-success`. Re-ran `gen-android-theme.mjs`; `KlarvoTheme.kt` regenerated (27 tokens, `SuccessHi = 0xFF62E0A4`). Drift-gate `--check` PASSED. `MANIFEST.md` re-stamped (fingerprint `717d5d3879090a58db4d732f5c35208f`, provenance row added).
+
+**Task 2 — FloatingBubbleView cluster:** Full rewrite of RECORDING rendering. Cluster constants: `CLUSTER_VISUAL_W_DP=150`, `CLUSTER_VISUAL_H_DP=52`, `CLUSTER_SHADOW_PAD_DP=8`, btn=40dp r12, gap=9dp, pad=6dp, backdrop r18 `0x8C141618`. Static amber ring `1.5dp AmberLine`. Two canvas sub-paths for send-glyph (M22,2→11,13 diagonal + M22,2→15,22→11,13→2,9→close body polygon). Touch zones tracked as `clusterSendZoneEnd`/`clusterCancelZoneStart` (set during `onDraw`). `suppressedForPanel` made no-op; `barAnimator` only in RECORDING (no scale pop, no pulse ring). Removed unused `appIconDrawable`/`ContextCompat`/`Drawable` imports.
+
+**Task 3 — KlarvoOverlayService wiring:** Added `preclusterBubbleX: Int?` to save/restore x position. `adjustLayoutForState(RECORDING)` expands to `clusterW×clusterH`, right-anchors at saved dock spot (`x = savedX + touchTargetPx - clusterW`); other states restore saved x + idle square. `handleTap(RECORDING)` routes `isTouchInConfirmZone` → `stopAndProcessRecording()`, `isTouchInCancelZone` → `cancelRecording()`, backdrop = no-op (AC2). `showListeningPanel()` adds `FLAG_NOT_TOUCHABLE` + removed touch listener (panel passive).
+
+**Task 4 — ListeningPanelView passive:** `applyAnimatorsForState(RECORDING)` pauses all animators. `TopRowView.onDraw(RECORDING)` stripped to K-badge + "Aufnahme" label + timer (no waveform, no livedot, no red square). TRANSCRIBING path unchanged. Locale strings confirmed: "Aufnahme" / "Bereinigt…" / "Tastatur pausiert · kehrt beim Einfügen zurück" / "Gleich fertig · Tastatur kommt gleich zurück".
+
+**Task 5 — Transcribing proc bubble + done-green:** TRANSCRIBING draws teal squircle + rotating spinner (`rotationAnimator`). DONE draws `LinearGradient(SuccessHi→Success)` + dark check polyline (`drawCheckMark`, 3dp stroke, `OnTeal`). `doneFlashRunnable` restores idle state (K-badge, teal gradient, idle animators reset).
+
+**Task 7 — Smoke + structural gate:**
+- `scripts/android-smoke.sh` → `SMOKE BUILD OK v0.5.0`, 24/24 JVM tests PASSED, APK installed on real device `100.112.41.70:5555` (from prior session; HyperOS harness dead after force-stop — known issue).
+- Emulator structural gate (`emulator-5554`, `klarvo-emu` AVD, density ~2.625):
+  - IDLE: `(897,1200)(162×162)` — 1 bubble ✓
+  - RECORDING: `(0,0)(fillxwrap) gr=BOTTOM alpha=0.8` (panel) + `(351,1200)(435×178)` (cluster ≈ 166×68dp) ✓
+  - TRANSCRIBING: panel stays + `(897,1200)(162×162)` proc bubble ✓ (no collapse between states)
+  - DONE: panel collapsed, `(897,1200)(162×162)` done bubble ✓
+  - Post-flash (back to IDLE): `(897,1200)(162×162)` idle ✓
+  - Evidence: `gate4-evidence/9-5/window-structure.txt`
+- GATE-4 visual (Andi real device): PENDING (see Task 7.3 — emulator structural GREEN is the machine gate; real-device aesthetic + interaction = Andi's gate)
+
+## File List
+
+- `docs/design/overhaul/source/assets/klarvo.css` (added `--k-success-hi` token)
+- `docs/design/overhaul/source/MANIFEST.md` (fingerprint `717d5d38…`, provenance row)
+- `scripts/gen-android-theme.mjs` (added `'SuccessHi'` to `CONSUMED_IDENTIFIERS`)
+- `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` (regenerated — 27 tokens, `SuccessHi`)
+- `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` (Modell B full rewrite)
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (cluster window resize + touch routing)
+- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` (panel passive in RECORDING)
+- `gate4-evidence/9-5/window-structure.txt` (emulator structural evidence)
+
 ## Change Log
 
+- 2026-06-18 — **Modell B built (Tasks 1–8 complete, GATE-4 machine side GRÜN).** Cluster (➤ teal / amber waveform / ✗ red) at bubble spot; panel passive; transcribing = proc bubble + panel spinner; done = success-green → idle. Emulator structural window assertion GRÜN (all 5 states verified). Pending: GATE-4 real-device visual smoke (Task 7.3, Andi). | Claude (Opus 4.8)
 - 2026-06-17 — **Story RE-FASHIONED (2nd) to Modell B (§4′ + transcribing Variante B).** Status `done`→`ready-for-dev`.
   ACs/Tasks rewritten: recording = control cluster (➤ teal send · amber waveform · ✗ red cancel) at the bubble
   spot; panel passive; transcribing = teal proc bubble (Variante B, Andi-approved); done = success-green → back

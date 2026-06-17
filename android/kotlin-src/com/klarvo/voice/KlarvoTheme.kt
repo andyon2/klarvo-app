@@ -50,6 +50,7 @@ object KlarvoTheme {
     const val Danger        = 0xFFEE6F63.toInt()
     const val DangerBg      = 0x1FEE6F63.toInt()
     const val Success       = 0xFF4FC58A.toInt()
+    const val SuccessHi     = 0xFF62E0A4.toInt()
     const val Info          = 0xFF57DDC7.toInt()
     // ===== END GENERATED =====
 
