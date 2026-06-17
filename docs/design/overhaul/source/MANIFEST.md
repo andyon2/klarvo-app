@@ -4,7 +4,7 @@
 Downstream (BMAD spec/story writing, epic-conductor fidelity GATE-4) anchors here — never on a prose
 transcription. The truth is the HTML render + the CSS values. Prose (incl. the README) is orientation only.
 
-- **sourceFingerprint:** `2bb990323f4fa224d6062b2c24965e37` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
+- **sourceFingerprint:** `b95f86f9b480b92c3375093bc2580d9f` (md5 over `Klarvo Design System.html` + `assets/klarvo.css`)
 - **Promoted from:** `design-handoff/design_handoff_klarvo_overhaul/` (gitignored raw inbox)
 - **Promoted on:** 2026-06-15
 - **mode:** force (first ingest — no prior canon)
@@ -19,6 +19,7 @@ clobber these — a re-handoff has to include them.
 |------|-------------------|------|----------|
 | (orig) | `a3a5baff3ae56aa62270aa5a736972cb` | first external ingest | — |
 | 2026-06-16 | `2bb990323f4fa224d6062b2c24965e37` | Added **`.ab-bubble.recording`** state (teal squircle + amber pulse-ring + send-glyph = "tap to send"); relabeled the listening-panel red square **Stop → Abbrechen**; tightened the `danger` token role to "Abbrechen / Löschen / Fehler (nie Senden)"; refined the bubble state-sequence prose. | [ADR-0019](../../../adr/0019-cross-platform-design-ssot.md) — codifies danger=Abbrechen + Android send = tap-the-bubble. |
+| 2026-06-17 | `b95f86f9b480b92c3375093bc2580d9f` | **Modell B** (Andi-approved). recording ist kein Einzel-Bubble mehr: `.ab-bubble.recording` (+ `.send`, `@keyframes abbubblepulse`) **entfernt**, ersetzt durch Steuer-**`.ab-cluster`** (`.ab-cbtn.send` teal ➤ · `.hwave` amber, live · `.ab-cbtn.cancel` rot ✗) am Bubble-Platz = EIN Interaktions-Ort. `.ab-panel.rec` jetzt **passiv** (livedot/hwave/Stop entfernt → nur K·"Aufnahme"·Zeit·Text). `.ab-bubble.done` von teal → **Erfolgs-Grün + Haken**. Idle unverändert. | [ADR-0019 Amendment 2026-06-17](../../../adr/0019-cross-platform-design-ssot.md#amendment-2026-06-17--modell-b-android-aufnahme-cluster) — Cluster am Bubble-Platz, rot verlässt das Panel, Senden = ➤ (nicht Haken). |
 
 ## Truth
 
