@@ -68,3 +68,6 @@ design-handoff/
 
 # Epic-Conductor run lock (logical run marker; never committed — Naht 4, Postmortem 2026-06-15)
 .conductor-lock
+
+# yt-scout research output (transcripts, ~110 MB videos, picked frames, report.md — local only)
+yt-scout/
