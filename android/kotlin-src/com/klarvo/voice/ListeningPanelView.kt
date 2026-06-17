@@ -10,7 +10,6 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.animation.LinearInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -153,19 +152,6 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     private val footerView: FooterView
     private val caretView: CaretView
 
-    // --- Spring-enter animation ---
-
-    private var animatedHeight = 0
-    private var fullHeight = 0
-    private val panelHeightAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-        duration = 240
-        interpolator = OvershootInterpolator(1.8f)
-        addUpdateListener { anim ->
-            val frac = anim.animatedValue as Float
-            animatedHeight = (fullHeight * frac).toInt()
-            requestLayout()
-        }
-    }
 
     init {
         orientation = VERTICAL
@@ -240,36 +226,13 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (panelState == State.RECORDING) caretView.startBlink()
-        // Kick off spring-enter animation; fullHeight set in first onMeasure
-        post {
-            if (fullHeight > 0 && !panelHeightAnimator.isRunning) {
-                panelHeightAnimator.start()
-            }
-        }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         caretView.stopBlink()
         stopTimer()
-        panelHeightAnimator.cancel()
         topRowView.cancelAnimators()
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        val measured = measuredHeight
-        if (measured > 0 && fullHeight == 0) {
-            // First measure — capture full height and start animation
-            fullHeight = measured
-            animatedHeight = 0
-            if (isAttachedToWindow && !panelHeightAnimator.isRunning) {
-                panelHeightAnimator.start()
-            }
-        }
-        if (panelHeightAnimator.isRunning && animatedHeight in 1 until fullHeight) {
-            setMeasuredDimension(measuredWidth, animatedHeight)
-        }
     }
 
     // Reusable Paint for onDraw — never allocate Paint inside a draw call (F5a)

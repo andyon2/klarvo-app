@@ -1731,7 +1731,7 @@ class KlarvoOverlayService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            android.graphics.PixelFormat.TRANSLUCENT
+            android.graphics.PixelFormat.OPAQUE
         ).apply {
             gravity = android.view.Gravity.BOTTOM
         }
