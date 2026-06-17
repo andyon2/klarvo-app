@@ -41,6 +41,11 @@
   .ab-bubble.idle { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass), 0 0 0 3px rgba(41,199,172,.13); }
   /* Modell B: done = Erfolgs-Grün + Haken — klar abgesetzt von Teal-idle (ADR-0019 Amendment 2026-06-17). */
   .ab-bubble.done { background: linear-gradient(150deg, #62E0A4, var(--k-success)); color: #05201B; }
+  /* Modell B / Variante B (ADR-0019 Amendment 2026-06-17, transcribing-Erweiterung): nach ➤ Senden bleibt
+     der Dock-Platz besetzt — der Cluster kollabiert zu EINER teal Verarbeitungs-Bubble mit Spinner
+     (Kontinuität: derselbe Ort, an dem ➤ war). Teal = Verarbeitung (§3). Panel-Spinner bleibt zusätzlich. */
+  .ab-bubble.proc { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); }
+  .ab-bubble.proc .spinner { width: 20px; height: 20px; }
   /* ADR-0019 Amendment (Modell B, 2026-06-17): recording ist KEIN Einzel-Bubble mehr, sondern ein
      Steuer-Cluster am Bubble-Platz — Senden (teal ➤) · Waveform (amber, live) · Abbrechen (rot ✗).
      EIN Interaktions-Ort; das Panel ist passiv (nur Text + Zeit, keine Waveform, kein roter Knopf). */
@@ -749,8 +754,9 @@
             <div class="ab-panel-text"><span class="pend">also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan und drittens die verantwortlichkeiten…</span></div>
             <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Gleich fertig · Tastatur kommt gleich zurück</div>
           </div>
+          <div class="ab-bubble proc" style="bottom:228px;"><svg class="spinner" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--k-on-teal)" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg></div>
         </div></div>
-        <div class="lbl"><b>transcribing</b> — Teal-Spinner im Panel · Roh-Text gedimmt, Tastatur noch unten</div>
+        <div class="lbl"><b>transcribing</b> — Dock-Platz bleibt besetzt: teal Verarbeitungs-Bubble mit Spinner (Variante B) · Teal-Spinner auch im Panel · Roh-Text gedimmt, Tastatur noch unten</div>
       </div>
 
       <!-- DONE -->

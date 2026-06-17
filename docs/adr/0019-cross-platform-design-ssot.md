@@ -111,3 +111,18 @@ ausschließlich Abbrechen** (das ✗). Senden ist nicht-rot. Geändert hat sich 
 
 **Supersedes** in „Folgearbeiten" oben: *„Story 9-5 … Bubble-Tap = Senden"* — Senden ist jetzt der ➤-Button
 im Cluster, nicht der Bubble-Tap. Die Story-Neufassung folgt dieser §4′.
+
+### §4′-Addendum 2026-06-17 — transcribing (Variante B)
+
+**Status:** Accepted · **Trigger:** Andis Pick aus `docs/design/overhaul/mockup-9-5-transcribing-done.html` (2026-06-17).
+
+§4′ ließ den transcribing-Zustand (nach ➤ Senden, vor `done`) offen; der Canon-Artboard zeigte bis dahin
+nur ein passives Panel mit Teal-Spinner und **leeren Dock**. Andi wählte **Variante B**: der **Dock-Platz
+bleibt besetzt** — der Cluster kollabiert zu **einer teal Verarbeitungs-Bubble mit Spinner** (`.ab-bubble.proc`)
+am selben Ort, an dem gerade ➤/✗ waren (Kontinuität; das Auge verliert den Ort nicht). Der Panel-Spinner
+bleibt zusätzlich erhalten. **Konsistenz mit §3:** teal = Verarbeitung — amber bleibt in transcribing verboten.
+
+**Provenance (§5):** in-repo-Canon-Erweiterung. Fingerprint `b95f86f9…` → **`efe726c6afa3cc92aff981a2e476e14c`**
+(MANIFEST-Zeile 2026-06-17). Neue Surface: `.ab-bubble.proc` im transcribing-Artboard. **done-Grün (G1)** war
+bereits Canon (`.ab-bubble.done` = `linear-gradient(150deg,#62E0A4,var(--k-success))`) — Andis Pick deckt sich,
+keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (Andi, 2026-06-17).
