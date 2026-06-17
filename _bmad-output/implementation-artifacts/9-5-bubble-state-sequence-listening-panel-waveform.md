@@ -1,391 +1,403 @@
 # Story 9.5: Bubble State Sequence + Listening Panel + Waveform
 
-Status: done
+Status: ready-for-dev
 
-> **RE-FASHIONED 2026-06-16 against [ADR-0019](../../docs/adr/0019-cross-platform-design-ssot.md) + the
-> extended canon.** The previously-built approach (suppress-bubble-to-idle · red square = Send · extra
-> neutral ✗ cancel) is **SUPERSEDED** — see `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-16.md`.
-> The full old build-record (old ACs, completed tasks, Dev Agent Record) is preserved **verbatim** in the
-> **SUPERSEDED** appendix at the bottom of this file — *do NOT rebuild that*. This story is a
-> **modification of the standing build**, not greenfield: the listening panel and the double-window
-> defect fix already exist and stand; only the bubble's recording visual and the confirm/cancel
-> semantics flip.
+> **RE-FASHIONED (2nd time) 2026-06-17 against [ADR-0019](../../docs/adr/0019-cross-platform-design-ssot.md)
+> Amendment §4′ + §4′-Addendum (Modell B).** The previously-built approach (recording-state bubble with
+> amber pulse-ring + send-glyph · **tap the bubble = Send** · red square **in the panel** = Cancel) is now
+> **SUPERSEDED** — Andi's real-use review (2026-06-17) found two competing moving elements + an asymmetric
+> control split. Modell B replaces it with **one control cluster at the bubble's spot**. The full prior
+> build-record (its ACs, tasks, Dev Agent Record) is preserved verbatim in the **SUPERSEDED — Layer 2**
+> appendix below; the still-older first build is **Layer 3**. *Do NOT build to either appendix.*
+>
+> This is a **modification of the standing build**, not greenfield. The separate-overlay listening panel and
+> the no-double-window fix already exist and **stand**; this story re-shapes the recording interaction
+> (cluster), makes the panel passive, and changes done→green.
 
 ## Story
 
 As a user dictating from a text field,
-I want the bubble to run idle→recording→transcribing→done with a Klarvo-owned listening panel,
-so that I see live feedback and the cleaned text lands in my field — sending by tapping the bubble and
-cancelling with the red square, exactly mirroring the desktop colour-semantics.
+I want the bubble to become a single control cluster while recording — **➤ Send** (teal), a live **amber
+waveform**, and **✗ Cancel** (red) in one place — with the preview panel staying passive, and a clear
+green "done",
+so that there is exactly one place to finish or discard a dictation, the colour-semantics match desktop
+(red = cancel only), and nothing competes for my eye.
 
 ## Stands vs Flips (read this first)
 
 **Stands — already built and correct, do NOT re-do:**
 - `ListeningPanelView` as a **separate `TYPE_APPLICATION_OVERLAY` window** (panel ≠ inside the bubble view).
-- Panel content per canon: grip, K-badge, amber live-dot + pulse, 5-bar amber RMS waveform, timer,
-  multiline mono transcript + amber caret, footer; TRANSCRIBING teal spinner + dimmed text; DONE check→idle.
-- The **double-window defect fix**: only ONE recording overlay form exists (the old HOLD-tap "expand to
-  bar" window stays retired), and the **bubble window stays alive so taps reach `handleTouch`** — this is
-  now load-bearing, because tap-to-send depends on it.
+- The **no-double-window** invariant: only ONE recording overlay form (the retired HOLD-tap "expand to bar"
+  window stays retired), and the **bubble window stays alive so taps reach `handleTouch`** — now load-bearing
+  because the cluster's buttons live in that window.
+- Panel infrastructure: grip, K-badge, multiline mono transcript + amber caret, footer; the
+  RECORDING→TRANSCRIBING persistence (no collapse between them); DONE→IDLE flash plumbing.
 - Token values from Story 9-10 codegen (`KlarvoTheme.kt` generated from `klarvo.css`).
+- AR5a (no composing/live text into the foreign field); batch-only pipeline (no fake streaming).
 
-**Flips — this story's work (4 changes):**
-1. **Bubble recording visual:** replace `suppressedForPanel`→static-idle with the canon
-   `.ab-bubble.recording` form (teal-gradient squircle + amber pulse-ring + send-glyph instead of "K").
-2. **Bubble tap = Senden:** a short tap on the recording-state bubble → `stopAndProcessRecording()`.
-3. **Panel red square = Abbrechen:** the `.ab-bar-stop` red square → `cancelRecording()` (discard, no
-   paste). Inverts the old `stopAndProcessRecording` wiring; parity with desktop red square.
-4. **Remove the extra neutral ✗ button** (added in the 2026-06-16 double-window fix). Cancel = red square;
-   Send = bubble-tap. Two distinct, correctly-coloured affordances.
+**Flips — this story's work (6 changes, delta from the standing §4 build → Modell B):**
+1. **Recording bubble → control cluster.** Remove the single recording-bubble (teal squircle + amber
+   **pulse-ring** + send-glyph). In RECORDING the bubble window grows into a **cluster** at the dock spot:
+   `[➤ send] [amber waveform] [✗ cancel]` on a soft semi-transparent backdrop with a static amber ring.
+2. **Send affordance: bubble-tap → dedicated ➤ teal Send button.** Tap-the-bubble-to-send is **removed**;
+   send is the teal paper-plane button. **No checkmark here** (checkmark = done only).
+3. **Cancel affordance: panel red square → ✗ red button in the cluster.** The red cancel **leaves the panel**
+   and joins the cluster. The panel no longer has any red control.
+4. **Panel becomes passive.** Remove from the panel: the 5-bar amber waveform, the amber live-dot + pulse,
+   the red square. Keep: K-badge, "Aufnahme" label, timer, live transcript + amber caret, footer. (The amber
+   top border-line on the recording panel **stays** per canon.)
+5. **Waveform relocates into the cluster** (amber, **between** ➤ and ✗) — the **only** moving element during
+   recording.
+6. **done → success green.** The done bubble flips from teal squircle to the canon **`.ab-bubble.done`**
+   (success-green gradient + dark check), then **collapses back to idle** (Andi: "wichtig, dass danach das
+   normale idle zurückkehrt").
+   Plus: **transcribing keeps the dock spot occupied** (Variante B, Andi-approved) — the cluster collapses to
+   one teal **processing bubble** (`.ab-bubble.proc`, spinner) while the panel shows its teal spinner.
 
 ## Acceptance Criteria
 
-**AC1 — Recording panel rises with grab handle, K + amber live-dot, waveform, timer, red Abbrechen square:**
-Given recording starts (tap or long-press gesture)
-When `setState(RecordingState.RECORDING)` is called
-Then a Klarvo-owned overlay panel rises from the bottom of the screen with:
-  - a grab handle (34dp × 4dp, `KlarvoTheme.Border2`, centered at top of panel)
-  - a top-row: squircle K-badge (18dp, teal squircle) + amber live-dot (7dp circle, pulsing) + 5-bar amber
-    RMS waveform + timer (Geist Mono 10.5sp, `KlarvoTheme.Dim`) + **red square = Abbrechen** (26dp × 26dp,
-    rounded 8dp, `KlarvoTheme.DangerBg` bg + danger border, inner 9dp square `KlarvoTheme.Danger`,
-    `contentDescription`/aria = "Abbrechen")
-  - panel background `rgba(18,20,22,.98)` (≈ `0xFA121416`), top amber border-line (`KlarvoTheme.AmberLine`)
-  - panel enters with spring animation (240ms `OvershootInterpolator(1.8f)` from height=0 to full height)
-And the bubble stays visible above the panel **in its recording state** (see AC6) — NOT the idle K.
+All visual/geometry values are **binding from the canon source** (`docs/design/overhaul/source/Klarvo Design
+System.html` file-local CSS + `assets/klarvo.css` tokens), fingerprint `efe726c6…`. Read values there, never
+from this prose. dp = the canon's px values (1:1).
 
-**AC2 — Live RAW transcript runs multiline inside the panel (NOT in the foreign field):**
-Given recording is active and audio chunks stream in
-When raw transcript text accumulates
-Then the text renders inside the panel (font mono 13sp, `KlarvoTheme.Muted`) with a blinking amber caret
-And no text is set in the foreign text field until the final paste step (AR5a: `SYSTEM_ALERT_WINDOW`
-overlay cannot set composing text in a foreign field)
-And `debugTranscript` injected via the 9.4 harness is displayed in the panel during harness runs
+**AC1 — RECORDING: the bubble window becomes a control cluster at the dock spot.**
+Given recording starts (any gesture mode) and `setState(RecordingState.RECORDING)` is called
+When the bubble is rendered
+Then the corner bubble window **grows** into a horizontal cluster (`.ab-cluster`) anchored at the dock
+(right ≈ 8dp, raised to sit above the panel — canon `bottom:228px` equivalent) containing, left→right:
+  - a **➤ Send button** (`.ab-cbtn.send`): 40×40dp, radius 12dp, teal-gradient fill
+    (`KlarvoTheme.TealHi`→`TealLo`, 150°), shadow `0 6px 18px rgba(0,0,0,.5)` + glass inset; paper-plane glyph
+    (`M22 2 11 13` + `M22 2 15 22l-4-9-9-4 20-7z`), 19dp, stroke 2.2dp, `KlarvoTheme.OnTeal`
+  - a **live amber waveform** (`.hwave`) **between** the buttons (see AC4)
+  - a **✗ Cancel button** (`.ab-cbtn.cancel`): 40×40dp, radius 12dp, fill `KlarvoTheme.DangerBg`
+    (`0x1FEE6F63`), 1dp border `0x66EE6F63`, ✗ glyph (`M18 6 6 18` + `M6 6l12 12`), 19dp, stroke 2.4dp,
+    `KlarvoTheme.Danger`; `contentDescription`/aria = "Abbrechen"
+  - cluster backdrop: rounded rect radius 18dp, fill `rgba(20,22,24,.55)` (`0x8C141618`), gap 9dp between
+    items, padding 6dp, **static** soft amber ring `0 0 0 1.5px KlarvoTheme.AmberLine` (NOT animated)
+And the touch target of each button is ≥ 48dp (transparent padding if the visual is 40dp).
+And the **idle "K" bubble does NOT show** during recording (it is replaced by the cluster).
 
-**AC3 — Transcribing: same panel, teal spinner + "Cleaning…", raw text dimmed:**
-Given recording stops and `setState(RecordingState.TRANSCRIBING)` is called
+**AC2 — ➤ Send button = finish/send (the primary, non-red affordance).**
+Given recording is active and the cluster is shown
+When the **➤ Send button** is tapped
+Then `stopAndProcessRecording()` is called (stop → transcribe → clean → paste) — exactly as the gesture-mode
+stop does today
+And there is **no checkmark** on the send control (a checkmark belongs only to `done`, AC7)
+And **tapping the bubble/cluster background is NOT a send** (the standing "tap-the-bubble = send" wiring is
+removed; only the ➤ button sends).
+
+**AC3 — ✗ Cancel button = discard, and it lives in the cluster (not the panel).**
+Given recording is active and the cluster is shown
+When the **✗ Cancel button** is tapped
+Then `cancelRecording()` is called (discard, no paste, panel + cluster dismissed → IDLE)
+And the **panel contains no red/danger control** at all (the old red square is gone from the panel).
+
+**AC4 — Live amber waveform sits between ➤ and ✗; it is the only motion during recording.**
+Given recording is active
+When audio amplitude streams in
+Then a 5-bar amber waveform renders **between** the Send and Cancel buttons: container height 18dp, bar width
+3dp, gap 3dp, colour `KlarvoTheme.Amber`, bars driven by RMS amplitude (reuse `drawWaveformBarsInZone()`),
+canon idle motion = `abwv` 850ms ease scaleY .4↔1 staggered (0/120/240/80/300ms) when amplitude is flat
+And the waveform is **non-interactive** (no hit zone)
+And it is the **only** animating element on screen during RECORDING (no pulse-ring, no panel waveform, no
+panel live-dot).
+
+**AC5 — RECORDING panel is passive: text + time only.**
+Given recording is active and `setState(RecordingState.RECORDING)`
+When the panel is shown
+Then the panel (`.ab-panel.rec`, separate overlay window) contains ONLY: grip (34×4dp `Border2`); a top-row
+of **K-badge** (18dp teal squircle, r5) + **"Aufnahme"** label (Geist Mono, `Dim`) + **timer** (Geist Mono
+13sp, `Muted`, right-aligned); the **live raw transcript** (mono 13sp `Muted`) + blinking **amber caret**;
+the **footer** "Tastatur pausiert · kehrt beim Einfügen zurück" (locale)
+And the panel has **no waveform, no amber live-dot/pulse, no red square** (all removed/relocated)
+And the panel keeps its **amber top border-line** (`.ab-panel.rec` → `KlarvoTheme.AmberLine`), background
+`rgba(18,20,22,.98)` (`0xFA121416`), min-height 200dp
+And no text is written to the foreign field during recording (AR5a).
+
+**AC6 — TRANSCRIBING (Variante B): cluster collapses to one teal processing bubble; dock spot stays occupied.**
+Given recording stops (via ➤ or a gesture stop) and `setState(RecordingState.TRANSCRIBING)` is called
 When the pipeline transitions
-Then the same panel remains on screen (no collapse between RECORDING and TRANSCRIBING)
-And the top-row changes to: squircle K-badge + teal spinner (15dp, 900ms rotation) + "Cleaning…" label
-(11sp, `KlarvoTheme.Dim`, Geist Mono)
-And the red Abbrechen square disappears (replaced by empty space)
-And the amber top border-line becomes `KlarvoTheme.Border2` (standard, no amber accent)
-And the raw transcript text renders in `KlarvoTheme.Dim` (dimmed — not `KlarvoTheme.Muted`)
-And the footer reads "Gleich fertig · Tastatur kommt gleich zurück" (or locale equivalent)
+Then the cluster collapses to **one teal processing bubble** (`.ab-bubble.proc`) at the same dock spot
+(40dp teal-gradient squircle + a rotating spinner glyph, 20dp, `KlarvoTheme.OnTeal` stroke, `spin` 900ms) —
+the place where ➤/✗ were stays occupied (continuity; no empty corner)
+And the **same panel stays on screen** (no collapse between RECORDING and TRANSCRIBING); its top-row changes
+to K-badge + **teal spinner** (15dp) + **"Bereinigt…"** label; the raw transcript dims to `KlarvoTheme.Dim`;
+the amber top border-line reverts to `KlarvoTheme.Border2` (no amber); footer reads "Gleich fertig ·
+Tastatur kommt gleich zurück"
+And **no amber appears in TRANSCRIBING** (amber = recording/live only — both the processing bubble and the
+panel spinner are teal).
 
-**AC4 — Done: panel collapses, keyboard note, cleaned text lands in field, bubble shows check → idle:**
+**AC7 — DONE: success-green bubble + check, then back to idle; cleaned text lands in field.**
 Given `setState(RecordingState.DONE)` is called after paste
 When the done transition fires
-Then the listening panel collapses (slides down in 320ms `LinearInterpolator`)
-And the bubble displays the teal squircle with a white checkmark (`.ab-bubble.done`, already in 9.4)
-And after 800ms (`doneFlashRunnable`) the bubble returns to idle
+Then the panel collapses (slides down) and the dock shows the **success-green done bubble**
+(`.ab-bubble.done`: `linear-gradient(150°, KlarvoTheme.SuccessHi #62E0A4, KlarvoTheme.Success #4FC58A)`,
+dark check polyline 20dp, stroke 3dp `KlarvoTheme.OnTeal`) — visibly distinct from the teal idle bubble
+And after the done flash the bubble **returns to the normal idle "K"** (teal squircle) — the corner returns to
+its resting idle state (Andi: das normale idle muss zurückkehren)
 And the cleaned text has been written to the focused field via
-`KlarvoAccessibilityService.instance?.pasteIntoFocusedField()` (a11y ACTION_PASTE) — fallback: clipboard
-only (existing path, no change)
-And the keyboard is NOT forcibly dismissed in this story (keyboard-collapse is Story 9.6)
+`KlarvoAccessibilityService.instance?.pasteIntoFocusedField()` (a11y ACTION_PASTE) — fallback clipboard only
+And the keyboard is NOT forcibly dismissed in this story (keyboard-collapse is Story 9.6).
 
-**AC5 — Panel is a second `TYPE_APPLICATION_OVERLAY` window, NOT inside `FloatingBubbleView`:**
-Given the listening panel's size and layout complexity
-When the panel is shown
-Then it is added to `WindowManager` as a separate `View` with `TYPE_APPLICATION_OVERLAY`, anchored at the
-bottom of the screen (above the keyboard)
-And `FloatingBubbleView` remains a small squircle in the corner (size/position unchanged)
-And the panel window is `MATCH_PARENT` width, height = auto-sized by content (minimum 200dp per canon
-`.ab-panel { min-height: 200px }`)
-And the panel window is created/destroyed on each recording cycle (added in RECORDING, removed in IDLE
-after DONE flash)
+**AC8 — Window geometry transitions are clean (the structural invariant).**
+Given the recording lifecycle idle → recording → transcribing → done → idle
+When each state is entered
+Then the bubble overlay window resizes correctly per state: idle = single 40dp squircle; recording = cluster
+(~ send 40 + gap 9 + waveform + gap 9 + cancel 40 + padding 12 ≈ 150dp wide × ~52dp); transcribing = single
+40dp proc bubble; done = single 40dp done bubble; back to idle = single 40dp squircle
+And there is **never a second recording overlay form** alongside the panel (no double-window regression)
+And the bubble window stays alive throughout so the cluster buttons receive touch (`handleTouch`); the retired
+HOLD-tap bar window is NOT reintroduced.
 
-**AC6 — Bubble recording state + confirm/cancel semantics (the ADR-0019 core):**
-Given recording is active (RECORDING or TRANSCRIBING)
-When the bubble is rendered
-Then the bubble renders the canon `.ab-bubble.recording` form, NOT the idle K:
-  - teal-gradient squircle (reuse `KlarvoTheme.TealHi`/`TealLo`, same 40dp / r=12dp shape as idle)
-  - an **amber pulse-ring** animation matching canon `@keyframes abbubblepulse` (1400ms, ease-out,
-    repeating): expanding amber ring `KlarvoTheme.Amber` (`rgba(233,162,76,…)`) — 2px+4px rings →
-    3px+15px fade-out → loop
-  - a **send-glyph** (paper-plane SVG path `m22 2-7 20-4-9-9-4 20-7z`, ~20dp, `KlarvoTheme.OnTeal` stroke)
-    in place of the "K"
-And **a short tap on the recording-state bubble = Senden** → calls `stopAndProcessRecording()`
-(stop → transcribe → clean → paste). This is the primary confirm affordance.
-And **the red square in the panel = Abbrechen** → calls `cancelRecording()` (discard, no paste).
-And there is **no separate neutral ✗ button** (the one added in the 2026-06-16 fix is removed).
-And on DONE/IDLE the bubble restores its normal visual (checkmark → idle K), and the recording-state
-animations are stopped/cleaned up.
+**AC9 — Token source for success-green (ADR-0019 §2: no hand-typed hex).**
+Given the done bubble needs a two-stop green gradient and only `--k-success` exists as a token today
+When the done visual is implemented
+Then `--k-success-hi: #62E0A4` is added to `klarvo.css` (formalises the literal already used by the canon's
+`.ab-bubble.done`), `KlarvoTheme.kt` is **re-generated** via the 9-10 codegen so `KlarvoTheme.SuccessHi`
+exists, and the done gradient uses `SuccessHi`→`Success` — **no hand-typed hex** in `FloatingBubbleView.kt`
+And the canon fingerprint is re-stamped: update `docs/design/overhaul/source/MANIFEST.md` (`sourceFingerprint`
++ a provenance row "added `--k-success-hi` token") since `klarvo.css` changed.
 
-> **Note on gesture modes:** existing modes (HOLD release / TOGGLE tap / AUTOSTOP / AUTO) still drive
-> start/stop as today; AC6 standardises that *whatever stops recording from the bubble is "send"* and the
-> red square is the *only* cancel. Per-mode gesture nuances are Story 9-7 — do NOT expand mode behaviour here.
-
-**AC7 — States verified via the 9.4 harness:**
+**AC10 — States verified via the 9.4 harness (machine signal) + GATE-4 (real device).**
 Given the debug broadcast receiver from Story 9.4
-When `adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.7 --es transcript "Test text"` is sent
-Then the listening panel appears with the waveform animated at the given RMS level, the bubble shows the
-recording form (amber pulse + send-glyph), and the transcript text shows in the panel
-And harness states for `transcribing`, `done`, `idle` drive panel + bubble correctly
-> **MIUI caveat:** the 9.4 broadcast harness is dead on Andi's real MIUI device (broadcast not delivered);
-> harness verification runs on emulator only and is **not** a visual oracle. Real-device drive is manual
-> (the harness-on-MIUI fix is a separate owed story).
+When `adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.7 --es transcript "Test"` is sent (and `transcribing`/`done`/`idle`)
+Then on the **emulator** the overlay **window structure** matches AC8 (recording = panel + cluster window of
+cluster size; transcribing = panel + single proc window; done/idle = single bubble window; never a double
+recording form) — this is the machine-checkable oracle (E9: emulator = window-structure oracle, NOT a pixel
+oracle)
+And **GATE-4 (Andi, real device)** is the visual/interaction gate (see DoD).
 
 **Inversion (must-fail gates):**
-- Red square / any danger-coloured control wired to **send/confirm** = instant review failure (ADR-0019:
-  red = Abbrechen only, on both platforms).
-- Bubble staying **idle** (K) during recording instead of the `.ab-bubble.recording` form = review failure.
-- A separate neutral ✗ cancel button still present = review failure (cancel is the red square).
-- Any attempt to set composing/live text in the foreign field from the overlay = review failure (AR5a).
-- A second recording overlay form reappearing alongside the panel (double-window regression) = review failure.
-- Amber appearing in TRANSCRIBING state = review failure (amber = recording only; transcribing uses teal).
+- Any **red/danger** control wired to **send/confirm** = instant review failure (ADR-0019 §3: red = Abbrechen
+  only, both platforms).
+- A **checkmark** shown on the recording **Send** control = review failure (check = done only).
+- **Tapping the bubble/cluster background** triggering send (standing wiring not removed) = review failure.
+- A **red square still in the panel** = review failure (cancel is the cluster ✗).
+- **Waveform or amber** appearing **in the panel** during recording, OR **amber in TRANSCRIBING** = review
+  failure (waveform lives in the cluster; amber = recording only).
+- The **idle "K"** shown during recording instead of the cluster = review failure.
+- A **second recording overlay form** alongside the panel (double-window regress) = review failure.
+- Composing/live text set in the foreign field from the overlay = review failure (AR5a).
+- Hand-typed green hex in `FloatingBubbleView.kt` instead of generated `KlarvoTheme.SuccessHi` = review failure
+  (ADR-0019 §2).
 
-**DoD:** On-device smoke on Andi's real device — real end-to-end dictation in a 3rd-party app (e.g. Chrome
-address bar or WhatsApp), across modes (PTT hold/release · HOLD-tap · TOGGLE · AUTOSTOP · AUTO): bubble
-shows the amber-pulsing send-form during recording; **tapping the bubble sends** (panel → teal spinner →
-cleaned text lands in the field → panel collapses); **the red square cancels** (panel dismisses, nothing
-pasted); no double overlay. Emulator harness drives states for compile/regression only — **GATE 4 = Andi's
-real device** (emulator is not a visual oracle, E9). `scripts/android-smoke.sh` exits 0.
+**DoD:** On-device smoke on **Andi's real device** — real end-to-end dictation in a 3rd-party app (e.g.
+Chrome address bar, WhatsApp), across modes (PTT hold/release · HOLD-tap · TOGGLE · AUTOSTOP · AUTO):
+recording shows the **cluster** (➤ teal · amber waveform · ✗ red) at the bubble spot with the **passive
+panel** (text + time, no waveform/red); **➤ sends** (→ teal proc bubble + panel spinner → cleaned text lands
+in the field → panel collapses → **green done bubble → back to idle**); **✗ cancels** (panel + cluster
+dismiss, nothing pasted); no double overlay; waveform is the only motion while recording. Emulator harness
+drives the window-structure assertion (AC10) for compile/regression only — **GATE 4 = Andi's real device**
+(emulator is not a visual oracle, E9). `scripts/android-smoke.sh` exits 0.
 
 ## Tasks / Subtasks
 
-- [x] **Task 1: Bubble recording visual — `.ab-bubble.recording` in `FloatingBubbleView`** (AC: 6)
-  - [x] 1.1 Replace the `suppressedForPanel`→static-idle rendering with the canon recording form: teal
-    gradient squircle (reuse idle gradient/shape) + send-glyph (paper-plane path `m22 2-7 20-4-9-9-4 20-7z`,
-    ~20dp, `KlarvoTheme.OnTeal` stroke ~2.2dp) instead of the "K" glyph, for RECORDING and TRANSCRIBING
-    effective-state.
-  - [x] 1.2 Add the amber pulse-ring animation matching `@keyframes abbubblepulse` (1400ms ease-out, repeat):
-    expanding amber ring(s) `KlarvoTheme.Amber`. Reuse the existing animator plumbing; ensure it is started
-    on entering recording and **stopped + cleaned up** on DONE/IDLE.
-  - [x] 1.3 Keep the window-stays-alive invariant from the double-window fix (bubble still receives touch in
-    handleTouch). Do NOT reintroduce the retired HOLD-tap "expand to bar" window.
-  - [x] 1.4 On the per-transition `alpha=1.0f` reset path: ensure the recording form (not idle) is what shows
-    while recording — the reset must not flip the bubble back to idle (the old `alpha` trap).
+- [ ] **Task 1: Token — add success-hi + regen** (AC: 9)
+  - [ ] 1.1 Add `--k-success-hi: #62E0A4` to `docs/design/overhaul/source/assets/klarvo.css` (next to `--k-success`).
+  - [ ] 1.2 Re-run the 9-10 token codegen → `KlarvoTheme.kt` gains `SuccessHi`. Verify the KlarvoTheme drift-gate is green.
+  - [ ] 1.3 Re-stamp `docs/design/overhaul/source/MANIFEST.md`: new `sourceFingerprint` (`cat HTML CSS | md5sum`) + a provenance row "added `--k-success-hi` token (9-5 Modell B done-green)".
 
-- [x] **Task 2: Confirm/cancel semantics in `KlarvoOverlayService` / panel** (AC: 6)
-  - [x] 2.1 Wire **bubble short-tap during recording → `stopAndProcessRecording()`** (Send). Confirm this
-    composes correctly with the existing gesture-mode stop wiring (TOGGLE tap / HOLD release already stop).
-  - [x] 2.2 Re-wire the panel **red square → `cancelRecording()`** (was `stopAndProcessRecording`). Update
-    `isTouchOnStopButton`/handler accordingly; relabel `contentDescription` to "Abbrechen".
-  - [x] 2.3 **Remove the neutral ✗ button** added in the 2026-06-16 fix (`isTouchOnCancelButton` + its draw +
-    its touch branch). Cancel is now the red square only.
+- [ ] **Task 2: Recording cluster in `FloatingBubbleView` + window resize** (AC: 1, 2, 3, 4, 8)
+  - [ ] 2.1 Replace the recording-bubble rendering (teal squircle + amber **pulse-ring** + send-glyph) with the
+    **cluster**: backdrop rounded-rect (r18, `0x8C141618`, static amber ring 1.5dp `AmberLine`), then
+    `[➤ send]`, `[waveform]`, `[✗ cancel]` (geometry per AC1). Remove `drawAmberPulseRings()`/`amberPulseAnimator`.
+  - [ ] 2.2 Grow the bubble overlay window to cluster size on RECORDING (WindowManager LayoutParams width/x),
+    shrink back to 40dp on TRANSCRIBING/DONE/IDLE (AC8). Keep the window-alive invariant (no retired bar window).
+  - [ ] 2.3 Draw the ➤ send glyph (paper-plane, OnTeal) and ✗ cancel glyph (Danger) per AC1; draw the cluster
+    backdrop + amber ring.
+  - [ ] 2.4 Draw the amber waveform **between** the buttons (reuse `drawWaveformBarsInZone()`, RMS-driven), 18dp
+    zone; ensure it is the only animation in RECORDING.
+  - [ ] 2.5 Hit-test **two zones** (send / cancel) with ≥48dp targets; waveform zone non-interactive. Fix the
+    alpha-reset path so the cluster (not idle) shows while recording.
 
-- [x] **Task 3: Locale / copy** (AC: 1, 3)
-  - [x] 3.1 Confirm footer strings ("Tastatur pausiert · kehrt beim Einfügen zurück" / "Gleich fertig ·
-    Tastatur kommt gleich zurück"). Resolve the residual "Cleaning…" → "Bereinigt…" locale item flagged in
-    the prior run (German product copy).
+- [ ] **Task 3: Confirm/cancel wiring in `KlarvoOverlayService`** (AC: 2, 3)
+  - [ ] 3.1 Wire the cluster **➤ send** zone → `stopAndProcessRecording()`. **Remove** the standing
+    "tap-the-bubble = send" wiring (bubble-background tap no longer sends).
+  - [ ] 3.2 Wire the cluster **✗ cancel** zone → `cancelRecording()`.
+  - [ ] 3.3 Confirm composition with gesture modes (TOGGLE tap / HOLD release / AUTOSTOP / AUTO) — they still
+    start/stop; whatever stops = send; cluster ✗ = the only explicit cancel. (Per-mode nuance is 9-7 — do not expand.)
 
-- [x] **Task 4: Compile + verify** (AC: all)
-  - [x] 4.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile clean, DEBUG APK built). JVM tests pass (24/24).
-  - [ ] 4.2 Emulator harness: drive recording→transcribing→done→idle; verify bubble shows the recording form
-    (amber pulse + send-glyph) and panel red square is present in RECORDING only. (Compile/regression signal —
-    NOT the visual gate.) — MIUI caveat: harness dead on real device; emulator path skipped (unattended emulator
-    was not available in this session; compile/build gate GRÜN = sufficient for review).
-  - [ ] 4.3 **GATE 4 (Andi, real device):** end-to-end across modes per DoD — tap-bubble-sends, red-square-
-    cancels, no double overlay.
+- [ ] **Task 4: Panel → passive in `ListeningPanelView`** (AC: 5, 6)
+  - [ ] 4.1 Remove from the RECORDING panel: the 5-bar waveform, the amber live-dot + pulse, the red square
+    (`stopBtnRect`/`isTouchOnStopButton` and its draw). Keep grip, K-badge, "Aufnahme", timer, transcript +
+    amber caret, footer.
+  - [ ] 4.2 TRANSCRIBING panel unchanged in spirit (teal spinner 15dp + "Bereinigt…", dimmed text, Border2 top
+    line) — verify it still matches the canon after the recording-panel edits.
 
-- [x] **Task 5: Commit** (AC: all)
-  - [x] 5.1 Stage only the touched Kotlin files (`FloatingBubbleView.kt`, `KlarvoOverlayService.kt`,
-    `ListeningPanelView.kt`). Never `git add .`.
-  - [x] 5.2 Commit message: `feat(android): 9-5 rebuild — recording-state bubble + tap=send / red=cancel (ADR-0019)`
+- [ ] **Task 5: Transcribing proc bubble + done-green + return-to-idle in `FloatingBubbleView`** (AC: 6, 7)
+  - [ ] 5.1 TRANSCRIBING: render the single **teal proc bubble** (`.ab-bubble.proc`: teal squircle + 20dp OnTeal
+    spinner, `spin` 900ms) at the dock spot; window shrinks to 40dp.
+  - [ ] 5.2 DONE: render `.ab-bubble.done` (gradient `SuccessHi`→`Success`, dark check polyline 20dp).
+  - [ ] 5.3 After the done flash, **restore the idle "K"** bubble (return-to-idle). Stop/clean up all
+    recording/transcribing animators.
+
+- [ ] **Task 6: Locale / copy** (AC: 5, 6) — confirm "Aufnahme", "Bereinigt…", footers ("Tastatur pausiert ·
+  kehrt beim Einfügen zurück" / "Gleich fertig · Tastatur kommt gleich zurück") match canon German copy.
+
+- [ ] **Task 7: Compile + verify** (AC: all)
+  - [ ] 7.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile clean, DEBUG APK built); JVM tests pass; KlarvoTheme drift-gate green.
+  - [ ] 7.2 Emulator window-structure assertion (AC10/AC8): idle/recording/transcribing/done/idle window counts
+    + cluster window geometry; no double-window. (Machine signal — NOT the visual gate.) Capture evidence under `gate4-evidence/9-5/`.
+  - [ ] 7.3 **GATE 4 (Andi, real device):** end-to-end across modes per DoD.
+
+- [ ] **Task 8: Commit** (AC: all) — stage only touched files (`klarvo.css`, `KlarvoTheme.kt`, `FloatingBubbleView.kt`,
+  `KlarvoOverlayService.kt`, `ListeningPanelView.kt`, `MANIFEST.md`, this story). Never `git add .`.
 
 ## Dev Notes
 
-### What is the actual delta (since the panel already exists)
-The listening panel (`ListeningPanelView`), its separate-overlay-window architecture, and the
-double-window defect fix are already in the tree and **stand**. The only code that changes is (a) the
-bubble's recording visual in `FloatingBubbleView`, (b) the send/cancel wiring in `KlarvoOverlayService`
-and the panel touch handlers, and (c) removing the neutral ✗. Read the SUPERSEDED appendix for the exact
-shape of the existing panel code — it is still the implementation, minus the ✗ button and with the red
-square re-pointed to cancel.
+### What is the actual delta (the tree currently holds the §4 tap-to-send build)
+The standing build (SUPERSEDED Layer 2 below) has: a recording-state **bubble** (teal squircle + amber
+pulse-ring + send-glyph), **bubble-tap = send**, and a **red square in the panel = cancel**. Modell B replaces
+that interaction. The **listening panel as a separate overlay window** and the **no-double-window fix** stand.
+Read Layer 2 for the exact current shapes of `FloatingBubbleView`/`KlarvoOverlayService`/`ListeningPanelView`
+— this story edits those, it does not start from zero.
 
-### Canon values for the recording bubble (binding — read from the canon)
-From file-local CSS in `Klarvo Design System.html`:
-- `.ab-bubble` (line 39): 40dp, `border-radius:12px`, `box-shadow: 0 6px 18px rgba(0,0,0,.5)` + glass.
-- `.ab-bubble.recording` (line 45): `background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo))`,
-  `color: var(--k-on-teal)`, `animation: abbubblepulse 1400ms ease-out infinite`.
-- `.ab-bubble.recording .send` (line 46): `width:20px; height:20px`.
-- `@keyframes abbubblepulse` (lines 47–51): rings in amber `rgba(233,162,76, …)` — 0%/100%
-  `0 0 0 2px (.95), 0 0 0 4px (.35)`; 70% `0 0 0 3px (.55), 0 0 0 15px (0)`.
-- Send-glyph SVG (line 727): `path d="m22 2-7 20-4-9-9-4 20-7z"`, `stroke="var(--k-on-teal)"`, `stroke-width=2.2`.
-- RECORDING artboard label (line 729): *"Bubble bleibt sichtbar mit Amber-Puls + Send-Glyph (antippen =
-  senden) · rotes Quadrat = abbrechen"* — the binding semantic statement.
+### Canon values (binding — read from the canon, fingerprint `efe726c6…`)
+File-local CSS in `Klarvo Design System.html`:
+- `.ab-cluster` (l.47): right 8, gap 9, padding 6, radius 18, `box-shadow 0 0 0 1.5px var(--k-amber-line)`,
+  `background rgba(20,22,24,.55)`. Recording artboard places it at `bottom:228px`.
+- `.ab-cbtn` (l.48): 40×40, radius 12, `box-shadow 0 6px 18px rgba(0,0,0,.5)` + glass. `.send` = teal gradient
+  + OnTeal. `.cancel` = `var(--k-danger-bg)` + `1px solid rgba(238,111,99,.4)` + Danger. `svg` 19px.
+- `.hwave` (l.67–74): height 18, 5 bars width 3 gap 3 amber; `@keyframes abwv` scaleY .4↔1 850ms staggered.
+- `.ab-panel` / `.ab-panel.rec` (l.77–83): bg `rgba(18,20,22,.98)`, min-height 200; `.rec` keeps
+  `border-top-color var(--k-amber-line)`. Passive recording panel = grip + (K + "Aufnahme" + timer) + text +
+  caret + foot (no waveform/dot/red — those are the removals).
+- `.ab-bubble.proc` (l.46–47, in-repo Variante-B extension): teal gradient squircle + `.spinner` 20px; the
+  transcribing artboard places it at `bottom:228px`.
+- `.ab-bubble.done` (l.43): `linear-gradient(150deg, #62E0A4, var(--k-success))`, color `#05201B`; check
+  polyline 20px stroke OnTeal width 3.
+- Send glyph (l.726): `M22 2 11 13 / M22 2 15 22l-4-9-9-4 20-7z` stroke 2.2; cancel glyph (l.728):
+  `M18 6 6 18 / M6 6l12 12` stroke 2.4.
+`assets/klarvo.css`: `--k-success #4FC58A` exists; `--k-success-hi #62E0A4` to be added (AC9).
 
-### Touch-routing constraint (carried from the prior build — still applies)
-`FLAG_NOT_FOCUSABLE` panels receive no touch directly; the bubble view's `setOnTouchListener` receives
-bubble-window touches. The panel uses `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL` and a panel touch
-listener that returns true on `ACTION_DOWN` inside a control so `ACTION_UP` arrives (the F1/F2 fixes).
-Re-point that control from stop→cancel; keep the coordinate translation (panel-root → TopRowView-local).
+### Touch-routing constraint (carried — still applies)
+`FLAG_NOT_FOCUSABLE` panels receive no touch directly; the **bubble window** view's touch listener handles the
+cluster. Two hit zones now (send/cancel). Keep the F1/F2 pattern (return true on `ACTION_DOWN` inside a control
+so `ACTION_UP` arrives) and the coordinate translation. The cluster grows the bubble window — make sure the
+window x/width follow so the right edge stays anchored and touch math uses the new window size.
 
-### "Live RAW transcript" in the current pipeline (unchanged)
-The pipeline is batch-only (no streaming STT). The transcript area is blank during real recording and
-populated by `debugTranscript` under the harness. Do NOT invent fake chunking. (See SUPERSEDED appendix
-for the full note — still accurate.)
+### "Live RAW transcript" (unchanged)
+Pipeline is batch-only (no streaming STT). The transcript area is blank during real recording, populated by
+`debugTranscript` under the harness. Do NOT invent fake chunking.
 
 ### Files to Modify
 | File | Change |
 |------|--------|
-| `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` | Recording-state visual (`.ab-bubble.recording`: teal + amber pulse-ring + send-glyph); keep window-alive invariant; fix alpha-reset path |
-| `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` | Bubble-tap→send wiring; panel red square→`cancelRecording`; remove ✗ branch |
-| `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` | Remove the neutral ✗ button (draw + bounds + `isTouchOnCancelButton`); relabel red square "Abbrechen" |
-| `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` | Only if a new token is needed (most likely none — recording uses existing Teal*/Amber/OnTeal) |
+| `docs/design/overhaul/source/assets/klarvo.css` | add `--k-success-hi: #62E0A4` (AC9) |
+| `docs/design/overhaul/source/MANIFEST.md` | re-stamp fingerprint + provenance row (AC9) |
+| `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` | regen — gains `SuccessHi` (codegen output; do not hand-edit) |
+| `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` | recording cluster (backdrop+ring, ➤/✗ buttons, waveform between), window resize, hit-zones; transcribing proc bubble; done-green; return-to-idle; remove pulse-ring |
+| `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` | ➤ zone→send, ✗ zone→cancel; remove bubble-tap=send; window LayoutParams per state |
+| `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` | strip panel waveform + live-dot + red square (passive) |
 
-No Rust/Tauri/Desktop files. Desktop parity check is a separate ADR-0019 follow-up.
+No Rust/Tauri/Desktop files. Desktop already has red=cancel (the parity target); no desktop change here.
 
 ### References
-- [Source: docs/adr/0019-cross-platform-design-ssot.md] — colour-semantics rule + interaction parity (the decision).
-- [Source: docs/design/overhaul/source/Klarvo Design System.html, lines 38–52, 715–729] — `.ab-bubble.recording`,
-  `abbubblepulse`, send-glyph, RECORDING artboard + binding affordance labels.
-- [Source: docs/design/overhaul/source/assets/klarvo.css] — token values (`--k-amber`, `--k-teal-*`, `--k-on-teal`).
-- [Source: _bmad-output/planning-artifacts/sprint-change-proposal-2026-06-16.md] — this re-fashion's full impact analysis.
-- [Source: docs/postmortem-2026-06-15-epic-conductor.md] — the double-window defect + the traps (PTT touch-stream, alpha reset, MIUI harness).
-- [Source: android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt] — `drawWaveformBarsInZone()`, `drawSpinner()`, animator plumbing to reuse.
+- [Source: docs/adr/0019-cross-platform-design-ssot.md] — §3 colour-semantics, §4′ Modell B, §4′-Addendum (transcribing Variante B).
+- [Source: docs/design/overhaul/source/Klarvo Design System.html, l.43–52, 67–83, 715–776] — cluster, cbtn, hwave, panel, proc, done, send/cancel glyphs.
+- [Source: docs/design/overhaul/source/assets/klarvo.css] — token values (`--k-success`, teal/amber/danger).
+- [Source: docs/design/overhaul/source/MANIFEST.md] — fingerprint `efe726c6…`; in-repo extensions table.
+- [Source: docs/design/overhaul/mockup-9-5-transcribing-done.html] — Andi's approved transcribing-B + done-G1 (experiential approval).
+- [Source: docs/postmortem-2026-06-15-epic-conductor.md] — double-window defect + traps (PTT touch-stream, alpha reset, MIUI harness dead).
 - [Source: _bmad-output/project-context.md] — minSdk 24, no Compose, never `git add .`, Android changes require on-device smoke.
-
-## Dev Agent Record (ADR-0019 rebuild, 2026-06-16)
-
-### Agent Model Used
-claude-sonnet-4-6
-
-### Completion Notes
-
-- **Task 1 (FloatingBubbleView.kt):** Replaced `suppressedForPanel`→static-idle rendering with the canon `.ab-bubble.recording` form. RECORDING and TRANSCRIBING now both draw: teal-gradient squircle (reuse idle gradient + shadow + ring shape) + `drawAmberPulseRings()` (1400ms `AccelerateDecelerate` ValueAnimator, two expanding rings in `KlarvoTheme.Amber`) + `drawSendGlyph()` (paper-plane path `m22 2-7 20-4-9-9-4 20-7z`, 20dp bounding box, `KlarvoTheme.OnTeal` stroke 2.2dp). `suppressedForPanel` kept as no-op property for backwards compat. `onMeasure` simplified: bar-mode removed (HOLD-tap bar retired). `isTouchInCancelZone`/`isTouchInConfirmZone` return false (dead). `updateAnimators`: starts `amberPulseAnimator` on RECORDING/TRANSCRIBING, stops+resets on DONE/IDLE.
-- **Task 2 (KlarvoOverlayService.kt):** Panel touch listener re-wired: red square → `cancelRecording()` (was `stopAndProcessRecording`). `isTouchOnCancelButton` branch removed. `handleTap` RECORDING branch simplified: all modes → `stopAndProcessRecording()` (ADR-0019: bubble tap = Senden). Header + doc comments updated.
-- **Task 3 (ListeningPanelView.kt):** `cancelBtnRect`, `isTouchOnCancelButton` removed. `✗`-button draw code removed. `rightReserved` formula updated (no cancelBtnSz). `isTouchOnStopButton` public API unchanged (KlarvoOverlayService still calls it). "Cleaning…" → "Bereinigt…" (German product copy). Footer strings confirmed correct.
-- **Task 4:** `scripts/android-smoke.sh` exits 0. JVM tests 24/24. APK built + installed on 100.112.41.70:5555 (v0.5.0). Harness dead on real MIUI (known); compile gate is the unattended signal. GATE 4 = Andi real device.
-- **Task 5:** Staged + committed (scoped files only, no `git add .`).
-
-### File List
-- `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` (modified — recording-state visual, amber pulse-ring, send-glyph, suppressedForPanel no-op)
-- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (modified — panel red square→cancel, bubble-tap→send, ✗ branch removed)
-- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` (modified — ✗ button removed, cancelBtnRect removed, "Bereinigt…")
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` (status update)
-- `_bmad-output/implementation-artifacts/9-5-bubble-state-sequence-listening-panel-waveform.md` (this file)
 
 ## Change Log
 
-- 2026-06-15: Story implemented — ListeningPanelView (NEW), KlarvoOverlayService wired, KlarvoTheme tokens added. Kotlin BUILD SUCCESSFUL, 60/60 JVM tests pass. Harness smoke verified on device (recording/transcribing/done/idle all drive panel correctly). [claude-sonnet-4-6]
-- 2026-06-15: Code-review fixes F1..F9 applied (claude-sonnet-4-6) — see SUPERSEDED appendix for the full list.
-- 2026-06-15 — Epic-conductor close-out → **done** (sole committer; folded 3 worker commits via reset --soft + one clean commit). GATE-4 fidelity GREEN on emulator-5554 for recording/transcribing/done; AR5a respected; amber absent in transcribing. Listening panel built as a SEPARATE TYPE_APPLICATION_OVERLAY window. | epic-conductor (Opus)
-- 2026-06-15 — **REOPENED done→review.** The emulator GATE-4 GREEN was a FALSE-GREEN: on Andi's real Xiaomi/MIUI the RECORDING state showed TWO overlay windows (panel + the old FloatingBubbleView RECORDING bar). The 9.4 harness is also dead on MIUI. Real defect + fix-spec documented in `docs/postmortem-2026-06-15-epic-conductor.md`. | Andi + Claude (conductor postmortem)
-- 2026-06-16 — **Double-window defect FIXED** (attended): bubble drew its OWN recording form as a second overlay; fix added `suppressedForPanel`→static-idle + retired the HOLD-tap bar window + restored a neutral ✗ cancel on the panel. Kotlin compile clean; JVM tests green. (This fix's *interaction surface* is superseded below; the *no-double-window* part stands.) | Claude (Opus)
-- 2026-06-16 — **Real-device smoke surfaced a deeper issue → interaction MODEL changed.** Andi confirmed function works but flagged Android↔Windows divergence (desktop red square = Cancel; my 9-5 made it = Send). Root-caused in **ADR-0019** + canon extended (Option A): **red = Abbrechen**, **tap the bubble = Senden**, bubble gets `.ab-bubble.recording`. Supersedes the suppress-to-idle / red=stop / extra-✗ approach. | Andi + Claude (Opus)
-- 2026-06-16 — **Story RE-FASHIONED (correct-course, Weg A).** Status `review`→`backlog`; ACs/Tasks rewritten to the ADR-0019 model (recording-state bubble, tap=send, red=cancel, no ✗); old build-record moved verbatim to the SUPERSEDED appendix; the panel + double-window fix marked as standing. Epic 9.5 AC updated in `epics-visual-overhaul.md`. Frontmatter↔tracker drift resolved (both `backlog`). Proposal: `sprint-change-proposal-2026-06-16.md`. | Claude (Opus)
-- 2026-06-16 — **ADR-0019 rebuild BUILT.** FloatingBubbleView: recording-state visual (teal + amber pulse-ring + send-glyph), `suppressedForPanel` no-op. KlarvoOverlayService: bubble-tap=Senden (all modes), red square=Abbrechen (cancelRecording). ListeningPanelView: ✗ button removed, "Bereinigt…" copy. Smoke: BUILD SUCCESSFUL, 24/24 JVM tests, APK installed on 100.112.41.70:5555. GATE 4 (Andi real device) open. | claude-sonnet-4-6
-- 2026-06-16 — **Code-review cleared (story-conductor, Opus; 3 parallel layers).** 2 confirmed findings fixed (1 fix round): (F1, HIGH) amber pulse-ring ran in TRANSCRIBING → tripped the must-fail inversion gate (amber = RECORDING only; AC3 + canon + ADR-0019) — gated `drawAmberPulseRings()`/`amberPulseAnimator` to RECORDING-only, teal squircle + send-glyph retained in TRANSCRIBING (AC6); (F2, MEDIUM) per-frame `Paint`/`Path` allocation in the 60fps recording hot path → hoisted to pre-allocated fields. Build green: 24/24 JVM tests, APK built, KlarvoTheme drift-gate in sync. Deferred (not blocking): real `contentDescription="Abbrechen"` absent — panel is canvas-drawn, never had a labelable view → a11y `AccessibilityNodeProvider` is its own backlog story; pulse-ring box-shadow-spread vs. stroke geometry + send-glyph centering = GATE-4 visual residual (Andi real device). Status held at `review` — GATE 4 (emulator structural assertion + Andi real-device visual) carries close-out. | story-conductor (Opus)
-- 2026-06-16 — **GATE 4 GREEN → done.** Emulator structural assertion GREEN (overlay windows: idle 1 / recording 2 = panel 1080×525 + bubble 162×162 / transcribing 2 / done 1; no double-window regress — evidence `gate4-evidence/9-5/`). Andi real-device smoke: function + interaction approved ("erstmal abgesegnet"). Minor visual finesse items noted by Andi are non-blocking polish, tracked separately. Status `review`→`done`. | story-conductor (Opus) + Andi (real-device gate)
+- 2026-06-17 — **Story RE-FASHIONED (2nd) to Modell B (§4′ + transcribing Variante B).** Status `done`→`ready-for-dev`.
+  ACs/Tasks rewritten: recording = control cluster (➤ teal send · amber waveform · ✗ red cancel) at the bubble
+  spot; panel passive; transcribing = teal proc bubble (Variante B, Andi-approved); done = success-green → back
+  to idle. Canon extended in-repo (`.ab-bubble.proc`), fingerprint `b95f86f9…`→`efe726c6…`, ADR-0019 §4′-Addendum
+  + MANIFEST row added. Prior §4 tap-to-send build moved verbatim to SUPERSEDED Layer 2. Picks via
+  `mockup-9-5-transcribing-done.html` (transcribing=B, done=G1). | Claude (Opus) + Andi (mockup gate)
+- 2026-06-16 — **GATE 4 GREEN → done** (the now-superseded §4 build). Emulator structural assertion GREEN; Andi
+  real-device smoke approved function + interaction ("erstmal abgesegnet"); Andi then flagged the two-moving-
+  elements / asymmetric-control issue that triggered Modell B. See Layer 2 for the full §4 record.
 
 ---
 
 ---
 
-# SUPERSEDED — historical (2026-06-15/16), do NOT rebuild
+# SUPERSEDED — Layer 2 (ADR-0019 §4 original: recording-bubble · tap=send · red square in panel)
 
-> The content below is the **old** Story 9.5 (suppress-bubble-to-idle · red square = Send · extra neutral
-> ✗ cancel). It is **superseded by ADR-0019** and retained verbatim only for implementation context — the
-> panel structure and the double-window fix it describes still stand, but its bubble-visual and
-> confirm/cancel semantics are replaced by the active spec above. **Do not build to these ACs.**
+> The content below is the **§4 tap-to-send** Story 9.5 — **built and briefly `done` (2026-06-16)**, then
+> superseded by Modell B (§4′) above. The **separate-overlay panel** and the **no-double-window fix** it
+> describes still stand; its **bubble-visual (pulse-ring + send-glyph), tap-to-send, and panel-red-square**
+> are replaced by the cluster above. **Do not build to these ACs.**
 
-## (OLD) Acceptance Criteria
+## (L2) Story
+As a user dictating from a text field, I want the bubble to run idle→recording→transcribing→done with a
+Klarvo-owned listening panel, so that I see live feedback and the cleaned text lands in my field — sending by
+tapping the bubble and cancelling with the red square, exactly mirroring the desktop colour-semantics.
 
-**AC1 — Recording panel rises with grab handle, K + amber live-dot, waveform, timer, stop:**
-Given recording starts (tap or long-press gesture)
-When `setState(RecordingState.RECORDING)` is called
-Then a Klarvo-owned overlay panel rises from the bottom of the screen with:
-  - a grab handle (34dp × 4dp, `KlarvoTheme.Border2`, centered at top of panel)
-  - a top-row: squircle K-badge (18dp, teal squircle) + amber live-dot (7dp circle, pulsing) + 5-bar amber RMS waveform + timer (Geist Mono 10.5sp, `KlarvoTheme.Dim`) + red stop button (26dp × 26dp, rounded 8dp, `KlarvoTheme.Danger` bg + border)
-  - panel background `rgba(18,20,22,.98)` (≈ `0xFA121416`), top amber border-line (`KlarvoTheme.AmberLine`)
-  - panel enters with spring animation (240ms `OvershootInterpolator(1.8f)` from height=0 to full height)
-And the bubble itself stays visible as the small teal squircle at the bottom-right (above the panel)
+## (L2) Acceptance Criteria (superseded)
 
-**AC2 — Live RAW transcript runs multiline inside the panel (NOT in the foreign field):**
-Given recording is active and audio chunks stream in
-When raw transcript text accumulates
-Then the text renders inside the panel (font mono 13sp, `KlarvoTheme.Muted`) with a blinking amber caret
-And no text is set in the foreign text field until the final paste step (AR5a: `SYSTEM_ALERT_WINDOW` overlay cannot set composing text in a foreign field)
-And `debugTranscript` injected via the 9.4 harness is displayed in the panel during harness runs
+**AC1 — Recording panel rises with grab handle, K + amber live-dot, waveform, timer, red Abbrechen square**
+(panel grip 34×4 Border2; top-row K-badge 18dp + amber live-dot 7dp pulsing + 5-bar amber waveform + timer +
+**red square = Abbrechen** 26×26 r8 DangerBg+border+inner 9dp Danger; panel bg `0xFA121416`, amber top line;
+spring enter 240ms OvershootInterpolator(1.8f)). Bubble stays in its recording state above the panel.
 
-**AC3 — Transcribing: same panel, teal spinner + "Cleaning…", raw text dimmed:**
-Given recording stops and `setState(RecordingState.TRANSCRIBING)` is called
-When the pipeline transitions
-Then the same panel remains on screen (no collapse between RECORDING and TRANSCRIBING)
-And the top-row changes to: squircle K-badge + teal spinner (15dp, 900ms rotation) + "Cleaning…" label (11sp, `KlarvoTheme.Dim`, Geist Mono)
-And the stop button disappears (replaced by empty space)
-And the amber top border-line becomes `KlarvoTheme.Border2` (standard, no amber accent)
-And the raw transcript text renders in `KlarvoTheme.Dim` (dimmed — not `KlarvoTheme.Muted`)
-And the footer reads "Gleich fertig · Tastatur kommt gleich zurück" (or locale equivalent, see Dev Notes)
+**AC2 — Live RAW transcript runs multiline inside the panel (NOT in the foreign field)** (mono 13sp Muted +
+amber caret; AR5a no composing text in field; `debugTranscript` shown under harness).
 
-**AC4 — Done: panel collapses, keyboard note, cleaned text lands in field, bubble shows check → idle:**
-Given `setState(RecordingState.DONE)` is called after paste
-When the done transition fires
-Then the listening panel collapses (slides down in 320ms `LinearInterpolator`)
-And the bubble displays the teal squircle with a white checkmark (already implemented as placeholder in 9.4)
-And after 800ms (`doneFlashRunnable`) the bubble returns to idle
-And the cleaned text has been written to the focused field via `KlarvoAccessibilityService.instance?.pasteIntoFocusedField()` (a11y ACTION_PASTE) — fallback: clipboard only (existing path, no change)
-And the keyboard is NOT forcibly dismissed in this story (keyboard-collapse is Story 9.6)
+**AC3 — Transcribing: same panel, teal spinner + "Bereinigt…", raw text dimmed** (no collapse RECORDING→
+TRANSCRIBING; K-badge + teal spinner 15dp 900ms + "Bereinigt…"; red square gone; amber line → Border2; text Dim;
+footer "Gleich fertig · Tastatur kommt gleich zurück").
 
-**AC5 — Panel is implemented as a second `TYPE_APPLICATION_OVERLAY` window, NOT inside `FloatingBubbleView`:**
-Given the listening panel's size and layout complexity
-When the panel is shown
-Then it is added to `WindowManager` as a separate `View` with `TYPE_APPLICATION_OVERLAY`, anchored at the bottom of the screen (above the keyboard), with `FLAG_NOT_FOCUSABLE`
-And `FloatingBubbleView` remains unchanged in size/position (still a small squircle in the corner)
-And the panel window is `MATCH_PARENT` width, height = auto-sized by content (minimum 200dp per canon `.ab-panel { min-height: 200px }`)
-And the panel window is created/destroyed on each recording cycle (added in RECORDING, removed in IDLE after DONE flash)
+**AC4 — Done: panel collapses, cleaned text lands in field, bubble check → idle** (320ms slide; teal squircle +
+white check; 800ms `doneFlashRunnable` → idle; a11y `pasteIntoFocusedField()`, clipboard fallback; keyboard not
+dismissed — that's 9.6).
 
-**AC6 — States are verified via the 9.4 harness:**
-Given the debug broadcast receiver from Story 9.4
-When `adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.7 --es transcript "Test text"` is sent
-Then the listening panel appears with the waveform animated at the given RMS level
-And the transcript text shows in the panel
-And harness states for `transcribing` and `done` also drive the panel correctly
+**AC5 — Panel is a second `TYPE_APPLICATION_OVERLAY` window, NOT inside `FloatingBubbleView`** (MATCH_PARENT
+width, content-auto height min 200dp; created/destroyed per cycle; `FloatingBubbleView` stays a corner squircle).
 
-**(OLD) Inversion (must-fail gates):**
-- Any attempt to set composing/live text in the foreign field from the overlay = instant review failure (AR5a).
-- Panel appearing inside `FloatingBubbleView.onDraw()` instead of as a separate window = review failure.
-- Recording state that clears the panel before transcribing completes = review failure.
-- Amber appearing in TRANSCRIBING state = review failure (DT5: amber = recording only; transcribing uses teal).
+**AC6 — Bubble recording state + confirm/cancel semantics (the §4 core, NOW SUPERSEDED)** — recording bubble =
+teal squircle + **amber pulse-ring** (`abbubblepulse` 1400ms) + **send-glyph**; **short tap on the bubble =
+Senden** (`stopAndProcessRecording()`); **red square in panel = Abbrechen** (`cancelRecording()`); no separate
+neutral ✗; on DONE/IDLE restore normal visual. *(Modell B replaces tap-to-send with the ➤ button and moves
+cancel into the cluster.)*
 
-**(OLD) DoD:** On-device smoke — real end-to-end dictation in a 3rd-party app: panel rises on recording, waveform reacts to voice, transcript accumulates in panel, panel switches to teal spinner on transcribing, cleaned text lands in the field on done, panel collapses. Harness commands drive all states. `scripts/android-smoke.sh` exits 0.
+**AC7 — States verified via the 9.4 harness** (DEBUG_SET_STATE drives panel + bubble; MIUI caveat: broadcast
+dead on Andi's real device → emulator-only machine signal, not a visual oracle).
 
-## (OLD) Tasks / Subtasks
+**(L2) Inversions:** red/danger wired to send = fail; bubble staying idle during recording = fail; separate
+neutral ✗ present = fail; composing text in foreign field = fail; second recording overlay form = fail; amber in
+transcribing = fail.
 
-- [x] **Task 1: Create `ListeningPanelView.kt` — the new overlay panel View** (AC: 1, 2, 3, 5)
-  - [x] 1.1 Create `ListeningPanelView.kt` as a `View` subclass (NOT inside `FloatingBubbleView`). Full-width overlay above the keyboard.
-  - [x] 1.2 Inner `enum class State { RECORDING, TRANSCRIBING }` (only 2 states; panel doesn't exist in IDLE/DONE).
-  - [x] 1.3 Public properties: `panelState`, `amplitude`, `rawTranscript`, `recordingElapsedMs`.
-  - [x] 1.4 `onDraw()` with explicit coordinate math: panel bg `0xFA121416`, amber/Border2 top line, grip, top-row, transcript, footer.
-  - [x] 1.5 K-badge 18dp squircle (r=5dp), teal gradient, dark "K" 10sp.
-  - [x] 1.6 Amber live-dot (7dp) + pulse ring (14dp, scale 0.5→1.2 / 1400ms).
-  - [x] 1.7 5-bar amber waveform driven by amplitude (reuse `drawWaveformBarsInZone()`).
-  - [x] 1.8 Red stop button (26dp, r=8dp, `DangerBg` + 1dp danger stroke, inner 9dp Danger square); `stopBtnRect`.
-  - [x] 1.9 TRANSCRIBING: teal 15dp spinner + "Cleaning…" label. No timer, no stop.
-  - [x] 1.10 Footer strings (RECORDING / TRANSCRIBING).
-  - [x] 1.11 `isTouchOnStopButton()`.
-  - [x] 1.12 `updateTranscript()` → invalidate.
-  - [x] 1.13 `startTimer()`/`stopTimer()`.
-  - [x] 1.14 Spring-enter animation (240ms OvershootInterpolator(1.8f)).
-- [x] **Task 2: Wire `ListeningPanelView` into `KlarvoOverlayService`** (AC: 1–5) — show/hide/update; lifecycle wiring; harness.
-- [x] **Task 3: Update `FloatingBubbleView` DONE state visual (polish)** (AC: 4).
-- [x] **Task 4: Add `DangerBg` and `AmberLine` to `KlarvoTheme.kt`** (AC: 1).
-- [x] **Task 5: Harness integration** (AC: 6).
-- [x] **Task 6: Compile + verify** (AC: all).
-- [x] **Task 7: Commit** (AC: all).
+**(L2) DoD:** real-device smoke across modes — bubble shows amber-pulse send-form; **tap sends**; **red square
+cancels**; no double overlay; `scripts/android-smoke.sh` exits 0. GATE 4 = Andi real device.
 
-> Full sub-task text, Dev Notes (panel coordinate layout, view-composition alternative, "do not touch the
-> audio pipeline", locale note, build architecture) and the F1..F9 fix detail are preserved in git history
-> at the `review`-state version of this file (pre-`cef0e9c`/`d67193d`) and in
+## (L2) Dev Agent Record (ADR-0019 §4 rebuild, 2026-06-16) — claude-sonnet-4-6
+- Task1 `FloatingBubbleView.kt`: recording form = teal squircle + `drawAmberPulseRings()` (1400ms, two amber
+  rings) + `drawSendGlyph()` (paper-plane, OnTeal 2.2); `suppressedForPanel` → no-op; `onMeasure` simplified
+  (bar-mode removed); `updateAnimators` starts amberPulse on RECORDING, stops on DONE/IDLE.
+- Task2 `KlarvoOverlayService.kt`: panel red square → `cancelRecording()`; `handleTap` RECORDING → all modes
+  `stopAndProcessRecording()` (tap=send).
+- Task3 `ListeningPanelView.kt`: removed `cancelBtnRect`/`isTouchOnCancelButton`/✗ draw; "Cleaning…" → "Bereinigt…".
+- Task4: smoke exits 0; JVM 24/24; APK installed on 100.112.41.70:5555; MIUI harness dead → compile gate.
+- Code-review (story-conductor, Opus, 3 layers): F1 (HIGH) amber pulse-ring leaked into TRANSCRIBING → gated to
+  RECORDING-only; F2 (MEDIUM) per-frame Paint/Path alloc → hoisted. Deferred: real `contentDescription` (canvas-
+  drawn → a11y NodeProvider own story); pulse-ring/send-glyph centring = GATE-4 residual.
+- GATE-4: emulator structural GREEN (idle 1 / recording 2 = panel 1080×525 + bubble 162×162 / transcribing 2 /
+  done 1; evidence `gate4-evidence/9-5/`); Andi real-device "erstmal abgesegnet" → then Modell B.
+
+### (L2) File List
+- `FloatingBubbleView.kt` (recording visual, amber pulse-ring, send-glyph, suppressedForPanel no-op)
+- `KlarvoOverlayService.kt` (panel red square→cancel, bubble-tap→send, ✗ removed)
+- `ListeningPanelView.kt` (✗ removed, "Bereinigt…")
+
+---
+
+---
+
+# SUPERSEDED — Layer 3 (first build, 2026-06-15: suppress-to-idle · red square = Send · neutral ✗)
+
+> The original Story 9.5. Superseded twice. The **panel structure + double-window fix** it introduced stand;
+> its bubble-visual and confirm/cancel semantics are replaced. **Do not build to these ACs.** Full sub-task
+> text, Dev Notes, and the F1..F9 fix detail live in git history (pre-`cef0e9c`/`d67193d`) and in
 > `docs/postmortem-2026-06-15-epic-conductor.md`.
 
-## (OLD) Dev Agent Record
-
-### Agent Model Used
-claude-sonnet-4-6 (story-creation, 2026-06-15)
-
-### Completion Notes List
-- ListeningPanelView.kt created as LinearLayout hybrid with inner Canvas views (TopRowView, GripView, FooterView). RECORDING (amber dot + pulse + 5-bar waveform + timer + stop) and TRANSCRIBING (teal spinner + "Cleaning…"). Spring-enter via panelHeightAnimator + onMeasure clamp.
-- KlarvoOverlayService: showListeningPanel/hideListeningPanel; all error paths + cancelRecording + doneFlashRunnable hide panel; harness drives panel.
-- KlarvoTheme.kt: DangerBg (0x1FEE6F63), AmberLine (0x52E9A24C after F6), AmberHi (0xFFF4BA72).
-- Compile BUILD SUCCESSFUL; JVM tests 60/60.
-- Harness smoke (emulator): recording→transcribing→done→idle confirmed via logcat.
-- Inversion checks: panel is separate window (AC5); no composing text in field (AC2); amber absent in TRANSCRIBING (AC3); panel persists RECORDING→TRANSCRIBING.
-- Real-device defect (double-window) + interaction-model supersession → see active spec above + ADR-0019.
-
-### File List
-- android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt (NEW)
-- android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt (modified)
-- android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt (modified)
-- android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt (modified — suppressedForPanel + ✗ cancel; superseded by active spec)
+**(L3) gist:** Created `ListeningPanelView.kt` as the separate overlay window (grip, K-badge, amber dot+pulse,
+5-bar waveform, timer, **red stop = Send**, teal spinner + "Cleaning…" in transcribing). Wired into
+`KlarvoOverlayService` (show/hide/update, harness). `KlarvoTheme.kt`: `DangerBg 0x1FEE6F63`, `AmberLine
+0x52E9A24C` (after F6), `AmberHi 0xFFF4BA72`. BUILD SUCCESSFUL, JVM 60/60. Real-device review found the
+double-window defect + the red=Send semantic inversion → Layer 2, then Modell B.
