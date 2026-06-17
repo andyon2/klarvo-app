@@ -169,9 +169,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(Color.argb(0xFA, 0x12, 0x14, 0x16))
-        // Software layer for shadow/blur-mask if needed (consistent with FloatingBubbleView)
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
+        // Fully opaque dark background (panel is not a glass surface — no alpha needed).
+        // LAYER_TYPE_SOFTWARE is intentionally absent: panel uses no BlurMaskFilter.
+        setBackgroundColor(Color.rgb(0x12, 0x14, 0x16))
 
         val dp = resources.displayMetrics.density
 

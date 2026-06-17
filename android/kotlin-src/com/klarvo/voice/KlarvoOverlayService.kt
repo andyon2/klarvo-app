@@ -1239,10 +1239,15 @@ class KlarvoOverlayService : Service() {
         setState(RecordingState.RECORDING)
         adjustLayoutForState(RecordingState.RECORDING, preRecordingState)
 
-        // Story 9.5: show listening panel (passive) when recording starts.
-        showListeningPanel(ListeningPanelView.State.RECORDING)
-        // F4: start timer only if panel was actually attached (panelVisible set inside showListeningPanel)
-        if (panelVisible) panelView?.startTimer()
+        // AUTO mode: paste-on-silence immediately — no panel, keyboard stays active.
+        // All other modes: dismiss keyboard + show passive listening panel.
+        if (activeMode != RecordingMode.AUTO) {
+            (getSystemService(Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager)
+                ?.hideSoftInputFromWindow(bubbleView.windowToken, 0)
+            showListeningPanel(ListeningPanelView.State.RECORDING)
+            if (panelVisible) panelView?.startTimer()
+        }
     }
 
     /**
