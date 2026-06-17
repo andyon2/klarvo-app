@@ -27,6 +27,12 @@ command              = "scripts/conductor-guard.sh"  # subcommands: acquire / re
 detaches_real_target = true
 # BMAD_CONDUCTOR=1 forces android-smoke.sh to the emulator and hard-rejects any non-emulator target —
 # this is why an unattended run physically cannot install onto the real phone.
+# Emulator lifecycle = RUN lifecycle: `conductor-guard.sh release` also runs
+# `android-emulator.sh stop` (the run owns the warm test surface, so run-end kills
+# it). The TTL watchdog inside android-emulator.sh (default 120min) is only the
+# BACKSTOP for crashed/lock-less runs — release is the clean prompt path. Added
+# 2026-06-17 after an orphaned klarvo-emu reparented to init pegged ~8 cores.
+stops_emulator_on_release = true
 
 [visual_oracle]
 # Two layers — the GATE-4 posture for surface stories (Naht 5).

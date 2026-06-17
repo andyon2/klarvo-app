@@ -42,7 +42,25 @@
 #   # then (re)start the overlay service via the app (it is exported=false; launch
 #   # MainActivity and clear the permission chain — accessibility dialog has SKIP).
 
+# LIFECYCLE (added 2026-06-17 after an orphaned emulator pegged ~8 cores)
+# --------------------------------------------------------------------------
+# The boot is `nohup ... &` ON PURPOSE — the emulator must outlive the booting
+# shell so multiple test steps / subagents share one warm surface. The flip side
+# is that nothing ever STOPPED it: a crashed/forgotten run left qemu reparented to
+# init, burning CPU until a human killed it. Fix = the boot now also arms a
+# detached, self-limiting WATCHDOG:
+#   * hard TTL  (KLARVO_EMU_TTL_SECS, default 7200s/120min) — absolute max lifetime,
+#     always on. Guarantees no infinite orphan even if the orchestrator dies.
+#   * idle reaper (KLARVO_EMU_IDLE_SECS, default 0 = off) — kills early if the
+#     heartbeat file is older than N seconds. Callers extend it with `bump`.
+# A boot TOKEN in the marker file scopes each watchdog to its own boot: a newer
+# boot (or `stop`) rewrites/removes the marker, and the stale watchdog sees the
+# token change / marker vanish and exits WITHOUT killing the live emulator.
+# Subcommands: up (default) | stop | bump | __watchdog <token> (internal).
+
 set -euo pipefail
+
+SELF="$(readlink -f "$0")"
 
 ANDROID_HOME="${ANDROID_HOME:-/home/andyon2/workspace/tools/android-sdk}"
 ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-/home/andyon2/.android/avd}"
@@ -52,49 +70,141 @@ AVD="${KLARVO_AVD:-klarvo-emu}"
 SER="${KLARVO_EMU_SERIAL:-emulator-5554}"
 PORT="${SER##*-}"
 
+# Watchdog tunables (env-overridable; defaults are deliberately generous so the
+# TTL never fires mid-run for realistic smoke/conductor durations).
+TTL="${KLARVO_EMU_TTL_SECS:-7200}"        # hard max lifetime in seconds (120 min)
+IDLE_SECS="${KLARVO_EMU_IDLE_SECS:-0}"    # 0 = idle reaper disabled
+CHECK="${KLARVO_EMU_WD_CHECK:-30}"        # watchdog poll interval
+MARKER="${KLARVO_EMU_MARKER:-/tmp/klarvo-emu.marker}"
+HEARTBEAT="${KLARVO_EMU_HEARTBEAT:-/tmp/klarvo-emu.heartbeat}"
+WD_PID="${KLARVO_EMU_WD_PID:-/tmp/klarvo-emu.watchdog.pid}"
+WD_LOG="${KLARVO_EMU_WD_LOG:-/tmp/klarvo-emu-watchdog.log}"
+
 export ANDROID_HOME ANDROID_AVD_HOME
 
 log() { echo "[emu] $*" >&2; }
 
 boot_completed() { [ "$("$ADB" -s "$SER" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
 
-# Already up? fast no-op.
-if "$ADB" devices 2>/dev/null | grep -q "^${SER}[[:space:]].*device$" && boot_completed; then
-    log "$SER already booted."
-    echo "$SER"
-    exit 0
-fi
+# Best-effort teardown: console kill first, then a targeted pkill of THIS avd's
+# qemu as a fallback. Both no-op cleanly when nothing matches.
+do_kill() {
+    "$ADB" -s "$SER" emu kill >/dev/null 2>&1 || true
+    sleep 2
+    pkill -f "qemu-system.*-avd $AVD" 2>/dev/null || true
+}
 
-# KVM access: after Andi's next WSL login the kvm group is native; in a session
-# started before that, wrap the launch in `sg kvm` (the group membership exists in
-# /etc/group even if not yet in this process's group set).
-KVM_WRAP=()
-if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
-    log "KVM directly accessible."
-elif id -nG 2>/dev/null | tr ' ' '\n' | grep -qx kvm; then
-    log "KVM via current group set."
-elif getent group kvm 2>/dev/null | grep -q ":.*\b$(id -un)\b"; then
-    log "KVM via 'sg kvm' wrapper (group not yet active in this session)."
-    KVM_WRAP=(sg kvm -c)
-else
-    log "ERROR: no KVM access. One-time fix: sudo usermod -aG kvm \$USER && sudo chmod 666 /dev/kvm"
-    exit 1
-fi
+# Arm a fresh watchdog unless a live one already guards this boot.
+ensure_watchdog() {
+    if [ -f "$WD_PID" ] && kill -0 "$(cat "$WD_PID" 2>/dev/null)" 2>/dev/null; then
+        log "Watchdog läuft bereits (pid $(cat "$WD_PID"))."
+        return 0
+    fi
+    local token; token="$(date +%s)-$$-${RANDOM}"
+    {
+        echo "token=$token"
+        echo "serial=$SER"
+        echo "started=$(date +%s)"
+        echo "ttl=$TTL"
+    } > "$MARKER"
+    touch "$HEARTBEAT"
+    nohup "$SELF" __watchdog "$token" >>"$WD_LOG" 2>&1 &
+    echo $! > "$WD_PID"
+    log "Watchdog gestartet (pid $!, TTL ${TTL}s, idle $([ "$IDLE_SECS" -gt 0 ] && echo "${IDLE_SECS}s" || echo aus))."
+}
 
-log "Booting AVD '$AVD' headless on port $PORT ..."
-EMU_CMD="$EMU -avd $AVD -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -port $PORT -accel on"
-if [ "${#KVM_WRAP[@]}" -gt 0 ]; then
-    nohup "${KVM_WRAP[@]}" "$EMU_CMD" >/tmp/klarvo-emu-boot.log 2>&1 &
-else
-    nohup $EMU_CMD >/tmp/klarvo-emu-boot.log 2>&1 &
-fi
+cmd_watchdog() {
+    local mytoken="${1:-}"
+    [ -n "$mytoken" ] || exit 0
+    while true; do
+        [ -f "$MARKER" ] || exit 0                              # stopped → marker gone
+        local tok started ttl now elapsed
+        tok="$(sed -n 's/^token=//p' "$MARKER")"
+        [ "$tok" = "$mytoken" ] || exit 0                       # superseded by newer boot
+        started="$(sed -n 's/^started=//p' "$MARKER")"; started="${started:-0}"
+        ttl="$(sed -n 's/^ttl=//p' "$MARKER")"; ttl="${ttl:-$TTL}"
+        now="$(date +%s)"
+        elapsed=$(( now - started ))
+        if [ "$elapsed" -ge "$ttl" ]; then
+            log "Watchdog: TTL ${ttl}s erreicht (elapsed ${elapsed}s) → Emulator wird beendet."
+            do_kill; rm -f "$MARKER" "$WD_PID"; exit 0
+        fi
+        if [ "${IDLE_SECS:-0}" -gt 0 ] && [ -f "$HEARTBEAT" ]; then
+            local hb idle
+            hb="$(stat -c %Y "$HEARTBEAT" 2>/dev/null || echo "$now")"
+            idle=$(( now - hb ))
+            if [ "$idle" -ge "$IDLE_SECS" ]; then
+                log "Watchdog: idle ${idle}s ≥ ${IDLE_SECS}s → Emulator wird beendet."
+                do_kill; rm -f "$MARKER" "$WD_PID"; exit 0
+            fi
+        fi
+        sleep "$CHECK"
+    done
+}
 
-log "Waiting for device transport ..."
-"$ADB" -s "$SER" wait-for-device
-log "Waiting for boot_completed ..."
-for _ in $(seq 1 90); do
-    boot_completed && { log "Boot complete."; echo "$SER"; exit 0; }
-    sleep 3
-done
-log "ERROR: boot timed out (see /tmp/klarvo-emu-boot.log)."
-exit 1
+cmd_bump() { touch "$HEARTBEAT"; }
+
+cmd_stop() {
+    log "Stoppe Emulator $SER (AVD $AVD) ..."
+    do_kill
+    rm -f "$MARKER" "$WD_PID"        # marker removal makes any live watchdog exit
+    log "Emulator gestoppt."
+}
+
+cmd_up() {
+    # Already up? fast no-op — but make sure a watchdog guards it.
+    if "$ADB" devices 2>/dev/null | grep -q "^${SER}[[:space:]].*device$" && boot_completed; then
+        log "$SER already booted."
+        ensure_watchdog
+        echo "$SER"
+        return 0
+    fi
+
+    # KVM access: after Andi's next WSL login the kvm group is native; in a session
+    # started before that, wrap the launch in `sg kvm` (the group membership exists in
+    # /etc/group even if not yet in this process's group set).
+    local KVM_WRAP=()
+    if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+        log "KVM directly accessible."
+    elif id -nG 2>/dev/null | tr ' ' '\n' | grep -qx kvm; then
+        log "KVM via current group set."
+    elif getent group kvm 2>/dev/null | grep -q ":.*\b$(id -un)\b"; then
+        log "KVM via 'sg kvm' wrapper (group not yet active in this session)."
+        KVM_WRAP=(sg kvm -c)
+    else
+        log "ERROR: no KVM access. One-time fix: sudo usermod -aG kvm \$USER && sudo chmod 666 /dev/kvm"
+        return 1
+    fi
+
+    log "Booting AVD '$AVD' headless on port $PORT ..."
+    local EMU_CMD="$EMU -avd $AVD -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -port $PORT -accel on"
+    if [ "${#KVM_WRAP[@]}" -gt 0 ]; then
+        nohup "${KVM_WRAP[@]}" "$EMU_CMD" >/tmp/klarvo-emu-boot.log 2>&1 &
+    else
+        nohup $EMU_CMD >/tmp/klarvo-emu-boot.log 2>&1 &
+    fi
+
+    log "Waiting for device transport ..."
+    "$ADB" -s "$SER" wait-for-device
+    log "Waiting for boot_completed ..."
+    local _
+    for _ in $(seq 1 90); do
+        if boot_completed; then
+            log "Boot complete."
+            ensure_watchdog
+            echo "$SER"
+            return 0
+        fi
+        sleep 3
+    done
+    log "ERROR: boot timed out (see /tmp/klarvo-emu-boot.log)."
+    return 1
+}
+
+case "${1:-up}" in
+    up|"")       cmd_up ;;
+    stop|down)   cmd_stop ;;
+    bump)        cmd_bump ;;
+    __watchdog)  shift; cmd_watchdog "${1:-}" ;;
+    *) log "Verwendung: $0 {up|stop|bump}"; exit 64 ;;
+esac

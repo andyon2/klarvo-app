@@ -65,6 +65,18 @@ reconnect_device() {
     log "echtes Gerät wieder verbunden: $REAL_DEVICE."
 }
 
+stop_emulator() {
+    # Lauf-Ende = Emulator-Ende: der Lauf besitzt die (warme) Test-Surface, also
+    # killt der Lock-Release sie. Der TTL-Watchdog in android-emulator.sh ist nur
+    # das Netz für abgestürzte/lock-lose Läufe; hier ist der saubere Normalpfad.
+    if ! adb_available; then return 0; fi
+    local emu; emu="$(dirname "$0")/android-emulator.sh"
+    if [ -x "$emu" ]; then
+        "$emu" stop >/dev/null 2>&1 || true
+        log "Emulator-Teardown angestoßen (android-emulator.sh stop)."
+    fi
+}
+
 lock_get() { sed -n "s/^$1=//p" "$LOCK" 2>/dev/null | head -1; }
 
 cmd_acquire() {
@@ -117,9 +129,10 @@ cmd_check_head() {
 }
 
 cmd_release() {
+    stop_emulator
     reconnect_device
     rm -f "$LOCK"
-    log "Lock entfernt + Gerät wieder verbunden (Lauf-Ende)."
+    log "Lock entfernt + Emulator gestoppt + Gerät wieder verbunden (Lauf-Ende)."
 }
 
 cmd_break() {
