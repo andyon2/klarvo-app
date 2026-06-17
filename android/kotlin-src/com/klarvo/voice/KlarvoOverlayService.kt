@@ -969,7 +969,8 @@ class KlarvoOverlayService : Service() {
             val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
             val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
             // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays fixed.
-            bubbleParams.x      = bubbleParams.x + touchTargetPx - clusterW
+            // Clamp to 0 so the cluster stays on-screen when the bubble is docked on the left side.
+            bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
             bubbleParams.width  = clusterW
             bubbleParams.height = clusterH
         } else {

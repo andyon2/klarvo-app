@@ -15,3 +15,11 @@
 --- (after flash, back to IDLE) ---
     mAttrs={(897,1200)(162x162) gr=TOP START CENTER sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
     mAttrs={(0,0)(fillxfill) sim={adjust=pan} layoutInDisplayCutoutMode=always ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+
+=== FIX-VERIFICATION: bubble-on-LEFT clamp (2026-06-18, after maxOf(0,...) fix) ===
+--- RECORDING (bubble RIGHT, x≈897) ---
+    mAttrs={(351,1200)(435x178) gr=TOP START CENTER ty=APPLICATION_OVERLAY  ← cluster on-screen ✓
+--- RECORDING (bubble LEFT, x=44 prefs) ---
+    mAttrs={(0,880)(435x178) gr=TOP START CENTER ty=APPLICATION_OVERLAY     ← x clamped to 0, on-screen ✓
+Root-cause: clusterX = bubbleX + touchTargetPx - clusterW = 44 + 165 - 456 = -247 → NEGATIVE (off-screen).
+Fix: maxOf(0, ...) clamps to 0. Panel always shown correctly; only cluster x was affected.
