@@ -599,6 +599,11 @@ pub async fn start_recording_only(handle: AppHandle) {
                 log::info!("[bar] recording started but bar not visible, showing");
                 let _ = bar.show();
             }
+            // Re-assert topmost on every recording start. After repeated
+            // hide/show cycles (and under the post-June-2026 WebView2 runtime)
+            // the overlay can lose its z-order and come up BEHIND the
+            // foreground app — visible to the OS but not to the user.
+            let _ = bar.set_always_on_top(true);
         } else {
             log::warn!("[bar] recording started but bar window missing, recreating");
             let saved = state.config.lock().ok().map(|c| (c.bar_x, c.bar_y));
