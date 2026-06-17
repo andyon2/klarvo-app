@@ -69,3 +69,45 @@ Verwandt: [ADR-0016](0016-android-path-parity-strategy.md) (Pfad-Parität), [ADR
 - Canon-Erweiterung: Bubble-Aufnahme-Zustand + „tap-to-send"-Affordance + danger=Abbrechen-Disambiguierung (Design-Spec, Provenance #5).
 - Story 9-5 neu fassen gegen die erweiterte Spec (rotes Quadrat = Abbrechen, Bubble-Tap = Senden); der committete 9-5-Stand (`suppress-to-idle`, rot=Stop, ✗-Zusatz) wird dadurch abgelöst.
 - Desktop-Paritäts-Check gegen die kodifizierte Semantik.
+
+---
+
+## Amendment 2026-06-17 — Modell B (Android-Aufnahme-Cluster)
+
+**Status:** Accepted · **Trigger:** Andis Befunde aus echter Nutzung (Mockup-Review-Runde, 2026-06-17).
+**Ändert:** Decision **§4** (Android-Aufnahme-Interaktion). **Unverändert:** §1–§3, §5 (Farb-Semantik, Token-Codegen, Provenance bleiben).
+
+### Was §4 ursprünglich sagte
+Senden = **Tippen auf die Bubble**; Abbrechen = rotes Quadrat im Panel; die Bubble braucht einen sichtbaren
+*Aufnahme-Zustand mit Send-Affordance*.
+
+### Befund (warum das nicht trägt)
+In der Praxis entstehen daraus **zwei Probleme**: (1) **zwei konkurrierende bewegte Elemente** während der
+Aufnahme — die pulsierende Bubble *und* die mitlaufende Live-Preview; (2) eine **asymmetrische Steuerung** —
+Senden an der Bubble, Abbrechen im Panel = zwei getrennte Orte für eine zusammengehörige Entscheidung.
+
+### Geänderte Entscheidung (§4′)
+Während der Aufnahme gibt es **genau einen Interaktions-Ort**: einen **Steuer-Cluster am Bubble-Platz**
+(die idle-Bubble wird beim Start der Aufnahme dadurch ersetzt, nicht angetippt):
+- **Abschließen/Senden** = **Senden-Icon** (teal ➤) — die primäre, **nicht-rote** Affordance. **Ersetzt**
+  „Tippen auf die Bubble". Ein **Haken (✓) ist hier falsch** (liest als „fertig") — der Haken ist dem
+  `done`-Zustand vorbehalten.
+- **Abbrechen** = **✗ (rot/danger)** im selben Cluster. Das rote Abbrechen **verlässt damit das Panel**.
+- **Live-Cue** = mitlaufende **Waveform** (amber) **zwischen** Senden und Abbrechen im Cluster — die einzige
+  Bewegung. Kein Puls-Ring, kein „REC"-Label.
+- Das **Panel ist passiv**: nur Live-Text + Zeit (keine Waveform, kein roter Knopf). Damit konkurriert nichts
+  mehr — Befund (1) ist aufgelöst.
+- **`done`** = Erfolgs-**Grün + Haken**, klar abgesetzt von der teal idle-Bubble (rein visuelle
+  Disambiguierung, keine Semantik-Änderung — Grün/Teal bleiben in der §3-Rolle „bereit/Erfolg").
+
+**Konsistenz mit §3:** unverändert eingehalten — teal = bestätigen/Erfolg, amber = live, **danger/rot =
+ausschließlich Abbrechen** (das ✗). Senden ist nicht-rot. Geändert hat sich nur die *Affordanz* des Sendens
+(➤-Button statt Bubble-Tap), nicht die Farb-Semantik.
+
+**Provenance (§5):** in-repo-Canon-Erweiterung. Canon-Fingerprint `2bb99032…` → **`b95f86f9b480b92c3375093bc2580d9f`**
+(MANIFEST-Zeile 2026-06-17). Konkrete Surfaces im Canon: `.ab-cluster` / `.ab-cbtn.send` / `.hwave` /
+`.ab-cbtn.cancel` (recording), passives `.ab-panel.rec`, grünes `.ab-bubble.done`. Abgesegneter Stand:
+`docs/design/overhaul/mockup-bubble-preview-modelB.html` (Andi, 2026-06-17).
+
+**Supersedes** in „Folgearbeiten" oben: *„Story 9-5 … Bubble-Tap = Senden"* — Senden ist jetzt der ➤-Button
+im Cluster, nicht der Bubble-Tap. Die Story-Neufassung folgt dieser §4′.
