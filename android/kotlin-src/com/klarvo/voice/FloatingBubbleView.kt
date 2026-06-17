@@ -394,7 +394,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         val btnShadowRect = RectF(btnRect.left, btnRect.top + r * 0.15f, btnRect.right, btnRect.bottom + r * 0.15f)
         canvas.drawRoundRect(btnShadowRect, cornerR, cornerR, shadowPaint)
 
-        // Teal gradient fill (150° = top-left → bottom-right)
+        // Teal gradient fill — reset alpha (backdrop set fillPaint to 0x8C; buttons must be opaque)
+        fillPaint.alpha = 0xFF
         fillPaint.shader = LinearGradient(
             btnRect.left, btnRect.top, btnRect.right, btnRect.bottom,
             KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
@@ -419,8 +420,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         fillPaint.color = KlarvoTheme.DangerBg
         canvas.drawRoundRect(btnRect, cornerR, cornerR, fillPaint)
 
-        // Border: ~40% alpha danger — 0x66EE6F63
-        strokePaint.color = 0x66EE6F63.toInt()
+        // Border: full-opacity Danger (mockup: border:1px solid var(--k-danger))
+        strokePaint.color = KlarvoTheme.Danger
         strokePaint.strokeWidth = dp
         strokePaint.style = Paint.Style.STROKE
         canvas.drawRoundRect(btnRect, cornerR, cornerR, strokePaint)
@@ -453,14 +454,16 @@ class FloatingBubbleView(context: Context) : View(context) {
         val minBarH = maxBarH * 0.10f
 
         val t = (barAnimator.animatedValue as? Float) ?: 0f
-        val isSilent = amplitude < 0.02f
-        val dynamicFactor = if (isSilent) 0f else Math.pow(amplitude.toDouble(), 0.6).toFloat()
+        // Always animate; amplitude scales height (baseline 0.15 so bars move even when silent).
+        // Cosine formula matches CSS @keyframes wv{0%,100%{minH}50%{maxH}} smooth ease-in-out shape.
+        val dynamicFactor = Math.pow(amplitude.coerceAtLeast(0.15f).toDouble(), 0.6).toFloat()
 
         for (i in 0 until WAVE_BAR_COUNT) {
             val barX = startX + i * (barW + barGap)
             if (barX - barW / 2f < zoneLeft || barX + barW / 2f > zoneRight) continue
-            val phase = if (isSilent) 0f else (t + barPhaseOffsets[i]) % 1f
-            val barH  = (minBarH + (maxBarH - minBarH) * phase * dynamicFactor).coerceIn(minBarH, maxBarH)
+            val phase = (t + barPhaseOffsets[i]) % 1f
+            val sinH  = ((1.0 - Math.cos(phase * 2.0 * Math.PI)) / 2.0).toFloat()
+            val barH  = (minBarH + (maxBarH - minBarH) * sinH * dynamicFactor).coerceIn(minBarH, maxBarH)
             val barRect = RectF(barX - barW / 2f, cy - barH / 2f, barX + barW / 2f, cy + barH / 2f)
             canvas.drawRoundRect(barRect, barW / 2f, barW / 2f, amberBarPaint)
         }

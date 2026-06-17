@@ -45,6 +45,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             topRowView.invalidate()
             updateTranscriptColor()
             footerView.invalidate()
+            if (value == State.RECORDING) caretView.startBlink() else caretView.stopBlink()
         }
 
     var amplitude: Float = 0f
@@ -150,6 +151,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     private val topRowView: TopRowView
     private val transcriptTextView: TextView
     private val footerView: FooterView
+    private val caretView: CaretView
 
     // --- Spring-enter animation ---
 
@@ -192,7 +194,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         }
         addView(topRowView, topRowParams)
 
-        // Transcript TextView
+        // Transcript area: TextView + blinking amber caret in a FrameLayout overlay
         transcriptTextView = TextView(context).apply {
             setTextColor(KlarvoTheme.Muted)
             textSize = 13f  // sp
@@ -201,11 +203,24 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             gravity = Gravity.TOP or Gravity.START
             text = ""
         }
+        caretView = CaretView(context)
+
+        val transcriptFrame = FrameLayout(context)
+        transcriptFrame.addView(transcriptTextView, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+        val caretLp = FrameLayout.LayoutParams(
+            (2 * dp).toInt(),
+            (15 * dp).toInt()
+        ).apply { gravity = Gravity.TOP or Gravity.START }
+        transcriptFrame.addView(caretView, caretLp)
+
         val textParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
             leftMargin = (16 * dp).toInt()
             rightMargin = (16 * dp).toInt()
         }
-        addView(transcriptTextView, textParams)
+        addView(transcriptFrame, textParams)
 
         // Footer
         footerView = FooterView(context)
@@ -224,6 +239,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        if (panelState == State.RECORDING) caretView.startBlink()
         // Kick off spring-enter animation; fullHeight set in first onMeasure
         post {
             if (fullHeight > 0 && !panelHeightAnimator.isRunning) {
@@ -234,6 +250,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        caretView.stopBlink()
         stopTimer()
         panelHeightAnimator.cancel()
         topRowView.cancelAnimators()
@@ -509,6 +526,50 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             val min      = totalSec / 60
             val sec      = totalSec % 60
             return "$min:${sec.toString().padStart(2, '0')}"
+        }
+    }
+
+    /**
+     * 2dp × 15dp amber rect that blinks at 1Hz during RECORDING (AC5: blinking amber caret).
+     * Positioned at top-left of the transcript area; correct for an empty transcript.
+     */
+    private inner class CaretView(context: Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = KlarvoTheme.Amber
+        }
+        private var caretVisible = false
+        private val blinkHandler = Handler(Looper.getMainLooper())
+        private val blinkRunnable = object : Runnable {
+            override fun run() {
+                caretVisible = !caretVisible
+                invalidate()
+                blinkHandler.postDelayed(this, 500)
+            }
+        }
+
+        fun startBlink() {
+            blinkHandler.removeCallbacks(blinkRunnable)
+            caretVisible = true
+            invalidate()
+            blinkHandler.postDelayed(blinkRunnable, 500)
+        }
+
+        fun stopBlink() {
+            blinkHandler.removeCallbacks(blinkRunnable)
+            caretVisible = false
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (!caretVisible) return
+            val dp = resources.displayMetrics.density
+            canvas.drawRect(0f, 0f, 2 * dp, 15 * dp, paint)
+        }
+
+        override fun onDetachedFromWindow() {
+            super.onDetachedFromWindow()
+            blinkHandler.removeCallbacks(blinkRunnable)
         }
     }
 
