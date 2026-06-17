@@ -337,6 +337,22 @@ No Rust/Tauri/Desktop files. Desktop already has red=cancel (the parity target);
 
 ## Change Log
 
+- 2026-06-18 (PM) — **Real-device debug + AC reality-reconcile (Opus, commits `ec21774`/`064142f`).** Andi's
+  real-device smoke surfaced 3 issues; resolved by mechanical verification (DEBUG_SET_STATE harness works on the
+  real device → force state + `screencap` + `dumpsys window`):
+  (1) **Panel transparency root cause = HyperOS force-dims `FLAG_NOT_TOUCHABLE` overlays to window alpha 0.8**
+  (overrides params/view alpha; PixelFormat + bg-color were red herrings). Fix: drop NOT_TOUCHABLE from the panel
+  window (now touchable, absorbs its own touches — harmless, the cluster is a separate window). Opaque verified
+  across RECORDING/TRANSCRIBING/DONE. See memory `reference_hyperos_overlay_quirks`.
+  (2) **AC5 "live raw transcript" is NOT achievable on Android** — Groq STT is batch-only (no partials), so the
+  transcript area stays empty during recording; only the blinking amber caret indicates "listening" (verified
+  visible). **DESCOPE: AC5's live-text requirement → its own new story ("Android Live-Preview" via on-device
+  Whisper). For 9-5, caret-only is the accepted RECORDING preview.**
+  (3) **Footer "Tastatur pausiert …" was false** — an overlay cannot dismiss another app's IME (NOT_FOCUSABLE);
+  real keyboard collapse needs the a11y service (**Story 9-6, revived**). Footer reworded to honest "🎙 Ich höre
+  zu …" / "🎙 Wird verarbeitet …". **AC5/AC6 footer wording is now superseded by the honest text.**
+  **To close 9-5:** Andi finger-smoke (mic→STT→paste; already worked in logs) + accept the AC5 caret-only /
+  honest-footer reconcile above, then Status → done in this file AND sprint-status.yaml. | Claude (Opus 4.8)
 - 2026-06-18 — **Modell B built (Tasks 1–8 complete, GATE-4 machine side GRÜN).** Cluster (➤ teal / amber waveform / ✗ red) at bubble spot; panel passive; transcribing = proc bubble + panel spinner; done = success-green → idle. Emulator structural window assertion GRÜN (all 5 states verified). Pending: GATE-4 real-device visual smoke (Task 7.3, Andi). | Claude (Opus 4.8)
 - 2026-06-17 — **Story RE-FASHIONED (2nd) to Modell B (§4′ + transcribing Variante B).** Status `done`→`ready-for-dev`.
   ACs/Tasks rewritten: recording = control cluster (➤ teal send · amber waveform · ✗ red cancel) at the bubble
