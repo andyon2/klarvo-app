@@ -1234,13 +1234,12 @@ class KlarvoOverlayService : Service() {
 
         audioRecorder = recorder
 
-        // Story 9.5 fix: all modes keep the small squircle bubble (no HOLD-tap bar expansion).
-        // The listening panel below carries the recording UI + stop/cancel; the bubble window stays
-        // alive only so PTT release / taps still reach handleTouch(). setState() suppresses the
-        // bubble's own recording visual.
+        // Modell B: grow bubble window to cluster dimensions, then set state.
+        val preRecordingState = currentState
         setState(RecordingState.RECORDING)
+        adjustLayoutForState(RecordingState.RECORDING, preRecordingState)
 
-        // Story 9.5: show listening panel when recording starts.
+        // Story 9.5: show listening panel (passive) when recording starts.
         showListeningPanel(ListeningPanelView.State.RECORDING)
         // F4: start timer only if panel was actually attached (panelVisible set inside showListeningPanel)
         if (panelVisible) panelView?.startTimer()
