@@ -1728,16 +1728,27 @@ class KlarvoOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType,
+            // CAUTION: do NOT add FLAG_NOT_TOUCHABLE here. HyperOS/MIUI force-dims any
+            // TYPE_APPLICATION_OVERLAY window that carries FLAG_NOT_TOUCHABLE to a window alpha
+            // of 0.8 (verified via `dumpsys window windows`: NOT_TOUCHABLE → alpha=0.8, removing
+            // it → alpha=1.0), which made the home screen bleed through the panel — the real
+            // cause of the long-standing "transparent panel" defect. PixelFormat and the view's
+            // opaque background were red herrings; the dim is applied at the window-composite
+            // level and overrides both params.alpha and view.alpha. The cluster window escapes it
+            // precisely because it is touchable. We match the cluster's flags exactly. Cost: the
+            // panel now consumes touches in its bottom strip instead of passing them through —
+            // acceptable because the panel is a passive display that overlaps no other surface
+            // (the ➤/✗ cluster is a separate window at the bubble position), and it stays
+            // NOT_FOCUSABLE so it never steals input focus.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            android.graphics.PixelFormat.OPAQUE
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             gravity = android.view.Gravity.BOTTOM
         }
-        // Modell B (ADR-0019 §4′): panel is PASSIVE — FLAG_NOT_TOUCHABLE passes all touches
-        // through to the layers below. Cancel now lives in the cluster (bubble window).
-        // No touch listener needed.
+        // Modell B (ADR-0019 §4′): panel is a PASSIVE display. Cancel/Send/Waveform all live in
+        // the cluster (a separate bubble-position window). The panel has no touch listener, so
+        // touches that land on it are simply absorbed (no-op).
         try {
             windowManager.addView(panel, params)
             panelView    = panel
