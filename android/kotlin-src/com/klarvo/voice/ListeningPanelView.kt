@@ -554,11 +554,15 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             val metrics = textPaint.fontMetrics
             val textY   = height / 2f - (metrics.ascent + metrics.descent) / 2f
 
-            // Simple keyboard icon: ⌨ unicode or text prefix
-            val iconText = "⌨ "
+            // Honest status caption. The previous "Tastatur pausiert / kommt zurück" wording
+            // claimed a keyboard-collapse behaviour that does NOT happen yet — an overlay cannot
+            // dismiss another app's IME (it is NOT_FOCUSABLE); real keyboard collapse needs the
+            // AccessibilityService (Story 9-6). Until 9-6 lands, describe only what actually
+            // happens. The mic glyph replaces the misleading keyboard glyph.
+            val iconText = "🎙 "
             val captionText = when (panelState) {
-                State.RECORDING    -> "Tastatur pausiert · kehrt beim Einfügen zurück"
-                State.TRANSCRIBING -> "Gleich fertig · Tastatur kommt gleich zurück"
+                State.RECORDING    -> "Ich höre zu …"
+                State.TRANSCRIBING -> "Wird verarbeitet …"
             }
             canvas.drawText(iconText + captionText, 0f, textY, textPaint)
         }
