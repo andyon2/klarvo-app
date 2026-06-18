@@ -187,6 +187,36 @@ Not yet scoped into stories.
 - **No Android Settings control for the live-preview.** Desktop exposes a preview opt-in toggle + pause
   slider (Stories 5-3 / 5-5); Android Settings has no equivalent. A parity story once the Android
   preview itself exists.
+  - **Re-confirmed 2026-06-19 (Andi 9-5 GATE-4):** the desktop-style *cleaned* live-preview is still
+    not built on Android (answers "in which story is live-preview planned?" — it is **not yet a story**,
+    only this backlog item). Needs its own story via on-device Whisper (benchmark-first; 3 design gates:
+    local-vs-cloud ADR / paused-vs-continuous / raw-preview). 9-5 ships caret-only RECORDING feedback.
+
+## Story 9-5 GATE-4 green — Modell B interaction follow-ups (2026-06-19)
+
+Source: Andi's 9-5 real-device GATE-4 (2026-06-19) — **9-5 approved → done**. These refine the *passing*
+Modell B build; they are NOT 9-5 gaps. #2 and #4 change the recording-cluster **interaction** → each needs
+its design decision settled in the **canon first (ADR-0019 §4′ amendment), design-gate = human**, before
+build. Anchor: `docs/design/overhaul/source/` + `mockup-bubble-preview-modelB.html`.
+
+- **(1) Cluster waveform must be RMS-reactive (voice-driven), like the desktop app.** Today the amber
+  waveform in the recording cluster animates but does not track the live voice amplitude — it looks
+  static/idle. AC4 already specified "bars driven by RMS amplitude (reuse `drawWaveformBarsInZone()`)",
+  so the amplitude feed into the **cluster** waveform zone is evidently unwired (or always falls back to
+  the flat-idle `abwv` animation). **Fidelity fix** — trace the RMS stream into the cluster waveform.
+
+- **(2) Swap ➤ Send and ✗ Cancel positions in the cluster.** Human habit expects the **➤ Send button at
+  the same screen position as the idle "K" bubble** (the dock spot the thumb just tapped). Current layout
+  is `[➤ send · waveform · ✗ cancel]` with the idle bubble at the right dock edge → Send should move to
+  the idle-bubble side. **Design change to ADR-0019 §4′ cluster geometry** (Andi-decided direction; exact
+  canon + `mockup-bubble-preview-modelB.html` update belongs to the fresh session).
+
+- **(4) HOLD (push-to-talk) mode needs different bubble behavior.** In HOLD mode, releasing the hold
+  **already sends**, so a separate ➤ Send button is redundant AND the ✗ Cancel button is effectively
+  unusable (you'd have to keep holding to reach it, and releasing sends before you can cancel). The Modell
+  B cluster (designed for tap/toggle) doesn't fit HOLD. **Design decision needed** — likely a per-mode
+  cluster variant (e.g. HOLD shows only a slide/hold-to-cancel affordance, no ➤). Amends ADR-0019 §4′ for
+  the HOLD gesture mode; relates to 9-7 (gesture modes) — do **not** silently expand 9-7.
 
 - **OPEN DESIGN DECISION — where the "end dictation" affordance lives.** 9-5 (per ADR-0019) put *Senden*
   on the bubble (tap), with the panel's red square = *Abbrechen*. Andi is reconsidering whether the

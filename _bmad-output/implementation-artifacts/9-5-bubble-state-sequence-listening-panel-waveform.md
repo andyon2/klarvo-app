@@ -1,6 +1,6 @@
 # Story 9.5: Bubble State Sequence + Listening Panel + Waveform
 
-Status: review
+Status: done
 
 > **RE-FASHIONED (2nd time) 2026-06-17 against [ADR-0019](../../docs/adr/0019-cross-platform-design-ssot.md)
 > Amendment §4′ + §4′-Addendum (Modell B).** The previously-built approach (recording-state bubble with
@@ -337,6 +337,16 @@ No Rust/Tauri/Desktop files. Desktop already has red=cancel (the parity target);
 
 ## Change Log
 
+- 2026-06-19 — **GATE-4 real-device GREEN → Status `done` (Andi).** Real end-to-end dictation on the real
+  device passed: cluster (➤ teal · amber waveform · ✗ red) at the bubble spot, passive panel, **➤ sends**
+  → teal proc bubble + panel spinner → cleaned text lands in the field → green done bubble → idle; **✗
+  cancels** (nothing pasted); no double overlay. Build `Klarvo-v0.5.0-20260617-2105` (commit `8d597c9`,
+  debug-keystore-signed, installed without data loss). **4 follow-ups raised by Andi — NOT 9-5 gaps,
+  deferred to fresh sessions, homed in `docs/backlog.md` ("Story 9-5 GATE-4 green — Modell B interaction
+  follow-ups"):** (1) cluster waveform must be RMS-reactive like desktop (AC4 intended RMS-driven — looks
+  static); (2) swap ➤/✗ so ➤ Send sits at the idle-bubble position (thumb habit); (3) Android cleaned
+  live-preview still unbuilt (confirms existing backlog item); (4) HOLD mode needs different bubble
+  behavior (release already sends → separate ➤/✗ redundant + ✗ unusable). | Claude (Opus 4.8)
 - 2026-06-18 (PM) — **Real-device debug + AC reality-reconcile (Opus, commits `ec21774`/`064142f`).** Andi's
   real-device smoke surfaced 3 issues; resolved by mechanical verification (DEBUG_SET_STATE harness works on the
   real device → force state + `screencap` + `dumpsys window`):

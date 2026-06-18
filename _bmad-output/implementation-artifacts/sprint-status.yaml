@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-06-18
+# last_updated: 2026-06-19
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -129,7 +129,7 @@ development_status:
   9-2-android-token-theme-source-and-fonts: done
   9-3-bubble-idle-re-skin-responsive-sizing-anchoring: done
   9-4-bubble-state-harness: done
-  9-5-bubble-state-sequence-listening-panel-waveform: review
+  9-5-bubble-state-sequence-listening-panel-waveform: done
   9-6-keyboard-collapse-via-a11y-service: backlog
   9-7-short-press-gesture-modes-mirror-desktop: done
   9-8-long-press-popover-menu: backlog
