@@ -610,6 +610,19 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
     }));
 }
 
+/// WebView2 browser arguments. MUST stay identical across ALL THREE windows —
+/// `main` (set in `tauri.conf.json`), plus `bar` and `preview` (set on their
+/// builders below). All webviews in the process share ONE WebView2 environment;
+/// any divergence in browser args between windows fails environment reuse and
+/// wedges startup silently (verified the hard way 2026-06-20: args on `main`
+/// only → bar/preview kept Tauri's default → app launched to a dead tray icon,
+/// no Rust error). The flags disable renderer/occluded-window/timer backgrounding
+/// so the hidden overlays keep painting under the post-June-2026 WebView2 runtime
+/// (149.0.4022.69+), while re-including wry's default `--disable-features=...`
+/// (a set value REPLACES the default rather than extending it).
+#[cfg(desktop)]
+const WEBVIEW2_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling";
+
 #[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
 ///
@@ -646,7 +659,9 @@ pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
-    .focused(false);
+    .focused(false)
+    // Must match `main` (tauri.conf.json) and `preview` exactly — see WEBVIEW2_BROWSER_ARGS.
+    .additional_browser_args(WEBVIEW2_BROWSER_ARGS);
 
     // Remove window shadow so only the CSS-rendered content is visible.
     #[cfg(target_os = "windows")]
@@ -805,7 +820,9 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
-    .focused(false);
+    .focused(false)
+    // Must match `main` (tauri.conf.json) and `bar` exactly — see WEBVIEW2_BROWSER_ARGS.
+    .additional_browser_args(WEBVIEW2_BROWSER_ARGS);
 
     // Remove window shadow so only the CSS-rendered content is visible.
     #[cfg(target_os = "windows")]
