@@ -65,7 +65,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
         "disabled:cursor-not-allowed disabled:opacity-60",
         isRecording
-          ? "bg-klarvo-danger/20 text-klarvo-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
+          ? "bg-klarvo-warning/20 text-klarvo-warning shadow-[0_0_40px_rgba(233,162,76,0.3)]"
           : isBusy
           ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(255,163,68,0.2)]"
           : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:shadow-[0_0_50px_rgba(42,195,168,0.3)] hover:bg-klarvo-primary/20",
@@ -74,11 +74,11 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
       <span
         className={[
           "absolute inset-0 rounded-full border-2 transition-colors duration-200",
-          isRecording ? "border-klarvo-danger/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
+          isRecording ? "border-klarvo-warning/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
         ].join(" ")}
       />
       {isRecording && (
-        <span className="absolute inset-0 rounded-full border-2 border-red-400 opacity-40 animate-ping" />
+        <span className="absolute inset-0 rounded-full border-2 border-klarvo-warning/40 opacity-40 animate-ping" />
       )}
       {isBusy ? (
         <SpinnerIcon className="w-9 h-9" />
@@ -741,7 +741,7 @@ export default function App() {
           <p className={[
             "text-xs font-medium",
             recording.recordingState === "error" ? "text-klarvo-danger"
-              : recording.recordingState === "recording" ? "text-klarvo-danger"
+              : recording.recordingState === "recording" ? "text-klarvo-warning"
               : recording.recordingState === "done" ? "text-klarvo-primary"
               : isBusy ? "text-klarvo-warning"
               : "text-klarvo-dim",
@@ -785,7 +785,7 @@ export default function App() {
                       readOnly
                       value={recording.rawText}
                       rows={2}
-                      className="w-full bg-[#0c0c0e] border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
+                      className="w-full bg-klarvo-bg-deep border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
                     />
                     <button
                       onClick={() => navigator.clipboard.writeText(recording.rawText!)}
