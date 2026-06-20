@@ -67,8 +67,8 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         isRecording
           ? "bg-klarvo-warning/20 text-klarvo-warning shadow-[0_0_40px_rgba(233,162,76,0.3)]"
           : isBusy
-          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(255,163,68,0.2)]"
-          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:shadow-[0_0_50px_rgba(42,195,168,0.3)] hover:bg-klarvo-primary/20",
+          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(233,162,76,0.2)]"
+          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(41,199,172,0.2)] hover:shadow-[0_0_50px_rgba(41,199,172,0.3)] hover:bg-klarvo-primary/20",
       ].join(" ")}
     >
       <span
@@ -78,7 +78,7 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         ].join(" ")}
       />
       {isRecording && (
-        <span className="absolute inset-0 rounded-full border-2 border-klarvo-warning/40 opacity-40 animate-ping" />
+        <span className="absolute inset-0 rounded-full border-2 border-klarvo-warning opacity-40 animate-ping" />
       )}
       {isBusy ? (
         <SpinnerIcon className="w-9 h-9" />
