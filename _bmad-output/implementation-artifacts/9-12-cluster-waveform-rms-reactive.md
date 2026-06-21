@@ -236,3 +236,4 @@ claude-sonnet-4-6
 ## Change Log
 
 - 2026-06-21: Widen amplitude visual range in `drawClusterWaveform()` — floor 0.15→0.05, exponent 0.6→0.5; ratio 2.2×→3.8×. 24 JVM tests pass. (claude-sonnet-4-6)
+- 2026-06-21: Fix comment in `drawClusterWaveform()` — correct conflation of `dynamicFactor` values with rendered bar height; now states both (dynamicFactor ~0.32→0.84 old / ~0.22→0.84 new, visible peak ratio ≈2.1×→≈2.8× after 10% minBarH baseline). Comment-only, no code change. 24 JVM tests pass. (claude-sonnet-4-6)
