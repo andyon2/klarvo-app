@@ -1,6 +1,6 @@
 # Story 9.12: Cluster-Waveform RMS-reaktiv
 
-Status: review
+Status: done
 
 ## Story
 
@@ -306,3 +306,4 @@ claude-sonnet-4-6
 - 2026-06-21: GATE-4 refinement (Andi-approved) — (1) FloatingBubbleView floor 0.05f→0f (silence flat/still, desktop parity); (2) KlarvoAudioRecorder noiseFloor 0.005f→0.012f (gate ambient hum ≈raw393 to zero); (3) diagSampleCount throttle fixed: was +=3/call→fires ~22min, now +=1 interval=4→fires ~1×/sec. 24 JVM tests pass. APK installed 100.112.41.70:5555. SHA 7964d4e. (claude-sonnet-4-6)
 - 2026-06-21: Latenz-Verfeinerung (real-device KLARVO_AMP_DIAG) — (1) 3-Sample-Rolling-Average entfernt aus smoothedAmplitude() → gated direkt zurück (onset-/offset-Lag ~200-300 ms eliminiert); (2) Read-Chunk 4096→1024 shorts (256 ms→64 ms, 4× häufiger); (3) KLARVO_AMP_DIAG-Throttle 4→16 (weiterhin ~1×/Sek). VAD/noiseFloor/gain/Geometrie unberührt. 24 JVM-Tests pass. APK 100.112.41.70:5555. SHA beb94b8. (claude-sonnet-4-6)
 - 2026-06-21: Definitiv-Fix: Desktop-Scrolling-History-Waveform auf Android portiert. waveLevels[20] Ring-Buffer in FloatingBubbleView; amplitude-Setter push-to-history; drawClusterWaveform() History-Sampling (kein Cosinus-Sweep, barAnimator/barPhaseOffsets entfernt); setStaticWaveLevel() für Harness-Pfad; applyHarnessState() ruft setStaticWaveLevel(). Silence=flat/still, Sprache füllt Buffer, Stop=smooth scroll-fade. 24 JVM-Tests pass. APK 100.112.41.70:5555. SHA 7a5c546. (claude-sonnet-4-6)
+- 2026-06-21: Code-Review F1/F2/F3: (F1) KDoc smoothedAmplitude() aktualisiert — stale Cosinus-Sweep-Referenz entfernt, spatiale Glättung via waveLevels[20]-History korrekt dokumentiert; (F2) applyHarnessState() Ordering-Fix — setStaticWaveLevel() nach setState()+adjustLayoutForState() verschoben (verhindert dass waveLevels.fill(0f) im RECORDING-Branch das Harness-Level löscht); (F3) setStaticWaveLevel() vereinfacht — amplitude-Push-Setter-Re-entry entfernt, nur waveLevels.fill()+invalidate(). 24 JVM-Tests pass. android-smoke.sh exits 0. SHA 6774e55. (claude-sonnet-4-6)
