@@ -48,6 +48,12 @@ Then no waveform is drawn (the cluster itself is only drawn in RECORDING — no 
 
 ## Root Cause Diagnosis (read before touching any code)
 
+> ⚠️ **SUPERSEDED 2026-06-21 by the "GATE-4 FAILED — Corrected Root Cause" section below.**
+> This original diagnosis (only the draw-formula visual range) was WRONG: the formula fix
+> (floor 0.05 / exp 0.5) shipped and Andi's real-device GATE-4 still showed NO voice reactivity.
+> In particular the claim "do NOT change `smoothedAmplitude()` — it serves the VAD path" is FALSE
+> (`smoothedAmplitude` is display-only, single call site). Read the corrected section before any code.
+
 ### What is wired
 
 The amplitude feed IS wired end-to-end:
@@ -210,6 +216,40 @@ No other files.
 - [Source: docs/adr/0019-cross-platform-design-ssot.md, §4′-Amendment 2026-06-21, (#1-Anker)] — canon mandate for RMS-driven waveform.
 - [Source: docs/backlog.md, §"Story 9-5 GATE-4 green" point (1)] — Andi's observation that the waveform "looks static/idle".
 - [Source: _bmad-output/project-context.md] — no `git add .`, Android changes require on-device smoke, minSdk 24, no Compose.
+
+## GATE-4 FAILED 2026-06-21 — Corrected Root Cause + Fix Direction
+
+**SUPERSEDES the "Root Cause Diagnosis" above.** The draw-formula fix shipped on the real device and
+voice reactivity was still absent. Cause isolated empirically on Andi's real device (conductor-driven):
+
+**Observed isolation:**
+- Harness `DEBUG_SET_STATE recording rms 0.9` (sets `bubbleView.amplitude` directly, mic-bypassed) → bars
+  clearly TALL. So `drawClusterWaveform` + the `amplitude` property WORK — the draw path is NOT the defect.
+- Real dictation (Tap/Toggle mode) → bars "konstant niedrig, aber in Bewegung" (constant LOW, only the
+  time-based cosine sweep moving); silence and speech look identical. So the live `amplitude` reaching the
+  view stays ≈0 even while speaking.
+
+**Named cause:** the display amplitude pipeline `smoothedAmplitude()` (`KlarvoAudioRecorder.kt:469`) pushes
+normal phone speech to ≈0. Its noise floor `0.04` normalized = raw RMS ≈1311 — too high for normal speech,
+much of which sits at/below that level — so `onAmplitude` emits ≈0, `bubbleView.amplitude` stays ≈0, and only
+the floor-level cosine sweep shows. (The ×2.5 gain on the narrow remaining band compounds it.)
+
+**Fix location verified SAFE:** `smoothedAmplitude` has exactly ONE call site (`:251` → `onAmplitude` →
+`bubbleView/panelView` display only). The VAD/silence path uses a SEPARATE `normalizedRms` +
+`isEnergyAboveGate` (`:322–324`), NOT `smoothedAmplitude`. The superseded "serves the VAD" note was wrong.
+
+**Fix direction:**
+1. **Recalibrate `smoothedAmplitude()`** so normal speech yields a clearly VARYING, visible amplitude and
+   silence drops low: drop the noise floor well below normal-speech RMS, and map the realistic speech RMS
+   band into a visible [0..1] range. Make it robust across mic levels — do not tune to a single magic number.
+2. **Add a TEMPORARY diagnostic log** in the display path (throttled, e.g. once per ~1s, greppable tag) that
+   prints raw RMS, normalized RMS, and the emitted smoothed amplitude — so Andi's one real recording doubles
+   as measurement (confirm real levels) AND verification (bars react). This log is REMOVED before close-out.
+3. Do **NOT** touch the VAD/silence path, the draw formula (already correct), geometry, tokens, or states.
+
+**Verification = GATE-4, Andi's real device + live mic:** bars must visibly rise on speech and fall on silence.
+The emulator/harness CANNOT verify this (it bypasses `smoothedAmplitude`). The logcat values confirm the
+calibration and, if a second pass is needed, make it data-driven (not a guess).
 
 ## Dev Agent Record
 
