@@ -119,6 +119,12 @@ The exact numbers are calibration that GATE-4 (Andi's real mic) must confirm —
   - [x] 6.4 `android-smoke.sh` exits 0, 24 JVM tests green, APK installed on real device.
   - [x] 6.5 Commit `KlarvoAudioRecorder.kt` (only changed file for this task).
 
+- [x] **Task 7 (Latenz-Verfeinerung 2026-06-21): Rolling-Average entfernen + kleinerer Read-Chunk (AC: 1, 2)**
+  - [x] 7.1 `smoothedAmplitude()`: 3-Sample-Rolling-Average entfernt — `gated`-Wert direkt zurückgeben. Felder `amplitudeHistory` / `amplitudeHistoryIndex` und deren Reset in `start()` entfernt.
+  - [x] 7.2 Read-Chunk: `ShortArray(bufferSize / 2)` → `ShortArray(1024)` (~64 ms). AudioRecord `bufferSize` (8192) unverändert. `feedVad` und PCM-Akkumulation unberührt.
+  - [x] 7.3 KLARVO_AMP_DIAG-Throttle: 4 → 16 Reads (~1×/Sek. bei neuem Kadenz). Tag und Format unverändert.
+  - [x] 7.4 `android-smoke.sh` exits 0, 24 JVM-Tests grün, APK auf 100.112.41.70:5555 installiert. SHA beb94b8.
+
 ## Dev Notes
 
 ### The one-file change
@@ -276,6 +282,7 @@ claude-sonnet-4-6
 - **One-line fix** in `FloatingBubbleView.drawClusterWaveform()`: lowered silence floor from `0.15f` to `0.05f`, exponent from `0.6` to `0.5`. New visual range: silence ≈ 22% height, speech@0.7 ≈ 84% height (ratio 3.8×, was 2.2×). Canon mandate: ADR-0019 §4′ #1-Anker.
 - Task 2.2: `drawClusterWaveform` called only from `drawRecordingCluster` (line 378) and dead-code legacy wrapper `drawWaveformBarsInZone` (private, zero call sites). Fix does not affect IDLE/TRANSCRIBING/DONE paths.
 - **Task 6 (GATE-4 reopen fix):** `smoothedAmplitude()` in `KlarvoAudioRecorder.kt` recalibrated. Old: noiseFloor=0.04, remap×2.5 → normal speech → ≈0. New: noiseFloor=0.005 (= raw RMS ≈164, aligned with VAD default), band [0.005..0.15] remapped × 4.0 gain → normal speech maps to [0..1] visibly. Temporary diagnostic log added (tag: `KLARVO_AMP_DIAG`, ~1/s throttle, prints rawRMS/normalized/smoothedAmp). VAD path (`processVadFrame`/`isEnergyAboveGate`) untouched.
+- **Task 7 (Latenz-Verfeinerung 2026-06-21):** 3-Sample-Rolling-Average aus `smoothedAmplitude()` entfernt — `gated` direkt zurück. Felder `amplitudeHistory`/`amplitudeHistoryIndex` + Reset in `start()` gelöscht. Read-Chunk 4096 shorts (256 ms) → 1024 shorts (~64 ms); AudioRecord bufferSize (8192) unverändert; feedVad/PCM-Akkumulation unberührt. KLARVO_AMP_DIAG-Throttle 4→16 (~1×/Sek bleibt). 24 JVM tests pass. SHA beb94b8.
 - 24 JVM unit tests pass. KlarvoTheme drift-gate green. android-smoke.sh exits 0. APK installed on real device 100.112.41.70:5555.
 - GATE-4 = Andi's real device with live mic (bars must visibly rise on speech / fall on silence; logcat `KLARVO_AMP_DIAG` confirms real amplitude levels).
 
@@ -289,3 +296,5 @@ claude-sonnet-4-6
 - 2026-06-21: Widen amplitude visual range in `drawClusterWaveform()` — floor 0.15→0.05, exponent 0.6→0.5; ratio 2.2×→3.8×. 24 JVM tests pass. (claude-sonnet-4-6)
 - 2026-06-21: Fix comment in `drawClusterWaveform()` — correct conflation of `dynamicFactor` values with rendered bar height; now states both (dynamicFactor ~0.32→0.84 old / ~0.22→0.84 new, visible peak ratio ≈2.1×→≈2.8× after 10% minBarH baseline). Comment-only, no code change. 24 JVM tests pass. (claude-sonnet-4-6)
 - 2026-06-21: GATE-4 reopen fix — recalibrate `smoothedAmplitude()` in `KlarvoAudioRecorder.kt`: noiseFloor 0.04→0.005, band [0.005..0.15]×4.0 gain. Add TEMPORARY diagnostic log tag KLARVO_AMP_DIAG (~1/s). VAD path untouched. 24 JVM tests pass. APK installed 100.112.41.70:5555. (claude-sonnet-4-6)
+- 2026-06-21: GATE-4 refinement (Andi-approved) — (1) FloatingBubbleView floor 0.05f→0f (silence flat/still, desktop parity); (2) KlarvoAudioRecorder noiseFloor 0.005f→0.012f (gate ambient hum ≈raw393 to zero); (3) diagSampleCount throttle fixed: was +=3/call→fires ~22min, now +=1 interval=4→fires ~1×/sec. 24 JVM tests pass. APK installed 100.112.41.70:5555. SHA 7964d4e. (claude-sonnet-4-6)
+- 2026-06-21: Latenz-Verfeinerung (real-device KLARVO_AMP_DIAG) — (1) 3-Sample-Rolling-Average entfernt aus smoothedAmplitude() → gated direkt zurück (onset-/offset-Lag ~200-300 ms eliminiert); (2) Read-Chunk 4096→1024 shorts (256 ms→64 ms, 4× häufiger); (3) KLARVO_AMP_DIAG-Throttle 4→16 (weiterhin ~1×/Sek). VAD/noiseFloor/gain/Geometrie unberührt. 24 JVM-Tests pass. APK 100.112.41.70:5555. SHA beb94b8. (claude-sonnet-4-6)
