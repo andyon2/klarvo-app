@@ -49,12 +49,37 @@ class FloatingBubbleView(context: Context) : View(context) {
             invalidate()
         }
 
+    /**
+     * Scrolling level-history ring buffer, depth 20 — mirrors desktop `useState(new Array(20).fill(0))`.
+     * Each `amplitude` set pushes a new value (shift-left, append-newest).
+     * The cluster waveform samples 5 positions across this buffer for the smooth scroll/fade effect.
+     * Reset to all-0 on recording start and on return to idle.
+     */
+    private val waveLevels = FloatArray(20) { 0f }
+
     /** Amplitude 0..1 for waveform bar height during RECORDING */
     var amplitude: Float = 0f
         set(value) {
             field = value.coerceIn(0f, 1f)
+            // Push new level into the scrolling history (shift left, append newest) — desktop parity.
+            System.arraycopy(waveLevels, 1, waveLevels, 0, waveLevels.size - 1)
+            waveLevels[waveLevels.size - 1] = field
             invalidate()
         }
+
+    /**
+     * Fill ALL waveLevels slots with [v] and invalidate.
+     * Used by the debug harness (which sets one static level, not a stream) so a forced
+     * harness recording shows a uniform waveform at that level rather than one filled slot.
+     */
+    fun setStaticWaveLevel(v: Float) {
+        val clamped = v.coerceIn(0f, 1f)
+        waveLevels.fill(clamped)
+        // Bypass the push-history setter — all slots are already filled; just sync the backing field.
+        // We set amplitude directly via setter; the arraycopy shifts one slot but since all slots
+        // equal clamped the result is identical, and it triggers invalidate().
+        amplitude = clamped
+    }
 
     /**
      * No-op — kept so KlarvoOverlayService compiles without change.
@@ -155,15 +180,6 @@ class FloatingBubbleView(context: Context) : View(context) {
     private var clusterCancelZoneStart = 0f
 
     // --- Animations ---
-    private val barAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-        duration = 600
-        repeatMode = ValueAnimator.REVERSE
-        repeatCount = ValueAnimator.INFINITE
-        interpolator = LinearInterpolator()
-        addUpdateListener { invalidate() }
-    }
-    private val barPhaseOffsets = floatArrayOf(0f, 0.20f, 0.40f, 0.60f, 0.80f)
-
     private val rotationAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
         duration = 900
         repeatCount = ValueAnimator.INFINITE
@@ -195,7 +211,6 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        barAnimator.cancel()
         rotationAnimator.cancel()
         pttScaleUpAnimator.cancel()
         pttScaleDownAnimator.cancel()
@@ -204,20 +219,22 @@ class FloatingBubbleView(context: Context) : View(context) {
     private fun updateAnimators() {
         when (state) {
             State.RECORDING -> {
-                // Cluster waveform uses barAnimator (amber bars, 600ms reverse loop).
+                // Cluster waveform motion comes from the scrolling waveLevels history (desktop parity).
+                // No barAnimator needed — each amplitude push triggers invalidate().
                 // No amber pulse-ring in Modell B — the static ring on the backdrop replaces it.
                 // No scale pop: the cluster draws in-place, no bounce animation.
                 rotationAnimator.cancel()
-                if (!barAnimator.isRunning) barAnimator.start()
+                // Reset history so each new recording starts flat (desktop: setLevels(new Array(20).fill(0))).
+                waveLevels.fill(0f)
             }
             State.TRANSCRIBING -> {
                 // Proc bubble: rotating spinner, no waveform.
-                barAnimator.cancel()
                 if (!rotationAnimator.isRunning) rotationAnimator.start()
             }
             State.DONE, State.IDLE -> {
-                barAnimator.cancel()
                 rotationAnimator.cancel()
+                // Reset history on return to idle (desktop: setLevels(new Array(20).fill(0))).
+                waveLevels.fill(0f)
                 if (scaleX != 1.0f) {
                     pttScaleUpAnimator.cancel()
                     pttScaleDownAnimator.setFloatValues(scaleX, 1.0f)
@@ -453,21 +470,22 @@ class FloatingBubbleView(context: Context) : View(context) {
         val maxBarH = WAVE_H_DP * dp
         val minBarH = maxBarH * 0.10f
 
-        val t = (barAnimator.animatedValue as? Float) ?: 0f
-        // Silence → flat/still; sweep coupled to amplitude (desktop parity).
-        // Floor 0f: at silence (amplitude≈0) dynamicFactor≈0 → bars sit at minBarH (still).
-        // When the user speaks, amplitude>0 → dynamicFactor scales up with voice.
-        // Exponent 0.5 gives perceptual loudness curve: speech@0.7 → dynamicFactor≈0.84.
+        // Scrolling-history waveform — mirrors desktop FloatingBar.tsx Waveform component:
+        //   levelIdx = round(i / (BAR_COUNT-1) * (levels.length-1))
+        //   amplitude = max(0.12, levels[levelIdx])
+        //   heightPx  = max(3, amplitude * 19)
+        //
+        // Motion source: each amplitude push shifts waveLevels left and appends the newest value.
+        // Silence → all slots 0 → all bars at minBarH (flat/still).
+        // Speech fills the buffer; stopping → loud values scroll off over 20 pushes → smooth fade.
+        // No synthetic animation — the motion is purely the scrolling history.
         // Canon mandate: hwave is RMS-driven (ADR-0019 §4′ #1-Anker, Story 9-12).
-        // Cosine formula matches CSS @keyframes wv{0%,100%{minH}50%{maxH}} smooth ease-in-out shape.
-        val dynamicFactor = Math.pow(amplitude.coerceAtLeast(0f).toDouble(), 0.5).toFloat()
-
         for (i in 0 until WAVE_BAR_COUNT) {
             val barX = startX + i * (barW + barGap)
             if (barX - barW / 2f < zoneLeft || barX + barW / 2f > zoneRight) continue
-            val phase = (t + barPhaseOffsets[i]) % 1f
-            val sinH  = ((1.0 - Math.cos(phase * 2.0 * Math.PI)) / 2.0).toFloat()
-            val barH  = (minBarH + (maxBarH - minBarH) * sinH * dynamicFactor).coerceIn(minBarH, maxBarH)
+            val levelIdx = Math.round(i.toFloat() / (WAVE_BAR_COUNT - 1) * (waveLevels.size - 1))
+            val level = waveLevels[levelIdx]
+            val barH = maxOf(minBarH, level * maxBarH)
             val barRect = RectF(barX - barW / 2f, cy - barH / 2f, barX + barW / 2f, cy + barH / 2f)
             canvas.drawRoundRect(barRect, barW / 2f, barW / 2f, amberBarPaint)
         }
