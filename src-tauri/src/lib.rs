@@ -620,8 +620,19 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 /// so the hidden overlays keep painting under the post-June-2026 WebView2 runtime
 /// (149.0.4022.69+), while re-including wry's default `--disable-features=...`
 /// (a set value REPLACES the default rather than extending it).
+///
+/// `CalculateNativeWinOcclusion` is disabled (2026-06-21): the transparent,
+/// always-on-top bar/preview overlays went BLANK whenever another window (e.g. a
+/// foreground terminal) covered their screen region — window stayed visible +
+/// on-screen + correct geometry (measured via dumpsys-equivalent EnumWindows), but
+/// Chromium's native occlusion detection marked the webview occluded and stopped
+/// compositing it. `--disable-backgrounding-occluded-windows` alone does NOT cover
+/// this: it stops the *backgrounding*, not the occlusion *detection* that gates the
+/// paint. Disabling occlusion calculation makes the overlays composite regardless of
+/// what is in front. (Repro: record with a maximized terminal foreground -> blank;
+/// bring Klarvo's own window forward -> paints.)
 #[cfg(desktop)]
-const WEBVIEW2_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling";
+const WEBVIEW2_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling";
 
 #[cfg(desktop)]
 /// Creates the floating bar window positioned above the taskbar.
