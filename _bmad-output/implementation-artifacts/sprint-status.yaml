@@ -136,5 +136,5 @@ development_status:
   9-9-in-app-recording-state-re-skin: done
   9-10-token-codegen-klarvo-css-to-klarvotheme: done
   9-11-android-honors-silence-threshold-mic-sensitivity: done
-  9-12-cluster-waveform-rms-reactive: in-progress
+  9-12-cluster-waveform-rms-reactive: review
   epic-9-retrospective: optional
