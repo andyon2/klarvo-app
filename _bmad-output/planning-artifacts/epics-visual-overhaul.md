@@ -791,6 +791,29 @@ of the canon color set.
 changes** (values are byte-identical to today) → the human visual gate is consciously downgraded to an
 optional sanity glance; the binding gate is the byte-identity assertion + the drift check (machine-verifiable).
 
+### Story 9.12: Cluster-Waveform RMS-reaktiv (9-5 GATE Follow-up #1)
+
+As a user dictating on Android,
+I want the amber recording-cluster waveform to move with my actual voice amplitude (RMS),
+So that the live cue honestly reflects that I'm being heard — matching the desktop, not a generic idle animation.
+
+**Scope (locked — fidelity fix, do NOT expand):** The recording-cluster waveform zone currently animates
+with a generic/idle fallback and does not track live mic RMS. AC4 of Story 9.5 already specified "bars
+driven by RMS amplitude (reuse `drawWaveformBarsInZone()`)"; the amplitude feed into the *cluster*
+waveform zone is evidently unwired (or always falls back to the flat-idle `abwv`-style animation). Trace
+the existing live RMS amplitude stream into the cluster waveform zone. **No** new tokens, **no** geometry
+change, **no** new states, **no** gesture-mode changes (those are separate follow-ups #2/#4).
+
+**Anchors:** `docs/backlog.md` §"Story 9-5 GATE-4 green" point (1); Story 9.5 AC4 + `drawWaveformBarsInZone()`;
+canon `docs/design/overhaul/source/` (fingerprint `fc9ef745…`) `.hwave` comment = "RMS-getriebener Live-Cue,
+NICHT idle-Animation". ADR-0019 §4′ + §4′-Amendment 2026-06-21.
+
+**DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke
+green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`). **GATE-4
+visual = real device (Andi's live mic):** RMS reactivity is only honestly verifiable against a live
+microphone — the emulator is a structural oracle only, never a motion/pixel oracle. Andi's batched
+real-device gate confirms the bars track his voice. Overlays must never use `FLAG_NOT_TOUCHABLE`.
+
 ---
 
 _Visual-overhaul planning artifact (Epics 8 + 9). Codeable contract:
