@@ -192,6 +192,21 @@ Not yet scoped into stories.
     only this backlog item). Needs its own story via on-device Whisper (benchmark-first; 3 design gates:
     local-vs-cloud ADR / paused-vs-continuous / raw-preview). 9-5 ships caret-only RECORDING feedback.
 
+## In-app big-mic-button on Android — fate undecided (surfaced 2026-06-21 during 9-9)
+
+Source: 9-9 conductor run + Andi. While re-skinning the in-app `RecordButton` (`android-05`), found that
+this surface is **not in the current Model-B design canon**: `.inapp-mic` (klarvo.css:452) is an orphan
+CSS rule, never instantiated in `docs/design/overhaul/source/Klarvo Design System.html`. The canon's
+Android recording language is the bubble overlay only. The big round in-app mic button (App.tsx:51/734)
+still **exists and is reachable on Android** (open app → tap mic → in-app record with Mic/Stop/Spinner),
+but it is shared-desktop React, not an Android-designed surface.
+
+- 9-9 closed it as a pure DT-closure (red→amber + remove hardcoded colors), NOT a design realization.
+- **Open product decision (not 9-9's job):** should the in-app big-mic button on Android be **kept** as a
+  standalone-recorder fallback, **hidden** on Android (recording = bubble only), or **redesigned** to the
+  Model-B symbolism? If kept/redesigned, the canon needs an explicit in-app-recording surface (Phase A)
+  first — today it has none.
+
 ## Story 9-5 GATE-4 green — Modell B interaction follow-ups (2026-06-19)
 
 Source: Andi's 9-5 real-device GATE-4 (2026-06-19) — **9-5 approved → done**. These refine the *passing*
