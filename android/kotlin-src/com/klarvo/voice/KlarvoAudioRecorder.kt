@@ -458,9 +458,10 @@ class KlarvoAudioRecorder(
     }
 
     // TEMPORARY diagnostic log state — removed before close-out (Story 9-12 GATE-4 re-run).
-    // One log line per ~1 second of recording (throttled by sample count).
+    // One log line per ~1 second of recording (throttled by buffer-read count).
+    // Buffer = 4096 shorts at 16000 Hz ≈ 4 reads/sec → fire every 4 calls.
     private var diagSampleCount = 0
-    private val diagLogIntervalSamples = SAMPLE_RATE  // ~1 s at 16 kHz
+    private val diagLogIntervalSamples = 4  // ~1 s at ~4 buffer reads/sec
 
     /**
      * Converts a raw RMS value (0..32768) into a noise-gated, amplified, smoothed
@@ -482,8 +483,9 @@ class KlarvoAudioRecorder(
         val normalized = (rawRms / 32768f).coerceIn(0f, 1f)
 
         // Noise floor: anything below this is treated as silence for display.
-        // 0.005 ≈ raw RMS 164 — well below typical speech, avoids gating quiet speakers.
-        val noiseFloor = 0.005f
+        // 0.012 ≈ raw RMS 393 — gates steady background hum to 0 while staying well
+        // below normal/quiet speech (typically ≥0.03 normalized on phone mics).
+        val noiseFloor = 0.012f
 
         val gated = if (normalized < noiseFloor) {
             0f
@@ -502,7 +504,7 @@ class KlarvoAudioRecorder(
 
         // TEMPORARY diagnostic log — tag: KLARVO_AMP_DIAG — remove before close-out (9-12).
         // Format: rawRMS | normalized | smoothedAmp  (throttled to ~1× per second)
-        diagSampleCount += amplitudeHistory.size  // each call ≈ one buffer read
+        diagSampleCount += 1  // increment by 1 per call; interval = ~4 reads/sec
         if (diagSampleCount >= diagLogIntervalSamples) {
             diagSampleCount = 0
             KlarvoLogger.d(
