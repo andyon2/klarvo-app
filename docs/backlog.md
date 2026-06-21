@@ -214,6 +214,14 @@ Modell B build; they are NOT 9-5 gaps. #2 and #4 change the recording-cluster **
 its design decision settled in the **canon first (ADR-0019 §4′ amendment), design-gate = human**, before
 build. Anchor: `docs/design/overhaul/source/` + `mockup-bubble-preview-modelB.html`.
 
+> **✅ DESIGN-GATE AUFGELÖST 2026-06-21 (Andi-approved).** #2 + #4 sind im Canon entschieden:
+> [ADR-0019 §4′-Amendment 2026-06-21](adr/0019-cross-platform-design-ssot.md#§4-amendment-2026-06-21--9-5-gate-follow-ups-2--4)
+> + Canon-Quelle (Fingerprint `fc9ef745…`, MANIFEST 2026-06-21) + Render `mockup-9-5-followups-2-4.html`.
+> **#2** = Cluster getauscht `[✗ links · Waveform · ➤ Senden rechts]`. **#4** = HOLD-Variante (halten=aufnehmen ·
+> loslassen=senden · wegziehen=abbrechen · hoch=🔒→normaler Cluster); eigene Build-Story, 9-7 NICHT still erweitern.
+> **#1** war immer design-frei. → Alle drei sind jetzt **build-reif** (kein Design-Gate mehr). #1 (design-frei)
+> eignet sich direkt für den story-conductor; #2/#4 brauchen je eine Build-Story gegen den neuen Canon.
+
 - **(1) Cluster waveform must be RMS-reactive (voice-driven), like the desktop app.** Today the amber
   waveform in the recording cluster animates but does not track the live voice amplitude — it looks
   static/idle. AC4 already specified "bars driven by RMS amplitude (reuse `drawWaveformBarsInZone()`)",

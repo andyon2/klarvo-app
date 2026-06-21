@@ -208,10 +208,11 @@ function screenHTML(state){
 
     <!-- docks -->
     <div class="dock d-idle"><button class="bub idle" data-act="start"><span class="k">K</span></button></div>
+    <!-- Reihenfolge getauscht (§4′-Amendment 2026-06-21 #2): ✗ links · Waveform · ➤ Senden RECHTS am Daumen-Platz -->
     <div class="dock d-rec cluster">
-      <button class="bub send" data-act="send" aria-label="Abschließen / Senden">${SVG.send}</button>
-      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       <button class="bub cancel" data-act="cancel" aria-label="Abbrechen">${SVG.x}</button>
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <button class="bub send" data-act="send" aria-label="Abschließen / Senden">${SVG.send}</button>
     </div>
     <div class="dock d-done"><button class="bub done"><span>${SVG.ins}</span></button></div>
 

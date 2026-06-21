@@ -126,3 +126,20 @@ bleibt zusätzlich erhalten. **Konsistenz mit §3:** teal = Verarbeitung — amb
 (MANIFEST-Zeile 2026-06-17). Neue Surface: `.ab-bubble.proc` im transcribing-Artboard. **done-Grün (G1)** war
 bereits Canon (`.ab-bubble.done` = `linear-gradient(150deg,#62E0A4,var(--k-success))`) — Andis Pick deckt sich,
 keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (Andi, 2026-06-17).
+
+### §4′-Amendment 2026-06-21 — 9-5 GATE Follow-ups #2 + #4
+
+**Status:** Accepted · **Trigger:** Andis Picks am 9-5-GATE-4-Gate (siehe `docs/backlog.md` „Story 9-5 GATE-4 green"), abgesegnet via Render `docs/design/overhaul/mockup-9-5-followups-2-4.html` (Andi, 2026-06-21).
+**Ändert:** verfeinert §4′ (Cluster-Geometrie + Gesten-Modus-Variante). **Unverändert:** §1–§3, §5 (Farb-Semantik, Token-Codegen, Provenance), die §4′-Kern-Entscheidung „ein Interaktions-Ort, Senden = ➤, rot = Abbrechen, Panel passiv" und das transcribing-Addendum.
+
+**(#2) Cluster-Reihenfolge getauscht.** Der recording-Cluster ist jetzt **`[✗ Abbrechen (links) · Waveform · ➤ Senden (rechts)]`** statt zuvor `[➤ · Waveform · ✗]`. Grund: Daumen-Gewohnheit — die primäre **➤-Senden**-Affordanz gehört an den Bildschirm-Platz, an dem gerade die idle-„K"-Bubble getippt wurde (das rechte Dock-Ende), nicht das rote ✗. Die §4′-Regel „Waveform **zwischen** Senden und Abbrechen" bleibt erfüllt. Farb-Semantik unverändert (teal=Senden, amber=live, rot=Abbrechen).
+
+**(#4) HOLD-Modus (Push-to-Talk) bekommt eine eigene Variante.** Der Tap/Toggle-Cluster passt nicht für **Hold**: dort **sendet Loslassen bereits** → ein separater ➤ ist redundant und ✗ unerreichbar (zum Tippen müsste man loslassen = sendet vorher). Stattdessen das vertraute Sprachnachricht-Modell:
+- **halten = aufnehmen** · **loslassen = senden** · **wegziehen = abbrechen** (kein tippbares ➤/✗, solange der Finger hält).
+- **hoch ziehen → 🔒 sperren** wandelt in den normalen Tap-Cluster `[✗ · Waveform · ➤]` (Reihenfolge aus #2), damit man loslassen kann, ohne zu senden.
+- Live-Cue bleibt die amber Waveform; Halte-Ring amber. Tap/Toggle/Auto-Stop/Auto nutzen weiter den Cluster (§4′ unverändert).
+- **Bezug 9-7 (Gesten-Modi):** eigene Build-Story; 9-7 wird **nicht** still erweitert.
+
+**(#1-Anker, keine Geometrie-Änderung) Waveform ist RMS-getrieben.** Die Cluster-/HOLD-Waveform (`.hwave`) ist im Build ein **von der echten Stimm-Amplitude (RMS) getriebener** Live-Cue (wie Desktop), nicht die im Canon nur illustrative idle-Animation. Im Canon als CSS-Kommentar festgehalten; Realisierung = Build-Story **Follow-up #1** (`docs/backlog.md`).
+
+**Provenance (§5):** in-repo-Canon-Erweiterung. Fingerprint `efe726c6…` → **`fc9ef7456700d19b8332dd2c34a43b8e`** (MANIFEST-Zeile 2026-06-21). Geänderte/neue Surfaces: recording-`.ab-cluster` (Reihenfolge), neu `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` + Artboard-Sektion „Aufnahme · HOLD-Modus". Abgesegneter Stand: `mockup-9-5-followups-2-4.html` (Andi, 2026-06-21).
