@@ -125,6 +125,11 @@ The exact numbers are calibration that GATE-4 (Andi's real mic) must confirm —
   - [x] 7.3 KLARVO_AMP_DIAG-Throttle: 4 → 16 Reads (~1×/Sek. bei neuem Kadenz). Tag und Format unverändert.
   - [x] 7.4 `android-smoke.sh` exits 0, 24 JVM-Tests grün, APK auf 100.112.41.70:5555 installiert. SHA beb94b8.
 
+- [x] **Task 8 (Definitiv-Fix 2026-06-21): Desktop-Scrolling-History-Waveform portieren (AC: 1, 2, 3)**
+  - [x] 8.1 `FloatingBubbleView.kt`: `waveLevels = FloatArray(20)` Ring-Buffer hinzugefügt; `amplitude`-Setter pushes per-push (shift-left + append); `setStaticWaveLevel(v)` füllt alle Slots (für Harness); Reset auf RECORDING/IDLE in `updateAnimators()`; `drawClusterWaveform()` komplett neu: History-Sampling (`levelIdx = round(i/(N-1)*(size-1))`), kein Cosinus-Sweep, `barAnimator`/`barPhaseOffsets` entfernt.
+  - [x] 8.2 `KlarvoOverlayService.kt`: `applyHarnessState()` ruft `bubbleView.setStaticWaveLevel(coercedRms)` statt `bubbleView.amplitude = coercedRms`.
+  - [x] 8.3 24 JVM-Tests grün, `android-smoke.sh` exits 0, APK installiert auf 100.112.41.70:5555. SHA 7a5c546.
+
 ## Dev Notes
 
 ### The one-file change
@@ -283,6 +288,7 @@ claude-sonnet-4-6
 - Task 2.2: `drawClusterWaveform` called only from `drawRecordingCluster` (line 378) and dead-code legacy wrapper `drawWaveformBarsInZone` (private, zero call sites). Fix does not affect IDLE/TRANSCRIBING/DONE paths.
 - **Task 6 (GATE-4 reopen fix):** `smoothedAmplitude()` in `KlarvoAudioRecorder.kt` recalibrated. Old: noiseFloor=0.04, remap×2.5 → normal speech → ≈0. New: noiseFloor=0.005 (= raw RMS ≈164, aligned with VAD default), band [0.005..0.15] remapped × 4.0 gain → normal speech maps to [0..1] visibly. Temporary diagnostic log added (tag: `KLARVO_AMP_DIAG`, ~1/s throttle, prints rawRMS/normalized/smoothedAmp). VAD path (`processVadFrame`/`isEnergyAboveGate`) untouched.
 - **Task 7 (Latenz-Verfeinerung 2026-06-21):** 3-Sample-Rolling-Average aus `smoothedAmplitude()` entfernt — `gated` direkt zurück. Felder `amplitudeHistory`/`amplitudeHistoryIndex` + Reset in `start()` gelöscht. Read-Chunk 4096 shorts (256 ms) → 1024 shorts (~64 ms); AudioRecord bufferSize (8192) unverändert; feedVad/PCM-Akkumulation unberührt. KLARVO_AMP_DIAG-Throttle 4→16 (~1×/Sek bleibt). 24 JVM tests pass. SHA beb94b8.
+- **Task 8 (Definitiv-Fix — Desktop-Scrolling-History):** Port der Desktop `levels[20]`-Scrollbuffer-Logik auf Android. `waveLevels = FloatArray(20)` Ring-Buffer in `FloatingBubbleView`; `amplitude`-Setter pushes (arraycopy shift-left + append). `drawClusterWaveform()` neu: für jeden der 5 Bars `levelIdx = round(i/(N-1)*(size-1))`, `barH = max(minBarH, waveLevels[levelIdx] * maxBarH)` — kein Cosinus-Sweep mehr. `barAnimator` und `barPhaseOffsets` entfernt (waren nur für den Sweep). Reset auf RECORDING/IDLE via `waveLevels.fill(0f)` in `updateAnimators()`. Harness-Pfad: `applyHarnessState()` ruft `setStaticWaveLevel()` (füllt alle 20 Slots uniform). 24 JVM tests pass. SHA 7a5c546.
 - 24 JVM unit tests pass. KlarvoTheme drift-gate green. android-smoke.sh exits 0. APK installed on real device 100.112.41.70:5555.
 - GATE-4 = Andi's real device with live mic (bars must visibly rise on speech / fall on silence; logcat `KLARVO_AMP_DIAG` confirms real amplitude levels).
 
@@ -290,6 +296,7 @@ claude-sonnet-4-6
 
 - `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt`
 - `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt`
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt`
 
 ## Change Log
 
@@ -298,3 +305,4 @@ claude-sonnet-4-6
 - 2026-06-21: GATE-4 reopen fix — recalibrate `smoothedAmplitude()` in `KlarvoAudioRecorder.kt`: noiseFloor 0.04→0.005, band [0.005..0.15]×4.0 gain. Add TEMPORARY diagnostic log tag KLARVO_AMP_DIAG (~1/s). VAD path untouched. 24 JVM tests pass. APK installed 100.112.41.70:5555. (claude-sonnet-4-6)
 - 2026-06-21: GATE-4 refinement (Andi-approved) — (1) FloatingBubbleView floor 0.05f→0f (silence flat/still, desktop parity); (2) KlarvoAudioRecorder noiseFloor 0.005f→0.012f (gate ambient hum ≈raw393 to zero); (3) diagSampleCount throttle fixed: was +=3/call→fires ~22min, now +=1 interval=4→fires ~1×/sec. 24 JVM tests pass. APK installed 100.112.41.70:5555. SHA 7964d4e. (claude-sonnet-4-6)
 - 2026-06-21: Latenz-Verfeinerung (real-device KLARVO_AMP_DIAG) — (1) 3-Sample-Rolling-Average entfernt aus smoothedAmplitude() → gated direkt zurück (onset-/offset-Lag ~200-300 ms eliminiert); (2) Read-Chunk 4096→1024 shorts (256 ms→64 ms, 4× häufiger); (3) KLARVO_AMP_DIAG-Throttle 4→16 (weiterhin ~1×/Sek). VAD/noiseFloor/gain/Geometrie unberührt. 24 JVM-Tests pass. APK 100.112.41.70:5555. SHA beb94b8. (claude-sonnet-4-6)
+- 2026-06-21: Definitiv-Fix: Desktop-Scrolling-History-Waveform auf Android portiert. waveLevels[20] Ring-Buffer in FloatingBubbleView; amplitude-Setter push-to-history; drawClusterWaveform() History-Sampling (kein Cosinus-Sweep, barAnimator/barPhaseOffsets entfernt); setStaticWaveLevel() für Harness-Pfad; applyHarnessState() ruft setStaticWaveLevel(). Silence=flat/still, Sprache füllt Buffer, Stop=smooth scroll-fade. 24 JVM-Tests pass. APK 100.112.41.70:5555. SHA 7a5c546. (claude-sonnet-4-6)
