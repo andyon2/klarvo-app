@@ -157,10 +157,6 @@ class KlarvoAudioRecorder(
     private var dbgRmsMax = 0f
     private var dbgVadTrue = 0
 
-    // Rolling average for amplitude smoothing (last 3 values).
-    private val amplitudeHistory = FloatArray(3) { 0f }
-    private var amplitudeHistoryIndex = 0
-
     /**
      * Returns true if [start] has been called and [stop] has not yet returned.
      */
@@ -219,10 +215,6 @@ class KlarvoAudioRecorder(
 
         recorder.startRecording()
 
-        // Reset smoothing state for the new recording session.
-        amplitudeHistory.fill(0f)
-        amplitudeHistoryIndex = 0
-
         // Reset VAD silence detection state.
         vadRingPos = 0
         silentFrames = 0
@@ -237,7 +229,10 @@ class KlarvoAudioRecorder(
             "energyGate=$energyGateThreshold onSilenceDetected=${onSilenceDetected != null}")
 
         recordingThread = Thread {
-            val buf = ShortArray(bufferSize / 2)
+            // Read in 1024-short chunks (~64 ms at 16 kHz) so onAmplitude fires ~4× more often
+            // than the old bufferSize/2 (4096 shorts = 256 ms). AudioRecord bufferSize (8192)
+            // is unchanged — only the per-iteration read slice shrinks.
+            val buf = ShortArray(1024)
             while (isCapturing) {
                 val read = recorder.read(buf, 0, buf.size)
                 if (read > 0) {
@@ -459,21 +454,24 @@ class KlarvoAudioRecorder(
 
     // TEMPORARY diagnostic log state — removed before close-out (Story 9-12 GATE-4 re-run).
     // One log line per ~1 second of recording (throttled by buffer-read count).
-    // Buffer = 4096 shorts at 16000 Hz ≈ 4 reads/sec → fire every 4 calls.
+    // Chunk = 1024 shorts at 16000 Hz ≈ 15.6 reads/sec → fire every 16 calls.
     private var diagSampleCount = 0
-    private val diagLogIntervalSamples = 4  // ~1 s at ~4 buffer reads/sec
+    private val diagLogIntervalSamples = 16  // ~1 s at ~16 buffer reads/sec (1024-short chunks)
 
     /**
-     * Converts a raw RMS value (0..32768) into a noise-gated, amplified, smoothed
-     * amplitude in [0, 1] suitable for waveform display.
+     * Converts a raw RMS value (0..32768) into a noise-gated, amplified amplitude
+     * in [0, 1] suitable for waveform display.
      *
      * Recalibrated 2026-06-21 (Story 9-12 GATE-4 re-run):
      * - Old noise floor 0.04 (= raw RMS ≈1311) gated normal phone speech to ≈0.
-     * - New noise floor 0.005 (= raw RMS ≈164) sits well below typical speech;
-     *   aligns with the VAD energy-gate DEFAULT_ENERGY_GATE_THRESHOLD (0.005).
-     * - Speech band [0.005..0.15] remapped and × 4.0 to fill [0..1] visibly;
+     * - New noise floor 0.012 (= raw RMS ≈393) gates ambient hum while passing speech.
+     * - Speech band [0.012..0.15] remapped and × 4.0 to fill [0..1] visibly;
      *   clamped at 1 — louder speech saturates cleanly.
-     * - 3-sample rolling average retained to remove frame-to-frame jitter.
+     * - No rolling average: [gated] is returned directly. The visual cosine sweep in
+     *   drawClusterWaveform already provides smoothness (same as Desktop). Removing the
+     *   3-sample average eliminates the ~200-300 ms onset/offset lag confirmed by real-
+     *   device KLARVO_AMP_DIAG data (silent rawRMS=64 still showed smoothedAmp=0.304
+     *   carryover; speech rawRMS=639 showed only smoothedAmp=0.073 onset lag).
      *
      * Call sites: DISPLAY ONLY (onAmplitude → bubbleView/panelView). The VAD path
      * uses normalizedRms + isEnergyAboveGate independently — this function is safe
@@ -497,22 +495,17 @@ class KlarvoAudioRecorder(
             (remapped * 4.0f).coerceIn(0f, 1f)
         }
 
-        // Rolling average over the last 3 samples.
-        amplitudeHistory[amplitudeHistoryIndex % amplitudeHistory.size] = gated
-        amplitudeHistoryIndex++
-        val smoothed = amplitudeHistory.average().toFloat()
-
         // TEMPORARY diagnostic log — tag: KLARVO_AMP_DIAG — remove before close-out (9-12).
         // Format: rawRMS | normalized | smoothedAmp  (throttled to ~1× per second)
-        diagSampleCount += 1  // increment by 1 per call; interval = ~4 reads/sec
+        diagSampleCount += 1
         if (diagSampleCount >= diagLogIntervalSamples) {
             diagSampleCount = 0
             KlarvoLogger.d(
                 "KLARVO_AMP_DIAG",
-                "rawRMS=%.1f normalized=%.4f smoothedAmp=%.3f".format(rawRms, normalized, smoothed)
+                "rawRMS=%.1f normalized=%.4f smoothedAmp=%.3f".format(rawRms, normalized, gated)
             )
         }
 
-        return smoothed
+        return gated
     }
 }
