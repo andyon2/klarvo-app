@@ -306,18 +306,21 @@ class KlarvoOverlayService : Service() {
                 return
             }
         }
-        // F3: reset amplitude when rms is absent so each harness broadcast starts clean.
+        // Reset amplitude when rms is absent so each harness broadcast starts clean.
         val coercedRms = if (rms >= 0f) rms.coerceIn(0f, 1f) else 0f
-        // Use setStaticWaveLevel so the harness (which sets one static level, not a stream)
-        // fills all 20 history slots uniformly — gives a visible uniform waveform at that level.
-        bubbleView.setStaticWaveLevel(coercedRms)
         if (transcript != null) debugTranscript = transcript
-        // F1-A: force the bubble visible for harness use before setting state.
-        // F2: capture previous state so adjustLayoutForState gets correct geometry.
+        // Force the bubble visible for harness use before setting state.
+        // Capture previous state so adjustLayoutForState gets correct geometry.
         val previousState = currentState
         forceShowBubbleForHarness()
         setState(newState)
         adjustLayoutForState(newState, previousState)
+        // Apply the static wave level AFTER the state transition so that the
+        // RECORDING branch of updateAnimators() (waveLevels.fill(0f)) has already
+        // run before we fill the history — otherwise the reset would wipe our level.
+        // Use setStaticWaveLevel so the harness fills all 20 history slots uniformly,
+        // giving a visible uniform waveform at that level (not just one pushed slot).
+        bubbleView.setStaticWaveLevel(coercedRms)
 
         // Story 9.5: sync listening panel to harness state.
         when (newState) {

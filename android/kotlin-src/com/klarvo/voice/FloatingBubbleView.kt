@@ -71,14 +71,12 @@ class FloatingBubbleView(context: Context) : View(context) {
      * Fill ALL waveLevels slots with [v] and invalidate.
      * Used by the debug harness (which sets one static level, not a stream) so a forced
      * harness recording shows a uniform waveform at that level rather than one filled slot.
+     * Does NOT re-enter the amplitude push-setter — the cluster waveform reads waveLevels
+     * directly, so touching amplitude is unnecessary here.
      */
     fun setStaticWaveLevel(v: Float) {
-        val clamped = v.coerceIn(0f, 1f)
-        waveLevels.fill(clamped)
-        // Bypass the push-history setter — all slots are already filled; just sync the backing field.
-        // We set amplitude directly via setter; the arraycopy shifts one slot but since all slots
-        // equal clamped the result is identical, and it triggers invalidate().
-        amplitude = clamped
+        waveLevels.fill(v.coerceIn(0f, 1f))
+        invalidate()
     }
 
     /**

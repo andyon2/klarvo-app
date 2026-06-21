@@ -461,11 +461,14 @@ class KlarvoAudioRecorder(
      * - New noise floor 0.012 (= raw RMS ≈393) gates ambient hum while passing speech.
      * - Speech band [0.012..0.15] remapped and × 4.0 to fill [0..1] visibly;
      *   clamped at 1 — louder speech saturates cleanly.
-     * - No rolling average: [gated] is returned directly. The visual cosine sweep in
-     *   drawClusterWaveform already provides smoothness (same as Desktop). Removing the
+     * - No rolling average: [gated] is returned directly (the per-chunk amplitude is
+     *   returned as-is; temporal/visual smoothing is provided SPATIALLY by the scrolling
+     *   20-deep waveLevels history in FloatingBubbleView — desktop parity). Removing the
      *   3-sample average eliminates the ~200-300 ms onset/offset lag confirmed by real-
      *   device KLARVO_AMP_DIAG data (silent rawRMS=64 still showed smoothedAmp=0.304
      *   carryover; speech rawRMS=639 showed only smoothedAmp=0.073 onset lag).
+     *   Note: the method name smoothedAmplitude is now a slight misnomer — it returns the
+     *   gated per-chunk amplitude, not a temporally smoothed value.
      *
      * Call sites: DISPLAY ONLY (onAmplitude → bubbleView/panelView). The VAD path
      * uses normalizedRms + isEnergyAboveGate independently — this function is safe
