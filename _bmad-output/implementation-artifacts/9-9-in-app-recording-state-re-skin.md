@@ -1,6 +1,6 @@
 # Story 9.9: In-app recording state re-skin (small — D2)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -86,6 +86,17 @@ Then zero hardcoded hex strings (`#xxxxxx`) or raw `rgba(...)` color literals ar
 - [x] **Task 5: Commit** (AC: all)
   - [x] 5.1 Stage only touched files. Never `git add .`.
   - [x] 5.2 Commit message: `feat(android/9-9): in-app recording re-skin — replace hardcoded color with bg-klarvo-bg-deep token`
+
+## Review Findings
+
+Code review of `c2452e38..eaf494f` (Blind / Edge / Auditor, Opus), 2026-06-21:
+
+- [ ] [Review][Patch] Processing/busy glow shadow uses stale `rgba(255,163,68)` (#FFA344, old amber) — must be `rgba(233,162,76)` (canon `--k-amber` #E9A24C) to match its role token [src/App.tsx ~70] (AC8/AC3)
+- [ ] [Review][Patch] Idle glow shadow uses stale `rgba(42,195,168)` (#2AC3A8, old teal) — must be `rgba(41,199,172)` (canon `--k-teal` #29C7AC), both the `0.2` and the hover `0.3` occurrences [src/App.tsx ~71] (AC8/AC1)
+- [ ] [Review][Patch] Recording pulse-ring salience regression — `border-klarvo-warning/40` on the `animate-ping` span compounds with the span's own `opacity-40` (~0.16 effective alpha) vs the original `border-red-400` × `opacity-40` (~0.40). Use full-alpha `border-klarvo-warning` (keep `opacity-40`) to restore the live-pulse visibility [src/App.tsx ~81] (AC7)
+- [x] [Review][Dismiss] "recording & processing now share amber" — intentional GATE-1 design decision (distinguished by Stop icon vs Spinner); not a defect
+- [x] [Review][Dismiss] "tokens may not resolve / bg-klarvo-bg-deep undefined" — false: all tokens exist in styles.css; `npm run build` generated the utility
+- [x] [Review][Dismiss] "#0c0c0e→token is an unverified color shift" — intended by AC6 (canonical deep-bg token, near-imperceptible)
 
 ## Dev Notes
 
@@ -210,5 +221,6 @@ None
 
 ### Change Log
 
+- 2026-06-21 — **Close-out → done (conductor + Andi).** Review clean (3 patches found + fixed, commit 3b2d7ee); GATE-4 machine-smoke green at artifact level (token chain verified in built CSS+JS; `android-smoke.sh` exit 0; APK installed on real device). **Scope reality, surfaced this run:** the in-app `RecordButton` surface (`android-05` / `.inapp-mic`) is NOT in the current Model-B canon — `.inapp-mic` is an orphan CSS rule, never instantiated in the canon HTML; the canon's Android recording language is the bubble overlay only. 9-9 therefore reduced to a DT-closure (red→amber + remove hardcoded colors + raw-text bg token) of a real-but-undesigned, shared-with-desktop surface. Andi accepted it as done rather than over-investing. **Follow-up to consider:** decide the fate of the in-app big-mic button on Android (keep / hide / redesign to Model-B symbolism) — not 9-9's job. GATE-4 evidence: `gate4-evidence/9-9/verdict.md`.
 - 2026-06-21 — **GATE-1 design decision (conductor + Andi):** Resolved an AC2/AC7 contradiction the story-creation worker merged silently. In-app recording-state indicator = **AMBER** (`klarvo-warning` / canon `.inapp-mic .ring` amber-line pulse), NOT red/danger. Red is reserved for stop/cancel/error only (ADR-0019; consistent with 9-5 Modell-B bubble). Scope corrected from "1-line tokenization" to "recording red→amber re-skin + remove hardcoded `border-red-400` + raw-text `bg-[#0c0c0e]`→token". ACs 2, 4, 7, 8 and Dev Notes updated accordingly.
 - 2026-06-21 — **Story implemented:** Recording state re-skinned danger→amber (AC2/AC7), status label recording→amber (AC4), raw-text textarea tokenized (AC6), hardcoded `border-red-400` removed (AC8). Build PASS. android-smoke.sh EXIT 0.

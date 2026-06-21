@@ -133,7 +133,7 @@ development_status:
   9-6-keyboard-collapse-via-a11y-service: backlog
   9-7-short-press-gesture-modes-mirror-desktop: done
   9-8-long-press-popover-menu: backlog
-  9-9-in-app-recording-state-re-skin: review
+  9-9-in-app-recording-state-re-skin: done
   9-10-token-codegen-klarvo-css-to-klarvotheme: done
   9-11-android-honors-silence-threshold-mic-sensitivity: done
   epic-9-retrospective: optional
