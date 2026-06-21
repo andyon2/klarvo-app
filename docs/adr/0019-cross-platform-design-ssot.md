@@ -142,4 +142,13 @@ keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (
 
 **(#1-Anker, keine Geometrie-Änderung) Waveform ist RMS-getrieben.** Die Cluster-/HOLD-Waveform (`.hwave`) ist im Build ein **von der echten Stimm-Amplitude (RMS) getriebener** Live-Cue (wie Desktop), nicht die im Canon nur illustrative idle-Animation. Im Canon als CSS-Kommentar festgehalten; Realisierung = Build-Story **Follow-up #1** (`docs/backlog.md`).
 
+> **Realisiert 2026-06-21 (Story 9-12, Andi real-device GATE-4 approved).** Der Android-Cluster-Waveform
+> ist als **Desktop-Paritäts-Algorithmus** gebaut: eine **scrollende 20-tiefe Amplituden-Historie** (1:1 zu
+> `src/FloatingBar.tsx`), kein synthetischer Cosinus-Sweep mehr. **Bei Stille flach/still** (alle Pegel 0 → Min-Balken)
+> — das präzisiert die „nicht idle-Animation"-Regel: der frühere Eindruck „Balken frieren nie ein" ist **überholt**
+> (Desktop friert bei Stille ein, Android jetzt auch). Verlauf: erst RMS-Feed kalibriert (`smoothedAmplitude`-Noise-Floor
+> 0.04→0.012 war der echte Defekt, nicht die Zeichen-Formel), dann Stille-Kopplung, dann Desktop-Port. Feinschliff
+> (Cross-Mic-Robustheit der Magic-Numbers, Panel-Waveform-Abgleich) geparkt → `docs/backlog.md`. Lehre: visuelle
+> *Bewegung* ist NUR am echten Gerät verifizierbar (Emulator/Harness setzen Amplitude direkt, am Mikro vorbei).
+
 **Provenance (§5):** in-repo-Canon-Erweiterung. Fingerprint `efe726c6…` → **`fc9ef7456700d19b8332dd2c34a43b8e`** (MANIFEST-Zeile 2026-06-21). Geänderte/neue Surfaces: recording-`.ab-cluster` (Reihenfolge), neu `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` + Artboard-Sektion „Aufnahme · HOLD-Modus". Abgesegneter Stand: `mockup-9-5-followups-2-4.html` (Andi, 2026-06-21).

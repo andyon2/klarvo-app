@@ -249,6 +249,25 @@ build. Anchor: `docs/design/overhaul/source/` + `mockup-bubble-preview-modelB.ht
 
 ---
 
+## Story 9-12 — Waveform-Feinschliff (deferred 2026-06-21, Andi)
+
+Source: 9-12 close-out. Andi nahm den Cluster-Waveform am echten Gerät ab („ja, passt") — Desktop-Paritäts-
+Port (scrollende 20er-Pegel-Historie, still bei Stille, weicher Fade). **„Feinschliff noch nötig, aber nicht
+jetzt"** — nicht spezifiziert. Wenn Andi es aufgreift, konkret machen. Bekannte Kandidaten:
+
+- **Cross-Mic-Robustheit der Magic-Numbers.** `smoothedAmplitude()` ist auf Andis Gerät kalibriert
+  (`noiseFloor=0.012`, Band `[0.012..0.15]`, Gain ×4.0). Andere Mikros/Distanzen können clippen oder zu
+  schwach sein. Evtl. adaptive Normalisierung statt fester Konstanten (Reviewer-Flag).
+- **`ListeningPanelView`-Waveform-Abgleich.** Dieser View hat noch den ALTEN Cosinus-Sweep
+  (`barAnimator`/`barPhaseOffsets`, `ListeningPanelView.kt:294/468`) und wird via `panelView?.amplitude`
+  gefüttert. In Modell B ist das Panel passiv (nur Text+Zeit) → vermutlich dormant/nicht gezeichnet. **Prüfen:**
+  zeichnet das Panel je eine Waveform? Falls ja, hat es das alte (abgehackte) Verhalten → auf Desktop-Parität
+  ziehen. War bewusst NICHT in 9-12-Scope (Cluster-only).
+- **Scroll-Glätte bei 64ms-Update-Takt** (15 fps) — falls bei genauem Hinsehen steppig, interpolieren.
+
+GATE = echtes Gerät, Live-Mikro (Emulator kann Bewegung nicht beurteilen). Anker: `src/FloatingBar.tsx`
+(Desktop-SOLL), ADR-0019 §4′-Amendment #1-Anker „Realisiert 2026-06-21".
+
 ## Tooling — klarvo BMAD-Version auf 6.8 ziehen (eigene, bewusste Entscheidung; NICHT jetzt)
 
 Source: BMAD-Internals-Session 2026-06-16 (Skill-Inventar-Diff klarvo 6.6.1-next.2 ↔ awos 6.8.0).
