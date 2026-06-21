@@ -112,6 +112,13 @@ The exact numbers are calibration that GATE-4 (Andi's real mic) must confirm —
   - [x] 5.1 Stage only `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` (the only modified file).
   - [x] 5.2 Never `git add .`.
 
+- [x] **Task 6 (GATE-4 Reopen Fix 2026-06-21): Recalibrate `smoothedAmplitude()` + add diagnostic log (AC: 1, 2)**
+  - [x] 6.1 Lower `noiseFloor` in `KlarvoAudioRecorder.smoothedAmplitude()` from `0.04f` → `0.005f` (aligned with VAD energy-gate default); remap band `[0.005..0.15]` × 4.0 gain so normal phone speech maps visibly to [0..1].
+  - [x] 6.2 Add TEMPORARY diagnostic log (tag `KLARVO_AMP_DIAG`, throttled ~1/s) printing rawRMS, normalized, smoothedAmp — removed before close-out.
+  - [x] 6.3 Confirm VAD path (`processVadFrame`, `normalizedRms`, `isEnergyAboveGate`) is untouched.
+  - [x] 6.4 `android-smoke.sh` exits 0, 24 JVM tests green, APK installed on real device.
+  - [x] 6.5 Commit `KlarvoAudioRecorder.kt` (only changed file for this task).
+
 ## Dev Notes
 
 ### The one-file change
@@ -261,19 +268,24 @@ claude-sonnet-4-6
 
 - Emulator overlay not visible in screencap (TYPE_APPLICATION_OVERLAY not captured by adb screencap) — expected behaviour; harness broadcasts completed successfully (result=0). Mathematical range verification used as machine-gate for AC3.
 - Debug APK built via gradle with Rust tasks skipped (`-x rustBuild*`) since `.so` already compiled by `android-build.sh --clean` at 03:24. APK timestamp: 03:25. Fix confirmed in `gen/android` sync path.
+- **GATE-4 FAILED 2026-06-21:** Real device showed bars constant-low during live dictation (harness RMS=0.9 → bars TALL, so draw-path is correct). Root cause: `smoothedAmplitude()` noise floor 0.04 (= raw RMS ≈1311) gates normal phone speech to ≈0. Fix direction: recalibrate `smoothedAmplitude()` in `KlarvoAudioRecorder.kt`.
+- **Task 6 fix:** `smoothedAmplitude()` recalibrated — noiseFloor 0.04→0.005, band [0.005..0.15] × 4.0 gain. Diagnostic log tag `KLARVO_AMP_DIAG` added (throttled 1/s). VAD path untouched. 24 JVM tests green. APK installed on 100.112.41.70:5555.
 
 ### Completion Notes List
 
 - **One-line fix** in `FloatingBubbleView.drawClusterWaveform()`: lowered silence floor from `0.15f` to `0.05f`, exponent from `0.6` to `0.5`. New visual range: silence ≈ 22% height, speech@0.7 ≈ 84% height (ratio 3.8×, was 2.2×). Canon mandate: ADR-0019 §4′ #1-Anker.
 - Task 2.2: `drawClusterWaveform` called only from `drawRecordingCluster` (line 378) and dead-code legacy wrapper `drawWaveformBarsInZone` (private, zero call sites). Fix does not affect IDLE/TRANSCRIBING/DONE paths.
-- 24 JVM unit tests pass. KlarvoTheme drift-gate green. android-smoke.sh exits 0.
-- GATE-4 = Andi's real device with live mic (live RMS reactivity confirmation).
+- **Task 6 (GATE-4 reopen fix):** `smoothedAmplitude()` in `KlarvoAudioRecorder.kt` recalibrated. Old: noiseFloor=0.04, remap×2.5 → normal speech → ≈0. New: noiseFloor=0.005 (= raw RMS ≈164, aligned with VAD default), band [0.005..0.15] remapped × 4.0 gain → normal speech maps to [0..1] visibly. Temporary diagnostic log added (tag: `KLARVO_AMP_DIAG`, ~1/s throttle, prints rawRMS/normalized/smoothedAmp). VAD path (`processVadFrame`/`isEnergyAboveGate`) untouched.
+- 24 JVM unit tests pass. KlarvoTheme drift-gate green. android-smoke.sh exits 0. APK installed on real device 100.112.41.70:5555.
+- GATE-4 = Andi's real device with live mic (bars must visibly rise on speech / fall on silence; logcat `KLARVO_AMP_DIAG` confirms real amplitude levels).
 
 ### File List
 
 - `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt`
+- `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt`
 
 ## Change Log
 
 - 2026-06-21: Widen amplitude visual range in `drawClusterWaveform()` — floor 0.15→0.05, exponent 0.6→0.5; ratio 2.2×→3.8×. 24 JVM tests pass. (claude-sonnet-4-6)
 - 2026-06-21: Fix comment in `drawClusterWaveform()` — correct conflation of `dynamicFactor` values with rendered bar height; now states both (dynamicFactor ~0.32→0.84 old / ~0.22→0.84 new, visible peak ratio ≈2.1×→≈2.8× after 10% minBarH baseline). Comment-only, no code change. 24 JVM tests pass. (claude-sonnet-4-6)
+- 2026-06-21: GATE-4 reopen fix — recalibrate `smoothedAmplitude()` in `KlarvoAudioRecorder.kt`: noiseFloor 0.04→0.005, band [0.005..0.15]×4.0 gain. Add TEMPORARY diagnostic log tag KLARVO_AMP_DIAG (~1/s). VAD path untouched. 24 JVM tests pass. APK installed 100.112.41.70:5555. (claude-sonnet-4-6)

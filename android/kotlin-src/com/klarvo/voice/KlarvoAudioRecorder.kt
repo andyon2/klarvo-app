@@ -457,32 +457,60 @@ class KlarvoAudioRecorder(
         return sqrt(sum / length).toFloat()
     }
 
+    // TEMPORARY diagnostic log state — removed before close-out (Story 9-12 GATE-4 re-run).
+    // One log line per ~1 second of recording (throttled by sample count).
+    private var diagSampleCount = 0
+    private val diagLogIntervalSamples = SAMPLE_RATE  // ~1 s at 16 kHz
+
     /**
      * Converts a raw RMS value (0..32768) into a noise-gated, amplified, smoothed
      * amplitude in [0, 1] suitable for waveform display.
      *
-     * - Values below NOISE_FLOOR_NORMALIZED are silenced (report 0).
-     * - Values above the floor are remapped to [0, 1] and amplified so that
-     *   normal speech peaks are clearly visible.
-     * - A 3-sample rolling average removes frame-to-frame jitter.
+     * Recalibrated 2026-06-21 (Story 9-12 GATE-4 re-run):
+     * - Old noise floor 0.04 (= raw RMS ≈1311) gated normal phone speech to ≈0.
+     * - New noise floor 0.005 (= raw RMS ≈164) sits well below typical speech;
+     *   aligns with the VAD energy-gate DEFAULT_ENERGY_GATE_THRESHOLD (0.005).
+     * - Speech band [0.005..0.15] remapped and × 4.0 to fill [0..1] visibly;
+     *   clamped at 1 — louder speech saturates cleanly.
+     * - 3-sample rolling average retained to remove frame-to-frame jitter.
+     *
+     * Call sites: DISPLAY ONLY (onAmplitude → bubbleView/panelView). The VAD path
+     * uses normalizedRms + isEnergyAboveGate independently — this function is safe
+     * to tune without touching silence detection.
      */
     private fun smoothedAmplitude(rawRms: Float): Float {
         val normalized = (rawRms / 32768f).coerceIn(0f, 1f)
 
-        // Noise floor: anything below this is treated as silence.
-        val noiseFloor = 0.04f
+        // Noise floor: anything below this is treated as silence for display.
+        // 0.005 ≈ raw RMS 164 — well below typical speech, avoids gating quiet speakers.
+        val noiseFloor = 0.005f
 
         val gated = if (normalized < noiseFloor) {
             0f
         } else {
-            // Remap [noiseFloor..1] -> [0..1], then amplify to make speech peaks pop.
-            val remapped = (normalized - noiseFloor) / (1f - noiseFloor)
-            (remapped * 2.5f).coerceIn(0f, 1f)
+            // Remap [noiseFloor..0.15] -> [0..1] with ×4 gain so normal speech (which
+            // sits roughly in the 0.01..0.10 normalized band on phone mics) maps to a
+            // clearly visible range. Louder speech saturates at 1 — that's fine.
+            val remapped = (normalized - noiseFloor) / (0.15f - noiseFloor)
+            (remapped * 4.0f).coerceIn(0f, 1f)
         }
 
         // Rolling average over the last 3 samples.
         amplitudeHistory[amplitudeHistoryIndex % amplitudeHistory.size] = gated
         amplitudeHistoryIndex++
-        return amplitudeHistory.average().toFloat()
+        val smoothed = amplitudeHistory.average().toFloat()
+
+        // TEMPORARY diagnostic log — tag: KLARVO_AMP_DIAG — remove before close-out (9-12).
+        // Format: rawRMS | normalized | smoothedAmp  (throttled to ~1× per second)
+        diagSampleCount += amplitudeHistory.size  // each call ≈ one buffer read
+        if (diagSampleCount >= diagLogIntervalSamples) {
+            diagSampleCount = 0
+            KlarvoLogger.d(
+                "KLARVO_AMP_DIAG",
+                "rawRMS=%.1f normalized=%.4f smoothedAmp=%.3f".format(rawRms, normalized, smoothed)
+            )
+        }
+
+        return smoothed
     }
 }
