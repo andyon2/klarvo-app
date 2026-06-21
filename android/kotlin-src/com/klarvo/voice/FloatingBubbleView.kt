@@ -454,9 +454,12 @@ class FloatingBubbleView(context: Context) : View(context) {
         val minBarH = maxBarH * 0.10f
 
         val t = (barAnimator.animatedValue as? Float) ?: 0f
-        // Always animate; amplitude scales height (baseline 0.15 so bars move even when silent).
+        // Always animate; amplitude scales height.
+        // Floor lowered to 0.05 (was 0.15) and exponent reduced to 0.5 (was 0.6) to widen the visual
+        // range: silence (amp=0) → ~22% height, speech (amp=0.7) → ~84% height (ratio ~3.8×, was ~2.2×).
+        // Canon mandate: hwave is RMS-driven (ADR-0019 §4′ #1-Anker, Story 9-12).
         // Cosine formula matches CSS @keyframes wv{0%,100%{minH}50%{maxH}} smooth ease-in-out shape.
-        val dynamicFactor = Math.pow(amplitude.coerceAtLeast(0.15f).toDouble(), 0.6).toFloat()
+        val dynamicFactor = Math.pow(amplitude.coerceAtLeast(0.05f).toDouble(), 0.5).toFloat()
 
         for (i in 0 until WAVE_BAR_COUNT) {
             val barX = startX + i * (barW + barGap)
