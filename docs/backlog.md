@@ -264,6 +264,12 @@ jetzt"** — nicht spezifiziert. Wenn Andi es aufgreift, konkret machen. Bekannt
   zeichnet das Panel je eine Waveform? Falls ja, hat es das alte (abgehackte) Verhalten → auf Desktop-Parität
   ziehen. War bewusst NICHT in 9-12-Scope (Cluster-only).
 - **Scroll-Glätte bei 64ms-Update-Takt** (15 fps) — falls bei genauem Hinsehen steppig, interpolieren.
+- **Reaktions-Latenz vs. Desktop (NEU 2026-06-26, Andi real-device nach 9-13).** Die Cluster-Waveform
+  reagiert auf die Stimme mit **~100-200ms Verzögerung**; die Windows-Pill reagiert **fast instant** —
+  spürbar träger und irritierend. Kandidaten: 64ms-Update-Takt (15 fps) + die `smoothedAmplitude()`-Glättung
+  (EMA/Fade) addieren Latenz; und der Amplituden-Feed-Pfad (AudioRecord-Buffer-Größe / Chunk-Latenz auf
+  Android vs. der cpal-Pfad auf Desktop). Messen: Stimm-Onset → erste Balken-Reaktion auf beiden Plattformen,
+  dann den dominierenden Latenz-Term kürzen. Ziel = Desktop-Parität (near-instant); Anker `src/FloatingBar.tsx`.
 
 GATE = echtes Gerät, Live-Mikro (Emulator kann Bewegung nicht beurteilen). Anker: `src/FloatingBar.tsx`
 (Desktop-SOLL), ADR-0019 §4′-Amendment #1-Anker „Realisiert 2026-06-21".
@@ -281,3 +287,20 @@ im Conductor-Lauf riskant** ist — unsere handgebauten Conductors hängen an ge
 6.6→6.8-Sprung verschieben kann. **Vorbedingung vor Durchführung:** Blast-Radius-Prüfung (was ändert
 sich an den Skills, an denen die Conductors hängen) + ein sicherer Zeitpunkt (kein laufender Epic-Lauf).
 Referenz-Mechanik: `~/.bmad/guides/bmad-internals.md`. Status: **geparkt, Decision pending.**
+
+## Android-Transkription langsamer geworden — Regression (2026-06-26, Andi real-device)
+
+Source: Andi real-device, nach dem 9-13-Install. Das **Transkribieren in der Android-App ist „seit ein paar
+Rebuilds" spürbar langsamer** geworden — „das hatten wir mal deutlich schneller". Welche Änderung das bewirkt
+hat, ist offen → **Regressions-Untersuchung**, nicht spekulativ fixen.
+
+- **Erst messen:** end-to-end STT-Latenz (Aufnahme-Ende → eingefügter Text) auf Android über die letzten
+  Builds vergleichen; Timestamp-Logging um den Groq-STT-Call (Request-Start → Response → Paste).
+- **Verdächtige (seit „schnell" dazugekommen):** der Min-Length-/Silence-Pre-Filter (Story 2-2) + Hallucination-
+  Filter (2-1) als zusätzliche Vor-/Nachverarbeitung; Änderungen am STT-Request-/Guard-Pfad via JNI (7-3);
+  Audio-Encoding / WAV-Payload-Größe; Chunking-Parameter; Netzwerk/Region zum Groq-Endpoint.
+- **Wichtig:** Android-STT = **Groq Cloud** `large-v3-turbo` (NICHT on-device; `reference_android_stt_is_groq_cloud`)
+  → die Latenz ist Netzwerk + Payload + Vor/Nachverarbeitung, **nicht** lokale Inferenz. Erst lokalisieren
+  (welcher Term dominiert), dann gezielt kürzen; ggf. `git bisect` über die Android-Builds seit „schnell".
+
+GATE = echtes Gerät (Latenz-Empfinden ist Andis). Status: **geparkt, Untersuchung offen.**
