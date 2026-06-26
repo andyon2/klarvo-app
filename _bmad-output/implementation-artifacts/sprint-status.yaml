@@ -135,3 +135,9 @@ development_status:
   9-8-long-press-popover-menu: backlog
   9-9-in-app-recording-state-re-skin: backlog
   epic-9-retrospective: optional
+
+  # Epic 10 — Native Desktop Overlays [L3 architecture-migration; surface-class smoke DoD] — branch feat/native-desktop-overlays, supersedes ADR-0020
+  epic-10: in-progress
+  10-1-native-pill-overlay: ready-for-dev
+  10-2-native-preview-overlay: backlog
+  epic-10-retrospective: optional
