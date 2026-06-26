@@ -320,11 +320,8 @@ pub async fn cancel_recording(
     *crate::lock!(inner.recording_start)? = None;
 
     // Emit idle state so all windows (main + floating bar) update.
-    use tauri::Emitter;
-    let _ = handle.emit(
-        crate::hotkey::EVENT_STATE_CHANGED,
-        crate::hotkey::PipelineEvent::idle(),
-    );
+    // Route through emit_pipeline_state so the native pill also transitions.
+    crate::emit_pipeline_state(&handle, crate::hotkey::PipelineEvent::idle());
 
     Ok(())
 }

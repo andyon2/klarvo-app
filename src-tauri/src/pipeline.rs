@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::audio;
 use crate::config::{self, AppConfig, HotkeyMode};
 use crate::history;
-use crate::hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
+use crate::hotkey::PipelineEvent;
 use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
 use crate::paste::{
     capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
@@ -757,10 +757,7 @@ pub async fn start_command_mode(handle: AppHandle) {
         .map(|s| crate::license::is_feature_allowed(&s, crate::license::LicensedFeature::CommandMode))
         .unwrap_or(false);
     if !command_mode_allowed {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error("feature_requires_license:CommandMode"),
-        );
+        crate::emit_pipeline_state(&handle, PipelineEvent::error("feature_requires_license:CommandMode"));
         return;
     }
 
@@ -871,10 +868,7 @@ pub async fn start_command_mode(handle: AppHandle) {
 
     let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
     if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error(format!("Failed to start recording: {e}")),
-        );
+        crate::emit_pipeline_state(&handle, PipelineEvent::error(format!("Failed to start recording: {e}")));
         if let Ok(mut guard) = state.command_mode_active.lock() {
             *guard = false;
         }
@@ -884,15 +878,12 @@ pub async fn start_command_mode(handle: AppHandle) {
     *match state.recording_start.lock() {
         Ok(g) => g,
         Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
+            crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned"));
             return;
         }
     } = Some(std::time::Instant::now());
 
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+    crate::emit_pipeline_state(&handle, PipelineEvent::recording());
 }
 
 // ---------------------------------------------------------------------------
@@ -1276,10 +1267,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("[pipeline] failed to stop recording: {e}");
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error(format!("Failed to stop recording: {e}")),
-            );
+            crate::emit_pipeline_state(&handle, PipelineEvent::error(format!("Failed to stop recording: {e}")));
             return;
         }
     };
@@ -1322,7 +1310,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     match silence_skip(duration_ms, adv.min_recording_ms as u64, rms, silence_threshold) {
         Some(SilenceSkip::TooShort) => {
             log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            crate::emit_pipeline_state(&handle, PipelineEvent::idle());
             return;
         }
         Some(SilenceSkip::Silent) => {
@@ -1330,7 +1318,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 "[pipeline] audio is silent (rms={:.5}), skipping",
                 rms.unwrap_or(0.0)
             );
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            crate::emit_pipeline_state(&handle, PipelineEvent::idle());
             return;
         }
         None => {}
@@ -1348,10 +1336,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] config lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (config)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (config)"));
                 return;
             }
         };
@@ -1360,10 +1345,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] stt_provider lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (stt_provider)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (stt_provider)"));
                 return;
             }
         };
@@ -1372,10 +1354,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] cleanup_provider lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (cleanup_provider)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (cleanup_provider)"));
                 return;
             }
         };
@@ -1509,8 +1488,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Run the STT -> guard -> LLM -> sanitize core (no locks held) ---
     let pipeline_start = std::time::Instant::now();
     let outcome = {
-        let mut emit = |ev| {
-            let _ = handle.emit(EVENT_STATE_CHANGED, ev);
+        let mut emit = |ev: PipelineEvent| {
+            crate::emit_pipeline_state(&handle, ev);
         };
         process_audio(process_input, &mut emit).await
     };
@@ -1786,7 +1765,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     } else {
         PipelineEvent::done(cleaned_text, raw_text)
     };
-    let _ = handle.emit(EVENT_STATE_CHANGED, done_event);
+    crate::emit_pipeline_state(&handle, done_event);
 }
 
 /// Applies the deferred side effects from a [`ProcessOutcome`] and extracts the
@@ -2249,6 +2228,22 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                 // Tell the FloatingBar which mode is active so it shows the
                 // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).
                 let _ = handle_clone.emit("klarvo://active-mode", mode);
+                // Also feed the native pill so its mode badge is correct
+                // (mirrors the deleted FloatingBar's klarvo://active-mode listener).
+                #[cfg(target_os = "windows")]
+                {
+                    let mode_str = match mode {
+                        HotkeyMode::Hold => "hold",
+                        HotkeyMode::Toggle => "toggle",
+                        HotkeyMode::AutoStop => "autostop",
+                        HotkeyMode::Auto => "auto",
+                    }.to_string();
+                    if let Ok(guard) = handle_clone.state::<AppState>().native_pill.lock() {
+                        if let Some(pill) = guard.as_ref() {
+                            pill.set_hotkey_mode(mode_str);
+                        }
+                    }
+                }
 
                 // Helper: stores the slot's insert_and_send flag in AppState
                 // so stop_and_process_pipeline can read it without needing to

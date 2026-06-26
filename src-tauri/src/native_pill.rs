@@ -72,6 +72,7 @@ const CHECK_SIZE: f32 = 11.0;
 const WM_PILL_SET_STATE: u32 = 0x8001; // WPARAM=state_code, LPARAM=clipboard_only
 const WM_PILL_SET_RMS: u32 = 0x8002;   // WPARAM=f32::to_bits()
 const WM_PILL_SET_MODE: u32 = 0x8003;  // WPARAM=ptr to Box<String> (caller Box::into_raw)
+const WM_PILL_SHUTDOWN: u32 = 0x8010;  // Request orderly teardown; handler calls DestroyWindow
 
 // Timer for spinner animation and done/error timeout
 const TIMER_ANIMATE: usize = 1;
@@ -155,6 +156,7 @@ struct PillWindowState {
     done_at: Option<Instant>,
     error_at: Option<Instant>,
     drag: Option<Drag>,
+    last_bar_moved_emit: Option<Instant>,
     // GDI resources
     main_dc: HDC,
     main_bmp: HBITMAP,
@@ -280,11 +282,12 @@ impl NativePill {
 
 impl Drop for NativePill {
     fn drop(&mut self) {
-        // Ask the pill thread to shut down its message loop.
+        // Post a custom shutdown message; the WndProc calls DestroyWindow which
+        // triggers the real WM_DESTROY + WM_NCDESTROY teardown and frees state.
         unsafe {
             let _ = PostMessageW(
                 HWND(self.hwnd as *mut _),
-                WM_DESTROY,
+                WM_PILL_SHUTDOWN,
                 WPARAM(0),
                 LPARAM(0),
             );
@@ -472,9 +475,10 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     }
 
     // --- 1. tiny-skia shape rendering into RGBA pixmap ---
-    let mut pixmap = Pixmap::new(pw as u32, ph as u32).unwrap_or_else(|| {
-        Pixmap::new(200, 36).unwrap()
-    });
+    let Some(mut pixmap) = Pixmap::new(pw as u32, ph as u32) else {
+        log::warn!("[native_pill] Pixmap::new({pw},{ph}) failed — skipping frame");
+        return;
+    };
 
     let (ar, ag, ab) = s.display.accent();
     let accent_color = Color::from_rgba(ar, ag, ab, 1.0).unwrap_or(Color::WHITE);
@@ -549,7 +553,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
                 }
             }
             // Waveform: 5 bars
-            render_waveform(&mut pixmap, &s.waveform, sc);
+            render_waveform(&mut pixmap, &s.waveform, s.waveform_pos, sc);
         }
 
         NativePillState::Transcribing | NativePillState::Cleaning => {
@@ -687,22 +691,20 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 }
 
-fn render_waveform(pixmap: &mut Pixmap, waveform: &[f32; 20], sc: f32) {
-    const NOISE_FLOOR: f32 = 0.006;
+fn render_waveform(pixmap: &mut Pixmap, waveform: &[f32; 20], waveform_pos: usize, sc: f32) {
+    // Samples are already boosted at ingest (WM_PILL_SET_RMS); no re-boost here.
     let total_wave_w = (PILL_W - WAVE_X - PAD) * sc;
     let bar_gap: f32 = 3.0 * sc;
     let bar_w = (total_wave_w - bar_gap * (WAVE_BARS as f32 - 1.0)) / WAVE_BARS as f32;
     let wave_center_y = (PILL_H / 2.0) * sc;
 
     for i in 0..WAVE_BARS {
+        // Sample relative to waveform_pos so index 0 = oldest, last = newest,
+        // reproducing FloatingBar's [...prev.slice(1), boosted] ordering.
         let level_idx = ((i as f32 / (WAVE_BARS - 1) as f32) * 19.0).round() as usize;
-        let raw = waveform[level_idx.min(19)];
-        let boosted = if raw <= NOISE_FLOOR {
-            0.0f32
-        } else {
-            (raw * 10.0).min(1.0).powf(0.4)
-        };
-        let amplitude = boosted.max(0.12);
+        let abs_idx = (waveform_pos + level_idx) % 20;
+        let sample = waveform[abs_idx];
+        let amplitude = sample.max(0.12);
         let bar_h = (amplitude * 19.0).max(3.0) * sc;
 
         let bx = (WAVE_X * sc) + i as f32 * (bar_w + bar_gap);
@@ -920,6 +922,7 @@ unsafe extern "system" fn pill_wnd_proc(
             s.done_at = None;
             s.error_at = None;
             s.waveform = [0.0f32; 20];
+            s.waveform_pos = 0; // reset ring-buffer head on state change
 
             match new_state {
                 NativePillState::Done | NativePillState::DoneClipboard => {
@@ -1030,13 +1033,22 @@ unsafe extern "system" fn pill_wnd_proc(
                 );
                 s.win_x = new_x;
                 s.win_y = new_y;
-                // Throttled bar-moved emit (every mouse move — matches rAF throttle in JS)
-                let logical_x = new_x as f64 / s.scale;
-                let logical_y = new_y as f64 / s.scale;
-                let _ = s.app_handle.emit(
-                    "klarvo://bar-moved",
-                    serde_json::json!({ "x": logical_x, "y": logical_y }),
-                );
+                // Throttle bar-moved emit during drag: at most once per ~16 ms
+                // (~60 Hz), matching the rAF-equivalent cadence in FloatingBar.
+                let now = Instant::now();
+                let should_emit = s
+                    .last_bar_moved_emit
+                    .map(|t| now.duration_since(t).as_millis() >= 16)
+                    .unwrap_or(true);
+                if should_emit {
+                    s.last_bar_moved_emit = Some(now);
+                    let logical_x = new_x as f64 / s.scale;
+                    let logical_y = new_y as f64 / s.scale;
+                    let _ = s.app_handle.emit(
+                        "klarvo://bar-moved",
+                        serde_json::json!({ "x": logical_x, "y": logical_y }),
+                    );
+                }
             }
             LRESULT(0)
         }
@@ -1074,21 +1086,34 @@ unsafe extern "system" fn pill_wnd_proc(
             LRESULT(0)
         }
 
+        WM_PILL_SHUTDOWN => {
+            // Triggered by NativePill::drop. DestroyWindow sends the real
+            // WM_DESTROY + WM_NCDESTROY sequence through the wndproc so
+            // the window and its GDI state are cleaned up in the right order.
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+
         WM_DESTROY => {
             if !state_ptr.is_null() {
+                // Zero USERDATA before freeing so any messages still in the
+                // queue find null and bail, avoiding use-after-free.
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let s = Box::from_raw(state_ptr);
-                // Clean up GDI resources
                 if s.timer_active {
                     let _ = KillTimer(hwnd, TIMER_ANIMATE);
                 }
-                DeleteObject(s.main_bmp);
-                DeleteDC(s.main_dc);
-                DeleteObject(s.tmp_bmp);
-                DeleteDC(s.tmp_dc);
+                // Fonts are never selected into a DC — safe to delete directly.
                 DeleteObject(s.font_k);
                 DeleteObject(s.font_label);
                 DeleteObject(s.font_mode);
                 DeleteObject(s.font_label_lg);
+                // Delete the DCs first; once a DC is destroyed the DIB section
+                // it owned is no longer "selected" and can be safely freed.
+                DeleteDC(s.main_dc);
+                DeleteObject(s.main_bmp);
+                DeleteDC(s.tmp_dc);
+                DeleteObject(s.tmp_bmp);
             }
             PostQuitMessage(0);
             LRESULT(0)
@@ -1106,11 +1131,9 @@ fn cancel_recording_now(app: &AppHandle) {
         if let Ok(mut g) = state.recording_start.lock() {
             *g = None;
         }
-        use tauri::Emitter;
-        let _ = app.emit(
-            crate::hotkey::EVENT_STATE_CHANGED,
-            crate::hotkey::PipelineEvent::idle(),
-        );
+        // Route through emit_pipeline_state so the native pill transitions
+        // to Idle/hidden (stop-button cancel must not leave pill on "Recording").
+        crate::emit_pipeline_state(app, crate::hotkey::PipelineEvent::idle());
     }
 }
 
@@ -1206,6 +1229,7 @@ fn pill_thread(
             done_at: None,
             error_at: None,
             drag: None,
+            last_bar_moved_emit: None,
             main_dc,
             main_bmp,
             main_bits,
@@ -1245,7 +1269,9 @@ fn pill_thread(
         ) {
             Ok(h) => h,
             Err(e) => {
-                drop(Box::from_raw(state_ptr));
+                // CreateWindowExW dispatches WM_DESTROY synchronously on failure
+                // (after WM_CREATE ran), so state_ptr was already freed by the
+                // WM_DESTROY handler. Do NOT call Box::from_raw here.
                 let _ = tx.send(Err(format!("CreateWindowExW: {e}")));
                 return;
             }

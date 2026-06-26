@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::{self, query_input_format};
-use crate::hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
+use crate::hotkey::PipelineEvent;
 use crate::pipeline::{stop_and_process_pipeline, run_dictation_pipeline, start_autostop_recording, start_auto_recording};
 use crate::AppState;
 
@@ -402,7 +402,7 @@ fn dispatch_command(cmd: VoiceCommand, handle: AppHandle) {
                 if let Ok(mut guard) = state.recording_start.lock() {
                     *guard = None;
                 }
-                let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+                crate::emit_pipeline_state(&handle, PipelineEvent::idle());
             }
         }
 
