@@ -93,13 +93,17 @@
   .ab-holddock { position: absolute; right: 8px; display: flex; align-items: center; gap: 11px; z-index: 5; }
   .ab-holdstrip { display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 11px; border-radius: 18px; background: rgba(20,22,24,.92); box-shadow: 0 0 0 1.5px var(--k-amber-line), var(--k-e3); }
   .ab-slidehint { display: flex; align-items: center; gap: 5px; color: var(--k-dim); font-size: 11px; white-space: nowrap; }
-  .ab-slidehint .arr { font-size: 14px; color: var(--k-amber); }
+  .ab-slidehint .arr { font-size: 14px; color: var(--k-amber); animation: slidearr 1.1s ease-in-out infinite; }
   .ab-heldbub { position: relative; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); font-weight: 700; font-size: 17px; box-shadow: 0 6px 18px rgba(0,0,0,.5), 0 0 0 4px var(--k-amber-line), var(--k-glass); }
   .ab-heldbub .ring { position: absolute; inset: -8px; border-radius: 18px; border: 2px solid var(--k-amber); opacity: .5; }
   .ab-heldbub .finger { position: absolute; right: -6px; bottom: -7px; width: 26px; height: 26px; border-radius: 50%; background: rgba(236,238,239,.15); border: 1.5px solid rgba(236,238,239,.45); }
   .ab-lockchip { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--k-muted); font-size: 10px; font-family: var(--k-mono); z-index: 6; }
-  .ab-lockchip .upi { font-size: 13px; color: var(--k-amber); }
+  .ab-lockchip .upi { font-size: 13px; color: var(--k-amber); animation: slideup 1.1s ease-in-out infinite; }
   .ab-lockchip svg { width: 13px; height: 13px; }
+  /* Gesten-Hint-Animation reconciled to the Andi-approved render (mockup-9-5-followups-2-4.html) · 2026-06-26.
+     The ingest had transcribed these static; the approval render pulses them (slide-to-cancel / drag-to-lock cue). */
+  @keyframes slidearr { 0%, 100% { transform: translateX(0); opacity: .5; } 50% { transform: translateX(-4px); opacity: 1; } }
+  @keyframes slideup { 0%, 100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(-4px); opacity: 1; } }
 
   /* ---- long-press popover ---- */
   .ab-scrim { position: absolute; inset: 0; background: rgba(6,8,9,.55); z-index: 3; }
