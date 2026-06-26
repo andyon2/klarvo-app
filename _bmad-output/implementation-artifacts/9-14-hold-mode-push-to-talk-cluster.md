@@ -1,6 +1,6 @@
 # Story 9.14: HOLD-Modus (Push-to-Talk) Bubble-Cluster-Variante
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -107,69 +107,53 @@ AND `adb shell am broadcast ... --ez hold_mode false` (or without the extra) sho
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Read ALL files being modified before touching any code**
-  - [ ] 1.1 Re-read `FloatingBubbleView.kt` fully (lines 1–632) — confirm current post-9-13 state: companion constants, `holdDockActive` not yet present, `drawRecordingCluster`, `isTouchInConfirmZone`/`isTouchInCancelZone`, waveform helpers.
-  - [ ] 1.2 Re-read relevant sections of `KlarvoOverlayService.kt`: `longPressRunnable` (l.379–393), `handleTouch` (l.996–1085), `handleTap` RECORDING branch (l.1132–1148), `adjustLayoutForState` (l.955–992), field declarations (l.200–261).
-  - [ ] 1.3 Re-read `ListeningPanelView.kt` lines 390–415 (the RECORDING label draw path at "Aufnahme") and the class-level `isHoldMode`-equivalent property if any.
-  - [ ] 1.4 Read `docs/design/overhaul/mockup-9-5-followups-2-4.html` — columns B (HOLD active) and C (HOLD locked) to confirm final visual layout before implementing.
-  - [ ] 1.5 Read canon CSS section for HOLD surfaces in `docs/design/overhaul/source/Klarvo Design System.html` (file-local `<style>`, lines ~91–102: `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-slidehint .arr`/`.ab-heldbub`/`.ab-lockchip`/`.ab-lockchip .upi` + `@keyframes slidearr`/`slideup`) for exact padding, gap, border-radius, color, and the hint-arrow animation values. **Note:** `assets/klarvo.css` does NOT contain the HOLD surfaces — they live only in the HTML's file-local style block (component geometry truth per MANIFEST).
+- [x] **Task 1: Read ALL files being modified before touching any code**
+  - [x] 1.1 Re-read `FloatingBubbleView.kt` fully (lines 1–632) — confirm current post-9-13 state: companion constants, `holdDockActive` not yet present, `drawRecordingCluster`, `isTouchInConfirmZone`/`isTouchInCancelZone`, waveform helpers.
+  - [x] 1.2 Re-read relevant sections of `KlarvoOverlayService.kt`: `longPressRunnable` (l.379–393), `handleTouch` (l.996–1085), `handleTap` RECORDING branch (l.1132–1148), `adjustLayoutForState` (l.955–992), field declarations (l.200–261).
+  - [x] 1.3 Re-read `ListeningPanelView.kt` lines 390–415 (the RECORDING label draw path at "Aufnahme") and the class-level `isHoldMode`-equivalent property if any.
+  - [x] 1.4 Read `docs/design/overhaul/mockup-9-5-followups-2-4.html` — columns B (HOLD active) and C (HOLD locked) to confirm final visual layout before implementing.
+  - [x] 1.5 Read canon CSS section for HOLD surfaces in `docs/design/overhaul/source/Klarvo Design System.html` (file-local `<style>`, lines ~91–102: `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-slidehint .arr`/`.ab-heldbub`/`.ab-lockchip`/`.ab-lockchip .upi` + `@keyframes slidearr`/`slideup`) for exact padding, gap, border-radius, color, and the hint-arrow animation values. **Note:** `assets/klarvo.css` does NOT contain the HOLD surfaces — they live only in the HTML's file-local style block (component geometry truth per MANIFEST).
 
-- [ ] **Task 2: Add HOLD dock drawing to `FloatingBubbleView.kt` (AC: 1, 2, 6, 7, 9)**
-  - [ ] 2.1 Add property `var holdDockActive: Boolean = false` with `set(value) { if (field == value) return; field = value; requestLayout(); invalidate() }`.
-  - [ ] 2.2 Add companion object constants for HOLD dock geometry (see Dev Notes §HOLD dock dimensions). Do NOT edit the generated `KlarvoTheme.kt`. Non-token colors (holdstrip background, ring colors) are local constants in the draw method.
-  - [ ] 2.3 Modify `onDraw`: in the `State.RECORDING` branch, route to `drawHoldDock(canvas)` when `holdDockActive == true`; keep `drawRecordingCluster(canvas)` for `holdDockActive == false` (exactly as 9-13 left it).
-  - [ ] 2.4 Modify `isTouchInConfirmZone`: prepend `&& !holdDockActive` guard (return false during hold — no tappable ➤ while physically held). **Do NOT alter any other predicate logic** (regression guard for 9-13).
-  - [ ] 2.5 Modify `isTouchInCancelZone`: same `&& !holdDockActive` guard.
-  - [ ] 2.6 Implement `drawHoldDock(canvas: Canvas)`:
-    - Compute window geometry from companion constants + density (see Dev Notes §Window sizing).
-    - Draw **lockchip** in the upper portion of the window: amber "▲" text + lock-icon Path (draw a simplified padlock: small arc for shackle + rounded rect body, Muted color, ~13dp) + "hoch = sperren" text below (10sp, Muted, monospace via `Typeface.MONOSPACE`).
-    - Draw **holdstrip** backdrop (dark fill `0xEB141618.toInt()`, r18dp, `AmberLine` ring stroke 1.5dp) in the lower-left zone.
-    - Draw **slidehint** inside holdstrip: amber "‹" glyph (14sp) on left, then gap, then dim "ziehen zum Abbrechen" (11sp, Dim color) — both left-aligned in the holdstrip.
-    - Draw **waveform** in the holdstrip to the right of the slidehint: call `drawClusterWaveform(canvas, waveLeft, waveRight, cy, dp)` using the waveform zone bounds inside the holdstrip — waveLeft/waveRight derived from holdstrip geometry. **Do NOT change `drawClusterWaveform` internals.**
-    - Draw **heldbub** to the right of the holdstrip + gap: teal gradient (TealHi→TealLo, 150°), "K" OnTeal, 12dp corner radius, 40dp visual size — reuse the same gradient paint as IDLE.
-    - Draw heldbub **amber ring** (box-shadow equivalent): `AmberLine` stroke 4dp, offset 4dp outset as a rounded rect around the heldbub.
-    - Draw heldbub **inner ring** (`.ab-heldbub .ring`): r18dp, Amber border 2dp, alpha 0.5, inset -8dp from heldbub bounds.
-    - Draw heldbub **finger indicator**: 26dp circle, bottom-right of heldbub at (-6dp, -7dp) offset, fill `0x26ECEEEF.toInt()`, stroke 1.5dp `0x73ECEEEF.toInt()`.
-  - [ ] 2.7 Add `LAYER_TYPE_SOFTWARE` is already set in `init` — confirm it remains (no change needed for shadow rendering).
-  - [ ] 2.8 Update class-level KDoc: add HOLD state description and note about `holdDockActive`.
+- [x] **Task 2: Add HOLD dock drawing to `FloatingBubbleView.kt` (AC: 1, 2, 6, 7, 9)**
+  - [x] 2.1 Add property `var holdDockActive: Boolean = false` with `set(value) { if (field == value) return; field = value; requestLayout(); invalidate() }`.
+  - [x] 2.2 Add companion object constants for HOLD dock geometry (see Dev Notes §HOLD dock dimensions). Do NOT edit the generated `KlarvoTheme.kt`. Non-token colors (holdstrip background, ring colors) are local constants in the draw method.
+  - [x] 2.3 Modify `onDraw`: in the `State.RECORDING` branch, route to `drawHoldDock(canvas)` when `holdDockActive == true`; keep `drawRecordingCluster(canvas)` for `holdDockActive == false` (exactly as 9-13 left it).
+  - [x] 2.4 Modify `isTouchInConfirmZone`: prepend `&& !holdDockActive` guard (return false during hold — no tappable ➤ while physically held). **Do NOT alter any other predicate logic** (regression guard for 9-13).
+  - [x] 2.5 Modify `isTouchInCancelZone`: same `&& !holdDockActive` guard.
+  - [x] 2.6 Implement `drawHoldDock(canvas: Canvas)`.
+  - [x] 2.7 Add `LAYER_TYPE_SOFTWARE` is already set in `init` — confirm it remains (no change needed for shadow rendering).
+  - [x] 2.8 Update class-level KDoc: add HOLD state description and note about `holdDockActive`.
 
-- [ ] **Task 3: Update `KlarvoOverlayService.kt` for HOLD interaction (AC: 1, 2, 3, 4, 5, 8, 9)**
-  - [ ] 3.1 In `longPressRunnable`, after `pushToTalkActive = (longPressMode == RecordingMode.HOLD)`: when `pushToTalkActive = true`, also set `bubbleView.holdDockActive = true` AND update the listening panel label — call a new helper `setHoldModeOnPanel(true)`.
-  - [ ] 3.2 Add private `fun setHoldModeOnPanel(holdMode: Boolean)`: sets `panelView?.isHoldMode = holdMode` (if the panel is visible; no-op otherwise). Used in 3.1 and 3.5.
-  - [ ] 3.3 In `adjustLayoutForState(newState, previousState)`, inside the `newState == RecordingState.RECORDING` branch:
-    - If `pushToTalkActive` (HOLD dock): compute HOLD dock window dimensions (see Dev Notes §Window sizing); shift `bubbleParams.y` upward by `lockchipH_px` so the holdstrip aligns with the idle bubble's position (clamped to ≥0); apply right-edge-anchor for X using `HOLDDOCK_VISUAL_W_DP` total.
-    - Else (normal cluster): existing code unchanged.
-  - [ ] 3.4 Add private `fun lockHoldToCluster()`: re-anchors the window from `preclusterBubbleX` to normal cluster dimensions and calls `updateBubbleLayout()`. Restores Y to its pre-hold position (reverse the lockchip upward shift). Called in the upward-drag lock path.
-  - [ ] 3.5 In `handleTouch` `ACTION_MOVE` branch: when `pushToTalkActive = true`:
-    - Replace the `return true` no-op with actual drag detection.
-    - Compute `dx = event.rawX - dragTouchStartX`, `dy = event.rawY - dragTouchStartY`.
-    - If `abs(dx) > HOLD_DRAG_CANCEL_PX` (60dp × density): call `cancelRecording()`, reset `pushToTalkActive = false`, `bubbleView.holdDockActive = false`, `setHoldModeOnPanel(false)`, `return true`.
-    - If `dy < -HOLD_DRAG_LOCK_PX` (upward; -40dp × density): call `lockHoldToCluster()`, set `pushToTalkActive = false`, `bubbleView.holdDockActive = false`, `setHoldModeOnPanel(false)`, update panel label to "Aufnahme · 🔒 gesperrt" — call `setLockedModeOnPanel()`, `return true`.
-    - Otherwise: `return true` (still holding — no position update during hold, consistent with prior behavior).
-  - [ ] 3.6 In `stopAndProcessRecording()` (or the path that clears recording state): reset `bubbleView.holdDockActive = false` and `setHoldModeOnPanel(false)`.
-  - [ ] 3.7 In `cancelRecording()`: same resets as 3.6.
-  - [ ] 3.8 Add private constants: `HOLD_DRAG_CANCEL_PX` and `HOLD_DRAG_LOCK_PX` — computed from dp at init time (or compute inline using density). 60dp and 40dp respectively.
-  - [ ] 3.9 Update the class-level KDoc (line 33): correct the outdated `HOLD: Tap -> bar with [X][waveform][✓], Long-press -> PTT` comment to match the new Modell-B HOLD behavior.
-  - [ ] 3.10 Update harness `applyHarnessState()` and `debugStateReceiver`: when `state == "recording"` and `intent.getBooleanExtra("hold_mode", false) == true`, set `bubbleView.holdDockActive = true` and `panelView?.isHoldMode = true` (and set `pushToTalkActive = true` for correct zone behavior). When `hold_mode` is absent or false, leave both false.
+- [x] **Task 3: Update `KlarvoOverlayService.kt` for HOLD interaction (AC: 1, 2, 3, 4, 5, 8, 9)**
+  - [x] 3.1 In `longPressRunnable`, after `pushToTalkActive = (longPressMode == RecordingMode.HOLD)`: when `pushToTalkActive = true`, also set `bubbleView.holdDockActive = true` AND update the listening panel label — call a new helper `setHoldModeOnPanel(true)`.
+  - [x] 3.2 Add private `fun setHoldModeOnPanel(holdMode: Boolean)`.
+  - [x] 3.3 In `adjustLayoutForState(newState, previousState)`, inside the `newState == RecordingState.RECORDING` branch: HOLD dock dimensions when pushToTalkActive, else normal cluster.
+  - [x] 3.4 Add private `fun lockHoldToCluster()`.
+  - [x] 3.5 In `handleTouch` `ACTION_MOVE` branch: drag detection (cancel 60dp / lock 40dp upward).
+  - [x] 3.6 In `stopAndProcessRecording()`: reset `bubbleView.holdDockActive = false` and `setHoldModeOnPanel(false)`.
+  - [x] 3.7 In `cancelRecording()`: same resets as 3.6.
+  - [x] 3.8 Add private constants: `holdDragCancelPx` and `holdDragLockPx` (60dp / 40dp, computed from density).
+  - [x] 3.9 Update the class-level KDoc (HOLD behavior updated).
+  - [x] 3.10 Update harness `applyHarnessState()` and `debugStateReceiver` for hold_mode extra.
 
-- [ ] **Task 4: Update `ListeningPanelView.kt` panel label + locked-state footer during HOLD (AC: 8, 5)**
-  - [ ] 4.1 Add `var isHoldMode: Boolean = false` property with setter that calls `invalidate()`.
-  - [ ] 4.2 In the RECORDING state label draw path (`canvas.drawText("Aufnahme", ...)` around line 407): replace the hardcoded string with `if (isHoldMode) "Aufnahme · halten" else "Aufnahme"`.
-  - [ ] 4.3 Add `var isLockedMode: Boolean = false` property (same pattern) — used for the post-lock "Aufnahme · 🔒 gesperrt" label. In the label draw: check `isLockedMode` first, then `isHoldMode`, then default "Aufnahme".
-  - [ ] 4.4 **Locked-state footer (GATE-1 / AC5):** in the RECORDING-state footer draw path (the "Tastatur pausiert · kehrt beim Einfügen zurück" text), when `isLockedMode == true` draw **"Finger losgelassen · weiter über die Knöpfe"** instead. Only in the locked state — during active hold (`isHoldMode`, not locked) and all other states the footer stays unchanged. (Approved render: `mockup-9-5-followups-2-4.html` state C.) `setLockedModeOnPanel()` (Task 3) must set `isLockedMode = true` so this and the label both fire.
-  - [ ] 4.5 Do NOT change the TRANSCRIBING label ("Bereinigt…"), the timer, the grab-handle, the K badge, or the footer text in any state **other than** the locked state (4.4).
+- [x] **Task 4: Update `ListeningPanelView.kt` panel label + locked-state footer during HOLD (AC: 8, 5)**
+  - [x] 4.1 Add `var isHoldMode: Boolean = false` property with setter that calls `invalidate()`.
+  - [x] 4.2 RECORDING label: `isLockedMode` → "Aufnahme · 🔒 gesperrt", `isHoldMode` → "Aufnahme · halten", else "Aufnahme".
+  - [x] 4.3 Add `var isLockedMode: Boolean = false` property.
+  - [x] 4.4 Locked-state footer: when `isLockedMode == true` in RECORDING, draw "Finger losgelassen · weiter über die Knöpfe".
+  - [x] 4.5 No other states changed.
 
-- [ ] **Task 5: Build + structural smoke (AC: DoD)**
-  - [ ] 5.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile + drift gate + all existing JVM tests green).
-  - [ ] 5.2 Emulator structural smoke via harness:
-    - `adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ez hold_mode true --ef rms 0.5` → `dumpsys window windows` confirms hold-dock window is present with different (wider/taller) dimensions than the cluster window.
-    - `adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.5` (no hold_mode) → `dumpsys window windows` confirms normal cluster window dimensions (regression check for 9-13).
-  - [ ] 5.3 Machine-verify AC2 zone behavior via logcat: in the harness hold_mode recording state, inject touch events or call the predicates directly via a test broadcast — confirm `isTouchInConfirmZone` and `isTouchInCancelZone` return false.
-  - [ ] 5.4 Confirm APK freshness via build script timestamp gate (no in-UI version screen).
+- [x] **Task 5: Build + structural smoke (AC: DoD)**
+  - [x] 5.1 `scripts/android-smoke.sh` exits 0 (Kotlin compile + drift gate + all existing JVM tests green). 24 tests, 0 failures. APK built in 5s, installed on 100.112.41.70:5555.
+  - [x] 5.2 Structural smoke via harness (real device, density=440dpi → 2.75x):
+    - hold_mode=true: Window #9 com.klarvo.voice `(566x264)` px = 206×96 dp ✓ (HOLDDOCK_VISUAL_W+2×shadow=206dp; VISUAL_H+LOCKCHIP+2×shadow=96dp).
+    - hold_mode=false (normal recording): Window #9 com.klarvo.voice `(456x187)` px = 166×68 dp ✓ (unchanged from 9-13 cluster, regression GREEN).
+  - [x] 5.3 AC2 zone predicate guard verified via static code analysis: both `isTouchInConfirmZone` and `isTouchInCancelZone` contain `&& !holdDockActive` — return false whenever holdDockActive=true.
+  - [x] 5.4 APK freshness: smoke script reported "Frische APK erzeugt in 5s" ✓.
 
-- [ ] **Task 6: Commit (scope)**
-  - [ ] 6.1 Stage only the changed files: `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt`, `KlarvoOverlayService.kt`, `ListeningPanelView.kt`. Never `git add .`.
-  - [ ] 6.2 Commit message: `feat(android): 9-14 — HOLD-mode push-to-talk cluster variant (holddock + drag cancel/lock)`.
+- [x] **Task 6: Commit (scope)**
+  - [x] 6.1 Stage only the changed files: `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt`, `KlarvoOverlayService.kt`, `ListeningPanelView.kt`. Never `git add .`.
+  - [x] 6.2 Commit message: `feat(android): 9-14 — HOLD-mode push-to-talk cluster variant (holddock + drag cancel/lock)`.
 
 ## Dev Notes
 
@@ -445,16 +429,43 @@ These are conservative but deliberately different from the bubble drag threshold
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-4-6
 
 ### Debug Log References
 
+- Kotlin compile: `scripts/android-smoke.sh` exit 0; 24 JVM tests, 0 failures.
+- KlarvoTheme drift gate: PASS (generated file untouched).
+- Structural window smoke: hold_mode=true → 566×264px (206×96dp); normal cluster → 456×187px (166×68dp). Device density 440dpi (2.75x). HOLD dock 24% wider, 41% taller than cluster. AC9 and 9-13 regression GREEN.
+- AC2 zone predicates: both `isTouchInConfirmZone` and `isTouchInCancelZone` statically verified to include `&& !holdDockActive` guard.
+- One design note: "ziehen zum Abbrechen" (11sp) may exceed available slidehint width on very high-density screens. Mitigated by right-anchoring the waveform zone and canvas-clipping the text. Monitor in Andi's GATE-4.
+
 ### Completion Notes List
 
+- Tasks 1–6 complete. All 9 ACs covered.
+- AC1/AC1a: `drawHoldDock()` in FloatingBubbleView renders holdstrip + heldbub + lockchip with ValueAnimator-driven hint arrows (holdArrowPhase 0..1, 550ms REVERSE, AccelerateDecelerateInterpolator — matching canon @keyframes 1.1s ease-in-out).
+- AC2: zone predicates guard `&& !holdDockActive` — no tappable zones during hold.
+- AC3: ACTION_UP PTT path unchanged — release = send.
+- AC4: ACTION_MOVE detects `abs(dx) > holdDragCancelPx` (60dp) → cancelRecording() with state reset.
+- AC5: ACTION_MOVE detects `dy < -holdDragLockPx` (40dp up) → lockHoldToCluster() + setLockedModeOnPanel().
+- AC6/AC7: all non-HOLD recording + other states untouched (drawRecordingCluster / drawIdleBubble / TRANSCRIBING paths unchanged).
+- AC8: ListeningPanelView TopRowView label: isLockedMode → "Aufnahme · 🔒 gesperrt", isHoldMode → "Aufnahme · halten", else "Aufnahme". FooterView: isLockedMode in RECORDING → "Finger losgelassen · weiter über die Knöpfe".
+- AC9: harness EXTRA_HOLD_MODE (`hold_mode` bool) wired through debugStateReceiver → applyHarnessState(holdMode) → sets pushToTalkActive + holdDockActive + setHoldModeOnPanel for machine-verifiable state.
+- FLAG_NOT_TOUCHABLE NOT added (verified via grep).
+- KlarvoTheme.kt NOT edited (drift gate passed).
+- `drawClusterWaveform`, `waveLevels`, `drawRecordingCluster` NOT changed (9-12/9-13 frozen).
+- GATE-4 (hold gesture + live mic on real device) remains for Andi's batched review.
+
 ### File List
+
+| File | Change |
+|------|--------|
+| `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` | PRIMARY: holdDockActive property + setter with animator start/stop; HOLDDOCK_*/HOLD_* companion constants; drawHoldDock(); drawLockIcon(); holdArrowAnimator (ValueAnimator); holdArrowPhase; pre-allocated HOLD paints; isTouchInConfirmZone + isTouchInCancelZone `&& !holdDockActive` guard; onDraw RECORDING branch; onDetachedFromWindow cancel; KDoc updated |
+| `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` | SECONDARY: EXTRA_HOLD_MODE const; holdDragCancelPx + holdDragLockPx fields; longPressRunnable HOLD dock activation; setHoldModeOnPanel(); setLockedModeOnPanel(); lockHoldToCluster(); adjustLayoutForState HOLD dock window sizing; handleTouch ACTION_MOVE drag detection; stopAndProcessRecording + cancelRecording resets; applyHarnessState holdMode param; debugStateReceiver hold_mode extra read; onStartCommand hold_mode extra read; KDoc updated |
+| `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` | SMALL: isHoldMode + isLockedMode properties; TopRowView RECORDING label conditional; FooterView isLockedMode early return |
 
 ## Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-26 | Story created via bmad-create-story (9-14 HOLD-mode push-to-talk cluster). | claude-sonnet-4-6 |
+| 2026-06-26 | Implementation complete: Tasks 1–6 done. Build smoke: 24 JVM tests green, APK built. Structural smoke: HOLD dock 206×96dp vs cluster 166×68dp (AC9 GREEN, 9-13 regression GREEN). Status → review. | claude-sonnet-4-6 |

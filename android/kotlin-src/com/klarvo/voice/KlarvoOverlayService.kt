@@ -30,7 +30,8 @@ import kotlin.math.abs
  *   ALWAYS_VISIBLE: bubble is always on screen, regardless of keyboard state.
  *
  * Recording modes (switchable via notification action):
- *   HOLD:     Tap -> bar with [X][waveform][✓], Long-press -> PTT (hold to record)
+ *   HOLD:     Tap -> cluster [✗·waveform·➤]; Long-press -> HOLD dock (PTT):
+ *               hold=record, release=send, drag-left=cancel, drag-up=lock→cluster (ADR-0019 §4′ #4)
  *   TOGGLE:   Tap -> start (red circle), Tap again -> stop + process
  *   AUTOSTOP: Tap -> start, auto-stops after silence detected
  *   AUTO:     Tap -> start loop, auto-stops on silence then restarts, Tap -> stop loop
@@ -70,9 +71,10 @@ class KlarvoOverlayService : Service() {
         //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state transcribing --ef rms 0.2 --es transcript "Hello world"
         //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state done
         private const val ACTION_DEBUG_SET_STATE = "com.klarvo.voice.DEBUG_SET_STATE"
-        private const val EXTRA_STATE      = "state"       // "idle"|"recording"|"transcribing"|"done"
-        private const val EXTRA_RMS        = "rms"         // Float 0.0–1.0 (synthetic amplitude)
-        private const val EXTRA_TRANSCRIPT = "transcript"  // String (synthetic raw text)
+        private const val EXTRA_STATE      = "state"        // "idle"|"recording"|"transcribing"|"done"
+        private const val EXTRA_RMS        = "rms"          // Float 0.0–1.0 (synthetic amplitude)
+        private const val EXTRA_TRANSCRIPT = "transcript"   // String (synthetic raw text)
+        private const val EXTRA_HOLD_MODE  = "hold_mode"   // Boolean: true → HOLD dock in recording state
 
         // Keyboard detection: poll InputMethodManager at this interval (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
@@ -275,10 +277,11 @@ class KlarvoOverlayService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != ACTION_DEBUG_SET_STATE) return
             val stateToken = intent.getStringExtra(EXTRA_STATE) ?: return
-            val rms = intent.getFloatExtra(EXTRA_RMS, -1f)
+            val rms        = intent.getFloatExtra(EXTRA_RMS, -1f)
             val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
+            val holdMode   = intent.getBooleanExtra(EXTRA_HOLD_MODE, false)
             handler.post {
-                applyHarnessState(stateToken, rms, transcript)
+                applyHarnessState(stateToken, rms, transcript, holdMode)
             }
         }
     }
@@ -290,7 +293,7 @@ class KlarvoOverlayService : Service() {
      * Must be called on the main thread (handler.post from dynamic receiver; handler.post from
      * onStartCommand). Idempotent: safe to call when the service is already in the target state.
      */
-    private fun applyHarnessState(stateToken: String, rms: Float, transcript: String?) {
+    private fun applyHarnessState(stateToken: String, rms: Float, transcript: String?, holdMode: Boolean = false) {
         if (!BuildConfig.DEBUG) return
         if (!::bubbleView.isInitialized) {
             KlarvoLogger.w(TAG, "[harness] bubbleView not ready — cannot apply state '$stateToken'")
@@ -313,6 +316,9 @@ class KlarvoOverlayService : Service() {
         // Capture previous state so adjustLayoutForState gets correct geometry.
         val previousState = currentState
         forceShowBubbleForHarness()
+        // Story 9-14: set pushToTalkActive BEFORE adjustLayoutForState so the HOLD dock
+        // window dimensions are used when hold_mode=true (adjustLayoutForState reads pushToTalkActive).
+        pushToTalkActive = (newState == RecordingState.RECORDING && holdMode)
         setState(newState)
         adjustLayoutForState(newState, previousState)
         // Apply the static wave level AFTER the state transition so that the
@@ -321,6 +327,15 @@ class KlarvoOverlayService : Service() {
         // Use setStaticWaveLevel so the harness fills all 20 history slots uniformly,
         // giving a visible uniform waveform at that level (not just one pushed slot).
         bubbleView.setStaticWaveLevel(coercedRms)
+
+        // Story 9-14: apply HOLD dock visual and panel label after state is applied.
+        if (newState == RecordingState.RECORDING) {
+            bubbleView.holdDockActive = holdMode
+            setHoldModeOnPanel(holdMode)
+        } else {
+            bubbleView.holdDockActive = false
+            setHoldModeOnPanel(false)
+        }
 
         // Story 9.5: sync listening panel to harness state.
         when (newState) {
@@ -376,6 +391,11 @@ class KlarvoOverlayService : Service() {
         }
     }
 
+    // HOLD drag thresholds (PTT mode — Story 9-14): 60dp cancel, 40dp lock (upward).
+    // Computed lazily from density on first use; initialized to 0 before resources are available.
+    private var holdDragCancelPx = 0f
+    private var holdDragLockPx   = 0f
+
     private val longPressRunnable = Runnable {
         if (!isDragging && currentState == RecordingState.IDLE) {
             longPressTriggered = true
@@ -388,8 +408,30 @@ class KlarvoOverlayService : Service() {
             if (longPressMode == RecordingMode.AUTO) {
                 autoLoopActive = true
             }
+            // HOLD dock: show holdDockActive surface and update panel label.
+            if (pushToTalkActive) {
+                bubbleView.holdDockActive = true
+                setHoldModeOnPanel(true)
+                // Initialise drag thresholds now that density is available.
+                val density = resources.displayMetrics.density
+                holdDragCancelPx = 60f * density
+                holdDragLockPx   = 40f * density
+            }
             startRecording()
         }
+    }
+
+    /** Sets isHoldMode on the listening panel (if visible). No-op when panel is not attached. */
+    private fun setHoldModeOnPanel(holdMode: Boolean) {
+        panelView?.isHoldMode = holdMode
+        panelView?.invalidate()
+    }
+
+    /** Sets isLockedMode on the listening panel (if visible) and clears isHoldMode. */
+    private fun setLockedModeOnPanel() {
+        panelView?.isHoldMode   = false
+        panelView?.isLockedMode = true
+        panelView?.invalidate()
     }
 
     /**
@@ -487,7 +529,8 @@ class KlarvoOverlayService : Service() {
             if (stateToken != null) {
                 val rms        = intent.getFloatExtra(EXTRA_RMS, -1f)
                 val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
-                handler.post { applyHarnessState(stateToken, rms, transcript) }
+                val holdMode   = intent.getBooleanExtra(EXTRA_HOLD_MODE, false)
+                handler.post { applyHarnessState(stateToken, rms, transcript, holdMode) }
             }
         }
         return START_STICKY
@@ -969,15 +1012,28 @@ class KlarvoOverlayService : Service() {
         val touchTargetPx = bubbleWindowPx(visualDp)
 
         if (newState == RecordingState.RECORDING) {
-            // Cluster window: visual W/H + shadow pad on each side (ADR-0019 §4′ Modell B).
             if (preclusterBubbleX == null) preclusterBubbleX = bubbleParams.x
-            val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-            val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-            // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays fixed.
-            // Clamp to 0 so the cluster stays on-screen when the bubble is docked on the left side.
-            bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
-            bubbleParams.width  = clusterW
-            bubbleParams.height = clusterH
+            if (pushToTalkActive) {
+                // HOLD dock window: wider + taller (lockchip above) — ADR-0019 §4′-Amendment #4.
+                val holdW = ((FloatingBubbleView.HOLDDOCK_VISUAL_W_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
+                val holdH = ((FloatingBubbleView.HOLDDOCK_VISUAL_H_DP + FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
+                // Right-edge-anchor: same dock-spot right edge as cluster/idle bubble.
+                bubbleParams.x     = maxOf(0, bubbleParams.x + touchTargetPx - holdW)
+                bubbleParams.width  = holdW
+                bubbleParams.height = holdH
+                // Shift Y upward so holdstrip (lower portion) aligns with the idle bubble position.
+                val lockchipH = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
+                bubbleParams.y = maxOf(0, bubbleParams.y - lockchipH)
+            } else {
+                // Normal cluster window: visual W/H + shadow pad on each side (ADR-0019 §4′ Modell B).
+                val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays fixed.
+                // Clamp to 0 so the cluster stays on-screen when the bubble is docked on the left side.
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
+                bubbleParams.width  = clusterW
+                bubbleParams.height = clusterH
+            }
         } else {
             // Restore single-bubble window.
             val savedX = preclusterBubbleX
@@ -988,6 +1044,28 @@ class KlarvoOverlayService : Service() {
             bubbleParams.width  = touchTargetPx
             bubbleParams.height = touchTargetPx
         }
+        updateBubbleLayout()
+    }
+
+    /**
+     * Transitions from HOLD dock → normal cluster window (upward-drag lock, AC5).
+     * Reverses the Y upward-shift applied in adjustLayoutForState and resizes the window
+     * to cluster dimensions anchored at preclusterBubbleX.
+     */
+    private fun lockHoldToCluster() {
+        val dp         = resources.displayMetrics.density
+        val visualDp   = bubbleView.getBubbleSizeDp()
+        val touchTargetPx = bubbleWindowPx(visualDp)
+        val clusterW   = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+        val clusterH   = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+        // Undo the upward Y-shift that placed the holdstrip at the idle bubble position.
+        val lockchipH  = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
+        bubbleParams.y += lockchipH
+        // Re-anchor X to the saved pre-expansion position (same as cluster layout in adjustLayoutForState).
+        val savedX = preclusterBubbleX ?: bubbleParams.x
+        bubbleParams.x      = maxOf(0, savedX + touchTargetPx - clusterW)
+        bubbleParams.width  = clusterW
+        bubbleParams.height = clusterH
         updateBubbleLayout()
     }
 
@@ -1012,9 +1090,36 @@ class KlarvoOverlayService : Service() {
             }
 
             MotionEvent.ACTION_MOVE -> {
-                // During push-to-talk the bubble must stay locked in place.
-                // Ignore all movement -- no drag, no cancel, no position update.
-                if (pushToTalkActive) return true
+                // During push-to-talk (HOLD dock): detect drag-cancel or drag-lock.
+                // The bubble does NOT move during a hold.
+                if (pushToTalkActive) {
+                    val dx = event.rawX - dragTouchStartX
+                    val dy = event.rawY - dragTouchStartY
+                    when {
+                        // Horizontal drag beyond threshold → cancel (discard recording)
+                        abs(dx) > holdDragCancelPx -> {
+                            cancelRecording()
+                            pushToTalkActive          = false
+                            bubbleView.holdDockActive = false
+                            setHoldModeOnPanel(false)
+                        }
+                        // Upward drag beyond threshold → lock (switch to normal cluster)
+                        dy < -holdDragLockPx -> {
+                            lockHoldToCluster()
+                            pushToTalkActive          = false
+                            bubbleView.holdDockActive = false
+                            setLockedModeOnPanel()
+                            // Reset drag origin so subsequent finger moves don't reposition the cluster.
+                            dragTouchStartX = event.rawX
+                            dragTouchStartY = event.rawY
+                            bubbleStartX    = bubbleParams.x
+                            bubbleStartY    = bubbleParams.y
+                        }
+                        // Otherwise: finger still held — no position update.
+                        else -> { /* keep holding */ }
+                    }
+                    return true
+                }
 
                 val dx = event.rawX - dragTouchStartX
                 val dy = event.rawY - dragTouchStartY
@@ -1295,6 +1400,10 @@ class KlarvoOverlayService : Service() {
             recorder.releaseImmediately()
         }.start()
 
+        // Reset HOLD dock state (Story 9-14).
+        bubbleView.holdDockActive = false
+        setHoldModeOnPanel(false)
+
         val previousState = currentState
         // Detect bar mode: width > height means the WRAP_CONTENT bar is currently shown.
         val wasBarMode = bubbleView.width > bubbleView.height
@@ -1314,6 +1423,10 @@ class KlarvoOverlayService : Service() {
     private fun stopAndProcessRecording() {
         val recorder = audioRecorder ?: return
         audioRecorder = null
+
+        // Reset HOLD dock state (Story 9-14).
+        bubbleView.holdDockActive = false
+        setHoldModeOnPanel(false)
 
         val previousState = currentState
         setState(RecordingState.TRANSCRIBING)
