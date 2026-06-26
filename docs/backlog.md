@@ -5,6 +5,31 @@ Single source of truth for deferred work. Every scope-cut / phase-deferral lands
 
 ---
 
+## Mobile-Overlay-Design durchgefallen — Real-Device-Verdikt (2026-06-26, Andi)
+
+Source: Andis erster echter Daumen-Test des HOLD-Modus (Story 9-14) am echten Gerät. GATE-4 Maschinen-Ebene
+war grün, **Design fiel durch**. 9-14 → `in-progress`, Rebuild blockiert auf einen Mobile-Overlay-Design-Rethink.
+Voll-Kontext: Memory `project_mobile_overlay_design_rejected`.
+
+**Systemisch (nicht nur 9-14):** Das gesamte mobile **Overlay** (Bubble + alle Recording-States) **und die
+Live-Preview** wirken „wie ein Laptop-Feature, nicht wie ein echtes Handy-Feature" — zu klein, Qualität
+ungenügend („andere Apps kriegen das besser hin"). In-App-Settings-UI ist okay; nur die Overlay-Surfaces.
+Wurzel-Hypothese: Canon als Browser-Mockups approved → nie im Daumen-/Geräte-Maßstab → Touch-Target-Größe,
+Finger-Occlusion, echter Hintergrund nie im Approval-Loop. → SOLL-Approval für mobile Overlays muss im
+Geräte-Maßstab passieren.
+
+**Konkrete Items (9-14, gelten als Muster fürs neue mobile Design):**
+1. Drag-links-Abbrechen: Farb-**Gradient amber→rot** während des Ziehens.
+2. Auslöser = **Loslassen im gezogenen Zustand** (nicht Schwellwert-während-Bewegung); **Undo** möglich
+   (zurückziehen vor dem Loslassen = kein Auslösen). Gilt für Abbrechen UND Hoch-Sperren.
+3. Klare **visuelle Drag-Cues** (links + hoch).
+4. Dock **deutlich größer + weiter auseinander** — Finger verdeckt aktuell zu viel; gezogener Zustand muss
+   sichtbar bleiben.
+5. Lock-Affordance braucht **soliden Hintergrund** (aktuell transparent → über wuseligem Wallpaper unlesbar).
+6. **Live-Preview** ebenfalls mobil neu denken (gleicher „Laptop-Feel").
+
+---
+
 ## Cross-Platform Drift — Sorte-2 (deferred, ADR-0016 Amendment 1 = accepted asymmetry → backlog, NOT hard won't-fix)
 
 Source: `docs/cross-platform-drift-audit.md` · routed by `sprint-change-proposal-2026-06-10.md`.

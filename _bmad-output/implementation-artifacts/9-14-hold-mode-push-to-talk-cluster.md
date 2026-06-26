@@ -1,6 +1,6 @@
 # Story 9.14: HOLD-Modus (Push-to-Talk) Bubble-Cluster-Variante
 
-Status: review
+Status: in-progress
 
 ## Story
 
@@ -482,3 +482,4 @@ claude-sonnet-4-6
 | 2026-06-26 | Code-review fix-pass: 7 confirmed findings applied (HIGH: animator order fix + isLockedMode reset; MED: lock-before-cancel + signed dx cancel + Y symmetry + pre-alloc no-GC + harness threshold init). Build smoke: 24 JVM tests green, APK 3s. | claude-sonnet-4-6 |
 | 2026-06-26 | Conductor GATE-1 (Andi-approved): hint arrows ANIMATE (canon reconciled, fingerprint fc9ef745→1bad4e27) + locked-state footer "Finger losgelassen · weiter über die Knöpfe" folded into AC1a/AC5; source pointer corrected (Klarvo Design System.html, not klarvo.css). | claude-opus-4-8 (conductor) |
 | 2026-06-26 | Conductor code-review (3 independent reviewers, baseRef 50f44ef..c389c88) → 7 confirmed findings → 1 bounded fix round (e92f4f3) → re-review CLEAN. GATE-4 machine layer PASS (build/24 tests/drift gate green; structure: panel 1080×550 + hold-dock 206×96dp intact; no FLAG_NOT_TOUCHABLE; 9-13 regression green). Live real-device read blocked by PIN keyguard; size assertion via code-continuity. Evidence: gate4-evidence/9-14/. **Held at `review`** — motion/gesture/visual = Andi's real-device gate (AC1a pulse, hold/release/drag-cancel/drag-lock, locked footer + clean re-record, fidelity). | claude-opus-4-8 (conductor) |
+| 2026-06-26 | **GATE-4 real-device = FAILED (Andi).** Machine layer was green but the design fails on the actual device → Status → `in-progress`. Verdict: (1) drag-left-cancel needs an amber→red **gradient**; (2) cancel/lock must fire on **release while dragged**, with **undo** (drag back before release = no trigger) — not on threshold-crossing-during-move; (3) **visual drag cues** for both left+up; (4) whole dock **too small / finger occludes it** → must be **bigger + more spread out** so the dragged state stays visible; (5) lock affordance sits on a **transparent bg** → unreadable over busy wallpaper, needs a solid bg; (6) overall design quality judged **poor / "laptop feature, not a phone feature"** — systemic to the whole mobile overlay AND the Preview, not just 9-14. Rebuild blocked on a mobile-overlay design rethink (Phase A). See docs/backlog.md + memory project_mobile_overlay_design_rejected. | claude-opus-4-8 (conductor) |
