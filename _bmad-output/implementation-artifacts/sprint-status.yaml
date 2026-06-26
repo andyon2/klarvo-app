@@ -113,7 +113,7 @@ development_status:
   7-7-golden-vector-parity-net-and-dead-config-lock: backlog
   epic-7-retrospective: optional
 
-  # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD] — LIVE STRAND
+  # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD] — ⏸ PARKED: komplett auf conductor/epic-8, Merge→v1-ship offen
   epic-8: in-progress
   8-1-token-and-type-foundation: done
   8-2-settings-form-system-home-and-sub-pages: backlog
