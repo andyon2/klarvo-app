@@ -1,6 +1,6 @@
 # Story 9.13: Recording-Cluster-Reihenfolge tauschen
 
-Status: review
+Status: done
 
 ## Story
 
@@ -352,3 +352,4 @@ android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-26 | Swapped recording cluster order: Cancel LEFT, Send RIGHT (dock/thumb). Renamed `clusterSendZoneEnd`→`clusterSendZoneStart`, `clusterCancelZoneStart`→`clusterCancelZoneEnd`. Updated predicates, draw order, waveform bounds, and all KDoc/comments in `FloatingBubbleView.kt`. | claude-sonnet-4-6 |
+| 2026-06-26 | Review cleared — 3 independent Opus reviewers (Blind/Edge/Auditor), clean: all ACs confirmed, no scope violation, canon verified at source. GATE-4: build/drift/24-tests + dumpsys structure green (2 overlay windows, no regression); L/R order visually corroborated OS-independently (`gate4-evidence/9-13/`). Andi real-device acceptance ("an sich läuft es" — cluster + routing OK). Status → done. | story-conductor (Opus) |
