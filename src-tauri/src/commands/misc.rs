@@ -205,12 +205,11 @@ pub fn get_bar_position(state: State<'_, AppState>) -> Result<Option<BarPosition
 // Window / UI helpers
 // ---------------------------------------------------------------------------
 
-/// Ensures the floating bar window exists and is responsive.
+/// Ensures the native pill overlay window exists and is alive.
 ///
-/// Returns `true` if the window had to be recreated, `false` if it was already
-/// alive and responding. The frontend should call this command before starting
-/// a recording session to recover from the rare case where the bar window
-/// silently vanished after hours in the background.
+/// Returns `true` if the pill had to be recreated, `false` if it was already
+/// alive. The frontend may call this command before starting a recording session
+/// to recover from the (rare) case where the pill window was lost.
 ///
 /// Desktop-only: on mobile the bar concept does not apply.
 #[cfg(desktop)]
@@ -219,37 +218,40 @@ pub async fn ensure_bar_window(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    // Check if the bar window handle exists and responds to is_visible().
-    if let Some(bar) = app.get_webview_window("bar") {
-        match bar.is_visible() {
-            Ok(_) => {
-                log::debug!("[bar] ensure_bar_window: window exists and responds");
-                return Ok(false); // No recreation needed
+    #[cfg(target_os = "windows")]
+    {
+        // Check if native pill is alive
+        let alive = {
+            let guard = crate::lock!(state.inner().native_pill)?;
+            guard.as_ref().map(|p| p.is_alive()).unwrap_or(false)
+        };
+        if alive {
+            log::debug!("[native_pill] ensure_bar_window: pill is alive");
+            return Ok(false);
+        }
+        // Recreate
+        log::warn!("[native_pill] ensure_bar_window: pill not alive, recreating");
+        let (saved_x, saved_y) = {
+            let cfg = crate::lock!(state.inner().config)?;
+            (cfg.bar_x, cfg.bar_y)
+        };
+        match crate::native_pill::NativePill::create(app.clone(), saved_x, saved_y) {
+            Ok(pill) => {
+                let mut guard = crate::lock!(state.inner().native_pill)?;
+                *guard = Some(pill);
+                log::info!("[native_pill] ensure_bar_window: successfully recreated");
+                Ok(true)
             }
             Err(e) => {
-                log::warn!("[bar] ensure_bar_window: window exists but not responding: {e}");
-                // Fall through to recreation
+                log::error!("[native_pill] ensure_bar_window: failed to recreate: {e}");
+                Err(format!("Failed to recreate native pill: {e}"))
             }
         }
-    } else {
-        log::warn!("[bar] ensure_bar_window: window not found, recreating");
     }
-
-    // Read the saved position from config before recreating.
-    let (saved_x, saved_y) = {
-        let cfg = crate::lock!(state.inner().config)?;
-        (cfg.bar_x, cfg.bar_y)
-    };
-
-    match crate::create_bar_window(&app, saved_x, saved_y) {
-        Ok(_) => {
-            log::info!("[bar] ensure_bar_window: successfully recreated bar window");
-            Ok(true)
-        }
-        Err(e) => {
-            log::error!("[bar] ensure_bar_window: failed to recreate: {e}");
-            Err(format!("Failed to recreate bar window: {e}"))
-        }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, state);
+        Ok(false)
     }
 }
 
@@ -432,44 +434,12 @@ pub fn read_recent_logs(handle: AppHandle) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 /// Updates the floating bar window region (thin idle pill vs. expanded active pill).
-/// Called by the frontend whenever the bar state changes.
+/// No-op since Story 10-1: the native pill overlay manages its own shape via
+/// UpdateLayeredWindow(ULW_ALPHA) — pixel alpha defines the shape; no Win32
+/// region is needed. Command is kept registered so the frontend doesn't need
+/// a guard before calling it.
 #[tauri::command]
-pub fn set_bar_shape(handle: AppHandle, shape: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use tauri::Manager;
-        if let Some(bar) = handle.get_webview_window("bar") {
-            let scale = bar.scale_factor().unwrap_or(1.0);
-            if let Ok(hwnd) = bar.hwnd() {
-                let h = hwnd.0 as isize;
-                if shape == "idle" {
-                    let w = (80.0 * scale) as i32;
-                    let ht = (10.0 * scale) as i32;
-                    crate::set_window_region_pill(h, w, ht);
-                } else if shape == "panel" {
-                    // Live-preview expanded card (Story 5.2). The panel height is
-                    // DYNAMIC — it auto-grows upward with the accumulated preview
-                    // text (5.2 cosmetic revision) — so the region must match the
-                    // window's ACTUAL size rather than a hardcoded constant. The
-                    // frontend always awaits setSize before calling this, so
-                    // inner_size() already reflects the new dimensions. The radius
-                    // MUST equal the wrapper's CSS borderRadius when isPanelOpen
-                    // (14) or the OS-region vs CSS-shape gap shows as the white line.
-                    if let Ok(size) = bar.inner_size() {
-                        let w = size.width as i32;
-                        let ht = size.height as i32;
-                        let r = (14.0 * scale) as i32; // card corner radius
-                        crate::set_window_region_round_rect(h, w, ht, r);
-                    }
-                } else {
-                    let w = (200.0 * scale) as i32;
-                    let ht = (36.0 * scale) as i32;
-                    crate::set_window_region_pill(h, w, ht);
-                }
-            }
-        }
-    }
-    let _ = (handle, shape); // suppress unused warnings on non-Windows
+pub fn set_bar_shape(_handle: AppHandle, _shape: String) -> Result<(), String> {
     Ok(())
 }
 

@@ -590,26 +590,27 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
     } = Some(std::time::Instant::now());
 
-    // Ensure the floating bar window exists before telling the frontend to show it.
-    // Recovers from the rare case where the bar silently vanished after hours idle.
-    #[cfg(desktop)]
+    // Native pill liveness check — recover if window was somehow lost.
+    // The pill renders itself on state-changed; no explicit "show" needed.
+    #[cfg(target_os = "windows")]
     {
-        if let Some(bar) = handle.get_webview_window("bar") {
-            if bar.is_visible().unwrap_or(false) == false {
-                log::info!("[bar] recording started but bar not visible, showing");
-                let _ = bar.show();
-            }
-            // Re-assert topmost on every recording start. After repeated
-            // hide/show cycles (and under the post-June-2026 WebView2 runtime)
-            // the overlay can lose its z-order and come up BEHIND the
-            // foreground app — visible to the OS but not to the user.
-            let _ = bar.set_always_on_top(true);
-        } else {
-            log::warn!("[bar] recording started but bar window missing, recreating");
+        let pill_alive = state
+            .native_pill
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|p| p.is_alive()))
+            .unwrap_or(false);
+        if !pill_alive {
+            log::warn!("[native_pill] recording started but pill not alive, recreating");
             let saved = state.config.lock().ok().map(|c| (c.bar_x, c.bar_y));
             let (sx, sy) = saved.unwrap_or((None, None));
-            if let Err(e) = crate::create_bar_window(&handle, sx, sy) {
-                log::error!("[bar] failed to recreate bar window: {e}");
+            match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
+                Ok(pill) => {
+                    if let Ok(mut g) = state.native_pill.lock() {
+                        *g = Some(pill);
+                    }
+                }
+                Err(e) => log::error!("[native_pill] failed to recreate: {e}"),
             }
         }
     }

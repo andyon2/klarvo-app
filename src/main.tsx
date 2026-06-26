@@ -21,13 +21,11 @@ if (!isPreviewMode) {
 // component mounts so its first logs are captured.
 installConsoleBridge(label);
 
-// FloatingBar and PreviewPanel are Tauri-only concepts (separate overlay windows).
+// PreviewPanel is a Tauri-only concept (separate overlay window).
+// The pill/bar is now a native Win32 window (Story 10-1) — no React entry point.
 // In preview mode we always render the main App.
 let Root: React.ComponentType;
-if (label === "bar" && !isPreviewMode) {
-  const { default: FloatingBar } = await import("./FloatingBar");
-  Root = FloatingBar;
-} else if (label === "preview" && !isPreviewMode) {
+if (label === "preview" && !isPreviewMode) {
   const { default: PreviewPanel } = await import("./PreviewPanel");
   Root = PreviewPanel;
 } else {

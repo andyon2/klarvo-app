@@ -58,6 +58,9 @@ mod vad;
 #[cfg(desktop)]
 mod voice_command;
 
+#[cfg(target_os = "windows")]
+mod native_pill;
+
 #[cfg(test)]
 mod test_helpers;
 
@@ -298,6 +301,10 @@ pub struct AppState {
     /// STT / LLM / paste error. Read by `get_feedback_metrics` when the user
     /// opens the feedback dialog so the payload carries fresh telemetry.
     pub feedback_metrics: Mutex<commands::feedback::FeedbackMetrics>,
+    /// Native pill overlay window handle (Windows-only).
+    /// Replaces the WebView2 "bar" window (Story 10-1).
+    #[cfg(target_os = "windows")]
+    pub native_pill: Mutex<Option<native_pill::NativePill>>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -380,6 +387,8 @@ impl AppState {
             active_insert_and_send: AtomicBool::new(false),
             voice_command_active: AtomicBool::new(false),
             feedback_metrics: Mutex::new(commands::feedback::FeedbackMetrics::default()),
+            #[cfg(target_os = "windows")]
+            native_pill: Mutex::new(None),
         }
     }
 }
@@ -500,10 +509,21 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
 }
 
 /// Emits a pipeline state-changed event and updates the tray tooltip
-/// to match the new state. This is the single call site for all state
-/// transitions so tray and frontend stay in sync automatically.
+/// to match the new state. Also drives the native pill overlay (Windows).
+/// This is the single call site for all state transitions so tray and
+/// frontend stay in sync automatically.
 pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
     let pipeline_state = event.state.clone();
+    // Drive native pill in-process (no JS round-trip needed — AC-3/ADR-0021 §4).
+    #[cfg(target_os = "windows")]
+    {
+        let clipboard_only = event.clipboard_only.unwrap_or(false);
+        if let Ok(guard) = handle.state::<AppState>().native_pill.lock() {
+            if let Some(pill) = guard.as_ref() {
+                pill.set_state(&pipeline_state, clipboard_only);
+            }
+        }
+    }
     let _ = handle.emit(hotkey::EVENT_STATE_CHANGED, event);
     #[cfg(desktop)]
     update_tray_tooltip(handle, &pipeline_state);
@@ -597,12 +617,21 @@ pub fn set_window_region_round_rect(hwnd: isize, width: i32, height: i32, radius
 }
 
 #[cfg(desktop)]
-/// Sets up the audio-level callback that emits events to the frontend.
+/// Sets up the audio-level callback that emits events to the frontend
+/// AND feeds the native pill overlay in-process (Windows, AC-3).
 pub fn setup_audio_level_emitter(handle: &AppHandle) {
     let state = handle.state::<AppState>();
     let handle_clone = handle.clone();
     state.recorder.set_level_callback(Box::new(move |level| {
+        // Still emit for the preview window (remains WebView2 until Story 10-2).
         let _ = handle_clone.emit(EVENT_AUDIO_LEVEL, serde_json::json!({ "level": level }));
+        // Feed native pill directly — no JS round-trip (AC-3 / ADR-0021 §4).
+        #[cfg(target_os = "windows")]
+        if let Ok(guard) = handle_clone.state::<AppState>().native_pill.lock() {
+            if let Some(pill) = guard.as_ref() {
+                pill.feed_rms(level);
+            }
+        }
     }));
 }
 
@@ -980,10 +1009,18 @@ pub fn run() {
                 .build(app)?;
         }
 
-        // --- Floating bar window ---
+        // --- Native pill overlay (replaces WebView2 "bar" window, Story 10-1) ---
         #[cfg(target_os = "windows")]
-        if let Err(e) = create_bar_window(app, _saved_bar_x, _saved_bar_y) {
-            log::warn!("[setup] Could not create floating bar: {e}");
+        {
+            match native_pill::NativePill::create(app.handle().clone(), _saved_bar_x, _saved_bar_y) {
+                Ok(pill) => {
+                    if let Ok(mut guard) = app.state::<AppState>().native_pill.lock() {
+                        *guard = Some(pill);
+                    }
+                    log::info!("[setup] Native pill overlay created");
+                }
+                Err(e) => log::warn!("[setup] Could not create native pill overlay: {e}"),
+            }
         }
 
         // --- Standalone preview window (transparent, click-through, always-on-top) ---
@@ -1068,8 +1105,8 @@ pub fn run() {
         builder = builder.on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let label = window.label();
-                // Bar and preview windows: always prevent close (they should always exist).
-                if label == "bar" || label == "preview" {
+                // Preview window: always prevent close (native pill has no Tauri window).
+                if label == "preview" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
