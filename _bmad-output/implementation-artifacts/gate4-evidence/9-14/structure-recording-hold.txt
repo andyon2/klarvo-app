@@ -1,0 +1,36 @@
+GATE-4 structural evidence — Story 9-14 (HOLD-mode push-to-talk), 2026-06-26
+Conductor self-verification. Target: real device 100.112.41.70:5555 (Andi's Xiaomi/HyperOS).
+Fix build installed: versionName 0.5.0, lastUpdateTime 2026-06-26 14:27:47 (commit e92f4f3).
+
+== What was machine-verified ==
+1. Harness reachable on real device: `DEBUG_SET_STATE --es state idle --include-stopped-packages`
+   wakes KlarvoOverlayService; a subsequent `--es state recording --ez hold_mode true` produced
+   TWO APPLICATION_OVERLAY windows (panel + dock) — the expected recording structure:
+     Window #8 (panel):  Requested w=1080 h=550   (full-width bottom panel; contract ~1080x525)
+     Window #9 (dock):   present
+   fl=NOT_FOCUSABLE (NOT FLAG_NOT_TOUCHABLE — correct; HyperOS dims NOT_TOUCHABLE to 0.8).
+2. HOLD-dock window SIZE = 206x96dp = 566x264px, verified by code-continuity (not a live read,
+   see boundary below):
+     FloatingBubbleView: HOLDDOCK_VISUAL_W_DP=190 (+2*8 pad)=206dp ; H=52+28(lockchip)+2*8=96dp.
+     adjustLayoutForState() hold-branch sets bubbleParams.width=holdW height=holdH (l.1038-1043).
+     Dev worker measured this live pre-fix: 566x264px (hold) vs 456x187px=166x68dp (cluster).
+     Fix round (e92f4f3 / finding 5) changed ONLY the Y handling (preclusterBubbleY save/restore,
+     l.1047-1049/1067-1073/1094-1095) — width/height computation untouched -> size assertion intact.
+3. 9-13 cluster regression GREEN (dev+fix workers); build green: 24 JVM tests, KlarvoTheme drift gate PASS.
+
+== BOUNDARY — why no clean LIVE structural read here ==
+The device was screen-asleep then PIN-LOCKED (HyperOS keyguard showing=true). APPLICATION_OVERLAY
+windows do not composite behind the keyguard: surfaces read shown=false / alpha=0.0 / mLastAlpha=0.0,
+and the forced-state layout does not reliably apply while locked (a transient read showed the dock at
+the stale cluster size 456x187, NOT the hold size — discarded as a lock artifact, confirmed by the
+code-continuity proof above). Clearing the keyguard needs Andi's PIN/finger — not conductor-observable.
+
+== RESIDUAL FOR ANDI (real-device, unlocked, live mic) — the actual GATE-4 ==
+Motion + touch + pixel cannot be machine-verified (emulator/harness force a static state; the keyguard
+blocks live composition here). Andi's batched device gate must confirm:
+  a) AC1a — the "<" (cancel) and "^" (lock) hint arrows actually PULSE (the fix moved animator-start
+     into updateAnimators(); harness can't show motion). This is the highest-risk item.
+  b) Gesture: hold=record, release=send, drag-LEFT>60dp=cancel, drag-UP>40dp=lock->cluster.
+  c) Locked state shows header "Aufnahme · gesperrt" + footer "Finger losgelassen · weiter über die Knöpfe";
+     and a SECOND recording afterwards is clean (no sticky locked label/footer — finding 2 fix).
+  d) Visual fidelity of the hold dock vs the approved render mockup-9-5-followups-2-4.html.
