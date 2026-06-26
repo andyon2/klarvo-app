@@ -14,18 +14,18 @@ import android.view.animation.OvershootInterpolator
  * States:
  *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
  *                    Canon: .ab-bubble.idle
- *   RECORDING     -- control cluster at the dock spot (Modell B / ADR-0019 §4′):
- *                    [➤ send teal] [amber waveform] [✗ cancel red] on a dark semi-transparent
+ *   RECORDING     -- control cluster at the dock spot (Modell B / ADR-0019 §4′ #2):
+ *                    [✗ cancel red] [amber waveform] [➤ send teal] on a dark semi-transparent
  *                    backdrop with a static amber ring. Window grows from single bubble → cluster.
  *   TRANSCRIBING  -- single teal proc bubble (.ab-bubble.proc): teal squircle + rotating spinner.
  *                    Window collapses back to single-bubble size.
  *   DONE          -- success-green gradient squircle + dark check polyline (.ab-bubble.done),
  *                    then returns to IDLE (via doneFlashRunnable).
  *
- * Touch zones in RECORDING (cluster layout, left→right: send | waveform | cancel):
- *   - Left zone   -> ➤ Send  (isTouchInConfirmZone)
+ * Touch zones in RECORDING (cluster layout, left→right: cancel | waveform | send):
+ *   - Left zone   -> ✗ Cancel (isTouchInCancelZone)
  *   - Dead zone   -> waveform (no action)
- *   - Right zone  -> ✗ Cancel (isTouchInCancelZone)
+ *   - Right zone  -> ➤ Send  (isTouchInConfirmZone)
  *   KlarvoOverlayService reads these helpers and routes accordingly; tap on waveform/backdrop = no-op.
  *
  * Color semantics (DT5 — binding rule):
@@ -92,7 +92,7 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     companion object {
         // Cluster visual dimensions (RECORDING state, Modell B).
-        // Width breakdown: 6(pad) + 40(send) + 9(gap) + 40(wave) + 9(gap) + 40(cancel) + 6(pad) = 150dp
+        // Width breakdown: 6(pad) + 40(cancel) + 9(gap) + 40(wave) + 9(gap) + 40(send) + 6(pad) = 150dp
         // Height: 6(pad) + 40(btn) + 6(pad) = 52dp
         const val CLUSTER_VISUAL_W_DP = 150
         const val CLUSTER_VISUAL_H_DP = 52
@@ -171,11 +171,11 @@ class FloatingBubbleView(context: Context) : View(context) {
     private var lastSendGlyphSize = -1f
 
     // --- Touch zone boundaries (updated each draw, used by isTouchInConfirmZone / Cancel) ---
-    // Send zone:   [0, clusterSendZoneEnd]
-    // Cancel zone: [clusterCancelZoneStart, width]
+    // Send zone:   [clusterSendZoneStart, width]   (RIGHT side — thumb position)
+    // Cancel zone: [0, clusterCancelZoneEnd]        (LEFT side)
     // Dead zone:   waveform area between them
-    private var clusterSendZoneEnd = 0f
-    private var clusterCancelZoneStart = 0f
+    private var clusterSendZoneStart = 0f
+    private var clusterCancelZoneEnd = 0f
 
     // --- Animations ---
     private val rotationAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -262,13 +262,13 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     // --- Touch zone helpers ---
 
-    /** True when [touchX] hits the ➤ Send button zone (left side of the cluster). */
+    /** True when [touchX] hits the ➤ Send button zone (right side of the cluster). */
     fun isTouchInConfirmZone(touchX: Float): Boolean =
-        state == State.RECORDING && clusterSendZoneEnd > 0f && touchX <= clusterSendZoneEnd
+        state == State.RECORDING && clusterSendZoneStart > 0f && touchX >= clusterSendZoneStart
 
-    /** True when [touchX] hits the ✗ Cancel button zone (right side of the cluster). */
+    /** True when [touchX] hits the ✗ Cancel button zone (left side of the cluster). */
     fun isTouchInCancelZone(touchX: Float): Boolean =
-        state == State.RECORDING && clusterCancelZoneStart > 0f && touchX >= clusterCancelZoneStart
+        state == State.RECORDING && clusterCancelZoneEnd > 0f && touchX <= clusterCancelZoneEnd
 
     // --- onDraw ---
 
@@ -330,8 +330,9 @@ class FloatingBubbleView(context: Context) : View(context) {
     }
 
     // =========================================================================
-    // RECORDING: control cluster [➤ send] [amber waveform] [✗ cancel]
-    // Canon .ab-cluster: r18dp backdrop, static amber ring, 6dp pad, 9dp gap
+    // RECORDING: control cluster [✗ cancel] [amber waveform] [➤ send]
+    // Cancel (left, Danger), waveform (center, amber, RMS-driven), Send (right, Teal — dock/thumb)
+    // Canon .ab-cluster: r18dp backdrop, static amber ring, 6dp pad, 9dp gap (§4′-Amendment 2026-06-21 #2)
     // =========================================================================
 
     private fun drawRecordingCluster(canvas: Canvas) {
@@ -378,27 +379,27 @@ class FloatingBubbleView(context: Context) : View(context) {
         val btnR     = CLUSTER_BTN_R_DP * dp
         val btnCy    = (clusterTop + clusterBottom) / 2f
 
-        val sendCx   = clusterLeft + innerPad + btnPx / 2f
-        val cancelCx = clusterRight - innerPad - btnPx / 2f
+        val cancelCx = clusterLeft + innerPad + btnPx / 2f    // LEFT  (was sendCx)
+        val sendCx   = clusterRight - innerPad - btnPx / 2f   // RIGHT (was cancelCx)
 
-        // --- ➤ Send button ---
-        drawSendButton(canvas, sendCx, btnCy, btnPx / 2f, btnR, dp)
-
-        // --- ✗ Cancel button ---
+        // --- ✗ Cancel button (LEFT) ---
         drawCancelButton(canvas, cancelCx, btnCy, btnPx / 2f, btnR, dp)
 
+        // --- ➤ Send button (RIGHT / dock-thumb) ---
+        drawSendButton(canvas, sendCx, btnCy, btnPx / 2f, btnR, dp)
+
         // --- Amber waveform (between buttons) ---
-        val waveLeft  = sendCx + btnPx / 2f + gapPx
-        val waveRight = cancelCx - btnPx / 2f - gapPx
+        val waveLeft  = cancelCx + btnPx / 2f + gapPx   // right edge of Cancel + gap
+        val waveRight = sendCx - btnPx / 2f - gapPx     // left edge of Send - gap
         drawClusterWaveform(canvas, waveLeft, waveRight, btnCy, dp)
 
         // --- Update touch zones (half-gap extends the zones over the dead area) ---
-        // Send zone: cluster left to midpoint between send button right edge and waveform left
-        val sendZoneRight = waveLeft - gapPx / 2f
-        // Cancel zone: midpoint between waveform right edge and cancel button left
-        val cancelZoneLeft = waveRight + gapPx / 2f
-        clusterSendZoneEnd = sendZoneRight
-        clusterCancelZoneStart = cancelZoneLeft
+        // Cancel zone right boundary: midpoint between cancel right edge and waveform left
+        val cancelZoneRight = waveLeft - gapPx / 2f
+        // Send zone left boundary: midpoint between waveform right edge and send left
+        val sendZoneLeft = waveRight + gapPx / 2f
+        clusterCancelZoneEnd = cancelZoneRight
+        clusterSendZoneStart = sendZoneLeft
     }
 
     private fun drawSendButton(canvas: Canvas, cx: Float, cy: Float, r: Float, cornerR: Float, dp: Float) {
