@@ -816,6 +816,20 @@ real-device gate confirms the bars track his voice. Overlays must never use `FLA
 
 ---
 
+### Story 9.13: Recording-Cluster-Reihenfolge tauschen (9-5 GATE Follow-up #2)
+
+As a user dictating on Android,
+I want the **➤ Send** control to sit at the dock/thumb position of the recording cluster (where the idle K-bubble sits) and **✗ Cancel** on the opposite (left) side,
+So that the most-used action (send) is under my thumb and matches human habit, while the destructive action (cancel) is deliberately off the thumb path.
+
+**Scope (locked — cluster-order/interaction change only, do NOT expand):** Swap the recording-state control-cluster order on Android from the current `[➤ Send (left) · waveform · ✗ Cancel (right/thumb)]` to `[✗ Cancel (left) · waveform (center) · ➤ Send (right/thumb)]`. ➤ Send (teal) moves to the dock/thumb anchor of the idle K-bubble; ✗ Cancel (red) moves to the left; the amber waveform stays centered. Color semantics are binding (ADR-0019): **red = Cancel, teal = Send** — both platforms. **No** RMS/waveform behavior change (that is #1 / Story 9.12, done — do not touch). **No** HOLD-mode surfaces (that is #4 — separate story; do not build `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` here). **No** new tokens, **no** new states, **no** gesture-mode logic change. Do **not** silently expand Story 9.7.
+
+**Anchors:** `docs/backlog.md` §"Story 9-5 GATE-4 green" point (2); canon `docs/design/overhaul/source/Klarvo Design System.html` + `assets/klarvo.css` (fingerprint `fc9ef745…`, MANIFEST 2026-06-21) — cluster order `[✗ cancel (links) · hwave · ➤ send (RECHTS)]`; approval render `docs/design/overhaul/mockup-9-5-followups-2-4.html` (section #2); ADR-0019 §4′ + §4′-Amendment 2026-06-21. Design gate is **resolved** (Andi-approved, commit `864af40`) — no open design/UI/intent question.
+
+**DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`; the structural assertion can confirm cluster element presence/order/anchor where machine-checkable). **GATE-4 visual = real device (Andi's batched gate):** final pixel/placement verdict is Andi's real-device sight, never an emulator screenshot — the emulator is a structural oracle only. Overlays must never use `FLAG_NOT_TOUCHABLE` (HyperOS dims them to alpha 0.8).
+
+---
+
 _Visual-overhaul planning artifact (Epics 8 + 9). Codeable contract:
 `docs/design/overhaul/SPEC-studio-dark-overhaul.md` (+ 01..04). Per-story full context via
 `bmad-create-story` per session._
