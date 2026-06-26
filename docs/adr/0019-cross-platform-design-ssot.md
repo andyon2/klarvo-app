@@ -152,3 +152,24 @@ keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (
 > *Bewegung* ist NUR am echten Gerät verifizierbar (Emulator/Harness setzen Amplitude direkt, am Mikro vorbei).
 
 **Provenance (§5):** in-repo-Canon-Erweiterung. Fingerprint `efe726c6…` → **`fc9ef7456700d19b8332dd2c34a43b8e`** (MANIFEST-Zeile 2026-06-21). Geänderte/neue Surfaces: recording-`.ab-cluster` (Reihenfolge), neu `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` + Artboard-Sektion „Aufnahme · HOLD-Modus". Abgesegneter Stand: `mockup-9-5-followups-2-4.html` (Andi, 2026-06-21).
+
+### Amendment 2026-06-26 — Android-Aufnahme-Steuerung: Mobile-Redesign („B-Sprache")
+
+**Status:** Accepted · **Trigger:** Andis **erster echter Daumen-Test** des HOLD-Modus (Story 9-14) am echten Gerät: die §4′-/§4′-Amendment-Umsetzung fiel am Gerät durch — **zu klein, Finger verdeckt die UI beim Ziehen, „fühlt sich an wie ein Laptop-Feature, nicht wie ein Handy-Feature"** (Maschinen-Ebene war grün). Wurzel: der Canon wurde als Browser-Mockups im Laptop-Maßstab abgesegnet, nie am Daumen/Geräte-Maßstab. Mobile-Overlay-Rethink (Phase A) → neue Design-Sprache, **abgesegnet im Geräte-Maßstab (1080×2460 @ 2.75)** über belebtem Hintergrund.
+
+**Ändert:** die **Android-MOBILE** Umsetzung der recording-Steuerung (der §4′-Klein-Cluster `[✗·Waveform·➤]` **und** die §4′-Amendment-HOLD-Slide-Variante). **Unverändert:** §1–§3, §5 (Farb-Semantik **teal=Senden · amber=live · rot=Abbrechen**, Token-Codegen, Provenance); **alle Desktop-Surfaces**; die HOLD-Kern-Intention (halten=aufnehmen · loslassen=senden · wegziehen=abbrechen · hochziehen=sperren) — nur **Surface, Geometrie, Größe und Feedback** ändern sich.
+
+**Kern-Entscheidung (B-Sprache) — mobile-first, occlusion-bewusst, solide Flächen, große Targets:**
+- **TAP-Aufnahme** (kurz tippen): zwei **große runde tappbare Ziele** — **Senden** (teal-Gradient, ➤) am **Dock/Daumen**, **Abbrechen** (dunkel + rot-Ring, ✕) auf der Gegenseite; dazwischen/oben ein ruhiger **Waveform-Chip** (amber, RMS-getrieben). **Ersetzt den `.ab-cluster`-Klein-Cluster.**
+- **HOLD** (halten): **Daumen-Anker-Bubble** (teal, amber-Ring) am Dock + zwei große runde Ziele — **Sperren** (teal, Schloss-Icon, oben-zur-Display-Mitte) + **Abbrechen** (rot, ✗, weiter unten). **Das Ziel wächst + leuchtet, sobald der Finger drauf ist** (klarer Treffer-Cue); **Loslassen löst aus** (release-to-commit); **Zurückziehen vor dem Loslassen = Undo**. Loslassen ohne Ziel = **senden**.
+- **Gesperrt** (nach Hochziehen-Sperren): wird zur **TAP-Surface** (Senden + Abbrechen, tappbar) — Loslassen sendet dann nicht mehr.
+- **Dock-adaptiv:** Bei allen Andock-Positionen (rechts/links/oben/unten/frei) **spiegelt/dreht** sich die Anordnung; Cues wachsen **weg von der angedockten Kante und vom Daumen**, nie unter den Finger.
+- **Größen-/Kontrast-Regeln:** Targets groß genug, dass sie neben dem Daumen sichtbar bleiben (Richtwert Ziel-Ø ≥ ~120dp, großzügiger Abstand); alles auf **blickdichten Flächen** — nie auf Transparenz verlassen (das war der „Lock auf transparentem Grund unlesbar"-Defekt).
+
+**Bindendes Render (SOLL):** `docs/design/overhaul/mockup-mobile-hold-B-refined.html` (Ruhe + Treffer-Abbrechen) **+** `docs/design/overhaul/mockup-mobile-recording-states.html` (TAP-Aufnahme + HOLD-Treffer-Sperren + Dock-Spiegelung). Andi-approved 2026-06-26, gerendert @ 1080×2460 (Playwright, Geist-Fonts, belebter Hintergrund). Exakte Werte (Farben/Radii/Größen) = die CSS dieser Mockups.
+
+**Superseded (für Android-MOBILE; Desktop unberührt):** die §4′-Amendment-Surfaces `.ab-cluster` (Klein-Cluster-Geometrie) + `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` (Slide-Spur-HOLD). Im tracked Canon `Klarvo Design System.html` als SUPERSEDED markiert; ein Consumer liest die neue Wahrheit aus den beiden Mockups + diesem Amendment.
+
+**Scope/Stories (nur geschrieben — Build folgt in frischer Session):** **9-14** neu gefasst (HOLD in B-Sprache); neue **9-15** (TAP-Surface-Re-Skin = ersetzt den 9-13-Klein-Cluster; liefert auch den Gesperrt-Zustand für 9-14). Transcribing/Done/Idle-Bubble + Live-Preview = **späterer Pass** (docs/backlog.md), bewusst nicht in diesem Amendment.
+
+**Provenance:** bindendes Render = die zwei Mockups (eine Ebene über `source/`); tracked-Canon-`.ab-*`-Mobile-Surfaces als SUPERSEDED markiert (MANIFEST-Zeile 2026-06-26).

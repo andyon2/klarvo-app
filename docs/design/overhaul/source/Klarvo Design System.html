@@ -49,6 +49,11 @@
   /* ADR-0019 Amendment (Modell B, 2026-06-17): recording ist KEIN Einzel-Bubble mehr, sondern ein
      Steuer-Cluster am Bubble-Platz — Senden (teal ➤) · Waveform (amber, live) · Abbrechen (rot ✗).
      EIN Interaktions-Ort; das Panel ist passiv (nur Text + Zeit, keine Waveform, kein roter Knopf). */
+  /* ⚠️ SUPERSEDED für Android-MOBILE (ADR-0019 Amendment 2026-06-26 „B-Sprache"): dieser Klein-Cluster
+     `.ab-cluster` UND die HOLD-Surfaces `.ab-holddock/.ab-holdstrip/.ab-slidehint/.ab-heldbub/.ab-lockchip`
+     (unten) wurden am echten Gerät als zu klein/„Laptop-Feel" verworfen. NEUE Android-Wahrheit = große
+     tappbare Ziele (Senden/Abbrechen) + HOLD-Zwei-Zonen mit grow-on-target + release-to-commit. Bindendes
+     Render: docs/design/overhaul/mockup-mobile-{hold-B-refined,recording-states}.html. Desktop unberührt. */
   .ab-cluster { position: absolute; right: 8px; display: flex; align-items: center; gap: 9px; padding: 6px; border-radius: 18px; box-shadow: 0 0 0 1.5px var(--k-amber-line); background: rgba(20,22,24,.55); z-index: 5; }
   .ab-cbtn { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass); border: 0; }
   .ab-cbtn.send { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); }

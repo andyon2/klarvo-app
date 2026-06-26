@@ -840,6 +840,23 @@ So that the recording cluster matches the familiar voice-message model that Hold
 
 **DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`; the structural assertion can confirm hold-dock/lock-chip surface presence + the lock→cluster window transition where machine-checkable). **GATE-4 motion/touch = real device (Andi's batched gate):** the press-hold-release / drag-to-cancel / drag-up-to-lock gesture and its live waveform are **only** verifiable on Andi's real device with a live mic — never an emulator (the emulator is a structural oracle only; it cannot drive a held touch + live amplitude). Overlays must never use `FLAG_NOT_TOUCHABLE` (HyperOS dims them to alpha 0.8).
 
+> **⚠️ Story 9.14 NEU GEFASST 2026-06-26 (B-Sprache).** Die obige 9.14-Beschreibung (Slide-Spur-HOLD) ist
+> **superseded**: Andis Real-Device-Test verwarf die mobile Aufnahme-Steuerung als zu klein/„Laptop-Feel".
+> Redesign in „B-Sprache" — siehe ADR-0019 Amendment 2026-06-26 + Story-File `9-14-...md` (neu) + die Render
+> `mockup-mobile-hold-B-refined.html` / `mockup-mobile-recording-states.html`. Build folgt in frischer Session.
+
+### Story 9.15: Mobile TAP-Aufnahme-Surface (B-Sprache Re-Skin, ersetzt den Klein-Cluster)
+
+As a user recording on Android in tap/toggle/auto modes (and after locking a HOLD recording),
+I want large thumb-friendly **Senden / Abbrechen** targets instead of the small `[✗·Waveform·➤]` cluster,
+So that I can hit the right control without my finger covering it (phone feature, not laptop feature).
+
+**Scope (locked):** Replace the `.ab-cluster` small cluster (RECORDING, tap/toggle/auto modes) with two **large round tappable targets** — **Senden** (teal ➤) at the dock/thumb, **Abbrechen** (dark + red ring ✕) opposite, plus a calm amber waveform chip (no overlap). **Dock-adaptive** (mirror for left/up/down). This surface is **also the "gesperrt" state consumed by Story 9.14** (post-lock). Color semantics binding (teal=Senden, rot=Abbrechen). No pipeline change; surface + touch zones only. NOT in scope: idle/transcribing/done/preview (later pass).
+
+**Anchors:** ADR-0019 **Amendment 2026-06-26** „B-Sprache"; binding render `docs/design/overhaul/mockup-mobile-recording-states.html` (frames `tapRight`/`tapLeft`); canon fingerprint `bac152993046699c5007612ac916d951` (MANIFEST 2026-06-26, supersedes `.ab-cluster`). Foundational for Story 9.14.
+
+**DoD (surface-class):** DEBUG APK builds; JVM tests pass; emulator structural smoke green (TAP-surface window present, size ≠ old small cluster). **GATE-4 visual/touch = real device (Andi's batched gate):** placement/size/legibility + tap behaviour = Andi's real-device sight, never an emulator screenshot. No `FLAG_NOT_TOUCHABLE`.
+
 ---
 
 _Visual-overhaul planning artifact (Epics 8 + 9). Codeable contract:
