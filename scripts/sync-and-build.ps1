@@ -117,6 +117,31 @@ if ($exeBefore -and $exeAfter -le $exeBefore) {
     Write-Host "      If you expected a SOURCE change to land in this build, re-run with  -Clean ." -ForegroundColor Yellow
 }
 
+# --- WebView2 fixed-runtime pin (see ADR-0020) ---------------------------------
+# Klarvo self-pins to a bundled WebView2 runtime in target\release\webview2-runtime
+# (lib.rs run()) to dodge the 149.0.4022.69+ occlusion regression that blanks the
+# always-on-top overlays. The sync above excludes `target`, so a normal build keeps
+# the folder -- but a full `cargo clean` wipes it, and Evergreen eventually deletes
+# the Program Files source. So we keep a master copy OUTSIDE the build tree and
+# self-heal from it here. Without the runtime, Klarvo silently falls back to the
+# broken Evergreen runtime -- exactly the "fix vanished" failure we are guarding.
+$wv2Master = "D:\apps\klarvo-webview2-runtime"
+$wv2Target = "$dst\src-tauri\target\release\webview2-runtime"
+$rc62 = "C:\Windows\System32\robocopy.exe"
+if (Test-Path "$wv2Target\msedgewebview2.exe") {
+    if (-not (Test-Path "$wv2Master\msedgewebview2.exe")) {
+        Write-Host "Seeding WebView2 runtime master copy from build tree..." -ForegroundColor Cyan
+        & $rc62 $wv2Target $wv2Master /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+    }
+} elseif (Test-Path "$wv2Master\msedgewebview2.exe") {
+    Write-Host "Restoring WebView2 fixed runtime into build tree (was missing)..." -ForegroundColor Yellow
+    & $rc62 $wv2Master $wv2Target /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+} else {
+    Write-Host "WARNING: no WebView2 fixed runtime found (neither build tree nor master)." -ForegroundColor Red
+    Write-Host "         Klarvo will use the auto-updating Evergreen runtime -> overlay-blank bug returns." -ForegroundColor Red
+    Write-Host "         Fix: copy an 'EdgeWebView\Application\<=149.0.4022.62' folder to $wv2Master (see ADR-0020)." -ForegroundColor Red
+}
+
 # Sign the installer via WSL rsign (Tauri's signer hangs).
 # Non-fatal: the raw klarvo.exe you smoke-test does not depend on signing.
 Write-Host "Signing installer via WSL rsign..." -ForegroundColor Cyan

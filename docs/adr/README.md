@@ -37,3 +37,4 @@ Die globale Sequenz wird fortgeführt: **0001–0014** dokumentieren die (seit P
 | [0017](0017-shared-core-stt-path.md) | Shared-Core STT-Pfad — ein Rust-STT-Request + Guards über JNI (Hard Rule) | Accepted |
 | [0018](0018-android-bubble-rendering-tech.md) | Android Bubble Rendering Tech — View+Canvas vs ComposeView | Accepted |
 | [0019](0019-cross-platform-design-ssot.md) | Cross-Platform Design-SSOT — Tokens (Codegen) · Farb-Semantik (rot=Abbrechen) · Interaktions-Parität | Accepted |
+| [0020](0020-webview2-fixed-runtime-pin.md) | WebView2 auf gepinnte Fixed-Version-Runtime (.62) festnageln — Overlay-Occlusion-Regression in Evergreen 149.69+ | Accepted |

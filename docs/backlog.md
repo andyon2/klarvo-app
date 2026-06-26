@@ -350,3 +350,21 @@ hat, ist offen → **Regressions-Untersuchung**, nicht spekulativ fixen.
   (welcher Term dominiert), dann gezielt kürzen; ggf. `git bisect` über die Android-Builds seit „schnell".
 
 GATE = echtes Gerät (Latenz-Empfinden ist Andis). Status: **geparkt, Untersuchung offen.**
+
+## WebView2 Fixed-Runtime-Pin — Distribution + Durability-Follow-ups (2026-06-26)
+
+Source: Overlay-Occlusion-Regression gelöst durch Runtime-Pin auf `149.0.4022.62` ([ADR-0020](adr/0020-webview2-fixed-runtime-pin.md);
+Mess-Saga in Memory `project_webview2_overlay_backgrounding`). Der Fix ist im lokalen Dev-Build verankert (Code-Pin in
+`lib.rs` + gebündelte Runtime in `target\release\webview2-runtime` + Self-Heal in `sync-and-build.ps1` aus
+Master-Kopie `D:\apps\klarvo-webview2-runtime`). Offen:
+
+- **Distribution-Pfad:** Für den ausgelieferten Installer (NSIS/MSI) auf Tauris natives
+  `bundle.windows.webviewInstallMode: { type: "fixedRuntime", path: "…" }` umstellen, statt die exe-relative Kopie.
+  Aktuell bringt nur der lokale Build die Runtime mit; ein frisch installierter Endnutzer-Build hätte den Pin nicht.
+- **Runtime-Bump-Prozess:** Bewusster Weg dokumentieren/scripten, um die gepinnte Runtime zu aktualisieren (neue
+  Version testen mit dem Probe-Skript → Master-Kopie ersetzen → Build). Gepinnt = **kein** Auto-Security-Update.
+- **Re-Verifikation über Zeit:** Andis Abnahme war „vorerst grün". Bei Wiederauftreten der unsichtbaren Pille
+  ZUERST Klarvo.log-Zeile `[webview2] runtime: …` prüfen (Pin aktiv? `webview2-runtime` vs „Evergreen (not pinned)")
+  und ob Master-Kopie + `target\…\webview2-runtime` existieren — erst dann tiefer graben.
+
+GATE = echtes Gerät über Tage (Andi). Status: **Kern-Fix gebaut + maschinen-verifiziert; Distribution + Bump-Prozess offen.**

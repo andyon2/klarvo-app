@@ -859,6 +859,28 @@ pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Pin WebView2 to a bundled fixed-version runtime (Windows) to dodge the
+    // 149.0.4022.69+ occlusion regression: the transparent, always-on-top overlays
+    // (bar + preview) stop compositing the moment another window covers their screen
+    // region — even with CalculateNativeWinOcclusion disabled. Measured + human-verified
+    // 2026-06-26: runtime .62 renders the occluded overlays; .69/.80 never do. The
+    // pinned runtime ships next to the exe as `webview2-runtime/`. If it's absent we
+    // fall back to the auto-updating Evergreen runtime (= the broken behaviour, but at
+    // least the app starts). Must run before any webview is created.
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER").is_none() {
+            if let Some(rt) = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|d| d.join("webview2-runtime")))
+            {
+                if rt.join("msedgewebview2.exe").is_file() {
+                    std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &rt);
+                }
+            }
+        }
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Structured logging: stdout/logcat + rotating log file in {app_log_dir}/klarvo.log
@@ -881,6 +903,12 @@ pub fn run() {
     }
 
     let mut builder = builder.setup(|app| {
+        #[cfg(target_os = "windows")]
+        log::info!(
+            "[webview2] runtime: {}",
+            std::env::var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER")
+                .unwrap_or_else(|_| "Evergreen (not pinned)".into())
+        );
         // Resolve the app-data directory (e.g. %APPDATA%\com.klarvo.voice on Windows).
         let app_data_dir = app
             .path()
