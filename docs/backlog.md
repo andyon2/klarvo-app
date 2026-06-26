@@ -28,6 +28,27 @@ Geräte-Maßstab passieren.
 5. Lock-Affordance braucht **soliden Hintergrund** (aktuell transparent → über wuseligem Wallpaper unlesbar).
 6. **Live-Preview** ebenfalls mobil neu denken (gleicher „Laptop-Feel").
 
+**Design-Inputs (Andi, 2026-06-26 — Phase A, Vorgehen „Prinzipien + Referenzen zuerst"):**
+- **Referenz = Wispr Flow** (mobiles Diktat-Overlay). DNA aus Recherche: Floating-Bubble über der Tastatur;
+  Tap → expandiert zu [✗ · Live-Waveform · ✓]; **Halten = Push-to-Talk**; ruhige, premium-minimalistische
+  Optik mit fließender Live-Waveform als „ich höre"-Signal. Pixel-Optik nicht agent-sichtbar → Treue = Andis Auge.
+- **Dock-Positionen dynamisch** für alle wichtigen Plätze: rechts-mittig (aktuell), links-angedockt-mittig,
+  oben, unten, frei. Das Overlay + die Drag-Cues müssen **position-adaptiv** sein.
+- **Rechtshänder, meist rechter Daumen** → Occlusion-Regel: aktive Cues wachsen WEG vom Daumen / von der
+  angedockten Kante ins Display hinein.
+- Approval-Surface = **Geräte-Maßstab** (Redmi 1080×2460 px @ 440dpi / Faktor 2.75), über belebtem Wallpaper —
+  nie Laptop-Browser-Mockup.
+- Scope: Recording-/HOLD-Overlay als Leit-Surface zuerst, dann übrige Bubble-States + Preview.
+
+**Stand 2026-06-26 — Richtung gewählt:** Aus 3 device-scale-Mockup-Richtungen (A Slide-Spur · B Zwei-Zonen ·
+C Ruhe-Sheet) hat Andi **B (verfeinert)** gewählt: held bubble = Daumen-Anker rechts; zwei große runde Ziele
+(Sperren teal oben-links · Abbrechen rot unten-links), aufgeräumt/nicht-überlappend, Waveform-Chip an der
+Bubble; **Ziel wächst + leuchtet, sobald der Finger drauf ist**, **Loslassen löst aus** (release-to-commit + Undo).
+Mockups: `docs/design/overhaul/mockup-mobile-hold-explore.html` (A/B/C) + `mockup-mobile-hold-B-refined.html`
+(Ruhe + Treffer), gerendert via Playwright @ 1080×2460. NÄCHSTE: volle HOLD-Flow-Zustandsfolge + Dock-Varianten
+in B-Sprache → neuer Canon → 9-14-Rebuild. OFFEN: Scope (nur HOLD vs. auch Tap-Cluster/9-13 vs. ganzes Overlay+Preview)
++ Post-Lock-Zustand (gesperrt = große tappbare Ziele statt altem Klein-Cluster?).
+
 ---
 
 ## Cross-Platform Drift — Sorte-2 (deferred, ADR-0016 Amendment 1 = accepted asymmetry → backlog, NOT hard won't-fix)

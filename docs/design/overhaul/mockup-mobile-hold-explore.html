@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Klarvo — Mobile HOLD Overlay · Richtungs-Explore (2026-06-26)</title>
+<style>
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-SemiBold.woff2') format('woff2');font-weight:600;font-display:swap}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+  @font-face{font-family:'Geist Mono';src:url('../../../dist/fonts/GeistMono-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+  @font-face{font-family:'Geist Mono';src:url('../../../dist/fonts/GeistMono-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
+
+  :root{
+    --k-bg:#0F1112; --k-surface:#16181A; --k-surface-2:#1B1E20; --k-elevated:#232729;
+    --k-border:#282C2F; --k-hairline:rgba(255,255,255,0.06);
+    --k-text:#ECEEEF; --k-muted:#A4A9AC; --k-dim:#6F7479; --k-faint:#4B4F53;
+    --k-teal:#29C7AC; --k-teal-hi:#57DDC7; --k-teal-lo:#1B9C88; --k-teal-line:rgba(41,199,172,.32); --k-on-teal:#05201B;
+    --k-amber:#E9A24C; --k-amber-hi:#F4BA72; --k-amber-line:rgba(233,162,76,.42);
+    --k-danger:#EE6F63; --k-danger-hi:#F4897E;
+    --k-e2:0 4px 14px rgba(0,0,0,.45); --k-e3:0 14px 40px rgba(0,0,0,.6); --k-glass:inset 0 1px 0 var(--k-hairline);
+    --k-font:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif; --k-mono:'Geist Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0a0a0b;font-family:var(--k-font);display:flex;gap:34px;padding:34px;align-items:flex-start}
+
+  /* ---------- device frame: 393 x 895 css px @ dpr 2.75 = 1080 x 2460 ---------- */
+  .phone{position:relative;width:393px;height:895px;border-radius:30px;overflow:hidden;flex:0 0 auto;
+    box-shadow:0 0 0 2px #1c1c1f,0 24px 60px rgba(0,0,0,.6)}
+  /* busy, colourful "photo wallpaper" — worst case for overlay contrast */
+  .wall{position:absolute;inset:0;
+    background:
+      radial-gradient(120% 80% at 12% 8%, #ff7a59 0%, transparent 42%),
+      radial-gradient(90% 70% at 88% 14%, #6d6bff 0%, transparent 46%),
+      radial-gradient(120% 90% at 78% 88%, #18b88a 0%, transparent 44%),
+      radial-gradient(120% 90% at 8% 92%, #ffd166 0%, transparent 42%),
+      conic-gradient(from 200deg at 50% 50%, #2a2350, #143b3a, #4a2a3e, #2a2350);}
+  .wall::after{content:"";position:absolute;inset:0;opacity:.5;
+    background:repeating-linear-gradient(58deg, rgba(255,255,255,.06) 0 2px, transparent 2px 26px),
+               repeating-linear-gradient(-32deg, rgba(0,0,0,.10) 0 2px, transparent 2px 22px)}
+  /* faux app behind: chat-ish bubbles so the overlay reads as "over an app" */
+  .appbehind{position:absolute;inset:0;padding:54px 16px 0;display:flex;flex-direction:column;gap:10px;opacity:.92}
+  .ab-row{display:flex}.ab-row.me{justify-content:flex-end}
+  .ab-msg{max-width:74%;padding:11px 14px;border-radius:16px;font-size:14px;line-height:1.4;color:#10241f;
+    background:rgba(255,255,255,.92);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  .ab-row.me .ab-msg{background:linear-gradient(180deg,#37e0c4,#19b89c);color:#062019}
+  .statusbar{position:absolute;top:0;left:0;right:0;height:40px;display:flex;justify-content:space-between;
+    align-items:center;padding:0 22px;color:#fff;font-family:var(--k-mono);font-size:13px;font-weight:500;
+    text-shadow:0 1px 3px rgba(0,0,0,.5);z-index:40}
+  .frame-tag{display:none;position:absolute;top:46px;left:0;right:0;text-align:center;z-index:40;
+    font-family:var(--k-mono);font-size:12px;letter-spacing:.04em;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+  .frame-tag b{color:var(--k-amber-hi)}
+
+  /* shared overlay atoms ----------------------------------------------------- */
+  .heldbub{position:absolute;width:84px;height:84px;border-radius:26px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);
+    font-weight:700;font-size:33px;box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 5px var(--k-amber-line),var(--k-glass);z-index:30}
+  .heldbub .ring{position:absolute;inset:-12px;border-radius:34px;border:2.5px solid var(--k-amber);opacity:.6}
+  .heldbub .finger{position:absolute;right:-12px;bottom:-14px;width:56px;height:56px;border-radius:50%;
+    background:rgba(236,238,239,.16);border:2px solid rgba(236,238,239,.5);backdrop-filter:blur(1px)}
+  .tm{font-family:var(--k-mono);letter-spacing:.02em}
+  .panelbg{background:rgba(18,20,22,.97);box-shadow:var(--k-e3),var(--k-glass);border:1px solid var(--k-border)}
+  .lockico{display:inline-block;vertical-align:middle}
+
+  /* calm waveform (amber, live) */
+  .wave{display:flex;align-items:center;gap:4px;height:40px}
+  .wave i{width:5px;border-radius:3px;background:var(--k-amber);opacity:.95}
+  .wave.sm i{width:4px}
+
+  /* ===== Variation A — Slide-Spur ===== */
+  #varA .lockpill{position:absolute;right:24px;display:flex;flex-direction:column;align-items:center;gap:4px;
+    padding:16px 0 13px;width:96px;border-radius:24px;z-index:28}
+  #varA .lockpill .up{font-size:26px;color:var(--k-amber);line-height:.8}
+  #varA .lockpill .lk{font-size:22px}
+  #varA .lockpill small{font-family:var(--k-mono);font-size:11px;color:var(--k-muted)}
+  #varA .track{position:absolute;height:96px;border-radius:48px;display:flex;align-items:center;z-index:26;overflow:hidden;
+    padding:0 18px 0 22px}
+  #varA .track .cancelzone{position:absolute;left:0;top:0;bottom:0;width:46%;
+    background:linear-gradient(90deg,var(--k-danger) 0%, rgba(238,111,99,.0) 100%)}
+  #varA .track .x{position:relative;font-size:30px;color:#fff;z-index:2;width:40px;text-align:center}
+  #varA .track .lab{position:relative;z-index:2;margin-left:6px;color:var(--k-text);font-size:15px;font-weight:500;white-space:nowrap}
+  #varA .track .lab b{color:var(--k-amber-hi)}
+  #varA .track .wave{position:relative;z-index:2;margin-left:auto;margin-right:6px}
+  #varA .meta{position:absolute;right:24px;display:flex;align-items:center;gap:8px;color:var(--k-muted);
+    font-size:13px;z-index:28}.meta .dot{width:8px;height:8px;border-radius:50%;background:var(--k-amber);box-shadow:0 0 0 4px var(--k-amber-line)}
+
+  /* ===== Variation B — Zwei-Zonen ===== */
+  #varB .zone{position:absolute;width:128px;height:128px;border-radius:50%;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:6px;z-index:26}
+  #varB .zone .ic{font-size:40px;line-height:1}
+  #varB .zone small{font-family:var(--k-mono);font-size:12px}
+  #varB .zone.lock{border:2px solid var(--k-teal-line);color:var(--k-teal-hi);background:rgba(18,20,22,.95);box-shadow:var(--k-e3)}
+  #varB .zone.lock small{color:var(--k-muted)}
+  #varB .zone.cancel{transform:scale(1.12);color:#fff;
+    background:radial-gradient(circle at 50% 40%, var(--k-danger-hi), var(--k-danger));
+    box-shadow:0 0 0 6px rgba(238,111,99,.22),var(--k-e3)}
+  #varB .zone.cancel small{color:rgba(255,255,255,.92)}
+  #varB .wavechip{position:absolute;display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:20px;z-index:27}
+  #varB .wavechip .tm{font-size:13px;color:var(--k-muted)}
+  #varB .pathline{position:absolute;z-index:24;border-radius:2px;opacity:.5}
+
+  /* ===== Variation C — Ruhe-Sheet ===== */
+  #varC .sheet{position:absolute;width:330px;border-radius:30px;padding:24px 22px 18px;z-index:26;display:flex;flex-direction:column;gap:16px}
+  #varC .sheet .head{display:flex;align-items:center;gap:10px}
+  #varC .sheet .head .k{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);font-weight:700;font-size:16px}
+  #varC .sheet .head .ttl{font-size:15px;font-weight:600;color:var(--k-text)}
+  #varC .sheet .head .tm{margin-left:auto;font-size:14px;color:var(--k-muted)}
+  #varC .sheet .bigwave{display:flex;align-items:center;justify-content:center;gap:5px;height:74px}
+  #varC .sheet .bigwave i{width:6px;border-radius:4px;background:var(--k-amber);opacity:.95}
+  #varC .sheet .cancelbar{position:relative;height:62px;border-radius:18px;display:flex;align-items:center;padding:0 16px;overflow:hidden;
+    background:linear-gradient(90deg,var(--k-danger) 0%, var(--k-amber) 58%, rgba(233,162,76,.18) 100%)}
+  #varC .sheet .cancelbar .x{font-size:26px;color:#fff}
+  #varC .sheet .cancelbar .lab{margin-left:10px;color:#fff;font-weight:600;font-size:14px;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+  #varC .sheet .cancelbar .knob{position:absolute;right:14px;width:44px;height:44px;border-radius:50%;
+    background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:var(--k-on-teal)}
+  #varC .lockpill{position:absolute;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:18px;z-index:28;
+    color:var(--k-teal-hi);border:1px solid var(--k-teal-line)}
+  #varC .lockpill .up{font-size:20px;color:var(--k-amber)}
+  #varC .lockpill small{font-family:var(--k-mono);font-size:12px;color:var(--k-muted)}
+  #varC .anchor{position:absolute;width:54px;height:54px;border-radius:17px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);font-weight:700;font-size:21px;
+    box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 4px var(--k-amber-line);z-index:30}
+</style>
+</head>
+<body>
+
+<!-- =================== VARIATION A — Slide-Spur =================== -->
+<div class="phone" id="varA">
+  <div class="wall"></div>
+  <div class="appbehind">
+    <div class="ab-row"><div class="ab-msg">Schickst du mir die Notizen von gestern?</div></div>
+    <div class="ab-row me"><div class="ab-msg">Klar, einen Moment …</div></div>
+    <div class="ab-row"><div class="ab-msg">Danke dir!</div></div>
+  </div>
+  <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
+  <div class="frame-tag">A · <b>Slide-Spur</b> — eine Spur, ziehen = füllt amber→rot</div>
+
+  <!-- lock pill above the bubble -->
+  <div class="lockpill panelbg" style="top:300px;">
+    <span class="up">▲</span><svg class="lockico" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--k-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><small>sperren</small>
+  </div>
+
+  <!-- held bubble, docked right-middle -->
+  <div class="heldbub" style="right:18px;top:430px;"><div class="ring"></div>K<div class="finger"></div></div>
+
+  <!-- slide track extending LEFT, mid-drag: cancel zone partly filled -->
+  <div class="track panelbg" style="left:26px;right:118px;top:436px;">
+    <div class="cancelzone"></div>
+    <span class="x">✕</span>
+    <span class="lab">‹ ziehen zum <b>Abbrechen</b></span>
+    <span class="wave"><i style="height:14px"></i><i style="height:26px"></i><i style="height:38px"></i><i style="height:20px"></i><i style="height:30px"></i></span>
+  </div>
+  <div class="meta" style="top:402px;"><span class="dot"></span><span class="tm">Aufnahme · 0:08 · loslassen = senden</span></div>
+</div>
+
+<!-- =================== VARIATION B — Zwei-Zonen =================== -->
+<div class="phone" id="varB">
+  <div class="wall"></div>
+  <div class="appbehind">
+    <div class="ab-row"><div class="ab-msg">Schickst du mir die Notizen von gestern?</div></div>
+    <div class="ab-row me"><div class="ab-msg">Klar, einen Moment …</div></div>
+    <div class="ab-row"><div class="ab-msg">Danke dir!</div></div>
+  </div>
+  <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
+  <div class="frame-tag">B · <b>Zwei-Zonen</b> — zwei große Ziele, leuchten beim Treffen</div>
+
+  <!-- path hints -->
+  <div class="pathline" style="left:150px;top:360px;width:150px;height:3px;background:var(--k-teal-line);transform:rotate(-26deg)"></div>
+  <div class="pathline" style="left:130px;top:470px;width:170px;height:3px;background:var(--k-danger);transform:rotate(8deg)"></div>
+
+  <!-- lock zone up-left -->
+  <div class="zone lock" style="left:54px;top:286px;"><svg class="lockico" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><small>sperren</small></div>
+  <!-- cancel zone left (active: finger near → red + scaled) -->
+  <div class="zone cancel" style="left:42px;top:452px;"><span class="ic">✕</span><small>Abbrechen</small></div>
+
+  <!-- waveform chip near bubble -->
+  <div class="wavechip panelbg" style="right:120px;top:454px;">
+    <span class="wave sm"><i style="height:12px"></i><i style="height:24px"></i><i style="height:34px"></i><i style="height:18px"></i><i style="height:28px"></i><i style="height:14px"></i></span>
+    <span class="tm">0:08</span>
+  </div>
+
+  <!-- held bubble docked right-middle -->
+  <div class="heldbub" style="right:18px;top:430px;"><div class="ring"></div>K<div class="finger"></div></div>
+</div>
+
+<!-- =================== VARIATION C — Ruhe-Sheet =================== -->
+<div class="phone" id="varC">
+  <div class="wall"></div>
+  <div class="appbehind">
+    <div class="ab-row"><div class="ab-msg">Schickst du mir die Notizen von gestern?</div></div>
+    <div class="ab-row me"><div class="ab-msg">Klar, einen Moment …</div></div>
+    <div class="ab-row"><div class="ab-msg">Danke dir!</div></div>
+  </div>
+  <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
+  <div class="frame-tag">C · <b>Ruhe-Sheet</b> — ruhige Fläche, slide-bar unten</div>
+
+  <!-- lock pill at top-right of the sheet -->
+  <div class="lockpill panelbg" style="right:24px;top:300px;"><span class="up">▲</span><small>hoch =&nbsp;</small><svg class="lockico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--k-teal-hi)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><small>&nbsp;sperren</small></div>
+
+  <!-- calm solid sheet, grows up-left from the dock -->
+  <div class="sheet panelbg" style="right:18px;top:352px;">
+    <div class="head"><span class="k">K</span><span class="ttl">Aufnahme · halten</span><span class="tm">0:08</span></div>
+    <div class="bigwave">
+      <i style="height:18px"></i><i style="height:40px"></i><i style="height:62px"></i><i style="height:30px"></i><i style="height:52px"></i>
+      <i style="height:24px"></i><i style="height:46px"></i><i style="height:66px"></i><i style="height:34px"></i><i style="height:20px"></i>
+      <i style="height:48px"></i><i style="height:28px"></i>
+    </div>
+    <div class="cancelbar">
+      <span class="x">✕</span><span class="lab">ziehen zum Abbrechen</span>
+      <span class="knob">‹</span>
+    </div>
+  </div>
+
+  <!-- small held anchor at the dock corner -->
+  <div class="anchor" style="right:20px;top:600px;">K</div>
+</div>
+
+</body>
+</html>
