@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-14
+last_updated: 2026-06-27
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
