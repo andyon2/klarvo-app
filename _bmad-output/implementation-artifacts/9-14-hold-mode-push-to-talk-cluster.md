@@ -81,7 +81,7 @@ Then `holdDockActive` has no effect on IDLE / TRANSCRIBING / DONE draws
 Given `pushToTalkActive = true` and recording has started (HOLD dock visible)
 When the listening panel renders
 Then the header label reads **"Aufnahme · halten"** (instead of "Aufnahme")
-AND panel footer "Tastatur pausiert · kehrt beim Einfügen zurück" is unchanged
+AND the during-hold panel footer (the normal RECORDING footer "Ich höre zu …") is unchanged — only the LOCKED state swaps it (AC5)
 
 **AC9 — Harness supports HOLD dock state (structural smoke).**
 Given the debug harness
@@ -439,6 +439,16 @@ claude-sonnet-4-6
 - AC2 zone predicates: both `isTouchInConfirmZone` and `isTouchInCancelZone` statically verified to include `&& !holdDockActive` guard.
 - One design note: "ziehen zum Abbrechen" (11sp) may exceed available slidehint width on very high-density screens. Mitigated by right-anchoring the waveform zone and canvas-clipping the text. Monitor in Andi's GATE-4.
 
+**Code-Review-Fix-Pass (2026-06-26):**
+- Build: `scripts/android-smoke.sh` exit 0; 24 JVM tests, 0 failures; APK 3s; installed on 100.112.41.70:5555.
+- Finding 1 (HIGH): `updateAnimators()` now starts holdArrowAnimator when `state==RECORDING && holdDockActive` — covers real longPressRunnable flow where holdDockActive is set before setState(RECORDING). Setter kept consistent (harness path unchanged). Also covers onAttachedToWindow reattach.
+- Finding 2 (HIGH): `setHoldModeOnPanel()` now always resets `isLockedMode=false` — prevents leak into subsequent recordings.
+- Finding 3 (MED): Lock condition (`dy < -holdDragLockPx`) now tested BEFORE cancel — diagonal up-and-left drag locks instead of cancelling.
+- Finding 4 (MED): Cancel now uses signed `dx < -holdDragCancelPx` — rightward drag no longer cancels.
+- Finding 5 (MED): `preclusterBubbleY` field saves pre-hold Y in adjustLayoutForState; lockHoldToCluster() restores it; else-branch also restores on stop/cancel — no net Y shift near screen top.
+- Finding 6 (MED): Pre-allocated `holdDockHeldbubRect`, `holdDockStripRect`, `holdScratchRect`, lazy `holdStripBlurFilter`/`heldbubBlurFilter`, `lockBodyRect`/`lockShackleRect`/`lockBodyFillPaint`/`lockShacklePaint` — no per-frame GC in holdArrowAnimator path. Removed redundant `strokePaint.alpha = (fingerBorder ushr 24) and 0xFF` dead line.
+- Finding 7 (MED, DEBUG): `applyHarnessState` now initializes `holdDragCancelPx`/`holdDragLockPx` when `pushToTalkActive=true` — harness-driven hold no longer cancels on first pixel of movement.
+
 ### Completion Notes List
 
 - Tasks 1–6 complete. All 9 ACs covered.
@@ -469,3 +479,4 @@ claude-sonnet-4-6
 |------|--------|--------|
 | 2026-06-26 | Story created via bmad-create-story (9-14 HOLD-mode push-to-talk cluster). | claude-sonnet-4-6 |
 | 2026-06-26 | Implementation complete: Tasks 1–6 done. Build smoke: 24 JVM tests green, APK built. Structural smoke: HOLD dock 206×96dp vs cluster 166×68dp (AC9 GREEN, 9-13 regression GREEN). Status → review. | claude-sonnet-4-6 |
+| 2026-06-26 | Code-review fix-pass: 7 confirmed findings applied (HIGH: animator order fix + isLockedMode reset; MED: lock-before-cancel + signed dx cancel + Y symmetry + pre-alloc no-GC + harness threshold init). Build smoke: 24 JVM tests green, APK 3s. | claude-sonnet-4-6 |

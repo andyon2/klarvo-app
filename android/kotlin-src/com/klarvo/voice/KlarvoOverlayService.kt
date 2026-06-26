@@ -263,6 +263,15 @@ class KlarvoOverlayService : Service() {
     private var preclusterBubbleX: Int? = null
 
     /**
+     * Saved Y position of the bubble window before entering the HOLD dock.
+     * adjustLayoutForState shifts Y upward by lockchipH (clamped); this field saves the
+     * original Y so lockHoldToCluster() can restore it exactly, avoiding the unclamped
+     * += lockchipH asymmetry (finding 5). Also restored on stop/cancel via adjustLayoutForState
+     * else-branch. Null when not in HOLD dock.
+     */
+    private var preclusterBubbleY: Int? = null
+
+    /**
      * Debug-only broadcast receiver — drives the bubble through all four states on demand
      * without live audio or network. Only registered when BuildConfig.DEBUG == true.
      * Fast path for an already-running service process (avoids service-start overhead).
@@ -319,6 +328,14 @@ class KlarvoOverlayService : Service() {
         // Story 9-14: set pushToTalkActive BEFORE adjustLayoutForState so the HOLD dock
         // window dimensions are used when hold_mode=true (adjustLayoutForState reads pushToTalkActive).
         pushToTalkActive = (newState == RecordingState.RECORDING && holdMode)
+        // Initialize drag thresholds for harness-driven HOLD state (finding 7).
+        // longPressRunnable normally sets these; the harness bypasses that path, leaving both
+        // at 0f — any finger movement would instantly cancel/never reach lock in harness mode.
+        if (pushToTalkActive) {
+            val density = resources.displayMetrics.density
+            holdDragCancelPx = 60f * density
+            holdDragLockPx   = 40f * density
+        }
         setState(newState)
         adjustLayoutForState(newState, previousState)
         // Apply the static wave level AFTER the state transition so that the
@@ -421,9 +438,12 @@ class KlarvoOverlayService : Service() {
         }
     }
 
-    /** Sets isHoldMode on the listening panel (if visible). No-op when panel is not attached. */
+    /** Sets isHoldMode on the listening panel (if visible). No-op when panel is not attached.
+     *  Always resets isLockedMode so a subsequent recording never inherits a prior locked state
+     *  (finding 2: isLockedMode was never cleared on stop/cancel). */
     private fun setHoldModeOnPanel(holdMode: Boolean) {
-        panelView?.isHoldMode = holdMode
+        panelView?.isHoldMode   = holdMode
+        panelView?.isLockedMode = false
         panelView?.invalidate()
     }
 
@@ -1022,8 +1042,11 @@ class KlarvoOverlayService : Service() {
                 bubbleParams.width  = holdW
                 bubbleParams.height = holdH
                 // Shift Y upward so holdstrip (lower portion) aligns with the idle bubble position.
+                // Save pre-hold Y so lockHoldToCluster() can restore it exactly — avoids the
+                // unclamped += lockchipH asymmetry when near the screen top (finding 5).
+                if (preclusterBubbleY == null) preclusterBubbleY = bubbleParams.y
                 val lockchipH = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
-                bubbleParams.y = maxOf(0, bubbleParams.y - lockchipH)
+                bubbleParams.y = maxOf(0, (preclusterBubbleY ?: bubbleParams.y) - lockchipH)
             } else {
                 // Normal cluster window: visual W/H + shadow pad on each side (ADR-0019 §4′ Modell B).
                 val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
@@ -1041,6 +1064,14 @@ class KlarvoOverlayService : Service() {
                 bubbleParams.x = savedX
                 preclusterBubbleX = null
             }
+            // Restore Y if we were in HOLD dock (preclusterBubbleY set by the HOLD branch above).
+            // Null in cluster-only recording (Y was never shifted). Covers stop/cancel while still
+            // in HOLD mode before lock (finding 5).
+            val savedY = preclusterBubbleY
+            if (savedY != null && previousState == RecordingState.RECORDING) {
+                bubbleParams.y = savedY
+                preclusterBubbleY = null
+            }
             bubbleParams.width  = touchTargetPx
             bubbleParams.height = touchTargetPx
         }
@@ -1053,17 +1084,18 @@ class KlarvoOverlayService : Service() {
      * to cluster dimensions anchored at preclusterBubbleX.
      */
     private fun lockHoldToCluster() {
-        val dp         = resources.displayMetrics.density
-        val visualDp   = bubbleView.getBubbleSizeDp()
+        val dp            = resources.displayMetrics.density
+        val visualDp      = bubbleView.getBubbleSizeDp()
         val touchTargetPx = bubbleWindowPx(visualDp)
-        val clusterW   = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-        val clusterH   = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-        // Undo the upward Y-shift that placed the holdstrip at the idle bubble position.
-        val lockchipH  = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
-        bubbleParams.y += lockchipH
+        val clusterW      = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+        val clusterH      = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+        // Restore Y from the saved pre-hold position (finding 5: the old unclamped += lockchipH
+        // produced a net downward shift when the bubble was within lockchipH of the screen top).
+        bubbleParams.y    = preclusterBubbleY ?: bubbleParams.y
+        preclusterBubbleY = null
         // Re-anchor X to the saved pre-expansion position (same as cluster layout in adjustLayoutForState).
-        val savedX = preclusterBubbleX ?: bubbleParams.x
-        bubbleParams.x      = maxOf(0, savedX + touchTargetPx - clusterW)
+        val savedX        = preclusterBubbleX ?: bubbleParams.x
+        bubbleParams.x    = maxOf(0, savedX + touchTargetPx - clusterW)
         bubbleParams.width  = clusterW
         bubbleParams.height = clusterH
         updateBubbleLayout()
@@ -1096,14 +1128,9 @@ class KlarvoOverlayService : Service() {
                     val dx = event.rawX - dragTouchStartX
                     val dy = event.rawY - dragTouchStartY
                     when {
-                        // Horizontal drag beyond threshold → cancel (discard recording)
-                        abs(dx) > holdDragCancelPx -> {
-                            cancelRecording()
-                            pushToTalkActive          = false
-                            bubbleView.holdDockActive = false
-                            setHoldModeOnPanel(false)
-                        }
-                        // Upward drag beyond threshold → lock (switch to normal cluster)
+                        // Upward drag beyond threshold → lock (switch to normal cluster).
+                        // Tested FIRST (finding 3): a diagonal up-and-left drag intended to lock
+                        // would otherwise be caught by the cancel branch below.
                         dy < -holdDragLockPx -> {
                             lockHoldToCluster()
                             pushToTalkActive          = false
@@ -1114,6 +1141,15 @@ class KlarvoOverlayService : Service() {
                             dragTouchStartY = event.rawY
                             bubbleStartX    = bubbleParams.x
                             bubbleStartY    = bubbleParams.y
+                        }
+                        // Leftward drag beyond threshold → cancel (discard recording).
+                        // Signed dx (finding 4): rightward drag does NOT cancel — the drawn
+                        // affordance is "‹ ziehen zum Abbrechen" (leftward only).
+                        dx < -holdDragCancelPx -> {
+                            cancelRecording()
+                            pushToTalkActive          = false
+                            bubbleView.holdDockActive = false
+                            setHoldModeOnPanel(false)
                         }
                         // Otherwise: finger still held — no position update.
                         else -> { /* keep holding */ }

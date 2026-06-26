@@ -261,6 +261,28 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
     }
 
+    // --- HOLD dock pre-allocated scratch objects (no GC on holdArrowAnimator's hot path) ---
+    // Hoisted from drawHoldDock/drawLockIcon which run on every frame of the infinite animator.
+    private val holdDockStripRect   = RectF()   // holdstrip bounds
+    private val holdDockHeldbubRect = RectF()   // heldbub bounds
+    private val holdScratchRect     = RectF()   // reused for all inline shadow/ring RectF args
+    private val holdStripBlurFilter by lazy {
+        val dp = resources.displayMetrics.density
+        BlurMaskFilter(HOLDDOCK_SHADOW_PAD_DP * dp * 0.8f, BlurMaskFilter.Blur.NORMAL)
+    }
+    private val heldbubBlurFilter by lazy {
+        val dp = resources.displayMetrics.density
+        BlurMaskFilter(HOLD_HELDBUB_DP * dp * 0.25f, BlurMaskFilter.Blur.NORMAL)
+    }
+    // Pre-allocated for drawLockIcon — replaces per-call Paint(paint).apply{…} + RectF() allocs.
+    private val lockBodyRect      = RectF()
+    private val lockShackleRect   = RectF()
+    private val lockBodyFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val lockShacklePaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style     = Paint.Style.STROKE
+        strokeCap = Paint.Cap.BUTT
+    }
+
     // --- Touch zone boundaries (updated each draw, used by isTouchInConfirmZone / Cancel) ---
     // Send zone:   [clusterSendZoneStart, width]   (RIGHT side — thumb position)
     // Cancel zone: [0, clusterCancelZoneEnd]        (LEFT side)
@@ -316,13 +338,28 @@ class FloatingBubbleView(context: Context) : View(context) {
                 rotationAnimator.cancel()
                 // Reset history so each new recording starts flat (desktop: setLevels(new Array(20).fill(0))).
                 waveLevels.fill(0f)
+                // HOLD arrow animation: start when holdDockActive, stop otherwise.
+                // Primary fix (finding 1): the real longPressRunnable sets holdDockActive=true
+                // BEFORE startRecording() calls setState(RECORDING). The holdDockActive setter
+                // checks state==RECORDING and still sees IDLE, so it cancels the animator instead
+                // of starting it. This path runs during the state transition (called by the state
+                // setter) and sees the already-true holdDockActive — starts the animator correctly.
+                // Also covers onAttachedToWindow → updateAnimators() reattach.
+                if (holdDockActive) {
+                    holdArrowPhase = 0f
+                    if (!holdArrowAnimator.isRunning) holdArrowAnimator.start()
+                } else {
+                    holdArrowAnimator.cancel()
+                }
             }
             State.TRANSCRIBING -> {
                 // Proc bubble: rotating spinner, no waveform.
                 if (!rotationAnimator.isRunning) rotationAnimator.start()
+                holdArrowAnimator.cancel()
             }
             State.DONE, State.IDLE -> {
                 rotationAnimator.cancel()
+                holdArrowAnimator.cancel()
                 // Reset history on return to idle (desktop: setLevels(new Array(20).fill(0))).
                 waveLevels.fill(0f)
                 if (scaleX != 1.0f) {
@@ -732,27 +769,28 @@ class FloatingBubbleView(context: Context) : View(context) {
         val w   = width.toFloat()
 
         // --- Layout constants ---
-        val shadowPad    = HOLDDOCK_SHADOW_PAD_DP * dp
+        val shadowPad     = HOLDDOCK_SHADOW_PAD_DP * dp
         val lockchipZoneH = HOLDDOCK_LOCKCHIP_H_DP * dp   // 28dp at top of window
-        val heldbubSide  = HOLD_HELDBUB_DP * dp            // 40dp
-        val heldbubR     = HOLD_HELDBUB_R_DP * dp          // 12dp
-        val holdGap      = HOLD_GAP_DP * dp                // 11dp between holdstrip and heldbub
-        val holdstripR   = HOLDSTRIP_R_DP * dp             // 18dp
+        val heldbubSide   = HOLD_HELDBUB_DP * dp           // 40dp
+        val heldbubR      = HOLD_HELDBUB_R_DP * dp         // 12dp
+        val holdGap       = HOLD_GAP_DP * dp               // 11dp between holdstrip and heldbub
+        val holdstripR    = HOLDSTRIP_R_DP * dp            // 18dp
 
         // Holdstrip row: visual zone starts after lockchip zone + top shadow pad
-        val visualRowTop  = lockchipZoneH + shadowPad      // 36dp from window top
-        val visualRowH    = HOLDDOCK_VISUAL_H_DP * dp      // 52dp
-        val rowCy         = visualRowTop + visualRowH / 2f // 62dp from window top
+        val visualRowTop = lockchipZoneH + shadowPad       // 36dp from window top
+        val visualRowH   = HOLDDOCK_VISUAL_H_DP * dp       // 52dp
+        val rowCy        = visualRowTop + visualRowH / 2f  // 62dp from window top
 
-        // Horizontal layout (right-anchored, same right edge as idle bubble)
-        val heldbubRight  = w - shadowPad
-        val heldbubLeft   = heldbubRight - heldbubSide
-        val heldbubCx     = (heldbubLeft + heldbubRight) / 2f
-        val heldbubRect   = RectF(heldbubLeft, rowCy - heldbubSide / 2f, heldbubRight, rowCy + heldbubSide / 2f)
+        // Horizontal layout (right-anchored, same right edge as idle bubble).
+        // Use pre-allocated class-level RectFs — no allocation on the animator hot path.
+        val heldbubRight = w - shadowPad
+        val heldbubLeft  = heldbubRight - heldbubSide
+        val heldbubCx    = (heldbubLeft + heldbubRight) / 2f
+        holdDockHeldbubRect.set(heldbubLeft, rowCy - heldbubSide / 2f, heldbubRight, rowCy + heldbubSide / 2f)
 
         val holdstripRight = heldbubLeft - holdGap
         val holdstripLeft  = shadowPad
-        val holdstripRect  = RectF(holdstripLeft, rowCy - heldbubSide / 2f, holdstripRight, rowCy + heldbubSide / 2f)
+        holdDockStripRect.set(holdstripLeft, rowCy - heldbubSide / 2f, holdstripRight, rowCy + heldbubSide / 2f)
 
         // Non-token colors (not in KlarvoTheme — local constants)
         val holdBgColor  = 0xEB141618.toInt()
@@ -760,21 +798,19 @@ class FloatingBubbleView(context: Context) : View(context) {
         val fingerBorder = 0x73ECEEEF.toInt()
 
         // Arrow animation (AC1a): phase 0..1 driven by holdArrowAnimator
-        val arrowAlpha     = 0.5f + holdArrowPhase * 0.5f           // 0.5 ↔ 1.0
-        val slideArrOffset = holdArrowPhase * 4f * dp               // "‹" translate left: 0..4dp
-        val lockArrOffset  = holdArrowPhase * 4f * dp               // "▲" translate up: 0..4dp
+        val arrowAlpha     = 0.5f + holdArrowPhase * 0.5f  // 0.5 ↔ 1.0
+        val slideArrOffset = holdArrowPhase * 4f * dp      // "‹" translate left: 0..4dp
+        val lockArrOffset  = holdArrowPhase * 4f * dp      // "▲" translate up: 0..4dp
 
-        // --- 1. Holdstrip soft shadow ---
-        shadowPaint.maskFilter = BlurMaskFilter(shadowPad * 0.8f, BlurMaskFilter.Blur.NORMAL)
-        canvas.drawRoundRect(
-            RectF(holdstripRect.left, holdstripRect.top + shadowPad * 0.3f, holdstripRect.right, holdstripRect.bottom + shadowPad * 0.3f),
-            holdstripR, holdstripR, shadowPaint
-        )
+        // --- 1. Holdstrip soft shadow (pre-allocated BlurMaskFilter — finding 6) ---
+        shadowPaint.maskFilter = holdStripBlurFilter
+        holdScratchRect.set(holdDockStripRect.left, holdDockStripRect.top + shadowPad * 0.3f, holdDockStripRect.right, holdDockStripRect.bottom + shadowPad * 0.3f)
+        canvas.drawRoundRect(holdScratchRect, holdstripR, holdstripR, shadowPaint)
 
         // --- 2. Holdstrip backdrop: rgba(20,22,24,.92) ---
         fillPaint.color  = holdBgColor
         fillPaint.shader = null
-        canvas.drawRoundRect(holdstripRect, holdstripR, holdstripR, fillPaint)
+        canvas.drawRoundRect(holdDockStripRect, holdstripR, holdstripR, fillPaint)
         fillPaint.alpha = 0xFF  // reset
 
         // --- 3. Holdstrip AmberLine ring (1.5dp outset) ---
@@ -782,24 +818,22 @@ class FloatingBubbleView(context: Context) : View(context) {
         strokePaint.color       = KlarvoTheme.AmberLine
         strokePaint.strokeWidth = 1.5f * dp
         strokePaint.style       = Paint.Style.STROKE
-        canvas.drawRoundRect(
-            RectF(holdstripRect.left - ringInset, holdstripRect.top - ringInset, holdstripRect.right + ringInset, holdstripRect.bottom + ringInset),
-            holdstripR + ringInset, holdstripR + ringInset, strokePaint
-        )
+        holdScratchRect.set(holdDockStripRect.left - ringInset, holdDockStripRect.top - ringInset, holdDockStripRect.right + ringInset, holdDockStripRect.bottom + ringInset)
+        canvas.drawRoundRect(holdScratchRect, holdstripR + ringInset, holdstripR + ringInset, strokePaint)
 
         // --- 4. Holdstrip content: animated "‹" + "ziehen zum Abbrechen" + waveform ---
-        val lPad       = HOLDSTRIP_L_PAD_DP * dp
-        val rPad       = HOLDSTRIP_R_PAD_DP * dp
-        val innerGap   = HOLDSTRIP_INNER_GAP_DP * dp
+        val lPad     = HOLDSTRIP_L_PAD_DP * dp
+        val rPad     = HOLDSTRIP_R_PAD_DP * dp
+        val innerGap = HOLDSTRIP_INNER_GAP_DP * dp
         val contentLeft  = holdstripLeft + lPad
         val contentRight = holdstripRight - rPad
         val contentCy    = rowCy
 
         // Waveform zone: fixed right-aligned inside holdstrip content
-        val waveZoneW  = (WAVE_BAR_W_DP * WAVE_BAR_COUNT + WAVE_BAR_GAP_DP * (WAVE_BAR_COUNT - 1)) * dp
-        val waveRight  = contentRight
-        val waveLeft   = waveRight - waveZoneW                  // right-anchor waveform
-        val slidehintRight = waveLeft - innerGap                 // slidehint zone right boundary
+        val waveZoneW      = (WAVE_BAR_W_DP * WAVE_BAR_COUNT + WAVE_BAR_GAP_DP * (WAVE_BAR_COUNT - 1)) * dp
+        val waveRight      = contentRight
+        val waveLeft       = waveRight - waveZoneW           // right-anchor waveform
+        val slidehintRight = waveLeft - innerGap             // slidehint zone right boundary
 
         // "‹" arrow (14sp, amber, animated translate-left + alpha)
         holdArrPaint.textSize = 14f * spd
@@ -809,7 +843,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         val arrW = holdArrPaint.measureText("‹")
 
         canvas.save()
-        canvas.clipRect(holdstripLeft, holdstripRect.top, slidehintRight, holdstripRect.bottom)
+        canvas.clipRect(holdstripLeft, holdDockStripRect.top, slidehintRight, holdDockStripRect.bottom)
         canvas.translate(-slideArrOffset, 0f)
         canvas.drawText("‹", contentLeft, arrY, holdArrPaint)
         canvas.restore()
@@ -821,27 +855,25 @@ class FloatingBubbleView(context: Context) : View(context) {
         val cancelX = contentLeft + arrW + 5f * dp
 
         canvas.save()
-        canvas.clipRect(cancelX, holdstripRect.top, slidehintRight, holdstripRect.bottom)
+        canvas.clipRect(cancelX, holdDockStripRect.top, slidehintRight, holdDockStripRect.bottom)
         canvas.drawText("ziehen zum Abbrechen", cancelX, cancelY, holdCancelTextPaint)
         canvas.restore()
 
         // Waveform (reuses frozen drawClusterWaveform — same helper as normal cluster)
         drawClusterWaveform(canvas, waveLeft, waveRight, contentCy, dp)
 
-        // --- 5. Heldbub soft shadow ---
-        shadowPaint.maskFilter = BlurMaskFilter(heldbubSide * 0.25f, BlurMaskFilter.Blur.NORMAL)
-        canvas.drawRoundRect(
-            RectF(heldbubRect.left, heldbubRect.top + heldbubSide * 0.1f, heldbubRect.right, heldbubRect.bottom + heldbubSide * 0.1f),
-            heldbubR, heldbubR, shadowPaint
-        )
+        // --- 5. Heldbub soft shadow (pre-allocated BlurMaskFilter — finding 6) ---
+        shadowPaint.maskFilter = heldbubBlurFilter
+        holdScratchRect.set(holdDockHeldbubRect.left, holdDockHeldbubRect.top + heldbubSide * 0.1f, holdDockHeldbubRect.right, holdDockHeldbubRect.bottom + heldbubSide * 0.1f)
+        canvas.drawRoundRect(holdScratchRect, heldbubR, heldbubR, shadowPaint)
 
         // --- 6. Heldbub teal gradient fill ---
         fillPaint.alpha = 0xFF
         fillPaint.shader = LinearGradient(
-            heldbubRect.left, heldbubRect.top, heldbubRect.right, heldbubRect.bottom,
+            holdDockHeldbubRect.left, holdDockHeldbubRect.top, holdDockHeldbubRect.right, holdDockHeldbubRect.bottom,
             KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
         )
-        canvas.drawRoundRect(heldbubRect, heldbubR, heldbubR, fillPaint)
+        canvas.drawRoundRect(holdDockHeldbubRect, heldbubR, heldbubR, fillPaint)
         fillPaint.shader = null
 
         // --- 7. Heldbub outer AmberLine ring (box-shadow 0 0 0 4dp AmberLine) ---
@@ -850,21 +882,17 @@ class FloatingBubbleView(context: Context) : View(context) {
         strokePaint.color       = KlarvoTheme.AmberLine
         strokePaint.strokeWidth = ringOutset
         strokePaint.style       = Paint.Style.STROKE
-        canvas.drawRoundRect(
-            RectF(heldbubRect.left - halfOutset, heldbubRect.top - halfOutset, heldbubRect.right + halfOutset, heldbubRect.bottom + halfOutset),
-            heldbubR + halfOutset, heldbubR + halfOutset, strokePaint
-        )
+        holdScratchRect.set(holdDockHeldbubRect.left - halfOutset, holdDockHeldbubRect.top - halfOutset, holdDockHeldbubRect.right + halfOutset, holdDockHeldbubRect.bottom + halfOutset)
+        canvas.drawRoundRect(holdScratchRect, heldbubR + halfOutset, heldbubR + halfOutset, strokePaint)
 
         // --- 8. Heldbub inner ring (.ring: Amber 2dp, r18dp, inset -8dp, alpha 0.5) ---
-        val innerInset  = HOLD_INNER_RING_INSET_DP * dp
-        val innerRingR  = HOLD_INNER_RING_R_DP * dp
+        val innerInset = HOLD_INNER_RING_INSET_DP * dp
+        val innerRingR = HOLD_INNER_RING_R_DP * dp
         strokePaint.color       = KlarvoTheme.Amber
         strokePaint.alpha       = (255 * 0.5f).toInt()
         strokePaint.strokeWidth = 2f * dp
-        canvas.drawRoundRect(
-            RectF(heldbubRect.left - innerInset, heldbubRect.top - innerInset, heldbubRect.right + innerInset, heldbubRect.bottom + innerInset),
-            innerRingR, innerRingR, strokePaint
-        )
+        holdScratchRect.set(holdDockHeldbubRect.left - innerInset, holdDockHeldbubRect.top - innerInset, holdDockHeldbubRect.right + innerInset, holdDockHeldbubRect.bottom + innerInset)
+        canvas.drawRoundRect(holdScratchRect, innerRingR, innerRingR, strokePaint)
         strokePaint.alpha = 0xFF  // reset
 
         // --- 9. Heldbub "K" (OnTeal, centered, same formula as IDLE) ---
@@ -874,16 +902,16 @@ class FloatingBubbleView(context: Context) : View(context) {
 
         // --- 10. Heldbub finger indicator (26dp circle, CSS: right:-6px; bottom:-7px) ---
         val fingerRadius = HOLD_FINGER_DP * dp / 2f
-        // CSS right:-6px means child's right extends 6dp beyond heldbubRect.right
-        // CSS bottom:-7px means child's bottom extends 7dp beyond heldbubRect.bottom
-        val fingerCx = heldbubRect.right + 6f * dp - fingerRadius
-        val fingerCy = heldbubRect.bottom + 7f * dp - fingerRadius
+        // CSS right:-6px means child's right extends 6dp beyond holdDockHeldbubRect.right
+        // CSS bottom:-7px means child's bottom extends 7dp beyond holdDockHeldbubRect.bottom
+        val fingerCx = holdDockHeldbubRect.right + 6f * dp - fingerRadius
+        val fingerCy = holdDockHeldbubRect.bottom + 7f * dp - fingerRadius
         fillPaint.color  = fingerFill
         fillPaint.shader = null
         canvas.drawCircle(fingerCx, fingerCy, fingerRadius, fillPaint)
         fillPaint.alpha = 0xFF
+        // strokePaint.color already encodes alpha — no redundant alpha assignment (finding 6).
         strokePaint.color       = fingerBorder
-        strokePaint.alpha       = (fingerBorder ushr 24) and 0xFF
         strokePaint.strokeWidth = 1.5f * dp
         strokePaint.style       = Paint.Style.STROKE
         canvas.drawCircle(fingerCx, fingerCy, fingerRadius - 0.75f * dp, strokePaint)
@@ -893,14 +921,14 @@ class FloatingBubbleView(context: Context) : View(context) {
         // --- 11. Lockchip (above holdstrip, centered horizontally over heldbub) ---
         // Zone: [0, lockchipZoneH] from window top. Content positioned near the bottom of zone.
         // Layout (column, top→bottom): ▲ (animated) → [lock icon + "hoch = sperren"]
-        val lockchipCx  = heldbubCx
-        val zoneBottom  = lockchipZoneH  // 28dp from top (includes ~4dp gap above holdstrip shadow)
+        val lockchipCx = heldbubCx
+        val zoneBottom = lockchipZoneH  // 28dp from top (includes ~4dp gap above holdstrip shadow)
 
         // Row 2 (bottom): lock icon + "hoch = sperren" (10sp, Muted, monospace)
         holdLockTextPaint.textSize = 10f * spd
-        val lockMetrics = holdLockTextPaint.fontMetrics
-        val row2Ascent  = -lockMetrics.ascent
-        val row2Descent = lockMetrics.descent
+        val lockMetrics  = holdLockTextPaint.fontMetrics
+        val row2Ascent   = -lockMetrics.ascent
+        val row2Descent  = lockMetrics.descent
         val row2Baseline = zoneBottom - row2Descent   // text baseline at bottom of zone
         val lockTextStr  = "hoch = sperren"
         val lockTextW    = holdLockTextPaint.measureText(lockTextStr)
@@ -918,8 +946,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         // Row 1 (top): animated "▲" (13sp, Amber), positioned above row 2 with 2dp gap
         holdUpPaint.textSize = 13f * spd
         holdUpPaint.alpha    = (arrowAlpha * 255f).toInt()
-        val upMetrics   = holdUpPaint.fontMetrics
-        val row2Height  = row2Ascent + row2Descent
+        val upMetrics    = holdUpPaint.fontMetrics
+        val row2Height   = row2Ascent + row2Descent
         val row1Baseline = row2Baseline - row2Height - 2f * dp - upMetrics.descent
 
         canvas.save()
@@ -933,28 +961,30 @@ class FloatingBubbleView(context: Context) : View(context) {
      * Size: approximately [sizeDp × sizeDp] dp. Uses Canvas Path (no emoji — device-independent).
      * Body: rounded rect (lower 55% of height). Shackle: arc (upper 45%).
      */
+    /**
+     * Draws a simplified padlock icon centered at (cx, cy) for the HOLD dock lockchip.
+     * Uses pre-allocated [lockBodyRect], [lockShackleRect], [lockBodyFillPaint], [lockShacklePaint]
+     * — no per-call Paint/RectF allocations (finding 6).
+     */
     private fun drawLockIcon(canvas: Canvas, cx: Float, cy: Float, sizeDp: Float, paint: Paint) {
         val dp    = resources.displayMetrics.density
         val w     = sizeDp * dp
         val bodyH = w * 0.55f
-        val bodyTop  = cy + w * 0.0f   // body starts at center
-        val bodyRect = RectF(cx - w / 2f, bodyTop - bodyH / 2f, cx + w / 2f, bodyTop + bodyH / 2f)
-        val cornerR  = w * 0.18f
+        val bodyTop = cy + w * 0.0f   // body starts at center
+        lockBodyRect.set(cx - w / 2f, bodyTop - bodyH / 2f, cx + w / 2f, bodyTop + bodyH / 2f)
+        val cornerR = w * 0.18f
 
-        // Body: rounded rect (fill)
-        val fillP = Paint(paint).apply { style = Paint.Style.FILL }
-        canvas.drawRoundRect(bodyRect, cornerR, cornerR, fillP)
+        // Body: rounded rect (fill) — reuse pre-allocated paint; copy color from param.
+        lockBodyFillPaint.color = paint.color
+        canvas.drawRoundRect(lockBodyRect, cornerR, cornerR, lockBodyFillPaint)
 
-        // Shackle: semi-circular arc above body (stroke)
-        val shackleW = w * 0.55f
-        val shackleCy = bodyRect.top
-        val shackleRect = RectF(cx - shackleW / 2f, shackleCy - w * 0.45f, cx + shackleW / 2f, shackleCy + shackleW * 0.4f)
-        val strokeP = Paint(paint).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = w * 0.18f
-            strokeCap = Paint.Cap.BUTT
-        }
-        canvas.drawArc(shackleRect, 180f, 180f, false, strokeP)
+        // Shackle: semi-circular arc above body — reuse pre-allocated paint.
+        val shackleW  = w * 0.55f
+        val shackleCy = lockBodyRect.top
+        lockShackleRect.set(cx - shackleW / 2f, shackleCy - w * 0.45f, cx + shackleW / 2f, shackleCy + shackleW * 0.4f)
+        lockShacklePaint.color       = paint.color
+        lockShacklePaint.strokeWidth = w * 0.18f
+        canvas.drawArc(lockShackleRect, 180f, 180f, false, lockShacklePaint)
     }
 
     // Legacy helpers kept for API compatibility with any remaining callers.
