@@ -305,6 +305,11 @@ pub struct AppState {
     /// Replaces the WebView2 "bar" window (Story 10-1).
     #[cfg(target_os = "windows")]
     pub native_pill: Mutex<Option<native_pill::NativePill>>,
+    /// Last hotkey mode fed to the pill (Windows-only).
+    /// Persisted here so a recreated pill (e.g. at recording start) can have the
+    /// correct mode badge without waiting for the next hotkey event (10-3 review).
+    #[cfg(target_os = "windows")]
+    pub active_hotkey_mode: std::sync::Mutex<String>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -389,6 +394,8 @@ impl AppState {
             feedback_metrics: Mutex::new(commands::feedback::FeedbackMetrics::default()),
             #[cfg(target_os = "windows")]
             native_pill: Mutex::new(None),
+            #[cfg(target_os = "windows")]
+            active_hotkey_mode: std::sync::Mutex::new("hold".to_string()),
         }
     }
 }

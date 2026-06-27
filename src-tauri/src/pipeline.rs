@@ -619,6 +619,12 @@ pub async fn start_recording_only(handle: AppHandle) {
         // failure leaves the previous pill in place (never "no pill").
         match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
             Ok(pill) => {
+                // Re-feed the active hotkey mode: a fresh pill defaults to "hold";
+                // the mode the hotkey handler set on the previous pill is lost on
+                // recreate (10-3 review).
+                if let Ok(m) = state.active_hotkey_mode.lock() {
+                    pill.set_hotkey_mode(m.clone());
+                }
                 if let Ok(mut g) = state.native_pill.lock() {
                     *g = Some(pill); // old pill (if any) dropped here → orderly teardown
                 }
@@ -2252,6 +2258,11 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                         HotkeyMode::AutoStop => "autostop",
                         HotkeyMode::Auto => "auto",
                     }.to_string();
+                    // Persist so a fresh pill created by start_recording_only can
+                    // inherit the correct mode badge (10-3 review fix).
+                    if let Ok(mut m) = handle_clone.state::<AppState>().active_hotkey_mode.lock() {
+                        *m = mode_str.clone();
+                    }
                     if let Ok(guard) = handle_clone.state::<AppState>().native_pill.lock() {
                         if let Some(pill) = guard.as_ref() {
                             pill.set_hotkey_mode(mode_str);

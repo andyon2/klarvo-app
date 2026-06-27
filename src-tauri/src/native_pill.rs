@@ -180,6 +180,9 @@ struct PillWindowState {
     app_handle: AppHandle,
     hotkey_mode: String,
     timer_active: bool,
+    // Tracks the previous visibility so render_frame can gate HWND_TOPMOST
+    // re-assertion to the hidden→visible edge rather than every frame (10-3 review).
+    was_visible: bool,
 }
 
 // SAFETY: PillWindowState is only ever touched from the pill thread (WndProc).
@@ -488,6 +491,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     // Hide window when idle
     if !s.display.is_visible() {
         ShowWindow(hwnd, SW_HIDE);
+        s.was_visible = false;
         return;
     }
 
@@ -733,20 +737,25 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     }
 
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-    // Re-assert top-of-the-topmost-band on every show. The window is created
-    // WS_EX_TOPMOST, but the topmost *position* can be lost across fullscreen apps
-    // / session transitions while the style bit persists (measured: pill at z-index
-    // 133, below a maximized foreground app). The old WebView2 bar re-asserted this
-    // on every recording start (commit b7acdb3); the native rewrite dropped it.
-    let _ = SetWindowPos(
-        hwnd,
-        Some(HWND_TOPMOST),
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-    );
+    if !s.was_visible {
+        // Re-assert top-of-the-topmost-band on the hidden→visible transition.
+        // The window is created WS_EX_TOPMOST, but the topmost *position* can be
+        // lost across fullscreen apps / session transitions while the style bit
+        // persists (measured: pill at z-index 133, below a maximized foreground
+        // app). The old WebView2 bar re-asserted this on every recording start
+        // (commit b7acdb3); the native rewrite dropped it. Gated to the edge
+        // (not every frame) to avoid z-order churn at 15-30 Hz (10-3 review).
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+    s.was_visible = true;
 }
 
 /// Build a rounded-rect path. radius is clamped to half the smaller side, so
@@ -1350,6 +1359,7 @@ fn pill_thread(
             app_handle,
             hotkey_mode: "hold".to_string(),
             timer_active: false,
+            was_visible: false,
         });
         let state_ptr = Box::into_raw(state);
 
