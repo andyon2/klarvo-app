@@ -75,6 +75,7 @@ pub struct PreviewConfig {
     pub text_r: u8,
     pub text_g: u8,
     pub text_b: u8,
+    pub text_a: u8,
     pub border_r: u8,
     pub border_g: u8,
     pub border_b: u8,
@@ -101,7 +102,7 @@ impl PreviewConfig {
         };
         let (bg_r, bg_g, bg_b, bg_a) =
             parse_css_rgba(&cfg.preview_bg_color, (25, 25, 25, 245)); // 0.96×255≈245
-        let (text_r, text_g, text_b, _) =
+        let (text_r, text_g, text_b, text_a) =
             parse_css_rgba(&cfg.preview_text_color, (220, 220, 220, 224)); // 0.88×255≈224
         let (border_r, border_g, border_b, border_a) =
             parse_css_rgba(&cfg.preview_border_color, (42, 195, 168, 64)); // 0.25×255≈64
@@ -113,6 +114,7 @@ impl PreviewConfig {
             text_r,
             text_g,
             text_b,
+            text_a,
             border_r,
             border_g,
             border_b,
@@ -438,7 +440,7 @@ unsafe fn copy_rgba_to_bgra(pixmap: &Pixmap, main_bits: *mut u8, byte_count: usi
 }
 
 /// Composite white-on-black GDI text (B-channel coverage) onto main BGRA DIB
-/// using the specified straight-alpha text color.
+/// using the specified straight-alpha text color (including text_a for overall opacity).
 unsafe fn composite_text_mask(
     tmp_bits: *const u8,
     main_bits: *mut u8,
@@ -447,11 +449,14 @@ unsafe fn composite_text_mask(
     text_r: u8,
     text_g: u8,
     text_b: u8,
+    text_a: u8,
 ) {
     let total = (w * h) as usize;
     for i in 0..total {
         let base = i * 4;
-        let coverage = *tmp_bits.add(base) as u32; // B channel = coverage mask
+        // Scale glyph coverage by the configured text alpha so e.g. the default
+        // 0.88 opacity (text_a≈224) renders text at 88% rather than fully opaque.
+        let coverage = (*tmp_bits.add(base) as u32 * text_a as u32) / 255;
         if coverage == 0 {
             continue;
         }
@@ -541,16 +546,17 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     let card_h = ph as f32 - 2.0 * inset;
     let radius = s.config.border_radius as f32 * sc;
 
-    // Background fill (premultiplied in tiny-skia's color space)
+    // Background fill — pass straight RGB; Color::from_rgba premultiplies internally.
+    // (Scaling RGB by alpha here would cause double-premultiplication: rgb·a².)
     let bg_a = s.config.bg_a as f32 / 255.0;
     {
         let mut paint = Paint::default();
         paint.anti_alias = true;
         paint.shader = Shader::SolidColor(
             Color::from_rgba(
-                s.config.bg_r as f32 / 255.0 * bg_a,
-                s.config.bg_g as f32 / 255.0 * bg_a,
-                s.config.bg_b as f32 / 255.0 * bg_a,
+                s.config.bg_r as f32 / 255.0,
+                s.config.bg_g as f32 / 255.0,
+                s.config.bg_b as f32 / 255.0,
                 bg_a,
             )
             .unwrap_or(Color::BLACK),
@@ -560,16 +566,16 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
         }
     }
 
-    // Border stroke
+    // Border stroke — straight RGB, same reasoning as bg fill.
     if s.config.border_width > 0 && s.config.border_a > 0 {
         let border_a = s.config.border_a as f32 / 255.0;
         let mut paint = Paint::default();
         paint.anti_alias = true;
         paint.shader = Shader::SolidColor(
             Color::from_rgba(
-                s.config.border_r as f32 / 255.0 * border_a,
-                s.config.border_g as f32 / 255.0 * border_a,
-                s.config.border_b as f32 / 255.0 * border_a,
+                s.config.border_r as f32 / 255.0,
+                s.config.border_g as f32 / 255.0,
+                s.config.border_b as f32 / 255.0,
                 border_a,
             )
             .unwrap_or(Color::WHITE),
@@ -624,8 +630,11 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
             // Bottom-aligned grow-up
             (inner_bottom - text_h, false)
         } else {
-            // Text overflows: show oldest at top (will be faded), newest at bottom
-            (inner_top, true)
+            // Text overflows: align newest text at inner_bottom, oldest overflows off the top.
+            // start_y is above inner_top (negative offset); DrawTextW renders top-down so the
+            // last (newest) lines end at inner_bottom (in view) and the first (oldest) lines
+            // overflow above inner_top and are faded by apply_top_fade.
+            (inner_bottom - text_h, true)
         };
 
         let mut text_rect = RECT {
@@ -644,6 +653,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
             s.config.text_r,
             s.config.text_g,
             s.config.text_b,
+            s.config.text_a,
         );
 
         // --- 4. Top-fade gradient when overflowing ---
@@ -794,16 +804,23 @@ unsafe extern "system" fn preview_wnd_proc(
                 }
                 render_frame(hwnd, s);
             } else {
-                // Move the window even when hidden, so next show lands at the right spot.
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    wx,
-                    wy,
-                    pw,
-                    ph,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW,
-                );
+                // Preview is hidden: update geometry so the next show lands at the right spot.
+                if pw != s.phys_w || ph != s.phys_h {
+                    // Size changed while hidden — rebuild DIBs (updates phys_w/phys_h and
+                    // repositions the HWND via SetWindowPos inside rebuild_dibs).
+                    rebuild_dibs(hwnd, s, pw, ph);
+                } else {
+                    // Size unchanged — just move the HWND without a render.
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        wx,
+                        wy,
+                        pw,
+                        ph,
+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW,
+                    );
+                }
             }
             LRESULT(0)
         }
@@ -840,40 +857,63 @@ unsafe extern "system" fn preview_wnd_proc(
 
 /// Rebuild main + tmp DIBs when window physical size changes.
 /// Called from `WM_PREVIEW_SET_PILL_POS` when geometry changes.
+///
+/// Safety: creates BOTH new DIBs before freeing the old ones so that
+/// `s.*` is never left dangling on failure. On partial failure the
+/// successful new DIB is freed and the old ones remain valid.
 unsafe fn rebuild_dibs(hwnd: HWND, s: &mut PreviewWindowState, new_w: i32, new_h: i32) {
-    // Free old GDI resources
+    // Create new DIBs first — do NOT free old ones yet.
+    let mut new_main_bits: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut new_tmp_bits: *mut core::ffi::c_void = std::ptr::null_mut();
+    let main_res = create_dib(new_w, new_h, &mut new_main_bits);
+    let tmp_res = create_dib(new_w, new_h, &mut new_tmp_bits);
+
+    let (mdc, mbmp) = match main_res {
+        Ok(v) => v,
+        Err(e) => {
+            // main failed; free any tmp that succeeded, leave s.* untouched.
+            if let Ok((tdc, tbmp)) = tmp_res {
+                DeleteDC(tdc);
+                DeleteObject(tbmp.into());
+            }
+            log::warn!("[native_preview] rebuild_dibs(main) failed: {e} — old DIBs still active");
+            return;
+        }
+    };
+    let (tdc, tbmp) = match tmp_res {
+        Ok(v) => v,
+        Err(e) => {
+            // tmp failed; free the new main DIB to avoid leak, leave s.* untouched.
+            DeleteDC(mdc);
+            DeleteObject(mbmp.into());
+            log::warn!("[native_preview] rebuild_dibs(tmp) failed: {e} — old DIBs still active");
+            return;
+        }
+    };
+
+    // Both succeeded: free old GDI objects and install new ones.
     DeleteDC(s.main_dc);
     DeleteObject(s.main_bmp.into());
     DeleteDC(s.tmp_dc);
     DeleteObject(s.tmp_bmp.into());
-
-    let mut main_bits: *mut core::ffi::c_void = std::ptr::null_mut();
-    let mut tmp_bits: *mut core::ffi::c_void = std::ptr::null_mut();
-    match (create_dib(new_w, new_h, &mut main_bits), create_dib(new_w, new_h, &mut tmp_bits)) {
-        (Ok((mdc, mbmp)), Ok((tdc, tbmp))) => {
-            s.main_dc = mdc;
-            s.main_bmp = mbmp;
-            s.main_bits = main_bits;
-            s.tmp_dc = tdc;
-            s.tmp_bmp = tbmp;
-            s.tmp_bits = tmp_bits;
-            s.phys_w = new_w;
-            s.phys_h = new_h;
-            // Resize the window to match
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                s.win_x,
-                s.win_y,
-                new_w,
-                new_h,
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-        }
-        (Err(e), _) | (_, Err(e)) => {
-            log::warn!("[native_preview] rebuild_dibs failed: {e}");
-        }
-    }
+    s.main_dc = mdc;
+    s.main_bmp = mbmp;
+    s.main_bits = new_main_bits;
+    s.tmp_dc = tdc;
+    s.tmp_bmp = tbmp;
+    s.tmp_bits = new_tmp_bits;
+    s.phys_w = new_w;
+    s.phys_h = new_h;
+    // Resize the window to match (uses updated s.win_x/win_y set by caller).
+    let _ = SetWindowPos(
+        hwnd,
+        None,
+        s.win_x,
+        s.win_y,
+        new_w,
+        new_h,
+        SWP_NOZORDER | SWP_NOACTIVATE,
+    );
 }
 
 // ---------------------------------------------------------------------------

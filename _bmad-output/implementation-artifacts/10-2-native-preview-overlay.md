@@ -220,6 +220,29 @@ not machine-claimed)
   - [x] Linux `cargo test` — 18 passed, 0 failures
   - [x] Win32 surface check: 0 errors via scratch harness (same recipe as 10-1)
 
+### Review Findings (code-review 2026-06-27, range b658320..2b2fbae)
+
+Conductor-confirmed against source. Discriminator: NEW-in-10-2 (fix) vs mirrored-from-`native_pill.rs`
+(shipped substrate → defer/dismiss).
+
+**Patches (fix this round — all NEW in 10-2, unambiguous):**
+- [x] [Review][Patch] Overflow renders OLDEST text + clips NEWEST off the bottom (AC-2 violation: "newest at bottom in view") — `native_preview.rs:623-637`. On overflow `start_y = inner_top` draws top-down so the newest lines push past `inner_bottom` and the top-fade hides the oldest. Fix: `start_y = inner_bottom - text_h` (negative top; oldest overflows up and is faded, newest sits at `inner_bottom`).
+- [x] [Review][Patch] Card colors double-premultiplied → teal hairline ~4× too faint / near-invisible (AC-2 "teal hairline border") — `native_preview.rs:550-573`. RGB is pre-scaled by alpha AND alpha is passed to `Color::from_rgba`, which premultiplies again (`rgb·a²`). `native_pill.rs:525` does it correctly (straight alpha). Fix: pass straight rgb (`bg_r/255.0`, not `bg_r/255.0 * bg_a`) for both bg fill and border stroke.
+- [x] [Review][Patch] `rebuild_dibs` use-after-free + partial leak on DIB-create failure — `native_preview.rs:843-876`. Old DCs/bitmaps are deleted FIRST (845-848); the `(Err,_)` arm leaves `s.main_dc/main_bits/tmp_*` dangling and `render_frame` (795) writes into freed GDI memory; partial success leaks the new main DIB. Fix: create both new DIBs FIRST, swap only on full success, delete old after; on failure keep old intact and return.
+- [x] [Review][Patch] Reposition-while-hidden leaves `phys_w/phys_h` + DIBs stale → window snaps back / size mismatch on next show (AC-3 path) — `native_preview.rs:796-806`. Hidden branch `SetWindowPos(pw,ph)` resizes the HWND but never updates `s.phys_w/phys_h` nor rebuilds DIBs (vertical clamp makes size depend on `pill_y`). Fix: when `pw!=phys_w || ph!=phys_h`, call `rebuild_dibs` in the hidden branch too (rebuild updates phys + window rect).
+- [x] [Review][Patch] Configured text alpha (default 0.88) parsed then discarded → native text more opaque than web (AC-2 "exact values to reproduce") — `native_preview.rs:644-647` + `composite_text_mask`. `parse_css_rgba` alpha dropped; coverage never modulated by `text_a`. Fix: thread `text_a` into `composite_text_mask` and scale glyph coverage by it.
+
+**Deferred (real, reported not fixed this round — residual):**
+- [x] [Review][Defer] Geometry degenerate-case guards: `h_max=0` when pill near work-area top → negative card dims fed to Pixmap (`native_preview.rs:1444-1460`); horizontal clamp inverts when window wider than work-area → off-screen-left (`compute_preview_geometry` clamp). Rare; one geometry-hardening follow-up (`.max(1)` clamps + `if min<max` guard).
+- [x] [Review][Defer] Multi-monitor: `SPI_GETWORKAREA` is primary-only + DPI sampled once from primary DC → preview on a secondary/mixed-DPI monitor mis-positioned/scaled. Mirrored substrate limitation (native_pill has the same primary-work-area assumption); a shared overlay follow-up if Andi runs multi-monitor.
+- [x] [Review][Defer] `parse_css_rgba` accepts only `rgb()/rgba()`; hex/hsl/named silently fall back to defaults — AC-2 defaults (rgba strings) render correctly; only user-customized non-rgba colors affected. Verify the Settings color-picker output format; add hex parsing if it emits hex.
+- [x] [Review][Defer] `bar-moved` missing x/y → `unwrap_or(0.0)` snaps preview to (0,0) (`lib.rs:773-778`). Emitter always sends `{x,y}` f64 (Edge-verified), so defensive-only; cheap skip-on-missing guard.
+- [x] [Review][Defer] One-time GDI/state leak if `CreateWindowExW` fails (`native_preview.rs:1031-1034`) + per-shutdown-race `Box<String>` leak on a queued append-chunk (`native_preview.rs:750-756`). Rare, bounded; reclaim-on-error fixes.
+- [x] [Review][Defer] `line-height:1.5` / `letter-spacing:0.01em` not reproduced (GDI `DrawText` natural leading ~1.2) → text tighter than web. Real 1:1 delta but disproportionate GDI fix cost; **surface to Andi's visual smoke** (story already flagged font-metric fidelity).
+- [x] [Review][Defer] Occlusion harness `preview-occlusion-proof.ps1`: dead `$EvidenceDir` param with literal-space typo (`_ bmad-output`); body works via `.Replace` workaround. Cosmetic; clean up. AND validate the PASS-criterion (`content>20` counts the dark card bg) really distinguishes composited-vs-blanked at GATE 4 when the harness runs.
+
+**Dismissed (noise / mirrored-and-benign / false positive):** 32-bit f64-param truncation (Windows target is x64-only, documented); `GetMessageW BOOL(1)` match (mirrored `native_pill.rs:1399`, works with current windows-rs); `compute_preview_geometry` gratuitous `unsafe fn` (style); config double-lock TOCTOU in recreate (negligible); mutex-poisoning fail-soft (codebase-wide `if let Ok(guard)` convention); dangling frontend refs (Edge-verified removal surface clean); `is_alive` recycled-HWND + `UnregisterClassW` recreate race + detached-thread-no-join (all mirrored from shipped `native_pill.rs` substrate, benign under Win32).
+
 ## Dev Notes
 
 ### This is a technology migration, anchored to the CURRENT render
@@ -487,6 +510,13 @@ claude-sonnet-4-6 (2026-06-27, create-story)
 
 ### Completion Notes List
 
+- ✅ Resolved review finding [Patch]: Overflow text anchor inverted — changed `start_y = inner_top` to `start_y = inner_bottom - text_h` on overflow branch; oldest text now overflows off top (faded), newest sits at inner_bottom.
+- ✅ Resolved review finding [Patch]: Card colors double-premultiplied — removed `* bg_a` / `* border_a` scaling from RGB channels in bg fill and border stroke; `Color::from_rgba` receives straight RGB now (matching native_pill.rs:525).
+- ✅ Resolved review finding [Patch]: `rebuild_dibs` use-after-free + partial leak — restructured to create both new DIBs first; only on full success free old GDI objects and swap; on any failure free whichever new DIB succeeded and leave s.* untouched.
+- ✅ Resolved review finding [Patch]: Reposition-while-hidden stale phys/DIB — hidden branch now calls `rebuild_dibs` when `pw != s.phys_w || ph != s.phys_h`; otherwise plain SetWindowPos to move only.
+- ✅ Resolved review finding [Patch]: Configured text alpha discarded — added `text_a: u8` to `PreviewConfig`, threaded through `from_app_config`, updated `composite_text_mask` signature and scales glyph coverage by `text_a/255`; default 0.88 opacity (≈224) now renders correctly.
+- Gates after patches: Linux `cargo test` **18 passed, 0 failed**; Win32 surface check **0 errors** (24 pre-existing #[must_use] BOOL warnings); `npm run build` **0 errors**, 78 modules transformed.
+
 - Created `native_preview.rs` (1052 lines): `WS_EX_LAYERED|WS_EX_TOPMOST|WS_EX_TRANSPARENT` window,
   `PreviewConfig` snapshot, `NativePreview` public handle, `PostMessageW` API, tiny-skia card renderer,
   GDI multi-line text compositor, bottom-aligned grow-up, top-fade on overflow, `UpdateLayeredWindow(ULW_ALPHA)`,
@@ -528,3 +558,4 @@ claude-sonnet-4-6 (2026-06-27, create-story)
 ## Change Log
 
 - 2026-06-27 (claude-sonnet-4-6): Implementation complete — native_preview.rs created, WebView2 preview surface removed, Win32 surface check 0 errors, cargo test 18/18, tsc/vite build clean. Status → review.
+- 2026-06-27 (claude-sonnet-4-6): Addressed code review findings — 5 Patch items resolved (overflow anchor, double-premultiplication, rebuild_dibs UAF, hidden-reposition stale DIB, text alpha). Gates re-verified: cargo test 18/18, Win32 surface 0 errors, npm build 0 errors.
