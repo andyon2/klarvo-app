@@ -1,6 +1,6 @@
 # Story 10.2: Native Preview Overlay
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -56,9 +56,13 @@ Then the native preview renders the current `PreviewPanel.tsx` appearance:
   `previewBorderColor`/`previewBorderWidth`)
 - **Corner radius:** 14 px (default; user-configurable via `previewBorderRadius`)
 - **Text:** `rgba(220,220,220,0.88)` (default; user-configurable via `previewTextColor`), rendered
-  with **Segoe UI** (the system-ui fallback the web preview renders today — RESOLVED at GATE 1, see
-  Font dev note; not Inter, not bundled), size 11 px (default; via `previewFontSize`
-  small/medium/large = 11/13/15 px)
+  **Inter-first** via the configured `previewFontFamily` cascade (CORRECTED at GATE-4 — the old
+  preview renders Inter on Andi's machine; see Font dev note), size 11 px (default; via
+  `previewFontSize` small/medium/large = 11/13/15 px)
+- **Card height:** the dark card is sized to the **content** (text height + padding), bottom-aligned
+  and growing upward inside the fixed-max-height window — NOT the full window height. With one line
+  the card hugs that line just above the pill; the rest of the window stays transparent
+  (mirrors the old `PreviewPanel.tsx` flex-end grow-up; see GATE-4 Defects)
 - **Text accumulation:** chunks space-joined, oldest at top, newest at bottom (bottom-aligned
   grow-up)
 - **Top-fade when text overflows:** `linear-gradient(to bottom, transparent 0%, black 18%)` applied
@@ -243,6 +247,26 @@ Conductor-confirmed against source. Discriminator: NEW-in-10-2 (fix) vs mirrored
 
 **Dismissed (noise / mirrored-and-benign / false positive):** 32-bit f64-param truncation (Windows target is x64-only, documented); `GetMessageW BOOL(1)` match (mirrored `native_pill.rs:1399`, works with current windows-rs); `compute_preview_geometry` gratuitous `unsafe fn` (style); config double-lock TOCTOU in recreate (negligible); mutex-poisoning fail-soft (codebase-wide `if let Ok(guard)` convention); dangling frontend refs (Edge-verified removal surface clean); `is_alive` recycled-HWND + `UnregisterClassW` recreate race + detached-thread-no-join (all mirrored from shipped `native_pill.rs` substrate, benign under Win32).
 
+### GATE-4 Defects (Andi real-device smoke, 2026-06-27) — story re-opened to in-progress
+
+Two visual defects on the real Windows build (build green; these are render-fidelity, not compile).
+Causes named from code + the old `PreviewPanel.tsx` SOLL (read from git `2b2fbae^`). NOT transparency
+(that is fine — conductor misread; dropped).
+
+- [ ] **[GATE-4][Patch] Card rendered at full max-height instead of content-height.** The window is
+  correctly fixed at max-height, but `render_frame` fills the card at the FULL window height
+  (`native_preview.rs:546` `card_h = ph - 2*inset`), so one sentence produces a giant card. SOLL
+  (`PreviewPanel.tsx`: "dark card grows upward inside a fixed-max window", `justifyContent: flex-end`):
+  the opaque card is only content-tall (text height + 2×`INNER_PAD_TB`), bottom-aligned at the window
+  bottom (just above the pill), growing up, clamped to max; the rest of the window stays transparent.
+  **Fix:** measure text height (DT_CALCRECT) BEFORE drawing the card; compute `card_h =
+  min(text_h + 2*INNER_PAD_TB*sc, ph - 2*inset)`; draw the round-rect card + border + text at
+  `card_y = (ph - inset) - card_h`; top-fade only when text actually overflows the max.
+- [ ] **[GATE-4][Patch] Font hardcoded to Segoe UI; must be Inter-first.** `native_preview.rs:989`
+  hardcodes `"Segoe UI"`. SOLL = `previewFontFamily` cascade `'Inter', system-ui, …` and Andi's
+  machine renders Inter. **Fix:** parse the first family token from `cfg.preview_font_family` (default
+  "Inter") and pass it to `CreateFontW`; keep `font_h = font_px * scale`. See corrected Font dev note.
+
 ## Dev Notes
 
 ### This is a technology migration, anchored to the CURRENT render
@@ -319,10 +343,25 @@ Read these from `AppState.config.lock()` **at recording-start** (before emitting
 
 Config stores colors as CSS rgba strings (e.g. `"rgba(25,25,25,0.96)"`). Parse these in Rust with a lightweight helper — no external crate needed; regex or manual `sscanf`-style parse suffices. Convert alpha 0.0–1.0 to 0–255 and premultiply (for the BGRA DIB). The `composite_gdi_text` technique in `native_pill.rs` for text shows how to derive premultiplied BGRA from channel values — reuse the same idiom.
 
-### Font: reproduce the CURRENT rendered face = Segoe UI (system-ui) — RESOLVED at GATE 1
+### Font: render Inter-first (the configured cascade) — CORRECTED at GATE-4 (2026-06-27)
 
-**Decision (Andi/conductor, GATE 1 2026-06-27 — do not re-litigate):** Render the preview text with
-**Segoe UI** via `CreateFontW`. Do **NOT** bundle Inter, do **NOT** use Geist for the preview.
+**⚠️ The earlier GATE-1 "Segoe UI" decision was WRONG and is overturned.** Andi's real-device smoke
+showed the native font is visibly different + smaller than his old preview — which proves his machine
+HAS Inter installed and the old WebView2 preview rendered **Inter** (the first family in the CSS
+cascade), not the Segoe fallback. Hardcoding Segoe was a fidelity regression.
+
+**Decision (Andi smoke, GATE-4 2026-06-27):** Honor the configured `previewFontFamily` cascade —
+parse the first family token from `cfg.preview_font_family` (default `"'Inter', system-ui, …"`) and
+pass it to `CreateFontW` (default face **"Inter"**). GDI renders Inter when installed (matching the
+old preview on Andi's machine), else substitutes — same behavior as the web `font-family` cascade.
+Keep `font_h = font_px * scale` (DPI scaling is correct). Do NOT hardcode Segoe; do NOT use Geist.
+
+<details><summary>Superseded GATE-1 reasoning (kept for the record)</summary>
+
+Render with Segoe UI; assumed the web preview fell back to system-ui because Inter is not bundled as
+a `.ttf`. This missed that Inter can be **system-installed** (it is, on Andi's machine), so the old
+render was Inter, not Segoe. Anchored to "is it bundled" instead of "what actually renders on the
+target" — the verify-against-the-real-render rule.</details>
 
 Rationale — this is the faithful "1:1 with the current render", not a compromise:
 - The preview card's `fontFamily` is `"'Inter', system-ui, -apple-system, sans-serif"` — it does
