@@ -590,28 +590,36 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
     } = Some(std::time::Instant::now());
 
-    // Native pill liveness check — recover if window was somehow lost.
-    // The pill renders itself on state-changed; no explicit "show" needed.
+    // Native pill: recreate a fresh layered window at every recording start.
+    //
+    // A WS_EX_LAYERED window presented via UpdateLayeredWindow is pushed into DWM's
+    // composition surface ONCE and never receives WM_PAINT. Across a power/session
+    // transition (Modern Standby resume, monitor power, lock/unlock) DWM rebuilds its
+    // composition surfaces and the long-lived pill is never re-presented into the new
+    // one — it still renders into its own bitmap (PrintWindow shows content) but the
+    // desktop shows nothing, while IsWindow() still reports it alive so a liveness gate
+    // never recovered it. Recreating the window guarantees a live composition surface,
+    // exactly as a process restart does. Recordings are infrequent, so the per-start
+    // cost (one short-lived OS thread + window) is negligible. See Story 10-3 / ADR-0021.
     #[cfg(target_os = "windows")]
     {
-        let pill_alive = state
-            .native_pill
+        let (sx, sy) = state
+            .config
             .lock()
             .ok()
-            .and_then(|g| g.as_ref().map(|p| p.is_alive()))
-            .unwrap_or(false);
-        if !pill_alive {
-            log::warn!("[native_pill] recording started but pill not alive, recreating");
-            let saved = state.config.lock().ok().map(|c| (c.bar_x, c.bar_y));
-            let (sx, sy) = saved.unwrap_or((None, None));
-            match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
-                Ok(pill) => {
-                    if let Ok(mut g) = state.native_pill.lock() {
-                        *g = Some(pill);
-                    }
+            .map(|c| (c.bar_x, c.bar_y))
+            .unwrap_or((None, None));
+        // Build the new pill BEFORE dropping the old one, so a transient create
+        // failure leaves the previous pill in place (never "no pill").
+        match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
+            Ok(pill) => {
+                if let Ok(mut g) = state.native_pill.lock() {
+                    *g = Some(pill); // old pill (if any) dropped here → orderly teardown
                 }
-                Err(e) => log::error!("[native_pill] failed to recreate: {e}"),
             }
+            Err(e) => log::error!(
+                "[native_pill] recreate at recording start failed, keeping existing pill: {e}"
+            ),
         }
     }
 

@@ -711,7 +711,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     let pt_dst = POINT { x: s.win_x, y: s.win_y };
     let sz = SIZE { cx: pw, cy: ph };
 
-    let _ = UpdateLayeredWindow(
+    let ulw = UpdateLayeredWindow(
         hwnd,
         None,
         Some(&pt_dst),
@@ -722,8 +722,31 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
         Some(&blend),
         ULW_ALPHA,
     );
+    if ulw.is_err() {
+        // A discarded present failure is how the standby-blank defect stayed
+        // invisible (Story 10-3). Surface it; recovery is the recreate-on-record
+        // path in pipeline.rs, not a retry here.
+        log::warn!(
+            "[native_pill] UpdateLayeredWindow failed: {ulw:?} (last error {:?})",
+            GetLastError()
+        );
+    }
 
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    // Re-assert top-of-the-topmost-band on every show. The window is created
+    // WS_EX_TOPMOST, but the topmost *position* can be lost across fullscreen apps
+    // / session transitions while the style bit persists (measured: pill at z-index
+    // 133, below a maximized foreground app). The old WebView2 bar re-asserted this
+    // on every recording start (commit b7acdb3); the native rewrite dropped it.
+    let _ = SetWindowPos(
+        hwnd,
+        Some(HWND_TOPMOST),
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+    );
 }
 
 /// Build a rounded-rect path. radius is clamped to half the smaller side, so
