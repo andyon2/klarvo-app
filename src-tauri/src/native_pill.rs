@@ -554,8 +554,22 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
                     pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
                 }
             }
+            // Measure the mode-badge text so the waveform reserves space for it
+            // on the right (SOLL: badge is flexShrink:0, the waveform flex:1 fills
+            // only the space that remains). font_mode is already physical-scaled.
+            let badge_w_phys = {
+                SelectObject(s.tmp_dc, s.font_mode.into());
+                let wide = to_wide(mode_label(&s.hotkey_mode));
+                let slice = &wide[..wide.len().saturating_sub(1)]; // drop trailing NUL
+                let mut size = SIZE { cx: 0, cy: 0 };
+                if GetTextExtentPoint32W(s.tmp_dc, slice, &mut size).as_bool() {
+                    size.cx as f32
+                } else {
+                    30.0 * sc
+                }
+            };
             // Waveform: 5 bars
-            render_waveform(&mut pixmap, &s.waveform, s.waveform_pos, sc);
+            render_waveform(&mut pixmap, &s.waveform, s.waveform_pos, sc, badge_w_phys);
         }
 
         NativePillState::Transcribing | NativePillState::Cleaning => {
@@ -693,11 +707,40 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 }
 
-fn render_waveform(pixmap: &mut Pixmap, waveform: &[f32; 20], waveform_pos: usize, sc: f32) {
+/// Build a rounded-rect path. radius is clamped to half the smaller side, so
+/// passing a large radius yields a full capsule (SOLL bars use borderRadius:9999).
+fn round_rect_path(x: f32, y: f32, w: f32, h: f32, radius: f32) -> Option<tiny_skia::Path> {
+    let r = radius.min(w / 2.0).min(h / 2.0).max(0.0);
+    let k = r * 0.5522847498_f32;
+    let mut pb = PathBuilder::new();
+    pb.move_to(x + r, y);
+    pb.line_to(x + w - r, y);
+    pb.cubic_to(x + w - r + k, y, x + w, y + r - k, x + w, y + r);
+    pb.line_to(x + w, y + h - r);
+    pb.cubic_to(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h);
+    pb.line_to(x + r, y + h);
+    pb.cubic_to(x + r - k, y + h, x, y + h - r + k, x, y + h - r);
+    pb.line_to(x, y + r);
+    pb.cubic_to(x, y + r - k, x + r - k, y, x + r, y);
+    pb.close();
+    pb.finish()
+}
+
+fn render_waveform(
+    pixmap: &mut Pixmap,
+    waveform: &[f32; 20],
+    waveform_pos: usize,
+    sc: f32,
+    badge_w_phys: f32,
+) {
     // Samples are already boosted at ingest (WM_PILL_SET_RMS); no re-boost here.
-    let total_wave_w = (PILL_W - WAVE_X - PAD) * sc;
+    // The waveform fills the space between the stop button (WAVE_X) and the mode
+    // badge reserved on the right — SOLL: badge flexShrink:0, waveform flex:1.
+    let right_reserve = badge_w_phys + GAP * sc;
+    let total_wave_w = ((PILL_W - PAD) * sc - WAVE_X * sc - right_reserve).max(0.0);
     let bar_gap: f32 = 3.0 * sc;
-    let bar_w = (total_wave_w - bar_gap * (WAVE_BARS as f32 - 1.0)) / WAVE_BARS as f32;
+    let bar_w =
+        ((total_wave_w - bar_gap * (WAVE_BARS as f32 - 1.0)) / WAVE_BARS as f32).max(1.0);
     let wave_center_y = (PILL_H / 2.0) * sc;
 
     for i in 0..WAVE_BARS {
@@ -712,12 +755,14 @@ fn render_waveform(pixmap: &mut Pixmap, waveform: &[f32; 20], waveform_pos: usiz
         let bx = (WAVE_X * sc) + i as f32 * (bar_w + bar_gap);
         let by = wave_center_y - bar_h / 2.0;
 
-        if let Some(rect) = tiny_skia::Rect::from_xywh(bx, by, bar_w, bar_h) {
-            let path = PathBuilder::from_rect(rect);
+        // borderRadius:9999 → full capsule (radius = half the smaller dimension).
+        let radius = bar_w.min(bar_h) / 2.0;
+        if let Some(path) = round_rect_path(bx, by, bar_w, bar_h, radius) {
             let mut paint = Paint::default();
             paint.shader = Shader::SolidColor(
                 Color::from_rgba(42.0/255.0, 195.0/255.0, 168.0/255.0, 0.85).unwrap(),
             );
+            paint.anti_alias = true;
             pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
         }
     }
