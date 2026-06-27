@@ -114,3 +114,12 @@ reacting to. Suggested first step: a structured fidelity audit (each FloatingBar
 transition vs the native pill) to size the story before building.
 
 Scope note: this is appearance/interaction fidelity, NOT the Epic 8 Studio-Dark re-skin (still parked).
+
+## Epic 10 — Blur slider becomes a no-op for the native preview (Story 10-2 GATE-1 defer, 2026-06-27)
+
+Source: Story 10-2 GATE-1 decision (conductor + Andi). ADR-0021 VR3 drops backdrop blur from the
+native preview, but the Settings UI still shows the `previewBgBlur` slider. **Decision: leave the
+slider in place (silent no-op) for now** — removing it would pull 10-2 into the WebView2 `main`
+Settings surface (scope creep), and VR3 notes real blur could return as a follow-up, in which case
+the slider regains meaning. If the no-op slider proves confusing, a small follow-up either (a) hides
+it while blur is dropped, or (b) re-implements blur natively. Not a 10-2 blocker.
