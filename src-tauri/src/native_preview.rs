@@ -83,6 +83,7 @@ pub struct PreviewConfig {
     pub border_width: u8,
     pub border_radius: u8,
     pub font_px: u32,     // 11 | 13 | 15 (from previewFontSize small/medium/large)
+    pub font_face: String, // first token of previewFontFamily CSS cascade (default "Inter")
     pub w_base: i32,      // 260 | 320 | 400 (from previewPanelForm compact/comfortable/wide)
     pub live_preview_enabled: bool,
 }
@@ -106,6 +107,19 @@ impl PreviewConfig {
             parse_css_rgba(&cfg.preview_text_color, (220, 220, 220, 224)); // 0.88×255≈224
         let (border_r, border_g, border_b, border_a) =
             parse_css_rgba(&cfg.preview_border_color, (42, 195, 168, 64)); // 0.25×255≈64
+        // Parse the first family token from the CSS cascade string.
+        // e.g. "'Inter', system-ui, -apple-system, sans-serif" → "Inter"
+        let font_face = {
+            let s = cfg.preview_font_family.trim();
+            let token = if s.starts_with('\'') || s.starts_with('"') {
+                let q = s.chars().next().unwrap();
+                let inner = &s[1..];
+                inner.find(q).map(|i| inner[..i].trim().to_string()).unwrap_or_default()
+            } else {
+                s.find(',').map(|i| s[..i].trim().to_string()).unwrap_or_else(|| s.to_string())
+            };
+            if token.is_empty() { "Inter".to_string() } else { token }
+        };
         PreviewConfig {
             bg_r,
             bg_g,
@@ -122,6 +136,7 @@ impl PreviewConfig {
             border_width: cfg.preview_border_width,
             border_radius: cfg.preview_border_radius,
             font_px,
+            font_face,
             w_base,
             live_preview_enabled: cfg.live_preview_enabled,
         }
@@ -533,18 +548,50 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
 
     let byte_count = (pw * ph) as usize * 4;
 
-    // --- 1. tiny-skia: rounded-rect card background + border ---
+    // --- 1. Measure text height FIRST (DT_CALCRECT does not draw) ---
+    // GDI context is set up here so we can size the card to the actual content before
+    // rasterising the card background. The tmp DIB is zeroed; font + colors are selected.
+    core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+    SetTextColor(s.tmp_dc, COLORREF(0x00FFFFFF));
+    SetBkMode(s.tmp_dc, TRANSPARENT);
+    SelectObject(s.tmp_dc, s.font.into());
+
+    // Horizontal inner bounds (independent of card height — only padding L/R matters).
+    let inner_left = (OUTER_INSET * sc + INNER_PAD_LR * sc) as i32;
+    let inner_right = (pw as f32 - OUTER_INSET * sc - INNER_PAD_LR * sc) as i32;
+    let text_area_w = (inner_right - inner_left).max(1);
+
+    // DrawTextW takes `&mut [u16]`; exclude null terminator from the length.
+    let mut text_wide = to_wide(&s.text_buffer);
+    let text_len = text_wide.len().saturating_sub(1);
+    let mut calc_rect = RECT { left: 0, top: 0, right: text_area_w, bottom: 0 };
+    DrawTextW(
+        s.tmp_dc,
+        &mut text_wide[..text_len],
+        &mut calc_rect,
+        DT_WORDBREAK | DT_CALCRECT,
+    );
+    let text_h = calc_rect.bottom;
+
+    // --- 2. Card geometry: content-height, bottom-aligned (grow-up) ---
+    // The window is fixed at max-height; the opaque dark card is only as tall as the text
+    // plus inner padding, bottom-aligned so it hugs the pill. The transparent region above
+    // the card lets the pill show through. Mirrors PreviewPanel.tsx justifyContent:flex-end.
+    let inset = OUTER_INSET * sc;
+    let card_x = inset;
+    let card_w = pw as f32 - 2.0 * inset;
+    let max_card_h = ph as f32 - 2.0 * inset;
+    let content_h = text_h as f32 + 2.0 * INNER_PAD_TB * sc;
+    let card_h = content_h.min(max_card_h);
+    let card_y = (ph as f32 - inset) - card_h; // bottom-aligned: card bottom at (ph - inset)
+    let overflows = content_h > max_card_h;
+    let radius = s.config.border_radius as f32 * sc;
+
+    // --- 3. tiny-skia: rounded-rect card background + border at content height ---
     let Some(mut pixmap) = Pixmap::new(pw as u32, ph as u32) else {
         log::warn!("[native_preview] Pixmap::new({pw},{ph}) failed — skipping frame");
         return;
     };
-
-    let inset = OUTER_INSET * sc;
-    let card_x = inset;
-    let card_y = inset;
-    let card_w = pw as f32 - 2.0 * inset;
-    let card_h = ph as f32 - 2.0 * inset;
-    let radius = s.config.border_radius as f32 * sc;
 
     // Background fill — pass straight RGB; Color::from_rgba premultiplies internally.
     // (Scaling RGB by alpha here would cause double-premultiplication: rgb·a².)
@@ -587,55 +634,18 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
         }
     }
 
-    // --- 2. Copy RGBA→BGRA into main DIB ---
+    // --- 4. Copy RGBA→BGRA into main DIB ---
     copy_rgba_to_bgra(&pixmap, s.main_bits as *mut u8, byte_count);
 
-    // --- 3. GDI text compositing ---
+    // --- 5. GDI text compositing (tmp DIB already zeroed + context set in step 1) ---
     {
-        core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
-        let white = COLORREF(0x00FFFFFF);
-        SetTextColor(s.tmp_dc, white);
-        SetBkMode(s.tmp_dc, TRANSPARENT);
-        SelectObject(s.tmp_dc, s.font.into());
+        // Inner vertical bounds derived from card position (not window height).
+        // inner_bottom marks the baseline for the newest (bottom) text line.
+        let inner_bottom = (card_y + card_h - INNER_PAD_TB * sc) as i32;
 
-        // Inner text area (physical pixels)
-        let inner_left = (OUTER_INSET * sc + INNER_PAD_LR * sc) as i32;
-        let inner_right = (pw as f32 - OUTER_INSET * sc - INNER_PAD_LR * sc) as i32;
-        let inner_top = (OUTER_INSET * sc + INNER_PAD_TB * sc) as i32;
-        let inner_bottom = (ph as f32 - OUTER_INSET * sc - INNER_PAD_TB * sc) as i32;
-        let available_h = (inner_bottom - inner_top).max(1);
-        let text_area_w = (inner_right - inner_left).max(1);
-
-        // Measure total text height with DT_CALCRECT
-        // DrawTextW takes `&mut [u16]` — text_wide must be mutable.
-        let mut text_wide = to_wide(&s.text_buffer);
-        // Exclude the null terminator: DrawTextW measures exactly len chars.
-        let text_len = text_wide.len().saturating_sub(1);
-        let mut calc_rect = RECT {
-            left: 0,
-            top: 0,
-            right: text_area_w,
-            bottom: 0,
-        };
-        DrawTextW(
-            s.tmp_dc,
-            &mut text_wide[..text_len],
-            &mut calc_rect,
-            DT_WORDBREAK | DT_CALCRECT,
-        );
-        let text_h = calc_rect.bottom;
-
-        // Decide vertical start position (bottom-aligned or overflow-clip)
-        let (start_y, overflows) = if text_h <= available_h {
-            // Bottom-aligned grow-up
-            (inner_bottom - text_h, false)
-        } else {
-            // Text overflows: align newest text at inner_bottom, oldest overflows off the top.
-            // start_y is above inner_top (negative offset); DrawTextW renders top-down so the
-            // last (newest) lines end at inner_bottom (in view) and the first (oldest) lines
-            // overflow above inner_top and are faded by apply_top_fade.
-            (inner_bottom - text_h, true)
-        };
+        // Newest text always anchored at inner_bottom (grow-up model).
+        // When overflowing, oldest lines extend above inner_top and are hidden by the top-fade.
+        let start_y = inner_bottom - text_h;
 
         let mut text_rect = RECT {
             left: inner_left,
@@ -656,9 +666,9 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
             s.config.text_a,
         );
 
-        // --- 4. Top-fade gradient when overflowing ---
+        // --- 6. Top-fade gradient: only when text actually overflows the max card height ---
         if overflows {
-            let fade_start = (OUTER_INSET * sc) as i32; // card top
+            let fade_start = card_y as i32; // card top (= inset when card fills max)
             let fade_h = ((card_h * FADE_FRACTION) * sc).max(1.0) as i32;
             let fade_end = (fade_start + fade_h).min(ph);
             apply_top_fade(s.main_bits as *mut u8, pw, fade_start, fade_end);
@@ -985,10 +995,15 @@ fn preview_thread(
             }
         };
 
-        // --- Font: Segoe UI (system-ui on Windows; see "Font" dev note) ---
-        let segoe: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
+        // --- Font: first family token from configured previewFontFamily cascade ---
+        // Default "Inter" (system-installed on Andi's machine; GDI substitutes Segoe UI if absent).
+        let font_face_null = {
+            let mut v: Vec<u16> = config.font_face.encode_utf16().collect();
+            v.push(0);
+            v
+        };
         let font_h = (config.font_px as f64 * scale) as i32;
-        let font = create_font(PCWSTR(segoe.as_ptr()), font_h);
+        let font = create_font(PCWSTR(font_face_null.as_ptr()), font_h);
 
         // --- Register window class ---
         let hinstance = match GetModuleHandleW(PCWSTR::null()) {
