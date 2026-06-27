@@ -149,3 +149,57 @@ uniqueness" convention) — the index reconciles at merge.
 Related: memory `project_webview2_overlay_backgrounding` (full measurement saga + proof), ADR-0020
 (superseded), ADR-0019 (design-SSOT / drift risk), ADR-0018 (Android bubble render-tech — the
 analogous "native vs framework rendering" decision on the Android side).
+
+---
+
+## Amendment 2026-06-27 — Standby present-loss (Story 10-3): a SECOND overlay-blank failure class
+
+After Story 10-1 shipped and Andi verified it on real Windows (occlusion survived), a **different**
+overlay-blank failure was measured live: after the laptop sits in **Modern Standby** for hours, the
+native pill stops appearing during recording — even unoccluded — in the same process, no restart;
+a restart fixes it until the next standby.
+
+**Measured signature (live diagnosis, same morning's build):** the pill window exists, is
+`WS_VISIBLE`, has `WS_EX_TOPMOST`, is on-screen, is **not** DWM-cloaked; `PrintWindow(PW_RENDERFULLCONTENT)`
+returns its **correct** bitmap (teal K + waveform); but `CopyFromScreen` of the same rect shows
+**zero** pill pixels. Re-asserting `HWND_TOPMOST` raised it above the maximized foreground window
+with **0** overlapping windows above it, yet still nothing on screen → **not occlusion, not z-order,
+not cloaking**. The System event log shows repeated Modern Standby enter/exit (events 506/507/566)
+across the gap between the last working and first broken recording.
+
+**Root cause (Microsoft-documented, KB 2667241; independent internal + external expert analysis
+converged):** `UpdateLayeredWindow` pushes the bitmap into DWM's composition surface **once**, and a
+layered window never receives `WM_PAINT`. Across a power/session transition DWM rebuilds its
+composition surfaces; a normal window repaints into the new surface, but the long-lived layered pill
+has nothing to re-push its bitmap → it silently stops compositing. This is a power/session-lifecycle
+defect of long-lived `UpdateLayeredWindow` windows — **orthogonal** to the occlusion defect this ADR
+originally killed. Two code facts ensured it never self-healed: the `UpdateLayeredWindow` return was
+discarded (`let _ =`), and the recovery gate `NativePill::is_alive()` == `IsWindow()` returns **true**
+for an existing-but-uncomposited window.
+
+**Decision (Story 10-3):** recreate the native pill window at **every recording start** (reusing the
+existing `NativePill::create` + `Drop` teardown), replacing the ineffective `is_alive()` gate. A
+freshly created layered window always has a live DWM composition surface — exactly what the restart
+workaround does — so the present-loss cannot accumulate. Recordings are discrete/infrequent, so the
+per-start cost (one short-lived OS thread + window) is negligible. This kills the defect class **by
+construction**, with no fragile power/session-broadcast handling on the pill's background thread
+(which `SMTO_ABORTIFHUNG` broadcast semantics can skip at resume). Secondary hardening in the same
+story: stop discarding the `UpdateLayeredWindow` result (log failures), and restore the
+`HWND_TOPMOST` re-assert on show that the WebView2→native rewrite dropped (commit `b7acdb3`).
+
+**Considered & rejected for now:** (a) re-present into the existing DC only — **empirically
+insufficient** (each diagnostic `set_state` already re-issued `UpdateLayeredWindow` and the screen
+stayed blank); (b) recreate only the DC/DIB on the same `HWND` — sufficiency **unverified**, would
+need its own build; (c) register `RegisterPowerSettingNotification` / `WTSRegisterSessionNotification`
++ handle `WM_DISPLAYCHANGE`/`WM_DPICHANGED` on the pill thread and rebuild on transition — more
+moving parts and depends on the background-thread pump catching the broadcast at the worst moment.
+Recreate-on-start is the minimal construction-level guarantee; (b)/(c) remain available follow-ups if
+per-start recreate shows latency/churn in smoke.
+
+**Verifiability symmetry:** standby-resume is **not** machine-reproducible unattended, so the gate is
+Andi's reachable smoke — record → real sleep/standby/lock cycle → record again → pill appears. The
+native-pill render path itself is compile-verified via the win-gnu surface harness (10-1 recipe).
+
+The live measurement scripts (`klarvo-pill-probe.ps1`, `klarvo-pill-pw.ps1`, `klarvo-zorder.ps1`,
+`klarvo-final.ps1`) and proof PNGs (PrintWindow shows content / CopyFromScreen blank) are in
+`%LOCALAPPDATA%\Temp`; full saga in memory `project_webview2_overlay_backgrounding`.
