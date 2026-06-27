@@ -253,7 +253,7 @@ Two visual defects on the real Windows build (build green; these are render-fide
 Causes named from code + the old `PreviewPanel.tsx` SOLL (read from git `2b2fbae^`). NOT transparency
 (that is fine — conductor misread; dropped).
 
-- [ ] **[GATE-4][Patch] Card rendered at full max-height instead of content-height.** The window is
+- [x] **[GATE-4][Patch] Card rendered at full max-height instead of content-height.** The window is
   correctly fixed at max-height, but `render_frame` fills the card at the FULL window height
   (`native_preview.rs:546` `card_h = ph - 2*inset`), so one sentence produces a giant card. SOLL
   (`PreviewPanel.tsx`: "dark card grows upward inside a fixed-max window", `justifyContent: flex-end`):
@@ -262,7 +262,7 @@ Causes named from code + the old `PreviewPanel.tsx` SOLL (read from git `2b2fbae
   **Fix:** measure text height (DT_CALCRECT) BEFORE drawing the card; compute `card_h =
   min(text_h + 2*INNER_PAD_TB*sc, ph - 2*inset)`; draw the round-rect card + border + text at
   `card_y = (ph - inset) - card_h`; top-fade only when text actually overflows the max.
-- [ ] **[GATE-4][Patch] Font hardcoded to Segoe UI; must be Inter-first.** `native_preview.rs:989`
+- [x] **[GATE-4][Patch] Font hardcoded to Segoe UI; must be Inter-first.** `native_preview.rs:989`
   hardcodes `"Segoe UI"`. SOLL = `previewFontFamily` cascade `'Inter', system-ui, …` and Andi's
   machine renders Inter. **Fix:** parse the first family token from `cfg.preview_font_family` (default
   "Inter") and pass it to `CreateFontW`; keep `font_h = font_px * scale`. See corrected Font dev note.
@@ -555,6 +555,9 @@ claude-sonnet-4-6 (2026-06-27, create-story)
 - ✅ Resolved review finding [Patch]: Reposition-while-hidden stale phys/DIB — hidden branch now calls `rebuild_dibs` when `pw != s.phys_w || ph != s.phys_h`; otherwise plain SetWindowPos to move only.
 - ✅ Resolved review finding [Patch]: Configured text alpha discarded — added `text_a: u8` to `PreviewConfig`, threaded through `from_app_config`, updated `composite_text_mask` signature and scales glyph coverage by `text_a/255`; default 0.88 opacity (≈224) now renders correctly.
 - Gates after patches: Linux `cargo test` **18 passed, 0 failed**; Win32 surface check **0 errors** (24 pre-existing #[must_use] BOOL warnings); `npm run build` **0 errors**, 78 modules transformed.
+- ✅ GATE-4 FIX 1 (content-height card): restructured `render_frame` — `DT_CALCRECT` now runs BEFORE skia card draw; `card_h = content_h.min(max_card_h)` where `content_h = text_h + 2×INNER_PAD_TB×sc`; `card_y = (ph−inset)−card_h` (bottom-aligned, grows upward); transparent above card; top-fade only on overflow. `inner_top` variable removed (unused after restructure).
+- ✅ GATE-4 FIX 2 (Inter-first font): added `font_face: String` to `PreviewConfig`; `from_app_config` parses first CSS family token from `cfg.preview_font_family` (strips surrounding quotes, takes pre-comma substring, defaults to "Inter"); `CreateFontW` now receives `font_face` via `font_face_null` wide string — no more hardcoded "Segoe UI".
+- Gates after GATE-4 fixes: Linux `cargo test` **630+18 passed, 0 failed**; Win32 surface check **0 errors** (24 pre-existing BOOL warnings); `npm run build` **0 errors**, 78 modules.
 
 - Created `native_preview.rs` (1052 lines): `WS_EX_LAYERED|WS_EX_TOPMOST|WS_EX_TRANSPARENT` window,
   `PreviewConfig` snapshot, `NativePreview` public handle, `PostMessageW` API, tiny-skia card renderer,
@@ -600,3 +603,4 @@ claude-sonnet-4-6 (2026-06-27, create-story)
 - 2026-06-27 (claude-sonnet-4-6): Addressed code review findings — 5 Patch items resolved (overflow anchor, double-premultiplication, rebuild_dibs UAF, hidden-reposition stale DIB, text alpha). Gates re-verified: cargo test 18/18, Win32 surface 0 errors, npm build 0 errors.
 - 2026-06-27 (conductor, claude-opus-4-8): Code review CLEARED (3-reviewer adversarial: Blind/Edge/Auditor → 5 Patch fixed + re-verified at fix commit `d23db1c`, 7 Defer residual, 9 Dismiss). Surface story: status held at `review` — GATE-4 smoke is the hard residual.
 - 2026-06-27 (conductor, claude-opus-4-8): GATE-4 build-break round (Andi's first Windows rebuild). Two misses fixed: (1) `sync-and-build.ps1` robocopy lacked `/PURGE` → deleted `PreviewPanel.tsx` orphaned in `D:\apps\klarvo` and broke `npm build` (fix `96fed45`); (2) `lib.rs:773` `app.listen` needed `use tauri::Listener;` → MSVC `E0599` the tauri-shimming WSL surface harness could not see (fix `c362e73`, machine-verified against REAL tauri/windows-gnu with inversion + 3 unused imports cleaned). Harness-gap + lesson recorded in `gate4-evidence/10-2/verdict.md`. Re-verified: Linux cargo test 630/0, mini-tauri win-gnu EXIT 0. Status stays `review`; awaiting Andi's clean rebuild for the GATE-4 smoke. WSL-observable gates all green (cargo test, Win32 surface compile, tsc/npm). Pending Andi Windows GATE-4: build via sync-and-build.ps1 → occlusion harness `preview-occlusion-proof.ps1` (machine, → gate4-evidence/10-2) → visual smoke (Segoe UI text, teal border now visible, newest-text-at-bottom, click-through, repositions on pill drag) → standby smoke (record → sleep/resume → record → preview reappears, AC-6). Review detail + residuals in `### Review Findings`. Minor introduced lint (unused imports recording.rs:352/lib.rs:77/pipeline.rs:41) — non-blocking, noted.
+- 2026-06-27 (claude-sonnet-4-6): GATE-4 defect fixes applied (commit `a8e9f66`). FIX 1 — card content-height/bottom-aligned: restructured `render_frame` so `DT_CALCRECT` runs before skia card draw; `card_h = (text_h + 2×INNER_PAD_TB×sc).min(max_card_h)`; `card_y = (ph−inset)−card_h` (bottom-aligned); top-fade only on actual overflow. FIX 2 — Inter-first font: added `font_face: String` to `PreviewConfig`; `from_app_config` parses first CSS token from `cfg.preview_font_family` (strips quotes, defaults to "Inter"); `CreateFontW` receives `font_face` instead of hardcoded "Segoe UI". Gates: Linux `cargo test` 630+18 passed 0 failed; Win32 surface check 0 errors 24 pre-existing BOOL warnings; `npm run build` 0 errors 78 modules.
