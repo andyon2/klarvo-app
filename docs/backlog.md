@@ -88,3 +88,29 @@ Source: `10-1-native-pill-overlay.md` Change Log + `gate4-evidence/10-1/verdict.
 
 > Older per-feature deferrals tracked in `_bmad-output/implementation-artifacts/deferred-work.md` remain
 > valid; migrate them here opportunistically.
+
+## Epic 10 — Native pill interaction + visual fidelity vs WebView2 (OWN STORY — Andi 2026-06-27)
+
+Source: Andi observation 2026-06-27 (during Story 10-3 work). **Andi's words:** the red cancel/stop
+button no longer animates on mouse-over — there is *no hover feedback at all*; it did this normally
+before. More broadly: "the pill doesn't behave and look exactly like it did before" since the native
+rewrite. **Andi wants this as a dedicated story** (not folded into 10-3, which is the standby-resilience
+lifecycle fix).
+
+**Concrete reported gap — stop/cancel button hover feedback (the trigger):**
+- The native pill is a static `UpdateLayeredWindow` raster. `native_pill.rs` only does a *click*
+  hit-test on the stop region (`WM_LBUTTONDOWN`); there is **no `WM_MOUSEMOVE` hover tracking, no
+  `TrackMouseEvent` for mouse-leave, and no re-render on hover**, so the WebView2 FloatingBar's CSS
+  `:hover` affordance (grow/highlight on the red cancel target) is gone entirely.
+- Fix direction (for the story, not now): track hover state in `PillWindowState`, add `WM_MOUSEMOVE` +
+  `TrackMouseEvent(TME_LEAVE)` → `WM_MOUSELEAVE`, re-render the stop button with a hover style
+  (scale/opacity/ring) matching the old SOLL, and set the hand cursor over the hit region.
+
+**Broader scope — a native-pill ↔ WebView2 fidelity pass.** This story is the natural home to also
+reconcile the already-logged Story 10-1 visual residuals (above): the per-state 1px stadium border,
+the `done(clipboard-only)` 📋 glyph, and the show/hide/expand/collapse/done-pop easing animations
+(state changes are currently instant). Together these are the "not 1:1 like before" drift Andi is
+reacting to. Suggested first step: a structured fidelity audit (each FloatingBar.tsx interaction +
+transition vs the native pill) to size the story before building.
+
+Scope note: this is appearance/interaction fidelity, NOT the Epic 8 Studio-Dark re-skin (still parked).
