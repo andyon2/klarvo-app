@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TDD in BMAD — TEA-Kette real gefahren</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f3ee; --paper-2:#fdfbf8; --card:#ffffff;
+    --ink:#1b1a17; --ink-2:#46433c; --ink-3:#76716a;
+    --line:#e2dcd2; --line-2:#cfc7ba;
+    --mech:#1452c9;   --mech-bg:#e9eefb;  --mech-line:#bcd0f6;
+    --llm:#b4560a;    --llm-bg:#fbeedd;   --llm-line:#f0cfa6;
+    --danger:#a3261f; --danger-bg:#f8e7e4; --danger-line:#eccac4;
+    --ok:#1f7a4d;     --ok-bg:#e3f3ea;    --ok-line:#bfe1cd;
+    --warn:#8a6d12;   --warn-bg:#f7efd6;  --warn-line:#e6d6a2;
+    --accent:#1b1a17;
+    --shadow:0 1px 2px rgba(40,34,20,.05),0 8px 26px -12px rgba(40,34,20,.18);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Inter",system-ui,-apple-system,sans-serif;
+    font-size:16.5px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  ::selection{background:#1b1a17;color:#f6f3ee}
+  .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+  code{font-family:"JetBrains Mono",monospace;font-size:.86em;background:#efeae1;
+    padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--ink-2)}
+
+  .wrap{display:grid;grid-template-columns:280px minmax(0,1fr);gap:0;max-width:1320px;margin:0 auto}
+  nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    padding:34px 22px 60px 30px;border-right:1px solid var(--line);background:var(--paper)}
+  nav .brand{font-family:"Fraunces",serif;font-weight:600;font-size:18px;letter-spacing:-.01em;line-height:1.25}
+  nav .brand small{display:block;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3);font-weight:400;margin-top:6px;letter-spacing:.02em}
+  nav .toc-list{list-style:none;margin:24px 0 0;padding:0;font-size:13.5px}
+  nav .toc-list li{margin:1px 0}
+  nav .toc-list a{display:flex;gap:10px;align-items:baseline;text-decoration:none;color:var(--ink-2);
+    padding:6px 10px;border-radius:8px;border-left:2px solid transparent;transition:.15s}
+  nav .toc-list a .n{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3);min-width:16px}
+  nav .toc-list a:hover{background:#ece6dc;color:var(--ink)}
+  nav .legend{margin-top:28px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}
+  nav .legend .lg{display:flex;gap:9px;align-items:flex-start;margin:10px 0}
+  nav .legend .dot{width:13px;height:13px;border-radius:4px;margin-top:3px;flex:none}
+
+  main{padding:56px clamp(24px,5vw,72px) 120px;min-width:0}
+  section{margin-bottom:56px}
+  h2{font-family:"Fraunces",serif;font-weight:600;font-size:clamp(23px,3vw,30px);letter-spacing:-.01em;
+    margin:0 0 6px;padding-top:8px;display:flex;gap:12px;align-items:baseline}
+  h2 .hn{font-family:"JetBrains Mono",monospace;font-size:14px;color:var(--ink-3);font-weight:500}
+  h3{font-family:"Inter";font-weight:700;font-size:16px;margin:26px 0 8px;letter-spacing:-.005em}
+  p{margin:.5em 0}
+  .lead{color:var(--ink-2);font-size:17px;max-width:64ch}
+
+  .hero{margin-bottom:54px}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--llm);font-weight:500}
+  h1{font-family:"Fraunces",serif;font-weight:600;font-size:clamp(33px,5.2vw,55px);line-height:1.03;letter-spacing:-.02em;margin:.32em 0 .3em}
+  h1 em{font-style:italic;color:var(--mech)}
+  .dek{font-size:clamp(18px,2.2vw,21px);color:var(--ink-2);max-width:62ch;line-height:1.5}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+  .badge{display:inline-flex;gap:7px;align-items:center;font-size:12.5px;font-family:"JetBrains Mono",monospace;
+    background:var(--card);border:1px solid var(--line);padding:6px 12px;border-radius:999px;color:var(--ink-2);box-shadow:var(--shadow)}
+  .badge b{color:var(--ink);font-weight:600}
+
+  /* confidence split */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}
+  .conf{border-radius:var(--radius);padding:24px 26px;box-shadow:var(--shadow);border:1px solid var(--line)}
+  .conf.fels{background:var(--ok-bg);border-color:var(--ok-line)}
+  .conf.park{background:var(--warn-bg);border-color:var(--warn-line)}
+  .conf .tag{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .conf.fels .tag{color:var(--ok)} .conf.park .tag{color:var(--warn)}
+  .conf h4{font-family:"Fraunces",serif;font-weight:600;font-size:20px;margin:6px 0 10px}
+  .conf ul{margin:.4em 0;padding-left:18px} .conf li{margin:5px 0;font-size:14.5px;color:var(--ink-2)}
+  .conf .stamp{margin-top:14px;font-size:12.5px;font-weight:600}
+  .conf.fels .stamp{color:var(--ok)} .conf.park .stamp{color:var(--warn)}
+
+  /* pipeline */
+  .pipe{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:22px 0 8px}
+  .pstep{flex:1 1 0;min-width:140px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);
+    border-radius:12px;padding:16px 16px 14px;position:relative;margin:6px 14px 6px 0}
+  .pstep .ph{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .pstep .pt{font-family:"Fraunces",serif;font-size:18px;font-weight:600;margin:3px 0 6px}
+  .pstep .pe{font-size:13px;color:var(--ink-2)}
+  .pstep .arrow{position:absolute;right:-13px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--ink-3);z-index:2}
+  .pstep.red{border-color:var(--danger-line)} .pstep.red .pt{color:var(--danger)}
+  .pstep.green{border-color:var(--ok-line)} .pstep.green .pt{color:var(--ok)}
+  .pstep.gate{border-color:var(--mech-line)} .pstep.gate .pt{color:var(--mech)}
+  .pstep .chk{font-family:"JetBrains Mono",monospace;font-size:11.5px;margin-top:8px;color:var(--ok);font-weight:600}
+
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;background:var(--card);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#efeae1;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);font-weight:600}
+  tr:last-child td{border-bottom:none}
+  td .pill{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.pass{background:var(--mech-bg);color:var(--mech)}
+
+  /* finding cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin-top:16px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:11px;
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .fcard .fh{display:flex;gap:9px;align-items:baseline;margin-bottom:5px}
+  .fcard .fk{font-family:"JetBrains Mono",monospace;font-weight:600;font-size:13px}
+  .fcard .ft{font-weight:700;font-size:14.5px;letter-spacing:-.005em}
+  .fcard p{font-size:13.5px;color:var(--ink-2);margin:.3em 0 0}
+  .fcard.sev-hi{border-left-color:var(--danger)} .fcard.sev-hi .fk{color:var(--danger)}
+  .fcard.sev-md{border-left-color:var(--warn)} .fcard.sev-md .fk{color:var(--warn)}
+  .fcard .sev{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-left:auto;color:var(--ink-3)}
+
+  .callout{border-radius:var(--radius);padding:20px 24px;margin:18px 0;box-shadow:var(--shadow);border:1px solid var(--line)}
+  .callout.danger{background:var(--danger-bg);border-color:var(--danger-line)}
+  .callout.mech{background:var(--mech-bg);border-color:var(--mech-line)}
+  .callout .ct{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-bottom:6px}
+  .callout.danger .ct{color:var(--danger)} .callout.mech .ct{color:var(--mech)}
+
+  ol.concl{counter-reset:c;list-style:none;padding:0;margin:14px 0}
+  ol.concl li{position:relative;padding:14px 18px 14px 56px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;margin:10px 0;box-shadow:var(--shadow);font-size:15px}
+  ol.concl li::before{counter-increment:c;content:counter(c);position:absolute;left:16px;top:14px;
+    width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--paper);
+    font-family:"JetBrains Mono",monospace;font-weight:600;font-size:13px;display:grid;place-items:center}
+  ol.concl li b{color:var(--ink)}
+
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
+  .proof{border-radius:12px;padding:16px 18px;box-shadow:var(--shadow);border:1px solid}
+  .proof.yes{background:var(--ok-bg);border-color:var(--ok-line)}
+  .proof.no{background:var(--danger-bg);border-color:var(--danger-line)}
+  .proof .pl{font-family:"JetBrains Mono",monospace;font-size:18px;font-weight:600}
+  .proof.yes .pl{color:var(--ok)} .proof.no .pl{color:var(--danger)}
+
+  footer{border-top:1px solid var(--line);margin-top:40px;padding-top:22px;color:var(--ink-3);font-size:13px}
+  footer .mono{color:var(--ink-2)}
+  a.src{color:var(--mech);text-decoration:none;border-bottom:1px solid var(--mech-line)}
+
+  @media(max-width:920px){
+    .wrap{grid-template-columns:1fr} nav.toc{display:none}
+    .split,.twocol{grid-template-columns:1fr} .pstep{flex:1 1 100%}
+    .pstep .arrow{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="toc">
+    <div class="brand">TDD in BMAD<small>research · 2026-06-27</small></div>
+    <ul class="toc-list">
+      <li><a href="#tldr"><span class="n">00</span> Auf einen Blick</a></li>
+      <li><a href="#konfidenz"><span class="n">01</span> Konfidenz-Karte</a></li>
+      <li><a href="#lauf"><span class="n">02</span> Der reale Lauf</a></li>
+      <li><a href="#smooth"><span class="n">03</span> Was glatt lief</a></li>
+      <li><a href="#bruch"><span class="n">04</span> Bruchstellen A–G</a></li>
+      <li><a href="#issues"><span class="n">05</span> Community-Belege</a></li>
+      <li><a href="#fazit"><span class="n">06</span> Fazit (generisch)</a></li>
+      <li><a href="#grenzen"><span class="n">07</span> Was TDD beweist</a></li>
+    </ul>
+    <div class="legend">
+      <div class="lg"><span class="dot" style="background:#1f7a4d"></span> Verifiziert (mechanisch geprüft)</div>
+      <div class="lg"><span class="dot" style="background:#8a6d12"></span> Schlussfolgerung (ungeprüft)</div>
+      <div class="lg"><span class="dot" style="background:#a3261f"></span> Defekt / Bruchstelle</div>
+      <div class="lg"><span class="dot" style="background:#1452c9"></span> Mechanik / Gate</div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="hero" id="top">
+      <div class="eyebrow">BMAD · TEA-Modul · empirischer Lauf</div>
+      <h1>Die Test-Kette <em>einmal echt</em> gefahren</h1>
+      <p class="dek">Ziel: TDD als generische BMAD-Fähigkeit verstehen. Methode: die echte TEA-Kette
+        <span class="mono">atdd → dev → trace</span> an einer lebenden Logik-Scheibe laufen lassen und
+        festhalten, wo Stock-BMAD glatt läuft — und wo es bricht.</p>
+      <div class="meta-row">
+        <span class="badge">📅 <b>2026-06-27</b></span>
+        <span class="badge">BMAD installiert <b>6.6.1-next.2</b></span>
+        <span class="badge">npm latest <b>6.9.0</b></span>
+        <span class="badge">Repo <b>klarvo</b></span>
+        <span class="badge">Slice <b>is_prompt_echo</b></span>
+      </div>
+    </div>
+
+    <section id="tldr">
+      <h2><span class="hn">00</span> Auf einen Blick</h2>
+      <p class="lead">Der wertvolle Kern von TDD funktioniert in BMAD real — aber der Generator ist auf
+        JavaScript verdrahtet, der „rote" Zustand ist nur <em>übersprungen</em> statt beobachtet-rot, und
+        nichts erzwingt die Reihenfolge. Der fehlende Hebel ist <b>Durchsetzung</b>, nicht eine weitere Regel.</p>
+      <div class="callout mech">
+        <div class="ct">Kernsatz</div>
+        Ein Agent, der „einfach codet", liefert Code <em>plus eine selbst-attestierte Behauptung</em>, dass er
+        funktioniert. Echtes TDD ersetzt die Selbst-Attestierung durch eine externe, vorher festgelegte,
+        nachweislich fälschbare Prüfung. Genau diese Ersetzung ist in Stock-BMAD <b>nicht durchgesetzt</b>.
+      </div>
+    </section>
+
+    <section id="konfidenz">
+      <h2><span class="hn">01</span> Konfidenz-Karte</h2>
+      <p class="lead">Dieser Report zerfällt in zwei Hälften mit <em>sehr</em> unterschiedlichem Vertrauensgrad.
+        Die Trennung ist bewusst und steht vornan.</p>
+      <div class="split">
+        <div class="conf fels">
+          <div class="tag">◆ Hälfte 1 — Fels</div>
+          <h4>Diagnose &amp; realer Lauf</h4>
+          <ul>
+            <li>Step-5/6-Widerspruch — Originaldateien gelesen (main + 6.9.0)</li>
+            <li>GitHub-Issues #1784/#2275/#843 — per API geholt, Originaltext</li>
+            <li>Versionsfakten — geprüft, byte-identisch offen</li>
+            <li>Lauf: RED beobachtet, GREEN beobachtet, 93 Tests grün</li>
+          </ul>
+          <div class="stamp">Hängt NICHT an einem Urteil — mechanisch nachgeprüft.</div>
+        </div>
+        <div class="conf park">
+          <div class="tag">◇ Hälfte 2 — geparkt</div>
+          <h4>Lösungs-Design</h4>
+          <ul>
+            <li>„Unabhängiger Rot-Beobachter" als Lösung</li>
+            <li>Git-Hook vs. CI vs. Skill — Zähne-Vergleich</li>
+            <li>Conductor-freies Zusammenspiel</li>
+            <li>Bausteine = Industrie-Standard; BMAD-Zusammensetzung = unbewiesen</li>
+          </ul>
+          <div class="stamp">Schlussfolgerung, nicht getestet → erst adversarial gegenprüfen.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="lauf">
+      <h2><span class="hn">02</span> Der reale Lauf — beobachtet, nicht behauptet</h2>
+      <p class="lead">Slice: <code>is_prompt_echo()</code> in <code>src-tauri/src/pipeline.rs</code>. Echter,
+        Deutsch-relevanter Bug: der Wort-Filter zählte <code>w.len()</code> (<b>Bytes</b>) statt Zeichen — das
+        Füllwort „äh" (2 Zeichen / 3 Bytes) galt fälschlich als signifikant. Fix: <code>w.chars().count()</code>.</p>
+      <div class="pipe">
+        <div class="pstep"><div class="ph">atdd</div><div class="pt">Scaffold</div><div class="pe">Rot-Test erzeugt (Operator schrieb Rust — Generator kann nur JS)</div><span class="arrow">→</span></div>
+        <div class="pstep red"><div class="ph">port + run</div><div class="pt">RED</div><div class="pe">Test schlägt fehl bei „äh"</div><div class="chk">✓ beobachtet</div><span class="arrow">→</span></div>
+        <div class="pstep green"><div class="ph">dev</div><div class="pt">GREEN</div><div class="pe">Einzeiler-Fix, Test grün</div><div class="chk">✓ beobachtet</div><span class="arrow">→</span></div>
+        <div class="pstep gate"><div class="ph">trace</div><div class="pt">GATE</div><div class="pe">PASS — aber advisory (kein CI blockt)</div><div class="chk">⚠ advisory</div></div>
+      </div>
+      <table>
+        <tr><th>Phase</th><th>Aktion</th><th>Beobachtete Evidenz</th></tr>
+        <tr><td><b>RED</b></td><td><code>cargo test … red_word_significance</code></td><td><b>FAILED</b> bei „'äh' … must not count"; Control-Test grün → diskriminierend</td></tr>
+        <tr><td><b>GREEN</b></td><td><code>chars().count()</code>-Fix, erneut</td><td>beide Tests <span class="pill ok">ok</span></td></tr>
+        <tr><td><b>REGRESSION</b></td><td><code>cargo test --lib pipeline::tests</code></td><td><b>93 passed, 0 failed</b> (vorher 91 + 2 neu)</td></tr>
+        <tr><td><b>GATE</b></td><td><code>trace</code> deterministische Logik</td><td><span class="pill pass">PASS</span> P0 100 % / P1 100 % / overall 100 %</td></tr>
+      </table>
+      <div class="callout mech">
+        <div class="ct">Der entscheidende Handgriff</div>
+        Das Rot wurde durch erneutes Laufen im Vor-Fix-Zustand <b>beobachtet</b> — eine unabhängige
+        Rot-Beobachtung, von Hand ausgeführt. Genau diesen Schritt erzwingt Stock-BMAD nicht.
+      </div>
+    </section>
+
+    <section id="smooth">
+      <h2><span class="hn">03</span> Was glatt lief</h2>
+      <div class="cards">
+        <div class="fcard"><div class="fh"><span class="ft">Framework-Prereq erfüllt</span></div><p>Cargo deckt atdds Test-Framework-Anforderung — reine Rust-Kern-Logik ist echt test-first-bar.</p></div>
+        <div class="fcard"><div class="fh"><span class="ft">Schnell &amp; lokal</span></div><p><code>cargo test</code> ~0,03 s, Linux-lauffähig — kein Gerät/Emulator nötig.</p></div>
+        <div class="fcard"><div class="fh"><span class="ft">Gate-Logik solide</span></div><p>Deterministische Schwellen (P0 100 % / overall 80 % / P1 90–80) — sauber.</p></div>
+        <div class="fcard"><div class="fh"><span class="ft">Skip-bewusst</span></div><p>trace zählt <code>skipped/fixme/pending</code> und senkt die Konfidenz bei null aktiven Tests — das Tooling <em>kennt</em> das Skip-Problem.</p></div>
+      </div>
+    </section>
+
+    <section id="bruch">
+      <h2><span class="hn">04</span> Bruchstellen — was Stock-BMAD verfehlt</h2>
+      <div class="cards">
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">A</span><span class="ft">Auto-Detect → HALT</span><span class="sev">hoch</span></div><p>Wegen <code>react</code> in der package.json klassifiziert BMAD klarvo als <b>fullstack</b> → harte Prereq <code>playwright.config</code> fehlt → ein Stock-Lauf <b>bricht ab</b>, obwohl die Arbeit reiner Rust-Backend ist.</p></div>
+        <div class="fcard sev-md"><div class="fh"><span class="fk">B</span><span class="ft">Rust nicht erkannt</span><span class="sev">mittel</span></div><p>Backend-Prereq-Liste kennt nur <code>conftest.py / *_test.go / .rspec</code> — Rusts inline <code>#[cfg(test)]</code> fehlt, obwohl cargo grün läuft.</p></div>
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">C</span><span class="ft">Generator nur JS</span><span class="sev">hoch</span></div><p>atdd dispatcht nur „API"- und „E2E"-Worker (<code>test.skip()</code>, Playwright). <b>Kein</b> nativer Rust/Backend-Unit-Pfad → das Rust-Rot muss der Operator schreiben.</p></div>
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">D</span><span class="ft">„RED" = übersprungen</span><span class="sev">hoch</span></div><p>Der erzeugte Zustand ist <code>test.skip()</code> — weder rot noch grün. Das Rot materialisiert sich nur, wenn jemand un-skippt &amp; läuft; nichts erzwingt das. = Wurzel von Issue #1784.</p></div>
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">E</span><span class="ft">Komposition manuell</span><span class="sev">hoch</span></div><p>Mit Daten belegt: die 7-3-atdd-Scaffolds sind <b>nicht</b> im echten Baum — ein Mensch schrieb äquivalente Tests neu. atdd-Output landet im Output-Ordner, nie im Build. = Beschwerde #843.</p></div>
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">F</span><span class="ft">Kein Rot-Beobachter</span><span class="sev">hoch</span></div><p>Derselbe Worker schreibt Code <em>und</em> attestiert das Rot (Selbst-Attestierung). trace läuft erst nach Grün; ohne CI blockt der Gate nichts.</p></div>
+        <div class="fcard sev-hi"><div class="fh"><span class="fk">G</span><span class="ft">Step 5/6-Widerspruch</span><span class="sev">hoch</span></div><p>Step 5 „Write FAILING tests first" vs. Step 6 „Author comprehensive tests" (danach). Ein Worker erfüllt Step 6 und meldet wahrheitsgemäß „compliant", ohne je rot gewesen zu sein. In 6.9.0/main byte-identisch offen.</p></div>
+      </div>
+    </section>
+
+    <section id="issues">
+      <h2><span class="hn">05</span> Community-Belege (direkt von GitHub verifiziert)</h2>
+      <table>
+        <tr><th>Issue</th><th>Status</th><th>Kern</th></tr>
+        <tr><td class="mono">#1784</td><td>CLOSED 04-26</td><td>„Step 5 has <b>no awareness of pre-existing ATDD tests</b>" — 29 Tests blieben <code>test.fixme()</code>, Story „Ready for Review with zero test evidence".</td></tr>
+        <tr><td class="mono">#2275</td><td>CLOSED · v6.3.0</td><td>nennt <b>Step 6</b> wörtlich; „complete multiple epics with <b>zero E2E tests</b> … despite the tooling being present".</td></tr>
+        <tr><td class="mono">#843</td><td>CLOSED</td><td>Nutzer: dev-Agent „still develops … <b>not following TDD</b>" trotz vorherigem <code>*atdd</code> → Kompositions-Lücke.</td></tr>
+      </table>
+      <p class="lead" style="margin-top:10px">Die Fixes wurden <b>geschlossen, aber nicht ausgeliefert</b>: Step 5/6 ist in der neuesten Version (6.9.0 / main) unverändert. „Upgraden" behebt den Defekt nicht.</p>
+    </section>
+
+    <section id="fazit">
+      <h2><span class="hn">06</span> Fazit für eine generische TDD-Fähigkeit</h2>
+      <p class="lead" style="color:var(--warn)"><b>Hinweis:</b> Dieser Abschnitt ist Hälfte 2 — meine Schlussfolgerung, ungeprüft. Vor Umsetzung adversarial gegenprüfen.</p>
+      <ol class="concl">
+        <li><b>Der wertvolle Kern ist real</b> — rot→grün auf einer Logik-Scheibe funktioniert und ist ehrlich beobachtbar. Aber der <em>Generator</em> emittiert nur JS; generisch braucht es native Test-Emitter (oder akzeptiert Operator-Scaffolds).</li>
+        <li><b>Der fehlende Hebel ist Durchsetzung, nicht Anweisung.</b> Die Rot-zuerst-Regel existiert (Step 5) und wird ignoriert. Lösung: ein <em>unabhängiger Rot-Beobachter</em> — eine nicht-implementierende Instanz, die mechanisch bestätigt, dass ein impl-freier Commit rot war, bevor der grüne kam.</li>
+        <li><b>Unabhängigkeit ≠ zweiter Agent.</b> Sie kommt aus <em>Determinismus</em>: ein Skript, das Git-Historie liest und Tests laufen lässt, kann nicht self-attestieren. Ein weiteres LLM-Skill wäre nur erneut überspringbar.</li>
+        <li><b>CI ist die größte Design-Gabel.</b> Mit CI ist der Beobachter gratis und der Gate ein echter Block; ohne CI gehört er in einen Git-Hook (lokaler, non-bypassbarer Trigger). Generisch darf CI nicht vorausgesetzt werden.</li>
+        <li><b>Step 5/6-Widerspruch auflösen</b>, damit „rot zuerst" und „umfassende Tests" eine geordnete Anweisung sind, nicht zwei widersprüchliche.</li>
+      </ol>
+    </section>
+
+    <section id="grenzen">
+      <h2><span class="hn">07</span> Was TDD beweist — und was nicht</h2>
+      <div class="twocol">
+        <div class="proof yes"><div class="pl">✓ Ordnung</div><p style="margin:.4em 0 0;font-size:14px;color:var(--ink-2)">Test X war an Commit N rot, an N+1 grün → rot-zuerst bewiesen. Unbestechlich.</p></div>
+        <div class="proof no"><div class="pl">✗ Test-Wert</div><p style="margin:.4em 0 0;font-size:14px;color:var(--ink-2)">Ein vacuous-grüner Test fällt nicht auf. Separate Sorge (Inversions-/Mutationsprüfung).</p></div>
+      </div>
+      <div class="callout danger" style="margin-top:18px">
+        <div class="ct">Ehrliche Erwartung</div>
+        TDD ist ein <b>Boden unter dem Logik-Kern</b>, kein Bug-Netz. Auf klarvos eigener Bug-Historie hätte
+        es 0 von 3 echten Bugs sauber gefangen (Mikro-Pfad, Laufzeit-Pipeline, Plattform-Parität sind nicht
+        unit-erreichbar). Nicht als „fängt die Bugs" verkaufen.
+      </div>
+    </section>
+
+    <footer>
+      <p><span class="mono">Quelle (Markdown):</span> <a class="src" href="tdd-in-bmad-2026-06-27.md">tdd-in-bmad-2026-06-27.md</a> · Lauf-Artefakte im Produkt-Repo unter <span class="mono">_bmad-output/test-artifacts/</span></p>
+      <p><span class="mono">Konfidenz:</span> Hälfte 1 (Diagnose + Lauf) mechanisch verifiziert · Hälfte 2 (Lösungs-Design) ungeprüfte Schlussfolgerung, vor Umsetzung adversarial gegenprüfen.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>
