@@ -1,6 +1,6 @@
 # Story 10.3: Native Pill Survives Power/Session Transitions (Standby Resilience)
 
-Status: ready-for-dev
+Status: review (code-review cleared 2026-06-27; remaining gate = Andi Windows build + standby smoke)
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -94,3 +94,21 @@ And this is the testable state Andi can produce himself (sleep/resume is user-re
 | Date | Change |
 |---|---|
 | 2026-06-27 | Story authored from live diagnosis of the post-Modern-Standby pill-blank regression (internal + external expert analysis converged on DWM composition-surface loss for long-lived `UpdateLayeredWindow` windows). |
+| 2026-06-27 | Implemented (commit `782170b`) + win-gnu compile-verified. Code-review (3 adversarial Opus layers) ran via bmad-story-conductor → bmad-code-review: caught 1 real regression (recreated pill lost the hotkey-mode badge) + 1 minor churn (per-frame topmost re-assert); both FIXED in `ceef960` (re-compile-verified green). 5 findings deferred, 6 dismissed. Also split out an unrelated prompt-echo slice (`e28a50e`) that had been bundled into the code commit. **Remaining gate: Andi Windows build + standby smoke (AC-5).** |
+
+## Review Findings (code-review 2026-06-27, range 737f52b..782170b)
+
+3 adversarial layers (Blind / Edge-Case / Acceptance-Auditor, Opus). Triage: 2 patch · 5 defer · 6 dismissed.
+
+**Patch (confirmed → FIXED in commit `ceef960`):**
+- [x] [Review][Patch] Recreated pill loses hotkey-mode badge → non-Hold modes show wrong "Hold" [pipeline.rs:620 / native_pill.rs:1351] — `set_hotkey_mode` is posted to the *old* pill (pipeline.rs:2257) before the async recreate; the fresh pill defaults to `"hold"` and is never re-fed. Toggle/AutoStop/Auto recordings render the wrong badge. (AC-4 regression.) **FIXED:** `AppState.active_hotkey_mode` (Windows-only `Mutex<String>`) persists the mode at the hotkey handler; `start_recording_only` re-feeds it to the fresh pill right after recreate.
+- [x] [Review][Patch] `HWND_TOPMOST` re-asserted every render_frame (~15–30 Hz), not on the hidden→visible transition [native_pill.rs:735-749] — comment says "on every show" but it fires per RMS/spinner tick. Idempotent so not a correctness bug, but needless z-order churn. **FIXED:** gated to the Idle→visible edge via a `was_visible` flag on `PillWindowState`.
+
+**Defer (real but pre-existing / out-of-scope / low-probability):**
+- [x] [Review][Defer] Command-mode recording start (`start_command_mode`) doesn't recreate the pill — but its auto-start is behind `if false` (voice-command parked); revisit when re-enabled.
+- [x] [Review][Defer] If `Drop`'s `WM_PILL_SHUTDOWN` PostMessage ever fails, the old thread/window/GDI leak — pre-existing Drop behaviour, now exercised per recording; PostMessage to a live thread effectively always succeeds.
+- [x] [Review][Defer] Poisoned `native_pill` mutex would drop the fresh pill and strand the old one — requires a panic-while-locked (project is no-panics); pre-existing `if let Ok` pattern.
+- [x] [Review][Defer] If `NativePill::create` fails AND the existing pill is dead, no recovery — create rarely fails; keeping the old pill is the only option (the removed `is_alive` gate couldn't detect the standby-dead state anyway).
+- [x] [Review][Defer] First RMS samples dropped between create (Idle) and the Recording emit — pre-existing Idle→Recording gap; cosmetic (waveform starts a beat late).
+
+**Dismissed (false positives):** window created on async/tokio thread w/o pump · DestroyWindow off owning thread (both false — `create` spawns a dedicated thread that owns the window + runs the message loop; `Drop` posts cross-thread, wndproc destroys on its own thread) · double-pill flicker (new pill starts Idle/hidden) · position-loss on recreate (drag persists on release; recreate only from idle) · `is_alive` dead code (still used in commands/misc.rs:226) · `GetLastError` redundant-but-harmless.
