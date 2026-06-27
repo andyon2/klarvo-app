@@ -216,6 +216,12 @@ pub fn resolve_fallback_provider(
 // Whisper prompt-echo detection
 // ---------------------------------------------------------------------------
 
+/// Whether a token counts as a "significant" word for prompt-echo overlap
+/// (the overlap heuristic only considers words of >= 3 characters).
+fn is_significant_word(w: &str) -> bool {
+    w.chars().count() >= 3
+}
+
 /// Detects when Whisper echoes the conditioning prompt instead of real speech.
 ///
 /// Whisper sometimes "hallucinates" the prompt text when the audio contains
@@ -271,7 +277,7 @@ pub(crate) fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
     let extract_words = |text: &str| -> Vec<String> {
         text.split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
             .map(|w| w.to_lowercase())
-            .filter(|w| w.len() >= 3)
+            .filter(|w| is_significant_word(w))
             .collect()
     };
 
@@ -3414,6 +3420,24 @@ mod tests {
             super::is_prompt_echo(hallucination, hint),
             "repeated variation should be detected"
         );
+    }
+
+    /// Word significance is measured by CHARACTER count, not byte length, so
+    /// multi-byte 2-char words (e.g. the German filler "äh", 3 UTF-8 bytes) are
+    /// not mistaken for significant words in the prompt-echo overlap heuristic.
+    #[test]
+    fn test_word_significance_counts_chars_not_bytes() {
+        assert!(!super::is_significant_word("äh"), "'äh' is 2 chars (filler) — must not count");
+        assert!(!super::is_significant_word("öl"), "'öl' is 2 chars — must not count");
+    }
+
+    /// Control: the char-count rule does not blanket-flip — genuine ≥3-char
+    /// words stay significant and genuine <3-char ascii words stay insignificant.
+    #[test]
+    fn test_word_significance_control_ascii_unchanged() {
+        assert!(super::is_significant_word("abc"), "3 ascii chars stays significant");
+        assert!(super::is_significant_word("über"), "4 chars (umlaut) stays significant");
+        assert!(!super::is_significant_word("an"), "2 ascii chars stays insignificant");
     }
 
     /// Long real text (>30 words) must never be flagged, even if some prompt
