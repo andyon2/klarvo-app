@@ -1,6 +1,6 @@
 # Story 10.3: Native Pill Survives Power/Session Transitions (Standby Resilience)
 
-Status: review (code-review cleared 2026-06-27; remaining gate = Andi Windows build + standby smoke)
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -95,6 +95,7 @@ And this is the testable state Andi can produce himself (sleep/resume is user-re
 |---|---|
 | 2026-06-27 | Story authored from live diagnosis of the post-Modern-Standby pill-blank regression (internal + external expert analysis converged on DWM composition-surface loss for long-lived `UpdateLayeredWindow` windows). |
 | 2026-06-27 | Implemented (commit `782170b`) + win-gnu compile-verified. Code-review (3 adversarial Opus layers) ran via bmad-story-conductor → bmad-code-review: caught 1 real regression (recreated pill lost the hotkey-mode badge) + 1 minor churn (per-frame topmost re-assert); both FIXED in `ceef960` (re-compile-verified green). 5 findings deferred, 6 dismissed. Also split out an unrelated prompt-echo slice (`e28a50e`) that had been bundled into the code commit. **Remaining gate: Andi Windows build + standby smoke (AC-5).** |
+| 2026-06-27 | **AC-5 GREEN → DONE.** Andi built on real Windows, recorded, put the laptop through a real sleep/standby cycle, woke it, recorded again → pill still renders. The exact transition that broke it this morning now holds. Both status fields → `done`. Durability note: one cycle is the required gate (passed); recreate-per-recording means robustness no longer depends on *surviving* the transition (every recording gets a fresh, freshly-composited window), so confidence is structural — but watch over days of normal use; recurrence would falsify the model and reopen. Epic 10 not complete (10-2 native preview still backlog). |
 
 ## Review Findings (code-review 2026-06-27, range 737f52b..782170b)
 
