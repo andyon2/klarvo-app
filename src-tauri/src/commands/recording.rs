@@ -349,7 +349,6 @@ pub fn list_audio_devices() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AppConfig;
     use crate::test_helpers::{make_state, temp_dir};
 
     /// `is_offline_mode` returns `true` when `stt_provider` is "local".

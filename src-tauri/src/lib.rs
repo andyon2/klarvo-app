@@ -74,7 +74,7 @@ use std::sync::atomic::AtomicBool;
 use audio::AudioRecorder;
 use config::{load_config_reporting, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
-use license::{compute_cached_status, LicenseStatus};
+use license::compute_cached_status;
 use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
@@ -769,6 +769,7 @@ pub fn run() {
         // --- klarvo://bar-moved → native preview reposition (Story 10-2) ---
         #[cfg(target_os = "windows")]
         {
+            use tauri::Listener; // App::listen is provided by the Listener trait
             let handle_bm = app.handle().clone();
             app.listen("klarvo://bar-moved", move |event| {
                 // Payload: {"x": f64, "y": f64}
