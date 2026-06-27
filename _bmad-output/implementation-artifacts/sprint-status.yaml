@@ -139,6 +139,6 @@ development_status:
   # Epic 10 — Native Desktop Overlays [L3 architecture-migration; surface-class smoke DoD] — branch feat/native-desktop-overlays, supersedes ADR-0020
   epic-10: in-progress
   10-1-native-pill-overlay: done
-  10-2-native-preview-overlay: in-progress
+  10-2-native-preview-overlay: review
   10-3-native-pill-standby-resilience: done
   epic-10-retrospective: optional
