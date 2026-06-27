@@ -25,9 +25,11 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
 use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Shader, Stroke, Transform};
+use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------------------
@@ -235,7 +237,7 @@ impl NativePill {
         let lparam = if clipboard_only { 1isize } else { 0isize };
         unsafe {
             let _ = PostMessageW(
-                HWND(self.hwnd as *mut _),
+                Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_STATE,
                 WPARAM(code as usize),
                 LPARAM(lparam),
@@ -248,7 +250,7 @@ impl NativePill {
         let bits = level.to_bits() as usize;
         unsafe {
             let _ = PostMessageW(
-                HWND(self.hwnd as *mut _),
+                Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_RMS,
                 WPARAM(bits),
                 LPARAM(0),
@@ -262,7 +264,7 @@ impl NativePill {
         unsafe {
             // If PostMessage fails the box leaks (window may be gone) — acceptable.
             if PostMessageW(
-                HWND(self.hwnd as *mut _),
+                Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_MODE,
                 WPARAM(boxed as usize),
                 LPARAM(0),
@@ -286,7 +288,7 @@ impl Drop for NativePill {
         // triggers the real WM_DESTROY + WM_NCDESTROY teardown and frees state.
         unsafe {
             let _ = PostMessageW(
-                HWND(self.hwnd as *mut _),
+                Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SHUTDOWN,
                 WPARAM(0),
                 LPARAM(0),
@@ -384,7 +386,7 @@ unsafe fn create_dib(
     )
     .map_err(|e| format!("CreateDIBSection failed: {e}"))?;
 
-    SelectObject(dc, bmp);
+    SelectObject(dc, bmp.into());
     Ok((dc, bmp))
 }
 
@@ -394,10 +396,10 @@ unsafe fn create_font(name: PCWSTR, height_px: i32, weight: i32) -> HFONT {
         0, 0, 0,
         weight,
         0, 0, 0,
-        DEFAULT_CHARSET.0 as u32,
-        OUT_DEFAULT_PRECIS.0 as u32,
-        CLIP_DEFAULT_PRECIS.0 as u32,
-        ANTIALIASED_QUALITY.0 as u32,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        ANTIALIASED_QUALITY,
         (FF_DONTCARE.0 | VARIABLE_PITCH.0) as u32,
         name,
     )
@@ -591,11 +593,11 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
 
         // "K" in logo
         {
-            SelectObject(s.tmp_dc, s.font_k);
+            SelectObject(s.tmp_dc, s.font_k.into());
             let lx = (LOGO_X + 5.0) * sc;        // center ~horizontally
             let ly = (LOGO_Y + 5.0) * sc;
             let text = to_wide("K");
-            TextOutW(s.tmp_dc, lx as i32, ly as i32, PCWSTR(text.as_ptr()), 1);
+            TextOutW(s.tmp_dc, lx as i32, ly as i32, &text[..1]);
             composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 255, 255);
             // Clear tmp again
             core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
@@ -604,12 +606,12 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
         match s.display {
             NativePillState::Recording => {
                 // Mode badge at right side
-                SelectObject(s.tmp_dc, s.font_mode);
+                SelectObject(s.tmp_dc, s.font_mode.into());
                 let badge = mode_label(&s.hotkey_mode);
                 let text = to_wide(badge);
                 let tx = (PILL_W - PAD - 28.0) * sc;
                 let ty = ((PILL_H - 10.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, PCWSTR(text.as_ptr()), (text.len() - 1) as i32);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 128, 131, 133);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
@@ -621,42 +623,42 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
                     "Cleaning up..."
                 };
                 let (ar8, ag8, ab8) = accent_to_u8(s.display.accent());
-                SelectObject(s.tmp_dc, s.font_label);
+                SelectObject(s.tmp_dc, s.font_label.into());
                 let text = to_wide(label);
                 let tx = LABEL_X_AFTER_SPIN * sc;
                 let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, PCWSTR(text.as_ptr()), (text.len() - 1) as i32);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 170, 172, 173);
                 let _ = (ar8, ag8, ab8);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
 
             NativePillState::Done => {
-                SelectObject(s.tmp_dc, s.font_label);
+                SelectObject(s.tmp_dc, s.font_label.into());
                 let text = to_wide("Done");
                 let tx = LABEL_X_AFTER_SPIN * sc;
                 let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, PCWSTR(text.as_ptr()), (text.len() - 1) as i32);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 74, 222, 128);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
 
             NativePillState::DoneClipboard => {
-                SelectObject(s.tmp_dc, s.font_label_lg);
+                SelectObject(s.tmp_dc, s.font_label_lg.into());
                 let text = to_wide("In Clipboard");
                 let tx = LABEL_X_AFTER_SPIN * sc;
                 let ty = ((PILL_H - 12.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, PCWSTR(text.as_ptr()), (text.len() - 1) as i32);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 163, 68);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
 
             NativePillState::Error => {
-                SelectObject(s.tmp_dc, s.font_label);
+                SelectObject(s.tmp_dc, s.font_label.into());
                 let text = to_wide("Error");
                 let tx = LABEL_X_AFTER_SPIN * sc;
                 let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, PCWSTR(text.as_ptr()), (text.len() - 1) as i32);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 115, 105);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
@@ -865,14 +867,14 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
 
 unsafe fn start_timer(hwnd: HWND, s: &mut PillWindowState) {
     if !s.timer_active {
-        SetTimer(hwnd, TIMER_ANIMATE, TIMER_MS, None);
+        SetTimer(Some(hwnd), TIMER_ANIMATE, TIMER_MS, None);
         s.timer_active = true;
     }
 }
 
 unsafe fn stop_timer(hwnd: HWND, s: &mut PillWindowState) {
     if s.timer_active {
-        let _ = KillTimer(hwnd, TIMER_ANIMATE);
+        let _ = KillTimer(Some(hwnd), TIMER_ANIMATE);
         s.timer_active = false;
     }
 }
@@ -1024,7 +1026,7 @@ unsafe extern "system" fn pill_wnd_proc(
                 let new_y = drag.start_win_y + dy;
                 let _ = SetWindowPos(
                     hwnd,
-                    HWND_TOPMOST,
+                    Some(HWND_TOPMOST),
                     new_x,
                     new_y,
                     0,
@@ -1101,19 +1103,19 @@ unsafe extern "system" fn pill_wnd_proc(
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let s = Box::from_raw(state_ptr);
                 if s.timer_active {
-                    let _ = KillTimer(hwnd, TIMER_ANIMATE);
+                    let _ = KillTimer(Some(hwnd), TIMER_ANIMATE);
                 }
                 // Fonts are never selected into a DC — safe to delete directly.
-                DeleteObject(s.font_k);
-                DeleteObject(s.font_label);
-                DeleteObject(s.font_mode);
-                DeleteObject(s.font_label_lg);
+                DeleteObject(s.font_k.into());
+                DeleteObject(s.font_label.into());
+                DeleteObject(s.font_mode.into());
+                DeleteObject(s.font_label_lg.into());
                 // Delete the DCs first; once a DC is destroyed the DIB section
                 // it owned is no longer "selected" and can be safely freed.
                 DeleteDC(s.main_dc);
-                DeleteObject(s.main_bmp);
+                DeleteObject(s.main_bmp.into());
                 DeleteDC(s.tmp_dc);
-                DeleteObject(s.tmp_bmp);
+                DeleteObject(s.tmp_bmp.into());
             }
             PostQuitMessage(0);
             LRESULT(0)
@@ -1158,7 +1160,7 @@ fn pill_thread(
     unsafe {
         // --- Determine DPI and physical dimensions ---
         let screen_dc = GetDC(None);
-        let dpi = GetDeviceCaps(screen_dc, LOGPIXELSX);
+        let dpi = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
         ReleaseDC(None, screen_dc);
         let scale = dpi as f64 / 96.0;
         let phys_w = (PILL_W as f64 * scale) as i32;
@@ -1178,7 +1180,7 @@ fn pill_thread(
         let (tmp_dc, tmp_bmp) = match create_dib(phys_w, phys_h, &mut tmp_bits) {
             Ok(v) => v,
             Err(e) => {
-                DeleteObject(main_bmp); DeleteDC(main_dc);
+                DeleteObject(main_bmp.into()); DeleteDC(main_dc);
                 let _ = tx.send(Err(e)); return;
             }
         };
@@ -1196,8 +1198,8 @@ fn pill_thread(
         let hinstance = match GetModuleHandleW(PCWSTR::null()) {
             Ok(h) => h,
             Err(e) => {
-                DeleteObject(main_bmp); DeleteDC(main_dc);
-                DeleteObject(tmp_bmp); DeleteDC(tmp_dc);
+                DeleteObject(main_bmp.into()); DeleteDC(main_dc);
+                DeleteObject(tmp_bmp.into()); DeleteDC(tmp_dc);
                 let _ = tx.send(Err(format!("GetModuleHandleW: {e}")));
                 return;
             }
