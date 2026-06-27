@@ -633,6 +633,36 @@ pub async fn start_recording_only(handle: AppHandle) {
                 "[native_pill] recreate at recording start failed, keeping existing pill: {e}"
             ),
         }
+
+        // Native preview: recreate alongside the pill (same standby-resilience pattern,
+        // Story 10-2). Only instantiate when live_preview_enabled; if disabled we hold
+        // None and all set_state/append_chunk calls are no-ops.
+        let (preview_enabled, px, py) = state
+            .config
+            .lock()
+            .ok()
+            .map(|c| (c.live_preview_enabled, c.bar_x, c.bar_y))
+            .unwrap_or((false, None, None));
+        if preview_enabled {
+            let pcfg = state
+                .config
+                .lock()
+                .ok()
+                .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
+                .unwrap_or_default();
+            match crate::native_preview::NativePreview::create(px, py, pcfg) {
+                Ok(preview) => {
+                    if let Ok(mut g) = state.native_preview.lock() {
+                        *g = Some(preview);
+                    }
+                }
+                Err(e) => log::error!(
+                    "[native_preview] recreate at recording start failed: {e}"
+                ),
+            }
+        } else if let Ok(mut g) = state.native_preview.lock() {
+            *g = None; // drop any previous preview window
+        }
     }
 
     crate::emit_pipeline_state(&handle, PipelineEvent::recording());
@@ -1984,8 +2014,15 @@ async fn flush_preview_delta(handle: AppHandle) {
     match stt_prov.transcribe(wav_bytes, &language, None).await {
         Ok(text) if !text.is_empty() => {
             // Emit the raw segment text as an append payload (NFR4 — colon form).
-            if let Err(e) = handle.emit("klarvo://live-preview-chunk", text) {
+            if let Err(e) = handle.emit("klarvo://live-preview-chunk", text.clone()) {
                 log::warn!("[preview] flush_preview_delta: failed to emit chunk event: {e}");
+            }
+            // Feed native preview in-process (Story 10-2 / ADR-0021 §4).
+            #[cfg(target_os = "windows")]
+            if let Ok(guard) = handle.state::<AppState>().native_preview.lock() {
+                if let Some(preview) = guard.as_ref() {
+                    preview.append_chunk(Box::new(text));
+                }
             }
         }
         Ok(_) => {

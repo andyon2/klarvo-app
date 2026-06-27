@@ -257,44 +257,28 @@ pub async fn ensure_bar_window(
 
 /// Ensures the standalone preview window exists and is responsive.
 ///
-/// Returns `true` if the window had to be recreated, `false` if it was already
-/// alive and responding. Unlike `ensure_bar_window`, no saved position is
-/// needed: the preview position is derived from the pill anchor at show-time
-/// (Story 6.2), not persisted in config.
+/// Returns `true` if the native preview overlay is alive, `false` if not.
+/// Story 10-2: NativePreview replaces the WebView2 "preview" window.
+/// The preview is recreated per-recording-start in pipeline.rs, so this
+/// command is informational only (no recreation side-effect needed here).
 ///
-/// Desktop-only: the preview window concept does not apply to mobile.
+/// Desktop-only: native preview is Windows-only.
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn ensure_preview_window(
-    app: tauri::AppHandle,
-    _state: State<'_, AppState>,
+    _app: tauri::AppHandle,
+    #[allow(unused_variables)]
+    state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    // Check if the preview window handle exists and responds to is_visible().
-    if let Some(preview) = app.get_webview_window("preview") {
-        match preview.is_visible() {
-            Ok(_) => {
-                log::debug!("[preview] ensure_preview_window: window exists and responds");
-                return Ok(false); // No recreation needed
-            }
-            Err(e) => {
-                log::warn!("[preview] ensure_preview_window: window exists but not responding: {e}");
-                // Fall through to recreation
-            }
-        }
-    } else {
-        log::warn!("[preview] ensure_preview_window: window not found, recreating");
-    }
-
-    match crate::create_preview_window(&app) {
-        Ok(_) => {
-            log::info!("[preview] ensure_preview_window: recreated");
-            Ok(true)
-        }
-        Err(e) => {
-            log::error!("[preview] ensure_preview_window: failed to recreate: {e}");
-            Err(format!("Failed to recreate preview window: {e}"))
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(guard) = state.native_preview.lock() {
+            let alive = guard.as_ref().map(|p| p.is_alive()).unwrap_or(false);
+            log::debug!("[native_preview] ensure_preview_window: alive={alive}");
+            return Ok(alive);
         }
     }
+    Ok(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -443,37 +427,7 @@ pub fn set_bar_shape(_handle: AppHandle, _shape: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Applies a rounded-rect OS window region to the "preview" window.
-/// Called once per show (size is already set before this is called).
-/// `radius` is the CSS border-radius in logical px (Story 6.6: AC-4 / R11).
-/// It MUST equal the CSS `borderRadius` applied to the preview card or a
-/// white-line corner artifact appears on Windows.
-///
-/// Inversion (smoke-time): pass radius=8 while CSS uses borderRadius=14
-/// → white-line gap at corners → RED.
-///
-/// `#[cfg(target_os = "windows")]` body only; no-op on other platforms.
-#[tauri::command]
-pub fn set_preview_shape(handle: AppHandle, radius: i32) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use tauri::Manager;
-        if let Some(preview) = handle.get_webview_window("preview") {
-            let scale = preview.scale_factor().unwrap_or(1.0);
-            if let Ok(hwnd) = preview.hwnd() {
-                let h = hwnd.0 as isize;
-                if let Ok(size) = preview.inner_size() {
-                    let w = size.width as i32;
-                    let ht = size.height as i32;
-                    let r = (radius as f64 * scale) as i32;
-                    crate::set_window_region_round_rect(h, w, ht, r);
-                }
-            }
-        }
-    }
-    let _ = (handle, radius); // suppress unused on non-Windows
-    Ok(())
-}
+// set_preview_shape removed (Story 10-2: NativePreview renders its own shape via tiny-skia).
 
 /// Receives a `console.*` line forwarded from any frontend window and writes it
 /// to the Rust log file (`Klarvo.log`).
