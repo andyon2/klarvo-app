@@ -390,6 +390,21 @@ unsafe fn create_dib(
     Ok((dc, bmp))
 }
 
+/// Register an in-memory font file (.ttf) with this process's GDI font table.
+/// The font lives for the process lifetime (not removed — app-wide UI font).
+unsafe fn load_embedded_font(bytes: &'static [u8]) {
+    let mut num_fonts: u32 = 0;
+    let h = AddFontMemResourceEx(
+        bytes.as_ptr() as *const core::ffi::c_void,
+        bytes.len() as u32,
+        None,
+        &mut num_fonts as *mut u32 as *const u32,
+    );
+    if h.is_invalid() {
+        log::warn!("[native_pill] AddFontMemResourceEx failed — falling back to default font");
+    }
+}
+
 unsafe fn create_font(name: PCWSTR, height_px: i32, weight: i32) -> HFONT {
     CreateFontW(
         -height_px, // negative = character height
@@ -608,9 +623,13 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
         // "K" in logo
         {
             SelectObject(s.tmp_dc, s.font_k.into());
-            let lx = (LOGO_X + 5.0) * sc;        // center ~horizontally
-            let ly = (LOGO_Y + 5.0) * sc;
             let text = to_wide("K");
+            // Center the glyph in the 24×24 logo box from its measured extent
+            // (SOLL uses flex center; a fixed offset drifts per font/DPI).
+            let mut ksz = SIZE { cx: 0, cy: 0 };
+            let _ = GetTextExtentPoint32W(s.tmp_dc, &text[..1], &mut ksz);
+            let lx = (LOGO_X * sc) + ((LOGO_SIZE * sc) - ksz.cx as f32) / 2.0;
+            let ly = (LOGO_Y * sc) + ((LOGO_SIZE * sc) - ksz.cy as f32) / 2.0;
             TextOutW(s.tmp_dc, lx as i32, ly as i32, &text[..1]);
             composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 255, 255);
             // Clear tmp again
@@ -1230,14 +1249,27 @@ fn pill_thread(
             }
         };
 
+        // Load the bundled Geist font (the app's UI typeface) into this process's
+        // GDI font table so the native pill matches the WebView2 SOLL 1:1 — the
+        // .woff2 the web UI uses can't be loaded by GDI, so equivalent .ttf files
+        // (derived from the same source) are embedded and registered from memory.
+        // GDI family mapping: Regular(400) + Bold(700) register under "Geist";
+        // SemiBold registers as its own family "Geist SemiBold".
+        load_embedded_font(include_bytes!("../fonts/Geist-Regular.ttf"));
+        load_embedded_font(include_bytes!("../fonts/Geist-Bold.ttf"));
+        load_embedded_font(include_bytes!("../fonts/Geist-SemiBold.ttf"));
+
         // Fonts (scale font height with DPI)
-        let seg_ui: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
-        let seg_ui_ptr = PCWSTR(seg_ui.as_ptr());
+        let geist: Vec<u16> = "Geist\0".encode_utf16().collect();
+        let geist_ptr = PCWSTR(geist.as_ptr());
+        let geist_sb: Vec<u16> = "Geist SemiBold\0".encode_utf16().collect();
+        let geist_sb_ptr = PCWSTR(geist_sb.as_ptr());
         let fh = |logical: i32| -> i32 { (logical as f64 * scale) as i32 };
-        let font_k = create_font(seg_ui_ptr, fh(14), FW_BOLD.0 as i32);
-        let font_label = create_font(seg_ui_ptr, fh(11), FW_NORMAL.0 as i32);
-        let font_mode = create_font(seg_ui_ptr, fh(10), FW_NORMAL.0 as i32);
-        let font_label_lg = create_font(seg_ui_ptr, fh(12), FW_SEMIBOLD.0 as i32);
+        let font_k = create_font(geist_ptr, fh(14), FW_BOLD.0 as i32);
+        let font_label = create_font(geist_ptr, fh(11), FW_NORMAL.0 as i32);
+        let font_mode = create_font(geist_ptr, fh(10), FW_NORMAL.0 as i32);
+        // "Geist SemiBold" is its own GDI family (weight 600 lives there, not under "Geist").
+        let font_label_lg = create_font(geist_sb_ptr, fh(12), FW_NORMAL.0 as i32);
 
         // --- Register window class ---
         let hinstance = match GetModuleHandleW(PCWSTR::null()) {
