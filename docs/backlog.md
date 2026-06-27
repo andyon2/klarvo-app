@@ -70,5 +70,21 @@ Source: `sprint-change-proposal-2026-06-12.md` + ADR-0017 (shared-core STT path)
   `activate()` gate is live. Source: `project_v1_feature_roadmap` memory, `deferred-work.md`.
 - Live-key acceptance in a release build is unverified (needs a real purchase) — close at real launch.
 
+## Epic 10 — Native Desktop Overlays — Story 10-1 residuals (deferred)
+
+Source: `10-1-native-pill-overlay.md` Change Log + `gate4-evidence/10-1/verdict.md`. Story 10-1 DONE
+(Andi gate passed 2026-06-27); these are accepted residuals, not blockers.
+
+- **Visual polish (low):** 1px state-colored stadium border not drawn on the native pill (SOLL has a
+  subtle per-state border ring); the `done(clipboard-only)` state renders a simplified amber clipboard
+  square instead of the 📋 glyph. Both below Andi's smoke threshold.
+- **Show/hide animations:** SOLL bar-expand (220ms) / collapse (180ms) / done-pop (280ms) easing not
+  reproduced in the native pill (state changes are instant). Cosmetic; revisit only if it grates.
+- **Robustness (low):** no per-monitor DPI handling (`WM_DPICHANGED`); off-screen drag not clamped to a
+  visible monitor; window class registered per-create (not once); `save_config_locked` lock-poison path
+  vs not-alive not distinguished; recreate-mid-recording doesn't replay current state.
+- **Harness rigor:** `desktop-occlusion-proof.ps1` asserts content pixels `> 0` rather than AC-5's
+  "≈100% of region"; one dead `$EvidenceDir` path typo to clean up.
+
 > Older per-feature deferrals tracked in `_bmad-output/implementation-artifacts/deferred-work.md` remain
 > valid; migrate them here opportunistically.
