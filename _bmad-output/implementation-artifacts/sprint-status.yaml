@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-28
+last_updated: 2026-06-29
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -141,5 +141,5 @@ development_status:
   10-1-native-pill-overlay: done
   10-2-native-preview-overlay: done
   10-3-native-pill-standby-resilience: done
-  10-4-native-overlay-dpi-scaling-and-appearance-wiring: ready-for-dev
+  10-4-native-overlay-dpi-scaling-and-appearance-wiring: review
   epic-10-retrospective: optional

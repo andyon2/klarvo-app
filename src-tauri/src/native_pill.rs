@@ -29,6 +29,7 @@ use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -1254,11 +1255,50 @@ fn pill_thread(
     tx: mpsc::Sender<Result<isize, String>>,
 ) {
     unsafe {
-        // --- Determine DPI and physical dimensions ---
-        let screen_dc = GetDC(None);
-        let dpi = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
-        ReleaseDC(None, screen_dc);
-        let scale = dpi as f64 / 96.0;
+        // --- Determine DPI via the monitor at the expected window position ---
+        // SPI_GETWORKAREA returns physical-pixel coordinates regardless of DPI awareness.
+        // Under per-monitor-v2 (Tauri's embedded manifest), GetDeviceCaps(desktop_dc, LOGPIXELSX)
+        // always returns 96 → scale=1.0, wrong on high-DPI monitors. Correct: GetDpiForMonitor.
+        let mut work_area = RECT::default();
+        let _ = SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(&raw mut work_area as *mut _),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+        // Candidate point for monitor selection:
+        // - saved_x/saved_y are logical px; under the previously broken scale=1.0 they equal
+        //   physical px, so they select the correct monitor in the common case.
+        // - Default: center-bottom of work area (physical coords from SPI_GETWORKAREA).
+        let candidate_pt = match (saved_x, saved_y) {
+            (Some(lx), Some(ly)) => POINT { x: lx as i32, y: ly as i32 },
+            _ => POINT {
+                x: work_area.left + (work_area.right - work_area.left) / 2,
+                y: work_area.bottom.saturating_sub(5),
+            },
+        };
+        let hmon = MonitorFromPoint(candidate_pt, MONITOR_DEFAULTTONEAREST);
+        let mut dpi_x = 0u32;
+        let mut dpi_y = 0u32;
+        let scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+            let screen_dc = GetDC(None);
+            let legacy = GetDeviceCaps(Some(screen_dc), LOGPIXELSX) as u32;
+            ReleaseDC(None, screen_dc);
+            log::info!(
+                "[native_pill] DPI: GetDpiForMonitor={dpi_x} GetDeviceCaps(legacy)={legacy} \
+                 scale_real={:.3} scale_was={:.3}",
+                dpi_x as f64 / 96.0,
+                legacy as f64 / 96.0
+            );
+            dpi_x as f64 / 96.0
+        } else {
+            log::warn!("[native_pill] GetDpiForMonitor failed — falling back to GetDeviceCaps");
+            let screen_dc = GetDC(None);
+            let d = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
+            ReleaseDC(None, screen_dc);
+            d as f64 / 96.0
+        };
+        // phys_w, phys_h, compute_initial_pos follow unchanged — they already use `scale`
         let phys_w = (PILL_W as f64 * scale) as i32;
         let phys_h = (PILL_H as f64 * scale) as i32;
 

@@ -1,6 +1,6 @@
 # Story 10.4: Native Overlay DPI Scaling + Appearance-Wiring Audit
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -87,41 +87,41 @@ And `cargo check --target x86_64-pc-windows-gnu` is green
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `Win32_UI_HiDpi` feature to Cargo.toml (AC: 2)
-  - [ ] In `src-tauri/Cargo.toml` under `[target.'cfg(windows)'.dependencies]` → `windows = { ...,
+- [x] Task 1: Add `Win32_UI_HiDpi` feature to Cargo.toml (AC: 2)
+  - [x] In `src-tauri/Cargo.toml` under `[target.'cfg(windows)'.dependencies]` → `windows = { ...,
     features = [...] }`, append `"Win32_UI_HiDpi"` to the features list (alongside the existing
     Win32_UI_WindowsAndMessaging, Win32_Graphics_Gdi, etc.)
 
-- [ ] Task 2: Fix DPI scale in `native_pill.rs` (AC: 1, 2)
-  - [ ] Replace lines 1257–1261 (the `GetDC` / `GetDeviceCaps` / `ReleaseDC` / `scale` block) with
+- [x] Task 2: Fix DPI scale in `native_pill.rs` (AC: 1, 2)
+  - [x] Replace lines 1257–1261 (the `GetDC` / `GetDeviceCaps` / `ReleaseDC` / `scale` block) with
     the `MonitorFromPoint` + `GetDpiForMonitor` approach (see Dev Notes for exact pattern)
-  - [ ] Add `use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};` import
-  - [ ] Keep `MonitorFromPoint` and `MONITOR_DEFAULTTONEAREST` — they are already available via the
+  - [x] Add `use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};` import
+  - [x] Keep `MonitorFromPoint` and `MONITOR_DEFAULTTONEAREST` — they are already available via the
     existing `use windows::Win32::Graphics::Gdi::*;` wildcard import
-  - [ ] Include the AC-1 log line in the `Ok` branch before the fallback path
+  - [x] Include the AC-1 log line in the `Ok` branch before the fallback path
 
-- [ ] Task 3: Fix DPI scale in `native_preview.rs` (AC: 1, 2)
-  - [ ] Replace lines 940–944 (same `GetDC` / `GetDeviceCaps` block) with the same
+- [x] Task 3: Fix DPI scale in `native_preview.rs` (AC: 1, 2)
+  - [x] Replace lines 940–944 (same `GetDC` / `GetDeviceCaps` block) with the same
     `MonitorFromPoint` + `GetDpiForMonitor` approach
-  - [ ] Use `pill_x` / `pill_y` (the logical coordinates passed to `preview_thread`) as the
+  - [x] Use `pill_x` / `pill_y` (the logical coordinates passed to `preview_thread`) as the
     candidate point when available; fall back to center of work area
-  - [ ] Same imports as Task 2
-  - [ ] Same AC-1 log line
+  - [x] Same imports as Task 2
+  - [x] Same AC-1 log line
 
-- [ ] Task 4: Verify appearance-settings end-to-end (AC: 3, 4)
-  - [ ] Read `native_preview.rs:91–143` (`PreviewConfig::from_app_config`) and confirm all 8
+- [x] Task 4: Verify appearance-settings end-to-end (AC: 3, 4)
+  - [x] Read `native_preview.rs:91–143` (`PreviewConfig::from_app_config`) and confirm all 8
     appearance fields (bg/text/border color, border width/radius, font family, font size, panel form)
     are correctly mapped — no code change expected, this is a read-and-confirm step
-  - [ ] Read the save chain (`settings.rs:merge_settings`, `useSettings.ts:handleSaveSettings`,
+  - [x] Read the save chain (`settings.rs:merge_settings`, `useSettings.ts:handleSaveSettings`,
     `SettingsPanel.tsx:onSave`) and confirm no hop drops an appearance field (trap #6 precedent)
-  - [ ] Note: the chain was verified in this story's create-story pass — all three hops correctly
+  - [x] Note: the chain was verified in this story's create-story pass — all three hops correctly
     forward all appearance fields (see Dev Notes). Smoke-verify on real Windows; only change code if
     the smoke reveals a gap
 
-- [ ] Task 5: compile-verify and DoD checks (AC: 5)
-  - [ ] `cargo check --target x86_64-pc-windows-gnu` (use the 10-1/10-3 recipe:
-    `gate4-evidence/10-1/win32-surface-check.md`)
-  - [ ] Linux `cargo test` green (no functional logic changed)
+- [x] Task 5: compile-verify and DoD checks (AC: 5)
+  - [x] `cargo check --target x86_64-pc-windows-gnu` (use the 10-1/10-3 recipe:
+    `gate4-evidence/10-1/win32-surface-check.md`) — scratch harness: 0 errors, 55 pre-existing warnings
+  - [x] Linux `cargo test` green (no functional logic changed) — 630 passed, 0 failed
   - [ ] Build real Windows release via `scripts/sync-and-build.ps1`
   - [ ] Andi smoke on real Windows (AC-1 log + AC-2 absolute size + AC-3 appearance settings +
     AC-4 preset legibility + AC-5 no regression)
@@ -353,6 +353,7 @@ reveals — not WSL-certifiable.
 | Date | Change |
 |---|---|
 | 2026-06-28 | Story authored from Andi real-device smoke (post-10-2) + read-only diagnosis in `docs/backlog.md`. DPI root-cause identified but not yet verified on Windows (leading hypothesis). |
+| 2026-06-29 | DPI fix implemented in native_pill.rs + native_preview.rs (GetDpiForMonitor replaces GetDeviceCaps). Win32_UI_HiDpi feature added to Cargo.toml. Appearance chain read-and-confirmed (no code gaps). Win32 cross-compile: 0 errors. Linux tests: 630/0. GATE-4 Windows smoke pending Andi's real device. |
 
 ## Dev Agent Record
 
@@ -362,6 +363,19 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+- Win32 surface compile: scratch harness at scratchpad/win32-check-10-4/, 0 errors, 55 pre-existing `#[must_use]` BOOL/Result warnings (same class as 10-1/10-2/10-3). Features: `windows = "0.61"` + `Win32_UI_HiDpi` added.
+- Linux `cargo test --lib`: 630 passed, 0 failed.
+
 ### Completion Notes List
 
+- Task 1: Added `"Win32_UI_HiDpi"` to `src-tauri/Cargo.toml` windows features (pinned version 0.61 unchanged).
+- Task 2: `native_pill.rs` — replaced 4-line `GetDeviceCaps` DPI block (lines 1257–1261) with a 35-line `MonitorFromPoint`+`GetDpiForMonitor` block per Dev Notes exact pattern. Candidate point from saved_x/saved_y or center-bottom of SPI_GETWORKAREA. AC-1 log line in Ok branch compares `GetDeviceCaps(legacy)` vs `GetDpiForMonitor(real)` values. Import added: `use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}`.
+- Task 3: `native_preview.rs` — symmetric fix replacing 4+8 lines (DPI block + separate work_area block) with combined 35-line block. Reuses `work_area` struct (eliminates redundant `SystemParametersInfoW` call). Candidate point from pill_x/pill_y. Same AC-1 log line. Same import.
+- Task 4: Appearance chain read-and-confirmed — all 8 fields (bg/text/border color, border width/radius, font family, font size, panel form) correctly wired through SettingsPanel.tsx:527–547 → useSettings.ts:88–113 → settings.rs:SettingsPatch/merge_settings → PreviewConfig::from_app_config:91–143 → renderer. No code gap found, chain is intact.
+- Task 5: Machine gates green (cross-compile 0 errors, Linux tests 630/0). GATE-4 Windows smoke (AC-1 log verification + AC-2 size + AC-3 appearance + AC-4 presets + AC-5 no regression) is Andi's real-device gate — requires Windows build via sync-and-build.ps1.
+
 ### File List
+
+- `src-tauri/Cargo.toml` — added `"Win32_UI_HiDpi"` to windows features
+- `src-tauri/src/native_pill.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added
+- `src-tauri/src/native_preview.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added; redundant SPI_GETWORKAREA call eliminated
