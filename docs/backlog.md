@@ -123,3 +123,36 @@ slider in place (silent no-op) for now** — removing it would pull 10-2 into th
 Settings surface (scope creep), and VR3 notes real blur could return as a follow-up, in which case
 the slider regains meaning. If the no-op slider proves confusing, a small follow-up either (a) hides
 it while blur is dropped, or (b) re-implements blur natively. Not a 10-2 blocker.
+
+## Epic 10 — Native-Overlay-Skalierung zu klein + Appearance-Wiring-Audit (EIGENE STORY — Andi 2026-06-28)
+
+Source: Andi Real-Device-Smoke nach Story 10-2 (native Preview). **Andis Befund:** Seit dem nativen
+Umbau (Epic 10: Pille 10-1/10-3 + Preview 10-2) ist **alles kleiner** als bei den alten WebView2-
+Overlays — **beide** Overlays: Preview-Karte UND Pille (Logo + roter Abbrechen-Button zu klein). Die
+**Schriftgrößen-Settings wirken viel schwächer**: „large" schon mega klein, „medium" viel zu klein,
+„small" ultra klein. Niemand hat die absolute Skalierung beim nativen Umbau geprüft. **Andi will das
+NICHT als Quick-Fix, sondern als eigene, harte Story** — inkl. der Frage: ist die Settings-Appearance-
+Rubrik überhaupt korrekt mit der Preview verschaltet?
+
+**Read-only-Diagnose (2026-06-28, Conductor — NICHT gefixt):**
+- **Settings→Preview-Wiring ist korrekt verschaltet.** `previewFontSize` → `font_px` Mapping ist
+  identisch zum alten `PreviewPanel.tsx`: small=11 / medium=13 / large=15 (`native_preview.rs:94-97`).
+  Die Settings erreichen den Renderer. Das ist NICHT der Defekt.
+- **Leitende Hypothese (NICHT auf Windows verifiziert): falsche DPI-Skala — betrifft BEIDE Overlays
+  über denselben Mechanismus.** Pille (`native_pill.rs:1259`) und Preview (`native_preview.rs:942`)
+  berechnen `scale = GetDeviceCaps(screen_dc, LOGPIXELSX) / 96`. Unter Per-Monitor-DPI-Awareness
+  (tao/Tauri setzt per-monitor-v2 im embedded Manifest) liefert `GetDeviceCaps(screen_dc, LOGPIXELSX)`
+  typisch **96** zurück (nicht die echte Monitor-DPI) → `scale = 1.0`, egal ob der Monitor auf 125/150 %
+  steht. Die alten WebView2-Fenster waren via Tauri korrekt DPI-skaliert (rendern bei echten 150 %).
+  Ergebnis: native Overlays rendern ~1.0× statt ~1.5× → **uniform zu klein, Pille + Preview**, und die
+  11/13/15-Stufen wirken bei 1.0× klein + ihre Abstände gestaucht („Settings wirken schwächer").
+  Korrekte API wäre `GetDpiForWindow(hwnd)` / `GetDpiForMonitor` statt `GetDeviceCaps(screen_dc)`.
+  **Zu verifizieren in der Story** (z. B. echte scale am Gerät loggen).
+
+**Story-Scope (Vorschlag):** (1) Root-Cause der absoluten Skala bestätigen (echte DPI am Gerät
+loggen — `GetDeviceCaps` vs `GetDpiForWindow`); (2) Skala für BEIDE nativen Overlays korrigieren, sodass
+sie 1:1 zur alten WebView2-Größe rendern (Andi-Referenz: „vorher war alles größer"); (3) Appearance-
+Settings end-to-end gegen die Preview prüfen (alle `previewXxx` + Größen-/Breiten-Presets sichtbar
+wirksam); (4) Größen-Presets so kalibrieren, dass small/medium/large spürbar unterschiedlich sind.
+Querbezug: die bereits gelistete „Native-Pille-Hover/Fidelity"-Story oben — Skalierung kann dort
+mit reinspielen (gemeinsamer Pass erwägen). Maßstabs-Referenz = alte WebView2-Optik (git vor Epic 10).
