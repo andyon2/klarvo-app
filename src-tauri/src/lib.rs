@@ -701,9 +701,10 @@ pub fn run() {
         // Apply autostart on launch: ensure registry entry matches config.
         commands::settings::apply_autostart(cfg.autostart);
 
-        // Extract bar position before `cfg` is moved into AppState.
+        // Extract bar position and overlay scale before `cfg` is moved into AppState.
         let _saved_bar_x = cfg.bar_x;
         let _saved_bar_y = cfg.bar_y;
+        let _overlay_scale = cfg.overlay_scale;
 
         // Build and register the application state.
         let app_state = AppState::new(cfg, dictionary, app_data_dir, history_db);
@@ -752,7 +753,7 @@ pub fn run() {
         // --- Native pill overlay (replaces WebView2 "bar" window, Story 10-1) ---
         #[cfg(target_os = "windows")]
         {
-            match native_pill::NativePill::create(app.handle().clone(), _saved_bar_x, _saved_bar_y) {
+            match native_pill::NativePill::create(app.handle().clone(), _saved_bar_x, _saved_bar_y, _overlay_scale) {
                 Ok(pill) => {
                     if let Ok(mut guard) = app.state::<AppState>().native_pill.lock() {
                         *guard = Some(pill);

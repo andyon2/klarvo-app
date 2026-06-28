@@ -785,6 +785,14 @@ pub struct AppConfig {
     #[serde(default)]
     pub bar_y: Option<f64>,
 
+    /// Uniform scale factor applied to BOTH native overlays (pill + preview) on
+    /// top of the per-monitor DPI scale. At 1.0 (default) the overlays are
+    /// pixel-identical to the designed size. Set to e.g. 1.3 in config.json
+    /// to make both overlays ~30 % larger; restart the app to apply.
+    /// camelCase JSON key = "overlayScale".
+    #[serde(default = "default_overlay_scale")]
+    pub overlay_scale: f64,
+
     /// Recording mode for the Android floating bubble.
     ///
     /// Valid values: `"hold"`, `"toggle"`, `"autostop"`, `"auto"`.
@@ -1008,6 +1016,10 @@ fn default_preview_font_size() -> String {
     "small".to_string()
 }
 
+fn default_overlay_scale() -> f64 {
+    1.0
+}
+
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
 }
@@ -1083,6 +1095,7 @@ impl Default for AppConfig {
             preview_font_size: default_preview_font_size(),
             bar_x: None,
             bar_y: None,
+            overlay_scale: default_overlay_scale(),
             bubble_recording_mode: default_bubble_recording_mode(),
             bubble_tap_mode: default_bubble_tap_mode(),
             bubble_tap_auto_send: false,
@@ -2137,6 +2150,7 @@ mod tests {
             preview_font_size: default_preview_font_size(),
             bar_x: Some(123.5),
             bar_y: Some(456.0),
+            overlay_scale: 1.0,
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),
             bubble_tap_auto_send: true,
@@ -3438,6 +3452,7 @@ mod tests {
             preview_font_size: default_preview_font_size(),
             bar_x: Some(200.0),
             bar_y: Some(800.0),
+            overlay_scale: 1.3,
 
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),

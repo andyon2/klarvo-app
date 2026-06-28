@@ -1,6 +1,6 @@
 # Story 10.4: Native Overlay DPI Scaling + Appearance-Wiring Audit
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -158,12 +158,12 @@ knob, documented in the smoke note
   - [ ] Andi smoke on real Windows (AC-1 log + AC-2 absolute size + AC-3 appearance settings +
     AC-4 preset legibility + AC-5 no regression)
 
-- [ ] Task 6: User-tunable overlay size factor (AC: 6) — the re-scoped real work
-  - [ ] `src-tauri/src/config/mod.rs`: add field `overlay_scale: f64` to `AppConfig` with
+- [x] Task 6: User-tunable overlay size factor (AC: 6) — the re-scoped real work
+  - [x] `src-tauri/src/config/mod.rs`: add field `overlay_scale: f64` to `AppConfig` with
     `#[serde(default = "default_overlay_scale")]` (serde `rename_all = "camelCase"` → JSON key
     `overlayScale`); add `fn default_overlay_scale() -> f64 { 1.0 }`. Mirror the existing `bar_x`/
     appearance-field pattern.
-  - [ ] `src-tauri/src/native_pill.rs`: thread the factor into `pill_thread`. Add an `overlay_scale: f64`
+  - [x] `src-tauri/src/native_pill.rs`: thread the factor into `pill_thread`. Add an `overlay_scale: f64`
     parameter to `NativePill::create` + `pill_thread`. After the DPI block computes the dpi `scale`,
     set the render scale: `let scale = dpi_scale * overlay_scale;` (rename the existing post-DPI
     `scale` binding to `dpi_scale`, then derive `scale` once). Everything downstream
@@ -171,13 +171,13 @@ knob, documented in the smoke note
     the WM_LBUTTONUP persist `win_x / s.scale`) keeps using `scale` unchanged — coupled model, so the
     saved position round-trips for any fixed factor. Do NOT decouple position; the one-drag re-settle
     is acceptable (AC-6).
-  - [ ] `src-tauri/src/lib.rs` (~705-755): read `cfg.overlay_scale` next to `cfg.bar_x`/`bar_y` and
+  - [x] `src-tauri/src/lib.rs` (~705-755): read `cfg.overlay_scale` next to `cfg.bar_x`/`bar_y` and
     pass it to `NativePill::create(...)`.
-  - [ ] `src-tauri/src/native_preview.rs`: add `overlay_scale: f64` to `PreviewConfig`; in
+  - [x] `src-tauri/src/native_preview.rs`: add `overlay_scale: f64` to `PreviewConfig`; in
     `from_app_config` set `overlay_scale: cfg.overlay_scale`. In `preview_thread`, after the DPI block,
     `let scale = dpi_scale * config.overlay_scale;` (same rename-to-`dpi_scale` pattern). All preview
     dimensions/fonts already derive from `scale` → uniform enlargement, position round-trips.
-  - [ ] Verify: `cargo check --target x86_64-pc-windows-gnu` green; Linux `cargo test` green. At
+  - [x] Verify: `cargo check --target x86_64-pc-windows-gnu` green; Linux `cargo test` green. At
     `overlayScale=1.0` the render must be byte-identical to before (the multiply is ×1.0).
 
 ## Dev Notes
@@ -410,6 +410,7 @@ reveals — not WSL-certifiable.
 | 2026-06-29 | DPI fix implemented in native_pill.rs + native_preview.rs (GetDpiForMonitor replaces GetDeviceCaps). Win32_UI_HiDpi feature added to Cargo.toml. Appearance chain read-and-confirmed (no code gaps). Win32 cross-compile: 0 errors. Linux tests: 630/0. GATE-4 Windows smoke pending Andi's real device. |
 | 2026-06-28 | GATE-4 smoke FAILED → hypothesis REFUTED. Andi's AC-1 log: `GetDeviceCaps=120 GetDpiForMonitor=120 scale_was=scale_real=1.25` — no scale=1.0 bug existed; DPI fix was a no-op. Conductor measured pill = 249 px (= designed 250 px) from full-width screenshot → renders 1:1 with old WebView2, no virtualization. "Too small" = designed-small, not a bug. Re-scoped: DPI fix + clamp kept (harmless); real work = AC-6 user-tunable `overlayScale` factor (Andi chose self-tunable knob, 2026-06-28). Status → in-progress. |
 | 2026-06-28 | Code-review (3 adversarial reviewers) CLEAN. One confirmed AC-5 finding fixed (795d5b3): `compute_initial_pos` now clamps the scaled saved pill position to the work area — guards a stale pre-DPI-fix coordinate from placing the pill off-screen (also closes backlog robustness gap "off-screen drag not clamped"). Preview already clamps. Multi-monitor mixed-DPI findings (monitor-selection coord-space, primary-only work_area) deferred to backlog — N/A on Andi's single-monitor setup. Status held at `review` pending Andi's real-machine GATE-4 smoke. Evidence: gate4-evidence/10-4/. |
+| 2026-06-29 | Task 6 (AC-6) implemented: overlayScale user-tunable factor added to AppConfig (default 1.0, camelCase JSON key); threaded through NativePill::create + pill_thread (dpi_scale × overlay_scale = scale); added to PreviewConfig + from_app_config + preview_thread (same pattern); merge_settings preserves existing value. Win32 harness: 0 errors, 55 pre-existing warnings. Linux cargo test: 630 passed, 0 failed. |
 
 ## Dev Agent Record
 
@@ -429,9 +430,13 @@ claude-sonnet-4-6
 - Task 3: `native_preview.rs` — symmetric fix replacing 4+8 lines (DPI block + separate work_area block) with combined 35-line block. Reuses `work_area` struct (eliminates redundant `SystemParametersInfoW` call). Candidate point from pill_x/pill_y. Same AC-1 log line. Same import.
 - Task 4: Appearance chain read-and-confirmed — all 8 fields (bg/text/border color, border width/radius, font family, font size, panel form) correctly wired through SettingsPanel.tsx:527–547 → useSettings.ts:88–113 → settings.rs:SettingsPatch/merge_settings → PreviewConfig::from_app_config:91–143 → renderer. No code gap found, chain is intact.
 - Task 5: Machine gates green (cross-compile 0 errors, Linux tests 630/0). GATE-4 Windows smoke (AC-1 log verification + AC-2 size + AC-3 appearance + AC-4 presets + AC-5 no regression) is Andi's real-device gate — requires Windows build via sync-and-build.ps1.
+- Task 6: `overlay_scale: f64` added to AppConfig with `#[serde(default = "default_overlay_scale")]` → `1.0`; camelCase JSON key `overlayScale`. Default impl + both full-field test struct literals updated. In native_pill.rs: `NativePill::create` + `pill_thread` each gain `overlay_scale: f64` param; DPI block renamed from `scale` → `dpi_scale`; `let scale = dpi_scale * overlay_scale` inserted. lib.rs extracts `_overlay_scale = cfg.overlay_scale` before cfg moved, passes it to `NativePill::create`. In native_preview.rs: `PreviewConfig` gains `overlay_scale: f64` field; `from_app_config` wires `overlay_scale: cfg.overlay_scale`; `preview_thread` DPI block renamed `dpi_scale`, `let scale = dpi_scale * config.overlay_scale` inserted. `merge_settings` passes `overlay_scale: existing.overlay_scale`. Win32 harness: 0 errors, 55 pre-existing warnings. Linux tests: 630/0. At overlayScale=1.0 pixel-identical to before (multiply by 1.0).
 
 ### File List
 
 - `src-tauri/Cargo.toml` — added `"Win32_UI_HiDpi"` to windows features
-- `src-tauri/src/native_pill.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added
-- `src-tauri/src/native_preview.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added; redundant SPI_GETWORKAREA call eliminated
+- `src-tauri/src/native_pill.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added; overlay_scale parameter threaded in; dpi_scale rename + let scale = dpi_scale * overlay_scale
+- `src-tauri/src/native_preview.rs` — DPI fix: GetDpiForMonitor replaces GetDeviceCaps; import added; redundant SPI_GETWORKAREA call eliminated; overlay_scale field in PreviewConfig; from_app_config wires it; dpi_scale rename + scale derivation
+- `src-tauri/src/config/mod.rs` — overlay_scale: f64 field added to AppConfig; default_overlay_scale() → 1.0; Default impl + two test struct literals updated
+- `src-tauri/src/lib.rs` — extract cfg.overlay_scale before cfg moved; pass to NativePill::create
+- `src-tauri/src/commands/settings.rs` — overlay_scale: existing.overlay_scale in merge_settings

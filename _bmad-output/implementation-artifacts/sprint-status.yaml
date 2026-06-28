@@ -141,5 +141,5 @@ development_status:
   10-1-native-pill-overlay: done
   10-2-native-preview-overlay: done
   10-3-native-pill-standby-resilience: done
-  10-4-native-overlay-dpi-scaling-and-appearance-wiring: in-progress
+  10-4-native-overlay-dpi-scaling-and-appearance-wiring: review
   epic-10-retrospective: optional

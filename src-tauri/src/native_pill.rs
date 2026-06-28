@@ -206,14 +206,16 @@ unsafe impl Send for NativePill {}
 impl NativePill {
     /// Spawn the pill window on a dedicated thread and return a handle.
     /// `saved_x` / `saved_y` are logical-pixel positions from config.
+    /// `overlay_scale` is the user-tunable size factor from config (default 1.0).
     pub fn create(
         app_handle: AppHandle,
         saved_x: Option<f64>,
         saved_y: Option<f64>,
+        overlay_scale: f64,
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<Result<isize, String>>();
         let thread = std::thread::spawn(move || {
-            pill_thread(app_handle, saved_x, saved_y, tx);
+            pill_thread(app_handle, saved_x, saved_y, overlay_scale, tx);
         });
         let hwnd = rx
             .recv()
@@ -1252,6 +1254,7 @@ fn pill_thread(
     app_handle: AppHandle,
     saved_x: Option<f64>,
     saved_y: Option<f64>,
+    overlay_scale: f64,
     tx: mpsc::Sender<Result<isize, String>>,
 ) {
     unsafe {
@@ -1280,7 +1283,7 @@ fn pill_thread(
         let hmon = MonitorFromPoint(candidate_pt, MONITOR_DEFAULTTONEAREST);
         let mut dpi_x = 0u32;
         let mut dpi_y = 0u32;
-        let scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+        let dpi_scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
             let screen_dc = GetDC(None);
             let legacy = GetDeviceCaps(Some(screen_dc), LOGPIXELSX) as u32;
             ReleaseDC(None, screen_dc);
@@ -1298,6 +1301,9 @@ fn pill_thread(
             ReleaseDC(None, screen_dc);
             d as f64 / 96.0
         };
+        // Apply the user-tunable overlay scale factor on top of the DPI scale.
+        // At overlay_scale=1.0 (default) the result is pixel-identical to before.
+        let scale = dpi_scale * overlay_scale;
         // phys_w, phys_h, compute_initial_pos follow unchanged — they already use `scale`
         let phys_w = (PILL_W as f64 * scale) as i32;
         let phys_h = (PILL_H as f64 * scale) as i32;

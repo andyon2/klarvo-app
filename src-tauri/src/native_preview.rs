@@ -87,6 +87,8 @@ pub struct PreviewConfig {
     pub font_face: String, // first token of previewFontFamily CSS cascade (default "Inter")
     pub w_base: i32,      // 260 | 320 | 400 (from previewPanelForm compact/comfortable/wide)
     pub live_preview_enabled: bool,
+    /// User-tunable overlay size factor (from config.overlayScale, default 1.0).
+    pub overlay_scale: f64,
 }
 
 impl PreviewConfig {
@@ -140,6 +142,7 @@ impl PreviewConfig {
             font_face,
             w_base,
             live_preview_enabled: cfg.live_preview_enabled,
+            overlay_scale: cfg.overlay_scale,
         }
     }
 }
@@ -961,7 +964,7 @@ fn preview_thread(
         let hmon = MonitorFromPoint(candidate_pt, MONITOR_DEFAULTTONEAREST);
         let mut dpi_x = 0u32;
         let mut dpi_y = 0u32;
-        let scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+        let dpi_scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
             let screen_dc = GetDC(None);
             let legacy = GetDeviceCaps(Some(screen_dc), LOGPIXELSX) as u32;
             ReleaseDC(None, screen_dc);
@@ -979,6 +982,9 @@ fn preview_thread(
             ReleaseDC(None, screen_dc);
             d as f64 / 96.0
         };
+        // Apply the user-tunable overlay scale factor on top of the DPI scale.
+        // At overlay_scale=1.0 (default) the result is pixel-identical to before.
+        let scale = dpi_scale * config.overlay_scale;
         // work_area populated above; the existing work_left/right/top reads below continue unchanged:
         let work_left = work_area.left;
         let work_right = work_area.right;
