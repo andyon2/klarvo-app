@@ -231,11 +231,11 @@ pub async fn ensure_bar_window(
         }
         // Recreate
         log::warn!("[native_pill] ensure_bar_window: pill not alive, recreating");
-        let (saved_x, saved_y) = {
+        let (saved_x, saved_y, overlay_scale) = {
             let cfg = crate::lock!(state.inner().config)?;
-            (cfg.bar_x, cfg.bar_y)
+            (cfg.bar_x, cfg.bar_y, cfg.overlay_scale)
         };
-        match crate::native_pill::NativePill::create(app.clone(), saved_x, saved_y) {
+        match crate::native_pill::NativePill::create(app.clone(), saved_x, saved_y, overlay_scale) {
             Ok(pill) => {
                 let mut guard = crate::lock!(state.inner().native_pill)?;
                 *guard = Some(pill);
