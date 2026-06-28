@@ -1458,12 +1458,7 @@ unsafe fn compute_initial_pos(
     phys_w: i32,
     phys_h: i32,
 ) -> (i32, i32) {
-    // 1. Saved position
-    if let (Some(lx), Some(ly)) = (saved_x, saved_y) {
-        return ((lx * scale) as i32, (ly * scale) as i32);
-    }
-
-    // 2. Work area center-bottom (mirrors create_bar_window logic)
+    // Query work area once; both the saved-position and default branches need it.
     let mut work_area = RECT::default();
     let ok = SystemParametersInfoW(
         SPI_GETWORKAREA,
@@ -1471,6 +1466,20 @@ unsafe fn compute_initial_pos(
         Some(&raw mut work_area as *mut _),
         SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
     );
+
+    // 1. Saved position — clamp to visible work area so a stale pre-DPI-fix
+    //    coordinate cannot place the pill off-screen.
+    if let (Some(lx), Some(ly)) = (saved_x, saved_y) {
+        let mut x = (lx * scale) as i32;
+        let mut y = (ly * scale) as i32;
+        if ok.is_ok() {
+            x = x.clamp(work_area.left, (work_area.right - phys_w).max(work_area.left));
+            y = y.clamp(work_area.top, (work_area.bottom - phys_h).max(work_area.top));
+        }
+        return (x, y);
+    }
+
+    // 2. Work area center-bottom (mirrors create_bar_window logic)
     if ok.is_ok() {
         let work_w = work_area.right - work_area.left;
         let x = work_area.left + (work_w - phys_w) / 2;
