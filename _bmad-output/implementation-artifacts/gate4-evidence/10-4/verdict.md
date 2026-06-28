@@ -1,27 +1,42 @@
-# GATE-4 Verdict — Story 10-4 (Native Overlay DPI Scaling + Appearance-Wiring)
+# GATE-4 Verdict — Story 10-4 (re-scoped: user-tunable overlayScale)
 
-Status: **review** — machine side GREEN, real-machine visual smoke = Andi's residual.
+Status: **review** — machine side GREEN; the real-machine step is now Andi's **size tuning**.
 
-## Self-verification (machine side, WSL) — DONE
+## What the GATE-4 smoke proved (2026-06-28) — original hypothesis REFUTED
 
-- `cargo check --target x86_64-pc-windows-gnu` (win-gnu surface harness, recipe `gate4-evidence/10-1/win32-surface-check.md`): **0 errors** (pre-existing warnings only, same class as 10-1/10-3). Win32_UI_HiDpi feature + GetDpiForMonitor imports compile clean.
-- `cargo test` (Linux): **green** (no functional logic on the Linux path changed; only the Windows `scale` source).
-- Code-review: 3 adversarial reviewers (Blind / Edge-Case / Acceptance), **CLEAN**. One confirmed AC-5 finding (stale saved-coordinate re-scaling) fixed via work-area clamp (`795d5b3`); preview already clamps; multi-monitor mixed-DPI findings deferred (single-monitor setup → N/A).
+- AC-1 log on Andi's machine: `GetDpiForMonitor=120 GetDeviceCaps(legacy)=120 scale_was=scale_real=1.250`.
+  Both APIs return 120 → the DPI scale was **always correct (1.25)** on his single primary monitor. The
+  "scale=1.0 bug" never existed there; the DPI fix (a0334bf) was a **no-op**.
+- Conductor measured the pill from Andi's full-width screenshot: **249 px** wide on a 1918 px (≈ physical
+  1920) screen. Designed = 200 logical × 1.25 = **250 px**. → Native pill renders **1:1 at designed size**,
+  identical to the old WebView2 pill. No DWM virtualization, no scaling regression.
+- Conclusion: "too small" is **by design**, not a defect. Enlarging = a taste decision. Andi chose a
+  **self-tunable size knob** (Verifikations-Symmetrie: he produces the test state himself, no rebuild per step).
 
-## Why the rest is NOT WSL-certifiable (residual for Andi)
+## Self-verification (machine side, WSL) — DONE for the overlayScale change
 
-The absolute DPI scale, font-preset legibility, and visual appearance render only on a real high-DPI Windows display. WSL cannot run the Windows binary or observe native layered-overlay pixels. Per project-context's rendering-oracle rule + the story's Verification-Symmetry section, these are genuine real-target judgments. Andi CAN produce the test state (his monitor is at 125/150 %; the AC-1 log is observable in `Klarvo.log`).
+- Linux `cargo check` (full crate): clean (exit 0).
+- Golden-master roundtrip test `test_appconfig_golden_master_full_field_roundtrip`: PASS — confirms
+  `overlayScale` persists through save/load (it is set to a non-default 1.3 in that test).
+- win-gnu scratch harness (native_pill + native_preview, refreshed from current source, clean recompile):
+  **0 errors**, 55 pre-existing warnings.
+- `NativePill::create` signature (+`overlay_scale: f64`) ↔ `lib.rs:756` call-site: consistent;
+  extraction `_overlay_scale` is `_`-prefixed so the Linux build stays warning-free.
+- Review (direct, Opus): coupled model `scale = dpi_scale × overlayScale` in both threads; at 1.0 the
+  render is pixel-identical to today (the multiply is ×1.0). CLEAN.
 
-## Andi's GATE-4 smoke checklist (real Windows machine, 125/150 % DPI)
+## Andi's tuning-smoke (real Windows machine)
 
-Build: `scripts/sync-and-build.ps1` (then `rsign` per signing gotcha).
+1. **Build** the new version: `scripts/sync-and-build.ps1` (+ `rsign`). This build contains the
+   `overlayScale` reader; the old build does not.
+2. **First run:** overlays look exactly as now (overlayScale defaults to 1.0).
+3. **Tune:** edit `config.json` at
+   `%APPDATA%\com.klarvo.voice\config.json` → add/set `"overlayScale": 1.3` (1.3 = ~30 % bigger; try
+   1.2–1.5). **Restart the app** → both pill and preview render at the new size.
+4. Repeat step 3, changing the number, until the size feels right. Tell the conductor the value you
+   settled on (it just lives in your config; no code change needed unless you want a different *default*).
+5. Note: if your pill has a saved drag position, changing the factor may shift it once — drag it back, it
+   re-persists at the new factor. Expected for a tuning knob.
 
-1. **AC-1** — Open `Klarvo.log` (Settings → About, or `%APPDATA%\com.klarvo.voice\klarvo.log`). On overlay creation, expect two lines like:
-   `[native_pill] DPI: GetDpiForMonitor=144 GetDeviceCaps(legacy)=96 scale_real=1.500 scale_was=1.000`
-   `[native_preview] DPI: ...` — confirms the legacy call was returning 96 (scale 1.0) and the real scale is now ~1.5.
-2. **AC-2** — Trigger recording. Pill (logo + waveform + red cancel button) and preview card should now look the **same apparent size as before Epic 10** (no longer tiny).
-3. **AC-3** — Change an appearance setting (e.g. preview font size = large, or a border color), save, start next recording → the change is visibly reflected in the preview.
-4. **AC-4** — Compare small / medium / large preview font: the three should be **perceptibly distinct**. (Per your decision: if after the DPI fix they still feel too close, that's a separate calibration step — give the target sizes and we adjust the 11/13/15 mapping; do not expect it to be pre-tuned.)
-5. **AC-5** — Pill drag + position persistence still work; the pill is **on-screen** at startup (the clamp guarantees this even if your saved position was stale); recording/transcription/cleanup/done/error states + standby recreate-on-start unchanged.
-
-GREEN on all → conductor flips both status fields to `done`. Any FAILED → re-opens via a fresh dev worker (never bare-loop hot-patch).
+GREEN (you found a comfortable value) → conductor flips both status fields to `done`. If `overlayScale`
+has **no visible effect** or something regresses → re-opens via a fresh dev worker.
