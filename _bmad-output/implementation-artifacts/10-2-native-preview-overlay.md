@@ -1,6 +1,6 @@
 # Story 10.2: Native Preview Overlay
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
