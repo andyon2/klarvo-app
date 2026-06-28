@@ -1,6 +1,6 @@
 # Story 10.4: Native Overlay DPI Scaling + Appearance-Wiring Audit
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -36,6 +36,26 @@ Correct API: `GetDpiForMonitor(MonitorFromPoint(...), MDT_EFFECTIVE_DPI)`.
 **Settings-wiring diagnosis (read-only, already done):** The `previewFontSize` → `font_px` mapping
 and the rest of the appearance chain are correctly wired. This is **not** the defect. AC-3 is a
 smoke-verification, not a code-fix story.
+
+### ⚠️ HYPOTHESIS REFUTED at GATE-4 smoke (2026-06-28) — story re-scoped
+
+Andi's real-machine AC-1 log: `GetDpiForMonitor=120 GetDeviceCaps(legacy)=120 scale_real=1.250
+scale_was=1.250`. **Both APIs return 120 → `scale_was == scale_real == 1.25`.** On Andi's single
+primary monitor `GetDeviceCaps` was returning the correct DPI all along; the "scale=1.0 bug" never
+existed there and the DPI fix (a0334bf) is a **no-op**. AC-2 failed precisely because there was nothing
+to enlarge.
+
+**Measurement (conductor, from Andi's full-width screenshot):** pill = **249 px** wide on a 1918 px
+(≈ physical 1920) screen. Designed width = 200 logical × 1.25 = **250 px**. → The native pill renders
+**1:1 at its designed size**, identical to the old WebView2 pill (both 200×36 logical; all internal
+constants — logo 24, stop 14/8, waveform 20, spinner 13, check 11, bg rgba(25,25,25,.96), fonts 14/10 —
+verified equal via git). **No DWM virtualization, no scaling regression.**
+
+**Conclusion:** "too small" is not a bug — the overlays are *designed* small (pill 200×36, preview fonts
+11/13/15) and render correctly. Enlarging is a **deliberate design/taste decision** (Andi, 2026-06-28),
+not a defect fix. The DPI fix + clamp (a0334bf, 795d5b3) are kept (harmless, more-correct for
+multi-monitor, AC-1 log useful); the F2/F3 multi-monitor findings stay in backlog (N/A single-monitor).
+New real work = AC-6, a user-tunable overlay size factor.
 
 ## Acceptance Criteria
 
@@ -85,6 +105,18 @@ updates in-process, drag + position persistence work, preview is click-through +
 standby recreate-on-start is preserved, occlusion survival is unchanged
 And `cargo check --target x86_64-pc-windows-gnu` is green
 
+**AC-6 — User-tunable overlay size factor (BOTH overlays, default = no change):**
+Given a new `overlayScale` value in `config.json` (default `1.0`)
+When the app starts (overlays are created reading config)
+Then both the native pill and the native preview render their dimensions, fonts, and elements scaled
+by `dpi_scale × overlayScale` — at `overlayScale = 1.0` the result is pixel-identical to today
+(measured 249 px pill), and at e.g. `1.3` both overlays are uniformly ~30 % larger
+And Andi can edit `overlayScale` in `config.json`, restart the app, and immediately see the new size —
+without a rebuild per tuning step (Verifikations-Symmetrie: he produces the test state himself)
+And changing the factor may reposition a pill that has a saved drag position (stored logical was under
+the prior factor); one drag re-settles it and it persists at the new factor — acceptable for a tuning
+knob, documented in the smoke note
+
 ## Tasks / Subtasks
 
 - [x] Task 1: Add `Win32_UI_HiDpi` feature to Cargo.toml (AC: 2)
@@ -125,6 +157,28 @@ And `cargo check --target x86_64-pc-windows-gnu` is green
   - [ ] Build real Windows release via `scripts/sync-and-build.ps1`
   - [ ] Andi smoke on real Windows (AC-1 log + AC-2 absolute size + AC-3 appearance settings +
     AC-4 preset legibility + AC-5 no regression)
+
+- [ ] Task 6: User-tunable overlay size factor (AC: 6) — the re-scoped real work
+  - [ ] `src-tauri/src/config/mod.rs`: add field `overlay_scale: f64` to `AppConfig` with
+    `#[serde(default = "default_overlay_scale")]` (serde `rename_all = "camelCase"` → JSON key
+    `overlayScale`); add `fn default_overlay_scale() -> f64 { 1.0 }`. Mirror the existing `bar_x`/
+    appearance-field pattern.
+  - [ ] `src-tauri/src/native_pill.rs`: thread the factor into `pill_thread`. Add an `overlay_scale: f64`
+    parameter to `NativePill::create` + `pill_thread`. After the DPI block computes the dpi `scale`,
+    set the render scale: `let scale = dpi_scale * overlay_scale;` (rename the existing post-DPI
+    `scale` binding to `dpi_scale`, then derive `scale` once). Everything downstream
+    (`phys_w`/`phys_h`, `fh()` fonts, `s.scale` used by the draw path, `compute_initial_pos`,
+    the WM_LBUTTONUP persist `win_x / s.scale`) keeps using `scale` unchanged — coupled model, so the
+    saved position round-trips for any fixed factor. Do NOT decouple position; the one-drag re-settle
+    is acceptable (AC-6).
+  - [ ] `src-tauri/src/lib.rs` (~705-755): read `cfg.overlay_scale` next to `cfg.bar_x`/`bar_y` and
+    pass it to `NativePill::create(...)`.
+  - [ ] `src-tauri/src/native_preview.rs`: add `overlay_scale: f64` to `PreviewConfig`; in
+    `from_app_config` set `overlay_scale: cfg.overlay_scale`. In `preview_thread`, after the DPI block,
+    `let scale = dpi_scale * config.overlay_scale;` (same rename-to-`dpi_scale` pattern). All preview
+    dimensions/fonts already derive from `scale` → uniform enlargement, position round-trips.
+  - [ ] Verify: `cargo check --target x86_64-pc-windows-gnu` green; Linux `cargo test` green. At
+    `overlayScale=1.0` the render must be byte-identical to before (the multiply is ×1.0).
 
 ## Dev Notes
 
@@ -354,6 +408,7 @@ reveals — not WSL-certifiable.
 |---|---|
 | 2026-06-28 | Story authored from Andi real-device smoke (post-10-2) + read-only diagnosis in `docs/backlog.md`. DPI root-cause identified but not yet verified on Windows (leading hypothesis). |
 | 2026-06-29 | DPI fix implemented in native_pill.rs + native_preview.rs (GetDpiForMonitor replaces GetDeviceCaps). Win32_UI_HiDpi feature added to Cargo.toml. Appearance chain read-and-confirmed (no code gaps). Win32 cross-compile: 0 errors. Linux tests: 630/0. GATE-4 Windows smoke pending Andi's real device. |
+| 2026-06-28 | GATE-4 smoke FAILED → hypothesis REFUTED. Andi's AC-1 log: `GetDeviceCaps=120 GetDpiForMonitor=120 scale_was=scale_real=1.25` — no scale=1.0 bug existed; DPI fix was a no-op. Conductor measured pill = 249 px (= designed 250 px) from full-width screenshot → renders 1:1 with old WebView2, no virtualization. "Too small" = designed-small, not a bug. Re-scoped: DPI fix + clamp kept (harmless); real work = AC-6 user-tunable `overlayScale` factor (Andi chose self-tunable knob, 2026-06-28). Status → in-progress. |
 | 2026-06-28 | Code-review (3 adversarial reviewers) CLEAN. One confirmed AC-5 finding fixed (795d5b3): `compute_initial_pos` now clamps the scaled saved pill position to the work area — guards a stale pre-DPI-fix coordinate from placing the pill off-screen (also closes backlog robustness gap "off-screen drag not clamped"). Preview already clamps. Multi-monitor mixed-DPI findings (monitor-selection coord-space, primary-only work_area) deferred to backlog — N/A on Andi's single-monitor setup. Status held at `review` pending Andi's real-machine GATE-4 smoke. Evidence: gate4-evidence/10-4/. |
 
 ## Dev Agent Record
