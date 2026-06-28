@@ -354,6 +354,7 @@ reveals — not WSL-certifiable.
 |---|---|
 | 2026-06-28 | Story authored from Andi real-device smoke (post-10-2) + read-only diagnosis in `docs/backlog.md`. DPI root-cause identified but not yet verified on Windows (leading hypothesis). |
 | 2026-06-29 | DPI fix implemented in native_pill.rs + native_preview.rs (GetDpiForMonitor replaces GetDeviceCaps). Win32_UI_HiDpi feature added to Cargo.toml. Appearance chain read-and-confirmed (no code gaps). Win32 cross-compile: 0 errors. Linux tests: 630/0. GATE-4 Windows smoke pending Andi's real device. |
+| 2026-06-28 | Code-review (3 adversarial reviewers) CLEAN. One confirmed AC-5 finding fixed (795d5b3): `compute_initial_pos` now clamps the scaled saved pill position to the work area — guards a stale pre-DPI-fix coordinate from placing the pill off-screen (also closes backlog robustness gap "off-screen drag not clamped"). Preview already clamps. Multi-monitor mixed-DPI findings (monitor-selection coord-space, primary-only work_area) deferred to backlog — N/A on Andi's single-monitor setup. Status held at `review` pending Andi's real-machine GATE-4 smoke. Evidence: gate4-evidence/10-4/. |
 
 ## Dev Agent Record
 

@@ -156,3 +156,17 @@ Settings end-to-end gegen die Preview prüfen (alle `previewXxx` + Größen-/Bre
 wirksam); (4) Größen-Presets so kalibrieren, dass small/medium/large spürbar unterschiedlich sind.
 Querbezug: die bereits gelistete „Native-Pille-Hover/Fidelity"-Story oben — Skalierung kann dort
 mit reinspielen (gemeinsamer Pass erwägen). Maßstabs-Referenz = alte WebView2-Optik (git vor Epic 10).
+
+### Native-Overlay Multi-Monitor Mixed-DPI (deferred aus 10-4 Code-Review 2026-06-28)
+
+Source: 10-4 Code-Review (Edge-Case + Blind Hunter). Auf Andis Single-Monitor-Setup **gegenstandslos**
+→ bewusst deferred, eigene Story falls jemals Multi-Monitor-Mixed-DPI relevant wird. Zwei Funde, gleiche
+Wurzel = logical-vs-physical-Koordinaten-Verwechslung über Monitor-Grenzen:
+- **F2 — Monitor-Auswahl nutzt logische Koordinaten, wo `MonitorFromPoint` physische erwartet**
+  (`native_pill.rs` candidate_pt, `native_preview.rs` candidate_pt). Nahe einer Monitor-Grenze kann der
+  falsche Monitor (und damit die falsche Skala) gewählt werden. Single-Monitor: irrelevant.
+- **F3 — `SPI_GETWORKAREA` liefert nur den PRIMÄR-Monitor, gemischt mit der Skala des Sekundär-Monitors**
+  (`native_preview.rs` work_area → `compute_preview_geometry`-Clamp). Preview kann auf einem Sekundär-
+  Monitor falsch clampen. Teilweise vorbestehend (work_area war immer primär-only). Single-Monitor: irrelevant.
+- F1 (stale saved-coordinate re-scaling) wurde in 10-4 via Work-Area-Clamp in `compute_initial_pos`
+  gefixt (`795d5b3`) — schließt zugleich den oben gelisteten Robustness-Fund "off-screen drag not clamped".
