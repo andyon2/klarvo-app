@@ -617,7 +617,7 @@ pub async fn start_recording_only(handle: AppHandle) {
             .unwrap_or((None, None, 1.0));
         // Build the new pill BEFORE dropping the old one, so a transient create
         // failure leaves the previous pill in place (never "no pill").
-        match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
+        match crate::native_pill::NativePill::create(handle.clone(), sx, sy, overlay_scale) {
             Ok(pill) => {
                 // Re-feed the active hotkey mode: a fresh pill defaults to "hold";
                 // the mode the hotkey handler set on the previous pill is lost on
