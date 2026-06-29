@@ -1,6 +1,6 @@
 # Story 10.4: Native Overlay DPI Scaling + Appearance-Wiring Audit
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -406,6 +406,7 @@ reveals — not WSL-certifiable.
 
 | Date | Change |
 |---|---|
+| 2026-06-29 | **STOPPED — UNSOLVED.** Preview-fidelity fix (bba8347: line-height 1.625 + Segoe-UI font + padding 12) did NOT make the native preview match the Settings SOLL (Andi real-build; `gate4-evidence/10-4/screenshots/ist-after-fidelity-fix-still-wrong-2026-06-29.png`). Real root cause still unknown; my prior "fixed" claims were wrong 3×. Status → in-progress. **Next session: read `gate4-evidence/10-4/HANDOVER.md` FIRST** (ruled-out list; top unexplored lead = border-alpha/premultiplied compositing + compare vs git-historical `e6e05b9~1:src/PreviewPanel.tsx`; verification constraints). |
 | 2026-06-28 | Story authored from Andi real-device smoke (post-10-2) + read-only diagnosis in `docs/backlog.md`. DPI root-cause identified but not yet verified on Windows (leading hypothesis). |
 | 2026-06-29 | DPI fix implemented in native_pill.rs + native_preview.rs (GetDpiForMonitor replaces GetDeviceCaps). Win32_UI_HiDpi feature added to Cargo.toml. Appearance chain read-and-confirmed (no code gaps). Win32 cross-compile: 0 errors. Linux tests: 630/0. GATE-4 Windows smoke pending Andi's real device. |
 | 2026-06-28 | GATE-4 smoke FAILED → hypothesis REFUTED. Andi's AC-1 log: `GetDeviceCaps=120 GetDpiForMonitor=120 scale_was=scale_real=1.25` — no scale=1.0 bug existed; DPI fix was a no-op. Conductor measured pill = 249 px (= designed 250 px) from full-width screenshot → renders 1:1 with old WebView2, no virtualization. "Too small" = designed-small, not a bug. Re-scoped: DPI fix + clamp kept (harmless); real work = AC-6 user-tunable `overlayScale` factor (Andi chose self-tunable knob, 2026-06-28). Status → in-progress. |
