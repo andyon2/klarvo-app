@@ -29,7 +29,6 @@ use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -206,16 +205,14 @@ unsafe impl Send for NativePill {}
 impl NativePill {
     /// Spawn the pill window on a dedicated thread and return a handle.
     /// `saved_x` / `saved_y` are logical-pixel positions from config.
-    /// `overlay_scale` is the user-tunable size factor from config (default 1.0).
     pub fn create(
         app_handle: AppHandle,
         saved_x: Option<f64>,
         saved_y: Option<f64>,
-        overlay_scale: f64,
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<Result<isize, String>>();
         let thread = std::thread::spawn(move || {
-            pill_thread(app_handle, saved_x, saved_y, overlay_scale, tx);
+            pill_thread(app_handle, saved_x, saved_y, tx);
         });
         let hwnd = rx
             .recv()
@@ -1254,57 +1251,14 @@ fn pill_thread(
     app_handle: AppHandle,
     saved_x: Option<f64>,
     saved_y: Option<f64>,
-    overlay_scale: f64,
     tx: mpsc::Sender<Result<isize, String>>,
 ) {
     unsafe {
-        // --- Determine DPI via the monitor at the expected window position ---
-        // SPI_GETWORKAREA returns physical-pixel coordinates regardless of DPI awareness.
-        // Under per-monitor-v2 (Tauri's embedded manifest), GetDeviceCaps(desktop_dc, LOGPIXELSX)
-        // always returns 96 → scale=1.0, wrong on high-DPI monitors. Correct: GetDpiForMonitor.
-        let mut work_area = RECT::default();
-        let _ = SystemParametersInfoW(
-            SPI_GETWORKAREA,
-            0,
-            Some(&raw mut work_area as *mut _),
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        );
-        // Candidate point for monitor selection:
-        // - saved_x/saved_y are logical px; under the previously broken scale=1.0 they equal
-        //   physical px, so they select the correct monitor in the common case.
-        // - Default: center-bottom of work area (physical coords from SPI_GETWORKAREA).
-        let candidate_pt = match (saved_x, saved_y) {
-            (Some(lx), Some(ly)) => POINT { x: lx as i32, y: ly as i32 },
-            _ => POINT {
-                x: work_area.left + (work_area.right - work_area.left) / 2,
-                y: work_area.bottom.saturating_sub(5),
-            },
-        };
-        let hmon = MonitorFromPoint(candidate_pt, MONITOR_DEFAULTTONEAREST);
-        let mut dpi_x = 0u32;
-        let mut dpi_y = 0u32;
-        let dpi_scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
-            let screen_dc = GetDC(None);
-            let legacy = GetDeviceCaps(Some(screen_dc), LOGPIXELSX) as u32;
-            ReleaseDC(None, screen_dc);
-            log::info!(
-                "[native_pill] DPI: GetDpiForMonitor={dpi_x} GetDeviceCaps(legacy)={legacy} \
-                 scale_real={:.3} scale_was={:.3}",
-                dpi_x as f64 / 96.0,
-                legacy as f64 / 96.0
-            );
-            dpi_x as f64 / 96.0
-        } else {
-            log::warn!("[native_pill] GetDpiForMonitor failed — falling back to GetDeviceCaps");
-            let screen_dc = GetDC(None);
-            let d = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
-            ReleaseDC(None, screen_dc);
-            d as f64 / 96.0
-        };
-        // Apply the user-tunable overlay scale factor on top of the DPI scale.
-        // At overlay_scale=1.0 (default) the result is pixel-identical to before.
-        let scale = dpi_scale * overlay_scale;
-        // phys_w, phys_h, compute_initial_pos follow unchanged — they already use `scale`
+        // --- Determine DPI and physical dimensions ---
+        let screen_dc = GetDC(None);
+        let dpi = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
+        ReleaseDC(None, screen_dc);
+        let scale = dpi as f64 / 96.0;
         let phys_w = (PILL_W as f64 * scale) as i32;
         let phys_h = (PILL_H as f64 * scale) as i32;
 
@@ -1464,7 +1418,12 @@ unsafe fn compute_initial_pos(
     phys_w: i32,
     phys_h: i32,
 ) -> (i32, i32) {
-    // Query work area once; both the saved-position and default branches need it.
+    // 1. Saved position
+    if let (Some(lx), Some(ly)) = (saved_x, saved_y) {
+        return ((lx * scale) as i32, (ly * scale) as i32);
+    }
+
+    // 2. Work area center-bottom (mirrors create_bar_window logic)
     let mut work_area = RECT::default();
     let ok = SystemParametersInfoW(
         SPI_GETWORKAREA,
@@ -1472,20 +1431,6 @@ unsafe fn compute_initial_pos(
         Some(&raw mut work_area as *mut _),
         SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
     );
-
-    // 1. Saved position — clamp to visible work area so a stale pre-DPI-fix
-    //    coordinate cannot place the pill off-screen.
-    if let (Some(lx), Some(ly)) = (saved_x, saved_y) {
-        let mut x = (lx * scale) as i32;
-        let mut y = (ly * scale) as i32;
-        if ok.is_ok() {
-            x = x.clamp(work_area.left, (work_area.right - phys_w).max(work_area.left));
-            y = y.clamp(work_area.top, (work_area.bottom - phys_h).max(work_area.top));
-        }
-        return (x, y);
-    }
-
-    // 2. Work area center-bottom (mirrors create_bar_window logic)
     if ok.is_ok() {
         let work_w = work_area.right - work_area.left;
         let x = work_area.left + (work_w - phys_w) / 2;

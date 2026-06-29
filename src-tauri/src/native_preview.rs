@@ -31,7 +31,6 @@ use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 // ---------------------------------------------------------------------------
@@ -87,8 +86,6 @@ pub struct PreviewConfig {
     pub font_face: String, // first token of previewFontFamily CSS cascade (default "Inter")
     pub w_base: i32,      // 260 | 320 | 400 (from previewPanelForm compact/comfortable/wide)
     pub live_preview_enabled: bool,
-    /// User-tunable overlay size factor (from config.overlayScale, default 1.0).
-    pub overlay_scale: f64,
 }
 
 impl PreviewConfig {
@@ -142,7 +139,6 @@ impl PreviewConfig {
             font_face,
             w_base,
             live_preview_enabled: cfg.live_preview_enabled,
-            overlay_scale: cfg.overlay_scale,
         }
     }
 }
@@ -941,10 +937,13 @@ fn preview_thread(
     tx: mpsc::Sender<Result<isize, String>>,
 ) {
     unsafe {
-        // --- DPI + scale (per-monitor, not desktop DC) ---
-        // Under per-monitor-v2 (Tauri's embedded manifest), GetDeviceCaps(desktop_dc, LOGPIXELSX)
-        // always returns 96 → scale=1.0, wrong on high-DPI monitors. Correct: GetDpiForMonitor.
-        // SPI_GETWORKAREA returns physical-pixel coordinates regardless of DPI awareness.
+        // --- DPI + scale ---
+        let screen_dc = GetDC(None);
+        let dpi = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
+        ReleaseDC(None, screen_dc);
+        let scale = dpi as f64 / 96.0;
+
+        // --- Work area ---
         let mut work_area = RECT::default();
         let _ = SystemParametersInfoW(
             SPI_GETWORKAREA,
@@ -952,40 +951,6 @@ fn preview_thread(
             Some(&raw mut work_area as *mut _),
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         );
-        // pill_x/pill_y are logical px (≈ physical under old broken scale=1.0).
-        // Use the pill position to pick the monitor the preview will appear on.
-        let candidate_pt = match (pill_x, pill_y) {
-            (Some(px), Some(py)) => POINT { x: px as i32, y: py as i32 },
-            _ => POINT {
-                x: work_area.left + (work_area.right - work_area.left) / 2,
-                y: work_area.bottom.saturating_sub(5),
-            },
-        };
-        let hmon = MonitorFromPoint(candidate_pt, MONITOR_DEFAULTTONEAREST);
-        let mut dpi_x = 0u32;
-        let mut dpi_y = 0u32;
-        let dpi_scale = if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
-            let screen_dc = GetDC(None);
-            let legacy = GetDeviceCaps(Some(screen_dc), LOGPIXELSX) as u32;
-            ReleaseDC(None, screen_dc);
-            log::info!(
-                "[native_preview] DPI: GetDpiForMonitor={dpi_x} GetDeviceCaps(legacy)={legacy} \
-                 scale_real={:.3} scale_was={:.3}",
-                dpi_x as f64 / 96.0,
-                legacy as f64 / 96.0
-            );
-            dpi_x as f64 / 96.0
-        } else {
-            log::warn!("[native_preview] GetDpiForMonitor failed — falling back to GetDeviceCaps");
-            let screen_dc = GetDC(None);
-            let d = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
-            ReleaseDC(None, screen_dc);
-            d as f64 / 96.0
-        };
-        // Apply the user-tunable overlay scale factor on top of the DPI scale.
-        // At overlay_scale=1.0 (default) the result is pixel-identical to before.
-        let scale = dpi_scale * config.overlay_scale;
-        // work_area populated above; the existing work_left/right/top reads below continue unchanged:
         let work_left = work_area.left;
         let work_right = work_area.right;
         let work_top = work_area.top;

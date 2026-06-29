@@ -333,7 +333,6 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
         ls_last_validated_at: existing.ls_last_validated_at,
         bar_x: existing.bar_x,
         bar_y: existing.bar_y,
-        overlay_scale: existing.overlay_scale,
         insert_and_send: patch.insert_and_send.unwrap_or(existing.insert_and_send),
         autostop_silence_secs: patch.autostop_silence_secs.unwrap_or(existing.autostop_silence_secs),
         auto_mode_silence_secs: patch.auto_mode_silence_secs.unwrap_or(existing.auto_mode_silence_secs),

@@ -609,15 +609,15 @@ pub async fn start_recording_only(handle: AppHandle) {
     // cost (one short-lived OS thread + window) is negligible. See Story 10-3 / ADR-0021.
     #[cfg(target_os = "windows")]
     {
-        let (sx, sy, overlay_scale) = state
+        let (sx, sy) = state
             .config
             .lock()
             .ok()
-            .map(|c| (c.bar_x, c.bar_y, c.overlay_scale))
-            .unwrap_or((None, None, 1.0));
+            .map(|c| (c.bar_x, c.bar_y))
+            .unwrap_or((None, None));
         // Build the new pill BEFORE dropping the old one, so a transient create
         // failure leaves the previous pill in place (never "no pill").
-        match crate::native_pill::NativePill::create(handle.clone(), sx, sy, overlay_scale) {
+        match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
             Ok(pill) => {
                 // Re-feed the active hotkey mode: a fresh pill defaults to "hold";
                 // the mode the hotkey handler set on the previous pill is lost on
