@@ -44,7 +44,8 @@ const WM_PREVIEW_SHUTDOWN: u32 = 0x8110;
 // Layout constants (logical px)
 const OUTER_INSET: f32 = 2.0; // keep border inside DIB at fractional DPI
 const INNER_PAD_TB: f32 = 8.0; // top/bottom inner padding
-const INNER_PAD_LR: f32 = 14.0; // left/right inner padding
+const INNER_PAD_LR: f32 = 12.0; // left/right inner padding (matches SOLL `padding: 8px 12px`)
+const PREVIEW_LINE_HEIGHT: f32 = 1.625; // matches SOLL `leading-relaxed` (AppearanceContent.tsx)
 const FADE_FRACTION: f32 = 0.18; // top-fade fraction of card height on overflow
 const PILL_WIDTH_LOGICAL: f64 = 200.0; // must match PILL_W in native_pill.rs
 const GAP_LOGICAL: f64 = 8.0; // gap between preview bottom edge and pill top
@@ -118,7 +119,18 @@ impl PreviewConfig {
             } else {
                 s.find(',').map(|i| s[..i].trim().to_string()).unwrap_or_else(|| s.to_string())
             };
-            if token.is_empty() { "Inter".to_string() } else { token }
+            let token = if token.is_empty() { "Inter".to_string() } else { token };
+            // Resolve the CSS family to the font GDI actually has, matching the
+            // browser's Windows fallback. The web app bundles only Geist, so the
+            // default stack 'Inter', system-ui, … renders as Segoe UI (system-ui)
+            // — NOT Inter — and the monospace stack resolves to Consolas. Without
+            // this, GDI substitutes an unrelated face for the unknown name "Inter"
+            // and the native preview drifts from the Settings SOLL.
+            match token.as_str() {
+                "Inter" | "system-ui" => "Segoe UI".to_string(),
+                "Cascadia Code" => "Consolas".to_string(),
+                _ => token,
+            }
         };
         PreviewConfig {
             bg_r,
@@ -392,6 +404,42 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
+/// Word-wrap `text` into visual lines fitting within `max_w` physical px,
+/// measured with the font currently selected into `dc`. Each returned line is a
+/// UTF-16 slice WITHOUT a null terminator (ready for `DrawTextW` with an explicit
+/// length). An explicit '\n' forces a new line. Mirrors the SOLL card's CSS
+/// word-wrap (break at spaces; an over-long single word takes its own line and is
+/// clipped by `inner_right`, like `overflow:hidden`). We wrap manually instead of
+/// using `DrawTextW(DT_WORDBREAK)` because GDI has no line-height control — the
+/// caller positions each line at a fixed `font_px × 1.625 × scale` step to match
+/// the SOLL's `leading-relaxed`.
+unsafe fn wrap_text_lines(dc: HDC, text: &str, max_w: i32) -> Vec<Vec<u16>> {
+    let mut lines: Vec<Vec<u16>> = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut cur = String::new();
+        for word in paragraph.split(' ') {
+            let candidate = if cur.is_empty() {
+                word.to_string()
+            } else {
+                format!("{cur} {word}")
+            };
+            let wide: Vec<u16> = candidate.encode_utf16().collect();
+            let mut sz = SIZE::default();
+            let fits = !wide.is_empty()
+                && GetTextExtentPoint32W(dc, &wide, &mut sz).as_bool()
+                && sz.cx <= max_w;
+            if fits || cur.is_empty() {
+                cur = candidate;
+            } else {
+                lines.push(cur.encode_utf16().collect());
+                cur = word.to_string();
+            }
+        }
+        lines.push(cur.encode_utf16().collect());
+    }
+    lines
+}
+
 fn class_name_wide() -> Vec<u16> {
     "KlarvoPreviewNative\0".encode_utf16().collect()
 }
@@ -561,17 +609,15 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     let inner_right = (pw as f32 - OUTER_INSET * sc - INNER_PAD_LR * sc) as i32;
     let text_area_w = (inner_right - inner_left).max(1);
 
-    // DrawTextW takes `&mut [u16]`; exclude null terminator from the length.
-    let mut text_wide = to_wide(&s.text_buffer);
-    let text_len = text_wide.len().saturating_sub(1);
-    let mut calc_rect = RECT { left: 0, top: 0, right: text_area_w, bottom: 0 };
-    DrawTextW(
-        s.tmp_dc,
-        &mut text_wide[..text_len],
-        &mut calc_rect,
-        DT_WORDBREAK | DT_CALCRECT,
-    );
-    let text_h = calc_rect.bottom;
+    // Word-wrap into visual lines, then size by a FIXED line-height (matches the
+    // SOLL `leading-relaxed` = 1.625). GDI's own DrawTextW line spacing is the
+    // font's natural ~1.2, which made the native preview look denser/smaller than
+    // the Settings live-preview — so we lay lines out manually at this step.
+    let line_h = (s.config.font_px as f32 * sc * PREVIEW_LINE_HEIGHT)
+        .round()
+        .max(1.0) as i32;
+    let lines = wrap_text_lines(s.tmp_dc, &s.text_buffer, text_area_w);
+    let text_h = lines.len() as i32 * line_h;
 
     // --- 2. Card geometry: content-height, bottom-aligned (grow-up) ---
     // The window is fixed at max-height; the opaque dark card is only as tall as the text
@@ -647,13 +693,27 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
         // When overflowing, oldest lines extend above inner_top and are hidden by the top-fade.
         let start_y = inner_bottom - text_h;
 
-        let mut text_rect = RECT {
-            left: inner_left,
-            top: start_y,
-            right: inner_right,
-            bottom: start_y + text_h,
-        };
-        DrawTextW(s.tmp_dc, &mut text_wide[..text_len], &mut text_rect, DT_WORDBREAK | DT_TOP);
+        // Draw each wrapped line in its own `line_h` box, vertically centred so the
+        // extra leading splits above/below the glyphs (CSS line-height behaviour).
+        for (i, line) in lines.iter().enumerate() {
+            if line.is_empty() {
+                continue; // blank line still occupies a line_h slot via the index
+            }
+            let line_top = start_y + i as i32 * line_h;
+            let mut rect = RECT {
+                left: inner_left,
+                top: line_top,
+                right: inner_right,
+                bottom: line_top + line_h,
+            };
+            let mut buf = line.clone();
+            DrawTextW(
+                s.tmp_dc,
+                &mut buf,
+                &mut rect,
+                DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX,
+            );
+        }
 
         composite_text_mask(
             s.tmp_bits as *const u8,
