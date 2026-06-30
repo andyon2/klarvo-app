@@ -404,3 +404,24 @@ Source: Conductor-Re-Review nach der Re-Scope (range 218ee5d..67f20b6, 3 Reviewe
 - **`.toInt()`-Truncation** in `tapVisualWidthDp/HeightDp` (`(size*320f/132f).toInt()`) floored die Fenster-Region <1dp unter den Float-Inhalt; aktuell vom 10dp-Schatten-Pad absorbiert (kein Clip), aber latent bei künftiger Pad-Reduktion.
 - **Cross-Layer-Default 72 durch keinen Test gepinnt** — 72 ist an 5 Stellen dupliziert (TS types/mock, Rust default-fn, Kotlin data-class, Kotlin optInt-Fallback, TAP_BUTTON_SIZE_DEFAULT); aktuell konsistent, aber ein künftiger Edit an einer Stelle würde nicht gefangen.
 - **Visuell (Andis Geräte-Gate, am 60dp-Ende):** Waveform-Chip-Bars skalieren nicht mit der Button-Größe (AC5 schützt drawClusterWaveform) → proportional groß bei 60dp; Label „Abbrechen" ~6.8sp bei 60dp. Beide nur mit device-validierten Werten anfassen, falls Andi sie bemängelt.
+
+---
+
+## Story 9-14 HOLD — Defer: HOLD-Größen an recordingButtonSizeDp koppeln (2026-06-30)
+
+Source: GATE-1-Designentscheidung im 9-14-story-conductor-Lauf (Andi). 9-14 baut die HOLD-Ziele mit **fixen**, geräte-skaliert abgenommenen Mockup-dp (Ruhe 112 · aktiv 148 · Daumen-Bubble 82) — bewusst **keine** Kopplung an 9-15s nutzer-konfigurierbaren Regler `recordingButtonSizeDp` {60,72,88}.
+
+- **Defer:** HOLD-Ziel-Proportionen optional an `recordingButtonSizeDp` koppeln (Konsistenz mit der TAP-Surface, Nutzer-Kontrolle über beide Surfaces).
+- **Warum jetzt nicht:** außerhalb aktueller Scope (keine neuen Config-Keys in 9-14); die komplexe HOLD-Geometrie (zwei wachsende Ziele weg vom Daumen) bei 60dp neu zu validieren vergrößert die Geräte-Test-Fläche + „zu-klein"-Risiko. Reduktion vor Konstruktion: erst die fixe Variante am echten Gerät validieren, dann erst koppeln — falls Andi nach dem Real-Device-Test mehr Kontrolle will.
+
+---
+
+## Story 9-14 HOLD — Code-Review-Defers (2026-06-30)
+
+Source: Conductor-Code-Review nach dev (range 20e74c6..ce20bb0, 3 Reviewer Blind/Edge/Auditor). A/B/C als Patch behoben (siehe Fix-Commit). Folgende real, aber nicht close-blockierend — Fidelity-Items gehören laut Story-DoD Andis Real-Device-GATE-4:
+
+- **Erster ACTION_MOVE liest stale idle-Square-Width (1 Frame)** — `adjustLayoutForState` → `updateViewLayout` ist async; ein ACTION_MOVE vor dem Layout-Pass liest die alte `bubbleView.width` → `holdTargetCenters` für ein/zwei Frames falsch (v.a. left-dock). Transient/selbst-korrigierend. Sauberer Fix nur falls am Gerät spürbar.
+- **[GATE-4 Fidelity] Drag-Ghost-Bubble + Origin-Fade fehlt** — Render `bHit` (`mockup-mobile-hold-B-refined.html:159/161`) zeichnet eine finger-folgende `.ghost`-Bubble (74×74, dashed, ~50% alpha) + faded die Origin-`.heldbub` auf opacity .32 beim Ziehen. Implementierung zeichnet die Anker-Bubble fix am Dock, voll opak, ohne Ghost. In Dev Notes geflaggt, aber nicht gebaut/deferred. Finger-Positions-Feedback fehlt damit in der Drag-Phase. **Andi am Gerät entscheiden: bauen oder akzeptabel ohne.**
+- **[GATE-4 Fidelity] Live-Caption wechselt nicht beim Ziel-Treffer** — `bHit` ändert `.reccap`-Text auf „Finger auf Abbrechen · loslassen löst aus"; Implementierung rendert statisch „Aufnahme · loslassen = senden". Das Ziel-eigene Zwei-Zeilen-Label wechselt korrekt (erfüllt explizite AC3/AC4-Prosa) → nur Render-Fidelity-Lücke.
+- **[GATE-4 Fidelity] `.heldbub .finger`-Indikator + inner amber `.ring` weggefallen** — Anker-Bubble zeichnet Schatten + teal-Gradient + äußeren 5dp-amber-Ring + „K", aber nicht den `.finger`-Child (in `bRest`+`bHit`) noch den inneren `.ring` (inset −11px, 2.5px amber, opacity .55). Minor.
+- **[GATE-4 Fidelity] Caption-Clip + Chip↔Abbrechen-Nähe (AC2)** — die am Bubble zentrierte Caption kann bei Dock-Nah die Fensterkante überlaufen (clip); Waveform-Chip-Unterkante sitzt evtl. wenige dp vom Abbrechen-Kreis (AC2 „kein Überlapp", low confidence) → am Gerät prüfen.

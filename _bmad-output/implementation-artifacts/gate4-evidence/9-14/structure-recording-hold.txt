@@ -1,36 +1,28 @@
-GATE-4 structural evidence — Story 9-14 (HOLD-mode push-to-talk), 2026-06-26
-Conductor self-verification. Target: real device 100.112.41.70:5555 (Andi's Xiaomi/HyperOS).
-Fix build installed: versionName 0.5.0, lastUpdateTime 2026-06-26 14:27:47 (commit e92f4f3).
+GATE-4 structural evidence — Story 9-14 HOLD-mode push-to-talk (B-Sprache REBUILD), 2026-06-30
+Conductor self-verification on the FIXED build c431ba5 (post code-review A/B/C).
+Surface: headless emulator-5554 (BMAD_CONDUCTOR=1), arm64-v8a APK via native-bridge.
+APK: app-universal-debug.apk, lastUpdateTime 2026-06-30 23:33:15 (commit c431ba5).
 
-== What was machine-verified ==
-1. Harness reachable on real device: `DEBUG_SET_STATE --es state idle --include-stopped-packages`
-   wakes KlarvoOverlayService; a subsequent `--es state recording --ez hold_mode true` produced
-   TWO APPLICATION_OVERLAY windows (panel + dock) — the expected recording structure:
-     Window #8 (panel):  Requested w=1080 h=550   (full-width bottom panel; contract ~1080x525)
-     Window #9 (dock):   present
-   fl=NOT_FOCUSABLE (NOT FLAG_NOT_TOUCHABLE — correct; HyperOS dims NOT_TOUCHABLE to 0.8).
-2. HOLD-dock window SIZE = 206x96dp = 566x264px, verified by code-continuity (not a live read,
-   see boundary below):
-     FloatingBubbleView: HOLDDOCK_VISUAL_W_DP=190 (+2*8 pad)=206dp ; H=52+28(lockchip)+2*8=96dp.
-     adjustLayoutForState() hold-branch sets bubbleParams.width=holdW height=holdH (l.1038-1043).
-     Dev worker measured this live pre-fix: 566x264px (hold) vs 456x187px=166x68dp (cluster).
-     Fix round (e92f4f3 / finding 5) changed ONLY the Y handling (preclusterBubbleY save/restore,
-     l.1047-1049/1067-1073/1094-1095) — width/height computation untouched -> size assertion intact.
-3. 9-13 cluster regression GREEN (dev+fix workers); build green: 24 JVM tests, KlarvoTheme drift gate PASS.
+== Drive ==
+am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ez hold_mode true --ef rms 0.6 -p com.klarvo.voice
 
-== BOUNDARY — why no clean LIVE structural read here ==
-The device was screen-asleep then PIN-LOCKED (HyperOS keyguard showing=true). APPLICATION_OVERLAY
-windows do not composite behind the keyguard: surfaces read shown=false / alpha=0.0 / mLastAlpha=0.0,
-and the forced-state layout does not reliably apply while locked (a transient read showed the dock at
-the stale cluster size 456x187, NOT the hold size — discarded as a lock artifact, confirmed by the
-code-continuity proof above). Clearing the keyguard needs Andi's PIN/finger — not conductor-observable.
+== Machine-verified (dumpsys window windows) — PASS ==
+Two com.klarvo.voice APPLICATION_OVERLAY windows in the HOLD state:
+  Window #7 (passive panel): gr=BOTTOM CENTER_VERTICAL, Requested w=1080 h=525
+                             Surface shown=true alpha=1.0 isOnScreen=true
+  Window #8 (HOLD targets):  mAttrs=(120,619)(939x1076) gr=TOP START CENTER, Requested w=939 h=1076
+                             Surface shown=true alpha=1.0 isOnScreen=true
+  Both: fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN HARDWARE_ACCELERATED — NO FLAG_NOT_TOUCHABLE
+        (HyperOS 0.8-dim avoidance — Scope boundary respected), fully composited (alpha 1.0).
 
-== RESIDUAL FOR ANDI (real-device, unlocked, live mic) — the actual GATE-4 ==
-Motion + touch + pixel cannot be machine-verified (emulator/harness force a static state; the keyguard
-blocks live composition here). Andi's batched device gate must confirm:
-  a) AC1a — the "<" (cancel) and "^" (lock) hint arrows actually PULSE (the fix moved animator-start
-     into updateAnimators(); harness can't show motion). This is the highest-risk item.
-  b) Gesture: hold=record, release=send, drag-LEFT>60dp=cancel, drag-UP>40dp=lock->cluster.
-  c) Locked state shows header "Aufnahme · gesperrt" + footer "Finger losgelassen · weiter über die Knöpfe";
-     and a SECOND recording afterwards is clean (no sticky locked label/footer — finding 2 fix).
-  d) Visual fidelity of the hold dock vs the approved render mockup-9-5-followups-2-4.html.
+== Fix A (bottom-edge clamp) — no regression at default dock ==
+HOLD window #8 spans y=619..1695 on a 1080x2400 screen → fits within bounds; the new
+coerceIn(0, screenH - NAV_BAR_CLEARANCE_PX - holdH) clamp did not shift/break default-dock
+placement. The clamp ENGAGING at an extreme-low dock is logic-reviewed (code), not driven here
+(harness forces a default saved position) — see verdict.md residual.
+
+== Coarse visual (emulator = STRUCTURAL oracle, NOT pixel/aesthetic — contract visual_oracle.pixel=false) ==
+ist-recording-hold.png: thumb-anchor bubble (teal squircle + K + amber ring), Sperren target
+(teal padlock + "ziehen zum Sperren"), Abbrechen target (red X + "ziehen zum Abbrechen"),
+waveform chip (amber bars + timer), passive bottom panel ("Aufnahme · halten"). No leftover
+slide-track / .ab-holddock surfaces (Inversion gate 1 structurally clear). Colors: teal/red/amber correct.
