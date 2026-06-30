@@ -80,6 +80,7 @@ export interface SettingsPanelProps {
     previewFontFamily?: string | null,
     previewFontSize?: string | null,
     bubbleSizeDp?: number | null, bubbleEdgeSnap?: boolean | null,
+    recordingButtonSizeDp?: number | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
