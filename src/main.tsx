@@ -16,30 +16,15 @@ if (!isPreviewMode) {
   label = getCurrentWindow().label;
 }
 
-// Mirror this window's console.* into Klarvo.log so overlay-window (bar/preview)
-// output is inspectable — they have no reachable devtools. Must run before the
-// component mounts so its first logs are captured.
+// Mirror this window's console.* into Klarvo.log so overlay-window output
+// is inspectable. Must run before the component mounts so its first logs are captured.
 installConsoleBridge(label);
 
-// FloatingBar and PreviewPanel are Tauri-only concepts (separate overlay windows).
-// In preview mode we always render the main App.
-let Root: React.ComponentType;
-if (label === "bar" && !isPreviewMode) {
-  const { default: FloatingBar } = await import("./FloatingBar");
-  Root = FloatingBar;
-} else if (label === "preview" && !isPreviewMode) {
-  const { default: PreviewPanel } = await import("./PreviewPanel");
-  Root = PreviewPanel;
-} else {
-  Root = App;
-}
-
-// The overlay-window listen() subscriptions each return an unlisten cleanup
-// (`return () => unlisten.then(fn => fn())`), so StrictMode's dev-only double-mount
-// is handled correctly. (The preview's "no events" bug was a capability + geometry
-// issue, not a StrictMode double-subscribe — see create_preview_window.)
+// Story 10-1: bar window is native Win32 (no React entry point).
+// Story 10-2: preview is native Win32 (PreviewPanel.tsx removed).
+// Only the "main" window remains here; always render App.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    <App />
   </React.StrictMode>,
 );

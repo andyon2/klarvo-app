@@ -58,6 +58,12 @@ mod vad;
 #[cfg(desktop)]
 mod voice_command;
 
+#[cfg(target_os = "windows")]
+mod native_pill;
+
+#[cfg(target_os = "windows")]
+mod native_preview;
+
 #[cfg(test)]
 mod test_helpers;
 
@@ -68,11 +74,11 @@ use std::sync::atomic::AtomicBool;
 use audio::AudioRecorder;
 use config::{load_config_reporting, save_config, AppConfig, HotkeyMode};
 use dictionary::{load_dictionary, Dictionary};
-use license::{compute_cached_status, LicenseStatus};
+use license::compute_cached_status;
 use llm::{CleanupProvider, CleanupStyle};
 use serde::{Deserialize, Serialize};
 use stt::SttProvider;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 #[cfg(target_os = "windows")]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(target_os = "windows")]
@@ -298,6 +304,20 @@ pub struct AppState {
     /// STT / LLM / paste error. Read by `get_feedback_metrics` when the user
     /// opens the feedback dialog so the payload carries fresh telemetry.
     pub feedback_metrics: Mutex<commands::feedback::FeedbackMetrics>,
+    /// Native pill overlay window handle (Windows-only).
+    /// Replaces the WebView2 "bar" window (Story 10-1).
+    #[cfg(target_os = "windows")]
+    pub native_pill: Mutex<Option<native_pill::NativePill>>,
+    /// Last hotkey mode fed to the pill (Windows-only).
+    /// Persisted here so a recreated pill (e.g. at recording start) can have the
+    /// correct mode badge without waiting for the next hotkey event (10-3 review).
+    #[cfg(target_os = "windows")]
+    pub active_hotkey_mode: std::sync::Mutex<String>,
+    /// Native preview overlay window handle (Windows-only).
+    /// Replaces the WebView2 "preview" window (Story 10-2).
+    /// Created fresh at each recording start (standby-resilience, AC-6).
+    #[cfg(target_os = "windows")]
+    pub native_preview: Mutex<Option<native_preview::NativePreview>>,
 }
 
 // SAFETY: All fields are either `Arc<_>`, `Mutex<_>`, or `RwLock<_>`, which
@@ -380,6 +400,12 @@ impl AppState {
             active_insert_and_send: AtomicBool::new(false),
             voice_command_active: AtomicBool::new(false),
             feedback_metrics: Mutex::new(commands::feedback::FeedbackMetrics::default()),
+            #[cfg(target_os = "windows")]
+            native_pill: Mutex::new(None),
+            #[cfg(target_os = "windows")]
+            active_hotkey_mode: std::sync::Mutex::new("hold".to_string()),
+            #[cfg(target_os = "windows")]
+            native_preview: Mutex::new(None),
         }
     }
 }
@@ -500,10 +526,26 @@ pub fn update_tray_tooltip(handle: &AppHandle, state: &hotkey::PipelineState) {
 }
 
 /// Emits a pipeline state-changed event and updates the tray tooltip
-/// to match the new state. This is the single call site for all state
-/// transitions so tray and frontend stay in sync automatically.
+/// to match the new state. Also drives the native pill overlay (Windows).
+/// This is the single call site for all state transitions so tray and
+/// frontend stay in sync automatically.
 pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
     let pipeline_state = event.state.clone();
+    // Drive native pill and preview in-process (no JS round-trip — AC-3/ADR-0021 §4).
+    #[cfg(target_os = "windows")]
+    {
+        let clipboard_only = event.clipboard_only.unwrap_or(false);
+        if let Ok(guard) = handle.state::<AppState>().native_pill.lock() {
+            if let Some(pill) = guard.as_ref() {
+                pill.set_state(&pipeline_state, clipboard_only);
+            }
+        }
+        if let Ok(guard) = handle.state::<AppState>().native_preview.lock() {
+            if let Some(preview) = guard.as_ref() {
+                preview.set_state(&pipeline_state);
+            }
+        }
+    }
     let _ = handle.emit(hotkey::EVENT_STATE_CHANGED, event);
     #[cfg(desktop)]
     update_tray_tooltip(handle, &pipeline_state);
@@ -558,297 +600,24 @@ pub fn set_window_region_ellipse(hwnd: isize, width: i32, height: i32) {
     }
 }
 
-/// Sets the window region to a rounded rectangle using Win32 API.
-#[cfg(target_os = "windows")]
-pub fn set_window_region_pill(hwnd: isize, width: i32, height: i32) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
-
-    unsafe {
-        // Corner radius = height for a pill shape
-        let rgn = CreateRoundRectRgn(0, 0, width, height, height, height);
-        if !rgn.is_invalid() {
-            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
-        }
-    }
-}
-
-/// Sets the window region to a rounded rectangle with an EXPLICIT corner radius
-/// (physical px; caller applies the scale factor). Used for the live-preview panel
-/// (Story 5.2), which is a tall rounded *card* — not a pill/stadium — so its corner
-/// radius must be independent of the window height. The radius passed here MUST equal
-/// the CSS `borderRadius` the WebView renders for the expanded bar, or the gap between
-/// the OS region and the CSS shape shows as the "white line" artifact.
-#[cfg(target_os = "windows")]
-pub fn set_window_region_round_rect(hwnd: isize, width: i32, height: i32, radius: i32) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
-
-    unsafe {
-        // CreateRoundRectRgn's corner ellipse = 2*radius → corner radius = `radius`.
-        // Clamp so the ellipse never exceeds the rect dimensions.
-        let ell_w = (radius * 2).min(width);
-        let ell_h = (radius * 2).min(height);
-        let rgn = CreateRoundRectRgn(0, 0, width, height, ell_w, ell_h);
-        if !rgn.is_invalid() {
-            let _ = SetWindowRgn(HWND(hwnd as *mut _), Some(rgn), true);
-        }
-    }
-}
 
 #[cfg(desktop)]
-/// Sets up the audio-level callback that emits events to the frontend.
+/// Sets up the audio-level callback that emits events to the frontend
+/// AND feeds the native pill overlay in-process (Windows, AC-3).
 pub fn setup_audio_level_emitter(handle: &AppHandle) {
     let state = handle.state::<AppState>();
     let handle_clone = handle.clone();
     state.recorder.set_level_callback(Box::new(move |level| {
         let _ = handle_clone.emit(EVENT_AUDIO_LEVEL, serde_json::json!({ "level": level }));
+        // Feed native pill directly — no JS round-trip (AC-3 / ADR-0021 §4).
+        #[cfg(target_os = "windows")]
+        if let Ok(guard) = handle_clone.state::<AppState>().native_pill.lock() {
+            if let Some(pill) = guard.as_ref() {
+                pill.feed_rms(level);
+            }
+        }
     }));
 }
-
-/// WebView2 browser arguments. MUST stay identical across ALL THREE windows —
-/// `main` (set in `tauri.conf.json`), plus `bar` and `preview` (set on their
-/// builders below). All webviews in the process share ONE WebView2 environment;
-/// any divergence in browser args between windows fails environment reuse and
-/// wedges startup silently (verified the hard way 2026-06-20: args on `main`
-/// only → bar/preview kept Tauri's default → app launched to a dead tray icon,
-/// no Rust error). The flags disable renderer/occluded-window/timer backgrounding
-/// so the hidden overlays keep painting under the post-June-2026 WebView2 runtime
-/// (149.0.4022.69+), while re-including wry's default `--disable-features=...`
-/// (a set value REPLACES the default rather than extending it).
-///
-/// `CalculateNativeWinOcclusion` is disabled (2026-06-21): the transparent,
-/// always-on-top bar/preview overlays went BLANK whenever another window (e.g. a
-/// foreground terminal) covered their screen region — window stayed visible +
-/// on-screen + correct geometry (measured via dumpsys-equivalent EnumWindows), but
-/// Chromium's native occlusion detection marked the webview occluded and stopped
-/// compositing it. `--disable-backgrounding-occluded-windows` alone does NOT cover
-/// this: it stops the *backgrounding*, not the occlusion *detection* that gates the
-/// paint. Disabling occlusion calculation makes the overlays composite regardless of
-/// what is in front. (Repro: record with a maximized terminal foreground -> blank;
-/// bring Klarvo's own window forward -> paints.)
-#[cfg(desktop)]
-const WEBVIEW2_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling";
-
-#[cfg(desktop)]
-/// Creates the floating bar window positioned above the taskbar.
-///
-/// `saved_x` / `saved_y`: persisted logical position from the config. When
-/// present they are used as-is; the work-area calculation is skipped. On
-/// first launch (both `None`) the position is derived from the Win32
-/// `SPI_GETWORKAREA` work area on Windows, or from the monitor bounds on
-/// other platforms.
-///
-/// Accepts any `Manager<R>` implementor (`App`, `AppHandle`, etc.) so this
-/// function can be called from both the `setup` closure and from commands
-/// that only have access to an `AppHandle`.
-pub fn create_bar_window<M: tauri::Manager<tauri::Wry>>(
-    app: &M,
-    saved_x: Option<f64>,
-    saved_y: Option<f64>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // The window is created at full pill size (200×36 logical px). The pill region
-    // is set once here — the frontend never calls setSize or setBarShape.
-    // Position calculations use bar_height directly (= pill height = 36).
-    let bar_width = 200.0_f64;  // PILL_WIDTH
-    let bar_height = 36.0_f64;  // PILL_HEIGHT
-
-    #[allow(unused_mut)]
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        app,
-        "bar",
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("")
-    .inner_size(bar_width, bar_height)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .resizable(false)
-    .skip_taskbar(true)
-    .focused(false)
-    // Must match `main` (tauri.conf.json) and `preview` exactly — see WEBVIEW2_BROWSER_ARGS.
-    .additional_browser_args(WEBVIEW2_BROWSER_ARGS);
-
-    // Remove window shadow so only the CSS-rendered content is visible.
-    #[cfg(target_os = "windows")]
-    {
-        builder = builder.shadow(false);
-    }
-
-    let bar = builder.build()?;
-
-    // Set initial pill-shaped window region on Windows.
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(hwnd) = bar.hwnd() {
-            let scale = bar.scale_factor().unwrap_or(1.0);
-            let pw = (bar_width * scale) as i32;
-            let ph = (bar_height * scale) as i32;
-            set_window_region_pill(hwnd.0 as isize, pw, ph);
-        }
-    }
-
-    // --- Position the bar ---
-    //
-    // Priority:
-    //   1. Persisted config position  (user dragged the bar, we saved it)
-    //   2. Win32 SPI_GETWORKAREA      (correct usable area, excludes taskbar)
-    //   3. monitor.size() fallback    (60 px conservative taskbar estimate)
-    //   4. Hard-coded fallback        (no monitor detected at all)
-
-    if let (Some(cx), Some(cy)) = (saved_x, saved_y) {
-        log::info!("[bar] Using saved config position ({cx}, {cy})");
-        let _ = bar.set_position(tauri::LogicalPosition::new(cx, cy));
-        return Ok(());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::RECT;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-        };
-
-        let mut work_area = RECT::default();
-        // SAFETY: `work_area` is a valid stack-allocated RECT; the Win32 call
-        // writes into it and we check the return value before using the data.
-        let ok = unsafe {
-            SystemParametersInfoW(
-                SPI_GETWORKAREA,
-                0,
-                Some(&raw mut work_area as *mut _),
-                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-            )
-        };
-
-        match ok {
-            Ok(()) => {
-                // `SPI_GETWORKAREA` returns physical pixels; divide by the bar
-                // window's scale factor to get logical coordinates that Tauri
-                // expects for `set_position`.
-                let scale = bar.scale_factor().unwrap_or(1.0);
-                let work_w = (work_area.right - work_area.left) as f64 / scale;
-                let work_bottom = work_area.bottom as f64 / scale;
-                let work_left = work_area.left as f64 / scale;
-
-                let x = work_left + (work_w - bar_width) / 2.0;
-                let y = work_bottom - bar_height - 8.0;
-
-                log::info!(
-                    "[bar] SPI_GETWORKAREA -> work_area=({},{},{},{}) scale={scale:.2}, placing at ({x:.1}, {y:.1})",
-                    work_area.left, work_area.top, work_area.right, work_area.bottom,
-                );
-                let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
-                return Ok(());
-            }
-            Err(e) => {
-                log::warn!("[bar] SPI_GETWORKAREA failed ({e}), falling back to monitor size");
-            }
-        }
-    }
-
-    // Fallback: derive position from monitor bounds with a conservative
-    // 60 px taskbar estimate.
-    match bar.current_monitor() {
-        Ok(Some(monitor)) => {
-            let screen_size = monitor.size();
-            let monitor_pos = monitor.position();
-            let scale = monitor.scale_factor();
-            let screen_w = screen_size.width as f64 / scale;
-            let screen_h = screen_size.height as f64 / scale;
-            let offset_x = monitor_pos.x as f64 / scale;
-            let offset_y = monitor_pos.y as f64 / scale;
-            let x = offset_x + (screen_w - bar_width) / 2.0;
-            // 60 px: conservative estimate for taskbar height at common DPI settings.
-            let y = offset_y + screen_h - bar_height - 60.0;
-            log::info!(
-                "[bar] monitor fallback: screen={screen_w}x{screen_h} scale={scale:.2} \
-                 offset=({offset_x},{offset_y}), placing at ({x:.1}, {y:.1})"
-            );
-            let _ = bar.set_position(tauri::LogicalPosition::new(x, y));
-        }
-        _ => {
-            log::warn!("[bar] No monitor detected, using hard-coded fallback position");
-            let _ = bar.set_position(tauri::LogicalPosition::new(400.0, 10.0));
-        }
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Preview window creation
-// ---------------------------------------------------------------------------
-
-/// Creates the standalone transparent, click-through `"preview"` window.
-///
-/// The window starts as a 1×1 hidden stub; Story 6.2 resizes it to the
-/// computed `clampedMaxHeight × width` geometry on the first live-preview
-/// chunk. No position is set here — 6.2 derives the position from the pill
-/// anchor on first show.
-///
-/// Accepts any `Manager<R>` implementor (`App`, `AppHandle`, etc.) so this
-/// function can be called from both the `setup` closure and from recovery
-/// commands that only have access to an `AppHandle`.
-#[cfg(desktop)]
-pub fn create_preview_window<M: tauri::Manager<tauri::Wry>>(
-    app: &M,
-) -> Result<(), Box<dyn std::error::Error>> {
-    #[allow(unused_mut)]
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        app,
-        "preview",
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("")
-    // Create the window VISIBLE at a real size.
-    //   - NOT 1×1: a near-zero WebView2 surface never initializes the JS/event bridge
-    //     (PreviewPanel never mounts, listeners never register).
-    //   - Created visible (no `.visible(false)`): a window resident from startup is
-    //     guaranteed to have mounted + registered its state-changed / live-preview-chunk
-    //     listeners before the first recording, so the first chunk is never missed. It is
-    //     fully transparent + click-through and renders nothing until there is preview
-    //     text, so a resident empty window is invisible and non-interactive to the user.
-    //
-    // (History: the preview "received no events" bug was NOT a hidden-window throttle —
-    //  it was a missing capability ("preview" absent from capabilities/default.json
-    //  windows) that denied core:event:allow-listen, plus a tuple-vs-object serialization
-    //  bug in get_bar_position that made runShowSequence compute NaN. Once both were
-    //  fixed, a hidden window was observed to receive events fine across recording cycles.
-    //  The window is left resident-visible because it is the verified-working config and
-    //  reverting to `.visible(false)` would re-risk first-cycle webview-init timing.)
-    //
-    // runShowSequence sets the exact size/region/position on the first chunk.
-    // Size is the max preset (wide 400 × maxHeight 600).
-    .inner_size(400.0, 600.0)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .resizable(false)
-    .skip_taskbar(true)
-    .focused(false)
-    // Must match `main` (tauri.conf.json) and `bar` exactly — see WEBVIEW2_BROWSER_ARGS.
-    .additional_browser_args(WEBVIEW2_BROWSER_ARGS);
-
-    // Remove window shadow so only the CSS-rendered content is visible.
-    #[cfg(target_os = "windows")]
-    {
-        builder = builder.shadow(false);
-    }
-
-    let preview = builder.build()?;
-
-    // Make the window click-through: cursor events pass to whatever is behind it.
-    // Fail-soft: if the call fails the window still renders, just not click-through.
-    if let Err(e) = preview.set_ignore_cursor_events(true) {
-        log::warn!("[preview] set_ignore_cursor_events failed: {e}");
-    }
-
-    log::info!("[setup] preview window created (transparent, 400x600, shown on first chunk)");
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Tauri entry point
 // ---------------------------------------------------------------------------
@@ -980,16 +749,40 @@ pub fn run() {
                 .build(app)?;
         }
 
-        // --- Floating bar window ---
+        // --- Native pill overlay (replaces WebView2 "bar" window, Story 10-1) ---
         #[cfg(target_os = "windows")]
-        if let Err(e) = create_bar_window(app, _saved_bar_x, _saved_bar_y) {
-            log::warn!("[setup] Could not create floating bar: {e}");
+        {
+            match native_pill::NativePill::create(app.handle().clone(), _saved_bar_x, _saved_bar_y) {
+                Ok(pill) => {
+                    if let Ok(mut guard) = app.state::<AppState>().native_pill.lock() {
+                        *guard = Some(pill);
+                    }
+                    log::info!("[setup] Native pill overlay created");
+                }
+                Err(e) => log::warn!("[setup] Could not create native pill overlay: {e}"),
+            }
         }
 
-        // --- Standalone preview window (transparent, click-through, always-on-top) ---
+        // NOTE: WebView2 create_preview_window removed (Story 10-2).
+        // NativePreview is now created per-recording in pipeline.rs.
+
+        // --- klarvo://bar-moved → native preview reposition (Story 10-2) ---
         #[cfg(target_os = "windows")]
-        if let Err(e) = create_preview_window(app) {
-            log::warn!("[setup] Could not create preview window: {e}");
+        {
+            use tauri::Listener; // App::listen is provided by the Listener trait
+            let handle_bm = app.handle().clone();
+            app.listen("klarvo://bar-moved", move |event| {
+                // Payload: {"x": f64, "y": f64}
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                    let x = payload["x"].as_f64().unwrap_or(0.0);
+                    let y = payload["y"].as_f64().unwrap_or(0.0);
+                    if let Ok(guard) = handle_bm.state::<AppState>().native_preview.lock() {
+                        if let Some(preview) = guard.as_ref() {
+                            preview.set_pill_pos(x, y);
+                        }
+                    }
+                }
+            });
         }
 
         // --- Desktop-only setup: audio level emitter + global hotkey ---
@@ -1067,18 +860,15 @@ pub fn run() {
     {
         builder = builder.on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let label = window.label();
-                // Bar and preview windows: always prevent close (they should always exist).
-                if label == "bar" || label == "preview" {
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
+                let _label = window.label();
                 // Main window: hide only if tray is available (Windows).
                 #[cfg(target_os = "windows")]
-                if label == "main" {
+                if _label == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
+                // On non-Windows (Linux/macOS), closing is the default behaviour.
+                let _ = api; // suppress unused on non-windows
             }
         });
     }
@@ -1093,7 +883,6 @@ pub fn run() {
             commands::recording::cleanup_text,
             commands::recording::is_recording,
             commands::recording::list_audio_devices,
-            commands::recording::transcribe_live_preview,
             // Settings
             commands::settings::save_settings,
             commands::settings::get_settings,
@@ -1142,7 +931,6 @@ pub fn run() {
             commands::misc::sync_history,
             commands::recording::cancel_recording,
             commands::misc::set_bar_shape,
-            commands::misc::set_preview_shape,
             commands::misc::frontend_log,
             commands::misc::save_bar_position,
             commands::misc::get_bar_position,

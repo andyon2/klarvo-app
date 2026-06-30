@@ -30,8 +30,13 @@ $exeBefore = if (Test-Path $exe) { (Get-Item $exe).LastWriteTime } else { $null 
 Write-Host "Syncing files from WSL..." -ForegroundColor Cyan
 
 # Sync with robocopy, excluding build artifacts and Android native libs.
-# robocopy exit codes: 0-7 = success (1 = files were copied), 8+ = real error.
-robocopy $src $dst /E /XD target node_modules .git jniLibs /XF "*.so" /NFL /NDL /NJH /NJS /NP /R:1 /W:1
+# /PURGE deletes dest files that no longer exist in source -- WITHOUT it, a story that
+# removes a file (e.g. deleting src/PreviewPanel.tsx in Story 10-2) leaves a stale orphan
+# in $dst that breaks the build (or silently compiles dead code). The /XD-excluded dirs
+# (target, node_modules, .git, jniLibs) are excluded from purge too, so build outputs and
+# the Windows-side npm install are never touched.
+# robocopy exit codes: 0-7 = success (1 = files were copied, 2 = extra/purged), 8+ = real error.
+robocopy $src $dst /E /PURGE /XD target node_modules .git jniLibs /XF "*.so" /NFL /NDL /NJH /NJS /NP /R:1 /W:1
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { Fail "robocopy sync failed (exit $rc) -- source not mirrored to $dst." }
 

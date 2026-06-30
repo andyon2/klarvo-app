@@ -188,3 +188,44 @@ marked Superseded in the index (already noted; confirm clean removal)
 
 - Same shape as 10-1: Windows release build; occlusion harness PASS (machine); Andi smoke
   (appearance + click-through + anchoring); `cargo check`/`cargo test`/`tsc` green; review inversion.
+
+## Story 10-4 — Native overlay DPI scaling + appearance-wiring audit
+
+**As** a Klarvo user on a high-DPI (125/150 %) display,
+**I want** both native overlays (pill + preview) to render at the same size as the old WebView2
+overlays, with the appearance/size settings visibly effective,
+**so that** the overlays are legible and the font-size presets actually differ.
+
+Source: Andi real-device smoke after Story 10-2. Since the native rebuild (Epic 10), **both** overlays
+render too small vs. the old WebView2 overlays, and the font-size presets feel far too weak
+(large ≈ tiny, small ≈ unusable). Full scope + read-only diagnosis: `docs/backlog.md`
+("Epic 10 — Native-Overlay-Skalierung zu klein + Appearance-Wiring-Audit").
+
+**Leading hypothesis (to confirm on device, NOT yet verified on Windows):** wrong DPI scale, shared by
+both overlays. `native_pill.rs:1259` and `native_preview.rs:942` compute
+`scale = GetDeviceCaps(screen_dc, LOGPIXELSX) / 96`. Under per-monitor-v2 DPI awareness (tao/Tauri's
+embedded manifest), `GetDeviceCaps(screen_dc, LOGPIXELSX)` typically returns 96 → `scale = 1.0`
+regardless of the monitor's real DPI → overlays render ~1.0× instead of ~1.5×. Correct API:
+`GetDpiForWindow(hwnd)` / `GetDpiForMonitor`. The old WebView2 windows were correctly DPI-scaled by
+Tauri. Settings→preview wiring is already correct (`previewFontSize` → `font_px` small=11/medium=13/
+large=15, `native_preview.rs:94-97`) — verify end-to-end, but it is not the defect.
+
+### Acceptance Criteria (outline — create-story to enrich)
+
+- **AC-1 — Root-cause confirmed on device:** the real scale is logged at runtime (`GetDeviceCaps` vs
+  `GetDpiForWindow`/`GetDpiForMonitor`) so the absolute-scale defect is proven, not assumed.
+- **AC-2 — Both overlays render 1:1 with the old WebView2 size:** pill (logo + red cancel button) and
+  preview card match the pre-Epic-10 WebView2 scale on a high-DPI monitor (reference = git before
+  Epic 10). One shared scale mechanism corrected for both.
+- **AC-3 — Appearance settings verified end-to-end against the preview:** all `previewXxx` settings plus
+  the size/width presets are visibly effective on the live preview.
+- **AC-4 — Size presets calibrated:** small / medium / large are perceptibly distinct. *(Open design
+  question — the exact target sizes are a human/taste call, surfaced at create-story elicitation, not
+  pre-decided here.)*
+
+### DoD (surface-class)
+
+- Windows release build; `cargo check`/`cargo test`/`tsc` green; review inversion.
+- **GATE 4 is Andi's real Windows machine** at real monitor DPI (125/150 %): absolute scale + preset
+  legibility are a genuine aesthetic/real-target judgment, not WSL-self-certifiable. Machine side
+  (WSL) verifies cross-compile (`x86_64-pc-windows-gnu`) + any harness-observable structure only.

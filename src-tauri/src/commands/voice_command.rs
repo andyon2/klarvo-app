@@ -4,7 +4,7 @@
 //! `cpal` continuous capture which is wired up only on desktop targets.
 
 #[cfg(desktop)]
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 #[cfg(desktop)]
 use crate::AppState;
@@ -69,10 +69,8 @@ pub fn toggle_voice_command_mode(app: AppHandle) -> Result<bool, String> {
             }
             // Also clear any auto-loop flag.
             state.auto_loop_active.store(false, Ordering::SeqCst);
-            let _ = app.emit(
-                crate::hotkey::EVENT_STATE_CHANGED,
-                crate::hotkey::PipelineEvent::idle(),
-            );
+            // Route through emit_pipeline_state so the native pill also transitions.
+            crate::emit_pipeline_state(&app, crate::hotkey::PipelineEvent::idle());
         }
 
         // Stop the monitor if it's actually running. Log errors but don't

@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::audio;
 use crate::config::{self, AppConfig, HotkeyMode};
 use crate::history;
-use crate::hotkey::{PipelineEvent, EVENT_STATE_CHANGED};
+use crate::hotkey::PipelineEvent;
 use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
 use crate::paste::{
     capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
@@ -216,6 +216,12 @@ pub fn resolve_fallback_provider(
 // Whisper prompt-echo detection
 // ---------------------------------------------------------------------------
 
+/// Whether a token counts as a "significant" word for prompt-echo overlap
+/// (the overlap heuristic only considers words of >= 3 characters).
+fn is_significant_word(w: &str) -> bool {
+    w.chars().count() >= 3
+}
+
 /// Detects when Whisper echoes the conditioning prompt instead of real speech.
 ///
 /// Whisper sometimes "hallucinates" the prompt text when the audio contains
@@ -271,7 +277,7 @@ pub(crate) fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
     let extract_words = |text: &str| -> Vec<String> {
         text.split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
             .map(|w| w.to_lowercase())
-            .filter(|w| w.len() >= 3)
+            .filter(|w| is_significant_word(w))
             .collect()
     };
 
@@ -590,27 +596,72 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
     } = Some(std::time::Instant::now());
 
-    // Ensure the floating bar window exists before telling the frontend to show it.
-    // Recovers from the rare case where the bar silently vanished after hours idle.
-    #[cfg(desktop)]
+    // Native pill: recreate a fresh layered window at every recording start.
+    //
+    // A WS_EX_LAYERED window presented via UpdateLayeredWindow is pushed into DWM's
+    // composition surface ONCE and never receives WM_PAINT. Across a power/session
+    // transition (Modern Standby resume, monitor power, lock/unlock) DWM rebuilds its
+    // composition surfaces and the long-lived pill is never re-presented into the new
+    // one — it still renders into its own bitmap (PrintWindow shows content) but the
+    // desktop shows nothing, while IsWindow() still reports it alive so a liveness gate
+    // never recovered it. Recreating the window guarantees a live composition surface,
+    // exactly as a process restart does. Recordings are infrequent, so the per-start
+    // cost (one short-lived OS thread + window) is negligible. See Story 10-3 / ADR-0021.
+    #[cfg(target_os = "windows")]
     {
-        if let Some(bar) = handle.get_webview_window("bar") {
-            if bar.is_visible().unwrap_or(false) == false {
-                log::info!("[bar] recording started but bar not visible, showing");
-                let _ = bar.show();
+        let (sx, sy) = state
+            .config
+            .lock()
+            .ok()
+            .map(|c| (c.bar_x, c.bar_y))
+            .unwrap_or((None, None));
+        // Build the new pill BEFORE dropping the old one, so a transient create
+        // failure leaves the previous pill in place (never "no pill").
+        match crate::native_pill::NativePill::create(handle.clone(), sx, sy) {
+            Ok(pill) => {
+                // Re-feed the active hotkey mode: a fresh pill defaults to "hold";
+                // the mode the hotkey handler set on the previous pill is lost on
+                // recreate (10-3 review).
+                if let Ok(m) = state.active_hotkey_mode.lock() {
+                    pill.set_hotkey_mode(m.clone());
+                }
+                if let Ok(mut g) = state.native_pill.lock() {
+                    *g = Some(pill); // old pill (if any) dropped here → orderly teardown
+                }
             }
-            // Re-assert topmost on every recording start. After repeated
-            // hide/show cycles (and under the post-June-2026 WebView2 runtime)
-            // the overlay can lose its z-order and come up BEHIND the
-            // foreground app — visible to the OS but not to the user.
-            let _ = bar.set_always_on_top(true);
-        } else {
-            log::warn!("[bar] recording started but bar window missing, recreating");
-            let saved = state.config.lock().ok().map(|c| (c.bar_x, c.bar_y));
-            let (sx, sy) = saved.unwrap_or((None, None));
-            if let Err(e) = crate::create_bar_window(&handle, sx, sy) {
-                log::error!("[bar] failed to recreate bar window: {e}");
+            Err(e) => log::error!(
+                "[native_pill] recreate at recording start failed, keeping existing pill: {e}"
+            ),
+        }
+
+        // Native preview: recreate alongside the pill (same standby-resilience pattern,
+        // Story 10-2). Only instantiate when live_preview_enabled; if disabled we hold
+        // None and all set_state/append_chunk calls are no-ops.
+        let (preview_enabled, px, py) = state
+            .config
+            .lock()
+            .ok()
+            .map(|c| (c.live_preview_enabled, c.bar_x, c.bar_y))
+            .unwrap_or((false, None, None));
+        if preview_enabled {
+            let pcfg = state
+                .config
+                .lock()
+                .ok()
+                .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
+                .unwrap_or_default();
+            match crate::native_preview::NativePreview::create(px, py, pcfg) {
+                Ok(preview) => {
+                    if let Ok(mut g) = state.native_preview.lock() {
+                        *g = Some(preview);
+                    }
+                }
+                Err(e) => log::error!(
+                    "[native_preview] recreate at recording start failed: {e}"
+                ),
             }
+        } else if let Ok(mut g) = state.native_preview.lock() {
+            *g = None; // drop any previous preview window
         }
     }
 
@@ -756,10 +807,7 @@ pub async fn start_command_mode(handle: AppHandle) {
         .map(|s| crate::license::is_feature_allowed(&s, crate::license::LicensedFeature::CommandMode))
         .unwrap_or(false);
     if !command_mode_allowed {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error("feature_requires_license:CommandMode"),
-        );
+        crate::emit_pipeline_state(&handle, PipelineEvent::error("feature_requires_license:CommandMode"));
         return;
     }
 
@@ -870,10 +918,7 @@ pub async fn start_command_mode(handle: AppHandle) {
 
     let device_name = state.config.lock().ok().and_then(|c| c.audio_device.clone());
     if let Err(e) = state.recorder.start_recording(device_name.as_deref()) {
-        let _ = handle.emit(
-            EVENT_STATE_CHANGED,
-            PipelineEvent::error(format!("Failed to start recording: {e}")),
-        );
+        crate::emit_pipeline_state(&handle, PipelineEvent::error(format!("Failed to start recording: {e}")));
         if let Ok(mut guard) = state.command_mode_active.lock() {
             *guard = false;
         }
@@ -883,15 +928,12 @@ pub async fn start_command_mode(handle: AppHandle) {
     *match state.recording_start.lock() {
         Ok(g) => g,
         Err(_) => {
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error("State lock poisoned"),
-            );
+            crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned"));
             return;
         }
     } = Some(std::time::Instant::now());
 
-    let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::recording());
+    crate::emit_pipeline_state(&handle, PipelineEvent::recording());
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,10 +1317,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("[pipeline] failed to stop recording: {e}");
-            let _ = handle.emit(
-                EVENT_STATE_CHANGED,
-                PipelineEvent::error(format!("Failed to stop recording: {e}")),
-            );
+            crate::emit_pipeline_state(&handle, PipelineEvent::error(format!("Failed to stop recording: {e}")));
             return;
         }
     };
@@ -1321,7 +1360,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     match silence_skip(duration_ms, adv.min_recording_ms as u64, rms, silence_threshold) {
         Some(SilenceSkip::TooShort) => {
             log::info!("[pipeline] recording too short ({duration_ms}ms), skipping");
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            crate::emit_pipeline_state(&handle, PipelineEvent::idle());
             return;
         }
         Some(SilenceSkip::Silent) => {
@@ -1329,7 +1368,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 "[pipeline] audio is silent (rms={:.5}), skipping",
                 rms.unwrap_or(0.0)
             );
-            let _ = handle.emit(EVENT_STATE_CHANGED, PipelineEvent::idle());
+            crate::emit_pipeline_state(&handle, PipelineEvent::idle());
             return;
         }
         None => {}
@@ -1347,10 +1386,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] config lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (config)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (config)"));
                 return;
             }
         };
@@ -1359,10 +1395,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] stt_provider lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (stt_provider)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (stt_provider)"));
                 return;
             }
         };
@@ -1371,10 +1404,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             Ok(g) => g.clone(),
             Err(e) => {
                 log::error!("[pipeline] cleanup_provider lock poisoned: {e}");
-                let _ = handle.emit(
-                    EVENT_STATE_CHANGED,
-                    PipelineEvent::error("State lock poisoned (cleanup_provider)"),
-                );
+                crate::emit_pipeline_state(&handle, PipelineEvent::error("State lock poisoned (cleanup_provider)"));
                 return;
             }
         };
@@ -1508,8 +1538,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // --- Run the STT -> guard -> LLM -> sanitize core (no locks held) ---
     let pipeline_start = std::time::Instant::now();
     let outcome = {
-        let mut emit = |ev| {
-            let _ = handle.emit(EVENT_STATE_CHANGED, ev);
+        let mut emit = |ev: PipelineEvent| {
+            crate::emit_pipeline_state(&handle, ev);
         };
         process_audio(process_input, &mut emit).await
     };
@@ -1785,7 +1815,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     } else {
         PipelineEvent::done(cleaned_text, raw_text)
     };
-    let _ = handle.emit(EVENT_STATE_CHANGED, done_event);
+    crate::emit_pipeline_state(&handle, done_event);
 }
 
 /// Applies the deferred side effects from a [`ProcessOutcome`] and extracts the
@@ -1984,8 +2014,15 @@ async fn flush_preview_delta(handle: AppHandle) {
     match stt_prov.transcribe(wav_bytes, &language, None).await {
         Ok(text) if !text.is_empty() => {
             // Emit the raw segment text as an append payload (NFR4 — colon form).
-            if let Err(e) = handle.emit("klarvo://live-preview-chunk", text) {
+            if let Err(e) = handle.emit("klarvo://live-preview-chunk", text.clone()) {
                 log::warn!("[preview] flush_preview_delta: failed to emit chunk event: {e}");
+            }
+            // Feed native preview in-process (Story 10-2 / ADR-0021 §4).
+            #[cfg(target_os = "windows")]
+            if let Ok(guard) = handle.state::<AppState>().native_preview.lock() {
+                if let Some(preview) = guard.as_ref() {
+                    preview.append_chunk(Box::new(text));
+                }
             }
         }
         Ok(_) => {
@@ -2248,6 +2285,27 @@ pub fn register_hotkey(handle: &AppHandle) -> Result<(), String> {
                 // Tell the FloatingBar which mode is active so it shows the
                 // correct badge (Hotkey 1 vs Hotkey 2 may have different modes).
                 let _ = handle_clone.emit("klarvo://active-mode", mode);
+                // Also feed the native pill so its mode badge is correct
+                // (mirrors the deleted FloatingBar's klarvo://active-mode listener).
+                #[cfg(target_os = "windows")]
+                {
+                    let mode_str = match mode {
+                        HotkeyMode::Hold => "hold",
+                        HotkeyMode::Toggle => "toggle",
+                        HotkeyMode::AutoStop => "autostop",
+                        HotkeyMode::Auto => "auto",
+                    }.to_string();
+                    // Persist so a fresh pill created by start_recording_only can
+                    // inherit the correct mode badge (10-3 review fix).
+                    if let Ok(mut m) = handle_clone.state::<AppState>().active_hotkey_mode.lock() {
+                        *m = mode_str.clone();
+                    }
+                    if let Ok(guard) = handle_clone.state::<AppState>().native_pill.lock() {
+                        if let Some(pill) = guard.as_ref() {
+                            pill.set_hotkey_mode(mode_str);
+                        }
+                    }
+                }
 
                 // Helper: stores the slot's insert_and_send flag in AppState
                 // so stop_and_process_pipeline can read it without needing to
@@ -3410,6 +3468,24 @@ mod tests {
             super::is_prompt_echo(hallucination, hint),
             "repeated variation should be detected"
         );
+    }
+
+    /// Word significance is measured by CHARACTER count, not byte length, so
+    /// multi-byte 2-char words (e.g. the German filler "äh", 3 UTF-8 bytes) are
+    /// not mistaken for significant words in the prompt-echo overlap heuristic.
+    #[test]
+    fn test_word_significance_counts_chars_not_bytes() {
+        assert!(!super::is_significant_word("äh"), "'äh' is 2 chars (filler) — must not count");
+        assert!(!super::is_significant_word("öl"), "'öl' is 2 chars — must not count");
+    }
+
+    /// Control: the char-count rule does not blanket-flip — genuine ≥3-char
+    /// words stay significant and genuine <3-char ascii words stay insignificant.
+    #[test]
+    fn test_word_significance_control_ascii_unchanged() {
+        assert!(super::is_significant_word("abc"), "3 ascii chars stays significant");
+        assert!(super::is_significant_word("über"), "4 chars (umlaut) stays significant");
+        assert!(!super::is_significant_word("an"), "2 ascii chars stays insignificant");
     }
 
     /// Long real text (>30 words) must never be flagged, even if some prompt

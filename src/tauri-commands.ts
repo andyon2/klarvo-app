@@ -546,17 +546,8 @@ export async function setBarShape(_shape: "idle" | "pill" | "panel"): Promise<vo
   await invoke("set_bar_shape", { shape: _shape });
 }
 
-export async function setPreviewShape(radius: number): Promise<void> {
-  if (isPreviewMode) return;
-  await invoke("set_preview_shape", { radius });
-}
-
-// --- Live preview ---
-
-export async function transcribeLivePreview(): Promise<string> {
-  if (isPreviewMode) return mockAsync("Live preview...", 300);
-  return invoke<string>("transcribe_live_preview");
-}
+// setPreviewShape removed (Story 10-2: NativePreview renders its own shape).
+// transcribeLivePreview removed (Story 10-2: NativePreview fed by flush_preview_delta in-process).
 
 // --- Window context ---
 

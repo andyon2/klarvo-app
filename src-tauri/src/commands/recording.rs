@@ -320,11 +320,8 @@ pub async fn cancel_recording(
     *crate::lock!(inner.recording_start)? = None;
 
     // Emit idle state so all windows (main + floating bar) update.
-    use tauri::Emitter;
-    let _ = handle.emit(
-        crate::hotkey::EVENT_STATE_CHANGED,
-        crate::hotkey::PipelineEvent::idle(),
-    );
+    // Route through emit_pipeline_state so the native pill also transitions.
+    crate::emit_pipeline_state(&handle, crate::hotkey::PipelineEvent::idle());
 
     Ok(())
 }
@@ -343,53 +340,7 @@ pub fn list_audio_devices() -> Vec<String> {
     audio::list_input_devices()
 }
 
-/// Takes a snapshot of the current audio buffer and transcribes it for live preview.
-///
-/// Returns the partial transcription text, or empty string if nothing recorded yet.
-#[tauri::command]
-pub async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<String, String> {
-    let inner = state.inner();
-
-    // Only preview while actually recording
-    if !inner.recorder.is_recording() {
-        return Ok(String::new());
-    }
-
-    let wav_bytes = match inner.recorder.snapshot_wav() {
-        Some(b) if b.len() > 44 => b, // 44 = WAV header only (no audio data)
-        _ => return Ok(String::new()),
-    };
-
-    let (language, stt_provider, dict_prompt) = {
-        let cfg = crate::lock!(inner.config)?;
-        let lang = cfg.language.clone();
-        let stt = inner
-            .stt_provider
-            .read()
-            .map_err(|e| format!("Lock poisoned: {e}"))?
-            .clone();
-        let dict_terms = match inner.dictionary.lock() {
-            Ok(g) => {
-                let p = g.terms_as_prompt();
-                if p.is_empty() { None } else { Some(p) }
-            }
-            Err(_) => None,
-        };
-        let prompt = build_stt_prompt(dict_terms.as_deref(), &lang);
-        (lang, stt, prompt)
-    };
-
-    match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
-        .await
-    {
-        Ok(text) => Ok(text),
-        Err(e) => {
-            log::warn!("[live-preview] transcription failed: {e}");
-            Ok(String::new()) // Don't error out, just return empty
-        }
-    }
-}
+// transcribe_live_preview removed (Story 10-2: NativePreview driven by flush_preview_delta in pipeline.rs).
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -398,7 +349,6 @@ pub async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AppConfig;
     use crate::test_helpers::{make_state, temp_dir};
 
     /// `is_offline_mode` returns `true` when `stt_provider` is "local".

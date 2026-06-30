@@ -18,7 +18,7 @@ use tauri::State;
 
 use crate::license::{
     compute_status_from_cache, compute_status_from_cache_ls, compute_trial_status,
-    ls_client, status_to_string, validate_key_dual_path, LicenseStatus, ValidateResult,
+    ls_client, status_to_string, validate_key_dual_path, ValidateResult,
 };
 use crate::AppState;
 

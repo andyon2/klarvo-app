@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-06-14
+last_updated: 2026-06-30
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -138,6 +138,8 @@ development_status:
 
   # Epic 10 — Native Desktop Overlays [L3 architecture-migration; surface-class smoke DoD] — branch feat/native-desktop-overlays, supersedes ADR-0020
   epic-10: in-progress
-  10-1-native-pill-overlay: ready-for-dev
-  10-2-native-preview-overlay: backlog
+  10-1-native-pill-overlay: done
+  10-2-native-preview-overlay: done
+  10-3-native-pill-standby-resilience: done
+  10-4-native-overlay-dpi-scaling-and-appearance-wiring: done
   epic-10-retrospective: optional
