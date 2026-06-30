@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Klarvo — Mobile HOLD · Variante B verfeinert (2026-06-26)</title>
+<style>
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Regular.woff2') format('woff2');font-weight:400}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Medium.woff2') format('woff2');font-weight:500}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-SemiBold.woff2') format('woff2');font-weight:600}
+  @font-face{font-family:'Geist';src:url('../../../dist/fonts/Geist-Bold.woff2') format('woff2');font-weight:700}
+  @font-face{font-family:'Geist Mono';src:url('../../../dist/fonts/GeistMono-Regular.woff2') format('woff2');font-weight:400}
+  @font-face{font-family:'Geist Mono';src:url('../../../dist/fonts/GeistMono-Medium.woff2') format('woff2');font-weight:500}
+  :root{
+    --k-text:#ECEEEF;--k-muted:#A4A9AC;--k-dim:#6F7479;
+    --k-teal:#29C7AC;--k-teal-hi:#57DDC7;--k-teal-lo:#1B9C88;--k-teal-line:rgba(41,199,172,.45);--k-on-teal:#05201B;
+    --k-amber:#E9A24C;--k-amber-line:rgba(233,162,76,.45);
+    --k-danger:#EE6F63;--k-danger-hi:#F4897E;--k-danger-line:rgba(238,111,99,.45);
+    --k-border:#282C2F;--k-hairline:rgba(255,255,255,.06);
+    --k-e3:0 14px 40px rgba(0,0,0,.6);--k-glass:inset 0 1px 0 var(--k-hairline);
+    --k-font:'Geist',system-ui,sans-serif;--k-mono:'Geist Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0a0a0b;font-family:var(--k-font);display:flex;gap:34px;padding:34px;align-items:flex-start}
+  .phone{position:relative;width:393px;height:895px;border-radius:30px;overflow:hidden;flex:0 0 auto;
+    box-shadow:0 0 0 2px #1c1c1f,0 24px 60px rgba(0,0,0,.6)}
+  .wall{position:absolute;inset:0;
+    background:radial-gradient(120% 80% at 12% 8%,#ff7a59 0,transparent 42%),
+      radial-gradient(90% 70% at 88% 14%,#6d6bff 0,transparent 46%),
+      radial-gradient(120% 90% at 78% 88%,#18b88a 0,transparent 44%),
+      radial-gradient(120% 90% at 8% 92%,#ffd166 0,transparent 42%),
+      conic-gradient(from 200deg at 50% 50%,#2a2350,#143b3a,#4a2a3e,#2a2350)}
+  .wall::after{content:"";position:absolute;inset:0;opacity:.5;
+    background:repeating-linear-gradient(58deg,rgba(255,255,255,.06) 0 2px,transparent 2px 26px),
+      repeating-linear-gradient(-32deg,rgba(0,0,0,.10) 0 2px,transparent 2px 22px)}
+  .appbehind{position:absolute;inset:0;padding:54px 16px 0;display:flex;flex-direction:column;gap:10px;opacity:.92}
+  .ab-row{display:flex}.ab-row.me{justify-content:flex-end}
+  .ab-msg{max-width:74%;padding:11px 14px;border-radius:16px;font-size:14px;line-height:1.4;color:#10241f;
+    background:rgba(255,255,255,.92);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  .ab-row.me .ab-msg{background:linear-gradient(180deg,#37e0c4,#19b89c);color:#062019}
+  .statusbar{position:absolute;top:0;left:0;right:0;height:40px;display:flex;justify-content:space-between;align-items:center;
+    padding:0 22px;color:#fff;font-family:var(--k-mono);font-size:13px;font-weight:500;text-shadow:0 1px 3px rgba(0,0,0,.5);z-index:40}
+
+  /* connecting hint paths (behind everything) */
+  .paths{position:absolute;inset:0;z-index:20}
+
+  /* held bubble (thumb anchor), right-middle */
+  .heldbub{position:absolute;width:82px;height:82px;border-radius:25px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);font-weight:700;font-size:32px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 5px var(--k-amber-line),var(--k-glass);z-index:32}
+  .heldbub .ring{position:absolute;inset:-11px;border-radius:32px;border:2.5px solid var(--k-amber);opacity:.55}
+  .heldbub .finger{position:absolute;right:-12px;bottom:-14px;width:54px;height:54px;border-radius:50%;
+    background:rgba(236,238,239,.16);border:2px solid rgba(236,238,239,.5)}
+  /* dragged ghost bubble + its finger */
+  .ghost{position:absolute;width:74px;height:74px;border-radius:23px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(150deg,rgba(87,221,199,.5),rgba(27,156,136,.5));color:rgba(5,32,27,.65);font-weight:700;font-size:28px;
+    border:2px dashed rgba(236,238,239,.35);z-index:33}
+  .ghost .finger{position:absolute;right:-10px;bottom:-12px;width:52px;height:52px;border-radius:50%;
+    background:rgba(236,238,239,.22);border:2px solid rgba(236,238,239,.6)}
+
+  /* compact recording status chip, hugging the bubble (no longer over a target) */
+  .statuschip{position:absolute;display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:18px;z-index:30;
+    background:rgba(18,20,22,.96);border:1px solid var(--k-border);box-shadow:var(--k-e3),var(--k-glass)}
+  .statuschip .wave{display:flex;align-items:center;gap:3.5px;height:30px}
+  .statuschip .wave i{width:4px;border-radius:3px;background:var(--k-amber)}
+  .statuschip .tm{font-family:var(--k-mono);font-size:13px;color:var(--k-muted)}
+
+  /* target zones */
+  .zone{position:absolute;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+    z-index:26;transition:none}
+  .zone .ic{line-height:1}
+  .zone .lab{font-family:var(--k-mono);text-align:center;line-height:1.15}
+  /* resting */
+  .zone.rest{width:112px;height:112px;background:rgba(18,20,22,.92);box-shadow:var(--k-e3),var(--k-glass)}
+  .zone.rest.lock{border:2px solid var(--k-teal-line);color:var(--k-teal-hi)}
+  .zone.rest.cancel{border:2px solid var(--k-danger-line);color:var(--k-danger-hi)}
+  .zone.rest .ic{font-size:34px}.zone.rest .lab{font-size:12px;color:var(--k-muted)}
+  /* active = finger is on it → larger + glow + solid fill + "loslassen" */
+  .zone.active{width:148px;height:148px;color:#fff}
+  .zone.active.cancel{background:radial-gradient(circle at 50% 38%,var(--k-danger-hi),var(--k-danger));
+    box-shadow:0 0 0 8px rgba(238,111,99,.22),0 0 46px rgba(238,111,99,.5),var(--k-e3)}
+  .zone.active.lock{background:radial-gradient(circle at 50% 38%,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);
+    box-shadow:0 0 0 8px rgba(41,199,172,.22),0 0 46px rgba(41,199,172,.5),var(--k-e3)}
+  .zone.active .ic{font-size:46px}.zone.active .lab{font-size:13px;font-weight:600}
+  .zone.active.cancel .lab{color:#fff}.zone.active.lock .lab{color:var(--k-on-teal)}
+  .lockico{display:inline-block;vertical-align:middle}
+
+  .reccap{position:absolute;display:flex;align-items:center;gap:8px;color:var(--k-muted);font-size:13px;z-index:30}
+  .reccap .dot{width:8px;height:8px;border-radius:50%;background:var(--k-amber);box-shadow:0 0 0 4px var(--k-amber-line)}
+  .tagline{position:absolute;bottom:26px;left:0;right:0;text-align:center;color:rgba(255,255,255,.85);
+    font-family:var(--k-mono);font-size:12.5px;letter-spacing:.03em;text-shadow:0 1px 4px rgba(0,0,0,.6);z-index:40}
+  .tagline b{color:var(--k-amber)}
+
+/* ===== SIMPLIFIED HOLD CANON (Sperren raus · ein Abbrechen-Button · Senden=Loslassen) ===== */
+.heldbub{width:48px!important;height:48px!important;border-radius:15px!important;font-size:22px!important}
+.heldbub .ring{inset:-7px!important;border-radius:20px!important;border-width:2px!important}
+.heldbub .finger{width:34px!important;height:34px!important;right:-8px!important;bottom:-9px!important}
+.ghost{width:44px!important;height:44px!important;border-radius:14px!important;font-size:20px!important}
+.ghost .finger{width:32px!important;height:32px!important;right:-7px!important;bottom:-8px!important}
+.zone.rest{width:96px!important;height:96px!important}
+.zone.active{width:120px!important;height:120px!important}
+.zone svg{width:28px!important;height:28px!important}
+.zone .ic{font-size:30px!important}
+.zone.active .ic{font-size:40px!important}
+.zone .lab{font-size:10px!important;line-height:1.12!important}
+.zone.active .lab{font-size:11px!important}
+.statuschip{transform:scale(.82);transform-origin:right center}
+
+</style>
+</head>
+<body>
+
+<!-- ============ B · RUHE (gehalten, beide Ziele aufgeräumt) ============ -->
+<div class="phone" id="sRest">
+  <div class="wall"></div>
+  <div class="appbehind">
+    <div class="ab-row"><div class="ab-msg">Schickst du mir die Notizen von gestern?</div></div>
+    <div class="ab-row me"><div class="ab-msg">Klar, einen Moment …</div></div>
+    <div class="ab-row"><div class="ab-msg">Danke dir!</div></div>
+  </div>
+  <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
+  <svg class="paths" viewBox="0 0 393 895">
+    <line x1="343" y1="462" x2="165" y2="298" stroke="rgba(238,111,99,.4)" stroke-width="2.5" stroke-dasharray="2 9" stroke-linecap="round"/>
+  </svg>
+  <!-- Abbrechen (resting) — der EINE bewusste Button -->
+  <div class="zone rest cancel" style="left:117px;top:252px;">
+    <span class="ic">✕</span><span class="lab">ziehen zum<br>Abbrechen</span>
+  </div>
+  <div class="statuschip" style="right:150px;top:440px;">
+    <span class="wave"><i style="height:11px"></i><i style="height:22px"></i><i style="height:30px"></i><i style="height:16px"></i><i style="height:24px"></i></span>
+    <span class="tm">0:08</span>
+  </div>
+  <div class="reccap" style="right:30px;top:398px;"><span class="dot"></span>Aufnahme · loslassen = senden</div>
+  <div class="heldbub" style="right:26px;top:436px;"><div class="ring"></div>K<div class="finger"></div></div>
+  <div class="tagline">B · <b>Ruhe</b> — gehalten · loslassen = senden · auf ✗ ziehen = abbrechen</div>
+</div>
+
+<div class="phone" id="sHit">
+  <div class="wall"></div>
+  <div class="appbehind">
+    <div class="ab-row"><div class="ab-msg">Schickst du mir die Notizen von gestern?</div></div>
+    <div class="ab-row me"><div class="ab-msg">Klar, einen Moment …</div></div>
+    <div class="ab-row"><div class="ab-msg">Danke dir!</div></div>
+  </div>
+  <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
+  <svg class="paths" viewBox="0 0 393 895">
+    <line x1="343" y1="460" x2="190" y2="360" stroke="rgba(238,111,99,.55)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>
+  </svg>
+  <!-- Abbrechen ACTIVE: gewachsen + leuchtet + "loslassen = abbrechen" -->
+  <div class="zone active cancel" style="left:105px;top:240px;">
+    <span class="ic">✕</span><span class="lab">loslassen<br>= abbrechen</span>
+  </div>
+  <!-- gezogene Ghost-Bubble + Finger zwischen Dock und Ziel -->
+  <div class="ghost" style="right:130px;top:372px;"><div class="finger"></div>K</div>
+  <!-- Dock-Origin (faded, woher die Bubble kam) -->
+  <div class="heldbub" style="right:26px;top:436px;opacity:.32;"><div class="ring"></div>K</div>
+  <div class="reccap" style="right:30px;top:398px;"><span class="dot"></span>Finger auf Abbrechen · loslassen löst aus</div>
+  <div class="tagline">B · <b>Treffer</b> — Ziel wächst + leuchtet · Ghost folgt dem Finger · Origin faded</div>
+</div>
+
+</body>
+</html>

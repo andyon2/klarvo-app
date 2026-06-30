@@ -173,3 +173,21 @@ keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (
 **Scope/Stories (nur geschrieben — Build folgt in frischer Session):** **9-14** neu gefasst (HOLD in B-Sprache); neue **9-15** (TAP-Surface-Re-Skin = ersetzt den 9-13-Klein-Cluster; liefert auch den Gesperrt-Zustand für 9-14). Transcribing/Done/Idle-Bubble + Live-Preview = **späterer Pass** (docs/backlog.md), bewusst nicht in diesem Amendment.
 
 **Provenance:** bindendes Render = die zwei Mockups (eine Ebene über `source/`); tracked-Canon-`.ab-*`-Mobile-Surfaces als SUPERSEDED markiert (MANIFEST-Zeile 2026-06-26).
+
+---
+
+## Amendment 2026-07-01 — HOLD vereinfacht: ein Abbrechen-Button · Senden = Loslassen · kein Sperren (Andi-approved, device-tested)
+
+**Kontext:** Die Zwei-Ziel-HOLD-Variante (Sperren + Abbrechen, B-refined, Amendment 2026-06-26) wurde gebaut (Story 9-14, commits `ce20bb0`/`c431ba5`) und **am echten Gerät verworfen**: (a) alles zu groß (feste Mockup-dp 82/112/148 — gleiche Provenienz-Falle wie 9-15s erster Build: Browser-Mockup ≠ Geräte-Maßstab), (b) das Anker-K springt in Größe+Position gegenüber der ~44dp Idle-Bubble, (c) **Design-Erkenntnis von Andi:** „Loslassen außerhalb von Abbrechen = senden" *ist* schon das Senden — es braucht **keinen** eigenen Senden-Button und keine zwei gleichberechtigten Ziele. Die Totzone zwischen zwei Zielen (Loslassen dort = unbeabsichtigtes Senden) verschwindet mit nur einem Ziel.
+
+**Entscheidung (supersedet die HOLD-Sektion des 2026-06-26-Amendments):**
+- **Halten** = aufnehmen. **Kleine Anker-Bubble** (K) am Dock, **= Idle-Bubble-Größe** (`bubbleSizeDp`, ~44dp responsive) — kein Größen-/Orts-Sprung; entkoppelt vom Button-Regler.
+- **Loslassen** (überall außer auf Abbrechen) = **senden**. Kein Senden-Button, keine Totzone.
+- **Ein** bewusster **Abbrechen-Button** (✗, rot, dunkle Ruhe-Fläche → wächst + leuchtet rot bei Treffer, „loslassen = abbrechen"). Größe **am `recordingButtonSizeDp`-Regler** (der erweitert wird: mehr + kleinere Stufen, nah an Idle-Größe).
+- **Zurückziehen** vom Button vor dem Loslassen = Undo (nichts).
+- **Kein Sperren** in HOLD (Freisprech-Aufnahme = TAP-Modus). Die gesamte Sperren-/Lock→TAP-Mechanik aus 9-14/9-15 entfällt für HOLD.
+- **Dynamik (Teil des SOLL, diesmal bauen):** Ghost-Bubble folgt dem Finger · Origin-Bubble faded auf .32 beim Ziehen · Caption wechselt auf „Finger auf Abbrechen · loslassen löst aus".
+
+**Bindendes Render (SOLL):** `docs/design/overhaul/mockup-mobile-hold-simple.html` (Frames `sRest` Ruhe + `sHit` Treffer), fingerprint `7e2829a5625c224fb2227cff53cefa70`, gerendert @ 1080×2460 (Playwright), Andi-approved 2026-07-01. **Supersedet** `mockup-mobile-hold-B-refined.html` (`bRest`/`bHit`) für HOLD.
+
+**Unverändert:** TAP-Surface (9-15), Farb-Semantik (teal=Senden · amber=live · rot=Abbrechen), blickdichte Flächen, dock-adaptiv, kein `FLAG_NOT_TOUCHABLE`.

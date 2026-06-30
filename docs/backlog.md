@@ -425,3 +425,13 @@ Source: Conductor-Code-Review nach dev (range 20e74c6..ce20bb0, 3 Reviewer Blind
 - **[GATE-4 Fidelity] Live-Caption wechselt nicht beim Ziel-Treffer** — `bHit` ändert `.reccap`-Text auf „Finger auf Abbrechen · loslassen löst aus"; Implementierung rendert statisch „Aufnahme · loslassen = senden". Das Ziel-eigene Zwei-Zeilen-Label wechselt korrekt (erfüllt explizite AC3/AC4-Prosa) → nur Render-Fidelity-Lücke.
 - **[GATE-4 Fidelity] `.heldbub .finger`-Indikator + inner amber `.ring` weggefallen** — Anker-Bubble zeichnet Schatten + teal-Gradient + äußeren 5dp-amber-Ring + „K", aber nicht den `.finger`-Child (in `bRest`+`bHit`) noch den inneren `.ring` (inset −11px, 2.5px amber, opacity .55). Minor.
 - **[GATE-4 Fidelity] Caption-Clip + Chip↔Abbrechen-Nähe (AC2)** — die am Bubble zentrierte Caption kann bei Dock-Nah die Fensterkante überlaufen (clip); Waveform-Chip-Unterkante sitzt evtl. wenige dp vom Abbrechen-Kreis (AC2 „kein Überlapp", low confidence) → am Gerät prüfen.
+
+---
+
+## Story 9-14 — Re-Scope auf vereinfachtes HOLD (2026-07-01): vorige Defers AUFGELÖST
+
+Source: Andis Real-Device-Gate + Design-Rethink (ADR-0019 Amendment 2026-07-01). Das Zwei-Ziel-HOLD wurde verworfen → vereinfachtes Ein-Button-Modell (ein Abbrechen-Button, Senden=Loslassen, kein Sperren). Damit sind folgende frühere Einträge **hinfällig/aufgelöst**:
+- „HOLD-Größen an recordingButtonSizeDp koppeln" (2026-06-30) → **umgesetzt** im neuen Scope (Abbrechen am Regler; Anker an Idle-Größe).
+- „[GATE-4 Fidelity] Drag-Ghost-Bubble + Origin-Fade / Caption-Update / .finger / inner-ring" (2026-06-30) → **in das neue Scope gezogen** (Dynamik wird gebaut, nicht mehr vertagt).
+- „Erster ACTION_MOVE liest stale idle-Width" → bleibt offen, gilt weiter im neuen Build.
+NEU offen: `recordingButtonSizeDp`-Regler um mehr + kleinere Stufen erweitern (Teil 9-14-Scope, berührt 9-15-Settings-UI).
