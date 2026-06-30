@@ -325,17 +325,11 @@ class KlarvoOverlayService : Service() {
         // Capture previous state so adjustLayoutForState gets correct geometry.
         val previousState = currentState
         forceShowBubbleForHarness()
-        // Story 9-14: set pushToTalkActive BEFORE adjustLayoutForState so the HOLD dock
+        // Story 9-14: set pushToTalkActive BEFORE adjustLayoutForState so the HOLD targets
         // window dimensions are used when hold_mode=true (adjustLayoutForState reads pushToTalkActive).
+        // No drag-threshold init needed anymore (B-Sprache release-to-commit is pure hit-tracking,
+        // not threshold-fire-on-move — finding 7's old init point is structurally gone).
         pushToTalkActive = (newState == RecordingState.RECORDING && holdMode)
-        // Initialize drag thresholds for harness-driven HOLD state (finding 7).
-        // longPressRunnable normally sets these; the harness bypasses that path, leaving both
-        // at 0f — any finger movement would instantly cancel/never reach lock in harness mode.
-        if (pushToTalkActive) {
-            val density = resources.displayMetrics.density
-            holdDragCancelPx = 60f * density
-            holdDragLockPx   = 40f * density
-        }
         setState(newState)
         adjustLayoutForState(newState, previousState)
         // Apply the static wave level AFTER the state transition so that the
@@ -414,11 +408,6 @@ class KlarvoOverlayService : Service() {
         }
     }
 
-    // HOLD drag thresholds (PTT mode — Story 9-14): 60dp cancel, 40dp lock (upward).
-    // Computed lazily from density on first use; initialized to 0 before resources are available.
-    private var holdDragCancelPx = 0f
-    private var holdDragLockPx   = 0f
-
     private val longPressRunnable = Runnable {
         if (!isDragging && currentState == RecordingState.IDLE) {
             longPressTriggered = true
@@ -431,14 +420,12 @@ class KlarvoOverlayService : Service() {
             if (longPressMode == RecordingMode.AUTO) {
                 autoLoopActive = true
             }
-            // HOLD dock: show holdDockActive surface and update panel label.
+            // HOLD targets (Story 9-14, B-Sprache): show holdDockActive surface + update panel
+            // label. No drag-threshold init needed — release-to-commit is pure hit-tracking
+            // (Task 6/7), not threshold-fire-on-move.
             if (pushToTalkActive) {
                 bubbleView.holdDockActive = true
                 setHoldModeOnPanel(true)
-                // Initialise drag thresholds now that density is available.
-                val density = resources.displayMetrics.density
-                holdDragCancelPx = 60f * density
-                holdDragLockPx   = 40f * density
             }
             startRecording()
         }
@@ -1040,7 +1027,8 @@ class KlarvoOverlayService : Service() {
      * IDLE / TRANSCRIBING / DONE -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
      *                               FloatingBubbleView draws the smaller visual circle centered.
      * RECORDING (TAP surface)    -> TAP_VISUAL_W/H + 2×TAP_SHADOW_PAD_DP each side.
-     * RECORDING (HOLD dock)      -> HOLDDOCK_VISUAL_W/H + lockchip + 2×HOLDDOCK_SHADOW_PAD_DP.
+     * RECORDING (HOLD targets)   -> HOLD_VISUAL_W/H + 2×HOLD_SHADOW_PAD_DP each side (Story 9-14,
+     *                               B-Sprache — thumb-anchor bubble + two large round targets).
      *
      * Dock-edge-anchor: when expanding to the TAP surface the right edge of the new window
      * aligns with the right edge of the idle bubble window (right dock), or the left edge
@@ -1054,17 +1042,31 @@ class KlarvoOverlayService : Service() {
         if (newState == RecordingState.RECORDING) {
             if (preclusterBubbleX == null) preclusterBubbleX = bubbleParams.x
             if (pushToTalkActive) {
-                // HOLD dock window: wider + taller (lockchip above) — ADR-0019 §4′-Amendment #4.
-                val holdW = ((FloatingBubbleView.HOLDDOCK_VISUAL_W_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
-                val holdH = ((FloatingBubbleView.HOLDDOCK_VISUAL_H_DP + FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
-                // Right-edge-anchor: same dock-spot right edge as HOLD/idle bubble.
-                bubbleParams.x     = maxOf(0, bubbleParams.x + touchTargetPx - holdW)
+                // HOLD targets window (Story 9-14, B-Sprache): thumb-anchor bubble at the dock edge +
+                // two large round targets growing toward the opposite/center side — ADR-0019
+                // Amendment 2026-06-26. Substantially larger than the old 190×52+28dp dock by design
+                // (large thumb-reach targets need real screen real estate — see story Dev Notes).
+                val holdW = ((FloatingBubbleView.HOLD_VISUAL_W_DP + 2 * FloatingBubbleView.HOLD_SHADOW_PAD_DP) * dp).toInt()
+                val holdH = ((FloatingBubbleView.HOLD_VISUAL_H_DP + 2 * FloatingBubbleView.HOLD_SHADOW_PAD_DP) * dp).toInt()
+                // dockSide must be set before any target-position computation (Task 5.3) — both the
+                // X edge-anchor below and drawHoldTargets()'s mirroring read it.
+                bubbleView.dockSide = getDockSide()
+                // Dock-edge-anchor: same right/left-edge convention as the TAP branch below.
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - holdW)
                 bubbleParams.width  = holdW
                 bubbleParams.height = holdH
-                // Shift Y upward so holdstrip (lower portion) aligns with the idle bubble position.
+                // Y-anchor: keep the thumb-anchor bubble's on-screen center where the idle bubble's
+                // center was — the user's thumb is still physically there when HOLD first appears.
+                // Reuses FloatingBubbleView.holdBubbleCenter() (same pure fn drawHoldTargets() uses)
+                // so the Service's window placement and the View's draw geometry can never diverge.
                 if (preclusterBubbleY == null) preclusterBubbleY = bubbleParams.y
-                val lockchipH = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
-                bubbleParams.y = maxOf(0, (preclusterBubbleY ?: bubbleParams.y) - lockchipH)
+                val bubbleCenterYPx = FloatingBubbleView.holdBubbleCenter(
+                    bubbleView.dockSide, holdW.toFloat(), FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp,
+                    FloatingBubbleView.HOLD_BUBBLE_EDGE_GAP_DP * dp, FloatingBubbleView.HOLD_BUBBLE_DP * dp,
+                    FloatingBubbleView.HOLD_LOCK_OFFSET_ABOVE_DP * dp, FloatingBubbleView.HOLD_TARGET_ACTIVE_DP * dp / 2f
+                ).y
+                val idleCenterY = (preclusterBubbleY ?: bubbleParams.y) + touchTargetPx / 2
+                bubbleParams.y  = maxOf(0, (idleCenterY - bubbleCenterYPx).toInt())
             } else {
                 // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
                 // Visual dims scale with recordingButtonSizeDp (AC10 — no fixed 320×202dp).
@@ -1147,37 +1149,37 @@ class KlarvoOverlayService : Service() {
             }
 
             MotionEvent.ACTION_MOVE -> {
-                // During push-to-talk (HOLD dock): detect drag-cancel or drag-lock.
-                // The bubble does NOT move during a hold.
+                // During push-to-talk (HOLD targets, Story 9-14, B-Sprache): continuous
+                // hit-tracking, NOT threshold-fire-on-move (that was the old, rejected
+                // mechanism — see story Dev Notes "Release-to-commit is the core mechanism
+                // change"). The window does not reposition during a hold, so event.x/event.y
+                // (view-local) are already in the same coordinate space drawHoldTargets() and
+                // holdTargetCenters() use. Only updates holdTargetHit + redraws — no
+                // cancelRecording()/lockHoldToCluster() here; that happens on release (Task 7).
+                // A circular hit-test has no directional ambiguity by construction, which
+                // structurally avoids the old code's diagonal-drag / signed-direction-only bugs
+                // (findings 3/4) rather than just porting around them.
                 if (pushToTalkActive) {
-                    val dx = event.rawX - dragTouchStartX
-                    val dy = event.rawY - dragTouchStartY
-                    when {
-                        // Upward drag beyond threshold → lock (switch to normal cluster).
-                        // Tested FIRST (finding 3): a diagonal up-and-left drag intended to lock
-                        // would otherwise be caught by the cancel branch below.
-                        dy < -holdDragLockPx -> {
-                            lockHoldToCluster()
-                            pushToTalkActive          = false
-                            bubbleView.holdDockActive = false
-                            setLockedModeOnPanel()
-                            // Reset drag origin so subsequent finger moves don't reposition the cluster.
-                            dragTouchStartX = event.rawX
-                            dragTouchStartY = event.rawY
-                            bubbleStartX    = bubbleParams.x
-                            bubbleStartY    = bubbleParams.y
-                        }
-                        // Leftward drag beyond threshold → cancel (discard recording).
-                        // Signed dx (finding 4): rightward drag does NOT cancel — the drawn
-                        // affordance is "‹ ziehen zum Abbrechen" (leftward only).
-                        dx < -holdDragCancelPx -> {
-                            cancelRecording()
-                            pushToTalkActive          = false
-                            bubbleView.holdDockActive = false
-                            setHoldModeOnPanel(false)
-                        }
-                        // Otherwise: finger still held — no position update.
-                        else -> { /* keep holding */ }
+                    val dp = resources.displayMetrics.density
+                    val shadowPad      = FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
+                    val bubbleEdgeGap  = FloatingBubbleView.HOLD_BUBBLE_EDGE_GAP_DP * dp
+                    val bubbleDiamPx   = FloatingBubbleView.HOLD_BUBBLE_DP * dp
+                    val farInsetPx     = FloatingBubbleView.HOLD_TARGET_FAR_INSET_DP * dp
+                    val activeRPx      = FloatingBubbleView.HOLD_TARGET_ACTIVE_DP * dp / 2f
+                    val restRPx        = FloatingBubbleView.HOLD_TARGET_REST_DP * dp / 2f
+                    val lockOffsetPx   = FloatingBubbleView.HOLD_LOCK_OFFSET_ABOVE_DP * dp
+                    val cancelOffsetPx = FloatingBubbleView.HOLD_CANCEL_OFFSET_BELOW_DP * dp
+                    val (lockCenter, cancelCenter) = FloatingBubbleView.holdTargetCenters(
+                        bubbleView.dockSide, bubbleView.width.toFloat(), shadowPad, bubbleEdgeGap,
+                        bubbleDiamPx, farInsetPx, activeRPx, lockOffsetPx, cancelOffsetPx
+                    )
+                    // Hit-test boundary stays the REST radius even when the target visually grows
+                    // to ACTIVE (Task 4.2) — growing is feedback, not a hit-zone change; the
+                    // finger is already inside once it crosses the REST circle.
+                    bubbleView.holdTargetHit = when {
+                        FloatingBubbleView.isInsideCircle(event.x, event.y, lockCenter.x, lockCenter.y, restRPx) -> HoldTarget.LOCK
+                        FloatingBubbleView.isInsideCircle(event.x, event.y, cancelCenter.x, cancelCenter.y, restRPx) -> HoldTarget.CANCEL
+                        else -> HoldTarget.NONE
                     }
                     return true
                 }
@@ -1229,20 +1231,39 @@ class KlarvoOverlayService : Service() {
                             savePosition(bubbleParams.x, bubbleParams.y)
                         }
                         pushToTalkActive -> {
-                            // Push-to-talk release: confirm recording
+                            // Release-to-commit (Story 9-14, B-Sprache, AC5/AC6): dispatch on
+                            // where the finger WAS at release (holdTargetHit), not a
+                            // threshold-fire mid-drag. Mirrors handleTouch's HoldTarget import —
+                            // same package as FloatingBubbleView, no qualification needed.
                             pushToTalkActive = false
-                            stopAndProcessRecording()
+                            when (bubbleView.holdTargetHit) {
+                                HoldTarget.CANCEL -> {
+                                    bubbleView.holdDockActive = false
+                                    cancelRecording()
+                                }
+                                HoldTarget.LOCK -> {
+                                    lockHoldToCluster()
+                                    bubbleView.holdDockActive = false
+                                    setLockedModeOnPanel()
+                                }
+                                HoldTarget.NONE -> stopAndProcessRecording()
+                            }
+                            bubbleView.holdTargetHit = HoldTarget.NONE
                         }
                         !longPressTriggered -> {
                             handleTap(event.x, event.y)
                         }
                     }
                 } else {
-                    // ACTION_CANCEL while push-to-talk -> cancel recording
+                    // ACTION_CANCEL while push-to-talk -> cancel recording. OS-interrupted touch
+                    // (distinct from a normal finger lift) — not covered by AC5 (release
+                    // semantics only); keeping the existing safe default is intentional, not an
+                    // oversight (Task 7.2).
                     if (pushToTalkActive) {
                         pushToTalkActive = false
                         cancelRecording()
                     }
+                    bubbleView.holdTargetHit = HoldTarget.NONE
                 }
                 return true
             }
@@ -1466,15 +1487,22 @@ class KlarvoOverlayService : Service() {
             recorder.releaseImmediately()
         }.start()
 
-        // Reset HOLD dock state (Story 9-14).
+        // Reset HOLD targets state (Story 9-14). holdTargetHit reset here too — finding 2's
+        // lesson (a transient HOLD flag never cleared on stop/cancel can leak into the next
+        // recording) applies to any HOLD-related transient state, not just isLockedMode.
         bubbleView.holdDockActive = false
+        bubbleView.holdTargetHit  = HoldTarget.NONE
         setHoldModeOnPanel(false)
         // Reset TAP surface timer (Story 9-15).
         bubbleView.recordingStartMs = 0L
 
         val previousState = currentState
-        // Detect expanded mode: width > height means the TAP surface / HOLD dock is shown.
-        val wasBarMode = bubbleView.width > bubbleView.height
+        // Detect expanded mode: any non-square window means the TAP surface / HOLD targets are
+        // shown (IDLE/TRANSCRIBING/DONE are always touchTargetPx × touchTargetPx — square).
+        // NOT width>height: HOLD's B-Sprache window (Story 9-14) is taller than wide (two
+        // vertically-separated targets), unlike TAP's wider-than-tall layout — a width>height
+        // check would silently skip the shrink-back-to-idle resize for HOLD.
+        val wasBarMode = bubbleView.width != bubbleView.height
         setState(RecordingState.IDLE)
         // Only adjust layout if we were in expanded mode.
         if (previousState == RecordingState.RECORDING && wasBarMode) {
@@ -1492,16 +1520,20 @@ class KlarvoOverlayService : Service() {
         val recorder = audioRecorder ?: return
         audioRecorder = null
 
-        // Reset HOLD dock state (Story 9-14).
+        // Reset HOLD targets state (Story 9-14). holdTargetHit reset here too — finding 2's
+        // lesson (a transient HOLD flag never cleared on stop/cancel can leak into the next
+        // recording) applies to any HOLD-related transient state, not just isLockedMode.
         bubbleView.holdDockActive = false
+        bubbleView.holdTargetHit  = HoldTarget.NONE
         setHoldModeOnPanel(false)
         // Reset TAP surface timer (Story 9-15).
         bubbleView.recordingStartMs = 0L
 
         val previousState = currentState
         setState(RecordingState.TRANSCRIBING)
-        // Only adjust layout if we were in expanded mode (TAP surface / HOLD dock).
-        if (previousState == RecordingState.RECORDING && bubbleView.width > bubbleView.height) {
+        // Only adjust layout if we were in expanded mode (TAP surface / HOLD targets — any
+        // non-square window; see cancelRecording()'s wasBarMode comment for why not width>height).
+        if (previousState == RecordingState.RECORDING && bubbleView.width != bubbleView.height) {
             adjustLayoutForState(RecordingState.TRANSCRIBING, previousState)
         }
 

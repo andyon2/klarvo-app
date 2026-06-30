@@ -42,6 +42,13 @@ class DebugHarnessReceiver : BroadcastReceiver() {
             if (rms >= 0f) putExtra(EXTRA_RMS, rms)
             val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
             if (transcript != null) putExtra(EXTRA_TRANSCRIPT, transcript)
+            // Story 9-14: hold_mode was missing here — a single `am broadcast` is delivered to
+            // BOTH this static receiver AND the service's dynamic debugStateReceiver. The dynamic
+            // one applied hold_mode correctly, but this one (which always also fires, racing
+            // slightly behind via startForegroundService -> onStartCommand) silently defaulted
+            // hold_mode to false and could win the race, snapping a HOLD-mode harness state back
+            // to the TAP surface. Forward it through so both paths agree.
+            putExtra(EXTRA_HOLD_MODE, intent.getBooleanExtra(EXTRA_HOLD_MODE, false))
         }
         context.startForegroundService(serviceIntent)
     }
@@ -53,5 +60,6 @@ class DebugHarnessReceiver : BroadcastReceiver() {
         const val EXTRA_STATE      = "state"
         const val EXTRA_RMS        = "rms"
         const val EXTRA_TRANSCRIPT = "transcript"
+        const val EXTRA_HOLD_MODE  = "hold_mode"
     }
 }
