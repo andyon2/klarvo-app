@@ -182,6 +182,19 @@ class FloatingBubbleView(context: Context) : View(context) {
     var dockSide: String = "right"
 
     /**
+     * Which vertical direction the HOLD Abbrechen target grows in: "up" (normal — there is
+     * room above the anchor bubble) or "down" (high-dock fallback — the bubble sits too close
+     * to the top of the screen for the target to fit above it). Set by
+     * KlarvoOverlayService.adjustLayoutForState() before entering the HOLD surface, and read by
+     * both [holdBubbleCenter]/[holdCancelCenter] here AND the Service's ACTION_MOVE hit-test —
+     * same single-source-of-truth pattern as [dockSide] (Code-Review Finding B, 2026-07-01): the
+     * anchor bubble's on-screen center must always equal the idle bubble's center, so when the
+     * window can't fit above without that requiring a clamp, the TARGET flips side instead of the
+     * bubble being clamped away from the thumb.
+     */
+    var holdGrowDirection: String = "up"
+
+    /**
      * Epoch-ms timestamp when the current recording started.
      * Used by drawTapSurface() to render the elapsed timer in the waveform chip.
      * Set by KlarvoOverlayService.startRecording(). Reset to 0L when leaving RECORDING.
@@ -357,21 +370,26 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
 
         /**
-         * Pure function: resolves the anchor bubble's center for the HOLD surface given dock side
-         * and window geometry (Story 9-14, re-scoped 2026-07-01). Mirrors [tapCircleCenters]'s
+         * Pure function: resolves the anchor bubble's center for the HOLD surface given dock side,
+         * grow direction, and window geometry (Story 9-14, re-scoped 2026-07-01; dock-adaptive
+         * grow direction added by Code-Review Finding B, 2026-07-01). Mirrors [tapCircleCenters]'s
          * convention — all inputs share one coordinate space (px in production via
          * drawHoldTargets/adjustLayoutForState, dp-equivalent in HoldTargetTouchZoneTest using
          * density=1).
          *
          * The bubble sits [shadowPad] from the dock-side window edge (Task 1.5 — no separate
          * HOLD-specific edge inset anymore; reuses the same shadow-pad-as-edge-inset convention
-         * [tapCircleCenters] already uses) and [shadowPad] from the BOTTOM window edge — the
-         * Abbrechen target always grows upward from it (AC2/AC7), so the window's vertical budget
-         * is spent above the bubble, not symmetrically around it.
+         * [tapCircleCenters] already uses). Vertically, [growDirection] decides which window edge
+         * the bubble is pinned to: "up" (the normal case — the Abbrechen target grows upward, so
+         * the window's vertical budget is spent ABOVE the bubble and the bubble sits near the
+         * BOTTOM window edge) or "down" (high-dock fallback — the target grows downward instead,
+         * so the bubble sits near the TOP window edge). Either way the bubble is always exactly
+         * [shadowPad] from the edge it's pinned to — only which edge changes.
          */
         @JvmStatic
         fun holdBubbleCenter(
             dockSide: String,
+            growDirection: String,
             windowW: Float,
             windowH: Float,
             shadowPad: Float,
@@ -383,30 +401,39 @@ class FloatingBubbleView(context: Context) : View(context) {
             } else {
                 windowW - shadowPad - bubbleR
             }
-            val bubbleCy = windowH - shadowPad - bubbleR
+            val bubbleCy = if (growDirection == "down") {
+                shadowPad + bubbleR
+            } else {
+                windowH - shadowPad - bubbleR
+            }
             return HoldPoint(bubbleCx, bubbleCy)
         }
 
         /**
          * Pure function: resolves the single Abbrechen target's center, offset from [bubbleCenter]
-         * by ([offsetXDp], [offsetYDp]) (Story 9-14 re-scope 2026-07-01). Mirrors [tapCircleCenters]'s
+         * by ([offsetXDp], [offsetYDp]) (Story 9-14 re-scope 2026-07-01; dock-adaptive grow
+         * direction added by Code-Review Finding B, 2026-07-01). Mirrors [tapCircleCenters]'s
          * pattern for JVM testability (no Android View instance needed) — this is the function
          * KlarvoOverlayService's ACTION_MOVE hit-tracking (Task 6) calls every move event.
          *
          * [offsetXDp] mirrors sign by dock side (the target always grows toward screen-center, i.e.
          * away from the dock edge: right-docked → leftward / negative dx, left-docked → rightward /
-         * positive dx). [offsetYDp] is always upward (AC7: vertical role is fixed regardless of
-         * dock side).
+         * positive dx). [offsetYDp]'s sign mirrors [growDirection]: "up" (normal) → target sits
+         * ABOVE the bubble (negative dy); "down" (high-dock fallback, the bubble has no room above
+         * it) → target sits BELOW the bubble (positive dy) instead — the bubble's own position
+         * never moves to make room, only the target's growth direction flips (AC2).
          */
         @JvmStatic
         fun holdCancelCenter(
             dockSide: String,
+            growDirection: String,
             bubbleCenter: HoldPoint,
             offsetXDp: Float,
             offsetYDp: Float,
         ): HoldPoint {
             val dx = if (dockSide == "left") offsetXDp else -offsetXDp
-            return HoldPoint(bubbleCenter.x + dx, bubbleCenter.y - offsetYDp)
+            val dy = if (growDirection == "down") offsetYDp else -offsetYDp
+            return HoldPoint(bubbleCenter.x + dx, bubbleCenter.y + dy)
         }
     }
 
@@ -489,13 +516,26 @@ class FloatingBubbleView(context: Context) : View(context) {
     // --- Pre-allocated for drawHoldChip/drawHoldZone (code review finding C, Story 9-14) — the
     // chip and the Abbrechen target's geometry is stable for the duration of a single hold
     // gesture, so their shaders/rects are rebuilt only when that geometry actually changes instead
-    // of on every amplitude-driven invalidate(). The shared squircle helper (drawTealSquircle,
-    // Task 3.1) deliberately does NOT cache — it now also serves the ghost bubble, whose position
-    // changes every ACTION_MOVE while dragging (a cache keyed on position would rarely hit), and
-    // matches the already-uncached style drawIdleBubble/drawProcBubble/drawDoneBubble use. ---
+    // of on every amplitude-driven invalidate(). ---
     private val holdBubbleRingRect   = RectF()
     private val holdChipRect         = RectF()
     private val holdChipShadowRect   = RectF()
+
+    // --- Pre-allocated for drawTealSquircle (code review finding A, Story 9-14 fix, 2026-07-01) —
+    // the shared squircle helper is drawn EVERY frame for the fixed-position HOLD anchor bubble
+    // during an active recording (onDraw fires per amplitude push), so re-allocating a RectF×2 +
+    // LinearGradient + BlurMaskFilter on every call here would reintroduce exactly the GC churn
+    // finding C already fixed for the chip/zone. Keyed on (cx, cy, diamPx): the fixed-position
+    // anchor/idle/proc/done bubbles hit this cache every frame; the ghost bubble (position changes
+    // every ACTION_MOVE while dragging) misses every time — acceptable, it only draws during an
+    // active drag, not the steady-state recording hot path. ---
+    private val tealSquircleRect       = RectF()
+    private val tealSquircleShadowRect = RectF()
+    private var tealSquircleCx      = Float.NaN
+    private var tealSquircleCy      = Float.NaN
+    private var tealSquircleDiamPx  = Float.NaN
+    private var tealSquircleGradient: LinearGradient? = null
+    private var tealSquircleBlur: BlurMaskFilter? = null
 
     private var holdChipShadowBlurR = -1f
     private var holdChipShadowBlur: BlurMaskFilter? = null
@@ -725,24 +765,42 @@ class FloatingBubbleView(context: Context) : View(context) {
      * code path for the idle bubble and the HOLD anchor makes AC2 ("kein Größen-/Orts-Sprung")
      * true by construction, not by copy-pasted, hopefully-matching constants.
      * [alpha] (0-255) supports the HOLD origin bubble's fade-on-drag (AC6, canon `opacity:.32`).
+     *
+     * Code-review finding A (2026-07-01): the RectF×2/LinearGradient/BlurMaskFilter are cached
+     * (keyed on cx/cy/diamPx, see [tealSquircleRect] et al.) rather than re-allocated per call —
+     * this is on the per-amplitude-invalidate() hot path for the fixed-position HOLD anchor bubble
+     * during a recording. The moving ghost bubble (Task 3.5) misses the cache every call since its
+     * position changes continuously while dragging; that's fine, it only draws during an active
+     * drag, not the steady-state recording hot path.
      */
     private fun drawTealSquircle(canvas: Canvas, cx: Float, cy: Float, diamPx: Float, alpha: Int) {
         val r = diamPx / 2f
         val cornerPx = diamPx * 0.30f
-        val rect = RectF(cx - r, cy - r, cx + r, cy + r)
 
-        shadowPaint.maskFilter = BlurMaskFilter(diamPx * 0.14f, BlurMaskFilter.Blur.NORMAL)
+        if (tealSquircleCx != cx || tealSquircleCy != cy || tealSquircleDiamPx != diamPx) {
+            tealSquircleCx = cx
+            tealSquircleCy = cy
+            tealSquircleDiamPx = diamPx
+            tealSquircleRect.set(cx - r, cy - r, cx + r, cy + r)
+            tealSquircleShadowRect.set(
+                tealSquircleRect.left, tealSquircleRect.top + diamPx * 0.06f,
+                tealSquircleRect.right, tealSquircleRect.bottom + diamPx * 0.06f
+            )
+            tealSquircleGradient = LinearGradient(
+                tealSquircleRect.left, tealSquircleRect.top, tealSquircleRect.right, tealSquircleRect.bottom,
+                KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
+            )
+            tealSquircleBlur = BlurMaskFilter(diamPx * 0.14f, BlurMaskFilter.Blur.NORMAL)
+        }
+
+        shadowPaint.maskFilter = tealSquircleBlur
         shadowPaint.alpha = alpha
-        val shadowRect = RectF(rect.left, rect.top + diamPx * 0.06f, rect.right, rect.bottom + diamPx * 0.06f)
-        canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
+        canvas.drawRoundRect(tealSquircleShadowRect, cornerPx, cornerPx, shadowPaint)
         shadowPaint.alpha = 0xFF
 
-        idleFillPaint.shader = LinearGradient(
-            rect.left, rect.top, rect.right, rect.bottom,
-            KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
-        )
+        idleFillPaint.shader = tealSquircleGradient
         idleFillPaint.alpha = alpha
-        canvas.drawRoundRect(rect, cornerPx, cornerPx, idleFillPaint)
+        canvas.drawRoundRect(tealSquircleRect, cornerPx, cornerPx, idleFillPaint)
         idleFillPaint.alpha = 0xFF
     }
 
@@ -1279,8 +1337,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         val offsetXPx    = HOLD_CANCEL_OFFSET_X_DP * dp
         val offsetYPx    = HOLD_CANCEL_OFFSET_Y_DP * dp
 
-        val bubbleCenter = holdBubbleCenter(dockSide, w, h, shadowPad, bubbleDiamPx)
-        val cancelCenter = holdCancelCenter(dockSide, bubbleCenter, offsetXPx, offsetYPx)
+        val bubbleCenter = holdBubbleCenter(dockSide, holdGrowDirection, w, h, shadowPad, bubbleDiamPx)
+        val cancelCenter = holdCancelCenter(dockSide, holdGrowDirection, bubbleCenter, offsetXPx, offsetYPx)
 
         // --- 1. Abbrechen target (drawn first — bubble/chip sit visually on top) ---
         drawHoldZone(canvas, cancelCenter.x, cancelCenter.y, restRPx, activeRPx,
@@ -1304,10 +1362,12 @@ class FloatingBubbleView(context: Context) : View(context) {
 
             // Ghost squircle follows the LIVE finger position — not a derived/interpolated point
             // (canon: the mockup's ghost position is illustrative, the formula input is the real
-            // touch). ~0.92× the anchor's size (canon ghost/heldbub ratio 44/48).
+            // touch). ~0.92× the anchor's size (canon ghost/heldbub ratio 44/48). Code-review
+            // finding E (2026-07-01): canon `.ghost` is ~50% alpha (background gradient stops
+            // rgba(...,.5)) — was drawn fully opaque, indistinguishable from a second real bubble.
             val ghostDiamPx = bubbleDiamPx * 0.92f
-            drawTealSquircle(canvas, holdFingerX, holdFingerY, ghostDiamPx, alpha = 0xFF)
-            drawKLetter(canvas, holdFingerX, holdFingerY, ghostDiamPx / 2f, alpha = 0xFF)
+            drawTealSquircle(canvas, holdFingerX, holdFingerY, ghostDiamPx, alpha = 0x80)
+            drawKLetter(canvas, holdFingerX, holdFingerY, ghostDiamPx / 2f, alpha = 0x80)
         } else {
             drawTealSquircle(canvas, bubbleCenter.x, bubbleCenter.y, bubbleDiamPx, alpha = 0xFF)
 
@@ -1327,10 +1387,19 @@ class FloatingBubbleView(context: Context) : View(context) {
             drawKLetter(canvas, bubbleCenter.x, bubbleCenter.y, bubbleRPx, alpha = 0xFF)
         }
 
-        // --- 4. Live caption above the (origin) bubble, mirrors .reccap — text swaps to the
+        // --- 4. Live caption hugging the (origin) bubble, mirrors .reccap — text swaps to the
         //        "Finger auf Abbrechen" variant only when the finger is actually on the target
-        //        (AC6, canon `sHit` text), independent of the broader holdDragging dead-zone. ---
-        drawHoldCaption(canvas, bubbleCenter.x, bubbleCenter.y - bubbleRPx - 24f * dp,
+        //        (AC6, canon `sHit` text), independent of the broader holdDragging dead-zone.
+        //        Vertical side mirrors holdGrowDirection (Finding B) — when the target grows
+        //        upward the window's spare vertical budget is above the bubble (caption goes
+        //        there too); when it flips downward (high-dock fallback) the budget is below the
+        //        bubble instead, so the caption must follow or it would draw outside the window. ---
+        val captionY = if (holdGrowDirection == "down") {
+            bubbleCenter.y + bubbleRPx + 24f * dp
+        } else {
+            bubbleCenter.y - bubbleRPx - 24f * dp
+        }
+        drawHoldCaption(canvas, bubbleCenter.x, captionY, dockSide = dockSide,
             hit = holdTargetHit == HoldTarget.CANCEL, dp = dp, spd = spd)
     }
 
@@ -1381,8 +1450,14 @@ class FloatingBubbleView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy, r - dp, strokePaint)
         }
 
-        // ✕ glyph (drawn as text, mirrors mockup's <span>✕</span>)
-        val iconSizeDp = if (active) 46f else 34f
+        // ✕ glyph (drawn as text, mirrors mockup's <span>✕</span>). Code-review finding D
+        // (2026-07-01): size is now PROPORTIONAL to the circle's current diameter — canon ratios
+        // .ic 30px/96px rest, 40px/120px active (mockup-mobile-hold-simple.html SIMPLIFIED block)
+        // — instead of a fixed dp constant, so it scales with the {52,60,72,84,96}
+        // recordingButtonSizeDp slider instead of being oversized at the default and frozen
+        // everywhere else.
+        val diamDp = r / dp * 2f
+        val iconSizeDp = if (active) diamDp * (40f / 120f) else diamDp * (30f / 96f)
         val iconCy = cy - r * 0.18f
         val labelColor = if (active) 0xFFFFFFFF.toInt() else HOLD_DANGER_HI
         holdCancelGlyphPaint.color    = labelColor
@@ -1390,10 +1465,12 @@ class FloatingBubbleView(context: Context) : View(context) {
         val glyphMetrics = holdCancelGlyphPaint.fontMetrics
         canvas.drawText("✕", cx, iconCy - (glyphMetrics.ascent + glyphMetrics.descent) / 2f, holdCancelGlyphPaint)
 
-        // Two-line label
+        // Two-line label — same proportional-scaling fix (finding D), canon ratios .lab 10px/96px
+        // rest, 11px/120px active.
         val labelStr = if (active) "loslassen\n= abbrechen" else "ziehen zum\nAbbrechen"
         holdZoneLabelPaint.color    = labelColor
-        holdZoneLabelPaint.textSize = (if (active) 13f else 12f) * spd
+        val labelSizeDp = if (active) diamDp * (11f / 120f) else diamDp * (10f / 96f)
+        holdZoneLabelPaint.textSize = labelSizeDp * spd
         holdZoneLabelPaint.isFakeBoldText = active
         val lines = labelStr.split("\n")
         val lineMetrics = holdZoneLabelPaint.fontMetrics
@@ -1464,15 +1541,24 @@ class FloatingBubbleView(context: Context) : View(context) {
      * Live caption + amber dot with halo — mirrors .reccap. [hit] swaps the text to the
      * "Finger auf Abbrechen" variant while the finger sits on the Abbrechen target (AC6, Task 3.4,
      * canon `sHit` text) — at rest it reads "Aufnahme · loslassen = senden".
+     *
+     * Code-review finding F (2026-07-01): [cx] is the bubble's x, which sits close to the
+     * dock-edge of the now-narrower HOLD window (same `shadowPad + bubbleR` inset
+     * [holdBubbleCenter] uses) — centering the caption block on it let the longer "hit" string
+     * overflow the far (dock-edge) side and clip. Fix: anchor the block on the side AWAY from the
+     * dock edge instead — for a right-docked bubble (near the window's right edge) the block ends
+     * at [cx] and grows leftward toward center; for a left-docked bubble it starts at [cx] and
+     * grows rightward — same `dockSide`-mirrored convention [drawHoldChip] already uses for the
+     * waveform chip, just applied to the caption.
      */
-    private fun drawHoldCaption(canvas: Canvas, cx: Float, cy: Float, hit: Boolean, dp: Float, spd: Float) {
+    private fun drawHoldCaption(canvas: Canvas, cx: Float, cy: Float, dockSide: String, hit: Boolean, dp: Float, spd: Float) {
         holdCaptionPaint.textSize = 13f * spd
         val text = if (hit) "Finger auf Abbrechen · loslassen löst aus" else "Aufnahme · loslassen = senden"
         val textW = holdCaptionPaint.measureText(text)
         val dotR  = 4f * dp
         val gap   = 8f * dp
         val totalW = dotR * 2f + gap + textW
-        val startX = cx - totalW / 2f
+        val startX = if (dockSide == "left") cx else cx - totalW
 
         val dotCx = startX + dotR
         strokePaint.color       = KlarvoTheme.AmberLine

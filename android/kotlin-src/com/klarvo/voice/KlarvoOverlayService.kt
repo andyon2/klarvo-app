@@ -1061,25 +1061,35 @@ class KlarvoOverlayService : Service() {
                 // bubble the window extends LEFTWARD (already covered by the maxOf(0, ...) above);
                 // for a left-docked bubble it extends RIGHTWARD and must not run past the screen's
                 // right edge.
-                val (screenW, screenH) = getScreenDimensions()
+                val (screenW, _) = getScreenDimensions()
                 bubbleParams.x = bubbleParams.x.coerceIn(0, maxOf(0, screenW - holdW))
 
                 // Y-anchor: AC2 requires the bubble's drawn center to coincide EXACTLY with where
-                // the idle bubble's center was (the thumb is still physically there) — derive
-                // purely from preclusterBubbleY/idleCenterY (Task 6.2), no Lock-shaped offset (that
-                // mechanism is gone). Reuses FloatingBubbleView.holdBubbleCenter() (the same pure
-                // fn drawHoldTargets() calls) so the Service's window placement and the View's draw
-                // geometry can never diverge.
+                // the idle bubble's center was (the thumb is still physically there), for EVERY
+                // dock position (Code-Review Finding B, 2026-07-01): the old
+                // `.coerceIn(0, maxHoldY)` here silently moved the anchor away from the thumb
+                // whenever the window didn't fit above the bubble (high/low dock) — exactly the
+                // "kein Größen-/Orts-Sprung" violation AC2 forbids and the bug that triggered this
+                // re-scope in the first place. Fix: NEVER clamp the bubble away from idleCenterY.
+                // Instead the Abbrechen target's GROWTH DIRECTION is dock-adaptive
+                // ([FloatingBubbleView.holdGrowDirection]) — it grows upward when there's room
+                // above (the normal case) and flips downward when docked too high for that to fit.
+                // Both this window-sizing code and drawHoldTargets()/the ACTION_MOVE hit-test below
+                // read the same [holdGrowDirection] field, so they can never diverge (same pattern
+                // already established for [dockSide]).
                 if (preclusterBubbleY == null) preclusterBubbleY = bubbleParams.y
+                val idleCenterY = (preclusterBubbleY ?: bubbleParams.y) + touchTargetPx / 2
+
+                val activeRPx = btnDp * FloatingBubbleView.HOLD_CANCEL_ACTIVE_SCALE / 2f * dp
+                val targetSpanAbovePx = FloatingBubbleView.HOLD_CANCEL_OFFSET_Y_DP * dp + activeRPx +
+                    FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
+                bubbleView.holdGrowDirection = if (idleCenterY - targetSpanAbovePx >= 0f) "up" else "down"
+
                 val bubbleCenterYPx = FloatingBubbleView.holdBubbleCenter(
-                    bubbleView.dockSide, holdW.toFloat(), holdH.toFloat(),
+                    bubbleView.dockSide, bubbleView.holdGrowDirection, holdW.toFloat(), holdH.toFloat(),
                     FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp, bubbleSizeDp * dp
                 ).y
-                val idleCenterY = (preclusterBubbleY ?: bubbleParams.y) + touchTargetPx / 2
-                // Bottom-edge clamp (carried forward from the prior two-target build, code review
-                // finding A): the tall HOLD window must not run past the screen bottom when docked low.
-                val maxHoldY = screenH - NAV_BAR_CLEARANCE_PX - holdH
-                bubbleParams.y = (idleCenterY - bubbleCenterYPx).toInt().coerceIn(0, maxOf(0, maxHoldY))
+                bubbleParams.y = (idleCenterY - bubbleCenterYPx).toInt()
             } else {
                 // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
                 // Visual dims scale with recordingButtonSizeDp (AC10 — no fixed 320×202dp).
@@ -1175,11 +1185,12 @@ class KlarvoOverlayService : Service() {
                     val offsetYPx    = FloatingBubbleView.HOLD_CANCEL_OFFSET_Y_DP * dp
 
                     val bubbleCenter = FloatingBubbleView.holdBubbleCenter(
-                        bubbleView.dockSide, bubbleView.width.toFloat(), bubbleView.height.toFloat(),
+                        bubbleView.dockSide, bubbleView.holdGrowDirection,
+                        bubbleView.width.toFloat(), bubbleView.height.toFloat(),
                         shadowPad, bubbleDiamPx
                     )
                     val cancelCenter = FloatingBubbleView.holdCancelCenter(
-                        bubbleView.dockSide, bubbleCenter, offsetXPx, offsetYPx
+                        bubbleView.dockSide, bubbleView.holdGrowDirection, bubbleCenter, offsetXPx, offsetYPx
                     )
 
                     // Hit-test boundary stays the REST radius even when the target visually grows
