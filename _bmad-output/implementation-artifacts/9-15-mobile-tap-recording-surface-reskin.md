@@ -49,7 +49,7 @@ Ersetze auf Android den `.ab-cluster`-Klein-Cluster im RECORDING-Zustand durch *
 
 **AC8 — Größe in Settings wählbar.** Neuer Config-Key `recordingButtonSizeDp` (Int, Default 72, erlaubte Werte 60/72/88) round-trippt Frontend↔config.json↔Android (camelCase; falscher Key wird still ignoriert — Round-Trip beweisen). Ein 3-Wege-Control im Mobile-Settings-Bereich (neben „Bubble Size") setzt ihn; Auswahl persistiert und wirkt auf die nächste/laufende Aufnahme-Surface ohne Neustart (wie `setBubbleSize`-Pfad aus 9-3).
 
-**AC9 — Gilt für alle Modi inkl. HOLD-Lock.** Der `holdDockActive`-Pfad (`drawHoldDock`) zeichnet dieselbe Zwei-Knopf-Surface in derselben konfigurierten Größe (kein alter Klein-Stand mehr im gesperrten HOLD). Die *aktive* HOLD-Geste (Hochziehen/grow/release) bleibt unverändert / Story 9-14.
+**AC9 — Gilt für alle Modi inkl. HOLD-Lock.** Der **gesperrte** HOLD-Zustand (erreicht via `lockHoldToCluster()`, das `holdDockActive=false` setzt → `onDraw` routet zu `drawTapSurface`) zeigt dieselbe Zwei-Knopf-Surface in der konfigurierten Größe. **Präzisierung (Review 2026-06-30):** `drawHoldDock` (= `holdDockActive=true`) ist die **aktive** HOLD-Geste (Hochziehen/grow/release) und bleibt unverändert / Story 9-14 — NICHT der gesperrte Zustand. Inversions-Gate „HOLD-gesperrt zeigt alten Stand" = nicht getrippt (Lock → drawTapSurface, verifiziert KlarvoOverlayService.kt:1162).
 
 **AC10 — Fenster-Dims folgen der Größe.** `adjustLayoutForState` berechnet die RECORDING-Fensterbreite/-höhe aus `recordingButtonSizeDp` (2 Kreise + Gap + Chip + Schatten-Pad), nicht aus festen 340×222dp. Struktureller Smoke: das RECORDING-Overlay-Fenster spiegelt die gewählte Größe (z.B. 72dp deutlich kleiner als die alten 892×582px).
 
@@ -216,8 +216,8 @@ TAP-Surface ersetzt `drawRecordingCluster()` in FloatingBubbleView.kt. Zwei 132d
 3 unabhängige Reviewer (Blind / Edge-Case / Acceptance-Auditor), Conductor-triagiert + selbst am Code/SOLL verifiziert.
 
 **Patch (zu fixen):**
-- [ ] [Review][Patch] AC6-Mirroring-Tests sind tautologisch — `inside(SEND_CX_LEFT,CY,SEND_CX_LEFT,CY)` (Punkt im eigenen Zentrum = immer drin) + `assertTrue(SEND_CX_LEFT==LEFT_CX)` (per Definition wahr). Die echte Mirroring-Logik (`getDockSide()` + `dockSide→sendCx/cancelCx`-Bindung in `drawTapSurface`) hat **null** Abdeckung trotz „AC6"-Header. [TapSurfaceTouchZoneTest.kt:127-152]
-- [ ] [Review][Patch] Cancel-Glyph + -Label nutzen `KlarvoTheme.Danger` (#EE6F63); SOLL ist `--k-danger-hi` (#F4897E, `.ztap.cancel{color:…}` kaskadiert auf `.ic`+`.lab`). KDoc sagt bereits „Danger-Hi tint" — nur der Body weicht ab. KlarvoTheme hat kein DangerHi-Token (Token-Edit verboten) → lokale Konstante wie `TAP_CANCEL_FILL`. [FloatingBubbleView.kt:356,390]
+- [x] [Review][Patch] AC6-Mirroring-Tests waren tautologisch → **GEFIXT 218ee5d**: pure `tapCircleCenters` extrahiert + Tests prüfen echten Swap + Integration. (Verifiziert nach Re-Scope intakt, Z.128-164.)
+- [x] [Review][Patch] Cancel-Glyph/-Label nutzten `KlarvoTheme.Danger` (#EE6F63) statt danger-hi #F4897E → **GEFIXT 218ee5d**: lokale Konstante `TAP_CANCEL_DANGER_HI`. (Verifiziert nach Re-Scope intakt, Z.412/444.)
 
 **Deferred (Backlog — siehe docs/backlog.md):**
 - [x] [Review][Defer] Per-Frame-Allocations auf RECORDING-Draw-Pfad (BlurMaskFilter/LinearGradient/Path/RectF) — echter GC-Druck, aber positions-abhängiger Shader/Path macht sicheres Cachen nicht-trivial; transienter 15fps-Zustand. [FloatingBubbleView.kt:663,697,702,741,768]
@@ -228,6 +228,20 @@ TAP-Surface ersetzt `drawRecordingCluster()` in FloatingBubbleView.kt. Zwei 132d
 
 **Dismissed (6):** Opaque-95%-Alpha (= SOLL rgba .95/.96, kein Bug) · Timer-Freeze-bei-Stille (widerlegt: `onAmplitude` feuert ~64ms unabhängig von Stille) · `.reccap`-Caption fehlt (außerhalb locked Scope) · Waveform 3dp×5 vs 4.5px×7 (AC5 mandatiert `drawClusterWaveform` unverändert) · `preclusterBubbleX`-Reset (vorhanden, Z.1087) · `holdDockActive`-im-Lock-Pfad (Service setzt false bei stop/cancel; 9-14-Territorium) · Send-Label-Weight 700 vs 600 (kein sauberes 600 ohne Font-Asset).
 
+### Re-Scope Review (code-review 2026-06-30, range 218ee5d..67f20b6 — 3 Reviewer, Conductor-verifiziert)
+
+**Funktional CLEAN.** Selbst am Code verifiziert: Config-Round-Trip FE↔config.json↔Android sauber (fehlender Key → Default 72 in allen 3 Schichten, kein Cross-Layer-Mismatch); Touch-Zonen folgen der **skalierten** Geometrie (`tapSendCx/tapCancelCx/tapZoneRadius=radPx`, AC4 ✓); AC9-Lock korrekt (`lockHoldToCluster`→`holdDockActive=false`→`drawTapSurface`); AC10 Fenster-Dims aus `recordingButtonSizeDp`; AC8 3-Wege-Control + apply-without-restart; KlarvoTheme unberührt. Vorherige Fixes (Mirroring-Tests, Cancel-Farbe) nach Re-Scope intakt.
+
+1 Compile-Fix vom Conductor gezogen (E0063 `SettingsPatch`-Test, `67f20b6`).
+
+**Andis Geräte-Gate-Residuen (visuell, am 60dp-Ende — kein Rate-Fix):**
+- Waveform-Chip: `drawClusterWaveform`-Bars skalieren NICHT mit (`waveW`/Bars fest, Chip skaliert) → bei 60dp wirkt die Waveform proportional groß (kein harter Clip: WAVE_H_DP=18 < Chip-Halbhöhe 12.3dp). AC5 schützt den RMS-Algorithmus → bewusst nicht geraten; falls Andi es zu groß findet → device-validiert skalieren.
+- Label-/Hint-Lesbarkeit: `textSize = 15f*scale*spd` → bei 60dp ~6.8sp „Abbrechen". Falls am Gerät zu klein → Min-Clamp mit device-validiertem Wert.
+
+**Deferred (Backlog):** Diskret-Set {60,72,88} nur range-geclampt [60,88], nicht gesnappt (hand-edit-only; UI sendet nur die 3) · Rust persistiert ohne Validierung (Android coerced beim Lesen) · `.toInt()`-Truncation latent (Schatten-Pad absorbiert) · Cross-Layer-Default 72 durch keinen Test gepinnt.
+
+**Dismissed:** Touch-Zonen-Divergenz (Blind „High" — falsch, Zonen folgen Skalierung) · ≥120dp→48dp-Test (AC2 bewusst re-scoped) · In-Flight-Resize (sicher auf nächste Aufnahme verschoben) · Cancel-Farbe/Mirroring „noch offen" (Auditor las veraltete Checkboxen — Code ist gefixt).
+
 ## Change Log
 
 | Date | Change | Author |
@@ -237,4 +251,5 @@ TAP-Surface ersetzt `drawRecordingCluster()` in FloatingBubbleView.kt. Zwei 132d
 | 2026-06-30 | Code-Review clean (1 Fix-Runde: Tautologie-Tests → echte `tapCircleCenters`-Abdeckung; Cancel-Farbton Danger→danger-hi). Emulator-Struktur-Smoke GRÜN (TAP-Fenster 340×222dp). | claude-opus-4-8 (conductor) |
 | 2026-06-30 | **GATE-4 REAL-DEVICE = FAILED (Andi).** Defekte: (1) Kreise **viel zu groß** — `TAP_SEND_DIAM_DP=132` kam 1:1 aus dem Browser-Render `.ztap{width:132px}`, nie im Geräte-Maßstab validiert (Wiederholung der 9-14-Wurzel). (2) Modi-Erwartung divergiert: neue UI aktuell nur tap/toggle/auto, HOLD noch alt — Andi erwartete andere Zuordnung. Andi offen für **neue UI in ALLEN Modi, sofern deutlich kleiner**. Status → in-progress. Größe + Modi-Scope = Design-Re-Entscheidung im Geräte-Maßstab (Phase A), kein Blind-Rebuild. | claude-opus-4-8 (conductor) |
 | 2026-06-30 | **Phase-A Re-Entscheidung (device-scale Mockup `mockup-tap-size-calibration.html` auf Andis Gerät approbiert).** Größe wird **nutzer-konfigurierbar** `recordingButtonSizeDp` ∈ {60,72,88}, **Default 72** (132/104 zu groß). Surface gilt für **alle Modi inkl. HOLD-Lock** (aktive HOLD-Geste = 9-14). Story re-spec't: AC1 (alle Modi), AC2 (konfigurierbar, proportional, vom device-scale Mockup), AC8 (Settings-Control, round-trip), AC9 (HOLD-Lock), AC10 (Fenster-Dims aus Größe). Anchors re-anchored auf device-scale. Bau folgt. | claude-opus-4-8 (conductor) |
+| 2026-06-30 | Re-Scope gebaut (`21ae533`, 13 Dateien cross-language: React/TS + Rust + Kotlin) + Conductor-Compile-Fix (`67f20b6`, E0063 SettingsPatch-Test). Re-Review (3 Reviewer) **funktional clean** — Round-Trip/Touch/AC9-Lock/AC10/AC8 verifiziert; visuelle 60dp-Reste (Waveform-Proportion, Label-Lesbarkeit) → Andis Gate; Robustheit → Backlog. Status → review. | claude-opus-4-8 (conductor) |
 | 2026-06-30 | **Re-Scope implementiert (Tasks 7–10).** Proportionale Skalierung via `recordingButtonSizeDp` ∈ {60,72,88} (Default 72) in FloatingBubbleView, KlarvoOverlayService, KlarvoApi, Rust-Config, SettingsView, settings.rs, types.ts, tauri-commands.ts, SettingsPanel.tsx, ShortcutsContent.tsx. 4 neue AC2-Tests ersetzen veralteten `tap_send_diam_is_at_least_120dp`-Test. BUILD SUCCESSFUL, Theme-Drift grün, Rust 0 Errors. Status → review. GATE-4 visual/touch = Andis Real-Device-Batch-Gate. | claude-sonnet-4-6 (dev) |

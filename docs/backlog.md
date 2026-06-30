@@ -392,3 +392,15 @@ Source: Conductor-Code-Review von Story 9-15 (baseRef `ed219f10..a3d0233`, 3 Rev
   Breite statt der 340dp-Fensterbreite → Surface landet großteils off-screen, schlechtes x wird via `savePosition` persistiert.
 - **AC6 oben/unten-Dock-Mirroring nicht implementiert** — `getDockSide()` löst nur links/rechts auf. Render spezifiziert
   nur `tapLeft`/`tapRight` (kein oben/unten-Frame) → render-unspezifiziert; bei späterem oben/unten-Bedarf nachziehen.
+
+---
+
+## Story 9-15 Re-Scope (konfigurierbare Button-Größe) — Code-Review-Defers (2026-06-30)
+
+Source: Conductor-Re-Review nach der Re-Scope (range 218ee5d..67f20b6, 3 Reviewer). Funktional clean; diese Robustheits-Punkte sind real, aber nicht close-blockierend (UI sendet nur {60,72,88}; nur hand-editierte/alte config.json triggert sie):
+
+- **Diskret-Set {60,72,88} nirgends erzwungen, nur range-geclampt [60,88]** — `recordingButtonSizeDp` wird in Kotlin (`coerceIn(60,88)`) und Rust (kein Clamp) nur auf den Bereich begrenzt; ein hand-editierter Wert wie 70/75 rendert off-spec, und das React-Segment-Control zeigt dann KEINE aktive Auswahl (kein `aria-pressed`). Fix (eine Stelle = SSOT): snap-to-nearest-of-{60,72,88} im Rust `merge_settings`/`save_settings`.
+- **Rust-Schicht validiert/clampt den Wert nicht** beim Persistieren (Android coerced erst beim Lesen; Desktop ignoriert das Feld). Persistierte SSOT kann out-of-range sein.
+- **`.toInt()`-Truncation** in `tapVisualWidthDp/HeightDp` (`(size*320f/132f).toInt()`) floored die Fenster-Region <1dp unter den Float-Inhalt; aktuell vom 10dp-Schatten-Pad absorbiert (kein Clip), aber latent bei künftiger Pad-Reduktion.
+- **Cross-Layer-Default 72 durch keinen Test gepinnt** — 72 ist an 5 Stellen dupliziert (TS types/mock, Rust default-fn, Kotlin data-class, Kotlin optInt-Fallback, TAP_BUTTON_SIZE_DEFAULT); aktuell konsistent, aber ein künftiger Edit an einer Stelle würde nicht gefangen.
+- **Visuell (Andis Geräte-Gate, am 60dp-Ende):** Waveform-Chip-Bars skalieren nicht mit der Button-Größe (AC5 schützt drawClusterWaveform) → proportional groß bei 60dp; Label „Abbrechen" ~6.8sp bei 60dp. Beide nur mit device-validierten Werten anfassen, falls Andi sie bemängelt.
