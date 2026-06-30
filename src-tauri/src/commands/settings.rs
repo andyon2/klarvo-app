@@ -1481,6 +1481,7 @@ mod tests {
             preview_font_size: None,
             bubble_size_dp: Some(48),
             bubble_edge_snap: Some(false),
+            recording_button_size_dp: Some(88),
         };
 
         let result = merge_settings(existing, patch);
@@ -1528,6 +1529,7 @@ mod tests {
         assert_eq!(result.preview_panel_form, "compact");
         assert_eq!(result.bubble_size_dp, 48);
         assert!(!result.bubble_edge_snap);
+        assert_eq!(result.recording_button_size_dp, 88);
     }
 
     // -----------------------------------------------------------------------
