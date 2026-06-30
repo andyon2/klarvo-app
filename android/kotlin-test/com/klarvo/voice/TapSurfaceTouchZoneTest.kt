@@ -125,30 +125,55 @@ class TapSurfaceTouchZoneTest {
 
     @Test
     fun left_dock_send_circle_is_on_left_side() {
+        // tapCircleCenters resolves send/cancel positions from the production dock→circle binding.
+        // windowW=340, shadowPad=10, radius=66 → leftCx=76, rightCx=264.
+        val (sendCx, cancelCx) = FloatingBubbleView.tapCircleCenters("left", 340f, 10f, RADIUS)
         assertTrue(
-            "Left-dock Send circle must be at left cx (AC6 dock mirroring)",
-            inside(SEND_CX_LEFT, CY, SEND_CX_LEFT, CY)
+            "Left-dock Send must be at leftCx=76, was $sendCx (AC6 dock mirroring)",
+            sendCx == LEFT_CX
         )
+        assertTrue(
+            "Left-dock Cancel must be at rightCx=264, was $cancelCx (AC6 dock mirroring)",
+            cancelCx == RIGHT_CX
+        )
+        // Integration: tap at send center hits send but not cancel — proves binding AND geometry.
+        assertTrue("Left-dock: tap at send center is inside send zone", inside(sendCx, CY, sendCx, CY))
+        assertFalse("Left-dock: tap at send center must NOT be inside cancel zone", inside(sendCx, CY, cancelCx, CY))
     }
 
     @Test
     fun left_dock_cancel_circle_is_on_right_side() {
+        // For right dock (default): send is on the right, cancel is on the left.
+        val (sendCx, cancelCx) = FloatingBubbleView.tapCircleCenters("right", 340f, 10f, RADIUS)
         assertTrue(
-            "Left-dock Cancel circle must be at right cx (AC6 dock mirroring)",
-            inside(CANCEL_CX_LEFT, CY, CANCEL_CX_LEFT, CY)
+            "Right-dock Send must be at rightCx=264, was $sendCx (AC6 dock mirroring)",
+            sendCx == RIGHT_CX
         )
+        assertTrue(
+            "Right-dock Cancel must be at leftCx=76, was $cancelCx (AC6 dock mirroring)",
+            cancelCx == LEFT_CX
+        )
+        // Integration: tap at send center hits send but not cancel — proves binding AND geometry.
+        assertTrue("Right-dock: tap at send center is inside send zone", inside(sendCx, CY, sendCx, CY))
+        assertFalse("Right-dock: tap at send center must NOT be inside cancel zone", inside(sendCx, CY, cancelCx, CY))
     }
 
     @Test
     fun left_dock_send_and_cancel_are_swapped_vs_right_dock() {
-        // Send is at left cx for left dock but at right cx for right dock.
+        val (leftSendCx, leftCancelCx)   = FloatingBubbleView.tapCircleCenters("left",  340f, 10f, RADIUS)
+        val (rightSendCx, rightCancelCx) = FloatingBubbleView.tapCircleCenters("right", 340f, 10f, RADIUS)
         assertFalse(
-            "Left-dock Send cx must NOT equal right-dock Send cx (circles really swap)",
-            SEND_CX_LEFT == SEND_CX_RIGHT
+            "Send center must differ between left and right dock — swap must be real (AC6)",
+            leftSendCx == rightSendCx
         )
-        // The two dock-side Send positions must match LEFT_CX and RIGHT_CX respectively.
-        assertTrue(SEND_CX_LEFT == LEFT_CX)
-        assertTrue(SEND_CX_RIGHT == RIGHT_CX)
+        assertTrue(
+            "Left-dock Send position must equal right-dock Cancel position (AC6 swap)",
+            leftSendCx == rightCancelCx
+        )
+        assertTrue(
+            "Left-dock Cancel position must equal right-dock Send position (AC6 swap)",
+            leftCancelCx == rightSendCx
+        )
     }
 
     // ---------------------------------------------------------------------------

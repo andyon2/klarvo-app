@@ -149,8 +149,9 @@ class FloatingBubbleView(context: Context) : View(context) {
 
         // Non-KlarvoTheme colors for the TAP surface (mockup-specific alpha blends not in canon CSS).
         // These are NOT generated and NOT diffed by the drift gate — local Canvas constants only.
-        private const val TAP_CANCEL_FILL   = 0xF2141212.toInt()  // .ztap.cancel fill: rgba(20,18,18,.95)
-        private const val TAP_CANCEL_BORDER = 0x80EE6F63.toInt()  // .ztap.cancel border: rgba(238,111,99,.5)
+        private const val TAP_CANCEL_FILL      = 0xF2141212.toInt()  // .ztap.cancel fill: rgba(20,18,18,.95)
+        private const val TAP_CANCEL_BORDER    = 0x80EE6F63.toInt()  // .ztap.cancel border: rgba(238,111,99,.5)
+        private const val TAP_CANCEL_DANGER_HI = 0xFFF4897E.toInt()  // .ztap.cancel color: var(--k-danger-hi)=#F4897E (glyph+label)
         private const val TAP_CHIP_BG       = 0xF5121416.toInt()  // .statuschip bg: rgba(18,20,22,.96)
         private const val TAP_SEND_HINT     = 0xB305201B.toInt()  // OnTeal @70% for "tippen" hint
 
@@ -199,10 +200,26 @@ class FloatingBubbleView(context: Context) : View(context) {
          * Extracted from isTouchInConfirmZone / isTouchInCancelZone for JVM testability
          * (no Android View context needed). Tested by TapSurfaceTouchZoneTest.
          */
+        @JvmStatic
         fun isInsideCircle(touchX: Float, touchY: Float, cx: Float, cy: Float, radius: Float): Boolean {
             val dx = touchX - cx
             val dy = touchY - cy
             return Math.sqrt((dx * dx + dy * dy).toDouble()) <= radius
+        }
+
+        /**
+         * Pure function: resolves Send/Cancel circle centers for the TAP surface given dock side.
+         * Returns Pair(sendCx, cancelCx) in the same coordinate space as [windowW].
+         *   dockSide=="left"  → Send on left  (shadowPad+radius),  Cancel on right (windowW-shadowPad-radius)
+         *   dockSide=="right" → Send on right (windowW-shadowPad-radius), Cancel on left (shadowPad+radius)
+         * Extracted from drawTapSurface for JVM testability (no Android View context needed).
+         * Tested by TapSurfaceTouchZoneTest (AC6).
+         */
+        @JvmStatic
+        fun tapCircleCenters(dockSide: String, windowW: Float, shadowPad: Float, radius: Float): Pair<Float, Float> {
+            val leftCx  = shadowPad + radius
+            val rightCx = windowW - shadowPad - radius
+            return if (dockSide == "left") Pair(leftCx, rightCx) else Pair(rightCx, leftCx)
         }
     }
 
@@ -355,7 +372,7 @@ class FloatingBubbleView(context: Context) : View(context) {
     /** Label inside Cancel circle: "Abbrechen" — 13sp, Danger-Hi tint */
     private val tapCancelLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = KlarvoTheme.Danger
+        color = TAP_CANCEL_DANGER_HI
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
@@ -384,10 +401,10 @@ class FloatingBubbleView(context: Context) : View(context) {
         typeface = Typeface.MONOSPACE
     }
 
-    /** Cancel glyph (✗ cross) in the TAP surface cancel circle — Danger, rounded cap */
+    /** Cancel glyph (✗ cross) in the TAP surface cancel circle — Danger-Hi tint, rounded cap */
     private val tapCancelGlyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = KlarvoTheme.Danger
+        color = TAP_CANCEL_DANGER_HI
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
@@ -592,20 +609,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         // Circles vertical center: below chip area + gap
         val circlesCy = shadowPadPx + chipH + chipGap + radPx
 
-        // Horizontal centers of the two circles
-        val leftCx  = shadowPadPx + radPx
-        val rightCx = w - shadowPadPx - radPx
-
         // Assign Send/Cancel based on dock side (AC3 + AC6)
-        val sendCx: Float
-        val cancelCx: Float
-        if (dockSide == "left") {
-            sendCx   = leftCx
-            cancelCx = rightCx
-        } else {
-            sendCx   = rightCx
-            cancelCx = leftCx
-        }
+        val (sendCx, cancelCx) = tapCircleCenters(dockSide, w, shadowPadPx, radPx)
 
         // Store 2D touch zones for isTouchInConfirmZone / isTouchInCancelZone (AC4)
         tapSendCx     = sendCx
