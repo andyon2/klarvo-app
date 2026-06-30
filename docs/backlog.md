@@ -435,3 +435,13 @@ Source: Andis Real-Device-Gate + Design-Rethink (ADR-0019 Amendment 2026-07-01).
 - „[GATE-4 Fidelity] Drag-Ghost-Bubble + Origin-Fade / Caption-Update / .finger / inner-ring" (2026-06-30) → **in das neue Scope gezogen** (Dynamik wird gebaut, nicht mehr vertagt).
 - „Erster ACTION_MOVE liest stale idle-Width" → bleibt offen, gilt weiter im neuen Build.
 NEU offen: `recordingButtonSizeDp`-Regler um mehr + kleinere Stufen erweitern (Teil 9-14-Scope, berührt 9-15-Settings-UI).
+
+---
+
+## Story 9-14 vereinfacht — Code-Review-Defers (2026-07-01)
+
+Source: Conductor-Re-Review (range 4d2bc9b..d01381a, 3 Reviewer). A/B/D/E/F als Patch behoben; C refuted (getBubbleSizeDp = reiner Getter). Folgende minor/edge, nicht close-blockierend:
+- **Multi-Touch: primärer Finger hebt via ACTION_POINTER_UP ab, zweiter bleibt** → Commit (send/cancel) verzögert bis zum letzten Finger-Lift (KlarvoOverlayService ~1142). Selten; Primary-Pointer-Lock ist Absicht. Fix nur falls am Gerät störend.
+- **Ghost-Squircle folgt rohem Finger ohne Bounds-Clamp** → kosmetisches Clipping nahe Fensterkante (FloatingBubbleView ~560). Teilweise durch E (alpha) entschärft.
+- **Sub-48dp Idle-Bubble: ~wenige dp X-Drift** beim idle→hold-Übergang (idle-Fenster ≥48dp gefloort). Edge.
+- **Left-Dock Anker-X (low confidence):** rechts-Kanten-Anker-Formel klemmt links auf 0 → ~Zehner-px Anker-Shift nur bei Links-Dock. AC2 am Gerät prüfen (rechts-Dock exakt).
