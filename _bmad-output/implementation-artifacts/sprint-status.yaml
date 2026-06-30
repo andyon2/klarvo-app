@@ -139,5 +139,5 @@ development_status:
   9-12-cluster-waveform-rms-reactive: done
   9-13-swap-send-cancel-cluster-order: done
   9-14-hold-mode-push-to-talk-cluster: ready-for-dev
-  9-15-mobile-tap-recording-surface-reskin: ready-for-dev
+  9-15-mobile-tap-recording-surface-reskin: review
   epic-9-retrospective: optional

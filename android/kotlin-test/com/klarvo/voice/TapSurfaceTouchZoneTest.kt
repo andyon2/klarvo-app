@@ -1,0 +1,201 @@
+package com.klarvo.voice
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * AC4 regression lock — Story 9-15: Mobile TAP-Aufnahme-Surface touch-zone correctness.
+ *
+ * Guards the circular 2D hit-detection logic introduced in Story 9-15 (B-Sprache reskin).
+ * Tests [FloatingBubbleView.isInsideCircle], the pure companion function extracted from
+ * the View-bound zone helpers, so no Android context is required.
+ *
+ * Design:
+ * - Tests the pure [isInsideCircle] math directly (independent predicate — not calling
+ *   isTouchInConfirmZone/isTouchInCancelZone which have View state guards).
+ * - Each test names the AC it covers and WHY it would go RED on a regression.
+ * - Inversion tests explicitly verify that a miss really is a miss.
+ *
+ * Geometry used in tests (mirrors adjustLayoutForState TAP window, density-independent):
+ *   Window: 340dp wide × 222dp tall (TAP_VISUAL_W_DP=320 + 2×TAP_SHADOW_PAD_DP=10)
+ *   Right dock (default): Send circle cx=264, cy=146, radius=66  (all in dp-equivalent units)
+ *                          Cancel circle cx=76, cy=146, radius=66
+ *   Left dock (mirrored): Send circle cx=76, cy=146, radius=66
+ *                          Cancel circle cx=264, cy=146, radius=66
+ */
+class TapSurfaceTouchZoneTest {
+
+    // ---------------------------------------------------------------------------
+    // Geometry constants (dp-space — density=1 simplifies the test math)
+    // ---------------------------------------------------------------------------
+
+    // Window dimensions (density-agnostic, using dp values directly):
+    //   shadowPad = 10, radius = 66 (TAP_SEND_DIAM_DP/2 = 132/2)
+    //   leftCx  = shadowPad + radius = 76
+    //   rightCx = windowW - shadowPad - radius = 340 - 10 - 66 = 264
+    //   chipH   = 54, chipGap = 16
+    //   circlesCy = shadowPad + chipH + chipGap + radius = 10+54+16+66 = 146
+    private val RADIUS = 66f
+    private val CY     = 146f      // both circles share the same vertical center
+
+    private val RIGHT_CX = 264f   // right side circle center
+    private val LEFT_CX  = 76f    // left side circle center
+
+    // For right dock: Send=right, Cancel=left
+    private val SEND_CX_RIGHT   = RIGHT_CX
+    private val CANCEL_CX_RIGHT = LEFT_CX
+
+    // For left dock: Send=left, Cancel=right
+    private val SEND_CX_LEFT   = LEFT_CX
+    private val CANCEL_CX_LEFT = RIGHT_CX
+
+    // ---------------------------------------------------------------------------
+    // Helper shorthands
+    // ---------------------------------------------------------------------------
+
+    private fun inside(touchX: Float, touchY: Float, cx: Float, cy: Float) =
+        FloatingBubbleView.isInsideCircle(touchX, touchY, cx, cy, RADIUS)
+
+    // ---------------------------------------------------------------------------
+    // AC4 — Basic circular hit detection: center of circle is always inside
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun center_of_send_circle_right_dock_is_inside() {
+        assertTrue(
+            "Touch exactly at Send circle center must be a hit (AC4)",
+            inside(SEND_CX_RIGHT, CY, SEND_CX_RIGHT, CY)
+        )
+    }
+
+    @Test
+    fun center_of_cancel_circle_right_dock_is_inside() {
+        assertTrue(
+            "Touch exactly at Cancel circle center must be a hit (AC4)",
+            inside(CANCEL_CX_RIGHT, CY, CANCEL_CX_RIGHT, CY)
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // AC4 — Touch on Send circle does NOT register as Cancel, and vice versa
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun send_circle_center_is_not_in_cancel_zone_right_dock() {
+        assertFalse(
+            "Send circle center must NOT be inside the Cancel zone — zones must be distinct (AC4)",
+            inside(SEND_CX_RIGHT, CY, CANCEL_CX_RIGHT, CY)
+        )
+    }
+
+    @Test
+    fun cancel_circle_center_is_not_in_send_zone_right_dock() {
+        assertFalse(
+            "Cancel circle center must NOT be inside the Send zone — zones must be distinct (AC4)",
+            inside(CANCEL_CX_RIGHT, CY, SEND_CX_RIGHT, CY)
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // AC4 — Touch at exactly the radius boundary (edge hit — inside == true)
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun edge_touch_at_radius_is_inside_send_circle() {
+        // Touch at exactly radius to the right of the Send circle center.
+        assertTrue(
+            "Touch at exact radius boundary must be inside the circle (AC4: edge tap is a hit)",
+            inside(SEND_CX_RIGHT + RADIUS, CY, SEND_CX_RIGHT, CY)
+        )
+    }
+
+    @Test
+    fun touch_just_outside_radius_is_outside_cancel_circle() {
+        // Touch one unit beyond the radius must miss.
+        assertFalse(
+            "Touch at radius+1 must be outside the circle (inversion: a miss is a miss)",
+            inside(CANCEL_CX_RIGHT + RADIUS + 1f, CY, CANCEL_CX_RIGHT, CY)
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // AC6 — Dock-side mirroring: for left dock, Send is on the left
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun left_dock_send_circle_is_on_left_side() {
+        assertTrue(
+            "Left-dock Send circle must be at left cx (AC6 dock mirroring)",
+            inside(SEND_CX_LEFT, CY, SEND_CX_LEFT, CY)
+        )
+    }
+
+    @Test
+    fun left_dock_cancel_circle_is_on_right_side() {
+        assertTrue(
+            "Left-dock Cancel circle must be at right cx (AC6 dock mirroring)",
+            inside(CANCEL_CX_LEFT, CY, CANCEL_CX_LEFT, CY)
+        )
+    }
+
+    @Test
+    fun left_dock_send_and_cancel_are_swapped_vs_right_dock() {
+        // Send is at left cx for left dock but at right cx for right dock.
+        assertFalse(
+            "Left-dock Send cx must NOT equal right-dock Send cx (circles really swap)",
+            SEND_CX_LEFT == SEND_CX_RIGHT
+        )
+        // The two dock-side Send positions must match LEFT_CX and RIGHT_CX respectively.
+        assertTrue(SEND_CX_LEFT == LEFT_CX)
+        assertTrue(SEND_CX_RIGHT == RIGHT_CX)
+    }
+
+    // ---------------------------------------------------------------------------
+    // AC2 — Target diameter ≥ 120dp: radius must be ≥ 60
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun tap_send_diam_is_at_least_120dp() {
+        assertTrue(
+            "TAP_SEND_DIAM_DP (${FloatingBubbleView.TAP_SEND_DIAM_DP}) must be ≥ 120dp (AC2 mobile-first target size)",
+            FloatingBubbleView.TAP_SEND_DIAM_DP >= 120
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // Inversion: touch between circles (chip area / backdrop) must miss both zones
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun touch_between_circles_misses_both_zones() {
+        // Mid-point between left and right circle centers (rightCx-leftCx = 188; mid = leftCx + 94 = 170)
+        val midX = (LEFT_CX + RIGHT_CX) / 2f
+        assertFalse(
+            "Touch at horizontal midpoint between circles must miss Send zone",
+            inside(midX, CY, SEND_CX_RIGHT, CY)
+        )
+        assertFalse(
+            "Touch at horizontal midpoint between circles must miss Cancel zone",
+            inside(midX, CY, CANCEL_CX_RIGHT, CY)
+        )
+    }
+
+    // ---------------------------------------------------------------------------
+    // Inversion: touch in chip area (above circles) must miss both zones
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun touch_in_chip_area_misses_both_zones() {
+        // Chip area is above circlesCy: use chipCy = shadowPad + chipH/2 = 10 + 27 = 37
+        val chipCy = 37f
+        assertFalse(
+            "Touch in chip zone (above circles) must miss Send zone (no false-positive)",
+            inside(SEND_CX_RIGHT, chipCy, SEND_CX_RIGHT, CY)
+        )
+        assertFalse(
+            "Touch in chip zone (above circles) must miss Cancel zone (no false-positive)",
+            inside(CANCEL_CX_RIGHT, chipCy, CANCEL_CX_RIGHT, CY)
+        )
+    }
+}

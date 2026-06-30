@@ -9,16 +9,17 @@ import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 
 /**
- * Custom View that draws the floating voice-input bubble (and the RECORDING cluster).
+ * Custom View that draws the floating voice-input bubble (and the RECORDING surface).
  * All rendering via Canvas — no asset files needed.
  *
  * States:
  *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
  *                    Canon: .ab-bubble.idle
  *   RECORDING     -- depends on [holdDockActive]:
- *     holdDockActive=false: control cluster (Modell B / ADR-0019 §4′ #2):
- *                    [✗ cancel red] [amber waveform] [➤ send teal] on a dark semi-transparent
- *                    backdrop with a static amber ring. Window grows from single bubble → cluster.
+ *     holdDockActive=false: TAP surface (B-Sprache — ADR-0019 Amendment 2026-06-26):
+ *                    Two large tappable circles (Send teal ➤ at dock side · Cancel dark+red ring ✕
+ *                    on the opposite side) + a calm amber waveform chip above. Window expands to
+ *                    320×202dp (visual). Dock side tracked in [dockSide] ("left"/"right").
  *     holdDockActive=true: HOLD dock (ADR-0019 §4′-Amendment #4):
  *                    Holdstrip (slidehint "‹" + "ziehen zum Abbrechen" + amber waveform) to the
  *                    left, heldbub (teal squircle + amber ring + finger indicator) to the right,
@@ -29,18 +30,17 @@ import android.view.animation.OvershootInterpolator
  *   DONE          -- success-green gradient squircle + dark check polyline (.ab-bubble.done),
  *                    then returns to IDLE (via doneFlashRunnable).
  *
- * Touch zones in RECORDING (cluster layout, left→right: cancel | waveform | send):
- *   - Left zone   -> ✗ Cancel (isTouchInCancelZone) — guarded by !holdDockActive
- *   - Dead zone   -> waveform (no action)
- *   - Right zone  -> ➤ Send  (isTouchInConfirmZone) — guarded by !holdDockActive
- *   KlarvoOverlayService reads these helpers and routes accordingly; tap on waveform/backdrop = no-op.
+ * Touch zones in RECORDING (TAP surface, Story 9-15):
+ *   - Send circle   -> ➤ Send  (isTouchInConfirmZone) — circular hit, dock side
+ *   - Cancel circle -> ✗ Cancel (isTouchInCancelZone) — circular hit, opposite side
+ *   - Between/outside circles → no-op (chip area, backdrop)
  *   When holdDockActive=true both zone helpers return false (release = send, drag = cancel/lock).
  *
  * Color semantics (DT5 — binding rule):
  *   KlarvoTheme.Teal    = brand / ready / processing / focus-ring
  *   KlarvoTheme.OnTeal  = dark "K" letter on teal fill (IDLE) / send-glyph stroke
  *   KlarvoTheme.TealBg  = ~12% alpha faint ring (IDLE glass-ring accent)
- *   KlarvoTheme.Amber   = waveform in RECORDING cluster ONLY (amber = live only)
+ *   KlarvoTheme.Amber   = waveform in RECORDING surface ONLY (amber = live only)
  *   KlarvoTheme.Danger  = ✗ cancel glyph (ADR-0019: red = Abbrechen only)
  *   KlarvoTheme.SuccessHi / Success = done bubble gradient (150°)
  */
@@ -115,51 +115,95 @@ class FloatingBubbleView(context: Context) : View(context) {
             invalidate()
         }
 
+    /**
+     * Which screen edge the bubble is docked on: "left" or "right".
+     * Set by KlarvoOverlayService.getDockSide() before entering RECORDING state.
+     * Controls which circle (Send/Cancel) appears on which side of the TAP surface.
+     */
+    var dockSide: String = "right"
+
+    /**
+     * Epoch-ms timestamp when the current recording started.
+     * Used by drawTapSurface() to render the elapsed timer in the waveform chip.
+     * Set by KlarvoOverlayService.startRecording(). Reset to 0L when leaving RECORDING.
+     */
+    var recordingStartMs: Long = 0L
+
     /** Current bubble size in dp. Changed via setBubbleSize(). */
     private var bubbleSizeDp: Int = 56
 
     companion object {
-        // Cluster visual dimensions (RECORDING state, Modell B).
-        // Width breakdown: 6(pad) + 40(cancel) + 9(gap) + 40(wave) + 9(gap) + 40(send) + 6(pad) = 150dp
-        // Height: 6(pad) + 40(btn) + 6(pad) = 52dp
+        // ---- TAP surface dimensions (B-Sprache — Story 9-15, ADR-0019 Amendment 2026-06-26) ----
+        // Replaces the old Klein-Cluster for non-HOLD RECORDING state.
+        // Layout: [Chip 54dp high] [16dp gap] [Circles 132dp] — stacked vertically.
+        // Horizontal: [Circle 132dp] [56dp gap] [Circle 132dp] = 320dp visual width.
+        // From .ztap CSS in mockup-mobile-recording-states.html (Frame tapRight/tapLeft).
+        const val TAP_SEND_DIAM_DP   = 132   // .ztap { width:132px; height:132px }
+        const val TAP_INNER_GAP_DP   = 56    // horizontal gap between the two circles
+        const val TAP_CHIP_H_DP      = 54    // .statuschip: padding:11dp + wave:32dp + padding:11dp
+        const val TAP_CHIP_GAP_DP    = 16    // gap between chip bottom and circles top
+        const val TAP_SHADOW_PAD_DP  = 10    // shadow/clip margin around visual content
+        // Total visual W: 132+56+132 = 320dp. Total visual H: 54+16+132 = 202dp.
+        const val TAP_VISUAL_W_DP    = 320
+        const val TAP_VISUAL_H_DP    = 202
+
+        // Non-KlarvoTheme colors for the TAP surface (mockup-specific alpha blends not in canon CSS).
+        // These are NOT generated and NOT diffed by the drift gate — local Canvas constants only.
+        private const val TAP_CANCEL_FILL   = 0xF2141212.toInt()  // .ztap.cancel fill: rgba(20,18,18,.95)
+        private const val TAP_CANCEL_BORDER = 0x80EE6F63.toInt()  // .ztap.cancel border: rgba(238,111,99,.5)
+        private const val TAP_CHIP_BG       = 0xF5121416.toInt()  // .statuschip bg: rgba(18,20,22,.96)
+        private const val TAP_SEND_HINT     = 0xB305201B.toInt()  // OnTeal @70% for "tippen" hint
+
+        // ---- Old Klein-Cluster dimensions (kept as dead constants for HOLD-lock dimensions only) ----
+        // The RECORDING cluster visual is now the TAP surface above. These are retained because
+        // HOLDDOCK_VISUAL_H_DP references CLUSTER_VISUAL_H_DP in comments.
         const val CLUSTER_VISUAL_W_DP = 150
         const val CLUSTER_VISUAL_H_DP = 52
-        const val CLUSTER_SHADOW_PAD_DP = 8  // padding around visual cluster for shadow/touch
+        const val CLUSTER_SHADOW_PAD_DP = 8
 
-        // Internal cluster geometry constants
+        // Internal cluster geometry (still used by drawRecordingCluster which is now dead code —
+        // kept so the companion object compiles and any future reference is traceable).
         private const val CLUSTER_PAD_DP = 6
         private const val CLUSTER_BTN_DP = 40
         private const val CLUSTER_GAP_DP = 9
-        private const val CLUSTER_BTN_R_DP = 12   // button corner radius
+        private const val CLUSTER_BTN_R_DP = 12
         private const val CLUSTER_BACKDROP_R_DP = 18
 
-        // Waveform bars inside the cluster (canon .hwave: 5 bars × 3dp, gap 3dp)
+        // Waveform bars (shared by both the old cluster dead code and the new TAP chip)
         private const val WAVE_BAR_W_DP = 3
         private const val WAVE_BAR_GAP_DP = 3
         private const val WAVE_BAR_COUNT = 5
-        private const val WAVE_H_DP = 18   // container height per AC4
+        private const val WAVE_H_DP = 18
 
         // HOLD dock dimensions (PTT mode: .ab-holddock surfaces, ADR-0019 §4′-Amendment #4)
-        // Layout (right→left): heldbub (40dp) · gap (11dp) · holdstrip (~139dp)
-        // Total visual width: ~139 (holdstrip) + 11 (gap) + 40 (heldbub) = ~190dp
-        const val HOLDDOCK_VISUAL_W_DP = 190       // holdstrip + gap + heldbub (without shadow pad)
-        const val HOLDDOCK_VISUAL_H_DP = 52        // matches CLUSTER_VISUAL_H_DP
-        const val HOLDDOCK_SHADOW_PAD_DP = 8       // matches CLUSTER_SHADOW_PAD_DP
-        const val HOLDDOCK_LOCKCHIP_H_DP = 28      // lockchip area above holdstrip (incl. ~4dp bottom gap)
-        // Total window height = HOLDDOCK_VISUAL_H_DP + HOLDDOCK_LOCKCHIP_H_DP + 2*HOLDDOCK_SHADOW_PAD_DP = 96dp
+        const val HOLDDOCK_VISUAL_W_DP = 190
+        const val HOLDDOCK_VISUAL_H_DP = 52
+        const val HOLDDOCK_SHADOW_PAD_DP = 8
+        const val HOLDDOCK_LOCKCHIP_H_DP = 28
 
-        // Internal HOLD dock geometry (from canon .ab-holddock CSS)
-        private const val HOLD_HELDBUB_DP = 40          // .ab-heldbub width/height
-        private const val HOLD_HELDBUB_R_DP = 12        // .ab-heldbub border-radius
-        private const val HOLD_RING_OUTSET_DP = 4       // AmberLine box-shadow outset (4dp)
-        private const val HOLD_INNER_RING_INSET_DP = 8  // .ab-heldbub .ring: inset -8dp
-        private const val HOLD_INNER_RING_R_DP = 18     // .ab-heldbub .ring border-radius
-        private const val HOLD_GAP_DP = 11              // gap between holdstrip and heldbub
-        private const val HOLDSTRIP_L_PAD_DP = 11       // .ab-holdstrip: left padding
-        private const val HOLDSTRIP_R_PAD_DP = 10       // .ab-holdstrip: right padding
-        private const val HOLDSTRIP_INNER_GAP_DP = 9    // gap between slidehint and waveform zone
-        private const val HOLDSTRIP_R_DP = 18           // .ab-holdstrip: border-radius
-        private const val HOLD_FINGER_DP = 26           // .ab-heldbub .finger: diameter
+        // Internal HOLD dock geometry
+        private const val HOLD_HELDBUB_DP = 40
+        private const val HOLD_HELDBUB_R_DP = 12
+        private const val HOLD_RING_OUTSET_DP = 4
+        private const val HOLD_INNER_RING_INSET_DP = 8
+        private const val HOLD_INNER_RING_R_DP = 18
+        private const val HOLD_GAP_DP = 11
+        private const val HOLDSTRIP_L_PAD_DP = 11
+        private const val HOLDSTRIP_R_PAD_DP = 10
+        private const val HOLDSTRIP_INNER_GAP_DP = 9
+        private const val HOLDSTRIP_R_DP = 18
+        private const val HOLD_FINGER_DP = 26
+
+        /**
+         * Pure function: true if (touchX, touchY) lies within the circle at (cx, cy) of [radius].
+         * Extracted from isTouchInConfirmZone / isTouchInCancelZone for JVM testability
+         * (no Android View context needed). Tested by TapSurfaceTouchZoneTest.
+         */
+        fun isInsideCircle(touchX: Float, touchY: Float, cx: Float, cy: Float, radius: Float): Boolean {
+            val dx = touchX - cx
+            val dy = touchY - cy
+            return Math.sqrt((dx * dx + dy * dy).toDouble()) <= radius
+        }
     }
 
     init {
@@ -283,12 +327,70 @@ class FloatingBubbleView(context: Context) : View(context) {
         strokeCap = Paint.Cap.BUTT
     }
 
-    // --- Touch zone boundaries (updated each draw, used by isTouchInConfirmZone / Cancel) ---
-    // Send zone:   [clusterSendZoneStart, width]   (RIGHT side — thumb position)
-    // Cancel zone: [0, clusterCancelZoneEnd]        (LEFT side)
-    // Dead zone:   waveform area between them
+    // --- Touch zone boundaries (updated each onDraw) ---
+    // TAP surface (Story 9-15): circular zones — 2D hit test via hypot(dx,dy) <= tapZoneRadius.
+    // Legacy 1-D cluster fields below are still used by the now-dead drawRecordingCluster code
+    // path and kept to avoid removing unused-variable warnings in the retained dead code.
+    private var tapSendCx     = 0f
+    private var tapSendCy     = 0f
+    private var tapCancelCx   = 0f
+    private var tapCancelCy   = 0f
+    private var tapZoneRadius = 0f
+
+    // Legacy cluster 1-D touch zone fields (kept — used by drawRecordingCluster dead code).
     private var clusterSendZoneStart = 0f
     private var clusterCancelZoneEnd = 0f
+
+    // --- TAP surface pre-allocated paints (Story 9-15) ---
+    // Pre-alloc to avoid GC on each amplitude-driven invalidate() during recording.
+
+    /** Label inside Send circle: "Senden" — 15sp, weight 600, OnTeal */
+    private val tapSendLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.OnTeal
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
+
+    /** Label inside Cancel circle: "Abbrechen" — 13sp, Danger-Hi tint */
+    private val tapCancelLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.Danger
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
+
+    /** Hint text inside circles: "tippen" — 11sp, monospace, subdued */
+    private val tapSendHintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = TAP_SEND_HINT
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.MONOSPACE
+    }
+
+    /** Hint text inside cancel circle: "tippen" — 11sp, monospace, Dim */
+    private val tapCancelHintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.Dim
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.MONOSPACE
+    }
+
+    /** Timer text in waveform chip: "0:08" — 13sp, monospace, Muted */
+    private val tapTimerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = KlarvoTheme.Muted
+        textAlign = Paint.Align.LEFT
+        typeface = Typeface.MONOSPACE
+    }
+
+    /** Cancel glyph (✗ cross) in the TAP surface cancel circle — Danger, rounded cap */
+    private val tapCancelGlyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = KlarvoTheme.Danger
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
 
     // --- Animations ---
     private val rotationAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -391,25 +493,35 @@ class FloatingBubbleView(context: Context) : View(context) {
 
     // --- Touch zone helpers ---
 
-    /** True when [touchX] hits the ➤ Send button zone (right side of the cluster).
-     *  Returns false when holdDockActive=true — no tappable ➤ zone during a physical hold. */
-    fun isTouchInConfirmZone(touchX: Float): Boolean =
-        state == State.RECORDING && !holdDockActive && clusterSendZoneStart > 0f && touchX >= clusterSendZoneStart
+    /**
+     * True when the touch point ([touchX], [touchY]) lands inside the ➤ Send circle of the
+     * TAP surface (Story 9-15). Uses 2D circular hit detection via [isInsideCircle].
+     * Returns false when holdDockActive=true — no tappable zones during a physical HOLD.
+     */
+    fun isTouchInConfirmZone(touchX: Float, touchY: Float): Boolean {
+        if (state != State.RECORDING || holdDockActive || tapZoneRadius <= 0f) return false
+        return isInsideCircle(touchX, touchY, tapSendCx, tapSendCy, tapZoneRadius)
+    }
 
-    /** True when [touchX] hits the ✗ Cancel button zone (left side of the cluster).
-     *  Returns false when holdDockActive=true — no tappable ✗ zone during a physical hold. */
-    fun isTouchInCancelZone(touchX: Float): Boolean =
-        state == State.RECORDING && !holdDockActive && clusterCancelZoneEnd > 0f && touchX <= clusterCancelZoneEnd
+    /**
+     * True when the touch point ([touchX], [touchY]) lands inside the ✗ Cancel circle of the
+     * TAP surface (Story 9-15). Uses 2D circular hit detection via [isInsideCircle].
+     * Returns false when holdDockActive=true — no tappable zones during a physical HOLD.
+     */
+    fun isTouchInCancelZone(touchX: Float, touchY: Float): Boolean {
+        if (state != State.RECORDING || holdDockActive || tapZoneRadius <= 0f) return false
+        return isInsideCircle(touchX, touchY, tapCancelCx, tapCancelCy, tapZoneRadius)
+    }
 
     // --- onDraw ---
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         when (state) {
-            State.IDLE       -> drawIdleBubble(canvas)
-            State.RECORDING  -> if (holdDockActive) drawHoldDock(canvas) else drawRecordingCluster(canvas)
+            State.IDLE         -> drawIdleBubble(canvas)
+            State.RECORDING    -> if (holdDockActive) drawHoldDock(canvas) else drawTapSurface(canvas)
             State.TRANSCRIBING -> drawProcBubble(canvas)
-            State.DONE       -> drawDoneBubble(canvas)
+            State.DONE         -> drawDoneBubble(canvas)
         }
     }
 
@@ -461,9 +573,224 @@ class FloatingBubbleView(context: Context) : View(context) {
     }
 
     // =========================================================================
-    // RECORDING: control cluster [✗ cancel] [amber waveform] [➤ send]
-    // Cancel (left, Danger), waveform (center, amber, RMS-driven), Send (right, Teal — dock/thumb)
-    // Canon .ab-cluster: r18dp backdrop, static amber ring, 6dp pad, 9dp gap (§4′-Amendment 2026-06-21 #2)
+    // RECORDING: TAP surface (B-Sprache — Story 9-15, ADR-0019 Amendment 2026-06-26)
+    // Two large tappable circles (Send teal ➤ + Cancel dark/red ✗) + waveform chip above.
+    // Window: TAP_VISUAL_W_DP × TAP_VISUAL_H_DP + 2×TAP_SHADOW_PAD_DP on each side.
+    // Dock side: dockSide="right" → Send on right, Cancel on left; mirrored for "left".
+    // =========================================================================
+
+    private fun drawTapSurface(canvas: Canvas) {
+        val dp  = resources.displayMetrics.density
+        val spd = resources.displayMetrics.scaledDensity
+        val w   = width.toFloat()
+
+        val shadowPadPx = TAP_SHADOW_PAD_DP * dp
+        val radPx       = TAP_SEND_DIAM_DP * dp / 2f
+        val chipH       = TAP_CHIP_H_DP * dp
+        val chipGap     = TAP_CHIP_GAP_DP * dp
+
+        // Circles vertical center: below chip area + gap
+        val circlesCy = shadowPadPx + chipH + chipGap + radPx
+
+        // Horizontal centers of the two circles
+        val leftCx  = shadowPadPx + radPx
+        val rightCx = w - shadowPadPx - radPx
+
+        // Assign Send/Cancel based on dock side (AC3 + AC6)
+        val sendCx: Float
+        val cancelCx: Float
+        if (dockSide == "left") {
+            sendCx   = leftCx
+            cancelCx = rightCx
+        } else {
+            sendCx   = rightCx
+            cancelCx = leftCx
+        }
+
+        // Store 2D touch zones for isTouchInConfirmZone / isTouchInCancelZone (AC4)
+        tapSendCx     = sendCx
+        tapSendCy     = circlesCy
+        tapCancelCx   = cancelCx
+        tapCancelCy   = circlesCy
+        tapZoneRadius = radPx
+
+        // --- 1. Waveform chip (amber wave + timer, above the circles) ---
+        val chipCy = shadowPadPx + chipH / 2f
+        drawTapChip(canvas, w / 2f, chipCy, dp, spd)
+
+        // --- 2. Cancel circle (drawn first so Send renders on top if they overlap) ---
+        drawTapCancelCircle(canvas, cancelCx, circlesCy, radPx, dp, spd)
+
+        // --- 3. Send circle ---
+        drawTapSendCircle(canvas, sendCx, circlesCy, radPx, dp, spd)
+    }
+
+    /**
+     * Draws the waveform chip centered at (cx, cy).
+     * Layout: [amber wave bars] [9dp gap] [mm:ss timer] — inside a dark rounded chip.
+     * Matches .statuschip CSS: padding 11dp×16dp, border-radius 18dp, rgba(18,20,22,.96) fill.
+     */
+    private fun drawTapChip(canvas: Canvas, cx: Float, cy: Float, dp: Float, spd: Float) {
+        val chipH    = TAP_CHIP_H_DP * dp
+        val halfH    = chipH / 2f
+        val padW     = 16f * dp
+        val padH     = 11f * dp        // top/bottom padding inside chip
+        val waveTimerGap = 9f * dp
+        val chipR    = 18f * dp
+
+        // Wave zone width (same as cluster: 5 bars × 3dp + 4 gaps × 3dp = 27dp)
+        val waveW = (WAVE_BAR_W_DP * WAVE_BAR_COUNT + WAVE_BAR_GAP_DP * (WAVE_BAR_COUNT - 1)).toFloat() * dp
+
+        // Elapsed time for timer
+        val elapsedMs = if (recordingStartMs > 0L) System.currentTimeMillis() - recordingStartMs else 0L
+        val totalSecs = (elapsedMs / 1000L).coerceAtLeast(0L)
+        val mm = totalSecs / 60L
+        val ss = totalSecs % 60L
+        val timerStr = "%d:%02d".format(mm, ss)
+        tapTimerPaint.textSize = 13f * spd
+        val timerW = tapTimerPaint.measureText(timerStr)
+
+        // Chip dimensions
+        val contentW = waveW + waveTimerGap + timerW
+        val chipW    = contentW + 2f * padW
+        val chipLeft = cx - chipW / 2f
+        val chipRight = cx + chipW / 2f
+        val chipTop  = cy - halfH
+        val chipBot  = cy + halfH
+        val chipRect = RectF(chipLeft, chipTop, chipRight, chipBot)
+
+        // Shadow
+        shadowPaint.maskFilter = BlurMaskFilter(halfH * 0.5f, BlurMaskFilter.Blur.NORMAL)
+        val shadowR = RectF(chipLeft, chipTop + halfH * 0.2f, chipRight, chipBot + halfH * 0.2f)
+        canvas.drawRoundRect(shadowR, chipR, chipR, shadowPaint)
+
+        // Fill (opaque dark — AC2 "blickdichte Fläche")
+        fillPaint.color  = TAP_CHIP_BG
+        fillPaint.shader = null
+        canvas.drawRoundRect(chipRect, chipR, chipR, fillPaint)
+        fillPaint.alpha = 0xFF
+
+        // Border (1dp, KlarvoTheme.Border)
+        strokePaint.color       = KlarvoTheme.Border
+        strokePaint.strokeWidth = 1f * dp
+        strokePaint.style       = Paint.Style.STROKE
+        canvas.drawRoundRect(chipRect, chipR, chipR, strokePaint)
+
+        // Wave bars (amber, RMS-driven — AC5: reuse drawClusterWaveform unchanged)
+        val waveLeft  = chipLeft + padW
+        val waveRight = waveLeft + waveW
+        val waveCy    = cy  // vertically centered inside chip
+        drawClusterWaveform(canvas, waveLeft, waveRight, waveCy, dp)
+
+        // Timer text (right of wave, vertically centered)
+        val timerMetrics = tapTimerPaint.fontMetrics
+        val timerBaseline = cy - (timerMetrics.ascent + timerMetrics.descent) / 2f
+        canvas.drawText(timerStr, waveRight + waveTimerGap, timerBaseline, tapTimerPaint)
+    }
+
+    /**
+     * Draws the Send (teal) circle centered at (cx, cy) with radius r.
+     * Content: ➤ glyph (paper-plane, OnTeal) + "Senden" label + "tippen" hint (stacked, centered).
+     */
+    private fun drawTapSendCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float) {
+        // Shadow
+        shadowPaint.maskFilter = BlurMaskFilter(r * 0.22f, BlurMaskFilter.Blur.NORMAL)
+        canvas.drawCircle(cx, cy + r * 0.08f, r, shadowPaint)
+
+        // Teal gradient fill (150° → approximate: TealHi top-left → TealLo bottom-right)
+        fillPaint.alpha  = 0xFF
+        fillPaint.shader = LinearGradient(
+            cx - r * 0.7f, cy - r * 0.7f,
+            cx + r * 0.7f, cy + r * 0.7f,
+            KlarvoTheme.TealHi, KlarvoTheme.TealLo,
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawCircle(cx, cy, r, fillPaint)
+        fillPaint.shader = null
+
+        // Content column (glyph 46dp + 7dp gap + label ~18dp + 7dp gap + hint ~13dp ≈ 91dp total)
+        // Centered: column top at cy - 45.5dp
+        val colHalf    = 45.5f * dp
+        val colTop     = cy - colHalf
+
+        // ➤ Paper-plane glyph (46dp box, centered vertically in glyph zone 46dp)
+        val glyphSize  = 46f * dp
+        val glyphCy    = colTop + glyphSize / 2f
+        drawSendGlyph(canvas, cx, glyphCy, glyphSize)
+
+        // "Senden" label (15sp, weight 600, OnTeal)
+        tapSendLabelPaint.textSize = 15f * spd
+        val labelGap   = 7f * dp
+        val labelTopY  = colTop + glyphSize + labelGap
+        val labelBaseline = labelTopY - tapSendLabelPaint.ascent()
+        canvas.drawText("Senden", cx, labelBaseline, tapSendLabelPaint)
+
+        // "tippen" hint (11sp, monospace, OnTeal@70%)
+        tapSendHintPaint.textSize = 11f * spd
+        val hintTopY  = labelBaseline + tapSendLabelPaint.descent() + labelGap
+        val hintBaseline = hintTopY - tapSendHintPaint.ascent()
+        canvas.drawText("tippen", cx, hintBaseline, tapSendHintPaint)
+    }
+
+    /**
+     * Draws the Cancel (dark + red-ring) circle centered at (cx, cy) with radius r.
+     * Content: ✗ cross glyph (Danger) + "Abbrechen" label + "tippen" hint.
+     */
+    private fun drawTapCancelCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float) {
+        // Shadow
+        shadowPaint.maskFilter = BlurMaskFilter(r * 0.22f, BlurMaskFilter.Blur.NORMAL)
+        canvas.drawCircle(cx, cy + r * 0.08f, r, shadowPaint)
+
+        // Dark fill (rgba(20,18,18,.95) — AC2 opaque dark, AC2 non-transparent)
+        fillPaint.color  = TAP_CANCEL_FILL
+        fillPaint.shader = null
+        canvas.drawCircle(cx, cy, r, fillPaint)
+        fillPaint.alpha = 0xFF
+
+        // Red ring border (2dp, rgba(238,111,99,.5))
+        strokePaint.color       = TAP_CANCEL_BORDER
+        strokePaint.strokeWidth = 2f * dp
+        strokePaint.style       = Paint.Style.STROKE
+        canvas.drawCircle(cx, cy, r - 1f * dp, strokePaint)
+
+        // Content column: ✗ glyph (42dp) + 7dp + "Abbrechen" (13sp) + 7dp + "tippen" (11sp)
+        // ≈ 42+7+16+7+13 = 85dp total; centered: colTop = cy - 42.5dp
+        val colHalf    = 42.5f * dp
+        val colTop     = cy - colHalf
+
+        // ✗ cross glyph (~42dp on a 24×24 viewbox)
+        val glyphSize  = 42f * dp
+        val glyphCy    = colTop + glyphSize / 2f
+        val scale      = glyphSize / 24f
+        val left       = cx - glyphSize / 2f
+        val top        = glyphCy - glyphSize / 2f
+        tapCancelGlyphPaint.strokeWidth = 2.8f * dp
+        val crossPath = Path().apply {
+            moveTo(left + 18f * scale, top + 6f * scale)
+            lineTo(left + 6f  * scale, top + 18f * scale)
+            moveTo(left + 6f  * scale, top + 6f  * scale)
+            lineTo(left + 18f * scale, top + 18f * scale)
+        }
+        canvas.drawPath(crossPath, tapCancelGlyphPaint)
+
+        // "Abbrechen" label (13sp, weight 600, Danger tint)
+        tapCancelLabelPaint.textSize = 13f * spd
+        val labelGap  = 7f * dp
+        val labelTopY = colTop + glyphSize + labelGap
+        val labelBaseline = labelTopY - tapCancelLabelPaint.ascent()
+        canvas.drawText("Abbrechen", cx, labelBaseline, tapCancelLabelPaint)
+
+        // "tippen" hint (11sp, monospace, Dim)
+        tapCancelHintPaint.textSize = 11f * spd
+        val hintTopY     = labelBaseline + tapCancelLabelPaint.descent() + labelGap
+        val hintBaseline = hintTopY - tapCancelHintPaint.ascent()
+        canvas.drawText("tippen", cx, hintBaseline, tapCancelHintPaint)
+    }
+
+    // =========================================================================
+    // RECORDING: old Klein-Cluster [✗ cancel] [amber waveform] [➤ send] — SUPERSEDED by drawTapSurface
+    // Kept as dead code so the private helpers (drawSendButton, drawCancelButton) remain reachable
+    // from the compiler. drawRecordingCluster() is no longer called from onDraw().
     // =========================================================================
 
     private fun drawRecordingCluster(canvas: Canvas) {

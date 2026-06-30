@@ -345,13 +345,19 @@ class KlarvoOverlayService : Service() {
         // giving a visible uniform waveform at that level (not just one pushed slot).
         bubbleView.setStaticWaveLevel(coercedRms)
 
-        // Story 9-14: apply HOLD dock visual and panel label after state is applied.
+        // Story 9-14/9-15: apply HOLD dock visual and TAP surface props after state is applied.
         if (newState == RecordingState.RECORDING) {
             bubbleView.holdDockActive = holdMode
             setHoldModeOnPanel(holdMode)
+            if (!holdMode) {
+                // TAP surface harness: set dock side and start timer.
+                bubbleView.dockSide = getDockSide()
+                bubbleView.recordingStartMs = System.currentTimeMillis()
+            }
         } else {
             bubbleView.holdDockActive = false
             setHoldModeOnPanel(false)
+            bubbleView.recordingStartMs = 0L
         }
 
         // Story 9.5: sync listening panel to harness state.
@@ -1015,16 +1021,30 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
+     * Returns "left" or "right" based on which screen half the idle bubble is currently on.
+     * Uses the pre-expansion X position ([preclusterBubbleX] if already set, else [bubbleParams.x])
+     * so that it reflects the idle position even after window expansion started.
+     * Used to set [FloatingBubbleView.dockSide] before entering the TAP surface.
+     */
+    private fun getDockSide(): String {
+        val (screenW, _) = getScreenDimensions()
+        val visualDp = bubbleView.getBubbleSizeDp()
+        val windowPx = bubbleWindowPx(visualDp)
+        val idleX = preclusterBubbleX ?: bubbleParams.x
+        return if (idleX + windowPx / 2 < screenW / 2) "left" else "right"
+    }
+
+    /**
      * Adjusts the WindowManager LayoutParams to match the current view state.
      *
      * IDLE / TRANSCRIBING / DONE -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
      *                               FloatingBubbleView draws the smaller visual circle centered.
-     * RECORDING (bar/HOLD mode)  -> WRAP_CONTENT (onMeasure returns BAR_WIDTH_DP × bubbleSizeDp)
-     * RECORDING (circular modes) -> explicit touchTargetPx (scale animation via scaleX/Y)
+     * RECORDING (TAP surface)    -> TAP_VISUAL_W/H + 2×TAP_SHADOW_PAD_DP each side.
+     * RECORDING (HOLD dock)      -> HOLDDOCK_VISUAL_W/H + lockchip + 2×HOLDDOCK_SHADOW_PAD_DP.
      *
-     * Also keeps the bar center aligned with the original bubble center:
-     * when expanding from circle to bar we shift x left by half the extra width so
-     * the center stays in place.
+     * Dock-edge-anchor: when expanding to the TAP surface the right edge of the new window
+     * aligns with the right edge of the idle bubble window (right dock), or the left edge
+     * is clamped to 0 (left dock) — drawTapSurface() places Send on the correct side via dockSide.
      */
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
         val dp            = resources.displayMetrics.density
@@ -1037,25 +1057,27 @@ class KlarvoOverlayService : Service() {
                 // HOLD dock window: wider + taller (lockchip above) — ADR-0019 §4′-Amendment #4.
                 val holdW = ((FloatingBubbleView.HOLDDOCK_VISUAL_W_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
                 val holdH = ((FloatingBubbleView.HOLDDOCK_VISUAL_H_DP + FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP + 2 * FloatingBubbleView.HOLDDOCK_SHADOW_PAD_DP) * dp).toInt()
-                // Right-edge-anchor: same dock-spot right edge as cluster/idle bubble.
+                // Right-edge-anchor: same dock-spot right edge as HOLD/idle bubble.
                 bubbleParams.x     = maxOf(0, bubbleParams.x + touchTargetPx - holdW)
                 bubbleParams.width  = holdW
                 bubbleParams.height = holdH
                 // Shift Y upward so holdstrip (lower portion) aligns with the idle bubble position.
-                // Save pre-hold Y so lockHoldToCluster() can restore it exactly — avoids the
-                // unclamped += lockchipH asymmetry when near the screen top (finding 5).
                 if (preclusterBubbleY == null) preclusterBubbleY = bubbleParams.y
                 val lockchipH = (FloatingBubbleView.HOLDDOCK_LOCKCHIP_H_DP * dp).toInt()
                 bubbleParams.y = maxOf(0, (preclusterBubbleY ?: bubbleParams.y) - lockchipH)
             } else {
-                // Normal cluster window: visual W/H + shadow pad on each side (ADR-0019 §4′ Modell B).
-                val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-                val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-                // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays fixed.
-                // Clamp to 0 so the cluster stays on-screen when the bubble is docked on the left side.
-                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
-                bubbleParams.width  = clusterW
-                bubbleParams.height = clusterH
+                // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
+                // Visual: TAP_VISUAL_W_DP × TAP_VISUAL_H_DP + 2×TAP_SHADOW_PAD_DP on each side.
+                val tapW = ((FloatingBubbleView.TAP_VISUAL_W_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+                val tapH = ((FloatingBubbleView.TAP_VISUAL_H_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+                // Dock-edge-anchor: shift X so the dock-side edge of the TAP window aligns with the
+                // idle bubble edge. For right dock: right edges align (same as old cluster).
+                // For left dock: maxOf(0,...) clamps to 0, left-anchoring the window. drawTapSurface()
+                // uses dockSide to place the Send circle on the correct side regardless.
+                bubbleView.dockSide = getDockSide()
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - tapW)
+                bubbleParams.width  = tapW
+                bubbleParams.height = tapH
             }
         } else {
             // Restore single-bubble window.
@@ -1079,25 +1101,25 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
-     * Transitions from HOLD dock → normal cluster window (upward-drag lock, AC5).
+     * Transitions from HOLD dock → TAP surface (Story 9-15) on upward-drag lock.
      * Reverses the Y upward-shift applied in adjustLayoutForState and resizes the window
-     * to cluster dimensions anchored at preclusterBubbleX.
+     * to TAP surface dimensions. After this the user sees the two large circles (locked state).
      */
     private fun lockHoldToCluster() {
         val dp            = resources.displayMetrics.density
         val visualDp      = bubbleView.getBubbleSizeDp()
         val touchTargetPx = bubbleWindowPx(visualDp)
-        val clusterW      = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-        val clusterH      = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
-        // Restore Y from the saved pre-hold position (finding 5: the old unclamped += lockchipH
-        // produced a net downward shift when the bubble was within lockchipH of the screen top).
+        val tapW = ((FloatingBubbleView.TAP_VISUAL_W_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+        val tapH = ((FloatingBubbleView.TAP_VISUAL_H_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+        // Restore Y from the saved pre-hold position.
         bubbleParams.y    = preclusterBubbleY ?: bubbleParams.y
         preclusterBubbleY = null
-        // Re-anchor X to the saved pre-expansion position (same as cluster layout in adjustLayoutForState).
-        val savedX        = preclusterBubbleX ?: bubbleParams.x
-        bubbleParams.x    = maxOf(0, savedX + touchTargetPx - clusterW)
-        bubbleParams.width  = clusterW
-        bubbleParams.height = clusterH
+        // Re-anchor X using the same dock-edge-anchor logic as adjustLayoutForState.
+        bubbleView.dockSide = getDockSide()
+        val savedX          = preclusterBubbleX ?: bubbleParams.x
+        bubbleParams.x      = maxOf(0, savedX + touchTargetPx - tapW)
+        bubbleParams.width  = tapW
+        bubbleParams.height = tapH
         updateBubbleLayout()
     }
 
@@ -1209,7 +1231,7 @@ class KlarvoOverlayService : Service() {
                             stopAndProcessRecording()
                         }
                         !longPressTriggered -> {
-                            handleTap(event.x)
+                            handleTap(event.x, event.y)
                         }
                     }
                 } else {
@@ -1246,20 +1268,22 @@ class KlarvoOverlayService : Service() {
      * Behavior depends on [tapMode]:
      *
      * HOLD mode:
-     *   IDLE -> expand to bar with [X][waveform][✓]
-     *   RECORDING -> tap cancel/confirm zones
+     *   IDLE -> expand to TAP surface
+     *   RECORDING -> tap Send/Cancel circles on the TAP surface
      *
      * TOGGLE / AUTOSTOP mode:
-     *   IDLE -> start recording (red circle, no bar)
-     *   RECORDING -> stop + process
+     *   IDLE -> start recording (TAP surface)
+     *   RECORDING -> tap Send/Cancel circles
      *
      * AUTO mode:
      *   IDLE -> start auto-loop (records, processes, repeats until tapped again)
      *   RECORDING -> stop loop + process current segment
      *
      * @param touchX Touch x-coordinate relative to the view's left edge.
+     * @param touchY Touch y-coordinate relative to the view's top edge.
+     *               Required for 2D circular hit detection on the TAP surface (Story 9-15).
      */
-    private fun handleTap(touchX: Float) {
+    private fun handleTap(touchX: Float, touchY: Float) {
         when (currentState) {
             RecordingState.IDLE -> {
                 activeGesture = "tap"
@@ -1271,20 +1295,20 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                // Modell B (ADR-0019 §4′): the cluster has two explicit zones.
+                // TAP surface (Story 9-15): two explicit circular zones.
                 // pushToTalkActive: finger still held → release handles PTT confirm.
                 if (pushToTalkActive) return
                 when {
-                    bubbleView.isTouchInConfirmZone(touchX) -> {
-                        // ➤ Send button
+                    bubbleView.isTouchInConfirmZone(touchX, touchY) -> {
+                        // ➤ Send circle
                         if (tapMode == RecordingMode.AUTO) autoLoopActive = false
                         stopAndProcessRecording()
                     }
-                    bubbleView.isTouchInCancelZone(touchX) -> {
-                        // ✗ Cancel button
+                    bubbleView.isTouchInCancelZone(touchX, touchY) -> {
+                        // ✗ Cancel circle
                         cancelRecording()
                     }
-                    // Waveform dead zone or cluster backdrop: no-op (AC2).
+                    // Chip area or backdrop between circles: no-op (AC4).
                 }
             }
             RecordingState.TRANSCRIBING -> {
@@ -1380,7 +1404,10 @@ class KlarvoOverlayService : Service() {
 
         audioRecorder = recorder
 
-        // Modell B: grow bubble window to cluster dimensions, then set state.
+        // TAP surface: record start time for the chip timer display.
+        bubbleView.recordingStartMs = System.currentTimeMillis()
+
+        // TAP surface: expand window and set state.
         val preRecordingState = currentState
         setState(RecordingState.RECORDING)
         adjustLayoutForState(RecordingState.RECORDING, preRecordingState)
@@ -1439,12 +1466,14 @@ class KlarvoOverlayService : Service() {
         // Reset HOLD dock state (Story 9-14).
         bubbleView.holdDockActive = false
         setHoldModeOnPanel(false)
+        // Reset TAP surface timer (Story 9-15).
+        bubbleView.recordingStartMs = 0L
 
         val previousState = currentState
-        // Detect bar mode: width > height means the WRAP_CONTENT bar is currently shown.
+        // Detect expanded mode: width > height means the TAP surface / HOLD dock is shown.
         val wasBarMode = bubbleView.width > bubbleView.height
         setState(RecordingState.IDLE)
-        // Only adjust layout if we were in bar mode (HOLD tap), not circular mode.
+        // Only adjust layout if we were in expanded mode.
         if (previousState == RecordingState.RECORDING && wasBarMode) {
             adjustLayoutForState(RecordingState.IDLE, previousState)
         }
@@ -1463,10 +1492,12 @@ class KlarvoOverlayService : Service() {
         // Reset HOLD dock state (Story 9-14).
         bubbleView.holdDockActive = false
         setHoldModeOnPanel(false)
+        // Reset TAP surface timer (Story 9-15).
+        bubbleView.recordingStartMs = 0L
 
         val previousState = currentState
         setState(RecordingState.TRANSCRIBING)
-        // Only adjust layout if we were in bar mode (HOLD tap), not circular mode.
+        // Only adjust layout if we were in expanded mode (TAP surface / HOLD dock).
         if (previousState == RecordingState.RECORDING && bubbleView.width > bubbleView.height) {
             adjustLayoutForState(RecordingState.TRANSCRIBING, previousState)
         }
