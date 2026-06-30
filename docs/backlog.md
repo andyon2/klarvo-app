@@ -170,3 +170,16 @@ Wurzel = logical-vs-physical-Koordinaten-Verwechslung über Monitor-Grenzen:
   Monitor falsch clampen. Teilweise vorbestehend (work_area war immer primär-only). Single-Monitor: irrelevant.
 - F1 (stale saved-coordinate re-scaling) wurde in 10-4 via Work-Area-Clamp in `compute_initial_pos`
   gefixt (`795d5b3`) — schließt zugleich den oben gelisteten Robustness-Fund "off-screen drag not clamped".
+
+## Epic 8-Abhängigkeit — native Overlays beim Studio-Dark-Reskin in Rust/GDI nachziehen (aus Epic-10-Retro 2026-06-30)
+
+Source: Epic-10-Retrospektive (`epic-10-retro-2026-06-30.md`) · ADR-0021 (native Win32-Overlays).
+**Kreuzungs-Abhängigkeit, kein Defekt.** Pille (`native_pill.rs`) und Preview (`native_preview.rs`) sind
+**bewusst an den AKTUELLEN Render verankert, NICHT an Epic 8 Studio-Dark** (so in jeder 10-x-Story
+festgeschrieben: „This is a technology migration, anchored to the CURRENT render. Do not apply Epic 8
+Studio-Dark."). Folge: Wenn der **Desktop-Visual-Overhaul (Epic 8)** drankommt, erfasst der CSS-Reskin
+diese beiden Overlays **nicht** — sie zeichnen in tiny-skia/GDI, nicht im WebView. Die Studio-Dark-Tokens
+(Farben, Radien, Typo, Border) müssen für Pille + Preview **von Hand in den Rust-Renderer portiert**
+werden, sonst bleiben sie nach einem Epic-8-Reskin optisch zurück (alte Farben/Border auf neuem Rest).
+Beim Epic-8-Desktop-Start zu berücksichtigen — nicht „der Reskin macht das automatisch". (Story erst
+schreiben, wenn Epic 8 Desktop live ist; jetzt würde sie verrotten.)
