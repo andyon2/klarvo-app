@@ -462,6 +462,36 @@ class FloatingBubbleView(context: Context) : View(context) {
         strokeCap = Paint.Cap.BUTT
     }
 
+    // --- Pre-allocated for drawHoldTargets/drawHoldChip/drawHoldZone (code review finding C,
+    // Story 9-14) — invalidate() fires on every amplitude push during a HOLD recording, so
+    // onDraw runs every frame; the geometry these shaders/rects depend on (dockSide, bubble
+    // position, target radius) is stable for the duration of a single hold gesture, so they are
+    // rebuilt only when that geometry actually changes instead of on every frame. ---
+    private val holdBubbleShadowRect = RectF()
+    private val holdBubbleRingRect   = RectF()
+    private val holdChipRect         = RectF()
+    private val holdChipShadowRect   = RectF()
+
+    private var holdBubbleShadowBlurR = -1f
+    private var holdBubbleShadowBlur: BlurMaskFilter? = null
+    private var holdChipShadowBlurR = -1f
+    private var holdChipShadowBlur: BlurMaskFilter? = null
+
+    private var holdBubbleGradientLeft   = Float.NaN
+    private var holdBubbleGradientTop    = Float.NaN
+    private var holdBubbleGradientRight  = Float.NaN
+    private var holdBubbleGradientBottom = Float.NaN
+    private var holdBubbleGradient: LinearGradient? = null
+
+    private var holdLockGradientCx = Float.NaN
+    private var holdLockGradientCy = Float.NaN
+    private var holdLockGradientR  = Float.NaN
+    private var holdLockGradient: RadialGradient? = null
+    private var holdCancelGradientCx = Float.NaN
+    private var holdCancelGradientCy = Float.NaN
+    private var holdCancelGradientR  = Float.NaN
+    private var holdCancelGradient: RadialGradient? = null
+
     // --- Touch zone boundaries (updated each onDraw) ---
     // TAP surface (Story 9-15): circular zones — 2D hit test via hypot(dx,dy) <= tapZoneRadius.
     // Legacy 1-D cluster fields below are still used by the now-dead drawRecordingCluster code
@@ -1249,14 +1279,32 @@ class FloatingBubbleView(context: Context) : View(context) {
         val cornerPx = HOLD_BUBBLE_R_DP * dp  // .heldbub border-radius:25px — absolute dp, not diameter-relative
         squircleRect.set(bubbleCenter.x - bubbleR, bubbleCenter.y - bubbleR, bubbleCenter.x + bubbleR, bubbleCenter.y + bubbleR)
 
-        shadowPaint.maskFilter = BlurMaskFilter(bubbleR * 0.3f, BlurMaskFilter.Blur.NORMAL)
-        val bubbleShadowRect = RectF(squircleRect.left, squircleRect.top + bubbleR * 0.1f, squircleRect.right, squircleRect.bottom + bubbleR * 0.1f)
-        canvas.drawRoundRect(bubbleShadowRect, cornerPx, cornerPx, shadowPaint)
+        // Shadow blur (finding C): rebuild only if bubbleR actually changed (e.g. a density
+        // change), not on every amplitude-driven invalidate() during the hold.
+        if (holdBubbleShadowBlur == null || holdBubbleShadowBlurR != bubbleR) {
+            holdBubbleShadowBlurR = bubbleR
+            holdBubbleShadowBlur  = BlurMaskFilter(bubbleR * 0.3f, BlurMaskFilter.Blur.NORMAL)
+        }
+        shadowPaint.maskFilter = holdBubbleShadowBlur
+        holdBubbleShadowRect.set(squircleRect.left, squircleRect.top + bubbleR * 0.1f, squircleRect.right, squircleRect.bottom + bubbleR * 0.1f)
+        canvas.drawRoundRect(holdBubbleShadowRect, cornerPx, cornerPx, shadowPaint)
 
-        idleFillPaint.shader = LinearGradient(
-            squircleRect.left, squircleRect.top, squircleRect.right, squircleRect.bottom,
-            KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
-        )
+        // Teal gradient (finding C): rebuild only if squircleRect bounds changed — stable for the
+        // duration of a single hold gesture (dockSide/bubble position don't move mid-hold).
+        if (holdBubbleGradient == null ||
+            holdBubbleGradientLeft != squircleRect.left || holdBubbleGradientTop != squircleRect.top ||
+            holdBubbleGradientRight != squircleRect.right || holdBubbleGradientBottom != squircleRect.bottom
+        ) {
+            holdBubbleGradientLeft   = squircleRect.left
+            holdBubbleGradientTop    = squircleRect.top
+            holdBubbleGradientRight  = squircleRect.right
+            holdBubbleGradientBottom = squircleRect.bottom
+            holdBubbleGradient = LinearGradient(
+                squircleRect.left, squircleRect.top, squircleRect.right, squircleRect.bottom,
+                KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
+            )
+        }
+        idleFillPaint.shader = holdBubbleGradient
         canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
 
         // Amber holding-ring (box-shadow 0 0 0 5dp AmberLine — .heldbub)
@@ -1265,8 +1313,8 @@ class FloatingBubbleView(context: Context) : View(context) {
         strokePaint.strokeWidth = ringOutset
         strokePaint.style       = Paint.Style.STROKE
         val halfOutset = ringOutset / 2f
-        val ringRect = RectF(squircleRect.left - halfOutset, squircleRect.top - halfOutset, squircleRect.right + halfOutset, squircleRect.bottom + halfOutset)
-        canvas.drawRoundRect(ringRect, cornerPx + halfOutset, cornerPx + halfOutset, strokePaint)
+        holdBubbleRingRect.set(squircleRect.left - halfOutset, squircleRect.top - halfOutset, squircleRect.right + halfOutset, squircleRect.bottom + halfOutset)
+        canvas.drawRoundRect(holdBubbleRingRect, cornerPx + halfOutset, cornerPx + halfOutset, strokePaint)
 
         kLetterPaint.textSize = bubbleR * 0.85f
         val kMetrics = kLetterPaint.fontMetrics
@@ -1293,12 +1341,32 @@ class FloatingBubbleView(context: Context) : View(context) {
             strokePaint.style       = Paint.Style.STROKE
             canvas.drawCircle(cx, cy, r + 4f * dp, strokePaint)
 
-            fillPaint.shader = RadialGradient(
-                cx, cy - r * 0.24f, r,
-                if (isLock) KlarvoTheme.TealHi else HOLD_DANGER_HI,
-                if (isLock) KlarvoTheme.TealLo else KlarvoTheme.Danger,
-                Shader.TileMode.CLAMP
-            )
+            // Radial gradient (finding C): cache per target (lock vs cancel) and rebuild only
+            // when its center/radius actually changed — stable while a single target stays
+            // ACTIVE across repeated amplitude-driven invalidate() calls.
+            val gradCy = cy - r * 0.24f
+            val shader = if (isLock) {
+                if (holdLockGradient == null || holdLockGradientCx != cx || holdLockGradientCy != gradCy || holdLockGradientR != r) {
+                    holdLockGradientCx = cx
+                    holdLockGradientCy = gradCy
+                    holdLockGradientR  = r
+                    holdLockGradient = RadialGradient(
+                        cx, gradCy, r, KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
+                    )
+                }
+                holdLockGradient
+            } else {
+                if (holdCancelGradient == null || holdCancelGradientCx != cx || holdCancelGradientCy != gradCy || holdCancelGradientR != r) {
+                    holdCancelGradientCx = cx
+                    holdCancelGradientCy = gradCy
+                    holdCancelGradientR  = r
+                    holdCancelGradient = RadialGradient(
+                        cx, gradCy, r, HOLD_DANGER_HI, KlarvoTheme.Danger, Shader.TileMode.CLAMP
+                    )
+                }
+                holdCancelGradient
+            }
+            fillPaint.shader = shader
             canvas.drawCircle(cx, cy, r, fillPaint)
             fillPaint.shader = null
             fillPaint.alpha  = 0xFF
@@ -1373,21 +1441,27 @@ class FloatingBubbleView(context: Context) : View(context) {
         // Chip extends AWAY from the bubble (chipNearX is the bubble-facing edge).
         val chipLeft  = if (dockSide == "left") chipNearX else chipNearX - chipW
         val chipRight = chipLeft + chipW
-        val chipRect  = RectF(chipLeft, cy - halfH, chipRight, cy + halfH)
+        holdChipRect.set(chipLeft, cy - halfH, chipRight, cy + halfH)
 
-        shadowPaint.maskFilter = BlurMaskFilter(halfH * 0.5f, BlurMaskFilter.Blur.NORMAL)
-        val shadowR = RectF(chipRect.left, chipRect.top + halfH * 0.2f, chipRect.right, chipRect.bottom + halfH * 0.2f)
-        canvas.drawRoundRect(shadowR, chipR, chipR, shadowPaint)
+        // Shadow blur (finding C): halfH is a fixed constant (HOLD_CHIP_H_DP * dp / 2f) —
+        // rebuild only if it changed, not on every amplitude-driven invalidate() during the hold.
+        if (holdChipShadowBlur == null || holdChipShadowBlurR != halfH) {
+            holdChipShadowBlurR = halfH
+            holdChipShadowBlur  = BlurMaskFilter(halfH * 0.5f, BlurMaskFilter.Blur.NORMAL)
+        }
+        shadowPaint.maskFilter = holdChipShadowBlur
+        holdChipShadowRect.set(holdChipRect.left, holdChipRect.top + halfH * 0.2f, holdChipRect.right, holdChipRect.bottom + halfH * 0.2f)
+        canvas.drawRoundRect(holdChipShadowRect, chipR, chipR, shadowPaint)
 
         fillPaint.color  = TAP_CHIP_BG
         fillPaint.shader = null
-        canvas.drawRoundRect(chipRect, chipR, chipR, fillPaint)
+        canvas.drawRoundRect(holdChipRect, chipR, chipR, fillPaint)
         fillPaint.alpha = 0xFF
 
         strokePaint.color       = KlarvoTheme.Border
         strokePaint.strokeWidth = 1f * dp
         strokePaint.style       = Paint.Style.STROKE
-        canvas.drawRoundRect(chipRect, chipR, chipR, strokePaint)
+        canvas.drawRoundRect(holdChipRect, chipR, chipR, strokePaint)
 
         val waveLeft  = chipLeft + padW
         val waveRight = waveLeft + waveW

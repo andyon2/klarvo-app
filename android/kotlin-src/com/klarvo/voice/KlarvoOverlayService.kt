@@ -206,6 +206,10 @@ class KlarvoOverlayService : Service() {
     private var bubbleStartY = 0
     private var isDragging = false
     private var dragThresholdPx = 0f
+    // Primary pointer lock (code review finding B): a second finger touching down during a HOLD
+    // must not be able to change which target the release commits — only the pointer captured at
+    // ACTION_DOWN drives hit-tracking and the release-to-commit decision.
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     // Per-gesture recording modes: tap and long-press are configured independently.
     private var tapMode = RecordingMode.TOGGLE
@@ -1066,7 +1070,13 @@ class KlarvoOverlayService : Service() {
                     FloatingBubbleView.HOLD_LOCK_OFFSET_ABOVE_DP * dp, FloatingBubbleView.HOLD_TARGET_ACTIVE_DP * dp / 2f
                 ).y
                 val idleCenterY = (preclusterBubbleY ?: bubbleParams.y) + touchTargetPx / 2
-                bubbleParams.y  = maxOf(0, (idleCenterY - bubbleCenterYPx).toInt())
+                // Bottom-edge clamp (code review finding A): the top-only clamp below left the
+                // tall HOLD window free to run past the screen bottom when docked low, pushing
+                // the lower "Abbrechen" target off-screen and making it untappable. Mirrors the
+                // keyboard-handling clamp pattern above (maxY = screenH - ... - windowPx).
+                val (_, screenH) = getScreenDimensions()
+                val maxHoldY     = screenH - NAV_BAR_CLEARANCE_PX - holdH
+                bubbleParams.y   = (idleCenterY - bubbleCenterYPx).toInt().coerceIn(0, maxOf(0, maxHoldY))
             } else {
                 // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
                 // Visual dims scale with recordingButtonSizeDp (AC10 — no fixed 320×202dp).
@@ -1131,8 +1141,11 @@ class KlarvoOverlayService : Service() {
     // --- Touch handling ---
 
     private fun handleTouch(event: MotionEvent): Boolean {
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // Lock onto the primary pointer (code review finding B): everything below this
+                // point reads THIS pointer's coordinates, never an arbitrary/secondary one.
+                activePointerId = event.getPointerId(0)
                 dragTouchStartX = event.rawX
                 dragTouchStartY = event.rawY
                 bubbleStartX    = bubbleParams.x
@@ -1148,18 +1161,33 @@ class KlarvoOverlayService : Service() {
                 return true
             }
 
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> {
+                // A second finger touched down/lifted (code review finding B). Only the primary
+                // pointer captured at ACTION_DOWN drives hit-tracking and release-to-commit below
+                // — a secondary pointer must never be able to change which target the release
+                // commits, or commit from the wrong location. No-op here by design.
+                return true
+            }
+
             MotionEvent.ACTION_MOVE -> {
+                // Resolve the primary pointer's current index (it can shift if another pointer
+                // left the array before it) — ignore the event if it's no longer present.
+                val pointerIndex = event.findPointerIndex(activePointerId)
+                if (pointerIndex == -1) return true
+
                 // During push-to-talk (HOLD targets, Story 9-14, B-Sprache): continuous
                 // hit-tracking, NOT threshold-fire-on-move (that was the old, rejected
                 // mechanism — see story Dev Notes "Release-to-commit is the core mechanism
-                // change"). The window does not reposition during a hold, so event.x/event.y
-                // (view-local) are already in the same coordinate space drawHoldTargets() and
-                // holdTargetCenters() use. Only updates holdTargetHit + redraws — no
-                // cancelRecording()/lockHoldToCluster() here; that happens on release (Task 7).
-                // A circular hit-test has no directional ambiguity by construction, which
-                // structurally avoids the old code's diagonal-drag / signed-direction-only bugs
-                // (findings 3/4) rather than just porting around them.
+                // change"). The window does not reposition during a hold, so the primary
+                // pointer's (x, y) (view-local) is already in the same coordinate space
+                // drawHoldTargets() and holdTargetCenters() use. Only updates holdTargetHit +
+                // redraws — no cancelRecording()/lockHoldToCluster() here; that happens on
+                // release (Task 7). A circular hit-test has no directional ambiguity by
+                // construction, which structurally avoids the old code's diagonal-drag /
+                // signed-direction-only bugs (findings 3/4) rather than just porting around them.
                 if (pushToTalkActive) {
+                    val touchX = event.getX(pointerIndex)
+                    val touchY = event.getY(pointerIndex)
                     val dp = resources.displayMetrics.density
                     val shadowPad      = FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
                     val bubbleEdgeGap  = FloatingBubbleView.HOLD_BUBBLE_EDGE_GAP_DP * dp
@@ -1177,8 +1205,8 @@ class KlarvoOverlayService : Service() {
                     // to ACTIVE (Task 4.2) — growing is feedback, not a hit-zone change; the
                     // finger is already inside once it crosses the REST circle.
                     bubbleView.holdTargetHit = when {
-                        FloatingBubbleView.isInsideCircle(event.x, event.y, lockCenter.x, lockCenter.y, restRPx) -> HoldTarget.LOCK
-                        FloatingBubbleView.isInsideCircle(event.x, event.y, cancelCenter.x, cancelCenter.y, restRPx) -> HoldTarget.CANCEL
+                        FloatingBubbleView.isInsideCircle(touchX, touchY, lockCenter.x, lockCenter.y, restRPx) -> HoldTarget.LOCK
+                        FloatingBubbleView.isInsideCircle(touchX, touchY, cancelCenter.x, cancelCenter.y, restRPx) -> HoldTarget.CANCEL
                         else -> HoldTarget.NONE
                     }
                     return true
@@ -1205,8 +1233,12 @@ class KlarvoOverlayService : Service() {
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPressRunnable)
+                // Primary pointer's index at release — may be -1 if it already left the screen
+                // while a secondary pointer remained (ACTION_POINTER_UP, handled above as no-op);
+                // guarded below wherever it's read.
+                val pointerIndex = event.findPointerIndex(activePointerId)
 
-                if (event.action == MotionEvent.ACTION_UP) {
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
                     when {
                         isDragging -> {
                             // AC9 (Story 9.3): edge-snap gated behind config.bubbleEdgeSnap.
@@ -1251,7 +1283,11 @@ class KlarvoOverlayService : Service() {
                             bubbleView.holdTargetHit = HoldTarget.NONE
                         }
                         !longPressTriggered -> {
-                            handleTap(event.x, event.y)
+                            // Use the primary pointer's coordinates (finding B) — falls back to a
+                            // no-op tap if it's already gone (see pointerIndex comment above).
+                            if (pointerIndex != -1) {
+                                handleTap(event.getX(pointerIndex), event.getY(pointerIndex))
+                            }
                         }
                     }
                 } else {
@@ -1265,6 +1301,7 @@ class KlarvoOverlayService : Service() {
                     }
                     bubbleView.holdTargetHit = HoldTarget.NONE
                 }
+                activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
             }
         }
