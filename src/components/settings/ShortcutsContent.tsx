@@ -217,7 +217,8 @@ export interface ShortcutsContentProps {
   setLocalBubbleSizeDp: (v: number) => void;
   localBubbleEdgeSnap: boolean;
   setLocalBubbleEdgeSnap: (v: boolean) => void;
-  // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88})
+  // Story 9-15 Re-Scope: recording button diameter — TAP surface + (Story 9-14 re-scope
+  // 2026-07-01) HOLD Abbrechen button (∈ {52,60,72,84,96})
   localRecordingButtonSizeDp: number;
   setLocalRecordingButtonSizeDp: (v: number) => void;
 }
@@ -647,14 +648,15 @@ export function ShortcutsContent({
             </button>
           </div>
 
-          {/* Recording button size segmented control (Story 9-15) */}
+          {/* Recording button size segmented control (Story 9-15; range extended {52,60,72,84,96}
+              by Story 9-14 re-scope 2026-07-01 — now also governs the HOLD Abbrechen button) */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className={LABEL_CLS}>Recording Button Size</span>
-              <span className="text-[11px] text-klarvo-muted">TAP-surface Send/Cancel circle diameter.</span>
+              <span className="text-[11px] text-klarvo-muted">Send/Cancel circle diameter (TAP surface + HOLD Abbrechen button).</span>
             </div>
             <div className="flex rounded-md overflow-hidden border border-klarvo-border/40 flex-shrink-0">
-              {([60, 72, 88] as const).map((size) => (
+              {([52, 60, 72, 84, 96] as const).map((size) => (
                 <button
                   key={size}
                   onClick={() => setLocalRecordingButtonSizeDp(size)}

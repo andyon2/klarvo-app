@@ -197,6 +197,20 @@ class TapSurfaceTouchZoneTest {
     }
 
     @Test
+    fun recording_button_size_range_is_52_to_96_per_story_9_14_rescope() {
+        // Story 9-14 re-scope 2026-07-01 AC3: range widened from {60,72,88} to {52,60,72,84,96},
+        // Andi-decided — now also governs the HOLD Abbrechen button, not just the TAP surface.
+        assertTrue(
+            "TAP_BUTTON_SIZE_MIN must be 52 (Story 9-14 re-scope AC3), was ${FloatingBubbleView.TAP_BUTTON_SIZE_MIN}",
+            FloatingBubbleView.TAP_BUTTON_SIZE_MIN == 52
+        )
+        assertTrue(
+            "TAP_BUTTON_SIZE_MAX must be 96 (Story 9-14 re-scope AC3), was ${FloatingBubbleView.TAP_BUTTON_SIZE_MAX}",
+            FloatingBubbleView.TAP_BUTTON_SIZE_MAX == 96
+        )
+    }
+
+    @Test
     fun visual_width_at_default_is_less_than_reference_max() {
         val visualW72 = FloatingBubbleView.tapVisualWidthDp(FloatingBubbleView.TAP_BUTTON_SIZE_DEFAULT)
         assertTrue(

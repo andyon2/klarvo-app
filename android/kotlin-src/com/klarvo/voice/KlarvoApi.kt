@@ -90,9 +90,9 @@ object KlarvoApi {
         // in config.json (camelCase, parity with Rust AdvancedSettings::silence_threshold).
         // Default 0.005 matches the Rust default_silence_threshold() in config/mod.rs:209.
         val silenceThreshold: Float = 0.005f,
-        // Recording TAP-surface button diameter in dp (Story 9-15 Re-Scope 2026-06-30).
-        // User-configurable ∈ {60, 72, 88}. Default 72 (device-scale approved).
-        // Written by desktop Settings UI via save_settings; read here for Android rendering.
+        // Recording button diameter in dp — TAP surface + (Story 9-14 re-scope 2026-07-01) the
+        // HOLD Abbrechen button. User-configurable ∈ {52, 60, 72, 84, 96}. Default 72 (device-scale
+        // approved). Written by desktop Settings UI via save_settings; read here for Android rendering.
         val recordingButtonSizeDp: Int = 72
     )
 
@@ -287,7 +287,8 @@ object KlarvoApi {
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
             val dictionaryTerms = loadDictionaryTerms(context)
-            // Story 9-15 Re-Scope: recording TAP-surface button size, ∈ {60,72,88}, default 72.
+            // Story 9-15 Re-Scope (range widened by 9-14 re-scope 2026-07-01): recording button
+            // size, ∈ {52,60,72,84,96}, default 72.
             // Written by desktop save_settings → config.json as "recordingButtonSizeDp" (camelCase).
             val recordingButtonSizeDp = json.optInt("recordingButtonSizeDp", 72)
                 .coerceIn(FloatingBubbleView.TAP_BUTTON_SIZE_MIN, FloatingBubbleView.TAP_BUTTON_SIZE_MAX)

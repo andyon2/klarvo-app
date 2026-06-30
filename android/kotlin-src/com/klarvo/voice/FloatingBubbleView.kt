@@ -18,18 +18,22 @@ import android.view.animation.OvershootInterpolator
  *     holdDockActive=false: TAP surface (B-Sprache — ADR-0019 Amendment 2026-06-26):
  *                    Two large tappable circles (Send teal ➤ at dock side · Cancel dark+red ring ✕
  *                    on the opposite side) + a calm amber waveform chip above. Window size is
- *                    computed from [recordingButtonSizeDp] (default 72dp, ∈ {60,72,88}).
+ *                    computed from [recordingButtonSizeDp] (default 72dp, ∈ {52,60,72,84,96}).
  *                    Dock side tracked in [dockSide] ("left"/"right").
- *     holdDockActive=true: HOLD targets (B-Sprache — ADR-0019 Amendment 2026-06-26, Story 9-14):
- *                    Thumb-anchor bubble (teal squircle + amber ring) at the dock edge, two large
- *                    round REST-state targets on the opposite side (Sperren teal/lock above ·
- *                    Abbrechen red/✗ below) + a calm waveform chip hugging the bubble. On finger
- *                    hit ([holdTargetHit]) the matching target grows to ACTIVE size and glows —
- *                    no continuous animator, a single redraw per hit-state change. Release (not
- *                    drag-threshold) commits: lands on Abbrechen → cancel, on Sperren → locks into
- *                    the TAP surface above, off-target → sends. Supersedes the old slide-track
- *                    holdstrip/heldbub/lockchip surface (commits `c389c88`/`e92f4f3`, GATE-4 failed
- *                    on device — see story Dev Notes).
+ *     holdDockActive=true: HOLD Cancel surface — vereinfacht (ADR-0019 Amendment 2026-07-01,
+ *                    Story 9-14 re-scope): the anchor bubble is the IDLE bubble itself (same size
+ *                    + on-screen position, [bubbleSizeDp] — no separate HOLD bubble size) + ONE
+ *                    round Abbrechen target (✕, red) growing diagonally up-and-toward-center from
+ *                    it, scaled by [recordingButtonSizeDp], + a calm waveform chip hugging the
+ *                    bubble. On finger hit ([holdTargetHit]) the target grows to ACTIVE size and
+ *                    glows — no continuous animator, a redraw per hit-state change. Dragging away
+ *                    from the bubble ([holdDragging]) fades the origin bubble (~.32 alpha) and
+ *                    shows a ghost squircle following the live finger ([holdFingerX]/[holdFingerY]).
+ *                    Release-to-commit: lands on Abbrechen → cancel, anywhere else → sends
+ *                    (no Sperren/lock target — sending is the default, only Abbrechen needs a
+ *                    deliberate target). Supersedes the prior two-target (Sperren+Abbrechen) build
+ *                    (commits `ce20bb0`/`c431ba5`), which GATE-4-failed on device — see story
+ *                    Dev Notes.
  *   TRANSCRIBING  -- single teal proc bubble (.ab-bubble.proc): teal squircle + rotating spinner.
  *                    Window collapses back to single-bubble size.
  *   DONE          -- success-green gradient squircle + dark check polyline (.ab-bubble.done),
@@ -39,7 +43,8 @@ import android.view.animation.OvershootInterpolator
  *   - Send circle   -> ➤ Send  (isTouchInConfirmZone) — circular hit, dock side
  *   - Cancel circle -> ✗ Cancel (isTouchInCancelZone) — circular hit, opposite side
  *   - Between/outside circles → no-op (chip area, backdrop)
- *   When holdDockActive=true both zone helpers return false (release = send, drag = cancel/lock).
+ *   When holdDockActive=true both zone helpers return false (release = send by default; release on
+ *   the Abbrechen target = cancel — no tappable zones during a physical HOLD, hit-tracking only).
  *
  * Color semantics (DT5 — binding rule):
  *   KlarvoTheme.Teal    = brand / ready / processing / focus-ring
@@ -50,17 +55,18 @@ import android.view.animation.OvershootInterpolator
  *   KlarvoTheme.SuccessHi / Success = done bubble gradient (150°)
  */
 /**
- * Which HOLD target (Sperren/Abbrechen) the finger currently sits over, or none.
+ * Whether the finger currently sits over the single HOLD Abbrechen target, or not (Story 9-14
+ * re-scope 2026-07-01 — the Sperren/lock target is gone, see story Dev Notes "vereinfachtes HOLD").
  * Top-level (not nested) so [KlarvoOverlayService]'s release-to-commit dispatch can reference
  * it unqualified (same package) — mirrors how RecordingState/RecordingMode are package-visible.
  */
-enum class HoldTarget { NONE, LOCK, CANCEL }
+enum class HoldTarget { NONE, CANCEL }
 
 /**
  * Plain Kotlin (x, y) pair — deliberately NOT android.graphics.PointF. The Android unit-test stub
  * jar (no Robolectric, same convention as TapSurfaceTouchZoneTest) replaces PointF's constructor
  * with a no-op that silently leaves x/y at 0f instead of throwing, which would make
- * [FloatingBubbleView.holdTargetCenters] pass-but-wrong in JVM tests. Mirrors how
+ * [FloatingBubbleView.holdCancelCenter] pass-but-wrong in JVM tests. Mirrors how
  * [FloatingBubbleView.tapCircleCenters] returns a plain `Pair<Float, Float>` for the same reason.
  */
 data class HoldPoint(val x: Float, val y: Float)
@@ -132,10 +138,10 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
 
     /**
-     * Which HOLD target (if any) the finger currently sits over, while [holdDockActive].
-     * Drives both the grow-on-target redraw (AC3/AC4) and KlarvoOverlayService's
-     * release-to-commit dispatch on ACTION_UP (AC5). No animator — setting this just
-     * triggers a single invalidate(); the grow/glow is a static redraw, not a continuous tween.
+     * Whether the finger currently sits over the single Abbrechen target, while [holdDockActive].
+     * Drives both the grow-on-target redraw (AC4) and KlarvoOverlayService's release-to-commit
+     * dispatch on ACTION_UP (AC5). No animator — setting this just triggers a single invalidate();
+     * the grow/glow is a static redraw, not a continuous tween.
      */
     var holdTargetHit: HoldTarget = HoldTarget.NONE
         set(value) {
@@ -143,6 +149,30 @@ class FloatingBubbleView(context: Context) : View(context) {
             field = value
             invalidate()
         }
+
+    /**
+     * True once the finger has moved more than ~10dp away from the anchor bubble during a HOLD
+     * gesture (Task 3.5/4, AC6) — gates the ghost-bubble + origin-fade dynamics. Reuses
+     * KlarvoOverlayService's existing `dragThresholdPx` convention (same ~10dp already tuned for
+     * the free-drag-the-idle-bubble gesture) rather than inventing a new threshold.
+     */
+    var holdDragging: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    /**
+     * Live finger position (view-local px), forwarded by KlarvoOverlayService on every ACTION_MOVE
+     * while [holdDockActive] (Task 4). Only meaningful while [holdDragging] — drives the ghost
+     * squircle's position so it tracks wherever the finger actually is, not a derived/interpolated
+     * point (AC6, canon: the ghost's mockup position is illustrative, not a formula input).
+     */
+    var holdFingerX: Float = 0f
+        set(value) { field = value; if (holdDragging) invalidate() }
+    var holdFingerY: Float = 0f
+        set(value) { field = value; if (holdDragging) invalidate() }
 
     /**
      * Which screen edge the bubble is docked on: "left" or "right".
@@ -159,11 +189,12 @@ class FloatingBubbleView(context: Context) : View(context) {
     var recordingStartMs: Long = 0L
 
     /**
-     * Diameter of the Send/Cancel circles on the TAP surface in dp.
-     * User-configurable: ∈ {60, 72, 88}, default 72. Read from config.json key
+     * Diameter of the Send/Cancel circles on the TAP surface in dp — AND (Story 9-14 re-scope
+     * 2026-07-01) the REST diameter of the single HOLD Abbrechen target.
+     * User-configurable: ∈ {52, 60, 72, 84, 96}, default 72. Read from config.json key
      * "recordingButtonSizeDp" and applied via KlarvoOverlayService.reloadBubbleAppearance().
      * All TAP-surface layout dimensions (chip, gap, glyphs, labels) scale proportionally.
-     * Also drives the window size via adjustLayoutForState (AC10).
+     * Also drives the window size via adjustLayoutForState (AC10 / Story 9-14 AC3).
      */
     var recordingButtonSizeDp: Int = TAP_BUTTON_SIZE_DEFAULT
         set(value) {
@@ -189,10 +220,12 @@ class FloatingBubbleView(context: Context) : View(context) {
         const val TAP_VISUAL_W_DP    = 320   // 132+56+132 at reference
         const val TAP_VISUAL_H_DP    = 202   // 54+16+132 at reference
 
-        // ---- User-configurable button size constants (AC2/AC8 — Story 9-15 Re-Scope 2026-06-30) ----
-        const val TAP_BUTTON_SIZE_MIN     = 60   // minimum allowed recordingButtonSizeDp
-        const val TAP_BUTTON_SIZE_DEFAULT = 72   // default recordingButtonSizeDp (device-scale approved)
-        const val TAP_BUTTON_SIZE_MAX     = 88   // maximum allowed recordingButtonSizeDp
+        // ---- User-configurable button size constants (AC2/AC8 — Story 9-15 Re-Scope 2026-06-30;
+        // range widened to {52,60,72,84,96} by Story 9-14 re-scope 2026-07-01 AC3, Andi-decided —
+        // now also governs the HOLD Abbrechen target's REST diameter, not just the TAP surface). ----
+        const val TAP_BUTTON_SIZE_MIN     = 52   // minimum allowed recordingButtonSizeDp
+        const val TAP_BUTTON_SIZE_DEFAULT = 72   // default recordingButtonSizeDp (device-scale approved, unchanged)
+        const val TAP_BUTTON_SIZE_MAX     = 96   // maximum allowed recordingButtonSizeDp
 
         /**
          * Compute TAP surface visual width in dp for the given [buttonSizeDp] (AC10).
@@ -220,9 +253,9 @@ class FloatingBubbleView(context: Context) : View(context) {
         private const val TAP_CHIP_BG       = 0xF5121416.toInt()  // .statuschip bg: rgba(18,20,22,.96)
         private const val TAP_SEND_HINT     = 0xB305201B.toInt()  // OnTeal @70% for "tippen" hint
 
-        // Non-KlarvoTheme colors for the HOLD targets (mockup-specific alpha blends not in canon CSS,
-        // same convention as TAP_CANCEL_* above — Story 9-14). KlarvoTheme.TealLine is reused as-is
-        // for the rest-state Sperren border (close enough to --k-teal-line per Dev Notes).
+        // Non-KlarvoTheme colors for the HOLD Abbrechen target (mockup-specific alpha blends not in
+        // canon CSS, same convention as TAP_CANCEL_* above — Story 9-14, re-scoped 2026-07-01 to a
+        // single target).
         private const val HOLD_DANGER_HI   = 0xFFF4897E.toInt()  // --k-danger-hi: rest-cancel icon/label, active-cancel border
         private const val HOLD_DANGER_LINE = 0x73EE6F63.toInt()  // --k-danger-line rgba(238,111,99,.45): rest-cancel border
         private const val HOLD_ZONE_REST_BG = 0xEB121416.toInt() // .zone.rest background: rgba(18,20,22,.92)
@@ -247,41 +280,54 @@ class FloatingBubbleView(context: Context) : View(context) {
         private const val WAVE_BAR_COUNT = 5
         private const val WAVE_H_DP = 18
 
-        // ---- HOLD targets (B-Sprache — Story 9-14, ADR-0019 Amendment 2026-06-26) ----
-        // Values from mockup-mobile-hold-B-refined.html (#bRest/#bHit) + mockup-mobile-recording-states.html
-        // (#holdLock), both rendered+approved at device scale 1080×2460@2.75 — these CSS px ARE dp,
-        // same convention as the 9-15 device-scale mockups. Not exact-pixel law — proportions matter,
-        // GATE-4 visual fidelity is Andi's real-device call (see story Dev Notes).
-        const val HOLD_BUBBLE_DP        = 82   // .heldbub width/height
-        const val HOLD_BUBBLE_R_DP      = 25   // .heldbub border-radius
-        const val HOLD_TARGET_REST_DP   = 112  // .zone.rest width/height (AC2 floor)
-        const val HOLD_TARGET_ACTIVE_DP = 148  // .zone.active width/height (AC3/AC4 floor)
-        const val HOLD_CHIP_H_DP        = 52   // .statuschip approx height (11px*2 pad + 30px wave)
-        const val HOLD_SHADOW_PAD_DP    = 10   // window shadow/clip margin (TAP_SHADOW_PAD_DP convention)
+        // ---- HOLD Abbrechen target — vereinfacht (Story 9-14 re-scope, ADR-0019 Amendment
+        // 2026-07-01). Values derived from mockup-mobile-hold-simple.html's `sRest`/`sHit` frames
+        // (the "SIMPLIFIED HOLD CANON" override block), rendered+approved at device scale
+        // 1080×2460@2.75 — these CSS px ARE dp, same convention as the 9-15 device-scale mockups.
+        // Not exact-pixel law — proportions matter, GATE-4 visual fidelity is Andi's real-device
+        // call (see story Dev Notes "Calibration caveat"). No fixed HOLD bubble size anymore — the
+        // anchor bubble reads the live [bubbleSizeDp] via [getBubbleSizeDp] (AC2: same value
+        // [drawIdleBubble] uses, so it can never drift from the idle bubble's size).
+        const val HOLD_CHIP_H_DP        = 52   // .statuschip approx height (11px*2 pad + 30px wave) — unchanged
+        const val HOLD_SHADOW_PAD_DP    = 10   // window shadow/clip margin (TAP_SHADOW_PAD_DP convention) — unchanged
+        const val HOLD_CHIP_BUBBLE_GAP_DP = 14 // chip's near edge -> bubble inner edge (mockup: ≈18dp) — unchanged
 
-        // Window-layout offsets (mockup-derived bounding box for adjustLayoutForState — Task 5).
-        // Target CENTERS are fixed between REST/ACTIVE (only radius grows — confirmed by the
-        // mockup: rest/active lock centers ≈(104,306)/(120,310), rest/active cancel centers
-        // ≈(100,548)/(114,544) — near-identical), so the budget below is split into a REST-side
-        // term (toward the bubble/chip — AC2's "kein Überlapp" only binds at REST size) and an
-        // ACTIVE-side term (toward the far window edge, so growth never clips).
-        const val HOLD_BUBBLE_EDGE_GAP_DP    = 16   // bubble inset from dock-side window edge (`right:16px`)
-        const val HOLD_TARGET_FAR_INSET_DP   = 40   // target ACTIVE outer edge inset from the far window edge
-        const val HOLD_BUBBLE_TARGET_GAP_DP  = 70   // bubble inner edge -> target REST near edge (houses the
-                                                       // waveform chip, compact variant of TAP's .statuschip)
-        const val HOLD_LOCK_OFFSET_ABOVE_DP   = 168f // bubble-center -> Sperren-center, upward (mockup-derived)
-        const val HOLD_CANCEL_OFFSET_BELOW_DP = 74f  // bubble-center -> Abbrechen-center, downward (asymmetric per render)
-        const val HOLD_CHIP_BUBBLE_GAP_DP    = 14   // chip's near edge -> bubble inner edge (mockup: ≈18dp)
+        // REST diameter of the Abbrechen target = [recordingButtonSizeDp] dp directly (mirrors the
+        // TAP surface's circle-diameter convention). ACTIVE = REST × this scale (mockup:
+        // .zone.rest{width:96px} -> .zone.active{width:120px}, 120/96 = 1.25).
+        const val HOLD_CANCEL_ACTIVE_SCALE = 1.25f
 
-        // Reference visual dims for window sizing (no recordingButtonSizeDp scaling — HOLD has no
-        // user-configurable size per Scope; unlike TAP_VISUAL_*_DP these are used directly).
-        // Not exact-pixel law — keep proportions, GATE-4 visual fidelity is Andi's real-device call.
-        const val HOLD_VISUAL_W_DP =
-            HOLD_BUBBLE_EDGE_GAP_DP + HOLD_BUBBLE_DP + HOLD_BUBBLE_TARGET_GAP_DP +
-                HOLD_TARGET_REST_DP / 2 + HOLD_TARGET_ACTIVE_DP / 2 + HOLD_TARGET_FAR_INSET_DP
-        val HOLD_VISUAL_H_DP: Float =
-            HOLD_LOCK_OFFSET_ABOVE_DP + HOLD_TARGET_ACTIVE_DP / 2f +
-                HOLD_CANCEL_OFFSET_BELOW_DP + HOLD_TARGET_ACTIVE_DP / 2f
+        // Bubble-center -> Abbrechen-center offset (mockup-derived, sRest/sHit center ≈(165,300)
+        // both frames — confirms center-fixed growth, only the radius changes). Magnitudes only:
+        // Δx mirrors sign by dock side (cancel always grows toward screen-center, i.e. AWAY from
+        // the dock edge), Δy is always upward regardless of dock side. Fixed dp, NOT scaled by
+        // recordingButtonSizeDp — no canon text addresses scaling the gap itself, and fixed-offset
+        // matches the codebase's existing convention (gaps were always fixed dp, never user-scaled).
+        const val HOLD_CANCEL_OFFSET_X_DP = 178f
+        const val HOLD_CANCEL_OFFSET_Y_DP = 160f
+
+        /**
+         * Compute the HOLD window's visual width in dp for the given [buttonSizeDp] and the live
+         * [bubbleSizeDp] (Task 1.6). The window must span from the bubble's dock-side edge to the
+         * Abbrechen target's far edge at ACTIVE size: bubbleR + [HOLD_CANCEL_OFFSET_X_DP] +
+         * activeR. Mirrors [tapVisualWidthDp]'s naming/shape; does NOT include
+         * [HOLD_SHADOW_PAD_DP] × 2 (added separately in adjustLayoutForState, TAP convention).
+         */
+        @JvmStatic
+        fun holdVisualWidthDp(buttonSizeDp: Int, bubbleSizeDp: Int): Int {
+            val activeRDp = buttonSizeDp * HOLD_CANCEL_ACTIVE_SCALE / 2f
+            return (bubbleSizeDp / 2f + HOLD_CANCEL_OFFSET_X_DP + activeRDp).toInt()
+        }
+
+        /**
+         * Compute the HOLD window's visual height in dp — same derivation as [holdVisualWidthDp]
+         * but along the (always-upward) Y offset: bubbleR + [HOLD_CANCEL_OFFSET_Y_DP] + activeR.
+         */
+        @JvmStatic
+        fun holdVisualHeightDp(buttonSizeDp: Int, bubbleSizeDp: Int): Int {
+            val activeRDp = buttonSizeDp * HOLD_CANCEL_ACTIVE_SCALE / 2f
+            return (bubbleSizeDp / 2f + HOLD_CANCEL_OFFSET_Y_DP + activeRDp).toInt()
+        }
 
         /**
          * Pure function: true if (touchX, touchY) lies within the circle at (cx, cy) of [radius].
@@ -311,70 +357,56 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
 
         /**
-         * Pure function: resolves the thumb-anchor bubble's center for the HOLD surface given dock
-         * side and window geometry (Story 9-14). Mirrors [tapCircleCenters]'s convention — all inputs
-         * share one coordinate space (px in production via drawHoldTargets/adjustLayoutForState,
-         * dp-equivalent in HoldTargetTouchZoneTest using density=1).
+         * Pure function: resolves the anchor bubble's center for the HOLD surface given dock side
+         * and window geometry (Story 9-14, re-scoped 2026-07-01). Mirrors [tapCircleCenters]'s
+         * convention — all inputs share one coordinate space (px in production via
+         * drawHoldTargets/adjustLayoutForState, dp-equivalent in HoldTargetTouchZoneTest using
+         * density=1).
          *
-         * The bubble sits [bubbleEdgeGap] from the dock-side window edge; its vertical center is
-         * pinned from the window top by [lockOffsetAbove] + [targetActiveRadius] so the Sperren
-         * target (which sits [lockOffsetAbove] above the bubble) never clips the window top even
-         * at ACTIVE size (mockup-derived asymmetric offsets — see story Dev Notes).
+         * The bubble sits [shadowPad] from the dock-side window edge (Task 1.5 — no separate
+         * HOLD-specific edge inset anymore; reuses the same shadow-pad-as-edge-inset convention
+         * [tapCircleCenters] already uses) and [shadowPad] from the BOTTOM window edge — the
+         * Abbrechen target always grows upward from it (AC2/AC7), so the window's vertical budget
+         * is spent above the bubble, not symmetrically around it.
          */
         @JvmStatic
         fun holdBubbleCenter(
             dockSide: String,
             windowW: Float,
+            windowH: Float,
             shadowPad: Float,
-            bubbleEdgeGap: Float,
             bubbleDiam: Float,
-            lockOffsetAbove: Float,
-            targetActiveRadius: Float,
         ): HoldPoint {
             val bubbleR = bubbleDiam / 2f
             val bubbleCx = if (dockSide == "left") {
-                shadowPad + bubbleEdgeGap + bubbleR
+                shadowPad + bubbleR
             } else {
-                windowW - shadowPad - bubbleEdgeGap - bubbleR
+                windowW - shadowPad - bubbleR
             }
-            val bubbleCy = shadowPad + lockOffsetAbove + targetActiveRadius
+            val bubbleCy = windowH - shadowPad - bubbleR
             return HoldPoint(bubbleCx, bubbleCy)
         }
 
         /**
-         * Pure function: resolves Sperren (lock) / Abbrechen (cancel) target centers for the HOLD
-         * surface given dock side and window geometry (Story 9-14). Mirrors [tapCircleCenters]'s
+         * Pure function: resolves the single Abbrechen target's center, offset from [bubbleCenter]
+         * by ([offsetXDp], [offsetYDp]) (Story 9-14 re-scope 2026-07-01). Mirrors [tapCircleCenters]'s
          * pattern for JVM testability (no Android View instance needed) — this is the function
          * KlarvoOverlayService's ACTION_MOVE hit-tracking (Task 6) calls every move event.
          *
-         * Both targets sit on the side OPPOSITE the dock, [farInset] from the far window edge at
-         * ACTIVE size — same horizontal center for both (AC7: only left/right mirrors with dock
-         * side, vertical roles are fixed: Sperren always above the bubble, Abbrechen always below).
-         * Returns Pair(lockCenter, cancelCenter).
+         * [offsetXDp] mirrors sign by dock side (the target always grows toward screen-center, i.e.
+         * away from the dock edge: right-docked → leftward / negative dx, left-docked → rightward /
+         * positive dx). [offsetYDp] is always upward (AC7: vertical role is fixed regardless of
+         * dock side).
          */
         @JvmStatic
-        fun holdTargetCenters(
+        fun holdCancelCenter(
             dockSide: String,
-            windowW: Float,
-            shadowPad: Float,
-            bubbleEdgeGap: Float,
-            bubbleDiam: Float,
-            farInset: Float,
-            targetActiveRadius: Float,
-            lockOffsetAbove: Float,
-            cancelOffsetBelow: Float,
-        ): Pair<HoldPoint, HoldPoint> {
-            val bubbleCy = holdBubbleCenter(
-                dockSide, windowW, shadowPad, bubbleEdgeGap, bubbleDiam, lockOffsetAbove, targetActiveRadius
-            ).y
-            val targetCx = if (dockSide == "left") {
-                windowW - shadowPad - farInset - targetActiveRadius
-            } else {
-                shadowPad + farInset + targetActiveRadius
-            }
-            val lockCy   = bubbleCy - lockOffsetAbove
-            val cancelCy = bubbleCy + cancelOffsetBelow
-            return Pair(HoldPoint(targetCx, lockCy), HoldPoint(targetCx, cancelCy))
+            bubbleCenter: HoldPoint,
+            offsetXDp: Float,
+            offsetYDp: Float,
+        ): HoldPoint {
+            val dx = if (dockSide == "left") offsetXDp else -offsetXDp
+            return HoldPoint(bubbleCenter.x + dx, bubbleCenter.y - offsetYDp)
         }
     }
 
@@ -453,40 +485,21 @@ class FloatingBubbleView(context: Context) : View(context) {
         color = KlarvoTheme.Muted
         textAlign = Paint.Align.LEFT
     }
-    // Pre-allocated for drawLockIcon — replaces per-call Paint(paint).apply{…} + RectF() allocs.
-    private val lockBodyRect      = RectF()
-    private val lockShackleRect   = RectF()
-    private val lockBodyFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val lockShacklePaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style     = Paint.Style.STROKE
-        strokeCap = Paint.Cap.BUTT
-    }
 
-    // --- Pre-allocated for drawHoldTargets/drawHoldChip/drawHoldZone (code review finding C,
-    // Story 9-14) — invalidate() fires on every amplitude push during a HOLD recording, so
-    // onDraw runs every frame; the geometry these shaders/rects depend on (dockSide, bubble
-    // position, target radius) is stable for the duration of a single hold gesture, so they are
-    // rebuilt only when that geometry actually changes instead of on every frame. ---
-    private val holdBubbleShadowRect = RectF()
+    // --- Pre-allocated for drawHoldChip/drawHoldZone (code review finding C, Story 9-14) — the
+    // chip and the Abbrechen target's geometry is stable for the duration of a single hold
+    // gesture, so their shaders/rects are rebuilt only when that geometry actually changes instead
+    // of on every amplitude-driven invalidate(). The shared squircle helper (drawTealSquircle,
+    // Task 3.1) deliberately does NOT cache — it now also serves the ghost bubble, whose position
+    // changes every ACTION_MOVE while dragging (a cache keyed on position would rarely hit), and
+    // matches the already-uncached style drawIdleBubble/drawProcBubble/drawDoneBubble use. ---
     private val holdBubbleRingRect   = RectF()
     private val holdChipRect         = RectF()
     private val holdChipShadowRect   = RectF()
 
-    private var holdBubbleShadowBlurR = -1f
-    private var holdBubbleShadowBlur: BlurMaskFilter? = null
     private var holdChipShadowBlurR = -1f
     private var holdChipShadowBlur: BlurMaskFilter? = null
 
-    private var holdBubbleGradientLeft   = Float.NaN
-    private var holdBubbleGradientTop    = Float.NaN
-    private var holdBubbleGradientRight  = Float.NaN
-    private var holdBubbleGradientBottom = Float.NaN
-    private var holdBubbleGradient: LinearGradient? = null
-
-    private var holdLockGradientCx = Float.NaN
-    private var holdLockGradientCy = Float.NaN
-    private var holdLockGradientR  = Float.NaN
-    private var holdLockGradient: RadialGradient? = null
     private var holdCancelGradientCx = Float.NaN
     private var holdCancelGradientCy = Float.NaN
     private var holdCancelGradientR  = Float.NaN
@@ -688,26 +701,10 @@ class FloatingBubbleView(context: Context) : View(context) {
         val cy = height / 2f
         val cornerPx = side * 0.30f
 
+        drawTealSquircle(canvas, cx, cy, side, alpha = 0xFF)
+
+        // Faint teal accent ring (idle-only — the HOLD anchor uses an amber holding-ring instead)
         squircleRect.set(cx - visualRadius, cy - visualRadius, cx + visualRadius, cy + visualRadius)
-
-        // Soft drop shadow
-        shadowPaint.maskFilter = BlurMaskFilter(side * 0.14f, BlurMaskFilter.Blur.NORMAL)
-        val shadowRect = RectF(
-            squircleRect.left, squircleRect.top + side * 0.06f,
-            squircleRect.right, squircleRect.bottom + side * 0.06f
-        )
-        canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
-
-        // Teal-gradient fill
-        idleFillPaint.shader = LinearGradient(
-            squircleRect.left, squircleRect.top,
-            squircleRect.right, squircleRect.bottom,
-            KlarvoTheme.TealHi, KlarvoTheme.TealLo,
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
-
-        // Faint teal accent ring
         val ringStrokePx = 2f * density
         idleRingPaint.strokeWidth = ringStrokePx
         val ringHalf = ringStrokePx / 2f
@@ -717,10 +714,45 @@ class FloatingBubbleView(context: Context) : View(context) {
         )
         canvas.drawRoundRect(ringRect, cornerPx + ringHalf, cornerPx + ringHalf, idleRingPaint)
 
-        // Dark "K"
-        kLetterPaint.textSize = visualRadius * 0.85f
+        drawKLetter(canvas, cx, cy, visualRadius, alpha = 0xFF)
+    }
+
+    /**
+     * Shared squircle base draw (soft shadow + teal-gradient fill + rounded-rect), extracted from
+     * the old per-state-duplicated block (Task 3.1, Story 9-14 re-scope). Now has 2 real consumers
+     * — [drawIdleBubble] and the HOLD anchor/ghost bubbles in [drawHoldTargets] — justifying the
+     * extraction per the project's "factor out only on proven duplication" rule. Using the SAME
+     * code path for the idle bubble and the HOLD anchor makes AC2 ("kein Größen-/Orts-Sprung")
+     * true by construction, not by copy-pasted, hopefully-matching constants.
+     * [alpha] (0-255) supports the HOLD origin bubble's fade-on-drag (AC6, canon `opacity:.32`).
+     */
+    private fun drawTealSquircle(canvas: Canvas, cx: Float, cy: Float, diamPx: Float, alpha: Int) {
+        val r = diamPx / 2f
+        val cornerPx = diamPx * 0.30f
+        val rect = RectF(cx - r, cy - r, cx + r, cy + r)
+
+        shadowPaint.maskFilter = BlurMaskFilter(diamPx * 0.14f, BlurMaskFilter.Blur.NORMAL)
+        shadowPaint.alpha = alpha
+        val shadowRect = RectF(rect.left, rect.top + diamPx * 0.06f, rect.right, rect.bottom + diamPx * 0.06f)
+        canvas.drawRoundRect(shadowRect, cornerPx, cornerPx, shadowPaint)
+        shadowPaint.alpha = 0xFF
+
+        idleFillPaint.shader = LinearGradient(
+            rect.left, rect.top, rect.right, rect.bottom,
+            KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
+        )
+        idleFillPaint.alpha = alpha
+        canvas.drawRoundRect(rect, cornerPx, cornerPx, idleFillPaint)
+        idleFillPaint.alpha = 0xFF
+    }
+
+    /** Shared dark "K" letter draw, centered at (cx, cy) for a squircle of [radius]. */
+    private fun drawKLetter(canvas: Canvas, cx: Float, cy: Float, radius: Float, alpha: Int) {
+        kLetterPaint.textSize = radius * 0.85f
+        kLetterPaint.alpha = alpha
         val textCy = cy - (kLetterPaint.ascent() + kLetterPaint.descent()) / 2f
         canvas.drawText("K", cx, textCy, kLetterPaint)
+        kLetterPaint.alpha = 0xFF
     }
 
     // =========================================================================
@@ -1225,40 +1257,33 @@ class FloatingBubbleView(context: Context) : View(context) {
     }
 
     // =========================================================================
-    // RECORDING: HOLD targets (B-Sprache — Story 9-14, ADR-0019 Amendment 2026-06-26)
-    // Thumb-anchor bubble at the dock edge + two large round targets (Sperren teal/lock above ·
-    // Abbrechen red/✗ below) on the opposite side + a calm waveform chip hugging the bubble.
-    // Grow-on-target (AC3/AC4): the target the finger sits over (holdTargetHit) draws at ACTIVE
-    // size + glow; the other stays at REST size. Centers are fixed (only radius grows).
-    // Supersedes the old drawHoldDock() slide-track surface (rejected at GATE-4 — see Dev Notes).
+    // RECORDING: HOLD Cancel surface — vereinfacht (Story 9-14 re-scope, ADR-0019 Amendment
+    // 2026-07-01). Anchor bubble = the idle bubble itself (same draw path, same size, same
+    // on-screen position — AC2) + ONE round Abbrechen target growing diagonally up-and-toward-
+    // center from it (AC1/AC3/AC4) + a calm waveform chip hugging the bubble. Dragging away from
+    // the bubble fades it (~.32 alpha) and shows a ghost squircle following the live finger (AC6).
+    // Supersedes the prior two-target (Sperren+Abbrechen) build — rejected at GATE-4, see Dev Notes.
     // =========================================================================
 
     private fun drawHoldTargets(canvas: Canvas) {
         val dp  = resources.displayMetrics.density
         val spd = resources.displayMetrics.scaledDensity
         val w   = width.toFloat()
+        val h   = height.toFloat()
 
-        val shadowPad      = HOLD_SHADOW_PAD_DP * dp
-        val bubbleEdgeGap  = HOLD_BUBBLE_EDGE_GAP_DP * dp
-        val bubbleDiamPx   = HOLD_BUBBLE_DP * dp
-        val bubbleRPx      = bubbleDiamPx / 2f
-        val farInsetPx     = HOLD_TARGET_FAR_INSET_DP * dp
-        val restRPx        = HOLD_TARGET_REST_DP * dp / 2f
-        val activeRPx      = HOLD_TARGET_ACTIVE_DP * dp / 2f
-        val lockOffsetPx   = HOLD_LOCK_OFFSET_ABOVE_DP * dp
-        val cancelOffsetPx = HOLD_CANCEL_OFFSET_BELOW_DP * dp
+        val shadowPad    = HOLD_SHADOW_PAD_DP * dp
+        val bubbleDiamPx = bubbleSizeDp * dp
+        val bubbleRPx    = bubbleDiamPx / 2f
+        val restRPx      = recordingButtonSizeDp * dp / 2f
+        val activeRPx    = recordingButtonSizeDp * HOLD_CANCEL_ACTIVE_SCALE * dp / 2f
+        val offsetXPx    = HOLD_CANCEL_OFFSET_X_DP * dp
+        val offsetYPx    = HOLD_CANCEL_OFFSET_Y_DP * dp
 
-        val bubbleCenter = holdBubbleCenter(
-            dockSide, w, shadowPad, bubbleEdgeGap, bubbleDiamPx, lockOffsetPx, activeRPx
-        )
-        val (lockCenter, cancelCenter) = holdTargetCenters(
-            dockSide, w, shadowPad, bubbleEdgeGap, bubbleDiamPx, farInsetPx, activeRPx, lockOffsetPx, cancelOffsetPx
-        )
+        val bubbleCenter = holdBubbleCenter(dockSide, w, h, shadowPad, bubbleDiamPx)
+        val cancelCenter = holdCancelCenter(dockSide, bubbleCenter, offsetXPx, offsetYPx)
 
-        // --- 1. Target zones (drawn first — bubble/chip sit visually on top) ---
-        drawHoldZone(canvas, lockCenter.x, lockCenter.y, restRPx, activeRPx, isLock = true,
-            active = holdTargetHit == HoldTarget.LOCK, dp = dp, spd = spd)
-        drawHoldZone(canvas, cancelCenter.x, cancelCenter.y, restRPx, activeRPx, isLock = false,
+        // --- 1. Abbrechen target (drawn first — bubble/chip sit visually on top) ---
+        drawHoldZone(canvas, cancelCenter.x, cancelCenter.y, restRPx, activeRPx,
             active = holdTargetHit == HoldTarget.CANCEL, dp = dp, spd = spd)
 
         // --- 2. Waveform chip hugging the bubble (inner side, same vertical level) ---
@@ -1270,103 +1295,77 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
         drawHoldChip(canvas, chipCx, bubbleCenter.y, dockSide, dp, spd)
 
-        // --- 3. Live caption ("Aufnahme · loslassen = senden") above the bubble, mirrors .reccap ---
-        drawHoldCaption(canvas, bubbleCenter.x, bubbleCenter.y - bubbleRPx - 24f * dp, dp, spd)
+        // --- 3. Anchor bubble + ghost dynamics (AC6, Task 3.5) ---
+        if (holdDragging) {
+            // Origin fades to ~.32 alpha (canon `opacity:.32`) — the anchor never moves, only
+            // fades; no amber ring while faded (matches the canon's `sHit` origin styling).
+            drawTealSquircle(canvas, bubbleCenter.x, bubbleCenter.y, bubbleDiamPx, alpha = 0x52)
+            drawKLetter(canvas, bubbleCenter.x, bubbleCenter.y, bubbleRPx, alpha = 0x52)
 
-        // --- 4. Thumb-anchor bubble: teal-gradient squircle + amber ring + "K" (reuses the same
-        //        gradient/text pattern as drawIdleBubble — Dev Notes "Reusable infrastructure") ---
-        val bubbleR = bubbleRPx
-        val cornerPx = HOLD_BUBBLE_R_DP * dp  // .heldbub border-radius:25px — absolute dp, not diameter-relative
-        squircleRect.set(bubbleCenter.x - bubbleR, bubbleCenter.y - bubbleR, bubbleCenter.x + bubbleR, bubbleCenter.y + bubbleR)
+            // Ghost squircle follows the LIVE finger position — not a derived/interpolated point
+            // (canon: the mockup's ghost position is illustrative, the formula input is the real
+            // touch). ~0.92× the anchor's size (canon ghost/heldbub ratio 44/48).
+            val ghostDiamPx = bubbleDiamPx * 0.92f
+            drawTealSquircle(canvas, holdFingerX, holdFingerY, ghostDiamPx, alpha = 0xFF)
+            drawKLetter(canvas, holdFingerX, holdFingerY, ghostDiamPx / 2f, alpha = 0xFF)
+        } else {
+            drawTealSquircle(canvas, bubbleCenter.x, bubbleCenter.y, bubbleDiamPx, alpha = 0xFF)
 
-        // Shadow blur (finding C): rebuild only if bubbleR actually changed (e.g. a density
-        // change), not on every amplitude-driven invalidate() during the hold.
-        if (holdBubbleShadowBlur == null || holdBubbleShadowBlurR != bubbleR) {
-            holdBubbleShadowBlurR = bubbleR
-            holdBubbleShadowBlur  = BlurMaskFilter(bubbleR * 0.3f, BlurMaskFilter.Blur.NORMAL)
-        }
-        shadowPaint.maskFilter = holdBubbleShadowBlur
-        holdBubbleShadowRect.set(squircleRect.left, squircleRect.top + bubbleR * 0.1f, squircleRect.right, squircleRect.bottom + bubbleR * 0.1f)
-        canvas.drawRoundRect(holdBubbleShadowRect, cornerPx, cornerPx, shadowPaint)
-
-        // Teal gradient (finding C): rebuild only if squircleRect bounds changed — stable for the
-        // duration of a single hold gesture (dockSide/bubble position don't move mid-hold).
-        if (holdBubbleGradient == null ||
-            holdBubbleGradientLeft != squircleRect.left || holdBubbleGradientTop != squircleRect.top ||
-            holdBubbleGradientRight != squircleRect.right || holdBubbleGradientBottom != squircleRect.bottom
-        ) {
-            holdBubbleGradientLeft   = squircleRect.left
-            holdBubbleGradientTop    = squircleRect.top
-            holdBubbleGradientRight  = squircleRect.right
-            holdBubbleGradientBottom = squircleRect.bottom
-            holdBubbleGradient = LinearGradient(
-                squircleRect.left, squircleRect.top, squircleRect.right, squircleRect.bottom,
-                KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
+            // Amber holding-ring (box-shadow 0 0 0 5dp AmberLine — .heldbub), rest-state only.
+            val cornerPx = bubbleDiamPx * 0.30f
+            val ringOutset = 5f * dp
+            strokePaint.color       = KlarvoTheme.AmberLine
+            strokePaint.strokeWidth = ringOutset
+            strokePaint.style       = Paint.Style.STROKE
+            val halfOutset = ringOutset / 2f
+            holdBubbleRingRect.set(
+                bubbleCenter.x - bubbleRPx - halfOutset, bubbleCenter.y - bubbleRPx - halfOutset,
+                bubbleCenter.x + bubbleRPx + halfOutset, bubbleCenter.y + bubbleRPx + halfOutset
             )
+            canvas.drawRoundRect(holdBubbleRingRect, cornerPx + halfOutset, cornerPx + halfOutset, strokePaint)
+
+            drawKLetter(canvas, bubbleCenter.x, bubbleCenter.y, bubbleRPx, alpha = 0xFF)
         }
-        idleFillPaint.shader = holdBubbleGradient
-        canvas.drawRoundRect(squircleRect, cornerPx, cornerPx, idleFillPaint)
 
-        // Amber holding-ring (box-shadow 0 0 0 5dp AmberLine — .heldbub)
-        val ringOutset = 5f * dp
-        strokePaint.color       = KlarvoTheme.AmberLine
-        strokePaint.strokeWidth = ringOutset
-        strokePaint.style       = Paint.Style.STROKE
-        val halfOutset = ringOutset / 2f
-        holdBubbleRingRect.set(squircleRect.left - halfOutset, squircleRect.top - halfOutset, squircleRect.right + halfOutset, squircleRect.bottom + halfOutset)
-        canvas.drawRoundRect(holdBubbleRingRect, cornerPx + halfOutset, cornerPx + halfOutset, strokePaint)
-
-        kLetterPaint.textSize = bubbleR * 0.85f
-        val kMetrics = kLetterPaint.fontMetrics
-        canvas.drawText("K", bubbleCenter.x, bubbleCenter.y - (kMetrics.ascent + kMetrics.descent) / 2f, kLetterPaint)
+        // --- 4. Live caption above the (origin) bubble, mirrors .reccap — text swaps to the
+        //        "Finger auf Abbrechen" variant only when the finger is actually on the target
+        //        (AC6, canon `sHit` text), independent of the broader holdDragging dead-zone. ---
+        drawHoldCaption(canvas, bubbleCenter.x, bubbleCenter.y - bubbleRPx - 24f * dp,
+            hit = holdTargetHit == HoldTarget.CANCEL, dp = dp, spd = spd)
     }
 
     /**
-     * Draws one HOLD target (Sperren or Abbrechen) centered at (cx, cy).
-     * REST: dark fill, colored 2dp border, icon+label muted (AC1/AC2).
-     * ACTIVE (grow-on-target, AC3/AC4): radial-gradient fill at [activeRadius], glow ring, white-ish
-     * label, "loslassen = …" text. Center stays fixed — only the drawn radius/style changes.
+     * Draws the single Abbrechen target centered at (cx, cy) (Task 3.2 — `isLock` branch removed,
+     * Story 9-14 re-scope 2026-07-01: there is only one target now).
+     * REST: dark fill, red-line 2dp border, ✕ icon+label muted (AC1).
+     * ACTIVE (grow-on-target, AC4): radial-gradient red fill at [activeRadius], glow ring, white
+     * label, "loslassen = abbrechen" text. Center stays fixed — only the drawn radius/style changes.
      */
     private fun drawHoldZone(
         canvas: Canvas, cx: Float, cy: Float, restRadius: Float, activeRadius: Float,
-        isLock: Boolean, active: Boolean, dp: Float, spd: Float
+        active: Boolean, dp: Float, spd: Float
     ) {
         val r = if (active) activeRadius else restRadius
 
         if (active) {
             // Glow ring (box-shadow 0 0 0 8dp @22% + soft outer glow)
-            val glowColor = if (isLock) KlarvoTheme.TealLine else HOLD_DANGER_LINE
-            strokePaint.color       = glowColor
+            strokePaint.color       = HOLD_DANGER_LINE
             strokePaint.strokeWidth = 8f * dp
             strokePaint.style       = Paint.Style.STROKE
             canvas.drawCircle(cx, cy, r + 4f * dp, strokePaint)
 
-            // Radial gradient (finding C): cache per target (lock vs cancel) and rebuild only
-            // when its center/radius actually changed — stable while a single target stays
-            // ACTIVE across repeated amplitude-driven invalidate() calls.
+            // Radial gradient (finding C): rebuild only when center/radius actually changed —
+            // stable while the target stays ACTIVE across repeated invalidate() calls.
             val gradCy = cy - r * 0.24f
-            val shader = if (isLock) {
-                if (holdLockGradient == null || holdLockGradientCx != cx || holdLockGradientCy != gradCy || holdLockGradientR != r) {
-                    holdLockGradientCx = cx
-                    holdLockGradientCy = gradCy
-                    holdLockGradientR  = r
-                    holdLockGradient = RadialGradient(
-                        cx, gradCy, r, KlarvoTheme.TealHi, KlarvoTheme.TealLo, Shader.TileMode.CLAMP
-                    )
-                }
-                holdLockGradient
-            } else {
-                if (holdCancelGradient == null || holdCancelGradientCx != cx || holdCancelGradientCy != gradCy || holdCancelGradientR != r) {
-                    holdCancelGradientCx = cx
-                    holdCancelGradientCy = gradCy
-                    holdCancelGradientR  = r
-                    holdCancelGradient = RadialGradient(
-                        cx, gradCy, r, HOLD_DANGER_HI, KlarvoTheme.Danger, Shader.TileMode.CLAMP
-                    )
-                }
-                holdCancelGradient
+            if (holdCancelGradient == null || holdCancelGradientCx != cx || holdCancelGradientCy != gradCy || holdCancelGradientR != r) {
+                holdCancelGradientCx = cx
+                holdCancelGradientCy = gradCy
+                holdCancelGradientR  = r
+                holdCancelGradient = RadialGradient(
+                    cx, gradCy, r, HOLD_DANGER_HI, KlarvoTheme.Danger, Shader.TileMode.CLAMP
+                )
             }
-            fillPaint.shader = shader
+            fillPaint.shader = holdCancelGradient
             canvas.drawCircle(cx, cy, r, fillPaint)
             fillPaint.shader = null
             fillPaint.alpha  = 0xFF
@@ -1376,34 +1375,23 @@ class FloatingBubbleView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy, r, fillPaint)
             fillPaint.alpha = 0xFF
 
-            strokePaint.color       = if (isLock) KlarvoTheme.TealLine else HOLD_DANGER_LINE
+            strokePaint.color       = HOLD_DANGER_LINE
             strokePaint.strokeWidth = 2f * dp
             strokePaint.style       = Paint.Style.STROKE
             canvas.drawCircle(cx, cy, r - dp, strokePaint)
         }
 
-        // Icon: lock (reuses drawLockIcon) or "✕" glyph (drawn as text, mirrors mockup's <span>✕</span>)
-        val iconSizeDp = if (active) (if (isLock) 40f else 46f) else 34f
+        // ✕ glyph (drawn as text, mirrors mockup's <span>✕</span>)
+        val iconSizeDp = if (active) 46f else 34f
         val iconCy = cy - r * 0.18f
-        val labelColor = if (active) (if (isLock) KlarvoTheme.OnTeal else 0xFFFFFFFF.toInt())
-                          else (if (isLock) KlarvoTheme.TealHi else HOLD_DANGER_HI)
-        if (isLock) {
-            // drawLockIcon copies paint.color into both lockBodyFillPaint/lockShacklePaint internally.
-            lockBodyFillPaint.color = labelColor
-            drawLockIcon(canvas, cx, iconCy, iconSizeDp, lockBodyFillPaint)
-        } else {
-            holdCancelGlyphPaint.color    = labelColor
-            holdCancelGlyphPaint.textSize = iconSizeDp * dp
-            val glyphMetrics = holdCancelGlyphPaint.fontMetrics
-            canvas.drawText("✕", cx, iconCy - (glyphMetrics.ascent + glyphMetrics.descent) / 2f, holdCancelGlyphPaint)
-        }
+        val labelColor = if (active) 0xFFFFFFFF.toInt() else HOLD_DANGER_HI
+        holdCancelGlyphPaint.color    = labelColor
+        holdCancelGlyphPaint.textSize = iconSizeDp * dp
+        val glyphMetrics = holdCancelGlyphPaint.fontMetrics
+        canvas.drawText("✕", cx, iconCy - (glyphMetrics.ascent + glyphMetrics.descent) / 2f, holdCancelGlyphPaint)
 
-        // Two-line label, e.g. "ziehen zum\nSperren" / "loslassen\n= sperren"
-        val labelStr = if (active) {
-            if (isLock) "loslassen\n= sperren" else "loslassen\n= abbrechen"
-        } else {
-            if (isLock) "ziehen zum\nSperren" else "ziehen zum\nAbbrechen"
-        }
+        // Two-line label
+        val labelStr = if (active) "loslassen\n= abbrechen" else "ziehen zum\nAbbrechen"
         holdZoneLabelPaint.color    = labelColor
         holdZoneLabelPaint.textSize = (if (active) 13f else 12f) * spd
         holdZoneLabelPaint.isFakeBoldText = active
@@ -1472,10 +1460,14 @@ class FloatingBubbleView(context: Context) : View(context) {
         canvas.drawText(timerStr, waveRight + waveTimerGap, timerBaseline, tapTimerPaint)
     }
 
-    /** Live caption ("Aufnahme · loslassen = senden") + amber dot with halo — mirrors .reccap. */
-    private fun drawHoldCaption(canvas: Canvas, cx: Float, cy: Float, dp: Float, spd: Float) {
+    /**
+     * Live caption + amber dot with halo — mirrors .reccap. [hit] swaps the text to the
+     * "Finger auf Abbrechen" variant while the finger sits on the Abbrechen target (AC6, Task 3.4,
+     * canon `sHit` text) — at rest it reads "Aufnahme · loslassen = senden".
+     */
+    private fun drawHoldCaption(canvas: Canvas, cx: Float, cy: Float, hit: Boolean, dp: Float, spd: Float) {
         holdCaptionPaint.textSize = 13f * spd
-        val text = "Aufnahme · loslassen = senden"
+        val text = if (hit) "Finger auf Abbrechen · loslassen löst aus" else "Aufnahme · loslassen = senden"
         val textW = holdCaptionPaint.measureText(text)
         val dotR  = 4f * dp
         val gap   = 8f * dp
@@ -1494,32 +1486,6 @@ class FloatingBubbleView(context: Context) : View(context) {
 
         val metrics = holdCaptionPaint.fontMetrics
         canvas.drawText(text, dotCx + dotR + gap, cy - (metrics.ascent + metrics.descent) / 2f, holdCaptionPaint)
-    }
-
-    /**
-     * Draws a simplified padlock icon centered at (cx, cy) for a HOLD Sperren target.
-     * Uses pre-allocated [lockBodyRect], [lockShackleRect], [lockBodyFillPaint], [lockShacklePaint]
-     * — no per-call Paint/RectF allocations (finding 6, ported from the old HOLD dock build).
-     */
-    private fun drawLockIcon(canvas: Canvas, cx: Float, cy: Float, sizeDp: Float, paint: Paint) {
-        val dp    = resources.displayMetrics.density
-        val w     = sizeDp * dp
-        val bodyH = w * 0.55f
-        val bodyTop = cy + w * 0.0f   // body starts at center
-        lockBodyRect.set(cx - w / 2f, bodyTop - bodyH / 2f, cx + w / 2f, bodyTop + bodyH / 2f)
-        val cornerR = w * 0.18f
-
-        // Body: rounded rect (fill) — reuse pre-allocated paint; copy color from param.
-        lockBodyFillPaint.color = paint.color
-        canvas.drawRoundRect(lockBodyRect, cornerR, cornerR, lockBodyFillPaint)
-
-        // Shackle: semi-circular arc above body — reuse pre-allocated paint.
-        val shackleW  = w * 0.55f
-        val shackleCy = lockBodyRect.top
-        lockShackleRect.set(cx - shackleW / 2f, shackleCy - w * 0.45f, cx + shackleW / 2f, shackleCy + shackleW * 0.4f)
-        lockShacklePaint.color       = paint.color
-        lockShacklePaint.strokeWidth = w * 0.18f
-        canvas.drawArc(lockShackleRect, 180f, 180f, false, lockShacklePaint)
     }
 
     // Legacy helpers kept for API compatibility with any remaining callers.

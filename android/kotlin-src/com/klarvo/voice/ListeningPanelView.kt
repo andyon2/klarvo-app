@@ -48,7 +48,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         }
 
     /**
-     * True while the HOLD dock is active (PTT hold in progress, Story 9-14).
+     * True while the HOLD Cancel surface is active (PTT hold in progress, Story 9-14).
      * Changes the RECORDING header label to "Aufnahme · halten".
      */
     var isHoldMode: Boolean = false
@@ -56,19 +56,6 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             if (field == value) return
             field = value
             topRowView.invalidate()
-        }
-
-    /**
-     * True after the user drags upward to lock the HOLD dock → normal cluster (AC5, Story 9-14).
-     * Changes the RECORDING header label to "Aufnahme · 🔒 gesperrt" and footer to the locked message.
-     * Set together with isHoldMode=false by setLockedModeOnPanel().
-     */
-    var isLockedMode: Boolean = false
-        set(value) {
-            if (field == value) return
-            field = value
-            topRowView.invalidate()
-            footerView.invalidate()
         }
 
     var amplitude: Float = 0f
@@ -428,11 +415,11 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                     textPaint.textAlign = Paint.Align.LEFT
                     val labelMetrics = textPaint.fontMetrics
                     val labelY = h / 2f - (labelMetrics.ascent + labelMetrics.descent) / 2f
-                    // Label: isLockedMode wins, then isHoldMode, then default (AC8 + AC5, Story 9-14)
+                    // Label: isHoldMode, then default (AC8, Story 9-14 — the isLockedMode variant
+                    // was removed in the 2026-07-01 re-scope, Sperren/lock is gone).
                     val recordingLabel = when {
-                        isLockedMode -> "Aufnahme · 🔒 gesperrt"
-                        isHoldMode   -> "Aufnahme · halten"
-                        else         -> "Aufnahme"
+                        isHoldMode -> "Aufnahme · halten"
+                        else       -> "Aufnahme"
                     }
                     canvas.drawText(recordingLabel, curX, labelY, textPaint)
 
@@ -589,13 +576,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             // dismiss another app's IME (it is NOT_FOCUSABLE); real keyboard collapse needs the
             // AccessibilityService (Story 9-6). Until 9-6 lands, describe only what actually
             // happens. The mic glyph replaces the misleading keyboard glyph.
-            // Locked-state footer overrides the normal RECORDING text (AC5, Story 9-14):
-            // when isLockedMode=true, show "Finger losgelassen · weiter über die Knöpfe" (no icon).
-            if (panelState == State.RECORDING && isLockedMode) {
-                textPaint.color = KlarvoTheme.Dim
-                canvas.drawText("Finger losgelassen · weiter über die Knöpfe", 0f, textY, textPaint)
-                return
-            }
+            // (The locked-state footer override — "Finger losgelassen · weiter über die Knöpfe" —
+            // was removed in the Story 9-14 2026-07-01 re-scope: there is no locked/TAP-handoff
+            // state anymore, release always either sends or cancels.)
             val iconText = "🎙 "
             val captionText = when (panelState) {
                 State.RECORDING    -> "Ich höre zu …"
