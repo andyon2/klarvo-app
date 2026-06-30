@@ -58,6 +58,8 @@ export interface AppSettings {
   bubbleSizeDp: number;
   /** Whether the Android bubble edge-snaps on drag release. Default: true. */
   bubbleEdgeSnap: boolean;
+  /** Android recording TAP-surface button diameter in dp (∈ {60,72,88}, default 72). Story 9-15. */
+  recordingButtonSizeDp: number;
   localWhisperModel: string;
   localWhisperGpu: boolean;
   // Recording behaviour extensions.

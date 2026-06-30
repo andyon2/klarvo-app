@@ -165,6 +165,8 @@ pub struct SettingsPatch {
     // Story 9.3 bubble size + snap controls.
     pub bubble_size_dp: Option<i32>,
     pub bubble_edge_snap: Option<bool>,
+    // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88}, default 72).
+    pub recording_button_size_dp: Option<i32>,
 }
 
 impl Default for SettingsPatch {
@@ -221,6 +223,7 @@ impl Default for SettingsPatch {
             preview_font_size: None,
             bubble_size_dp: None,
             bubble_edge_snap: None,
+            recording_button_size_dp: None,
         }
     }
 }
@@ -330,6 +333,7 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
         bubble_opacity: patch.bubble_opacity.unwrap_or(existing.bubble_opacity),
         bubble_size_dp: patch.bubble_size_dp.unwrap_or(existing.bubble_size_dp),
         bubble_edge_snap: patch.bubble_edge_snap.unwrap_or(existing.bubble_edge_snap),
+        recording_button_size_dp: patch.recording_button_size_dp.unwrap_or(existing.recording_button_size_dp),
         advanced: existing.advanced,
         local_whisper_model: patch.local_whisper_model.unwrap_or(existing.local_whisper_model),
         local_whisper_gpu: patch.local_whisper_gpu.unwrap_or(existing.local_whisper_gpu),
@@ -469,6 +473,8 @@ pub async fn save_settings(
     // Story 9.3 bubble size + snap controls.
     bubble_size_dp: Option<i32>,
     bubble_edge_snap: Option<bool>,
+    // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88}, default 72).
+    recording_button_size_dp: Option<i32>,
 ) -> Result<(), String> {
     let inner = state.inner();
 
@@ -564,6 +570,7 @@ pub async fn save_settings(
         preview_font_size,
         bubble_size_dp,
         bubble_edge_snap,
+        recording_button_size_dp,
     };
     let new_cfg = inner.save_config_locked("settings", |cfg| {
         *cfg = merge_settings(cfg.clone(), patch);
@@ -646,6 +653,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         bubble_opacity: cfg.bubble_opacity,
         bubble_size_dp: cfg.bubble_size_dp,
         bubble_edge_snap: cfg.bubble_edge_snap,
+        recording_button_size_dp: cfg.recording_button_size_dp,
         local_whisper_model: cfg.local_whisper_model,
         local_whisper_gpu: cfg.local_whisper_gpu,
         insert_and_send_slot1: cfg.hotkey_slots.first().map(|s| s.insert_and_send).unwrap_or(false),

@@ -12,26 +12,30 @@ so that I can hit the control I want without my finger covering it, and the over
 
 Beim ersten echten Daumen-Test (9-14, 2026-06-26) hat Andi die **gesamte mobile Aufnahme-Steuerung** als zu klein / „Laptop-Feel" verworfen. Phase-A-Redesign → **B-Sprache** (ADR-0019 Amendment 2026-06-26). Diese Story setzt die **TAP-Surface** um (kurz tippen = aufnehmen, dann tappbare Steuerung). Sie ist **fundamental**: der „gesperrt"-Zustand von Story 9-14 (nach Hochziehen-Sperren) ist **dieselbe Surface** → 9-15 wird vor / zusammen mit 9-14 gebaut.
 
-## Scope (locked — nur die TAP-Aufnahme-Surface + ihre Touch-Zonen)
+## Scope (TAP-Aufnahme-Surface + Touch-Zonen + nutzer-konfigurierbare Größe)
 
-Ersetze auf Android den `.ab-cluster`-Klein-Cluster im RECORDING-Zustand (für die Gesten-Modi **Tap/Toggle/Auto-Stop/Auto**) durch **zwei große runde tappbare Ziele** in B-Sprache:
+> **Re-Scope 2026-06-30 (Andi-Real-Device-Verdikt, GATE-4 FAILED):** Die feste 132dp-Größe aus dem Browser-Render war am Gerät **viel zu groß** (beide Kreise = 81% der Schirmbreite). Größe wird **nutzer-konfigurierbar** {60, 72, 88}dp, Default **72**; die Surface gilt jetzt für **alle Modi inkl. HOLD-Lock** (Andi-Entscheidung). Verankert am **device-scale** Mockup, nicht mehr am Browser-px-Render.
+
+Ersetze auf Android den `.ab-cluster`-Klein-Cluster im RECORDING-Zustand durch **zwei runde tappbare Ziele** in B-Sprache — für **alle Modi**: Tap/Toggle/Auto-Stop/Auto **und den HOLD-gesperrten Zustand** (`holdDockActive`-Surface zieht dieselbe Zwei-Knopf-Darstellung; die *aktive* HOLD-Geste = Story 9-14):
 - **Senden** — teal-Gradient-Kreis, ➤-Glyph (OnTeal), am **Dock/Daumen** (dort, wo die idle-„K"-Bubble saß).
-- **Abbrechen** — dunkler Kreis mit rotem Ring + ✕ (danger), auf der **Gegenseite**, großzügig entfernt.
-- **Waveform-Chip** — ruhiger amber RMS-Waveform + Timer, eigener blickdichter Chip, **oben/zwischen** den Zielen (überlappt KEIN Ziel).
+- **Abbrechen** — dunkler Kreis mit rotem Ring + ✕ (danger-hi), auf der **Gegenseite**, großzügig entfernt.
+- **Waveform-Chip** — ruhiger amber RMS-Waveform + Timer, eigener blickdichter Chip, **oben/zwischen** den Zielen (überlappt KEIN Ziel); skaliert proportional mit der gewählten Größe.
 - **Dock-adaptiv:** bei links/oben/unten/frei angedockt **spiegelt** sich die Anordnung — Senden bleibt am Dock, Abbrechen wächst weg von der Dock-Kante (nie unter den Daumen).
+- **Größe nutzer-konfigurierbar:** neuer Config-Key `recordingButtonSizeDp` ∈ {60, 72, 88}, Default 72. Settings-Control (Mobile-Bereich, neben „Bubble Size"). Kreis-Durchmesser, Glyph, Labels, „tippen"-Hint, Chip und die Fenster-Dims (`adjustLayoutForState`) leiten sich alle aus diesem Wert ab (proportional, wie das device-scale Mockup mit `calc()`).
 
 **Hard scope boundaries:**
-- **Nur** der RECORDING-Steuer-Surface + dessen Touch-Zonen. Keine Pipeline-/Aufnahme-Logik, kein STT, kein Cleanup.
+- RECORDING-Steuer-Surface + Touch-Zonen + die Größen-Einstellung (Config-Plumbing Frontend↔Android + Settings-Control). Keine Pipeline-/Aufnahme-Logik, kein STT, kein Cleanup.
 - **Keine** Änderung an IDLE / TRANSCRIBING / DONE / Preview (eigener späterer Pass — `docs/backlog.md`).
-- **Keine** Token-Änderung (`KlarvoTheme.kt` generiert — nicht hand-editieren).
+- **Keine** Token-Änderung (`KlarvoTheme.kt` generiert — nicht hand-editieren); der Größen-Wert ist KEIN Token, sondern Runtime-Config.
+- Mobile-only Setting (Desktop-Overlays sind native Win32, eigener Pfad).
 - Farb-Semantik bindend (ADR-0019 §5): **teal = Senden · amber = live · rot = Abbrechen** — nie tauschen.
 - `FLAG_NOT_TOUCHABLE` nie hinzufügen (HyperOS dimmt auf 0.8).
 
 ## Acceptance Criteria
 
-**AC1 — TAP-Surface ersetzt den Klein-Cluster.** Given RECORDING-Zustand mit `pushToTalkActive = false` (tap/toggle/auto), When die Overlay zeichnet, Then erscheinen **zwei große runde tappbare Ziele** (Senden teal ➤ am Dock-/Daumen-Platz · Abbrechen dunkel+rot-Ring ✕ gegenüber) + ein ruhiger amber Waveform-Chip — und der alte `.ab-cluster` `[✗·Waveform·➤]` wird **NICHT** mehr gezeichnet.
+**AC1 — TAP-Surface ersetzt den Klein-Cluster (alle Modi).** Given RECORDING-Zustand, When die Overlay zeichnet, Then erscheinen **zwei runde tappbare Ziele** (Senden teal ➤ am Dock-/Daumen-Platz · Abbrechen dunkel+rot-Ring ✕ gegenüber) + ein ruhiger amber Waveform-Chip — und der alte `.ab-cluster` `[✗·Waveform·➤]` wird **NICHT** mehr gezeichnet. Gilt für tap/toggle/auto/auto-stop (`pushToTalkActive=false`) **und** den HOLD-gesperrten Zustand (`holdDockActive`).
 
-**AC2 — Größe & Lesbarkeit (mobile-first).** Ziel-Durchmesser ≥ ~120dp; großzügiger Abstand zwischen den Zielen; jedes Ziel + der Chip auf **blickdichter** Fläche (keine Transparenz-Abhängigkeit), lesbar über beliebigem Hintergrund. Werte exakt aus dem Render `mockup-mobile-recording-states.html` (Frame `tapRight`).
+**AC2 — Größe nutzer-konfigurierbar + Lesbarkeit (mobile-first).** Kreis-Durchmesser = `recordingButtonSizeDp` ∈ {60, 72, 88}, Default 72 — **nicht** der alte feste 132dp-Render-Wert (war am Gerät zu groß, GATE-4-FAILED 2026-06-30). Glyph, Labels, Hint, Abstand und Chip skalieren **proportional** mit (wie das device-scale Mockup via `calc()`); „Abbrechen" muss bei 60dp noch sauber im Kreis sitzen (kein Clipping/Überlauf). Jedes Ziel + der Chip auf **blickdichter** Fläche (keine Transparenz-Abhängigkeit). Größen-/Farb-/Radii-Verhältnisse aus `docs/design/overhaul/mockup-tap-size-calibration.html` (device-scale SOLL); Farben weiter aus `mockup-mobile-recording-states.html`.
 
 **AC3 — Senden am Dock/Daumen.** Senden sitzt am Bildschirm-Platz der idle-„K"-Bubble (Dock-Kante); Abbrechen auf der Gegenseite (Daumen-Gewohnheit, wie ADR-0019 §4′-#2 — nur jetzt groß).
 
@@ -43,16 +47,25 @@ Ersetze auf Android den `.ab-cluster`-Klein-Cluster im RECORDING-Zustand (für d
 
 **AC7 — Andere Zustände unberührt.** IDLE / TRANSCRIBING / DONE / Preview unverändert.
 
+**AC8 — Größe in Settings wählbar.** Neuer Config-Key `recordingButtonSizeDp` (Int, Default 72, erlaubte Werte 60/72/88) round-trippt Frontend↔config.json↔Android (camelCase; falscher Key wird still ignoriert — Round-Trip beweisen). Ein 3-Wege-Control im Mobile-Settings-Bereich (neben „Bubble Size") setzt ihn; Auswahl persistiert und wirkt auf die nächste/laufende Aufnahme-Surface ohne Neustart (wie `setBubbleSize`-Pfad aus 9-3).
+
+**AC9 — Gilt für alle Modi inkl. HOLD-Lock.** Der `holdDockActive`-Pfad (`drawHoldDock`) zeichnet dieselbe Zwei-Knopf-Surface in derselben konfigurierten Größe (kein alter Klein-Stand mehr im gesperrten HOLD). Die *aktive* HOLD-Geste (Hochziehen/grow/release) bleibt unverändert / Story 9-14.
+
+**AC10 — Fenster-Dims folgen der Größe.** `adjustLayoutForState` berechnet die RECORDING-Fensterbreite/-höhe aus `recordingButtonSizeDp` (2 Kreise + Gap + Chip + Schatten-Pad), nicht aus festen 340×222dp. Struktureller Smoke: das RECORDING-Overlay-Fenster spiegelt die gewählte Größe (z.B. 72dp deutlich kleiner als die alten 892×582px).
+
 **Inversion (must-fail gates):**
 - Alter `.ab-cluster` im RECORDING-Zustand sichtbar = review failure.
 - Senden nicht am Dock-/Daumen-Platz = review failure.
 - Farben getauscht (teal≠Senden / rot≠Abbrechen) = review failure.
+- Kreis-Durchmesser fest auf 132dp / ignoriert `recordingButtonSizeDp` = review failure.
+- HOLD-gesperrt zeigt noch den alten Stand statt der Zwei-Knopf-Surface = review failure.
 
 ## Anchors (binding design source)
 
 - **ADR-0019 Amendment 2026-06-26** „Android-Aufnahme-Steuerung: Mobile-Redesign (B-Sprache)" (`docs/adr/0019-cross-platform-design-ssot.md`).
-- **Bindendes Render (SOLL):** `docs/design/overhaul/mockup-mobile-recording-states.html` — Frames `tapRight` (rechts angedockt) + `tapLeft` (Dock-Spiegelung). Exakte Farben/Radii/Größen = die CSS dieser Datei.
-- Canon-Fingerprint `bac152993046699c5007612ac916d951` (MANIFEST 2026-06-26); **supersedet** `.ab-cluster` (im tracked Canon als SUPERSEDED markiert).
+- **Bindende Größe (device-scale SOLL):** `docs/design/overhaul/mockup-tap-size-calibration.html` — am echten Gerät (1080×2460 @440dpi = 393dp) approbiert; `recordingButtonSizeDp` ∈ {60,72,88}, Default 72. **Supersedet** den festen `.ztap{width:132px}`-Wert des Browser-Renders (war zu groß — GATE-4-FAILED 2026-06-30).
+- **Bindende Farben/Form/Anordnung (SOLL):** `docs/design/overhaul/mockup-mobile-recording-states.html` — Frames `tapRight`/`tapLeft`. Farben/Radii-Verhältnisse/Dock-Spiegelung von hier (NUR die absolute Pixel-Größe ist durch die device-scale-Kalibrierung ersetzt).
+- Canon-Fingerprint `bac152993046699c5007612ac916d951` (MANIFEST 2026-06-26); **supersedet** `.ab-cluster` (im tracked Canon als SUPERSEDED markiert). Lehre: SOLL-Größen am Geräte-Maßstab abnehmen, nie aus Browser-px (`feedback_soll_anchor_external_approved_source` + `project_mobile_overlay_design_rejected`).
 - Touch-/Canvas-Lehren: `reference_android_bubble_canvas_and_install.md`; Cluster-Anker/Daumen-Logik: Story 9-13.
 
 ## Tasks/Subtasks
@@ -94,6 +107,35 @@ Ersetze auf Android den `.ab-cluster`-Klein-Cluster im RECORDING-Zustand (für d
   - [x] 6.1 `./gradlew testUniversalDebugUnitTest --rerun-tasks` — **97 Tests, 0 Failures** (12 neue TapSurfaceTouchZoneTest)
   - [x] 6.2 `node scripts/gen-android-theme.mjs --check` — **[ok] KlarvoTheme.kt is in sync with canon klarvo.css**
   - [x] 6.3 `cargo check --target x86_64-pc-windows-gnu` — N/A: keine Rust/Windows-Pfade berührt (nur android/kotlin-src + android/kotlin-test)
+
+- [x] Task 7: Re-Scope 2026-06-30 — Proportionale Skalierung in FloatingBubbleView.kt
+  - [x] 7.1 Neue Konstanten `TAP_BUTTON_SIZE_{MIN=60,DEFAULT=72,MAX=88}` im companion object
+  - [x] 7.2 Neue Property `recordingButtonSizeDp: Int` (default 72, setter coerces + invalidates)
+  - [x] 7.3 Neue `@JvmStatic` Companion-Funktionen `tapVisualWidthDp(buttonSizeDp)` + `tapVisualHeightDp(buttonSizeDp)` für testbare Geometrie-Berechnung
+  - [x] 7.4 `drawTapSurface()` berechnet `scale = recordingButtonSizeDp / 132f`; alle Sub-Funktionen erhalten `scale: Float`-Parameter
+  - [x] 7.5 `drawTapChip()`, `drawTapSendCircle()`, `drawTapCancelCircle()` alle Dimensionen × scale (lokale `scale`-Variable in `drawTapCancelCircle` umbenannt zu `glyphScale` zur Vermeidung von shadowing)
+
+- [x] Task 8: Re-Scope 2026-06-30 — KlarvoOverlayService.kt + KlarvoApi.kt (Android-Config-Lesen)
+  - [x] 8.1 `KlarvoOverlayService.adjustLayoutForState()`: TAP-Window-Dims jetzt via `FloatingBubbleView.tapVisualWidthDp(bubbleView.recordingButtonSizeDp)` (statt feste Konstanten)
+  - [x] 8.2 `KlarvoOverlayService.lockHoldToCluster()`: gleiche Änderung (AC10)
+  - [x] 8.3 `KlarvoOverlayService.reloadBubbleAppearance()`: setzt `bubbleView.recordingButtonSizeDp = config.recordingButtonSizeDp`
+  - [x] 8.4 `KlarvoApi.Config`: neues Feld `val recordingButtonSizeDp: Int = 72`
+  - [x] 8.5 `KlarvoApi.readConfig()`: liest `json.optInt("recordingButtonSizeDp", 72).coerceIn(MIN,MAX)`
+
+- [x] Task 9: Re-Scope 2026-06-30 — Config-Round-Trip Rust/TS + Settings-Control (AC8)
+  - [x] 9.1 `src-tauri/src/config/mod.rs`: `pub recording_button_size_dp: i32` mit `#[serde(default = "default_recording_button_size_dp")]` + Funktion `fn default_recording_button_size_dp() -> i32 { 72 }`
+  - [x] 9.2 `src-tauri/src/lib.rs` (`SettingsView`): `pub recording_button_size_dp: i32` hinzugefügt
+  - [x] 9.3 `src-tauri/src/commands/settings.rs`: `recording_button_size_dp: Option<i32>` in `SettingsPatch` + Default-Impl + `merge_settings` + `save_settings`-Param + Patch-Konstruktion + `get_settings`-Response
+  - [x] 9.4 `src/types.ts`: `recordingButtonSizeDp: number` in `AppSettings`
+  - [x] 9.5 `src/tauri-commands.ts`: Parameter + Invoke-Aufruf + Fallback-Konstante `72`
+  - [x] 9.6 `src/components/SettingsPanel.tsx`: State `localRecordingButtonSizeDp`, dirty tracking (2 Stellen), loadedSettings-Reset, saveCurrentSettings-Aufruf, useCallback-Deps, ShortcutsContent-Prop
+  - [x] 9.7 `src/components/settings/ShortcutsContent.tsx`: Props-Typ + Destrukturierung + 3-Wege-Segmented-Control (60/72/88 dp) im „Bubble Appearance"-Abschnitt
+
+- [x] Task 10: Re-Scope 2026-06-30 — Unit-Tests aktualisieren + finales Gate
+  - [x] 10.1 `TapSurfaceTouchZoneTest.kt`: `tap_send_diam_is_at_least_120dp()` ersetzt durch 4 neue Tests: `recording_button_size_default_is_72dp`, `recording_button_size_min_is_at_least_48dp`, `visual_width_at_default_is_less_than_reference_max`, `visual_width_scales_proportionally_with_button_size`
+  - [x] 10.2 JVM-Tests: **BUILD SUCCESSFUL** (`./gradlew :app:testUniversalDebugUnitTest --rerun-tasks`)
+  - [x] 10.3 Theme-Drift-Gate: **[ok] KlarvoTheme.kt is in sync with canon klarvo.css**
+  - [x] 10.4 Rust native check: **Finished dev profile, 0 errors** (Windows cross-compile hat pre-existierenden whisper.cpp/mingw-Fehler, unabhängig von unseren Änderungen)
 
 ## Dev Notes
 
@@ -137,15 +179,54 @@ TAP-Surface ersetzt `drawRecordingCluster()` in FloatingBubbleView.kt. Zwei 132d
 
 - Residual gap: `holdDockActive=true → beide Zonen false` (Task 5.5) ist View-Level-Guard — kein JVM-Test möglich ohne Robolectric. Guard klar lesbar in `isTouchInConfirmZone`/`isTouchInCancelZone`.
 
+**Re-Scope 2026-06-30 — implementiert (Tasks 7–10):**
+
+- `FloatingBubbleView.kt`: Proportionale Skalierung via `scale = recordingButtonSizeDp / 132f`. Neue Property `recordingButtonSizeDp` (default 72, coerces to {60..88}). Neue `@JvmStatic`-Companion-Funktionen `tapVisualWidthDp(buttonSizeDp)` + `tapVisualHeightDp(buttonSizeDp)`. Alle Sub-Funktionen (`drawTapChip`, `drawTapSendCircle`, `drawTapCancelCircle`) erhalten `scale: Float`-Parameter. Lokale Variable `scale` in `drawTapCancelCircle` umbenannt zu `glyphScale` (shadowing-Schutz). `TAP_SEND_DIAM_DP=132` bleibt als Referenz-/Skalierungs-Anker (nicht als angezeigte Größe).
+
+- `KlarvoOverlayService.kt`: `adjustLayoutForState()` + `lockHoldToCluster()` nutzen jetzt `FloatingBubbleView.tapVisualWidthDp/tapVisualHeightDp(bubbleView.recordingButtonSizeDp)` statt feste Konstanten (AC10). `reloadBubbleAppearance()` setzt `bubbleView.recordingButtonSizeDp = config.recordingButtonSizeDp`.
+
+- `KlarvoApi.kt`: `Config.recordingButtonSizeDp: Int = 72`; `readConfig()` liest + coerces aus JSON.
+
+- Config-Round-Trip: `config/mod.rs` (Rust-Feld + Default), `lib.rs` (SettingsView), `commands/settings.rs` (Patch + merge + save + get), `types.ts` (AppSettings), `tauri-commands.ts` (Param + invoke + Fallback).
+
+- Settings-Control: `ShortcutsContent.tsx` 3-Wege-Segmented-Control (60dp/72dp/88dp) im „Bubble Appearance"-Abschnitt. `SettingsPanel.tsx` vollständig verdrahtet (State, dirty tracking × 2, reset, save, deps, Prop-Weitergabe).
+
+- Tests: `tap_send_diam_is_at_least_120dp` ersetzt durch 4 semantisch korrekte AC2-Tests. BUILD SUCCESSFUL (JVM-Tests grün, Theme-Drift grün, Rust 0 Errors).
+
 ### Debug Log
 
 (leer)
 
 ## File List
 
-- `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` — geändert (drawTapSurface, isInsideCircle, 2D touch zones, dockSide/recordingStartMs properties + paints + constants)
-- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — geändert (handleTap touchY, adjustLayoutForState TAP dims, lockHoldToCluster TAP dims, getDockSide, recordingStartMs, applyHarnessState)
-- `android/kotlin-test/com/klarvo/voice/TapSurfaceTouchZoneTest.kt` — neu (12 JVM-Tests für isInsideCircle / AC2 / AC4 / AC6)
+- `android/kotlin-src/com/klarvo/voice/FloatingBubbleView.kt` — geändert (drawTapSurface proportional scaling, recordingButtonSizeDp property, tapVisualWidthDp/tapVisualHeightDp companion fns, TAP_BUTTON_SIZE_{MIN,DEFAULT,MAX} constants)
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — geändert (adjustLayoutForState + lockHoldToCluster via tapVisualWidthDp/tapVisualHeightDp; reloadBubbleAppearance setzt recordingButtonSizeDp)
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — geändert (Config.recordingButtonSizeDp Feld + readConfig Parsing)
+- `android/kotlin-test/com/klarvo/voice/TapSurfaceTouchZoneTest.kt` — geändert (4 neue AC2-Re-Scope-Tests; tap_send_diam_is_at_least_120dp ersetzt)
+- `src-tauri/src/config/mod.rs` — geändert (recording_button_size_dp Feld + default-Funktion + 3× Struct-Init)
+- `src-tauri/src/lib.rs` — geändert (SettingsView.recording_button_size_dp Feld + 3× Struct-Init in Tests)
+- `src-tauri/src/commands/settings.rs` — geändert (SettingsPatch + Default-Impl + merge_settings + save_settings + get_settings)
+- `src/types.ts` — geändert (AppSettings.recordingButtonSizeDp)
+- `src/tauri-commands.ts` — geändert (saveSettings-Param + invoke + Fallback-Konstante)
+- `src/components/SettingsPanel.tsx` — geändert (State + dirty tracking + reset + save + deps + ShortcutsContent-Prop)
+- `src/components/settings/ShortcutsContent.tsx` — geändert (Props-Typ + Destrukturierung + 3-Wege-Segmented-Control)
+
+## Review Findings (code-review 2026-06-30, baseRef ed219f10..a3d0233)
+
+3 unabhängige Reviewer (Blind / Edge-Case / Acceptance-Auditor), Conductor-triagiert + selbst am Code/SOLL verifiziert.
+
+**Patch (zu fixen):**
+- [ ] [Review][Patch] AC6-Mirroring-Tests sind tautologisch — `inside(SEND_CX_LEFT,CY,SEND_CX_LEFT,CY)` (Punkt im eigenen Zentrum = immer drin) + `assertTrue(SEND_CX_LEFT==LEFT_CX)` (per Definition wahr). Die echte Mirroring-Logik (`getDockSide()` + `dockSide→sendCx/cancelCx`-Bindung in `drawTapSurface`) hat **null** Abdeckung trotz „AC6"-Header. [TapSurfaceTouchZoneTest.kt:127-152]
+- [ ] [Review][Patch] Cancel-Glyph + -Label nutzen `KlarvoTheme.Danger` (#EE6F63); SOLL ist `--k-danger-hi` (#F4897E, `.ztap.cancel{color:…}` kaskadiert auf `.ic`+`.lab`). KDoc sagt bereits „Danger-Hi tint" — nur der Body weicht ab. KlarvoTheme hat kein DangerHi-Token (Token-Edit verboten) → lokale Konstante wie `TAP_CANCEL_FILL`. [FloatingBubbleView.kt:356,390]
+
+**Deferred (Backlog — siehe docs/backlog.md):**
+- [x] [Review][Defer] Per-Frame-Allocations auf RECORDING-Draw-Pfad (BlurMaskFilter/LinearGradient/Path/RectF) — echter GC-Druck, aber positions-abhängiger Shader/Path macht sicheres Cachen nicht-trivial; transienter 15fps-Zustand. [FloatingBubbleView.kt:663,697,702,741,768]
+- [x] [Review][Defer] Cancel-Label 13sp vs Render 15px — SOLL-Abweichung; 15sp riskiert Clipping bei „Abbrechen" → Andis Visual-Gate-Residual. [FloatingBubbleView.kt:777]
+- [x] [Review][Defer] TAP-Fenster 340dp kann auf <340dp-Screens (sw320/Split-Screen/Foldable) die Breite überschreiten — kein Width-Clamp/Scale. [KlarvoOverlayService.kt adjustLayoutForState]
+- [x] [Review][Defer] Drag der RECORDING-TAP-Surface + Release → Edge-Snap nutzt idle-72dp-Breite → Off-Screen-x persistiert. [KlarvoOverlayService.kt edge-snap]
+- [x] [Review][Defer] AC6 oben/unten-Mirroring nicht implementiert — Render spezifiziert nur tapLeft/tapRight (render-unspezifiziert). [KlarvoOverlayService.kt getDockSide]
+
+**Dismissed (6):** Opaque-95%-Alpha (= SOLL rgba .95/.96, kein Bug) · Timer-Freeze-bei-Stille (widerlegt: `onAmplitude` feuert ~64ms unabhängig von Stille) · `.reccap`-Caption fehlt (außerhalb locked Scope) · Waveform 3dp×5 vs 4.5px×7 (AC5 mandatiert `drawClusterWaveform` unverändert) · `preclusterBubbleX`-Reset (vorhanden, Z.1087) · `holdDockActive`-im-Lock-Pfad (Service setzt false bei stop/cancel; 9-14-Territorium) · Send-Label-Weight 700 vs 600 (kein sauberes 600 ohne Font-Asset).
 
 ## Change Log
 
@@ -153,3 +234,7 @@ TAP-Surface ersetzt `drawRecordingCluster()` in FloatingBubbleView.kt. Zwei 132d
 |------|--------|--------|
 | 2026-06-26 | Story geschrieben (Phase-A Mobile-Redesign, B-Sprache) gegen ADR-0019 Amendment 2026-06-26 + Render `mockup-mobile-recording-states.html`. Build folgt in frischer Session. | claude-opus-4-8 (conductor) |
 | 2026-06-30 | Implementierung komplett: drawTapSurface + 2D Touch-Zonen + KlarvoOverlayService-Anpassungen + 12 JVM-Tests. 97 Tests grün, Theme-Drift-Gate grün. Status → review. | claude-sonnet-4-6 (dev) |
+| 2026-06-30 | Code-Review clean (1 Fix-Runde: Tautologie-Tests → echte `tapCircleCenters`-Abdeckung; Cancel-Farbton Danger→danger-hi). Emulator-Struktur-Smoke GRÜN (TAP-Fenster 340×222dp). | claude-opus-4-8 (conductor) |
+| 2026-06-30 | **GATE-4 REAL-DEVICE = FAILED (Andi).** Defekte: (1) Kreise **viel zu groß** — `TAP_SEND_DIAM_DP=132` kam 1:1 aus dem Browser-Render `.ztap{width:132px}`, nie im Geräte-Maßstab validiert (Wiederholung der 9-14-Wurzel). (2) Modi-Erwartung divergiert: neue UI aktuell nur tap/toggle/auto, HOLD noch alt — Andi erwartete andere Zuordnung. Andi offen für **neue UI in ALLEN Modi, sofern deutlich kleiner**. Status → in-progress. Größe + Modi-Scope = Design-Re-Entscheidung im Geräte-Maßstab (Phase A), kein Blind-Rebuild. | claude-opus-4-8 (conductor) |
+| 2026-06-30 | **Phase-A Re-Entscheidung (device-scale Mockup `mockup-tap-size-calibration.html` auf Andis Gerät approbiert).** Größe wird **nutzer-konfigurierbar** `recordingButtonSizeDp` ∈ {60,72,88}, **Default 72** (132/104 zu groß). Surface gilt für **alle Modi inkl. HOLD-Lock** (aktive HOLD-Geste = 9-14). Story re-spec't: AC1 (alle Modi), AC2 (konfigurierbar, proportional, vom device-scale Mockup), AC8 (Settings-Control, round-trip), AC9 (HOLD-Lock), AC10 (Fenster-Dims aus Größe). Anchors re-anchored auf device-scale. Bau folgt. | claude-opus-4-8 (conductor) |
+| 2026-06-30 | **Re-Scope implementiert (Tasks 7–10).** Proportionale Skalierung via `recordingButtonSizeDp` ∈ {60,72,88} (Default 72) in FloatingBubbleView, KlarvoOverlayService, KlarvoApi, Rust-Config, SettingsView, settings.rs, types.ts, tauri-commands.ts, SettingsPanel.tsx, ShortcutsContent.tsx. 4 neue AC2-Tests ersetzen veralteten `tap_send_diam_is_at_least_120dp`-Test. BUILD SUCCESSFUL, Theme-Drift grün, Rust 0 Errors. Status → review. GATE-4 visual/touch = Andis Real-Device-Batch-Gate. | claude-sonnet-4-6 (dev) |

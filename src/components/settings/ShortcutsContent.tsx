@@ -217,6 +217,9 @@ export interface ShortcutsContentProps {
   setLocalBubbleSizeDp: (v: number) => void;
   localBubbleEdgeSnap: boolean;
   setLocalBubbleEdgeSnap: (v: boolean) => void;
+  // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88})
+  localRecordingButtonSizeDp: number;
+  setLocalRecordingButtonSizeDp: (v: number) => void;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -236,6 +239,7 @@ export function ShortcutsContent({
   loadedSettings: _loadedSettings, onHotkeyChange, onHotkeyModeChange,
   localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
   localBubbleSizeDp, setLocalBubbleSizeDp, localBubbleEdgeSnap, setLocalBubbleEdgeSnap,
+  localRecordingButtonSizeDp, setLocalRecordingButtonSizeDp,
 }: ShortcutsContentProps) {
 
   const handleHotkeyChange = useCallback((h: string) => {
@@ -641,6 +645,31 @@ export function ShortcutsContent({
             >
               <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localBubbleEdgeSnap ? "translate-x-4" : ""].join(" ")} />
             </button>
+          </div>
+
+          {/* Recording button size segmented control (Story 9-15) */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className={LABEL_CLS}>Recording Button Size</span>
+              <span className="text-[11px] text-klarvo-muted">TAP-surface Send/Cancel circle diameter.</span>
+            </div>
+            <div className="flex rounded-md overflow-hidden border border-klarvo-border/40 flex-shrink-0">
+              {([60, 72, 88] as const).map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setLocalRecordingButtonSizeDp(size)}
+                  className={[
+                    "px-2.5 py-1 text-xs font-mono transition-colors duration-150 focus:outline-none",
+                    localRecordingButtonSizeDp === size
+                      ? "bg-klarvo-primary/30 text-klarvo-text"
+                      : "bg-transparent text-klarvo-muted hover:bg-klarvo-elevated",
+                  ].join(" ")}
+                  aria-pressed={localRecordingButtonSizeDp === size}
+                >
+                  {size}dp
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         </>

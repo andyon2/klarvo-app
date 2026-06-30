@@ -163,6 +163,8 @@ pub struct SettingsView {
     pub bubble_size_dp: i32,
     /// Whether the Android bubble edge-snaps on drag release. Default: true.
     pub bubble_edge_snap: bool,
+    /// Android recording TAP-surface button diameter in dp (∈ {60,72,88}, default 72).
+    pub recording_button_size_dp: i32,
     /// GGML model variant for offline STT (e.g. `"base"`, `"tiny-q5_1"`).
     pub local_whisper_model: String,
     /// Whether GPU acceleration (CUDA) is enabled for local whisper.
@@ -1324,6 +1326,7 @@ mod tests {
             bubble_opacity: 0.85,
             bubble_size_dp: 0,
             bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1394,6 +1397,7 @@ mod tests {
             bubble_opacity: 0.85,
             bubble_size_dp: 0,
             bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1458,6 +1462,7 @@ mod tests {
             bubble_opacity: 0.85,
             bubble_size_dp: 0,
             bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,

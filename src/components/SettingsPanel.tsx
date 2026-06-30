@@ -160,6 +160,7 @@ export function SettingsPanel({
   // Story 9.3: manual bubble size (0 = Auto) and edge-snap toggle.
   const [localBubbleSizeDp, setLocalBubbleSizeDp] = useState(loadedSettings?.bubbleSizeDp ?? 0);
   const [localBubbleEdgeSnap, setLocalBubbleEdgeSnap] = useState(loadedSettings?.bubbleEdgeSnap ?? true);
+  const [localRecordingButtonSizeDp, setLocalRecordingButtonSizeDp] = useState(loadedSettings?.recordingButtonSizeDp ?? 72);
   const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "small");
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [localInsertAndSendSlot1, setLocalInsertAndSendSlot1] = useState(loadedSettings?.insertAndSendSlot1 ?? false);
@@ -306,6 +307,7 @@ export function SettingsPanel({
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
       setLocalBubbleSizeDp(loadedSettings.bubbleSizeDp ?? 0);
       setLocalBubbleEdgeSnap(loadedSettings.bubbleEdgeSnap ?? true);
+      setLocalRecordingButtonSizeDp(loadedSettings.recordingButtonSizeDp ?? 72);
       setLocalWhisperModel(loadedSettings.localWhisperModel ?? "small");
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
       setLocalInsertAndSendSlot1(loadedSettings.insertAndSendSlot1 ?? false);
@@ -383,6 +385,7 @@ export function SettingsPanel({
       localBubbleOpacity !== (loadedSettings.bubbleOpacity ?? 0.85) ||
       localBubbleSizeDp !== (loadedSettings.bubbleSizeDp ?? 0) ||
       localBubbleEdgeSnap !== (loadedSettings.bubbleEdgeSnap ?? true) ||
+      localRecordingButtonSizeDp !== (loadedSettings.recordingButtonSizeDp ?? 72) ||
       localWhisperModel !== (loadedSettings.localWhisperModel ?? "small") ||
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
       localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
@@ -420,7 +423,8 @@ export function SettingsPanel({
     || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily
     || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize
     || (loadedSettings?.bubbleSizeDp ?? 0) !== localBubbleSizeDp
-    || (loadedSettings?.bubbleEdgeSnap ?? true) !== localBubbleEdgeSnap;
+    || (loadedSettings?.bubbleEdgeSnap ?? true) !== localBubbleEdgeSnap
+    || (loadedSettings?.recordingButtonSizeDp ?? 72) !== localRecordingButtonSizeDp;
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -435,7 +439,7 @@ export function SettingsPanel({
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
     localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
-    localBubbleSizeDp, localBubbleEdgeSnap,
+    localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
   ]);
 
   // --- useCallback handlers ---
@@ -557,6 +561,7 @@ export function SettingsPanel({
         localPreviewFontFamily,
         localPreviewFontSize,
         localBubbleSizeDp, localBubbleEdgeSnap,
+        localRecordingButtonSizeDp,
       );
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
@@ -604,7 +609,7 @@ export function SettingsPanel({
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
     localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
-    localBubbleSizeDp, localBubbleEdgeSnap,
+    localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
     onSave,
   ]);
 
@@ -768,6 +773,8 @@ export function SettingsPanel({
                 setLocalBubbleSizeDp={setLocalBubbleSizeDp}
                 localBubbleEdgeSnap={localBubbleEdgeSnap}
                 setLocalBubbleEdgeSnap={setLocalBubbleEdgeSnap}
+                localRecordingButtonSizeDp={localRecordingButtonSizeDp}
+                setLocalRecordingButtonSizeDp={setLocalRecordingButtonSizeDp}
               />
             )}
             {activeCategory === "license" && (

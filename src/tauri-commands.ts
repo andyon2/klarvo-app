@@ -68,6 +68,7 @@ const MOCK_SETTINGS: AppSettings = {
   bubbleOpacity: 90,
   bubbleSizeDp: 0,
   bubbleEdgeSnap: true,
+  recordingButtonSizeDp: 72,
   localWhisperModel: "small",
   localWhisperGpu: false,
   insertAndSendSlot1: false,
@@ -312,6 +313,8 @@ export async function saveSettings(
   // Story 9.3 bubble size + snap controls.
   bubbleSizeDp?: number | null,
   bubbleEdgeSnap?: boolean | null,
+  // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88}, default 72).
+  recordingButtonSizeDp?: number | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -366,6 +369,7 @@ export async function saveSettings(
     previewFontSize: previewFontSize ?? null,
     bubbleSizeDp: bubbleSizeDp ?? null,
     bubbleEdgeSnap: bubbleEdgeSnap ?? null,
+    recordingButtonSizeDp: recordingButtonSizeDp ?? null,
   });
 }
 

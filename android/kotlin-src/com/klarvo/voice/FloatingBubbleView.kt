@@ -18,8 +18,9 @@ import android.view.animation.OvershootInterpolator
  *   RECORDING     -- depends on [holdDockActive]:
  *     holdDockActive=false: TAP surface (B-Sprache — ADR-0019 Amendment 2026-06-26):
  *                    Two large tappable circles (Send teal ➤ at dock side · Cancel dark+red ring ✕
- *                    on the opposite side) + a calm amber waveform chip above. Window expands to
- *                    320×202dp (visual). Dock side tracked in [dockSide] ("left"/"right").
+ *                    on the opposite side) + a calm amber waveform chip above. Window size is
+ *                    computed from [recordingButtonSizeDp] (default 72dp, ∈ {60,72,88}).
+ *                    Dock side tracked in [dockSide] ("left"/"right").
  *     holdDockActive=true: HOLD dock (ADR-0019 §4′-Amendment #4):
  *                    Holdstrip (slidehint "‹" + "ziehen zum Abbrechen" + amber waveform) to the
  *                    left, heldbub (teal squircle + amber ring + finger indicator) to the right,
@@ -129,23 +130,59 @@ class FloatingBubbleView(context: Context) : View(context) {
      */
     var recordingStartMs: Long = 0L
 
+    /**
+     * Diameter of the Send/Cancel circles on the TAP surface in dp.
+     * User-configurable: ∈ {60, 72, 88}, default 72. Read from config.json key
+     * "recordingButtonSizeDp" and applied via KlarvoOverlayService.reloadBubbleAppearance().
+     * All TAP-surface layout dimensions (chip, gap, glyphs, labels) scale proportionally.
+     * Also drives the window size via adjustLayoutForState (AC10).
+     */
+    var recordingButtonSizeDp: Int = TAP_BUTTON_SIZE_DEFAULT
+        set(value) {
+            field = value.coerceIn(TAP_BUTTON_SIZE_MIN, TAP_BUTTON_SIZE_MAX)
+            invalidate()
+        }
+
     /** Current bubble size in dp. Changed via setBubbleSize(). */
     private var bubbleSizeDp: Int = 56
 
     companion object {
-        // ---- TAP surface dimensions (B-Sprache — Story 9-15, ADR-0019 Amendment 2026-06-26) ----
-        // Replaces the old Klein-Cluster for non-HOLD RECORDING state.
-        // Layout: [Chip 54dp high] [16dp gap] [Circles 132dp] — stacked vertically.
-        // Horizontal: [Circle 132dp] [56dp gap] [Circle 132dp] = 320dp visual width.
-        // From .ztap CSS in mockup-mobile-recording-states.html (Frame tapRight/tapLeft).
-        const val TAP_SEND_DIAM_DP   = 132   // .ztap { width:132px; height:132px }
-        const val TAP_INNER_GAP_DP   = 56    // horizontal gap between the two circles
-        const val TAP_CHIP_H_DP      = 54    // .statuschip: padding:11dp + wave:32dp + padding:11dp
-        const val TAP_CHIP_GAP_DP    = 16    // gap between chip bottom and circles top
-        const val TAP_SHADOW_PAD_DP  = 10    // shadow/clip margin around visual content
-        // Total visual W: 132+56+132 = 320dp. Total visual H: 54+16+132 = 202dp.
-        const val TAP_VISUAL_W_DP    = 320
-        const val TAP_VISUAL_H_DP    = 202
+        // ---- TAP surface reference dimensions (B-Sprache — Story 9-15, ADR-0019 Amendment 2026-06-26) ----
+        // These constants define the reference layout at the ORIGINAL 132dp circle size (from the
+        // browser-px render .ztap{width:132px}) and are used ONLY as proportional scaling anchors.
+        // The ACTUAL rendered size is [recordingButtonSizeDp] (default 72dp, ∈ {60,72,88}).
+        // All TAP-surface layout values scale as: actual = reference × (recordingButtonSizeDp / 132f).
+        const val TAP_SEND_DIAM_DP   = 132   // reference circle diameter (scaling anchor; NOT the displayed size)
+        const val TAP_INNER_GAP_DP   = 56    // horizontal gap at reference size
+        const val TAP_CHIP_H_DP      = 54    // .statuschip at reference size
+        const val TAP_CHIP_GAP_DP    = 16    // gap between chip bottom and circles top at reference size
+        const val TAP_SHADOW_PAD_DP  = 10    // shadow/clip margin (fixed, not scaled)
+        // Reference visual dimensions (used by tapVisualWidthDp / tapVisualHeightDp for proportional scaling).
+        const val TAP_VISUAL_W_DP    = 320   // 132+56+132 at reference
+        const val TAP_VISUAL_H_DP    = 202   // 54+16+132 at reference
+
+        // ---- User-configurable button size constants (AC2/AC8 — Story 9-15 Re-Scope 2026-06-30) ----
+        const val TAP_BUTTON_SIZE_MIN     = 60   // minimum allowed recordingButtonSizeDp
+        const val TAP_BUTTON_SIZE_DEFAULT = 72   // default recordingButtonSizeDp (device-scale approved)
+        const val TAP_BUTTON_SIZE_MAX     = 88   // maximum allowed recordingButtonSizeDp
+
+        /**
+         * Compute TAP surface visual width in dp for the given [buttonSizeDp] (AC10).
+         * Scales proportionally from the 132dp reference: result = buttonSizeDp × 320/132.
+         * Does NOT include shadow padding (TAP_SHADOW_PAD_DP × 2 is added in adjustLayoutForState).
+         */
+        @JvmStatic
+        fun tapVisualWidthDp(buttonSizeDp: Int): Int =
+            (buttonSizeDp * TAP_VISUAL_W_DP.toFloat() / TAP_SEND_DIAM_DP.toFloat()).toInt()
+
+        /**
+         * Compute TAP surface visual height in dp for the given [buttonSizeDp] (AC10).
+         * Scales proportionally from the 132dp reference: result = buttonSizeDp × 202/132.
+         * Does NOT include shadow padding (TAP_SHADOW_PAD_DP × 2 is added in adjustLayoutForState).
+         */
+        @JvmStatic
+        fun tapVisualHeightDp(buttonSizeDp: Int): Int =
+            (buttonSizeDp * TAP_VISUAL_H_DP.toFloat() / TAP_SEND_DIAM_DP.toFloat()).toInt()
 
         // Non-KlarvoTheme colors for the TAP surface (mockup-specific alpha blends not in canon CSS).
         // These are NOT generated and NOT diffed by the drift gate — local Canvas constants only.
@@ -597,14 +634,16 @@ class FloatingBubbleView(context: Context) : View(context) {
     // =========================================================================
 
     private fun drawTapSurface(canvas: Canvas) {
-        val dp  = resources.displayMetrics.density
-        val spd = resources.displayMetrics.scaledDensity
-        val w   = width.toFloat()
+        val dp    = resources.displayMetrics.density
+        val spd   = resources.displayMetrics.scaledDensity
+        val w     = width.toFloat()
+        // Proportional scale factor relative to the 132dp reference size (AC2/AC10).
+        val scale = recordingButtonSizeDp / TAP_SEND_DIAM_DP.toFloat()
 
         val shadowPadPx = TAP_SHADOW_PAD_DP * dp
-        val radPx       = TAP_SEND_DIAM_DP * dp / 2f
-        val chipH       = TAP_CHIP_H_DP * dp
-        val chipGap     = TAP_CHIP_GAP_DP * dp
+        val radPx       = recordingButtonSizeDp * dp / 2f   // actual circle radius (AC2)
+        val chipH       = TAP_CHIP_H_DP   * scale * dp      // chip scales with button size
+        val chipGap     = TAP_CHIP_GAP_DP * scale * dp      // gap scales with button size
 
         // Circles vertical center: below chip area + gap
         val circlesCy = shadowPadPx + chipH + chipGap + radPx
@@ -621,27 +660,28 @@ class FloatingBubbleView(context: Context) : View(context) {
 
         // --- 1. Waveform chip (amber wave + timer, above the circles) ---
         val chipCy = shadowPadPx + chipH / 2f
-        drawTapChip(canvas, w / 2f, chipCy, dp, spd)
+        drawTapChip(canvas, w / 2f, chipCy, dp, spd, scale)
 
         // --- 2. Cancel circle (drawn first so Send renders on top if they overlap) ---
-        drawTapCancelCircle(canvas, cancelCx, circlesCy, radPx, dp, spd)
+        drawTapCancelCircle(canvas, cancelCx, circlesCy, radPx, dp, spd, scale)
 
         // --- 3. Send circle ---
-        drawTapSendCircle(canvas, sendCx, circlesCy, radPx, dp, spd)
+        drawTapSendCircle(canvas, sendCx, circlesCy, radPx, dp, spd, scale)
     }
 
     /**
      * Draws the waveform chip centered at (cx, cy).
      * Layout: [amber wave bars] [9dp gap] [mm:ss timer] — inside a dark rounded chip.
      * Matches .statuschip CSS: padding 11dp×16dp, border-radius 18dp, rgba(18,20,22,.96) fill.
+     * [scale] = recordingButtonSizeDp / 132f — all layout dims scale proportionally (AC2).
      */
-    private fun drawTapChip(canvas: Canvas, cx: Float, cy: Float, dp: Float, spd: Float) {
-        val chipH    = TAP_CHIP_H_DP * dp
+    private fun drawTapChip(canvas: Canvas, cx: Float, cy: Float, dp: Float, spd: Float, scale: Float) {
+        val chipH    = TAP_CHIP_H_DP * scale * dp
         val halfH    = chipH / 2f
-        val padW     = 16f * dp
-        val padH     = 11f * dp        // top/bottom padding inside chip
-        val waveTimerGap = 9f * dp
-        val chipR    = 18f * dp
+        val padW     = 16f * scale * dp
+        val padH     = 11f * scale * dp   // top/bottom padding inside chip
+        val waveTimerGap = 9f * scale * dp
+        val chipR    = 18f * scale * dp
 
         // Wave zone width (same as cluster: 5 bars × 3dp + 4 gaps × 3dp = 27dp)
         val waveW = (WAVE_BAR_W_DP * WAVE_BAR_COUNT + WAVE_BAR_GAP_DP * (WAVE_BAR_COUNT - 1)).toFloat() * dp
@@ -652,7 +692,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         val mm = totalSecs / 60L
         val ss = totalSecs % 60L
         val timerStr = "%d:%02d".format(mm, ss)
-        tapTimerPaint.textSize = 13f * spd
+        tapTimerPaint.textSize = 13f * scale * spd
         val timerW = tapTimerPaint.measureText(timerStr)
 
         // Chip dimensions
@@ -696,8 +736,9 @@ class FloatingBubbleView(context: Context) : View(context) {
     /**
      * Draws the Send (teal) circle centered at (cx, cy) with radius r.
      * Content: ➤ glyph (paper-plane, OnTeal) + "Senden" label + "tippen" hint (stacked, centered).
+     * [scale] = recordingButtonSizeDp / 132f — all layout dims scale proportionally (AC2).
      */
-    private fun drawTapSendCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float) {
+    private fun drawTapSendCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float, scale: Float) {
         // Shadow
         shadowPaint.maskFilter = BlurMaskFilter(r * 0.22f, BlurMaskFilter.Blur.NORMAL)
         canvas.drawCircle(cx, cy + r * 0.08f, r, shadowPaint)
@@ -713,25 +754,25 @@ class FloatingBubbleView(context: Context) : View(context) {
         canvas.drawCircle(cx, cy, r, fillPaint)
         fillPaint.shader = null
 
-        // Content column (glyph 46dp + 7dp gap + label ~18dp + 7dp gap + hint ~13dp ≈ 91dp total)
-        // Centered: column top at cy - 45.5dp
-        val colHalf    = 45.5f * dp
+        // Content column scales proportionally with button size.
+        // At 132dp: colHalf=45.5dp, glyph=46dp, gap=7dp.
+        val colHalf    = 45.5f * scale * dp
         val colTop     = cy - colHalf
 
-        // ➤ Paper-plane glyph (46dp box, centered vertically in glyph zone 46dp)
-        val glyphSize  = 46f * dp
+        // ➤ Paper-plane glyph (scales with circle)
+        val glyphSize  = 46f * scale * dp
         val glyphCy    = colTop + glyphSize / 2f
         drawSendGlyph(canvas, cx, glyphCy, glyphSize)
 
-        // "Senden" label (15sp, weight 600, OnTeal)
-        tapSendLabelPaint.textSize = 15f * spd
-        val labelGap   = 7f * dp
+        // "Senden" label (scales with circle)
+        tapSendLabelPaint.textSize = 15f * scale * spd
+        val labelGap   = 7f * scale * dp
         val labelTopY  = colTop + glyphSize + labelGap
         val labelBaseline = labelTopY - tapSendLabelPaint.ascent()
         canvas.drawText("Senden", cx, labelBaseline, tapSendLabelPaint)
 
-        // "tippen" hint (11sp, monospace, OnTeal@70%)
-        tapSendHintPaint.textSize = 11f * spd
+        // "tippen" hint (scales with circle)
+        tapSendHintPaint.textSize = 11f * scale * spd
         val hintTopY  = labelBaseline + tapSendLabelPaint.descent() + labelGap
         val hintBaseline = hintTopY - tapSendHintPaint.ascent()
         canvas.drawText("tippen", cx, hintBaseline, tapSendHintPaint)
@@ -740,8 +781,9 @@ class FloatingBubbleView(context: Context) : View(context) {
     /**
      * Draws the Cancel (dark + red-ring) circle centered at (cx, cy) with radius r.
      * Content: ✗ cross glyph (Danger) + "Abbrechen" label + "tippen" hint.
+     * [scale] = recordingButtonSizeDp / 132f — all layout dims scale proportionally (AC2).
      */
-    private fun drawTapCancelCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float) {
+    private fun drawTapCancelCircle(canvas: Canvas, cx: Float, cy: Float, r: Float, dp: Float, spd: Float, scale: Float) {
         // Shadow
         shadowPaint.maskFilter = BlurMaskFilter(r * 0.22f, BlurMaskFilter.Blur.NORMAL)
         canvas.drawCircle(cx, cy + r * 0.08f, r, shadowPaint)
@@ -752,41 +794,41 @@ class FloatingBubbleView(context: Context) : View(context) {
         canvas.drawCircle(cx, cy, r, fillPaint)
         fillPaint.alpha = 0xFF
 
-        // Red ring border (2dp, rgba(238,111,99,.5))
+        // Red ring border (scales with button size)
         strokePaint.color       = TAP_CANCEL_BORDER
-        strokePaint.strokeWidth = 2f * dp
+        strokePaint.strokeWidth = 2f * scale * dp
         strokePaint.style       = Paint.Style.STROKE
-        canvas.drawCircle(cx, cy, r - 1f * dp, strokePaint)
+        canvas.drawCircle(cx, cy, r - 1f * scale * dp, strokePaint)
 
-        // Content column: ✗ glyph (42dp) + 7dp + "Abbrechen" (13sp) + 7dp + "tippen" (11sp)
-        // ≈ 42+7+16+7+13 = 85dp total; centered: colTop = cy - 42.5dp
-        val colHalf    = 42.5f * dp
+        // Content column scales proportionally with button size.
+        // At 132dp: colHalf=42.5dp, glyph=42dp, gap=7dp.
+        val colHalf    = 42.5f * scale * dp
         val colTop     = cy - colHalf
 
-        // ✗ cross glyph (~42dp on a 24×24 viewbox)
-        val glyphSize  = 42f * dp
+        // ✗ cross glyph (scales with circle; internal path uses 24×24 viewBox)
+        val glyphSize  = 42f * scale * dp
         val glyphCy    = colTop + glyphSize / 2f
-        val scale      = glyphSize / 24f
+        val glyphScale = glyphSize / 24f
         val left       = cx - glyphSize / 2f
         val top        = glyphCy - glyphSize / 2f
-        tapCancelGlyphPaint.strokeWidth = 2.8f * dp
+        tapCancelGlyphPaint.strokeWidth = 2.8f * scale * dp
         val crossPath = Path().apply {
-            moveTo(left + 18f * scale, top + 6f * scale)
-            lineTo(left + 6f  * scale, top + 18f * scale)
-            moveTo(left + 6f  * scale, top + 6f  * scale)
-            lineTo(left + 18f * scale, top + 18f * scale)
+            moveTo(left + 18f * glyphScale, top + 6f  * glyphScale)
+            lineTo(left + 6f  * glyphScale, top + 18f * glyphScale)
+            moveTo(left + 6f  * glyphScale, top + 6f  * glyphScale)
+            lineTo(left + 18f * glyphScale, top + 18f * glyphScale)
         }
         canvas.drawPath(crossPath, tapCancelGlyphPaint)
 
-        // "Abbrechen" label (13sp, weight 600, Danger tint)
-        tapCancelLabelPaint.textSize = 13f * spd
-        val labelGap  = 7f * dp
+        // "Abbrechen" label (scales with circle)
+        tapCancelLabelPaint.textSize = 13f * scale * spd
+        val labelGap  = 7f * scale * dp
         val labelTopY = colTop + glyphSize + labelGap
         val labelBaseline = labelTopY - tapCancelLabelPaint.ascent()
         canvas.drawText("Abbrechen", cx, labelBaseline, tapCancelLabelPaint)
 
-        // "tippen" hint (11sp, monospace, Dim)
-        tapCancelHintPaint.textSize = 11f * spd
+        // "tippen" hint (scales with circle)
+        tapCancelHintPaint.textSize = 11f * scale * spd
         val hintTopY     = labelBaseline + tapCancelLabelPaint.descent() + labelGap
         val hintBaseline = hintTopY - tapCancelHintPaint.ascent()
         canvas.drawText("tippen", cx, hintBaseline, tapCancelHintPaint)

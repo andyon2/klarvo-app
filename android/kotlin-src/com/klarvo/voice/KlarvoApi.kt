@@ -89,7 +89,11 @@ object KlarvoApi {
         // Energy gate threshold for VAD pre-filter. Nested under "advanced.silenceThreshold"
         // in config.json (camelCase, parity with Rust AdvancedSettings::silence_threshold).
         // Default 0.005 matches the Rust default_silence_threshold() in config/mod.rs:209.
-        val silenceThreshold: Float = 0.005f
+        val silenceThreshold: Float = 0.005f,
+        // Recording TAP-surface button diameter in dp (Story 9-15 Re-Scope 2026-06-30).
+        // User-configurable ∈ {60, 72, 88}. Default 72 (device-scale approved).
+        // Written by desktop Settings UI via save_settings; read here for Android rendering.
+        val recordingButtonSizeDp: Int = 72
     )
 
     /**
@@ -283,6 +287,10 @@ object KlarvoApi {
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
             val dictionaryTerms = loadDictionaryTerms(context)
+            // Story 9-15 Re-Scope: recording TAP-surface button size, ∈ {60,72,88}, default 72.
+            // Written by desktop save_settings → config.json as "recordingButtonSizeDp" (camelCase).
+            val recordingButtonSizeDp = json.optInt("recordingButtonSizeDp", 72)
+                .coerceIn(FloatingBubbleView.TAP_BUTTON_SIZE_MIN, FloatingBubbleView.TAP_BUTTON_SIZE_MAX)
 
             // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
             // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.
@@ -348,7 +356,8 @@ object KlarvoApi {
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
                 gatedSttProvider, customPrompt, dictionaryTerms,
                 licenseValidatedAt, effectiveFirstInstall,
-                silenceThreshold
+                silenceThreshold,
+                recordingButtonSizeDp
             )
         } catch (e: Exception) {
             null

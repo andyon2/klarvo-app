@@ -1067,9 +1067,10 @@ class KlarvoOverlayService : Service() {
                 bubbleParams.y = maxOf(0, (preclusterBubbleY ?: bubbleParams.y) - lockchipH)
             } else {
                 // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
-                // Visual: TAP_VISUAL_W_DP × TAP_VISUAL_H_DP + 2×TAP_SHADOW_PAD_DP on each side.
-                val tapW = ((FloatingBubbleView.TAP_VISUAL_W_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
-                val tapH = ((FloatingBubbleView.TAP_VISUAL_H_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+                // Visual dims scale with recordingButtonSizeDp (AC10 — no fixed 320×202dp).
+                val btnDp = bubbleView.recordingButtonSizeDp
+                val tapW = ((FloatingBubbleView.tapVisualWidthDp(btnDp)  + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+                val tapH = ((FloatingBubbleView.tapVisualHeightDp(btnDp) + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
                 // Dock-edge-anchor: shift X so the dock-side edge of the TAP window aligns with the
                 // idle bubble edge. For right dock: right edges align (same as old cluster).
                 // For left dock: maxOf(0,...) clamps to 0, left-anchoring the window. drawTapSurface()
@@ -1109,8 +1110,10 @@ class KlarvoOverlayService : Service() {
         val dp            = resources.displayMetrics.density
         val visualDp      = bubbleView.getBubbleSizeDp()
         val touchTargetPx = bubbleWindowPx(visualDp)
-        val tapW = ((FloatingBubbleView.TAP_VISUAL_W_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
-        val tapH = ((FloatingBubbleView.TAP_VISUAL_H_DP + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+        // Use recordingButtonSizeDp for window dims (AC10 — consistent with adjustLayoutForState).
+        val btnDp = bubbleView.recordingButtonSizeDp
+        val tapW = ((FloatingBubbleView.tapVisualWidthDp(btnDp)  + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
+        val tapH = ((FloatingBubbleView.tapVisualHeightDp(btnDp) + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
         // Restore Y from the saved pre-hold position.
         bubbleParams.y    = preclusterBubbleY ?: bubbleParams.y
         preclusterBubbleY = null
@@ -2006,6 +2009,8 @@ class KlarvoOverlayService : Service() {
         val config = KlarvoApi.readConfig(this) ?: return
         val newSizeDp = computeVisualSizeDp(config)
         bubbleView.setBubbleSize(newSizeDp)
+        // AC8 (Story 9-15 Re-Scope): apply user-configured recording button size.
+        bubbleView.recordingButtonSizeDp = config.recordingButtonSizeDp
         bubbleView.alpha = 1.0f  // idle fully opaque (canon); legacy bubbleOpacity no longer dims it
 
         // Keep window (visual + shadow padding) in sync with the (possibly changed) visual size

@@ -177,14 +177,42 @@ class TapSurfaceTouchZoneTest {
     }
 
     // ---------------------------------------------------------------------------
-    // AC2 — Target diameter ≥ 120dp: radius must be ≥ 60
+    // AC2 — Configurable button size {60,72,88}dp; default 72dp (Story 9-15 Re-Scope 2026-06-30)
     // ---------------------------------------------------------------------------
 
     @Test
-    fun tap_send_diam_is_at_least_120dp() {
+    fun recording_button_size_default_is_72dp() {
         assertTrue(
-            "TAP_SEND_DIAM_DP (${FloatingBubbleView.TAP_SEND_DIAM_DP}) must be ≥ 120dp (AC2 mobile-first target size)",
-            FloatingBubbleView.TAP_SEND_DIAM_DP >= 120
+            "TAP_BUTTON_SIZE_DEFAULT must be 72 (device-scale calibrated default — AC2 re-scope)",
+            FloatingBubbleView.TAP_BUTTON_SIZE_DEFAULT == 72
+        )
+    }
+
+    @Test
+    fun recording_button_size_min_is_at_least_48dp() {
+        assertTrue(
+            "TAP_BUTTON_SIZE_MIN (${FloatingBubbleView.TAP_BUTTON_SIZE_MIN}) must be ≥ 48dp (minimum comfortable tap target — AC2)",
+            FloatingBubbleView.TAP_BUTTON_SIZE_MIN >= 48
+        )
+    }
+
+    @Test
+    fun visual_width_at_default_is_less_than_reference_max() {
+        val visualW72 = FloatingBubbleView.tapVisualWidthDp(FloatingBubbleView.TAP_BUTTON_SIZE_DEFAULT)
+        assertTrue(
+            "tapVisualWidthDp(72)=$visualW72 must be < TAP_VISUAL_W_DP=${FloatingBubbleView.TAP_VISUAL_W_DP} (proportional downsizing — AC2 re-scope)",
+            visualW72 < FloatingBubbleView.TAP_VISUAL_W_DP
+        )
+    }
+
+    @Test
+    fun visual_width_scales_proportionally_with_button_size() {
+        val w60 = FloatingBubbleView.tapVisualWidthDp(60)
+        val w72 = FloatingBubbleView.tapVisualWidthDp(72)
+        val w88 = FloatingBubbleView.tapVisualWidthDp(88)
+        assertTrue(
+            "tapVisualWidthDp must increase monotonically with button size: $w60 < $w72 < $w88 (AC2 proportional scaling)",
+            w60 < w72 && w72 < w88
         )
     }
 

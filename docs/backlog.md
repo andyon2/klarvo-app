@@ -368,3 +368,27 @@ Master-Kopie `D:\apps\klarvo-webview2-runtime`). Offen:
   und ob Master-Kopie + `target\…\webview2-runtime` existieren — erst dann tiefer graben.
 
 GATE = echtes Gerät über Tage (Andi). Status: **Kern-Fix gebaut + maschinen-verifiziert; Distribution + Bump-Prozess offen.**
+
+---
+
+## Story 9-15 (Mobile TAP-Surface) — Code-Review-Defers (2026-06-30)
+
+Source: Conductor-Code-Review von Story 9-15 (baseRef `ed219f10..a3d0233`, 3 Reviewer). Findings im Story-File
+`9-15-mobile-tap-recording-surface-reskin.md` → „Review Findings". Story selbst geht trotzdem auf `done`
+(GATE-4 visuell = Andis Real-Device-Gate). Diese Punkte sind real, aber nicht close-blockierend:
+
+- **Per-Frame-Allocations auf dem RECORDING-Draw-Pfad** — `drawTapChip`/`drawTapSendCircle`/`drawTapCancelCircle`
+  allokieren je Frame `BlurMaskFilter`, `LinearGradient`, `Path`, `RectF` (FloatingBubbleView.kt:663/697/702/741/768),
+  obwohl ein Kommentar „pre-alloc to avoid GC on each amplitude-driven invalidate()" das Gegenteil behauptet.
+  ~15fps während Aufnahme. Fix nicht-trivial: Gradient/Path sind positions-abhängig (variieren mit Dock-Seite) →
+  naives Cachen würde Rendering-Bugs einführen; korrekter Fix = Cache + Invalidierung bei Geometrie-Wechsel.
+- **Cancel-Label 13sp vs Render-SOLL 15px** (`.ztap .lab{font-size:15px}` gilt Send+Cancel; Send nutzt 15sp korrekt).
+  Bewusst geschrumpft, damit „Abbrechen" passt. 15sp riskiert Clipping → **Andis Visual-Gate entscheidet**, ob die
+  SOLL-Größe passt oder der Kreis/das Layout angepasst werden muss.
+- **TAP-Fenster 340dp ohne Width-Clamp** — auf <340dp-Screens (sw320, Split-Screen, Foldable-Cover) überläuft das
+  Fenster + Off-Dock-Kreis die Bildschirmkante (teils untappbar). Sauberer Fix = Durchmesser+Gap auf `screenW` skalieren,
+  nicht nur clampen.
+- **Drag der RECORDING-TAP-Surface → Edge-Snap mit idle-Breite** — beim Loslassen snapt der Edge-Snap mit der idle-72dp-
+  Breite statt der 340dp-Fensterbreite → Surface landet großteils off-screen, schlechtes x wird via `savePosition` persistiert.
+- **AC6 oben/unten-Dock-Mirroring nicht implementiert** — `getDockSide()` löst nur links/rechts auf. Render spezifiziert
+  nur `tapLeft`/`tapRight` (kein oben/unten-Frame) → render-unspezifiziert; bei späterem oben/unten-Bedarf nachziehen.

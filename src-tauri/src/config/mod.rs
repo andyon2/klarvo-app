@@ -642,6 +642,12 @@ pub struct AppConfig {
     #[serde(default = "default_bubble_edge_snap")]
     pub bubble_edge_snap: bool,
 
+    /// Android recording TAP-surface button diameter in dp. Allowed values: 60, 72, 88.
+    /// Default 72 (device-scale calibrated — Story 9-15 Re-Scope 2026-06-30).
+    /// Only used on Android; ignored on desktop.
+    #[serde(default = "default_recording_button_size_dp")]
+    pub recording_button_size_dp: i32,
+
     /// Fine-grained advanced settings for power users.
     /// Defaults to `AdvancedSettings::default()` so existing config files
     /// without this field load correctly.
@@ -980,6 +986,10 @@ fn default_bubble_edge_snap() -> bool {
     true
 }
 
+fn default_recording_button_size_dp() -> i32 {
+    72
+}
+
 fn default_autostop_silence_secs() -> f32 {
     2.0
 }
@@ -1075,6 +1085,7 @@ impl Default for AppConfig {
             bubble_opacity: default_bubble_opacity(),
             bubble_size_dp: 0,
             bubble_edge_snap: default_bubble_edge_snap(),
+            recording_button_size_dp: default_recording_button_size_dp(),
             advanced: AdvancedSettings::default(),
             local_whisper_model: default_local_whisper_model(),
             local_whisper_gpu: default_local_whisper_gpu(),
@@ -2132,6 +2143,7 @@ mod tests {
             bubble_opacity: 0.85,
             bubble_size_dp: 0,
             bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "tiny-q5_1".to_string(),
             local_whisper_gpu: false,
             license_key: String::new(),
@@ -3396,6 +3408,7 @@ mod tests {
             bubble_opacity: 0.5,
             bubble_size_dp: 48,
             bubble_edge_snap: false,
+            recording_button_size_dp: 72,
 
             advanced: AdvancedSettings {
                 stt_prompt_de: "Custom DE prompt golden master.".to_string(),
