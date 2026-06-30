@@ -1,3 +1,67 @@
+# ✅ UPDATE 2026-06-29 (3rd session) — TRUE ROOT CAUSE FOUND: Windows "Text size" accessibility factor
+
+The "preview too small" complaint was NEVER border/DPI/font-face — those were minor sub-issues. The
+real cause, found by measurement + registry read:
+
+- **`HKCU\Software\Microsoft\Accessibility\TextScaleFactor = 123`** (Andi's Windows "Text size"
+  accessibility slider = 123%). `AppliedDPI = 120` (display scale 125%, single monitor — Andi confirmed).
+- **Chromium/WebView2 honors TextScaleFactor for all page text; GDI-drawn text does NOT.** So the
+  Settings "Live-Vorschau" card renders its font at `15 × 1.25 × 1.23 = 23px`, while the native GDI
+  float preview rendered `15 × 1.25 = 18px`. Ratio `18/23 = 0.78` — EXACTLY the measured native/settings
+  glyph ratio (0.76–0.79 in two screenshots). Case closed, arithmetic exact.
+- Before Epic 10 it was 1:1 because the OLD float preview was ALSO a webview (also honored the 123%).
+  The GDI rebuild dropped it.
+- **DECISION (Andi, 2026-06-29): "Native zieht nach"** — the native float preview should ALSO honor
+  TextScaleFactor (his deliberate accessibility choice should apply everywhere; bigger live-transcript
+  text is good). NOT make the settings card ignore it.
+- **FIX APPLIED (not yet committed):** `native_preview.rs` reads TextScaleFactor from the registry
+  (`read_text_scale_factor()`) and multiplies the **font height + line-height** by it (box/padding/
+  border stay at DPI only — mirrors Chromium scaling text not layout). New `text_scale` field on
+  `PreviewWindowState`. Compiles clean via win32 harness (Win32_System_Registry already enabled).
+- **EXPECTED after rebuild:** native font `15 × 1.25 × 1.23 ≈ 23px` = matches the Settings card.
+- **Still in place from earlier this session (both correct, keep):** font-face fix (Cascadia Code passes
+  through, not remapped to Consolas). Border/radius/height were measured EQUAL — never the bug.
+
+---
+
+# UPDATE 2026-06-29 (cont.) — border lead REFUTED, font-face root cause FOUND + fixed
+
+A fresh session measured the existing screenshot (`ist-after-fidelity-fix-still-wrong-2026-06-29.png`)
+pixel-by-pixel instead of eyeballing. Results:
+
+- **Border lead (#1 below) = REFUTED by measurement.** Settings-card border `(27,68,63)` vs native
+  border `(28,68,63)` — same pixel value. Corner radius (~12 px) and box height also match. The
+  border is NOT the bug.
+- **ROOT CAUSE = font face.** The "Monospace" preset's CSS stack is
+  `'Cascadia Code', 'Fira Code', 'Consolas', …` (first token **Cascadia Code**). `CascadiaCode.ttf`
+  IS installed on Andi's machine (`/mnt/c/Windows/Fonts/`), so the browser/Settings card renders
+  **Cascadia Code**. But `native_preview.rs::from_app_config` hard-remapped `"Cascadia Code" => "Consolas"`
+  (added in `bba8347`), so native rendered **Consolas** → the visible letterform mismatch in the two
+  box crops. The `bba8347` "fidelity" font change *introduced* this.
+- **FIX APPLIED (this session, not yet committed):** removed the `"Cascadia Code" => "Consolas"` match
+  arm in `from_app_config` so installed named fonts pass through to GDI `CreateFontW` unchanged. The
+  `"Inter"|"system-ui" => "Segoe UI"` arm stays (Inter is NOT installed → browser also falls to Segoe
+  UI, so that remap is correct). Compiles clean via the win32 harness (no signature change → no caller risk).
+- **CORROBORATED by two more measurements (same "still-wrong" screenshot, both boxes at "Groß"=15px):**
+  1. **Doubling diagnostic (Andi rebuild):** font_px temporarily set to 22/26/30 → the on-screen native
+     preview font visibly DOUBLED. Proves the config→native-render wiring works; size was never broken.
+     (Reverted to 11/13/15.)
+  2. **Glyph metric:** native vs settings glyph HEIGHT ≈ equal (16 vs 17px → em size / scale 1.25 correct),
+     but monospace ADVANCE WIDTH differed hard: native 9.9 px/char vs settings 13.4 px/char (~74%).
+     Same height + narrower width = a DIFFERENT TYPEFACE (narrow Consolas vs wide Cascadia Code), NOT a
+     size scale error. Exactly what the font-face fix addresses. Andi's "native looks too small" was the
+     dense narrow Consolas, not a true em shortfall.
+- **AWAITING:** Andi's single rebuild → confirm the floating preview's monospace now matches the
+  Settings → Appearance "Live-Vorschau" card in both height AND width (advance ≈ 13.4, face = Cascadia Code). If a residual remains, it is NOT border/radius/height
+  (measured equal) and NOT the default-font case — look next at line-height/padding or the
+  full cascade-resolution follow-up (skip-if-not-installed walk; see below).
+- **Follow-up (deferred, NOT this rebuild):** the remap table is still fragile for fonts that are the
+  user's first choice but absent on a given machine. The drift-proof fix walks the whole CSS cascade
+  and picks the first GDI-installed family (GetTextFaceW round-trip), mapping only generic keywords —
+  mirrors the browser exactly. Backlog candidate.
+
+---
+
 # Story 10-4 — HANDOVER to a fresh session (2026-06-29)
 
 **Status: UNSOLVED.** Andi stopped the session: the native live-preview overlay still does NOT

@@ -120,15 +120,19 @@ impl PreviewConfig {
                 s.find(',').map(|i| s[..i].trim().to_string()).unwrap_or_else(|| s.to_string())
             };
             let token = if token.is_empty() { "Inter".to_string() } else { token };
-            // Resolve the CSS family to the font GDI actually has, matching the
-            // browser's Windows fallback. The web app bundles only Geist, so the
-            // default stack 'Inter', system-ui, … renders as Segoe UI (system-ui)
-            // — NOT Inter — and the monospace stack resolves to Consolas. Without
-            // this, GDI substitutes an unrelated face for the unknown name "Inter"
-            // and the native preview drifts from the Settings SOLL.
+            // Resolve only the CSS *generic* keywords to their Windows equivalents,
+            // matching the browser's fallback. "Inter" is NOT installed on the
+            // target machine, so the default stack 'Inter', system-ui, … resolves
+            // to Segoe UI (system-ui) in the browser — mirror that here.
+            //
+            // Named fonts that ARE installed must pass through UNCHANGED: the
+            // monospace preset's first token "Cascadia Code" is installed
+            // (CascadiaCode.ttf), so the browser renders Cascadia Code — a prior
+            // hard-remap of "Cascadia Code" => "Consolas" forced a font mismatch
+            // against the Settings SOLL (measured, gate4-evidence/10-4). GDI's
+            // CreateFontW matches the installed family by name.
             match token.as_str() {
                 "Inter" | "system-ui" => "Segoe UI".to_string(),
-                "Cascadia Code" => "Consolas".to_string(),
                 _ => token,
             }
         };
@@ -167,6 +171,11 @@ struct PreviewWindowState {
     win_x: i32,
     win_y: i32,
     scale: f64,
+    // Windows "Text size" accessibility multiplier (1.0 = 100%). Applied to the font
+    // (and line-height) ONLY — like Chromium's text scaling — so the native preview's
+    // text matches the Settings webview card, which honors this factor. Box/padding/
+    // border stay at `scale` (DPI) only.
+    text_scale: f64,
     // Current pill position in logical pixels (for reposition on bar-moved)
     pill_x_logical: f64,
     pill_y_logical: f64,
@@ -404,6 +413,38 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
+/// Read the Windows "Text size" accessibility factor
+/// (`HKCU\Software\Microsoft\Accessibility\TextScaleFactor`, a REG_DWORD percent
+/// like 123 for 123%). Chromium/WebView2 honors this for ALL page text, so the
+/// Settings "Live-Vorschau" card renders its font at `font_px × this`. GDI-drawn
+/// text does NOT honor it — so the native preview must apply the same factor to its
+/// font to match the Settings preview 1:1 (Andi decision 2026-06-29; the floating
+/// preview is a faithful predictor of itself). Returns a multiplier (1.23 for 123%);
+/// defaults to 1.0 when the value is unset or unreadable. Windows clamps the slider
+/// to 100–225%.
+unsafe fn read_text_scale_factor() -> f64 {
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let subkey = to_wide("Software\\Microsoft\\Accessibility");
+    let value = to_wide("TextScaleFactor");
+    let mut data: u32 = 0;
+    let mut size = size_of::<u32>() as u32;
+    let res = RegGetValueW(
+        HKEY_CURRENT_USER,
+        PCWSTR(subkey.as_ptr()),
+        PCWSTR(value.as_ptr()),
+        RRF_RT_REG_DWORD,
+        None,
+        Some(&mut data as *mut u32 as *mut core::ffi::c_void),
+        Some(&mut size),
+    );
+    if res == ERROR_SUCCESS && data >= 100 {
+        (data as f64 / 100.0).min(2.25)
+    } else {
+        1.0
+    }
+}
+
 /// Word-wrap `text` into visual lines fitting within `max_w` physical px,
 /// measured with the font currently selected into `dc`. Each returned line is a
 /// UTF-16 slice WITHOUT a null terminator (ready for `DrawTextW` with an explicit
@@ -613,7 +654,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     // SOLL `leading-relaxed` = 1.625). GDI's own DrawTextW line spacing is the
     // font's natural ~1.2, which made the native preview look denser/smaller than
     // the Settings live-preview — so we lay lines out manually at this step.
-    let line_h = (s.config.font_px as f32 * sc * PREVIEW_LINE_HEIGHT)
+    let line_h = (s.config.font_px as f32 * sc * s.text_scale as f32 * PREVIEW_LINE_HEIGHT)
         .round()
         .max(1.0) as i32;
     let lines = wrap_text_lines(s.tmp_dc, &s.text_buffer, text_area_w);
@@ -1002,6 +1043,9 @@ fn preview_thread(
         let dpi = GetDeviceCaps(Some(screen_dc), LOGPIXELSX);
         ReleaseDC(None, screen_dc);
         let scale = dpi as f64 / 96.0;
+        // Windows "Text size" accessibility factor — honored by the Settings webview
+        // card but not by GDI text; apply it to the font so the two match (see helper).
+        let text_scale = read_text_scale_factor();
 
         // --- Work area ---
         let mut work_area = RECT::default();
@@ -1062,7 +1106,9 @@ fn preview_thread(
             v.push(0);
             v
         };
-        let font_h = (config.font_px as f64 * scale) as i32;
+        // Font height includes the accessibility text-scale (line-height matches it in
+        // render_frame) so the native text tracks the Settings webview card 1:1.
+        let font_h = (config.font_px as f64 * scale * text_scale) as i32;
         let font = create_font(PCWSTR(font_face_null.as_ptr()), font_h);
 
         // --- Register window class ---
@@ -1103,6 +1149,7 @@ fn preview_thread(
             win_x,
             win_y,
             scale,
+            text_scale,
             pill_x_logical,
             pill_y_logical,
             work_left,
