@@ -15,11 +15,14 @@ import android.view.animation.OvershootInterpolator
  *   IDLE          -- teal-gradient squircle + dark "K" (OnTeal) + faint teal glass ring
  *                    Canon: .ab-bubble.idle
  *   RECORDING     -- depends on [holdDockActive]:
- *     holdDockActive=false: TAP surface (B-Sprache — ADR-0019 Amendment 2026-06-26):
- *                    Two large tappable circles (Send teal ➤ at dock side · Cancel dark+red ring ✕
- *                    on the opposite side) + a calm amber waveform chip above. Window size is
- *                    computed from [recordingButtonSizeDp] (default 72dp, ∈ {52,60,72,84,96}).
- *                    Dock side tracked in [dockSide] ("left"/"right").
+ *     holdDockActive=false: compact cluster (Story 9-16 revert of the 9-15 TAP surface, per
+ *                    Andi's device feedback 2026-07-01 — ADR-0019 Amendment 2026-07-01 #2):
+ *                    a fixed horizontal row — ✗ Cancel (small, LEFT) · amber waveform (middle) ·
+ *                    ➤ Send (small, RIGHT) — small symbols WITHOUT text flanking the waveform.
+ *                    Fixed size (CLUSTER_VISUAL_W_DP × CLUSTER_VISUAL_H_DP); [recordingButtonSizeDp]
+ *                    no longer affects this surface — the size slider now scales only the HOLD
+ *                    Cancel target. Drawn by [drawRecordingCluster]; the 9-15 [drawTapSurface] is
+ *                    now dead code (kept, symmetric to how it once kept the cluster dead).
  *     holdDockActive=true: HOLD Cancel surface — vereinfacht (ADR-0019 Amendment 2026-07-01,
  *                    Story 9-14 re-scope): the anchor bubble is the IDLE bubble itself (same size
  *                    + on-screen position, [bubbleSizeDp] — no separate HOLD bubble size) + ONE
@@ -39,10 +42,10 @@ import android.view.animation.OvershootInterpolator
  *   DONE          -- success-green gradient squircle + dark check polyline (.ab-bubble.done),
  *                    then returns to IDLE (via doneFlashRunnable).
  *
- * Touch zones in RECORDING (TAP surface, Story 9-15):
- *   - Send circle   -> ➤ Send  (isTouchInConfirmZone) — circular hit, dock side
- *   - Cancel circle -> ✗ Cancel (isTouchInCancelZone) — circular hit, opposite side
- *   - Between/outside circles → no-op (chip area, backdrop)
+ * Touch zones in RECORDING (compact cluster, Story 9-16):
+ *   - Right X-band  -> ➤ Send  (isTouchInConfirmZone) — 1-D hit, right of the waveform
+ *   - Left  X-band  -> ✗ Cancel (isTouchInCancelZone) — 1-D hit, left of the waveform
+ *   - Between bands (waveform/dead area) → no-op
  *   When holdDockActive=true both zone helpers return false (release = send by default; release on
  *   the Abbrechen target = cancel — no tappable zones during a physical HOLD, hit-tracking only).
  *
@@ -557,18 +560,19 @@ class FloatingBubbleView(context: Context) : View(context) {
     private var holdCancelGradient: RadialGradient? = null
 
     // --- Touch zone boundaries (updated each onDraw) ---
-    // TAP surface (Story 9-15): circular zones — 2D hit test via hypot(dx,dy) <= tapZoneRadius.
-    // Legacy 1-D cluster fields below are still used by the now-dead drawRecordingCluster code
-    // path and kept to avoid removing unused-variable warnings in the retained dead code.
+    // LIVE (Story 9-16): compact-cluster 1-D X-bands — set by drawRecordingCluster, read by
+    // isTouchInConfirmZone/isTouchInCancelZone.
+    private var clusterSendZoneStart = 0f
+    private var clusterCancelZoneEnd = 0f
+
+    // DEAD (Story 9-15 TAP surface): 2D circular zones — set by the now-dead drawTapSurface, no
+    // longer read by any hit test. Kept to keep drawTapSurface compiling (symmetric to how the
+    // cluster fields were once kept for the then-dead drawRecordingCluster).
     private var tapSendCx     = 0f
     private var tapSendCy     = 0f
     private var tapCancelCx   = 0f
     private var tapCancelCy   = 0f
     private var tapZoneRadius = 0f
-
-    // Legacy cluster 1-D touch zone fields (kept — used by drawRecordingCluster dead code).
-    private var clusterSendZoneStart = 0f
-    private var clusterCancelZoneEnd = 0f
 
     // --- TAP surface pre-allocated paints (Story 9-15) ---
     // Pre-alloc to avoid GC on each amplitude-driven invalidate() during recording.
@@ -709,24 +713,20 @@ class FloatingBubbleView(context: Context) : View(context) {
     // --- Touch zone helpers ---
 
     /**
-     * True when the touch point ([touchX], [touchY]) lands inside the ➤ Send circle of the
-     * TAP surface (Story 9-15). Uses 2D circular hit detection via [isInsideCircle].
-     * Returns false when holdDockActive=true — no tappable zones during a physical HOLD.
+     * True when [touchX] hits the ➤ Send zone (RIGHT side of the compact cluster). 1-D X-band hit
+     * test — the cluster is a fixed horizontal row (Story 9-16 revert of the 9-15 TAP surface for
+     * non-HOLD modes). Returns false when holdDockActive=true — no tappable zone during a physical
+     * HOLD (release-to-commit handles that path).
      */
-    fun isTouchInConfirmZone(touchX: Float, touchY: Float): Boolean {
-        if (state != State.RECORDING || holdDockActive || tapZoneRadius <= 0f) return false
-        return isInsideCircle(touchX, touchY, tapSendCx, tapSendCy, tapZoneRadius)
-    }
+    fun isTouchInConfirmZone(touchX: Float): Boolean =
+        state == State.RECORDING && !holdDockActive && clusterSendZoneStart > 0f && touchX >= clusterSendZoneStart
 
     /**
-     * True when the touch point ([touchX], [touchY]) lands inside the ✗ Cancel circle of the
-     * TAP surface (Story 9-15). Uses 2D circular hit detection via [isInsideCircle].
-     * Returns false when holdDockActive=true — no tappable zones during a physical HOLD.
+     * True when [touchX] hits the ✗ Cancel zone (LEFT side of the compact cluster).
+     * Returns false when holdDockActive=true — no tappable ✗ zone during a physical HOLD.
      */
-    fun isTouchInCancelZone(touchX: Float, touchY: Float): Boolean {
-        if (state != State.RECORDING || holdDockActive || tapZoneRadius <= 0f) return false
-        return isInsideCircle(touchX, touchY, tapCancelCx, tapCancelCy, tapZoneRadius)
-    }
+    fun isTouchInCancelZone(touchX: Float): Boolean =
+        state == State.RECORDING && !holdDockActive && clusterCancelZoneEnd > 0f && touchX <= clusterCancelZoneEnd
 
     // --- onDraw ---
 
@@ -734,7 +734,7 @@ class FloatingBubbleView(context: Context) : View(context) {
         super.onDraw(canvas)
         when (state) {
             State.IDLE         -> drawIdleBubble(canvas)
-            State.RECORDING    -> if (holdDockActive) drawHoldTargets(canvas) else drawTapSurface(canvas)
+            State.RECORDING    -> if (holdDockActive) drawHoldTargets(canvas) else drawRecordingCluster(canvas)
             State.TRANSCRIBING -> drawProcBubble(canvas)
             State.DONE         -> drawDoneBubble(canvas)
         }
@@ -827,8 +827,10 @@ class FloatingBubbleView(context: Context) : View(context) {
     // =========================================================================
     // RECORDING: TAP surface (B-Sprache — Story 9-15, ADR-0019 Amendment 2026-06-26)
     // Two large tappable circles (Send teal ➤ + Cancel dark/red ✗) + waveform chip above.
-    // Window: TAP_VISUAL_W_DP × TAP_VISUAL_H_DP + 2×TAP_SHADOW_PAD_DP on each side.
-    // Dock side: dockSide="right" → Send on right, Cancel on left; mirrored for "left".
+    // SUPERSEDED (Story 9-16, Andi device feedback 2026-07-01): non-HOLD modes reverted to the
+    // compact [drawRecordingCluster]. drawTapSurface() is no longer called from onDraw() — kept as
+    // dead code (symmetric to how it once kept drawRecordingCluster reachable), so the flip is a
+    // one-line dispatch change if ever revisited.
     // =========================================================================
 
     private fun drawTapSurface(canvas: Canvas) {

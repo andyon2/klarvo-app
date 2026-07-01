@@ -1096,19 +1096,16 @@ class KlarvoOverlayService : Service() {
                 ).y
                 bubbleParams.y = (idleCenterY - bubbleCenterYPx).toInt()
             } else {
-                // TAP surface window (Story 9-15 B-Sprache): two large circles + chip.
-                // Visual dims scale with recordingButtonSizeDp (AC10 — no fixed 320×202dp).
-                val btnDp = bubbleView.recordingButtonSizeDp
-                val tapW = ((FloatingBubbleView.tapVisualWidthDp(btnDp)  + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
-                val tapH = ((FloatingBubbleView.tapVisualHeightDp(btnDp) + 2 * FloatingBubbleView.TAP_SHADOW_PAD_DP) * dp).toInt()
-                // Dock-edge-anchor: shift X so the dock-side edge of the TAP window aligns with the
-                // idle bubble edge. For right dock: right edges align (same as old cluster).
-                // For left dock: maxOf(0,...) clamps to 0, left-anchoring the window. drawTapSurface()
-                // uses dockSide to place the Send circle on the correct side regardless.
-                bubbleView.dockSide = getDockSide()
-                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - tapW)
-                bubbleParams.width  = tapW
-                bubbleParams.height = tapH
+                // Compact cluster window (Story 9-16 revert of the 9-15 TAP surface): fixed
+                // visual W/H + shadow pad on each side. The cluster is fixed-size — the size
+                // slider (recordingButtonSizeDp) no longer affects this surface, only HOLD.
+                val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays
+                // fixed. Clamp to 0 so the cluster stays on-screen when docked on the left side.
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
+                bubbleParams.width  = clusterW
+                bubbleParams.height = clusterH
             }
         } else {
             // Restore single-bubble window.
@@ -1372,20 +1369,20 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                // TAP surface (Story 9-15): two explicit circular zones.
+                // Compact cluster (Story 9-16 revert): two 1-D X-band zones flanking the waveform.
                 // pushToTalkActive: finger still held → release handles PTT confirm.
                 if (pushToTalkActive) return
                 when {
-                    bubbleView.isTouchInConfirmZone(touchX, touchY) -> {
-                        // ➤ Send circle
+                    bubbleView.isTouchInConfirmZone(touchX) -> {
+                        // ➤ Send (RIGHT)
                         if (tapMode == RecordingMode.AUTO) autoLoopActive = false
                         stopAndProcessRecording()
                     }
-                    bubbleView.isTouchInCancelZone(touchX, touchY) -> {
-                        // ✗ Cancel circle
+                    bubbleView.isTouchInCancelZone(touchX) -> {
+                        // ✗ Cancel (LEFT)
                         cancelRecording()
                     }
-                    // Chip area or backdrop between circles: no-op (AC4).
+                    // Waveform/dead area between the buttons: no-op.
                 }
             }
             RecordingState.TRANSCRIBING -> {

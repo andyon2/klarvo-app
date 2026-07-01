@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-06-30
+# last_updated: 2026-07-01
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -140,4 +140,5 @@ development_status:
   9-13-swap-send-cancel-cluster-order: done
   9-14-hold-mode-push-to-talk-cluster: done
   9-15-mobile-tap-recording-surface-reskin: done
-  epic-9-retrospective: optional
+  9-16-revert-non-hold-recording-to-compact-cluster: done
+  epic-9-retrospective: done

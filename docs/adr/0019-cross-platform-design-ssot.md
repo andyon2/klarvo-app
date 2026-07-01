@@ -191,3 +191,20 @@ keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (
 **Bindendes Render (SOLL):** `docs/design/overhaul/mockup-mobile-hold-simple.html` (Frames `sRest` Ruhe + `sHit` Treffer), fingerprint `7e2829a5625c224fb2227cff53cefa70`, gerendert @ 1080×2460 (Playwright), Andi-approved 2026-07-01. **Supersedet** `mockup-mobile-hold-B-refined.html` (`bRest`/`bHit`) für HOLD.
 
 **Unverändert:** TAP-Surface (9-15), Farb-Semantik (teal=Senden · amber=live · rot=Abbrechen), blickdichte Flächen, dock-adaptiv, kein `FLAG_NOT_TOUCHABLE`.
+
+---
+
+## Amendment 2026-07-01 #2 — non-HOLD-Aufnahme zurück zum Kompakt-Cluster (TAP-Surface verworfen, Andi-approved)
+
+**Kontext:** Nach der Geräte-Abnahme von 9-14 (HOLD) + 9-15 (TAP) meldete Andi: die **großen TAP-Ziele mit Text** („Senden"/„tippen"/„Abbrechen") für die **non-HOLD-Modi** gefallen ihm nicht — er will **zurück zur Vorgänger-UI: kleine Symbole ohne Text, direkt links und rechts der Waveform** (der `.ab-cluster`-Klein-Cluster, der vor 9-15 live war). HOLD (Amendment #1 oben) bleibt unverändert.
+
+**Entscheidung (supersedet die TAP-Surface aus dem 2026-06-26-Amendment — nur für non-HOLD):**
+- **non-HOLD-Aufnahme** (TAP-Modi: kurz tippen, AUTO etc.) = **Kompakt-Cluster** `[✗ Abbrechen · amber Waveform · ➤ Senden]` — kleine Symbole **ohne Text**, feste Größe (`CLUSTER_VISUAL_W_DP=150 × CLUSTER_VISUAL_H_DP=52`), 1-D-X-Band-Touch-Zonen. Reihenfolge = post-9-13 (Abbrechen LINKS, Senden RECHTS).
+- **Größen-Regler** (`recordingButtonSizeDp`): bleibt in den Settings, wirkt aber **nur noch auf den HOLD-Abbrechen-Button** — der Cluster ist fix (Andi-Entscheidung 2026-07-01).
+- **HOLD** (Amendment #1): unverändert.
+
+**Implementierung (reversibel, symmetrisch):** `drawRecordingCluster` (war seit 9-15 toter Code) wieder live via onDraw-Dispatch; `drawTapSurface` + 2D-Kreis-Touch-Zonen jetzt toter Code (behalten). JVM-Build + Unit-Tests grün; GATE-4 (Sicht/Touch am echten Gerät) = Andis Runde via `scripts/android-smoke.sh`.
+
+**Superseded (nur Android non-HOLD):** die TAP-Surface (`.ztap`-Große-Kreise mit Labels, `mockup-mobile-recording-states.html` Frames `tapRight`/`tapLeft`) — der Kompakt-Cluster ist wieder Canon für non-HOLD. **Unverändert:** HOLD-Surface, Farb-Semantik, Waveform (RMS, 9-12), dock-Verhalten, kein `FLAG_NOT_TOUCHABLE`.
+
+**Scope/Story:** **9-16** (non-HOLD-Cluster-Revert). Bindende Quelle = der historische `.ab-cluster` (git `e92f4f3`, pre-9-15) + dieses Amendment.

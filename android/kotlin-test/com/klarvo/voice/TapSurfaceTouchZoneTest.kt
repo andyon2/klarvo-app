@@ -5,11 +5,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * AC4 regression lock — Story 9-15: Mobile TAP-Aufnahme-Surface touch-zone correctness.
+ * Story 9-15 TAP-surface geometry guard.
  *
- * Guards the circular 2D hit-detection logic introduced in Story 9-15 (B-Sprache reskin).
- * Tests [FloatingBubbleView.isInsideCircle], the pure companion function extracted from
- * the View-bound zone helpers, so no Android context is required.
+ * NOTE (Story 9-16, Andi device feedback 2026-07-01): non-HOLD recording modes were reverted
+ * from this TAP surface to the compact cluster ([FloatingBubbleView.drawRecordingCluster]), so the
+ * circular 2D hit-detection guarded here ([isInsideCircle]/[tapCircleCenters]) now covers DEAD code
+ * for the non-HOLD path. The file is retained (still green) because:
+ *   (a) it documents the TAP geometry in case the dispatch is ever flipped back, and
+ *   (b) the button-size constant tests below (TAP_BUTTON_SIZE_*) still govern the LIVE HOLD Cancel
+ *       target — the size slider now scales only HOLD (9-16 decision).
+ * The live compact-cluster touch/layout wiring is View-bound (not unit-testable) and is verified on
+ * the real device (Andi's GATE-4), as the cluster originally was.
  *
  * Design:
  * - Tests the pure [isInsideCircle] math directly (independent predicate — not calling
