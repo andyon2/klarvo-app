@@ -72,6 +72,23 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                 fontFamily.contains("Consolas", ignoreCase = true) -> Typeface.MONOSPACE
             else -> Typeface.DEFAULT
         }
+
+        /**
+         * Code-review fix F4 (2026-07-01, pure/testable): decides which color the transcript
+         * text should use on a [State] change. When an appearance config has been applied
+         * ([appliedPreviewTextColor] non-null), it must win outright -- honoring the configured
+         * preview text color across state transitions (desktop parity: `PreviewPanel.tsx` uses
+         * one configured color for both states, no per-state dimming). Only when no appearance
+         * has been applied (preview off) does this fall back to the pre-11-2 stock
+         * Muted(RECORDING)/Dim(TRANSCRIBING) split.
+         */
+        fun resolveTranscriptColor(
+            appliedPreviewTextColor: Int?,
+            panelState: State,
+            recordingColor: Int,
+            transcribingColor: Int,
+        ): Int =
+            appliedPreviewTextColor ?: if (panelState == State.RECORDING) recordingColor else transcribingColor
     }
 
     // --- Public properties ---
@@ -160,6 +177,15 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     }
 
     /**
+     * Code-review fix F4 (2026-07-01): the configured preview text color, set by
+     * [applyAppearance]. `null` means no appearance config has been applied (preview off, or
+     * panel not yet configured) -- [updateTranscriptColor] falls back to the pre-11-2
+     * Muted/Dim behavior in that case. Stored so state transitions (RECORDING<->TRANSCRIBING)
+     * can honor the configured color instead of hard-resetting it.
+     */
+    private var appliedPreviewTextColor: Int? = null
+
+    /**
      * Applies the ported preview-appearance config fields (Story 11-2, AC-9/Task 5.2/5.3) to
      * the panel's background, border, transcript text color and font. Call at show-time with a
      * freshly-read config (mirrors the desktop 6.6 "separate-window reactive read" lesson --
@@ -175,6 +201,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             setStroke((config.previewBorderWidth * dp).toInt().coerceAtLeast(0), borderColor)
         }
         val textColor = parseRgba(config.previewTextColor, KlarvoTheme.Muted)
+        // Fix F4: remember the applied color so a later state change (panelState setter ->
+        // updateTranscriptColor) doesn't discard it back to the hardcoded Muted/Dim.
+        appliedPreviewTextColor = textColor
         transcriptTextView.setTextColor(textColor)
         transcriptTextView.typeface = typefaceForFontFamily(config.previewFontFamily)
         transcriptTextView.textSize = FONT_PX_SP[config.previewFontSize] ?: 11f
@@ -336,9 +365,18 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         canvas.drawRect(0f, 0f, width.toFloat(), dp, borderLinePaint)
     }
 
+    /**
+     * Code-review fix F4 (2026-07-01): previously hard-reset to Muted/Dim on every
+     * [panelState] change, discarding whatever [applyAppearance] configured -- so a configured
+     * preview text color reverted on the very first RECORDING->TRANSCRIBING transition. Desktop
+     * parity (`PreviewPanel.tsx`) uses a single configured `previewTextColor` for both states
+     * (no per-state dimming), so once an appearance has been applied we honor it unconditionally
+     * here too; the Muted/Dim split is only the pre-11-2 stock look for when no appearance
+     * config has been applied (preview off).
+     */
     private fun updateTranscriptColor() {
         transcriptTextView.setTextColor(
-            if (panelState == State.RECORDING) KlarvoTheme.Muted else KlarvoTheme.Dim
+            resolveTranscriptColor(appliedPreviewTextColor, panelState, KlarvoTheme.Muted, KlarvoTheme.Dim)
         )
     }
 

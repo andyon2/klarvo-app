@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
@@ -98,6 +99,18 @@ class KlarvoOverlayService : Service() {
 
         /** Live reference used by KlarvoAccessibilityService for paste. */
         var instance: KlarvoOverlayService? = null
+
+        /**
+         * Code-review fix F2 (2026-07-01, pure/testable): guards whether
+         * [ListeningPanelView.applyAppearance] may be called at all. `applyAppearance` restyles
+         * the listening panel's stock look (translucent bg, teal border, font size/family) --
+         * it must only run when the user actually opted into Live Preview (AC-4: byte-identical
+         * to pre-11-2 behavior when disabled; also keeps Auto/AutoStop visuals untouched, since
+         * those modes never enable preview per [RecordingMode.shouldInstallPreviewFlush]).
+         * Pure function -- no Android Context needed -- same testable-shape pattern as
+         * [RecordingMode.shouldInstallPreviewFlush].
+         */
+        fun shouldApplyPreviewAppearance(livePreviewEnabled: Boolean): Boolean = livePreviewEnabled
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -176,6 +189,16 @@ class KlarvoOverlayService : Service() {
     private enum class RecordingState { IDLE, RECORDING, TRANSCRIBING, DONE }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Story 11-2 code-review fix F3 (2026-07-01): serializes preview-chunk transcription so
+     * appended order always matches speech order. Previously each [flushPreviewDelta] spawned an
+     * independent `Thread`; variable Groq latency could let pause N+1's transcription land
+     * before pause N's, scrambling the preview. A single-thread executor makes flushes FIFO
+     * (one in-flight at a time) without blocking the caller (main thread just enqueues).
+     */
+    private val previewFlushExecutor = Executors.newSingleThreadExecutor()
+
     private lateinit var windowManager: WindowManager
     private lateinit var bubbleView: FloatingBubbleView
     private lateinit var bubbleParams: WindowManager.LayoutParams
@@ -581,6 +604,9 @@ class KlarvoOverlayService : Service() {
         }
         audioRecorder?.releaseImmediately()
         audioRecorder = null
+        // Story 11-2 fix F3: tear down the preview-flush executor so no queued/in-flight preview
+        // transcription outlives the service.
+        previewFlushExecutor.shutdownNow()
         // F3: release panel window + its Handler + ValueAnimators on teardown
         hideListeningPanel()
         super.onDestroy()
@@ -1569,6 +1595,11 @@ class KlarvoOverlayService : Service() {
      * `transcribeWithRetry` + hallucination-filter chain [processAudio] uses, and appends the
      * result to the panel. Recording is NOT stopped, nothing is pasted -- fail-soft on any
      * error (log + skip, mirrors desktop AC-8 in Story 5-1).
+     *
+     * Code-review fix F3 (2026-07-01): dispatched onto [previewFlushExecutor] (single-thread,
+     * FIFO) instead of an independent `Thread` per pause -- variable Groq latency could
+     * otherwise let pause N+1's transcription complete before pause N's, scrambling the
+     * appended order. One flush is in-flight at a time; the caller (main thread) never blocks.
      */
     private fun flushPreviewDelta() {
         if (currentState != RecordingState.RECORDING) return
@@ -1576,7 +1607,7 @@ class KlarvoOverlayService : Service() {
         val config = cachedConfig ?: return
         val wavBytes = recorder.deltaSnapshotWav() ?: return
 
-        Thread {
+        previewFlushExecutor.execute {
             try {
                 val text = transcribeWithRetry(
                     wavBytes,
@@ -1587,20 +1618,32 @@ class KlarvoOverlayService : Service() {
                     config.customPrompt,
                     null // preview chunks are display-only -- no pending-WAV backup needed
                 )
-                if (text.isBlank()) return@Thread
+                if (text.isBlank()) return@execute
                 if (GroqSttBridge.nativeIsHallucination(text)) {
                     KlarvoLogger.d(TAG, "[preview] chunk filtered as hallucination, skipping")
-                    return@Thread
+                    return@execute
                 }
                 handler.post { appendPreviewText(text) }
             } catch (e: Exception) {
                 KlarvoLogger.w(TAG, "[preview] flush failed, skipping (fail-soft)", e)
             }
-        }.start()
+        }
     }
 
-    /** Story 11-2 (AC-5): appends [text] to the accumulated preview and pushes it to the panel. */
+    /**
+     * Story 11-2 (AC-5): appends [text] to the accumulated preview and pushes it to the panel.
+     *
+     * Code-review fix F1 (2026-07-01): a preview STT chunk is dispatched (Groq round-trip) while
+     * still RECORDING, but can complete AFTER the user has already finished
+     * ([stopAndProcessRecording], which clears `previewAccumulatedText`) or cancelled
+     * ([cancelRecording], same reset) -- i.e. after the state has moved on to TRANSCRIBING/IDLE.
+     * Without this recheck, that late chunk would re-populate stale preview text onto the panel,
+     * which is still visible during TRANSCRIBING. Bail out and drop the chunk once we're no
+     * longer RECORDING; this is called on the main thread ([handler.post]), same thread that
+     * flips [currentState], so there is no race on the read itself.
+     */
     private fun appendPreviewText(text: String) {
+        if (currentState != RecordingState.RECORDING) return
         previewAccumulatedText = if (previewAccumulatedText.isBlank()) text else "$previewAccumulatedText $text"
         panelView?.rawTranscript = previewAccumulatedText
     }
@@ -2123,7 +2166,13 @@ class KlarvoOverlayService : Service() {
         panel.panelState = initialState
         // Story 11-2 (AC-9): apply the ported appearance config fresh at show-time (mirrors the
         // desktop 6.6 "separate-window reactive read" lesson -- never cache stale values).
-        (cachedConfig ?: KlarvoApi.readConfig(this))?.let { panel.applyAppearance(it) }
+        // Code-review fix F2 (2026-07-01): only restyle when Live Preview is actually enabled.
+        // `applyAppearance` isn't just cosmetics-when-off -- it also changes the panel's stock
+        // look (translucent bg, teal border, 13sp->11sp, monospace->sans) that Auto/AutoStop and
+        // the disabled-by-default (AC-4) case must keep byte-identical to pre-11-2 behavior.
+        (cachedConfig ?: KlarvoApi.readConfig(this))?.let { config ->
+            if (shouldApplyPreviewAppearance(config.livePreviewEnabled)) panel.applyAppearance(config)
+        }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,

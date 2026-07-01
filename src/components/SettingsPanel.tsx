@@ -829,6 +829,7 @@ export function SettingsPanel({
                 localPreviewFontSize={localPreviewFontSize}
                 setLocalPreviewFontSize={setLocalPreviewFontSize}
                 hidePanelForm={!isDesktop}
+                hideBgBlur={!isDesktop}
               />
             )}
             {activeCategory === "language" && (
