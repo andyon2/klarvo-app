@@ -23,22 +23,21 @@ import org.junit.Test
  * KlarvoOverlayService.handleTouch's ACTION_MOVE branch / FloatingBubbleView.drawHoldTargets):
  *   buttonSizeDp=72 (default), bubbleSizeDp=44 (max responsive idle bubble size)
  *   activeR = 72×1.25/2 = 45, restR = 72/2 = 36
- *   holdVisualWidthDp(72,44)  = 44/2 + 178 + 45 = 245
- *   holdVisualHeightDp(72,44) = 44/2 + 160 + 45 = 227
- *   windowW = 245 + 2×10(shadowPad) = 265, windowH = 227 + 2×10 = 247
- *   Right dock, grow up (default/normal case): bubble center=(233,215), Abbrechen center=(55,55)
- *   Left dock, grow up (mirrored): bubble center=(32,215),  Abbrechen center=(210,55)
+ *   holdVisualWidthDp(72,44)  = 44/2 + 165 + 45 = 232
+ *   holdVisualHeightDp(72,44) = 2×max(45, 26, 22) = 90   (level layout, 2026-07-01)
+ *   windowW = 232 + 2×10(shadowPad) = 252, windowH = 90 + 2×10 = 110
+ *   Right dock: bubble center=(220,55), Abbrechen center=(55,55)  — SAME Y (level)
+ *   Left dock (mirrored): bubble center=(32,55), Abbrechen center=(197,55)
  * Hit-test radius is always [REST_R] (Task 4.2 — growing to ACTIVE is feedback, not a hit-zone
  * change).
  *
- * Code-Review Finding B (2026-07-01): [FloatingBubbleView.holdBubbleCenter] /
- * [FloatingBubbleView.holdCancelCenter] gained a `growDirection` parameter ("up"/"down") — the
- * prior build's `coerceIn(0, maxHoldY)` on the WindowManager y-position silently clamped the
- * anchor bubble away from the idle thumb position whenever the window didn't fit above the bubble
- * (high dock), violating AC2. The fix flips the Abbrechen target's growth direction instead of
- * ever moving the bubble — see the `high_dock_*` tests below, which replicate
- * KlarvoOverlayService.adjustLayoutForState's `window.y = idleCenterY - bubbleCenterYPx`
- * construction to lock the bubble-never-clamped invariant, not just the local geometry.
+ * 2026-07-01 level re-tune (Andi: "das X auf gleicher Höhe wie die waveform und den rest"):
+ * HOLD_CANCEL_OFFSET_Y_DP is now 0, so the ✗ sits LEVEL with the bubble and the waveform chip
+ * (one horizontal row). The bubble is centred vertically in the HOLD window, so its screen-space
+ * center still equals the idle thumb Y (window.y = idleCenterY - bubbleCenterYPx) — the AC2
+ * "bubble never clamped away from the thumb" invariant holds by construction at every dock height,
+ * with no up/down grow-direction flip needed (the `growDirection` param is retained for signature
+ * stability but no longer affects the vertical layout).
  */
 class HoldTargetTouchZoneTest {
 
@@ -79,8 +78,8 @@ class HoldTargetTouchZoneTest {
     @Test
     fun right_dock_bubble_center_matches_derived_geometry() {
         val bubble = bubbleCenter("right")
-        assertEquals("Right-dock bubble center x must be 233 (AC2)", 233f, bubble.x, 0.01f)
-        assertEquals("Right-dock bubble center y must be 215 (AC2)", 215f, bubble.y, 0.01f)
+        assertEquals("Right-dock bubble center x must be 220 (AC2)", 220f, bubble.x, 0.01f)
+        assertEquals("Right-dock bubble center y must be 55 — window middle (AC2)", 55f, bubble.y, 0.01f)
     }
 
     @Test
@@ -90,6 +89,7 @@ class HoldTargetTouchZoneTest {
         assertTrue("Left-dock bubble x must differ from right-dock (AC2/AC7)", left.x != right.x)
         assertEquals("Bubble y must NOT change with dock side", right.y, left.y, 0.01f)
         assertEquals("Left-dock bubble x must be 32", 32f, left.x, 0.01f)
+        assertEquals("Left-dock bubble y must be 55 — window middle", 55f, left.y, 0.01f)
     }
 
     // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class HoldTargetTouchZoneTest {
     fun right_dock_cancel_center_matches_mockup_derived_geometry() {
         val cancel = cancelCenter("right")
         assertEquals("Right-dock Abbrechen center x must be 55 (AC7)", 55f, cancel.x, 0.01f)
-        assertEquals("Right-dock Abbrechen center y must be 55 (AC7)", 55f, cancel.y, 0.01f)
+        assertEquals("Right-dock Abbrechen center y must be 55 — level with bubble (AC7)", 55f, cancel.y, 0.01f)
     }
 
     @Test
@@ -116,17 +116,19 @@ class HoldTargetTouchZoneTest {
             "Abbrechen y must NOT change with dock side — vertical role is fixed (AC7)",
             right.y, left.y, 0.01f
         )
-        assertEquals("Left-dock Abbrechen x must be 210", 210f, left.x, 0.01f)
+        assertEquals("Left-dock Abbrechen x must be 197", 197f, left.x, 0.01f)
     }
 
     @Test
-    fun cancel_target_is_always_above_the_bubble_regardless_of_dock_side() {
+    fun cancel_target_is_level_with_the_bubble_regardless_of_dock_side() {
+        // 2026-07-01 re-tune (Andi): the ✗ sits LEVEL with the bubble and the waveform chip — one
+        // horizontal row, not above/below. This replaces the old "always above" vertical role.
         for (dockSide in listOf("left", "right")) {
             val bubble = bubbleCenter(dockSide)
             val cancel = cancelCenter(dockSide)
-            assertTrue(
-                "Abbrechen must sit above the bubble (smaller y) for dock=$dockSide (AC7 fixed vertical role)",
-                cancel.y < bubble.y
+            assertEquals(
+                "Abbrechen must sit at the same Y as the bubble for dock=$dockSide (level layout)",
+                bubble.y, cancel.y, 0.01f
             )
         }
     }
@@ -247,54 +249,52 @@ class HoldTargetTouchZoneTest {
 
     @Test
     fun hold_visual_dims_at_default_match_derived_geometry() {
-        assertEquals(245, FloatingBubbleView.holdVisualWidthDp(BUTTON_SIZE_DP, BUBBLE_SIZE_DP))
-        assertEquals(227, FloatingBubbleView.holdVisualHeightDp(BUTTON_SIZE_DP, BUBBLE_SIZE_DP))
+        assertEquals(232, FloatingBubbleView.holdVisualWidthDp(BUTTON_SIZE_DP, BUBBLE_SIZE_DP))
+        assertEquals(90, FloatingBubbleView.holdVisualHeightDp(BUTTON_SIZE_DP, BUBBLE_SIZE_DP))
     }
 
     // ---------------------------------------------------------------------------
-    // Code-Review Finding B (2026-07-01) — high-dock case: bubble docked near the very top of
-    // the screen, where the Abbrechen target no longer fits ABOVE it. growDirection flips to
-    // "down" instead of the bubble being clamped away from the idle thumb position (AC2).
-    // These tests replicate KlarvoOverlayService.adjustLayoutForState's Y-anchor construction
-    // (`window.y = idleCenterY - bubbleCenterYPx`) so the invariant is locked at the level it
-    // actually matters: the bubble's SCREEN-space center, not just its window-local offset.
+    // High-dock case (2026-07-01 level layout): the bubble is centred vertically in the HOLD
+    // window and the ✗ is level with it, so the whole cluster is centred on the idle thumb Y at
+    // every dock height — no up/down flip. These tests replicate KlarvoOverlayService's Y-anchor
+    // construction (`window.y = idleCenterY - bubbleCenterYPx`) to lock the invariant at the level
+    // it matters: the bubble's SCREEN-space center equals the thumb, not just its window offset.
     // ---------------------------------------------------------------------------
 
     @Test
-    fun high_dock_bubble_screen_center_equals_idle_center_when_grow_direction_flips_down() {
-        // idleCenterY=50 simulates a bubble docked close to the top of the screen — far too
-        // little room above it for the up-growing target (would need ~205dp: offsetY 160 +
-        // activeR 45), so production picks growDirection="down" (mirrors KlarvoOverlayService's
-        // chooser: idleCenterY - shadowPad - offsetY - activeR < 0).
+    fun high_dock_bubble_screen_center_equals_idle_center() {
+        // idleCenterY=50 simulates a bubble docked close to the top of the screen. The bubble is
+        // centred in the window (bubbleCenterYPx = windowH/2), so window.y goes slightly negative
+        // but the bubble's screen-space center still lands exactly on the thumb — never clamped.
         val idleCenterY = 50f
-        val bubbleLocalY = bubbleCenter("right", "down").y
+        val bubbleLocalY = bubbleCenter("right").y
         val windowY = idleCenterY - bubbleLocalY
         val bubbleScreenY = windowY + bubbleLocalY
         assertEquals(
             "Bubble's screen-space center must equal idleCenterY exactly — never clamped away " +
-                "from the thumb at any dock position (Finding B / AC2)",
+                "from the thumb at any dock position (AC2)",
             idleCenterY, bubbleScreenY, 0.01f
         )
     }
 
     @Test
-    fun high_dock_cancel_target_flips_below_the_bubble_and_stays_on_screen() {
-        val bubble = bubbleCenter("right", "down")
-        val cancel = cancelCenter("right", "down")
-        assertTrue(
-            "When grow direction flips to down, the Abbrechen target must sit BELOW the bubble " +
-                "(larger y) — the mirror image of the normal up-growing case (Finding B)",
-            cancel.y > bubble.y
+    fun high_dock_cancel_target_stays_level_with_bubble_and_on_screen() {
+        val bubble = bubbleCenter("right")
+        val cancel = cancelCenter("right")
+        assertEquals(
+            "The Abbrechen target must stay LEVEL with the bubble at a high dock (same Y) — the " +
+                "cluster is centred on the thumb, no vertical flip (level layout)",
+            bubble.y, cancel.y, 0.01f
         )
 
         // On-screen check: place the window the same way KlarvoOverlayService does for a bubble
-        // docked at idleCenterY=50 (near the screen top) and verify the target's top edge (its
-        // near side, closest to the screen's top boundary) doesn't go negative.
+        // docked at idleCenterY=50 (near the screen top) and verify the target's top edge stays
+        // on-screen (>= 0) even in this extreme.
         val idleCenterY = 50f
         val windowY = idleCenterY - bubble.y
         val cancelScreenY = windowY + cancel.y
         assertTrue(
-            "Abbrechen target's top edge must stay on-screen (>= 0) in the high-dock fallback",
+            "Abbrechen target's top edge must stay on-screen (>= 0) even at an extreme high dock",
             cancelScreenY - ACTIVE_R >= 0f
         )
     }

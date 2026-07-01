@@ -310,14 +310,21 @@ class FloatingBubbleView(context: Context) : View(context) {
         // .zone.rest{width:96px} -> .zone.active{width:120px}, 120/96 = 1.25).
         const val HOLD_CANCEL_ACTIVE_SCALE = 1.25f
 
-        // Bubble-center -> Abbrechen-center offset (mockup-derived, sRest/sHit center ≈(165,300)
-        // both frames — confirms center-fixed growth, only the radius changes). Magnitudes only:
-        // Δx mirrors sign by dock side (cancel always grows toward screen-center, i.e. AWAY from
-        // the dock edge), Δy is always upward regardless of dock side. Fixed dp, NOT scaled by
-        // recordingButtonSizeDp — no canon text addresses scaling the gap itself, and fixed-offset
-        // matches the codebase's existing convention (gaps were always fixed dp, never user-scaled).
-        const val HOLD_CANCEL_OFFSET_X_DP = 178f
-        const val HOLD_CANCEL_OFFSET_Y_DP = 160f
+        // Bubble-center -> Abbrechen-center offset. Δx mirrors sign by dock side (cancel always
+        // grows toward screen-center, AWAY from the dock edge); Δy mirrors holdGrowDirection.
+        //
+        // 2026-07-01 (Andi device feedback): the original canon offset (178/160dp) is a LARGE
+        // diagonal — when the bubble is docked high, growing up hit the app header and growing down
+        // flung the ✗ deep into chat content. Root cause = the big VERTICAL magnitude. Final tune
+        // (Andi: "das X einfach auf gleicher Höhe wie die waveform und den rest"): Δy = 0 — the ✗
+        // sits LEVEL with the bubble and the waveform chip, one horizontal row. A purely horizontal
+        // leftward drag cancels; nothing can reach the header or dive into content because the whole
+        // cluster shares the bubble's Y. With Δy=0 the up/down grow-direction is moot (dy is 0
+        // either way) and the window is vertically centred on the bubble (see holdBubbleCenter).
+        // Δx=165 seats the ✗ just LEFT of the waveform chip (~82dp wide, hugging the bubble) with a
+        // ~11dp rest gap — level and clearly separated, not overlapping it.
+        const val HOLD_CANCEL_OFFSET_X_DP = 165f
+        const val HOLD_CANCEL_OFFSET_Y_DP = 0f
 
         /**
          * Compute the HOLD window's visual width in dp for the given [buttonSizeDp] and the live
@@ -333,13 +340,17 @@ class FloatingBubbleView(context: Context) : View(context) {
         }
 
         /**
-         * Compute the HOLD window's visual height in dp — same derivation as [holdVisualWidthDp]
-         * but along the (always-upward) Y offset: bubbleR + [HOLD_CANCEL_OFFSET_Y_DP] + activeR.
+         * Compute the HOLD window's visual height in dp. With the ✗ level with the bubble
+         * (HOLD_CANCEL_OFFSET_Y_DP=0, 2026-07-01), the tallest element on the row is the Abbrechen
+         * target at ACTIVE size, centred on the bubble's Y — so the window must span its full
+         * diameter (2·activeR), which also comfortably contains the smaller bubble and chip. The
+         * bubble is centred vertically in this window (see [holdBubbleCenter]).
          */
         @JvmStatic
         fun holdVisualHeightDp(buttonSizeDp: Int, bubbleSizeDp: Int): Int {
             val activeRDp = buttonSizeDp * HOLD_CANCEL_ACTIVE_SCALE / 2f
-            return (bubbleSizeDp / 2f + HOLD_CANCEL_OFFSET_Y_DP + activeRDp).toInt()
+            val chipHalfDp = HOLD_CHIP_H_DP / 2f
+            return (2f * maxOf(activeRDp, chipHalfDp, bubbleSizeDp / 2f)).toInt()
         }
 
         /**
@@ -401,11 +412,11 @@ class FloatingBubbleView(context: Context) : View(context) {
             } else {
                 windowW - shadowPad - bubbleR
             }
-            val bubbleCy = if (growDirection == "down") {
-                shadowPad + bubbleR
-            } else {
-                windowH - shadowPad - bubbleR
-            }
+            // Bubble is centred vertically in the HOLD window (2026-07-01): the ✗ sits LEVEL with it
+            // (HOLD_CANCEL_OFFSET_Y_DP=0), so the window's height is the ✗'s full active diameter
+            // centred on the bubble — the bubble's own Y is the window middle, independent of
+            // growDirection (which no longer affects the level layout; [growDirection] is unused).
+            val bubbleCy = windowH / 2f
             return HoldPoint(bubbleCx, bubbleCy)
         }
 
@@ -1387,20 +1398,11 @@ class FloatingBubbleView(context: Context) : View(context) {
             drawKLetter(canvas, bubbleCenter.x, bubbleCenter.y, bubbleRPx, alpha = 0xFF)
         }
 
-        // --- 4. Live caption hugging the (origin) bubble, mirrors .reccap — text swaps to the
-        //        "Finger auf Abbrechen" variant only when the finger is actually on the target
-        //        (AC6, canon `sHit` text), independent of the broader holdDragging dead-zone.
-        //        Vertical side mirrors holdGrowDirection (Finding B) — when the target grows
-        //        upward the window's spare vertical budget is above the bubble (caption goes
-        //        there too); when it flips downward (high-dock fallback) the budget is below the
-        //        bubble instead, so the caption must follow or it would draw outside the window. ---
-        val captionY = if (holdGrowDirection == "down") {
-            bubbleCenter.y + bubbleRPx + 24f * dp
-        } else {
-            bubbleCenter.y - bubbleRPx - 24f * dp
-        }
-        drawHoldCaption(canvas, bubbleCenter.x, captionY, dockSide = dockSide,
-            hit = holdTargetHit == HoldTarget.CANCEL, dp = dp, spd = spd)
+        // --- 4. (removed) Live caption — canon amendment 2026-07-01 (Andi): no instructional text
+        //        in HOLD. The floating "Aufnahme · loslassen = senden" / "Finger auf Abbrechen …"
+        //        caption blurred against the busy app background and added nothing the visuals
+        //        (held bubble + waveform chip + grow-on-target ✗) don't already say. drawHoldCaption
+        //        is kept for reference but no longer drawn.
     }
 
     /**
@@ -1458,28 +1460,15 @@ class FloatingBubbleView(context: Context) : View(context) {
         // everywhere else.
         val diamDp = r / dp * 2f
         val iconSizeDp = if (active) diamDp * (40f / 120f) else diamDp * (30f / 96f)
-        val iconCy = cy - r * 0.18f
+        // Canon amendment 2026-07-01 (Andi): no instructional text in HOLD — the grow + solid-red
+        // fill of the target carries the "= abbrechen" meaning on its own ("die UI ist eindeutig
+        // genug"). Only the ✕ glyph remains, now CENTERED in the circle (it was shifted up by
+        // r*0.18 to leave room for the removed two-line label).
         val labelColor = if (active) 0xFFFFFFFF.toInt() else HOLD_DANGER_HI
         holdCancelGlyphPaint.color    = labelColor
         holdCancelGlyphPaint.textSize = iconSizeDp * dp
         val glyphMetrics = holdCancelGlyphPaint.fontMetrics
-        canvas.drawText("✕", cx, iconCy - (glyphMetrics.ascent + glyphMetrics.descent) / 2f, holdCancelGlyphPaint)
-
-        // Two-line label — same proportional-scaling fix (finding D), canon ratios .lab 10px/96px
-        // rest, 11px/120px active.
-        val labelStr = if (active) "loslassen\n= abbrechen" else "ziehen zum\nAbbrechen"
-        holdZoneLabelPaint.color    = labelColor
-        val labelSizeDp = if (active) diamDp * (11f / 120f) else diamDp * (10f / 96f)
-        holdZoneLabelPaint.textSize = labelSizeDp * spd
-        holdZoneLabelPaint.isFakeBoldText = active
-        val lines = labelStr.split("\n")
-        val lineMetrics = holdZoneLabelPaint.fontMetrics
-        val lineH = lineMetrics.descent - lineMetrics.ascent
-        val labelTopY = iconCy + iconSizeDp * dp / 2f + 7f * dp
-        for ((i, line) in lines.withIndex()) {
-            val baseline = labelTopY - lineMetrics.ascent + i * lineH
-            canvas.drawText(line, cx, baseline, holdZoneLabelPaint)
-        }
+        canvas.drawText("✕", cx, cy - (glyphMetrics.ascent + glyphMetrics.descent) / 2f, holdCancelGlyphPaint)
     }
 
     /**

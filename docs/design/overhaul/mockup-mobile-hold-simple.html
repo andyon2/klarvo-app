@@ -119,17 +119,20 @@
   </div>
   <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
   <svg class="paths" viewBox="0 0 393 895">
-    <line x1="343" y1="462" x2="165" y2="298" stroke="rgba(238,111,99,.4)" stroke-width="2.5" stroke-dasharray="2 9" stroke-linecap="round"/>
+    <line x1="343" y1="460" x2="178" y2="460" stroke="rgba(238,111,99,.4)" stroke-width="2.5" stroke-dasharray="2 9" stroke-linecap="round"/>
   </svg>
-  <!-- Abbrechen (resting) — der EINE bewusste Button -->
-  <div class="zone rest cancel" style="left:117px;top:252px;">
-    <span class="ic">✕</span><span class="lab">ziehen zum<br>Abbrechen</span>
+  <!-- Abbrechen (resting) — der EINE bewusste Button. Amendment 2026-07-01 (Andi): kein Label-Text
+       ("keinerlei Text als Anweisung · UI ist eindeutig genug") — nur das ✕-Icon.
+       Positions-Re-Tune 2026-07-01 (Andi "X auf gleicher Höhe wie waveform und rest"): LEVEL mit
+       der Bubble — Offset 165dp links, 0dp vertikal (räumt den Waveform-Chip). Center ≈(178,460). -->
+  <div class="zone rest cancel" style="left:130px;top:412px;">
+    <span class="ic">✕</span>
   </div>
   <div class="statuschip" style="right:150px;top:440px;">
     <span class="wave"><i style="height:11px"></i><i style="height:22px"></i><i style="height:30px"></i><i style="height:16px"></i><i style="height:24px"></i></span>
     <span class="tm">0:08</span>
   </div>
-  <div class="reccap" style="right:30px;top:398px;"><span class="dot"></span>Aufnahme · loslassen = senden</div>
+  <!-- reccap-Caption entfernt (Amendment 2026-07-01): kein Anweisungstext im HOLD. -->
   <div class="heldbub" style="right:26px;top:436px;"><div class="ring"></div>K<div class="finger"></div></div>
   <div class="tagline">B · <b>Ruhe</b> — gehalten · loslassen = senden · auf ✗ ziehen = abbrechen</div>
 </div>
@@ -143,17 +146,18 @@
   </div>
   <div class="statusbar"><span>9:41</span><span>5G ▮▮▮ 84%</span></div>
   <svg class="paths" viewBox="0 0 393 895">
-    <line x1="343" y1="460" x2="190" y2="360" stroke="rgba(238,111,99,.55)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>
+    <line x1="343" y1="460" x2="178" y2="460" stroke="rgba(238,111,99,.55)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>
   </svg>
-  <!-- Abbrechen ACTIVE: gewachsen + leuchtet + "loslassen = abbrechen" -->
-  <div class="zone active cancel" style="left:105px;top:240px;">
-    <span class="ic">✕</span><span class="lab">loslassen<br>= abbrechen</span>
+  <!-- Abbrechen ACTIVE: gewachsen + leuchtet (kein Text — Amendment 2026-07-01).
+       Re-Tune 2026-07-01: Center ≈(178,460), LEVEL mit der Bubble (Offset 165/0). -->
+  <div class="zone active cancel" style="left:118px;top:400px;">
+    <span class="ic">✕</span>
   </div>
-  <!-- gezogene Ghost-Bubble + Finger zwischen Dock und Ziel -->
-  <div class="ghost" style="right:130px;top:372px;"><div class="finger"></div>K</div>
+  <!-- gezogene Ghost-Bubble + Finger zwischen Dock und Ziel (level) -->
+  <div class="ghost" style="right:130px;top:438px;"><div class="finger"></div>K</div>
   <!-- Dock-Origin (faded, woher die Bubble kam) -->
   <div class="heldbub" style="right:26px;top:436px;opacity:.32;"><div class="ring"></div>K</div>
-  <div class="reccap" style="right:30px;top:398px;"><span class="dot"></span>Finger auf Abbrechen · loslassen löst aus</div>
+  <!-- reccap-Caption entfernt (Amendment 2026-07-01): kein Anweisungstext im HOLD. -->
   <div class="tagline">B · <b>Treffer</b> — Ziel wächst + leuchtet · Ghost folgt dem Finger · Origin faded</div>
 </div>
 

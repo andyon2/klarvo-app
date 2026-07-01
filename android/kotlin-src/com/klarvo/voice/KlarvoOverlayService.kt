@@ -1083,6 +1083,11 @@ class KlarvoOverlayService : Service() {
                 val activeRPx = btnDp * FloatingBubbleView.HOLD_CANCEL_ACTIVE_SCALE / 2f * dp
                 val targetSpanAbovePx = FloatingBubbleView.HOLD_CANCEL_OFFSET_Y_DP * dp + activeRPx +
                     FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
+                // Grow up if the target's span fits above the bubble, else flip down. With the small
+                // 48dp vertical offset (2026-07-01 re-tune) this span is short, so "up" fits for all
+                // realistic dock heights and "down" (rare, very-high dock) only seats the ✗ ~48dp
+                // below — neither branch reaches the header or dives into chat content anymore, which
+                // is what the earlier 0.15·screenH threshold was compensating for with a big offset.
                 bubbleView.holdGrowDirection = if (idleCenterY - targetSpanAbovePx >= 0f) "up" else "down"
 
                 val bubbleCenterYPx = FloatingBubbleView.holdBubbleCenter(
@@ -1211,8 +1216,16 @@ class KlarvoOverlayService : Service() {
                         (touchX - bubbleCenter.x).toDouble(), (touchY - bubbleCenter.y).toDouble()
                     )
                     bubbleView.holdDragging = distFromBubble > dragThresholdPx
-                    bubbleView.holdFingerX  = touchX
-                    bubbleView.holdFingerY  = touchY
+                    // Clamp the DRAWN ghost position inside the overlay window so it can never be
+                    // clipped away by the window edge (2026-07-01, Andi: "harte Kante unten — Bubble
+                    // verschwindet"). The HOLD window spends its vertical budget on the target side
+                    // of the bubble, leaving only ~shadowPad on the far side; dragging the finger
+                    // past that edge drew the ghost outside the surface → it vanished. The hit-test
+                    // above still uses the RAW touch coords, so target detection is unaffected — only
+                    // the ghost's paint position is pinned to the window so it stays visible.
+                    val ghostR = bubbleDiamPx * 0.92f / 2f
+                    bubbleView.holdFingerX  = touchX.coerceIn(ghostR, bubbleView.width.toFloat()  - ghostR)
+                    bubbleView.holdFingerY  = touchY.coerceIn(ghostR, bubbleView.height.toFloat() - ghostR)
                     return true
                 }
 
@@ -2071,6 +2084,14 @@ class KlarvoOverlayService : Service() {
             // Re-read config so bubble size/opacity changes from Settings take effect
             // without requiring a full app restart.
             reloadBubbleAppearance()
+            // Regression fix (9-14/9-15 push-to-talk rework): the keyboard is dismissed mid-RECORDING
+            // (line ~1484, non-AUTO modes), so applyKeyboardState(false) fires while state != IDLE and
+            // its hide gate (line 758) is correctly skipped. Nothing re-checked keyboard visibility once
+            // the state later returned to IDLE, stranding the idle bubble on screen with no keyboard.
+            // Re-apply the same gate here on every return to IDLE (covers the DONE→IDLE flash and cancel).
+            if (!alwaysVisible && !keyboardVisible) {
+                hideBubble()
+            }
         }
     }
 
