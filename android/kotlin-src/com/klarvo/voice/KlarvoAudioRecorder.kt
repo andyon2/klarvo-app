@@ -358,6 +358,12 @@ class KlarvoAudioRecorder(
                 if (silentFrames >= requiredSilentFrames) {
                     silenceCallbackFired = true
                     KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
+                    // Story 11-1 (spike): mark the exact pause-signal instant here (this IS
+                    // onSilenceDetected firing). Log-only -- the actual pause-to-text delta is
+                    // computed and logged in KlarvoOverlayService once the transcript returns
+                    // (tag "[benchmark-11-1]"); this line lets the raw fire instant be cross-
+                    // checked independently if the two ever need pairing on-device.
+                    KlarvoLogger.d(TAG, "[benchmark-11-1] onSilenceDetected fired at ${System.currentTimeMillis()}")
                     onSilenceDetected?.invoke()
                 }
             }

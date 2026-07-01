@@ -1,6 +1,6 @@
 # Story 11.1: Android Live-Preview — Machbarkeits-Benchmark (Spike)
 
-Status: ready-for-dev
+Status: in-progress
 
 > **Neues Epic 11 — Cross-Platform Live-Preview.** Die Live-Cleanup-Preview-Box ist auf **Windows
 > bereits voll implementiert und settings-abschaltbar** (Epics 5 + 6, beide `done`). Epic 11 bringt
@@ -73,21 +73,21 @@ Transkriptions-Änderung.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Messpunkte setzen (AC1)
-  - [ ] Zeitstempel beim Feuern von `onSilenceDetected` in `KlarvoAudioRecorder.kt` erfassen
-  - [ ] Zeitstempel bei Rückkehr des Segment-Transkripts im `KlarvoOverlayService`-Transkriptions-Pfad
+- [x] Task 1 — Messpunkte setzen (AC1)
+  - [x] Zeitstempel beim Feuern von `onSilenceDetected` in `KlarvoAudioRecorder.kt` erfassen
+  - [x] Zeitstempel bei Rückkehr des Segment-Transkripts im `KlarvoOverlayService`-Transkriptions-Pfad
         (um `GroqSttBridge.nativeTranscribe` / `transcribeWithRetry`) erfassen
-  - [ ] Delta in ms pro Zyklus via `KlarvoLogger` mit eindeutigem Tag loggen (am Gerät greppbar)
+  - [x] Delta in ms pro Zyklus via `KlarvoLogger` mit eindeutigem Tag loggen (am Gerät greppbar)
 - [ ] Task 2 — Auf echtem Gerät messen (AC2)
-  - [ ] Build via `scripts/android-smoke.sh` (debug-signiert + `adb install -r`)
+  - [x] Build via `scripts/android-smoke.sh` (debug-signiert + `adb install -r`)
   - [ ] Andi nimmt ~5+ Sprech-Pause-Zyklen unter normalen Bedingungen auf; Logs via `adb logcat` ziehen
   - [ ] min/median/max aus den Log-Werten bilden
 - [ ] Task 3 — Bewerten + entscheiden (AC3)
   - [ ] Verteilung gegen < 1 s bewerten
   - [ ] Go/No-Go schriftlich festhalten (Completion Notes + Backlog/Memory)
   - [ ] Bei rot: dominante Latenz-Quelle benennen + Alternativen skizzieren
-- [ ] Task 4 — Regression-frei verifizieren (AC4)
-  - [ ] Bestätigen, dass nur Logging hinzukam und der Produktions-Pfad unverändert ist
+- [x] Task 4 — Regression-frei verifizieren (AC4)
+  - [x] Bestätigen, dass nur Logging hinzukam und der Produktions-Pfad unverändert ist
 
 ## Dev Notes
 
@@ -140,8 +140,65 @@ nicht wenn eine Preview-Box existiert.
 
 ### Agent Model Used
 
+Claude Sonnet 5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `scripts/android-smoke.sh` run (2026-07-01): 24 JVM unit tests, 0 failures; fresh debug APK
+  built and installed on Andi's real device (`100.112.41.70:5555` via Tailscale pin), versionName
+  `0.5.0` verified on-device (AI-1 gate passed). Log output not reproduced here (see terminal
+  history), just the summary line: `SMOKE BUILD OK v0.5.0`.
 
 ### Completion Notes List
 
+- **Instrumentation implemented (Task 1, AC1) — done.** Two timestamp points + one delta log:
+  - `KlarvoAudioRecorder.kt` (`processVadFrame`, right before `onSilenceDetected?.invoke()`):
+    logs `[benchmark-11-1] onSilenceDetected fired at <epoch-ms>` — the pause-signal instant.
+  - `KlarvoOverlayService.kt`: `onSilenceTriggered()` captures `pauseSignalMs =
+    System.currentTimeMillis()` right at pause-signal receipt, threads it through
+    `stopAndProcessRecording(pauseSignalMs)` → `processAudio(wavBytes, pauseSignalMs)`. At the
+    exact point the raw transcript returns (`tStt`, right after the
+    `transcribeWithRetry`/`GroqSttBridge.nativeTranscribe` call, before the hallucination filter),
+    logs `[benchmark-11-1] pause-to-text=<delta>ms` when `pauseSignalMs != null`.
+  - Only fires for **pause-triggered** stops (AUTOSTOP/AUTO modes, i.e. real `onSilenceDetected`
+    events) — manual taps/releases (✓ button, push-to-talk release) pass `pauseSignalMs = null`
+    and are silently skipped, matching AC1's "Pause-Signal" definition exactly.
+  - Both `stopAndProcessRecording` and `processAudio` gained an **optional, default-`null`**
+    parameter — every pre-existing call site (manual stop paths, lines ~1292/1379 in
+    `KlarvoOverlayService.kt`) is unchanged and behaves byte-identically (AC4).
+- **Build + install (Task 2, first subtask) — done.** `scripts/android-smoke.sh` ran clean:
+  KlarvoTheme.kt drift-gate ok, 17 Kotlin sources + 6 fonts + 10 test sources synced, 24 JVM unit
+  tests green, fresh debug APK built (2s incremental) and installed on the real device via the
+  pinned Tailscale adb target; on-device `versionName` matched the build (AI-1 gate).
+- **Regression-free (Task 4, AC4) — verified.** `git diff --stat` on the two touched files shows
+  only the timestamp/log additions plus the two default-`null` optional parameters described
+  above — no VAD/chunking/silence-detection logic, no config keys, no UI, and no timing behavior
+  changed. All 24 pre-existing JVM unit tests still pass unchanged.
+- **BLOCKED on a human action — Task 2's real-recording subtask, Task 3 (Go/No-Go).** The
+  benchmark's whole point is a genuine on-device, real-network measurement of Andi speaking with
+  natural pauses (AC1/AC2 require "eine reale Aufnahme ... mit mindestens einer Sprech-Pause" /
+  "~5 Sprech-Pause-Zyklen über normale Nutzung"). I have no microphone/voice input into the real
+  device — this is explicitly designed in the story as Andi's action ("Andi nimmt ~5+
+  Sprech-Pause-Zyklen auf"), matching the project's Verifikations-Symmetrie rule (a test step
+  goes to Andi only when *he* can establish the test state himself, which he can here: open the
+  app, use an AUTOSTOP/AUTO-mode gesture, speak a few sentences with pauses between them). The
+  fresh APK with the instrumentation is already installed and ready on his device — nothing else
+  needs to be built first.
+  - **What Andi needs to do:** open Klarvo, use an AUTOSTOP or AUTO-mode gesture (the ones that
+    auto-stop/auto-loop on silence — check current bubble-gesture config in Settings if unsure
+    which gesture maps to which mode), speak ~5+ short sentences with a natural pause after each,
+    then pull the log: `adb -s 100.112.41.70:5555 logcat -d | grep "benchmark-11-1"`. Each cycle
+    yields one `pause-to-text=<ms>` line.
+  - **Task 3 (Go/No-Go) is written but not executable without that data** — min/median/max
+    against the Andi-decided <1s / ≥1s threshold, plus (if red) naming the dominant latency
+    source (chunk size vs. network RTT vs. Groq processing) is deferred to whoever runs the
+    device session next, using the log tag above. Story stays `in-progress` until that happens.
+
 ### File List
+
+- `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt` — pause-signal timestamp log at
+  `onSilenceDetected` fire point (instrumentation only).
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `pauseSignalMs` threaded through
+  `onSilenceTriggered` → `stopAndProcessRecording` → `processAudio`; pause-to-text delta logged
+  once the raw transcript returns (instrumentation only, default-null param preserves all other
+  call sites unchanged).

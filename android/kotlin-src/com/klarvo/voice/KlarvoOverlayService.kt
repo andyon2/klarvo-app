@@ -1504,6 +1504,12 @@ class KlarvoOverlayService : Service() {
     private fun onSilenceTriggered() {
         if (currentState != RecordingState.RECORDING) return
 
+        // Story 11-1 (spike): capture the pause-signal timestamp right here -- this is
+        // KlarvoAudioRecorder.onSilenceDetected reaching the service, i.e. the "pause"
+        // moment the live-preview benchmark measures from. Threaded through to
+        // processAudio() purely for logging; does not affect recording/STT behavior (AC4).
+        val pauseSignalMs = System.currentTimeMillis()
+
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
             else        -> tapMode
@@ -1511,12 +1517,12 @@ class KlarvoOverlayService : Service() {
 
         when (activeMode) {
             RecordingMode.AUTOSTOP -> {
-                stopAndProcessRecording()
+                stopAndProcessRecording(pauseSignalMs)
             }
             RecordingMode.AUTO -> {
                 // Stop current segment and process it, then start a new recording
                 // if the auto-loop is still active.
-                stopAndProcessRecording()
+                stopAndProcessRecording(pauseSignalMs)
                 // processAudio will call onProcessingComplete which handles the loop restart.
             }
             else -> { /* should not happen */ }
@@ -1567,8 +1573,14 @@ class KlarvoOverlayService : Service() {
     /**
      * Stops recording and starts the STT + cleanup pipeline.
      * This is the "confirm" action -- used by the ✓ button and push-to-talk release.
+     *
+     * @param pauseSignalMs Story 11-1 (spike): when non-null, this call was triggered by
+     *   [onSilenceTriggered] (a VAD pause, not a manual tap/release) and holds the
+     *   `System.currentTimeMillis()` at which the pause fired. Threaded through to
+     *   [processAudio] purely so the benchmark log line can compute pause-to-text latency;
+     *   null for manual stops (button tap, push-to-talk release), which are not "pause" events.
      */
-    private fun stopAndProcessRecording() {
+    private fun stopAndProcessRecording(pauseSignalMs: Long? = null) {
         val recorder = audioRecorder ?: return
         audioRecorder = null
 
@@ -1600,13 +1612,18 @@ class KlarvoOverlayService : Service() {
 
         Thread {
             val wavBytes = recorder.stop()
-            processAudio(wavBytes)
+            processAudio(wavBytes, pauseSignalMs)
         }.start()
     }
 
     // --- API pipeline ---
 
-    private fun processAudio(wavBytes: ByteArray) {
+    /**
+     * @param pauseSignalMs Story 11-1 (spike): non-null only when this call originated from a
+     *   VAD pause ([onSilenceTriggered] / AUTOSTOP+AUTO modes). Used solely to log the
+     *   pause-to-raw-text latency benchmark below -- does not affect the pipeline itself (AC4).
+     */
+    private fun processAudio(wavBytes: ByteArray, pauseSignalMs: Long? = null) {
         val t0 = System.currentTimeMillis()
         if (wavBytes.isEmpty()) {
             handler.post {
@@ -1774,6 +1791,14 @@ class KlarvoOverlayService : Service() {
             }
             val tStt = System.currentTimeMillis()
             KlarvoLogger.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
+
+            // Story 11-1 (spike): pause-to-raw-text latency benchmark. Only logged for
+            // pause-triggered stops (AUTOSTOP/AUTO -- pauseSignalMs non-null); manual
+            // taps/releases are not a "pause" and are skipped. Log-only, no behavior change (AC4).
+            if (pauseSignalMs != null) {
+                val pauseToTextMs = tStt - pauseSignalMs
+                KlarvoLogger.d(TAG, "[benchmark-11-1] pause-to-text=${pauseToTextMs}ms")
+            }
 
             // STT succeeded -- safe to remove the pending WAV backup.
             pendingWavFile?.delete()
