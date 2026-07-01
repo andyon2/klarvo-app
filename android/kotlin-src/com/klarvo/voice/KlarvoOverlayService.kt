@@ -1508,7 +1508,10 @@ class KlarvoOverlayService : Service() {
         // KlarvoAudioRecorder.onSilenceDetected reaching the service, i.e. the "pause"
         // moment the live-preview benchmark measures from. Threaded through to
         // processAudio() purely for logging; does not affect recording/STT behavior (AC4).
-        val pauseSignalMs = System.currentTimeMillis()
+        // Monotonic (SystemClock.elapsedRealtime()) rather than wall-clock: a clock step
+        // (NTP sync) between pause and end-capture must not corrupt the benchmark interval
+        // (code review finding, 2026-07-01).
+        val pauseSignalMs = SystemClock.elapsedRealtime()
 
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -1576,7 +1579,7 @@ class KlarvoOverlayService : Service() {
      *
      * @param pauseSignalMs Story 11-1 (spike): when non-null, this call was triggered by
      *   [onSilenceTriggered] (a VAD pause, not a manual tap/release) and holds the
-     *   `System.currentTimeMillis()` at which the pause fired. Threaded through to
+     *   `SystemClock.elapsedRealtime()` at which the pause fired. Threaded through to
      *   [processAudio] purely so the benchmark log line can compute pause-to-text latency;
      *   null for manual stops (button tap, push-to-talk release), which are not "pause" events.
      */
@@ -1790,15 +1793,13 @@ class KlarvoOverlayService : Service() {
                 )
             }
             val tStt = System.currentTimeMillis()
+            // Story 11-1 (spike, code review fix): dedicated monotonic end-capture for the
+            // benchmark only -- taken at the same point as tStt above, but via
+            // SystemClock.elapsedRealtime() so the pause-to-text interval can't be corrupted
+            // by a wall-clock step (NTP sync) between pause and here. tStt/tConfig above are
+            // unchanged and still drive the existing [pipeline] logs.
+            val benchmarkEndElapsedMs = SystemClock.elapsedRealtime()
             KlarvoLogger.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
-
-            // Story 11-1 (spike): pause-to-raw-text latency benchmark. Only logged for
-            // pause-triggered stops (AUTOSTOP/AUTO -- pauseSignalMs non-null); manual
-            // taps/releases are not a "pause" and are skipped. Log-only, no behavior change (AC4).
-            if (pauseSignalMs != null) {
-                val pauseToTextMs = tStt - pauseSignalMs
-                KlarvoLogger.d(TAG, "[benchmark-11-1] pause-to-text=${pauseToTextMs}ms")
-            }
 
             // STT succeeded -- safe to remove the pending WAV backup.
             pendingWavFile?.delete()
@@ -1813,6 +1814,18 @@ class KlarvoOverlayService : Service() {
                     adjustLayoutForState(RecordingState.IDLE, prev)
                 }
                 return
+            }
+
+            // Story 11-1 (spike): pause-to-raw-text latency benchmark. Only logged for
+            // pause-triggered stops (AUTOSTOP/AUTO -- pauseSignalMs non-null) and only once the
+            // transcript is confirmed non-blank (code review fix: a blank "no speech" round-trip
+            // is not a real sample and must not contaminate the distribution). Log-only, no
+            // behavior change (AC4). `stt=` is the already-computed STT sub-duration so
+            // retry-inflated samples (transcribeWithRetry backs off >=2000ms on transient
+            // failures) are identifiable and excludable.
+            if (pauseSignalMs != null) {
+                val pauseToTextMs = benchmarkEndElapsedMs - pauseSignalMs
+                KlarvoLogger.d(TAG, "[benchmark-11-1] pause-to-text=${pauseToTextMs}ms stt=${tStt - tConfig}ms")
             }
 
             // Hallucination guard via shared Rust (ADR-0017, AC2).
