@@ -3,6 +3,7 @@ package com.klarvo.voice
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.text.TextPaint
@@ -12,6 +13,7 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 /**
@@ -33,6 +35,44 @@ import android.widget.TextView
 class ListeningPanelView(context: Context) : LinearLayout(context) {
 
     enum class State { RECORDING, TRANSCRIBING }
+
+    companion object {
+        private val RGBA_REGEX =
+            Regex("""rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([\d.]+))?\s*\)""")
+        private val FONT_PX_SP = mapOf("small" to 11f, "medium" to 13f, "large" to 15f)
+
+        /**
+         * Parses a CSS `rgba()`/`rgb()` string into an Android ARGB color int (Story 11-2,
+         * Task 5.2). Mirrors `src/components/settings/previewAppearance.ts`'s
+         * `rgbaToHexOpacity` regex/validation. Falls back to [fallback] on any malformed input
+         * -- never throws (config values are user-editable free text).
+         */
+        fun parseRgba(css: String, fallback: Int): Int {
+            val m = RGBA_REGEX.find(css) ?: return fallback
+            val r = m.groupValues[1].toIntOrNull() ?: return fallback
+            val g = m.groupValues[2].toIntOrNull() ?: return fallback
+            val b = m.groupValues[3].toIntOrNull() ?: return fallback
+            val a = m.groupValues[4].takeIf { it.isNotEmpty() }?.toFloatOrNull() ?: 1f
+            if (listOf(r, g, b).any { it < 0 || it > 255 } || a < 0f || a > 1f) return fallback
+            val alphaByte = (a * 255f).toInt().coerceIn(0, 255)
+            return Color.argb(alphaByte, r, g, b)
+        }
+
+        /**
+         * Maps the curated desktop font-family stack (`previewAppearance.ts` `PREVIEW_FONTS`)
+         * to an Android [Typeface] (Task 5.3). No native asset is currently wired for Inter in
+         * Kotlin (checked: no `R.font.*` reference exists anywhere in `android/kotlin-src`
+         * today), so Inter and System UI both map to the platform default; Serif/Monospace map
+         * to their Android built-ins.
+         */
+        fun typefaceForFontFamily(fontFamily: String): Typeface = when {
+            fontFamily.contains("Georgia", ignoreCase = true) -> Typeface.SERIF
+            fontFamily.contains("Cascadia", ignoreCase = true) ||
+                fontFamily.contains("Fira Code", ignoreCase = true) ||
+                fontFamily.contains("Consolas", ignoreCase = true) -> Typeface.MONOSPACE
+            else -> Typeface.DEFAULT
+        }
+    }
 
     // --- Public properties ---
 
@@ -68,6 +108,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         set(value) {
             field = value
             transcriptTextView.text = value
+            // Story 11-2 (AC-5): auto-scroll to the newest appended text. Posted so it runs
+            // after the TextView has re-measured with the new (longer) text.
+            transcriptScrollView.post { transcriptScrollView.fullScroll(View.FOCUS_DOWN) }
         }
 
     var recordingElapsedMs: Long = 0L
@@ -117,6 +160,27 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     }
 
     /**
+     * Applies the ported preview-appearance config fields (Story 11-2, AC-9/Task 5.2/5.3) to
+     * the panel's background, border, transcript text color and font. Call at show-time with a
+     * freshly-read config (mirrors the desktop 6.6 "separate-window reactive read" lesson --
+     * do not cache stale values across a Settings session).
+     */
+    fun applyAppearance(config: KlarvoApi.Config) {
+        val dp = resources.displayMetrics.density
+        val bgColor = parseRgba(config.previewBgColor, Color.rgb(0x12, 0x14, 0x16))
+        val borderColor = parseRgba(config.previewBorderColor, KlarvoTheme.Border2)
+        background = GradientDrawable().apply {
+            setColor(bgColor)
+            cornerRadius = config.previewBorderRadius * dp
+            setStroke((config.previewBorderWidth * dp).toInt().coerceAtLeast(0), borderColor)
+        }
+        val textColor = parseRgba(config.previewTextColor, KlarvoTheme.Muted)
+        transcriptTextView.setTextColor(textColor)
+        transcriptTextView.typeface = typefaceForFontFamily(config.previewFontFamily)
+        transcriptTextView.textSize = FONT_PX_SP[config.previewFontSize] ?: 11f
+    }
+
+    /**
      * Collapse animation: slides the panel downward over 320ms (canon --k-t-panel),
      * then calls [onDone] so the service can removeView.
      *
@@ -162,6 +226,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     private val transcriptTextView: TextView
     private val footerView: FooterView
     private val caretView: CaretView
+    // Story 11-2 (AC-5): wraps the transcript FrameLayout so accumulated preview text can grow
+    // beyond the visible area and auto-scroll to the newest appended chunk.
+    private val transcriptScrollView: ScrollView
 
 
     init {
@@ -205,7 +272,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         val transcriptFrame = FrameLayout(context)
         transcriptFrame.addView(transcriptTextView, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
+            FrameLayout.LayoutParams.WRAP_CONTENT
         ))
         val caretLp = FrameLayout.LayoutParams(
             (2 * dp).toInt(),
@@ -213,11 +280,21 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         ).apply { gravity = Gravity.TOP or Gravity.START }
         transcriptFrame.addView(caretView, caretLp)
 
+        // Story 11-2 (AC-5): ScrollView wrapper so accumulated preview text scrolls instead of
+        // being clipped/overflowing once it exceeds the panel's visible height.
+        transcriptScrollView = ScrollView(context).apply {
+            isVerticalScrollBarEnabled = false
+        }
+        transcriptScrollView.addView(transcriptFrame, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+
         val textParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
             leftMargin = (16 * dp).toInt()
             rightMargin = (16 * dp).toInt()
         }
-        addView(transcriptFrame, textParams)
+        addView(transcriptScrollView, textParams)
 
         // Footer
         footerView = FooterView(context)

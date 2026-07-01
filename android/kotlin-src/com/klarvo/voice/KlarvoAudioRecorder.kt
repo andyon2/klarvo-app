@@ -53,7 +53,17 @@ class KlarvoAudioRecorder(
      * The previous hard-coded 0.02 was 4× the desktop default, causing ~10% of quiet
      * utterances to be missed on a typical device microphone.
      */
-    private var energyGateThreshold: Float = DEFAULT_ENERGY_GATE_THRESHOLD
+    private var energyGateThreshold: Float = DEFAULT_ENERGY_GATE_THRESHOLD,
+    /**
+     * Seconds of continuous silence required to trigger the repeatable [onPreviewPause]
+     * edge (Story 11-2, AC-2/Task 2.3a). Independent of [silenceSecs] -- HOLD/TOGGLE have no
+     * mode-level silence window of their own (that constructor param carries the per-gesture
+     * tap/long-press value, only ever *consumed* by AUTOSTOP/AUTO), so the preview signal needs
+     * its own frame counter driven by the ported `previewPauseSilenceSecs` Settings slider,
+     * exactly mirroring desktop where `preview_pause_silence_secs` is a distinct config field.
+     * Defaults to 2.0s (matches the Rust/desktop default).
+     */
+    private var previewPauseSilenceSecs: Float = 2.0f
 ) {
 
     companion object {
@@ -86,6 +96,29 @@ class KlarvoAudioRecorder(
         fun isEnergyAboveGate(normalizedRms: Float, threshold: Float): Boolean =
             normalizedRms >= threshold
 
+        /**
+         * Pure delta-slice function (Story 11-2, AC-1/Task 1.2/1.3). Given the FULL sample
+         * buffer captured so far and the marker (sample-count offset of the last flush),
+         * returns the new samples since [marker] -- empty if none.
+         *
+         * Extracted so a JVM test can verify disjoint + union == full buffer without an
+         * Android [Context] (mirrors desktop's `delta_snapshot_wav`/`spec_delta_snapshot_disjoint_union`).
+         */
+        fun sliceSince(samples: ShortArray, marker: Int): ShortArray {
+            val from = marker.coerceIn(0, samples.size)
+            return samples.copyOfRange(from, samples.size)
+        }
+
+        /**
+         * Pure seconds→frames conversion (Story 11-2, Task 2.3a), extracted so a JVM test can
+         * verify a larger silence-seconds value yields a larger frame threshold WITHOUT an
+         * Android Context. Used for both [requiredSilentFrames] (one-shot AUTOSTOP/AUTO path)
+         * and [previewRequiredSilentFrames] (repeatable preview-pause edge) -- same formula,
+         * different independent inputs, so the preview slider is never inert.
+         */
+        fun framesForSeconds(secs: Float): Int =
+            (secs * VAD_FRAMES_PER_SECOND).toInt().coerceAtLeast(1)
+
         // Silero VAD requires exactly 512 samples per frame at 16 kHz (~32 ms/frame).
         private const val VAD_FRAME_SIZE = 512
 
@@ -117,7 +150,15 @@ class KlarvoAudioRecorder(
      * Each frame is 512 samples = ~32 ms at 16 kHz.
      */
     private val requiredSilentFrames: Int
-        get() = (silenceSecs * VAD_FRAMES_PER_SECOND).toInt().coerceAtLeast(1)
+        get() = framesForSeconds(silenceSecs)
+
+    /**
+     * Story 11-2 (AC-2/Task 2.3a): independent frame threshold for the repeatable
+     * [onPreviewPause] edge, derived from [previewPauseSilenceSecs] -- NOT from [silenceSecs]/
+     * [requiredSilentFrames], which govern the (possibly unset) one-shot [onSilenceDetected] path.
+     */
+    private val previewRequiredSilentFrames: Int
+        get() = framesForSeconds(previewPauseSilenceSecs)
 
     /**
      * Optional callback fired once when sustained silence is detected after speech.
@@ -126,8 +167,22 @@ class KlarvoAudioRecorder(
      */
     var onSilenceDetected: (() -> Unit)? = null
 
+    /**
+     * Optional REPEATABLE callback (Story 11-2, AC-2) fired on every silence-onset edge for
+     * the whole recording -- unlike [onSilenceDetected], it is not gated by [silenceCallbackFired]
+     * and does not stop VAD feeding. Set by KlarvoOverlayService for HOLD/TOGGLE when live preview
+     * is enabled. Fires on the recording thread -- caller must post to main thread.
+     */
+    var onPreviewPause: (() -> Unit)? = null
+
     private var audioRecord: AudioRecord? = null
     private val pcmBuffer = ArrayList<Short>()
+
+    /**
+     * Sample-count offset into [pcmBuffer] of the last [deltaSnapshotWav] flush (Story 11-2,
+     * mirrors desktop's `delta_marker: Mutex<usize>`). Reset to 0 on [start].
+     */
+    private var deltaMarker = 0
     private var recordingThread: Thread? = null
     private var isCapturing = false
 
@@ -147,6 +202,12 @@ class KlarvoAudioRecorder(
     private var onsetFrames = 0
     // True once enough consecutive speech frames have been seen (onset confirmed).
     private var speechDetected = false
+
+    // Story 11-2: independent hangover counter + one-shot-per-silence-period guard for the
+    // repeatable onPreviewPause edge. Reset to 0/false whenever speech resumes, so it can fire
+    // again on the NEXT pause (unlike silenceCallbackFired, which never resets).
+    private var previewSilentFrames = 0
+    private var previewFiredThisSilence = false
 
     // --- Auto-mode silence-fire diagnostics (Story 9-7 follow-up, 2026-06-16) ---
     // Purely observational: aggregate per ~1s window so one device repro reveals why
@@ -210,7 +271,7 @@ class KlarvoAudioRecorder(
         )
 
         audioRecord = recorder
-        pcmBuffer.clear()
+        synchronized(pcmBuffer) { pcmBuffer.clear() }
         isCapturing = true
 
         recorder.startRecording()
@@ -221,6 +282,9 @@ class KlarvoAudioRecorder(
         silenceCallbackFired = false
         onsetFrames = 0
         speechDetected = false
+        previewSilentFrames = 0
+        previewFiredThisSilence = false
+        deltaMarker = 0
         dbgWindowFrames = 0
         dbgSpeechFrames = 0
         dbgRmsMax = 0f
@@ -236,9 +300,12 @@ class KlarvoAudioRecorder(
             while (isCapturing) {
                 val read = recorder.read(buf, 0, buf.size)
                 if (read > 0) {
-                    // Accumulate PCM for WAV output.
-                    for (i in 0 until read) {
-                        pcmBuffer.add(buf[i])
+                    // Accumulate PCM for WAV output. Synchronized: deltaSnapshotWav() (Story 11-2)
+                    // reads/copies pcmBuffer from the main thread while this thread keeps appending.
+                    synchronized(pcmBuffer) {
+                        for (i in 0 until read) {
+                            pcmBuffer.add(buf[i])
+                        }
                     }
 
                     // Compute RMS for waveform visualization (unchanged from before).
@@ -247,7 +314,11 @@ class KlarvoAudioRecorder(
                     onAmplitude(smoothedAmp)
 
                     // Feed samples into the VAD ring buffer in 512-sample frames.
-                    if (onSilenceDetected != null && !silenceCallbackFired) {
+                    // Story 11-2 (AC-2a): widened so HOLD/TOGGLE also feed the VAD when the
+                    // repeatable preview-flush callback is installed -- previously this gate was
+                    // closed for HOLD/TOGGLE (onSilenceDetected is null there), so no pause edges
+                    // were ever produced and the preview flush could never fire.
+                    if ((onSilenceDetected != null && !silenceCallbackFired) || onPreviewPause != null) {
                         feedVad(buf, read)
                     }
                 }
@@ -304,12 +375,10 @@ class KlarvoAudioRecorder(
      * Now: VAD model runs on 512-sample frames with onset and hangover hysteresis.
      */
     private fun processVadFrame(frame: ShortArray) {
-        // AC4 guard: silenceCallbackFired is also checked in the start() loop, but that
-        // outer check fires only between audio buffers. Within a single buffer, feedVad()
-        // may call processVadFrame() multiple times after the first fire (remaining frames
-        // in the same batch). This inner guard ensures the callback fires at most once per
-        // session, regardless of how many frames cross the threshold in the same buffer.
-        if (silenceCallbackFired) return
+        // Story 11-2 (AC-2): the old top-of-function `if (silenceCallbackFired) return` guard
+        // is REMOVED here -- it used to block ALL further processing (including the new
+        // repeatable preview edge) forever after the one-shot callback fired once. The one-shot
+        // guard is now scoped locally to the onSilenceDetected branch below, where it belongs.
 
         // Energy gate: avoid calling the ONNX model for clearly silent frames.
         // Uses the instance energyGateThreshold (from config.json "advanced.silenceThreshold")
@@ -343,31 +412,76 @@ class KlarvoAudioRecorder(
                 if (onsetFrames >= VAD_ONSET_FRAMES) {
                     speechDetected = true
                     silentFrames = 0
+                    previewSilentFrames = 0
+                    previewFiredThisSilence = false
                     KlarvoLogger.d(TAG,"VAD: speech onset confirmed (onsetFrames=$onsetFrames)")
                 }
             } else {
                 // Any non-speech frame resets the onset counter.
                 onsetFrames = 0
             }
-        } else {
-            // Hangover phase: count silence frames after speech was detected.
-            if (isSpeechFrame) {
-                silentFrames = 0
-            } else {
-                silentFrames++
-                if (silentFrames >= requiredSilentFrames) {
-                    silenceCallbackFired = true
-                    KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
-                    // Story 11-1 (spike): mark the exact pause-signal instant here (this IS
-                    // onSilenceDetected firing). Log-only -- the actual pause-to-text delta is
-                    // computed and logged in KlarvoOverlayService once the transcript returns
-                    // (tag "[benchmark-11-1]"); this line lets the raw fire instant be cross-
-                    // checked independently if the two ever need pairing on-device.
-                    KlarvoLogger.d(TAG, "[benchmark-11-1] onSilenceDetected fired at ${System.currentTimeMillis()}")
-                    onSilenceDetected?.invoke()
-                }
+            return
+        }
+
+        // Hangover phase: count silence frames after speech was detected.
+        if (isSpeechFrame) {
+            silentFrames = 0
+            previewSilentFrames = 0
+            previewFiredThisSilence = false
+            return
+        }
+
+        // Story 11-2 (AC-2): the one-shot AUTOSTOP/AUTO path is scoped to `onSilenceDetected != null`
+        // and its own `silenceCallbackFired` guard -- exactly as before, byte-identical semantics,
+        // just no longer gating the repeatable preview edge below.
+        if (onSilenceDetected != null && !silenceCallbackFired) {
+            silentFrames++
+            if (silentFrames >= requiredSilentFrames) {
+                silenceCallbackFired = true
+                KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
+                // Story 11-1 (spike): mark the exact pause-signal instant here (this IS
+                // onSilenceDetected firing). Log-only -- the actual pause-to-text delta is
+                // computed and logged in KlarvoOverlayService once the transcript returns
+                // (tag "[benchmark-11-1]"); this line lets the raw fire instant be cross-
+                // checked independently if the two ever need pairing on-device.
+                KlarvoLogger.d(TAG, "[benchmark-11-1] onSilenceDetected fired at ${System.currentTimeMillis()}")
+                onSilenceDetected?.invoke()
             }
         }
+
+        // Story 11-2 (AC-2b/Task 2.3a): repeatable preview-pause edge -- NOT gated by
+        // silenceCallbackFired, uses its own independent frame threshold
+        // (previewRequiredSilentFrames, derived from previewPauseSilenceSecs), and re-arms
+        // (previewFiredThisSilence = false) whenever speech resumes above, so it fires once
+        // per pause for the whole recording, not just once per session.
+        if (onPreviewPause != null) {
+            previewSilentFrames++
+            if (previewSilentFrames >= previewRequiredSilentFrames && !previewFiredThisSilence) {
+                previewFiredThisSilence = true
+                KlarvoLogger.d(TAG, "VAD: preview-pause edge fired ($previewSilentFrames frames >= $previewRequiredSilentFrames required)")
+                onPreviewPause?.invoke()
+            }
+        }
+    }
+
+    /**
+     * Story 11-2 (AC-1/Task 1.2): returns the audio captured **since the last flush** (not the
+     * whole buffer so far), encoded as a WAV byte array, and advances the delta marker.
+     * Returns `null` if no new samples have accumulated since the marker (e.g. flush fired but
+     * the ring-buffer boundary landed exactly at a prior flush -- practically rare).
+     *
+     * Safe to call from any thread while recording is in progress (synchronizes on [pcmBuffer],
+     * which the recording thread is concurrently appending to).
+     */
+    fun deltaSnapshotWav(): ByteArray? {
+        val slice = synchronized(pcmBuffer) {
+            val snapshot = pcmBuffer.toShortArray()
+            val s = sliceSince(snapshot, deltaMarker)
+            deltaMarker = snapshot.size
+            s
+        }
+        if (slice.isEmpty()) return null
+        return encodeWav(slice, SAMPLE_RATE)
     }
 
     /**
@@ -411,8 +525,8 @@ class KlarvoAudioRecorder(
         }
         vad = null
 
-        val pcmData = pcmBuffer.toShortArray()
-        pcmBuffer.clear()
+        val pcmData = synchronized(pcmBuffer) { pcmBuffer.toShortArray() }
+        synchronized(pcmBuffer) { pcmBuffer.clear() }
 
         KlarvoLogger.d(TAG,"Recording stopped (${pcmData.size} samples captured)")
 
@@ -446,7 +560,7 @@ class KlarvoAudioRecorder(
             KlarvoLogger.w(TAG,"releaseImmediately: failed to close VadSilero", e)
         }
         vad = null
-        pcmBuffer.clear()
+        synchronized(pcmBuffer) { pcmBuffer.clear() }
     }
 
     private fun calculateRms(buffer: ShortArray, length: Int): Float {

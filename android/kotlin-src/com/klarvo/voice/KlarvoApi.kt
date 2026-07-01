@@ -93,7 +93,19 @@ object KlarvoApi {
         // Recording button diameter in dp — TAP surface + (Story 9-14 re-scope 2026-07-01) the
         // HOLD Abbrechen button. User-configurable ∈ {52, 60, 72, 84, 96}. Default 72 (device-scale
         // approved). Written by desktop Settings UI via save_settings; read here for Android rendering.
-        val recordingButtonSizeDp: Int = 72
+        val recordingButtonSizeDp: Int = 72,
+        // --- Live-preview fields (Story 11-2 port; all already exist in Rust AppConfig,
+        // src-tauri/src/config/mod.rs:730-790,1001-1032 -- defaults mirrored exactly here). ---
+        val livePreviewEnabled: Boolean = false,
+        val previewPauseSilenceSecs: Float = 2.0f,
+        val previewTextColor: String = "rgba(220,220,220,0.88)",
+        val previewBgColor: String = "rgba(25,25,25,0.96)",
+        val previewBgBlur: Int = 12,
+        val previewBorderColor: String = "rgba(42,195,168,0.25)",
+        val previewBorderWidth: Int = 1,
+        val previewBorderRadius: Int = 14,
+        val previewFontFamily: String = "'Inter', system-ui, -apple-system, sans-serif",
+        val previewFontSize: String = "small"
     )
 
     /**
@@ -293,6 +305,20 @@ object KlarvoApi {
             val recordingButtonSizeDp = json.optInt("recordingButtonSizeDp", 72)
                 .coerceIn(FloatingBubbleView.TAP_BUTTON_SIZE_MIN, FloatingBubbleView.TAP_BUTTON_SIZE_MAX)
 
+            // Story 11-2 (AC-8, Task 5.1): live-preview fields. Same camelCase-key /
+            // opt*-with-default pattern as bubbleTapSilenceSecs above. Defaults match the Rust
+            // serde defaults exactly (src-tauri/src/config/mod.rs:1001-1032).
+            val livePreviewEnabled = json.optBoolean("livePreviewEnabled", false)
+            val previewPauseSilenceSecs = json.optDouble("previewPauseSilenceSecs", 2.0).toFloat()
+            val previewTextColor = json.optString("previewTextColor", "rgba(220,220,220,0.88)")
+            val previewBgColor = json.optString("previewBgColor", "rgba(25,25,25,0.96)")
+            val previewBgBlur = json.optInt("previewBgBlur", 12)
+            val previewBorderColor = json.optString("previewBorderColor", "rgba(42,195,168,0.25)")
+            val previewBorderWidth = json.optInt("previewBorderWidth", 1)
+            val previewBorderRadius = json.optInt("previewBorderRadius", 14)
+            val previewFontFamily = json.optString("previewFontFamily", "'Inter', system-ui, -apple-system, sans-serif")
+            val previewFontSize = json.optString("previewFontSize", "small")
+
             // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
             // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.
             val resolvedLlmProvider = if (
@@ -358,7 +384,11 @@ object KlarvoApi {
                 gatedSttProvider, customPrompt, dictionaryTerms,
                 licenseValidatedAt, effectiveFirstInstall,
                 silenceThreshold,
-                recordingButtonSizeDp
+                recordingButtonSizeDp,
+                livePreviewEnabled, previewPauseSilenceSecs,
+                previewTextColor, previewBgColor, previewBgBlur,
+                previewBorderColor, previewBorderWidth, previewBorderRadius,
+                previewFontFamily, previewFontSize
             )
         } catch (e: Exception) {
             null

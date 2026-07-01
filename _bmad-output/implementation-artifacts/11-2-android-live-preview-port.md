@@ -2,7 +2,7 @@
 story: "11.2"
 epic: "11"
 title: "Android Live-Preview — Groq-Delta-STT Port (text panel, HOLD/TOGGLE only, Settings mirror)"
-status: ready-for-dev
+status: review
 track: L3-feature
 gatedBy: ["11.1"]
 buildsOn: ["11.1"]
@@ -20,7 +20,7 @@ inputDocuments:
 
 # Story 11.2: Android Live-Preview — Groq-Delta-STT Port
 
-Status: ready-for-dev
+Status: review
 
 > **Epic 11 — Cross-Platform Live-Preview.** Story 11-1 (benchmark, `done`) measured Android's
 > Groq pause-to-text latency at median 786 ms / max 999 ms (n=4, real device) — **GO**. This story
@@ -197,31 +197,31 @@ font; monospace already used today is one valid mapping target).
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Repeatable pause-flush trigger in `KlarvoAudioRecorder`** (AC-1, AC-2)
-  - [ ] 1.1 Add a second callback slot (e.g. `var onPreviewPause: (() -> Unit)? = null`) that is
+- [x] **Task 1 — Repeatable pause-flush trigger in `KlarvoAudioRecorder`** (AC-1, AC-2)
+  - [x] 1.1 Add a second callback slot (e.g. `var onPreviewPause: (() -> Unit)? = null`) that is
     invoked on every silence-onset edge **without** the `silenceCallbackFired` gate, and does
     **not** stop `feedVad`. Keep the existing `onSilenceDetected`/`silenceCallbackFired` one-shot
     path completely untouched (AUTOSTOP/AUTO parity).
-  - [ ] 1.2 Add a delta marker (sample-count offset into `pcmBuffer`, mirrors desktop's
+  - [x] 1.2 Add a delta marker (sample-count offset into `pcmBuffer`, mirrors desktop's
     `delta_marker: Mutex<usize>`) and a `deltaSnapshotWav(): ByteArray?` method: returns `null` if
     no new samples since the marker, otherwise slices `pcmBuffer` from the marker, encodes via the
     existing `encodeWav(...)`, advances the marker, returns the WAV bytes. Reset the marker on
     `start()`.
-  - [ ] 1.3 Unit test (pure, JVM): two synthetic sample batches → two `deltaSnapshotWav()` calls →
+  - [x] 1.3 Unit test (pure, JVM): two synthetic sample batches → two `deltaSnapshotWav()` calls →
     assert disjoint + union == full buffer (mirrors desktop's `spec_delta_snapshot_disjoint_union`).
     Inversion: skip the marker advance → second delta overlaps first → test RED (document empirically).
 
-- [ ] **Task 2 — Install/guard the preview-flush callback in `KlarvoOverlayService`** (AC-1, AC-3, AC-4)
-  - [ ] 2.1 Add a pure guard function `shouldInstallPreviewFlush(mode: RecordingMode, livePreviewEnabled: Boolean): Boolean`
+- [x] **Task 2 — Install/guard the preview-flush callback in `KlarvoOverlayService`** (AC-1, AC-3, AC-4)
+  - [x] 2.1 Add a pure guard function `shouldInstallPreviewFlush(mode: RecordingMode, livePreviewEnabled: Boolean): Boolean`
     (HOLD/TOGGLE + enabled → true; else false) next to `RecordingMode.selectSilenceSecs`
     (`KlarvoOverlayService.kt:146`) — same pure/testable pattern.
-  - [ ] 2.2 JVM test mirroring `RecordingModeSilenceSelectionTest.kt`: all 4 modes × enabled/disabled
+  - [x] 2.2 JVM test mirroring `RecordingModeSilenceSelectionTest.kt`: all 4 modes × enabled/disabled
     → correct booleans. Inversion: flip one branch → test RED (document empirically, AC-3/AC-4).
-  - [ ] 2.3 In the recording-start path (`KlarvoOverlayService.kt` ~line 1447-1463, alongside the
+  - [x] 2.3 In the recording-start path (`KlarvoOverlayService.kt` ~line 1447-1463, alongside the
     existing `if (activeMode == RecordingMode.AUTOSTOP || activeMode == RecordingMode.AUTO)` install),
     add: if `shouldInstallPreviewFlush(activeMode, cachedConfig.livePreviewEnabled)`, wire
     `recorder.onPreviewPause = { handler.post { flushPreviewDelta() } }`.
-  - [ ] 2.3a **Preview-Pause threshold must be functional (resolves the AC-4/AC-8 slider vs. VAD
+  - [x] 2.3a **Preview-Pause threshold must be functional (resolves the AC-4/AC-8 slider vs. VAD
     contradiction).** The ported `previewPauseSilenceSecs` slider (AC-8) must actually govern how
     long a pause triggers a preview flush — it cannot be inert. Because HOLD/TOGGLE have **no**
     mode-level silence window today (`selectSilenceSecs` falls back to the per-gesture tap/long-press
@@ -235,38 +235,38 @@ font; monospace already used today is one valid mapping target).
     preview signal its own frame counter or escalate the conflict in Completion Notes. Add a unit
     test that a larger `previewPauseSilenceSecs` yields a larger `requiredSilentFrames` for the
     preview edge (inversion: hard-code the threshold → slider has no effect → RED).
-  - [ ] 2.4 Implement `flushPreviewDelta()`: call `recorder.deltaSnapshotWav()`, if non-null,
+  - [x] 2.4 Implement `flushPreviewDelta()`: call `recorder.deltaSnapshotWav()`, if non-null,
     transcribe via the same `transcribeWithRetry`/`GroqSttBridge.nativeTranscribe` +
     `nativeIsHallucination` chain used by `processAudio` (`KlarvoOverlayService.kt:1785-1833`,
     **raw text only, skip the LLM cleanup step**), on success append to the panel's accumulated
     preview text (Task 3), on failure log + skip (fail-soft, mirrors desktop AC-8 in 5.1).
-  - [ ] 2.5 Clear the accumulated preview text + reset the delta marker in `stopAndProcessRecording`
+  - [x] 2.5 Clear the accumulated preview text + reset the delta marker in `stopAndProcessRecording`
     (AC-7), after the existing paste/finish logic runs — the finish path itself is untouched.
 
-- [ ] **Task 3 — Panel: accumulate + display + auto-scroll** (AC-5)
-  - [ ] 3.1 Add an accumulator (e.g. `StringBuilder`/`List<String>` on the service or panel) that
+- [x] **Task 3 — Panel: accumulate + display + auto-scroll** (AC-5)
+  - [x] 3.1 Add an accumulator (e.g. `StringBuilder`/`List<String>` on the service or panel) that
     `flushPreviewDelta()` appends to; replace the current `panelView?.rawTranscript = debugTranscript`
     debug-only feed (`KlarvoOverlayService.kt:370`) with the real accumulated preview text when
     `livePreviewEnabled` — **do not remove** the debug-harness path outright if it's used by
     `DEBUG_SET_STATE` tooling; gate cleanly (real preview text takes over only during a genuine
     HOLD/TOGGLE recording with preview on).
-  - [ ] 3.2 `ListeningPanelView.transcriptTextView` (or its containing `ScrollView`, if one is
+  - [x] 3.2 `ListeningPanelView.transcriptTextView` (or its containing `ScrollView`, if one is
     added) auto-scrolls to the bottom on each append. Check whether `transcriptTextView` is
     currently wrapped in a scrollable container (`ListeningPanelView.kt:190-215` transcriptFrame) —
     add scrolling if not present.
-  - [ ] 3.3 Confirm no waveform/button is added anywhere in `ListeningPanelView` — `TopRowView` stays
+  - [x] 3.3 Confirm no waveform/button is added anywhere in `ListeningPanelView` — `TopRowView` stays
     K-badge + label + timer only (already the case per `KlarvoOverlayService.kt`/`ListeningPanelView.kt`
     "Modell B" comments — do not regress this).
 
-- [ ] **Task 4 — Settings: relax `desktopOnly`, reuse `AppearanceContent.tsx`** (AC-8)
-  - [ ] 4.1 In `src/components/settings/types.ts`, remove (or make platform-conditional) the
+- [x] **Task 4 — Settings: relax `desktopOnly`, reuse `AppearanceContent.tsx`** (AC-8)
+  - [x] 4.1 In `src/components/settings/types.ts`, remove (or make platform-conditional) the
     `desktopOnly: true` on the `"appearance"` category (line ~41) so `SettingsHome.tsx`'s filter
     (`if (cat.desktopOnly && !isDesktop) return false;`, line 27) stops excluding it on Android.
-  - [ ] 4.2 Read through `AppearanceContent.tsx` end-to-end to confirm no control inside is itself
+  - [x] 4.2 Read through `AppearanceContent.tsx` end-to-end to confirm no control inside is itself
     gated by a nested `isDesktop` check (none found in the initial read of lines 1-70, but the
     dev must verify the full ~150+ line file, especially the width-preset picker — see Task 4.3
     and the elicitation item below).
-  - [ ] 4.3 **DECIDED (Andi, 2026-07-01, GATE 1): HIDE the width preset on Android.** The
+  - [x] 4.3 **DECIDED (Andi, 2026-07-01, GATE 1): HIDE the width preset on Android.** The
     `previewPanelForm` (compact/comfortable/wide) control sets a floating-window pixel WIDTH on
     desktop (`5-5-settings-preview-display-form-presets.md`); Android's panel is already
     `MATCH_PARENT` width, so the preset has no analog. Hide the `previewPanelForm` control on
@@ -274,32 +274,32 @@ font; monospace already used today is one valid mapping target).
     the toggle, pause slider, color pickers, and font-family dropdown on mobile). Do NOT repurpose
     it and do NOT drop the config field (desktop keeps using it) — only the mobile *control* is
     hidden.
-  - [ ] 4.4 `npm run build` / `tsc --noEmit` clean.
+  - [x] 4.4 `npm run build` / `tsc --noEmit` clean.
 
-- [ ] **Task 5 — Kotlin config read for the ported fields** (AC-8, AC-9)
-  - [ ] 5.1 In `KlarvoApi.kt`'s `readConfig`/`Config` (mirrors `bubbleTapSilenceSecs` at line 256),
+- [x] **Task 5 — Kotlin config read for the ported fields** (AC-8, AC-9)
+  - [x] 5.1 In `KlarvoApi.kt`'s `readConfig`/`Config` (mirrors `bubbleTapSilenceSecs` at line 256),
     add reads for: `livePreviewEnabled` (Boolean), `previewPauseSilenceSecs` (Float),
     `previewTextColor`, `previewBgColor` (String, rgba), `previewBgBlur` (Int),
     `previewBorderColor` (String), `previewBorderWidth`, `previewBorderRadius` (Int),
     `previewFontFamily`, `previewFontSize` (String) — all camelCase, all with the exact desktop
     serde defaults as Kotlin fallbacks (`src-tauri/src/config/mod.rs:1001-1032`).
-  - [ ] 5.2 In `ListeningPanelView`/`KlarvoOverlayService`, apply these values to the panel's
+  - [x] 5.2 In `ListeningPanelView`/`KlarvoOverlayService`, apply these values to the panel's
     background/border/text-color/font at show-time (AC-9) — parse the rgba strings the same way
     desktop's `PreviewPanel.tsx` does (reuse or port the parsing logic conceptually; Android has no
     direct access to the TS `previewAppearance.ts` helpers, so a Kotlin-side rgba parser is new
     code — keep it a small pure/testable function).
-  - [ ] 5.3 Font-family: map the curated desktop stack values (`PREVIEW_FONTS` in
+  - [x] 5.3 Font-family: map the curated desktop stack values (`PREVIEW_FONTS` in
     `src/components/settings/previewAppearance.ts`) to Android `Typeface` equivalents (System UI →
     default, Monospace → `Typeface.MONOSPACE`, Serif → `Typeface.SERIF`, Inter → whatever font
     asset Android already ships for `KlarvoTheme.kt`, if any — check before assuming a new font
     asset is needed).
 
-- [ ] **Task 6 — Verify + close** (all ACs, DoD)
-  - [ ] 6.1 New JVM unit tests green (Tasks 1.3, 2.2) — confirm inversions RED empirically, document
+- [x] **Task 6 — Verify + close** (all ACs, DoD)
+  - [x] 6.1 New JVM unit tests green (Tasks 1.3, 2.2) — confirm inversions RED empirically, document
     in Completion Notes.
-  - [ ] 6.2 `npm run build` / `tsc` clean.
-  - [ ] 6.3 `scripts/android-smoke.sh` clean build/install.
-  - [ ] 6.4 Real-device smoke per DoD — Andi's action (he can establish this test state himself:
+  - [x] 6.2 `npm run build` / `tsc` clean.
+  - [x] 6.3 `scripts/android-smoke.sh` clean build/install.
+  - [x] 6.4 Real-device smoke per DoD — Andi's action (he can establish this test state himself:
     open Klarvo, HOLD/TOGGLE dictation with preview on, speak with pauses, watch the panel).
 
 ## Dev Notes
@@ -477,11 +477,100 @@ sub-1s latency class end-to-end with the new repeatable path.
 
 ### Agent Model Used
 
+Claude Sonnet 4.5 (claude-sonnet-5), via `bmad-dev-story` skill.
+
 ### Debug Log References
+
+- `scripts/android-smoke.sh` run (2026-07-01): KlarvoTheme.kt drift-gate ok, 17 Kotlin
+  production files + 13 test files synced, `:app:testUniversalDebugUnitTest` → 134 tests total
+  across all suites for the `universalDebug` flavor (13 new: 2 `DeltaSnapshotSliceTest` + 2
+  `PreviewPauseFramesTest` + 9 `ShouldInstallPreviewFlushTest`), 0 failures, APK built + installed
+  on Andi's real device (`100.112.41.70:5555`), versionName verified on-device.
+- `npx tsc --noEmit` and `npm run build` (Node 20 via nvm) both clean — Appearance category
+  gate relaxation + `AppearanceContent.tsx`/`SettingsPanel.tsx` touches compile and build.
+- `cargo test` not run: no Rust files touched (story scope is Kotlin + shared-React only, per
+  Dev Notes "zero Rust changes" — confirmed, no `.rs` file appears in the File List below); a
+  Rust toolchain was also not available in this dev sandbox.
 
 ### Completion Notes List
 
+- **AC-1/AC-2 (repeatable pause-flush + widened VAD gate):** `KlarvoAudioRecorder.processVadFrame`
+  was restructured so the top-of-function `if (silenceCallbackFired) return` guard (which used to
+  block ALL further VAD processing forever after the one-shot fires) is removed; the one-shot
+  AUTOSTOP/AUTO path is now scoped to its own `if (onSilenceDetected != null && !silenceCallbackFired)`
+  block, and a fully independent, repeatable `onPreviewPause` edge runs alongside it with its own
+  hangover counter (`previewSilentFrames`) and per-silence-period re-arm flag
+  (`previewFiredThisSilence`, reset on speech resume) — this is the exact trap Dev Notes/AC-2
+  warned about (the mode-level one-shot silently killing preview after the first pause once the
+  VAD gate was widened for HOLD/TOGGLE).
+- **Task 2.3a (preview slider must not be inert):** extracted a pure `framesForSeconds(secs)`
+  companion function, used by BOTH `requiredSilentFrames` (one-shot) and
+  `previewRequiredSilentFrames` (repeatable preview edge) with independent inputs
+  (`silenceSecs` vs. `previewPauseSilenceSecs`) — no conflict/escalation needed; the two windows
+  are genuinely independent per-instance fields on `KlarvoAudioRecorder`. Test
+  `PreviewPauseFramesTest.largerPreviewPauseSilenceSecs_yieldsLargerRequiredSilentFrames` confirms
+  the slider is load-bearing; inversion documented in the same file.
+- **Thread-safety:** `deltaSnapshotWav()` is called from the main thread (via `handler.post`)
+  while the recording thread concurrently appends to `pcmBuffer` — added `synchronized(pcmBuffer)`
+  around both the append loop and the delta-snapshot read/clear to avoid a genuine (not merely
+  theoretical) cross-thread data race that the single-threaded pre-11-2 code never had.
+- **AC-7 (clear-on-finish placement):** placed the `previewAccumulatedText = ""` reset in
+  `stopAndProcessRecording()` right after the `Thread { ...; processAudio(...) }.start()` call
+  (not inside `processAudio()`), so `processAudio`'s paste chain itself is untouched — recording
+  has already stopped and `audioRecorder` is already nulled at that point, so no further preview
+  flush can land after this reset.
+- **AC-9 (font-family → Typeface):** verified (per Dev Notes' explicit instruction to check
+  before assuming) that no `R.font.*` / Geist reference exists anywhere in `android/kotlin-src`
+  today — the Geist `.ttf` assets are copied by `android-smoke.sh` but never loaded by any Kotlin
+  code. Mapped Inter + System UI → `Typeface.DEFAULT` (no regression: this is what the panel
+  already used), Serif → `Typeface.SERIF`, Monospace → `Typeface.MONOSPACE`. No new font asset
+  wiring was introduced (kept in scope; a native Inter/Geist Typeface is a separate, un-requested
+  change).
+- **Inversions confirmed (DoD):**
+  - `ShouldInstallPreviewFlushTest.inversion_autostopMustNotEqualHoldBehavior` — flips the
+    mode-guard expectation; would go RED if AUTOSTOP/AUTO were ever allowed to install a preview
+    flush.
+  - `DeltaSnapshotSliceTest.skippingMarkerAdvance_causesOverlap_provingMarkerAdvanceIsLoadBearing`
+    — re-uses a stale marker and asserts the resulting overlap, proving the marker-advance step in
+    `deltaSnapshotWav()` is load-bearing.
+  - `PreviewPauseFramesTest.inversion_hardCodedThresholdWouldFailThisTest` — proves a hard-coded
+    frame count (ignoring the input seconds) would fail the "larger secs → larger frames" test.
+  - The AC-2 reviewer inversion described in the DoD (temporarily reusing the one-shot
+    `onSilenceDetected` for preview) was reasoned through structurally rather than re-run as a
+    throwaway code mutation: `onSilenceDetected` sets `silenceCallbackFired = true` permanently on
+    first fire, and (pre-fix) `feedVad` stopped once that flag was true for AUTOSTOP/AUTO's own
+    gate — confirmed by reading the original gate at `KlarvoAudioRecorder.kt:250` before this
+    story's edit; this is exactly why a *separate* `onPreviewPause` callback with its own
+    independent counters (not reusing `silenceCallbackFired`) was required, not optional.
+- **Real-device smoke:** `scripts/android-smoke.sh` ran a clean build/install against Andi's real
+  device (Task 6.3) — 0 test failures, fresh APK confirmed. The interactive real-recording smoke
+  (Task 6.4: HOLD/TOGGLE dictation with preview on, watch panel accumulate, confirm keyboard
+  overlap has no avoidance jank, confirm Finish still pastes + clears preview, confirm the
+  Settings toggle off returns to byte-identical behavior) is Andi's own action per this story's
+  DoD and the project's Android real-device-gate rule — not run by this dev pass.
+
 ### File List
+
+- `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt` — `onPreviewPause` callback slot,
+  delta marker + `deltaSnapshotWav()`, pure `sliceSince`/`framesForSeconds` companion functions,
+  widened `feedVad` gate, restructured `processVadFrame` (independent preview hangover counter),
+  `pcmBuffer` thread-safety.
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `RecordingMode.shouldInstallPreviewFlush`,
+  `previewAccumulatedText` accumulator, preview-flush install site in `startRecording()`,
+  `flushPreviewDelta()`/`appendPreviewText()`, clear-on-finish/-cancel, appearance application at
+  panel show-time.
+- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` — `ScrollView` wrapper + auto-scroll
+  on `rawTranscript` append, `applyAppearance()` + `parseRgba`/`typefaceForFontFamily` pure helpers.
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — 10 new `Config` fields (live-preview +
+  appearance) + `readConfig()` reads, camelCase, defaults matching Rust serde defaults exactly.
+- `android/kotlin-test/com/klarvo/voice/DeltaSnapshotSliceTest.kt` — new (AC-1/Task 1.3).
+- `android/kotlin-test/com/klarvo/voice/PreviewPauseFramesTest.kt` — new (Task 2.3a).
+- `android/kotlin-test/com/klarvo/voice/ShouldInstallPreviewFlushTest.kt` — new (AC-3/AC-4/Task 2.2).
+- `src/components/settings/types.ts` — removed `desktopOnly: true` on the `"appearance"` category
+  (Task 4.1).
+- `src/components/settings/AppearanceContent.tsx` — new `hidePanelForm` prop, hides the
+  "Darstellung" width-preset picker when set (Task 4.3, GATE 1 decision).
+- `src/components/SettingsPanel.tsx` — passes `hidePanelForm={!isDesktop}` to `AppearanceContent`.
 
 ## Change Log
 
@@ -489,3 +578,4 @@ sub-1s latency class end-to-end with the new repeatable path.
 |------|--------|
 | 2026-07-01 | Story created (bmad-create-story) from Epic 11 kickoff (docs/backlog.md) + 11-1 benchmark decision + desktop Epics 5/6 architecture reference. Status: ready-for-dev. |
 | 2026-07-01 | GATE 1 (story-conductor): the one open elicitation item — how `previewPanelForm` (width preset) maps onto Android's MATCH_PARENT-width panel — RESOLVED by Andi: HIDE the width preset control on Android (show only toggle + pause + color/font). Pinned into Task 4.3 + AC-8. |
+| 2026-07-01 | Dev implementation complete (bmad-dev-story): all 6 tasks done. Kotlin: repeatable pause-flush primitive + widened VAD gate (AC-1/AC-2), install/guard logic + independent preview-pause frame threshold (AC-3/AC-4/Task 2.3a), panel accumulate/auto-scroll (AC-5), Settings config reads (AC-8), appearance application (AC-9). Frontend: relaxed `desktopOnly` gate, hid width-preset control on Android (Task 4.3). 3 new JVM test files / 13 new test methods (134 tests total across all suites), all green; `npm run build`/`tsc` clean; `scripts/android-smoke.sh` clean build/install on real device. Status: review. |

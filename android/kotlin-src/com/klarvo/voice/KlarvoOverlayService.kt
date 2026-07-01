@@ -158,6 +158,18 @@ class KlarvoOverlayService : Service() {
                     else        -> tapSilence
                 }
             }
+
+            /**
+             * Story 11-2 (AC-1/AC-3/AC-4, Task 2.1): pure guard deciding whether the repeatable
+             * preview-flush callback should be installed for a recording session -- HOLD/TOGGLE
+             * only, and only when the user has opted in via Settings (`livePreviewEnabled`).
+             * Auto/AutoStop never get a preview flush (mirrors desktop FR4 parity) regardless of
+             * the setting. Pure function -- no Android Context needed -- same testable-shape
+             * pattern as [selectSilenceSecs] (AC-3/AC-4's JVM test lives next to
+             * `RecordingModeSilenceSelectionTest.kt`).
+             */
+            fun shouldInstallPreviewFlush(mode: RecordingMode, livePreviewEnabled: Boolean): Boolean =
+                (mode == HOLD || mode == TOGGLE) && livePreviewEnabled
         }
     }
 
@@ -259,6 +271,13 @@ class KlarvoOverlayService : Service() {
      * Stored for use by the listening-panel render in Story 9.5; ignored in 9.4.
      */
     private var debugTranscript: String = ""
+
+    /**
+     * Story 11-2: accumulated raw preview text for the CURRENT recording (HOLD/TOGGLE,
+     * `livePreviewEnabled == true` only). Appended to by [flushPreviewDelta] on every pause;
+     * display-only -- never feeds the paste path. Cleared on finish (AC-7) and cancel.
+     */
+    private var previewAccumulatedText: String = ""
 
     /**
      * Saved X position of the bubble window before expanding to the recording cluster.
@@ -1454,13 +1473,24 @@ class KlarvoOverlayService : Service() {
                 }
             },
             silenceSecs = activeSilenceSecs,
-            energyGateThreshold = silenceThreshold
+            energyGateThreshold = silenceThreshold,
+            previewPauseSilenceSecs = cachedConfig?.previewPauseSilenceSecs ?: 2.0f
         )
 
         // Wire up silence detection for AUTOSTOP / AUTO modes.
         if (activeMode == RecordingMode.AUTOSTOP || activeMode == RecordingMode.AUTO) {
             recorder.onSilenceDetected = {
                 handler.post { onSilenceTriggered() }
+            }
+        }
+
+        // Story 11-2 (AC-1/AC-3/AC-4, Task 2.3): repeatable preview-flush callback, HOLD/TOGGLE
+        // only, opt-in via Settings. Fresh accumulator for this recording (AC-7's clear-on-finish
+        // guarantees this is already empty, but reset defensively in case of an earlier bail-out).
+        if (RecordingMode.shouldInstallPreviewFlush(activeMode, cachedConfig?.livePreviewEnabled == true)) {
+            previewAccumulatedText = ""
+            recorder.onPreviewPause = {
+                handler.post { flushPreviewDelta() }
             }
         }
 
@@ -1533,6 +1563,49 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
+     * Story 11-2 (AC-1/Task 2.4): called (via `handler.post`) whenever
+     * [KlarvoAudioRecorder.onPreviewPause] fires. Takes the delta-since-last-flush WAV,
+     * transcribes it RAW (no LLM cleanup, mirrors AC-1/FR1 parity) via the same
+     * `transcribeWithRetry` + hallucination-filter chain [processAudio] uses, and appends the
+     * result to the panel. Recording is NOT stopped, nothing is pasted -- fail-soft on any
+     * error (log + skip, mirrors desktop AC-8 in Story 5-1).
+     */
+    private fun flushPreviewDelta() {
+        if (currentState != RecordingState.RECORDING) return
+        val recorder = audioRecorder ?: return
+        val config = cachedConfig ?: return
+        val wavBytes = recorder.deltaSnapshotWav() ?: return
+
+        Thread {
+            try {
+                val text = transcribeWithRetry(
+                    wavBytes,
+                    config.groqApiKey,
+                    config.language,
+                    "whisper-large-v3-turbo",
+                    config.dictionaryTerms,
+                    config.customPrompt,
+                    null // preview chunks are display-only -- no pending-WAV backup needed
+                )
+                if (text.isBlank()) return@Thread
+                if (GroqSttBridge.nativeIsHallucination(text)) {
+                    KlarvoLogger.d(TAG, "[preview] chunk filtered as hallucination, skipping")
+                    return@Thread
+                }
+                handler.post { appendPreviewText(text) }
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[preview] flush failed, skipping (fail-soft)", e)
+            }
+        }.start()
+    }
+
+    /** Story 11-2 (AC-5): appends [text] to the accumulated preview and pushes it to the panel. */
+    private fun appendPreviewText(text: String) {
+        previewAccumulatedText = if (previewAccumulatedText.isBlank()) text else "$previewAccumulatedText $text"
+        panelView?.rawTranscript = previewAccumulatedText
+    }
+
+    /**
      * Stops recording and discards the captured audio.
      * Returns the bubble to IDLE immediately without calling the STT pipeline.
      */
@@ -1569,6 +1642,10 @@ class KlarvoOverlayService : Service() {
         if (previousState == RecordingState.RECORDING && wasBarMode) {
             adjustLayoutForState(RecordingState.IDLE, previousState)
         }
+        // Story 11-2: reset the preview accumulator so a cancelled recording never leaks its
+        // partial preview text into the next one (the panel itself is a fresh instance per
+        // showListeningPanel() call, so this is a defensive service-level reset, not a visible fix).
+        previewAccumulatedText = ""
         // Story 9.5: hide listening panel on cancel.
         hideListeningPanel()
     }
@@ -1617,6 +1694,14 @@ class KlarvoOverlayService : Service() {
             val wavBytes = recorder.stop()
             processAudio(wavBytes, pauseSignalMs)
         }.start()
+
+        // Story 11-2 (AC-7): clear the accumulated preview text + implicitly the delta marker
+        // (a fresh KlarvoAudioRecorder is constructed per recording in startRecording(), so its
+        // marker already starts at 0 -- nothing to reset there). Placed here, right after the
+        // finish/paste chain is kicked off, rather than inside processAudio()'s many branches --
+        // the finish path itself (processAudio -> paste) stays completely untouched, and no
+        // further preview flushes can occur once audioRecorder is null (already cleared above).
+        previewAccumulatedText = ""
     }
 
     // --- API pipeline ---
@@ -2036,6 +2121,9 @@ class KlarvoOverlayService : Service() {
         }
         val panel = ListeningPanelView(this)
         panel.panelState = initialState
+        // Story 11-2 (AC-9): apply the ported appearance config fresh at show-time (mirrors the
+        // desktop 6.6 "separate-window reactive read" lesson -- never cache stale values).
+        (cachedConfig ?: KlarvoApi.readConfig(this))?.let { panel.applyAppearance(it) }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,

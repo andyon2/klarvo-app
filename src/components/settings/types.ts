@@ -38,7 +38,6 @@ export const SETTINGS_CATEGORIES: SettingsCategoryDef[] = [
     label: "Appearance",
     subtitle: "Live preview look & behavior",
     iconColor: "#34D399",
-    desktopOnly: true,
   },
   {
     id: "language",

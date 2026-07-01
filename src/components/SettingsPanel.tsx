@@ -828,6 +828,7 @@ export function SettingsPanel({
                 setLocalPreviewFontFamily={setLocalPreviewFontFamily}
                 localPreviewFontSize={localPreviewFontSize}
                 setLocalPreviewFontSize={setLocalPreviewFontSize}
+                hidePanelForm={!isDesktop}
               />
             )}
             {activeCategory === "language" && (

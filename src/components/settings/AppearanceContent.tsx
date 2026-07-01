@@ -42,6 +42,13 @@ export interface AppearanceContentProps {
   setLocalPreviewFontFamily: (v: string) => void;
   localPreviewFontSize: string;
   setLocalPreviewFontSize: (v: string) => void;
+  /**
+   * Story 11-2 (Task 4.3, GATE 1 decision 2026-07-01): hides the "Darstellung" width-preset
+   * picker on Android, where the panel is already MATCH_PARENT-width and the preset has no
+   * analog. The config field itself is untouched — desktop keeps using it; only this control
+   * is hidden. Defaults to false (desktop keeps showing it).
+   */
+  hidePanelForm?: boolean;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -67,6 +74,7 @@ export function AppearanceContent({
   localPreviewBorderRadius, setLocalPreviewBorderRadius,
   localPreviewFontFamily, setLocalPreviewFontFamily,
   localPreviewFontSize, setLocalPreviewFontSize,
+  hidePanelForm = false,
 }: AppearanceContentProps) {
   return (
     <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -346,29 +354,32 @@ export function AppearanceContent({
               </p>
             </div>
 
-            {/* Display Form preset picker */}
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>Darstellung</span>
-              <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                {(["compact", "comfortable", "wide"] as const).map((preset) => (
-                  <button
-                    key={preset}
-                    onClick={() => setLocalPreviewPanelForm(preset)}
-                    className={[
-                      "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      localPreviewPanelForm === preset
-                        ? "bg-klarvo-primary/15 text-klarvo-primary"
-                        : "text-klarvo-dim hover:text-klarvo-muted",
-                    ].join(" ")}
-                  >
-                    {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
-                  </button>
-                ))}
+            {/* Display Form preset picker — hidden on Android (Task 4.3): the panel is already
+                MATCH_PARENT-width there, so the desktop width preset has no analog. */}
+            {!hidePanelForm && (
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>Darstellung</span>
+                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
+                  {(["compact", "comfortable", "wide"] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => setLocalPreviewPanelForm(preset)}
+                      className={[
+                        "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                        localPreviewPanelForm === preset
+                          ? "bg-klarvo-primary/15 text-klarvo-primary"
+                          : "text-klarvo-dim hover:text-klarvo-muted",
+                      ].join(" ")}
+                    >
+                      {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-klarvo-muted">
+                  Changes the width of the preview panel.
+                </p>
               </div>
-              <p className="text-[11px] text-klarvo-muted">
-                Changes the width of the preview panel.
-              </p>
-            </div>
+            )}
           </div>
         </>
       )}
