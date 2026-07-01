@@ -445,3 +445,14 @@ Source: Conductor-Re-Review (range 4d2bc9b..d01381a, 3 Reviewer). A/B/D/E/F als 
 - **Ghost-Squircle folgt rohem Finger ohne Bounds-Clamp** → kosmetisches Clipping nahe Fensterkante (FloatingBubbleView ~560). Teilweise durch E (alpha) entschärft.
 - **Sub-48dp Idle-Bubble: ~wenige dp X-Drift** beim idle→hold-Übergang (idle-Fenster ≥48dp gefloort). Edge.
 - **Left-Dock Anker-X (low confidence):** rechts-Kanten-Anker-Formel klemmt links auf 0 → ~Zehner-px Anker-Shift nur bei Links-Dock. AC2 am Gerät prüfen (rechts-Dock exakt).
+
+---
+
+## Epic 11 — Cross-Platform Live-Preview (Android) — Kickoff 2026-07-01
+
+Source: Andi-Entscheidung + Story 11-1 Benchmark (Machbarkeits-Spike, DONE 2026-07-01). Desktop-Live-Preview-Box (Epics 5/6) auf Android bringen; benchmark-first.
+
+- **11-1 DONE (GO/grün):** Groq-Pause-to-Text am echten Gerät = median 786 ms (n=4, alle < 1 s, keine Retry-Kontamination). Caveat: max 999 ms an der 1-s-Kante, ~½ der Latenz = Groq-Netz-RTT → Preview muss gelegentliches Sample > 1 s vertragen.
+- **11-2 (NÄCHSTE STORY, noch nicht geschrieben) = eigentlicher Android-Preview-Port.** Architektur ENTSCHIEDEN (Andi 2026-07-01): **Groq-Delta-STT** wie Desktop — `delta_snapshot_wav()`-Äquivalent (jede Pause STT't nur neues Audio seit letzter Pause) → Gesamt ≈ **2× Groq-Audio-Sekunden** pro Diktat, NICHT N×. Braucht Andis Design-Input beim Schreiben (spiegelt Windows-Box? Overlay-Position? Settings-Toggle-Verhalten wie Desktop?).
+- **DEFERRED — lokales Modell für Preview:** 0 Groq-Kosten/offline, aber (a) mein Groq-Benchmark gilt NICHT (lokale On-Device-Whisper-Latenz unbekannt → eigener Benchmark nötig), (b) Aktivierung des schlafenden Android-Whisper-JNI + Modell-Binary (App-Größe). Nur aufgreifen, falls ~2× Groq das Free-Tier real sprengt (Volumen-abhängig).
+- **Instrumentierung aus 11-1 bleibt im Code** (`[benchmark-11-1]`-Logs, `KlarvoOverlayService`/`KlarvoAudioRecorder`) — für 11-2 evtl. nützlich, sonst später entfernen.
