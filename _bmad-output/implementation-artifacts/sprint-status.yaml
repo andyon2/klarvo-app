@@ -142,3 +142,7 @@ development_status:
   9-15-mobile-tap-recording-surface-reskin: done
   9-16-revert-non-hold-recording-to-compact-cluster: done
   epic-9-retrospective: done
+
+  # Epic 11 — Cross-Platform Live-Preview [L3 feature] — Desktop-Box (Epics 5/6) auf Android bringen; benchmark-first
+  epic-11: in-progress
+  11-1-android-live-preview-feasibility-benchmark: ready-for-dev
