@@ -181,7 +181,15 @@ font; monospace already used today is one valid mapping target).
   tests in `android/kotlin-test/com/klarvo/voice/`, following the existing pattern
   (`RecordingModeSilenceSelectionTest.kt`, `SilencePreFilterTest.kt`).
 - `npm run build` / `tsc` clean (Appearance category filter change + any TS touch).
-- **Real-device Android smoke required** — `scripts/android-smoke.sh` (build/install) **plus a
+- **⚠️ FULL BUILD REQUIRED for the frontend parts (GATE-4 fail 2026-07-02):** the Settings changes
+  (Appearance category on Android, AC-8) are React/webview embedded into the Rust binary at compile
+  time. `scripts/android-smoke.sh` is **Kotlin-only** (gradle `assembleUniversalDebug`, no Vite/no
+  frontend embed) → it will NOT include the settings change. Verifying AC-8/AC-9 (and enabling
+  Live Preview at all, since its toggle lives in the new category) requires the **full
+  `npx tauri android build` / `scripts/android-build.sh`** (runs `beforeBuildCommand: npm run build`
+  + recompiles the Rust lib that embeds `frontendDist`). Use android-smoke.sh only for Kotlin-only
+  overlay/recorder iteration.
+- **Real-device Android smoke required** — a **full `tauri android build`** (see above) **plus a
   real recording session on Andi's device**: HOLD or TOGGLE dictation with preview enabled, at
   least 2 speech pauses, confirm raw text accumulates in the panel, confirm the keyboard can be
   open with the panel visible without avoidance jank, confirm Finish still pastes correctly and
@@ -579,3 +587,5 @@ Claude Sonnet 4.5 (claude-sonnet-5), via `bmad-dev-story` skill.
 | 2026-07-01 | Story created (bmad-create-story) from Epic 11 kickoff (docs/backlog.md) + 11-1 benchmark decision + desktop Epics 5/6 architecture reference. Status: ready-for-dev. |
 | 2026-07-01 | GATE 1 (story-conductor): the one open elicitation item — how `previewPanelForm` (width preset) maps onto Android's MATCH_PARENT-width panel — RESOLVED by Andi: HIDE the width preset control on Android (show only toggle + pause + color/font). Pinned into Task 4.3 + AC-8. |
 | 2026-07-01 | Dev implementation complete (bmad-dev-story): all 6 tasks done. Kotlin: repeatable pause-flush primitive + widened VAD gate (AC-1/AC-2), install/guard logic + independent preview-pause frame threshold (AC-3/AC-4/Task 2.3a), panel accumulate/auto-scroll (AC-5), Settings config reads (AC-8), appearance application (AC-9). Frontend: relaxed `desktopOnly` gate, hid width-preset control on Android (Task 4.3). 3 new JVM test files / 13 new test methods (134 tests total across all suites), all green; `npm run build`/`tsc` clean; `scripts/android-smoke.sh` clean build/install on real device. Status: review. |
+| 2026-07-01 | Code-review (3 adversarial layers) + fix round (story-conductor). 5 confirmed findings (2 High): F1 late-preview append after finish/cancel (state-guard), F2 `applyAppearance` unconditional → restyle even preview-off/Auto/AutoStop (AC-4; gated behind `livePreviewEnabled`), F3 out-of-order flush (single-thread FIFO executor), F4 `updateTranscriptColor` overwrote configured color (pure resolver), F5 inert Bg-blur control (hidden on Android, Andi-approved). +2 pure-function tests. 142 tests green. Commit `beb005c`. Accepted Low residuals → backlog. |
+| 2026-07-02 | GATE-4 (story-conductor). Emulator STRUCTURAL smoke GREEN (`gate4-evidence/11-2/`): 2 APPLICATION_OVERLAY windows (panel 1080×525 bottom + cluster 435×178), panel renders text, preview-off = stock look (F2 confirmed). **BUT: Andi's device build showed NO Appearance settings category → GATE-4 FAIL on AC-8.** Cause isolated (NOT a code defect): `android-smoke.sh` is Kotlin-only and does not embed the React frontend; the settings change needs a full `tauri android build`. React logic verified correct by read (SettingsHome filter + types.ts). DoD amended to require the full build for frontend parts. Re-verification in progress via WSL full build → emulator settings check. Status stays `review`. |
