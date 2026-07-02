@@ -44,3 +44,32 @@ contract-detached from conductor runs). To verify:
    "✗ Transkription fehlgeschlagen — Audio gesichert" message (audio preserved for Story 12-2).
 3. **Android real device:** same two scenarios → confirm the corresponding toasts appear
    (`⚠ …`) and behaviour matches Windows.
+
+## Device verification — 2026-07-02 (Andi's real Xiaomi via Tailscale)
+
+**Android cleanup-fallback path: VERIFIED GREEN on the real device.** The UI's key-validation
+gate refuses to save an invalid key (by design), so the outage state was produced by writing an
+invalid `deepseekApiKey` directly into the on-device `config.json` (backed up + restored after).
+Andi dictated one sentence; device log (`logs/klarvo.log`) shows the exact designed path:
+```
+[pipeline] STT: 1789ms (provider=groq)                 ← STT (Groq) still valid → produced text
+W Text cleanup failed -- trying fallback provider
+java.io.IOException: LLM cleanup failed (deepseek-chat): HTTP 401 -- "...api key ...0000 is invalid"
+W No cleanup fallback provider available -- using raw transcript   ← 401 non-retryable + no OpenAI/OpenRouter key
+```
+→ raw text pasted + the `⚠ Cleanup nicht verfügbar → Rohtext eingefügt` toast shown (Andi confirmed
+the toast appeared). Real key restored afterwards (verified `sk-4…`).
+
+**Follow-up fix (commit 125d2d7):** device-verify surfaced that the `Inserted: <preview>` paste-
+confirmation toast fired right after the pipeline and OVERRODE the fallback toast (Android shows one
+toast at a time). Fixed: successful paste is now silent; the clipboard-fallback `Copied:` toast is
+kept. Rebuilt + reinstalled (v0.5.0). Andi to re-confirm the status toast is no longer covered.
+
+**Still open (Andi's gate):** (a) re-confirm the paste-toast fix; (b) Windows same two scenarios in
+the pill (needs Andi's Windows rebuild — not WSL-producible); (c) STT→local-Whisper fallback path was
+not exercised on device (needs an invalid Groq key + a present local model; note: Android local JNI
+may be inactive per project memory — worth a separate check, not a 12-1 blocker).
+
+**Not-a-bug found + separately noted:** Andi's inability to save an invalid key is the key-validation
+gate working correctly (it refuses to persist a key that fails `validate_api_key`). Minor UX backlog
+item: the rejection reads as a "blinking, never-saved" button rather than a clear "invalid key" signal.
