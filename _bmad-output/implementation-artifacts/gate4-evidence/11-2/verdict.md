@@ -39,7 +39,25 @@ Evidence: `structure-{idle,recording,transcribing}.txt`, `ist-{idle,recording,tr
 4. **Settings render on Android** — the Appearance category appears in mobile settings
    (toggle + pause + color/font), with the **width preset and Bg-blur controls hidden**.
 
+## Frontend re-verify (2026-07-02, after GATE-4 FAIL "no Appearance category")
+Andi's first device build used `android-smoke.sh` (Kotlin-only) → stale frontend, no settings change.
+Root cause = build gap, NOT code (Tauri embeds `frontendDist` into the Rust binary at compile time;
+only the full `tauri android build` re-embeds it). Re-verified via a FULL WSL build:
+- `npx tauri android build --debug --target aarch64` (219 MB APK, fresh Vite bundle embedded) →
+  installed on emulator → **the real Klarvo React UI renders** (`settings-home.png`: Klarvo home,
+  gear/history/stats, Polished/Verbatim/Chat, mic). So the frontend IS in the APK. ✅
+- Appearance-category presence is airtight by code + this render proof: `SettingsHome.tsx:27`
+  `if (cat.desktopOnly && !isDesktop) return false` + dev removed `desktopOnly` from the `appearance`
+  category ⇒ never filtered out on any platform; `AppearanceContent.tsx:71` confirms SettingsHome
+  (mobile) is what that flag gated. SettingsHome renders ⇒ category must appear. ✅ (logically)
+- A direct settings screenshot was NOT captured: `MainActivity` won't hold foreground on this
+  emulator for reliable `input tap` (3 attempts; launcher/overlay-bubble instead — see nav*.png).
+  Emulator-automation limit, not a product signal. The visual glance at the Appearance row +
+  width/blur-hidden is folded into Andi's device gate (he opens Settings anyway to enable preview).
+
 ## Verdict
-Mechanical/structural layer **GREEN**. Visual + real-STT verdict is Andi's batched real-device
-gate (a visual story is never "done" on emulator-green — Epic-9 lesson). Story stays at `review`
-until Andi's device confirmation; then close-out flips both status fields to `done`.
+Mechanical/structural layer **GREEN**; frontend build + render **GREEN**; Appearance-category
+**code-guaranteed**. Visual + real-STT verdict is Andi's batched real-device gate — **using a FULL
+`tauri android build`, never the Kotlin-only smoke** (a visual story is never "done" on
+emulator-green — Epic-9 lesson). Story stays at `review` until Andi's device confirmation; then
+close-out flips both status fields to `done`.
