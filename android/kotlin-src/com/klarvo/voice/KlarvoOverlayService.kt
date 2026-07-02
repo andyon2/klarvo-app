@@ -2146,7 +2146,11 @@ class KlarvoOverlayService : Service() {
                 KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
-                if (pasted) showToast("Inserted: $preview") else showToast("Copied: $preview")
+                // Successful paste is silent (the text simply appears) so it can't
+                // override a same-cycle status/fallback toast (story 12-1). The
+                // clipboard-fallback case IS surfaced: it's real info that the paste
+                // did not land and the text is on the clipboard instead.
+                if (!pasted) showToast("Copied: $preview")
 
                 // Write feedback metrics (fire-and-forget, off main thread).
                 Thread {
