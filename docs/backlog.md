@@ -470,3 +470,29 @@ Source: Andi-Entscheidung + Story 11-1 Benchmark (Machbarkeits-Spike, DONE 2026-
 3. **Feste Box-Größe statt Mitwachsen** — das Desktop-Verhalten „Box wächst mit Text" ergibt auf Android keinen Sinn; Box bleibt fest über dem Keyboard. **ENTSCHIEDEN (Andi 2026-07-02): rollendes Fenster** — Box zeigt nur die letzten Zeilen, Älteres rollt oben raus (sanft ausgefadet), kein Scrollen. (Ersetzt den gebauten ScrollView-Auto-Scroll → auf rollendes Last-N-Fenster mit Top-Fade umbauen.)
 4. **Griff-Linie (GripView) oben mitte entfernen** — suggeriert Resize, den es nicht gibt; entfernt → macht Platz, Header-Elemente rücken näher an den Rand.
 5. **Font-Skala verschieben (Andi: klein ist viel zu klein)** — **ENTSCHIEDEN (Andi 2026-07-02): `FONT_PX_SP` = klein/mittel/groß → 13 / 15 / 18 sp, Android-only (Desktop-`FONT_PX_MAP` unberührt).** (Ersetzt den akzeptierten „Font sp vs px"-Residual oben.)
+
+---
+
+## Epic 12 — Cloud-Resilienz: robuste Fallback-Leiter + Audio-Retry-Historie — Kickoff 2026-07-02
+
+Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit Andi. `api.deepseek.com` war ~08:24–09:39 (Log-Zeit 10:24–10:39) tot/degradiert → Cleanup 25–29 s bzw. 30-s-Timeouts, dann Roh-Text. STT (Groq) lief normal weiter. Entscheidungs-KOMPLETT (alle Design-Calls unten getroffen), aber noch nicht als BMAD-Stories geschrieben.
+
+### Verifizierter Ist-Zustand (Code, 2026-07-02)
+- **Fallback existiert schon, feuerte aber nicht:** `resolve_fallback_provider` (pipeline.rs:193) läuft deepseek→groq→openai→openrouter. Auslöser ist NUR `is_retryable_llm_error` = `ApiError{status}` mit 429/≥500 (pipeline.rs:178). Die Ausfall-Fehler waren **Transport-Fehler** (`error sending request for url` = Timeout/Connection-refused), KEIN HTTP-Status → landen im non-retryable-Zweig (pipeline.rs:1184) → direkt Roh-Text, Fallback nie versucht. **← eigentlicher Bug.**
+- **Warn-Nachricht existiert, UI wirft sie weg:** Backend sendet bei Degradierung `PipelineEvent::warn(degrade_warn_msg(...))` = „Cleanup failed — raw text inserted. <Grund>" (pipeline.rs:973/1163/1176/1188). `FloatingBar.tsx:335` verwirft `warning`-Events bewusst (`if (newState === "warning") return;`) → Nutzer sieht nichts.
+- **Cleanup degradiert immer auf Roh-Text** (nie Absturz). STT kann das NICHT (kein Text → nichts zum Degradieren). Groq ist heute STT-Provider UND Cleanup-Fallback → Cleanup-Fallback auf Groq frisst STT-Kontingent.
+- **Audio wird NIRGENDS persistiert:** WAV-Bytes leben nur transient (`last_recording`); `history`-Tabelle hat nur Text (`text, raw_text, style, language, is_note, app_name, uuid, device_id`) — keine Audio-Spalte/Blob/Pfad, kein Re-Processing. Andis „zweite Historie" ist wirklich neu.
+- Bausteine vorhanden: lokaler Whisper (`build_local_whisper_provider`, Windows+Android, pipeline.rs:84) heute nur bei explizitem Offline-Modus; lokaler LLM-Cleanup (llama.cpp) existiert ebenfalls.
+
+### Entschiedene Design-Calls (Andi, 2026-07-02)
+- **Cleanup-Fallback-Kette:** DeepSeek → (OpenAI/OpenRouter, falls Key) → **ROHTEXT**. **NIE Groq für Cleanup** (schont STT-Kontingent — definitiv). Terminal = Roh-Text, nie Absturz.
+- **STT-Fallback:** Groq → **lokaler Whisper** (Auto-Fallback, JA — bisher nur Offline-Modus) → falls kein Modell: Audio in Retry-Queue + klare Fehlermeldung. Terminal = nie stiller Verlust.
+- **Fallback-Auslöser erweitern:** Transport-Fehler (Timeout, Connection-refused) müssen fallback-auslösend werden, nicht non-retryable. (Kern-Fix des Vorfalls.)
+- **Pillbar-Statusanzeige (JA, Andi will es):** Warn-Event nicht mehr verwerfen, sondern kurz einblenden. Generisch-informativ, ein Satz, kein Stacktrace. Vorschlag-Taxonomie: Fallback lief `⚠ DeepSeek langsam → OpenAI` · Roh-Text `⚠ Cleanup nicht verfügbar → Rohtext eingefügt` · STT-Notanker `⚠ Groq am Limit → lokale Transkription` · alles tot `✗ Transkription fehlgeschlagen — Audio gesichert`.
+- **Audio-Retry-Historie:** Variante **A jetzt** (Audio nur bei terminalem Fehlschlag speichern, nach erfolgreichem Nachverarbeiten löschen), **Datenmodell B-fähig** (Status-Feld pending/done/failed + Audio-als-Datei, damit B ohne Umbau draufsitzt). Speicherort: **Datei auf Platte, rohes WAV, Windows UND Android** (~2 MB/min; **Kompression für B später vermerkt**). Referenz per uuid. Re-Processing **manuell zuerst** (Button am geparkten Eintrag), Auto-Retry später.
+- **B (Nordstern, NICHT jetzt):** dieselbe Aufnahme durch verschiedene Anbieter/Settings → Ergebnis-Vergleich; braucht dauerhafte Audio-Retention + Kompression + Vergleichs-UI.
+
+### Story-Landschaft (Titel + Outcome; volle ACs bei bmad-create-story)
+- **12-1 — Robuste LLM/STT-Fallback-Leiter + Pillbar-Statusanzeige.** Transport-Fehler lösen Fallback aus; Cleanup-Kette ohne Groq; STT→lokaler-Whisper-Auto-Fallback; Warn-Events in der Pille sichtbar (Windows + Android). Kern-Fix des Vorfalls, höchste Priorität.
+- **12-2 — Audio-Retry-Historie (Primitiv A + manuelles Nachverarbeiten).** Bei terminalem Fehlschlag WAV auf Platte + „zweite Historie"-Eintrag (Status pending); manueller Re-Process-Button; Löschung nach Erfolg. Datenmodell B-fähig. Windows + Android.
+- **12-3 (Nordstern, später) — Anbieter/Settings-Vergleich auf derselben Aufnahme.** Baut auf 12-2-Primitiv; Retention-Politik + Kompression + Vergleichs-UI.
