@@ -1829,6 +1829,12 @@ class KlarvoOverlayService : Service() {
             return
         }
 
+        // Story 12-1 GATE-4 follow-up: status/fallback toasts fired during STT/cleanup are
+        // overridden ~1s later by HyperOS's own "pasted from your clipboard" system toast when
+        // the paste reads the clipboard (Android shows only one toast at a time). Deferring the
+        // message and showing it AFTER the paste makes it the newest toast, so it wins.
+        var degradeStatusMsg: String? = null
+
         try {
             // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
             val transcript = if (config.sttProvider == "local") {
@@ -1932,7 +1938,7 @@ class KlarvoOverlayService : Service() {
                     if (localResult.isBlank()) {
                         throw sttEx
                     }
-                    handler.post { showToast("⚠ Groq am Limit → lokale Transkription") }
+                    degradeStatusMsg = "⚠ Groq am Limit → lokale Transkription"
                     localResult
                 }
             }
@@ -2065,16 +2071,16 @@ class KlarvoOverlayService : Service() {
                                 // Finding [copy]: this fires after a cleanup FAILURE (not
                                 // slowness) that triggered a provider switch -- reword to
                                 // reflect what actually happened.
-                                handler.post { showToast("⚠ Cleanup-Anbieter gewechselt") }
+                                degradeStatusMsg = "⚠ Cleanup-Anbieter gewechselt"
                                 result
                             } catch (fallbackEx: Exception) {
                                 KlarvoLogger.w(TAG, "Cleanup fallback also failed -- using raw transcript", fallbackEx)
-                                handler.post { showToast("⚠ Cleanup nicht verfügbar → Rohtext eingefügt") }
+                                degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
                                 KlarvoApi.sanitizeLlmOutput(transcript)
                             }
                         } else {
                             KlarvoLogger.w(TAG, "No cleanup fallback provider available -- using raw transcript")
-                            handler.post { showToast("⚠ Cleanup nicht verfügbar → Rohtext eingefügt") }
+                            degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
                             KlarvoApi.sanitizeLlmOutput(transcript)
                         }
                     }
@@ -2126,6 +2132,7 @@ class KlarvoOverlayService : Service() {
             val capturedLlmLatency  = llmLatencyMs
             val capturedTranscript  = transcript
             val capturedFinalText   = finalText
+            val capturedDegradeMsg  = degradeStatusMsg
             handler.post {
                 // DIV-04 fix: abort paste if a banking/security app is focused at paste time.
                 // The pipeline may have started before the app-switch; this guard ensures
@@ -2151,6 +2158,14 @@ class KlarvoOverlayService : Service() {
                 // clipboard-fallback case IS surfaced: it's real info that the paste
                 // did not land and the text is on the clipboard instead.
                 if (!pasted) showToast("Copied: $preview")
+
+                // Story 12-1 GATE-4 follow-up: show the deferred status/fallback toast now,
+                // AFTER the paste, so it postdates (and thus wins over) HyperOS's own
+                // "pasted from your clipboard" system toast. LENGTH_LONG so it dwells long
+                // enough to actually be read.
+                if (capturedDegradeMsg != null) {
+                    Toast.makeText(this@KlarvoOverlayService, capturedDegradeMsg, Toast.LENGTH_LONG).show()
+                }
 
                 // Write feedback metrics (fire-and-forget, off main thread).
                 Thread {
