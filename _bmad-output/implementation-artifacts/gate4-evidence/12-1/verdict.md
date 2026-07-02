@@ -73,3 +73,23 @@ may be inactive per project memory — worth a separate check, not a 12-1 blocke
 **Not-a-bug found + separately noted:** Andi's inability to save an invalid key is the key-validation
 gate working correctly (it refuses to persist a key that fails `validate_api_key`). Minor UX backlog
 item: the rejection reads as a "blinking, never-saved" button rather than a clear "invalid key" signal.
+
+## Status-toast visibility fix — VERIFIED GREEN (2026-07-02, real Xiaomi)
+
+Follow-up commits 125d2d7 (silence success-paste toast) + 2c3876f (defer status toast until
+after paste, LENGTH_LONG). Root cause of the collision was HyperOS's OWN system toast
+("<app> pasted from your clipboard", pkg=android) firing during the paste and overriding
+Klarvo's status toast. Fix: defer Klarvo's status toast to fire AFTER the paste so it postdates
+the OS toast. Objective logcat proof (toast-ordering-logcat.txt):
+```
+23:25:17.861  No cleanup fallback available -- using raw transcript   (status captured)
+23:25:18–22   Window u0 Toast → "Toast already killed. pkg=android"          ← HyperOS toast FIRST
+23:25:22–26   Window u0 Toast → "Toast already killed. pkg=com.klarvo.voice" ← Klarvo status LAST (~4s, LENGTH_LONG)
+```
+Andi confirmed visually ("top, passt!"). Android GATE-4 (cleanup-fallback path + status
+visibility) is GREEN.
+
+Note on test-state hygiene: the outage state is produced by writing a NON-BLANK invalid
+deepseekApiKey into the on-device config.json via run-as (a blank key routes differently and does
+NOT exercise the 401→fallback path). Andi's DeepSeek key was left blank on the device (his own
+pre-test state — he had removed it in Settings); re-adding it is his call.
