@@ -211,6 +211,11 @@ export default function FloatingBar() {
   const [state, setState] = useState<RecordingState>("idle");
   const [levels, setLevels] = useState<number[]>(new Array(20).fill(0));
   const [showDone, setShowDone] = useState(false);
+  // AC4: transient one-line status text for a cleanup/STT fallback or
+  // degrade (e.g. "⚠ Groq am Limit → lokale Transkription"). Set when the
+  // backend emits state="warning"; the pipeline always follows a warn()
+  // with a done()/error() shortly after, so no separate timer is needed here.
+  const [warningMessage, setWarningMessage] = useState("");
   const [clipboardOnly, setClipboardOnly] = useState(false);
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
@@ -226,7 +231,10 @@ export default function FloatingBar() {
   const isActive = isRecording || isProcessing;
   // The pill is visible when active, showing done flash, or showing an error.
   const isError = state === "error" && !showDone;
-  const isPillVisible = isActive || showDone || isError;
+  // AC4: the pill briefly shows the warning label before the backend's
+  // follow-up done()/error() event transitions state again.
+  const isWarning = state === "warning";
+  const isPillVisible = isActive || showDone || isError || isWarning;
   const isIdle = !isPillVisible && !collapsing;
 
   const isDone = showDone && !isActive;
@@ -332,8 +340,12 @@ export default function FloatingBar() {
     const unlisten = onStateChanged((payload) => {
       const newState = payload.state as RecordingState;
       console.log(`[bar] state-changed: ${newState}`); // bridged to Klarvo.log for overlay observability
-      // Warning is transient — don't change bar state, pipeline continues to "done".
-      if (newState === "warning") return;
+      // AC4: warning is transient but must be surfaced, not discarded — show
+      // the taxonomy message text in the pill, then fall through to the
+      // normal "done"/"error" transition the backend always sends next.
+      if (newState === "warning") {
+        setWarningMessage(payload.warning ?? "");
+      }
       setState(newState);
 
       if (newState === "recording") {
@@ -500,12 +512,14 @@ export default function FloatingBar() {
 
   const accentColor = isRecording ? "#2AC3A8"
     : isProcessing ? "#FFA344"
+    : isWarning ? "#FFA344"
     : (isDone && clipboardOnly) ? "#FFA344"
     : isDone ? "#4ADE80"
     : "#FF7369";
 
   const borderColor = isRecording ? "rgba(42,195,168,0.25)"
     : isProcessing ? "rgba(255,163,68,0.2)"
+    : isWarning ? "rgba(255,163,68,0.25)"
     : (isDone && clipboardOnly) ? "rgba(255,163,68,0.25)"
     : isDone ? "rgba(74,222,128,0.25)"
     : "rgba(255,115,105,0.2)";
@@ -634,6 +648,26 @@ export default function FloatingBar() {
           {/* Error */}
           {isError && (
             <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
+          )}
+
+          {/* AC4: transient fallback/degrade warning — same treatment as Error
+              (short label, one line) but amber, not red, and with the
+              "Cleaning up..." label's ellipsis handling for a longer string. */}
+          {isWarning && (
+            <span
+              style={{
+                fontSize: 11,
+                color: "#FFA344",
+                flex: 1,
+                minWidth: 0,
+                letterSpacing: "0.01em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {warningMessage || "Warning"}
+            </span>
           )}
         </div>
       </div>

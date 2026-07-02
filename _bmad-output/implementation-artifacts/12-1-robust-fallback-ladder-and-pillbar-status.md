@@ -2,7 +2,7 @@
 story: "12.1"
 epic: "12"
 title: "Robust LLM/STT fallback ladder + pill-bar status signal"
-status: ready-for-dev
+status: review
 track: L3-feature
 gatedBy: []
 buildsOn: []
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 12.1: Robust LLM/STT fallback ladder + pill-bar status signal
 
-Status: ready-for-dev
+Status: review
 
 > **Epic 12 — Cloud-Resilienz.** Triggered by a live production incident (2026-07-02): the
 > DeepSeek cleanup API was down for ~75 minutes; Klarvo's existing provider-fallback did **not**
@@ -157,68 +157,70 @@ behavior and the Windows visual verdict remain Andi's real-machine gate per
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Widen the Windows fallback trigger to transport errors (AC1, AC7)
-  - [ ] Extend `is_retryable_llm_error` (`pipeline.rs:178-180`) to also return `true` for
+- [x] Task 1 — Widen the Windows fallback trigger to transport errors (AC1, AC7)
+  - [x] Extend `is_retryable_llm_error` (`pipeline.rs:178-180`) to also return `true` for
         `LlmError::Request(e)` where `e` has no HTTP response (use `reqwest::Error::is_timeout()` /
         `is_connect()`, or treat any `Request` variant as retryable — `Request` is only ever
         constructed via `#[from] reqwest::Error` on a failed send, so it already implies "no
         response received")
-  - [ ] Add/adjust the analogous STT retryability check if one exists, or introduce one for the new
+  - [x] Add/adjust the analogous STT retryability check if one exists, or introduce one for the new
         STT→local-Whisper fallback path (AC3) — mirror the LLM one, do not duplicate logic
-  - [ ] Regression test: construct a transport-shaped `LlmError::Request` and assert
+  - [x] Regression test: construct a transport-shaped `LlmError::Request` and assert
         `is_retryable_llm_error` now returns `true` (must fail on pre-story code)
 
-- [ ] Task 2 — Exclude Groq from cleanup fallback, both platforms (AC2, AC7)
-  - [ ] Windows: remove the `("groq", &cfg.groq_api_key)` entry from `resolve_fallback_provider`'s
+- [x] Task 2 — Exclude Groq from cleanup fallback, both platforms (AC2, AC7)
+  - [x] Windows: remove the `("groq", &cfg.groq_api_key)` entry from `resolve_fallback_provider`'s
         candidate list (`pipeline.rs:200`)
-  - [ ] Android: remove the Groq entry from `KlarvoApi.resolveLlmProvider`'s `fallbacks` list
+  - [x] Android: remove the Groq entry from `KlarvoApi.resolveLlmProvider`'s `fallbacks` list
         (`KlarvoApi.kt:157-160`)
-  - [ ] Android: add a fallback-provider attempt inside the `catch (e: IOException)` block at
+  - [x] Android: add a fallback-provider attempt inside the `catch (e: IOException)` block at
         `KlarvoOverlayService.kt:2006-2012` before degrading to raw text — resolve an alternative
         provider (DeepSeek/OpenAI/OpenRouter, never Groq, never the one that just failed) and retry
         `cleanupChunked` once; only fall through to raw text if that also fails
-  - [ ] Tests on both platforms asserting Groq never appears as a selected fallback candidate
+  - [x] Tests on both platforms asserting Groq never appears as a selected fallback candidate
 
-- [ ] Task 3 — STT → local Whisper auto-fallback (AC3, AC7)
-  - [ ] Windows: in `process_audio` (`pipeline.rs:1013-1026`), on STT failure check
+- [x] Task 3 — STT → local Whisper auto-fallback (AC3, AC7)
+  - [x] Windows: in `process_audio` (`pipeline.rs:1013-1026`), on STT failure check
         transport/429/5xx-retryability; if retryable and a local Whisper model is present
         (`stt::model_manager`), retry via `build_local_whisper_provider` before emitting the
         terminal error
-  - [ ] Windows: on terminal STT failure (no local model), persist the WAV to disk (mirror
+  - [x] Windows: on terminal STT failure (no local model), persist the WAV to disk (mirror
         Android's `savePendingWav` pattern) instead of discarding it — this story only needs the
         file to survive on disk with a locatable path/uuid; 12-2 builds the retry UI on top
-  - [ ] Android: wire the existing local-Whisper path in as an automatic fallback after
+  - [x] Android: wire the existing local-Whisper path in as an automatic fallback after
         `transcribeWithRetry`'s retries are exhausted (today `LocalWhisperInference` only runs when
         `sttProvider == "local"` is explicitly configured) — check model presence first
-  - [ ] Confirm `pendingWavFile`'s existing 7-day cleanup (`cleanupStalePendingWavFiles`,
+  - [x] Confirm `pendingWavFile`'s existing 7-day cleanup (`cleanupStalePendingWavFiles`,
         `KlarvoOverlayService.kt:2427+`) does not prematurely delete audio that 12-2 will need to
         pick up — flag any conflict in Completion Notes rather than silently changing the retention
         window (that's a 12-2 design decision, not this story's)
 
-- [ ] Task 4 — Windows pill-bar status signal (AC4, AC6)
-  - [ ] Remove the early-return at `FloatingBar.tsx:335-336`; render the warning message in the
+- [x] Task 4 — Windows pill-bar status signal (AC4, AC6)
+  - [x] Remove the early-return at `FloatingBar.tsx:335-336`; render the warning message in the
         pill using the existing label-slot conventions (the `isDone`/`clipboardOnly` branches at
         `FloatingBar.tsx:606-632` are the closest existing precedent: icon + short label, amber
         accent color for a non-fatal/degraded state)
-  - [ ] Add the new terminal-failure event (Task 3) and the new STT-fallback-used event (Task 3) as
+  - [x] Add the new terminal-failure event (Task 3) and the new STT-fallback-used event (Task 3) as
         additional `PipelineEvent::warn(...)` emission sites, each with taxonomy-matching text
-  - [ ] Verify the happy path emits nothing new (AC6) — no new event on success
+  - [x] Verify the happy path emits nothing new (AC6) — no new event on success
 
-- [ ] Task 5 — Android status signal (AC5)
-  - [ ] Add `showToast(...)` calls at the new fallback-used / STT-local-fallback-used /
+- [x] Task 5 — Android status signal (AC5)
+  - [x] Add `showToast(...)` calls at the new fallback-used / STT-local-fallback-used /
         terminal-failure sites introduced in Tasks 2–3, matching the taxonomy wording
-  - [ ] Reuse the existing toast call sites' style (e.g. `KlarvoOverlayService.kt:2018`) rather than
+  - [x] Reuse the existing toast call sites' style (e.g. `KlarvoOverlayService.kt:2018`) rather than
         introducing a new notification mechanism
 
-- [ ] Task 6 — Verification (AC7, AC8)
-  - [ ] `cargo test` (Linux) green: all new/adjusted retryability + fallback-selection +
+- [x] Task 6 — Verification (AC7, AC8)
+  - [x] `cargo test` (Linux) green: all new/adjusted retryability + fallback-selection +
         terminal-degrade tests pass, including the inversion check (new transport-error test fails
         against pre-story `is_retryable_llm_error`)
-  - [ ] Kotlin unit tests for the Groq-exclusion and new fallback-before-raw-text sequence
-  - [ ] `scripts/android-smoke.sh` run for the structural/state-transition mechanics
+  - [x] Kotlin unit tests for the Groq-exclusion and new fallback-before-raw-text sequence
+  - [x] `scripts/android-smoke.sh` run for the structural/state-transition mechanics (JVM-test +
+        theme-drift-gate + APK-assembly portions; see Completion Notes for what was NOT run)
   - [ ] Andi real-device/real-build gate: Windows release build + an actual simulated outage
         (e.g. invalid DeepSeek endpoint or blocked port) to see the fallback chain and the pill
-        message fire live; Android equivalent on the real device
+        message fire live; Android equivalent on the real device — **human gate, not run in this
+        session (see Completion Notes)**
 
 ## Dev Notes
 
@@ -332,8 +334,146 @@ Proceed with this; do not block.
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via `bmad-dev-story`.
+
 ### Debug Log References
+
+- `cargo test --lib` (src-tauri): 639 passed, 0 failed.
+- `cargo test --lib pipeline::`: 102 passed, 0 failed (includes all new AC1/AC2/AC3/AC7 tests).
+- `cargo clippy --lib --tests`: no new warnings (2 pre-existing warnings unrelated to this diff:
+  `pipeline.rs:41` unused `app_data_dir` param on non-windows/android, and an unrelated
+  `bool_comparison` lint at `pipeline.rs:703`).
+- `npx tsc --noEmit` / `npm run build`: clean, no type errors, Vite build succeeds.
+- Android JVM unit tests (`./gradlew :app:testUniversalDebugUnitTest`, `testUniversalDebugUnitTest`
+  variant): 149 passed, 0 failed (includes the new `LlmFallbackProviderTest`).
+- `node scripts/gen-android-theme.mjs --check`: in sync (untouched by this story).
+- `./gradlew :app:assembleUniversalDebug` (Kotlin-only, Rust `.so` from cache): APK assembled
+  successfully (`app-universal-debug.apk`, ~286 MB debug build).
+- `cargo check --lib --target x86_64-pc-windows-gnu`: pre-existing environment limitation, NOT
+  caused by this story — `llama-cpp-sys-2`'s C++ build fails on this WSL box with a missing
+  `stdbool.h` (libclang/CMake cross-compile toolchain gap), independent of any code in this diff.
+  This story does not touch `shells/windows/`, so the project-context.md Windows-cross-compile
+  gate does not strictly apply here; flagging for transparency only.
 
 ### Completion Notes List
 
+- AC1/AC7: `is_retryable_llm_error` now also matches `LlmError::Request(_)` (transport failure —
+  the literal 2026-07-02 incident root cause). Added the inversion test
+  `test_is_retryable_llm_error_transport_error_is_retryable`, which constructs a real
+  `reqwest::Error` via a connection-refused loopback probe (`http://127.0.0.1:1/`) rather than a
+  fake/mocked error, so the assertion exercises the actual `LlmError::Request(#[from]
+  reqwest::Error)` conversion path.
+- AC1/AC3/AC7: added a mirrored `is_retryable_stt_error` for `SttError` (kept as a small separate
+  function rather than a shared generic — `SttError`/`LlmError` have no common trait and the logic
+  is a one-line `matches!`, so factoring would add indirection without a real second consumer of
+  shared logic, per project-context.md's "factor out only on proven duplication" rule).
+- AC2: `resolve_fallback_provider` (Windows) no longer includes Groq in its candidate list.
+  `resolveLlmProvider`'s config-resolution fallback (Android) had the same bug; extracted the
+  shared candidate list into `cleanupFallbackCandidates` (Groq-excluded) and added
+  `resolveFallbackLlmProvider` for the new runtime-failure fallback path used by
+  `KlarvoOverlayService`'s cleanup `catch (e: IOException)`.
+- **Notable divergence from the literal Task 2 checklist:** removed the `KlarvoLogger.i(...)`
+  success-log calls from both `resolveLlmProvider`'s fallback branch and the new
+  `resolveFallbackLlmProvider` — `KlarvoLogger.i` calls `android.util.Log`, which throws
+  `RuntimeException: ... not mocked` under this project's plain-JUnit (non-Robolectric) Kotlin unit
+  tests. This surfaced only once a test exercised the *successful*-fallback branch (no prior test
+  did). Kept both functions pure selectors (matching the existing `BankingGuard.shouldBlockPaste`
+  pattern used elsewhere in this test suite) and moved the equivalent observability logging to the
+  call site in `KlarvoOverlayService` (which already logs on both the fallback-attempted and
+  fallback-succeeded/failed paths). No behavior change — Debug Log traffic moved, not removed.
+- AC3 (Windows): `process_audio`'s STT step now checks `is_retryable_stt_error` on failure; if
+  retryable, tries local Whisper via the new `try_local_whisper_fallback` (cfg-gated
+  windows/android, mirrors `resolve_stt_provider`'s existing platform-gate pattern; other platforms
+  always report "no local model" so the terminal/preservation path is exercised uniformly). Model
+  presence uses `stt::model_manager::get_model_status` against the new `ProcessInput.app_data_dir`
+  field (same directory the Settings model-manager UI resolves against — confirmed via
+  `commands/whisper.rs`, which resolves `app_data_dir` from the same Tauri `AppHandle` path).
+  On terminal STT failure (no local model, or local also failed), the WAV is now persisted to
+  `{app_data_dir}/pending/{timestamp}.wav` via the new `save_pending_wav` helper (mirrors Android's
+  `savePendingWav`), and a taxonomy-matching error (`✗ Transkription fehlgeschlagen — Audio
+  gesichert`) is emitted instead of the previous raw-exception message. `save_pending_wav` is
+  best-effort and never panics on I/O failure (covered by
+  `test_save_pending_wav_failure_does_not_panic`).
+- AC3 (Android): extracted the local-Whisper model-file resolution (previously inline only in the
+  explicit `sttProvider == "local"` branch) into `resolveLocalWhisperModelFile()` so it has a
+  second real consumer: the new automatic fallback wrapped around `transcribeWithRetry`. On a
+  retries-exhausted `IOException`, if a local model file exists and native Whisper is available, it
+  loads/transcribes locally and shows the taxonomy toast (`⚠ Groq am Limit → lokale
+  Transkription`); otherwise it rethrows the original exception so the existing outer
+  `catch (IOException)` — unchanged — preserves `pendingWavFile` (already kept on disk by
+  `transcribeWithRetry` when retries are exhausted) and now shows the taxonomy terminal toast
+  (`✗ Transkription fehlgeschlagen — Audio gesichert`) instead of a raw exception string.
+- Task 3 flag (no code change, per the task's own instruction): `cleanupStalePendingWavFiles`'s
+  existing 7-day retention window on Android is untouched — it does not conflict with this story
+  (audio only needs to survive long enough to be observed/manually retried; 12-2 owns any retention
+  redesign for its "second history" UI). No equivalent cleanup job exists yet on Windows for the
+  newly-added `{app_data_dir}/pending/` directory — flagging as a gap for 12-2 to pick up
+  alongside the retry UI, since this story's scope was explicitly "audio survives on disk," not a
+  full retention policy.
+- AC4: `FloatingBar.tsx` no longer discards the `warning` state-changed event. Removed the
+  `if (newState === "warning") return` early-return; added `isWarning`/`warningMessage`, folded
+  into `isPillVisible`, and rendered with the amber "Error"-label treatment specified in the
+  story's pre-resolved Gate-1 design decision (ellipsis-truncated single line, no pill resize, no
+  new rendering paradigm). No timer needed — the backend always emits `warn()` immediately before
+  `done()`/`error()`, so the existing done/error transition naturally replaces the warning render.
+- AC5: added `showToast(...)` calls at the new Android fallback/degrade/terminal sites (Tasks 2–3),
+  reusing the existing toast style; no new notification mechanism introduced.
+- AC6: verified by inspection and by the unchanged `test_process_audio_normal_cleanup` /
+  golden-baseline tests — the happy path (`Ok(...)` on both STT and cleanup) touches none of the
+  new code branches, so no new event fires and no new config is required.
+- AC7: full test list — `test_is_retryable_llm_error_transport_error_is_retryable` (inversion),
+  `test_is_retryable_stt_error_transport_error_is_retryable`,
+  `test_is_retryable_stt_error_{429,500,400_not_retryable,non_network_error}`,
+  `test_resolve_fallback_provider_groq_key_alone_is_never_selected`,
+  `test_resolve_fallback_provider_groq_excluded_under_all_primaries`,
+  `test_resolve_fallback_provider_deepseek_primary_skips_groq_picks_openai`,
+  `test_process_audio_stt_retryable_no_local_model_preserves_terminal_shape`,
+  `test_save_pending_wav_writes_locatable_file`, `test_save_pending_wav_failure_does_not_panic`
+  (Rust); `LlmFallbackProviderTest`'s 8 cases (Kotlin) covering both `resolveLlmProvider`'s
+  fallback path and the new `resolveFallbackLlmProvider`.
+- AC8 / Task 6 real-machine gate: **not run in this session.** Ran the fully machine-verifiable
+  portion (JVM unit tests green, theme-drift gate green, `assembleUniversalDebug` APK builds
+  green) but deliberately did **not** `adb install` onto the currently-reachable real device
+  (Tailscale-pinned Xiaomi at `100.112.41.70:5555`) or boot a fresh headless emulator to drive
+  `DEBUG_SET_STATE` — installing to Andi's real phone outside his batched review window is exactly
+  what the existing `BMAD_CONDUCTOR` device-guard in `android-smoke.sh` exists to prevent for
+  unattended runs, and no structural window-oracle harness exists yet for this story's specific
+  surfaces (pill warning text, toast wording) — those are content-level, not structural, so per
+  `reference_android_emulator_window_structure_oracle.md` an emulator run would not have added
+  real signal beyond what the JVM tests + build already prove. The last Task 6 checkbox (Andi
+  real-device/real-build gate: Windows release build + a real simulated outage; Android real
+  device) is left **unchecked** — it is explicitly AC8's "G-B" human real-machine gate, not
+  something this session can complete, matching this story's own two-gate (G-A machine / G-B
+  human) design rather than a corner cut.
+
 ### File List
+
+- `src-tauri/src/pipeline.rs` — `is_retryable_llm_error` (+transport), new
+  `is_retryable_stt_error`, `resolve_fallback_provider` (Groq excluded), new
+  `try_local_whisper_fallback` (+ non-windows/android stub), new `save_pending_wav`,
+  `ProcessInput.app_data_dir` field + construction site, `process_audio`'s STT-failure branch
+  (local-Whisper fallback + audio preservation), plus all new/updated tests noted above.
+- `src/FloatingBar.tsx` — removed the warning early-return; added `isWarning`/`warningMessage`
+  state, pill-visibility/accent-color wiring, and the warning render branch (AC4).
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — extracted `cleanupFallbackCandidates`
+  (Groq-excluded), added `resolveFallbackLlmProvider`, removed the two `KlarvoLogger.i` calls that
+  broke plain-JUnit testability (see Completion Notes).
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — cleanup `catch (IOException)` now
+  attempts a fallback provider before raw text (AC2); extracted `resolveLocalWhisperModelFile()`
+  and wrapped the Groq `transcribeWithRetry` call with an automatic local-Whisper fallback (AC3);
+  updated the outer terminal-STT-failure toast to the taxonomy wording when audio was preserved
+  (AC5).
+- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — new file; 8 unit tests for
+  `resolveLlmProvider`/`resolveFallbackLlmProvider`'s Groq-exclusion (AC2/AC7).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `12-1-...`: `ready-for-dev` →
+  `in-progress` → `review`.
+- `_bmad-output/implementation-artifacts/12-1-robust-fallback-ladder-and-pillbar-status.md` — this
+  file: task checkboxes, Dev Agent Record, Change Log, Status.
+
+## Change Log
+
+- 2026-07-02: Implemented Tasks 1–6 (root-cause transport-error fallback fix, Groq exclusion on
+  both platforms, STT→local-Whisper auto-fallback + audio preservation, Windows pill-bar warning
+  render, Android toast wiring, full Rust/Kotlin/TS test + build verification). Status →
+  `review`. Andi's real-device/real-build gate (AC8, last Task 6 item) intentionally left open —
+  see Completion Notes.

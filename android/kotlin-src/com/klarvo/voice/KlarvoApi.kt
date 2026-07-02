@@ -148,32 +148,63 @@ object KlarvoApi {
         if (primary != null) return primary
 
         // Configured provider has no key -- try fallbacks in priority order.
-        val fallbacks = listOf(
-            Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
-                url    = "https://api.deepseek.com/chat/completions",
-                model  = "deepseek-chat",
-                apiKey = config.deepseekApiKey
-            )),
-            Triple("groq", config.groqApiKey, LlmProviderInfo(
-                url    = "https://api.groq.com/openai/v1/chat/completions",
-                model  = "llama-3.3-70b-versatile",
-                apiKey = config.groqApiKey
-            )),
-            Triple("openai", config.openaiApiKey, LlmProviderInfo(
-                url    = "https://api.openai.com/v1/chat/completions",
-                model  = "gpt-4o-mini",
-                apiKey = config.openaiApiKey
-            )),
-            Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
-                "https://openrouter.ai/api/v1/chat/completions",
-                "deepseek/deepseek-chat",
-                config.openrouterApiKey
-            ))
-        )
-        return fallbacks.firstOrNull { it.second.isNotBlank() }?.let {
-            KlarvoLogger.i(TAG, "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
-            it.third
-        }
+        // Groq is deliberately NOT a candidate (AC2/story 12-1): it is the STT
+        // provider and must never have its quota eaten by cleanup-fallback
+        // retries, on either the config-resolution path here or the
+        // runtime-failure path (see resolveFallbackLlmProvider below).
+        //
+        // No logging in here (pre-story this logged via KlarvoLogger.i on the
+        // success branch) -- kept as a pure selector, like
+        // BankingGuard.shouldBlockPaste, so it stays plain-JUnit-testable
+        // without touching android.util.Log ("not mocked" outside
+        // Robolectric). Callers that care can log the resolved provider name.
+        return cleanupFallbackCandidates(config).firstOrNull { it.second.isNotBlank() }?.third
+    }
+
+    /**
+     * Ordered cleanup-fallback candidates: DeepSeek -> OpenAI -> OpenRouter.
+     *
+     * Groq is NEVER a candidate here (AC2, story 12-1) -- it is the STT
+     * provider and must not have its quota eaten by cleanup-fallback retries.
+     * Shared by [resolveLlmProvider]'s config-resolution fallback and
+     * [resolveFallbackLlmProvider]'s runtime-failure fallback so the
+     * candidate list lives in exactly one place.
+     */
+    private fun cleanupFallbackCandidates(config: Config): List<Triple<String, String, LlmProviderInfo>> = listOf(
+        Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
+            url    = "https://api.deepseek.com/chat/completions",
+            model  = "deepseek-chat",
+            apiKey = config.deepseekApiKey
+        )),
+        Triple("openai", config.openaiApiKey, LlmProviderInfo(
+            url    = "https://api.openai.com/v1/chat/completions",
+            model  = "gpt-4o-mini",
+            apiKey = config.openaiApiKey
+        )),
+        Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
+            "https://openrouter.ai/api/v1/chat/completions",
+            "deepseek/deepseek-chat",
+            config.openrouterApiKey
+        ))
+    )
+
+    /**
+     * Resolves an alternative cleanup provider after a *runtime* call
+     * failure (AC2) -- e.g. the transport/IOException catch in
+     * [KlarvoOverlayService]'s cleanup call site. Skips [excluding] (the
+     * provider that just failed) and Groq (never a cleanup-fallback
+     * candidate). Returns `null` when no alternative provider has a
+     * configured key, in which case the caller must degrade to raw text.
+     *
+     * Deliberately does its own logging at the call site, not in here: this
+     * stays a pure selector (like `BankingGuard.shouldBlockPaste`) so it is
+     * plain-JUnit-testable without touching `KlarvoLogger`/`android.util.Log`
+     * (which throw "not mocked" under a non-Robolectric unit test).
+     */
+    fun resolveFallbackLlmProvider(config: Config, excluding: String): LlmProviderInfo? {
+        return cleanupFallbackCandidates(config)
+            .firstOrNull { (name, key, _) -> name != excluding && key.isNotBlank() }
+            ?.third
     }
 
     /**

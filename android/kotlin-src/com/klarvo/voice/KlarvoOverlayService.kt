@@ -1834,25 +1834,9 @@ class KlarvoOverlayService : Service() {
             val transcript = if (config.sttProvider == "local") {
                 val tLocalStart = System.currentTimeMillis()
 
-                // Resolve model file path.
-                // Tauri's app_data_dir() maps to filesDir on Android,
-                // so downloaded models land in filesDir/models/.
-                // Fallback: also check dataDir/models/ in case of older builds.
-                val filesDirModels = java.io.File(filesDir, "models")
-                val dataDirModels = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    java.io.File(dataDir, "models")
-                } else {
-                    java.io.File(applicationInfo.dataDir, "models")
-                }
-                KlarvoLogger.d(TAG, "[local-stt] filesDir/models: $filesDirModels exists=${filesDirModels.exists()}")
-                KlarvoLogger.d(TAG, "[local-stt] dataDir/models: $dataDirModels exists=${dataDirModels.exists()}")
-
-                val modelDir = when {
-                    filesDirModels.exists() -> filesDirModels
-                    dataDirModels.exists() -> dataDirModels
-                    else -> filesDirModels  // default to filesDir (matches Tauri download path)
-                }
-                val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
+                // Resolve model file path (shared with the automatic Groq-failure
+                // safety net below, AC3/story 12-1 -- see resolveLocalWhisperModelFile).
+                val modelFile = resolveLocalWhisperModelFile()
 
                 KlarvoLogger.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")
 
@@ -1910,15 +1894,38 @@ class KlarvoOverlayService : Service() {
                 }
                 result
             } else {
-                transcribeWithRetry(
-                    wavBytes,
-                    config.groqApiKey,
-                    config.language,
-                    "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
-                    config.dictionaryTerms,
-                    config.customPrompt,
-                    pendingWavFile
-                )
+                try {
+                    transcribeWithRetry(
+                        wavBytes,
+                        config.groqApiKey,
+                        config.language,
+                        "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
+                        config.dictionaryTerms,
+                        config.customPrompt,
+                        pendingWavFile
+                    )
+                } catch (sttEx: IOException) {
+                    // AC3: automatic local-Whisper safety net after Groq's retries are
+                    // exhausted. Rethrow the original exception when no local model is
+                    // usable -- the outer catch below preserves `pendingWavFile` (already
+                    // kept on disk by transcribeWithRetry) and shows a clear error, so the
+                    // dictation is never silently lost.
+                    val modelFile = resolveLocalWhisperModelFile()
+                    if (!modelFile.exists() || !LocalWhisperInference.isNativeAvailable()) {
+                        throw sttEx
+                    }
+                    KlarvoLogger.w(TAG, "[pipeline] Groq STT failed after retries ($sttEx), falling back to local Whisper", sttEx)
+                    if (!LocalWhisperInference.isModelLoaded() && !LocalWhisperInference.load(modelFile.absolutePath)) {
+                        throw sttEx
+                    }
+                    val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+                    val localResult = LocalWhisperInference.transcribeAudio(wavBase64, config.language)
+                    if (localResult.isBlank()) {
+                        throw sttEx
+                    }
+                    handler.post { showToast("⚠ Groq am Limit → lokale Transkription") }
+                    localResult
+                }
             }
             val tStt = System.currentTimeMillis()
             // Story 11-1 (spike, code review fix): dedicated monotonic end-capture for the
@@ -2004,11 +2011,39 @@ class KlarvoOverlayService : Service() {
                         KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result
                     } catch (e: IOException) {
-                        KlarvoLogger.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                        // AC2: try a fallback cleanup provider (never Groq, never the one
+                        // that just failed) before degrading to raw text -- mirrors the
+                        // Rust pipeline's fallback-then-raw-text sequence, which this
+                        // runtime-failure path previously skipped entirely.
+                        KlarvoLogger.w(TAG, "Text cleanup failed -- trying fallback provider", e)
                         KlarvoApi.updateFeedbackMetrics(this) { m ->
                             m.copy(llmErrorCount = m.llmErrorCount + 1)
                         }
-                        KlarvoApi.sanitizeLlmOutput(transcript)
+                        val fallbackProvider = KlarvoApi.resolveFallbackLlmProvider(config, config.llmProvider)
+                        if (fallbackProvider != null) {
+                            try {
+                                val result = KlarvoApi.cleanupChunked(
+                                    text = transcript,
+                                    provider = fallbackProvider,
+                                    style = config.cleanupStyle,
+                                    dictionaryTerms = config.dictionaryTerms.takeIf { it.isNotBlank() },
+                                    customInstructions = config.customPrompt.takeIf { it.isNotBlank() }
+                                )
+                                val tCleanup = System.currentTimeMillis()
+                                llmLatencyMs = tCleanup - tStt
+                                KlarvoLogger.i(TAG, "[pipeline] cleanup fallback succeeded (${fallbackProvider.model})")
+                                handler.post { showToast("⚠ Cleanup langsam → Fallback verwendet") }
+                                result
+                            } catch (fallbackEx: IOException) {
+                                KlarvoLogger.w(TAG, "Cleanup fallback also failed -- using raw transcript", fallbackEx)
+                                handler.post { showToast("⚠ Cleanup nicht verfügbar → Rohtext eingefügt") }
+                                KlarvoApi.sanitizeLlmOutput(transcript)
+                            }
+                        } else {
+                            KlarvoLogger.w(TAG, "No cleanup fallback provider available -- using raw transcript")
+                            handler.post { showToast("⚠ Cleanup nicht verfügbar → Rohtext eingefügt") }
+                            KlarvoApi.sanitizeLlmOutput(transcript)
+                        }
                     }
                 } else {
                     KlarvoLogger.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
@@ -2135,11 +2170,18 @@ class KlarvoOverlayService : Service() {
             KlarvoApi.updateFeedbackMetrics(this) { m ->
                 m.copy(sttErrorCount = m.sttErrorCount + 1)
             }
-            // If a pending WAV still exists (retries exhausted) let the user know it was
-            // preserved so no audio is silently lost.
-            val savedMsg = if (pendingWavFile?.exists() == true) " Recording saved." else ""
+            // AC3/AC5: if a pending WAV still exists (Groq retries exhausted, no local
+            // model available), the audio was preserved -- surface the taxonomy terminal
+            // message so the user knows it wasn't silently lost, rather than a raw
+            // exception string.
+            val audioPreserved = pendingWavFile?.exists() == true
+            val toastMsg = if (audioPreserved) {
+                "✗ Transkription fehlgeschlagen — Audio gesichert"
+            } else {
+                "Error: ${e.message?.take(80)}"
+            }
             handler.post {
-                showToast("Error: ${e.message?.take(80)}$savedMsg")
+                showToast(toastMsg)
                 autoLoopActive = false
                 hideListeningPanel()
                 val prev = currentState
@@ -2303,6 +2345,30 @@ class KlarvoOverlayService : Service() {
     }
 
     // ---- Data-loss prevention helpers ----
+
+    /**
+     * Resolves the local Whisper model file path.
+     *
+     * Checks `filesDir/models/` first (matches Tauri's `app_data_dir()` download
+     * location), falling back to `dataDir/models/` for older builds. Shared by
+     * the explicit `sttProvider == "local"` path and the automatic
+     * Groq-failure safety net (AC3, story 12-1) so both consumers use the
+     * same presence check instead of two independently-drifting copies.
+     */
+    private fun resolveLocalWhisperModelFile(): File {
+        val filesDirModels = File(filesDir, "models")
+        val dataDirModels = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            File(dataDir, "models")
+        } else {
+            File(applicationInfo.dataDir, "models")
+        }
+        val modelDir = when {
+            filesDirModels.exists() -> filesDirModels
+            dataDirModels.exists() -> dataDirModels
+            else -> filesDirModels // default to filesDir (matches Tauri download path)
+        }
+        return modelDir.resolve("ggml-small.bin") // TODO: read model name from config
+    }
 
     /**
      * Writes the WAV bytes to {dataDir}/pending/<timestamp>.wav before any network call.
