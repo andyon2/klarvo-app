@@ -118,4 +118,51 @@ class LlmFallbackProviderTest {
         val result = KlarvoApi.resolveFallbackLlmProvider(config, excluding = "deepseek")
         assertNull("The provider that just failed must not be re-selected as its own fallback", result)
     }
+
+    // -----------------------------------------------------------------------
+    // Finding C (12-1 code review): the fallback call site must exclude the
+    // ACTUALLY resolved provider name, not `config.llmProvider` -- when the
+    // configured provider has no key, `resolveLlmProvider` silently
+    // substitutes one (see resolveLlmProvider's cleanupFallbackCandidates
+    // fallthrough), and excluding the never-run configured name lets the
+    // runtime fallback re-pick the exact substitute that just failed.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun resolveLlmProvider_substitutesDeepseek_exposesResolvedNameForExclusion() {
+        // llmProvider = "openrouter" has no key -> resolveLlmProvider falls
+        // through to cleanupFallbackCandidates and actually runs DeepSeek.
+        val config = baseConfig(llmProvider = "openrouter", deepseekApiKey = "ds-key")
+        val primary = KlarvoApi.resolveLlmProvider(config)
+        assertNotNull(primary)
+        assertEquals(
+            "resolveLlmProvider substituted DeepSeek, so providerName must say so (not 'openrouter')",
+            "deepseek",
+            primary!!.providerName
+        )
+    }
+
+    @Test
+    fun resolveFallbackLlmProvider_excludingResolvedSubstitute_doesNotRetryIt() {
+        val config = baseConfig(
+            llmProvider = "openrouter",
+            deepseekApiKey = "ds-key",
+            openaiApiKey = "sk-openai"
+        )
+        val primary = KlarvoApi.resolveLlmProvider(config)!!
+
+        // Correct call site behavior (post-fix): exclude the resolved substitute.
+        val fallback = KlarvoApi.resolveFallbackLlmProvider(config, excluding = primary.providerName)
+        assertNotNull("must pick an alternative, not silently return nothing", fallback)
+        assertEquals(
+            "must move on to the next candidate, not re-run the DeepSeek call that just failed",
+            "gpt-4o-mini",
+            fallback!!.model
+        )
+
+        // Regression pin: excluding the never-run CONFIGURED name (the pre-fix
+        // bug) re-selects the same DeepSeek that just failed.
+        val buggyFallback = KlarvoApi.resolveFallbackLlmProvider(config, excluding = config.llmProvider)
+        assertEquals("deepseek-chat", buggyFallback!!.model)
+    }
 }

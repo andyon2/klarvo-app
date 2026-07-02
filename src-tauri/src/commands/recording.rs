@@ -170,7 +170,7 @@ pub async fn transcribe_audio(
     let provider = crate::read_lock!(inner.stt_provider)?.clone();
 
     provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .transcribe(&wav_bytes, &language, dict_prompt.as_deref())
         .await
         .map_err(|e: stt::SttError| e.to_string())
 }
@@ -215,7 +215,7 @@ pub async fn transcribe_audio_bytes(
     let provider = crate::read_lock!(inner.stt_provider)?.clone();
 
     provider
-        .transcribe(audio_data, &language, dict_prompt.as_deref())
+        .transcribe(&audio_data, &language, dict_prompt.as_deref())
         .await
         .map_err(|e: stt::SttError| e.to_string())
 }
@@ -380,7 +380,7 @@ pub async fn transcribe_live_preview(state: State<'_, AppState>) -> Result<Strin
     };
 
     match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .transcribe(&wav_bytes, &language, dict_prompt.as_deref())
         .await
     {
         Ok(text) => Ok(text),

@@ -20,7 +20,14 @@ import java.util.concurrent.Executors
 data class LlmProviderInfo(
     val url: String,
     val model: String,
-    val apiKey: String
+    val apiKey: String,
+    // Finding C (story 12-1 code review): the ACTUALLY resolved provider
+    // name -- may differ from `config.llmProvider` when that provider had no
+    // key and `resolveLlmProvider` substituted a fallback candidate. Callers
+    // must exclude THIS name (not the configured one) when asking for a
+    // further fallback after a runtime failure, or they can end up retrying
+    // the same substitute provider that just failed.
+    val providerName: String
 )
 
 /**
@@ -126,22 +133,26 @@ object KlarvoApi {
             "groq" -> if (config.groqApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.groq.com/openai/v1/chat/completions",
                 model  = "llama-3.3-70b-versatile",
-                apiKey = config.groqApiKey
+                apiKey = config.groqApiKey,
+                providerName = "groq"
             ) else null
             "openai" -> if (config.openaiApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.openai.com/v1/chat/completions",
                 model  = "gpt-4o-mini",
-                apiKey = config.openaiApiKey
+                apiKey = config.openaiApiKey,
+                providerName = "openai"
             ) else null
             "openrouter" -> if (config.openrouterApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://openrouter.ai/api/v1/chat/completions",
                 model  = "deepseek/deepseek-chat",
-                apiKey = config.openrouterApiKey
+                apiKey = config.openrouterApiKey,
+                providerName = "openrouter"
             ) else null
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.deepseek.com/chat/completions",
                 model  = "deepseek-chat",
-                apiKey = config.deepseekApiKey
+                apiKey = config.deepseekApiKey,
+                providerName = "deepseek"
             ) else null
         }
 
@@ -174,17 +185,20 @@ object KlarvoApi {
         Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
             url    = "https://api.deepseek.com/chat/completions",
             model  = "deepseek-chat",
-            apiKey = config.deepseekApiKey
+            apiKey = config.deepseekApiKey,
+            providerName = "deepseek"
         )),
         Triple("openai", config.openaiApiKey, LlmProviderInfo(
             url    = "https://api.openai.com/v1/chat/completions",
             model  = "gpt-4o-mini",
-            apiKey = config.openaiApiKey
+            apiKey = config.openaiApiKey,
+            providerName = "openai"
         )),
         Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
-            config.openrouterApiKey
+            config.openrouterApiKey,
+            "openrouter"
         ))
     )
 

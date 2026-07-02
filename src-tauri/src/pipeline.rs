@@ -128,7 +128,7 @@ fn build_local_whisper_provider(cfg: &AppConfig, app_data_dir: &std::path::Path)
 async fn try_local_whisper_fallback(
     cfg: &AppConfig,
     app_data_dir: &std::path::Path,
-    wav_bytes: Vec<u8>,
+    wav_bytes: &[u8],
     language: &str,
     prompt: Option<&str>,
 ) -> Option<Result<String, stt::SttError>> {
@@ -149,7 +149,7 @@ async fn try_local_whisper_fallback(
 async fn try_local_whisper_fallback(
     _cfg: &AppConfig,
     _app_data_dir: &std::path::Path,
-    _wav_bytes: Vec<u8>,
+    _wav_bytes: &[u8],
     _language: &str,
     _prompt: Option<&str>,
 ) -> Option<Result<String, stt::SttError>> {
@@ -1121,11 +1121,12 @@ pub async fn process_audio(
     emit(PipelineEvent::transcribing());
 
     let stt_start = std::time::Instant::now();
-    // Kept for the local-Whisper fallback attempt and/or audio-preservation
-    // path below — `transcribe` consumes its `Vec<u8>` on the primary call.
-    let wav_bytes_for_fallback = wav_bytes.clone();
+    // `transcribe` now borrows the audio (finding G) so `wav_bytes` stays
+    // available for the local-Whisper fallback attempt and/or the
+    // audio-preservation paths below without an eager, unconditional clone
+    // on the hot (first-try-success) path.
     let raw_text = match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .transcribe(&wav_bytes, &language, dict_prompt.as_deref())
         .await
     {
         Ok(t) => t,
@@ -1136,7 +1137,7 @@ pub async fn process_audio(
             match try_local_whisper_fallback(
                 &config_for_fallback,
                 &app_data_dir,
-                wav_bytes_for_fallback.clone(),
+                &wav_bytes,
                 &language,
                 dict_prompt.as_deref(),
             )
@@ -1149,7 +1150,7 @@ pub async fn process_audio(
                 }
                 Some(Err(local_err)) => {
                     log::error!("[pipeline] local Whisper fallback also failed: {local_err}");
-                    let _ = save_pending_wav(&app_data_dir, &wav_bytes_for_fallback);
+                    let _ = save_pending_wav(&app_data_dir, &wav_bytes);
                     emit(PipelineEvent::error(
                         "✗ Transkription fehlgeschlagen — Audio gesichert",
                     ));
@@ -1157,7 +1158,7 @@ pub async fn process_audio(
                 }
                 None => {
                     log::warn!("[pipeline] no local Whisper model available, preserving audio");
-                    let _ = save_pending_wav(&app_data_dir, &wav_bytes_for_fallback);
+                    let _ = save_pending_wav(&app_data_dir, &wav_bytes);
                     emit(PipelineEvent::error(
                         "✗ Transkription fehlgeschlagen — Audio gesichert",
                     ));
@@ -1167,10 +1168,21 @@ pub async fn process_audio(
         }
         Err(e) => {
             log::error!("[pipeline] STT transcription failed (non-retryable): {e}");
-            emit(PipelineEvent::error(friendly_error(
-                "Transcription failed",
-                &e.to_string(),
-            )));
+            // Finding B: a non-retryable failure (e.g. 401/400 from an expired
+            // key) must not discard the recording either — mirror the
+            // retryable-exhausted path above and preserve the audio whenever
+            // there actually is any.
+            if wav_bytes.is_empty() {
+                emit(PipelineEvent::error(friendly_error(
+                    "Transcription failed",
+                    &e.to_string(),
+                )));
+            } else {
+                let _ = save_pending_wav(&app_data_dir, &wav_bytes);
+                emit(PipelineEvent::error(
+                    "✗ Transkription fehlgeschlagen — Audio gesichert",
+                ));
+            }
             return ProcessOutcome::Stopped { stt_error: true };
         }
     };
@@ -2132,7 +2144,7 @@ async fn flush_preview_delta(handle: AppHandle) {
     };
 
     // Transcribe the delta (raw, no LLM cleanup — FR1/D1).
-    match stt_prov.transcribe(wav_bytes, &language, None).await {
+    match stt_prov.transcribe(&wav_bytes, &language, None).await {
         Ok(text) if !text.is_empty() => {
             // Emit the raw segment text as an append payload (NFR4 — colon form).
             if let Err(e) = handle.emit("klarvo://live-preview-chunk", text) {
@@ -2797,7 +2809,7 @@ mod tests {
     impl SttProvider for FakeStt {
         async fn transcribe(
             &self,
-            _audio: Vec<u8>,
+            _audio: &[u8],
             _language: &str,
             _prompt: Option<&str>,
         ) -> Result<String, stt::SttError> {
@@ -3460,6 +3472,56 @@ mod tests {
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
         assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+    }
+
+    /// Fake STT that always fails with a non-retryable (401) API error --
+    /// used to exercise finding B (12-1 code review): the non-retryable
+    /// branch must still preserve the audio, not just the retryable-exhausted
+    /// branch.
+    struct FakeSttNonRetryable;
+
+    #[async_trait::async_trait]
+    impl SttProvider for FakeSttNonRetryable {
+        async fn transcribe(
+            &self,
+            _audio: &[u8],
+            _language: &str,
+            _prompt: Option<&str>,
+        ) -> Result<String, stt::SttError> {
+            Err(stt::SttError::ApiError {
+                status: 401,
+                message: "invalid api key".to_string(),
+            })
+        }
+    }
+
+    /// Finding B (12-1 code review): a non-retryable STT failure (e.g. an
+    /// expired/invalid key returning 401) must preserve the audio via
+    /// `save_pending_wav`, exactly like the retryable-exhausted path already
+    /// does — previously this branch dropped the recording silently.
+    #[tokio::test]
+    async fn test_process_audio_stt_nonretryable_preserves_audio() {
+        let tmp = test_helpers::temp_dir();
+        let mut input = make_input(
+            FakeStt(Ok("unused".to_string())),
+            FakeCleanup { cleanup: CleanupBehavior::Ok("unused".to_string()), rewrite: Err(()) },
+        );
+        input.stt_provider = Arc::new(FakeSttNonRetryable);
+        input.app_data_dir = tmp.path().to_path_buf();
+        input.wav_bytes = vec![1u8, 2, 3, 4];
+
+        let (outcome, events) = run(input).await;
+
+        assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+        let pending_dir = tmp.path().join("pending");
+        let preserved = std::fs::read_dir(&pending_dir)
+            .expect("pending dir should have been created")
+            .count();
+        assert_eq!(
+            preserved, 1,
+            "non-retryable STT failure must preserve the audio as a pending WAV"
+        );
     }
 
     /// Directly exercises the audio-preservation helper: writing succeeds

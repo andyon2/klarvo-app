@@ -216,11 +216,20 @@ export default function FloatingBar() {
   // backend emits state="warning"; the pipeline always follows a warn()
   // with a done()/error() shortly after, so no separate timer is needed here.
   const [warningMessage, setWarningMessage] = useState("");
+  // Terminal error message text (AC4/finding-A parity): captured the same way
+  // as warningMessage so the pill can show the pipeline's actual failure
+  // reason (e.g. "✗ Transkription fehlgeschlagen — Audio gesichert") instead
+  // of a hardcoded "Error".
+  const [errorMessage, setErrorMessage] = useState("");
   const [clipboardOnly, setClipboardOnly] = useState(false);
   const [collapsing, setCollapsing] = useState(false);
   const [hotkeyMode, setHotkeyMode] = useState<HotkeyMode>("hold");
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Safety timer for the warning state (finding F): the backend always
+  // follows warn() with done()/error(), but if that follow-up event is ever
+  // dropped, this prevents the pill from sticking on "warning" forever.
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stored logical position of the bar's top-left corner after drags.
   const barX = useRef<number | null>(null);
@@ -345,6 +354,13 @@ export default function FloatingBar() {
       // normal "done"/"error" transition the backend always sends next.
       if (newState === "warning") {
         setWarningMessage(payload.warning ?? "");
+        // Finding F: guard against the warning state sticking if the
+        // expected done()/error() follow-up never arrives.
+        if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+        warningTimerRef.current = setTimeout(() => {
+          setWarningMessage("");
+          setState((prev) => (prev === "warning" ? "idle" : prev));
+        }, 4000);
       }
       setState(newState);
 
@@ -352,6 +368,13 @@ export default function FloatingBar() {
         // Safety net: ensure the bar window is healthy before the user sees
         // recording feedback. Runs fire-and-forget so it never blocks the UI.
         ensureBarWindow().catch((e) => console.error("[bar] pre-recording recovery failed:", e));
+      }
+
+      if (newState !== "warning") {
+        // Any non-warning transition clears the warning safety timer/message
+        // (finding F) — the expected follow-up arrived, so the guard is moot.
+        if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+        setWarningMessage("");
       }
 
       if (newState === "done") {
@@ -374,6 +397,9 @@ export default function FloatingBar() {
       } else if (newState === "error") {
         setLevels(new Array(20).fill(0));
         setShowDone(false);
+        // Finding A: capture the terminal error message the same way
+        // warningMessage is captured, so the pill can render it.
+        setErrorMessage(payload.error ?? "");
         if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
         doneTimerRef.current = setTimeout(() => setState("idle"), 2500);
       }
@@ -647,7 +673,20 @@ export default function FloatingBar() {
 
           {/* Error */}
           {isError && (
-            <span style={{ fontSize: 11, color: "#FF7369", flex: 1, letterSpacing: "0.01em" }}>Error</span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "#FF7369",
+                flex: 1,
+                minWidth: 0,
+                letterSpacing: "0.01em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {errorMessage || "Error"}
+            </span>
           )}
 
           {/* AC4: transient fallback/degrade warning — same treatment as Error

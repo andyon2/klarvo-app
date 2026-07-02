@@ -1910,6 +1910,15 @@ class KlarvoOverlayService : Service() {
                     // usable -- the outer catch below preserves `pendingWavFile` (already
                     // kept on disk by transcribeWithRetry) and shows a clear error, so the
                     // dictation is never silently lost.
+                    //
+                    // Finding D: only fall back for a RETRYABLE failure (5xx/transport,
+                    // already exhausted by transcribeWithRetry's own backoff) -- mirrors
+                    // Rust's is_retryable_stt_error gate. A non-retryable failure (empty
+                    // audio, 4xx/auth) is a guaranteed repeat, so loading/running the local
+                    // model for it would be pure waste; go straight to the terminal path.
+                    if (!isRetryableSttFailure(sttEx)) {
+                        throw sttEx
+                    }
                     val modelFile = resolveLocalWhisperModelFile()
                     if (!modelFile.exists() || !LocalWhisperInference.isNativeAvailable()) {
                         throw sttEx
@@ -2010,16 +2019,37 @@ class KlarvoOverlayService : Service() {
                         llmLatencyMs = tCleanup - tStt
                         KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result
-                    } catch (e: IOException) {
+                    } catch (e: Exception) {
                         // AC2: try a fallback cleanup provider (never Groq, never the one
                         // that just failed) before degrading to raw text -- mirrors the
                         // Rust pipeline's fallback-then-raw-text sequence, which this
                         // runtime-failure path previously skipped entirely.
+                        //
+                        // Finding H: catches ANY exception (not just IOException) so a
+                        // non-IOException from cleanupChunked (e.g. RuntimeException /
+                        // ExecutionException) still degrades to raw text instead of
+                        // escaping and losing the already-obtained transcript.
                         KlarvoLogger.w(TAG, "Text cleanup failed -- trying fallback provider", e)
                         KlarvoApi.updateFeedbackMetrics(this) { m ->
                             m.copy(llmErrorCount = m.llmErrorCount + 1)
                         }
-                        val fallbackProvider = KlarvoApi.resolveFallbackLlmProvider(config, config.llmProvider)
+                        // Finding C: exclude the ACTUALLY resolved provider name
+                        // (llmProvider.providerName), not config.llmProvider -- when
+                        // resolveLlmProvider substituted a fallback because the configured
+                        // provider had no key, config.llmProvider names a provider that
+                        // never ran, so excluding it would let the fallback re-pick the
+                        // same substitute that just failed.
+                        //
+                        // Finding D: only actually attempt a fallback for a RETRYABLE
+                        // failure (429/5xx/transport) -- mirrors Rust's is_retryable_llm_error
+                        // gate. A non-retryable (e.g. 400/401 config/auth) failure or a
+                        // non-IOException is a guaranteed repeat, so degrade straight to
+                        // raw text instead of burning another provider's quota for nothing.
+                        val fallbackProvider = if (e is IOException && isRetryableCleanupFailure(e)) {
+                            KlarvoApi.resolveFallbackLlmProvider(config, llmProvider.providerName)
+                        } else {
+                            null
+                        }
                         if (fallbackProvider != null) {
                             try {
                                 val result = KlarvoApi.cleanupChunked(
@@ -2032,9 +2062,12 @@ class KlarvoOverlayService : Service() {
                                 val tCleanup = System.currentTimeMillis()
                                 llmLatencyMs = tCleanup - tStt
                                 KlarvoLogger.i(TAG, "[pipeline] cleanup fallback succeeded (${fallbackProvider.model})")
-                                handler.post { showToast("⚠ Cleanup langsam → Fallback verwendet") }
+                                // Finding [copy]: this fires after a cleanup FAILURE (not
+                                // slowness) that triggered a provider switch -- reword to
+                                // reflect what actually happened.
+                                handler.post { showToast("⚠ Cleanup-Anbieter gewechselt") }
                                 result
-                            } catch (fallbackEx: IOException) {
+                            } catch (fallbackEx: Exception) {
                                 KlarvoLogger.w(TAG, "Cleanup fallback also failed -- using raw transcript", fallbackEx)
                                 handler.post { showToast("⚠ Cleanup nicht verfügbar → Rohtext eingefügt") }
                                 KlarvoApi.sanitizeLlmOutput(transcript)
@@ -2386,6 +2419,33 @@ class KlarvoOverlayService : Service() {
             KlarvoLogger.w(TAG, "[pending-wav] failed to save backup WAV", e)
             null
         }
+    }
+
+    /**
+     * Finding D (story 12-1 code review): classifies an [IOException] thrown by
+     * [transcribeWithRetry] as retryable or not, mirroring Rust's
+     * `is_retryable_stt_error`. `transcribeWithRetry` already does its own
+     * classification internally (4xx = non-retryable, 5xx/network = retried,
+     * empty audio = non-retryable) and encodes the outcome in the exception
+     * message prefix, so this reads that prefix rather than re-parsing status
+     * codes: only "failed after retries" means the retryable path was actually
+     * exhausted -- everything else (empty audio, 4xx) is a permanent failure
+     * that a local-Whisper attempt cannot fix.
+     */
+    private fun isRetryableSttFailure(e: IOException): Boolean {
+        return e.message?.startsWith("Groq STT failed after retries:") == true
+    }
+
+    /**
+     * Finding D (story 12-1 code review): classifies an [IOException] thrown by
+     * [KlarvoApi.cleanupChunked] as retryable or not, mirroring Rust's
+     * `is_retryable_llm_error` (429/5xx or a transport failure with no HTTP
+     * response at all -- DNS/timeout/connection-refused -- are retryable;
+     * every other HTTP status is a permanent/config error).
+     */
+    private fun isRetryableCleanupFailure(e: IOException): Boolean {
+        val status = Regex("HTTP (\\d{3})").find(e.message ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull()
+        return status == null || status == 429 || status >= 500
     }
 
     /**
