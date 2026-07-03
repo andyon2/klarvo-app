@@ -150,6 +150,6 @@ development_status:
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
   epic-12: in-progress
-  12-1-robust-fallback-ladder-and-pillbar-status: review
+  12-1-robust-fallback-ladder-and-pillbar-status: done
   12-2-audio-retry-history: backlog
   12-3-provider-comparison: backlog

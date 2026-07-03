@@ -2,7 +2,7 @@
 story: "12.1"
 epic: "12"
 title: "Robust LLM/STT fallback ladder + pill-bar status signal"
-status: review
+status: done
 track: L3-feature
 gatedBy: []
 buildsOn: []
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 12.1: Robust LLM/STT fallback ladder + pill-bar status signal
 
-Status: review
+Status: done
 
 > **Epic 12 — Cloud-Resilienz.** Triggered by a live production incident (2026-07-02): the
 > DeepSeek cleanup API was down for ~75 minutes; Klarvo's existing provider-fallback did **not**
@@ -477,3 +477,17 @@ Claude Sonnet 5 (claude-sonnet-5), via `bmad-dev-story`.
   render, Android toast wiring, full Rust/Kotlin/TS test + build verification). Status →
   `review`. Andi's real-device/real-build gate (AC8, last Task 6 item) intentionally left open —
   see Completion Notes.
+- 2026-07-02: Code-review (3 reviewers) → fix round applied findings A/B/C/D/F/G/H (commit
+  32c42f0): non-retryable STT audio preservation, Android runtime cleanup-fallback (was absent),
+  Android excluded the actually-run substitute provider, retryable-classification parity Rust↔Kotlin,
+  warning-state safety timer, WAV-clone removed (trait borrows `&[u8]`), broadened Kotlin degrade
+  catches, Windows pill renders `payload.error`.
+- 2026-07-03: **AC8 real-device/real-build gate CLEARED → Status `done`.** Android (real Xiaomi) and
+  Windows (Andi's build) both device-verified: DeepSeek-401 outage → raw text pasted + amber
+  status surfaced, no data loss, no 30 s hang. Two device-only defects found + fixed during verify:
+  the `Inserted:` paste toast (125d2d7) and HyperOS's `pasted from clipboard` system toast
+  (2c3876f) both overrode the status toast → status toast now deferred to after the paste
+  (LENGTH_LONG); objective logcat ordering proof in gate4-evidence/12-1/. Deliberate residuals
+  (backlog): whole-`Request`-variant retryable match kept broad; EN/DE degrade wording; STT→local
+  path not exercised on device; **Windows pill too narrow for the long STT-terminal message
+  (truncates — Andi accepted "passt aber", follow-up polish).**
