@@ -2,7 +2,7 @@
 story: "12.2"
 epic: "12"
 title: "Audio-retry history (primitive A + manual re-process)"
-status: review
+status: done
 track: L3-feature
 gatedBy: ["12.1"]
 buildsOn: ["12.1"]
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 12.2: Audio-retry history (primitive A + manual re-process)
 
-Status: review
+Status: done
 
 > **Epic 12 — Cloud-Resilienz.** Story 12-1 made the fallback ladder robust and, as its last-resort
 > safety net, **preserves the raw WAV to disk** when transcription fails terminally (no text could be
@@ -306,3 +306,4 @@ fields. (Machine-testable — G-A.)
 | 2026-07-06 | Story authored in Phase A (epic-conductor); design decision (pending-entry UX + actions) settled with Andi. | Claude (Phase A) |
 | 2026-07-06 | Implemented AC1-AC7: schema migration, Windows pending-entry wiring, re-process/discard Tauri commands, pending-entry surface (App.tsx), Android WAV+history-entry parity. Status → review. | Claude (dev-story) |
 | 2026-07-06 | Addressed 8 confirmed code-review findings: sync push status filter (Rust+Kotlin), `synced` reset on promotion, discard pending-status guard + delete-order fix, discard try/catch (frontend), all-pending-cards busy-state disable, and command-layer tests for discard/pending-exclusion. Status stays `review` pending Andi's real-device gate. | Claude (dev-story) |
+| 2026-07-06 | Review cleared (3 parallel layers, all 7 ACs met at logic level). GATE-4: machine layer self-verified GREEN — G-A guards `cargo test --lib` 654 passed/0 failed + both-platform compile + apksigner-verified Android APK. Surface is the main-window history list (not an overlay), so the emulator structural oracle does not gate it; Windows pending-entry rendering/on-outage behaviour + Android history-UI tap-through are Andi's batched real-machine residual (evidence: `gate4-evidence/12-2/verdict.md`). Both status fields → done. | Claude (story-conductor) |
