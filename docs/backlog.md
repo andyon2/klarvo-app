@@ -680,3 +680,18 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 - **[Verifikations-Symmetrie] Outage-Testzustand nicht UI-herstellbar:** Weil die Validierung ungültige Keys blockt, lässt sich „Provider-Ausfall" nicht per Key-Editieren in der App testen. Für künftige Fallback-Tests: invaliden Key direkt in die `config.json` schreiben (on-device via `run-as`, mit Backup) ODER Netzwerk zum Provider blocken. In 12-1 so gemacht (verifiziert).
 - **[12-1 offen] STT→lokaler-Whisper-Fallback am Gerät nicht exerziert:** Braucht invaliden Groq-Key + vorhandenes lokales Modell; Android-JNI evtl. inaktiv (Memory `reference_android_stt_is_groq_cloud`). Kein 12-1-Blocker, aber vor „done" prüfen, ob der lokale Pfad auf Android real greift oder nur Terminal-Fehler zeigt.
 - **[12-1 Follow-up, UX] Windows-Pille zu schmal für volle Status-Meldung:** Andi device-verified (2026-07-03) — die längere STT-Terminal-Meldung „✗ Transkription fehlgeschlagen — Audio gesichert" wird in der ~200px-Pille zu „✗ Transkription fehl…" abgeschnitten (GATE-1-Entscheidung war Ellipsis-Kürzung; reicht für die kurzen Cleanup-Meldungen, nicht für die lange STT-Meldung). Andi „passt aber" → nicht done-blockierend. Optionen: (a) Pille für den Warn-/Fehler-Zustand temporär verbreitern/umbrechen; (b) kürzere Meldung („✗ STT-Fehler — Audio gesichert"); (c) Status ins Preview-Panel statt Pille. Android (Toast, LENGTH_LONG) zeigt die volle Meldung — nur die Windows-Pille kürzt.
+
+---
+
+## Epic 8 „Studio Dark" — RE-SCOPE (Andi 2026-07-06: Design abgenommen, „erstmal so" bauen)
+
+**Quelle:** Session 2026-07-06. Andi hat die Studio-Dark-Ziel-Optik (Mockup `docs/design/overhaul/source/Klarvo Design System.html`) abgenommen und will die Basis-Erneuerung jetzt umgesetzt haben, den Feinschliff später.
+
+**Entscheidung — der alte Branch wird NICHT gemergt.** `conductor/epic-8` (auf origin gesichert) ist 238 Commits hinter `v1-ship`; ein Merge produziert tote Konflikte auf inzwischen ersetztem Code. Stattdessen dient der gebaute Re-Skin als **Referenz-Vorlage**, und die noch lebenden Flächen werden **pro Fläche neu gegen den heutigen `v1-ship` portiert** (Story-Zyklus je Fläche). Fundament (Tokens/Fonts, 8-1) liegt bereits auf `v1-ship`.
+
+**Scope-Aufteilung:**
+- **✅ 8-2 Einstellungen / 8-5 Verlauf / 8-6 Onboarding — werden gebaut** (re-port). Referenz-Qualität laut `epic-8-fidelity-audit.md` (15.06.): 100 % Token-Treue, History „starker Match". 8-5: History lebt heute in `VoiceNotesPanel.tsx` (nicht mehr `App.tsx`) → neu verorten. 8-6: Testzustand nur nach Config-Wipe sichtbar → Erreichbarkeit als Vorlauf mitbauen (Verifikations-Symmetrie).
+- **❌ 8-3 FloatingBar / 8-4 Live-Preview — SUPERSEDED** durch native Overlays (Epic 10, `native_pill.rs`/`native_preview.rs`). Kein React-Port. Der nötige native Token-Nachzug in tiny-skia/GDI ist bereits separat gelistet (siehe „Epic 8-Abhängigkeit — native Overlays … in Rust/GDI nachziehen", oben) — das ist die richtige Heimat, nicht dieser Re-Skin.
+- **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
+
+**Fahrweise:** je Fläche ein `bmad-story-conductor`-Lauf, nacheinander, mit Andis Real-Device-Smoke dazwischen (visuelle Epics NICHT unbeaufsichtigt durchfahren — Postmortem 2026-06-15). Vor Andis Blick: objektiver Chromium-Harness-Abgleich gegen das Mockup.
