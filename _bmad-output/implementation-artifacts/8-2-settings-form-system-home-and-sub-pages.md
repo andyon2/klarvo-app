@@ -1,6 +1,6 @@
 # Story 8.2: Settings Form System + Home & Sub-pages
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -369,3 +369,10 @@ Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story skill.
   dirty-tracking behavior change). Only `FormControls.tsx` and this story file were touched — no
   Rust files, no 8-7-deferred residuals (yellow-/amber- colors, `#2ac3a8` preview-border default)
   touched.
+- **2026-07-06 — Review cleared + GATE-4 smoke → done.** Code-review (Blind/Edge/Auditor) caught a
+  re-port regression (KSelect dropdown lost the reference's portal → clipped by the panel's
+  `overflow-y-auto`); fixed by restoring the reference primitives (commit `4896801`). GATE-4 desktop
+  smoke (Chromium render, preview-mode) GREEN at observable layers — Home/sub-page match mockup,
+  KSelect portal-clipping fix confirmed unclipped; evidence in `gate4-evidence/8-2/`. Andi confirmed
+  the real-Windows aesthetic + config round-trip ("passt", 2026-07-06). Pre-existing 8-1 `.focus-klarvo`
+  always-on-ring finding recorded in backlog as its own cross-surface story (not folded here).

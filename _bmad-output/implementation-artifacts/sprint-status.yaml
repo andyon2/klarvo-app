@@ -124,7 +124,7 @@ development_status:
   #   8-7 = Fidelity-Pass (die 3-4 nicht-angewandten Affordances aus der Audit) — VERTAGT, nicht "erstmal so".
   epic-8: in-progress
   8-1-token-and-type-foundation: done
-  8-2-settings-form-system-home-and-sub-pages: review   # re-port gegen v1-ship; Windows-Smoke = Andis Gate
+  8-2-settings-form-system-home-and-sub-pages: done   # re-port gegen v1-ship; Andi-smoke 2026-07-06
   8-3-floatingbar-re-skin: backlog                       # SUPERSEDED durch native pill (Epic 10) — kein React-Port
   8-4-live-cleanup-preview-re-skin: backlog              # SUPERSEDED durch native preview (Epic 10) — kein React-Port
   8-5-main-window-history-re-skin: backlog               # re-port; History lebt heute in VoiceNotesPanel.tsx
