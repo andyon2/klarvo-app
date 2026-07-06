@@ -695,3 +695,13 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 - **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
 
 **Fahrweise:** je Fläche ein `bmad-story-conductor`-Lauf, nacheinander, mit Andis Real-Device-Smoke dazwischen (visuelle Epics NICHT unbeaufsichtigt durchfahren — Postmortem 2026-06-15). Vor Andis Blick: objektiver Chromium-Harness-Abgleich gegen das Mockup.
+
+---
+
+## [Defekt, vorbestehend aus 8-1] `.focus-klarvo` ist ein Dauer-Ring statt Fokus-Ring (entdeckt bei 8-2 GATE-4, 2026-07-06)
+
+**Quelle:** GATE-4-Smoke Story 8-2 (`gate4-evidence/8-2/verdict.md`). Beim Chromium-Render der gebauten Settings fiel auf: jedes Input/Select trägt einen permanenten Teal-Ring.
+
+**Ursache:** `src/styles.css:253` definiert `.focus-klarvo { box-shadow: 0 0 0 3px rgba(41,199,172,.28); }` als **bare Klasse ohne `:focus-visible`**. Da die Komponenten `focus-klarvo` statisch in der className tragen, ist der Ring **immer an**. Der Mockup (`.input:focus`/`.select:focus`) zeigt den Ring nur bei Fokus. Stammt aus **8-1** (Kommentar „Task 5.3"), NICHT aus 8-2 — 8-2 hat die Referenz byte-identisch nachgezogen.
+
+**Fix (klein, aber eigener Scope):** `.focus-klarvo` → `.focus-klarvo:focus-visible` (oder die Nutzung auf einen `:focus`-Modifier umstellen). ACHTUNG: `focus-klarvo` wird surface-übergreifend genutzt (Bar, Preview, Onboarding, Settings) — der Fix berührt die geteilte Token-Schicht und braucht einen eigenen Smoke über alle Flächen. Darum **eigene Story / Teil von 8-7**, nicht in 8-2 geschmuggelt.
