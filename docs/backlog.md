@@ -5,6 +5,52 @@ Single source of truth for deferred work. Every scope-cut / phase-deferral lands
 
 ---
 
+## Native Desktop-Overlays nach `main` nachziehen — Fix-Propagation (2026-07-06, Andi)
+
+Source: Andi meldete die Pillbar/Preview-Regression auf Windows wieder. Phase-0-Diagnose (Log `[fe:bar]`/
+`[fe:preview]` = Frontend-Webview + kein `KlarvoPillNative`-Fenster + Branch-Topologie) ergab **eindeutig**:
+kein neuer Bug — der laufende Build ist der **alte WebView2-Overlay-Stand von vor Epic 10**. `conductor/epic-12`
+zweigte am **2026-06-14** von `v1-ship` ab, 16 Tage **bevor** der native Win32-Overlay-Fix (Epic 10, `678094c`,
+30.06.) auf `v1-ship` landete. `v1-ship` **hat** den Fix; `main` und die aktiven Arbeitszweige **nicht**.
+
+**Kernursache = Prozess, nicht Compositing:** Overlay-Fixes wurden historisch auf dem gerade heißen Branch
+gemacht und nie konsequent nach `main` propagiert → jeder Build aus einer Linie, die vor dem Fix abzweigt,
+verliert ihn wieder. Ein WebView2-Flag-Quick-Fix auf epic-12 wäre die 6. Iteration an der falschen Schicht.
+
+**Entscheidung (Andi 2026-07-06):** Epic 12 abgeschlossen — **12-1 + 12-2 DONE + device-verified beide Plattformen**
+(12-3 deferred). **NÄCHSTER SCHRITT = diese Integration**, in **frischer Session** aufzusetzen.
+
+### ⏭️ PHASE 2 — Integration `conductor/epic-12` × `v1-ship` (NÄCHSTE SESSION, entscheidungs-komplett)
+
+Ziel: EINE Linie, die BEIDES trägt — die nativen Desktop-Overlays (Pill-Fix, Epic 10, auf `v1-ship`) UND
+Epic 9/11/12 (auf `conductor/epic-12`). **KEIN trivialer Merge** — Trial-Merge (`git merge-tree v1-ship
+conductor/epic-12`, 2026-07-06) zeigt: die beiden Linien haben **dieselben Overlay-Surfaces unterschiedlich**
+implementiert (Epic 10 ersetzte die WebView2-Pille/Preview durch native `native_pill.rs`/`native_preview.rs`;
+Epic 12 änderte die alte WebView2-`FloatingBar.tsx`). Divergenz: 174 Commits (epic-12) vs. 60 (v1-ship).
+
+**Konfliktfläche + Auflösungs-Plan:**
+- **Mechanisch (Union/beide-behalten):** `sprint-status.yaml`, `backlog.md`, `deferred-work.md`,
+  `bmad-sprint-status.toml`, `docs/adr/README.md`.
+- **Echte Code-Konflikte:** `pipeline.rs`, `lib.rs`, `commands/recording.rs` — Epic-12-Logik (Fallback-Leiter +
+  `save_pending_wav` + Audio-Retry) auf die native-Overlay-Basis (recreate-per-recording, In-Process-State)
+  zusammenführen. Beide Seiten behalten, nicht eine gewinnen lassen.
+- **⚠️ SEMANTISCHER KNACKPUNKT / Surface-Nachbau:** `src/FloatingBar.tsx` ist **auf v1-ship gelöscht**
+  (native Pille), **auf epic-12 geändert** (12-1 FR4 Pill-Status-Signal „⚠ DeepSeek → OpenAI" etc.). Die native
+  Pille (Epic 10, 30.06.) hat den Epic-12-Status-Signal **gar nicht**. → `FloatingBar.tsx` bleibt gelöscht, und
+  das **Pill-Status-Signal (12-1 FR4) muss in `native_pill.rs` neu portiert** werden. Das ist ein SURFACE-Feature
+  → **Andis Geräte-Gate** (Windows). `12-2` selbst ist unkritisch (Hauptfenster-History, nicht im Konflikt).
+
+**Vorgehen (frische Session):** Integrations-Branch off `v1-ship` → `conductor/epic-12` mergen → obige Konflikte
+lösen + Pill-Status nach `native_pill.rs` portieren → **Build-Verify BEIDE Plattformen** (`sync-and-build.ps1` +
+`android-smoke.sh`) → **Andis Geräte-Gate**: (a) native Pille bleibt bei Verdeckung sichtbar (Occlusion-Repro),
+(b) 12-1 Fallback-Status erscheint auf der nativen Pille, (c) 12-2 Pending/Re-process weiter grün. Dann wird das
+Ergebnis `v1-ship`; Andi baut daraus; optional `v1-ship`→`main`. Groß genug für eine eigene Story / `bmad-quick-dev`
+bzw. Conductor-Runde mit Build-Verify — **nicht** als Anhängsel durchwinken.
+
+Voll-Kontext: Memory `project_webview2_overlay_backgrounding`.
+
+---
+
 ## Mobile-Overlay-Design durchgefallen — Real-Device-Verdikt (2026-06-26, Andi)
 
 Source: Andis erster echter Daumen-Test des HOLD-Modus (Story 9-14) am echten Gerät. GATE-4 Maschinen-Ebene
