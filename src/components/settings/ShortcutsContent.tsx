@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { HotkeyMode, AppSettings } from "../../types";
 import { isDesktop } from "../../platform";
 import { LABEL_CLS } from "../ui";
+import { KToggle, KSlider, KSegmented } from "./FormControls";
 
 // --- Shortcut Recorder -------------------------------------------------------
 
@@ -144,8 +145,8 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
       className={[
         "w-full bg-klarvo-bg border rounded-lg px-3 py-2 text-sm text-left font-mono",
         listening
-          ? "border-klarvo-primary/50 text-klarvo-primary animate-pulse"
-          : "border-klarvo-border/50 text-klarvo-text hover:border-klarvo-border-active",
+          ? "border-klarvo-teal/50 text-klarvo-teal animate-pulse"
+          : "border-klarvo-border/50 text-klarvo-text hover:border-klarvo-border-2",
         "focus:outline-none transition-all duration-150",
       ].join(" ")}
     >
@@ -153,6 +154,15 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
     </button>
   );
 }
+
+// Shared hotkey/bubble mode options (Hold / Toggle / Auto Stop / Auto), used by
+// all four mode pickers below (hotkey slot 1/2, bubble tap/long-press).
+const MODE_OPTIONS: { value: HotkeyMode; label: string; tooltip: string }[] = [
+  { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
+  { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
+  { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
+  { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
+];
 
 // --- Props -------------------------------------------------------------------
 
@@ -259,26 +269,15 @@ export function ShortcutsContent({
       {isDesktop && (
         <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
           {/* Tab bar */}
-          <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 self-start">
-            <button
-              onClick={() => setHotkeyTab(0)}
-              className={[
-                "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                hotkeyTab === 0 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-              ].join(" ")}
-            >
-              Hotkey 1
-            </button>
-            <button
-              onClick={() => setHotkeyTab(1)}
-              className={[
-                "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                hotkeyTab === 1 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-              ].join(" ")}
-            >
-              Hotkey 2
-            </button>
-          </div>
+          <KSegmented
+            value={hotkeyTab === 0 ? "0" : "1"}
+            onChange={(v) => setHotkeyTab(v === "0" ? 0 : 1)}
+            options={[
+              { value: "0", label: "Hotkey 1" },
+              { value: "1", label: "Hotkey 2" },
+            ]}
+            className="self-start"
+          />
 
           {/* Tab 1: Hotkey 1 */}
           {hotkeyTab === 0 && (
@@ -290,28 +289,11 @@ export function ShortcutsContent({
 
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>Mode</span>
-                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                  {([
-                    { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
-                    { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                    { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
-                    { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
-                  ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
-                    <button
-                      key={value}
-                      onClick={() => handleHotkeyModeChange(value)}
-                      title={tooltip}
-                      className={[
-                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                        localHotkeyMode === value
-                          ? "bg-klarvo-primary/15 text-klarvo-primary"
-                          : "text-klarvo-dim hover:text-klarvo-muted",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <KSegmented
+                  value={localHotkeyMode}
+                  onChange={(v) => handleHotkeyModeChange(v as HotkeyMode)}
+                  options={MODE_OPTIONS}
+                />
               </div>
               <p className="text-[11px] text-klarvo-muted">
                 {localHotkeyMode === "hold" && "Hold to record, release to process"}
@@ -354,28 +336,11 @@ export function ShortcutsContent({
               {localHotkeySlot2 && (
                 <div className="flex flex-col gap-1.5">
                   <span className={LABEL_CLS}>Mode</span>
-                  <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                    {([
-                      { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
-                      { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                      { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
-                      { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
-                    ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
-                      <button
-                        key={value}
-                        onClick={() => setLocalHotkeyModeSlot2(value)}
-                        title={tooltip}
-                        className={[
-                          "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                          localHotkeyModeSlot2 === value
-                            ? "bg-klarvo-primary/15 text-klarvo-primary"
-                            : "text-klarvo-dim hover:text-klarvo-muted",
-                        ].join(" ")}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <KSegmented
+                    value={localHotkeyModeSlot2}
+                    onChange={(v) => setLocalHotkeyModeSlot2(v as HotkeyMode)}
+                    options={MODE_OPTIONS}
+                  />
                   <p className="text-[11px] text-klarvo-dim">
                     {localHotkeyModeSlot2 === "hold" && "Hold to record, release to process"}
                     {localHotkeyModeSlot2 === "toggle" && "Press once to start, press again to stop"}
@@ -401,16 +366,14 @@ export function ShortcutsContent({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className={LABEL_CLS}>Stop-Pause</span>
-                    <span className="text-xs font-mono text-klarvo-primary">{localAutostopSilenceSecs.toFixed(1)}s</span>
+                    <span className="text-xs font-mono text-klarvo-teal">{localAutostopSilenceSecs.toFixed(1)}s</span>
                   </div>
-                  <input
-                    type="range"
+                  <KSlider
                     min={1.0}
                     max={5.0}
                     step={0.1}
                     value={localAutostopSilenceSecs}
-                    onChange={(e) => setLocalAutostopSilenceSecs(parseFloat(e.target.value))}
-                    className="w-full accent-klarvo-primary"
+                    onChange={setLocalAutostopSilenceSecs}
                   />
                   <p className="text-[11px] text-klarvo-muted">Silence before <strong>Auto Stop</strong> mode ends the recording.</p>
                 </div>
@@ -420,16 +383,14 @@ export function ShortcutsContent({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className={LABEL_CLS}>Segment-Pause</span>
-                    <span className="text-xs font-mono text-klarvo-primary">{localAutoModeSilenceSecs.toFixed(1)}s</span>
+                    <span className="text-xs font-mono text-klarvo-teal">{localAutoModeSilenceSecs.toFixed(1)}s</span>
                   </div>
-                  <input
-                    type="range"
+                  <KSlider
                     min={1.0}
                     max={5.0}
                     step={0.1}
                     value={localAutoModeSilenceSecs}
-                    onChange={(e) => setLocalAutoModeSilenceSecs(parseFloat(e.target.value))}
-                    className="w-full accent-klarvo-primary"
+                    onChange={setLocalAutoModeSilenceSecs}
                   />
                   <p className="text-[11px] text-klarvo-muted">Silence before <strong>Auto</strong> mode sends a segment and keeps recording.</p>
                 </div>
@@ -445,54 +406,26 @@ export function ShortcutsContent({
         <>
         <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
           {/* Tab bar: Tap / Long Press */}
-          <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 self-start">
-            <button
-              onClick={() => setBubbleTab(0)}
-              className={[
-                "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                bubbleTab === 0 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-              ].join(" ")}
-            >
-              Tap
-            </button>
-            <button
-              onClick={() => setBubbleTab(1)}
-              className={[
-                "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                bubbleTab === 1 ? "bg-klarvo-primary/15 text-klarvo-primary" : "text-klarvo-dim hover:text-klarvo-muted",
-              ].join(" ")}
-            >
-              Long Press
-            </button>
-          </div>
+          <KSegmented
+            value={bubbleTab === 0 ? "0" : "1"}
+            onChange={(v) => setBubbleTab(v === "0" ? 0 : 1)}
+            options={[
+              { value: "0", label: "Tap" },
+              { value: "1", label: "Long Press" },
+            ]}
+            className="self-start"
+          />
 
           {/* Tab 0: Tap */}
           {bubbleTab === 0 && (
             <>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>Mode</span>
-                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                  {([
-                    { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
-                    { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                    { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
-                    { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
-                  ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
-                    <button
-                      key={value}
-                      onClick={() => setLocalBubbleTapMode(value)}
-                      title={tooltip}
-                      className={[
-                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                        localBubbleTapMode === value
-                          ? "bg-klarvo-primary/15 text-klarvo-primary"
-                          : "text-klarvo-dim hover:text-klarvo-muted",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <KSegmented
+                  value={localBubbleTapMode}
+                  onChange={(v) => setLocalBubbleTapMode(v as HotkeyMode)}
+                  options={MODE_OPTIONS}
+                />
               </div>
               <p className="text-[11px] text-klarvo-dim">
                 {localBubbleTapMode === "hold" && "Hold to record, release to process"}
@@ -505,16 +438,14 @@ export function ShortcutsContent({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className={LABEL_CLS}>Silence Duration</span>
-                    <span className="text-xs font-mono text-klarvo-primary">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
+                    <span className="text-xs font-mono text-klarvo-teal">{localBubbleTapSilenceSecs.toFixed(1)}s</span>
                   </div>
-                  <input
-                    type="range"
+                  <KSlider
                     min={1.0}
                     max={5.0}
                     step={0.1}
                     value={localBubbleTapSilenceSecs}
-                    onChange={(e) => setLocalBubbleTapSilenceSecs(parseFloat(e.target.value))}
-                    className="w-full accent-klarvo-primary"
+                    onChange={setLocalBubbleTapSilenceSecs}
                   />
                   <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                 </div>
@@ -529,28 +460,11 @@ export function ShortcutsContent({
             <>
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>Mode</span>
-                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                  {([
-                    { value: "hold", label: "Hold", tooltip: "Hold to record, release to process" },
-                    { value: "toggle", label: "Toggle", tooltip: "Press to start, press again to stop" },
-                    { value: "autostop", label: "Auto Stop ⚠", tooltip: "Experimental — Press to start, stops automatically on silence" },
-                    { value: "auto", label: "Auto ⚠", tooltip: "Experimental — Continuous: restarts after each silence gap" },
-                  ] as { value: HotkeyMode; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
-                    <button
-                      key={value}
-                      onClick={() => setLocalBubbleLongPressMode(value)}
-                      title={tooltip}
-                      className={[
-                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                        localBubbleLongPressMode === value
-                          ? "bg-klarvo-primary/15 text-klarvo-primary"
-                          : "text-klarvo-dim hover:text-klarvo-muted",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <KSegmented
+                  value={localBubbleLongPressMode}
+                  onChange={(v) => setLocalBubbleLongPressMode(v as HotkeyMode)}
+                  options={MODE_OPTIONS}
+                />
               </div>
               <p className="text-[11px] text-klarvo-dim">
                 {localBubbleLongPressMode === "hold" && "Hold to record, release to process"}
@@ -563,16 +477,14 @@ export function ShortcutsContent({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className={LABEL_CLS}>Silence Duration</span>
-                    <span className="text-xs font-mono text-klarvo-primary">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
+                    <span className="text-xs font-mono text-klarvo-teal">{localBubbleLongPressSilenceSecs.toFixed(1)}s</span>
                   </div>
-                  <input
-                    type="range"
+                  <KSlider
                     min={1.0}
                     max={5.0}
                     step={0.1}
                     value={localBubbleLongPressSilenceSecs}
-                    onChange={(e) => setLocalBubbleLongPressSilenceSecs(parseFloat(e.target.value))}
-                    className="w-full accent-klarvo-primary"
+                    onChange={setLocalBubbleLongPressSilenceSecs}
                   />
                   <p className="text-[11px] text-klarvo-muted">Seconds of silence before auto-stop</p>
                 </div>
@@ -596,34 +508,24 @@ export function ShortcutsContent({
                   {localBubbleSizeDp === 0 ? "Auto (responsive)" : `${localBubbleSizeDp} dp`}
                 </span>
               </div>
-              <button
-                role="switch"
-                aria-checked={localBubbleSizeDp === 0}
-                onClick={() => setLocalBubbleSizeDp(localBubbleSizeDp === 0 ? 40 : 0)}
-                className={[
-                  "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                  localBubbleSizeDp === 0 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-                ].join(" ")}
-                title={localBubbleSizeDp === 0 ? "Auto: tap to set manual size" : "Manual: tap to restore Auto"}
-              >
-                <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localBubbleSizeDp === 0 ? "translate-x-4" : ""].join(" ")} />
-              </button>
+              <KToggle
+                checked={localBubbleSizeDp === 0}
+                onChange={() => setLocalBubbleSizeDp(localBubbleSizeDp === 0 ? 40 : 0)}
+              />
             </div>
             {localBubbleSizeDp > 0 && (
               <div className="flex flex-col gap-1">
                 <div className="flex justify-between text-[11px] text-klarvo-dim">
                   <span>32 dp</span>
-                  <span className="font-mono text-klarvo-primary">{localBubbleSizeDp} dp</span>
+                  <span className="font-mono text-klarvo-teal">{localBubbleSizeDp} dp</span>
                   <span>72 dp</span>
                 </div>
-                <input
-                  type="range"
+                <KSlider
                   min={32}
                   max={72}
                   step={1}
                   value={localBubbleSizeDp}
-                  onChange={(e) => setLocalBubbleSizeDp(parseInt(e.target.value, 10))}
-                  className="w-full accent-klarvo-primary"
+                  onChange={(v) => setLocalBubbleSizeDp(Math.round(v))}
                 />
               </div>
             )}
@@ -635,21 +537,14 @@ export function ShortcutsContent({
               <span className={LABEL_CLS}>Snap to screen edge</span>
               <span className="text-[11px] text-klarvo-muted">Slide bubble to nearest edge on release.</span>
             </div>
-            <button
-              role="switch"
-              aria-checked={localBubbleEdgeSnap}
-              onClick={() => setLocalBubbleEdgeSnap(!localBubbleEdgeSnap)}
-              className={[
-                "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-                localBubbleEdgeSnap ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-              ].join(" ")}
-            >
-              <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localBubbleEdgeSnap ? "translate-x-4" : ""].join(" ")} />
-            </button>
+            <KToggle checked={localBubbleEdgeSnap} onChange={setLocalBubbleEdgeSnap} />
           </div>
 
           {/* Recording button size segmented control (Story 9-15; range extended {52,60,72,84,96}
-              by Story 9-14 re-scope 2026-07-01 — now also governs the HOLD Abbrechen button) */}
+              by Story 9-14 re-scope 2026-07-01 — now also governs the HOLD Abbrechen button).
+              Kept as native buttons (distinct pattern from the KSegmented-migrated groups
+              above — different container/active styling, out of this story's control-swap
+              scope per Dev Notes control inventory), only the alias color token migrated. */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <span className={LABEL_CLS}>Recording Button Size</span>
@@ -663,7 +558,7 @@ export function ShortcutsContent({
                   className={[
                     "px-2.5 py-1 text-xs font-mono transition-colors duration-150 focus:outline-none",
                     localRecordingButtonSizeDp === size
-                      ? "bg-klarvo-primary/30 text-klarvo-text"
+                      ? "bg-klarvo-teal/30 text-klarvo-text"
                       : "bg-transparent text-klarvo-muted hover:bg-klarvo-elevated",
                   ].join(" ")}
                   aria-pressed={localRecordingButtonSizeDp === size}
@@ -681,50 +576,23 @@ export function ShortcutsContent({
         <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Paste & Behavior</span>
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Paste</span><span className="text-[11px] text-klarvo-muted">Automatically paste result into active window.</span></div>
-          <button
-            role="switch"
-            aria-checked={localAutoPaste}
-            onClick={() => setLocalAutoPaste(!localAutoPaste)}
-            className={[
-              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-              localAutoPaste ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-            ].join(" ")}
-          >
-            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoPaste ? "translate-x-4" : ""].join(" ")} />
-          </button>
+          <KToggle checked={localAutoPaste} onChange={setLocalAutoPaste} />
         </div>
         <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Send</span><span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span></div>
-          <button
-            role="switch"
-            aria-checked={localInsertAndSendSlot1}
-            onClick={() => setLocalInsertAndSendSlot1((v) => !v)}
+          <KToggle
+            checked={localInsertAndSendSlot1}
+            onChange={() => setLocalInsertAndSendSlot1((v) => !v)}
             disabled={!localAutoPaste}
-            className={[
-              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-              localInsertAndSendSlot1 ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-            ].join(" ")}
-          >
-            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localInsertAndSendSlot1 ? "translate-x-4" : ""].join(" ")} />
-          </button>
+          />
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className="text-[11px] text-klarvo-muted">Capitalize first letter of every result.</span></div>
-          <button
-            role="switch"
-            aria-checked={localAutoCapitalize}
-            onClick={() => setLocalAutoCapitalize(!localAutoCapitalize)}
-            className={[
-              "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-              localAutoCapitalize ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-            ].join(" ")}
-          >
-            <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localAutoCapitalize ? "translate-x-4" : ""].join(" ")} />
-          </button>
+          <KToggle checked={localAutoCapitalize} onChange={setLocalAutoCapitalize} />
         </div>
         <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
-          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} disabled={!localAutoPaste} className={`w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus:outline-none focus:border-klarvo-primary/40${!localAutoPaste ? " cursor-not-allowed" : ""}`} />
+          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} disabled={!localAutoPaste} className={`w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus-klarvo${!localAutoPaste ? " cursor-not-allowed" : ""}`} />
         </div>
       </div>
     </>

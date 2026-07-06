@@ -47,12 +47,12 @@ export function DictionaryContent({
       </div>
 
       {!isPaid && dictionary.length >= 20 && (
-        <p className="text-[11px] text-klarvo-warning/80">
+        <p className="text-[11px] text-klarvo-amber/80">
           Free limit reached (20 terms). Upgrade for unlimited.
         </p>
       )}
       {isPaid && isTrial && (
-        <p className={isMobile ? "text-xs text-klarvo-primary/70" : "text-[11px] text-klarvo-primary/70"}>
+        <p className={isMobile ? "text-xs text-klarvo-teal/70" : "text-[11px] text-klarvo-teal/70"}>
           Unlimited terms (Trial) &mdash; stays unlimited with a license.
         </p>
       )}

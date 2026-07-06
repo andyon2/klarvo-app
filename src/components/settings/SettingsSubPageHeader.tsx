@@ -29,7 +29,7 @@ export function SettingsSubPageHeader({ title, onBack, onClose }: SettingsSubPag
         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-klarvo-surface/50 transition-colors"
       >
         <svg
-          className="w-5 h-5 text-klarvo-primary"
+          className="w-5 h-5 text-klarvo-teal"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

@@ -84,7 +84,7 @@ function UpdateChecker() {
         {status === "available" ? (
           <button
             onClick={handleInstall}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-primary/10 border border-klarvo-primary/20 text-klarvo-primary hover:bg-klarvo-primary/15 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-klarvo-teal/10 border border-klarvo-teal/20 text-klarvo-teal hover:bg-klarvo-teal/15 transition-colors"
           >
             Install v{updateVersion}
           </button>

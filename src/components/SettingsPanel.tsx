@@ -693,7 +693,7 @@ export function SettingsPanel({
 
   // === NEW RENDER ==============================================================
   return (
-    <div className={`w-full bg-klarvo-surface border border-klarvo-border/60 rounded-2xl overflow-hidden shadow-xl shadow-black/30 flex flex-col ${panelMaxH}`}>
+    <div className={`w-full bg-klarvo-surface border border-klarvo-border/60 rounded-klarvo-xl overflow-hidden shadow-klarvo-e3 flex flex-col ${panelMaxH}`}>
       {activeCategory === "home" ? (
         <SettingsHome
           onSelectCategory={setActiveCategory}
@@ -853,9 +853,9 @@ export function SettingsPanel({
           <button onClick={handleSave} disabled={saving}
             className={[
               "w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border",
-              saveMsg === "Saved" ? "bg-klarvo-primary/15 border-klarvo-primary/30 text-klarvo-primary"
+              saveMsg === "Saved" ? "bg-klarvo-teal/15 border-klarvo-teal/30 text-klarvo-teal"
                 : saveMsg && saveMsg !== "Saved" ? "bg-klarvo-danger/10 border-klarvo-danger/20 text-klarvo-danger"
-                : "bg-klarvo-primary/10 border-klarvo-primary/30 text-klarvo-primary hover:bg-klarvo-primary/15 hover:border-klarvo-primary/40 animate-pulse",
+                : "bg-klarvo-teal/10 border-klarvo-teal/30 text-klarvo-teal hover:bg-klarvo-teal/15 hover:border-klarvo-teal/40 animate-pulse",
               "disabled:opacity-50 disabled:cursor-not-allowed",
             ].join(" ")}
           >

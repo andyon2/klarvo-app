@@ -32,7 +32,7 @@ export function SettingsHome({ onSelectCategory, onClose, isTrial }: SettingsHom
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
-      <div className="flex items-center px-4 py-3 border-b border-klarvo-border/50 shrink-0">
+      <div className="flex items-center px-4 py-3 border-b border-klarvo-border shrink-0">
         <span className="flex-1 text-lg font-bold text-klarvo-text">Settings</span>
         <button
           type="button"
