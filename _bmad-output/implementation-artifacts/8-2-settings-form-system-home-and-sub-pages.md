@@ -108,7 +108,7 @@ caused by this story — no Rust files are touched here).
   - [x] 6.3 `grep -rn "klarvo-primary\|klarvo-accent\|klarvo-secondary\|klarvo-warm\|klarvo-activity\|klarvo-warning\|klarvo-info\|klarvo-border-active" src/components/settings/ src/components/ui.tsx src/components/SettingsPanel.tsx` → must be empty.
   - [x] 6.4 `grep -rn "red-300\|green-500\|green-400\|blue-500\|blue-400\|orange-500" src/components/settings/ src/components/ui.tsx` → must be empty.
   - [x] 6.5 `grep -rn "#[0-9a-fA-F]\{6\}\|#[0-9a-fA-F]\{3\}\b" src/components/settings/` → must show only the 9 new Studio-Dark `iconColor` values in `types.ts`, the native `<input type="color">` default-hex constants in `AppearanceContent.tsx`/`previewAppearance.ts` (user-facing default values, not a role color — acceptable), and nothing else.
-  - [x] 6.6 `grep -c '<select\|type="range"\|role="switch"' src/components/settings/*.tsx` → all zero (every native control replaced).
+  - [x] 6.6 `grep -c '<select\|type="range"\|role="switch"' src/components/settings/*.tsx --exclude=FormControls.tsx` → all zero (every native control replaced; `FormControls.tsx` is excluded because it legitimately *defines* the `KSelect`/`KSlider`/`KToggle` primitives this AC's native-control ban targets, not a regression).
 
 ## Dev Notes
 
@@ -348,3 +348,24 @@ Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story skill.
   x86_64-pc-windows-gnu` shows only the pre-existing `ort-sys` cross-compile failure (no new
   errors, no Rust files touched). Status → review; Windows release-build settings smoke is
   Andi's real-device gate.
+- 2026-07-06 (code-review fix pass): The first-pass `FormControls.tsx` (241 lines) was a naive
+  re-implementation that regressed the finished reference at `conductor/epic-8`
+  (455 lines) — non-portal `KSelect` dropdown clipped by the sub-page's `overflow-y-auto`
+  scroll container, no focus-return-to-trigger, re-focus-every-render bug, no fallback label
+  for an unmatched value, arrow-nav didn't skip disabled options, broken `KSegmented` ARIA,
+  and an unguarded `KSlider` divide-by-zero. Restored the reference's robust internals for
+  `KSelect`/`KSegmented`/`KSlider`/`KToggle` onto the current file (kept the current file's API
+  superset — `className` retained on `KSelect`/`KSlider`/`KSegmented` since existing consumers in
+  `LanguageContent.tsx`/`AppearanceContent.tsx`/`RecordingAudioContent.tsx`/`ShortcutsContent.tsx`
+  pass it). `KSelect` now renders its dropdown via `createPortal(dropdown, document.body)`,
+  `position: fixed` computed from the trigger's `getBoundingClientRect()`, recomputed on
+  scroll (walks up to the nearest `.overflow-y-auto` ancestor) and resize; closes and returns
+  focus to the trigger on Escape/select/outside-click, and also closes (without stealing focus)
+  when Tab moves focus out of the open listbox. Arrow-key nav skips disabled options; committing
+  on a disabled option no longer closes without selecting. Corrected Task-6.6's grep gate wording
+  (excludes `FormControls.tsx`, which legitimately *defines* the primitives the gate bans
+  elsewhere). `npm run build` green, 0 TS errors; all existing consumer call sites in
+  `src/components/settings/*.tsx` still type-check with unchanged props/setters (no
+  dirty-tracking behavior change). Only `FormControls.tsx` and this story file were touched — no
+  Rust files, no 8-7-deferred residuals (yellow-/amber- colors, `#2ac3a8` preview-border default)
+  touched.
