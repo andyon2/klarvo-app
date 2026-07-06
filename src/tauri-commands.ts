@@ -500,6 +500,20 @@ export async function addHistoryEntry(
   return invoke<number>("add_history_entry", { text, rawText, style, language });
 }
 
+/** Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on a
+ * pending entry's stored WAV. Resolves with the promoted (done) entry on
+ * success; rejects (entry stays pending) on failure. */
+export async function reprocessPendingEntry(id: number): Promise<HistoryEntry> {
+  if (isPreviewMode) return Promise.reject(new Error("[preview] reprocessPendingEntry not available"));
+  return invoke<HistoryEntry>("reprocess_pending_entry", { id });
+}
+
+/** Story 12-2 (AC6) — "Verwerfen": deletes a pending entry and its WAV. */
+export async function discardPendingEntry(id: number): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("discard_pending_entry", { id });
+}
+
 // --- Stats ---
 
 export async function getUsageStats(): Promise<UsageSummary> {

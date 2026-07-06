@@ -1164,6 +1164,8 @@ pub fn run() {
             commands::history::save_note,
             commands::history::is_tip_shown,
             commands::history::mark_tip_shown,
+            commands::history::reprocess_pending_entry,
+            commands::history::discard_pending_entry,
             // Feedback
             commands::feedback::send_feedback,
             commands::feedback::get_feedback_metrics,

@@ -465,31 +465,7 @@ object KlarvoApi {
         var db: SQLiteDatabase? = null
         try {
             db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    raw_text TEXT,
-                    style TEXT NOT NULL DEFAULT 'polished',
-                    language TEXT NOT NULL DEFAULT '',
-                    is_note INTEGER NOT NULL DEFAULT 0,
-                    app_name TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    uuid TEXT,
-                    device_id TEXT,
-                    synced INTEGER NOT NULL DEFAULT 0
-                )
-                """.trimIndent()
-            )
-            // Migrate existing tables that predate sync columns (best-effort).
-            for (col in listOf(
-                "uuid TEXT",
-                "device_id TEXT",
-                "synced INTEGER NOT NULL DEFAULT 0"
-            )) {
-                try { db.execSQL("ALTER TABLE history ADD COLUMN $col") } catch (_: Exception) {}
-            }
+            ensureHistorySchema(db)
             val stmt = db.compileStatement(
                 "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id, synced) VALUES (?, ?, ?, ?, 0, NULL, ?, ?, 0)"
             )
@@ -499,6 +475,84 @@ object KlarvoApi {
             stmt.bindString(4, language)
             stmt.bindString(5, uuid)
             stmt.bindString(6, deviceId)
+            stmt.executeInsert()
+        } catch (_: Exception) {
+            // History saving is best-effort; never crash the main flow.
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Creates (or upgrades) the `history` table schema on the given open DB
+     * connection. Shared by [saveToHistory] and [savePendingHistoryEntry] so
+     * the CREATE TABLE + migration ladder lives in exactly one place.
+     * Mirrors the Rust `history::open_db` migration ladder (additive,
+     * idempotent — every ALTER is guarded by a try/catch so an already-
+     * migrated DB is a silent no-op).
+     */
+    private fun ensureHistorySchema(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                raw_text TEXT,
+                style TEXT NOT NULL DEFAULT 'polished',
+                language TEXT NOT NULL DEFAULT '',
+                is_note INTEGER NOT NULL DEFAULT 0,
+                app_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                uuid TEXT,
+                device_id TEXT,
+                synced INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'done',
+                audio_path TEXT
+            )
+            """.trimIndent()
+        )
+        // Migrate existing tables that predate these columns (best-effort).
+        for (col in listOf(
+            "uuid TEXT",
+            "device_id TEXT",
+            "synced INTEGER NOT NULL DEFAULT 0",
+            "status TEXT NOT NULL DEFAULT 'done'",
+            "audio_path TEXT"
+        )) {
+            try { db.execSQL("ALTER TABLE history ADD COLUMN $col") } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Creates a `pending` history entry for a terminal STT failure whose raw
+     * WAV was preserved to disk (Story 12-1 `savePendingWav` + Story 12-2,
+     * AC3). Mirrors the Rust `history::add_pending_entry`: same B-capable
+     * schema (status + audio_path), text/raw_text left empty (the frontend
+     * renders a placeholder for pending entries), app_name is not tracked on
+     * Android (mirrors [saveToHistory]'s existing NULL).
+     *
+     * @param audioPath absolute path to the preserved WAV on disk.
+     */
+    fun savePendingHistoryEntry(
+        context: Context,
+        audioPath: String,
+        language: String,
+        deviceId: String = ""
+    ) {
+        val uuid = java.util.UUID.randomUUID().toString()
+        val dbFile = File(getDataDir(context), "history.db")
+        var db: SQLiteDatabase? = null
+        try {
+            db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+            ensureHistorySchema(db)
+            val stmt = db.compileStatement(
+                "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id, synced, status, audio_path) " +
+                    "VALUES ('', NULL, 'verbatim', ?, 0, NULL, ?, ?, 0, 'pending', ?)"
+            )
+            stmt.bindString(1, language)
+            stmt.bindString(2, uuid)
+            stmt.bindString(3, deviceId)
+            stmt.bindString(4, audioPath)
             stmt.executeInsert()
         } catch (_: Exception) {
             // History saving is best-effort; never crash the main flow.

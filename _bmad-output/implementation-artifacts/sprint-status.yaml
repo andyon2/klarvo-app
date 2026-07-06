@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-07-02
+last_updated: 2026-07-06
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -151,5 +151,5 @@ development_status:
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
   epic-12: in-progress
   12-1-robust-fallback-ladder-and-pillbar-status: done
-  12-2-audio-retry-history: backlog
+  12-2-audio-retry-history: review
   12-3-provider-comparison: backlog

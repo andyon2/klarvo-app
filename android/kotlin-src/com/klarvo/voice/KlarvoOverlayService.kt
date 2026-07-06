@@ -2232,6 +2232,16 @@ class KlarvoOverlayService : Service() {
             } else {
                 "Error: ${e.message?.take(80)}"
             }
+            // Story 12-2 (AC3): mirror the Windows pipeline — a preserved WAV must be
+            // discoverable in the dictation history as a `pending` entry, not just a toast.
+            if (audioPreserved) {
+                KlarvoApi.savePendingHistoryEntry(
+                    context   = this,
+                    audioPath = pendingWavFile!!.absolutePath,
+                    language  = config.language,
+                    deviceId  = config.deviceId
+                )
+            }
             handler.post {
                 showToast(toastMsg)
                 autoLoopActive = false

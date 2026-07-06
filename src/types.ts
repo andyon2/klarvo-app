@@ -133,6 +133,11 @@ export interface HistoryEntry {
   isNote?: boolean;
   appName: string | null;
   createdAt: string;
+  // "done" (normal, complete) | "pending" (terminal STT failure, audio
+  // preserved, awaiting manual re-process) | "failed" (reserved). Story 12-2.
+  status?: string;
+  // Path to the preserved raw WAV on disk; set only while status="pending".
+  audioPath?: string | null;
 }
 
 // Aggregated usage/cost statistics from the backend.

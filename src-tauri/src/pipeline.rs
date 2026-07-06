@@ -1059,8 +1059,10 @@ pub struct ProcessInput {
 pub enum ProcessOutcome {
     /// Stopped before producing text — a pre-LLM guard skipped it, or STT
     /// failed (`stt_error`). The command point was NOT reached, so command mode
-    /// is left untouched.
-    Stopped { stt_error: bool },
+    /// is left untouched. `audio_path` is `Some` when a terminal STT failure
+    /// preserved the raw WAV to disk (`save_pending_wav`, Story 12-1) — the
+    /// shell uses it to create a `pending` history entry (Story 12-2, AC2).
+    Stopped { stt_error: bool, audio_path: Option<std::path::PathBuf> },
     /// Reached the command path but the rewrite failed. The command point WAS
     /// reached, so command mode should be consumed.
     CommandFailed,
@@ -1150,19 +1152,19 @@ pub async fn process_audio(
                 }
                 Some(Err(local_err)) => {
                     log::error!("[pipeline] local Whisper fallback also failed: {local_err}");
-                    let _ = save_pending_wav(&app_data_dir, &wav_bytes);
+                    let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
                     emit(PipelineEvent::error(
                         "✗ Transkription fehlgeschlagen — Audio gesichert",
                     ));
-                    return ProcessOutcome::Stopped { stt_error: true };
+                    return ProcessOutcome::Stopped { stt_error: true, audio_path };
                 }
                 None => {
                     log::warn!("[pipeline] no local Whisper model available, preserving audio");
-                    let _ = save_pending_wav(&app_data_dir, &wav_bytes);
+                    let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
                     emit(PipelineEvent::error(
                         "✗ Transkription fehlgeschlagen — Audio gesichert",
                     ));
-                    return ProcessOutcome::Stopped { stt_error: true };
+                    return ProcessOutcome::Stopped { stt_error: true, audio_path };
                 }
             }
         }
@@ -1172,18 +1174,20 @@ pub async fn process_audio(
             // key) must not discard the recording either — mirror the
             // retryable-exhausted path above and preserve the audio whenever
             // there actually is any.
-            if wav_bytes.is_empty() {
+            let audio_path = if wav_bytes.is_empty() {
                 emit(PipelineEvent::error(friendly_error(
                     "Transcription failed",
                     &e.to_string(),
                 )));
+                None
             } else {
-                let _ = save_pending_wav(&app_data_dir, &wav_bytes);
+                let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
                 emit(PipelineEvent::error(
                     "✗ Transkription fehlgeschlagen — Audio gesichert",
                 ));
-            }
-            return ProcessOutcome::Stopped { stt_error: true };
+                audio_path
+            };
+            return ProcessOutcome::Stopped { stt_error: true, audio_path };
         }
     };
     let stt_ms = stt_start.elapsed().as_millis() as u64;
@@ -1212,12 +1216,12 @@ pub async fn process_audio(
                 "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
             );
             emit(PipelineEvent::idle());
-            return ProcessOutcome::Stopped { stt_error: false };
+            return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
         Some(PostSttSkip::Blocklist) => {
             log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
             emit(PipelineEvent::idle());
-            return ProcessOutcome::Stopped { stt_error: false };
+            return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
         None => {}
     }
@@ -1683,7 +1687,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // matching the original guard-before-reset ordering. Progress/terminal
     // events were already emitted by process_audio. ---
     let Some((cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens)) =
-        deliver_outcome(outcome, &state, is_command_mode)
+        deliver_outcome(outcome, &state, is_command_mode, &language)
     else {
         return;
     };
@@ -1965,17 +1969,37 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 ///   llm_error: true }`.
 /// - `consume_command_mode` is called on `CommandFailed` and on `Produced`
 ///   when `is_command_mode` is `true`.
+/// - A `pending` history entry is created (Story 12-2, AC2) when `Stopped`
+///   carries an `audio_path` — i.e. a terminal STT failure preserved the WAV.
+///   Best-effort: a DB error here is logged, never escalated, so it can't turn
+///   an already-degraded pipeline run into a panic/second error surface.
 #[allow(clippy::type_complexity)] // Tuple mirrors ProcessOutcome::Produced fields; a named struct is a follow-up refactor
 fn deliver_outcome(
     outcome: ProcessOutcome,
     state: &AppState,
     is_command_mode: bool,
+    language: &str,
 ) -> Option<(String, String, bool, u64, Option<u64>, Option<u32>, Option<u32>)> {
     match outcome {
-        ProcessOutcome::Stopped { stt_error } => {
+        ProcessOutcome::Stopped { stt_error, audio_path } => {
             if stt_error {
                 if let Ok(mut m) = state.feedback_metrics.lock() {
                     m.stt_error_count = m.stt_error_count.saturating_add(1);
+                }
+            }
+            if let Some(path) = audio_path {
+                let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+                let device_id = state.config.lock().ok().map(|c| c.device_id.clone());
+                if let Ok(db) = state.history_db.lock() {
+                    if let Err(e) = history::add_pending_entry(
+                        &db,
+                        &path.to_string_lossy(),
+                        language,
+                        app_name.as_deref(),
+                        device_id.as_deref(),
+                    ) {
+                        log::warn!("[pipeline] Failed to create pending history entry: {e}");
+                    }
                 }
             }
             None
@@ -3046,7 +3070,7 @@ mod tests {
         );
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true, audio_path: None });
     }
 
     #[tokio::test]
@@ -3060,7 +3084,7 @@ mod tests {
         );
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Idle]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false });
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false, audio_path: None });
     }
 
     #[tokio::test]
@@ -3471,7 +3495,7 @@ mod tests {
         );
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true, audio_path: None });
     }
 
     /// Fake STT that always fails with a non-retryable (401) API error --
@@ -3513,7 +3537,14 @@ mod tests {
         let (outcome, events) = run(input).await;
 
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+        match outcome {
+            ProcessOutcome::Stopped { stt_error, audio_path } => {
+                assert!(stt_error);
+                let audio_path = audio_path.expect("audio_path must be Some when the WAV was preserved");
+                assert!(audio_path.exists(), "the reported audio_path must actually exist on disk");
+            }
+            other => panic!("expected Stopped, got {other:?}"),
+        }
         let pending_dir = tmp.path().join("pending");
         let preserved = std::fs::read_dir(&pending_dir)
             .expect("pending dir should have been created")
@@ -3522,6 +3553,53 @@ mod tests {
             preserved, 1,
             "non-retryable STT failure must preserve the audio as a pending WAV"
         );
+    }
+
+    /// Story 12-2 (AC2): `deliver_outcome` must create a `pending` history
+    /// entry when the `Stopped` outcome carries an `audio_path` — the wiring
+    /// between the audio-preservation side effect (12-1) and the visible
+    /// history entry (12-2) this story adds.
+    #[test]
+    fn test_deliver_outcome_creates_pending_entry_when_audio_preserved() {
+        let dir = test_helpers::temp_dir();
+        let db = crate::history::open_db(dir.path()).expect("history db must open");
+        let state = AppState::new(AppConfig::default(), crate::dictionary::Dictionary::new(), dir.path().to_path_buf(), db);
+
+        let outcome = ProcessOutcome::Stopped {
+            stt_error: true,
+            audio_path: Some(dir.path().join("pending").join("123.wav")),
+        };
+        let result = deliver_outcome(outcome, &state, false, "de");
+        assert!(result.is_none(), "Stopped must never yield a Produced-shaped result");
+
+        let entries = {
+            let conn = state.history_db.lock().unwrap();
+            crate::history::get_entries(&conn, 10).unwrap()
+        };
+        assert_eq!(entries.len(), 1, "a pending history entry must have been created");
+        assert_eq!(entries[0].status, "pending");
+        assert_eq!(entries[0].language, "de");
+        assert!(entries[0].audio_path.as_deref().unwrap().ends_with("123.wav"));
+    }
+
+    /// Mirror of the above: no `audio_path` (e.g. a hallucination skip, or a
+    /// terminal STT failure where persistence itself failed) must NOT create
+    /// any history entry — `Stopped` without preserved audio stays invisible,
+    /// exactly like before this story.
+    #[test]
+    fn test_deliver_outcome_no_pending_entry_without_audio_path() {
+        let dir = test_helpers::temp_dir();
+        let db = crate::history::open_db(dir.path()).expect("history db must open");
+        let state = AppState::new(AppConfig::default(), crate::dictionary::Dictionary::new(), dir.path().to_path_buf(), db);
+
+        let outcome = ProcessOutcome::Stopped { stt_error: false, audio_path: None };
+        deliver_outcome(outcome, &state, false, "de");
+
+        let entries = {
+            let conn = state.history_db.lock().unwrap();
+            crate::history::get_entries(&conn, 10).unwrap()
+        };
+        assert!(entries.is_empty(), "no audio_path means no history entry should be created");
     }
 
     /// Directly exercises the audio-preservation helper: writing succeeds

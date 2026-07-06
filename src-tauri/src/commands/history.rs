@@ -4,7 +4,9 @@ use tauri::State;
 
 use crate::history::{self, UsageSummary};
 use crate::license::LicensedFeature;
+use crate::llm::chunked_cleanup;
 use crate::require_license;
+use crate::stt::build_stt_prompt;
 use crate::AppState;
 
 /// Maximum number of history entries visible in the free tier.
@@ -156,6 +158,125 @@ pub fn is_tip_shown(state: State<'_, AppState>, tip_id: String) -> Result<bool, 
 pub fn mark_tip_shown(state: State<'_, AppState>, tip_id: String) -> Result<(), String> {
     let db = crate::lock!(state.inner().history_db)?;
     history::mark_tip_shown(&db, &tip_id).map_err(|e| format!("Failed to mark tip shown: {e}"))
+}
+
+/// Re-processes a `pending` history entry (Story 12-2, AC5 — "Erneut
+/// verarbeiten"): re-runs STT + cleanup on the WAV preserved from the
+/// original terminal failure. On success the entry is promoted to `done`
+/// (text/raw_text filled in) and the stored WAV is deleted. On any failure
+/// (missing file, STT error, cleanup error) the entry is left untouched —
+/// still `pending`, WAV still on disk — and the error is returned for the
+/// frontend to show inline.
+#[tauri::command]
+pub async fn reprocess_pending_entry(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<history::HistoryEntry, String> {
+    let inner = state.inner();
+
+    let entry = {
+        let db = crate::lock!(inner.history_db)?;
+        history::get_entry_by_id(&db, id)
+            .map_err(|e| format!("Failed to load entry: {e}"))?
+            .ok_or_else(|| "History entry not found".to_string())?
+    };
+    if entry.status != "pending" {
+        return Err("Entry is not pending".to_string());
+    }
+    let audio_path = entry
+        .audio_path
+        .clone()
+        .ok_or_else(|| "Pending entry has no stored audio".to_string())?;
+
+    let wav_bytes = std::fs::read(&audio_path)
+        .map_err(|e| format!("Failed to read stored audio: {e}"))?;
+
+    // Dictionary + STT prompt hint, same shape as transcribe_audio.
+    let dict_prompt = {
+        let guard = crate::lock!(inner.dictionary)?;
+        let terms = guard.terms_as_prompt();
+        let terms_opt = if terms.is_empty() { None } else { Some(terms) };
+        build_stt_prompt(terms_opt.as_deref(), &entry.language)
+    };
+
+    let stt_provider = crate::read_lock!(inner.stt_provider)?.clone();
+    let raw_text = stt_provider
+        .transcribe(&wav_bytes, &entry.language, dict_prompt.as_deref())
+        .await
+        .map_err(|e| format!("Re-transcription failed: {e}"))?;
+
+    let cfg = crate::lock!(inner.config)?.clone();
+    let cleanup_provider = crate::read_lock!(inner.cleanup_provider)?.clone();
+    let dict_list = {
+        let guard = crate::lock!(inner.dictionary)?;
+        let list = guard.terms_as_list();
+        if list.is_empty() { None } else { Some(list) }
+    };
+    let custom_prompt = if cfg.custom_prompt.is_empty() {
+        None
+    } else {
+        Some(cfg.custom_prompt.clone())
+    };
+    let output_lang = if cfg.output_language.is_empty() {
+        None
+    } else {
+        Some(cfg.output_language.clone())
+    };
+
+    let cleanup_result = chunked_cleanup(
+        &*cleanup_provider,
+        &raw_text,
+        cfg.cleanup_style,
+        dict_list.as_deref(),
+        custom_prompt.as_deref(),
+        output_lang.as_deref(),
+    )
+    .await
+    .map_err(|e| format!("Cleanup failed: {e}"))?;
+
+    let db = crate::lock!(inner.history_db)?;
+    let promoted =
+        history::promote_pending_to_done(&db, id, &cleanup_result.text, &raw_text)
+            .map_err(|e| format!("Failed to update history entry: {e}"))?;
+    if !promoted {
+        return Err("Entry was already processed or discarded".to_string());
+    }
+    // AC5: audio retention is transient — delete the WAV now that it has been
+    // promoted. Best-effort: the entry is already correctly `done` regardless.
+    if let Err(e) = std::fs::remove_file(&audio_path) {
+        log::warn!("[history] failed to delete promoted WAV {audio_path}: {e}");
+    }
+
+    history::get_entry_by_id(&db, id)
+        .map_err(|e| format!("Failed to reload entry: {e}"))?
+        .ok_or_else(|| "Entry disappeared after promotion".to_string())
+}
+
+/// Discards a `pending` history entry (Story 12-2, AC6 — "Verwerfen"):
+/// deletes both the history row and its stored WAV. Tolerates an
+/// already-missing WAV file without error.
+#[tauri::command]
+pub fn discard_pending_entry(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    let inner = state.inner();
+
+    let audio_path = {
+        let db = crate::lock!(inner.history_db)?;
+        history::get_entry_by_id(&db, id)
+            .map_err(|e| format!("Failed to load entry: {e}"))?
+            .and_then(|e| e.audio_path)
+    };
+
+    if let Some(path) = &audio_path {
+        if let Err(e) = std::fs::remove_file(path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("[history] failed to delete discarded WAV {path}: {e}");
+            }
+        }
+    }
+
+    let db = crate::lock!(inner.history_db)?;
+    history::delete_entry(&db, id).map_err(|e| format!("Failed to delete entry: {e}"))?;
+    Ok(())
 }
 
 /// Saves a dictation result as a voice note (not pasted).

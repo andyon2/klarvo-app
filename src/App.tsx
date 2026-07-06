@@ -14,6 +14,8 @@ import {
   getOnboardingState,
   setOnboardingState,
   clearApiKey,
+  reprocessPendingEntry,
+  discardPendingEntry,
 } from "./tauri-commands";
 import { CostDashboard } from "./components/CostDashboard";
 import { QuickTip } from "./components/QuickTip";
@@ -143,6 +145,11 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
+  // Story 12-2: pending (terminal-failure) entries -- id of the entry
+  // currently re-processing (busy/disabled state) and any inline error from
+  // the last failed re-process attempt, keyed by entry id.
+  const [reprocessingId, setReprocessingId] = useState<number | null>(null);
+  const [pendingErrors, setPendingErrors] = useState<Record<number, string>>({});
 
   // Stats state
   const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
@@ -298,6 +305,37 @@ export default function App() {
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
     await deleteHistoryEntry(id);
     setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  // Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on the
+  // stored WAV. On success the entry is replaced in place with the promoted
+  // (done) entry; on failure it stays pending and shows an inline error.
+  const handleReprocessPendingEntry = useCallback(async (id: number) => {
+    setReprocessingId(id);
+    setPendingErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      const updated = await reprocessPendingEntry(id);
+      setHistoryEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    } catch (err) {
+      setPendingErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setReprocessingId(null);
+    }
+  }, []);
+
+  // Story 12-2 (AC6) — "Verwerfen": deletes the pending entry and its WAV.
+  const handleDiscardPendingEntry = useCallback(async (id: number) => {
+    await discardPendingEntry(id);
+    setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+    setPendingErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }, []);
 
   // --- Onboarding handler ---
@@ -565,6 +603,43 @@ export default function App() {
                 <p className="text-xs text-klarvo-dim italic text-center py-4">No dictations yet.</p>
               ) : (
                 historyEntries.map((entry) => (
+                  entry.status === "pending" ? (
+                    <div
+                      key={entry.id}
+                      className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3"
+                    >
+                      <p className="text-xs text-amber-300">
+                        ⏳ Audio gesichert — noch nicht transkribiert
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[11px] text-klarvo-dim">
+                          {new Date(entry.createdAt + "Z").toLocaleString()}
+                          {entry.appName && (
+                            <span className="ml-1 px-1.5 py-0.5 bg-klarvo-warm/10 rounded text-[9px] text-klarvo-warm">{entry.appName}</span>
+                          )}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleReprocessPendingEntry(entry.id)}
+                            disabled={reprocessingId === entry.id}
+                            className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
+                          </button>
+                          <button
+                            onClick={() => handleDiscardPendingEntry(entry.id)}
+                            disabled={reprocessingId === entry.id}
+                            className="text-[11px] text-orange-400 hover:text-orange-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Verwerfen
+                          </button>
+                        </div>
+                      </div>
+                      {pendingErrors[entry.id] && (
+                        <p className="mt-1.5 text-[11px] text-red-400">{pendingErrors[entry.id]}</p>
+                      )}
+                    </div>
+                  ) : (
                   <div
                     key={entry.id}
                     className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 group hover:border-klarvo-border/60 transition-colors"
@@ -633,6 +708,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  )
                 ))
               )}
             </div>
