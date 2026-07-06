@@ -113,23 +113,15 @@ development_status:
   7-7-golden-vector-parity-net-and-dead-config-lock: backlog
   epic-7-retrospective: optional
 
-  # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD]
-  # RE-SCOPED 2026-07-06 (Andi approved design, "erstmal so" bauen): conductor/epic-8 (auf origin) wird
-  #   NICHT gemergt (238 commits zurück, tote Konflikte). Der gebaute Re-Skin dient als REFERENZ-Vorlage;
-  #   8-2/8-5/8-6 werden pro Fläche NEU gegen den heutigen v1-ship portiert (Story-Zyklus je Fläche).
-  #   Referenz: Branch conductor/epic-8 + _bmad-output/implementation-artifacts/epic-8-fidelity-audit.md
-  #   (Audit 15.06.: 100% Token-Treue, History "starker Match" — Re-Skin ist hochtreu).
-  #   8-3/8-4 = SUPERSEDED durch native Overlays (Epic 10); nativer Token-Nachzug in GDI ist separat im
-  #   Backlog (docs/backlog.md "Epic 8-Abhängigkeit — native Overlays … in Rust/GDI nachziehen"). Nicht React.
-  #   8-7 = Fidelity-Pass (die 3-4 nicht-angewandten Affordances aus der Audit) — VERTAGT, nicht "erstmal so".
+  # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06 (re-port per Fläche; scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
   epic-8: in-progress
   8-1-token-and-type-foundation: done
-  8-2-settings-form-system-home-and-sub-pages: done   # re-port gegen v1-ship; Andi-smoke 2026-07-06
-  8-3-floatingbar-re-skin: backlog                       # SUPERSEDED durch native pill (Epic 10) — kein React-Port
-  8-4-live-cleanup-preview-re-skin: backlog              # SUPERSEDED durch native preview (Epic 10) — kein React-Port
-  8-5-main-window-history-re-skin: backlog               # re-port; History lebt heute in VoiceNotesPanel.tsx
-  8-6-onboarding-re-skin: backlog                        # re-port; Testzustand nur via Config-Wipe erreichbar (Vorlauf bauen)
-  8-7-studio-dark-fidelity-pass: backlog                 # VERTAGT: Elevation/Status-Dots/Amber-Ring/Datumsformat (aus fidelity-audit)
+  8-2-settings-form-system-home-and-sub-pages: done
+  8-3-floatingbar-re-skin: backlog
+  8-4-live-cleanup-preview-re-skin: backlog
+  8-5-main-window-history-re-skin: backlog
+  8-6-onboarding-re-skin: backlog
+  8-7-studio-dark-fidelity-pass: backlog
   epic-8-retrospective: optional
 
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]
