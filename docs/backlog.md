@@ -5,7 +5,28 @@ Single source of truth for deferred work. Every scope-cut / phase-deferral lands
 
 ---
 
+## PROZESS-REGEL — Fixes zeitnah in die kanonische Linie (`v1-ship`) propagieren (2026-07-06, Epic-12-Retro)
+
+Source: Epic-12-Retro (`epic-12-retro-2026-07-06.md`). **Wurzel der 2026-07-06-Overlay-Regression:**
+Overlay-/Produkt-Fixes wurden auf dem gerade heißen Conductor-Branch gemacht und **nie konsequent in
+eine kanonische Linie gezogen** → jeder Build aus einer Linie, die vor dem Fix abzweigt, verliert ihn
+wieder (Epic 10 nativ-Overlays gingen auf `conductor/epic-12` verloren, weil der 16 Tage vorher
+abzweigte).
+
+**Regel (Andi 2026-07-06):** Ein abgeschlossenes Epic **nicht** auf seinem Conductor-Branch liegen
+lassen — nach dem Epic-Abschluss (Retro done) **zeitnah in `v1-ship` mergen/fast-forwarden**, damit
+`v1-ship` die einzige aktuelle Produktlinie bleibt und der nächste Bau-Branch von dort abzweigt.
+`v1-ship` = kanonische Produktlinie (2026-07-06 bestätigt: `main` ist eine disjunkte v0.4.x-Release-
+Historie, kein Merge-Ziel). Verwandt: [[project_webview2_overlay_backgrounding]] (Symptom-Klasse),
+Branch-Hygiene beugt Wieder-Divergenz vor.
+
+---
+
 ## Native Desktop-Overlays nach `main` nachziehen — Fix-Propagation (2026-07-06, Andi)
+
+> **✅ GELÖST 2026-07-06** durch Integration `f53da68` (`conductor/epic-12` × `v1-ship`, in dieser
+> Session gefahren): native Overlays + Epic 9/11/12 auf EINER Linie, `v1-ship` = Produkt. `main`
+> bleibt disjunktes Archiv (Andis Call). Historie unten bleibt als Beleg.
 
 Source: Andi meldete die Pillbar/Preview-Regression auf Windows wieder. Phase-0-Diagnose (Log `[fe:bar]`/
 `[fe:preview]` = Frontend-Webview + kein `KlarvoPillNative`-Fenster + Branch-Topologie) ergab **eindeutig**:

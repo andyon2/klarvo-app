@@ -157,7 +157,9 @@ development_status:
   11-2-android-live-preview-port: done
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
-  epic-12: in-progress
+  # done 2026-07-06: 12-1 + 12-2 both Andi-device-verified; integrated into v1-ship (merge f53da68); 12-3 deferred (north-star).
+  epic-12: done
   12-1-robust-fallback-ladder-and-pillbar-status: done
   12-2-audio-retry-history: done
   12-3-provider-comparison: backlog
+  epic-12-retrospective: done
