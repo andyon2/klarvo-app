@@ -329,13 +329,17 @@ export default function App() {
 
   // Story 12-2 (AC6) — "Verwerfen": deletes the pending entry and its WAV.
   const handleDiscardPendingEntry = useCallback(async (id: number) => {
-    await discardPendingEntry(id);
-    setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
-    setPendingErrors((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    try {
+      await discardPendingEntry(id);
+      setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+      setPendingErrors((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setPendingErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : String(err) }));
+    }
   }, []);
 
   // --- Onboarding handler ---
@@ -621,14 +625,14 @@ export default function App() {
                         <div className="flex gap-1.5">
                           <button
                             onClick={() => handleReprocessPendingEntry(entry.id)}
-                            disabled={reprocessingId === entry.id}
+                            disabled={reprocessingId !== null}
                             className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
                           </button>
                           <button
                             onClick={() => handleDiscardPendingEntry(entry.id)}
-                            disabled={reprocessingId === entry.id}
+                            disabled={reprocessingId !== null}
                             className="text-[11px] text-orange-400 hover:text-orange-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             Verwerfen

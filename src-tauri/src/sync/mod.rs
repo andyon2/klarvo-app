@@ -243,7 +243,7 @@ async fn execute_sql(
 pub fn read_unsynced_entries(conn: &Connection) -> Result<Vec<SyncEntry>, SyncError> {
     let mut stmt = conn.prepare(
         "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at
-         FROM history WHERE synced = 0 AND uuid IS NOT NULL",
+         FROM history WHERE synced = 0 AND uuid IS NOT NULL AND status = 'done'",
     )?;
     let entries = stmt
         .query_map([], |row| {
@@ -535,7 +535,8 @@ mod tests {
                 uuid TEXT,
                 device_id TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                synced INTEGER NOT NULL DEFAULT 0
+                synced INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'done'
             )",
         )
         .unwrap();
@@ -559,7 +560,8 @@ mod tests {
                 uuid TEXT UNIQUE,
                 device_id TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                synced INTEGER NOT NULL DEFAULT 0
+                synced INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'done'
             )",
         )
         .unwrap();
@@ -580,6 +582,45 @@ mod tests {
 
         let entries = read_unsynced_entries(&conn).unwrap();
         assert!(entries.is_empty());
+    }
+
+    // Story 12-2 review fix (Finding 1): a `pending` row (blank text, synced=0)
+    // must never be picked up for push — only `done` entries are eligible.
+    #[test]
+    fn test_read_unsynced_excludes_pending_status() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                raw_text TEXT,
+                style TEXT NOT NULL DEFAULT 'polished',
+                language TEXT NOT NULL DEFAULT '',
+                is_note INTEGER NOT NULL DEFAULT 0,
+                app_name TEXT,
+                uuid TEXT UNIQUE,
+                device_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                synced INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'done'
+            )",
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO history (text, uuid, device_id, status) VALUES ('', 'uuid-pending', 'dev-1', 'pending')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history (text, uuid, device_id, status) VALUES ('Done text', 'uuid-done', 'dev-1', 'done')",
+            [],
+        )
+        .unwrap();
+
+        let entries = read_unsynced_entries(&conn).unwrap();
+        assert_eq!(entries.len(), 1, "only the done entry must be eligible for push");
+        assert_eq!(entries[0].uuid, "uuid-done");
     }
 
     #[test]

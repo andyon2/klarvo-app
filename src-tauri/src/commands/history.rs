@@ -257,14 +257,26 @@ pub async fn reprocess_pending_entry(
 /// already-missing WAV file without error.
 #[tauri::command]
 pub fn discard_pending_entry(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let inner = state.inner();
+    discard_pending_entry_inner(state.inner(), id)
+}
 
+/// Testable body of [`discard_pending_entry`] — takes a plain `&AppState` so
+/// it can be exercised without a Tauri runtime.
+fn discard_pending_entry_inner(inner: &AppState, id: i64) -> Result<(), String> {
     let audio_path = {
         let db = crate::lock!(inner.history_db)?;
-        history::get_entry_by_id(&db, id)
+        let entry = history::get_entry_by_id(&db, id)
             .map_err(|e| format!("Failed to load entry: {e}"))?
-            .and_then(|e| e.audio_path)
+            .ok_or_else(|| "History entry not found".to_string())?;
+        if entry.status != "pending" {
+            return Err("Entry is not pending".to_string());
+        }
+        entry.audio_path
     };
+
+    let db = crate::lock!(inner.history_db)?;
+    history::delete_entry(&db, id).map_err(|e| format!("Failed to delete entry: {e}"))?;
+    drop(db);
 
     if let Some(path) = &audio_path {
         if let Err(e) = std::fs::remove_file(path) {
@@ -274,8 +286,6 @@ pub fn discard_pending_entry(state: State<'_, AppState>, id: i64) -> Result<(), 
         }
     }
 
-    let db = crate::lock!(inner.history_db)?;
-    history::delete_entry(&db, id).map_err(|e| format!("Failed to delete entry: {e}"))?;
     Ok(())
 }
 
@@ -308,4 +318,109 @@ pub fn save_note(
         Some(&device_id),
     )
     .map_err(|e| format!("Failed to save note: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_helpers::temp_dir;
+    use std::fs;
+
+    /// Builds an [`AppState`] backed by a real on-disk history schema
+    /// (via [`history::open_db`]) rather than the bare in-memory connection
+    /// `test_helpers::make_state` uses — the pending-entry tests below need
+    /// the actual `history` table + columns to exist.
+    fn make_history_state(dir: &tempfile::TempDir) -> AppState {
+        let db = history::open_db(dir.path()).expect("history db must open");
+        AppState::new(
+            AppConfig::default(),
+            crate::dictionary::Dictionary::new(),
+            dir.path().to_path_buf(),
+            db,
+        )
+    }
+
+    /// Inserts a `pending` history row whose `audio_path` points at a real
+    /// (freshly-written) WAV file in `dir`, returning `(id, path)`.
+    fn make_pending_entry_with_wav(state: &AppState, dir: &std::path::Path) -> (i64, std::path::PathBuf) {
+        let wav_path = dir.join("pending.wav");
+        fs::write(&wav_path, b"RIFF....fake wav bytes").expect("failed to write fake wav");
+        let db = state.history_db.lock().unwrap();
+        let id = history::add_pending_entry(&db, wav_path.to_str().unwrap(), "en", None, None)
+            .expect("failed to insert pending entry");
+        (id, wav_path)
+    }
+
+    // Story 12-2 review fix (Finding 4, G-A): discard_pending_entry must
+    // actually delete both the history row and the on-disk WAV.
+    #[test]
+    fn test_discard_pending_entry_deletes_row_and_wav() {
+        let dir = temp_dir();
+        let state = make_history_state(&dir);
+        let (id, wav_path) = make_pending_entry_with_wav(&state, dir.path());
+
+        discard_pending_entry_inner(&state, id).expect("discard must succeed");
+
+        let db = state.history_db.lock().unwrap();
+        assert!(
+            history::get_entry_by_id(&db, id).unwrap().is_none(),
+            "history row must be gone after discard"
+        );
+        drop(db);
+        assert!(!wav_path.exists(), "WAV file must be deleted after discard");
+    }
+
+    // Story 12-2 review fix (Finding 4, AC6): discarding an entry whose WAV
+    // is already missing on disk must still remove the row, without error.
+    #[test]
+    fn test_discard_pending_entry_tolerates_missing_wav() {
+        let dir = temp_dir();
+        let state = make_history_state(&dir);
+        let (id, wav_path) = make_pending_entry_with_wav(&state, dir.path());
+        fs::remove_file(&wav_path).expect("failed to pre-delete wav for test setup");
+
+        let result = discard_pending_entry_inner(&state, id);
+        assert!(result.is_ok(), "missing WAV must not error: {result:?}");
+
+        let db = state.history_db.lock().unwrap();
+        assert!(
+            history::get_entry_by_id(&db, id).unwrap().is_none(),
+            "history row must still be removed when the WAV was already gone"
+        );
+    }
+
+    // Story 12-2 review fix (Finding 6): discard must refuse a non-pending
+    // entry rather than silently deleting an already-`done` transcription.
+    #[test]
+    fn test_discard_pending_entry_rejects_non_pending_status() {
+        let dir = temp_dir();
+        let state = make_history_state(&dir);
+        let db = state.history_db.lock().unwrap();
+        let id = history::add_entry(&db, "Already done", None, "polished", "en", false, None, None, None)
+            .expect("failed to insert done entry");
+        drop(db);
+
+        let result = discard_pending_entry_inner(&state, id);
+        assert!(result.is_err(), "discard must reject a non-pending entry");
+
+        let db = state.history_db.lock().unwrap();
+        assert!(
+            history::get_entry_by_id(&db, id).unwrap().is_some(),
+            "a done entry must not be deleted by discard"
+        );
+    }
+
+    // NOTE (test boundary): `reprocess_pending_entry`'s success path drives a
+    // live STT + cleanup network call (Groq/DeepSeek), which this test suite
+    // deliberately does not mock (per project-context.md testing rules — no
+    // network-mock framework). Its state-machine guard (non-pending id is
+    // rejected) and its downstream promote/WAV-delete step are covered above
+    // and by `history::promote_pending_to_done`'s own tests
+    // (`history/mod.rs`); the STT round-trip itself remains a manual/surface
+    // verification item.
 }

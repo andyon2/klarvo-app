@@ -582,7 +582,7 @@ object KlarvoApi {
 
             // Read unsynced entries that have a uuid (entries before the migration may lack one).
             val cursor = db.rawQuery(
-                "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at FROM history WHERE synced = 0 AND uuid IS NOT NULL",
+                "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at FROM history WHERE synced = 0 AND uuid IS NOT NULL AND status = 'done'",
                 null
             )
 

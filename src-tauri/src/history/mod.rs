@@ -320,7 +320,7 @@ pub fn promote_pending_to_done(
     raw_text: &str,
 ) -> Result<bool, HistoryError> {
     let affected = conn.execute(
-        "UPDATE history SET text = ?1, raw_text = ?2, status = 'done', audio_path = NULL \
+        "UPDATE history SET text = ?1, raw_text = ?2, status = 'done', audio_path = NULL, synced = 0 \
          WHERE id = ?3 AND status = 'pending'",
         params![text, raw_text, id],
     )?;

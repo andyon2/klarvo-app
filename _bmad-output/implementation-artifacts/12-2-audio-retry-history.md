@@ -134,6 +134,32 @@ fields. (Machine-testable — G-A.)
    on terminal failure; re-process success→done+WAV-deleted; re-process failure→stays pending; discard→
    row+WAV gone; happy-path parity (no WAV, status done).
 
+### Review Follow-ups (AI)
+
+- [x] **[AI-Review][High]** Sync push query (Rust) lacked a `status` filter — blank `pending` rows could
+  push to Turso and fan out to other devices. Added `AND status = 'done'` (`sync/mod.rs`).
+- [x] **[AI-Review][High]** Same sync push query (Kotlin) had the identical gap — added `AND status = 'done'`
+  (`KlarvoApi.kt`), mirroring the Rust fix per ADR-0016 parity.
+- [x] **[AI-Review][High]** `promote_pending_to_done` didn't reset `synced` — a promoted entry that had
+  already been (wrongly) pushed while pending would never re-sync its real transcript. Added `synced = 0`
+  to the UPDATE (`history/mod.rs`).
+- [x] **[AI-Review][Med]** Command-layer WAV deletion (`discard_pending_entry`) had zero binding tests.
+  Factored a testable `discard_pending_entry_inner` and added tests: deletes row+WAV; tolerates an
+  already-missing WAV; rejects a non-pending entry. Left a boundary note explaining why the
+  `reprocess_pending_entry` STT round-trip itself isn't unit-tested (live network, no mock framework).
+  Also added a sync-layer test proving a `pending` row is excluded from the unsynced-push query.
+- [x] **[AI-Review][Med]** `handleDiscardPendingEntry` (frontend) had no try/catch — a rejected
+  `discardPendingEntry` call left an unhandled promise rejection and no error surfaced. Wrapped in
+  try/catch, routing failures into `pendingErrors[id]` like reprocess already does.
+- [x] **[AI-Review][Med]** `discard_pending_entry` deleted any entry unconditionally without checking
+  `status == "pending"`. Added the same guard `reprocess_pending_entry` already has.
+- [x] **[AI-Review][Low]** `discard_pending_entry` deleted the WAV before the DB row — a failed row
+  delete would leave a dangling pending row pointing at a deleted file. Reordered: row delete first,
+  then WAV removal (still tolerating a missing WAV).
+- [x] **[AI-Review][Low]** Reprocess busy-state (`reprocessingId`) only disabled the matching card's
+  buttons, leaving other pending cards' actions clickable mid-flight. Both action buttons on every
+  pending card now disable whenever `reprocessingId !== null`.
+
 ## Dev Notes
 
 ### Verified current-state (audit 2026-07-06) — use as given, do not re-derive
@@ -229,6 +255,28 @@ fields. (Machine-testable — G-A.)
   flow on either platform — that is the Windows/Android surface DoD residual for Andi's real-machine
   gate (project-context.md "Surface DoD" / "Android on-device smoke" rules), consistent with this
   being a dev-story pass, not the smoke pass.
+- **Review follow-up pass (2026-07-06):** resolved 8 confirmed code-review findings — see "Review
+  Follow-ups (AI)" above and the "Senior Developer Review (AI)" section below for detail. Re-ran the
+  full gate set after the fixes: Rust `cargo test --lib` 654/654 green (5 new/updated tests: 3
+  `discard_pending_entry` command-layer tests, 1 sync-layer `pending`-exclusion test, 2 sync test
+  schemas updated to carry the `status` column), `tsc --noEmit` clean, `npm run build` clean, and a
+  full `scripts/android-build.sh` run producing a signed release APK.
+
+### Senior Developer Review (AI)
+
+**Review date:** 2026-07-06
+**Outcome:** Changes Requested → all 8 findings addressed in this follow-up pass.
+
+**Action Items:**
+1. [x] [High] Rust sync push query missing `status = 'done'` filter (`sync/mod.rs`).
+2. [x] [High] Kotlin sync push query missing the same filter (`KlarvoApi.kt`), ADR-0016 parity.
+3. [x] [High] `promote_pending_to_done` didn't reset `synced`, blocking re-sync of a previously-pushed
+   pending row's real transcript.
+4. [x] [Med] No binding tests for `reprocess_pending_entry`/`discard_pending_entry` (G-A, story Task 6).
+5. [x] [Med] `handleDiscardPendingEntry` missing try/catch (frontend robustness).
+6. [x] [Med] `discard_pending_entry` didn't verify `status == "pending"` before deleting.
+7. [x] [Low] `discard_pending_entry` deleted the WAV before the row (wrong failure-order).
+8. [x] [Low] Reprocess busy-state only disabled the matching pending card, not all pending cards.
 
 ### File List
 
@@ -245,6 +293,8 @@ fields. (Machine-testable — G-A.)
   `savePendingHistoryEntry`.
 - `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — calls `savePendingHistoryEntry` on
   terminal STT failure with preserved audio.
+- `src-tauri/src/sync/mod.rs` — review fix: `status = 'done'` filter on the unsynced-push query +
+  new/updated tests.
 - `_bmad-output/implementation-artifacts/12-2-audio-retry-history.md` — this story file (status,
   tasks, Dev Agent Record, Change Log).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `12-2-audio-retry-history: review`.
@@ -255,3 +305,4 @@ fields. (Machine-testable — G-A.)
 |------------|-----------------------------------------------------|--------|
 | 2026-07-06 | Story authored in Phase A (epic-conductor); design decision (pending-entry UX + actions) settled with Andi. | Claude (Phase A) |
 | 2026-07-06 | Implemented AC1-AC7: schema migration, Windows pending-entry wiring, re-process/discard Tauri commands, pending-entry surface (App.tsx), Android WAV+history-entry parity. Status → review. | Claude (dev-story) |
+| 2026-07-06 | Addressed 8 confirmed code-review findings: sync push status filter (Rust+Kotlin), `synced` reset on promotion, discard pending-status guard + delete-order fix, discard try/catch (frontend), all-pending-cards busy-state disable, and command-layer tests for discard/pending-exclusion. Status stays `review` pending Andi's real-device gate. | Claude (dev-story) |
