@@ -54,6 +54,12 @@ export interface AppSettings {
   deviceId: string;
   bubbleSize: number;
   bubbleOpacity: number;
+  /** Android bubble manual size in dp. 0 = Auto (responsive formula). Range 32..72 when set. */
+  bubbleSizeDp: number;
+  /** Whether the Android bubble edge-snaps on drag release. Default: true. */
+  bubbleEdgeSnap: boolean;
+  /** Android recording TAP-surface button diameter in dp (∈ {60,72,88}, default 72). Story 9-15. */
+  recordingButtonSizeDp: number;
   localWhisperModel: string;
   localWhisperGpu: boolean;
   // Recording behaviour extensions.
@@ -127,6 +133,11 @@ export interface HistoryEntry {
   isNote?: boolean;
   appName: string | null;
   createdAt: string;
+  // "done" (normal, complete) | "pending" (terminal STT failure, audio
+  // preserved, awaiting manual re-process) | "failed" (reserved). Story 12-2.
+  status?: string;
+  // Path to the preserved raw WAV on disk; set only while status="pending".
+  audioPath?: string | null;
 }
 
 // Aggregated usage/cost statistics from the backend.

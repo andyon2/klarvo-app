@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 9-5 — transcribing + done-Grün (Modell B)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --k-bg-deep:#0A0B0C; --k-bg:#0F1112; --k-surface:#16181A; --k-surface-2:#1B1E20;
+    --k-elevated:#232729; --k-border:#282C2F; --k-border-2:#353A3E; --k-hairline:rgba(255,255,255,.055);
+    --k-text:#ECEEEF; --k-muted:#A4A9AC; --k-dim:#6F7479; --k-faint:#4B4F53;
+    --k-teal:#29C7AC; --k-teal-hi:#57DDC7; --k-teal-lo:#1B9C88; --k-teal-bg:rgba(41,199,172,.12);
+    --k-on-teal:#05201B; --k-amber:#E9A24C; --k-amber-hi:#F4BA72; --k-amber-line:rgba(233,162,76,.32);
+    --k-danger:#EE6F63; --k-danger-bg:rgba(238,111,99,.12); --k-success:#4FC58A;
+    --k-glass:inset 0 1px 0 var(--k-hairline); --k-e3:0 12px 32px rgba(0,0,0,.55);
+    --k-font:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --k-mono:'Geist Mono',ui-monospace,'SF Mono',monospace;
+    --k-ease:cubic-bezier(.2,0,0,1); --k-spring:cubic-bezier(.34,1.56,.64,1); --k-t-state:180ms;
+    /* done-Grün-Varianten (umschaltbar) */
+    --done-bg:linear-gradient(150deg,#62e0a4,#4FC58A); --done-ring:none; --done-fg:#05201b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#070809;color:var(--k-text);font-family:var(--k-font);line-height:1.55}
+  header{position:sticky;top:0;z-index:9;background:#070809ee;border-bottom:1px solid var(--k-border);
+         padding:16px 22px;backdrop-filter:blur(6px)}
+  header h1{margin:0 0 3px;font-size:19px}
+  header .meta{color:var(--k-muted);font-size:13px}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 22px}
+  .lead{color:var(--k-muted);font-size:14px;margin:0 0 20px}
+  .lead b{color:var(--k-teal)}
+
+  /* ===== phone ===== */
+  .phone{width:266px;background:var(--k-bg);border:1px solid var(--k-border);border-radius:30px;
+         overflow:hidden;box-shadow:var(--k-e3);position:relative}
+  .screen{display:flex;flex-direction:column;height:512px;position:relative}
+  .statusbar{display:flex;justify-content:space-between;padding:9px 18px 4px;font-size:11px;color:var(--k-dim);font-family:var(--k-mono)}
+  .thread{flex:1;padding:12px 14px;display:flex;flex-direction:column;gap:9px;overflow:hidden}
+  .msg{max-width:82%;padding:9px 12px;border-radius:13px;font-size:12.5px;line-height:1.5}
+  .msg.in{background:var(--k-surface-2);color:var(--k-text);align-self:flex-start;border-bottom-left-radius:4px}
+  .msg .tm{font-family:var(--k-mono);font-size:9.5px;color:var(--k-dim);margin-top:3px}
+
+  .compose{flex:none;display:flex;align-items:center;gap:9px;padding:11px 14px 17px;border-top:1px solid var(--k-border);background:var(--k-surface)}
+  .field{flex:1;height:40px;border-radius:999px;background:var(--k-bg);border:1px solid var(--k-border);
+         display:flex;align-items:center;padding:0 15px;color:var(--k-dim);font-size:13px}
+  .field.focus{border-color:rgba(41,199,172,.5);box-shadow:0 0 0 3px rgba(41,199,172,.13)}
+
+  .panel{flex:none;background:rgba(18,20,22,.98);border-top:1px solid var(--k-border-2);
+         box-shadow:0 -10px 26px rgba(0,0,0,.4);padding:9px 16px 18px;display:flex;flex-direction:column;gap:11px;min-height:184px}
+  .panel.rec{border-top-color:var(--k-amber-line)}
+  .panel.tr{border-top-color:var(--k-border-2)}            /* transcribing: amber-Linie weg (kein live) */
+  .grip{width:34px;height:4px;border-radius:999px;background:var(--k-border-2);align-self:center}
+  .bar-top{display:flex;align-items:center;gap:10px}
+  .kmark{width:18px;height:18px;border-radius:5px;background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));
+         color:var(--k-on-teal);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+  .bar-top .lab{font-size:11.5px;color:var(--k-dim);font-family:var(--k-mono)}
+  .bar-top .tm{margin-left:auto;font-family:var(--k-mono);font-size:13px;color:var(--k-muted);letter-spacing:.02em}
+  .ptext{font-family:var(--k-mono);font-size:13px;line-height:1.7;color:var(--k-muted);flex:1}
+  .ptext.dim{color:var(--k-dim)}                           /* transcribing: Text gedimmt */
+  .caret{display:inline-block;width:2px;height:15px;background:var(--k-amber);margin-left:1px;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .pfoot{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--k-dim)}
+  .pfoot svg{width:13px;height:13px;flex:none}
+  /* teal spinner (transcribing) */
+  .spin{width:15px;height:15px;border-radius:50%;border:2px solid var(--k-teal-bg);border-top-color:var(--k-teal);
+        animation:rot .9s linear infinite;flex:none}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  /* ===== bubble / cluster dock ===== */
+  .dock{position:absolute;right:14px;z-index:6;display:flex;align-items:center;gap:11px;transition:bottom var(--k-t-state) var(--k-ease)}
+  .bub{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+       box-shadow:0 6px 18px rgba(0,0,0,.5),var(--k-glass);cursor:pointer;border:0;padding:0;
+       transition:transform var(--k-t-state) var(--k-spring)}
+  .bub:active{transform:scale(.92)}
+  .bub.idle{background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal);
+            box-shadow:0 6px 18px rgba(0,0,0,.5),0 0 0 3px rgba(41,199,172,.13),var(--k-glass)}
+  .bub .k{font-weight:700;font-size:19px}
+  .bub.done{background:var(--done-bg);color:var(--done-fg);box-shadow:0 6px 18px rgba(0,0,0,.5),var(--done-ring),var(--k-glass)}
+  .bub.send{background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal)}
+  .bub.cancel{background:var(--k-danger-bg);border:1px solid var(--k-danger);color:var(--k-danger)}
+  .bub.proc{background:linear-gradient(150deg,var(--k-teal-hi),var(--k-teal-lo));color:var(--k-on-teal)}
+  .bub.proc .spin{border-color:rgba(5,32,27,.25);border-top-color:var(--k-on-teal);width:18px;height:18px}
+  .bub svg{width:22px;height:22px}
+  .cluster{display:flex;align-items:center;gap:11px;padding:7px;border-radius:20px;box-shadow:0 0 0 1.5px var(--k-amber-line)}
+  .wave{display:flex;align-items:center;gap:3px;height:40px}
+  .wave i{width:3px;height:6px;background:var(--k-amber);border-radius:2px;align-self:center;animation:wv .85s ease-in-out infinite}
+  .wave i:nth-child(2){animation-delay:.12s} .wave i:nth-child(3){animation-delay:.26s}
+  .wave i:nth-child(4){animation-delay:.38s} .wave i:nth-child(5){animation-delay:.18s}
+  @keyframes wv{0%,100%{height:6px}50%{height:30px}}
+
+  /* state visibility */
+  .screen .panel,.screen .compose,.screen .dock{display:none}
+  .screen[data-state="idle"] .compose,.screen[data-state="done"] .compose{display:flex}
+  .screen[data-state="idle"] .dock.d-idle,.screen[data-state="done"] .dock.d-done{display:flex}
+  .screen[data-state="recording"] .panel.rec{display:flex}
+  .screen[data-state="recording"] .dock.d-rec{display:flex}
+  .screen[data-state="transcribing"] .panel.tr{display:flex}
+  /* transcribing dock: nur in Variante B sichtbar (teal Spinner-Bubble) */
+  body.tv-b .screen[data-state="transcribing"] .dock.d-tr{display:flex}
+  .screen[data-state="idle"] .dock,.screen[data-state="done"] .dock{bottom:80px}
+  .screen[data-state="recording"] .dock,.screen[data-state="transcribing"] .dock{bottom:196px}
+  .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:96px;background:var(--k-elevated);
+         border:1px solid var(--k-border-2);border-radius:999px;padding:7px 14px;font-size:12px;color:var(--k-text);
+         display:flex;align-items:center;gap:7px;box-shadow:var(--k-e3);opacity:0;transition:opacity .2s;pointer-events:none}
+  .screen[data-state="done"] .toast{opacity:1}
+  .toast svg{width:14px;height:14px;color:var(--k-success)}
+
+  /* ===== layout ===== */
+  .stage{display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap;margin:0 0 26px}
+  .stage .side{flex:1;min-width:280px}
+  .ctrls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  .ctrls button{background:var(--k-surface-2);color:var(--k-text);border:1px solid var(--k-border-2);
+                border-radius:9px;padding:9px 13px;font-size:13px;cursor:pointer;font-family:var(--k-font)}
+  .ctrls button.on{background:var(--k-teal);color:var(--k-on-teal);border-color:transparent;font-weight:600}
+  .hint{color:var(--k-dim);font-size:12.5px;margin:8px 0 0}
+  .seg{display:inline-flex;border:1px solid var(--k-border-2);border-radius:10px;overflow:hidden;margin:6px 0}
+  .seg button{background:var(--k-surface);color:var(--k-muted);border:0;padding:9px 14px;font-size:13px;cursor:pointer;font-family:var(--k-font)}
+  .seg button.on{background:var(--k-teal);color:var(--k-on-teal);font-weight:600}
+  .lbl{font-size:12px;color:var(--k-dim);font-family:var(--k-mono);margin:14px 0 2px;text-transform:uppercase;letter-spacing:.06em}
+
+  details.guard{background:var(--k-surface);border:1px solid var(--k-border);border-radius:12px;padding:13px 16px;margin:0 0 22px}
+  details.guard summary{cursor:pointer;font-weight:600;color:var(--k-teal);font-size:14px}
+  details.guard ul{margin:10px 0 0;padding-left:20px;color:var(--k-muted);font-size:13.5px}
+  details.guard b.t{color:var(--k-teal)} details.guard b.a{color:var(--k-amber)} details.guard b.d{color:var(--k-danger)} details.guard b.s{color:var(--k-success)}
+
+  h2.sec{font-size:16px;margin:30px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--k-border)}
+  .secsub{color:var(--k-muted);font-size:13px;margin:0 0 14px}
+
+  /* done-Grün-Vergleich */
+  .swatches{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin:6px 0 4px}
+  .sw{background:var(--k-surface);border:1px solid var(--k-border);border-radius:14px;padding:14px;width:150px;cursor:pointer;text-align:center;transition:border-color .15s}
+  .sw.on{border-color:var(--k-teal);box-shadow:0 0 0 2px rgba(41,199,172,.18)}
+  .sw .bub{margin:0 auto 10px;cursor:pointer}
+  .sw .nm{font-size:13px;font-weight:600;margin:0 0 2px}
+  .sw .hx{font-family:var(--k-mono);font-size:10.5px;color:var(--k-dim)}
+  .refrow{display:flex;gap:16px;align-items:center;margin:8px 0 0;color:var(--k-dim);font-size:12px}
+  .refrow .bub{cursor:default}
+
+  textarea{width:100%;background:var(--k-bg);color:var(--k-text);border:1px solid var(--k-border);border-radius:9px;
+           padding:10px 12px;font:14px/1.5 var(--k-font);resize:vertical;margin-top:6px}
+  textarea:focus{outline:2px solid var(--k-teal);border-color:transparent}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:8px}
+  .card{background:var(--k-surface);border:1px solid var(--k-border);border-radius:12px;padding:14px}
+  .card h3{margin:0 0 2px;font-size:14px}
+  .card .csub{color:var(--k-muted);font-size:12px;margin:0}
+  .bar{position:sticky;bottom:0;background:linear-gradient(#07080900,#070809 35%);padding:18px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px}
+  .bar button{background:var(--k-teal);color:var(--k-on-teal);border:0;border-radius:10px;padding:12px 18px;font-weight:700;font-size:15px;cursor:pointer;font-family:var(--k-font)}
+  .bar button.ghost{background:var(--k-surface-2);color:var(--k-text);border:1px solid var(--k-border-2)}
+  .savednote{color:var(--k-dim);font-size:12px;text-align:center;padding:2px}
+</style></head>
+<body class="tv-a gv-1">
+<header>
+  <h1>Mockup 9-5 — die zwei offenen Stellen</h1>
+  <div class="meta">Echte Canon-Tokens. Klick die Bubble „K" → ➤ Senden, dann siehst du <b>transcribing → done</b>. Wähle unten deine Varianten.</div>
+</header>
+<div class="wrap">
+  <p class="lead">Modell-B steht für <b>idle / recording / done</b> schon. Hier geht es nur um zwei Lücken, die der erste Mockup nicht gezeigt hat:
+  <b>① transcribing</b> (was passiert, nachdem du ➤ gedrückt hast) und <b>② die done-Grün-Variante</b>.
+  Spiel den Ablauf durch, wähle je eine Variante, schreib unten kurz dazu.</p>
+
+  <details class="guard"><summary>⛓ Bindende Leitplanken (ADR-0019 §4′)</summary>
+    <ul>
+      <li><b class="t">teal</b>=bereit/Erfolg · <b class="a">amber</b>=live/Aufnahme · <b class="d">rot</b>=Abbrechen (nie Senden) · <b class="s">grün</b>=done</li>
+      <li>recording = <b>ein</b> Cluster am Bubble-Platz: ➤ Senden (teal) · Waveform (amber, live) · ✗ Abbrechen (rot). Panel passiv.</li>
+      <li><b class="a">amber</b> erscheint <b>nur</b> während Aufnahme — in transcribing ist Amber verboten (nur teal).</li>
+    </ul>
+  </details>
+
+  <!-- ===== INTERACTIVE ===== -->
+  <div class="stage">
+    <div class="phone" id="livephone"></div>
+    <div class="side">
+      <h3 style="margin:2px 0 2px">Ablauf erleben</h3>
+      <p class="hint">Tippe die <b style="color:var(--k-teal)">Bubble „K"</b> → recording. Dann
+      <b style="color:var(--k-teal)">➤</b> = senden (→ transcribing → done → idle) oder
+      <b style="color:var(--k-danger)">✗</b> = abbrechen (→ idle).</p>
+      <div class="ctrls" id="ctrls">
+        <button data-go="idle" class="on">idle</button>
+        <button data-go="recording">recording</button>
+        <button data-go="transcribing">transcribing</button>
+        <button data-go="done">done</button>
+      </div>
+
+      <div class="lbl">① transcribing-Variante (offene Frage)</div>
+      <div class="seg" id="tvseg">
+        <button data-tv="a" class="on">A · Dock leer, Panel-Spinner</button>
+        <button data-tv="b">B · teal Spinner-Bubble am Dock</button>
+      </div>
+      <p class="hint" id="tvhint"></p>
+    </div>
+  </div>
+
+  <!-- ===== DONE GREEN ===== -->
+  <h2 class="sec">② done — Grün-Variante wählen</h2>
+  <p class="secsub">Ziel: klar <b>abgesetzt</b> von der teal idle-Bubble (damit „fertig" anders aussieht als „bereit"), aber innerhalb der Erfolgs-Rolle. Klick eine Karte — die done-Bubble oben übernimmt sie sofort.</p>
+  <div class="swatches" id="swatches"></div>
+  <div class="refrow">
+    <span>Zum Vergleich daneben:</span>
+    <div class="bub idle"><span class="k">K</span></div><span>teal idle</span>
+  </div>
+
+  <!-- ===== NOTES ===== -->
+  <h2 class="sec">Deine Anmerkungen</h2>
+  <div class="cards">
+    <div class="card"><h3>① transcribing</h3><p class="csub">A oder B? Was fühlt sich richtig an, was stört?</p>
+      <textarea data-key="tr" rows="3" placeholder="z.B. 'B — der Ort soll besetzt bleiben' / 'A — ruhiger'…"></textarea></div>
+    <div class="card"><h3>② done-Grün</h3><p class="csub">Welche Variante? Genug Abstand zu teal?</p>
+      <textarea data-key="done" rows="3" placeholder="z.B. 'G3, satter' / 'G1 ist zu nah an teal'…"></textarea></div>
+    <div class="card"><h3>Sonst</h3><p class="csub">Alles andere zu Ablauf/Timing/Grün.</p>
+      <textarea data-key="misc" rows="3" placeholder="frei…"></textarea></div>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="ghost" id="copymd">📋 Anmerkungen als Markdown kopieren</button>
+  <button class="ghost" id="clear">Felder leeren</button>
+</div>
+<div class="savednote" id="savednote"></div>
+
+<script>
+const SVG={
+  send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  kbd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>'
+};
+const REC_TEXT='also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan';
+
+function screenHTML(state){
+  return `<div class="screen" data-state="${state}">
+    <div class="statusbar"><span>16:08</span><span>VPN · 67%</span></div>
+    <div class="thread"><div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:06</div></div></div>
+
+    <!-- recording: passive preview panel -->
+    <div class="panel rec">
+      <div class="grip"></div>
+      <div class="bar-top"><span class="kmark">K</span><span class="lab">Aufnahme</span><span class="tm">0:06</span></div>
+      <div class="ptext">${REC_TEXT}<span class="caret"></span></div>
+      <div class="pfoot">${SVG.kbd}Tastatur pausiert · kehrt beim Einfügen zurück</div>
+    </div>
+
+    <!-- transcribing: same passive panel, teal spinner, dimmed text, NO amber -->
+    <div class="panel tr">
+      <div class="grip"></div>
+      <div class="bar-top"><span class="kmark">K</span><span class="spin"></span><span class="lab">Bereinigt…</span><span class="tm">&nbsp;</span></div>
+      <div class="ptext dim">${REC_TEXT}</div>
+      <div class="pfoot">${SVG.kbd}Gleich fertig · Tastatur kommt gleich zurück</div>
+    </div>
+
+    <!-- idle / done: compose bar -->
+    <div class="compose"><div class="field${state==='idle'?' focus':''}">Notiz tippen oder diktieren…</div></div>
+
+    <!-- docks -->
+    <div class="dock d-idle"><button class="bub idle" data-act="start"><span class="k">K</span></button></div>
+    <div class="dock d-rec cluster">
+      <button class="bub send" data-act="send" aria-label="Abschließen / Senden">${SVG.send}</button>
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <button class="bub cancel" data-act="cancel" aria-label="Abbrechen">${SVG.x}</button>
+    </div>
+    <div class="dock d-tr"><div class="bub proc"><span class="spin"></span></div></div>
+    <div class="dock d-done"><button class="bub done">${SVG.check}</button></div>
+
+    <div class="toast">${SVG.check}<span>Eingefügt</span></div>
+  </div>`;
+}
+
+const live=document.getElementById('livephone');
+let timer=null;
+function setState(s){
+  clearTimeout(timer);
+  live.innerHTML=screenHTML(s);
+  document.querySelectorAll('#ctrls button').forEach(b=>b.classList.toggle('on',b.dataset.go===s));
+  live.querySelectorAll('[data-act]').forEach(btn=>btn.addEventListener('click',()=>{
+    const a=btn.dataset.act;
+    if(a==='start') setState('recording');
+    else if(a==='send'){ setState('transcribing'); timer=setTimeout(()=>{ setState('done'); timer=setTimeout(()=>setState('idle'),1400); },1500); }
+    else if(a==='cancel') setState('idle');
+  }));
+}
+document.querySelectorAll('#ctrls button').forEach(b=>b.addEventListener('click',()=>setState(b.dataset.go)));
+
+// transcribing variant toggle
+const TVH={a:'A: Sobald ➤ gedrückt ist, verschwindet der Cluster (Entscheidung gefallen) — der Dock-Platz ist leer, der Spinner läuft im Panel. Ruhig, ein Fokus.',
+           b:'B: Der Cluster kollabiert zu EINER teal Spinner-Bubble am selben Platz (Kontinuität: da war gerade ➤). Der Ort bleibt besetzt, das Auge bleibt.'};
+function setTV(v){ document.body.classList.toggle('tv-a',v==='a'); document.body.classList.toggle('tv-b',v==='b');
+  document.querySelectorAll('#tvseg button').forEach(b=>b.classList.toggle('on',b.dataset.tv===v));
+  document.getElementById('tvhint').textContent=TVH[v]; localStorage.setItem('k95-tv',v); }
+document.querySelectorAll('#tvseg button').forEach(b=>b.addEventListener('click',()=>{ setTV(b.dataset.tv);
+  if(live.querySelector('.screen').dataset.state==='transcribing') setState('transcribing'); }));
+
+// done-green variants
+const GREENS=[
+  {id:'1',nm:'G1 · Gradient',hx:'#62e0a4 → #4FC58A',bg:'linear-gradient(150deg,#62e0a4,#4FC58A)',ring:'none',fg:'#05201b'},
+  {id:'2',nm:'G2 · Solid success',hx:'#4FC58A',bg:'#4FC58A',ring:'none',fg:'#05201b'},
+  {id:'3',nm:'G3 · Satt/tief',hx:'#3FBF86 → #2E9E6E',bg:'linear-gradient(150deg,#3FBF86,#2E9E6E)',ring:'none',fg:'#05201b'},
+  {id:'4',nm:'G4 · Solid + Glow',hx:'#4FC58A + Ring',bg:'#4FC58A',ring:'0 0 0 3px rgba(79,197,138,.20)',fg:'#05201b'}
+];
+const swEl=document.getElementById('swatches');
+GREENS.forEach(g=>{
+  const c=document.createElement('div');c.className='sw';c.dataset.gv=g.id;
+  c.innerHTML=`<button class="bub" style="background:${g.bg};color:${g.fg};box-shadow:0 6px 18px rgba(0,0,0,.5),${g.ring},var(--k-glass)">${SVG.check}</button>
+    <div class="nm">${g.nm}</div><div class="hx">${g.hx}</div>`;
+  swEl.appendChild(c);
+});
+function setGV(id){
+  const g=GREENS.find(x=>x.id===id);
+  document.documentElement.style.setProperty('--done-bg',g.bg);
+  document.documentElement.style.setProperty('--done-ring',g.ring);
+  document.documentElement.style.setProperty('--done-fg',g.fg);
+  document.querySelectorAll('.sw').forEach(s=>s.classList.toggle('on',s.dataset.gv===id));
+  localStorage.setItem('k95-gv',id);
+  if(live.querySelector('.screen').dataset.state==='done') {} // live bubble already bound to --done-*
+}
+swEl.querySelectorAll('.sw').forEach(s=>s.addEventListener('click',()=>setGV(s.dataset.gv)));
+
+// notes persistence
+const SK='k95-notes';
+function save(){const d={};document.querySelectorAll('textarea').forEach(t=>d[t.dataset.key]=t.value);
+  localStorage.setItem(SK,JSON.stringify(d));
+  document.getElementById('savednote').textContent='gespeichert '+new Date().toLocaleTimeString('de-DE');}
+function load(){try{const d=JSON.parse(localStorage.getItem(SK)||'{}');
+  document.querySelectorAll('textarea').forEach(t=>{if(d[t.dataset.key])t.value=d[t.dataset.key];});}catch(e){}}
+document.querySelectorAll('textarea').forEach(t=>t.addEventListener('input',save));
+document.getElementById('copymd').onclick=async()=>{
+  const tv=localStorage.getItem('k95-tv')||'a', gv=localStorage.getItem('k95-gv')||'1';
+  const g=GREENS.find(x=>x.id===gv);
+  const d={};document.querySelectorAll('textarea').forEach(t=>d[t.dataset.key]=(t.value||'').trim());
+  const md=`## 9-5 Mockup-Picks\n\n- **transcribing:** Variante ${tv.toUpperCase()}\n- **done-Grün:** ${g.nm} (${g.hx})\n\n`+
+    `### Anmerkungen\n- transcribing: ${d.tr||'—'}\n- done-Grün: ${d.done||'—'}\n- sonst: ${d.misc||'—'}\n`;
+  try{await navigator.clipboard.writeText(md);alert('Picks + Anmerkungen kopiert.');}catch(e){prompt('Kopieren:',md);}};
+document.getElementById('clear').onclick=()=>{if(confirm('Felder leeren?')){localStorage.removeItem(SK);
+  document.querySelectorAll('textarea').forEach(t=>t.value='');}};
+
+// init
+setState('idle');
+setTV(localStorage.getItem('k95-tv')||'a');
+setGV(localStorage.getItem('k95-gv')||'1');
+load();
+</script>
+</body></html>

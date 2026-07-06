@@ -1,0 +1,34 @@
+    mPrepareSyncSeqId=0
+  Window #7 Window{2acb0cd u0 com.klarvo.voice}:
+    mDisplayId=0 rootTaskId=1 mSession=Session{80e8da0 2919:u0a10194} mClient=android.os.BinderProxy@5f6c7f7
+    mOwnerUid=10194 showForAllUsers=false package=com.klarvo.voice appop=SYSTEM_ALERT_WINDOW
+    mAttrs={(0,0)(fillxwrap) gr=BOTTOM CENTER_VERTICAL sim={adjust=resize} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+      fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN HARDWARE_ACCELERATED
+      pfl=USE_BLAST
+      bhv=DEFAULT
+      fitTypes=NAVIGATION_BARS CAPTION_BAR}
+    Requested w=1080 h=525 mLayoutSeq=128
+--
+    mPrepareSyncSeqId=0
+  Window #8 Window{de4a11 u0 com.klarvo.voice}:
+    mDisplayId=0 rootTaskId=1 mSession=Session{80e8da0 2919:u0a10194} mClient=android.os.BinderProxy@a076d1c
+    mOwnerUid=10194 showForAllUsers=false package=com.klarvo.voice appop=SYSTEM_ALERT_WINDOW
+    mAttrs={(351,1200)(435x178) gr=TOP START CENTER sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+      fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN HARDWARE_ACCELERATED
+      pfl=USE_BLAST
+      bhv=DEFAULT
+      fitTypes=NAVIGATION_BARS CAPTION_BAR}
+    Requested w=435 h=178 mLayoutSeq=128
+--
+    mWindowsNotificationEnabled: true
+    5 visible windows: [c04729b ScreenDecorOverlay, frame=[0,0,1080,128], touchableRegion=SkRegion((492,0,610,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@ef595, displayId=0, isClone=false, 6a6d51 StatusBar, frame=[0,0,1080,128], touchableRegion=SkRegion((0,0,1080,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@dbda8ea, displayId=0, isClone=false, 2acb0cd com.klarvo.voice, frame=[0,1812,1080,2337], touchableRegion=SkRegion((0,1812,1080,2337)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -1812.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@5f6c7f7, displayId=0, isClone=false, de4a11 com.klarvo.voice, frame=[351,1200,786,1378], touchableRegion=SkRegion((351,1200,786,1378)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -351.0][0.0, 1.0, -1200.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@a076d1c, displayId=0, isClone=false, 5e77173 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity, frame=[0,0,1080,2400], touchableRegion=SkRegion((0,0,1080,2400)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@c06f9e2, displayId=0, isClone=false]
+    1 display info(s):
+displayId=0, mLogicalSize=1080x2400, mTransform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}
+    1 window handles on display(s):
+  Display #0: [c04729b ScreenDecorOverlay, frame=[0,0,1080,128], touchableRegion=SkRegion((492,0,610,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@ef595, displayId=0, isClone=false, 6a6d51 StatusBar, frame=[0,0,1080,128], touchableRegion=SkRegion((0,0,1080,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@dbda8ea, displayId=0, isClone=false, 2acb0cd com.klarvo.voice, frame=[0,1812,1080,2337], touchableRegion=SkRegion((0,1812,1080,2337)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -1812.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@5f6c7f7, displayId=0, isClone=false, de4a11 com.klarvo.voice, frame=[351,1200,786,1378], touchableRegion=SkRegion((351,1200,786,1378)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -351.0][0.0, 1.0, -1200.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@a076d1c, displayId=0, isClone=false, 5e77173 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity, frame=[0,0,1080,2400], touchableRegion=SkRegion((0,0,1080,2400)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@c06f9e2, displayId=0, isClone=false]
+    No magnification spec matrixs
+    No current magnification specs
+    No previous magnification specs
+  mInputMethodWindow=Window{cf65a95 u0 InputMethod}
+  mTraversalScheduled=false
+  mSystemBooted=true mDisplayEnabled=true

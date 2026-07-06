@@ -109,6 +109,85 @@ fn build_local_whisper_provider(cfg: &AppConfig, app_data_dir: &std::path::Path)
     ))
 }
 
+/// Automatic STT safety-net fallback: after a retryable Groq/cloud STT failure
+/// (AC3), tries local Whisper if a model is present — but only when local
+/// inference is available on this platform at all.
+///
+/// Returns:
+/// - `Some(Ok(text))` — local model was present and transcription succeeded.
+/// - `Some(Err(e))` — local model was present but transcription itself failed.
+/// - `None` — no local model available (or local STT unsupported on this
+///   platform); the caller must treat this as a terminal STT failure and
+///   preserve the audio instead of losing it silently.
+///
+/// Uses the same presence check as the Settings model-manager UI
+/// (`stt::model_manager::get_model_status`) rather than a bespoke
+/// `Path::exists()`, per the Dev Notes guidance — both resolve against the
+/// same Tauri `app_data_dir`.
+#[cfg(any(target_os = "windows", target_os = "android"))]
+async fn try_local_whisper_fallback(
+    cfg: &AppConfig,
+    app_data_dir: &std::path::Path,
+    wav_bytes: &[u8],
+    language: &str,
+    prompt: Option<&str>,
+) -> Option<Result<String, stt::SttError>> {
+    match stt::model_manager::get_model_status(&cfg.local_whisper_model, app_data_dir) {
+        Ok(stt::model_manager::ModelStatus::Downloaded) => {
+            let provider = build_local_whisper_provider(cfg, app_data_dir);
+            Some(provider.transcribe(wav_bytes, language, prompt).await)
+        }
+        _ => None,
+    }
+}
+
+/// Non-Windows/Android platforms have no local Whisper backend at all
+/// (mirrors the equivalent branch in [`resolve_stt_provider`]) — always
+/// report "no local model available" so the caller falls through to the
+/// audio-preservation terminal path.
+#[cfg(not(any(target_os = "windows", target_os = "android")))]
+async fn try_local_whisper_fallback(
+    _cfg: &AppConfig,
+    _app_data_dir: &std::path::Path,
+    _wav_bytes: &[u8],
+    _language: &str,
+    _prompt: Option<&str>,
+) -> Option<Result<String, stt::SttError>> {
+    None
+}
+
+/// Persists WAV audio to `{app_data_dir}/pending/{timestamp}.wav` so a
+/// terminal STT failure never silently loses the recording (AC3), mirroring
+/// Android's existing `savePendingWav` mechanism. Story 12-2 builds the
+/// retry UI on top of this; this story only needs the file to survive on
+/// disk with a locatable path.
+///
+/// Returns the written path, or `None` if persistence itself failed (already
+/// logged) — a failure here must never panic or block the terminal-error
+/// event from being emitted.
+fn save_pending_wav(app_data_dir: &std::path::Path, wav_bytes: &[u8]) -> Option<std::path::PathBuf> {
+    let pending_dir = app_data_dir.join("pending");
+    if let Err(e) = std::fs::create_dir_all(&pending_dir) {
+        log::warn!("[pipeline] failed to create pending-audio dir {}: {e}", pending_dir.display());
+        return None;
+    }
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = pending_dir.join(format!("{millis}.wav"));
+    match std::fs::write(&path, wav_bytes) {
+        Ok(()) => {
+            log::info!("[pipeline] preserved audio (STT failure) at {}", path.display());
+            Some(path)
+        }
+        Err(e) => {
+            log::warn!("[pipeline] failed to persist pending WAV at {}: {e}", path.display());
+            None
+        }
+    }
+}
+
 /// Constructs a *network* LLM cleanup provider by name with the given API key.
 ///
 /// Shared by [`resolve_cleanup_provider`] (primary selection) and
@@ -168,36 +247,62 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
     }
 }
 
-/// Returns `true` for transient, retryable LLM errors (rate limit or server error).
+/// Returns `true` for transient, retryable LLM errors: rate limit, server
+/// error, or a transport failure (no HTTP response was ever received).
 ///
 /// - 429 Too Many Requests (rate limit)
 /// - 5xx Server Error (temporary provider outage)
+/// - `LlmError::Request` — timeout, connection-refused, DNS failure, TLS
+///   failure. This variant is only ever constructed via `#[from] reqwest::Error`
+///   on a failed send, so its mere existence already implies "no response
+///   received" — every `Request` is transport-shaped and therefore retryable.
+///   (Root-cause fix for the 2026-07-02 incident: a DeepSeek outage that
+///   produced connection-refused/timeout errors — not HTTP status codes —
+///   previously fell through to the non-retryable branch and skipped fallback
+///   entirely.)
 ///
 /// All other errors (400 Bad Request, 401 Unauthorized, 403 Forbidden, …) are
 /// considered permanent and are NOT retried.
 pub fn is_retryable_llm_error(err: &llm::LlmError) -> bool {
     matches!(err, llm::LlmError::ApiError { status, .. } if *status == 429 || *status >= 500)
+        || matches!(err, llm::LlmError::Request(_))
+}
+
+/// Returns `true` for transient, retryable STT errors: rate limit, server
+/// error, or a transport failure (no HTTP response was ever received).
+///
+/// Mirrors [`is_retryable_llm_error`] — kept as a separate (small) function
+/// rather than a shared generic because `SttError` and `LlmError` are
+/// independent enums with no common trait, and the logic is a single
+/// `matches!` line; factoring it out would add indirection for no shared
+/// behavior (per project-context.md's "factor out only on proven
+/// duplication" rule).
+pub fn is_retryable_stt_error(err: &stt::SttError) -> bool {
+    matches!(err, stt::SttError::ApiError { status, .. } if *status == 429 || *status >= 500)
+        || matches!(err, stt::SttError::Request(_))
 }
 
 /// Selects an alternative LLM cleanup provider, excluding `primary_provider`.
 ///
-/// Iterates the fixed fallback order (DeepSeek → Groq → OpenAI → OpenRouter)
-/// and returns the first provider whose API key is non-empty, skipping the
-/// one whose name matches `primary_provider`.
+/// Iterates the fixed fallback order (DeepSeek → OpenAI → OpenRouter) and
+/// returns the first provider whose API key is non-empty, skipping the one
+/// whose name matches `primary_provider`.
 ///
 /// Returns `None` when no suitable alternative exists (all keys empty or
 /// only the primary provider has a key).
 ///
-/// "local" is never used as a fallback here because network errors are the
-/// trigger for fallback and local inference does not require a network call.
+/// Groq is intentionally NOT a candidate here: it is the STT provider and
+/// must never have its quota eaten by cleanup-fallback retries (design
+/// decision 1, AC2). "local" is never used as a fallback here either,
+/// because network errors are the trigger for fallback and local inference
+/// does not require a network call.
 pub fn resolve_fallback_provider(
     cfg: &AppConfig,
     primary_provider: &str,
 ) -> Option<(Arc<dyn CleanupProvider>, &'static str)> {
-    // Ordered candidate list: (provider name, api key)
+    // Ordered candidate list: (provider name, api key). Groq excluded (AC2).
     let candidates: &[(&str, &str)] = &[
         ("deepseek", &cfg.deepseek_api_key),
-        ("groq", &cfg.groq_api_key),
         ("openai", &cfg.openai_api_key),
         ("openrouter", &cfg.openrouter_api_key),
     ];
@@ -980,8 +1085,13 @@ pub struct ProcessInput {
     pub dict_list: Option<String>,
     pub output_lang: Option<String>,
     pub llm_provider_name: String,
-    /// Config snapshot used solely to resolve a fallback cleanup provider.
+    /// Config snapshot used to resolve a fallback cleanup provider (AC2) and
+    /// the local-Whisper STT safety net (AC3, `local_whisper_model`).
     pub config_for_fallback: AppConfig,
+    /// App data directory, used to check local-Whisper model presence
+    /// (`stt::model_manager`) and to persist audio on a terminal STT failure
+    /// (AC3). Same directory the Settings model-manager UI resolves against.
+    pub app_data_dir: std::path::PathBuf,
 }
 
 /// Result of [`process_audio`]. The shell applies the deferred side effects
@@ -991,8 +1101,10 @@ pub struct ProcessInput {
 pub enum ProcessOutcome {
     /// Stopped before producing text — a pre-LLM guard skipped it, or STT
     /// failed (`stt_error`). The command point was NOT reached, so command mode
-    /// is left untouched.
-    Stopped { stt_error: bool },
+    /// is left untouched. `audio_path` is `Some` when a terminal STT failure
+    /// preserved the raw WAV to disk (`save_pending_wav`, Story 12-1) — the
+    /// shell uses it to create a `pending` history entry (Story 12-2, AC2).
+    Stopped { stt_error: bool, audio_path: Option<std::path::PathBuf> },
     /// Reached the command path but the rewrite failed. The command point WAS
     /// reached, so command mode should be consumed.
     CommandFailed,
@@ -1046,24 +1158,78 @@ pub async fn process_audio(
         output_lang,
         llm_provider_name,
         config_for_fallback,
+        app_data_dir,
     } = input;
 
     // --- Transcribe ---
     emit(PipelineEvent::transcribing());
 
     let stt_start = std::time::Instant::now();
+    // `transcribe` now borrows the audio (finding G) so `wav_bytes` stays
+    // available for the local-Whisper fallback attempt and/or the
+    // audio-preservation paths below without an eager, unconditional clone
+    // on the hot (first-try-success) path.
     let raw_text = match stt_provider
-        .transcribe(wav_bytes, &language, dict_prompt.as_deref())
+        .transcribe(&wav_bytes, &language, dict_prompt.as_deref())
         .await
     {
         Ok(t) => t,
+        Err(e) if is_retryable_stt_error(&e) => {
+            // AC3: Groq (cloud STT) -> local Whisper safety net -> if no local
+            // model is available, preserve the audio and show a clear error.
+            log::warn!("[pipeline] STT transcription failed ({e}), checking local Whisper fallback");
+            match try_local_whisper_fallback(
+                &config_for_fallback,
+                &app_data_dir,
+                &wav_bytes,
+                &language,
+                dict_prompt.as_deref(),
+            )
+            .await
+            {
+                Some(Ok(t)) => {
+                    log::info!("[pipeline] STT failed ({e}), local Whisper fallback succeeded");
+                    emit(PipelineEvent::warn("⚠ Groq am Limit → lokale Transkription"));
+                    t
+                }
+                Some(Err(local_err)) => {
+                    log::error!("[pipeline] local Whisper fallback also failed: {local_err}");
+                    let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
+                    emit(PipelineEvent::error(
+                        "✗ Transkription fehlgeschlagen — Audio gesichert",
+                    ));
+                    return ProcessOutcome::Stopped { stt_error: true, audio_path };
+                }
+                None => {
+                    log::warn!("[pipeline] no local Whisper model available, preserving audio");
+                    let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
+                    emit(PipelineEvent::error(
+                        "✗ Transkription fehlgeschlagen — Audio gesichert",
+                    ));
+                    return ProcessOutcome::Stopped { stt_error: true, audio_path };
+                }
+            }
+        }
         Err(e) => {
-            log::error!("[pipeline] STT transcription failed: {e}");
-            emit(PipelineEvent::error(friendly_error(
-                "Transcription failed",
-                &e.to_string(),
-            )));
-            return ProcessOutcome::Stopped { stt_error: true };
+            log::error!("[pipeline] STT transcription failed (non-retryable): {e}");
+            // Finding B: a non-retryable failure (e.g. 401/400 from an expired
+            // key) must not discard the recording either — mirror the
+            // retryable-exhausted path above and preserve the audio whenever
+            // there actually is any.
+            let audio_path = if wav_bytes.is_empty() {
+                emit(PipelineEvent::error(friendly_error(
+                    "Transcription failed",
+                    &e.to_string(),
+                )));
+                None
+            } else {
+                let audio_path = save_pending_wav(&app_data_dir, &wav_bytes);
+                emit(PipelineEvent::error(
+                    "✗ Transkription fehlgeschlagen — Audio gesichert",
+                ));
+                audio_path
+            };
+            return ProcessOutcome::Stopped { stt_error: true, audio_path };
         }
     };
     let stt_ms = stt_start.elapsed().as_millis() as u64;
@@ -1092,12 +1258,12 @@ pub async fn process_audio(
                 "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
             );
             emit(PipelineEvent::idle());
-            return ProcessOutcome::Stopped { stt_error: false };
+            return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
         Some(PostSttSkip::Blocklist) => {
             log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
             emit(PipelineEvent::idle());
-            return ProcessOutcome::Stopped { stt_error: false };
+            return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
         None => {}
     }
@@ -1532,6 +1698,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             output_lang,
             llm_provider_name,
             config_for_fallback: cfg,
+            app_data_dir: state.app_data_dir.clone(),
         }
     };
 
@@ -1550,7 +1717,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // matching the original guard-before-reset ordering. Progress/terminal
     // events were already emitted by process_audio. ---
     let Some((cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens)) =
-        deliver_outcome(outcome, &state, is_command_mode)
+        deliver_outcome(outcome, &state, is_command_mode, &language)
     else {
         return;
     };
@@ -1832,17 +1999,37 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 ///   llm_error: true }`.
 /// - `consume_command_mode` is called on `CommandFailed` and on `Produced`
 ///   when `is_command_mode` is `true`.
+/// - A `pending` history entry is created (Story 12-2, AC2) when `Stopped`
+///   carries an `audio_path` — i.e. a terminal STT failure preserved the WAV.
+///   Best-effort: a DB error here is logged, never escalated, so it can't turn
+///   an already-degraded pipeline run into a panic/second error surface.
 #[allow(clippy::type_complexity)] // Tuple mirrors ProcessOutcome::Produced fields; a named struct is a follow-up refactor
 fn deliver_outcome(
     outcome: ProcessOutcome,
     state: &AppState,
     is_command_mode: bool,
+    language: &str,
 ) -> Option<(String, String, bool, u64, Option<u64>, Option<u32>, Option<u32>)> {
     match outcome {
-        ProcessOutcome::Stopped { stt_error } => {
+        ProcessOutcome::Stopped { stt_error, audio_path } => {
             if stt_error {
                 if let Ok(mut m) = state.feedback_metrics.lock() {
                     m.stt_error_count = m.stt_error_count.saturating_add(1);
+                }
+            }
+            if let Some(path) = audio_path {
+                let app_name = state.prev_window_title.lock().ok().and_then(|t| t.clone());
+                let device_id = state.config.lock().ok().map(|c| c.device_id.clone());
+                if let Ok(db) = state.history_db.lock() {
+                    if let Err(e) = history::add_pending_entry(
+                        &db,
+                        &path.to_string_lossy(),
+                        language,
+                        app_name.as_deref(),
+                        device_id.as_deref(),
+                    ) {
+                        log::warn!("[pipeline] Failed to create pending history entry: {e}");
+                    }
                 }
             }
             None
@@ -2011,7 +2198,7 @@ async fn flush_preview_delta(handle: AppHandle) {
     };
 
     // Transcribe the delta (raw, no LLM cleanup — FR1/D1).
-    match stt_prov.transcribe(wav_bytes, &language, None).await {
+    match stt_prov.transcribe(&wav_bytes, &language, None).await {
         Ok(text) if !text.is_empty() => {
             // Emit the raw segment text as an append payload (NFR4 — colon form).
             if let Err(e) = handle.emit("klarvo://live-preview-chunk", text.clone()) {
@@ -2485,6 +2672,7 @@ pub fn sanitize_llm_output(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+    use crate::test_helpers;
 
     /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
     /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
@@ -2703,7 +2891,7 @@ mod tests {
     impl SttProvider for FakeStt {
         async fn transcribe(
             &self,
-            _audio: Vec<u8>,
+            _audio: &[u8],
             _language: &str,
             _prompt: Option<&str>,
         ) -> Result<String, stt::SttError> {
@@ -2791,6 +2979,9 @@ mod tests {
             output_lang: None,
             llm_provider_name: "deepseek".to_string(),
             config_for_fallback: AppConfig::default(),
+            // Deliberately non-writable/non-existent: exercises the "no local
+            // model / persistence best-effort" path without touching real disk.
+            app_data_dir: std::path::PathBuf::from("/nonexistent-klarvo-test-dir"),
         }
     }
 
@@ -2937,7 +3128,7 @@ mod tests {
         );
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true });
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true, audio_path: None });
     }
 
     #[tokio::test]
@@ -2951,7 +3142,7 @@ mod tests {
         );
         let (outcome, events) = run(input).await;
         assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Idle]);
-        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false });
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false, audio_path: None });
     }
 
     #[tokio::test]
@@ -3118,22 +3309,47 @@ mod tests {
     // resolve_fallback_provider tests
     // -----------------------------------------------------------------------
 
-    /// When primary is "deepseek" and groq key is available, groq is the fallback.
+    /// AC2: Groq must NEVER be a cleanup-fallback candidate, even when it is
+    /// the only other configured key — a Groq-only "fallback" must resolve to
+    /// `None` (which then degrades to raw text), not silently pick Groq and
+    /// eat its STT quota.
     #[test]
-    fn test_resolve_fallback_provider_deepseek_primary_groq_fallback() {
+    fn test_resolve_fallback_provider_groq_key_alone_is_never_selected() {
         let cfg = AppConfig {
             llm_provider: "deepseek".to_string(),
             deepseek_api_key: "ds-key".to_string(),
             groq_api_key: "gsk-key".to_string(),
+            openai_api_key: String::new(),
+            openrouter_api_key: String::new(),
             ..AppConfig::default()
         };
         let result = resolve_fallback_provider(&cfg, "deepseek");
-        assert!(result.is_some(), "should find groq as fallback");
-        let (_, name) = result.unwrap();
-        assert_eq!(name, "groq");
+        assert!(
+            result.is_none(),
+            "Groq must never be selected as a cleanup fallback, even when it's the only other key set"
+        );
     }
 
-    /// When primary is "groq", deepseek is preferred as first candidate.
+    /// When primary is "deepseek" and both groq and openai keys are available,
+    /// openai (not groq) is the fallback — AC2's exclusion list.
+    #[test]
+    fn test_resolve_fallback_provider_deepseek_primary_skips_groq_picks_openai() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            ..AppConfig::default()
+        };
+        let result = resolve_fallback_provider(&cfg, "deepseek");
+        assert!(result.is_some(), "should find openai as fallback, skipping groq");
+        let (_, name) = result.unwrap();
+        assert_eq!(name, "openai");
+    }
+
+    /// When primary is "groq" (a user CAN configure Groq as primary cleanup
+    /// provider — only the *fallback* candidate list excludes it), deepseek
+    /// is the fallback.
     #[test]
     fn test_resolve_fallback_provider_groq_primary_deepseek_fallback() {
         let cfg = AppConfig {
@@ -3146,6 +3362,24 @@ mod tests {
         assert!(result.is_some(), "should find deepseek as fallback");
         let (_, name) = result.unwrap();
         assert_eq!(name, "deepseek");
+    }
+
+    /// AC7: Groq is excluded from the candidate list under ALL primary-provider
+    /// values — never returned as `name`, regardless of which provider is primary.
+    #[test]
+    fn test_resolve_fallback_provider_groq_excluded_under_all_primaries() {
+        let cfg = AppConfig {
+            deepseek_api_key: "ds-key".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            openrouter_api_key: "sk-or".to_string(),
+            ..AppConfig::default()
+        };
+        for primary in ["deepseek", "groq", "openai", "openrouter", "anthropic", "local"] {
+            if let Some((_, name)) = resolve_fallback_provider(&cfg, primary) {
+                assert_ne!(name, "groq", "primary={primary}: groq must never be the selected fallback");
+            }
+        }
     }
 
     /// When primary is "deepseek" and no other key is set, returns None.
@@ -3230,6 +3464,221 @@ mod tests {
     fn test_is_retryable_llm_error_non_api_error() {
         let err = llm::LlmError::EmptyInput;
         assert!(!is_retryable_llm_error(&err));
+    }
+
+    /// Builds a real `reqwest::Error` shaped exactly like the 2026-07-02
+    /// incident: a transport failure where no HTTP response was ever
+    /// received. Connecting to an unbound loopback port produces an instant,
+    /// deterministic connection-refused error without touching the network.
+    async fn make_transport_error() -> reqwest::Error {
+        reqwest::Client::new()
+            .get("http://127.0.0.1:1/")
+            .send()
+            .await
+            .expect_err("connecting to an unbound loopback port must fail")
+    }
+
+    /// AC1/AC7 — the literal regression test for the 2026-07-02 incident's
+    /// root cause: a transport error (no HTTP response — connection refused,
+    /// DNS failure, TLS failure, or timeout) must now be treated as
+    /// fallback-eligible, exactly like a 429/5xx `ApiError`. This assertion
+    /// is RED against pre-story `is_retryable_llm_error` (which only matched
+    /// `ApiError`) and GREEN after this story's fix.
+    #[tokio::test]
+    async fn test_is_retryable_llm_error_transport_error_is_retryable() {
+        let err = llm::LlmError::from(make_transport_error().await);
+        assert!(
+            is_retryable_llm_error(&err),
+            "LlmError::Request (transport failure) must be retryable — this is the incident's root-cause fix"
+        );
+    }
+
+    /// AC3/AC7 — mirrors the LLM inversion test for the STT side: a
+    /// transport-shaped `SttError::Request` must be retryable so the pipeline
+    /// attempts the local-Whisper safety net instead of losing the dictation.
+    #[tokio::test]
+    async fn test_is_retryable_stt_error_transport_error_is_retryable() {
+        let err = stt::SttError::from(make_transport_error().await);
+        assert!(
+            is_retryable_stt_error(&err),
+            "SttError::Request (transport failure) must be retryable"
+        );
+    }
+
+    /// STT 429 is retryable.
+    #[test]
+    fn test_is_retryable_stt_error_429() {
+        let err = stt::SttError::ApiError { status: 429, message: "rate limit".to_string() };
+        assert!(is_retryable_stt_error(&err));
+    }
+
+    /// STT 500 is retryable.
+    #[test]
+    fn test_is_retryable_stt_error_500() {
+        let err = stt::SttError::ApiError { status: 500, message: "internal server error".to_string() };
+        assert!(is_retryable_stt_error(&err));
+    }
+
+    /// STT 400 is NOT retryable (bad request / invalid key).
+    #[test]
+    fn test_is_retryable_stt_error_400_not_retryable() {
+        let err = stt::SttError::ApiError { status: 400, message: "bad request".to_string() };
+        assert!(!is_retryable_stt_error(&err));
+    }
+
+    /// STT EmptyAudio is NOT retryable (not an ApiError/Request).
+    #[test]
+    fn test_is_retryable_stt_error_non_network_error() {
+        let err = stt::SttError::EmptyAudio;
+        assert!(!is_retryable_stt_error(&err));
+    }
+
+    // -----------------------------------------------------------------------
+    // AC3 — STT -> local Whisper auto-fallback / audio-preservation tests
+    // -----------------------------------------------------------------------
+
+    /// A retryable STT failure with no local Whisper model present (the
+    /// `make_input` fixture points `app_data_dir` at a non-existent path, so
+    /// `get_model_status` reports `NotDownloaded`) must NOT lose the
+    /// dictation: the pipeline reports a terminal STT error (never panics),
+    /// and the caller-visible outcome is the same `Stopped { stt_error: true
+    /// }` shape as before — the audio-preservation attempt is best-effort
+    /// (`save_pending_wav` swallows its own I/O errors) and must never change
+    /// that terminal *outcome* shape, only add a best-effort side effect.
+    #[tokio::test]
+    async fn test_process_audio_stt_retryable_no_local_model_preserves_terminal_shape() {
+        let input = make_input(
+            FakeStt(Err(())), // SttError::ApiError { status: 500, .. } — retryable
+            FakeCleanup { cleanup: CleanupBehavior::Ok("unused".to_string()), rewrite: Err(()) },
+        );
+        let (outcome, events) = run(input).await;
+        assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
+        assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: true, audio_path: None });
+    }
+
+    /// Fake STT that always fails with a non-retryable (401) API error --
+    /// used to exercise finding B (12-1 code review): the non-retryable
+    /// branch must still preserve the audio, not just the retryable-exhausted
+    /// branch.
+    struct FakeSttNonRetryable;
+
+    #[async_trait::async_trait]
+    impl SttProvider for FakeSttNonRetryable {
+        async fn transcribe(
+            &self,
+            _audio: &[u8],
+            _language: &str,
+            _prompt: Option<&str>,
+        ) -> Result<String, stt::SttError> {
+            Err(stt::SttError::ApiError {
+                status: 401,
+                message: "invalid api key".to_string(),
+            })
+        }
+    }
+
+    /// Finding B (12-1 code review): a non-retryable STT failure (e.g. an
+    /// expired/invalid key returning 401) must preserve the audio via
+    /// `save_pending_wav`, exactly like the retryable-exhausted path already
+    /// does — previously this branch dropped the recording silently.
+    #[tokio::test]
+    async fn test_process_audio_stt_nonretryable_preserves_audio() {
+        let tmp = test_helpers::temp_dir();
+        let mut input = make_input(
+            FakeStt(Ok("unused".to_string())),
+            FakeCleanup { cleanup: CleanupBehavior::Ok("unused".to_string()), rewrite: Err(()) },
+        );
+        input.stt_provider = Arc::new(FakeSttNonRetryable);
+        input.app_data_dir = tmp.path().to_path_buf();
+        input.wav_bytes = vec![1u8, 2, 3, 4];
+
+        let (outcome, events) = run(input).await;
+
+        assert_eq!(events, vec![PipelineState::Transcribing, PipelineState::Error]);
+        match outcome {
+            ProcessOutcome::Stopped { stt_error, audio_path } => {
+                assert!(stt_error);
+                let audio_path = audio_path.expect("audio_path must be Some when the WAV was preserved");
+                assert!(audio_path.exists(), "the reported audio_path must actually exist on disk");
+            }
+            other => panic!("expected Stopped, got {other:?}"),
+        }
+        let pending_dir = tmp.path().join("pending");
+        let preserved = std::fs::read_dir(&pending_dir)
+            .expect("pending dir should have been created")
+            .count();
+        assert_eq!(
+            preserved, 1,
+            "non-retryable STT failure must preserve the audio as a pending WAV"
+        );
+    }
+
+    /// Story 12-2 (AC2): `deliver_outcome` must create a `pending` history
+    /// entry when the `Stopped` outcome carries an `audio_path` — the wiring
+    /// between the audio-preservation side effect (12-1) and the visible
+    /// history entry (12-2) this story adds.
+    #[test]
+    fn test_deliver_outcome_creates_pending_entry_when_audio_preserved() {
+        let dir = test_helpers::temp_dir();
+        let db = crate::history::open_db(dir.path()).expect("history db must open");
+        let state = AppState::new(AppConfig::default(), crate::dictionary::Dictionary::new(), dir.path().to_path_buf(), db);
+
+        let outcome = ProcessOutcome::Stopped {
+            stt_error: true,
+            audio_path: Some(dir.path().join("pending").join("123.wav")),
+        };
+        let result = deliver_outcome(outcome, &state, false, "de");
+        assert!(result.is_none(), "Stopped must never yield a Produced-shaped result");
+
+        let entries = {
+            let conn = state.history_db.lock().unwrap();
+            crate::history::get_entries(&conn, 10).unwrap()
+        };
+        assert_eq!(entries.len(), 1, "a pending history entry must have been created");
+        assert_eq!(entries[0].status, "pending");
+        assert_eq!(entries[0].language, "de");
+        assert!(entries[0].audio_path.as_deref().unwrap().ends_with("123.wav"));
+    }
+
+    /// Mirror of the above: no `audio_path` (e.g. a hallucination skip, or a
+    /// terminal STT failure where persistence itself failed) must NOT create
+    /// any history entry — `Stopped` without preserved audio stays invisible,
+    /// exactly like before this story.
+    #[test]
+    fn test_deliver_outcome_no_pending_entry_without_audio_path() {
+        let dir = test_helpers::temp_dir();
+        let db = crate::history::open_db(dir.path()).expect("history db must open");
+        let state = AppState::new(AppConfig::default(), crate::dictionary::Dictionary::new(), dir.path().to_path_buf(), db);
+
+        let outcome = ProcessOutcome::Stopped { stt_error: false, audio_path: None };
+        deliver_outcome(outcome, &state, false, "de");
+
+        let entries = {
+            let conn = state.history_db.lock().unwrap();
+            crate::history::get_entries(&conn, 10).unwrap()
+        };
+        assert!(entries.is_empty(), "no audio_path means no history entry should be created");
+    }
+
+    /// Directly exercises the audio-preservation helper: writing succeeds
+    /// against a real temp directory and the file is locatable on disk
+    /// afterwards (Story 12-2 will pick it up from there).
+    #[test]
+    fn test_save_pending_wav_writes_locatable_file() {
+        let dir = test_helpers::temp_dir();
+        let wav_bytes = vec![1u8, 2, 3, 4];
+        let path = save_pending_wav(dir.path(), &wav_bytes).expect("write should succeed");
+        assert!(path.exists(), "preserved audio file must exist on disk");
+        assert_eq!(std::fs::read(&path).unwrap(), wav_bytes);
+    }
+
+    /// `save_pending_wav` must never panic when persistence fails (e.g. an
+    /// unwritable directory) — it degrades to `None` so the terminal-error
+    /// event can still be emitted.
+    #[test]
+    fn test_save_pending_wav_failure_does_not_panic() {
+        let result = save_pending_wav(std::path::Path::new("/nonexistent-klarvo-test-dir"), &[1, 2, 3]);
+        assert!(result.is_none());
     }
 
     /// When `insert_and_send` is `true` in config, the flag is correctly read.
@@ -4008,6 +4457,7 @@ mod tests {
             output_lang: None,
             llm_provider_name: "groq".to_string(),
             config_for_fallback: AppConfig::default(), // live_preview_enabled=false (default)
+            app_data_dir: std::path::PathBuf::from("/nonexistent-klarvo-test-dir"),
         };
 
         let (outcome, events) = run(input).await;

@@ -1,0 +1,6 @@
+STATE=recording — klarvo overlay windows (Window{...com.klarvo.voice} + Requested size):
+  Window #8 Window{cf0e057 u0 com.klarvo.voice}:
+    Requested w=1080 h=525 mLayoutSeq=155
+  Window #9 Window{fdb9932 u0 com.klarvo.voice}:
+    Requested w=162 h=162 mLayoutSeq=155
+    Requested w=1080 h=2400 mLayoutSeq=5

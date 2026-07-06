@@ -75,7 +75,9 @@ pub enum SttError {
 /// Implementations receive raw WAV bytes and return the transcribed text.
 ///
 /// Parameters:
-/// - `audio`: raw WAV bytes.
+/// - `audio`: raw WAV bytes, borrowed — callers that need to preserve the
+///   audio for a fallback/error path (finding G) keep ownership instead of
+///   paying for a defensive clone before every attempt.
 /// - `language`: ISO-639-1 code (e.g. `"de"`, `"en"`). Empty string = auto-detect.
 /// - `prompt`: optional hint for the STT model. Used to inject dictionary
 ///   terms so rare words are recognised correctly. Backends that do not
@@ -84,7 +86,7 @@ pub enum SttError {
 pub trait SttProvider: Send + Sync {
     async fn transcribe(
         &self,
-        audio: Vec<u8>,
+        audio: &[u8],
         language: &str,
         prompt: Option<&str>,
     ) -> Result<String, SttError>;
@@ -355,7 +357,7 @@ impl SttProvider for WhisperStt {
     /// - `SttError::ResponseFormat` -- the response JSON was unexpected.
     async fn transcribe(
         &self,
-        audio: Vec<u8>,
+        audio: &[u8],
         language: &str,
         prompt: Option<&str>,
     ) -> Result<String, SttError> {
@@ -363,7 +365,11 @@ impl SttProvider for WhisperStt {
             return Err(SttError::EmptyAudio);
         }
 
-        let form = self.build_form(audio, language, prompt)?;
+        // `build_form` needs an owned buffer (multipart::Part::bytes requires
+        // `'static` ownership) — this copy is intrinsic to constructing the
+        // HTTP request body, unlike the eager defensive clone removed from
+        // the pipeline caller (finding G).
+        let form = self.build_form(audio.to_vec(), language, prompt)?;
 
         let response = self
             .client
@@ -497,7 +503,7 @@ impl GroqWhisper {
 impl SttProvider for GroqWhisper {
     async fn transcribe(
         &self,
-        audio: Vec<u8>,
+        audio: &[u8],
         language: &str,
         prompt: Option<&str>,
     ) -> Result<String, SttError> {
@@ -573,7 +579,7 @@ impl OpenAiWhisper {
 impl SttProvider for OpenAiWhisper {
     async fn transcribe(
         &self,
-        audio: Vec<u8>,
+        audio: &[u8],
         language: &str,
         prompt: Option<&str>,
     ) -> Result<String, SttError> {
@@ -647,7 +653,7 @@ mod tests {
     #[tokio::test]
     async fn test_transcribe_empty_audio_returns_error() {
         let stt = GroqWhisper::new("dummy-key");
-        let result = stt.transcribe(vec![], "en", None).await;
+        let result = stt.transcribe(&[], "en", None).await;
         assert!(
             matches!(result, Err(SttError::EmptyAudio)),
             "expected EmptyAudio error, got: {result:?}"
@@ -659,7 +665,7 @@ mod tests {
     async fn test_transcribe_empty_audio_with_prompt_returns_error() {
         let stt = GroqWhisper::new("dummy-key");
         let result = stt
-            .transcribe(vec![], "de", Some("Kubernetes"))
+            .transcribe(&[], "de", Some("Kubernetes"))
             .await;
         assert!(
             matches!(result, Err(SttError::EmptyAudio)),
@@ -705,7 +711,7 @@ mod tests {
     #[tokio::test]
     async fn test_openai_whisper_empty_audio_returns_error() {
         let stt = OpenAiWhisper::new("dummy-key");
-        let result = stt.transcribe(vec![], "en", None).await;
+        let result = stt.transcribe(&[], "en", None).await;
         assert!(
             matches!(result, Err(SttError::EmptyAudio)),
             "expected EmptyAudio error, got: {result:?}"
@@ -724,7 +730,7 @@ mod tests {
     #[tokio::test]
     async fn test_whisper_stt_empty_audio_returns_error() {
         let stt = WhisperStt::new("key", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo");
-        let result = stt.transcribe(vec![], "en", None).await;
+        let result = stt.transcribe(&[], "en", None).await;
         assert!(matches!(result, Err(SttError::EmptyAudio)));
     }
 

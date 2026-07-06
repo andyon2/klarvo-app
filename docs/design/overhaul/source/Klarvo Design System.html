@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klarvo — Design System · Single Source of Truth</title>
+<link rel="stylesheet" href="assets/klarvo.css">
+<style>
+  /* ---- file-local: bubble redesign on top of klarvo.css tokens ---- */
+  .phone { width: 252px; }
+  .phone .screen { display: flex; flex-direction: column; height: 472px; }
+
+  .ab-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--k-border); flex: none; }
+  .ab-head .av { width: 28px; height: 28px; border-radius: 50%; background: var(--k-elevated); display: flex; align-items: center; justify-content: center; color: var(--k-muted); font-size: 12px; font-weight: 600; }
+  .ab-head .nm { font-weight: 600; font-size: 14px; }
+  .ab-head .sub { font-size: 11px; color: var(--k-dim); margin-top: -2px; }
+  .ab-head .sp { margin-left: auto; color: var(--k-dim); display: flex; }
+
+  .ab-thread { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 9px; overflow: hidden; justify-content: flex-end; }
+  .msg { max-width: 80%; padding: 8px 12px; border-radius: 15px; font-size: 12.5px; line-height: 1.45; }
+  .msg.in { align-self: flex-start; background: var(--k-surface-2); color: var(--k-text); border-bottom-left-radius: 5px; }
+  .msg.out { align-self: flex-end; background: var(--k-teal-bg); color: var(--k-teal-hi); border: 1px solid var(--k-teal-line); border-bottom-right-radius: 5px; }
+  .msg .tm { font-size: 9.5px; color: var(--k-faint); font-family: var(--k-mono); margin-top: 3px; text-align: right; }
+
+  .ab-compose { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--k-border); background: var(--k-bg); flex: none; }
+  .ab-field { flex: 1; min-height: 38px; background: var(--k-surface-2); border: 1px solid var(--k-border); border-radius: 19px; padding: 8px 14px; font-size: 12.5px; line-height: 1.4; color: var(--k-text); display: flex; align-items: center; }
+  .ab-field .placeholder { color: var(--k-faint); }
+  .ab-field .final { color: var(--k-text); }
+  .ab-send { width: 38px; height: 38px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: var(--k-surface-2); color: var(--k-dim); border: 1px solid var(--k-border); }
+  .ab-send.on { background: var(--k-teal); color: var(--k-on-teal); border-color: transparent; }
+  .ab-send svg { width: 16px; height: 16px; }
+
+  /* keyboard */
+  .ab-kb { flex: none; height: 150px; background: #131517; border-top: 1px solid var(--k-border); display: grid; grid-template-rows: repeat(4, 1fr); padding: 7px 5px 14px; gap: 5px; }
+  .ab-kb .krow { display: flex; gap: 4px; justify-content: center; }
+  .ab-kb .key { flex: 1; max-width: 22px; background: #262a2d; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: var(--k-muted); }
+
+  /* ---- the bubble (smaller — ~40dp visual, 48dp hit target) ---- */
+  .ab-bubble { position: absolute; right: 10px; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass); z-index: 5; }
+  .ab-bubble .kt { font-weight: 700; font-size: 17px; }
+  .ab-bubble.idle { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass), 0 0 0 3px rgba(41,199,172,.13); }
+  /* Modell B: done = Erfolgs-Grün + Haken — klar abgesetzt von Teal-idle (ADR-0019 Amendment 2026-06-17). */
+  .ab-bubble.done { background: linear-gradient(150deg, #62E0A4, var(--k-success)); color: #05201B; }
+  /* Modell B / Variante B (ADR-0019 Amendment 2026-06-17, transcribing-Erweiterung): nach ➤ Senden bleibt
+     der Dock-Platz besetzt — der Cluster kollabiert zu EINER teal Verarbeitungs-Bubble mit Spinner
+     (Kontinuität: derselbe Ort, an dem ➤ war). Teal = Verarbeitung (§3). Panel-Spinner bleibt zusätzlich. */
+  .ab-bubble.proc { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); }
+  .ab-bubble.proc .spinner { width: 20px; height: 20px; }
+  /* ADR-0019 Amendment (Modell B, 2026-06-17): recording ist KEIN Einzel-Bubble mehr, sondern ein
+     Steuer-Cluster am Bubble-Platz — Senden (teal ➤) · Waveform (amber, live) · Abbrechen (rot ✗).
+     EIN Interaktions-Ort; das Panel ist passiv (nur Text + Zeit, keine Waveform, kein roter Knopf). */
+  /* ⚠️ SUPERSEDED für Android-MOBILE (ADR-0019 Amendment 2026-06-26 „B-Sprache"): dieser Klein-Cluster
+     `.ab-cluster` UND die HOLD-Surfaces `.ab-holddock/.ab-holdstrip/.ab-slidehint/.ab-heldbub/.ab-lockchip`
+     (unten) wurden am echten Gerät als zu klein/„Laptop-Feel" verworfen. NEUE Android-Wahrheit = große
+     tappbare Ziele (Senden/Abbrechen) + HOLD-Zwei-Zonen mit grow-on-target + release-to-commit. Bindendes
+     Render: docs/design/overhaul/mockup-mobile-{hold-B-refined,recording-states}.html. Desktop unberührt. */
+  .ab-cluster { position: absolute; right: 8px; display: flex; align-items: center; gap: 9px; padding: 6px; border-radius: 18px; box-shadow: 0 0 0 1.5px var(--k-amber-line); background: rgba(20,22,24,.55); z-index: 5; }
+  .ab-cbtn { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.5), var(--k-glass); border: 0; }
+  .ab-cbtn.send { background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); }
+  .ab-cbtn.cancel { background: var(--k-danger-bg); border: 1px solid rgba(238,111,99,.4); color: var(--k-danger); }
+  .ab-cbtn svg { width: 19px; height: 19px; }
+  .ab-bubble .hit { position: absolute; inset: -4px; }
+
+  /* ---- listening bar (Klarvo-owned overlay, sits above the keyboard) ---- */
+  .ab-bar { position: absolute; left: 8px; right: 8px; bottom: 158px; border-radius: 14px; background: rgba(20,22,24,.97); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--k-border-2); box-shadow: var(--k-e3), var(--k-glass); padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; z-index: 5; }
+  .ab-bar.rec { border-color: var(--k-amber-line); }
+  .ab-bar-top { display: flex; align-items: center; gap: 8px; }
+  .ab-bar-top .nm { font-size: 11px; color: var(--k-dim); font-family: var(--k-mono); }
+  .ab-bar-top .tm { margin-left: auto; font-size: 10.5px; font-family: var(--k-mono); color: var(--k-dim); }
+  .ab-bar-stop { width: 26px; height: 26px; border-radius: 8px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--k-danger-bg); border: 1px solid rgba(238,111,99,.3); cursor: pointer; }
+  .ab-bar-stop span { width: 9px; height: 9px; border-radius: 2px; background: var(--k-danger); }
+  .ab-bar-text { font-family: var(--k-mono); font-size: 11.5px; line-height: 1.55; color: var(--k-muted); }
+  .ab-bar-text .pend { color: var(--k-dim); }
+  .ab-bcaret { display: inline-block; width: 2px; height: 13px; background: var(--k-amber); margin-left: 1px; vertical-align: middle; animation: abblink 1.1s steps(1) infinite; }
+  @keyframes abblink { 50% { opacity: 0; } }
+
+  /* hwave = LIVE-Cue: im Build von der echten Stimm-Amplitude (RMS) getrieben (wie Desktop), NICHT die hier nur illustrative idle-Animation. Build-Story: 9-5-Follow-up #1. */
+  .hwave { display: flex; align-items: center; gap: 3px; height: 18px; }
+  .hwave i { width: 3px; border-radius: 2px; background: var(--k-amber); display: block; }
+  .hwave i:nth-child(1){ height: 7px; animation: abwv 850ms var(--k-ease) infinite; }
+  .hwave i:nth-child(2){ height: 15px; animation: abwv 850ms var(--k-ease) 120ms infinite; }
+  .hwave i:nth-child(3){ height: 10px; animation: abwv 850ms var(--k-ease) 240ms infinite; }
+  .hwave i:nth-child(4){ height: 17px; animation: abwv 850ms var(--k-ease) 80ms infinite; }
+  .hwave i:nth-child(5){ height: 8px; animation: abwv 850ms var(--k-ease) 300ms infinite; }
+  @keyframes abwv { 0%,100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } }
+
+  /* ---- expanded panel: keyboard collapses during capture ---- */
+  .ab-panel { flex: none; background: rgba(18,20,22,.98); border-top: 1px solid var(--k-border-2); box-shadow: 0 -10px 26px rgba(0,0,0,.4); padding: 9px 16px 18px; display: flex; flex-direction: column; gap: 11px; min-height: 200px; }
+  .ab-panel.rec { border-top-color: var(--k-amber-line); }
+  .ab-panel-grip { width: 34px; height: 4px; border-radius: 999px; background: var(--k-border-2); align-self: center; }
+  .ab-panel-text { font-family: var(--k-mono); font-size: 13px; line-height: 1.7; color: var(--k-muted); flex: 1; }
+  .ab-panel-text .pend { color: var(--k-dim); }
+  .ab-panel-foot { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--k-dim); }
+  .ab-panel-foot svg { width: 13px; height: 13px; flex: none; }
+
+  /* ---- recording · HOLD-Modus (Push-to-Talk-Variante) · §4′-Amendment 2026-06-21 (#4) ---- */
+  /* HOLD: Finger hält die Bubble. Loslassen = Senden · wegziehen = Abbrechen · hoch ziehen = Sperren → normaler Cluster. Kein tippbares ➤/✗ solange gehalten. */
+  .ab-holddock { position: absolute; right: 8px; display: flex; align-items: center; gap: 11px; z-index: 5; }
+  .ab-holdstrip { display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 11px; border-radius: 18px; background: rgba(20,22,24,.92); box-shadow: 0 0 0 1.5px var(--k-amber-line), var(--k-e3); }
+  .ab-slidehint { display: flex; align-items: center; gap: 5px; color: var(--k-dim); font-size: 11px; white-space: nowrap; }
+  .ab-slidehint .arr { font-size: 14px; color: var(--k-amber); animation: slidearr 1.1s ease-in-out infinite; }
+  .ab-heldbub { position: relative; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(150deg, var(--k-teal-hi), var(--k-teal-lo)); color: var(--k-on-teal); font-weight: 700; font-size: 17px; box-shadow: 0 6px 18px rgba(0,0,0,.5), 0 0 0 4px var(--k-amber-line), var(--k-glass); }
+  .ab-heldbub .ring { position: absolute; inset: -8px; border-radius: 18px; border: 2px solid var(--k-amber); opacity: .5; }
+  .ab-heldbub .finger { position: absolute; right: -6px; bottom: -7px; width: 26px; height: 26px; border-radius: 50%; background: rgba(236,238,239,.15); border: 1.5px solid rgba(236,238,239,.45); }
+  .ab-lockchip { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--k-muted); font-size: 10px; font-family: var(--k-mono); z-index: 6; }
+  .ab-lockchip .upi { font-size: 13px; color: var(--k-amber); animation: slideup 1.1s ease-in-out infinite; }
+  .ab-lockchip svg { width: 13px; height: 13px; }
+  /* Gesten-Hint-Animation reconciled to the Andi-approved render (mockup-9-5-followups-2-4.html) · 2026-06-26.
+     The ingest had transcribed these static; the approval render pulses them (slide-to-cancel / drag-to-lock cue). */
+  @keyframes slidearr { 0%, 100% { transform: translateX(0); opacity: .5; } 50% { transform: translateX(-4px); opacity: 1; } }
+  @keyframes slideup { 0%, 100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(-4px); opacity: 1; } }
+
+  /* ---- long-press popover ---- */
+  .ab-scrim { position: absolute; inset: 0; background: rgba(6,8,9,.55); z-index: 3; }
+  .ab-menu { position: absolute; width: 202px; border-radius: 14px; background: rgba(22,24,26,.98); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--k-border-2); box-shadow: var(--k-e3), var(--k-glass); overflow: hidden; z-index: 6; }
+  .ab-menu .mh { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--k-border); }
+  .ab-menu .mh .nm { font-size: 12px; font-weight: 600; }
+  .ab-menu .mh .hint { margin-left: auto; font-size: 9.5px; font-family: var(--k-mono); color: var(--k-dim); }
+  .ab-mblock { padding: 9px 12px; border-bottom: 1px solid var(--k-border); }
+  .ab-mblock .ml { font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--k-dim); margin-bottom: 7px; font-family: var(--k-mono); display: flex; justify-content: space-between; }
+  .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .ab-grid button { font: inherit; font-size: 11px; font-weight: 500; color: var(--k-muted); padding: 6px 4px; border: 1px solid var(--k-border); background: var(--k-surface); border-radius: 7px; cursor: pointer; text-align: center; }
+  .ab-grid button[aria-selected="true"] { background: var(--k-teal-bg); color: var(--k-teal); border-color: var(--k-teal-line); }
+  .ab-seg { display: flex; padding: 2px; gap: 2px; background: var(--k-surface); border: 1px solid var(--k-border); border-radius: 9px; }
+  .ab-seg button { flex: 1; font: inherit; font-size: 11px; font-weight: 500; color: var(--k-muted); padding: 5px 4px; border: 0; background: transparent; border-radius: 7px; cursor: pointer; }
+  .ab-seg button[aria-selected="true"] { background: var(--k-elevated); color: var(--k-teal); box-shadow: var(--k-e1); }
+  .ab-mrow2 { display: flex; border-bottom: 1px solid var(--k-border); }
+  .ab-mrow2 .cell { flex: 1; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+  .ab-mrow2 .cell + .cell { border-left: 1px solid var(--k-border); }
+  .ab-mrow2 .cl { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--k-dim); font-family: var(--k-mono); }
+  .ab-mrow2 .cv { font-size: 12.5px; color: var(--k-text); display: flex; align-items: center; gap: 5px; }
+  .ab-mrow2 .cv svg { width: 12px; height: 12px; color: var(--k-dim); }
+  .ab-mfoot { padding: 10px 12px; font-size: 12px; color: var(--k-muted); display: flex; align-items: center; gap: 8px; }
+  .ab-mfoot svg { width: 14px; height: 14px; }
+  .ab-menu-tail { position: absolute; width: 12px; height: 12px; background: rgba(22,24,26,.98); border-right: 1px solid var(--k-border-2); border-bottom: 1px solid var(--k-border-2); transform: rotate(45deg); }
+
+  .sizetag { font-family: var(--k-mono); font-size: 10px; color: var(--k-teal); border: 1px solid var(--k-teal-line); background: var(--k-teal-bg); padding: 2px 7px; border-radius: 999px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 12.5px; color: var(--k-muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend .d { width: 10px; height: 10px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ============================ TOP BAR ============================ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="kmark" style="width:26px;height:26px;font-size:15px;">K</span>
+    <span>Klarvo</span>
+    <span class="doc-label">· Design System · v1 · Single Source of Truth</span>
+  </div>
+  <nav class="topnav">
+    <a href="#kritik">Kritik</a>
+    <a href="#direction">Direction</a>
+    <a href="#tokens">Tokens</a>
+    <a href="#floatingbar">FloatingBar</a>
+    <a href="#app">App</a>
+    <a href="#preview">Live-Preview</a>
+    <a href="#android">Android</a>
+    <a href="#umsetzung">Umsetzung</a>
+  </nav>
+</header>
+
+<!-- ============================ HERO ============================ -->
+<section class="wrap" style="padding-top:64px;" data-screen-label="Hero">
+  <span class="eyebrow">Single Source of Truth · v1 · Desktop + Android</span>
+  <h1 class="sec-title" style="font-size:clamp(34px,5vw,56px);max-width:18ch;">Ein ruhigeres, schärferes Werkzeug — ohne ein einziges Feature zu verschieben.</h1>
+  <p class="sec-lede" style="font-size:19px;margin-top:18px;">
+    Klarvo bleibt das dichte, lokal-first Diktier-Tool für Power-User, Devs und Institute.
+    Dieser Overhaul gibt ihm Tiefe statt Flächen, eine konsolidierte Token-Sprache und eine
+    Signature-Pille, die sich edel materialisiert statt nur zu funktionieren. <b style="color:var(--k-text)">Dieses Dokument bündelt alle abgesegneten Entscheidungen — Desktop (Windows) und Android — als einzige verbindliche Referenz.</b>
+  </p>
+
+  <!-- hero pill demo -->
+  <div class="desktopstrip" style="margin-top:40px;">
+    <div class="fake-editor">
+      Betreff: Re-Design Briefing<br>
+      Hallo Andi, ich diktiere dir gleich die nächsten Schritte zum Overhaul der<br>
+      FloatingBar und der Settings-Architektur. Kurz vorab<span class="cursor"></span>
+    </div>
+    <div class="pill floating" style="left:50%;bottom:34px;transform:translateX(-50%);">
+      <span class="kmark">K</span>
+      <span class="livedot"></span>
+      <div class="wave live" aria-hidden="true">
+        <i style="height:6px"></i><i style="height:14px"></i><i style="height:9px"></i><i style="height:16px"></i><i style="height:7px"></i>
+      </div>
+      <span class="tag-mode">Toggle</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:18px;color:var(--k-dim);font-size:13px;font-family:var(--k-mono);">
+    <span>● Windows · Tauri / WebView2 · React · Tailwind v4</span>
+    <span>● Android · native Kotlin (Tokens + Specs)</span>
+    <span>● Dark = Identität</span>
+  </div>
+</section>
+
+<!-- ============================ KRITIK ============================ -->
+<section class="wrap" id="kritik" data-screen-label="Kritik">
+  <span class="eyebrow">01 · Design-Kritik des Ist-Zustands</span>
+  <h2 class="sec-title">Wo der heutige Build Hebel liegen lässt</h2>
+  <p class="sec-lede">Acht konkrete Schwächen, nach Hebelwirkung sortiert — je ein Satz.</p>
+
+  <div class="crit-grid">
+    <div class="crit">
+      <span class="num">01</span>
+      <div><h4>Keine echte Elevation — Tiefe entsteht nur über Border-Stufen</h4>
+      <p>Panels, Pille und Karten sitzen flach auf der Fläche; ohne Schatten, Glas oder Lichtkante fehlt das „Premium"-Gefühl, das die Referenzklasse (Linear, Raycast) trägt.</p></div>
+      <span class="lev hi">Höchster Hebel</span>
+    </div>
+    <div class="crit">
+      <span class="num">02</span>
+      <div><h4>Die Signature-Pille wirkt utilitaristisch, nicht edel</h4>
+      <p>Flache dunkle Kapsel, simple 5-Balken-Waveform, harte State-Sprünge — die wichtigste Dauerfläche des Produkts sieht aus wie ein Debug-Widget, nicht wie ein Instrument.</p></div>
+      <span class="lev hi">Höchster Hebel</span>
+    </div>
+    <div class="crit">
+      <span class="num">03</span>
+      <div><h4>Akzent-Hex sind über den Code verstreut, nicht tokenisiert</h4>
+      <p>Orange 33×, Teal 13× plus Einzel-Hex wie <span class="mono">#7B8CDB</span>, <span class="mono">#5BBEF5</span>, <span class="mono">#22D3EE</span> — das erzeugt das „nicht aus einem Guss"-Gefühl und macht ein Theming unmöglich.</p></div>
+      <span class="lev hi">Höchster Hebel</span>
+    </div>
+    <div class="crit">
+      <span class="num">04</span>
+      <div><h4>Native <span class="mono">&lt;select&gt;</span>-Dropdowns brechen die Dark-Ästhetik</h4>
+      <p>Helle OS-Dropdowns mitten in einem dunklen Power-Tool sind der sichtbarste Stilbruch und das offensichtlichste Custom-Komponenten-Ziel.</p></div>
+      <span class="lev md">Hoch</span>
+    </div>
+    <div class="crit">
+      <span class="num">05</span>
+      <div><h4>Typo-Skala ist eng und ohne Rhythmus</h4>
+      <p>Vom <span class="mono">11px</span>-Label bis <span class="mono">text-lg</span> fehlt eine bewusste Stufung; Sub-Page-Header sind dünn, Listen wirken gedrängt statt dicht.</p></div>
+      <span class="lev md">Hoch</span>
+    </div>
+    <div class="crit">
+      <span class="num">06</span>
+      <div><h4>Settings-Formfelder sind „stock", ohne visuelle Gruppierung</h4>
+      <p>Inputs, Toggles und Slider stehen ungruppiert untereinander; es fehlt ein konsistentes Sektions-/Form-System, das Informationsdichte sauber hierarchisiert.</p></div>
+      <span class="lev md">Hoch</span>
+    </div>
+    <div class="crit">
+      <span class="num">07</span>
+      <div><h4>Doppelte Akzentachse ist unausgesprochen, nicht systematisiert</h4>
+      <p>Teal=Marke/Status und Orange=Aktivität sind charakteristisch, aber nirgends als Regel festgehalten — mal ist Recording teal, mal das Processing orange, ohne Logik.</p></div>
+      <span class="lev lo">Mittel</span>
+    </div>
+    <div class="crit">
+      <span class="num">08</span>
+      <div><h4>Radii und Spacing sind gemischt verwendet</h4>
+      <p><span class="mono">rounded-lg / xl / full</span> wechseln ohne System; gleiche Elementklassen tragen unterschiedliche Rundungen — kleine Inkonsistenzen, die Politur kosten.</p></div>
+      <span class="lev lo">Mittel</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ DIRECTION ============================ -->
+<section class="wrap" id="direction" data-screen-label="Direction">
+  <span class="eyebrow">02 · Eine Design-Direction</span>
+  <h2 class="sec-title">„Studio Dark" — Instrument, kein Spielzeug</h2>
+
+  <div class="mood">
+    <div class="lead">
+      <p><strong>Moodboard in Worten.</strong> Stell dir ein hochwertiges Audio-Pult in einem
+      abgedunkelten Studio vor: matte Graphit-Flächen, eine einzige selbstbewusste Teal-Signalleuchte,
+      warmes Bernstein nur dann, wenn das System tatsächlich <em>zuhört</em>. Tiefe entsteht durch Licht
+      und Schatten — eine Lichtkante oben, ein weicher Schlagschatten unten — statt durch Borders.</p>
+      <p>Der Diktat-Text selbst wird in <strong>Monospace</strong> gesetzt: er ist das Artefakt des
+      Werkzeugs, „erfasste Daten", und liest sich dadurch präzise statt beliebig. Die UI-Schrift ist
+      eine ruhige Grotesk (<strong>Geist</strong>). Großzügige, aber disziplinierte Abstände; nichts
+      konkurriert um Aufmerksamkeit, bis du es brauchst.</p>
+      <div class="chips">
+        <span class="chip">graphite</span>
+        <span class="chip">glass + depth</span>
+        <span class="chip">tally-light amber</span>
+        <span class="chip">monospaced artifact</span>
+        <span class="chip">calm density</span>
+        <span class="chip">instrument-grade</span>
+        <span class="chip">no loud gradients</span>
+      </div>
+    </div>
+    <div class="aside">
+      <div class="principle"><span class="d" style="background:var(--k-teal)"></span>
+        <div><h5>Teal = Marke &amp; System</h5><p>Identität, „bereit", Verarbeitung, Erfolg, Fokus-Ring.</p></div></div>
+      <div class="principle"><span class="d" style="background:var(--k-amber)"></span>
+        <div><h5>Amber = „live / hört zu"</h5><p>Der Tally-Light-Moment: nur aktiv, während aufgenommen wird. Ruhiger als das alte Orange.</p></div></div>
+      <div class="principle"><span class="d" style="background:var(--k-danger)"></span>
+        <div><h5>Rot = zerstörerisch</h5><p>Stop, Löschen, Fehler — sonst nie.</p></div></div>
+      <hr class="div">
+      <div class="principle"><span class="d" style="background:var(--k-text)"></span>
+        <div><h5>Motion = materialisieren</h5><p>Die Pille skaliert + blurrt sich herein (Spring), nicht hartes Toggle. Alles andere kurz &amp; ease-out.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ===== COLOR TOKENS ===== -->
+  <div id="tokens"></div>
+  <div class="tok-head"><h3>Farb-Tokens</h3><span>graphite · teal · amber · semantic — konsolidiert aus verstreutem Hex</span></div>
+  <div class="swatches">
+    <div class="sw"><div class="chip-c" style="background:#0F1112"></div><div class="meta"><div class="nm">bg</div><div class="hx">#0F1112</div><div class="role">Canvas / Fenster-Basis</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#16181A"></div><div class="meta"><div class="nm">surface</div><div class="hx">#16181A</div><div class="role">Karten, Listen</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#1B1E20"></div><div class="meta"><div class="nm">surface-2</div><div class="hx">#1B1E20</div><div class="role">Inputs, raised</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#232729"></div><div class="meta"><div class="nm">elevated</div><div class="hx">#232729</div><div class="role">Popover, Hover</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#282C2F"></div><div class="meta"><div class="nm">border</div><div class="hx">#282C2F</div><div class="role">Hairline default</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#353A3E"></div><div class="meta"><div class="nm">border-2</div><div class="hx">#353A3E</div><div class="role">aktiv / hover</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#ECEEEF"></div><div class="meta"><div class="nm">text</div><div class="hx">#ECEEEF</div><div class="role">Haupttext</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#A4A9AC"></div><div class="meta"><div class="nm">muted</div><div class="hx">#A4A9AC</div><div class="role">Sekundär</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#6F7479"></div><div class="meta"><div class="nm">dim</div><div class="hx">#6F7479</div><div class="role">Labels / Tertiär</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#29C7AC"></div><div class="meta"><div class="nm">teal · primary</div><div class="hx">#29C7AC</div><div class="role">Marke / Status / aktiv</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#57DDC7"></div><div class="meta"><div class="nm">teal-hi</div><div class="hx">#57DDC7</div><div class="role">Hover / Highlight</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#1B9C88"></div><div class="meta"><div class="nm">teal-lo</div><div class="hx">#1B9C88</div><div class="role">pressed</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#E9A24C"></div><div class="meta"><div class="nm">amber · activity</div><div class="hx">#E9A24C</div><div class="role">live / Aufnahme / Warnung</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#EE6F63"></div><div class="meta"><div class="nm">danger</div><div class="hx">#EE6F63</div><div class="role">Abbrechen / Löschen / Fehler (nie Senden) — ADR-0019</div></div></div>
+    <div class="sw"><div class="chip-c" style="background:#4FC58A"></div><div class="meta"><div class="nm">success</div><div class="hx">#4FC58A</div><div class="role">Erfolg (sparsam)</div></div></div>
+  </div>
+
+  <!-- ===== TYPE SCALE ===== -->
+  <div class="tok-head"><h3>Typo-Skala</h3><span>Geist (UI) · Geist&nbsp;Mono (Diktat-Text, Keys, IDs)</span></div>
+  <div class="tablecard">
+    <table class="tok">
+      <thead><tr><th style="width:38%">Sample</th><th>Token</th><th>Größe / LH</th><th>Verwendung</th></tr></thead>
+      <tbody>
+        <tr><td><span class="type-sample" style="font-size:40px;font-weight:600;letter-spacing:-.02em;">Sprich.</span></td><td class="mono">display</td><td class="mono">40 / 1.1</td><td>Onboarding-Hero</td></tr>
+        <tr><td><span class="type-sample" style="font-size:28px;font-weight:600;letter-spacing:-.015em;">Settings</span></td><td class="mono">title</td><td class="mono">28 / 1.2</td><td>Fenster-/Page-Titel</td></tr>
+        <tr><td><span class="type-sample" style="font-size:20px;font-weight:600;">AI &amp; Providers</span></td><td class="mono">heading</td><td class="mono">20 / 1.25</td><td>Sub-Page-Header</td></tr>
+        <tr><td><span class="type-sample" style="font-size:16px;font-weight:500;">Recording &amp; Audio</span></td><td class="mono">subhead</td><td class="mono">16 / 1.3</td><td>Sektions-Titel</td></tr>
+        <tr><td><span class="type-sample" style="font-size:14px;">Dictation &amp; translation</span></td><td class="mono">body</td><td class="mono">14 / 1.55</td><td>Row-Label / Body</td></tr>
+        <tr><td><span class="type-sample" style="font-size:13px;color:var(--k-muted);">API keys, cleanup, profiles</span></td><td class="mono">body-sm</td><td class="mono">13 / 1.5</td><td>Sekundär / Hints</td></tr>
+        <tr><td><span class="type-sample mono" style="font-size:13px;color:var(--k-muted);">****urrK · Groq</span></td><td class="mono">mono</td><td class="mono">13 / 1.5</td><td>Diktat, Keys, Hotkeys</td></tr>
+        <tr><td><span class="type-sample" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--k-dim);">Cleanup Instructions</span></td><td class="mono">label</td><td class="mono">11 / 1.4 · +8%</td><td>Uppercase-Labels</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== SPACING / RADII / ELEVATION / MOTION ===== -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
+    <div class="tablecard">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--k-border);"><h3 style="font-size:15px;">Spacing · 4-px-Basis</h3></div>
+      <table class="tok"><tbody>
+        <tr><td class="mono">2 / 4 / 6</td><td><div class="scaleitem"><span class="bar" style="width:2px"></span><span class="bar" style="width:4px"></span><span class="bar" style="width:6px"></span></div></td><td style="color:var(--k-dim);font-size:13px;">Icon-Gaps, Chips</td></tr>
+        <tr><td class="mono">8 / 12 / 16</td><td><div class="scaleitem"><span class="bar" style="width:8px"></span><span class="bar" style="width:12px"></span><span class="bar" style="width:16px"></span></div></td><td style="color:var(--k-dim);font-size:13px;">Row-/Card-Padding</td></tr>
+        <tr><td class="mono">20 / 24 / 32</td><td><div class="scaleitem"><span class="bar" style="width:20px"></span><span class="bar" style="width:24px"></span><span class="bar" style="width:32px"></span></div></td><td style="color:var(--k-dim);font-size:13px;">Sektions-Abstände</td></tr>
+        <tr><td class="mono">40 / 48</td><td><div class="scaleitem"><span class="bar" style="width:40px"></span><span class="bar" style="width:48px"></span></div></td><td style="color:var(--k-dim);font-size:13px;">Page-Rhythmus, Touch-Target</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tablecard">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--k-border);"><h3 style="font-size:15px;">Radii</h3></div>
+      <table class="tok"><tbody>
+        <tr><td><div style="display:flex;gap:12px;align-items:center;"><span style="width:34px;height:34px;background:var(--k-surface-2);border:1px solid var(--k-border);border-radius:6px;"></span><span class="mono">xs · 6</span></div></td><td style="color:var(--k-dim);font-size:13px;">Inputs, Chips, Stop-Icon</td></tr>
+        <tr><td><div style="display:flex;gap:12px;align-items:center;"><span style="width:34px;height:34px;background:var(--k-surface-2);border:1px solid var(--k-border);border-radius:8px;"></span><span class="mono">sm · 8</span></div></td><td style="color:var(--k-dim);font-size:13px;">Buttons, Selects</td></tr>
+        <tr><td><div style="display:flex;gap:12px;align-items:center;"><span style="width:34px;height:34px;background:var(--k-surface-2);border:1px solid var(--k-border);border-radius:12px;"></span><span class="mono">md · 12</span></div></td><td style="color:var(--k-dim);font-size:13px;">Karten, Icon-Badges</td></tr>
+        <tr><td><div style="display:flex;gap:12px;align-items:center;"><span style="width:34px;height:34px;background:var(--k-surface-2);border:1px solid var(--k-border);border-radius:16px;"></span><span class="mono">lg · 16</span></div></td><td style="color:var(--k-dim);font-size:13px;">Panels, Sheets</td></tr>
+        <tr><td><div style="display:flex;gap:12px;align-items:center;"><span style="width:34px;height:34px;background:var(--k-surface-2);border:1px solid var(--k-border);border-radius:999px;"></span><span class="mono">full</span></div></td><td style="color:var(--k-dim);font-size:13px;">Pille, Status-Dots, Toggle</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tablecard">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--k-border);"><h3 style="font-size:15px;">Elevation — der größte Hebel</h3></div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:20px 16px;">
+        <div style="display:flex;align-items:center;gap:14px;"><span style="width:60px;height:36px;border-radius:10px;background:var(--k-surface);border:1px solid var(--k-border);box-shadow:var(--k-e1),var(--k-glass);"></span><div><div class="mono" style="font-size:12px;color:var(--k-muted)">e1 · card</div><div style="font-size:12px;color:var(--k-dim)">Hairline-Top + 1px Schatten</div></div></div>
+        <div style="display:flex;align-items:center;gap:14px;"><span style="width:60px;height:36px;border-radius:10px;background:var(--k-surface);border:1px solid var(--k-border);box-shadow:var(--k-e2),var(--k-glass);"></span><div><div class="mono" style="font-size:12px;color:var(--k-muted)">e2 · raised</div><div style="font-size:12px;color:var(--k-dim)">Boards, Hover-Lift</div></div></div>
+        <div style="display:flex;align-items:center;gap:14px;"><span style="width:60px;height:36px;border-radius:10px;background:var(--k-elevated);border:1px solid var(--k-border);box-shadow:var(--k-e3),var(--k-glass);"></span><div><div class="mono" style="font-size:12px;color:var(--k-muted)">e3 · popover / window</div><div style="font-size:12px;color:var(--k-dim)">Fenster, Dropdowns</div></div></div>
+        <div style="display:flex;align-items:center;gap:14px;"><span style="width:60px;height:36px;border-radius:999px;background:rgba(16,18,20,.72);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.08);box-shadow:var(--k-e-pill),var(--k-glass);"></span><div><div class="mono" style="font-size:12px;color:var(--k-muted)">e-pill · overlay</div><div style="font-size:12px;color:var(--k-dim)">Glas-Pille + backdrop-blur 16</div></div></div>
+      </div>
+    </div>
+    <div class="tablecard">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--k-border);"><h3 style="font-size:15px;">Motion-Prinzipien</h3></div>
+      <table class="tok"><tbody>
+        <tr><td class="mono">micro · 120ms</td><td style="color:var(--k-dim);font-size:13px;">Hover, Farb-Wechsel</td></tr>
+        <tr><td class="mono">state · 180ms</td><td style="color:var(--k-dim);font-size:13px;">Toggle, Segmented, Fokus</td></tr>
+        <tr><td class="mono">enter · 240ms</td><td style="color:var(--k-dim);font-size:13px;">Pille materialisieren (Spring)</td></tr>
+        <tr><td class="mono">panel · 320ms</td><td style="color:var(--k-dim);font-size:13px;">Live-Preview expand/collapse</td></tr>
+        <tr><td class="mono">ease</td><td style="color:var(--k-dim);font-size:13px;">cubic-bezier(.2,0,0,1) · Spring (.34,1.56,.64,1)</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FLOATINGBAR ============================ -->
+<section class="wrap" id="floatingbar" data-screen-label="FloatingBar">
+  <span class="eyebrow">03 · Mockups — Signature-Fläche</span>
+  <h2 class="sec-title">FloatingBar — die Pille als Sequenz gedacht</h2>
+  <p class="sec-lede">Transparentes, randloses Overlay · ~200×36 logische px · draggable. Eine Glas-Kapsel mit Tiefe, die sich materialisiert statt zu erscheinen — die States als eine Bewegung.</p>
+
+  <!-- desktop context -->
+  <div class="board" data-screen-label="FloatingBar im Kontext">
+    <span class="board-cap">Recording · über der echten Arbeit, unaufdringlich</span>
+    <div class="board-row">
+      <div class="desktopstrip">
+        <div class="fake-editor">
+          // payment.service.ts<br>
+          export async function capture(intent: PaymentIntent) {<br>
+          &nbsp;&nbsp;const res = await gateway.charge(intent)<span class="cursor"></span><br>
+          &nbsp;&nbsp;return res
+        </div>
+        <div class="pill floating" style="left:50%;bottom:30px;transform:translateX(-50%);">
+          <span class="kmark">K</span>
+          <span class="livedot"></span>
+          <div class="wave live" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="tag-mode">Toggle</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- state sequence -->
+  <div class="board dotgrid" data-screen-label="FloatingBar States">
+    <span class="board-cap">State-Sequenz · 1:1 Maßstab (200×36)</span>
+    <div class="board-row" style="gap:40px;">
+      <div class="artboard">
+        <div class="ghost-pill">idle · unsichtbar</div>
+        <div class="lbl"><b>idle</b> — Fenster versteckt, materialisiert erst bei Aktivität</div>
+      </div>
+      <div class="artboard">
+        <div class="pill">
+          <span class="kmark">K</span>
+          <span class="livedot"></span>
+          <div class="wave live" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="tag-mode">Toggle</span>
+        </div>
+        <div class="lbl"><b>recording</b> — Amber-Tally + Teal-Waveform</div>
+      </div>
+      <div class="artboard">
+        <div class="pill">
+          <span class="kmark">K</span>
+          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="var(--k-teal)" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="10" stroke-opacity=".18"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+          <span style="font-size:11px;color:var(--k-muted);">Transcribing…</span>
+        </div>
+        <div class="lbl"><b>transcribing</b> — Teal-Spinner (System denkt)</div>
+      </div>
+      <div class="artboard">
+        <div class="pill">
+          <span class="kmark">K</span>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--k-success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span style="font-size:11px;color:var(--k-success);">Eingefügt</span>
+        </div>
+        <div class="lbl"><b>done</b> — kurzer Check, dann dematerialisieren</div>
+      </div>
+    </div>
+    <div class="board-row" style="margin-top:34px;gap:24px;align-items:stretch;">
+      <div class="detail-card">
+        <b>Was die Tiefe trägt</b>
+        <ul>
+          <li>backdrop-blur 16px + 72% Graphit-Fill</li>
+          <li>1px Lichtkante oben (<span class="mono">inset hairline</span>)</li>
+          <li>weicher Schatten <span class="mono">0 8px 28px</span></li>
+          <li>Spring-Enter: scale .85→1 + fade</li>
+        </ul>
+      </div>
+      <div class="detail-card">
+        <b>Amber-Tally-Light</b>
+        <ul>
+          <li>pulsierender Ring = „hört gerade zu"</li>
+          <li>nur im <span class="mono">recording</span>-State sichtbar</li>
+          <li>Stop-Affordance (rot) erscheint bei Hover</li>
+          <li>Mode-Badge rechts, dim &amp; mono</li>
+        </ul>
+      </div>
+      <div class="detail-card">
+        <b>Constraint-treu</b>
+        <ul>
+          <li>Fläche bleibt <span class="mono">200×36</span> — kein Aufblasen</li>
+          <li>Fenster-Hintergrund transparent</li>
+          <li>Position persistiert (draggable)</li>
+          <li>clipboard-only → Amber „In Zwischenablage"</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ APP / SETTINGS ============================ -->
+<section class="wrap" id="app" data-screen-label="App und Settings">
+  <span class="eyebrow">03 · Mockups — App-Shell</span>
+  <h2 class="sec-title">Settings: ein Form-System auf Linear-Niveau</h2>
+  <p class="sec-lede">Kategorie-Home + Sub-Pages mit konsistenten Rows, Sektionen, Custom-Selects und Status-Dots. Gleiche IA, echte Labels — nur sauber hierarchisiert und mit Tiefe.</p>
+
+  <div class="board" data-screen-label="Settings Home + Sub-Page">
+    <span class="board-cap">Settings-Home · AI &amp; Providers</span>
+    <div class="board-row">
+      <!-- Settings Home -->
+      <div class="artboard">
+        <div class="win">
+          <div class="titlebar">
+            <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+            <span class="t">Klarvo · Early Access</span>
+            <span class="wc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </span>
+          </div>
+          <div class="panel-head">
+            <h3>Settings</h3>
+            <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+          </div>
+          <div>
+            <div class="srow"><span class="ic" style="background:var(--k-teal-bg);color:var(--k-teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></span><span class="tx"><div class="l">Recording &amp; Audio</div><div class="s">STT, Modell, Mikrofon</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-teal-bg);color:var(--k-teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span><span class="tx"><div class="l">AI &amp; Providers</div><div class="s">API-Keys, Cleanup, Profile</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-amber-bg);color:var(--k-amber)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="9" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1" fill="currentColor" stroke="none"/></svg></span><span class="tx"><div class="l">Appearance</div><div class="s">Live-Preview Look &amp; Verhalten</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-teal-bg);color:var(--k-teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg></span><span class="tx"><div class="l">Language</div><div class="s">Diktat &amp; Übersetzung</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-amber-bg);color:var(--k-amber)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M7 13h10"/></svg></span><span class="tx"><div class="l">Shortcuts</div><div class="s">Hotkeys, Modi, Paste-Verhalten</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-amber-bg);color:var(--k-amber)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="tx"><div class="l">License</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-teal-bg);color:var(--k-teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="tx"><div class="l">Dictionary</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-surface-2);color:var(--k-dim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="tx"><div class="l">Advanced</div><div class="s">Prompts, Audio, Webhooks, Sync</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+            <div class="srow"><span class="ic" style="background:var(--k-surface-2);color:var(--k-dim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><span class="tx"><div class="l">About</div><div class="s">Version, Updates, Links</div></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="lbl"><b>Settings · Home</b> — farbcodierte Icon-Badges, ruhige Divider</div>
+      </div>
+
+      <!-- AI und Providers sub-page -->
+      <div class="artboard">
+        <div class="win">
+          <div class="titlebar">
+            <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+            <span class="t">Klarvo · Early Access</span>
+            <span class="wc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </span>
+          </div>
+          <div class="panel-head">
+            <span class="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></span>
+            <h3 style="text-align:center;">AI &amp; Providers</h3>
+            <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+          </div>
+          <div class="field">
+            <div class="flabel">Groq <span style="color:var(--k-dim)">· Speech + Cleanup</span> <span class="dot on" style="margin-left:auto"></span></div>
+            <input class="input" value="••••••••••••urrK" readonly="readonly">
+            <button class="btn ghost-danger" style="margin-top:8px;">Key entfernen</button>
+          </div>
+          <div class="field">
+            <div class="flabel">DeepSeek <span style="color:var(--k-dim)">· Cleanup</span> <span class="dot on" style="margin-left:auto"></span></div>
+            <input class="input" value="••••••••••••4b8e" readonly="readonly">
+            <button class="btn ghost-danger" style="margin-top:8px;">Key entfernen</button>
+          </div>
+          <div class="field">
+            <div class="flabel">OpenAI <span style="color:var(--k-dim)">· Speech + Cleanup</span> <span class="dot off" style="margin-left:auto"></span></div>
+            <input class="input" placeholder="sk-…">
+          </div>
+          <div class="field">
+            <div class="flabel">Anthropic <span style="color:var(--k-dim)">· Cleanup</span> <span class="dot off" style="margin-left:auto"></span></div>
+            <input class="input" placeholder="sk-ant-…">
+          </div>
+          <div class="field">
+            <div style="font-family:var(--k-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--k-dim);margin-bottom:8px;">Cleanup Instructions</div>
+            <textarea class="input" rows="3" style="resize:none;font-family:var(--k-font);" placeholder="Zusätzliche Anweisungen für das LLM, z.B. „Immer formelles Deutsch“ oder „Fachbegriffe auf Englisch lassen“."></textarea>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+              <span style="font-size:12px;color:var(--k-dim)">Presets:</span>
+              <button class="btn">Formal</button>
+              <button class="btn">Technical</button>
+              <button class="btn">Casual</button>
+              <button class="btn ghost-danger" style="padding:8px 6px;">Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="lbl"><b>Sub-Page · AI &amp; Providers</b> — Status-Dots, maskierte Keys, mono Inputs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- form kit -->
+  <div class="board" data-screen-label="Form-Kit">
+    <span class="board-cap">Form-Komponenten-Kit — ersetzt native Controls</span>
+    <div class="board-row" style="gap:20px;align-items:stretch;">
+      <div class="win" style="width:300px;">
+        <div style="padding:18px;display:flex;flex-direction:column;gap:18px;">
+          <div>
+            <div style="font-size:13px;color:var(--k-muted);margin-bottom:8px;">Mode</div>
+            <div class="seg teal"><button aria-selected="true">Polished</button><button aria-selected="false">Verbatim</button><button aria-selected="false">Chat</button></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:14px;">Live-Cleanup-Preview</span><span class="toggle on"></span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:14px;">Auto-Paste ins Feld</span><span class="toggle"></span></div>
+          <div>
+            <div style="font-size:13px;color:var(--k-muted);">Cleanup-Provider</div>
+            <div class="select" style="margin-top:8px;width:100%;"><span>Groq · llama-3.3-70b</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="win" style="width:300px;">
+        <div style="padding:18px;display:flex;flex-direction:column;gap:20px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--k-muted);"><span>Preview-Pause</span><span class="mono" style="color:var(--k-text)">1.2 s</span></div>
+            <div class="slider"><div class="fill" style="width:42%"></div><div class="knob" style="left:42%"></div></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--k-muted);"><span>Temperature</span><span class="mono" style="color:var(--k-text)">0.30</span></div>
+            <div class="slider"><div class="fill" style="width:30%"></div><div class="knob" style="left:30%"></div></div>
+          </div>
+          <div>
+            <div style="font-size:13px;color:var(--k-muted);margin-bottom:8px;">Hotkey 1</div>
+            <div style="display:flex;gap:6px;"><span class="chip" style="border-color:var(--k-border-2)">Shift</span><span class="chip" style="border-color:var(--k-border-2)">Alt</span><span class="chip" style="border-color:var(--k-border-2)">Y</span></div>
+          </div>
+          <div style="display:flex;gap:8px;"><button class="btn primary" style="flex:1">Speichern</button><button class="btn" style="flex:1">Zurücksetzen</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ LIVE PREVIEW ============================ -->
+<section class="wrap" id="preview" data-screen-label="Live-Preview">
+  <span class="eyebrow">03 · Mockups — Live-Cleanup-Preview</span>
+  <h2 class="sec-title">Live-Preview — ruhiger, lesbarer Live-Text</h2>
+  <p class="sec-lede">Transparentes Panel, das sich während des Sprechens füllt. Bereinigter Text in Mono, der Roh-Stream gedämpft darunter — klarer Kontrast, weiches Expand.</p>
+
+  <div class="board dotgrid" data-screen-label="Live-Preview Panel">
+    <span class="board-cap">Live-Cleanup-Preview · desktop-only · transparent</span>
+    <div class="board-row" style="align-items:stretch;">
+      <div class="artboard">
+        <div class="livepanel">
+          <div class="lp-head">
+            <span class="livedot"></span>
+            <span class="t">Live Cleanup</span>
+            <span style="margin-left:auto;font-family:var(--k-mono);font-size:11px;color:var(--k-teal)">Polished</span>
+          </div>
+          <div class="lp-body">
+            <div class="lp-clean">So, jetzt kommt ein bisschen Text rein und die Preview müsste jetzt auch schon reinkommen. Das klappt super.<span class="pend"> Damit solltest du eigentlich</span><span class="cursor" style="height:14px;margin-left:2px;"></span></div>
+          </div>
+          <div class="lp-foot">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/></svg>
+            <span>Orientierung — kein exakter Output</span>
+          </div>
+        </div>
+        <div class="lbl"><b>bereinigt</b> — Mono, am Boden verankert, baut sich auf</div>
+      </div>
+      <div class="artboard">
+        <div class="livepanel" style="border-color:var(--k-border);">
+          <div class="lp-head"><span class="t" style="color:var(--k-dim)">Raw ↔ Clean</span></div>
+          <div class="lp-body" style="justify-content:flex-start;gap:18px;">
+            <div>
+              <div style="font-family:var(--k-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--k-dim);margin-bottom:6px;">Clean</div>
+              <div class="lp-clean" style="font-size:13px;">Wir nehmen das Token-Profil, das du empfohlen hast. Jetzt gibt es noch zwei Punkte zu klären.</div>
+            </div>
+            <div>
+              <div style="font-family:var(--k-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--k-dim);margin-bottom:6px;">Raw</div>
+              <div class="lp-raw" style="border:none;padding:0;">ne also wir nehmen das ähm token profil was du empfohlen hast und jetzt gibts aber noch zwei punkte die wir erst klären müssen</div>
+            </div>
+          </div>
+        </div>
+        <div class="lbl"><b>Roh vs. bereinigt</b> — gedämpfter Stream als Kontext</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="board" data-screen-label="History">
+    <span class="board-cap">Main-Window · History &amp; Voice-Notes</span>
+    <div class="board-row">
+      <div class="artboard">
+        <div class="win">
+          <div class="titlebar">
+            <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+            <span class="t">Klarvo · Early Access</span>
+            <span class="wc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </span>
+          </div>
+          <div class="appnav">
+            <span class="iconbtn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></span>
+            <div class="wm"><span class="name">Klarvo</span><span class="ea">Early Access</span></div>
+            <span class="navicons">
+              <span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+              <span class="iconbtn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg></span>
+              <span class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+            </span>
+          </div>
+          <div class="panel-head" style="border-top:1px solid var(--k-border);">
+            <h3 style="font-family:var(--k-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--k-dim);">History</h3>
+            <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+          </div>
+          <div class="searchbar">
+            <div class="input" style="flex:1;display:flex;align-items:center;gap:8px;color:var(--k-dim);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>Text durchsuchen…</div>
+            <div class="select" style="min-width:96px;"><span style="color:var(--k-dim)">App…</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+          </div>
+          <div class="note">
+            <div class="body">Fast, ich habe jetzt nochmal reingeschaut und im Desktop-Modus hast du einiges nicht gemacht. Das Erste war, ich habe die Anzeigedarstellung von M auf S umgeändert …</div>
+            <div class="showorig">Original anzeigen</div>
+            <div class="meta"><span class="ts">13.6.2026, 16:17</span><span class="mode">verbatim</span><span class="profile">✦ Design Brief · Claude UI</span></div>
+          </div>
+          <div class="note">
+            <div class="body">Die Landkarte hat bisher gar nicht die Kommunikationskanäle beinhaltet. Wir müssen also erstmal gemeinsam brainstormen, wo wir die Kanäle überhaupt verorten …</div>
+            <div class="meta"><span class="ts">13.6.2026, 15:36</span><span class="mode">verbatim</span><span class="profile">✦ Strategie · Algron</span></div>
+          </div>
+          <div class="note" style="border-bottom:none;">
+            <div class="body">Wir nehmen das Token-Profil, das du empfohlen hast. Und jetzt gibt es noch zwei Punkte, die nicht in deinen Fragen drin waren …</div>
+            <div class="showorig">Original anzeigen</div>
+            <div class="meta"><span class="ts">13.6.2026, 12:28</span><span class="mode">verbatim</span><span class="profile">✦ Bar-Redesign-Spec</span></div>
+          </div>
+        </div>
+        <div class="lbl"><b>History</b> — bessere Listendichte, mono Timestamps, Profil-Tags in Amber</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ANDROID ============================ -->
+<section class="wrap" id="android" data-screen-label="Android">
+  <span class="eyebrow">03 · Mockups — Android · Dictation-Bubble</span>
+  <h2 class="sec-title">Android — dieselbe Sprache, native Ausprägung</h2>
+  <p class="sec-lede">Interaktion bleibt: <b style="color:var(--k-text)">Short-Press = Standard-Geste</b> (konfigurierbar: Hold / Toggle / Auto-Stop / Auto), <b style="color:var(--k-text)">Long-Press = Quick-Menü</b>. Das Live-Roh-Transkript läuft in einer schlanken <b style="color:var(--k-text)">„Listening"-Leiste</b>, die Klarvo selbst rendert — nicht als provisorischer Text im fremden Feld (das ist technisch IME-only, siehe Umsetzung). Während der Aufnahme klappt die Tastatur ein und das Panel rückt hoch und größer; beim Einfügen kommt sie zurück. Ins App-Feld kommt nur der fertige, bereinigte Text.</p>
+</section>
+
+<!-- ===== STATE SEQUENCE ===== -->
+<section class="wrap" data-screen-label="State-Sequenz">
+  <div class="tok-head"><h3>State-Sequenz</h3><span>tap startet → Listening-Leiste → Bubble antippen = senden (rotes Quadrat = abbrechen) → cleanup → einfügen</span></div>
+
+  <div class="board dotgrid" data-screen-label="Bubble States">
+    <span class="board-cap">idle → recording → transcribing → done · 1:1</span>
+    <div class="board-row" style="gap:30px;">
+
+      <!-- IDLE -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub">online</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-compose">
+            <div class="ab-field"><span class="placeholder">Nachricht…</span></div>
+            <div class="ab-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg></div>
+          </div>
+          <div class="ab-kb">
+            <div class="krow"><span class="key">q</span><span class="key">w</span><span class="key">e</span><span class="key">r</span><span class="key">t</span><span class="key">z</span><span class="key">u</span><span class="key">i</span><span class="key">o</span><span class="key">p</span></div>
+            <div class="krow"><span class="key">a</span><span class="key">s</span><span class="key">d</span><span class="key">f</span><span class="key">g</span><span class="key">h</span><span class="key">j</span><span class="key">k</span><span class="key">l</span></div>
+            <div class="krow"><span class="key">y</span><span class="key">x</span><span class="key">c</span><span class="key">v</span><span class="key">b</span><span class="key">n</span><span class="key">m</span></div>
+            <div class="krow"><span class="key" style="max-width:36px;">?123</span><span class="key" style="max-width:110px;flex:3;">DE · EN</span><span class="key" style="max-width:36px;">→</span></div>
+          </div>
+          <div class="ab-bubble idle" style="bottom:176px;"><span class="kt">K</span><span class="hit"></span></div>
+        </div></div>
+        <div class="lbl"><b>idle</b> — kleines Teal-K · <span class="sizetag">≈40dp · Hit 48dp</span></div>
+      </div>
+
+      <!-- RECORDING -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub" style="color:var(--k-amber)">hört zu…</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-panel rec">
+            <div class="ab-panel-grip"></div>
+            <div class="ab-bar-top">
+              <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+              <span class="nm">Aufnahme</span>
+              <span class="tm">0:06</span>
+            </div>
+            <div class="ab-panel-text">also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan<span class="ab-bcaret"></span></div>
+            <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Tastatur pausiert · kehrt beim Einfügen zurück</div>
+          </div>
+          <!-- Cluster-Reihenfolge: ✗ Abbrechen links · Waveform · ➤ Senden RECHTS (am Dock-/Daumen-Platz, wo die idle-K-Bubble saß). §4′-Amendment 2026-06-21 (#2). -->
+          <div class="ab-cluster" style="bottom:228px;">
+            <button class="ab-cbtn cancel" aria-label="Abbrechen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            <div class="hwave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <button class="ab-cbtn send" aria-label="Abschließen / Senden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg></button>
+          </div>
+        </div></div>
+        <div class="lbl"><b>recording</b> — Bubble wird zum Cluster: <b style="color:var(--k-danger)">✗ Abbrechen</b> (links) · <b style="color:var(--k-amber)">Waveform</b> (live, RMS-getrieben) · <b style="color:var(--k-text)">➤ Senden</b> (rechts, am Daumen-Platz) — EIN Ort. Panel passiv (nur Text + Zeit).</div>
+      </div>
+
+      <!-- TRANSCRIBING -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub" style="color:var(--k-teal)">bereinigt…</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-panel">
+            <div class="ab-panel-grip"></div>
+            <div class="ab-bar-top">
+              <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+              <svg class="spinner" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--k-teal)" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="10" stroke-opacity=".18"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+              <span class="nm">Bereinigt…</span>
+            </div>
+            <div class="ab-panel-text"><span class="pend">also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan und drittens die verantwortlichkeiten…</span></div>
+            <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Gleich fertig · Tastatur kommt gleich zurück</div>
+          </div>
+          <div class="ab-bubble proc" style="bottom:228px;"><svg class="spinner" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--k-on-teal)" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg></div>
+        </div></div>
+        <div class="lbl"><b>transcribing</b> — Dock-Platz bleibt besetzt: teal Verarbeitungs-Bubble mit Spinner (Variante B) · Teal-Spinner auch im Panel · Roh-Text gedimmt, Tastatur noch unten</div>
+      </div>
+
+      <!-- DONE -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub">online</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-compose">
+            <div class="ab-field"><span class="final">Wir haben drei Punkte besprochen: erstens das Budget, zweitens den Zeitplan und drittens die Verantwortlichkeiten.</span></div>
+            <div class="ab-send on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg></div>
+          </div>
+          <div class="ab-kb">
+            <div class="krow"><span class="key">q</span><span class="key">w</span><span class="key">e</span><span class="key">r</span><span class="key">t</span><span class="key">z</span><span class="key">u</span><span class="key">i</span><span class="key">o</span><span class="key">p</span></div>
+            <div class="krow"><span class="key">a</span><span class="key">s</span><span class="key">d</span><span class="key">f</span><span class="key">g</span><span class="key">h</span><span class="key">j</span><span class="key">k</span><span class="key">l</span></div>
+            <div class="krow"><span class="key">y</span><span class="key">x</span><span class="key">c</span><span class="key">v</span><span class="key">b</span><span class="key">n</span><span class="key">m</span></div>
+            <div class="krow"><span class="key" style="max-width:36px;">?123</span><span class="key" style="max-width:110px;flex:3;">DE · EN</span><span class="key" style="max-width:36px;">→</span></div>
+          </div>
+          <div class="ab-bubble done" style="bottom:176px;"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--k-on-teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="hit"></span></div>
+        </div></div>
+        <div class="lbl"><b>done</b> — Erfolgs-Grün + Haken (abgesetzt von Teal-idle) · klappt zur idle-Bubble zurück, bereinigter Text im Feld</div>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <span><span class="d" style="background:var(--k-teal)"></span>Teal — Marke, „bereit", Verarbeitung, Erfolg</span>
+      <span><span class="d" style="background:var(--k-amber)"></span>Amber — „live / hört zu" (Aufnahme)</span>
+      <span><span class="d" style="background:var(--k-danger)"></span>Rot — nur der Stop-Moment</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== AUFNAHME · HOLD-MODUS (Push-to-Talk-Variante) ===== -->
+<section class="wrap" data-screen-label="Aufnahme · HOLD-Modus">
+  <div class="tok-head"><h3>Aufnahme · HOLD-Modus</h3><span>Nur wenn Standard-Geste = Hold · §4′-Amendment (#4)</span></div>
+  <p class="sec-lede">Im <b style="color:var(--k-text)">Hold</b>-Modus <b>sendet Loslassen bereits</b> — ein separater ➤ wäre redundant und ✗ unerreichbar (zum Tippen müsste man loslassen = sendet). Stattdessen das vertraute Sprachnachricht-Modell: <b style="color:var(--k-text)">halten = aufnehmen</b> · <b style="color:var(--k-text)">loslassen = senden</b> · <b style="color:var(--k-danger)">wegziehen = abbrechen</b>. <b style="color:var(--k-text)">Hoch ziehen → 🔒 sperren</b> wandelt in den normalen Tap-Cluster <b style="color:var(--k-danger)">[✗</b> · Waveform · <b style="color:var(--k-text)">➤]</b>, damit man loslassen kann ohne zu senden. Tap/Toggle/Auto nutzen weiter den Cluster (oben). Bezug 9-7 (Gesten-Modi) — eigene Build-Story, 9-7 wird nicht still erweitert.</p>
+
+  <div class="board dotgrid" data-screen-label="HOLD States">
+    <span class="board-cap">HOLD aktiv → gesperrt · 1:1</span>
+    <div class="board-row" style="gap:30px;">
+
+      <!-- HOLD ACTIVE -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub" style="color:var(--k-amber)">hört zu… · halten</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-panel rec">
+            <div class="ab-panel-grip"></div>
+            <div class="ab-bar-top">
+              <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+              <span class="nm">Aufnahme · halten</span>
+              <span class="tm">0:03</span>
+            </div>
+            <div class="ab-panel-text">also wir haben drei sachen besprochen<span class="ab-bcaret"></span></div>
+            <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Tastatur pausiert · kehrt beim Einfügen zurück</div>
+          </div>
+          <div class="ab-lockchip" style="right:14px;bottom:286px;">
+            <span class="upi">▲</span>
+            <span style="display:flex;align-items:center;gap:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>hoch = sperren</span>
+          </div>
+          <div class="ab-holddock" style="bottom:228px;">
+            <div class="ab-holdstrip">
+              <span class="ab-slidehint"><span class="arr">‹</span>ziehen zum Abbrechen</span>
+              <div class="hwave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="ab-heldbub"><span class="ring"></span>K<span class="finger"></span></div>
+          </div>
+        </div></div>
+        <div class="lbl"><b>HOLD aktiv</b> — Finger hält die Bubble (Amber-Ring) · <span style="color:var(--k-dim)">‹ ziehen zum Abbrechen</span> · loslassen = senden · ▲ hoch = 🔒 sperren. Kein tippbares ➤/✗.</div>
+      </div>
+
+      <!-- HOLD LOCKED -->
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub" style="color:var(--k-amber)">hört zu… · 🔒</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-panel rec">
+            <div class="ab-panel-grip"></div>
+            <div class="ab-bar-top">
+              <span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span>
+              <span class="nm">Aufnahme · gesperrt</span>
+              <span class="tm">0:11</span>
+            </div>
+            <div class="ab-panel-text">also wir haben drei sachen besprochen erstens das budget zweitens den zeitplan<span class="ab-bcaret"></span></div>
+            <div class="ab-panel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="m8 19 4 3 4-3"/></svg>Finger losgelassen · weiter über die Knöpfe</div>
+          </div>
+          <!-- gesperrt → normaler Cluster (Reihenfolge wie #2: ✗ links · Waveform · ➤ rechts) -->
+          <div class="ab-cluster" style="bottom:228px;">
+            <button class="ab-cbtn cancel" aria-label="Abbrechen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            <div class="hwave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <button class="ab-cbtn send" aria-label="Abschließen / Senden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg></button>
+          </div>
+        </div></div>
+        <div class="lbl"><b>HOLD gesperrt</b> — hoch ziehen sperrt → normaler Cluster <b style="color:var(--k-danger)">[✗</b> · Waveform · <b style="color:var(--k-text)">➤]</b>. Finger losgelassen, weiter per Tippen.</div>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <span><span class="d" style="background:var(--k-amber)"></span>Amber — live / Aufnahme aktiv (auch der Halte-Ring)</span>
+      <span><span class="d" style="background:var(--k-teal)"></span>Teal — Senden (nach Sperren)</span>
+      <span><span class="d" style="background:var(--k-danger)"></span>Rot — Abbrechen (Wegziehen, bzw. ✗ nach Sperren)</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== LONG-PRESS MENU ===== -->
+<section class="wrap" data-screen-label="Long-Press-Menü">
+  <div class="tok-head"><h3>Long-Press · Quick-Menü</h3><span>Standard-Geste + Modus + Ziel/Sprache — ohne App-Wechsel</span></div>
+
+  <div class="board dotgrid" data-screen-label="Long-Press Popover">
+    <span class="board-cap">gedrückt halten → Popover öffnet nach innen</span>
+    <div class="board-row" style="gap:40px;align-items:center;">
+
+      <div class="artboard">
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>16:10</span><span>VPN · 67%</span></div>
+          <div class="ab-head"><span class="av">SD</span><div><div class="nm">Sven D.</div><div class="sub">online</div></div><span class="sp"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></span></div>
+          <div class="ab-thread">
+            <div class="msg in">Kannst du mir die Punkte aus dem Call kurz zusammenfassen?<div class="tm">16:08</div></div>
+          </div>
+          <div class="ab-compose">
+            <div class="ab-field"><span class="placeholder">Nachricht…</span></div>
+            <div class="ab-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg></div>
+          </div>
+          <div class="ab-kb">
+            <div class="krow"><span class="key">q</span><span class="key">w</span><span class="key">e</span><span class="key">r</span><span class="key">t</span><span class="key">z</span><span class="key">u</span><span class="key">i</span><span class="key">o</span><span class="key">p</span></div>
+            <div class="krow"><span class="key">a</span><span class="key">s</span><span class="key">d</span><span class="key">f</span><span class="key">g</span><span class="key">h</span><span class="key">j</span><span class="key">k</span><span class="key">l</span></div>
+            <div class="krow"><span class="key">y</span><span class="key">x</span><span class="key">c</span><span class="key">v</span><span class="key">b</span><span class="key">n</span><span class="key">m</span></div>
+            <div class="krow"><span class="key" style="max-width:36px;">?123</span><span class="key" style="max-width:110px;flex:3;">DE · EN</span><span class="key" style="max-width:36px;">→</span></div>
+          </div>
+          <div class="ab-scrim"></div>
+          <div class="ab-bubble idle" style="bottom:120px;right:10px;z-index:6;width:40px;height:40px;"><span class="kt">K</span></div>
+          <div class="ab-menu" style="right:10px;bottom:170px;">
+            <div class="mh"><span class="kmark" style="width:18px;height:18px;font-size:10px;border-radius:5px;">K</span><span class="nm">Klarvo</span><span class="hint">gedrückt</span></div>
+            <div class="ab-mblock">
+              <div class="ml"><span>Standard-Geste</span><span style="text-transform:none;letter-spacing:0;color:var(--k-faint)">kurzer Tap</span></div>
+              <div class="ab-grid">
+                <button aria-selected="false">Hold</button>
+                <button aria-selected="true">Toggle</button>
+                <button aria-selected="false">Auto-Stop</button>
+                <button aria-selected="false">Auto</button>
+              </div>
+            </div>
+            <div class="ab-mblock">
+              <div class="ml"><span>Modus</span></div>
+              <div class="ab-seg"><button aria-selected="false">Polished</button><button aria-selected="true">Verbatim</button><button aria-selected="false">Chat</button></div>
+            </div>
+            <div class="ab-mrow2">
+              <div class="cell"><span class="cl">Ziel</span><span class="cv">Ins Feld <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+              <div class="cell"><span class="cl">Sprache</span><span class="cv">DE <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+            </div>
+            <div class="ab-mfoot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Einstellungen öffnen</div>
+            <div class="ab-menu-tail" style="right:18px;bottom:-6px;"></div>
+          </div>
+        </div></div>
+        <div class="lbl"><b>Long-Press</b> — Standard-Geste (4 Modi) zuerst, dann Modus, Ziel &amp; Sprache</div>
+      </div>
+
+      <div style="max-width:340px;display:flex;flex-direction:column;gap:14px;">
+        <div class="crit" style="grid-template-columns:1fr;gap:6px;">
+          <h4>Standard-Geste ist jetzt konfigurierbar</h4>
+          <p>Der kurze Tap kann <b style="color:var(--k-text)">Hold, Toggle, Auto-Stop</b> oder <b style="color:var(--k-text)">Auto</b> auslösen — dieselben vier Modi wie der Desktop-Hotkey. Direkt hier umschaltbar, gespiegelt in Settings → Shortcuts.</p>
+        </div>
+        <div class="crit" style="grid-template-columns:1fr;gap:6px;">
+          <h4>Modus, Ziel &amp; Sprache ohne App-Wechsel</h4>
+          <p>Inhalts-Modus (Polished/Verbatim/Chat), Ziel (Feld ↔ Zwischenablage) und Diktatsprache direkt erreichbar — mit aktuellem Wert.</p>
+        </div>
+        <div class="crit" style="grid-template-columns:1fr;gap:6px;">
+          <h4>Popover statt Radial</h4>
+          <p>Öffnet immer nach innen, klippt nie an Kante/Tastatur, trägt Labels + Werte. Zwei getrennte Achsen sauber gestapelt: <b style="color:var(--k-text)">Geste</b> (wie ausgelöst) vs. <b style="color:var(--k-text)">Modus</b> (wie bereinigt).</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================ UMSETZUNG ============================ -->
+<section class="wrap" id="umsetzung" data-screen-label="Umsetzung">
+  <span class="eyebrow">04 · Umsetzungshinweise</span>
+  <h2 class="sec-title">Was 1:1 in Tailwind geht — und was Android nativ nachbaut</h2>
+  <p class="sec-lede">Die Token-Sprache ist die gemeinsame Quelle. Desktop bekommt sie als <span class="mono">@theme</span>-Variablen; Android baut dieselben Werte als Compose-Tokens nach, mit zwei dokumentierten Abweichungen.</p>
+
+  <div class="tablecard" style="margin-top:28px;">
+    <table class="tok">
+      <thead><tr><th style="width:24%">Token</th><th style="width:20%">Wert</th><th>Tailwind v4 · <span class="mono">@theme</span></th><th>Android · Kotlin / Compose</th></tr></thead>
+      <tbody>
+        <tr><td>bg / surface / elevated</td><td class="mono">#0F1112 …</td><td class="mono">--color-klarvo-bg: #0F1112;</td><td class="mono">val Bg = Color(0xFF0F1112)</td></tr>
+        <tr><td>teal · primary</td><td class="mono">#29C7AC</td><td class="mono">--color-klarvo-primary</td><td class="mono">val Primary = Color(0xFF29C7AC)</td></tr>
+        <tr><td>amber · activity</td><td class="mono">#E9A24C</td><td class="mono">--color-klarvo-activity</td><td class="mono">val Activity = Color(0xFFE9A24C)</td></tr>
+        <tr><td>radii (xs…lg)</td><td class="mono">6 / 8 / 12 / 16</td><td class="mono">rounded-[6px] … rounded-2xl</td><td class="mono">RoundedCornerShape(12.dp)</td></tr>
+        <tr><td>type · UI</td><td class="mono">Geist</td><td class="mono">font-family: 'Geist'</td><td class="mono">FontFamily(Font(R.font.geist))</td></tr>
+        <tr><td>type · Diktat</td><td class="mono">Geist Mono</td><td class="mono">font-mono</td><td class="mono">FontFamily(geist_mono)</td></tr>
+        <tr><td>elevation e1–e3</td><td class="mono">box-shadow</td><td class="mono">shadow-[0_4px_14px_…]</td><td class="mono">Modifier.shadow(8.dp) *</td></tr>
+        <tr><td>focus-ring</td><td class="mono">teal 28%</td><td class="mono">focus:ring + ring-teal/30</td><td class="mono">border + indication</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
+    <div class="tablecard" style="padding:22px;">
+      <h3 style="font-size:16px;display:flex;align-items:center;gap:8px;"><span class="dot on"></span>1:1 in Tailwind (Desktop)</h3>
+      <ul style="margin:14px 0 0;padding-left:18px;color:var(--k-muted);font-size:14px;line-height:1.7;">
+        <li>Alle Farben, Radii, Spacing, Type → <span class="mono">@theme</span>-Tokens, verstreute Inline-Hex ersetzen.</li>
+        <li>Glas-Pille: <span class="mono">backdrop-filter: blur(16px)</span> + 72% Fill + inset hairline.</li>
+        <li>Custom-Select / Segmented / Toggle / Slider als React-Komponenten (native <span class="mono">&lt;select&gt;</span> raus).</li>
+        <li>Motion: CSS-Transitions + Spring-Keyframe, <span class="mono">prefers-reduced-motion</span> respektieren.</li>
+        <li>Live-Preview &amp; Appearance bleiben desktop-only.</li>
+      </ul>
+    </div>
+    <div class="tablecard" style="padding:22px;">
+      <h3 style="font-size:16px;display:flex;align-items:center;gap:8px;"><span class="dot" style="background:var(--k-amber)"></span>Android nativ nachbauen</h3>
+      <ul style="margin:14px 0 0;padding-left:18px;color:var(--k-muted);font-size:14px;line-height:1.7;">
+        <li>Dictation-Bubble: <span class="mono">SYSTEM_ALERT_WINDOW</span>-Overlay, solider Teal-Kreis statt Glas (kein WebView-blur).</li>
+        <li>Tally-Light als kleiner Amber-Dot am Bubble-Rand statt pulsierendem Ring.</li>
+        <li>Touch-Targets ≥ 48dp; feste 56px-Clearance unten (env(safe-area) ist 0).</li>
+        <li>Elevation über <span class="mono">Modifier.shadow</span> — weicher Schatten approximiert, exakte Werte als Spec.</li>
+        <li>Kein Appearance/Live-Preview, schlankeres About (laut IA).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg></span>
+    <div><p><b>Zwei bewusste Abweichungen von den Alt-Tokens, begründet:</b> (1) Der Neutral-Ladder wird tiefer und kühler (Graphit statt #252525-Warmgrau) — das liest „Instrument" statt „Notion-Klon" und gibt Elevation mehr Raum. (2) Orange <span class="mono">#FFA344</span> → ruhigeres Amber <span class="mono">#E9A24C</span> mit klarer Semantik „live/hört zu", damit die Aufnahme-Signalfarbe nicht den ganzen Tag um Aufmerksamkeit konkurriert. Teal bleibt als Marke erhalten, nur minimal geklärt.</p></div>
+  </div>
+
+  <div class="callout" style="margin-top:0;">
+    <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg></span>
+    <div><p><b>Machbarkeits-Check „Live-Text im Feld":</b> Provisorischer Composing-Text (grau, der sich verfestigt) ist eine <b style="color:var(--k-text)">reine IME-Fähigkeit</b> (<span class="mono">InputConnection.setComposingText</span>) — nur die aktive Tastatur darf das. Ein <span class="mono">SYSTEM_ALERT_WINDOW</span>-Overlay wie die Bubble kann fremde Felder nur <b style="color:var(--k-text)">final</b> beschreiben (Accessibility <span class="mono">ACTION_SET_TEXT</span> oder Clipboard+Paste). Darum: <b style="color:var(--k-text)">Live-Roh-Text in Klarvos eigener Listening-Leiste</b>, bereinigter Text final ins Feld. Echtes In-Field-Grau gäbe es nur, wenn Klarvo selbst eine Tastatur (IME) wäre — anderes Architekturmodell, hier bewusst nicht.</p></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
+    <div class="tablecard" style="padding:22px;">
+      <h3 style="font-size:16px;display:flex;align-items:center;gap:8px;"><span class="dot on"></span>Bubble-Größe · responsiv</h3>
+      <p style="color:var(--k-muted);font-size:13.5px;margin-top:10px;line-height:1.6;">Größe relativ zur Display-Dichte, nicht in festen px:</p>
+      <div class="tablecard" style="margin-top:10px;background:var(--k-bg);padding:12px 14px;">
+        <code class="mono" style="font-size:12px;color:var(--k-teal-hi);line-height:1.7;display:block;">visual = clamp(36dp,<br>&nbsp;&nbsp;0.11 × min(screenW, screenH)dp,<br>&nbsp;&nbsp;44dp)<br>hitTarget = max(visual, 48dp)</code>
+      </div>
+      <ul style="margin:12px 0 0;padding-left:18px;color:var(--k-muted);font-size:13.5px;line-height:1.7;">
+        <li>~40dp auf einem 360–420dp-Phone, skaliert auf Tablets nicht ins Riesige.</li>
+        <li>Sichtbar kleiner, aber transparentes Padding hält das Touch-Ziel ≥ 48dp.</li>
+        <li>Idle bewusst dezent; erst beim Aufnehmen wird Fläche „verdient" (Leiste).</li>
+      </ul>
+    </div>
+    <div class="tablecard" style="padding:22px;">
+      <h3 style="font-size:16px;display:flex;align-items:center;gap:8px;"><span class="dot" style="background:var(--k-amber)"></span>Token-treu &amp; native Hinweise</h3>
+      <ul style="margin:12px 0 0;padding-left:18px;color:var(--k-muted);font-size:13.5px;line-height:1.7;">
+        <li>States = Farb-/Inhalts-Wechsel bei gleicher Form — kein Kreis↔Quadrat-Morph mehr.</li>
+        <li>Aufnahme Amber + reaktive Waveform aus den RMS-Levels; Processing Teal-Spinner.</li>
+        <li>Listening-Leiste &amp; Popover als solide <span class="mono">#16181A</span>-Flächen (kein <span class="mono">backdrop-blur</span> nativ).</li>
+        <li>Standard-Geste (Hold/Toggle/Auto-Stop/Auto) gespiegelt mit Desktop-Hotkey-Mode.</li>
+        <li>Verankerung bleibt: draggable, springt mit Tastatur hoch, Rand-Snap.</li>
+        <li><b style="color:var(--k-text)">Tastatur einklappen während Aufnahme</b> (optionaler Schalter): IME-Dismiss über den Accessibility-Service, Feld bleibt fokussiert → finaler Insert klappt trotzdem.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg></span>
+    <div><p><b>Changelog gegenüber heute:</b> Bubble deutlich kleiner &amp; auflösungsabhängig · Form konstant (kein Kreis↔Quadrat) · Rot → Amber für Aufnahme (Rot nur Stop) · 3 statische Striche → reaktive Waveform · Orange-Spinner → Teal-Spinner · grauer Halo entfällt · Live-Roh-Text in eigener Listening-Leiste statt (unmöglichem) In-Field-Grau · Long-Press-Menü mit konfigurierbarer <b style="color:var(--k-text)">Standard-Geste</b> (Hold/Toggle/Auto-Stop/Auto) · neu (optional): <b style="color:var(--k-text)">Tastatur klappt während der Aufnahme ein</b> und kehrt beim Einfügen zurück. <b>Flow bleibt: Short = Geste, Long = Menü.</b></p></div>
+  </div>
+</section>
+
+<footer class="wrap" data-screen-label="Footer">
+  <hr class="div" style="margin-bottom:32px;">
+  <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;align-items:center;gap:10px;"><span class="kmark" style="width:22px;height:22px;font-size:12px;">K</span><span>Klarvo · Design System „Studio Dark" · v1 — Single Source of Truth</span></div>
+    <span class="mono" style="font-size:12px;">Desktop (Tauri/React/Tailwind) + Android (native Kotlin) · gleiche Funktion · gleiche IA</span>
+  </div>
+</footer>
+
+</body>
+</html>

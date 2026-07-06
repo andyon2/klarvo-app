@@ -73,7 +73,20 @@ fi
 # pinnen (siehe Anleitung unten). Danach ist die STABILE Tailscale-IP:5555 ohne
 # erneutes Pairing erreichbar, und dieser Auto-Connect "geht einfach an".
 # Ziel überschreibbar:  KLARVO_ADB_TARGET=<ip>:<port> scripts/android-smoke.sh
-KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-100.112.41.70:5555}"
+#
+# Naht 2 (Conductor-Isolation, Postmortem 2026-06-15): In einem Conductor-Lauf
+# (BMAD_CONDUCTOR=1; KLARVO_CONDUCTOR=1 als Alt-Name akzeptiert) darf dieses Script
+# NIEMALS das echte Gerät treffen — sonst landet halbfertiger Lauf-Code auf Andis
+# Telefon (so geschehen am 2026-06-15: firstInstall 19:37 / lastUpdate 22:00 durch
+# Worker). Im Conductor-Modus wird der Default das Emulator-Ziel, und ein
+# nicht-Emulator-Ziel wird weiter unten hart abgelehnt (Hosenträger zur
+# adb-disconnect-Abkopplung aus conductor-guard.sh).
+CONDUCTOR_MODE="${BMAD_CONDUCTOR:-${KLARVO_CONDUCTOR:-0}}"
+if [ "$CONDUCTOR_MODE" = "1" ]; then
+    KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-emulator-5554}"
+else
+    KLARVO_ADB_TARGET="${KLARVO_ADB_TARGET:-100.112.41.70:5555}"
+fi
 
 device_count() { ${ADB} devices 2>/dev/null | grep -c "device$" || true; }
 
@@ -116,8 +129,27 @@ else
 fi
 ok "Gerät: $DEVICE_SERIAL"
 
+# Naht 2: Conductor-Lauf hart auf den Emulator einzäunen. Selbst wenn ein
+# nicht-Emulator-Ziel durchrutschte (alte Verbindung, falsches Env), bricht der
+# Lauf hier ab, BEVOR etwas auf das echte Telefon installiert wird.
+if [ "$CONDUCTOR_MODE" = "1" ]; then
+    case "$DEVICE_SERIAL" in
+        emulator-*) ok "Conductor-Modus: Ziel ist Emulator — Isolation ok (Naht 2)" ;;
+        *) fail "BMAD_CONDUCTOR=1: Ziel '$DEVICE_SERIAL' ist kein Emulator — Conductor darf NUR emulator-* installieren (Naht 2, Postmortem 2026-06-15)" ;;
+    esac
+fi
+
 # ---------------------------------------------------------------------------
-# 2. Kotlin-Quellen synchronisieren
+# 2. KlarvoTheme.kt Drift-Gate (vor dem Sync — Story 9-10, ADR-0019)
+# ---------------------------------------------------------------------------
+step "KlarvoTheme.kt Drift-Gate prüfen"
+
+node scripts/gen-android-theme.mjs --check \
+    || fail "KlarvoTheme.kt ist von der Canon-CSS abgedriftet — node scripts/gen-android-theme.mjs ausführen"
+ok "KlarvoTheme.kt ist in Sync mit canon klarvo.css"
+
+# ---------------------------------------------------------------------------
+# 2b. Kotlin-Quellen synchronisieren
 # ---------------------------------------------------------------------------
 step "Kotlin-Quellen synchronisieren"
 
@@ -153,7 +185,10 @@ step "JVM-Unit-Tests"
 
 cd "$GEN_ANDROID"
 if ./gradlew :app:testUniversalDebugUnitTest --quiet 2>&1; then
-    TEST_XML=$(find app/build/test-results -name "*.xml" 2>/dev/null | head -1)
+    # -print -quit returns the first match WITHOUT closing the pipe early; `find … | head -1`
+    # trips SIGPIPE → non-zero under `set -o pipefail` → false ERR-trap failure once many result
+    # XMLs exist. (Robustness fix 2026-06-16.)
+    TEST_XML=$(find app/build/test-results -name "*.xml" -print -quit 2>/dev/null || true)
     if [ -n "$TEST_XML" ]; then
         TOTAL=$(grep -o 'tests="[0-9]*"' "$TEST_XML" | head -1 | grep -o '[0-9]*')
         FAIL=$(grep -o 'failures="[0-9]*"' "$TEST_XML" | head -1 | grep -o '[0-9]*')

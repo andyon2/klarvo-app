@@ -103,9 +103,11 @@ IDs are native to this track. Categories: **DT** = design-token/system (the shar
 
 ### Functional / Interaction Requirements (Android bubble — Epic 9; feature work)
 
-- **FR1** — Bubble **idle**: one form across all states (**no** circle↔square morph) — teal "K" +
-  subtle glass ring; **responsive size** `visual = clamp(36dp, 0.11 × min(screenW,screenH)dp, 44dp)`,
-  touch target `max(visual, 48dp)` via transparent padding.
+- **FR1** — Bubble **idle**: one form across all states (**no** circle↔square morph) — a **teal-gradient
+  squircle** (rounded square, not a circle) with a **dark "K"** centered, plus a subtle teal ring; **responsive
+  size** `visual = clamp(36dp, 0.11 × min(screenW,screenH)dp, 44dp)`, touch target `max(visual, 48dp)` via
+  transparent padding. *Visual values are anchored on the canon `docs/design/overhaul/source/` (`.ab-bubble.idle`
+  in the HTML + `klarvo.css`), NOT transcribed here — read fill/shape/colors there.*
 - **FR2** — **recording**: keyboard **collapses**, a **Klarvo-owned panel** rises (grab handle, K +
   **amber** live-dot + reactive waveform from RMS levels + timer + red stop). Live **raw** transcript
   runs multiline in the panel. Footer: "keyboard paused · returns on insert".
@@ -277,10 +279,19 @@ re-skin. Standalone: builds on the existing v1 Android overlay; depends on no ot
   (FR6)
 - **9.9 — In-app recording state re-skin** *(after 9.2; small — D2)*. Re-skin `android-05` to the new
   language. (FR8)
+- **9.10 — Token codegen: `klarvo.css` → `KlarvoTheme.kt`** *(post-ADR-0019 insertion; sequenced
+  BEFORE the 9.5 rebuild; ADR-0019 Decision #2)*. Replace the hand-typed `KlarvoTheme.kt` (the Token-
+  Drift surface — proven by the 9.5-F6 AmberLine `.30→.32` copy-error) with a generator that projects
+  the canon `--k-*` custom properties into Kotlin token constants, plus a build/CI drift gate so
+  hand-edited values can no longer merge. Mechanical, highest leverage, cheap (ADR-0019 §Mitigations
+  ordering #1). Foundation for the 9.5 rebuild (the recording state must render against real SSOT
+  tokens, not a drifting copy).
 
 **Dependency flow:** 9.1 (gate) → 9.2 (foundation) → 9.3 → **9.4 (harness) → 9.5 (states)** →
 {9.6, 9.7, 9.8}; 9.9 after 9.2 (parallel with bubble work). The **harness-before-states** ordering is
-load-bearing (verifiability symmetry). No story depends on a later story.
+load-bearing (verifiability symmetry). **Post-ADR-0019:** 9.10 (token codegen) sequences before the
+9.5 *rebuild* (which is re-fashioned against the extended canon — `.ab-bubble.recording`, danger=cancel,
+bubble-tap=send). No story depends on a later story.
 
 ---
 
@@ -559,8 +570,9 @@ So that it's reachable and unobtrusive.
 
 **Given** a focused field + open keyboard
 **When** the bubble shows idle
-**Then** it renders the teal "K" + 4dp glass ring using tokens; the **same form** is used across states
-(no circle↔square morph).
+**Then** it renders a **teal-gradient squircle** (rounded square, 12px-equivalent corner radius — NOT a circle)
+with a **dark "K"** (OnTeal) centered and a subtle teal ring, per the canon `.ab-bubble.idle`
+(`docs/design/overhaul/source/`); the **same form** is used across states (no circle↔square morph).
 
 **Given** varying screen sizes
 **When** sized
@@ -613,7 +625,13 @@ So that I see live feedback and the cleaned text lands in my field.
 **Given** recording starts
 **When** the panel rises
 **Then** a Klarvo-owned panel shows a grab handle, K + amber live-dot, a reactive RMS waveform, a timer,
-and a red stop; the footer reads "keyboard paused · returns on insert".
+and a **red square = Abbrechen** (cancel/discard, parity with desktop); the footer reads "keyboard
+paused · returns on insert".
+
+**And** the bubble stays visible in its **recording state** (`.ab-bubble.recording`: teal squircle +
+amber pulse-ring + send-glyph, NOT the idle K); **tapping the bubble = Senden** (stop → transcribe →
+paste). Confirm (bubble-tap) and Cancel (red square) are distinct affordances; **red is never the
+send/confirm action** (ADR-0019 colour-semantics rule).
 
 **Given** recording
 **When** raw text streams
@@ -732,6 +750,112 @@ So that the app is visually consistent end-to-end.
 surface).
 
 **DoD:** on-device smoke (in-app recording visual) via the build/smoke scripts; APK freshness verified.
+
+### Story 9.10: Token codegen — `klarvo.css` → `KlarvoTheme.kt` (post-ADR-0019; before the 9.5 rebuild)
+
+As a developer maintaining two platform implementations of one design,
+I want the Android token file generated from the canon CSS rather than hand-typed,
+So that the token layer cannot structurally drift (closing the F6 class of copy-errors) and the 9.5
+rebuild renders against the real single-source-of-truth.
+
+**Acceptance Criteria:**
+
+**Given** the canon `docs/design/overhaul/source/assets/klarvo.css` holds the `--k-*` custom properties
+**When** the generator runs
+**Then** it emits `android/kotlin-src/com/klarvo/voice/KlarvoTheme.kt` with every canon color token as a
+Kotlin constant, with hex `#RRGGBB` → `0xFFRRGGBB` and `rgba(r,g,b,a)` → `0xAARRGGBB` (alpha = round(a×255)),
+and **no canon-derived hex is hand-typed** anywhere in platform code.
+
+**Given** the current consumers (`FloatingBubbleView.kt`, `ListeningPanelView.kt`) reference identifiers
+like `KlarvoTheme.TextC`, `Border2`, `AmberLine`, `TealBg`
+**When** the file is regenerated
+**Then** every currently-referenced identifier still resolves with a **byte-identical color value**
+(zero visual regression) — an explicit alias map preserves non-mechanical names (e.g. `--k-text` → `TextC`).
+
+**Given** the alpha conversion
+**When** the file is generated
+**Then** `AmberLine == 0x52E9A24C`, `TealBg == 0x1F29C7AC`, `DangerBg == 0x1FEE6F63` (the F6 class is
+produced correctly by the rule, not by hand).
+
+**Given** someone hand-edits a generated token value
+**When** the build/smoke flow runs
+**Then** a **drift gate** (regenerate to temp + diff against the committed file) fails the build with a
+clear "KlarvoTheme.kt drifted from canon — re-run the generator" message.
+
+**And** canon color tokens absent from today's hand-written file (`--k-bg-deep`, `--k-hairline`,
+`--k-faint`, `--k-teal-line`, `--k-success`, `--k-info`) are added, so the file is a complete projection
+of the canon color set.
+
+**DoD:** generator + drift gate wired into `scripts/android-smoke.sh` (and `scripts/android-build.sh`)
+**before** the `kotlin-src` sync; the 60 JVM unit tests still pass; the DEBUG APK builds. **No pixel
+changes** (values are byte-identical to today) → the human visual gate is consciously downgraded to an
+optional sanity glance; the binding gate is the byte-identity assertion + the drift check (machine-verifiable).
+
+### Story 9.12: Cluster-Waveform RMS-reaktiv (9-5 GATE Follow-up #1)
+
+As a user dictating on Android,
+I want the amber recording-cluster waveform to move with my actual voice amplitude (RMS),
+So that the live cue honestly reflects that I'm being heard — matching the desktop, not a generic idle animation.
+
+**Scope (locked — fidelity fix, do NOT expand):** The recording-cluster waveform zone currently animates
+with a generic/idle fallback and does not track live mic RMS. AC4 of Story 9.5 already specified "bars
+driven by RMS amplitude (reuse `drawWaveformBarsInZone()`)"; the amplitude feed into the *cluster*
+waveform zone is evidently unwired (or always falls back to the flat-idle `abwv`-style animation). Trace
+the existing live RMS amplitude stream into the cluster waveform zone. **No** new tokens, **no** geometry
+change, **no** new states, **no** gesture-mode changes (those are separate follow-ups #2/#4).
+
+**Anchors:** `docs/backlog.md` §"Story 9-5 GATE-4 green" point (1); Story 9.5 AC4 + `drawWaveformBarsInZone()`;
+canon `docs/design/overhaul/source/` (fingerprint `fc9ef745…`) `.hwave` comment = "RMS-getriebener Live-Cue,
+NICHT idle-Animation". ADR-0019 §4′ + §4′-Amendment 2026-06-21.
+
+**DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke
+green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`). **GATE-4
+visual = real device (Andi's live mic):** RMS reactivity is only honestly verifiable against a live
+microphone — the emulator is a structural oracle only, never a motion/pixel oracle. Andi's batched
+real-device gate confirms the bars track his voice. Overlays must never use `FLAG_NOT_TOUCHABLE`.
+
+---
+
+### Story 9.13: Recording-Cluster-Reihenfolge tauschen (9-5 GATE Follow-up #2)
+
+As a user dictating on Android,
+I want the **➤ Send** control to sit at the dock/thumb position of the recording cluster (where the idle K-bubble sits) and **✗ Cancel** on the opposite (left) side,
+So that the most-used action (send) is under my thumb and matches human habit, while the destructive action (cancel) is deliberately off the thumb path.
+
+**Scope (locked — cluster-order/interaction change only, do NOT expand):** Swap the recording-state control-cluster order on Android from the current `[➤ Send (left) · waveform · ✗ Cancel (right/thumb)]` to `[✗ Cancel (left) · waveform (center) · ➤ Send (right/thumb)]`. ➤ Send (teal) moves to the dock/thumb anchor of the idle K-bubble; ✗ Cancel (red) moves to the left; the amber waveform stays centered. Color semantics are binding (ADR-0019): **red = Cancel, teal = Send** — both platforms. **No** RMS/waveform behavior change (that is #1 / Story 9.12, done — do not touch). **No** HOLD-mode surfaces (that is #4 — separate story; do not build `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip` here). **No** new tokens, **no** new states, **no** gesture-mode logic change. Do **not** silently expand Story 9.7.
+
+**Anchors:** `docs/backlog.md` §"Story 9-5 GATE-4 green" point (2); canon `docs/design/overhaul/source/Klarvo Design System.html` + `assets/klarvo.css` (fingerprint `fc9ef745…`, MANIFEST 2026-06-21) — cluster order `[✗ cancel (links) · hwave · ➤ send (RECHTS)]`; approval render `docs/design/overhaul/mockup-9-5-followups-2-4.html` (section #2); ADR-0019 §4′ + §4′-Amendment 2026-06-21. Design gate is **resolved** (Andi-approved, commit `864af40`) — no open design/UI/intent question.
+
+**DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`; the structural assertion can confirm cluster element presence/order/anchor where machine-checkable). **GATE-4 visual = real device (Andi's batched gate):** final pixel/placement verdict is Andi's real-device sight, never an emulator screenshot — the emulator is a structural oracle only. Overlays must never use `FLAG_NOT_TOUCHABLE` (HyperOS dims them to alpha 0.8).
+
+### Story 9.14: HOLD-Modus (Push-to-Talk) Bubble-Cluster-Variante (9-5 GATE Follow-up #4)
+
+As a user dictating on Android with the **Hold** gesture mode,
+I want pressing-and-holding the bubble to record, releasing to send, and dragging away to cancel — with an upward drag to **lock** into a normal tappable cluster,
+So that the recording cluster matches the familiar voice-message model that Hold actually implies, instead of the tap/toggle cluster whose ➤ Send is redundant (release already sends) and whose ✗ Cancel is unreachable while holding.
+
+**Scope (locked — Hold-mode bubble interaction + its surfaces only, do NOT expand):** Add the HOLD-mode recording variant on Android, used **only** when the active gesture mode is **Hold**. While the finger holds: **hold = record · release = send · drag away = cancel** (no tappable ➤/✗ exist during the hold). **Drag up → 🔒 lock** converts the held state into the normal tap-cluster `[✗ Cancel (left) · waveform (center) · ➤ Send (right/thumb)]` (the order from #2 / Story 9.13) so the user can release without sending. Live cue stays the **amber** waveform; the hold ring is **amber**. New canon surfaces: `.ab-holddock` / `.ab-holdstrip` / `.ab-slidehint` / `.ab-heldbub` / `.ab-lockchip`. Color semantics binding (ADR-0019): **red = Cancel, teal = Send, amber = live** — never swapped. **No** change to Tap / Toggle / Auto-Stop / Auto modes (they keep the §4′ cluster unchanged). **No** RMS/waveform behavior change (that is #1 / Story 9.12, done). **No** token changes. Do **not** silently expand Story 9.7 (gesture modes) — this is its own story; the Hold-mode *detection* already exists, this story is its *recording-cluster surface + interaction*.
+
+**Anchors:** `docs/backlog.md` §"Story 9-5 GATE-4 green" point (4); canon ADR-0019 §4′ + **§4′-Amendment 2026-06-21 (#4)** (`docs/adr/0019-cross-platform-design-ssot.md`); canon source `docs/design/overhaul/source/` (fingerprint `fc9ef7456700d19b8332dd2c34a43b8e`, MANIFEST 2026-06-21) — Artboard-Sektion „Aufnahme · HOLD-Modus" + surfaces `.ab-holddock`/`.ab-holdstrip`/`.ab-slidehint`/`.ab-heldbub`/`.ab-lockchip`; approval render `docs/design/overhaul/mockup-9-5-followups-2-4.html` (HOLD section). Design gate is **resolved** (Andi-approved 2026-06-21) — no open design/UI/intent question.
+
+**DoD (surface-class):** DEBUG APK builds; the existing JVM unit tests pass; emulator **structural** smoke green (overlay-window structure intact via `scripts/android-smoke.sh` under `BMAD_CONDUCTOR=1`; the structural assertion can confirm hold-dock/lock-chip surface presence + the lock→cluster window transition where machine-checkable). **GATE-4 motion/touch = real device (Andi's batched gate):** the press-hold-release / drag-to-cancel / drag-up-to-lock gesture and its live waveform are **only** verifiable on Andi's real device with a live mic — never an emulator (the emulator is a structural oracle only; it cannot drive a held touch + live amplitude). Overlays must never use `FLAG_NOT_TOUCHABLE` (HyperOS dims them to alpha 0.8).
+
+> **⚠️ Story 9.14 NEU GEFASST 2026-06-26 (B-Sprache).** Die obige 9.14-Beschreibung (Slide-Spur-HOLD) ist
+> **superseded**: Andis Real-Device-Test verwarf die mobile Aufnahme-Steuerung als zu klein/„Laptop-Feel".
+> Redesign in „B-Sprache" — siehe ADR-0019 Amendment 2026-06-26 + Story-File `9-14-...md` (neu) + die Render
+> `mockup-mobile-hold-B-refined.html` / `mockup-mobile-recording-states.html`. Build folgt in frischer Session.
+
+### Story 9.15: Mobile TAP-Aufnahme-Surface (B-Sprache Re-Skin, ersetzt den Klein-Cluster)
+
+As a user recording on Android in tap/toggle/auto modes (and after locking a HOLD recording),
+I want large thumb-friendly **Senden / Abbrechen** targets instead of the small `[✗·Waveform·➤]` cluster,
+So that I can hit the right control without my finger covering it (phone feature, not laptop feature).
+
+**Scope (locked):** Replace the `.ab-cluster` small cluster (RECORDING, tap/toggle/auto modes) with two **large round tappable targets** — **Senden** (teal ➤) at the dock/thumb, **Abbrechen** (dark + red ring ✕) opposite, plus a calm amber waveform chip (no overlap). **Dock-adaptive** (mirror for left/up/down). This surface is **also the "gesperrt" state consumed by Story 9.14** (post-lock). Color semantics binding (teal=Senden, rot=Abbrechen). No pipeline change; surface + touch zones only. NOT in scope: idle/transcribing/done/preview (later pass).
+
+**Anchors:** ADR-0019 **Amendment 2026-06-26** „B-Sprache"; binding render `docs/design/overhaul/mockup-mobile-recording-states.html` (frames `tapRight`/`tapLeft`); canon fingerprint `bac152993046699c5007612ac916d951` (MANIFEST 2026-06-26, supersedes `.ab-cluster`). Foundational for Story 9.14.
+
+**DoD (surface-class):** DEBUG APK builds; JVM tests pass; emulator structural smoke green (TAP-surface window present, size ≠ old small cluster). **GATE-4 visual/touch = real device (Andi's batched gate):** placement/size/legibility + tap behaviour = Andi's real-device sight, never an emulator screenshot. No `FLAG_NOT_TOUCHABLE`.
 
 ---
 

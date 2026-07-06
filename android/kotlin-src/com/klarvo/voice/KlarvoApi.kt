@@ -20,7 +20,14 @@ import java.util.concurrent.Executors
 data class LlmProviderInfo(
     val url: String,
     val model: String,
-    val apiKey: String
+    val apiKey: String,
+    // Finding C (story 12-1 code review): the ACTUALLY resolved provider
+    // name -- may differ from `config.llmProvider` when that provider had no
+    // key and `resolveLlmProvider` substituted a fallback candidate. Callers
+    // must exclude THIS name (not the configured one) when asking for a
+    // further fallback after a runtime failure, or they can end up retrying
+    // the same substitute provider that just failed.
+    val providerName: String
 )
 
 /**
@@ -46,6 +53,10 @@ object KlarvoApi {
         val deviceId: String,
         val bubbleSize: Float = 1.0f,
         val bubbleOpacity: Float = 0.85f,
+        // Manual bubble size in dp. 0 = Auto (responsive formula). Range 32..72 when set.
+        val bubbleSizeDp: Int = 0,
+        // Whether to snap the bubble to the nearest screen edge on drag release. Default: true.
+        val bubbleEdgeSnap: Boolean = true,
         // Kept for backwards compatibility -- no longer used in overlay logic.
         val bubbleRecordingMode: String = "hold",
         // Per-gesture recording controls (tap and long-press independently configured).
@@ -81,7 +92,27 @@ object KlarvoApi {
         // firstInstallAt: the EFFECTIVE trial start = config.json value if synced
         // from desktop, else the Android-owned SharedPreferences timestamp.
         val licenseValidatedAt: Long = 0L,
-        val firstInstallAt: Long = 0L
+        val firstInstallAt: Long = 0L,
+        // Energy gate threshold for VAD pre-filter. Nested under "advanced.silenceThreshold"
+        // in config.json (camelCase, parity with Rust AdvancedSettings::silence_threshold).
+        // Default 0.005 matches the Rust default_silence_threshold() in config/mod.rs:209.
+        val silenceThreshold: Float = 0.005f,
+        // Recording button diameter in dp — TAP surface + (Story 9-14 re-scope 2026-07-01) the
+        // HOLD Abbrechen button. User-configurable ∈ {52, 60, 72, 84, 96}. Default 72 (device-scale
+        // approved). Written by desktop Settings UI via save_settings; read here for Android rendering.
+        val recordingButtonSizeDp: Int = 72,
+        // --- Live-preview fields (Story 11-2 port; all already exist in Rust AppConfig,
+        // src-tauri/src/config/mod.rs:730-790,1001-1032 -- defaults mirrored exactly here). ---
+        val livePreviewEnabled: Boolean = false,
+        val previewPauseSilenceSecs: Float = 2.0f,
+        val previewTextColor: String = "rgba(220,220,220,0.88)",
+        val previewBgColor: String = "rgba(25,25,25,0.96)",
+        val previewBgBlur: Int = 12,
+        val previewBorderColor: String = "rgba(42,195,168,0.25)",
+        val previewBorderWidth: Int = 1,
+        val previewBorderRadius: Int = 14,
+        val previewFontFamily: String = "'Inter', system-ui, -apple-system, sans-serif",
+        val previewFontSize: String = "small"
     )
 
     /**
@@ -102,54 +133,92 @@ object KlarvoApi {
             "groq" -> if (config.groqApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.groq.com/openai/v1/chat/completions",
                 model  = "llama-3.3-70b-versatile",
-                apiKey = config.groqApiKey
+                apiKey = config.groqApiKey,
+                providerName = "groq"
             ) else null
             "openai" -> if (config.openaiApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.openai.com/v1/chat/completions",
                 model  = "gpt-4o-mini",
-                apiKey = config.openaiApiKey
+                apiKey = config.openaiApiKey,
+                providerName = "openai"
             ) else null
             "openrouter" -> if (config.openrouterApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://openrouter.ai/api/v1/chat/completions",
                 model  = "deepseek/deepseek-chat",
-                apiKey = config.openrouterApiKey
+                apiKey = config.openrouterApiKey,
+                providerName = "openrouter"
             ) else null
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.deepseek.com/chat/completions",
                 model  = "deepseek-chat",
-                apiKey = config.deepseekApiKey
+                apiKey = config.deepseekApiKey,
+                providerName = "deepseek"
             ) else null
         }
 
         if (primary != null) return primary
 
         // Configured provider has no key -- try fallbacks in priority order.
-        val fallbacks = listOf(
-            Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
-                url    = "https://api.deepseek.com/chat/completions",
-                model  = "deepseek-chat",
-                apiKey = config.deepseekApiKey
-            )),
-            Triple("groq", config.groqApiKey, LlmProviderInfo(
-                url    = "https://api.groq.com/openai/v1/chat/completions",
-                model  = "llama-3.3-70b-versatile",
-                apiKey = config.groqApiKey
-            )),
-            Triple("openai", config.openaiApiKey, LlmProviderInfo(
-                url    = "https://api.openai.com/v1/chat/completions",
-                model  = "gpt-4o-mini",
-                apiKey = config.openaiApiKey
-            )),
-            Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
-                "https://openrouter.ai/api/v1/chat/completions",
-                "deepseek/deepseek-chat",
-                config.openrouterApiKey
-            ))
-        )
-        return fallbacks.firstOrNull { it.second.isNotBlank() }?.let {
-            KlarvoLogger.i(TAG, "LLM provider '${config.llmProvider}' has no key, falling back to '${it.first}'")
-            it.third
-        }
+        // Groq is deliberately NOT a candidate (AC2/story 12-1): it is the STT
+        // provider and must never have its quota eaten by cleanup-fallback
+        // retries, on either the config-resolution path here or the
+        // runtime-failure path (see resolveFallbackLlmProvider below).
+        //
+        // No logging in here (pre-story this logged via KlarvoLogger.i on the
+        // success branch) -- kept as a pure selector, like
+        // BankingGuard.shouldBlockPaste, so it stays plain-JUnit-testable
+        // without touching android.util.Log ("not mocked" outside
+        // Robolectric). Callers that care can log the resolved provider name.
+        return cleanupFallbackCandidates(config).firstOrNull { it.second.isNotBlank() }?.third
+    }
+
+    /**
+     * Ordered cleanup-fallback candidates: DeepSeek -> OpenAI -> OpenRouter.
+     *
+     * Groq is NEVER a candidate here (AC2, story 12-1) -- it is the STT
+     * provider and must not have its quota eaten by cleanup-fallback retries.
+     * Shared by [resolveLlmProvider]'s config-resolution fallback and
+     * [resolveFallbackLlmProvider]'s runtime-failure fallback so the
+     * candidate list lives in exactly one place.
+     */
+    private fun cleanupFallbackCandidates(config: Config): List<Triple<String, String, LlmProviderInfo>> = listOf(
+        Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
+            url    = "https://api.deepseek.com/chat/completions",
+            model  = "deepseek-chat",
+            apiKey = config.deepseekApiKey,
+            providerName = "deepseek"
+        )),
+        Triple("openai", config.openaiApiKey, LlmProviderInfo(
+            url    = "https://api.openai.com/v1/chat/completions",
+            model  = "gpt-4o-mini",
+            apiKey = config.openaiApiKey,
+            providerName = "openai"
+        )),
+        Triple("openrouter", config.openrouterApiKey, LlmProviderInfo(
+            "https://openrouter.ai/api/v1/chat/completions",
+            "deepseek/deepseek-chat",
+            config.openrouterApiKey,
+            "openrouter"
+        ))
+    )
+
+    /**
+     * Resolves an alternative cleanup provider after a *runtime* call
+     * failure (AC2) -- e.g. the transport/IOException catch in
+     * [KlarvoOverlayService]'s cleanup call site. Skips [excluding] (the
+     * provider that just failed) and Groq (never a cleanup-fallback
+     * candidate). Returns `null` when no alternative provider has a
+     * configured key, in which case the caller must degrade to raw text.
+     *
+     * Deliberately does its own logging at the call site, not in here: this
+     * stays a pure selector (like `BankingGuard.shouldBlockPaste`) so it is
+     * plain-JUnit-testable without touching `KlarvoLogger`/`android.util.Log`
+     * (which throw "not mocked" under a non-Robolectric unit test).
+     */
+    fun resolveFallbackLlmProvider(config: Config, excluding: String): LlmProviderInfo? {
+        return cleanupFallbackCandidates(config)
+            .firstOrNull { (name, key, _) -> name != excluding && key.isNotBlank() }
+            ?.third
     }
 
     /**
@@ -234,6 +303,8 @@ object KlarvoApi {
             val deviceId = json.optString("deviceId", "")
             val bubbleSize = json.optDouble("bubbleSize", 1.0).toFloat()
             val bubbleOpacity = json.optDouble("bubbleOpacity", 0.85).toFloat()
+            val bubbleSizeDp = json.optInt("bubbleSizeDp", 0)
+            val bubbleEdgeSnap = json.optBoolean("bubbleEdgeSnap", true)
             // Rust serializes with camelCase (rename_all on AppConfig struct).
             val bubbleRecordingMode = json.optString("bubbleRecordingMode", "hold")
             // Per-gesture controls (tap and long-press independently configured).
@@ -260,10 +331,38 @@ object KlarvoApi {
             val firstInstallAtJson = json.optLong("firstInstallAt", 0L)
             val sttProvider = json.optString("sttProvider", "groq")
             val customPrompt = json.optString("customPrompt", "")
+            // "advanced.silenceThreshold" is nested under the "advanced" object (camelCase,
+            // parity with Rust AdvancedSettings { silence_threshold } serialized via
+            // serde rename_all = "camelCase"). Default 0.005 matches Rust's
+            // default_silence_threshold() in src-tauri/src/config/mod.rs:209.
+            val silenceThreshold = json
+                .optJSONObject("advanced")
+                ?.optDouble("silenceThreshold", 0.005)
+                ?.toFloat()
+                ?: 0.005f
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
             val dictionaryTerms = loadDictionaryTerms(context)
+            // Story 9-15 Re-Scope (range widened by 9-14 re-scope 2026-07-01): recording button
+            // size, ∈ {52,60,72,84,96}, default 72.
+            // Written by desktop save_settings → config.json as "recordingButtonSizeDp" (camelCase).
+            val recordingButtonSizeDp = json.optInt("recordingButtonSizeDp", 72)
+                .coerceIn(FloatingBubbleView.TAP_BUTTON_SIZE_MIN, FloatingBubbleView.TAP_BUTTON_SIZE_MAX)
+
+            // Story 11-2 (AC-8, Task 5.1): live-preview fields. Same camelCase-key /
+            // opt*-with-default pattern as bubbleTapSilenceSecs above. Defaults match the Rust
+            // serde defaults exactly (src-tauri/src/config/mod.rs:1001-1032).
+            val livePreviewEnabled = json.optBoolean("livePreviewEnabled", false)
+            val previewPauseSilenceSecs = json.optDouble("previewPauseSilenceSecs", 2.0).toFloat()
+            val previewTextColor = json.optString("previewTextColor", "rgba(220,220,220,0.88)")
+            val previewBgColor = json.optString("previewBgColor", "rgba(25,25,25,0.96)")
+            val previewBgBlur = json.optInt("previewBgBlur", 12)
+            val previewBorderColor = json.optString("previewBorderColor", "rgba(42,195,168,0.25)")
+            val previewBorderWidth = json.optInt("previewBorderWidth", 1)
+            val previewBorderRadius = json.optInt("previewBorderRadius", 14)
+            val previewFontFamily = json.optString("previewFontFamily", "'Inter', system-ui, -apple-system, sans-serif")
+            val previewFontSize = json.optString("previewFontSize", "small")
 
             // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
             // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.
@@ -321,14 +420,20 @@ object KlarvoApi {
             if (gatedSttProvider != "local" && groqKey.isBlank()) null
             else Config(
                 groqKey, gatedDeepseek, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
-                bubbleSize, bubbleOpacity, bubbleRecordingMode,
+                bubbleSize, bubbleOpacity, bubbleSizeDp, bubbleEdgeSnap, bubbleRecordingMode,
                 bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
                 bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
                 autostopSilenceSecs, autoModeSilenceSecs,
                 gatedLlmProvider, gatedOpenai, gatedOpenrouter,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
                 gatedSttProvider, customPrompt, dictionaryTerms,
-                licenseValidatedAt, effectiveFirstInstall
+                licenseValidatedAt, effectiveFirstInstall,
+                silenceThreshold,
+                recordingButtonSizeDp,
+                livePreviewEnabled, previewPauseSilenceSecs,
+                previewTextColor, previewBgColor, previewBgBlur,
+                previewBorderColor, previewBorderWidth, previewBorderRadius,
+                previewFontFamily, previewFontSize
             )
         } catch (e: Exception) {
             null
@@ -360,31 +465,7 @@ object KlarvoApi {
         var db: SQLiteDatabase? = null
         try {
             db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    raw_text TEXT,
-                    style TEXT NOT NULL DEFAULT 'polished',
-                    language TEXT NOT NULL DEFAULT '',
-                    is_note INTEGER NOT NULL DEFAULT 0,
-                    app_name TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    uuid TEXT,
-                    device_id TEXT,
-                    synced INTEGER NOT NULL DEFAULT 0
-                )
-                """.trimIndent()
-            )
-            // Migrate existing tables that predate sync columns (best-effort).
-            for (col in listOf(
-                "uuid TEXT",
-                "device_id TEXT",
-                "synced INTEGER NOT NULL DEFAULT 0"
-            )) {
-                try { db.execSQL("ALTER TABLE history ADD COLUMN $col") } catch (_: Exception) {}
-            }
+            ensureHistorySchema(db)
             val stmt = db.compileStatement(
                 "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id, synced) VALUES (?, ?, ?, ?, 0, NULL, ?, ?, 0)"
             )
@@ -394,6 +475,84 @@ object KlarvoApi {
             stmt.bindString(4, language)
             stmt.bindString(5, uuid)
             stmt.bindString(6, deviceId)
+            stmt.executeInsert()
+        } catch (_: Exception) {
+            // History saving is best-effort; never crash the main flow.
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Creates (or upgrades) the `history` table schema on the given open DB
+     * connection. Shared by [saveToHistory] and [savePendingHistoryEntry] so
+     * the CREATE TABLE + migration ladder lives in exactly one place.
+     * Mirrors the Rust `history::open_db` migration ladder (additive,
+     * idempotent — every ALTER is guarded by a try/catch so an already-
+     * migrated DB is a silent no-op).
+     */
+    private fun ensureHistorySchema(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                raw_text TEXT,
+                style TEXT NOT NULL DEFAULT 'polished',
+                language TEXT NOT NULL DEFAULT '',
+                is_note INTEGER NOT NULL DEFAULT 0,
+                app_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                uuid TEXT,
+                device_id TEXT,
+                synced INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'done',
+                audio_path TEXT
+            )
+            """.trimIndent()
+        )
+        // Migrate existing tables that predate these columns (best-effort).
+        for (col in listOf(
+            "uuid TEXT",
+            "device_id TEXT",
+            "synced INTEGER NOT NULL DEFAULT 0",
+            "status TEXT NOT NULL DEFAULT 'done'",
+            "audio_path TEXT"
+        )) {
+            try { db.execSQL("ALTER TABLE history ADD COLUMN $col") } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Creates a `pending` history entry for a terminal STT failure whose raw
+     * WAV was preserved to disk (Story 12-1 `savePendingWav` + Story 12-2,
+     * AC3). Mirrors the Rust `history::add_pending_entry`: same B-capable
+     * schema (status + audio_path), text/raw_text left empty (the frontend
+     * renders a placeholder for pending entries), app_name is not tracked on
+     * Android (mirrors [saveToHistory]'s existing NULL).
+     *
+     * @param audioPath absolute path to the preserved WAV on disk.
+     */
+    fun savePendingHistoryEntry(
+        context: Context,
+        audioPath: String,
+        language: String,
+        deviceId: String = ""
+    ) {
+        val uuid = java.util.UUID.randomUUID().toString()
+        val dbFile = File(getDataDir(context), "history.db")
+        var db: SQLiteDatabase? = null
+        try {
+            db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+            ensureHistorySchema(db)
+            val stmt = db.compileStatement(
+                "INSERT INTO history (text, raw_text, style, language, is_note, app_name, uuid, device_id, synced, status, audio_path) " +
+                    "VALUES ('', NULL, 'verbatim', ?, 0, NULL, ?, ?, 0, 'pending', ?)"
+            )
+            stmt.bindString(1, language)
+            stmt.bindString(2, uuid)
+            stmt.bindString(3, deviceId)
+            stmt.bindString(4, audioPath)
             stmt.executeInsert()
         } catch (_: Exception) {
             // History saving is best-effort; never crash the main flow.
@@ -423,7 +582,7 @@ object KlarvoApi {
 
             // Read unsynced entries that have a uuid (entries before the migration may lack one).
             val cursor = db.rawQuery(
-                "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at FROM history WHERE synced = 0 AND uuid IS NOT NULL",
+                "SELECT uuid, text, raw_text, style, language, is_note, app_name, device_id, created_at FROM history WHERE synced = 0 AND uuid IS NOT NULL AND status = 'done'",
                 null
             )
 

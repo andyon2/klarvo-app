@@ -14,6 +14,8 @@ import {
   getOnboardingState,
   setOnboardingState,
   clearApiKey,
+  reprocessPendingEntry,
+  discardPendingEntry,
 } from "./tauri-commands";
 import { CostDashboard } from "./components/CostDashboard";
 import { QuickTip } from "./components/QuickTip";
@@ -65,20 +67,20 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
         "disabled:cursor-not-allowed disabled:opacity-60",
         isRecording
-          ? "bg-klarvo-danger/20 text-klarvo-danger shadow-[0_0_40px_rgba(255,115,105,0.3)]"
+          ? "bg-klarvo-warning/20 text-klarvo-warning shadow-[0_0_40px_rgba(233,162,76,0.3)]"
           : isBusy
-          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(255,163,68,0.2)]"
-          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(42,195,168,0.2)] hover:shadow-[0_0_50px_rgba(42,195,168,0.3)] hover:bg-klarvo-primary/20",
+          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(233,162,76,0.2)]"
+          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(41,199,172,0.2)] hover:shadow-[0_0_50px_rgba(41,199,172,0.3)] hover:bg-klarvo-primary/20",
       ].join(" ")}
     >
       <span
         className={[
           "absolute inset-0 rounded-full border-2 transition-colors duration-200",
-          isRecording ? "border-klarvo-danger/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
+          isRecording ? "border-klarvo-warning/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
         ].join(" ")}
       />
       {isRecording && (
-        <span className="absolute inset-0 rounded-full border-2 border-red-400 opacity-40 animate-ping" />
+        <span className="absolute inset-0 rounded-full border-2 border-klarvo-warning opacity-40 animate-ping" />
       )}
       {isBusy ? (
         <SpinnerIcon className="w-9 h-9" />
@@ -143,6 +145,11 @@ export default function App() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
+  // Story 12-2: pending (terminal-failure) entries -- id of the entry
+  // currently re-processing (busy/disabled state) and any inline error from
+  // the last failed re-process attempt, keyed by entry id.
+  const [reprocessingId, setReprocessingId] = useState<number | null>(null);
+  const [pendingErrors, setPendingErrors] = useState<Record<number, string>>({});
 
   // Stats state
   const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
@@ -298,6 +305,41 @@ export default function App() {
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
     await deleteHistoryEntry(id);
     setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  // Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on the
+  // stored WAV. On success the entry is replaced in place with the promoted
+  // (done) entry; on failure it stays pending and shows an inline error.
+  const handleReprocessPendingEntry = useCallback(async (id: number) => {
+    setReprocessingId(id);
+    setPendingErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      const updated = await reprocessPendingEntry(id);
+      setHistoryEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    } catch (err) {
+      setPendingErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setReprocessingId(null);
+    }
+  }, []);
+
+  // Story 12-2 (AC6) — "Verwerfen": deletes the pending entry and its WAV.
+  const handleDiscardPendingEntry = useCallback(async (id: number) => {
+    try {
+      await discardPendingEntry(id);
+      setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+      setPendingErrors((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setPendingErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : String(err) }));
+    }
   }, []);
 
   // --- Onboarding handler ---
@@ -565,6 +607,43 @@ export default function App() {
                 <p className="text-xs text-klarvo-dim italic text-center py-4">No dictations yet.</p>
               ) : (
                 historyEntries.map((entry) => (
+                  entry.status === "pending" ? (
+                    <div
+                      key={entry.id}
+                      className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3"
+                    >
+                      <p className="text-xs text-amber-300">
+                        ⏳ Audio gesichert — noch nicht transkribiert
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[11px] text-klarvo-dim">
+                          {new Date(entry.createdAt + "Z").toLocaleString()}
+                          {entry.appName && (
+                            <span className="ml-1 px-1.5 py-0.5 bg-klarvo-warm/10 rounded text-[9px] text-klarvo-warm">{entry.appName}</span>
+                          )}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleReprocessPendingEntry(entry.id)}
+                            disabled={reprocessingId !== null}
+                            className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
+                          </button>
+                          <button
+                            onClick={() => handleDiscardPendingEntry(entry.id)}
+                            disabled={reprocessingId !== null}
+                            className="text-[11px] text-orange-400 hover:text-orange-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Verwerfen
+                          </button>
+                        </div>
+                      </div>
+                      {pendingErrors[entry.id] && (
+                        <p className="mt-1.5 text-[11px] text-red-400">{pendingErrors[entry.id]}</p>
+                      )}
+                    </div>
+                  ) : (
                   <div
                     key={entry.id}
                     className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 group hover:border-klarvo-border/60 transition-colors"
@@ -633,6 +712,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  )
                 ))
               )}
             </div>
@@ -741,7 +821,7 @@ export default function App() {
           <p className={[
             "text-xs font-medium",
             recording.recordingState === "error" ? "text-klarvo-danger"
-              : recording.recordingState === "recording" ? "text-klarvo-danger"
+              : recording.recordingState === "recording" ? "text-klarvo-warning"
               : recording.recordingState === "done" ? "text-klarvo-primary"
               : isBusy ? "text-klarvo-warning"
               : "text-klarvo-dim",
@@ -785,7 +865,7 @@ export default function App() {
                       readOnly
                       value={recording.rawText}
                       rows={2}
-                      className="w-full bg-[#0c0c0e] border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
+                      className="w-full bg-klarvo-bg-deep border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
                     />
                     <button
                       onClick={() => navigator.clipboard.writeText(recording.rawText!)}

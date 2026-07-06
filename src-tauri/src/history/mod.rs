@@ -49,6 +49,14 @@ pub struct HistoryEntry {
     pub uuid: Option<String>,
     /// ID of the device that created this entry (set during sync).
     pub device_id: Option<String>,
+    /// Lifecycle state: `"done"` (normal, complete), `"pending"` (terminal STT
+    /// failure — audio preserved, awaiting manual re-process), or `"failed"`
+    /// (reserved for future use). Story 12-2.
+    pub status: String,
+    /// Path to the preserved raw WAV on disk, set only for `pending` entries.
+    /// Deleted (and this field cleared) on a successful re-process or an
+    /// explicit discard. Story 12-2 (transient/"primitive A" audio retention).
+    pub audio_path: Option<String>,
 }
 
 /// A single API usage entry for cost tracking.
@@ -113,7 +121,9 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
             language   TEXT NOT NULL DEFAULT '',
             is_note    INTEGER NOT NULL DEFAULT 0,
             app_name   TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            status     TEXT NOT NULL DEFAULT 'done',
+            audio_path TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_history_created_at ON history(created_at DESC);
 
@@ -179,6 +189,19 @@ pub fn open_db(app_data_dir: &Path) -> Result<Connection, HistoryError> {
         )?;
     }
 
+    // Migration: add status + audio_path columns (Story 12-2 — B-capable
+    // schema for terminal-failure audio-retry history entries). Additive,
+    // idempotent, mirrors the is_note migration above: every pre-existing row
+    // reads back as status='done', audio_path=NULL.
+    let has_status: bool = conn.prepare("SELECT status FROM history LIMIT 0").is_ok();
+    if !has_status {
+        conn.execute_batch("ALTER TABLE history ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")?;
+    }
+    let has_audio_path: bool = conn.prepare("SELECT audio_path FROM history LIMIT 0").is_ok();
+    if !has_audio_path {
+        conn.execute_batch("ALTER TABLE history ADD COLUMN audio_path TEXT")?;
+    }
+
     Ok(conn)
 }
 
@@ -217,7 +240,7 @@ pub fn add_entry(
 /// Reads a `HistoryEntry` from a row.
 ///
 /// Expected column order: id, text, raw_text, style, language, is_note,
-/// app_name, created_at, uuid, device_id.
+/// app_name, created_at, uuid, device_id, status, audio_path.
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
     Ok(HistoryEntry {
         id: row.get(0)?,
@@ -230,27 +253,78 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
         created_at: row.get(7)?,
         uuid: row.get(8)?,
         device_id: row.get(9)?,
+        status: row.get(10)?,
+        audio_path: row.get(11)?,
     })
 }
 
+const SELECT_COLUMNS: &str =
+    "id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id, status, audio_path";
+
 /// Returns the most recent history entries (newest first), excluding notes.
 pub fn get_entries(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, HistoryError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
-         FROM history WHERE is_note = 0 ORDER BY created_at DESC, id DESC LIMIT ?1",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SELECT_COLUMNS} FROM history WHERE is_note = 0 ORDER BY created_at DESC, id DESC LIMIT ?1",
+    ))?;
     let entries = stmt.query_map(params![limit], row_to_entry)?.collect::<Result<Vec<_>, _>>()?;
     Ok(entries)
 }
 
 /// Returns the most recent voice notes (newest first).
 pub fn get_notes(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, HistoryError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
-         FROM history WHERE is_note = 1 ORDER BY created_at DESC, id DESC LIMIT ?1",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SELECT_COLUMNS} FROM history WHERE is_note = 1 ORDER BY created_at DESC, id DESC LIMIT ?1",
+    ))?;
     let entries = stmt.query_map(params![limit], row_to_entry)?.collect::<Result<Vec<_>, _>>()?;
     Ok(entries)
+}
+
+/// Returns a single history entry by ID, or `None` if it doesn't exist.
+pub fn get_entry_by_id(conn: &Connection, id: i64) -> Result<Option<HistoryEntry>, HistoryError> {
+    let mut stmt = conn.prepare(&format!("SELECT {SELECT_COLUMNS} FROM history WHERE id = ?1"))?;
+    let mut rows = stmt.query_map(params![id], row_to_entry)?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+/// Inserts a `pending` history entry for a terminal STT failure whose raw
+/// audio was preserved to disk (AC2/AC3). `text`/`raw_text` are left empty —
+/// the frontend renders a placeholder for `pending` entries instead.
+pub fn add_pending_entry(
+    conn: &Connection,
+    audio_path: &str,
+    language: &str,
+    app_name: Option<&str>,
+    device_id: Option<&str>,
+) -> Result<i64, HistoryError> {
+    let entry_uuid = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO history (text, style, language, is_note, app_name, uuid, device_id, status, audio_path) \
+         VALUES ('', 'verbatim', ?1, 0, ?2, ?3, ?4, 'pending', ?5)",
+        params![language, app_name, entry_uuid, device_id, audio_path],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Promotes a `pending` entry to `done` after a successful re-process (AC5):
+/// fills in the produced text/raw_text and clears `audio_path` (the caller is
+/// responsible for deleting the WAV file itself). Only affects rows that are
+/// still `pending` — a no-op (returns `false`) if the entry was already
+/// promoted/discarded concurrently or doesn't exist.
+pub fn promote_pending_to_done(
+    conn: &Connection,
+    id: i64,
+    text: &str,
+    raw_text: &str,
+) -> Result<bool, HistoryError> {
+    let affected = conn.execute(
+        "UPDATE history SET text = ?1, raw_text = ?2, status = 'done', audio_path = NULL, synced = 0 \
+         WHERE id = ?3 AND status = 'pending'",
+        params![text, raw_text, id],
+    )?;
+    Ok(affected > 0)
 }
 
 /// Searches history entries by text content and/or app name (case-insensitive).
@@ -269,33 +343,30 @@ pub fn search_entries(
         (Some(tq), Some(aq)) => {
             let tp = format!("%{tq}%");
             let ap = format!("%{aq}%");
-            let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
-                 FROM history WHERE text LIKE ?1 AND app_name LIKE ?2
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {SELECT_COLUMNS} FROM history WHERE text LIKE ?1 AND app_name LIKE ?2
                  ORDER BY created_at DESC, id DESC LIMIT ?3",
-            )?;
+            ))?;
             let entries = stmt.query_map(params![tp, ap, limit], row_to_entry)?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(entries)
         }
         (Some(tq), None) => {
             let tp = format!("%{tq}%");
-            let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
-                 FROM history WHERE text LIKE ?1
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {SELECT_COLUMNS} FROM history WHERE text LIKE ?1
                  ORDER BY created_at DESC, id DESC LIMIT ?2",
-            )?;
+            ))?;
             let entries = stmt.query_map(params![tp, limit], row_to_entry)?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(entries)
         }
         (None, Some(aq)) => {
             let ap = format!("%{aq}%");
-            let mut stmt = conn.prepare(
-                "SELECT id, text, raw_text, style, language, is_note, app_name, created_at, uuid, device_id
-                 FROM history WHERE app_name LIKE ?1
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {SELECT_COLUMNS} FROM history WHERE app_name LIKE ?1
                  ORDER BY created_at DESC, id DESC LIMIT ?2",
-            )?;
+            ))?;
             let entries = stmt.query_map(params![ap, limit], row_to_entry)?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(entries)
@@ -528,7 +599,9 @@ mod tests {
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 uuid       TEXT,
                 device_id  TEXT,
-                synced     INTEGER NOT NULL DEFAULT 0
+                synced     INTEGER NOT NULL DEFAULT 0,
+                status     TEXT NOT NULL DEFAULT 'done',
+                audio_path TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_history_uuid ON history(uuid);
             CREATE TABLE IF NOT EXISTS usage (
@@ -668,11 +741,15 @@ mod tests {
             created_at: "2026-03-07T12:00:00".to_string(),
             uuid: Some("test-uuid".to_string()),
             device_id: None,
+            status: "done".to_string(),
+            audio_path: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("rawText"));
         assert!(json.contains("createdAt"));
         assert!(json.contains("appName"));
+        assert!(json.contains("\"status\""));
+        assert!(json.contains("audioPath"));
     }
 
     // --- Usage tracking ---
@@ -903,8 +980,8 @@ mod tests {
         // Call the REAL open_db() migration ladder (AC-1).
         let conn = open_db(dir.path()).unwrap();
 
-        // AC-2: All five migrated columns must exist after migration.
-        for col in ["is_note", "app_name", "uuid", "device_id", "synced"] {
+        // AC-2: All migrated columns must exist after migration.
+        for col in ["is_note", "app_name", "uuid", "device_id", "synced", "status", "audio_path"] {
             let sql = format!("SELECT {} FROM history LIMIT 0", col);
             assert!(
                 conn.prepare(&sql).is_ok(),
@@ -933,6 +1010,17 @@ mod tests {
         assert_eq!(text, "Migration test entry", "row text must survive migration");
         assert_eq!(style, "verbatim", "row style must survive migration");
         assert_eq!(language, "en", "row language must survive migration");
+
+        // AC1: the pre-existing row must default to status='done', audio_path=NULL.
+        let (status, audio_path): (String, Option<String>) = conn
+            .query_row(
+                "SELECT status, audio_path FROM history WHERE id = ?1",
+                params![row_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "done", "pre-existing row must default to status='done'");
+        assert_eq!(audio_path, None, "pre-existing row must default to audio_path=NULL");
 
         // AC-3: The pre-existing row must have been UUID-backfilled.
         let uuid_val: Option<String> = conn
@@ -979,5 +1067,98 @@ mod tests {
             !has_uuid,
             "old schema must not have uuid column — pre-condition guard for migration ladder test"
         );
+    }
+
+    // --- Story 12-2: pending/audio-retry entries ---
+
+    #[test]
+    fn test_add_pending_entry_creates_pending_row_with_audio_path() {
+        let conn = mem_db();
+        let id = add_pending_entry(&conn, "/tmp/pending/123.wav", "de", Some("Slack"), None).unwrap();
+        assert!(id > 0);
+
+        let entry = get_entry_by_id(&conn, id).unwrap().expect("entry must exist");
+        assert_eq!(entry.status, "pending");
+        assert_eq!(entry.audio_path.as_deref(), Some("/tmp/pending/123.wav"));
+        assert_eq!(entry.is_note, false);
+        assert_eq!(entry.language, "de");
+        assert_eq!(entry.app_name.as_deref(), Some("Slack"));
+    }
+
+    #[test]
+    fn test_pending_entry_appears_in_get_entries() {
+        // Pending entries are failed dictations (is_note=0) — they must be
+        // discoverable in the same dictation-history list as normal entries
+        // (Dev Notes: "belong in the dictation-history view").
+        let conn = mem_db();
+        add_pending_entry(&conn, "/tmp/pending/1.wav", "en", None, None).unwrap();
+        let entries = get_entries(&conn, 10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, "pending");
+    }
+
+    #[test]
+    fn test_get_entry_by_id_missing_returns_none() {
+        let conn = mem_db();
+        assert!(get_entry_by_id(&conn, 999).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_promote_pending_to_done_success() {
+        let conn = mem_db();
+        let id = add_pending_entry(&conn, "/tmp/pending/1.wav", "en", None, None).unwrap();
+
+        let promoted = promote_pending_to_done(&conn, id, "Cleaned text", "raw text").unwrap();
+        assert!(promoted);
+
+        let entry = get_entry_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(entry.status, "done");
+        assert_eq!(entry.text, "Cleaned text");
+        assert_eq!(entry.raw_text.as_deref(), Some("raw text"));
+        assert_eq!(entry.audio_path, None, "audio_path must be cleared on promotion");
+    }
+
+    #[test]
+    fn test_promote_pending_to_done_is_noop_for_already_done_entry() {
+        // Guards against double-promotion (e.g. a concurrent re-process click):
+        // once an entry is 'done' it must not be re-promotable.
+        let conn = mem_db();
+        let id = add_entry(&conn, "Already done", None, "polished", "en", false, None, None, None).unwrap();
+
+        let promoted = promote_pending_to_done(&conn, id, "New text", "new raw").unwrap();
+        assert!(!promoted);
+
+        let entry = get_entry_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(entry.text, "Already done", "a non-pending row must not be overwritten");
+    }
+
+    #[test]
+    fn test_promote_pending_to_done_missing_id_returns_false() {
+        let conn = mem_db();
+        assert!(!promote_pending_to_done(&conn, 999, "x", "y").unwrap());
+    }
+
+    #[test]
+    fn test_discard_pending_entry_via_delete_entry() {
+        // Verwerfen (AC6): delete_entry already removes the row regardless of
+        // status; the WAV-file deletion itself is the command layer's job
+        // (history has no filesystem access), covered by the pipeline/command
+        // integration tests.
+        let conn = mem_db();
+        let id = add_pending_entry(&conn, "/tmp/pending/1.wav", "en", None, None).unwrap();
+        assert!(delete_entry(&conn, id).unwrap());
+        assert!(get_entry_by_id(&conn, id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_happy_path_add_entry_defaults_to_done_no_audio_path() {
+        // AC7: normal add_entry() calls must be byte-identical to today —
+        // status defaults to 'done' and audio_path stays NULL via the column
+        // defaults, without add_entry's signature changing at all.
+        let conn = mem_db();
+        let id = add_entry(&conn, "Normal dictation", Some("raw"), "polished", "en", false, None, None, None).unwrap();
+        let entry = get_entry_by_id(&conn, id).unwrap().unwrap();
+        assert_eq!(entry.status, "done");
+        assert_eq!(entry.audio_path, None);
     }
 }

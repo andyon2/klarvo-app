@@ -165,6 +165,12 @@ pub struct SettingsView {
     pub bubble_size: f32,
     /// Android bubble opacity (0.3..1.0). Default: 0.85.
     pub bubble_opacity: f32,
+    /// Android bubble manual size in dp. 0 = Auto (responsive formula). Range 32..72 when set.
+    pub bubble_size_dp: i32,
+    /// Whether the Android bubble edge-snaps on drag release. Default: true.
+    pub bubble_edge_snap: bool,
+    /// Android recording TAP-surface button diameter in dp (∈ {60,72,88}, default 72).
+    pub recording_button_size_dp: i32,
     /// GGML model variant for offline STT (e.g. `"base"`, `"tiny-q5_1"`).
     pub local_whisper_model: String,
     /// Whether GPU acceleration (CUDA) is enabled for local whisper.
@@ -535,8 +541,13 @@ pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
     #[cfg(target_os = "windows")]
     {
         let clipboard_only = event.clipboard_only.unwrap_or(false);
+        // 12-1 FR4 native re-port: forward the pipeline's dynamic status text
+        // (warning for Warning, error for Error) so the native pill can render
+        // it — posted BEFORE set_state so it is present when the pill renders.
+        let status_msg = event.warning.clone().or_else(|| event.error.clone());
         if let Ok(guard) = handle.state::<AppState>().native_pill.lock() {
             if let Some(pill) = guard.as_ref() {
+                pill.set_status_msg(status_msg);
                 pill.set_state(&pipeline_state, clipboard_only);
             }
         }
@@ -624,6 +635,28 @@ pub fn setup_audio_level_emitter(handle: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Pin WebView2 to a bundled fixed-version runtime (Windows) to dodge the
+    // 149.0.4022.69+ occlusion regression: the transparent, always-on-top overlays
+    // (bar + preview) stop compositing the moment another window covers their screen
+    // region — even with CalculateNativeWinOcclusion disabled. Measured + human-verified
+    // 2026-06-26: runtime .62 renders the occluded overlays; .69/.80 never do. The
+    // pinned runtime ships next to the exe as `webview2-runtime/`. If it's absent we
+    // fall back to the auto-updating Evergreen runtime (= the broken behaviour, but at
+    // least the app starts). Must run before any webview is created.
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER").is_none() {
+            if let Some(rt) = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|d| d.join("webview2-runtime")))
+            {
+                if rt.join("msedgewebview2.exe").is_file() {
+                    std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &rt);
+                }
+            }
+        }
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Structured logging: stdout/logcat + rotating log file in {app_log_dir}/klarvo.log
@@ -646,6 +679,12 @@ pub fn run() {
     }
 
     let mut builder = builder.setup(|app| {
+        #[cfg(target_os = "windows")]
+        log::info!(
+            "[webview2] runtime: {}",
+            std::env::var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER")
+                .unwrap_or_else(|_| "Evergreen (not pinned)".into())
+        );
         // Resolve the app-data directory (e.g. %APPDATA%\com.klarvo.voice on Windows).
         let app_data_dir = app
             .path()
@@ -919,6 +958,8 @@ pub fn run() {
             commands::history::save_note,
             commands::history::is_tip_shown,
             commands::history::mark_tip_shown,
+            commands::history::reprocess_pending_entry,
+            commands::history::discard_pending_entry,
             // Feedback
             commands::feedback::send_feedback,
             commands::feedback::get_feedback_metrics,
@@ -1078,6 +1119,9 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1146,6 +1190,9 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,
@@ -1208,6 +1255,9 @@ mod tests {
             device_id: "test-device".to_string(),
             bubble_size: 1.0,
             bubble_opacity: 0.85,
+            bubble_size_dp: 0,
+            bubble_edge_snap: true,
+            recording_button_size_dp: 72,
             local_whisper_model: "base".to_string(),
             local_whisper_gpu: true,
             insert_and_send_slot1: false,

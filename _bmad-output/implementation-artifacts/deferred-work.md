@@ -255,6 +255,13 @@ Core change PASS (acceptance audit: all 4 ACs + boundaries satisfied). One patch
 
 - **Android has no on-device license-entry / activation UI.** Licensing is desktop-activated only; an Android-only user cannot enter/activate a key on-device, so alternative providers stay gated after trial until activation happens on desktop and `config.json` is synced. Documented as a known limitation in `spec-android-license-enforcement` (Design Notes). Belongs to a separate onboarding/sync story (roadmap bucket B), not the enforcement fix. MEDIUM. Source: Android license enforcement planning.
 
+## Deferred from: code review of 9-10-token-codegen-klarvo-css-to-klarvotheme (2026-06-16)
+
+- **`gen-android-theme.mjs` parser throws on modern/alternate CSS color syntax** — `rgb()` (no alpha), space-separated `rgb(r g b / a)`, percentage channels, 3-digit `#RGB` and 8-digit `#RRGGBBAA` hex all hard-throw (`hexToArgb` length-6 check; `rgbaToArgb` comma-int regex). Fail-loud, and the current canon uses only `#RRGGBB` + `rgba(int,int,int,float)`, so not triggered today. If a future canon edit switches a token to modern syntax it bricks the drift gate (hence the build) with a cryptic message. LOW. Source: Blind + Edge Hunter (9-10 review).
+- **rgba alpha >1 overflow unguarded** — `round(a*255)` with `a>1` yields a 3-hex-digit AA → malformed 9-digit literal → kotlinc error. All canon alphas ≤1 today. LOW. Source: Edge Hunter (9-10 review).
+- **Drift gate gives an opaque failure if `node` is absent on the build host** — `node scripts/gen-android-theme.mjs --check` under `set -e` prints bare "node: command not found" before the sync. Node is available in the WSL build env (render-surface.mjs). A `command -v node` guard would clarify. LOW. Source: Edge Hunter (9-10 review).
+- **`android-smoke.sh` mis-reports the JVM test count** — the harness reads one result XML (`-print -quit`) and reports e.g. "24 Tests" while the real suite is 60; the real count is confirmed out-of-band. Pre-existing harness quirk, unrelated to the 9-10 drift gate. LOW. Source: Blind Hunter (9-10 review).
+
 ## From WebView2 overlay-backgrounding hotfix, review iteration 1 — 2026-06-20
 
 Source: review of `spec-webview2-overlay-backgrounding.md` (edge-case-hunter). Out of the config-only scope (AC3); correctness is fine today.

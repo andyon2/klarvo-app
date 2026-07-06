@@ -42,6 +42,21 @@ export interface AppearanceContentProps {
   setLocalPreviewFontFamily: (v: string) => void;
   localPreviewFontSize: string;
   setLocalPreviewFontSize: (v: string) => void;
+  /**
+   * Story 11-2 (Task 4.3, GATE 1 decision 2026-07-01): hides the "Darstellung" width-preset
+   * picker on Android, where the panel is already MATCH_PARENT-width and the preset has no
+   * analog. The config field itself is untouched — desktop keeps using it; only this control
+   * is hidden. Defaults to false (desktop keeps showing it).
+   */
+  hidePanelForm?: boolean;
+  /**
+   * Story 11-2 code-review fix F5 (2026-07-01): hides the "Bg blur" slider on Android.
+   * `applyAppearance` never applies `previewBgBlur` there — `GradientDrawable` has no blur and
+   * `RenderEffect` needs API 31 while minSdk is 24 — so the control is inert on mobile. The
+   * config field itself is untouched — desktop keeps using it; only this control is hidden.
+   * Defaults to false (desktop keeps showing it). Mirrors `hidePanelForm` above.
+   */
+  hideBgBlur?: boolean;
 }
 
 // --- Component ---------------------------------------------------------------
@@ -67,6 +82,8 @@ export function AppearanceContent({
   localPreviewBorderRadius, setLocalPreviewBorderRadius,
   localPreviewFontFamily, setLocalPreviewFontFamily,
   localPreviewFontSize, setLocalPreviewFontSize,
+  hidePanelForm = false,
+  hideBgBlur = false,
 }: AppearanceContentProps) {
   return (
     <div className="flex flex-col gap-3 pl-4 pb-3 pt-1">
@@ -219,22 +236,24 @@ export function AppearanceContent({
               </div>
             </div>
 
-            {/* Bg Blur */}
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-klarvo-muted">Bg blur</span>
-                <span className="text-xs font-mono text-klarvo-primary">{localPreviewBgBlur}px</span>
+            {/* Bg Blur (Story 11-2 fix F5: hidden on Android — inert there, see hideBgBlur doc) */}
+            {!hideBgBlur && (
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-klarvo-muted">Bg blur</span>
+                  <span className="text-xs font-mono text-klarvo-primary">{localPreviewBgBlur}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={localPreviewBgBlur}
+                  onChange={(e) => setLocalPreviewBgBlur(parseInt(e.target.value, 10))}
+                  className="w-full accent-klarvo-primary"
+                />
               </div>
-              <input
-                type="range"
-                min={0}
-                max={20}
-                step={1}
-                value={localPreviewBgBlur}
-                onChange={(e) => setLocalPreviewBgBlur(parseInt(e.target.value, 10))}
-                className="w-full accent-klarvo-primary"
-              />
-            </div>
+            )}
 
             {/* Border Color */}
             <div className="flex flex-col gap-0.5">
@@ -346,29 +365,32 @@ export function AppearanceContent({
               </p>
             </div>
 
-            {/* Display Form preset picker */}
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>Darstellung</span>
-              <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                {(["compact", "comfortable", "wide"] as const).map((preset) => (
-                  <button
-                    key={preset}
-                    onClick={() => setLocalPreviewPanelForm(preset)}
-                    className={[
-                      "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      localPreviewPanelForm === preset
-                        ? "bg-klarvo-primary/15 text-klarvo-primary"
-                        : "text-klarvo-dim hover:text-klarvo-muted",
-                    ].join(" ")}
-                  >
-                    {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
-                  </button>
-                ))}
+            {/* Display Form preset picker — hidden on Android (Task 4.3): the panel is already
+                MATCH_PARENT-width there, so the desktop width preset has no analog. */}
+            {!hidePanelForm && (
+              <div className="flex flex-col gap-1.5">
+                <span className={LABEL_CLS}>Darstellung</span>
+                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
+                  {(["compact", "comfortable", "wide"] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => setLocalPreviewPanelForm(preset)}
+                      className={[
+                        "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
+                        localPreviewPanelForm === preset
+                          ? "bg-klarvo-primary/15 text-klarvo-primary"
+                          : "text-klarvo-dim hover:text-klarvo-muted",
+                      ].join(" ")}
+                    >
+                      {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-klarvo-muted">
+                  Changes the width of the preview panel.
+                </p>
               </div>
-              <p className="text-[11px] text-klarvo-muted">
-                Changes the width of the preview panel.
-              </p>
-            </div>
+            )}
           </div>
         </>
       )}

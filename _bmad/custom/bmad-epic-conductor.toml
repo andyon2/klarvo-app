@@ -1,0 +1,80 @@
+# Conductor contract for THIS project.
+#
+# Read EXPLICITLY by the global bmad-epic-conductor / bmad-story-conductor skills
+# at activation. This is orchestration MECHANICS, not code-derived testing rules:
+# it lives here on purpose because (a) `bmad-generate-project-context` owns and may
+# regenerate `project-context.md` and cannot reproduce this policy from a code scan,
+# and (b) only the conductor reads it — the dev/review workers never needed it.
+# `_bmad/custom/` is never touched by the generator, so a dropped run-guard line
+# can no longer break run-isolation silently.
+#
+# Worker-facing testing POSTURE (rendering-oracle anti-pattern, surface-DoD,
+# KlarvoTheme regeneration) stays in project-context.md where the workers load it.
+
+env_flag = "BMAD_CONDUCTOR"  # exported =1 for the whole run
+
+[smoke]
+# The UNATTENDED-producible proxy surface and how to drive it (GATE-4 + E7).
+command       = "scripts/android-smoke.sh"   # build / install / drive-to-state / capture
+proxy_surface = "headless Android emulator via scripts/android-emulator.sh — install --abi arm64-v8a so the arm64-only Rust .so runs via the x86_64 image's native-bridge"
+evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
+# The real target is NOT unattended-producible — never an automated-run target:
+real_target   = "the real Xiaomi/HyperOS device: its install confirmation needs a finger and the DEBUG_SET_STATE harness is dead on HyperOS (background restrictions). It is Andi's BATCHED visual gate only."
+
+[run_guard]
+# Mechanical run-isolation (Naht 2 + Naht 4): lock + HEAD-watch + real-target detach.
+command              = "scripts/conductor-guard.sh"  # subcommands: acquire / release / expect <sha> / check-head / break
+detaches_real_target = true
+# BMAD_CONDUCTOR=1 forces android-smoke.sh to the emulator and hard-rejects any non-emulator target —
+# this is why an unattended run physically cannot install onto the real phone.
+# Emulator lifecycle = RUN lifecycle: `conductor-guard.sh release` also runs
+# `android-emulator.sh stop` (the run owns the warm test surface, so run-end kills
+# it). The TTL watchdog inside android-emulator.sh (default 120min) is only the
+# BACKSTOP for crashed/lock-less runs — release is the clean prompt path. Added
+# 2026-06-17 after an orphaned klarvo-emu reparented to init pegged ~8 cores.
+stops_emulator_on_release = true
+
+[visual_oracle]
+# Two layers — the GATE-4 posture for surface stories (Naht 5).
+structural        = true   # the emulator IS a reliable STRUCTURAL oracle
+structural_method = "adb shell dumpsys window windows — assert overlay-window structure: count of APPLICATION_OVERLAY windows + their requested sizes / gravity / visibility (e.g. recording state = panel ~1080x525 bottom + idle bubble 162x162). A wrong window count/size is a real FAILED smoke, caught without a screenshot."
+pixel             = false  # NOT a pixel / aesthetic oracle
+pixel_note        = "stock Android (no HyperOS skin), software GPU, and system dialogs can force-hide overlays (mForceHideNonSystemOverlayWindow); on 2026-06-15 an emulator screenshot looked 'green' while the real Xiaomi was visibly broken. The pixel/aesthetic verdict is Andi's real-device gate, never an emulator screenshot."
+
+[tea]
+# DEFERRED INTENT MARKER — NOT wired. Both flags are OFF and the story-conductor does NOT
+# read them today (the 2026-06-26 wiring into the global skill was built, adversarially
+# reviewed, and REVERTED). This block only records the decision + what real wiring requires,
+# so the next session doesn't re-improvise it. See memory:
+# feedback_check_tea_and_retros_before_bmad_test_proposals.
+#
+# The idea: have the conductor ORCHESTRATE (never BE) the installed TEA skills —
+# bmad-testarch-atdd (red acceptance tests before dev) + bmad-testarch-trace (gate decision).
+# Sound in principle, but reverted because the build was broken-when-enabled AND mis-placed:
+#
+# WHY NOT NOW:
+#  - Klarvo's live work is the visual overhaul (Epic 8/9): atdd is weak there (no meaningful
+#    pre-test for "looks like the SOLL"; it HARD-HALTS for frontend stories with no framework)
+#    and GATE-4 smoke already rules. No CI ⇒ trace is an overridable LLM verdict, not a block.
+#  - Pre-building this into the SHARED, non-git-tracked global conductor skill = speculative
+#    optionality with no concrete consumer (violates code-simplicity + spirit of Epic-4's
+#    "don't touch the global conductor"). Wire it the day a logic epic actually needs it.
+#
+# WHAT REAL WIRING MUST FIRST SOLVE (found by the 2026-06-26 critics — solve these, with a
+# concrete logic story to test against, BEFORE editing the global skill):
+#  1. atdd→dev COMPOSITION: atdd writes scaffolds to _bmad-output/test-artifacts/ (an output
+#     dir), NOT the src/test tree; dev-story authors its own tests (Steps 5-6) and never runs
+#     atdd's. "red before dev, dev makes it green" is NOT automatic — the scaffolds must be
+#     ported into the real suite, or the value is nil.
+#  2. PLACEMENT: epic-conductor spawns each Phase-B story at startStage=dev (create ran in
+#     Phase A), so an atdd stage hung on the create->dev seam never fires in the autonomous
+#     night run. Anchor atdd to "no impl commit yet in baseRef..HEAD", not a stage label.
+#  3. FRAMEWORK FIRST: atdd hard-HALTS without an initialized test framework (TEA chain is
+#     test-design -> framework -> ci -> atdd). Klarvo has none; only pure Rust-backend stories
+#     pass its prereq on Cargo.toml.
+#  4. NO SELF-ATTESTED RED: don't have the atdd worker merely *claim* its tests run red
+#     (Epic-4 anti-pattern); the conductor/reviewer observes red itself.
+#  5. trace recording + trace-FAIL fix budget need their own channel/counter (don't abuse
+#     decisions[]; don't collide with maxFixRounds).
+# atdd       = false
+# trace_gate = false

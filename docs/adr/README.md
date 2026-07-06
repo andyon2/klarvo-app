@@ -36,6 +36,6 @@ Die globale Sequenz wird fortgeführt: **0001–0014** dokumentieren die (seit P
 | [0016](0016-android-path-parity-strategy.md) | Android-Pfad-Paritäts-Strategie — Linie + Wächter-Ausnahmen (A1 2026-06-10, A2 2026-06-12) | Accepted |
 | [0017](0017-shared-core-stt-path.md) | Shared-Core STT-Pfad — ein Rust-STT-Request + Guards über JNI (Hard Rule) | Accepted |
 | [0018](0018-android-bubble-rendering-tech.md) | Android Bubble Rendering Tech — View+Canvas vs ComposeView | Accepted |
-| 0019 | Cross-Platform Design-SSOT — *(lebt auf `conductor/epic-8/9`, reconcilet bei Merge)* | Accepted (elsewhere) |
-| 0020 | WebView2 Fixed-Runtime-Pin — *(lebt auf `conductor/epic-9`; durch 0021 **superseded**)* | Superseded |
+| [0019](0019-cross-platform-design-ssot.md) | Cross-Platform Design-SSOT — Tokens (Codegen) · Farb-Semantik (rot=Abbrechen) · Interaktions-Parität | Accepted |
+| [0020](0020-webview2-fixed-runtime-pin.md) | WebView2 Fixed-Runtime-Pin (.62) — Overlay-Occlusion-Regression Evergreen 149.69+ (durch 0021 superseded) | Superseded |
 | [0021](0021-native-desktop-overlays.md) | Native Desktop Overlays — Pille+Preview als native Layered-Windows statt WebView2 (überholt 0020) | Accepted |

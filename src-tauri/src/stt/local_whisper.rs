@@ -226,7 +226,7 @@ impl SttProvider for LocalWhisperProvider {
     /// - `SttError::LocalWhisper(...)` -- model load / inference failure.
     async fn transcribe(
         &self,
-        audio: Vec<u8>,
+        audio: &[u8],
         language: &str,
         prompt: Option<&str>,
     ) -> Result<String, SttError> {
@@ -237,7 +237,11 @@ impl SttProvider for LocalWhisperProvider {
         // Ensure model is loaded (cheap after first call).
         let ctx_arc = self.ensure_context()?;
 
-        // Clone values we need to move into the blocking closure.
+        // Clone values we need to move into the blocking closure. `audio` must
+        // become owned here since `spawn_blocking` requires `'static` — this
+        // copy only happens for an attempt that's actually running, unlike the
+        // eager defensive clone removed from the pipeline caller (finding G).
+        let audio = audio.to_vec();
         let model_path = self.model_path.clone();
         let language = language.to_owned();
         let prompt = prompt.map(|p| p.to_owned());
@@ -389,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn test_transcribe_empty_audio_returns_error() {
         let provider = LocalWhisperProvider::new("/tmp/nonexistent-model.bin");
-        let result = provider.transcribe(vec![], "de", None).await;
+        let result = provider.transcribe(&[], "de", None).await;
         assert!(
             matches!(result, Err(SttError::EmptyAudio)),
             "expected EmptyAudio, got: {result:?}"
@@ -402,7 +406,7 @@ mod tests {
         let provider = LocalWhisperProvider::new("/tmp/definitely-does-not-exist-12345.bin");
         // Non-empty dummy WAV header (enough to pass the empty check).
         let dummy = vec![0u8; 64];
-        let result = provider.transcribe(dummy, "de", None).await;
+        let result = provider.transcribe(&dummy, "de", None).await;
         assert!(
             matches!(result, Err(SttError::LocalWhisper(_))),
             "expected LocalWhisper error for missing model, got: {result:?}"

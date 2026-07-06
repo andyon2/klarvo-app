@@ -74,6 +74,7 @@ const CHECK_SIZE: f32 = 11.0;
 const WM_PILL_SET_STATE: u32 = 0x8001; // WPARAM=state_code, LPARAM=clipboard_only
 const WM_PILL_SET_RMS: u32 = 0x8002;   // WPARAM=f32::to_bits()
 const WM_PILL_SET_MODE: u32 = 0x8003;  // WPARAM=ptr to Box<String> (caller Box::into_raw)
+const WM_PILL_SET_MSG: u32 = 0x8004;   // WPARAM=ptr to Box<Option<String>> (dynamic status text for Error/Warning)
 const WM_PILL_SHUTDOWN: u32 = 0x8010;  // Request orderly teardown; handler calls DestroyWindow
 
 // Timer for spinner animation and done/error timeout
@@ -84,6 +85,10 @@ const TIMER_MS: u32 = 33; // ~30 fps
 const DONE_NORMAL_MS: u128 = 1500;
 const DONE_CLIPBOARD_MS: u128 = 4000;
 const ERROR_IDLE_MS: u128 = 2500;
+// Transient warning safety timeout (12-1 FR4). Mirrors FloatingBar.tsx's 4000ms
+// warning safety timer: the follow-up Done/Error event normally overrides the
+// warning first; this only fires if that follow-up is ever dropped.
+const WARNING_IDLE_MS: u128 = 4000;
 
 // ---------------------------------------------------------------------------
 // State
@@ -99,6 +104,11 @@ pub enum NativePillState {
     Done,
     DoneClipboard,
     Error,
+    /// Transient non-fatal warning (12-1 FR4): a fallback/degrade message shown
+    /// briefly in the pill, then overridden by the follow-up Done/Error event.
+    /// Amber, dynamic message text (`status_msg`). Ported from FloatingBar.tsx
+    /// isWarning at the WebView2→native migration (Epic 10 × Epic 12 integration).
+    Warning,
 }
 
 impl NativePillState {
@@ -121,6 +131,8 @@ impl NativePillState {
             NativePillState::Done => (74.0 / 255.0, 222.0 / 255.0, 128.0 / 255.0),
             NativePillState::DoneClipboard => (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0),
             NativePillState::Error => (255.0 / 255.0, 115.0 / 255.0, 105.0 / 255.0),
+            // Amber #FFA344 — matches FloatingBar.tsx isWarning color (and DoneClipboard).
+            NativePillState::Warning => (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0),
             NativePillState::Idle => (0.0, 0.0, 0.0),
         }
     }
@@ -137,6 +149,7 @@ impl NativePillState {
                 }
             }
             5 => NativePillState::Error,
+            6 => NativePillState::Warning,
             _ => NativePillState::Idle,
         }
     }
@@ -157,6 +170,12 @@ struct PillWindowState {
     spinner_deg: f32,
     done_at: Option<Instant>,
     error_at: Option<Instant>,
+    // Transient warning display (12-1 FR4). Set when a Warning state arrives;
+    // handle_timer auto-dismisses to Idle after WARNING_IDLE_MS if no follow-up.
+    warning_at: Option<Instant>,
+    // Dynamic status text rendered for Error/Warning (the pipeline's taxonomy
+    // message, e.g. "⚠ DeepSeek langsam → OpenAI"). None → static label fallback.
+    status_msg: Option<String>,
     drag: Option<Drag>,
     last_bar_moved_emit: Option<Instant>,
     // GDI resources
@@ -221,7 +240,11 @@ impl NativePill {
     }
 
     /// Update pill state from a `PipelineState`.
-    /// Skips `Warning` (transient toast — pill state unchanged per FloatingBar parity).
+    ///
+    /// `Warning` now maps to a transient amber display (12-1 FR4 native re-port).
+    /// The dynamic message text is delivered separately via `set_status_msg`,
+    /// which callers post *before* `set_state` so it is present when the pill
+    /// renders (PostMessage is FIFO per window).
     pub fn set_state(
         &self,
         state: &crate::hotkey::PipelineState,
@@ -235,7 +258,7 @@ impl NativePill {
             PipelineState::Cleaning => 3,
             PipelineState::Done => 4,
             PipelineState::Error => 5,
-            PipelineState::Warning => return, // ignored
+            PipelineState::Warning => 6,
         };
         let lparam = if clipboard_only { 1isize } else { 0isize };
         unsafe {
@@ -269,6 +292,26 @@ impl NativePill {
             if PostMessageW(
                 Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_MODE,
+                WPARAM(boxed as usize),
+                LPARAM(0),
+            )
+            .is_err()
+            {
+                drop(Box::from_raw(boxed));
+            }
+        }
+    }
+
+    /// Set the dynamic status message rendered for the next Error/Warning state
+    /// (12-1 FR4). Post this *before* the matching `set_state` so the pill has
+    /// the text when it renders. `None` clears any previous message.
+    pub fn set_status_msg(&self, msg: Option<String>) {
+        let boxed = Box::into_raw(Box::new(msg));
+        unsafe {
+            // If PostMessage fails the box leaks (window may be gone) — acceptable.
+            if PostMessageW(
+                Some(HWND(self.hwnd as *mut _)),
+                WM_PILL_SET_MSG,
                 WPARAM(boxed as usize),
                 LPARAM(0),
             )
@@ -482,6 +525,38 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
+/// Truncate `text` to fit `max_w` physical px in the font currently selected in
+/// `dc`, appending an ellipsis ("…") when cut. Returns the UTF-16 slice WITHOUT
+/// a trailing NUL (ready to hand straight to `TextOutW`). Used for the dynamic
+/// Error/Warning status message (12-1 FR4), which can exceed the ~200px pill.
+///
+/// Iterative shrink measured with `GetTextExtentPoint32W` (already used elsewhere):
+/// message length is tiny (< ~40 chars in the pill), so the O(n) measure loop is
+/// cheap and avoids the extra `GetTextExtentExPointW` binding.
+unsafe fn fit_text(dc: HDC, text: &str, max_w: i32) -> Vec<u16> {
+    let full = to_wide(text);
+    let chars: Vec<u16> = full[..full.len().saturating_sub(1)].to_vec(); // drop NUL
+    let mut sz = SIZE { cx: 0, cy: 0 };
+    if max_w <= 0 {
+        return chars;
+    }
+    if GetTextExtentPoint32W(dc, &chars, &mut sz).as_bool() && sz.cx <= max_w {
+        return chars;
+    }
+    const ELLIPSIS: u16 = 0x2026; // …
+    // Shrink from the end until "<prefix>…" fits.
+    let mut n = chars.len();
+    while n > 0 {
+        n -= 1;
+        let mut cand: Vec<u16> = chars[..n].to_vec();
+        cand.push(ELLIPSIS);
+        if GetTextExtentPoint32W(dc, &cand, &mut sz).as_bool() && sz.cx <= max_w {
+            return cand;
+        }
+    }
+    vec![ELLIPSIS]
+}
+
 /// Main render: build the frame and call UpdateLayeredWindow.
 unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
     let pw = s.phys_w;
@@ -608,7 +683,9 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             }
         }
 
-        NativePillState::Error | NativePillState::Idle => {}
+        // Error/Warning draw no shape — only the K logo + dynamic message text
+        // (composited in the GDI section below).
+        NativePillState::Error | NativePillState::Warning | NativePillState::Idle => {}
     }
 
     // --- 2. Copy RGBA→BGRA into main DIB ---
@@ -691,12 +768,31 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             }
 
             NativePillState::Error => {
+                // 12-1 FR4: render the pipeline's terminal message (e.g.
+                // "✗ Transkription fehlgeschlagen — Audio gesichert"), truncated
+                // to the pill's label width. Falls back to "Error" if none.
                 SelectObject(s.tmp_dc, s.font_label.into());
-                let text = to_wide("Error");
+                let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
+                let msg = s.status_msg.as_deref().unwrap_or("Error");
+                let text = fit_text(s.tmp_dc, msg, avail);
                 let tx = LABEL_X_AFTER_SPIN * sc;
                 let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 115, 105);
+                core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+            }
+
+            NativePillState::Warning => {
+                // 12-1 FR4: transient amber fallback/degrade message (e.g.
+                // "⚠ DeepSeek langsam → OpenAI"), same treatment as Error but amber.
+                SelectObject(s.tmp_dc, s.font_label.into());
+                let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
+                let msg = s.status_msg.as_deref().unwrap_or("Warning");
+                let text = fit_text(s.tmp_dc, msg, avail);
+                let tx = LABEL_X_AFTER_SPIN * sc;
+                let ty = ((PILL_H - 11.0) / 2.0) * sc;
+                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
+                composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 163, 68);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
 
@@ -955,6 +1051,20 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         if started.elapsed().as_millis() >= ERROR_IDLE_MS {
             s.display = NativePillState::Idle;
             s.error_at = None;
+            s.status_msg = None;
+            stop_timer(hwnd, s);
+            render_frame(hwnd, s);
+        }
+        return;
+    }
+
+    // Warning safety timeout (12-1 FR4) — only fires if the follow-up
+    // Done/Error event never arrived to override the transient warning.
+    if let Some(started) = s.warning_at {
+        if started.elapsed().as_millis() >= WARNING_IDLE_MS {
+            s.display = NativePillState::Idle;
+            s.warning_at = None;
+            s.status_msg = None;
             stop_timer(hwnd, s);
             render_frame(hwnd, s);
         }
@@ -1019,6 +1129,7 @@ unsafe extern "system" fn pill_wnd_proc(
             s.spinner_deg = 0.0;
             s.done_at = None;
             s.error_at = None;
+            s.warning_at = None;
             s.waveform = [0.0f32; 20];
             s.waveform_pos = 0; // reset ring-buffer head on state change
 
@@ -1029,6 +1140,12 @@ unsafe extern "system" fn pill_wnd_proc(
                 }
                 NativePillState::Error => {
                     s.error_at = Some(Instant::now());
+                    start_timer(hwnd, s);
+                }
+                NativePillState::Warning => {
+                    // Transient (12-1 FR4): safety-dismiss after WARNING_IDLE_MS;
+                    // normally the follow-up Done/Error SET_STATE overrides first.
+                    s.warning_at = Some(Instant::now());
                     start_timer(hwnd, s);
                 }
                 NativePillState::Transcribing | NativePillState::Cleaning => {
@@ -1073,6 +1190,16 @@ unsafe extern "system" fn pill_wnd_proc(
             if matches!((*state_ptr).display, NativePillState::Recording) {
                 render_frame(hwnd, &mut *state_ptr);
             }
+            LRESULT(0)
+        }
+
+        WM_PILL_SET_MSG => {
+            if state_ptr.is_null() { return LRESULT(0); }
+            // Caller allocated Box<Option<String>> via into_raw; we own it now.
+            // No render here — the matching WM_PILL_SET_STATE arrives next (FIFO)
+            // and renders with this message present.
+            let msg = Box::from_raw(wparam.0 as *mut Option<String>);
+            (*state_ptr).status_msg = *msg;
             LRESULT(0)
         }
 
@@ -1339,6 +1466,8 @@ fn pill_thread(
             spinner_deg: 0.0,
             done_at: None,
             error_at: None,
+            warning_at: None,
+            status_msg: None,
             drag: None,
             last_bar_moved_emit: None,
             main_dc,

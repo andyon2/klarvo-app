@@ -1,0 +1,35 @@
+2:  Window #0 Window{3be7738 u0 ScreenDecorOverlayBottom}:
+10:    Requested w=1080 h=63 mLayoutSeq=142
+30:  Window #1 Window{9d3479e u0 ScreenDecorOverlay}:
+38:    Requested w=1080 h=128 mLayoutSeq=142
+58:  Window #2 Window{3f515f9 u0 SecondaryHomeHandle0}:
+66:    Requested w=-1 h=-1 mLayoutSeq=60
+83:  Window #3 Window{9f61003 u0 EdgeBackGestureHandler0}:
+90:    Requested w=-1 h=-1 mLayoutSeq=54
+107:  Window #4 Window{1c57ec0 u0 NavigationBar0}:
+161:    Requested w=1080 h=126 mLayoutSeq=142
+185:  Window #5 Window{45c54f8 u0 NotificationShade}:
+192:    Requested w=1080 h=2400 mLayoutSeq=66
+211:  Window #6 Window{b237a2f u0 StatusBar}:
+255:    Requested w=1080 h=128 mLayoutSeq=142
+277:  Window #7 Window{b9682b1 u0 com.klarvo.voice}:
+279:    mOwnerUid=10194 showForAllUsers=false package=com.klarvo.voice appop=SYSTEM_ALERT_WINDOW
+280:    mAttrs={(0,0)(fillxwrap) gr=BOTTOM CENTER_VERTICAL sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+285:    Requested w=1080 h=525 mLayoutSeq=142
+303:  Window #8 Window{5ae0613 u0 com.klarvo.voice}:
+305:    mOwnerUid=10194 showForAllUsers=false package=com.klarvo.voice appop=SYSTEM_ALERT_WINDOW
+306:    mAttrs={(0,880)(435x178) gr=TOP START CENTER sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+311:    Requested w=435 h=178 mLayoutSeq=142
+329:  Window #9 Window{83ce1a3 u0 ShellDropTarget}:
+332:    mAttrs={(0,0)(fillxfill) sim={adjust=pan} layoutInDisplayCutoutMode=always ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+336:    Requested w=1080 h=2400 mLayoutSeq=5
+353:  Window #10 Window{3ab340c u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}:
+362:    Requested w=1080 h=2400 mLayoutSeq=142
+383:  Window #11 Window{ff6261 u0 InputMethod}:
+392:    Requested w=1080 h=2400 mLayoutSeq=96
+416:  Window #12 Window{70bfe7d u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}:
+425:    Requested w=1080 h=2400 mLayoutSeq=142
+448:  Window #13 Window{f0b18f2 u0 com.android.systemui.wallpapers.ImageWallpaper}:
+455:    Requested w=922 h=1024 mLayoutSeq=142
+499:    5 visible windows: [9d3479e ScreenDecorOverlay, frame=[0,0,1080,128], touchableRegion=SkRegion((492,0,610,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@eacd0b4, displayId=0, isClone=false, b237a2f StatusBar, frame=[0,0,1080,128], touchableRegion=SkRegion((0,0,1080,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@d20cb10, displayId=0, isClone=false, b9682b1 com.klarvo.voice, frame=[0,1812,1080,2337], touchableRegion=SkRegion((0,1812,1080,2337)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -1812.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@783663b, displayId=0, isClone=false, 5ae0613 com.klarvo.voice, frame=[0,880,435,1058], touchableRegion=SkRegion((0,880,435,1058)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -880.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@a41ce4d, displayId=0, isClone=false, 70bfe7d com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity, frame=[0,0,1080,2400], touchableRegion=SkRegion((0,0,1080,2400)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@9371227, displayId=0, isClone=false]
+503:  Display #0: [9d3479e ScreenDecorOverlay, frame=[0,0,1080,128], touchableRegion=SkRegion((492,0,610,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@eacd0b4, displayId=0, isClone=false, b237a2f StatusBar, frame=[0,0,1080,128], touchableRegion=SkRegion((0,0,1080,128)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@d20cb10, displayId=0, isClone=false, b9682b1 com.klarvo.voice, frame=[0,1812,1080,2337], touchableRegion=SkRegion((0,1812,1080,2337)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -1812.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@783663b, displayId=0, isClone=false, 5ae0613 com.klarvo.voice, frame=[0,880,435,1058], touchableRegion=SkRegion((0,880,435,1058)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -880.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@a41ce4d, displayId=0, isClone=false, 70bfe7d com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity, frame=[0,0,1080,2400], touchableRegion=SkRegion((0,0,1080,2400)), scaleFactor=1.0, transform=Matrix{[1.0, 0.0, -0.0][0.0, 1.0, -0.0][0.0, 0.0, 1.0]}, windowToken=android.os.BinderProxy@9371227, displayId=0, isClone=false]

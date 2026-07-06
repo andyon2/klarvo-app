@@ -66,6 +66,9 @@ const MOCK_SETTINGS: AppSettings = {
   deviceId: "preview-device-0000",
   bubbleSize: 56,
   bubbleOpacity: 90,
+  bubbleSizeDp: 0,
+  bubbleEdgeSnap: true,
+  recordingButtonSizeDp: 72,
   localWhisperModel: "small",
   localWhisperGpu: false,
   insertAndSendSlot1: false,
@@ -307,6 +310,11 @@ export async function saveSettings(
   previewBorderRadius?: number | null,
   previewFontFamily?: string | null,
   previewFontSize?: string | null,
+  // Story 9.3 bubble size + snap controls.
+  bubbleSizeDp?: number | null,
+  bubbleEdgeSnap?: boolean | null,
+  // Story 9-15 Re-Scope: recording TAP-surface button diameter (∈ {60,72,88}, default 72).
+  recordingButtonSizeDp?: number | null,
 ): Promise<void> {
   if (isPreviewMode) return mockAsync(undefined);
   await invoke("save_settings", {
@@ -359,6 +367,9 @@ export async function saveSettings(
     previewBorderRadius: previewBorderRadius ?? null,
     previewFontFamily: previewFontFamily ?? null,
     previewFontSize: previewFontSize ?? null,
+    bubbleSizeDp: bubbleSizeDp ?? null,
+    bubbleEdgeSnap: bubbleEdgeSnap ?? null,
+    recordingButtonSizeDp: recordingButtonSizeDp ?? null,
   });
 }
 
@@ -487,6 +498,20 @@ export async function addHistoryEntry(
 ): Promise<number> {
   if (isPreviewMode) return mockAsync(0);
   return invoke<number>("add_history_entry", { text, rawText, style, language });
+}
+
+/** Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on a
+ * pending entry's stored WAV. Resolves with the promoted (done) entry on
+ * success; rejects (entry stays pending) on failure. */
+export async function reprocessPendingEntry(id: number): Promise<HistoryEntry> {
+  if (isPreviewMode) return Promise.reject(new Error("[preview] reprocessPendingEntry not available"));
+  return invoke<HistoryEntry>("reprocess_pending_entry", { id });
+}
+
+/** Story 12-2 (AC6) — "Verwerfen": deletes a pending entry and its WAV. */
+export async function discardPendingEntry(id: number): Promise<void> {
+  if (isPreviewMode) return mockAsync(undefined);
+  await invoke("discard_pending_entry", { id });
 }
 
 // --- Stats ---

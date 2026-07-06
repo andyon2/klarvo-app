@@ -1,0 +1,12 @@
+07-02 23:25:17.853 22217 30272 W KlarvoOverlayService: Text cleanup failed -- trying fallback provider
+07-02 23:25:17.861 22217 30272 W KlarvoOverlayService: No cleanup fallback provider available -- using raw transcript
+07-02 23:25:18.085  1685  3051 D CoreBackPreview: Window{4fe75b0 u0 Toast}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@9cd3cdc, mPriority=0, mIsAnimationCallback=false}
+07-02 23:25:18.103  1685  5525 W WindowManager: finishDrawingWindow: Window{4fe75b0 u0 Toast} mDrawState=DRAW_PENDING
+07-02 23:25:21.980  1685  5525 D CoreBackPreview: Window{4fe75b0 u0 Toast}: Setting back callback null
+07-02 23:25:21.991  1685  1913 D WindowManager: setParent old=WindowToken{1f607d6 type=2005 android.os.Binder@9602ff1},new=null,this window=Window{4fe75b0 u0 Toast},callers=com.android.server.wm.WindowContainer.removeChild:821 com.android.server.wm.WindowContainer.removeImmediately:879 com.android.server.wm.WindowState.removeImmediately:2492 com.android.server.wm.WindowState.removeIfPossible:2661 com.android.server.wm.WindowManagerService.removeWindow:2372 com.android.server.wm.Session.remove:245 
+07-02 23:25:22.005  1685  1913 W NotificationService: Toast already killed. pkg=android token=android.os.Binder@1ac4e55
+07-02 23:25:22.073  1685  5525 D CoreBackPreview: Window{edef5f8 u0 Toast}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@30979a4, mPriority=0, mIsAnimationCallback=false}
+07-02 23:25:22.109  1685  5525 W WindowManager: finishDrawingWindow: Window{edef5f8 u0 Toast} mDrawState=DRAW_PENDING
+07-02 23:25:26.079  1685  5525 D CoreBackPreview: Window{edef5f8 u0 Toast}: Setting back callback null
+07-02 23:25:26.091  1685  1913 D WindowManager: setParent old=WindowToken{8a2cb62 type=2005 android.os.Binder@b36da2d},new=null,this window=Window{edef5f8 u0 Toast},callers=com.android.server.wm.WindowContainer.removeChild:821 com.android.server.wm.WindowContainer.removeImmediately:879 com.android.server.wm.WindowState.removeImmediately:2492 com.android.server.wm.WindowState.removeIfPossible:2661 com.android.server.wm.WindowManagerService.removeWindow:2372 com.android.server.wm.Session.remove:245 
+07-02 23:25:26.105  1685  1913 W NotificationService: Toast already killed. pkg=com.klarvo.voice token=android.os.BinderProxy@39d290e

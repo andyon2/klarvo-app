@@ -335,7 +335,7 @@ fn transcribe_with_groq(
     let start = std::time::Instant::now();
     // Conditioning prompt: helps Groq recognize "Klarvo" as a keyword.
     let prompt = Some("Klarvo toggle, Klarvo start, Klarvo auto-stop, Klarvo autostop, Klarvo full auto, Klarvo stop, Klarvo stopp, Klarvo cancel, Klarvo abbrechen, Klarvo off, Klarvo aus");
-    let result = rt.block_on(provider.transcribe(wav, language, prompt));
+    let result = rt.block_on(provider.transcribe(&wav, language, prompt));
 
     log::debug!(
         "[voice_command] Groq completed in {:.1}s",

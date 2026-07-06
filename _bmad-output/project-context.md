@@ -13,7 +13,7 @@ sections_completed:
     'anti_patterns',
   ]
 status: 'complete'
-rule_count: 29
+rule_count: 31
 optimized_for_llm: true
 ---
 
@@ -60,7 +60,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 - **Tests are inline `#[cfg(test)]` modules**, not a separate `tests/` tree. Snapshot tests use `insta`; snapshots live in `src-tauri/src/snapshots/`. Accept with `cargo insta review`.
 - **Linux `cargo test` + lint do NOT satisfy the DoD for surface/UI stories.** Hard gate: a real **Windows release build + manual press-to-paste smoke** is required. (`cargo check` and Linux tests mask Tauri-runtime bugs and Windows-only code paths.) **Before the smoke, run the applicable items of `docs/surface-smoke-checklist.md`** — the running ledger of traps that are green on Linux (camelCase config keys, Settings resync-`useEffect`, FloatingBar separate-window reactivity, window-geometry/region clip, event push-wiring). Mechanical check, not a self-attestation (Epic-5 retro AI-1).
-- **Android changes require an on-device smoke** via `scripts/android-smoke.sh` before a story is done.
+- **Android changes require an on-device/emulator smoke before a story is done** via `scripts/android-smoke.sh` (the real Xiaomi/HyperOS device is Andi's *batched* visual gate). `android-smoke.sh` runs a build-time gate (`node scripts/gen-android-theme.mjs --check`) that fails if `KlarvoTheme.kt` drifted from the canon CSS (ADR-0019) — **regenerate, don't hand-edit**.
+- **Boot the unattended emulator ONLY via `scripts/android-emulator.sh` — never hand-roll `emulator -avd …`.** The script boots the AVD detached (`nohup`, so it survives the booting shell and is shared warm across steps) and arms a self-limiting **watchdog**: a hard TTL (`KLARVO_EMU_TTL_SECS`, default 7200s/120min) kills the AVD even if the run crashes or forgets — so a forgotten emulator can't peg ~8 cores indefinitely (born 2026-06-17, an orphaned `klarvo-emu` reparented to `init` did exactly that). **Stop it explicitly when done with `scripts/android-emulator.sh stop`** (conductor runs do this automatically at `conductor-guard release`). A direct `emulator -avd` call bypasses the reaper → orphan risk. Caveat for **shared/concurrent** use: the TTL is a blunt wall-clock backstop anchored to the *first* boot, **not** usage-aware — it can kill an emulator another agent is actively using at the boundary; the usage-aware option is the opt-in idle-reaper (`KLARVO_EMU_IDLE_SECS` + periodic `android-emulator.sh bump`).
 - **Bind tests to the real code paths/files they cover**, not to a parallel mock — divergence otherwise goes undetected (Epic-1 lesson; a real paste-path leak was caught this way).
 
 ### Code Quality & Style Rules
@@ -75,6 +76,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Canonical Windows build is `scripts/sync-and-build.ps1`** (robocopy from `\\wsl$\…\products\klarvo` → `D:\apps\klarvo` → Tauri build). Dev runs in WSL; Andy builds/tests on Windows. **Signing gotcha:** the Tauri signer hangs → run `rsign` afterwards (`scripts/sign-installer.sh`).
 - **Android build/sign/freshness:** `scripts/android-build.sh`. There is **no in-UI version/About screen** — verify a fresh APK landed via the build script's timestamp gate + APK filename (or `adb … lastUpdateTime`), NOT a version number.
 - **When touching `shells/windows/`**, verify the Windows cross-compile before closing: `cargo check --target x86_64-pc-windows-gnu` (Linux tests mask Win-shell bugs).
+- **Unattended multi-story runs (epic-/story-conductor) read their orchestration contract from `_bmad/custom/bmad-epic-conductor.toml`** — run-guard, smoke surface, `BMAD_CONDUCTOR` flag, and visual-oracle posture live there (generator-immune, conductor-only), NOT in this file. Do not re-add conductor mechanics here.
 - **Commits:** small and scoped, **never `git add .`**. Branch off `main`; do not commit directly to `main`. Keep BMAD planning/story artifacts committed per-story.
 
 ### Critical Don't-Miss Rules

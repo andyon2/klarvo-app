@@ -145,18 +145,31 @@ class KlarvoAccessibilityService : AccessibilityService() {
      * Inspects the current window list for a window of type TYPE_INPUT_METHOD.
      * Calls KlarvoOverlayService.onKeyboardVisibilityChanged() with the result.
      *
+     * When the IME is visible, also extracts its height via getBoundsInScreen() (API 21+,
+     * within minSdk 24) and calls adjustBubbleForKeyboard() so the bubble jumps above
+     * the keyboard with the configured 56px nav-bar clearance.
+     *
      * Must be called from the accessibility thread (which onAccessibilityEvent uses);
-     * KlarvoOverlayService.onKeyboardVisibilityChanged() posts to the main handler
-     * internally, so cross-thread calls are safe.
+     * KlarvoOverlayService methods post to the main handler internally, so cross-thread
+     * calls are safe.
      */
     private fun notifyKeyboardState() {
-        val imeVisible = try {
-            windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        val imeWindow = try {
+            windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
         } catch (e: Exception) {
-            KlarvoLogger.w(TAG,"windows list unavailable", e)
+            KlarvoLogger.w(TAG, "windows list unavailable", e)
             return
         }
+        val imeVisible = imeWindow != null
         KlarvoOverlayService.instance?.onKeyboardVisibilityChanged(imeVisible)
+        if (imeVisible && imeWindow != null) {
+            val rect = android.graphics.Rect()
+            imeWindow.getBoundsInScreen(rect)
+            val keyboardHeightPx = rect.height()
+            if (keyboardHeightPx > 0) {
+                KlarvoOverlayService.instance?.adjustBubbleForKeyboard(keyboardHeightPx)
+            }
+        }
     }
 
     /**

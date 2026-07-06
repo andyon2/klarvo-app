@@ -465,7 +465,7 @@ pub mod android {
 
         // 4. Run transcription (blocks inside spawn_blocking inside the provider).
         let result = provider
-            .transcribe(wav_bytes, &lang, None)
+            .transcribe(&wav_bytes, &lang, None)
             .await
             .map_err(|e| format!("transcription_error: {e}"))?;
 

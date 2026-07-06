@@ -79,6 +79,8 @@ export interface SettingsPanelProps {
     previewBorderWidth?: number | null, previewBorderRadius?: number | null,
     previewFontFamily?: string | null,
     previewFontSize?: string | null,
+    bubbleSizeDp?: number | null, bubbleEdgeSnap?: boolean | null,
+    recordingButtonSizeDp?: number | null,
   ) => Promise<void>;
   onLanguageChange: (lang: string) => void;
   onStyleChange: (style: CleanupStyle) => void;
@@ -156,6 +158,10 @@ export function SettingsPanel({
   const [tursoToken, setTursoToken] = useState("");
   const [localBubbleSize, setLocalBubbleSize] = useState(loadedSettings?.bubbleSize ?? 1.0);
   const [localBubbleOpacity, setLocalBubbleOpacity] = useState(loadedSettings?.bubbleOpacity ?? 0.85);
+  // Story 9.3: manual bubble size (0 = Auto) and edge-snap toggle.
+  const [localBubbleSizeDp, setLocalBubbleSizeDp] = useState(loadedSettings?.bubbleSizeDp ?? 0);
+  const [localBubbleEdgeSnap, setLocalBubbleEdgeSnap] = useState(loadedSettings?.bubbleEdgeSnap ?? true);
+  const [localRecordingButtonSizeDp, setLocalRecordingButtonSizeDp] = useState(loadedSettings?.recordingButtonSizeDp ?? 72);
   const [localWhisperModel, setLocalWhisperModel] = useState(loadedSettings?.localWhisperModel ?? "small");
   const [localWhisperGpu, setLocalWhisperGpu] = useState(loadedSettings?.localWhisperGpu ?? true);
   const [localInsertAndSendSlot1, setLocalInsertAndSendSlot1] = useState(loadedSettings?.insertAndSendSlot1 ?? false);
@@ -300,6 +306,9 @@ export function SettingsPanel({
       setLocalTursoUrl(loadedSettings.tursoUrl ?? "");
       setLocalBubbleSize(loadedSettings.bubbleSize ?? 1.0);
       setLocalBubbleOpacity(loadedSettings.bubbleOpacity ?? 0.85);
+      setLocalBubbleSizeDp(loadedSettings.bubbleSizeDp ?? 0);
+      setLocalBubbleEdgeSnap(loadedSettings.bubbleEdgeSnap ?? true);
+      setLocalRecordingButtonSizeDp(loadedSettings.recordingButtonSizeDp ?? 72);
       setLocalWhisperModel(loadedSettings.localWhisperModel ?? "small");
       setLocalWhisperGpu(loadedSettings.localWhisperGpu ?? true);
       setLocalInsertAndSendSlot1(loadedSettings.insertAndSendSlot1 ?? false);
@@ -375,6 +384,9 @@ export function SettingsPanel({
       localTursoUrl !== (loadedSettings.tursoUrl ?? "") ||
       localBubbleSize !== (loadedSettings.bubbleSize ?? 1.0) ||
       localBubbleOpacity !== (loadedSettings.bubbleOpacity ?? 0.85) ||
+      localBubbleSizeDp !== (loadedSettings.bubbleSizeDp ?? 0) ||
+      localBubbleEdgeSnap !== (loadedSettings.bubbleEdgeSnap ?? true) ||
+      localRecordingButtonSizeDp !== (loadedSettings.recordingButtonSizeDp ?? 72) ||
       localWhisperModel !== (loadedSettings.localWhisperModel ?? "small") ||
       localWhisperGpu !== (loadedSettings.localWhisperGpu ?? true) ||
       localInsertAndSendSlot1 !== (loadedSettings.insertAndSendSlot1 ?? false) ||
@@ -410,7 +422,10 @@ export function SettingsPanel({
     || (loadedSettings?.previewBorderWidth ?? 1) !== localPreviewBorderWidth
     || (loadedSettings?.previewBorderRadius ?? 14) !== localPreviewBorderRadius
     || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily
-    || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize;
+    || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize
+    || (loadedSettings?.bubbleSizeDp ?? 0) !== localBubbleSizeDp
+    || (loadedSettings?.bubbleEdgeSnap ?? true) !== localBubbleEdgeSnap
+    || (loadedSettings?.recordingButtonSizeDp ?? 72) !== localRecordingButtonSizeDp;
     setIsDirty(dirty);
   }, [
     loadedSettings, localLang, localStyle, localHotkey, localHotkeyMode, localAudioDevice,
@@ -425,6 +440,7 @@ export function SettingsPanel({
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
     localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
+    localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
   ]);
 
   // --- useCallback handlers ---
@@ -545,6 +561,8 @@ export function SettingsPanel({
         localPreviewBorderWidth, localPreviewBorderRadius,
         localPreviewFontFamily,
         localPreviewFontSize,
+        localBubbleSizeDp, localBubbleEdgeSnap,
+        localRecordingButtonSizeDp,
       );
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
@@ -592,6 +610,7 @@ export function SettingsPanel({
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
     localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
+    localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
     onSave,
   ]);
 
@@ -664,8 +683,6 @@ export function SettingsPanel({
   // or future use but is not yet wired into the new drill-down render.
   void localAutostart;
   void localWhisperMode;
-  void localBubbleSize;
-  void localBubbleOpacity;
   void localWebhookUrl;
   void localTursoUrl;
   void localVoiceCommandEnabled;
@@ -753,6 +770,12 @@ export function SettingsPanel({
                 setLocalPasteDelayMs={setLocalPasteDelayMs}
                 localAutoCapitalize={localAutoCapitalize}
                 setLocalAutoCapitalize={setLocalAutoCapitalize}
+                localBubbleSizeDp={localBubbleSizeDp}
+                setLocalBubbleSizeDp={setLocalBubbleSizeDp}
+                localBubbleEdgeSnap={localBubbleEdgeSnap}
+                setLocalBubbleEdgeSnap={setLocalBubbleEdgeSnap}
+                localRecordingButtonSizeDp={localRecordingButtonSizeDp}
+                setLocalRecordingButtonSizeDp={setLocalRecordingButtonSizeDp}
               />
             )}
             {activeCategory === "license" && (
@@ -805,6 +828,8 @@ export function SettingsPanel({
                 setLocalPreviewFontFamily={setLocalPreviewFontFamily}
                 localPreviewFontSize={localPreviewFontSize}
                 setLocalPreviewFontSize={setLocalPreviewFontSize}
+                hidePanelForm={!isDesktop}
+                hideBgBlur={!isDesktop}
               />
             )}
             {activeCategory === "language" && (

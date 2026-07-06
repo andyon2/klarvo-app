@@ -200,7 +200,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
         }
     };
 
-    let result = runtime.block_on(client.transcribe(wav_bytes, &lang, prompt.as_deref()));
+    let result = runtime.block_on(client.transcribe(&wav_bytes, &lang, prompt.as_deref()));
 
     match result {
         Ok(text) => {

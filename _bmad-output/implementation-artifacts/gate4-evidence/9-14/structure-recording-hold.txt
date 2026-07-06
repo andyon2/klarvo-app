@@ -1,0 +1,28 @@
+GATE-4 structural evidence — Story 9-14 HOLD-mode push-to-talk (B-Sprache REBUILD), 2026-06-30
+Conductor self-verification on the FIXED build c431ba5 (post code-review A/B/C).
+Surface: headless emulator-5554 (BMAD_CONDUCTOR=1), arm64-v8a APK via native-bridge.
+APK: app-universal-debug.apk, lastUpdateTime 2026-06-30 23:33:15 (commit c431ba5).
+
+== Drive ==
+am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ez hold_mode true --ef rms 0.6 -p com.klarvo.voice
+
+== Machine-verified (dumpsys window windows) — PASS ==
+Two com.klarvo.voice APPLICATION_OVERLAY windows in the HOLD state:
+  Window #7 (passive panel): gr=BOTTOM CENTER_VERTICAL, Requested w=1080 h=525
+                             Surface shown=true alpha=1.0 isOnScreen=true
+  Window #8 (HOLD targets):  mAttrs=(120,619)(939x1076) gr=TOP START CENTER, Requested w=939 h=1076
+                             Surface shown=true alpha=1.0 isOnScreen=true
+  Both: fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN HARDWARE_ACCELERATED — NO FLAG_NOT_TOUCHABLE
+        (HyperOS 0.8-dim avoidance — Scope boundary respected), fully composited (alpha 1.0).
+
+== Fix A (bottom-edge clamp) — no regression at default dock ==
+HOLD window #8 spans y=619..1695 on a 1080x2400 screen → fits within bounds; the new
+coerceIn(0, screenH - NAV_BAR_CLEARANCE_PX - holdH) clamp did not shift/break default-dock
+placement. The clamp ENGAGING at an extreme-low dock is logic-reviewed (code), not driven here
+(harness forces a default saved position) — see verdict.md residual.
+
+== Coarse visual (emulator = STRUCTURAL oracle, NOT pixel/aesthetic — contract visual_oracle.pixel=false) ==
+ist-recording-hold.png: thumb-anchor bubble (teal squircle + K + amber ring), Sperren target
+(teal padlock + "ziehen zum Sperren"), Abbrechen target (red X + "ziehen zum Abbrechen"),
+waveform chip (amber bars + timer), passive bottom panel ("Aufnahme · halten"). No leftover
+slide-track / .ab-holddock surfaces (Inversion gate 1 structurally clear). Colors: teal/red/amber correct.

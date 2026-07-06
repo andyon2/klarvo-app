@@ -1,0 +1,56 @@
+GATE-4 structural evidence — Story 9-14 HOLD-mode, vereinfacht (ein Abbrechen-Button), 2026-07-01
+Conductor self-verification on the re-scoped build (ADR-0019 Amendment 2026-07-01).
+SUPERSEDES structure-recording-hold.txt (the rejected two-target Sperren+Abbrechen build,
+GATE-4-FAILED on Andi's real device 2026-06-30: too big, anchor-K jumps vs idle bubble).
+Surface: headless emulator-5554 (BMAD_CONDUCTOR=1), arm64-v8a APK via native-bridge, density 2.625
+(420dpi), screen 1080x2400px.
+
+== Drive ==
+am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ez hold_mode true --ef rms 0.6 -p com.klarvo.voice
+
+== Machine-verified (dumpsys window windows) — PASS ==
+Two com.klarvo.voice APPLICATION_OVERLAY windows in the HOLD state:
+  Window #7 (passive panel): gr=BOTTOM CENTER_VERTICAL, Requested w=1080 h=525
+                              Surface shown=true alpha=1.0 isOnScreen=true
+  Window #8 (HOLD Cancel surface): mAttrs=(364,717)(695x648) gr=TOP START CENTER
+                              Surface shown=true alpha=1.0 isOnScreen=true
+  Both: fl=NOT_FOCUSABLE LAYOUT_IN_SCREEN HARDWARE_ACCELERATED — NO FLAG_NOT_TOUCHABLE
+        (HyperOS 0.8-dim avoidance — Scope boundary respected), fully composited (alpha 1.0).
+
+== Window-size regression check (AC2/AC3 — the very thing that GATE-4-failed before) ==
+Window #8 is 695x648 — substantially SMALLER than the prior two-target build's 939x1076 (was
+the box GATE-4-rejected as "too big"). Confirms the window now only needs to fit ONE Abbrechen
+target growing diagonally from the (unchanged-size) anchor bubble, not two vertically-stacked
+targets.
+
+Independent arithmetic cross-check (not just "smaller", the EXACT predicted value):
+  holdVisualWidthDp(72,44)=245, holdVisualHeightDp(72,44)=227 (bubbleSizeDp=44 — confirmed via the
+  responsive formula at this screen's 411dp width: clamp(36, 0.11×411=45→45, 44)=44).
+  windowW = 245 + 2×10(HOLD_SHADOW_PAD_DP) = 265dp × 2.625 density = 695.625 → 695px  [MATCHES]
+  windowH = 227 + 20 = 247dp × 2.625 = 648.225 → 648px                                [MATCHES]
+This confirms the Service's window-sizing math (KlarvoOverlayService.adjustLayoutForState) and the
+View's draw geometry (FloatingBubbleView.holdBubbleCenter/holdCancelCenter) are not just "smaller
+by feel" but match the documented dp formula exactly — same JVM-tested functions, same numbers.
+
+== Coarse visual (emulator = STRUCTURAL oracle, NOT pixel/aesthetic — contract visual_oracle.pixel=false) ==
+ist-recording-hold-simplified.png (captured under an unrelated onboarding-dialog overlay, which
+sits BELOW the APPLICATION_OVERLAY windows in z-order and does not obscure them):
+  - Anchor bubble: small teal squircle + dark "K" + amber holding-ring, bottom-right — visibly the
+    SAME size class as the idle bubble (not the old 82dp HOLD_BUBBLE_DP constant), satisfying AC2
+    "kein Größen-/Orts-Sprung" by inspection.
+  - ONE Abbrechen target (dark fill, red ring, "✕" + "ziehen zum Abbrechen" label) above-left of
+    the bubble — no Sperren/lock target anywhere (Inversion gate 1 structurally clear).
+  - Waveform chip (amber bars + "0:00" timer) hugging the bubble's inner side.
+  - Passive bottom panel: "Aufnahme" + timer, footer "Ich höre zu ..." — no "🔒 gesperrt" label, no
+    locked-state footer override (both removed in this re-scope, ListeningPanelView.kt).
+  - Abbrechen target's screen position (~x=508,y=861 in the screenshot) matches the independently
+    computed holdCancelCenter() prediction for this window/density almost exactly (≈4px off,
+    rounding) — visual placement and the pure-function geometry agree.
+
+== Not verified here (real-device GATE-4, Andi's batched gate — DoD, unchanged) ==
+Touch-driven release-to-commit (hold/release-anywhere=send, release-on-Abbrechen=cancel,
+pull-back=undo), grow-on-target (AC4), ghost-bubble/origin-fade dynamics (AC6), dock-mirroring at
+device scale (AC7), the 5-step recordingButtonSizeDp slider in Settings, and overall readability —
+none of these are touch-injectable against this Service's input state machine from an unattended
+script (ACTION_DOWN always resets pushToTalkActive unless armed via a real long-press from IDLE),
+consistent with why prior 9-14/9-15 GATE-4 evidence also stopped at structural+coarse-visual.

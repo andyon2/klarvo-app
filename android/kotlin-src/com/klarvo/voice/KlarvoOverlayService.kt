@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
@@ -30,15 +31,17 @@ import kotlin.math.abs
  *   ALWAYS_VISIBLE: bubble is always on screen, regardless of keyboard state.
  *
  * Recording modes (switchable via notification action):
- *   HOLD:     Tap -> bar with [X][waveform][✓], Long-press -> PTT (hold to record)
+ *   HOLD:     Tap -> TAP surface [✗·waveform·➤]; Long-press -> HOLD Cancel surface (PTT,
+ *               Story 9-14 re-scope 2026-07-01): hold=record, release anywhere=send,
+ *               release on the ✗ Abbrechen target=cancel (no Sperren/lock target)
  *   TOGGLE:   Tap -> start (red circle), Tap again -> stop + process
  *   AUTOSTOP: Tap -> start, auto-stops after silence detected
  *   AUTO:     Tap -> start loop, auto-stops on silence then restarts, Tap -> stop loop
  *
- * Touch gestures in RECORDING state (bar mode, HOLD only):
- *   Tap left zone  (X button)  -> cancel: stop recording, discard audio
- *   Tap right zone (✓ button)  -> confirm: stop recording, start STT + cleanup pipeline
- *   Drag                       -> moves the bar (drag threshold still applies)
+ * Touch gestures in RECORDING state (ADR-0019 / Story 9.5):
+ *   Tap bubble          -> Senden: stopAndProcessRecording() (all modes, all gestures)
+ *   Red square (panel)  -> Abbrechen: cancelRecording() (discard audio, no paste)
+ *   Drag                -> moves the bubble (drag threshold still applies)
  */
 class KlarvoOverlayService : Service() {
 
@@ -50,12 +53,30 @@ class KlarvoOverlayService : Service() {
         private const val PREFS_NAME    = "klarvo_bubble_prefs"
         private const val PREF_X        = "bubble_x"
         private const val PREF_Y        = "bubble_y"
+        private const val PREF_SIDE     = "bubble_side"  // "left" or "right"
+
+        // Keyboard jump-up: fixed nav-bar clearance in px (AR5d — do NOT use WindowInsetsCompat
+        // or env(safe-area-inset-bottom); those are unreliable for overlay Services on API 24+)
+        private const val NAV_BAR_CLEARANCE_PX = 56
 
         /** SharedPreference key: if true the bubble is always visible, not just when keyboard is open. */
         const val PREF_ALWAYS_VISIBLE = "bubble_always_visible"
 
         /** BroadcastReceiver actions. */
         const val ACTION_TOGGLE_BUBBLE = "com.klarvo.voice.TOGGLE_BUBBLE"
+
+        // Debug harness — registered only in debug builds (BuildConfig.DEBUG).
+        // Drive all four bubble states on-device without live audio/network:
+        //   adb connect 100.112.41.70:5555
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state idle
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state recording --ef rms 0.7 --es transcript "Hello world"
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state transcribing --ef rms 0.2 --es transcript "Hello world"
+        //   adb shell am broadcast -a com.klarvo.voice.DEBUG_SET_STATE --es state done
+        private const val ACTION_DEBUG_SET_STATE = "com.klarvo.voice.DEBUG_SET_STATE"
+        private const val EXTRA_STATE      = "state"        // "idle"|"recording"|"transcribing"|"done"
+        private const val EXTRA_RMS        = "rms"          // Float 0.0–1.0 (synthetic amplitude)
+        private const val EXTRA_TRANSCRIPT = "transcript"   // String (synthetic raw text)
+        private const val EXTRA_HOLD_MODE  = "hold_mode"   // Boolean: true → HOLD dock in recording state
 
         // Keyboard detection: poll InputMethodManager at this interval (ms)
         private const val KEYBOARD_CHECK_INTERVAL = 300L
@@ -70,8 +91,26 @@ class KlarvoOverlayService : Service() {
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
+        // Transparent padding around the visual squircle (as a fraction of the visual size) so the
+        // soft drop shadow + outer ring render without being clipped by the overlay window bounds.
+        // Floored so the window always meets the ≥48dp touch target even at the smallest size.
+        private const val SHADOW_PAD_FRACTION = 0.22f
+        private const val MIN_SHADOW_PAD_DP   = 8
+
         /** Live reference used by KlarvoAccessibilityService for paste. */
         var instance: KlarvoOverlayService? = null
+
+        /**
+         * Code-review fix F2 (2026-07-01, pure/testable): guards whether
+         * [ListeningPanelView.applyAppearance] may be called at all. `applyAppearance` restyles
+         * the listening panel's stock look (translucent bg, teal border, font size/family) --
+         * it must only run when the user actually opted into Live Preview (AC-4: byte-identical
+         * to pre-11-2 behavior when disabled; also keeps Auto/AutoStop visuals untouched, since
+         * those modes never enable preview per [RecordingMode.shouldInstallPreviewFlush]).
+         * Pure function -- no Android Context needed -- same testable-shape pattern as
+         * [RecordingMode.shouldInstallPreviewFlush].
+         */
+        fun shouldApplyPreviewAppearance(livePreviewEnabled: Boolean): Boolean = livePreviewEnabled
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -97,12 +136,69 @@ class KlarvoOverlayService : Service() {
                 "auto"     -> AUTO
                 else       -> HOLD
             }
+
+            /**
+             * Selects the silence-detection duration for a recording session.
+             *
+             * Mirrors the desktop pipeline (pipeline.rs:640 AUTOSTOP→autostop_silence_secs,
+             * :704 AUTO→auto_mode_silence_secs). AUTO and AUTOSTOP use the shared mode-level
+             * fields; HOLD and TOGGLE fall back to the per-gesture values.
+             *
+             * Pure function — no Android context needed — so it is directly testable by JVM
+             * tests (AC6, Story 9-7). Behavior is byte-identical to the inline block it
+             * replaced in startRecording().
+             *
+             * @param mode           Active RecordingMode for this session.
+             * @param gesture        Gesture that started the recording ("tap", "longpress", or null).
+             * @param tapSilence     Per-gesture silence for tap (HOLD/TOGGLE only).
+             * @param longPressSilence Per-gesture silence for long-press (HOLD/TOGGLE only).
+             * @param autostopSilence Mode-level silence for AUTOSTOP.
+             * @param autoModeSilence Mode-level silence for AUTO.
+             * @return               Silence duration in seconds to pass to KlarvoAudioRecorder.
+             */
+            fun selectSilenceSecs(
+                mode: RecordingMode,
+                gesture: String?,
+                tapSilence: Float,
+                longPressSilence: Float,
+                autostopSilence: Float,
+                autoModeSilence: Float,
+            ): Float = when (mode) {
+                AUTO     -> autoModeSilence
+                AUTOSTOP -> autostopSilence
+                else -> when (gesture) {
+                    "longpress" -> longPressSilence
+                    else        -> tapSilence
+                }
+            }
+
+            /**
+             * Story 11-2 (AC-1/AC-3/AC-4, Task 2.1): pure guard deciding whether the repeatable
+             * preview-flush callback should be installed for a recording session -- HOLD/TOGGLE
+             * only, and only when the user has opted in via Settings (`livePreviewEnabled`).
+             * Auto/AutoStop never get a preview flush (mirrors desktop FR4 parity) regardless of
+             * the setting. Pure function -- no Android Context needed -- same testable-shape
+             * pattern as [selectSilenceSecs] (AC-3/AC-4's JVM test lives next to
+             * `RecordingModeSilenceSelectionTest.kt`).
+             */
+            fun shouldInstallPreviewFlush(mode: RecordingMode, livePreviewEnabled: Boolean): Boolean =
+                (mode == HOLD || mode == TOGGLE) && livePreviewEnabled
         }
     }
 
-    private enum class RecordingState { IDLE, RECORDING, RECORDING_PTT, PROCESSING }
+    private enum class RecordingState { IDLE, RECORDING, TRANSCRIBING, DONE }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Story 11-2 code-review fix F3 (2026-07-01): serializes preview-chunk transcription so
+     * appended order always matches speech order. Previously each [flushPreviewDelta] spawned an
+     * independent `Thread`; variable Groq latency could let pause N+1's transcription land
+     * before pause N's, scrambling the preview. A single-thread executor makes flushes FIFO
+     * (one in-flight at a time) without blocking the caller (main thread just enqueues).
+     */
+    private val previewFlushExecutor = Executors.newSingleThreadExecutor()
+
     private lateinit var windowManager: WindowManager
     private lateinit var bubbleView: FloatingBubbleView
     private lateinit var bubbleParams: WindowManager.LayoutParams
@@ -112,6 +208,11 @@ class KlarvoOverlayService : Service() {
 
     /** Tracks whether the bubble view is currently attached to WindowManager. */
     private var isBubbleVisible = false
+
+    // Listening panel (Story 9.5): second TYPE_APPLICATION_OVERLAY window shown during recording/transcribing.
+    private var panelView: ListeningPanelView? = null
+    private var panelParams: WindowManager.LayoutParams? = null
+    private var panelVisible = false
 
     // Keyboard detection
     private var keyboardVisible = false
@@ -141,11 +242,10 @@ class KlarvoOverlayService : Service() {
     private var bubbleStartY = 0
     private var isDragging = false
     private var dragThresholdPx = 0f
-
-    // Bubble opacity (0.0..1.0). Applied to bubbleView.alpha when state is IDLE.
-    // During RECORDING / PROCESSING the bubble is always fully opaque.
-    // Loaded from config.json; defaults to 0.85 if config is unavailable.
-    private var bubbleOpacity = 0.85f
+    // Primary pointer lock (code review finding B): a second finger touching down during a HOLD
+    // must not be able to change which target the release commits — only the pointer captured at
+    // ACTION_DOWN drives hit-tracking and the release-to-commit decision.
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     // Per-gesture recording modes: tap and long-press are configured independently.
     private var tapMode = RecordingMode.TOGGLE
@@ -159,6 +259,9 @@ class KlarvoOverlayService : Service() {
     // Mode-level silence durations (AUTO/AUTOSTOP use these, parity with desktop pipeline.rs:640/704).
     private var autostopSilenceSecs = 2.0f
     private var autoModeSilenceSecs = 2.0f
+    // Energy gate threshold for VAD pre-filter (AC1/AC2/AC3, Story 9-11).
+    // Read from config.json "advanced.silenceThreshold"; default matches Rust default_silence_threshold() = 0.005.
+    private var silenceThreshold = KlarvoAudioRecorder.DEFAULT_ENERGY_GATE_THRESHOLD
 
     /**
      * Tracks which gesture started the current recording session.
@@ -170,6 +273,13 @@ class KlarvoOverlayService : Service() {
     // Auto-mode loop: true while the auto-loop is active (records, processes, repeats)
     private var autoLoopActive = false
 
+    /**
+     * Remembered Y position before a keyboard jump-up so we can restore it when the keyboard
+     * closes in always-visible mode. Null when the bubble has not been moved for the keyboard.
+     * Never written by savePosition() — a keyboard-shifted Y must not become the resting position.
+     */
+    private var preKeyboardY: Int? = null
+
     // Long-press / push-to-talk state
     private var longPressTriggered = false
 
@@ -178,6 +288,171 @@ class KlarvoOverlayService : Service() {
      * When the finger lifts we confirm (stop + process) instead of treating it as a tap.
      */
     private var pushToTalkActive = false
+
+    /**
+     * Synthetic transcript injected by the debug harness broadcast.
+     * Stored for use by the listening-panel render in Story 9.5; ignored in 9.4.
+     */
+    private var debugTranscript: String = ""
+
+    /**
+     * Story 11-2: accumulated raw preview text for the CURRENT recording (HOLD/TOGGLE,
+     * `livePreviewEnabled == true` only). Appended to by [flushPreviewDelta] on every pause;
+     * display-only -- never feeds the paste path. Cleared on finish (AC-7) and cancel.
+     */
+    private var previewAccumulatedText: String = ""
+
+    /**
+     * Saved X position of the bubble window before expanding to the recording cluster.
+     * Restored when leaving RECORDING state (TRANSCRIBING / DONE / IDLE).
+     * Null when not currently in cluster mode.
+     */
+    private var preclusterBubbleX: Int? = null
+
+    /**
+     * Saved Y position of the bubble window before entering the HOLD Cancel surface.
+     * adjustLayoutForState shifts Y so the anchor bubble's drawn center coincides with the idle
+     * bubble's on-screen center (AC2); this field saves the original Y so it can be restored
+     * exactly on stop/cancel via adjustLayoutForState's else-branch. Null when not in HOLD.
+     */
+    private var preclusterBubbleY: Int? = null
+
+    /**
+     * Debug-only broadcast receiver — drives the bubble through all four states on demand
+     * without live audio or network. Only registered when BuildConfig.DEBUG == true.
+     * Fast path for an already-running service process (avoids service-start overhead).
+     * See ACTION_DEBUG_SET_STATE constants for adb commands.
+     *
+     * Cold-start path (dead process): DebugHarnessReceiver (manifest-declared, static) wakes
+     * the process via startForegroundService and forwards extras; onStartCommand calls
+     * applyHarnessState() once bubbleView is initialised. Keep both paths in sync via the
+     * shared applyHarnessState() helper below.
+     */
+    private val debugStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_DEBUG_SET_STATE) return
+            val stateToken = intent.getStringExtra(EXTRA_STATE) ?: return
+            val rms        = intent.getFloatExtra(EXTRA_RMS, -1f)
+            val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
+            val holdMode   = intent.getBooleanExtra(EXTRA_HOLD_MODE, false)
+            handler.post {
+                applyHarnessState(stateToken, rms, transcript, holdMode)
+            }
+        }
+    }
+
+    /**
+     * Shared harness-state application logic — called by both the dynamic debugStateReceiver
+     * (already-running process fast path) and onStartCommand (cold-start via DebugHarnessReceiver).
+     *
+     * Must be called on the main thread (handler.post from dynamic receiver; handler.post from
+     * onStartCommand). Idempotent: safe to call when the service is already in the target state.
+     */
+    private fun applyHarnessState(stateToken: String, rms: Float, transcript: String?, holdMode: Boolean = false) {
+        if (!BuildConfig.DEBUG) return
+        if (!::bubbleView.isInitialized) {
+            KlarvoLogger.w(TAG, "[harness] bubbleView not ready — cannot apply state '$stateToken'")
+            return
+        }
+        val newState = when (stateToken.lowercase()) {
+            "idle"         -> RecordingState.IDLE
+            "recording"    -> RecordingState.RECORDING
+            "transcribing" -> RecordingState.TRANSCRIBING
+            "done"         -> RecordingState.DONE
+            else -> {
+                KlarvoLogger.w(TAG, "[harness] DEBUG_SET_STATE: unknown token '$stateToken'")
+                return
+            }
+        }
+        // Reset amplitude when rms is absent so each harness broadcast starts clean.
+        val coercedRms = if (rms >= 0f) rms.coerceIn(0f, 1f) else 0f
+        if (transcript != null) debugTranscript = transcript
+        // Force the bubble visible for harness use before setting state.
+        // Capture previous state so adjustLayoutForState gets correct geometry.
+        val previousState = currentState
+        forceShowBubbleForHarness()
+        // Story 9-14: set pushToTalkActive BEFORE adjustLayoutForState so the HOLD targets
+        // window dimensions are used when hold_mode=true (adjustLayoutForState reads pushToTalkActive).
+        // No drag-threshold init needed anymore (B-Sprache release-to-commit is pure hit-tracking,
+        // not threshold-fire-on-move — finding 7's old init point is structurally gone).
+        pushToTalkActive = (newState == RecordingState.RECORDING && holdMode)
+        setState(newState)
+        adjustLayoutForState(newState, previousState)
+        // Apply the static wave level AFTER the state transition so that the
+        // RECORDING branch of updateAnimators() (waveLevels.fill(0f)) has already
+        // run before we fill the history — otherwise the reset would wipe our level.
+        // Use setStaticWaveLevel so the harness fills all 20 history slots uniformly,
+        // giving a visible uniform waveform at that level (not just one pushed slot).
+        bubbleView.setStaticWaveLevel(coercedRms)
+
+        // Story 9-14/9-15: apply HOLD dock visual and TAP surface props after state is applied.
+        if (newState == RecordingState.RECORDING) {
+            bubbleView.holdDockActive = holdMode
+            setHoldModeOnPanel(holdMode)
+            if (!holdMode) {
+                // TAP surface harness: set dock side and start timer.
+                bubbleView.dockSide = getDockSide()
+                bubbleView.recordingStartMs = System.currentTimeMillis()
+            }
+        } else {
+            bubbleView.holdDockActive = false
+            setHoldModeOnPanel(false)
+            bubbleView.recordingStartMs = 0L
+        }
+
+        // Story 9.5: sync listening panel to harness state.
+        when (newState) {
+            RecordingState.RECORDING -> {
+                if (!panelVisible) {
+                    showListeningPanel(ListeningPanelView.State.RECORDING)
+                    // F4: guard timer start on actual successful attach
+                    if (panelVisible) panelView?.startTimer()
+                }
+                panelView?.amplitude = coercedRms
+                panelView?.rawTranscript = debugTranscript
+            }
+            RecordingState.TRANSCRIBING -> {
+                if (!panelVisible) {
+                    showListeningPanel(ListeningPanelView.State.TRANSCRIBING)
+                } else {
+                    panelView?.stopTimer()
+                    panelView?.panelState = ListeningPanelView.State.TRANSCRIBING
+                    panelView?.invalidate()
+                }
+            }
+            RecordingState.IDLE, RecordingState.DONE -> {
+                hideListeningPanel()
+            }
+        }
+
+        KlarvoLogger.d(TAG, "[harness] state → $newState (rms=$rms, transcript=${transcript?.take(30)})")
+    }
+
+    /**
+     * Debug-only direct-show path for the state harness.
+     * Bypasses the SHOW_DEBOUNCE_MS delay and the banking-app guard so the bubble
+     * appears synchronously on the emulator without any UI interaction.
+     *
+     * Only compiled/called in DEBUG builds (receiver is already DEBUG-gated;
+     * this helper is an extra safety so the logic never leaks into release).
+     */
+    private fun forceShowBubbleForHarness() {
+        if (!BuildConfig.DEBUG) return
+        // Cancel any pending debounced show — we want immediate attach.
+        pendingShowRunnable?.let { handler.removeCallbacks(it) }
+        pendingShowRunnable = null
+        if (!isBubbleVisible && ::bubbleView.isInitialized) {
+            try {
+                reloadBubbleAppearance()
+                windowManager.addView(bubbleView, bubbleParams)
+                isBubbleVisible = true
+                updateNotification()
+                KlarvoLogger.d(TAG, "[harness] bubble force-shown for harness")
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[harness] forceShowBubbleForHarness failed", e)
+            }
+        }
+    }
 
     private val longPressRunnable = Runnable {
         if (!isDragging && currentState == RecordingState.IDLE) {
@@ -191,8 +466,21 @@ class KlarvoOverlayService : Service() {
             if (longPressMode == RecordingMode.AUTO) {
                 autoLoopActive = true
             }
+            // HOLD Cancel surface (Story 9-14 re-scope 2026-07-01): show holdDockActive surface +
+            // update panel label. No drag-threshold init needed — release-to-commit is pure
+            // hit-tracking (Task 6/7), not threshold-fire-on-move.
+            if (pushToTalkActive) {
+                bubbleView.holdDockActive = true
+                setHoldModeOnPanel(true)
+            }
             startRecording()
         }
+    }
+
+    /** Sets isHoldMode on the listening panel (if visible). No-op when panel is not attached. */
+    private fun setHoldModeOnPanel(holdMode: Boolean) {
+        panelView?.isHoldMode = holdMode
+        panelView?.invalidate()
     }
 
     /**
@@ -210,6 +498,21 @@ class KlarvoOverlayService : Service() {
         override fun run() {
             checkKeyboardVisibility()
             handler.postDelayed(this, KEYBOARD_CHECK_INTERVAL)
+        }
+    }
+
+    /**
+     * Runnable that completes the DONE→IDLE flash after 800ms.
+     * Named so it can be cancelled if a new recording starts before the delay fires
+     * (AUTO mode, re-record, or harness) — preventing a stale callback from forcing
+     * IDLE while a fresh recording is already live.
+     */
+    private val doneFlashRunnable = Runnable {
+        if (currentState == RecordingState.DONE) {
+            // Story 9.5: hide listening panel before returning to IDLE.
+            hideListeningPanel()
+            setState(RecordingState.IDLE)
+            adjustLayoutForState(RecordingState.IDLE, RecordingState.DONE)
         }
     }
 
@@ -240,6 +543,22 @@ class KlarvoOverlayService : Service() {
             registerReceiver(notificationActionReceiver, filter)
         }
 
+        // Debug harness: register state-override receiver only in debug builds.
+        // Allows driving all four bubble states on-device without live audio/network.
+        // RECEIVER_EXPORTED is intentional on Tiramisu+: adb shell am broadcast runs as shell
+        // UID (2000), not the app UID — RECEIVER_NOT_EXPORTED would silently drop those
+        // broadcasts. This is safe because the entire block is gated by BuildConfig.DEBUG;
+        // release APKs never register this receiver at all (AC4).
+        if (BuildConfig.DEBUG) {
+            val debugFilter = IntentFilter(ACTION_DEBUG_SET_STATE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(debugStateReceiver, debugFilter, RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(debugStateReceiver, debugFilter)
+            }
+            KlarvoLogger.d(TAG, "[harness] debug broadcast receiver registered")
+        }
+
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -250,6 +569,19 @@ class KlarvoOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Cold-start harness path: DebugHarnessReceiver (manifest-declared static receiver) starts
+        // the service with ACTION_DEBUG_SET_STATE when the process is dead. onCreate() runs first
+        // and initialises bubbleView, so we can safely apply the harness state here on the main
+        // thread via handler.post (gives the layout a frame to settle before we attach the bubble).
+        if (BuildConfig.DEBUG && intent?.action == ACTION_DEBUG_SET_STATE) {
+            val stateToken = intent.getStringExtra(EXTRA_STATE)
+            if (stateToken != null) {
+                val rms        = intent.getFloatExtra(EXTRA_RMS, -1f)
+                val transcript = intent.getStringExtra(EXTRA_TRANSCRIPT)
+                val holdMode   = intent.getBooleanExtra(EXTRA_HOLD_MODE, false)
+                handler.post { applyHarnessState(stateToken, rms, transcript, holdMode) }
+            }
+        }
         return START_STICKY
     }
 
@@ -257,13 +589,26 @@ class KlarvoOverlayService : Service() {
         instance = null
         handler.removeCallbacks(keyboardCheckRunnable)
         handler.removeCallbacks(longPressRunnable)
+        handler.removeCallbacks(doneFlashRunnable)
         try {
             unregisterReceiver(notificationActionReceiver)
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "Failed to unregister notificationActionReceiver (already unregistered?)", e)
         }
+        if (BuildConfig.DEBUG) {
+            try {
+                unregisterReceiver(debugStateReceiver)
+            } catch (e: IllegalArgumentException) {
+                KlarvoLogger.w(TAG, "[harness] debugStateReceiver already unregistered", e)
+            }
+        }
         audioRecorder?.releaseImmediately()
         audioRecorder = null
+        // Story 11-2 fix F3: tear down the preview-flush executor so no queued/in-flight preview
+        // transcription outlives the service.
+        previewFlushExecutor.shutdownNow()
+        // F3: release panel window + its Handler + ValueAnimators on teardown
+        hideListeningPanel()
         super.onDestroy()
         if (::bubbleView.isInitialized && isBubbleVisible) {
             try {
@@ -329,10 +674,33 @@ class KlarvoOverlayService : Service() {
     private fun startForegroundWithNotification() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            // Android 14+ (API 34+) blocks FOREGROUND_SERVICE_TYPE_MICROPHONE from background
+            // callers (e.g. BroadcastReceiver context) unless the app is in a user-visible state,
+            // even when RECORD_AUDIO is granted. In DEBUG builds the service may be cold-started
+            // via DebugHarnessReceiver (background), so we catch the SecurityException and fall
+            // back to type NONE for the initial notification. The microphone FGS type is not
+            // needed for the visual-state harness (no audio is captured). This fallback is gated
+            // to DEBUG so release builds always use the microphone type from the normal
+            // MainActivity foreground-start path.
+            if (BuildConfig.DEBUG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                try {
+                    startForeground(
+                        NOTIFICATION_ID, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    )
+                } catch (e: SecurityException) {
+                    // FOREGROUND_SERVICE_TYPE_NONE is also prohibited on targetSdk 34+.
+                    // DATA_SYNC is allowed from background under the SYSTEM_ALERT_WINDOW exemption
+                    // and does not require a user-visible state — safe for the visual harness.
+                    KlarvoLogger.d(TAG, "[harness] microphone FGS type blocked from background, using DATA_SYNC fallback: ${e.message?.take(60)}")
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                }
+            } else {
+                startForeground(
+                    NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -357,7 +725,8 @@ class KlarvoOverlayService : Service() {
             longPressSilenceSecs = config.bubbleLongPressSilenceSecs
             autostopSilenceSecs = config.autostopSilenceSecs
             autoModeSilenceSecs = config.autoModeSilenceSecs
-            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend")
+            silenceThreshold = config.silenceThreshold
+            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend, silenceThreshold=$silenceThreshold")
         } else {
             KlarvoLogger.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
         }
@@ -407,14 +776,73 @@ class KlarvoOverlayService : Service() {
     }
 
     private fun applyKeyboardState(isOpen: Boolean) {
-        if (alwaysVisible) return
+        if (alwaysVisible) {
+            // In always-visible mode we never show/hide, but we still need to restore the
+            // bubble's Y position when the keyboard closes after a jump-up.
+            if (!isOpen) {
+                val saved = preKeyboardY
+                if (saved != null && isBubbleVisible && ::bubbleView.isInitialized) {
+                    preKeyboardY = null
+                    bubbleParams.y = saved
+                    updateBubbleLayout()
+                } else {
+                    preKeyboardY = null
+                }
+            }
+            return
+        }
         if (isOpen == keyboardVisible) return
 
         keyboardVisible = isOpen
         if (isOpen) {
             showBubble()
-        } else if (currentState == RecordingState.IDLE) {
-            hideBubble()
+        } else {
+            // Keyboard closed: clear any remembered pre-keyboard Y (not always-visible path,
+            // so the bubble is about to be hidden; no restore needed).
+            preKeyboardY = null
+            if (currentState == RecordingState.IDLE) {
+                hideBubble()
+            }
+        }
+    }
+
+    /**
+     * Adjusts the bubble Y position upward if the keyboard would cover it.
+     * Called by KlarvoAccessibilityService when the IME window bounds are known,
+     * and by the reflection fallback path with the IMM-reported height.
+     *
+     * Nav-bar clearance: 56px fixed constant (AR5d). Do NOT use WindowInsetsCompat or
+     * env(safe-area-inset-bottom) — those are unreliable for overlay Services on API 24+.
+     */
+    /**
+     * Overlay-window size (px) for a given visual bubble size: the visual squircle plus transparent
+     * shadow padding on every side. FloatingBubbleView draws the squircle centered, so the padding
+     * is the room the soft shadow + outer ring need — without it they clip at the window edge (a
+     * hard square cutoff, worst at large manual sizes). Always ≥48dp, so it also satisfies the
+     * touch-target requirement (AC4). Single source of truth for ALL window-size math (set + snap +
+     * save + keyboard) so they never diverge.
+     */
+    private fun bubbleWindowPx(visualDp: Int): Int {
+        val dm = resources.displayMetrics
+        val padDp = maxOf(MIN_SHADOW_PAD_DP, (visualDp * SHADOW_PAD_FRACTION).toInt())
+        return ((visualDp + 2 * padDp) * dm.density).toInt()
+    }
+
+    fun adjustBubbleForKeyboard(keyboardHeightPx: Int) {
+        handler.post {
+            if (!isBubbleVisible || !::bubbleView.isInitialized) return@post
+            val (_, screenH) = getScreenDimensions()
+            // Use the full window height (incl. shadow padding) so the real bottom edge clears
+            // the keyboard, not just the smaller visual squircle.
+            val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
+            val maxY = screenH - keyboardHeightPx - NAV_BAR_CLEARANCE_PX - windowPx
+            if (bubbleParams.y > maxY) {
+                if (preKeyboardY == null) {
+                    preKeyboardY = bubbleParams.y
+                }
+                bubbleParams.y = maxY.coerceAtLeast(0)
+                updateBubbleLayout()
+            }
         }
     }
 
@@ -426,6 +854,10 @@ class KlarvoOverlayService : Service() {
             val method = imm.javaClass.getMethod("getInputMethodWindowVisibleHeight")
             val height = method.invoke(imm) as Int
             applyKeyboardState(height > 0)
+            // Reflection fallback: also apply keyboard jump-up with the reported height
+            if (height > 0) {
+                adjustBubbleForKeyboard(height)
+            }
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "getInputMethodWindowVisibleHeight reflection failed: ${e.message}")
         }
@@ -504,28 +936,50 @@ class KlarvoOverlayService : Service() {
     private fun setupBubble() {
         bubbleView = FloatingBubbleView(this)
 
-        // Load bubble size and opacity from config.json (written by the Tauri/React settings UI).
-        // Falls back to defaults if the config is not yet available (first launch).
+        // bubbleSize scale factor is superseded by computeVisualSizeDp() as of Story 9.3;
+        // idle opacity is fixed at 1.0 (canon) as of the 9.3 polish pass.
         val config = KlarvoApi.readConfig(this)
-        val sizeScale = config?.bubbleSize ?: 1.0f
-        bubbleOpacity = config?.bubbleOpacity ?: 0.85f
 
-        val sizeDp = (BASE_BUBBLE_SIZE_DP * sizeScale).toInt().coerceAtLeast(24)
+        // Responsive size formula: clamp(36, 0.11 × min(screenW_dp, screenH_dp), 44)
+        val sizeDp = computeVisualSizeDp(config)
         bubbleView.setBubbleSize(sizeDp)
-        bubbleView.alpha = bubbleOpacity
+        // Idle bubble renders fully opaque to match the canon (.ab-bubble.idle has no opacity
+        // reduction). The legacy 0.85 translucency washed the solid teal-gradient squircle out,
+        // especially on light backgrounds. (Story 9.3 polish.)
+        bubbleView.alpha = 1.0f
 
         val (screenW, screenH) = getScreenDimensions()
-        val dp        = resources.displayMetrics.density
+        val dm        = resources.displayMetrics
+        val dp        = dm.density
         val bubblePx  = (sizeDp * dp).toInt()
-        val marginPx  = (16 * dp).toInt()
+        val marginPx  = (8 * dp).toInt()  // 8dp snap margin (tighter than startup default)
+
+        // Window = visual squircle + shadow padding (always ≥48dp touch target). The squircle is
+        // drawn centered; the padding gives the soft shadow + outer ring room (no clipping).
+        val touchTargetPx = bubbleWindowPx(sizeDp)
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedX = prefs.getInt(PREF_X, screenW - bubblePx - marginPx)
-        val savedY = prefs.getInt(PREF_Y, screenH / 2)
+        // AC9 (Story 9.3): when edge-snap is OFF restore the raw saved X; when ON use saved side.
+        val savedX: Int
+        val savedY: Int
+        if (config?.bubbleEdgeSnap != false) {
+            // Restore position using saved side (left/right) rather than raw pixel X.
+            // This ensures the bubble lands on the correct edge after screen rotation or reinstall.
+            val savedSide = prefs.getString(PREF_SIDE, "right") ?: "right"
+            // WindowManager positions the window (touchTargetPx wide), not the visual circle.
+            // Use touchTargetPx for edge placement so the window fits within the screen edge.
+            val defaultX = if (savedSide == "left") marginPx else screenW - touchTargetPx - marginPx
+            savedX = prefs.getInt(PREF_X, defaultX)
+        } else {
+            // Edge-snap OFF: restore the raw drop X the user last placed the bubble at.
+            val defaultX = screenW - touchTargetPx - marginPx
+            savedX = prefs.getInt(PREF_X, defaultX)
+        }
+        savedY = prefs.getInt(PREF_Y, screenH / 2)
 
         bubbleParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            touchTargetPx,
+            touchTargetPx,
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -554,6 +1008,29 @@ class KlarvoOverlayService : Service() {
         }
     }
 
+    /**
+     * Computes the visual bubble size in dp using the responsive formula:
+     *   visualDp = clamp(36, (0.11 × min(screenW_dp, screenH_dp)).toInt(), 44)
+     *
+     * This supersedes the old BASE_BUBBLE_SIZE_DP × config.bubbleSize formula as of Story 9.3.
+     * The bubbleSize config scale factor is no longer applied to the visual size (it becomes a
+     * no-op). Document here so Story 9.5+ is aware. The config field is intentionally not
+     * removed — it may be repurposed or restored in a future story.
+     */
+    private fun computeVisualSizeDp(cfg: KlarvoApi.Config? = null): Int {
+        // AC8 (Story 9.3): when bubbleSizeDp > 0 the user has set a manual size — use it directly.
+        // 0 = Auto: fall back to the responsive formula from AC3.
+        // Uses the provided config first, then falls back to the cached config.
+        val effectiveCfg = cfg ?: cachedConfig
+        val manual = effectiveCfg?.bubbleSizeDp ?: 0
+        if (manual > 0) return manual.coerceIn(32, 72)
+        val dm = resources.displayMetrics
+        val screenWdp = dm.widthPixels / dm.density
+        val screenHdp = dm.heightPixels / dm.density
+        val rawDp = (0.11f * minOf(screenWdp, screenHdp)).toInt()
+        return rawDp.coerceIn(36, 44)
+    }
+
     // --- WindowManager layout update ---
 
     /**
@@ -570,49 +1047,140 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
-     * Adjusts the WindowManager LayoutParams width to match the current view state.
+     * Returns "left" or "right" based on which screen half the idle bubble is currently on.
+     * Uses the pre-expansion X position ([preclusterBubbleX] if already set, else [bubbleParams.x])
+     * so that it reflects the idle position even after window expansion started.
+     * Used to set [FloatingBubbleView.dockSide] before entering the TAP surface.
+     */
+    private fun getDockSide(): String {
+        val (screenW, _) = getScreenDimensions()
+        val visualDp = bubbleView.getBubbleSizeDp()
+        val windowPx = bubbleWindowPx(visualDp)
+        val idleX = preclusterBubbleX ?: bubbleParams.x
+        return if (idleX + windowPx / 2 < screenW / 2) "left" else "right"
+    }
+
+    /**
+     * Adjusts the WindowManager LayoutParams to match the current view state.
      *
-     * IDLE / PROCESSING  -> WRAP_CONTENT (square = bubble diameter)
-     * RECORDING          -> WRAP_CONTENT (the view's onMeasure returns BAR_WIDTH_DP)
+     * IDLE / TRANSCRIBING / DONE -> explicit touchTargetPx × touchTargetPx (≥48dp touch target)
+     *                               FloatingBubbleView draws the smaller visual circle centered.
+     * RECORDING (TAP surface)    -> TAP_VISUAL_W/H + 2×TAP_SHADOW_PAD_DP each side.
+     * RECORDING (HOLD Cancel)    -> holdVisualWidthDp/HeightDp + 2×HOLD_SHADOW_PAD_DP each side
+     *                               (Story 9-14 re-scope 2026-07-01 — anchor bubble at its idle
+     *                               size/position + ONE Abbrechen target growing diagonally).
      *
-     * WRAP_CONTENT is sufficient because FloatingBubbleView.onMeasure returns different
-     * dimensions depending on state. We just need to force a layout pass after the state
-     * change so WindowManager picks up the new measured size.
-     *
-     * Also keeps the bar center aligned with the original bubble center:
-     * when expanding from circle to bar we shift x left by half the extra width so
-     * the center stays in place.
+     * Dock-edge-anchor: when expanding to the TAP surface the right edge of the new window
+     * aligns with the right edge of the idle bubble window (right dock), or the left edge
+     * is clamped to 0 (left dock) — drawTapSurface() places Send on the correct side via dockSide.
      */
     private fun adjustLayoutForState(newState: RecordingState, previousState: RecordingState) {
-        val dp       = resources.displayMetrics.density
-        val bubblePx = (bubbleView.getBubbleSizeDp() * dp).toInt()
-        val barPx    = (FloatingBubbleView.BAR_WIDTH_DP * dp).toInt()
+        val dp            = resources.displayMetrics.density
+        val visualDp      = bubbleView.getBubbleSizeDp()
+        val touchTargetPx = bubbleWindowPx(visualDp)
 
-        when {
-            newState == RecordingState.RECORDING && previousState == RecordingState.IDLE -> {
-                // Expand: shift left so bubble center stays under finger
-                val extraW = barPx - bubblePx
-                bubbleParams.x = (bubbleParams.x - extraW / 2).coerceAtLeast(0)
+        if (newState == RecordingState.RECORDING) {
+            if (preclusterBubbleX == null) preclusterBubbleX = bubbleParams.x
+            if (pushToTalkActive) {
+                // HOLD Cancel surface window (Story 9-14 re-scope 2026-07-01, ADR-0019 Amendment):
+                // the anchor bubble keeps its idle size+position (AC2) — the window only needs to
+                // be just big enough to also hold the ONE Abbrechen target, which grows diagonally
+                // up-and-toward-center from the bubble (see Dev Notes "Window geometry is now
+                // diagonal, not vertical").
+                bubbleView.dockSide = getDockSide()
+                val btnDp        = bubbleView.recordingButtonSizeDp
+                val bubbleSizeDp = visualDp
+                val holdW = ((FloatingBubbleView.holdVisualWidthDp(btnDp, bubbleSizeDp)  + 2 * FloatingBubbleView.HOLD_SHADOW_PAD_DP) * dp).toInt()
+                val holdH = ((FloatingBubbleView.holdVisualHeightDp(btnDp, bubbleSizeDp) + 2 * FloatingBubbleView.HOLD_SHADOW_PAD_DP) * dp).toInt()
+
+                // X-anchor: dock-edge-anchor (same convention as the TAP branch below) — the bubble
+                // sits at the same inset from the dock-side window edge as it did in the idle
+                // window (Task 1.5: no separate HOLD-specific edge inset), so preserving the EDGE
+                // position preserves the bubble's on-screen X automatically (AC2).
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - holdW)
+                bubbleParams.width  = holdW
+                bubbleParams.height = holdH
+
+                // Horizontal clamp toward whichever side the Abbrechen target now grows into (new
+                // — the old purely-vertical layout never needed this, Task 6.3). For a right-docked
+                // bubble the window extends LEFTWARD (already covered by the maxOf(0, ...) above);
+                // for a left-docked bubble it extends RIGHTWARD and must not run past the screen's
+                // right edge.
+                val (screenW, _) = getScreenDimensions()
+                bubbleParams.x = bubbleParams.x.coerceIn(0, maxOf(0, screenW - holdW))
+
+                // Y-anchor: AC2 requires the bubble's drawn center to coincide EXACTLY with where
+                // the idle bubble's center was (the thumb is still physically there), for EVERY
+                // dock position (Code-Review Finding B, 2026-07-01): the old
+                // `.coerceIn(0, maxHoldY)` here silently moved the anchor away from the thumb
+                // whenever the window didn't fit above the bubble (high/low dock) — exactly the
+                // "kein Größen-/Orts-Sprung" violation AC2 forbids and the bug that triggered this
+                // re-scope in the first place. Fix: NEVER clamp the bubble away from idleCenterY.
+                // Instead the Abbrechen target's GROWTH DIRECTION is dock-adaptive
+                // ([FloatingBubbleView.holdGrowDirection]) — it grows upward when there's room
+                // above (the normal case) and flips downward when docked too high for that to fit.
+                // Both this window-sizing code and drawHoldTargets()/the ACTION_MOVE hit-test below
+                // read the same [holdGrowDirection] field, so they can never diverge (same pattern
+                // already established for [dockSide]).
+                if (preclusterBubbleY == null) preclusterBubbleY = bubbleParams.y
+                val idleCenterY = (preclusterBubbleY ?: bubbleParams.y) + touchTargetPx / 2
+
+                val activeRPx = btnDp * FloatingBubbleView.HOLD_CANCEL_ACTIVE_SCALE / 2f * dp
+                val targetSpanAbovePx = FloatingBubbleView.HOLD_CANCEL_OFFSET_Y_DP * dp + activeRPx +
+                    FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
+                // Grow up if the target's span fits above the bubble, else flip down. With the small
+                // 48dp vertical offset (2026-07-01 re-tune) this span is short, so "up" fits for all
+                // realistic dock heights and "down" (rare, very-high dock) only seats the ✗ ~48dp
+                // below — neither branch reaches the header or dives into chat content anymore, which
+                // is what the earlier 0.15·screenH threshold was compensating for with a big offset.
+                bubbleView.holdGrowDirection = if (idleCenterY - targetSpanAbovePx >= 0f) "up" else "down"
+
+                val bubbleCenterYPx = FloatingBubbleView.holdBubbleCenter(
+                    bubbleView.dockSide, bubbleView.holdGrowDirection, holdW.toFloat(), holdH.toFloat(),
+                    FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp, bubbleSizeDp * dp
+                ).y
+                bubbleParams.y = (idleCenterY - bubbleCenterYPx).toInt()
+            } else {
+                // Compact cluster window (Story 9-16 revert of the 9-15 TAP surface): fixed
+                // visual W/H + shadow pad on each side. The cluster is fixed-size — the size
+                // slider (recordingButtonSizeDp) no longer affects this surface, only HOLD.
+                val clusterW = ((FloatingBubbleView.CLUSTER_VISUAL_W_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                val clusterH = ((FloatingBubbleView.CLUSTER_VISUAL_H_DP + 2 * FloatingBubbleView.CLUSTER_SHADOW_PAD_DP) * dp).toInt()
+                // Right-edge-anchor: shift X left by the extra width so the dock-spot right edge stays
+                // fixed. Clamp to 0 so the cluster stays on-screen when docked on the left side.
+                bubbleParams.x      = maxOf(0, bubbleParams.x + touchTargetPx - clusterW)
+                bubbleParams.width  = clusterW
+                bubbleParams.height = clusterH
             }
-            newState != RecordingState.RECORDING && previousState == RecordingState.RECORDING -> {
-                // Collapse: shift right to restore original center position
-                val extraW = barPx - bubblePx
-                bubbleParams.x += extraW / 2
+        } else {
+            // Restore single-bubble window.
+            val savedX = preclusterBubbleX
+            if (savedX != null && previousState == RecordingState.RECORDING) {
+                bubbleParams.x = savedX
+                preclusterBubbleX = null
             }
+            // Restore Y if we were in the HOLD Cancel surface (preclusterBubbleY set by the HOLD
+            // branch above). Null in TAP-only recording (Y was never shifted). Covers stop/cancel
+            // while still in HOLD mode (finding 5).
+            val savedY = preclusterBubbleY
+            if (savedY != null && previousState == RecordingState.RECORDING) {
+                bubbleParams.y = savedY
+                preclusterBubbleY = null
+            }
+            bubbleParams.width  = touchTargetPx
+            bubbleParams.height = touchTargetPx
         }
-
-        // WRAP_CONTENT in both directions; onMeasure drives the actual size
-        bubbleParams.width  = WindowManager.LayoutParams.WRAP_CONTENT
-        bubbleParams.height = WindowManager.LayoutParams.WRAP_CONTENT
-
         updateBubbleLayout()
     }
 
     // --- Touch handling ---
 
     private fun handleTouch(event: MotionEvent): Boolean {
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // Lock onto the primary pointer (code review finding B): everything below this
+                // point reads THIS pointer's coordinates, never an arbitrary/secondary one.
+                activePointerId = event.getPointerId(0)
                 dragTouchStartX = event.rawX
                 dragTouchStartY = event.rawY
                 bubbleStartX    = bubbleParams.x
@@ -628,10 +1196,80 @@ class KlarvoOverlayService : Service() {
                 return true
             }
 
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> {
+                // A second finger touched down/lifted (code review finding B). Only the primary
+                // pointer captured at ACTION_DOWN drives hit-tracking and release-to-commit below
+                // — a secondary pointer must never be able to change which target the release
+                // commits, or commit from the wrong location. No-op here by design.
+                return true
+            }
+
             MotionEvent.ACTION_MOVE -> {
-                // During push-to-talk the bubble must stay locked in place.
-                // Ignore all movement -- no drag, no cancel, no position update.
-                if (pushToTalkActive) return true
+                // Resolve the primary pointer's current index (it can shift if another pointer
+                // left the array before it) — ignore the event if it's no longer present.
+                val pointerIndex = event.findPointerIndex(activePointerId)
+                if (pointerIndex == -1) return true
+
+                // During push-to-talk (HOLD Cancel surface, Story 9-14 re-scope 2026-07-01):
+                // continuous hit-tracking against the single Abbrechen target, NOT
+                // threshold-fire-on-move (see story Dev Notes "Release-to-commit is the core
+                // mechanism change"). The window does not reposition during a hold, so the primary
+                // pointer's (x, y) (view-local) is already in the same coordinate space
+                // drawHoldTargets() uses. Also forwards the live finger position + the
+                // dragged-away-from-bubble dead-zone flag (Task 4) so the View can render the
+                // ghost-bubble/origin-fade dynamics (AC6) — no cancelRecording() here; that
+                // happens on release (Task 5). A circular hit-test has no directional ambiguity
+                // by construction, which structurally avoids the old code's diagonal-drag /
+                // signed-direction-only bugs (findings 3/4) rather than just porting around them.
+                if (pushToTalkActive) {
+                    val touchX = event.getX(pointerIndex)
+                    val touchY = event.getY(pointerIndex)
+                    val dp = resources.displayMetrics.density
+                    val shadowPad    = FloatingBubbleView.HOLD_SHADOW_PAD_DP * dp
+                    val bubbleDiamPx = bubbleView.getBubbleSizeDp() * dp
+                    val restRPx      = bubbleView.recordingButtonSizeDp * dp / 2f
+                    val offsetXPx    = FloatingBubbleView.HOLD_CANCEL_OFFSET_X_DP * dp
+                    val offsetYPx    = FloatingBubbleView.HOLD_CANCEL_OFFSET_Y_DP * dp
+
+                    val bubbleCenter = FloatingBubbleView.holdBubbleCenter(
+                        bubbleView.dockSide, bubbleView.holdGrowDirection,
+                        bubbleView.width.toFloat(), bubbleView.height.toFloat(),
+                        shadowPad, bubbleDiamPx
+                    )
+                    val cancelCenter = FloatingBubbleView.holdCancelCenter(
+                        bubbleView.dockSide, bubbleView.holdGrowDirection, bubbleCenter, offsetXPx, offsetYPx
+                    )
+
+                    // Hit-test boundary stays the REST radius even when the target visually grows
+                    // to ACTIVE (Task 4.2/AC4) — growing is feedback, not a hit-zone change; the
+                    // finger is already inside once it crosses the REST circle.
+                    bubbleView.holdTargetHit =
+                        if (FloatingBubbleView.isInsideCircle(touchX, touchY, cancelCenter.x, cancelCenter.y, restRPx)) {
+                            HoldTarget.CANCEL
+                        } else {
+                            HoldTarget.NONE
+                        }
+
+                    // Dead-zone (Task 3.5/4): reuses the existing free-drag dragThresholdPx
+                    // convention (same ~10dp already tuned for that gesture) — once the finger
+                    // has moved that far from the bubble, the ghost-bubble + origin-fade dynamics
+                    // kick in (AC6).
+                    val distFromBubble = Math.hypot(
+                        (touchX - bubbleCenter.x).toDouble(), (touchY - bubbleCenter.y).toDouble()
+                    )
+                    bubbleView.holdDragging = distFromBubble > dragThresholdPx
+                    // Clamp the DRAWN ghost position inside the overlay window so it can never be
+                    // clipped away by the window edge (2026-07-01, Andi: "harte Kante unten — Bubble
+                    // verschwindet"). The HOLD window spends its vertical budget on the target side
+                    // of the bubble, leaving only ~shadowPad on the far side; dragging the finger
+                    // past that edge drew the ghost outside the surface → it vanished. The hit-test
+                    // above still uses the RAW touch coords, so target detection is unaffected — only
+                    // the ghost's paint position is pinned to the window so it stays visible.
+                    val ghostR = bubbleDiamPx * 0.92f / 2f
+                    bubbleView.holdFingerX  = touchX.coerceIn(ghostR, bubbleView.width.toFloat()  - ghostR)
+                    bubbleView.holdFingerY  = touchY.coerceIn(ghostR, bubbleView.height.toFloat() - ghostR)
+                    return true
+                }
 
                 val dx = event.rawX - dragTouchStartX
                 val dy = event.rawY - dragTouchStartY
@@ -654,28 +1292,74 @@ class KlarvoOverlayService : Service() {
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPressRunnable)
+                // Primary pointer's index at release — may be -1 if it already left the screen
+                // while a secondary pointer remained (ACTION_POINTER_UP, handled above as no-op);
+                // guarded below wherever it's read.
+                val pointerIndex = event.findPointerIndex(activePointerId)
 
-                if (event.action == MotionEvent.ACTION_UP) {
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
                     when {
                         isDragging -> {
+                            // AC9 (Story 9.3): edge-snap gated behind config.bubbleEdgeSnap.
+                            // Default = true (canon snap + remembered-side). When OFF: raw drop X persists.
+                            if (cachedConfig?.bubbleEdgeSnap != false) {
+                                // Edge-snap: slide to nearest horizontal edge on drag release.
+                                // 8dp margin from edge for a clean overlay feel.
+                                val (screenW, _) = getScreenDimensions()
+                                val dm = resources.displayMetrics
+                                // WindowManager positions the window (windowPx wide, incl. shadow
+                                // padding), not the visual squircle. All edge/midpoint math uses it.
+                                val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
+                                val marginPx = (8 * dm.density).toInt()
+                                val midScreen = screenW / 2
+                                bubbleParams.x = if (bubbleParams.x + windowPx / 2 < midScreen) {
+                                    marginPx              // snap left
+                                } else {
+                                    screenW - windowPx - marginPx  // snap right
+                                }
+                                updateBubbleLayout()
+                            }
                             savePosition(bubbleParams.x, bubbleParams.y)
                         }
                         pushToTalkActive -> {
-                            // Push-to-talk release: confirm recording
+                            // Release-to-commit (Story 9-14 re-scope 2026-07-01, AC5): dispatch on
+                            // where the finger WAS at release (holdTargetHit), not a
+                            // threshold-fire mid-drag. Lands on Abbrechen -> cancel; anywhere else
+                            // -> sends (no Sperren/lock target anymore — sending is the default).
+                            // Mirrors handleTouch's HoldTarget import — same package as
+                            // FloatingBubbleView, no qualification needed.
                             pushToTalkActive = false
-                            stopAndProcessRecording()
+                            when (bubbleView.holdTargetHit) {
+                                HoldTarget.CANCEL -> {
+                                    bubbleView.holdDockActive = false
+                                    cancelRecording()
+                                }
+                                HoldTarget.NONE -> stopAndProcessRecording()
+                            }
+                            bubbleView.holdTargetHit = HoldTarget.NONE
+                            bubbleView.holdDragging  = false
                         }
                         !longPressTriggered -> {
-                            handleTap(event.x)
+                            // Use the primary pointer's coordinates (finding B) — falls back to a
+                            // no-op tap if it's already gone (see pointerIndex comment above).
+                            if (pointerIndex != -1) {
+                                handleTap(event.getX(pointerIndex), event.getY(pointerIndex))
+                            }
                         }
                     }
                 } else {
-                    // ACTION_CANCEL while push-to-talk -> cancel recording
+                    // ACTION_CANCEL while push-to-talk -> cancel recording. OS-interrupted touch
+                    // (distinct from a normal finger lift) — not covered by AC5 (release
+                    // semantics only); keeping the existing safe default is intentional, not an
+                    // oversight (Task 7.2).
                     if (pushToTalkActive) {
                         pushToTalkActive = false
                         cancelRecording()
                     }
+                    bubbleView.holdTargetHit = HoldTarget.NONE
+                    bubbleView.holdDragging  = false
                 }
+                activePointerId = MotionEvent.INVALID_POINTER_ID
                 return true
             }
         }
@@ -683,9 +1367,15 @@ class KlarvoOverlayService : Service() {
     }
 
     private fun savePosition(x: Int, y: Int) {
+        val (screenW, _) = getScreenDimensions()
+        // Side detection uses the full window width (incl. shadow padding), matching WindowManager
+        // placement logic so left/right classification agrees with edge-snap math.
+        val windowPx = bubbleWindowPx(bubbleView.getBubbleSizeDp())
+        val side = if (x + windowPx / 2 < screenW / 2) "left" else "right"
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putInt(PREF_X, x)
             .putInt(PREF_Y, y)
+            .putString(PREF_SIDE, side)
             .apply()
     }
 
@@ -697,20 +1387,22 @@ class KlarvoOverlayService : Service() {
      * Behavior depends on [tapMode]:
      *
      * HOLD mode:
-     *   IDLE -> expand to bar with [X][waveform][✓]
-     *   RECORDING -> tap cancel/confirm zones
+     *   IDLE -> expand to TAP surface
+     *   RECORDING -> tap Send/Cancel circles on the TAP surface
      *
      * TOGGLE / AUTOSTOP mode:
-     *   IDLE -> start recording (red circle, no bar)
-     *   RECORDING -> stop + process
+     *   IDLE -> start recording (TAP surface)
+     *   RECORDING -> tap Send/Cancel circles
      *
      * AUTO mode:
      *   IDLE -> start auto-loop (records, processes, repeats until tapped again)
      *   RECORDING -> stop loop + process current segment
      *
      * @param touchX Touch x-coordinate relative to the view's left edge.
+     * @param touchY Touch y-coordinate relative to the view's top edge.
+     *               Required for 2D circular hit detection on the TAP surface (Story 9-15).
      */
-    private fun handleTap(touchX: Float) {
+    private fun handleTap(touchX: Float, touchY: Float) {
         when (currentState) {
             RecordingState.IDLE -> {
                 activeGesture = "tap"
@@ -722,43 +1414,31 @@ class KlarvoOverlayService : Service() {
                 startRecording()
             }
             RecordingState.RECORDING -> {
-                when (tapMode) {
-                    RecordingMode.HOLD -> {
-                        when {
-                            bubbleView.isTouchInCancelZone(touchX)  -> cancelRecording()
-                            bubbleView.isTouchInConfirmZone(touchX) -> stopAndProcessRecording()
-                            // Middle zone tap: ignore
-                        }
-                    }
-                    RecordingMode.TOGGLE, RecordingMode.AUTOSTOP -> {
+                // Compact cluster (Story 9-16 revert): two 1-D X-band zones flanking the waveform.
+                // pushToTalkActive: finger still held → release handles PTT confirm.
+                if (pushToTalkActive) return
+                when {
+                    bubbleView.isTouchInConfirmZone(touchX) -> {
+                        // ➤ Send (RIGHT)
+                        if (tapMode == RecordingMode.AUTO) autoLoopActive = false
                         stopAndProcessRecording()
                     }
-                    RecordingMode.AUTO -> {
-                        autoLoopActive = false
-                        stopAndProcessRecording()
+                    bubbleView.isTouchInCancelZone(touchX) -> {
+                        // ✗ Cancel (LEFT)
+                        cancelRecording()
                     }
+                    // Waveform/dead area between the buttons: no-op.
                 }
             }
-            RecordingState.RECORDING_PTT -> {
-                if (!pushToTalkActive) {
-                    // Not actual PTT -- this is TOGGLE/AUTOSTOP/AUTO using circular visual
-                    when (tapMode) {
-                        RecordingMode.TOGGLE, RecordingMode.AUTOSTOP -> stopAndProcessRecording()
-                        RecordingMode.AUTO -> {
-                            autoLoopActive = false
-                            stopAndProcessRecording()
-                        }
-                        else -> { /* HOLD PTT: ignore taps, release handles it */ }
-                    }
-                }
-                // If pushToTalkActive: ignore taps, finger release handles it
-            }
-            RecordingState.PROCESSING -> {
-                // Stop auto-loop so the cycle doesn't repeat after this processing finishes.
+            RecordingState.TRANSCRIBING -> {
+                // Stop auto-loop so the cycle doesn't repeat after transcribing finishes.
                 if (autoLoopActive) {
                     autoLoopActive = false
-                    KlarvoLogger.d(TAG, "Auto-loop deactivated by tap during processing")
+                    KlarvoLogger.d(TAG, "Auto-loop deactivated by tap during transcribing")
                 }
+            }
+            RecordingState.DONE -> {
+                // Placeholder state: no user action during the 800ms DONE flash.
             }
         }
     }
@@ -798,31 +1478,45 @@ class KlarvoOverlayService : Service() {
             else        -> tapMode  // "tap" or null (auto-loop restart)
         }
 
-        // Select the silence duration by the ACTIVE MODE, mirroring desktop
-        // (pipeline.rs:640 AUTOSTOP→autostop_silence_secs, :704 AUTO→auto_mode_silence_secs)
-        // and the shared settings UI, which binds the silence slider to those mode-level fields.
-        // The bubble per-gesture values apply only to non-auto modes (HOLD/TOGGLE), where no
-        // silence auto-stop is wired anyway.
-        val activeSilenceSecs = when (activeMode) {
-            RecordingMode.AUTO     -> autoModeSilenceSecs
-            RecordingMode.AUTOSTOP -> autostopSilenceSecs
-            else -> when (activeGesture) {
-                "longpress" -> longPressSilenceSecs
-                else        -> tapSilenceSecs
-            }
-        }
+        // Select the silence duration by the ACTIVE MODE via the pure companion function.
+        // See RecordingMode.selectSilenceSecs() for the full rationale and desktop parity ref.
+        val activeSilenceSecs = RecordingMode.selectSilenceSecs(
+            mode              = activeMode,
+            gesture           = activeGesture,
+            tapSilence        = tapSilenceSecs,
+            longPressSilence  = longPressSilenceSecs,
+            autostopSilence   = autostopSilenceSecs,
+            autoModeSilence   = autoModeSilenceSecs,
+        )
         KlarvoLogger.d(TAG, "[pipeline] silence window: mode=$activeMode → ${activeSilenceSecs}s")
 
         val recorder = KlarvoAudioRecorder(
             context = this,
-            onAmplitude = { amplitude -> handler.post { bubbleView.amplitude = amplitude } },
-            silenceSecs = activeSilenceSecs
+            onAmplitude = { amplitude ->
+                handler.post {
+                    bubbleView.amplitude = amplitude
+                    panelView?.amplitude = amplitude
+                }
+            },
+            silenceSecs = activeSilenceSecs,
+            energyGateThreshold = silenceThreshold,
+            previewPauseSilenceSecs = cachedConfig?.previewPauseSilenceSecs ?: 2.0f
         )
 
         // Wire up silence detection for AUTOSTOP / AUTO modes.
         if (activeMode == RecordingMode.AUTOSTOP || activeMode == RecordingMode.AUTO) {
             recorder.onSilenceDetected = {
                 handler.post { onSilenceTriggered() }
+            }
+        }
+
+        // Story 11-2 (AC-1/AC-3/AC-4, Task 2.3): repeatable preview-flush callback, HOLD/TOGGLE
+        // only, opt-in via Settings. Fresh accumulator for this recording (AC-7's clear-on-finish
+        // guarantees this is already empty, but reset defensively in case of an earlier bail-out).
+        if (RecordingMode.shouldInstallPreviewFlush(activeMode, cachedConfig?.livePreviewEnabled == true)) {
+            previewAccumulatedText = ""
+            recorder.onPreviewPause = {
+                handler.post { flushPreviewDelta() }
             }
         }
 
@@ -839,22 +1533,23 @@ class KlarvoOverlayService : Service() {
         }
 
         audioRecorder = recorder
-        val previousState = currentState
 
-        when {
-            pushToTalkActive -> {
-                // PTT mode: bubble stays circular (no bar expansion), just turns red + scales up.
-                setState(RecordingState.RECORDING_PTT)
-            }
-            activeMode == RecordingMode.HOLD -> {
-                // HOLD: expand to bar with cancel/confirm buttons
-                setState(RecordingState.RECORDING)
-                adjustLayoutForState(RecordingState.RECORDING, previousState)
-            }
-            else -> {
-                // TOGGLE / AUTOSTOP / AUTO: red circle, no bar
-                setState(RecordingState.RECORDING_PTT)
-            }
+        // TAP surface: record start time for the chip timer display.
+        bubbleView.recordingStartMs = System.currentTimeMillis()
+
+        // TAP surface: expand window and set state.
+        val preRecordingState = currentState
+        setState(RecordingState.RECORDING)
+        adjustLayoutForState(RecordingState.RECORDING, preRecordingState)
+
+        // AUTO mode: paste-on-silence immediately — no panel, keyboard stays active.
+        // All other modes: dismiss keyboard + show passive listening panel.
+        if (activeMode != RecordingMode.AUTO) {
+            (getSystemService(Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager)
+                ?.hideSoftInputFromWindow(bubbleView.windowToken, 0)
+            showListeningPanel(ListeningPanelView.State.RECORDING)
+            if (panelVisible) panelView?.startTimer()
         }
     }
 
@@ -863,7 +1558,16 @@ class KlarvoOverlayService : Service() {
      * Must be called on the main thread.
      */
     private fun onSilenceTriggered() {
-        if (currentState != RecordingState.RECORDING && currentState != RecordingState.RECORDING_PTT) return
+        if (currentState != RecordingState.RECORDING) return
+
+        // Story 11-1 (spike): capture the pause-signal timestamp right here -- this is
+        // KlarvoAudioRecorder.onSilenceDetected reaching the service, i.e. the "pause"
+        // moment the live-preview benchmark measures from. Threaded through to
+        // processAudio() purely for logging; does not affect recording/STT behavior (AC4).
+        // Monotonic (SystemClock.elapsedRealtime()) rather than wall-clock: a clock step
+        // (NTP sync) between pause and end-capture must not corrupt the benchmark interval
+        // (code review finding, 2026-07-01).
+        val pauseSignalMs = SystemClock.elapsedRealtime()
 
         val activeMode = when (activeGesture) {
             "longpress" -> longPressMode
@@ -872,16 +1576,76 @@ class KlarvoOverlayService : Service() {
 
         when (activeMode) {
             RecordingMode.AUTOSTOP -> {
-                stopAndProcessRecording()
+                stopAndProcessRecording(pauseSignalMs)
             }
             RecordingMode.AUTO -> {
                 // Stop current segment and process it, then start a new recording
                 // if the auto-loop is still active.
-                stopAndProcessRecording()
+                stopAndProcessRecording(pauseSignalMs)
                 // processAudio will call onProcessingComplete which handles the loop restart.
             }
             else -> { /* should not happen */ }
         }
+    }
+
+    /**
+     * Story 11-2 (AC-1/Task 2.4): called (via `handler.post`) whenever
+     * [KlarvoAudioRecorder.onPreviewPause] fires. Takes the delta-since-last-flush WAV,
+     * transcribes it RAW (no LLM cleanup, mirrors AC-1/FR1 parity) via the same
+     * `transcribeWithRetry` + hallucination-filter chain [processAudio] uses, and appends the
+     * result to the panel. Recording is NOT stopped, nothing is pasted -- fail-soft on any
+     * error (log + skip, mirrors desktop AC-8 in Story 5-1).
+     *
+     * Code-review fix F3 (2026-07-01): dispatched onto [previewFlushExecutor] (single-thread,
+     * FIFO) instead of an independent `Thread` per pause -- variable Groq latency could
+     * otherwise let pause N+1's transcription complete before pause N's, scrambling the
+     * appended order. One flush is in-flight at a time; the caller (main thread) never blocks.
+     */
+    private fun flushPreviewDelta() {
+        if (currentState != RecordingState.RECORDING) return
+        val recorder = audioRecorder ?: return
+        val config = cachedConfig ?: return
+        val wavBytes = recorder.deltaSnapshotWav() ?: return
+
+        previewFlushExecutor.execute {
+            try {
+                val text = transcribeWithRetry(
+                    wavBytes,
+                    config.groqApiKey,
+                    config.language,
+                    "whisper-large-v3-turbo",
+                    config.dictionaryTerms,
+                    config.customPrompt,
+                    null // preview chunks are display-only -- no pending-WAV backup needed
+                )
+                if (text.isBlank()) return@execute
+                if (GroqSttBridge.nativeIsHallucination(text)) {
+                    KlarvoLogger.d(TAG, "[preview] chunk filtered as hallucination, skipping")
+                    return@execute
+                }
+                handler.post { appendPreviewText(text) }
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[preview] flush failed, skipping (fail-soft)", e)
+            }
+        }
+    }
+
+    /**
+     * Story 11-2 (AC-5): appends [text] to the accumulated preview and pushes it to the panel.
+     *
+     * Code-review fix F1 (2026-07-01): a preview STT chunk is dispatched (Groq round-trip) while
+     * still RECORDING, but can complete AFTER the user has already finished
+     * ([stopAndProcessRecording], which clears `previewAccumulatedText`) or cancelled
+     * ([cancelRecording], same reset) -- i.e. after the state has moved on to TRANSCRIBING/IDLE.
+     * Without this recheck, that late chunk would re-populate stale preview text onto the panel,
+     * which is still visible during TRANSCRIBING. Bail out and drop the chunk once we're no
+     * longer RECORDING; this is called on the main thread ([handler.post]), same thread that
+     * flips [currentState], so there is no race on the read itself.
+     */
+    private fun appendPreviewText(text: String) {
+        if (currentState != RecordingState.RECORDING) return
+        previewAccumulatedText = if (previewAccumulatedText.isBlank()) text else "$previewAccumulatedText $text"
+        panelView?.rawTranscript = previewAccumulatedText
     }
 
     /**
@@ -898,43 +1662,105 @@ class KlarvoOverlayService : Service() {
             recorder.releaseImmediately()
         }.start()
 
+        // Reset HOLD Cancel surface state (Story 9-14). holdTargetHit/holdDragging reset here too
+        // — finding 2's lesson (a transient HOLD flag never cleared on stop/cancel can leak into
+        // the next recording) applies to any HOLD-related transient state, not just the old
+        // isLockedMode flag (removed in the 2026-07-01 re-scope — Sperren/lock is gone).
+        bubbleView.holdDockActive = false
+        bubbleView.holdTargetHit  = HoldTarget.NONE
+        bubbleView.holdDragging   = false
+        setHoldModeOnPanel(false)
+        // Reset TAP surface timer (Story 9-15).
+        bubbleView.recordingStartMs = 0L
+
         val previousState = currentState
+        // Detect expanded mode: any non-square window means the TAP surface / HOLD Cancel surface
+        // is shown (IDLE/TRANSCRIBING/DONE are always touchTargetPx × touchTargetPx — square).
+        // NOT width>height: HOLD's window (Story 9-14) grows diagonally from the bubble, not
+        // purely horizontally like TAP's wider-than-tall layout — a width>height check would
+        // silently skip the shrink-back-to-idle resize for HOLD.
+        val wasBarMode = bubbleView.width != bubbleView.height
         setState(RecordingState.IDLE)
-        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
-        if (previousState == RecordingState.RECORDING) {
+        // Only adjust layout if we were in expanded mode.
+        if (previousState == RecordingState.RECORDING && wasBarMode) {
             adjustLayoutForState(RecordingState.IDLE, previousState)
         }
+        // Story 11-2: reset the preview accumulator so a cancelled recording never leaks its
+        // partial preview text into the next one (the panel itself is a fresh instance per
+        // showListeningPanel() call, so this is a defensive service-level reset, not a visible fix).
+        previewAccumulatedText = ""
+        // Story 9.5: hide listening panel on cancel.
+        hideListeningPanel()
     }
 
     /**
      * Stops recording and starts the STT + cleanup pipeline.
      * This is the "confirm" action -- used by the ✓ button and push-to-talk release.
+     *
+     * @param pauseSignalMs Story 11-1 (spike): when non-null, this call was triggered by
+     *   [onSilenceTriggered] (a VAD pause, not a manual tap/release) and holds the
+     *   `SystemClock.elapsedRealtime()` at which the pause fired. Threaded through to
+     *   [processAudio] purely so the benchmark log line can compute pause-to-text latency;
+     *   null for manual stops (button tap, push-to-talk release), which are not "pause" events.
      */
-    private fun stopAndProcessRecording() {
+    private fun stopAndProcessRecording(pauseSignalMs: Long? = null) {
         val recorder = audioRecorder ?: return
         audioRecorder = null
 
+        // Reset HOLD Cancel surface state (Story 9-14). holdTargetHit/holdDragging reset here too
+        // — finding 2's lesson (a transient HOLD flag never cleared on stop/cancel can leak into
+        // the next recording) applies to any HOLD-related transient state, not just the old
+        // isLockedMode flag (removed in the 2026-07-01 re-scope — Sperren/lock is gone).
+        bubbleView.holdDockActive = false
+        bubbleView.holdTargetHit  = HoldTarget.NONE
+        bubbleView.holdDragging   = false
+        setHoldModeOnPanel(false)
+        // Reset TAP surface timer (Story 9-15).
+        bubbleView.recordingStartMs = 0L
+
         val previousState = currentState
-        setState(RecordingState.PROCESSING)
-        // Only adjust layout if we were in bar mode (tap-to-record), not PTT mode.
-        if (previousState == RecordingState.RECORDING) {
-            adjustLayoutForState(RecordingState.PROCESSING, previousState)
+        setState(RecordingState.TRANSCRIBING)
+        // Only adjust layout if we were in expanded mode (TAP surface / HOLD targets — any
+        // non-square window; see cancelRecording()'s wasBarMode comment for why not width>height).
+        if (previousState == RecordingState.RECORDING && bubbleView.width != bubbleView.height) {
+            adjustLayoutForState(RecordingState.TRANSCRIBING, previousState)
+        }
+
+        // Story 9.5: transition panel to TRANSCRIBING (keep visible, change appearance).
+        panelView?.let { panel ->
+            panel.stopTimer()
+            panel.panelState = ListeningPanelView.State.TRANSCRIBING
+            panel.invalidate()
         }
 
         Thread {
             val wavBytes = recorder.stop()
-            processAudio(wavBytes)
+            processAudio(wavBytes, pauseSignalMs)
         }.start()
+
+        // Story 11-2 (AC-7): clear the accumulated preview text + implicitly the delta marker
+        // (a fresh KlarvoAudioRecorder is constructed per recording in startRecording(), so its
+        // marker already starts at 0 -- nothing to reset there). Placed here, right after the
+        // finish/paste chain is kicked off, rather than inside processAudio()'s many branches --
+        // the finish path itself (processAudio -> paste) stays completely untouched, and no
+        // further preview flushes can occur once audioRecorder is null (already cleared above).
+        previewAccumulatedText = ""
     }
 
     // --- API pipeline ---
 
-    private fun processAudio(wavBytes: ByteArray) {
+    /**
+     * @param pauseSignalMs Story 11-1 (spike): non-null only when this call originated from a
+     *   VAD pause ([onSilenceTriggered] / AUTOSTOP+AUTO modes). Used solely to log the
+     *   pause-to-raw-text latency benchmark below -- does not affect the pipeline itself (AC4).
+     */
+    private fun processAudio(wavBytes: ByteArray, pauseSignalMs: Long? = null) {
         val t0 = System.currentTimeMillis()
         if (wavBytes.isEmpty()) {
             handler.post {
                 showToast("No audio recorded")
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
@@ -957,6 +1783,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Recording too short")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -969,6 +1796,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("No speech detected")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -993,6 +1821,7 @@ class KlarvoOverlayService : Service() {
             handler.post {
                 showToast("No API keys configured. Please open Klarvo and add your Groq key in Settings.")
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1000,30 +1829,20 @@ class KlarvoOverlayService : Service() {
             return
         }
 
+        // Story 12-1 GATE-4 follow-up: status/fallback toasts fired during STT/cleanup are
+        // overridden ~1s later by HyperOS's own "pasted from your clipboard" system toast when
+        // the paste reads the clipboard (Android shows only one toast at a time). Deferring the
+        // message and showing it AFTER the paste makes it the newest toast, so it wins.
+        var degradeStatusMsg: String? = null
+
         try {
             // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
             val transcript = if (config.sttProvider == "local") {
                 val tLocalStart = System.currentTimeMillis()
 
-                // Resolve model file path.
-                // Tauri's app_data_dir() maps to filesDir on Android,
-                // so downloaded models land in filesDir/models/.
-                // Fallback: also check dataDir/models/ in case of older builds.
-                val filesDirModels = java.io.File(filesDir, "models")
-                val dataDirModels = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    java.io.File(dataDir, "models")
-                } else {
-                    java.io.File(applicationInfo.dataDir, "models")
-                }
-                KlarvoLogger.d(TAG, "[local-stt] filesDir/models: $filesDirModels exists=${filesDirModels.exists()}")
-                KlarvoLogger.d(TAG, "[local-stt] dataDir/models: $dataDirModels exists=${dataDirModels.exists()}")
-
-                val modelDir = when {
-                    filesDirModels.exists() -> filesDirModels
-                    dataDirModels.exists() -> dataDirModels
-                    else -> filesDirModels  // default to filesDir (matches Tauri download path)
-                }
-                val modelFile = modelDir.resolve("ggml-small.bin")  // TODO: read model name from config
+                // Resolve model file path (shared with the automatic Groq-failure
+                // safety net below, AC3/story 12-1 -- see resolveLocalWhisperModelFile).
+                val modelFile = resolveLocalWhisperModelFile()
 
                 KlarvoLogger.d(TAG, "[local-stt] model path: $modelFile, exists=${modelFile.exists()}")
 
@@ -1032,6 +1851,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Whisper model not downloaded. Please download in Settings.")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1050,6 +1870,7 @@ class KlarvoOverlayService : Service() {
                         handler.post {
                             showToast("Failed to load Whisper model")
                             autoLoopActive = false
+                            hideListeningPanel()
                             val prev = currentState
                             setState(RecordingState.IDLE)
                             adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1070,6 +1891,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         showToast("Transcription failed")
                         autoLoopActive = false
+                        hideListeningPanel()
                         val prev = currentState
                         setState(RecordingState.IDLE)
                         adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1078,17 +1900,55 @@ class KlarvoOverlayService : Service() {
                 }
                 result
             } else {
-                transcribeWithRetry(
-                    wavBytes,
-                    config.groqApiKey,
-                    config.language,
-                    "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
-                    config.dictionaryTerms,
-                    config.customPrompt,
-                    pendingWavFile
-                )
+                try {
+                    transcribeWithRetry(
+                        wavBytes,
+                        config.groqApiKey,
+                        config.language,
+                        "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
+                        config.dictionaryTerms,
+                        config.customPrompt,
+                        pendingWavFile
+                    )
+                } catch (sttEx: IOException) {
+                    // AC3: automatic local-Whisper safety net after Groq's retries are
+                    // exhausted. Rethrow the original exception when no local model is
+                    // usable -- the outer catch below preserves `pendingWavFile` (already
+                    // kept on disk by transcribeWithRetry) and shows a clear error, so the
+                    // dictation is never silently lost.
+                    //
+                    // Finding D: only fall back for a RETRYABLE failure (5xx/transport,
+                    // already exhausted by transcribeWithRetry's own backoff) -- mirrors
+                    // Rust's is_retryable_stt_error gate. A non-retryable failure (empty
+                    // audio, 4xx/auth) is a guaranteed repeat, so loading/running the local
+                    // model for it would be pure waste; go straight to the terminal path.
+                    if (!isRetryableSttFailure(sttEx)) {
+                        throw sttEx
+                    }
+                    val modelFile = resolveLocalWhisperModelFile()
+                    if (!modelFile.exists() || !LocalWhisperInference.isNativeAvailable()) {
+                        throw sttEx
+                    }
+                    KlarvoLogger.w(TAG, "[pipeline] Groq STT failed after retries ($sttEx), falling back to local Whisper", sttEx)
+                    if (!LocalWhisperInference.isModelLoaded() && !LocalWhisperInference.load(modelFile.absolutePath)) {
+                        throw sttEx
+                    }
+                    val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+                    val localResult = LocalWhisperInference.transcribeAudio(wavBase64, config.language)
+                    if (localResult.isBlank()) {
+                        throw sttEx
+                    }
+                    degradeStatusMsg = "⚠ Groq am Limit → lokale Transkription"
+                    localResult
+                }
             }
             val tStt = System.currentTimeMillis()
+            // Story 11-1 (spike, code review fix): dedicated monotonic end-capture for the
+            // benchmark only -- taken at the same point as tStt above, but via
+            // SystemClock.elapsedRealtime() so the pause-to-text interval can't be corrupted
+            // by a wall-clock step (NTP sync) between pause and here. tStt/tConfig above are
+            // unchanged and still drive the existing [pipeline] logs.
+            val benchmarkEndElapsedMs = SystemClock.elapsedRealtime()
             KlarvoLogger.d(TAG, "[pipeline] STT: ${tStt - tConfig}ms (${wavBytes.size / 1024}KB audio, provider=${config.sttProvider})")
 
             // STT succeeded -- safe to remove the pending WAV backup.
@@ -1098,11 +1958,24 @@ class KlarvoOverlayService : Service() {
                 handler.post {
                     showToast("No speech detected")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
                 }
                 return
+            }
+
+            // Story 11-1 (spike): pause-to-raw-text latency benchmark. Only logged for
+            // pause-triggered stops (AUTOSTOP/AUTO -- pauseSignalMs non-null) and only once the
+            // transcript is confirmed non-blank (code review fix: a blank "no speech" round-trip
+            // is not a real sample and must not contaminate the distribution). Log-only, no
+            // behavior change (AC4). `stt=` is the already-computed STT sub-duration so
+            // retry-inflated samples (transcribeWithRetry backs off >=2000ms on transient
+            // failures) are identifiable and excludable.
+            if (pauseSignalMs != null) {
+                val pauseToTextMs = benchmarkEndElapsedMs - pauseSignalMs
+                KlarvoLogger.d(TAG, "[benchmark-11-1] pause-to-text=${pauseToTextMs}ms stt=${tStt - tConfig}ms")
             }
 
             // Hallucination guard via shared Rust (ADR-0017, AC2).
@@ -1112,6 +1985,7 @@ class KlarvoOverlayService : Service() {
                 handler.post {
                     showToast("Speech not recognized")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1151,12 +2025,64 @@ class KlarvoOverlayService : Service() {
                         llmLatencyMs = tCleanup - tStt
                         KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (${llmProvider.model})")
                         result
-                    } catch (e: IOException) {
-                        KlarvoLogger.w(TAG, "Text cleanup failed -- using raw transcript", e)
+                    } catch (e: Exception) {
+                        // AC2: try a fallback cleanup provider (never Groq, never the one
+                        // that just failed) before degrading to raw text -- mirrors the
+                        // Rust pipeline's fallback-then-raw-text sequence, which this
+                        // runtime-failure path previously skipped entirely.
+                        //
+                        // Finding H: catches ANY exception (not just IOException) so a
+                        // non-IOException from cleanupChunked (e.g. RuntimeException /
+                        // ExecutionException) still degrades to raw text instead of
+                        // escaping and losing the already-obtained transcript.
+                        KlarvoLogger.w(TAG, "Text cleanup failed -- trying fallback provider", e)
                         KlarvoApi.updateFeedbackMetrics(this) { m ->
                             m.copy(llmErrorCount = m.llmErrorCount + 1)
                         }
-                        KlarvoApi.sanitizeLlmOutput(transcript)
+                        // Finding C: exclude the ACTUALLY resolved provider name
+                        // (llmProvider.providerName), not config.llmProvider -- when
+                        // resolveLlmProvider substituted a fallback because the configured
+                        // provider had no key, config.llmProvider names a provider that
+                        // never ran, so excluding it would let the fallback re-pick the
+                        // same substitute that just failed.
+                        //
+                        // Finding D: only actually attempt a fallback for a RETRYABLE
+                        // failure (429/5xx/transport) -- mirrors Rust's is_retryable_llm_error
+                        // gate. A non-retryable (e.g. 400/401 config/auth) failure or a
+                        // non-IOException is a guaranteed repeat, so degrade straight to
+                        // raw text instead of burning another provider's quota for nothing.
+                        val fallbackProvider = if (e is IOException && isRetryableCleanupFailure(e)) {
+                            KlarvoApi.resolveFallbackLlmProvider(config, llmProvider.providerName)
+                        } else {
+                            null
+                        }
+                        if (fallbackProvider != null) {
+                            try {
+                                val result = KlarvoApi.cleanupChunked(
+                                    text = transcript,
+                                    provider = fallbackProvider,
+                                    style = config.cleanupStyle,
+                                    dictionaryTerms = config.dictionaryTerms.takeIf { it.isNotBlank() },
+                                    customInstructions = config.customPrompt.takeIf { it.isNotBlank() }
+                                )
+                                val tCleanup = System.currentTimeMillis()
+                                llmLatencyMs = tCleanup - tStt
+                                KlarvoLogger.i(TAG, "[pipeline] cleanup fallback succeeded (${fallbackProvider.model})")
+                                // Finding [copy]: this fires after a cleanup FAILURE (not
+                                // slowness) that triggered a provider switch -- reword to
+                                // reflect what actually happened.
+                                degradeStatusMsg = "⚠ Cleanup-Anbieter gewechselt"
+                                result
+                            } catch (fallbackEx: Exception) {
+                                KlarvoLogger.w(TAG, "Cleanup fallback also failed -- using raw transcript", fallbackEx)
+                                degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
+                                KlarvoApi.sanitizeLlmOutput(transcript)
+                            }
+                        } else {
+                            KlarvoLogger.w(TAG, "No cleanup fallback provider available -- using raw transcript")
+                            degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
+                            KlarvoApi.sanitizeLlmOutput(transcript)
+                        }
                     }
                 } else {
                     KlarvoLogger.d(TAG, "[pipeline] cleanup: skipped (no LLM provider key)")
@@ -1206,6 +2132,7 @@ class KlarvoOverlayService : Service() {
             val capturedLlmLatency  = llmLatencyMs
             val capturedTranscript  = transcript
             val capturedFinalText   = finalText
+            val capturedDegradeMsg  = degradeStatusMsg
             handler.post {
                 // DIV-04 fix: abort paste if a banking/security app is focused at paste time.
                 // The pipeline may have started before the app-switch; this guard ensures
@@ -1213,6 +2140,7 @@ class KlarvoOverlayService : Service() {
                 if (BankingGuard.shouldBlockPaste(bankingAppActive)) {
                     showToast("Paste blocked — banking app active.")
                     autoLoopActive = false
+                    hideListeningPanel()
                     val prev = currentState
                     setState(RecordingState.IDLE)
                     adjustLayoutForState(RecordingState.IDLE, prev)
@@ -1225,7 +2153,19 @@ class KlarvoOverlayService : Service() {
                 KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
-                if (pasted) showToast("Inserted: $preview") else showToast("Copied: $preview")
+                // Successful paste is silent (the text simply appears) so it can't
+                // override a same-cycle status/fallback toast (story 12-1). The
+                // clipboard-fallback case IS surfaced: it's real info that the paste
+                // did not land and the text is on the clipboard instead.
+                if (!pasted) showToast("Copied: $preview")
+
+                // Story 12-1 GATE-4 follow-up: show the deferred status/fallback toast now,
+                // AFTER the paste, so it postdates (and thus wins over) HyperOS's own
+                // "pasted from your clipboard" system toast. LENGTH_LONG so it dwells long
+                // enough to actually be read.
+                if (capturedDegradeMsg != null) {
+                    Toast.makeText(this@KlarvoOverlayService, capturedDegradeMsg, Toast.LENGTH_LONG).show()
+                }
 
                 // Write feedback metrics (fire-and-forget, off main thread).
                 Thread {
@@ -1243,9 +2183,14 @@ class KlarvoOverlayService : Service() {
                     }
                 }.start()
 
-                val prev = currentState
-                setState(RecordingState.IDLE)
-                adjustLayoutForState(RecordingState.IDLE, prev)
+                // DONE flash: briefly show checkmark before returning to IDLE.
+                // Only the success path gets the DONE state; error paths go straight to IDLE.
+                // Cancel any prior pending flash before scheduling a new one (defensive).
+                val prevForDone = currentState
+                setState(RecordingState.DONE)
+                adjustLayoutForState(RecordingState.DONE, prevForDone)
+                handler.removeCallbacks(doneFlashRunnable)
+                handler.postDelayed(doneFlashRunnable, 800L)
 
                 // Auto-send (press Enter) if configured for this gesture.
                 val shouldAutoSend = when (gesture) {
@@ -1277,15 +2222,117 @@ class KlarvoOverlayService : Service() {
             KlarvoApi.updateFeedbackMetrics(this) { m ->
                 m.copy(sttErrorCount = m.sttErrorCount + 1)
             }
-            // If a pending WAV still exists (retries exhausted) let the user know it was
-            // preserved so no audio is silently lost.
-            val savedMsg = if (pendingWavFile?.exists() == true) " Recording saved." else ""
+            // AC3/AC5: if a pending WAV still exists (Groq retries exhausted, no local
+            // model available), the audio was preserved -- surface the taxonomy terminal
+            // message so the user knows it wasn't silently lost, rather than a raw
+            // exception string.
+            val audioPreserved = pendingWavFile?.exists() == true
+            val toastMsg = if (audioPreserved) {
+                "✗ Transkription fehlgeschlagen — Audio gesichert"
+            } else {
+                "Error: ${e.message?.take(80)}"
+            }
+            // Story 12-2 (AC3): mirror the Windows pipeline — a preserved WAV must be
+            // discoverable in the dictation history as a `pending` entry, not just a toast.
+            if (audioPreserved) {
+                KlarvoApi.savePendingHistoryEntry(
+                    context   = this,
+                    audioPath = pendingWavFile!!.absolutePath,
+                    language  = config.language,
+                    deviceId  = config.deviceId
+                )
+            }
             handler.post {
-                showToast("Error: ${e.message?.take(80)}$savedMsg")
+                showToast(toastMsg)
                 autoLoopActive = false
+                hideListeningPanel()
                 val prev = currentState
                 setState(RecordingState.IDLE)
                 adjustLayoutForState(RecordingState.IDLE, prev)
+            }
+        }
+    }
+
+    // --- Listening panel helpers (Story 9.5) ---
+
+    /**
+     * Creates and attaches the listening panel overlay window.
+     * Must be called on the main thread. No-op if panel is already visible.
+     */
+    private fun showListeningPanel(initialState: ListeningPanelView.State) {
+        if (panelVisible) {
+            // Update state if already visible (e.g. RECORDING→TRANSCRIBING without hide/show)
+            panelView?.panelState = initialState
+            panelView?.invalidate()
+            return
+        }
+        val panel = ListeningPanelView(this)
+        panel.panelState = initialState
+        // Story 11-2 (AC-9): apply the ported appearance config fresh at show-time (mirrors the
+        // desktop 6.6 "separate-window reactive read" lesson -- never cache stale values).
+        // Code-review fix F2 (2026-07-01): only restyle when Live Preview is actually enabled.
+        // `applyAppearance` isn't just cosmetics-when-off -- it also changes the panel's stock
+        // look (translucent bg, teal border, 13sp->11sp, monospace->sans) that Auto/AutoStop and
+        // the disabled-by-default (AC-4) case must keep byte-identical to pre-11-2 behavior.
+        (cachedConfig ?: KlarvoApi.readConfig(this))?.let { config ->
+            if (shouldApplyPreviewAppearance(config.livePreviewEnabled)) panel.applyAppearance(config)
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType,
+            // CAUTION: do NOT add FLAG_NOT_TOUCHABLE here. HyperOS/MIUI force-dims any
+            // TYPE_APPLICATION_OVERLAY window that carries FLAG_NOT_TOUCHABLE to a window alpha
+            // of 0.8 (verified via `dumpsys window windows`: NOT_TOUCHABLE → alpha=0.8, removing
+            // it → alpha=1.0), which made the home screen bleed through the panel — the real
+            // cause of the long-standing "transparent panel" defect. PixelFormat and the view's
+            // opaque background were red herrings; the dim is applied at the window-composite
+            // level and overrides both params.alpha and view.alpha. The cluster window escapes it
+            // precisely because it is touchable. We match the cluster's flags exactly. Cost: the
+            // panel now consumes touches in its bottom strip instead of passing them through —
+            // acceptable because the panel is a passive display that overlaps no other surface
+            // (the ➤/✗ cluster is a separate window at the bubble position), and it stays
+            // NOT_FOCUSABLE so it never steals input focus.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = android.view.Gravity.BOTTOM
+        }
+        // Modell B (ADR-0019 §4′): panel is a PASSIVE display. Cancel/Send/Waveform all live in
+        // the cluster (a separate bubble-position window). The panel has no touch listener, so
+        // touches that land on it are simply absorbed (no-op).
+        try {
+            windowManager.addView(panel, params)
+            panelView    = panel
+            panelParams  = params
+            panelVisible = true
+            KlarvoLogger.d(TAG, "[panel] shown (state=$initialState)")
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[panel] addView failed", e)
+        }
+    }
+
+    /**
+     * Removes the listening panel overlay window with a 320ms slide-down collapse animation.
+     * If called mid-collapse (e.g. a new show is requested), the in-flight animation is cancelled
+     * and the window is removed immediately so state stays consistent (F9).
+     *
+     * Must be called on the main thread. No-op if panel is not visible.
+     */
+    private fun hideListeningPanel() {
+        if (!panelVisible) return
+        val panel = panelView ?: return
+        // Mark not visible immediately so re-entrant calls (e.g. from onDestroy) are no-ops
+        panelVisible = false
+        panelView    = null
+        panelParams  = null
+        panel.hideWithAnimation {
+            try {
+                windowManager.removeView(panel)
+                KlarvoLogger.d(TAG, "[panel] hidden")
+            } catch (e: Exception) {
+                KlarvoLogger.w(TAG, "[panel] removeView failed (already removed?)", e)
             }
         }
     }
@@ -1295,34 +2342,55 @@ class KlarvoOverlayService : Service() {
     private fun setState(newState: RecordingState) {
         currentState   = newState
         bubbleView.state = when (newState) {
-            RecordingState.IDLE          -> FloatingBubbleView.State.IDLE
-            RecordingState.RECORDING     -> FloatingBubbleView.State.RECORDING
-            RecordingState.RECORDING_PTT -> FloatingBubbleView.State.RECORDING_PTT
-            RecordingState.PROCESSING    -> FloatingBubbleView.State.PROCESSING
+            RecordingState.IDLE        -> FloatingBubbleView.State.IDLE
+            RecordingState.RECORDING   -> FloatingBubbleView.State.RECORDING
+            RecordingState.TRANSCRIBING -> FloatingBubbleView.State.TRANSCRIBING
+            RecordingState.DONE        -> FloatingBubbleView.State.DONE
         }
-        bubbleView.alpha = when (newState) {
-            RecordingState.IDLE -> bubbleOpacity
-            RecordingState.RECORDING, RecordingState.RECORDING_PTT,
-            RecordingState.PROCESSING -> 1.0f
-        }
+        bubbleView.alpha = 1.0f  // all states fully opaque (idle matches canon — see setupBubble)
+        // Story 9.5 fix: while the listening panel owns RECORDING/TRANSCRIBING, suppress the
+        // bubble's own state visual to the idle squircle so the two overlays don't both render the
+        // same state (real-device double-window defect). The bubble window stays alive for touch
+        // (PTT release / taps). Driven here on EVERY transition so DONE/IDLE restore the normal
+        // visual (DONE checkmark, then idle).
+        bubbleView.suppressedForPanel =
+            newState == RecordingState.RECORDING || newState == RecordingState.TRANSCRIBING
         if (newState == RecordingState.IDLE) {
             bubbleView.amplitude = 0f
             // Re-read config so bubble size/opacity changes from Settings take effect
             // without requiring a full app restart.
             reloadBubbleAppearance()
+            // Regression fix (9-14/9-15 push-to-talk rework): the keyboard is dismissed mid-RECORDING
+            // (line ~1484, non-AUTO modes), so applyKeyboardState(false) fires while state != IDLE and
+            // its hide gate (line 758) is correctly skipped. Nothing re-checked keyboard visibility once
+            // the state later returned to IDLE, stranding the idle bubble on screen with no keyboard.
+            // Re-apply the same gate here on every return to IDLE (covers the DONE→IDLE flash and cancel).
+            if (!alwaysVisible && !keyboardVisible) {
+                hideBubble()
+            }
         }
     }
 
     /**
      * Re-reads bubble size, opacity, and recording controls from config.json.
      * Called on every return to IDLE so Settings changes take effect after the next dictation.
+     *
+     * Bubble visual size uses the responsive formula (computeVisualSizeDp) as of Story 9.3;
+     * config.bubbleSize scale factor is no longer applied here.
      */
     private fun reloadBubbleAppearance() {
         val config = KlarvoApi.readConfig(this) ?: return
-        val newSizeDp = (BASE_BUBBLE_SIZE_DP * config.bubbleSize).toInt().coerceAtLeast(24)
-        bubbleOpacity = config.bubbleOpacity
+        val newSizeDp = computeVisualSizeDp(config)
         bubbleView.setBubbleSize(newSizeDp)
-        bubbleView.alpha = bubbleOpacity
+        // AC8 (Story 9-15 Re-Scope): apply user-configured recording button size.
+        bubbleView.recordingButtonSizeDp = config.recordingButtonSizeDp
+        bubbleView.alpha = 1.0f  // idle fully opaque (canon); legacy bubbleOpacity no longer dims it
+
+        // Keep window (visual + shadow padding) in sync with the (possibly changed) visual size
+        val touchTargetPx = bubbleWindowPx(newSizeDp)
+        bubbleParams.width  = touchTargetPx
+        bubbleParams.height = touchTargetPx
+
         updateBubbleLayout()
         loadBubbleControls()
         updateNotification()
@@ -1341,6 +2409,30 @@ class KlarvoOverlayService : Service() {
     // ---- Data-loss prevention helpers ----
 
     /**
+     * Resolves the local Whisper model file path.
+     *
+     * Checks `filesDir/models/` first (matches Tauri's `app_data_dir()` download
+     * location), falling back to `dataDir/models/` for older builds. Shared by
+     * the explicit `sttProvider == "local"` path and the automatic
+     * Groq-failure safety net (AC3, story 12-1) so both consumers use the
+     * same presence check instead of two independently-drifting copies.
+     */
+    private fun resolveLocalWhisperModelFile(): File {
+        val filesDirModels = File(filesDir, "models")
+        val dataDirModels = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            File(dataDir, "models")
+        } else {
+            File(applicationInfo.dataDir, "models")
+        }
+        val modelDir = when {
+            filesDirModels.exists() -> filesDirModels
+            dataDirModels.exists() -> dataDirModels
+            else -> filesDirModels // default to filesDir (matches Tauri download path)
+        }
+        return modelDir.resolve("ggml-small.bin") // TODO: read model name from config
+    }
+
+    /**
      * Writes the WAV bytes to {dataDir}/pending/<timestamp>.wav before any network call.
      * Returns the File, or null if the write fails (non-fatal -- pipeline continues).
      */
@@ -1356,6 +2448,33 @@ class KlarvoOverlayService : Service() {
             KlarvoLogger.w(TAG, "[pending-wav] failed to save backup WAV", e)
             null
         }
+    }
+
+    /**
+     * Finding D (story 12-1 code review): classifies an [IOException] thrown by
+     * [transcribeWithRetry] as retryable or not, mirroring Rust's
+     * `is_retryable_stt_error`. `transcribeWithRetry` already does its own
+     * classification internally (4xx = non-retryable, 5xx/network = retried,
+     * empty audio = non-retryable) and encodes the outcome in the exception
+     * message prefix, so this reads that prefix rather than re-parsing status
+     * codes: only "failed after retries" means the retryable path was actually
+     * exhausted -- everything else (empty audio, 4xx) is a permanent failure
+     * that a local-Whisper attempt cannot fix.
+     */
+    private fun isRetryableSttFailure(e: IOException): Boolean {
+        return e.message?.startsWith("Groq STT failed after retries:") == true
+    }
+
+    /**
+     * Finding D (story 12-1 code review): classifies an [IOException] thrown by
+     * [KlarvoApi.cleanupChunked] as retryable or not, mirroring Rust's
+     * `is_retryable_llm_error` (429/5xx or a transport failure with no HTTP
+     * response at all -- DNS/timeout/connection-refused -- are retryable;
+     * every other HTTP status is a permanent/config error).
+     */
+    private fun isRetryableCleanupFailure(e: IOException): Boolean {
+        val status = Regex("HTTP (\\d{3})").find(e.message ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull()
+        return status == null || status == 429 || status >= 500
     }
 
     /**

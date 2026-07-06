@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<!-- Device-scale: 1 CSS px ≈ 1 dp on the phone (width=device-width). Open ON THE PHONE. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Klarvo — TAP-Surface Größen-Kalibrierung</title>
+<style>
+  :root{
+    --teal-hi:#57DDC7; --teal-lo:#1B9C88; --on-teal:#05201B;
+    --danger:#EE6F63; --danger-hi:#F4897E; --danger-line:rgba(238,111,99,.5);
+    --amber:#F0A93B; --dim:#8A9098;
+    --cancel-fill:rgba(20,18,18,.95); --chip-bg:rgba(18,20,22,.96); --border:rgba(255,255,255,.10);
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:#0c0e11;color:#e7eaee;font-family:system-ui,Roboto,sans-serif;
+       /* realistic dark wallpaper-ish backdrop */
+       background:radial-gradient(120% 60% at 70% 0%,#1a2230 0%,#0c0e11 60%);}
+  header{padding:18px 16px 6px}
+  header h1{font-size:17px;margin:0 0 4px}
+  header p{font-size:13px;color:#aab2bd;margin:2px 0;line-height:1.4}
+  .screeninfo{font-family:var(--mono);font-size:11px;color:#7c8794}
+  .card{margin:10px 12px 26px;padding:14px 0 6px;border-top:1px solid rgba(255,255,255,.07)}
+  .tag{display:flex;align-items:baseline;gap:8px;padding:0 14px 12px}
+  .tag b{font-size:15px}
+  .tag .pct{font-family:var(--mono);font-size:11px;color:var(--amber)}
+  .tag.cur b{color:var(--danger-hi)}
+  /* the surface: chip on top, two circles below */
+  .surface{display:flex;flex-direction:column;align-items:center;gap:14px;padding:6px 12px}
+  .chip{display:inline-flex;align-items:center;gap:9px;background:var(--chip-bg);
+        border:1px solid var(--border);border-radius:18px;padding:8px 14px}
+  .wave{display:flex;align-items:flex-end;gap:3px;height:22px}
+  .wave i{width:3px;background:var(--amber);border-radius:2px;display:block}
+  .wave i:nth-child(1){height:40%}.wave i:nth-child(2){height:75%}.wave i:nth-child(3){height:55%}
+  .wave i:nth-child(4){height:90%}.wave i:nth-child(5){height:50%}
+  .timer{font-family:var(--mono);font-size:13px;color:#cfd6de}
+  .row{display:flex;align-items:flex-start;justify-content:center;gap:var(--gap)}
+  .ztap{width:var(--d);height:var(--d);border-radius:50%;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:calc(var(--d)*.04);position:relative}
+  .ztap.send{background:linear-gradient(150deg,var(--teal-hi),var(--teal-lo));color:var(--on-teal)}
+  .ztap.cancel{background:var(--cancel-fill);border:2px solid var(--danger-line);color:var(--danger-hi)}
+  .ic{line-height:1;font-size:calc(var(--d)*.34)}
+  .lab{font-weight:600;font-size:calc(var(--d)*.135)}
+  .hint{font-family:var(--mono);font-size:calc(var(--d)*.085);opacity:.72}
+  .send .hint{color:rgba(5,32,27,.7)}
+  .cancel .hint{color:var(--dim)}
+  .note{padding:0 16px;font-size:12px;color:#9aa3ad}
+  footer{padding:20px 16px 60px;font-size:12px;color:#7c8794;line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+  <h1>TAP-Surface — welche Größe fühlt sich richtig an?</h1>
+  <p>Auf deinem Handy öffnen — die Kreise sind hier in <b>echter Geräte-Größe</b> (px = dp).
+     Leg den Daumen drauf: gut erreichbar &amp; nicht bildschirmfüllend = richtig.</p>
+  <p class="screeninfo">Gerät 23054RA19C · 1080×2460 @440dpi · 393dp breit</p>
+  <p class="note">Jeder Block = die zwei Knöpfe + Waveform-Chip bei einem Durchmesser. Sag mir die dp-Zahl, die passt.</p>
+</header>
+
+<!-- template blocks; JS fills them -->
+<div id="cards"></div>
+
+<footer>
+  Referenz: idle-„K"-Bubble ist 62 dp. Aktuell gebaut = 132 dp (= 81% der Schirmbreite für beide Kreise).<br>
+  Antworte einfach mit der dp-Zahl (oder „zwischen X und Y").
+</footer>
+
+<script>
+  // current=132 reference first, then descending candidates
+  const sizes = [
+    {d:132, label:"132 dp", cur:true},
+    {d:104, label:"104 dp"},
+    {d:88,  label:"88 dp"},
+    {d:72,  label:"72 dp (≈ idle-Bubble)"},
+    {d:60,  label:"60 dp (kompakt)"},
+  ];
+  const screenDp = 393;
+  const wrap = document.getElementById('cards');
+  for(const s of sizes){
+    const gap = Math.round(s.d*0.42); // gap scales with size, but min readable
+    const pairW = s.d*2 + gap;
+    const pct = Math.round(pairW/screenDp*100);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="tag ${s.cur?'cur':''}">
+        <b>${s.label}${s.cur?' — das ist JETZT gebaut':''}</b>
+        <span class="pct">beide Kreise = ${pct}% Schirmbreite</span>
+      </div>
+      <div class="surface" style="--d:${s.d}px; --gap:${gap}px;">
+        <div class="chip">
+          <div class="wave"><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="timer">0:04</span>
+        </div>
+        <div class="row">
+          <div class="ztap send"><span class="ic">&#10148;</span><span class="lab">Senden</span><span class="hint">tippen</span></div>
+          <div class="ztap cancel"><span class="ic">&#10005;</span><span class="lab">Abbrechen</span><span class="hint">tippen</span></div>
+        </div>
+      </div>`;
+    wrap.appendChild(card);
+  }
+</script>
+</body>
+</html>
