@@ -193,7 +193,10 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             val line = visible.getOrNull(i)
             slot.text = line?.text ?: ""
             val targetAlpha = if (line?.isFading == true) ROLLING_FADE_ALPHA else 1f
-            if (slot.alpha != targetAlpha) {
+            // P4 (11-3 review): epsilon comparison -- exact float equality can miss-fire (or
+            // fail to fire) under residual animation float drift, re-triggering redundant
+            // animations.
+            if (kotlin.math.abs(slot.alpha - targetAlpha) > 0.01f) {
                 slot.animate().cancel()
                 slot.animate().alpha(targetAlpha).setDuration(ROLLING_FADE_MS).start()
             }
@@ -358,7 +361,13 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // Transcript area: fixed pool of ROLLING_MAX_LINES line-TextViews (rolling window,
         // Story 11-3 item 3) + blinking amber caret, in a FrameLayout overlay. No ScrollView —
         // the box is fixed-height and never scrolls; content is bounded by visibleLines().
-        val linesContainer = LinearLayout(context).apply { orientation = VERTICAL }
+        // P2 (11-3 review): gravity BOTTOM so overflow (a long wrapped chunk, or the "large"
+        // 18sp font) clips the TOP (oldest) line, never the bottom (newest) -- the rolling
+        // model is newest-at-bottom, older rolls out the top.
+        val linesContainer = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.BOTTOM
+        }
         lineViews = (0 until ROLLING_MAX_LINES).map {
             TextView(context).apply {
                 setTextColor(KlarvoTheme.Muted)
@@ -378,7 +387,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         transcriptFrame.addView(linesContainer, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
-        ))
+        ).apply { gravity = Gravity.BOTTOM })
         val caretLp = FrameLayout.LayoutParams(
             (2 * dp).toInt(),
             (15 * dp).toInt()

@@ -121,6 +121,24 @@ class KlarvoOverlayService : Service() {
          * [RecordingMode.shouldInstallPreviewFlush].
          */
         fun shouldApplyPreviewAppearance(livePreviewEnabled: Boolean): Boolean = livePreviewEnabled
+
+        /**
+         * Code-review fix P1 (11-3): sanitizes an incoming preview STT chunk before it is
+         * accumulated in [appendPreviewText]. Two problems this closes:
+         *  - `ListeningPanelView.renderRollingLines` recovers the per-chunk list by splitting
+         *    the accumulated text on `"\n"` (Task 4.2). If a single STT chunk itself contains an
+         *    embedded newline, that split would miscount it as two rolling-window lines instead
+         *    of one. Embedded newlines are collapsed to a single space here so `"\n"` stays the
+         *    ONLY inter-chunk separator.
+         *  - A blank/whitespace-only chunk would otherwise still get joined in, wasting a
+         *    rolling-window slot on an empty line.
+         * Returns the cleaned chunk, or `null` if there is nothing worth appending (caller should
+         * skip the append entirely in that case).
+         */
+        fun sanitizePreviewChunk(text: String): String? {
+            val cleaned = text.replace(Regex("\\n+"), " ").trim()
+            return cleaned.ifBlank { null }
+        }
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -1662,7 +1680,8 @@ class KlarvoOverlayService : Service() {
      */
     private fun appendPreviewText(text: String) {
         if (currentState != RecordingState.RECORDING) return
-        previewAccumulatedText = if (previewAccumulatedText.isBlank()) text else "$previewAccumulatedText\n$text"
+        val cleaned = sanitizePreviewChunk(text) ?: return
+        previewAccumulatedText = if (previewAccumulatedText.isBlank()) cleaned else "$previewAccumulatedText\n$cleaned"
         panelView?.rawTranscript = previewAccumulatedText
     }
 
