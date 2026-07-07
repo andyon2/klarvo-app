@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-07-07
+# last_updated: 2026-07-07 (11-3 -> review)
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -158,7 +158,7 @@ development_status:
   11-2-android-live-preview-port: done
   # 11-3 HOCHGESTUFT 2026-07-07 (Andi): Bedienbarkeits-Blocker, nicht Politur — mitwachsende Preview
   # verdeckt Aufnahme-Controls → Gerät unbenutzbar. NÄCHSTE Android-Story, VOR Epic 8. Spec: docs/backlog.md#11-3
-  11-3-android-preview-box-device-feedback-pass: ready-for-dev
+  11-3-android-preview-box-device-feedback-pass: review
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
   # done 2026-07-06: 12-1 + 12-2 both Andi-device-verified; integrated into v1-ship (merge f53da68); 12-3 deferred (north-star).

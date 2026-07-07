@@ -2,7 +2,7 @@
 story: "11.3"
 epic: "11"
 title: "Android Preview-Box — Device Feedback Pass (fixed-size rolling window, header/footer cleanup, font scale, bubble Z-order fix)"
-status: ready-for-dev
+status: review
 track: L2-fix
 gatedBy: ["11.2"]
 buildsOn: ["11.2"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.3: Android Preview-Box — Device Feedback Pass
 
-Status: ready-for-dev
+Status: review
 
 > **Epic 11 — Cross-Platform Live-Preview.** Story 11-2 (`done`, real-device-verified) shipped the
 > Android preview panel: a passive text surface at the bottom overlay window that accumulates raw
@@ -222,54 +222,56 @@ end up on top).
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Header + footer text changes** (AC-1, AC-2)
-  - [ ] 1.1 `ListeningPanelView.kt:535-538`: rename `"Aufnahme"` → `"Live-Preview"`,
+- [x] **Task 1 — Header + footer text changes** (AC-1, AC-2)
+  - [x] 1.1 `ListeningPanelView.kt:535-538`: rename `"Aufnahme"` → `"Live-Preview"`,
     `"Aufnahme · halten"` → `"Live-Preview · halten"`.
-  - [ ] 1.2 `ListeningPanelView.kt:697-702`: remove the RECORDING-branch caption text (draw
+  - [x] 1.2 `ListeningPanelView.kt:697-702`: remove the RECORDING-branch caption text (draw
     nothing, or skip the `canvas.drawText` call for that branch) — leave the TRANSCRIBING branch
     untouched.
 
-- [ ] **Task 2 — Remove GripView, tighten layout** (AC-4)
-  - [ ] 2.1 Remove the `GripView` inner class and its `addView(gripView, gripParams)` call
+- [x] **Task 2 — Remove GripView, tighten layout** (AC-4)
+  - [x] 2.1 Remove the `GripView` inner class and its `addView(gripView, gripParams)` call
     (`ListeningPanelView.kt:274-279`).
-  - [ ] 2.2 Adjust the reclaimed top padding/margin so `topRowView` sits closer to the panel's top
+  - [x] 2.2 Adjust the reclaimed top padding/margin so `topRowView` sits closer to the panel's top
     edge (`init` block `setPadding`/margins, `ListeningPanelView.kt:271-288`) — implementation
     call, verify at GATE-4.
 
-- [ ] **Task 3 — Font scale rescale** (AC-5)
-  - [ ] 3.1 `ListeningPanelView.kt:42`: `FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f,
+- [x] **Task 3 — Font scale rescale** (AC-5)
+  - [x] 3.1 `ListeningPanelView.kt:42`: `FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f,
     "large" to 18f)`.
 
-- [ ] **Task 4 — Fixed-size rolling-window transcript display** (AC-3, the core fix)
-  - [ ] 4.1 Design a pure Kotlin line-buffer/eviction function (e.g.
+- [x] **Task 4 — Fixed-size rolling-window transcript display** (AC-3, the core fix)
+  - [x] 4.1 Design a pure Kotlin line-buffer/eviction function (e.g.
     `visibleLines(chunks: List<String>, maxLines: Int): List<Line>` where `Line` carries
     text + a fading/evicting flag) — no `Context`, no `View`, directly JVM-testable, mirrors the
     existing pure-function pattern.
-  - [ ] 4.2 Decide (first-pass, device-tunable — see "Open Items") a `maxLines`/fixed-height value
+  - [x] 4.2 Decide (first-pass, device-tunable — see "Open Items") a `maxLines`/fixed-height value
     and a fade duration; wire the flush pipeline so each `appendPreviewText` call is treated as one
     line-buffer entry (currently chunks are joined with a single space into one long string,
     `KlarvoOverlayService.kt:1647` — evaluate whether that join needs to change to a newline-join
     for "line" to mean something visually, or whether line-wrapping the single string within the
     fixed-height view is sufficient; document the choice in Completion Notes).
-  - [ ] 4.3 Remove `transcriptScrollView`/`fullScroll` auto-scroll (`ListeningPanelView.kt:130, 260,
+  - [x] 4.3 Remove `transcriptScrollView`/`fullScroll` auto-scroll (`ListeningPanelView.kt:130, 260,
     312-326`); replace with the fixed rolling-window rendering (view re-layout, fade-out
     animation for evicted lines — reuse `ValueAnimator` patterns already present in the file, e.g.
     `hideWithAnimation`'s style, for consistency).
-  - [ ] 4.4 JVM unit test for 4.1's pure function: assert eviction bound holds (buffer never
+  - [x] 4.4 JVM unit test for 4.1's pure function: assert eviction bound holds (buffer never
     exceeds `maxLines`), oldest-first eviction order. Inversion: an unbounded implementation must
     fail.
 
-- [ ] **Task 5 — Panel window: fixed height, not WRAP_CONTENT** (AC-3)
-  - [ ] 5.1 `KlarvoOverlayService.kt:2280-2301`: change the panel's `WindowManager.LayoutParams`
+- [x] **Task 5 — Panel window: fixed height, not WRAP_CONTENT** (AC-3)
+  - [x] 5.1 `KlarvoOverlayService.kt:2280-2301`: change the panel's `WindowManager.LayoutParams`
     height from `WRAP_CONTENT` to the fixed value chosen in Task 4.2 (converted to px via
     `resources.displayMetrics.density`, matching the existing `ListeningPanelView`
     `minimumHeight` conversion pattern at `ListeningPanelView.kt:339-340`).
-  - [ ] 5.2 Remove/reconcile the `minimumHeight = 200dp` floor in `ListeningPanelView`'s `init`
+  - [x] 5.2 Remove/reconcile the `minimumHeight = 200dp` floor in `ListeningPanelView`'s `init`
     (`ListeningPanelView.kt:340`) if it becomes redundant with the fixed window height — do not
     leave two competing height mechanisms.
 
-- [ ] **Task 6 — Bubble structurally above panel** (AC-6, the blocker fix)
-  - [ ] 6.1 Investigate Android window-type options for a same-owner (foreground `Service`), same-
+- [x] **Task 6 — Bubble structurally above panel** (AC-6, the blocker fix) — **investigated,
+  ESCALATED per 6.3 (see Completion Notes); AC-6 is NOT satisfied in this story's code — no
+  code change was made for this task.**
+  - [x] 6.1 Investigate Android window-type options for a same-owner (foreground `Service`), same-
     permission-set fix that structurally out-ranks `TYPE_APPLICATION_OVERLAY` — start from what
     the app already has: `KlarvoAccessibilityService` is already bound and running
     (`android/kotlin-src/com/klarvo/voice/KlarvoAccessibilityService.kt`), which is the usual
@@ -278,24 +280,32 @@ end up on top).
     foreground-service `WindowManager`/context, or whether ownership must move to
     `KlarvoAccessibilityService` itself (bigger change — touches how `bubbleView`/`bubbleParams`
     are created and how touch handling reaches back into `KlarvoOverlayService`). See Dev Notes.
+    **Done — see Completion Notes: no same-owner path exists.**
   - [ ] 6.2 If a viable mechanism exists, implement it; document the exact API/type chosen and why
-    it's order-independent in Completion Notes.
-  - [ ] 6.3 If no permission-free, same-owner mechanism exists, **escalate in Completion Notes
+    it's order-independent in Completion Notes. **N/A — 6.1 found no viable same-owner
+    mechanism; nothing to implement without the larger reparenting change 6.3 explicitly gates.**
+  - [x] 6.3 If no permission-free, same-owner mechanism exists, **escalate in Completion Notes
     rather than silently building a large reparenting change** — flag for Andi/story-conductor
     decision before proceeding (this is the story's designated hardest point, expected to possibly
-    need a follow-up design call).
-  - [ ] 6.4 Add/extend a JVM test if a pure resolver/guard function is introduced as part of the
+    need a follow-up design call). **Done — escalated, see Completion Notes.**
+  - [x] 6.4 Add/extend a JVM test if a pure resolver/guard function is introduced as part of the
     fix (e.g. "does this Z-order approach depend on add-order" as a documented, testable
     invariant) — if the fix is purely a `WindowManager.LayoutParams.type`/flags change with no new
-    pure logic, document why no new test applies instead of skipping silently.
+    pure logic, document why no new test applies instead of skipping silently. **No code was
+    changed for Task 6 (escalated instead), so no new test applies — documented here rather than
+    skipped silently.**
 
-- [ ] **Task 7 — Verify + close**
-  - [ ] 7.1 New JVM unit tests green (Tasks 4.4, 6.4) — confirm inversions RED empirically,
+- [x] **Task 7 — Verify + close**
+  - [x] 7.1 New JVM unit tests green (Tasks 4.4, 6.4) — confirm inversions RED empirically,
     document in Completion Notes.
-  - [ ] 7.2 `scripts/android-smoke.sh` clean build/install (confirm this story stayed Kotlin-only —
+  - [x] 7.2 `scripts/android-smoke.sh` clean build/install (confirm this story stayed Kotlin-only —
     no full `tauri android build` needed, unlike 11-2's Settings-touching scope).
   - [ ] 7.3 Real-device smoke per DoD — Andi's action, with the specific ➤/✗-reachability
     confirmation called out above (this is the story's actual deliverable, not a nice-to-have).
+    **Not done by the dev agent — real-device smoke is Andi's action per project-context.md;
+    also, AC-6 (bubble-above-panel) cannot be confirmed at GATE-4 because it was not implemented
+    (see Task 6 escalation) — Andi's smoke should treat the ➤/✗-reachability check as
+    EXPECTED-TO-STILL-FAIL until AC-6 is resolved.**
 
 ## Dev Notes
 
@@ -415,14 +425,87 @@ pure functions, no `Context`/`WindowManager`/I/O, directly JVM-testable in
 
 ### Agent Model Used
 
+Claude (bmad-dev-story workflow, claude-in-chrome/Bash/Read/Edit toolset), 2026-07-07.
+
 ### Debug Log References
+
+- JVM unit tests (all Android suites, `:app:testUniversalDebugUnitTest --offline`): 17 suites,
+  **158/158 passing, 0 failures, 0 errors** — includes the new `RollingWindowVisibleLinesTest`
+  (7/7) and confirms no regression in the 10 other suites touched indirectly by the
+  `ListeningPanelView`/`KlarvoOverlayService` edits (e.g. `ResolveTranscriptColorTest`,
+  `ShouldApplyPreviewAppearanceTest`, `RecordingModeSilenceSelectionTest`,
+  `DeltaSnapshotSliceTest`).
+- `:app:compileUniversalDebugKotlin --offline`: clean compile of the full main source set
+  (proves `KlarvoOverlayService.kt`/`ListeningPanelView.kt` changes are syntactically/type
+  correct beyond just the test sourceset).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon
+  klarvo.css` — unaffected by this story (no theme-token changes).
 
 ### Completion Notes List
 
+- **Tasks 1–5 (AC-1 through AC-5) fully implemented and JVM-tested where applicable.**
+- **Task 4.2 join-format decision:** `KlarvoOverlayService.appendPreviewText` was changed from
+  space-join (`"$acc $text"`) to **newline-join** (`"$acc\n$text"`) so each preview-flush chunk
+  becomes exactly one rolling-window line (`ListeningPanelView.renderRollingLines` splits on
+  `"\n"`). This revisits 11-2's accepted-Low finding on the space-join per the story's own Dev
+  Notes guidance (that finding was accepted for STT *accuracy* reasons, not for this story's
+  *display* mechanics).
+- **Task 4.2 first-pass numeric parameters (OPEN ITEM #1, explicitly not pixel-pinned):**
+  `ListeningPanelView.ROLLING_MAX_LINES = 5`, `ROLLING_FADE_MS = 280`,
+  `ROLLING_FADE_ALPHA = 0.35f`; panel window `KlarvoOverlayService.PANEL_FIXED_HEIGHT_DP = 200`
+  (reuses the pre-11-3 200dp floor value, now as the sole/fixed height, per the story's own
+  first-pass proposal). **Flag for Andi at GATE-4** per the story's own instruction.
+- **Task 4.3 rolling-window rendering approach:** implemented as a fixed pool of
+  `ROLLING_MAX_LINES` `TextView`s in a vertical `LinearLayout` (`lineViews`), rebuilt on every
+  `rawTranscript` update via `renderRollingLines`. The oldest visible line (flagged
+  `Line.isFading` by the pure `visibleLines` function whenever older chunks exist beyond the
+  window) is animated to `ROLLING_FADE_ALPHA` over `ROLLING_FADE_MS` via `TextView.animate()` —
+  a first-pass "soft fade" (dim before it rolls off), not a full crossfade choreography; GATE-4
+  should confirm this reads as "soft", not abrupt.
+- **AC-6 / Task 6 — ESCALATED, NOT IMPLEMENTED.** Investigation (Task 6.1) confirmed via web
+  research (Android platform docs/community sources on `TYPE_ACCESSIBILITY_OVERLAY`) that this
+  window type — the standard mechanism for "always above other app overlays" — can only be added
+  through a `WindowManager` obtained from an active `AccessibilityService`'s own `Context`;
+  non-accessibility-service callers (i.e. `KlarvoOverlayService`, a plain foreground `Service`)
+  cannot add such a window. There is **no lighter, same-owner, permission-free fix** — the only
+  structural path is reparenting the bubble window's ownership (creation, touch-listener, drag
+  logic — `KlarvoOverlayService.kt` ~980-1330) to `KlarvoAccessibilityService`. Per Task 6.3's
+  explicit contract ("if no permission-free, same-owner mechanism exists, escalate ... rather
+  than silently building a large reparenting change"), **this dev-story session did not build
+  that reparenting change.** Reasons beyond raw size: (1) `KlarvoAccessibilityService` requires a
+  user-granted Accessibility permission the app currently treats as optional/best-effort (used
+  today only for keyboard detection with an existing non-accessibility fallback) — moving bubble
+  *ownership* there would make the bubble itself disappear entirely for any user who hasn't
+  granted that permission, a severe, unstated regression; (2) the touch/drag/edge-snap logic
+  currently in `KlarvoOverlayService` (~350 lines) would need to move or gain a cross-component
+  bridge, which is not safely verifiable without a real-device test loop this session doesn't
+  have. **This is the story's designated hardest point (explicitly anticipated in Dev Notes) and
+  is flagged here for Andi/story-conductor decision, per the story's own instruction.** AC-6
+  (bubble always renders above the panel) is **NOT satisfied by this story's code** — the
+  original z-order defect (panel can still cover the bubble's ➤/✗ controls) **remains
+  unfixed**. Items 3+5 (fixed box, bounded content) reduce how often the panel grows large enough
+  to reach the bubble, but do not structurally rule out the overlap this AC exists to fix.
+- **File-List scope confirmed:** no `.rs`/`.ts`/`.tsx` file changed — this story stayed
+  Kotlin-only as scoped, so `scripts/android-smoke.sh`'s lighter Kotlin-only build/install path
+  (not a full `tauri android build`) is the correct DoD smoke path (Task 7.2).
+
 ### File List
+
+- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` — header/footer text (AC-1/AC-2),
+  `GripView` removal + padding tighten (AC-4), `FONT_PX_SP` rescale (AC-5), rolling-window
+  `visibleLines`/`Line`/`renderRollingLines`/`lineViews` replacing the single
+  `transcriptTextView`/`transcriptScrollView` (AC-3), `minimumHeight` floor removed (Task 5.2).
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `PANEL_FIXED_HEIGHT_DP`
+  constant + panel window `WindowManager.LayoutParams` height fixed instead of `WRAP_CONTENT`
+  (AC-3a, Task 5.1), `appendPreviewText` newline-join instead of space-join (Task 4.2). No
+  changes for Task 6 (escalated, not implemented — see Completion Notes).
+- `android/kotlin-test/com/klarvo/voice/RollingWindowVisibleLinesTest.kt` (new) — JVM unit tests
+  for `ListeningPanelView.visibleLines` (Task 4.4): capacity bound, oldest-first eviction,
+  fading-flag correctness, and a documented inversion (unbounded buffer fails the bound).
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-07-07 | Story created (bmad-create-story) from `docs/backlog.md` §11-3, upgraded 2026-07-07 from polish pass to usability-blocker fix (root-caused: WRAP_CONTENT panel window + shared window-type add-order z-ordering). Status: ready-for-dev. Two items flagged as not-fully-pinned open design questions (rolling-window exact parameters; bubble Z-order fix mechanism) — see "OPEN ITEMS" section and elicitation report. |
+| 2026-07-07 | bmad-dev-story: implemented Tasks 1–5 (AC-1 through AC-5) — header/footer rename, GripView removal, font rescale, fixed-size rolling-window transcript (new `visibleLines` pure function + JVM tests), panel window fixed height. **Task 6 (AC-6, bubble-above-panel) investigated and ESCALATED per its own 6.3 contract — not implemented; no same-owner/permission-free fix exists (see Completion Notes).** 158/158 JVM unit tests green, clean Kotlin compile, Kotlin-only file list confirmed. Status → review. **AC-6 remains unmet — flagged for Andi/story-conductor decision before this story can be considered done.** |

@@ -13,19 +13,20 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 
 /**
  * Klarvo listening-panel overlay for the recording / transcribing states.
  *
  * Implemented as a LinearLayout wrapper containing:
- *   - GripView          — 34dp × 4dp centered grab handle
  *   - TopRowView        — Canvas-drawn row: K-badge, live-dot/spinner, waveform/"Cleaning…", timer, stop-btn
- *   - transcriptTextView — standard TextView for multiline raw transcript
+ *   - linesContainer    — fixed pool of [ROLLING_MAX_LINES] TextViews, rolling-window transcript
+ *                         (Story 11-3, item 3 — replaces the pre-11-3 single-TextView/ScrollView)
  *   - FooterView        — Canvas-drawn footer row with caption text
  *
- * Added to WindowManager as a separate TYPE_APPLICATION_OVERLAY window (AC5).
+ * Added to WindowManager as a separate TYPE_APPLICATION_OVERLAY window (AC5). The window itself
+ * is fixed-height (Story 11-3, `KlarvoOverlayService.showListeningPanel`) — the panel never grows
+ * or scrolls; older transcript lines roll out the top with a soft fade instead (item 3).
  * Panel enters with spring animation (240ms OvershootInterpolator(1.8f)) on attach.
  *
  * States:
@@ -39,7 +40,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     companion object {
         private val RGBA_REGEX =
             Regex("""rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([\d.]+))?\s*\)""")
-        private val FONT_PX_SP = mapOf("small" to 11f, "medium" to 13f, "large" to 15f)
+        // Story 11-3 (AC-5, item 5): device feedback pass rescale 11/13/15 -> 13/15/18.
+        // Android-only; desktop's FONT_PX_MAP (Story 6-3) is untouched.
+        private val FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f, "large" to 18f)
 
         /**
          * Parses a CSS `rgba()`/`rgb()` string into an Android ARGB color int (Story 11-2,
@@ -89,6 +92,53 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             transcribingColor: Int,
         ): Int =
             appliedPreviewTextColor ?: if (panelState == State.RECORDING) recordingColor else transcribingColor
+
+        // --- Story 11-3 (AC-3, item 3): fixed-size rolling-window transcript ---
+
+        /**
+         * Rolling-window capacity in lines (Task 4.2 first-pass value — OPEN ITEM #1, not
+         * pixel-pinned by Andi; device-tunable at GATE-4, mirrors Story 9-15's
+         * `recordingButtonSizeDp` precedent). Paired with the panel's fixed 200dp window height
+         * (`KlarvoOverlayService.showListeningPanel`, Task 5.1) and the FONT_PX_SP medium
+         * default (15sp * 1.7 line-spacing), 5 lines comfortably fits the fixed box without the
+         * box ever growing.
+         */
+        const val ROLLING_MAX_LINES = 5
+
+        /**
+         * Fade duration for the topmost (about-to-be-evicted) line's soft dim (Task 4.2) —
+         * matches the panel's existing 320ms collapse-animation convention ([hideWithAnimation]).
+         */
+        const val ROLLING_FADE_MS = 280L
+
+        /** Alpha the topmost line dims to once flagged fading (soft fade, not an abrupt cut — AC-3c). */
+        const val ROLLING_FADE_ALPHA = 0.35f
+
+        /** One rolling-window transcript line, with whether it is about to roll off the top. */
+        data class Line(val text: String, val isFading: Boolean)
+
+        /**
+         * Pure line-buffer eviction (Story 11-3, AC-3/Task 4.1). [chunks] is every accumulated
+         * preview line in arrival order (oldest first) — one entry per `appendPreviewText` flush
+         * (`KlarvoOverlayService`, newline-joined; see Task 4.2 Completion Notes). Returns only
+         * the most recent [maxLines] of them; this bound is the direct fix for the "fills the
+         * screen" defect (item 3) — the window itself never needs to grow because this function
+         * never returns more than [maxLines] lines, regardless of how much has accumulated.
+         *
+         * The oldest of the returned lines is flagged [Line.isFading] whenever older chunks
+         * exist beyond the window (i.e. eviction has begun), so the caller can render a soft
+         * fade instead of an abrupt cut for that line (AC-3c).
+         *
+         * No Context/View/I-O — directly JVM-testable (mirrors `RecordingMode.selectSilenceSecs`).
+         */
+        fun visibleLines(chunks: List<String>, maxLines: Int): List<Line> {
+            require(maxLines > 0) { "maxLines must be positive (got $maxLines)" }
+            if (chunks.isEmpty()) return emptyList()
+            val start = (chunks.size - maxLines).coerceAtLeast(0)
+            return chunks.subList(start, chunks.size).mapIndexed { i, text ->
+                Line(text, isFading = i == 0 && start > 0)
+            }
+        }
     }
 
     // --- Public properties ---
@@ -124,11 +174,31 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     var rawTranscript: String = ""
         set(value) {
             field = value
-            transcriptTextView.text = value
-            // Story 11-2 (AC-5): auto-scroll to the newest appended text. Posted so it runs
-            // after the TextView has re-measured with the new (longer) text.
-            transcriptScrollView.post { transcriptScrollView.fullScroll(View.FOCUS_DOWN) }
+            renderRollingLines(value)
         }
+
+    /**
+     * Story 11-3 (AC-3, item 3): rebuilds the fixed [ROLLING_MAX_LINES]-slot line pool from the
+     * accumulated preview text. [accumulated] is newline-joined by `KlarvoOverlayService.
+     * appendPreviewText` (Task 4.2 — one `\n` per preview-flush chunk, replacing the pre-11-3
+     * single-space join), so splitting on `\n` recovers the chunk list [visibleLines] expects.
+     * No scrolling: unused trailing slots are simply left blank, so the fixed-height box never
+     * grows or shrinks with content (replaces the pre-11-3 ScrollView/fullScroll auto-scroll).
+     */
+    private fun renderRollingLines(accumulated: String) {
+        val chunks = if (accumulated.isBlank()) emptyList() else accumulated.split("\n")
+        val visible = visibleLines(chunks, ROLLING_MAX_LINES)
+        for (i in lineViews.indices) {
+            val slot = lineViews[i]
+            val line = visible.getOrNull(i)
+            slot.text = line?.text ?: ""
+            val targetAlpha = if (line?.isFading == true) ROLLING_FADE_ALPHA else 1f
+            if (slot.alpha != targetAlpha) {
+                slot.animate().cancel()
+                slot.animate().alpha(targetAlpha).setDuration(ROLLING_FADE_MS).start()
+            }
+        }
+    }
 
     var recordingElapsedMs: Long = 0L
         set(value) {
@@ -204,9 +274,13 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // Fix F4: remember the applied color so a later state change (panelState setter ->
         // updateTranscriptColor) doesn't discard it back to the hardcoded Muted/Dim.
         appliedPreviewTextColor = textColor
-        transcriptTextView.setTextColor(textColor)
-        transcriptTextView.typeface = typefaceForFontFamily(config.previewFontFamily)
-        transcriptTextView.textSize = FONT_PX_SP[config.previewFontSize] ?: 11f
+        val typeface = typefaceForFontFamily(config.previewFontFamily)
+        val sizeSp = FONT_PX_SP[config.previewFontSize] ?: 15f
+        lineViews.forEach {
+            it.setTextColor(textColor)
+            it.typeface = typeface
+            it.textSize = sizeSp
+        }
     }
 
     /**
@@ -252,13 +326,11 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     // --- Child views ---
 
     private val topRowView: TopRowView
-    private val transcriptTextView: TextView
+    // Story 11-3 (AC-3, item 3): fixed pool of ROLLING_MAX_LINES TextViews (replaces the pre-11-3
+    // single transcriptTextView + ScrollView). Index 0 = oldest visible line (fades first).
+    private val lineViews: List<TextView>
     private val footerView: FooterView
     private val caretView: CaretView
-    // Story 11-2 (AC-5): wraps the transcript FrameLayout so accumulated preview text can grow
-    // beyond the visible area and auto-scroll to the newest appended chunk.
-    private val transcriptScrollView: ScrollView
-
 
     init {
         orientation = VERTICAL
@@ -268,15 +340,11 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
 
         val dp = resources.displayMetrics.density
 
-        // top padding = 9dp
-        setPadding(0, (9 * dp).toInt(), 0, (18 * dp).toInt())
-
-        // Grab handle
-        val gripView = GripView(context)
-        val gripParams = LayoutParams(LayoutParams.MATCH_PARENT, (4 * dp).toInt()).apply {
-            bottomMargin = (11 * dp).toInt()
-        }
-        addView(gripView, gripParams)
+        // Story 11-3 (AC-4, item 4): GripView (grab-handle) removed — it implied a resize
+        // affordance that doesn't exist. Top padding tightened from 9dp so topRowView sits
+        // closer to the panel's top edge with the reclaimed space (was 9dp + 4dp grip +
+        // 11dp grip bottom-margin = 24dp before topRowView; now a single reduced top padding).
+        setPadding(0, (6 * dp).toInt(), 0, (18 * dp).toInt())
 
         // Top row
         topRowView = TopRowView(context)
@@ -287,19 +355,27 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         }
         addView(topRowView, topRowParams)
 
-        // Transcript area: TextView + blinking amber caret in a FrameLayout overlay
-        transcriptTextView = TextView(context).apply {
-            setTextColor(KlarvoTheme.Muted)
-            textSize = 13f  // sp
-            typeface = Typeface.MONOSPACE
-            setLineSpacing(0f, 1.7f)
-            gravity = Gravity.TOP or Gravity.START
-            text = ""
+        // Transcript area: fixed pool of ROLLING_MAX_LINES line-TextViews (rolling window,
+        // Story 11-3 item 3) + blinking amber caret, in a FrameLayout overlay. No ScrollView —
+        // the box is fixed-height and never scrolls; content is bounded by visibleLines().
+        val linesContainer = LinearLayout(context).apply { orientation = VERTICAL }
+        lineViews = (0 until ROLLING_MAX_LINES).map {
+            TextView(context).apply {
+                setTextColor(KlarvoTheme.Muted)
+                textSize = 15f  // sp — FONT_PX_SP "medium" default until applyAppearance runs
+                typeface = Typeface.MONOSPACE
+                setLineSpacing(0f, 1.7f)
+                gravity = Gravity.TOP or Gravity.START
+                text = ""
+            }.also { line -> linesContainer.addView(line, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )) }
         }
         caretView = CaretView(context)
 
         val transcriptFrame = FrameLayout(context)
-        transcriptFrame.addView(transcriptTextView, FrameLayout.LayoutParams(
+        transcriptFrame.addView(linesContainer, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ))
@@ -309,21 +385,11 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         ).apply { gravity = Gravity.TOP or Gravity.START }
         transcriptFrame.addView(caretView, caretLp)
 
-        // Story 11-2 (AC-5): ScrollView wrapper so accumulated preview text scrolls instead of
-        // being clipped/overflowing once it exceeds the panel's visible height.
-        transcriptScrollView = ScrollView(context).apply {
-            isVerticalScrollBarEnabled = false
-        }
-        transcriptScrollView.addView(transcriptFrame, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        ))
-
         val textParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
             leftMargin = (16 * dp).toInt()
             rightMargin = (16 * dp).toInt()
         }
-        addView(transcriptScrollView, textParams)
+        addView(transcriptFrame, textParams)
 
         // Footer
         footerView = FooterView(context)
@@ -336,8 +402,12 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // Outer: draw the top border-line via dispatchDraw override
         setWillNotDraw(false)
 
-        // AC5 / canon .ab-panel { min-height: 200px } — enforce 200dp floor (F8)
-        minimumHeight = (200 * dp).toInt()
+        // Story 11-3 (Task 5.2): the pre-11-3 200dp `minimumHeight` floor (AC5/F8) is now
+        // redundant — the WindowManager window itself is a FIXED 200dp height
+        // (`KlarvoOverlayService.showListeningPanel`, Task 5.1), not just a minimum. Two
+        // competing height mechanisms would be confusing; the window-level fix is the one that
+        // actually prevents the window from growing, so it wins and this view-level floor is
+        // removed.
     }
 
     override fun onAttachedToWindow() {
@@ -375,34 +445,13 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
      * config has been applied (preview off).
      */
     private fun updateTranscriptColor() {
-        transcriptTextView.setTextColor(
-            resolveTranscriptColor(appliedPreviewTextColor, panelState, KlarvoTheme.Muted, KlarvoTheme.Dim)
-        )
+        val color = resolveTranscriptColor(appliedPreviewTextColor, panelState, KlarvoTheme.Muted, KlarvoTheme.Dim)
+        lineViews.forEach { it.setTextColor(color) }
     }
 
     // -------------------------------------------------------------------------
     // Inner views
     // -------------------------------------------------------------------------
-
-    /**
-     * Grab handle: 34dp × 4dp, Border2 fill, full-pill corners, horizontally centered.
-     */
-    private inner class GripView(context: Context) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = KlarvoTheme.Border2
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            val dp = resources.displayMetrics.density
-            val gripW = 34 * dp
-            val gripH = 4 * dp
-            val cx = width / 2f
-            val cy = height / 2f
-            val rect = RectF(cx - gripW / 2f, cy - gripH / 2f, cx + gripW / 2f, cy + gripH / 2f)
-            canvas.drawRoundRect(rect, gripH / 2f, gripH / 2f, paint)
-        }
-    }
 
     /**
      * Top row: K-badge | live-dot(RECORDING)/spinner(TRANSCRIBING) | waveform(REC)/"Cleaning…"(TRANS) |
@@ -532,9 +581,10 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
                     val labelY = h / 2f - (labelMetrics.ascent + labelMetrics.descent) / 2f
                     // Label: isHoldMode, then default (AC8, Story 9-14 — the isLockedMode variant
                     // was removed in the 2026-07-01 re-scope, Sperren/lock is gone).
+                    // Story 11-3 (AC-1, item 1): "Aufnahme" -> "Live-Preview" identity rename.
                     val recordingLabel = when {
-                        isHoldMode -> "Aufnahme · halten"
-                        else       -> "Aufnahme"
+                        isHoldMode -> "Live-Preview · halten"
+                        else       -> "Live-Preview"
                     }
                     canvas.drawText(recordingLabel, curX, labelY, textPaint)
 
@@ -694,12 +744,17 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             // (The locked-state footer override — "Finger losgelassen · weiter über die Knöpfe" —
             // was removed in the Story 9-14 2026-07-01 re-scope: there is no locked/TAP-handoff
             // state anymore, release always either sends or cancels.)
+            // Story 11-3 (AC-2, item 2): RECORDING's "Ich höre zu …" caption removed — the
+            // preview context makes it unnecessary. TRANSCRIBING's caption is unchanged (out of
+            // scope per this story's decisions).
             val iconText = "🎙 "
             val captionText = when (panelState) {
-                State.RECORDING    -> "Ich höre zu …"
+                State.RECORDING    -> null
                 State.TRANSCRIBING -> "Wird verarbeitet …"
             }
-            canvas.drawText(iconText + captionText, 0f, textY, textPaint)
+            if (captionText != null) {
+                canvas.drawText(iconText + captionText, 0f, textY, textPaint)
+            }
         }
     }
 }
