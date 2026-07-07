@@ -642,12 +642,23 @@ Source: Andi-Entscheidung + Story 11-1 Benchmark (Machbarkeits-Spike, DONE 2026-
 - **11-2 F5-Entscheidung (Andi-override möglich):** Bg-Blur-Regler auf Android **versteckt** (wie Breiten-Regler), weil `RenderEffect` API 31 braucht (minSdk 24) → sonst inerter Regler. Config-Feld bleibt für Desktop. Falls Blur auf Android gewünscht: eigene Story (RenderEffect ≥ API31 + No-op-Fallback < 31).
 
 ### 11-3 (Follow-up) — Android Preview-Box Geräte-Feedback-Pass — Source: Andi device-verify 2026-07-02
+> **⚠️ HOCHGESTUFT 2026-07-07 (Andi): nicht mehr nur Politur — Bedienbarkeits-Blocker.** Andi meldet: die
+> mitwachsende Preview-Box (Punkt 3) füllt in der Praxis den ganzen Bildschirm; weil sie als Overlay ganz
+> oben liegt UND die Aufnahme-Controls im *Bubble*-Fenster darunter verdeckt/deren Touches schluckt, wird
+> das Gerät während der Aufnahme unbenutzbar (Bubble = Senden/Abbrechen nicht mehr erreichbar). Geerdet im
+> Code 2026-07-07: Preview-Fenster ist `WRAP_CONTENT` ohne Max (`KlarvoOverlayService.kt:2282`) → der in
+> 11-2 gebaute ScrollView ist inert, weil das Fenster selbst mitwächst; Bubble + Preview haben denselben
+> Fenstertyp/Flags/PID → Z-Order = Add-Reihenfolge → später hinzugefügte Preview liegt über der Bubble.
+> Punkt 3 (rollendes Fenster mit fester Höhe) + neuer Punkt 6 (Bubble-Z-Band) lösen zusammen die Wurzel.
+> **11-3 ist damit die nächste Android-Story, VOR Epic 8** (Andi 2026-07-07). Verify = Andi-Real-Device.
+
 11-2 DONE + real-device-verified; folgende Politur-Punkte aus Andis Geräte-Runde (nicht 11-2 wieder aufmachen):
 1. **Box-Header „Aufnahme" → „Live-Preview".** (Copy; `ListeningPanelView`-Header.)
 2. **„Ich höre zu…" unten entfernen** — unnötig im Preview-Kontext.
 3. **Feste Box-Größe statt Mitwachsen** — das Desktop-Verhalten „Box wächst mit Text" ergibt auf Android keinen Sinn; Box bleibt fest über dem Keyboard. **ENTSCHIEDEN (Andi 2026-07-02): rollendes Fenster** — Box zeigt nur die letzten Zeilen, Älteres rollt oben raus (sanft ausgefadet), kein Scrollen. (Ersetzt den gebauten ScrollView-Auto-Scroll → auf rollendes Last-N-Fenster mit Top-Fade umbauen.)
 4. **Griff-Linie (GripView) oben mitte entfernen** — suggeriert Resize, den es nicht gibt; entfernt → macht Platz, Header-Elemente rücken näher an den Rand.
 5. **Font-Skala verschieben (Andi: klein ist viel zu klein)** — **ENTSCHIEDEN (Andi 2026-07-02): `FONT_PX_SP` = klein/mittel/groß → 13 / 15 / 18 sp, Android-only (Desktop-`FONT_PX_MAP` unberührt).** (Ersetzt den akzeptierten „Font sp vs px"-Residual oben.)
+6. **Bubble muss IMMER über der Preview liegen — Z-Order-Fix (NEU 2026-07-07, Andi).** Bug: Bubble (`bubbleParams`, `KlarvoOverlayService.kt:980`) und Preview-Panel (`KlarvoOverlayService.kt:2280`) nutzen denselben `overlayType` + identische Flags → gleiches Z-Band → Reihenfolge entscheidet → Preview (später addiert) liegt über der Bubble und verdeckt die Aufnahme-Controls (Senden/Abbrechen sitzen im Bubble-Fenster, Kommentar `:2302-2304`). **ENTSCHIEDEN (Andi 2026-07-07): Bubble strukturell in ein HÖHERES Z-Band** heben (höherer Fenster-Typ), sodass sie unabhängig von der Add-Reihenfolge immer oben liegt — nicht bloß Re-Add nach der Preview. Typ-Wechsel → real-device-smoke Pflicht (Overlay-Permission/HyperOS-Quirks beachten, vgl. `reference_hyperos_overlay_quirks`). Hängt eng an Punkt 3: sobald die Box feste Höhe hat, überlappt sie ohnehin weniger, aber die Bubble-Erreichbarkeit muss strukturell garantiert sein.
 
 ---
 
