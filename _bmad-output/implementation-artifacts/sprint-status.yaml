@@ -159,6 +159,9 @@ development_status:
   # 11-3 HOCHGESTUFT 2026-07-07 (Andi): Bedienbarkeits-Blocker, nicht Politur — mitwachsende Preview
   # verdeckt Aufnahme-Controls → Gerät unbenutzbar. NÄCHSTE Android-Story, VOR Epic 8. Spec: docs/backlog.md#11-3
   11-3-android-preview-box-device-feedback-pass: review
+  # 11-4 SPLIT aus 11-3 Punkt 6 (Andi 2026-07-07 GATE-2): Bubble strukturell über Preview (Z-Order).
+  # Zuerst Positionierungs-Fix versuchen, a11y-Reparenting nur falls nötig. Spec: docs/backlog.md#11-4
+  11-4-bubble-structurally-above-preview-z-order: backlog
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
   # done 2026-07-06: 12-1 + 12-2 both Andi-device-verified; integrated into v1-ship (merge f53da68); 12-3 deferred (north-star).

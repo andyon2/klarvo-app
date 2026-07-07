@@ -660,6 +660,27 @@ Source: Andi-Entscheidung + Story 11-1 Benchmark (Machbarkeits-Spike, DONE 2026-
 5. **Font-Skala verschieben (Andi: klein ist viel zu klein)** — **ENTSCHIEDEN (Andi 2026-07-02): `FONT_PX_SP` = klein/mittel/groß → 13 / 15 / 18 sp, Android-only (Desktop-`FONT_PX_MAP` unberührt).** (Ersetzt den akzeptierten „Font sp vs px"-Residual oben.)
 6. **Bubble muss IMMER über der Preview liegen — Z-Order-Fix (NEU 2026-07-07, Andi).** Bug: Bubble (`bubbleParams`, `KlarvoOverlayService.kt:980`) und Preview-Panel (`KlarvoOverlayService.kt:2280`) nutzen denselben `overlayType` + identische Flags → gleiches Z-Band → Reihenfolge entscheidet → Preview (später addiert) liegt über der Bubble und verdeckt die Aufnahme-Controls (Senden/Abbrechen sitzen im Bubble-Fenster, Kommentar `:2302-2304`). **ENTSCHIEDEN (Andi 2026-07-07): Bubble strukturell in ein HÖHERES Z-Band** heben (höherer Fenster-Typ), sodass sie unabhängig von der Add-Reihenfolge immer oben liegt — nicht bloß Re-Add nach der Preview. Typ-Wechsel → real-device-smoke Pflicht (Overlay-Permission/HyperOS-Quirks beachten, vgl. `reference_hyperos_overlay_quirks`). Hängt eng an Punkt 3: sobald die Box feste Höhe hat, überlappt sie ohnehin weniger, aber die Bubble-Erreichbarkeit muss strukturell garantiert sein.
 
+> **UPDATE 2026-07-07 — Punkte 1–5 gebaut (Story 11-3, AC-1..AC-5), Punkt 6 abgespalten → Story 11-4.**
+> 11-3 lieferte die feste Höhe + rollendes Fenster (Punkt 3) und Copy/Font/Grip (1,2,4,5); damit ist
+> der **katastrophale Bug (Box füllt Bildschirm → Handy unbedienbar) weg**. Story-Conductor-Lauf
+> `fix/11-3-android-preview-box`, code-review-cleared, 163 JVM-Tests grün. Punkt 6 (Z-Order) → **11-4**.
+
+### 11-4 — Bubble strukturell über der Preview (Z-Order) — Split aus 11-3 Punkt 6 (2026-07-07)
+Source: 11-3 GATE-2-Entscheidung (Andi 2026-07-07). Der Dev-Investigation in 11-3 ergab: **kein leichter,
+erlaubnisfreier Weg** existiert — das einzige Mittel, das `TYPE_APPLICATION_OVERLAY` strukturell überragt,
+ist `TYPE_ACCESSIBILITY_OVERLAY`, nur vom Bedienungshilfe-Dienst erzeugbar → ~350 Zeilen Bubble-Logik in
+`KlarvoAccessibilityService` umhängen + **Regressionsgefahr: Bubble verschwände für Nutzer ohne aktivierten
+a11y-Dienst** (heute best-effort/optional).
+- **ENTSCHEIDUNG (Andi 2026-07-07): ZUERST einen Positionierungs-Fix versuchen, NICHT den a11y-Umbau.**
+  Da das Panel jetzt fest 200dp ist (11-3), ist die Frage eng: überdeckt das feste untere Panel-Band
+  überhaupt noch die ➤/✗-Controls der Bubble? Falls per Geometrie lösbar (Bubble über die feste
+  Panel-Oberkante, oder Panel-Top endet unter der Bubble) → **kein a11y nötig, keine Z-Order-Akrobatik**.
+- **Vorbedingung/Messung:** an Andis Real-Device (bzw. Emulator-`dumpsys`) messen, ob Panel-Rect und
+  Bubble/Cluster-Rect bei fester Höhe noch überlappen. Kein Überlapp → 11-4 evtl. hinfällig (nur bestätigen).
+- **Nur falls Positionierung nicht reicht:** a11y-Reparenting als bewusst freigegebener größerer Schritt
+  (dann Produkt-Abhängigkeit „a11y-Dienst muss an sein" mit Andi klären). Verweise: `reference_hyperos_overlay_quirks`,
+  9-6 (keyboard-collapse via a11y, backlog) als verwandter a11y-Pfad.
+
 ---
 
 ## Epic 12 — Cloud-Resilienz: robuste Fallback-Leiter + Audio-Retry-Historie — Kickoff 2026-07-02
