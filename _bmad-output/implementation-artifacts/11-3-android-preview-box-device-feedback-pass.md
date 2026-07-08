@@ -313,6 +313,13 @@ end up on top).
     (see Task 6 escalation) — Andi's smoke should treat the ➤/✗-reachability check as
     EXPECTED-TO-STILL-FAIL until AC-6 is resolved.**
 
+- [ ] **Task 8 — AC-3 rendering PIVOT: fixed-height scroll box, auto-to-newest + manual scroll** (revised AC-3, b+c; added 2026-07-08 after Andi device-test) — **THIS is the only open work for this reopen. AC-1/2/4/5 stay done; AC-3's fixed WINDOW height (Task 5) stays done + device-verified; AC-6 stays split to Story 11-4.**
+  - [ ] 8.1 In `ListeningPanelView.kt`, REMOVE the rolling-window rendering added on 2026-07-07: the fixed `ROLLING_MAX_LINES` `TextView` pool, `renderRollingLines`, the `visibleLines` companion function, `ROLLING_*` constants, and the `Gravity.BOTTOM` line-container anchoring (P2). Delete the now-obsolete `RollingWindowVisibleLinesTest.kt`.
+  - [ ] 8.2 Restore a single scrollable transcript surface INSIDE the fixed-height panel: a `ScrollView`/`NestedScrollView` wrapping one transcript `TextView` (the 11-2 shape), which now actually scrolls because the panel WINDOW is fixed height (`PANEL_FIXED_HEIGHT_DP`, Task 5 — do NOT revert that). Keep the caret if it still fits the scroll model; if it complicates scrolling, simplify (its exact placement was already a low-pri residual).
+  - [ ] 8.3 Auto-scroll to newest (b): on each `rawTranscript`/preview append, scroll the view to the bottom (`fullScroll(View.FOCUS_DOWN)` / `smoothScrollTo`), so the most-recently-spoken text is visible by default. Preferred (device-tunable, first-pass): "stick to bottom UNLESS the user has manually scrolled up" — i.e. don't yank a user who scrolled back. A simple flag toggled on user scroll is acceptable.
+  - [ ] 8.4 Manual touch-scroll (c): ensure the panel overlay window is touch-scrollable (the panel window is NOT `FLAG_NOT_TOUCHABLE`, so the ScrollView should receive drag events — verify the overlay `LayoutParams` flags don't block scroll touches; do NOT add focus that would steal the keyboard). No new appearance controls here (line-spacing setting is 11-6, out of scope).
+  - [ ] 8.5 Keep `sanitizePreviewChunk` (P1) — still correct. If any pure helper remains after the pivot (e.g. a stick-to-bottom decision), add a small JVM test; otherwise no new pure-logic test is required (scroll behaviour is device-verified at GATE-4). Re-run JVM tests + Kotlin compile + `gen-android-theme.mjs --check`; commit.
+
 ## Dev Notes
 
 ### Why this got upgraded from polish to blocker (context for the "why")
