@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-07-08 (11-3 -> review, Task 8 AC-3 pivot)
+# last_updated: 2026-07-08
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-07-07
+last_updated: 2026-07-08
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -156,11 +156,7 @@ development_status:
   epic-11: in-progress
   11-1-android-live-preview-feasibility-benchmark: done
   11-2-android-live-preview-port: done
-  # 11-3 HOCHGESTUFT 2026-07-07 (Andi): Bedienbarkeits-Blocker, nicht Politur — mitwachsende Preview
-  # verdeckt Aufnahme-Controls → Gerät unbenutzbar. NÄCHSTE Android-Story, VOR Epic 8. Spec: docs/backlog.md#11-3
   11-3-android-preview-box-device-feedback-pass: done
-  # 11-4 SPLIT aus 11-3 Punkt 6 (Andi 2026-07-07 GATE-2): Bubble strukturell über Preview (Z-Order).
-  # Zuerst Positionierungs-Fix versuchen, a11y-Reparenting nur falls nötig. Spec: docs/backlog.md#11-4
   11-4-bubble-structurally-above-preview-z-order: backlog
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
