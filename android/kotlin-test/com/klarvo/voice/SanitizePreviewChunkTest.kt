@@ -8,10 +8,10 @@ import org.junit.Test
  * Code-review fix P1 (11-3): guards [KlarvoOverlayService.sanitizePreviewChunk], the pure helper
  * `appendPreviewText` uses to clean an incoming preview STT chunk before accumulating it.
  *
- * `ListeningPanelView.renderRollingLines` recovers the per-chunk rolling-window list by
- * splitting the accumulated text on `"\n"` -- so `"\n"` must stay the ONLY inter-chunk separator.
- * A chunk with an embedded newline must collapse to a single line, and a blank/whitespace chunk
- * must be dropped entirely rather than wasting a rolling-window slot on an empty line.
+ * The accumulated preview text is newline-joined per chunk (`KlarvoOverlayService.
+ * appendPreviewText`) -- so `"\n"` must stay the ONLY inter-chunk separator. A chunk with an
+ * embedded newline must collapse to a single line, and a blank/whitespace chunk must be dropped
+ * entirely rather than wasting a transcript line on an empty entry.
  */
 class SanitizePreviewChunkTest {
 

@@ -2,7 +2,7 @@
 story: "11.3"
 epic: "11"
 title: "Android Preview-Box — Device Feedback Pass (fixed-size rolling window, header/footer cleanup, font scale, bubble Z-order fix)"
-status: in-progress
+status: review
 track: L2-fix
 gatedBy: ["11.2"]
 buildsOn: ["11.2"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.3: Android Preview-Box — Device Feedback Pass
 
-Status: in-progress
+Status: review
 
 > **Epic 11 — Cross-Platform Live-Preview.** Story 11-2 (`done`, real-device-verified) shipped the
 > Android preview panel: a passive text surface at the bottom overlay window that accumulates raw
@@ -313,12 +313,12 @@ end up on top).
     (see Task 6 escalation) — Andi's smoke should treat the ➤/✗-reachability check as
     EXPECTED-TO-STILL-FAIL until AC-6 is resolved.**
 
-- [ ] **Task 8 — AC-3 rendering PIVOT: fixed-height scroll box, auto-to-newest + manual scroll** (revised AC-3, b+c; added 2026-07-08 after Andi device-test) — **THIS is the only open work for this reopen. AC-1/2/4/5 stay done; AC-3's fixed WINDOW height (Task 5) stays done + device-verified; AC-6 stays split to Story 11-4.**
-  - [ ] 8.1 In `ListeningPanelView.kt`, REMOVE the rolling-window rendering added on 2026-07-07: the fixed `ROLLING_MAX_LINES` `TextView` pool, `renderRollingLines`, the `visibleLines` companion function, `ROLLING_*` constants, and the `Gravity.BOTTOM` line-container anchoring (P2). Delete the now-obsolete `RollingWindowVisibleLinesTest.kt`.
-  - [ ] 8.2 Restore a single scrollable transcript surface INSIDE the fixed-height panel: a `ScrollView`/`NestedScrollView` wrapping one transcript `TextView` (the 11-2 shape), which now actually scrolls because the panel WINDOW is fixed height (`PANEL_FIXED_HEIGHT_DP`, Task 5 — do NOT revert that). Keep the caret if it still fits the scroll model; if it complicates scrolling, simplify (its exact placement was already a low-pri residual).
-  - [ ] 8.3 Auto-scroll to newest (b): on each `rawTranscript`/preview append, scroll the view to the bottom (`fullScroll(View.FOCUS_DOWN)` / `smoothScrollTo`), so the most-recently-spoken text is visible by default. Preferred (device-tunable, first-pass): "stick to bottom UNLESS the user has manually scrolled up" — i.e. don't yank a user who scrolled back. A simple flag toggled on user scroll is acceptable.
-  - [ ] 8.4 Manual touch-scroll (c): ensure the panel overlay window is touch-scrollable (the panel window is NOT `FLAG_NOT_TOUCHABLE`, so the ScrollView should receive drag events — verify the overlay `LayoutParams` flags don't block scroll touches; do NOT add focus that would steal the keyboard). No new appearance controls here (line-spacing setting is 11-6, out of scope).
-  - [ ] 8.5 Keep `sanitizePreviewChunk` (P1) — still correct. If any pure helper remains after the pivot (e.g. a stick-to-bottom decision), add a small JVM test; otherwise no new pure-logic test is required (scroll behaviour is device-verified at GATE-4). Re-run JVM tests + Kotlin compile + `gen-android-theme.mjs --check`; commit.
+- [x] **Task 8 — AC-3 rendering PIVOT: fixed-height scroll box, auto-to-newest + manual scroll** (revised AC-3, b+c; added 2026-07-08 after Andi device-test) — **THIS is the only open work for this reopen. AC-1/2/4/5 stay done; AC-3's fixed WINDOW height (Task 5) stays done + device-verified; AC-6 stays split to Story 11-4.**
+  - [x] 8.1 In `ListeningPanelView.kt`, REMOVE the rolling-window rendering added on 2026-07-07: the fixed `ROLLING_MAX_LINES` `TextView` pool, `renderRollingLines`, the `visibleLines` companion function, `ROLLING_*` constants, and the `Gravity.BOTTOM` line-container anchoring (P2). Delete the now-obsolete `RollingWindowVisibleLinesTest.kt`.
+  - [x] 8.2 Restore a single scrollable transcript surface INSIDE the fixed-height panel: a `ScrollView`/`NestedScrollView` wrapping one transcript `TextView` (the 11-2 shape), which now actually scrolls because the panel WINDOW is fixed height (`PANEL_FIXED_HEIGHT_DP`, Task 5 — do NOT revert that). Keep the caret if it still fits the scroll model; if it complicates scrolling, simplify (its exact placement was already a low-pri residual).
+  - [x] 8.3 Auto-scroll to newest (b): on each `rawTranscript`/preview append, scroll the view to the bottom (`fullScroll(View.FOCUS_DOWN)` / `smoothScrollTo`), so the most-recently-spoken text is visible by default. Preferred (device-tunable, first-pass): "stick to bottom UNLESS the user has manually scrolled up" — i.e. don't yank a user who scrolled back. A simple flag toggled on user scroll is acceptable.
+  - [x] 8.4 Manual touch-scroll (c): ensure the panel overlay window is touch-scrollable (the panel window is NOT `FLAG_NOT_TOUCHABLE`, so the ScrollView should receive drag events — verify the overlay `LayoutParams` flags don't block scroll touches; do NOT add focus that would steal the keyboard). No new appearance controls here (line-spacing setting is 11-6, out of scope).
+  - [x] 8.5 Keep `sanitizePreviewChunk` (P1) — still correct. If any pure helper remains after the pivot (e.g. a stick-to-bottom decision), add a small JVM test; otherwise no new pure-logic test is required (scroll behaviour is device-verified at GATE-4). Re-run JVM tests + Kotlin compile + `gen-android-theme.mjs --check`; commit.
 
 ## Dev Notes
 
@@ -454,6 +454,18 @@ Claude (bmad-dev-story workflow, claude-in-chrome/Bash/Read/Edit toolset), 2026-
 - `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon
   klarvo.css` — unaffected by this story (no theme-token changes).
 
+**2026-07-08, Task 8 (AC-3 rendering pivot) round:**
+- `:app:compileUniversalDebugKotlin --offline`: `BUILD SUCCESSFUL` — clean compile of the full
+  main source set after removing the rolling-window rendering and restoring the ScrollView-based
+  transcript.
+- `:app:testUniversalDebugUnitTest --offline`: `BUILD SUCCESSFUL` — **161/161 passing, 0
+  failures, 0 errors** across 18 suites (163 pre-pivot minus the 7 deleted
+  `RollingWindowVisibleLinesTest` cases plus the 5 new `IsScrolledToBottomTest` cases = 161).
+  Confirms no regression in the untouched suites (`SanitizePreviewChunkTest`,
+  `ResolveTranscriptColorTest`, `ShouldApplyPreviewAppearanceTest`, etc.).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon
+  klarvo.css` — unaffected (no theme-token changes this round either).
+
 ### Completion Notes List
 
 - **Tasks 1–5 (AC-1 through AC-5) fully implemented and JVM-tested where applicable.**
@@ -502,19 +514,66 @@ Claude (bmad-dev-story workflow, claude-in-chrome/Bash/Read/Edit toolset), 2026-
   Kotlin-only as scoped, so `scripts/android-smoke.sh`'s lighter Kotlin-only build/install path
   (not a full `tauri android build`) is the correct DoD smoke path (Task 7.2).
 
+**2026-07-08, Task 8 (AC-3 rendering pivot) round — supersedes the 2026-07-07 rolling-window
+notes above for AC-3's rendering mechanism (Task 5's fixed WINDOW height is unchanged/kept):**
+- **8.1 removal:** deleted `ListeningPanelView.ROLLING_MAX_LINES`, `ROLLING_FADE_MS`,
+  `ROLLING_FADE_ALPHA`, the `Line` data class, the pure `visibleLines` companion function,
+  `renderRollingLines`, the `lineViews` TextView pool, and the `Gravity.BOTTOM`
+  `linesContainer`/anchoring. Deleted `android/kotlin-test/com/klarvo/voice/
+  RollingWindowVisibleLinesTest.kt` (its SUT no longer exists).
+- **8.2 restore:** re-added a single `transcriptTextView` wrapped in a new `TranscriptScrollView`
+  (a small `ScrollView` subclass, not the pre-11-2 plain `ScrollView`) inside the existing
+  `transcriptFrame`/caret `FrameLayout` — same overall shape as the pre-11-2 11-2 code, now
+  layered on top of the still-fixed `PANEL_FIXED_HEIGHT_DP` window (Task 5, untouched), which is
+  what makes the ScrollView non-inert this time. The caret was kept as-is (still fits: it sits in
+  the same `FrameLayout` as the transcript text and scrolls along with it, matching its pre-11-2
+  position/behavior).
+- **8.3 auto-scroll + stick-to-bottom:** `TranscriptScrollView` overrides `onScrollChanged` to
+  recompute a `stickToBottom` flag via a new pure function `ListeningPanelView.
+  isScrolledToBottom(scrollY, viewportHeight, contentHeight, thresholdPx)` (24dp threshold,
+  `SCROLL_STICK_THRESHOLD_DP`) — this fires on BOTH user drag/fling and the view's own
+  programmatic `fullScroll(FOCUS_DOWN)`, so it always reflects "is the viewport currently at the
+  newest text". `rawTranscript`'s setter reads `stickToBottom` **before** updating
+  `transcriptTextView.text`, so the decision is based on the user's position relative to the OLD
+  content — if they were following along, a `post { fullScroll(FOCUS_DOWN) }` keeps them at the
+  new bottom; if they had scrolled up, nothing moves (AC-3d).
+- **8.4 manual scroll:** no `FLAG_NOT_TOUCHABLE` on the panel window (unchanged, verified still
+  absent at `KlarvoOverlayService.kt` panel `LayoutParams`), so touch/drag/fling reaches the
+  `ScrollView` normally — confirmed by reading the existing `LayoutParams` construction, no code
+  change needed here beyond the ScrollView itself existing again.
+- **8.5 test + verification:** added `IsScrolledToBottomTest.kt` (5 cases incl. one documented
+  inversion) for the new pure `isScrolledToBottom` function — the only new pure logic this pivot
+  introduced. `sanitizePreviewChunk` (P1, 11-2/11-3) is unchanged and still correct; its
+  newline-join precondition (Task 4.2, kept) is unaffected by the rendering pivot. JVM tests
+  (161/161), Kotlin compile, and `gen-android-theme.mjs --check` all green (see Debug Log).
+- **Scope note:** this round is Kotlin-only (`ListeningPanelView.kt`, `KlarvoOverlayService.kt`
+  doc-comment-only touch, plus test files) — no `.rs`/`.ts`/`.tsx` file — so the lighter
+  `scripts/android-smoke.sh` Kotlin-only build/install path remains the correct DoD smoke path.
+- **AC-6 / Task 6 status unchanged:** still escalated/not implemented, split to Story 11-4 per
+  Andi's 2026-07-07 GATE-2 decision (unaffected by this round's AC-3 rendering pivot).
+
 ### File List
 
 - `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt` — header/footer text (AC-1/AC-2),
-  `GripView` removal + padding tighten (AC-4), `FONT_PX_SP` rescale (AC-5), rolling-window
-  `visibleLines`/`Line`/`renderRollingLines`/`lineViews` replacing the single
-  `transcriptTextView`/`transcriptScrollView` (AC-3), `minimumHeight` floor removed (Task 5.2).
+  `GripView` removal + padding tighten (AC-4), `FONT_PX_SP` rescale (AC-5), `minimumHeight` floor
+  removed (Task 5.2). **2026-07-08 Task 8 pivot:** removed the rolling-window rendering
+  (`visibleLines`/`Line`/`renderRollingLines`/`lineViews`/`ROLLING_*` constants) and restored a
+  single `transcriptTextView` inside a new `TranscriptScrollView` (custom `ScrollView` subclass)
+  with a new pure `isScrolledToBottom` companion function + `SCROLL_STICK_THRESHOLD_DP` constant
+  (AC-3 pivot, Task 8.1-8.3).
 - `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `PANEL_FIXED_HEIGHT_DP`
   constant + panel window `WindowManager.LayoutParams` height fixed instead of `WRAP_CONTENT`
-  (AC-3a, Task 5.1), `appendPreviewText` newline-join instead of space-join (Task 4.2). No
-  changes for Task 6 (escalated, not implemented — see Completion Notes).
-- `android/kotlin-test/com/klarvo/voice/RollingWindowVisibleLinesTest.kt` (new) — JVM unit tests
-  for `ListeningPanelView.visibleLines` (Task 4.4): capacity bound, oldest-first eviction,
-  fading-flag correctness, and a documented inversion (unbounded buffer fails the bound).
+  (AC-3a, Task 5.1, unchanged by the pivot), `appendPreviewText` newline-join instead of
+  space-join (Task 4.2, unchanged). **2026-07-08:** doc-comment updates only (stale references to
+  the removed rolling-window mechanism), no behavioral change. No changes for Task 6 (escalated,
+  not implemented — see Completion Notes).
+- `android/kotlin-test/com/klarvo/voice/RollingWindowVisibleLinesTest.kt` — **deleted 2026-07-08**
+  (Task 8.1): its SUT (`visibleLines`) no longer exists after the AC-3 rendering pivot.
+- `android/kotlin-test/com/klarvo/voice/IsScrolledToBottomTest.kt` (new, 2026-07-08) — JVM unit
+  tests for `ListeningPanelView.isScrolledToBottom` (Task 8.5): at/within/beyond the stick-to-
+  bottom threshold, content-shorter-than-viewport edge case, and a documented inversion.
+- `android/kotlin-test/com/klarvo/voice/SanitizePreviewChunkTest.kt` — doc-comment update only
+  (2026-07-08, removed a stale reference to `renderRollingLines`), no test-logic change.
 
 ## Change Log
 
@@ -525,3 +584,4 @@ Claude (bmad-dev-story workflow, claude-in-chrome/Bash/Read/Edit toolset), 2026-
 | 2026-07-07 | **GATE-2 decision (Andi): AC-6 SPLIT OUT to a focused follow-up story (`11-4`, `docs/backlog.md`). This story's scope is now AC-1..AC-5** — the fixed-height rolling window already removes the catastrophic bug (panel filling the screen → device unusable). The narrower "does the fixed panel still overlap the bubble controls" question + the z-order fix are deferred to 11-4, which is to try a positioning fix BEFORE the a11y-reparenting per Andi's preference. |
 | 2026-07-07 | **code-review (bmad-code-review, 3 adversarial reviewers: Blind / Edge / Auditor) on `88bc48c..2a655ec`.** AC-1..AC-5 confirmed satisfied; AC-6 correctly noted as intentionally deferred. 4 findings confirmed + fixed in one round (commit `152ed10`): P1 sanitize incoming preview chunk (embedded-newline collapse + blank-chunk drop, new pure `sanitizePreviewChunk` + JVM test), P2 bottom-anchor rolling-lines container so overflow clips oldest-at-top (newest always visible, font-independent), P4 epsilon alpha-compare. Residual to Andi's real-device GATE-4 (emulator cannot judge pixels): fade soft-vs-abrupt feel + final line-count/height at real dictation pacing (first-pass, tunable). **163/163 JVM tests green, clean compile, KlarvoTheme in sync.** Status stays `review` pending Andi's real-device visual gate. |
 | 2026-07-08 | **Andi real-device test (fresh APK pushed via Tailscale adb): fixed height CONFIRMED ✅ — the blocker is solved.** But two follow-ups reopen the story: **(b) the box shows the BEGINNING, not the newest-spoken text, and does not follow the transcript** (root: long real chunks wrap top-aligned in the "line-per-chunk" rolling model), and **(c) Andi wants manual touch-scroll** through longer preview text. **Decision (Andi): AC-3 rendering PIVOTS** — keep the fixed height, replace the rolling-window with a bounded scroll view that auto-scrolls to the newest text + is manually scrollable (this reverses the 2026-07-02 "no scroll" call, now viable because the window height is fixed). Status → `in-progress`; fresh dev round for revised AC-3. Also captured (separate stories, NOT this cycle): **11-4** intent clarified = true Z-LAYERING wanted (bubble layer-above panel, may overlap — not the current geometric-repositioning trick); **11-6** new = line-spacing as an Appearance setting. Sequence: b+c (this story) first, then 11-4. |
+| 2026-07-08 | **bmad-dev-story: implemented Task 8 (revised AC-3 b+c, the rendering pivot).** Removed the 2026-07-07 rolling-window rendering (`visibleLines`/`Line`/`renderRollingLines`/`lineViews`/`ROLLING_*`, and the now-obsolete `RollingWindowVisibleLinesTest.kt`); restored a single scrollable transcript (`transcriptTextView` inside a new `TranscriptScrollView`) on top of the still-fixed panel WINDOW height (Task 5, untouched). Auto-scroll-to-newest with a "stick to bottom unless the user scrolled away" rule, implemented via a new pure `isScrolledToBottom` function (+ `IsScrolledToBottomTest.kt`, 5 cases incl. inversion) — evaluated before each text update so a manually-scrolled-up user is never yanked back down (AC-3d). Manual touch-scroll confirmed reachable (no `FLAG_NOT_TOUCHABLE` on the panel window, unchanged). AC-1/2/4/5 and AC-3a (fixed window height) untouched and stay done; AC-6 stays split to Story 11-4 per the 2026-07-07 GATE-2 decision. **161/161 JVM unit tests green (163 pre-pivot − 7 deleted + 5 new), clean Kotlin compile, `gen-android-theme.mjs --check` in sync, Kotlin-only file list confirmed** (`scripts/android-smoke.sh`'s lighter path remains correct). Status → `review`. **Real-device GATE-4 smoke (Task 7.3) is still Andi's action — this is the story's actual deliverable per the "Bedienbarkeits-Blocker" DoD; specifically confirm the box now follows the newest speech and is manually scrollable.** |

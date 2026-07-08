@@ -96,8 +96,7 @@ class KlarvoOverlayService : Service() {
          * WindowManager window — replaces the pre-11-3 WRAP_CONTENT + 200dp-minimum combination
          * that let the window grow unbounded with accumulated preview text (the root cause of
          * the "fills the screen" usability blocker). Reuses that same 200dp value as the sole,
-         * fixed height (Task 4.2 first-pass proposal) — device-tunable at GATE-4 together with
-         * `ListeningPanelView.ROLLING_MAX_LINES`.
+         * fixed height (Task 4.2 first-pass proposal) — device-tunable at GATE-4.
          */
         private const val PANEL_FIXED_HEIGHT_DP = 200
 
@@ -125,13 +124,12 @@ class KlarvoOverlayService : Service() {
         /**
          * Code-review fix P1 (11-3): sanitizes an incoming preview STT chunk before it is
          * accumulated in [appendPreviewText]. Two problems this closes:
-         *  - `ListeningPanelView.renderRollingLines` recovers the per-chunk list by splitting
-         *    the accumulated text on `"\n"` (Task 4.2). If a single STT chunk itself contains an
-         *    embedded newline, that split would miscount it as two rolling-window lines instead
-         *    of one. Embedded newlines are collapsed to a single space here so `"\n"` stays the
-         *    ONLY inter-chunk separator.
+         *  - The accumulated preview text is newline-joined per chunk (Task 4.2). If a single
+         *    STT chunk itself contains an embedded newline, that would introduce a spurious
+         *    extra line break. Embedded newlines are collapsed to a single space here so `"\n"`
+         *    stays the ONLY inter-chunk separator.
          *  - A blank/whitespace-only chunk would otherwise still get joined in, wasting a
-         *    rolling-window slot on an empty line.
+         *    transcript line on an empty entry.
          * Returns the cleaned chunk, or `null` if there is nothing worth appending (caller should
          * skip the append entirely in that case).
          */
@@ -1670,13 +1668,11 @@ class KlarvoOverlayService : Service() {
      * longer RECORDING; this is called on the main thread ([handler.post]), same thread that
      * flips [currentState], so there is no race on the read itself.
      *
-     * Story 11-3 (Task 4.2): chunks are now newline-joined (`"\n"`), not space-joined
-     * (`" "`). 11-2's code review accepted the space-join as a Low residual for *accuracy*
-     * reasons (orientation surface, not accuracy) -- that acceptance does not extend to this
-     * story's *display* mechanics (Dev Notes "Rolling-window 'line' semantics"). A visually
-     * sensible rolling window of lines needs one line per flush chunk;
-     * `ListeningPanelView.rawTranscript`/`renderRollingLines` splits on `"\n"` to recover the
-     * chunk list `visibleLines()` expects.
+     * Story 11-3 (Task 4.2): chunks are newline-joined (`"\n"`), not space-joined (`" "`).
+     * 11-2's code review accepted the space-join as a Low residual for *accuracy* reasons
+     * (orientation surface, not accuracy) -- that acceptance does not extend to this story's
+     * *display* mechanics. One line per flush chunk reads better in the scrollable transcript
+     * (AC-3 pivot, 2026-07-08) than one run-on paragraph would.
      */
     private fun appendPreviewText(text: String) {
         if (currentState != RecordingState.RECORDING) return
@@ -2314,16 +2310,15 @@ class KlarvoOverlayService : Service() {
         (cachedConfig ?: KlarvoApi.readConfig(this))?.let { config ->
             if (shouldApplyPreviewAppearance(config.livePreviewEnabled)) panel.applyAppearance(config)
         }
-        // Story 11-3 (AC-3a, item 3, Task 5.1): the panel window's height is now FIXED
+        // Story 11-3 (AC-3a, item 3, Task 5.1): the panel window's height is FIXED
         // (PANEL_FIXED_HEIGHT_DP), not WRAP_CONTENT. This is the direct fix for the original
         // "growing panel fills the whole screen" usability blocker (Dev Notes "Why this got
         // upgraded"): a WRAP_CONTENT window re-measures to whatever the accumulated transcript
-        // needs, which is unbounded. The rolling-window rendering inside ListeningPanelView
-        // (ROLLING_MAX_LINES, visibleLines()) already bounds the CONTENT to a fixed number of
-        // lines, but only a fixed WINDOW height guarantees the window itself never grows/shrinks
-        // -- a WRAP_CONTENT window around bounded content would still (re-)measure on every
-        // text update, which is unnecessary churn and does not structurally rule out regrowth if
-        // the rolling-window bound is ever changed.
+        // needs, which is unbounded. AC-3 pivot (2026-07-08): the transcript content itself is
+        // now a bounded ScrollView (ListeningPanelView.transcriptScrollView) that scrolls inside
+        // this fixed window instead of evicting older lines -- the fixed WINDOW height is what
+        // guarantees the window itself never grows/shrinks (a WRAP_CONTENT window would still
+        // (re-)measure on every text update even with scrollable content inside it).
         val dp = resources.displayMetrics.density
         val panelHeightPx = (PANEL_FIXED_HEIGHT_DP * dp).toInt()
         val params = WindowManager.LayoutParams(
