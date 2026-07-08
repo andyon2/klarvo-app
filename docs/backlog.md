@@ -671,15 +671,24 @@ erlaubnisfreier Weg** existiert — das einzige Mittel, das `TYPE_APPLICATION_OV
 ist `TYPE_ACCESSIBILITY_OVERLAY`, nur vom Bedienungshilfe-Dienst erzeugbar → ~350 Zeilen Bubble-Logik in
 `KlarvoAccessibilityService` umhängen + **Regressionsgefahr: Bubble verschwände für Nutzer ohne aktivierten
 a11y-Dienst** (heute best-effort/optional).
-- **ENTSCHEIDUNG (Andi 2026-07-07): ZUERST einen Positionierungs-Fix versuchen, NICHT den a11y-Umbau.**
-  Da das Panel jetzt fest 200dp ist (11-3), ist die Frage eng: überdeckt das feste untere Panel-Band
-  überhaupt noch die ➤/✗-Controls der Bubble? Falls per Geometrie lösbar (Bubble über die feste
-  Panel-Oberkante, oder Panel-Top endet unter der Bubble) → **kein a11y nötig, keine Z-Order-Akrobatik**.
-- **Vorbedingung/Messung:** an Andis Real-Device (bzw. Emulator-`dumpsys`) messen, ob Panel-Rect und
-  Bubble/Cluster-Rect bei fester Höhe noch überlappen. Kein Überlapp → 11-4 evtl. hinfällig (nur bestätigen).
-- **Nur falls Positionierung nicht reicht:** a11y-Reparenting als bewusst freigegebener größerer Schritt
-  (dann Produkt-Abhängigkeit „a11y-Dienst muss an sein" mit Andi klären). Verweise: `reference_hyperos_overlay_quirks`,
-  9-6 (keyboard-collapse via a11y, backlog) als verwandter a11y-Pfad.
+- **INTENT GEKLÄRT (Andi 2026-07-08 Device-Test): echtes Z-LAYERING gewollt, NICHT Positionierung.**
+  Der 11-3-Build zeigt aktuell einen ungewollten „Trick": zieht Andi die Bubble in die Box, wird sie
+  *geometrisch* über die Preview versetzt (Bubble bleibt über der Panel-Oberkante). Andi will das NICHT —
+  er will, dass die Bubble **layer-technisch über der Preview** liegen kann (auch während der Aufnahme)
+  und die Box damit **effektiv teilverdeckt**. D.h. der frühere „Positionierungs-Fix zuerst"-Plan ist
+  VERWORFEN: 11-4 = **echte Z-Schichtung** (Bubble über Panel, darf überlappen), plus die ungewollte
+  vertikale Repositionierungs-Klammer ENTFERNEN.
+- **Mechanik (zu untersuchen):** gleiche Fenster-Typen → Z = Add-Reihenfolge. Leichtester Weg evtl.
+  Bubble nach `showListeningPanel` erneut oben einhängen (Re-Add) statt des a11y-Umbaus — der Dev hatte
+  Re-Add als „fragil" verworfen, aber für „Bubble über Panel" ist genau Add-Order das Mittel; a11y
+  (`TYPE_ACCESSIBILITY_OVERLAY`, ~350 LOC Reparenting + Regressionsrisiko Bubble ohne a11y-Dienst weg)
+  nur, falls Re-Add die Drag-/Touch-Wege nicht sauber trägt. Verweise: `reference_hyperos_overlay_quirks`.
+
+### 11-6 (Backlog) — Zeilenabstand als Appearance-Setting — Source: Andi 2026-07-08 Device-Test
+Preview-Box: **Zeilenabstand (line-height) als einstellbares Setting** in die Appearance-Kategorie
+aufnehmen (analog Font-Größe/-Familie/Farbe). Aktuell fix `setLineSpacing(0f, 1.7f)`
+(`ListeningPanelView.kt`). Desktop-Gegenstück (CSS `--k-leading` / `leading-relaxed`) mitdenken für
+Cross-Platform-SSOT. Neuer Config-Key (camelCase, Backend-Locale-Files), Android- + Desktop-Wiring.
 
 ---
 

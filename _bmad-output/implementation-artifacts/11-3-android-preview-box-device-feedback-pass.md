@@ -2,7 +2,7 @@
 story: "11.3"
 epic: "11"
 title: "Android Preview-Box — Device Feedback Pass (fixed-size rolling window, header/footer cleanup, font scale, bubble Z-order fix)"
-status: review
+status: in-progress
 track: L2-fix
 gatedBy: ["11.2"]
 buildsOn: ["11.2"]
@@ -16,7 +16,7 @@ inputDocuments:
 
 # Story 11.3: Android Preview-Box — Device Feedback Pass
 
-Status: review
+Status: in-progress
 
 > **Epic 11 — Cross-Platform Live-Preview.** Story 11-2 (`done`, real-device-verified) shipped the
 > Android preview panel: a passive text surface at the bottom overlay window that accumulates raw
@@ -147,22 +147,28 @@ replacement text is added unless a later Andi confirmation says otherwise),
 And the TRANSCRIBING caption ("🎙 Wird verarbeitet …") is **unchanged** — out of scope per this
 story's decisions (only "Ich höre zu…" was named for removal).
 
-**AC-3 (Fixed-size rolling window, no growth, no scroll — item 3, the core usability fix):**
+**AC-3 (Fixed-height, auto-scroll-to-newest, manually-scrollable transcript — item 3, the core usability fix; ⚠️ REVISED 2026-07-08 after Andi's device-test — see Change Log):**
 Given preview text chunks accumulate during a HOLD/TOGGLE recording with `livePreviewEnabled ==
 true` (the existing 11-2 `appendPreviewText`/`rawTranscript` pipeline, untouched),
-When the accumulated text exceeds what fits in the panel's fixed content height,
+When the accumulated text exceeds the panel's fixed content height,
 Then (a) the panel's `WindowManager.LayoutParams` height is a **fixed value**, not `WRAP_CONTENT`
-(`KlarvoOverlayService.kt:2280-2301` — the window itself must not grow/shrink, this is the direct
-fix for the original "fills the whole screen" defect), (b) only the most recent lines are visible
-within that fixed height, (c) older lines are evicted from the top with a soft fade (not an abrupt
-cut), and (d) there is **no scrolling** — the 11-2 `transcriptScrollView`/`fullScroll` auto-scroll
-mechanism (`ListeningPanelView.kt:130,260,312-326`) is removed/replaced by this fixed rolling
-display, not layered on top of it,
-And this rolling-window rendering is implemented as new, pure/testable Kotlin logic (a line-buffer
-eviction function taking accumulated chunks + a max-line-count and returning the visible/fading
-lines) with a JVM unit test mirroring the existing pure-function pattern (`RecordingMode.
-selectSilenceSecs`, `DeltaSnapshotSliceTest`) — inversion: an unbounded buffer (no eviction) must
-fail the test.
+(`KlarvoOverlayService.kt:2328-2329`, `PANEL_FIXED_HEIGHT_DP` — **already delivered + device-verified**;
+the window must not grow; the direct fix for the original "fills the whole screen" defect — KEEP),
+(b) the transcript content area is a fixed-height **vertically scrollable** view, (c) on each preview
+update the view **auto-scrolls so the NEWEST (most-recently-spoken) text at the bottom is visible by
+default** — the shipped rolling-window instead showed the BEGINNING (the exact defect this revision
+fixes), and (d) the user can **manually touch-scroll** up to review earlier text and back down; the
+auto-scroll-to-bottom should not fight a user who has deliberately scrolled up mid-recording (a simple
+"stick to bottom unless the user scrolled away" rule is acceptable — first-pass, device-tunable).
+**Supersedes the 2026-07-07 "rolling window / no-scroll / evict-oldest-with-fade" rendering** (the
+old AC-3 b/c/d + the pure `visibleLines` eviction function): now that the window height is FIXED, a
+bounded `ScrollView`/`NestedScrollView` actually functions (the 11-2 ScrollView was inert only because
+the window was `WRAP_CONTENT`). Dev: restore a bounded scroll view inside the fixed-height panel with
+`fullScroll(FOCUS_DOWN)` (stick-to-bottom) on append; **remove** the `visibleLines` rolling-window
+rendering + its now-obsolete `RollingWindowVisibleLinesTest`. **Keep** `sanitizePreviewChunk` (still
+valid) and the P2 nothing-specific-to-rolling changes. Verification of the scroll behaviour is the
+device gate; unit-test any pure helper that remains (e.g. a "stick-to-bottom unless scrolled-away"
+decision) — otherwise no new pure-logic test is required.
 
 **AC-4 (GripView removed, item 4):**
 Given the panel is constructed (`ListeningPanelView.kt` `init` block, `GripView` at lines
@@ -511,3 +517,4 @@ Claude (bmad-dev-story workflow, claude-in-chrome/Bash/Read/Edit toolset), 2026-
 | 2026-07-07 | bmad-dev-story: implemented Tasks 1–5 (AC-1 through AC-5) — header/footer rename, GripView removal, font rescale, fixed-size rolling-window transcript (new `visibleLines` pure function + JVM tests), panel window fixed height. **Task 6 (AC-6, bubble-above-panel) investigated and ESCALATED per its own 6.3 contract — not implemented; no same-owner/permission-free fix exists (see Completion Notes).** 158/158 JVM unit tests green, clean Kotlin compile, Kotlin-only file list confirmed. Status → review. **AC-6 remains unmet — flagged for Andi/story-conductor decision before this story can be considered done.** |
 | 2026-07-07 | **GATE-2 decision (Andi): AC-6 SPLIT OUT to a focused follow-up story (`11-4`, `docs/backlog.md`). This story's scope is now AC-1..AC-5** — the fixed-height rolling window already removes the catastrophic bug (panel filling the screen → device unusable). The narrower "does the fixed panel still overlap the bubble controls" question + the z-order fix are deferred to 11-4, which is to try a positioning fix BEFORE the a11y-reparenting per Andi's preference. |
 | 2026-07-07 | **code-review (bmad-code-review, 3 adversarial reviewers: Blind / Edge / Auditor) on `88bc48c..2a655ec`.** AC-1..AC-5 confirmed satisfied; AC-6 correctly noted as intentionally deferred. 4 findings confirmed + fixed in one round (commit `152ed10`): P1 sanitize incoming preview chunk (embedded-newline collapse + blank-chunk drop, new pure `sanitizePreviewChunk` + JVM test), P2 bottom-anchor rolling-lines container so overflow clips oldest-at-top (newest always visible, font-independent), P4 epsilon alpha-compare. Residual to Andi's real-device GATE-4 (emulator cannot judge pixels): fade soft-vs-abrupt feel + final line-count/height at real dictation pacing (first-pass, tunable). **163/163 JVM tests green, clean compile, KlarvoTheme in sync.** Status stays `review` pending Andi's real-device visual gate. |
+| 2026-07-08 | **Andi real-device test (fresh APK pushed via Tailscale adb): fixed height CONFIRMED ✅ — the blocker is solved.** But two follow-ups reopen the story: **(b) the box shows the BEGINNING, not the newest-spoken text, and does not follow the transcript** (root: long real chunks wrap top-aligned in the "line-per-chunk" rolling model), and **(c) Andi wants manual touch-scroll** through longer preview text. **Decision (Andi): AC-3 rendering PIVOTS** — keep the fixed height, replace the rolling-window with a bounded scroll view that auto-scrolls to the newest text + is manually scrollable (this reverses the 2026-07-02 "no scroll" call, now viable because the window height is fixed). Status → `in-progress`; fresh dev round for revised AC-3. Also captured (separate stories, NOT this cycle): **11-4** intent clarified = true Z-LAYERING wanted (bubble layer-above panel, may overlap — not the current geometric-repositioning trick); **11-6** new = line-spacing as an Appearance setting. Sequence: b+c (this story) first, then 11-4. |
