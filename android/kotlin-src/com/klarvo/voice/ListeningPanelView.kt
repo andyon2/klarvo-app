@@ -157,15 +157,33 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     var rawTranscript: String = ""
         set(value) {
             field = value
-            // Story 11-3 (AC-3 pivot, Task 8.3): read stickToBottom BEFORE the text change lands
-            // -- it reflects the user's scroll position relative to the OLD content, i.e.
-            // "was the user following the newest text just before this update". A user who has
-            // deliberately scrolled up is left alone (AC-3d); otherwise auto-scroll to the new
-            // bottom once the TextView has re-laid-out (post, since content height just changed).
+            // Story 11-3 (AC-3 pivot, Task 8.3, review fixes F1/F2): read stickToBottom BEFORE the
+            // text change lands -- it reflects the user's scroll position relative to the OLD
+            // content, i.e. "was the user following the newest text just before this update". A
+            // user who has deliberately scrolled up is left alone (AC-3d); this only decides
+            // whether to bother scheduling a scroll at all.
             val shouldFollow = transcriptScrollView.stickToBottom
             transcriptTextView.text = value
             if (shouldFollow) {
-                transcriptScrollView.post { transcriptScrollView.fullScroll(View.FOCUS_DOWN) }
+                // F2: don't scroll on a bare post {} -- the TextView's re-layout to its new
+                // (taller) height is scheduled via the Choreographer and is not guaranteed to run
+                // before a Handler.post runnable, so a bare post can scroll to the OLD bottom and
+                // clip the just-appended newest line. Wait for the TextView to actually re-layout
+                // (one-shot listener, self-removing so it never leaks/duplicates across appends).
+                // F1: re-check stickToBottom at execution time -- the user may have scrolled up
+                // between enqueue and this callback firing (rapid preview appends).
+                transcriptTextView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                    override fun onLayoutChange(
+                        v: View,
+                        left: Int, top: Int, right: Int, bottom: Int,
+                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                    ) {
+                        v.removeOnLayoutChangeListener(this)
+                        if (transcriptScrollView.stickToBottom) {
+                            transcriptScrollView.fullScroll(View.FOCUS_DOWN)
+                        }
+                    }
+                })
             }
         }
 

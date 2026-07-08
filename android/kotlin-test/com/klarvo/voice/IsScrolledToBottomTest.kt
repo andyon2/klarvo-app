@@ -1,6 +1,7 @@
 package com.klarvo.voice
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,21 +45,46 @@ class IsScrolledToBottomTest {
     }
 
     /**
-     * Inversion (per DoD): an implementation that always returns true regardless of scroll
-     * position (i.e. "always auto-scroll", the AC-3 pivot's predecessor defect where the box
-     * showed the beginning and never followed new text) would wrongly report a far-scrolled-up
-     * user as being at the bottom -- exactly what this function exists to prevent.
+     * Boundary (per DoD): content exactly fills the viewport -- scrollY=0 with
+     * contentHeight == viewportHeight leaves nothing to scroll, so this counts as "at the bottom".
      */
     @Test
-    fun inversion_alwaysTrueWouldMisreportAScrolledUpUser() {
-        val alwaysAtBottom = true // stand-in for "ignore scroll position entirely"
+    fun contentHeightEqualsViewportHeight_isAtBottom() {
+        assertTrue(ListeningPanelView.isScrolledToBottom(scrollY = 0, viewportHeight = 300, contentHeight = 300, thresholdPx = threshold))
+    }
+
+    /**
+     * Inversion (per DoD): demonstrates the guard is load-bearing, not a tautology. A naive
+     * "always auto-scroll" stand-in (the AC-3 pivot's predecessor defect, where the box showed
+     * the beginning and never followed new text) would wrongly report a far-scrolled-up user as
+     * being at the bottom. The REAL [ListeningPanelView.isScrolledToBottom] must disagree with
+     * that naive stand-in for exactly this input -- if a future change made the real function
+     * always return true, [assertNotEquals] below would fail, proving this test actually exercises
+     * the guard rather than asserting a hard-coded literal.
+     */
+    @Test
+    fun inversion_naiveAlwaysAtBottomDivergesFromRealFunctionForScrolledUpUser() {
+        fun naiveAlwaysAtBottom(scrollY: Int, viewportHeight: Int, contentHeight: Int, thresholdPx: Int) = true
+
+        val scrollY = 0
+        val viewportHeight = 200
+        val contentHeight = 500
+
+        val naiveResult = naiveAlwaysAtBottom(scrollY, viewportHeight, contentHeight, threshold)
+        val realResult = ListeningPanelView.isScrolledToBottom(scrollY, viewportHeight, contentHeight, threshold)
+
         assertTrue(
-            "an always-true stand-in would wrongly claim a scrolled-up user is at the bottom",
-            alwaysAtBottom
+            "the naive stand-in wrongly claims a scrolled-up user is at the bottom",
+            naiveResult
         )
         assertFalse(
-            "the real function correctly identifies this user has scrolled away from the bottom",
-            ListeningPanelView.isScrolledToBottom(scrollY = 0, viewportHeight = 200, contentHeight = 500, thresholdPx = threshold)
+            "the real function must correctly identify this user has scrolled away from the bottom",
+            realResult
+        )
+        assertNotEquals(
+            "the guard exists precisely because naive and real disagree for a scrolled-up user",
+            naiveResult,
+            realResult
         )
     }
 }
