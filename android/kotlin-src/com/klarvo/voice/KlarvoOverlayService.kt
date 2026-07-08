@@ -273,6 +273,13 @@ class KlarvoOverlayService : Service() {
     // ACTION_DOWN drives hit-tracking and the release-to-commit decision.
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
+    // Story 11-4 (AC-1): set when the bubble-above-panel reorder (see showListeningPanel /
+    // reorderBubbleAbovePanel) had to be deferred because a touch gesture was in flight on the
+    // bubble window at the moment the panel was shown (e.g. push-to-talk's longPressRunnable
+    // fires startRecording()/showListeningPanel() while the finger is still down). Consumed at
+    // the next ACTION_UP/ACTION_CANCEL, once the gesture has actually ended.
+    private var bubbleReorderPending = false
+
     // Per-gesture recording modes: tap and long-press are configured independently.
     private var tapMode = RecordingMode.TOGGLE
     private var longPressMode = RecordingMode.HOLD
@@ -1386,6 +1393,12 @@ class KlarvoOverlayService : Service() {
                     bubbleView.holdDragging  = false
                 }
                 activePointerId = MotionEvent.INVALID_POINTER_ID
+                // Story 11-4 (AC-1): the gesture just ended -- if a bubble-above-panel reorder was
+                // deferred while it was in flight (see showListeningPanel), do it now.
+                if (bubbleReorderPending) {
+                    bubbleReorderPending = false
+                    reorderBubbleAbovePanel()
+                }
                 return true
             }
         }
@@ -2352,8 +2365,45 @@ class KlarvoOverlayService : Service() {
             panelParams  = params
             panelVisible = true
             KlarvoLogger.d(TAG, "[panel] shown (state=$initialState)")
+            // Story 11-4 (AC-1, Design Decision 2): both the bubble and the panel are
+            // TYPE_APPLICATION_OVERLAY windows owned by this same Service -- Android z-orders
+            // same-type overlay windows by add-order, with no priority field (11-3's
+            // investigation). The panel was just added, so without this it would now be the
+            // most-recently-added window and render/receive-touches ABOVE the bubble. Re-adding
+            // the bubble here makes IT the most-recently-added window again, restoring the
+            // required "bubble always on top" invariant on every actual panel show (including
+            // every RECORDING->TRANSCRIBING->RECORDING hide/re-show cycle, since each cycle goes
+            // through this addView call again -- the early-return branch above, for a panel that
+            // is already visible, doesn't change window order and needs no reorder).
+            if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                // A touch gesture is in flight on the bubble window right now (e.g. push-to-talk's
+                // longPressRunnable calls startRecording() -> showListeningPanel() while the
+                // finger is still down). windowManager.removeView() would tear down the window's
+                // input channel and cancel that gesture (OS-level ACTION_CANCEL) -- defer the
+                // reorder until the gesture actually ends (handleTouch's ACTION_UP/CANCEL).
+                bubbleReorderPending = true
+            } else {
+                reorderBubbleAbovePanel()
+            }
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "[panel] addView failed", e)
+        }
+    }
+
+    /**
+     * Re-adds the bubble window to the WindowManager so it becomes the most-recently-added
+     * TYPE_APPLICATION_OVERLAY window and therefore renders/receives-touches above the panel
+     * (Story 11-4, AC-1). No-op if the bubble isn't currently shown -- showBubble() itself always
+     * adds fresh, so a bubble shown after the panel is already correctly on top with no extra
+     * step needed.
+     */
+    private fun reorderBubbleAbovePanel() {
+        if (!isBubbleVisible || !::bubbleView.isInitialized) return
+        try {
+            windowManager.removeView(bubbleView)
+            windowManager.addView(bubbleView, bubbleParams)
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[panel] failed to re-add bubble above panel", e)
         }
     }
 
