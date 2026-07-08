@@ -620,6 +620,9 @@ class KlarvoOverlayService : Service() {
 
     override fun onDestroy() {
         instance = null
+        // Story 11-4 F2: service teardown removes the bubble window below without a touch ever
+        // reaching handleTouch's ACTION_UP/CANCEL consume -- clear the flag so it can't leak.
+        bubbleReorderPending = false
         handler.removeCallbacks(keyboardCheckRunnable)
         handler.removeCallbacks(longPressRunnable)
         handler.removeCallbacks(doneFlashRunnable)
@@ -962,6 +965,11 @@ class KlarvoOverlayService : Service() {
                 KlarvoLogger.w(TAG, "Failed to remove bubbleView from WindowManager", e)
             }
         }
+        // Story 11-4 F2: the bubble window may be torn down here mid-gesture (e.g. banking-app
+        // detection), without the touch ever reaching handleTouch's ACTION_UP/CANCEL branch that
+        // normally consumes this flag. Clear it here too so a later unrelated gesture doesn't
+        // fire a spurious reorder against a since-recreated bubble.
+        bubbleReorderPending = false
     }
 
     // --- Bubble setup ---
@@ -1397,7 +1405,19 @@ class KlarvoOverlayService : Service() {
                 // deferred while it was in flight (see showListeningPanel), do it now.
                 if (bubbleReorderPending) {
                     bubbleReorderPending = false
-                    reorderBubbleAbovePanel()
+                    // F3: this fires synchronously from inside bubbleView's own ACTION_UP
+                    // dispatch -- reorderBubbleAbovePanel() would remove/re-add that same view
+                    // while it's still handling its own touch event. Post it instead so the
+                    // reorder runs after dispatch has unwound.
+                    handler.post {
+                        // F4: the panel may have been hidden (e.g. AUTOSTOP/AUTO auto-stop)
+                        // between the deferral and this post running. Reordering above an
+                        // already-gone panel is a pointless removeView+addView (flicker,
+                        // animator reset) with no z-order benefit -- skip it.
+                        if (panelVisible) {
+                            reorderBubbleAbovePanel()
+                        }
+                    }
                 }
                 return true
             }
@@ -2404,6 +2424,11 @@ class KlarvoOverlayService : Service() {
             windowManager.addView(bubbleView, bubbleParams)
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "[panel] failed to re-add bubble above panel", e)
+            // F1: removeView may have succeeded before addView threw, leaving the bubble window
+            // detached from the WindowManager while isBubbleVisible still claims it's shown.
+            // Reflect reality so a later showBubble() can cleanly re-add it instead of acting on
+            // a stale "visible" flag for a window that's no longer attached.
+            isBubbleVisible = false
         }
     }
 
