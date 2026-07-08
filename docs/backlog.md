@@ -684,6 +684,14 @@ a11y-Dienst** (heute best-effort/optional).
   (`TYPE_ACCESSIBILITY_OVERLAY`, ~350 LOC Reparenting + Regressionsrisiko Bubble ohne a11y-Dienst weg)
   nur, falls Re-Add die Drag-/Touch-Wege nicht sauber trägt. Verweise: `reference_hyperos_overlay_quirks`.
 
+### 11-3 akzeptierte Low-Residuals (Andi „passt" 2026-07-08, nicht 11-3 wieder aufmachen)
+- **Blinkende Caret-Linie scrollt mit dem Inhalt oben raus** (sitzt im scrollenden Transkript,
+  `ListeningPanelView.kt` caret in `transcriptFrame`). Bei langem Text meist unsichtbar. Andi hat
+  „passt" gesagt; falls später gewünscht: Caret als Sibling der ScrollView pinnen ODER entfernen
+  (mein AC-3-Pivot erlaubte Vereinfachen). Kandidat, mit 11-4 (Bubble-Overlay) oder 11-6 zu bündeln.
+- **Scroll-Stick-Schwelle `SCROLL_STICK_THRESHOLD_DP = 24`** ist ~1 Zeile — device-tunable, falls
+  Auto-Follow bei kleinen Hoch-Wischern zu aggressiv zurückreißt.
+
 ### 11-6 (Backlog) — Zeilenabstand als Appearance-Setting — Source: Andi 2026-07-08 Device-Test
 Preview-Box: **Zeilenabstand (line-height) als einstellbares Setting** in die Appearance-Kategorie
 aufnehmen (analog Font-Größe/-Familie/Farbe). Aktuell fix `setLineSpacing(0f, 1.7f)`
