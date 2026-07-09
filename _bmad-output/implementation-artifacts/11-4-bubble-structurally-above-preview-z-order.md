@@ -2,7 +2,7 @@
 story: "11.4"
 epic: "11"
 title: "Bubble structurally above the Preview panel (Z-order)"
-status: review
+status: done
 track: L2-fix
 gatedBy: ["11.3"]
 buildsOn: ["11.3"]
@@ -15,7 +15,7 @@ inputDocuments:
 
 # Story 11.4: Bubble structurally above the Preview panel (Z-order)
 
-Status: review
+Status: done
 
 > **Epic 11 — Cross-Platform Live-Preview.** Story 11-3 shipped the fixed-height, auto-scrolling
 > preview panel (AC-1..AC-5, `done`, real-device-verified). Its Task 6 (AC-6, "bubble always
@@ -63,6 +63,20 @@ Source: `docs/backlog.md` §"11-4", decisions dated 2026-07-07 (split + investig
    regression must be avoided (e.g. a permission-checked fallback back to `TYPE_APPLICATION_OVERLAY`
    ownership in `KlarvoOverlayService` when Accessibility is not granted) — do not silently
    introduce a "no accessibility permission → no bubble" regression.
+
+4. **Keyboard-avoidance is suppressed while the preview panel is visible (Andi, 2026-07-09,
+   GATE-4 round 1).** GATE-4 round 1 FAILED AC-2: the bubble "sprang immer wieder hoch" when
+   dragged into the box during a real dictation. Observed cause (device-confirmed, keyboard open):
+   the emergent clamp Design Decision 1 predicted — `adjustBubbleForKeyboard()`
+   (`KlarvoOverlayService.kt:867-883`) clamps `bubbleParams.y` to
+   `maxY = screenH − keyboardHeightPx − navbar − windowPx` whenever the soft keyboard is visible;
+   during a live-preview dictation the keyboard is open and the panel shares that bottom zone, so
+   the clamp repeatedly pushes the bubble above the box. **Decision:** since AC-1 now guarantees the
+   bubble renders on top (z-order), the vertical keyboard-avoidance is no longer needed for
+   reachability while the box is up — **suppress `adjustBubbleForKeyboard`'s clamp when
+   `panelVisible == true`**. Keyboard-avoidance is retained unchanged for the non-preview case
+   (keyboard open, no recording). This scopes AC-3 ("no keyboard-avoidance regression") to the
+   non-preview case and is the deliberate reconciliation of the AC-2/AC-3 tension.
 
 ## Story
 
@@ -508,5 +522,8 @@ exists today.
 
 | Date | Change |
 |------|--------|
-| 2026-07-08 | Story created (bmad-create-story) from `docs/backlog.md` §11-4, split from 11-3 Task 6 (2026-07-07 GATE-2) with intent clarified 2026-07-08 (real Z-layering, not positioning; remove unwanted geometric-clearance behavior). Status: ready-for-dev. Open items: exact repositioning-behavior location (Task 1, not conclusively found during story creation), Z-order mechanism choice (re-add vs. a11y-reparenting), touch-overlap visual acceptability — see "OPEN ITEMS" and elicitation report. |
+| 2026-07-08 | Story created (bmad-create-story) from `docs/backlog.md` §11-4, split from 11-3 Task 6 (2026-07-07 GATE-2) with intent clarified 2026-07-08 (real Z-layering, not positioning; remove unwanted geometric-clearance behavior). Status: in-progress. Open items: exact repositioning-behavior location (Task 1, not conclusively found during story creation), Z-order mechanism choice (re-add vs. a11y-reparenting), touch-overlap visual acceptability — see "OPEN ITEMS" and elicitation report. |
 | 2026-07-08 | **bmad-dev-story: implemented Tasks 1-4 (AC-1, AC-2, AC-3; AC-4 N/A).** Task 1/2 investigation found no dedicated geometric-clearance clamp anywhere in the codebase — the observed "avoidance" was the AC-1 z-order defect itself (panel added after bubble → panel rendered on top), nothing to remove. Task 3 implemented re-add-after-panel-show (`reorderBubbleAbovePanel()`, called from `showListeningPanel` after every actual panel `addView`) — the sanctioned first-try mechanism (Design Decision 2) held up under analysis for the repeated hide/re-show stress case (AC-1's order-independence clause), so **no escalation to `TYPE_ACCESSIBILITY_OVERLAY` reparenting was needed and AC-4 is N/A**. Found and guarded one real fragility: `showListeningPanel()` can fire mid-touch-sequence (push-to-talk's `longPressRunnable`), where `removeView()` would have cancelled the in-flight gesture — added a `bubbleReorderPending` deferral (consumed at the next `ACTION_UP`/`ACTION_CANCEL`) so the reorder never disrupts an active touch. No new pure-logic function introduced (Task 4.1: a `WindowManager` call-sequence change gated by existing touch state, not a new testable invariant — documented rationale, mirrors 11-3 Task 6.4 precedent). **162/162 JVM unit tests green (no regressions, count unchanged), clean Kotlin compile, `gen-android-theme.mjs --check` in sync, `scripts/android-smoke.sh` full clean build/install verified on real device (Tailscale `100.112.41.70`), Kotlin-only File List confirmed.** Status → `review`. **Real-device GATE-4 smoke (Task 4.4) is still Andi's action** — confirm bubble renders on top + stays reachable across RECORDING→TRANSCRIBING→DONE cycles, confirm no more geometric-clearance trick when dragging into the panel, spot-check the narrow push-to-talk-mid-hold edge case flagged in Completion Notes, and spot-check drag/edge-snap/keyboard-avoidance (AC-3) are unregressed. |
+| 2026-07-08 | **Code-review (conductor, Opus + 3 sub-reviewers) → review-cleared; fix round F1-F4 (`678cf4a`).** Acceptance Auditor confirmed AC-1/2/3 met, AC-4 legitimately N/A, scope clean. Adversarial reviewers surfaced 4 real robustness defects in the new reorder mechanism, fixed in one round: F1 (`reorderBubbleAbovePanel` reset `isBubbleVisible=false` if `addView` throws after a successful `removeView`, so a detached bubble can't strand the session with a lying flag), F2 (clear `bubbleReorderPending` in `hideBubble`/`onDestroy` so a mid-gesture teardown can't leak the flag), F3 (post the deferred reorder off the ACTION_UP dispatch via `handler.post` instead of removing the view during its own touch dispatch), F4 (gate the deferred reorder on `panelVisible`). Speculative findings (stale `bubbleParams`, thread-race, ACTION_UP-only consume) verified against code and dismissed. Compile + JVM + theme-check green. |
+| 2026-07-09 | **GATE-4 round 1 FAILED (AC-2), root cause named + fixed (`43a52ca`).** Andi real-device: bubble "sprang immer wieder hoch" when dragged into the box during a live dictation (keyboard open). Conductor isolated the device-confirmed cause (the emergent clamp Design Decision 1 predicted, which the dev-story investigation had missed): `adjustBubbleForKeyboard` clamps `bubbleParams.y` above the soft-keyboard height, and during preview the panel shares that bottom zone. Reconciled the resulting AC-2/AC-3 tension via **Design Decision 4** (Andi): suppress keyboard-avoidance while the preview panel is visible (bubble is z-ordered on top anyway per AC-1), retain it unchanged for the non-preview case. Compile + JVM + theme-check green. Evidence: `gate4-evidence/11-4/`. |
+| 2026-07-09 | **GATE-4 round 2 GREEN → close-out (conductor).** Andi real-device (fresh `43a52ca` build, agent-installed): bubble now stays where dropped when dragged into the box during dictation (AC-2 ✓), controls reachable (AC-1 ✓), non-preview keyboard-avoidance unregressed (AC-3 ✓), overlap reads as intended. Both status fields → `done`. Last open story in Epic 11 (epic → done / retro left to Andi). |
