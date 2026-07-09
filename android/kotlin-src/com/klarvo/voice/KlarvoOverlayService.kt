@@ -867,6 +867,16 @@ class KlarvoOverlayService : Service() {
     fun adjustBubbleForKeyboard(keyboardHeightPx: Int) {
         handler.post {
             if (!isBubbleVisible || !::bubbleView.isInitialized) return@post
+            if (panelVisible) {
+                // Live-preview panel is up: AC-1's z-order reorder already keeps the bubble
+                // on top of the panel, so keyboard-avoidance is unneeded and actively harmful
+                // here — it repeatedly yanked the bubble out of the box the user is trying to
+                // drag it into. Suppress the clamp, and clear any stash from before the panel
+                // appeared so a later keyboard-close doesn't restore a stale pre-panel Y and
+                // override the position the user just dragged into the box.
+                preKeyboardY = null
+                return@post
+            }
             val (_, screenH) = getScreenDimensions()
             // Use the full window height (incl. shadow padding) so the real bottom edge clears
             // the keyboard, not just the smaller visual squircle.
