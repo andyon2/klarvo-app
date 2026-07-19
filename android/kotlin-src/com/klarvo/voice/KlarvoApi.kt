@@ -991,56 +991,75 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
      */
     fun isTrivialChunk(chunk: String): Boolean = chunk.none { it.isLetterOrDigit() }
 
+    /**
+     * Splits text into chunks at sentence boundaries (`. `, `! `, `? `, or `\n`).
+     * Each chunk targets ~CHUNK_TARGET_SIZE characters but does not break mid-sentence.
+     *
+     * **Byte-level parity with Rust `split_into_chunks`:** indices are UTF-8 byte offsets
+     * (`text.encodeToByteArray().size`), not UTF-16 char counts (`text.length`). This ensures
+     * umlaut-heavy German text splits at the same logical point as the desktop path.
+     *
+     * Mirrors the Rust implementation in `src-tauri/src/llm/mod.rs`.
+     *
+     * @param text Input text to split
+     * @return List of trimmed, non-empty chunks
+     */
     fun splitIntoChunks(text: String): List<String> {
+        val bytes = text.encodeToByteArray()
+        val byteLen = bytes.size
         val ranges = mutableListOf<Pair<Int, Int>>()
         var start = 0
 
-        while (start < text.length) {
-            if (text.length - start <= CHUNK_TARGET_SIZE) {
-                ranges.add(start to text.length)
+        while (start < byteLen) {
+            if (byteLen - start <= CHUNK_TARGET_SIZE) {
+                ranges.add(start to byteLen)
                 break
             }
 
             // Search for a sentence boundary near the target size.
             // Search window: from (start + CHUNK_TARGET_SIZE/2) up to (start + CHUNK_TARGET_SIZE + 200).
-            val searchEnd = (start + CHUNK_TARGET_SIZE + 200).coerceAtMost(text.length)
+            val searchEnd = (start + CHUNK_TARGET_SIZE + 200).coerceAtMost(byteLen)
             var bestSplit: Int? = null
 
             var i = start + CHUNK_TARGET_SIZE / 2
             while (i < searchEnd) {
-                val c = text[i]
-                val next = if (i + 1 < text.length) text[i + 1] else '\u0000'
+                val b = bytes[i]
+                val next = if (i + 1 < byteLen) bytes[i + 1] else -1
 
-                if ((c == '.' || c == '!' || c == '?') && next == ' ') {
+                if ((b == '.'.code.toByte() || b == '!'.code.toByte() || b == '?'.code.toByte())
+                    && next == ' '.code.toByte()
+                ) {
                     bestSplit = i + 1  // include the punctuation character
                     if (i >= start + CHUNK_TARGET_SIZE) break  // close enough to target
-                } else if (c == '\n') {
+                } else if (b == '\n'.code.toByte()) {
                     bestSplit = i
                     if (i >= start + CHUNK_TARGET_SIZE) break
                 }
                 i++
             }
 
-            // Fallback (no boundary found): never split between a surrogate pair
-            // (the char-index analog of Rust's UTF-8 char-boundary floor).
-            var splitAt = bestSplit ?: (start + CHUNK_TARGET_SIZE).coerceAtMost(text.length)
-            while (splitAt > start && splitAt < text.length && text[splitAt].isLowSurrogate()) {
+            // Fallback (no boundary found): floor to a UTF-8 char boundary so the slice
+            // cannot produce malformed UTF-8. Boundary hits (`.`, `!`, `?` + space, or `\n`)
+            // are already ASCII → valid char boundaries.
+            var splitAt = bestSplit ?: (start + CHUNK_TARGET_SIZE).coerceAtMost(byteLen)
+            while (splitAt > start && isUtf8ContinuationByte(bytes[splitAt])) {
                 splitAt--
             }
             ranges.add(start to splitAt)
 
-            // Advance past the split point, skipping leading whitespace.
+            // Advance past the split point, skipping leading ASCII whitespace.
             start = splitAt
-            while (start < text.length && text[start].isWhitespace()) start++
+            while (start < byteLen && bytes[start].isAsciiWhitespace()) start++
         }
 
-        // Materialize: trim, drop empties, and fold any trivial fragment into its
-        // predecessor (widen the previous range's end) so it stays attached rather
-        // than reaching the LLM as a lone chunk.
+        // Materialize: decode each range to a String, trim, drop empties, and fold any
+        // trivial fragment into its predecessor (widen the previous range's end) so it
+        // stays attached rather than reaching the LLM as a lone chunk.
         val merged = mutableListOf<Pair<Int, Int>>()
         for ((s, e) in ranges) {
-            if (text.substring(s, e).trim().isEmpty()) continue
-            if (isTrivialChunk(text.substring(s, e))) {
+            val chunk = bytes.decodeToString(s, e)
+            if (chunk.trim().isEmpty()) continue
+            if (isTrivialChunk(chunk)) {
                 val last = merged.lastOrNull()
                 if (last != null) {
                     merged[merged.size - 1] = last.first to e
@@ -1052,23 +1071,27 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
 
         // A leading trivial fragment has no predecessor to fold backward into; fold
         // it FORWARD into the next chunk so a trivial chunk never stands alone.
-        if (merged.size >= 2 && isTrivialChunk(text.substring(merged[0].first, merged[0].second))) {
+        if (merged.size >= 2 && isTrivialChunk(bytes.decodeToString(merged[0].first, merged[0].second))) {
             val first = merged.removeAt(0)
             merged[0] = first.first to merged[0].second
         }
 
-        return merged.map { (s, e) -> text.substring(s, e).trim() }
+        return merged.map { (s, e) -> bytes.decodeToString(s, e).trim() }
     }
+
+    /** Returns true if the byte is a UTF-8 continuation byte (10xxxxxx / 0x80–0xBF). */
+    private fun isUtf8ContinuationByte(b: Byte): Boolean = b in 0x80..0xBF
 
     /**
      * Cleans up text using an OpenAI-compatible LLM API, with chunked parallel processing
      * for long texts.
      *
-     * - If text.length <= CHUNK_THRESHOLD: delegates to [cleanup] (single call).
-     * - If text.length > CHUNK_THRESHOLD: splits into chunks via [splitIntoChunks] and
+     * - If text.length < CHUNK_THRESHOLD: delegates to [cleanup] (single call).
+     * - If text.length >= CHUNK_THRESHOLD: splits into chunks via [splitIntoChunks] and
      *   processes all chunks in parallel using a fixed-size thread pool.
-     *   Results are joined with "\n\n".
-     *   If any chunk fails, falls back to a single [cleanup] call on the full text.
+     *   Results are joined with "\n".
+     *   If any chunk fails, the error propagates immediately (abort-on-first-error,
+     *   parity with Desktop's `chunked_cleanup`).
      *
      * @param text                Raw transcription text to clean up
      * @param provider            Resolved LLM provider (URL, model, API key)
@@ -1076,7 +1099,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
      * @param dictionaryTerms     Comma-separated dictionary terms the LLM must preserve (optional)
      * @param customInstructions  Additional user instructions appended to system prompt (optional)
      * @return Cleaned text
-     * @throws IOException if both chunked and fallback calls fail
+     * @throws IOException if any chunk call fails (abort-on-first-error)
      */
     fun cleanupChunked(
         text: String,
@@ -1092,7 +1115,7 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
             return text
         }
 
-        if (text.length <= CHUNK_THRESHOLD) {
+        if (text.length < CHUNK_THRESHOLD) {
             return cleanup(text, provider, style, dictionaryTerms, customInstructions)
         }
 
@@ -1116,14 +1139,12 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
             }
 
             // Collect results -- if any Future throws, we fall through to the catch block.
-            val results = try {
-                futures.map { it.get() }
-            } catch (e: Exception) {
-                KlarvoLogger.w(CLEANUP_TAG, "[cleanupChunked] a chunk failed, falling back to single call", e)
-                return cleanup(text, provider, style, dictionaryTerms, customInstructions)
-            }
+            // Abort on first error — parity with Rust `let r = result?` (llm/mod.rs:1405).
+            // A transient API failure on one chunk must not silently retry the entire text
+            // as a single call (which would mask the root cause and waste tokens).
+            val results = futures.map { it.get() }
 
-            return results.joinToString("\n\n")
+            return results.joinToString("\n")
         } finally {
             executor.shutdown()
         }

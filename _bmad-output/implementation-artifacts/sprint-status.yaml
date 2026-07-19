@@ -105,7 +105,7 @@ development_status:
 
   # Epic 7 — Cross-Platform Parity — ⏸ PARKED 2026-06-13 (sprint-change-proposal-2026-06-13.md): deferred für Studio-Dark-Overhaul (Epics 8/9); resume mit 7-1, 7-7 ZULETZT
   epic-7: in-progress
-  7-1-android-chunking-parity-core-output: backlog
+  7-1-android-chunking-parity-core-output: review
   7-2-android-live-auto-stop-vad-gate-parity: backlog
   7-3-shared-core-stt-request-and-guard-path-via-jni: done
   7-5-android-llm-routing-contract-hygiene: backlog
@@ -133,6 +133,7 @@ development_status:
   9-5-bubble-state-sequence-listening-panel-waveform: done
   9-6-keyboard-collapse-via-a11y-service: backlog
   9-7-short-press-gesture-modes-mirror-desktop: done
+  9-7-followup-swap-safe-silence: done
   9-8-long-press-popover-menu: backlog
   9-9-in-app-recording-state-re-skin: done
   9-10-token-codegen-klarvo-css-to-klarvotheme: done
