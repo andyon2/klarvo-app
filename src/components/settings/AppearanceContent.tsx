@@ -1,4 +1,5 @@
 import { LABEL_CLS } from "../ui";
+import { KToggle, KSelect, KSlider, KSegmented } from "./FormControls";
 import {
   rgbaToHexOpacity,
   hexOpacityToRgba,
@@ -93,17 +94,7 @@ export function AppearanceContent({
           <span className={LABEL_CLS}>Live Preview</span>
           <span className="text-[11px] text-klarvo-muted">Show raw transcription while you dictate in Toggle/Hold mode.</span>
         </div>
-        <button
-          role="switch"
-          aria-checked={localLivePreviewEnabled}
-          onClick={() => setLocalLivePreviewEnabled(!localLivePreviewEnabled)}
-          className={[
-            "relative flex-shrink-0 w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none",
-            localLivePreviewEnabled ? "bg-klarvo-primary/40" : "bg-klarvo-elevated",
-          ].join(" ")}
-        >
-          <span className={["absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200", localLivePreviewEnabled ? "translate-x-4" : ""].join(" ")} />
-        </button>
+        <KToggle checked={localLivePreviewEnabled} onChange={setLocalLivePreviewEnabled} />
       </div>
 
       {localLivePreviewEnabled && (
@@ -112,16 +103,14 @@ export function AppearanceContent({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <span className={LABEL_CLS}>Preview Pause</span>
-              <span className="text-xs font-mono text-klarvo-primary">{localPreviewPauseSilenceSecs.toFixed(1)}s</span>
+              <span className="text-xs font-mono text-klarvo-teal">{localPreviewPauseSilenceSecs.toFixed(1)}s</span>
             </div>
-            <input
-              type="range"
+            <KSlider
               min={0.5}
               max={5.0}
               step={0.1}
               value={localPreviewPauseSilenceSecs}
-              onChange={(e) => setLocalPreviewPauseSilenceSecs(parseFloat(e.target.value))}
-              className="w-full accent-klarvo-primary"
+              onChange={setLocalPreviewPauseSilenceSecs}
             />
             <p className="text-[11px] text-klarvo-muted">Short = more responsive, more Groq calls, less context per segment. Long = less responsive, fewer calls, better context.</p>
           </div>
@@ -163,7 +152,7 @@ export function AppearanceContent({
                     setLocalPreviewBorderWidth(theme.borderWidth);
                     setLocalPreviewBorderRadius(theme.borderRadius);
                   }}
-                  className="flex-1 py-1 rounded-md text-xs font-medium text-klarvo-muted hover:text-klarvo-text bg-klarvo-bg border border-klarvo-border/60 hover:border-klarvo-primary/40 transition-all duration-100 whitespace-nowrap"
+                  className="flex-1 py-1 rounded-md text-xs font-medium text-klarvo-muted hover:text-klarvo-text bg-klarvo-bg border border-klarvo-border/60 hover:border-klarvo-teal/40 transition-all duration-100 whitespace-nowrap"
                 >
                   {theme.label}
                 </button>
@@ -174,7 +163,7 @@ export function AppearanceContent({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Text color</span>
-                <span className="text-xs font-mono text-klarvo-primary">
+                <span className="text-xs font-mono text-klarvo-teal">
                   {rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}%
                 </span>
               </div>
@@ -188,17 +177,16 @@ export function AppearanceContent({
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
                 />
-                <input
-                  type="range"
+                <KSlider
                   min={0}
                   max={100}
                   step={1}
                   value={rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88).opacityPct}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     const { hex } = rgbaToHexOpacity(localPreviewTextColor, "#dcdcdc", 88);
-                    setLocalPreviewTextColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_TEXT_COLOR));
+                    setLocalPreviewTextColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_TEXT_COLOR));
                   }}
-                  className="flex-1 accent-klarvo-primary"
+                  className="flex-1"
                 />
               </div>
             </div>
@@ -207,7 +195,7 @@ export function AppearanceContent({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Bg color</span>
-                <span className="text-xs font-mono text-klarvo-primary">
+                <span className="text-xs font-mono text-klarvo-teal">
                   {rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}%
                 </span>
               </div>
@@ -221,17 +209,16 @@ export function AppearanceContent({
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
                 />
-                <input
-                  type="range"
+                <KSlider
                   min={0}
                   max={100}
                   step={1}
                   value={rgbaToHexOpacity(localPreviewBgColor, "#191919", 96).opacityPct}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     const { hex } = rgbaToHexOpacity(localPreviewBgColor, "#191919", 96);
-                    setLocalPreviewBgColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_BG_COLOR));
+                    setLocalPreviewBgColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_BG_COLOR));
                   }}
-                  className="flex-1 accent-klarvo-primary"
+                  className="flex-1"
                 />
               </div>
             </div>
@@ -241,16 +228,14 @@ export function AppearanceContent({
               <div className="flex flex-col gap-0.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-klarvo-muted">Bg blur</span>
-                  <span className="text-xs font-mono text-klarvo-primary">{localPreviewBgBlur}px</span>
+                  <span className="text-xs font-mono text-klarvo-teal">{localPreviewBgBlur}px</span>
                 </div>
-                <input
-                  type="range"
+                <KSlider
                   min={0}
                   max={20}
                   step={1}
                   value={localPreviewBgBlur}
-                  onChange={(e) => setLocalPreviewBgBlur(parseInt(e.target.value, 10))}
-                  className="w-full accent-klarvo-primary"
+                  onChange={(v) => setLocalPreviewBgBlur(Math.round(v))}
                 />
               </div>
             )}
@@ -259,7 +244,7 @@ export function AppearanceContent({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Border color</span>
-                <span className="text-xs font-mono text-klarvo-primary">
+                <span className="text-xs font-mono text-klarvo-teal">
                   {rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}%
                 </span>
               </div>
@@ -273,17 +258,16 @@ export function AppearanceContent({
                   }}
                   className="w-7 h-6 rounded cursor-pointer border border-klarvo-border/60"
                 />
-                <input
-                  type="range"
+                <KSlider
                   min={0}
                   max={100}
                   step={1}
                   value={rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25).opacityPct}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     const { hex } = rgbaToHexOpacity(localPreviewBorderColor, "#2ac3a8", 25);
-                    setLocalPreviewBorderColor(hexOpacityToRgba(hex, parseInt(e.target.value, 10), DEFAULT_BORDER_COLOR));
+                    setLocalPreviewBorderColor(hexOpacityToRgba(hex, Math.round(v), DEFAULT_BORDER_COLOR));
                   }}
-                  className="flex-1 accent-klarvo-primary"
+                  className="flex-1"
                 />
               </div>
             </div>
@@ -292,16 +276,14 @@ export function AppearanceContent({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Border thickness</span>
-                <span className="text-xs font-mono text-klarvo-primary">{localPreviewBorderWidth}px</span>
+                <span className="text-xs font-mono text-klarvo-teal">{localPreviewBorderWidth}px</span>
               </div>
-              <input
-                type="range"
+              <KSlider
                 min={0}
                 max={5}
                 step={1}
                 value={localPreviewBorderWidth}
-                onChange={(e) => setLocalPreviewBorderWidth(parseInt(e.target.value, 10))}
-                className="w-full accent-klarvo-primary"
+                onChange={(v) => setLocalPreviewBorderWidth(Math.round(v))}
               />
             </div>
 
@@ -309,57 +291,44 @@ export function AppearanceContent({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-klarvo-muted">Corner radius</span>
-                <span className="text-xs font-mono text-klarvo-primary">{localPreviewBorderRadius}px</span>
+                <span className="text-xs font-mono text-klarvo-teal">{localPreviewBorderRadius}px</span>
               </div>
-              <input
-                type="range"
+              <KSlider
                 min={0}
                 max={24}
                 step={1}
                 value={localPreviewBorderRadius}
-                onChange={(e) => setLocalPreviewBorderRadius(parseInt(e.target.value, 10))}
-                className="w-full accent-klarvo-primary"
+                onChange={(v) => setLocalPreviewBorderRadius(Math.round(v))}
               />
             </div>
 
             {/* Font family */}
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] text-klarvo-muted min-w-[90px]">Font family</span>
-              <select
+              <KSelect
                 value={
                   PREVIEW_FONTS.find((f) => f.stack === localPreviewFontFamily)?.stack
                   ?? PREVIEW_FONTS[0].stack
                 }
-                onChange={(e) => setLocalPreviewFontFamily(e.target.value)}
-                className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded px-2 py-0.5 text-xs text-klarvo-text"
-              >
-                {PREVIEW_FONTS.map((f) => (
-                  <option key={f.label} value={f.stack}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setLocalPreviewFontFamily}
+                options={PREVIEW_FONTS.map((f) => ({ value: f.stack, label: f.label }))}
+                className="flex-1"
+              />
             </div>
 
             {/* Font-size picker — affects card geometry (k-scaling) */}
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLS}>Schriftgröße</span>
-              <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                {(["small", "medium", "large"] as const).map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => setLocalPreviewFontSize(size)}
-                    className={[
-                      "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                      localPreviewFontSize === size
-                        ? "bg-klarvo-primary/15 text-klarvo-primary"
-                        : "text-klarvo-dim hover:text-klarvo-muted",
-                    ].join(" ")}
-                  >
-                    {size === "small" ? "Klein" : size === "medium" ? "Mittel" : "Groß"}
-                  </button>
-                ))}
-              </div>
+              <KSegmented
+                value={localPreviewFontSize}
+                onChange={setLocalPreviewFontSize}
+                options={[
+                  { value: "small", label: "Klein" },
+                  { value: "medium", label: "Mittel" },
+                  { value: "large", label: "Groß" },
+                ]}
+                className="w-full"
+              />
               <p className="text-[11px] text-klarvo-muted">
                 Skaliert Breite, Höhe und Schrift der Vorschau proportional.
               </p>
@@ -370,22 +339,16 @@ export function AppearanceContent({
             {!hidePanelForm && (
               <div className="flex flex-col gap-1.5">
                 <span className={LABEL_CLS}>Darstellung</span>
-                <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60">
-                  {(["compact", "comfortable", "wide"] as const).map((preset) => (
-                    <button
-                      key={preset}
-                      onClick={() => setLocalPreviewPanelForm(preset)}
-                      className={[
-                        "flex-1 py-1 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
-                        localPreviewPanelForm === preset
-                          ? "bg-klarvo-primary/15 text-klarvo-primary"
-                          : "text-klarvo-dim hover:text-klarvo-muted",
-                      ].join(" ")}
-                    >
-                      {preset === "compact" ? "Compact" : preset === "comfortable" ? "Comfortable" : "Wide"}
-                    </button>
-                  ))}
-                </div>
+                <KSegmented
+                  value={localPreviewPanelForm}
+                  onChange={setLocalPreviewPanelForm}
+                  options={[
+                    { value: "compact", label: "Compact" },
+                    { value: "comfortable", label: "Comfortable" },
+                    { value: "wide", label: "Wide" },
+                  ]}
+                  className="w-full"
+                />
                 <p className="text-[11px] text-klarvo-muted">
                   Changes the width of the preview panel.
                 </p>

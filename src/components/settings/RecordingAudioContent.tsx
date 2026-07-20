@@ -3,6 +3,7 @@ import { isDesktop, isMobile } from "../../platform";
 import { LABEL_CLS_M } from "../ui";
 import { WhisperModelManager } from "../WhisperModelManager";
 import { LlmModelManager } from "../LlmModelManager";
+import { KSelect, KSegmented } from "./FormControls";
 
 // --- Cloud STT models ---------------------------------------------------------
 
@@ -56,46 +57,30 @@ export function RecordingAudioContent({
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Speech Recognition</span>
         <div className="flex flex-col gap-2 pl-0">
-        <div className="flex gap-0.5 bg-klarvo-bg rounded-lg p-0.5 border border-klarvo-border/60 w-fit">
-          <button
-            type="button"
-            onClick={() => {
-              if (localSttProvider === "local") {
-                setLocalSttProvider("groq");
-              }
-            }}
-            className={[
-              "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-              localSttProvider !== "local"
-                ? "bg-klarvo-primary/15 text-klarvo-primary"
-                : "text-klarvo-dim hover:text-klarvo-muted",
-            ].join(" ")}
-          >
-            Cloud
-          </button>
-          <button
-            type="button"
-            onClick={() => setLocalSttProvider("local")}
-            className={[
-              "px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-100",
-              localSttProvider === "local"
-                ? "bg-klarvo-primary/15 text-klarvo-primary"
-                : "text-klarvo-dim hover:text-klarvo-muted",
-            ].join(" ")}
-          >
-            Offline
-          </button>
-        </div>
+        <KSegmented
+          value={localSttProvider === "local" ? "local" : "cloud"}
+          onChange={(v) => {
+            if (v === "local") {
+              setLocalSttProvider("local");
+            } else if (localSttProvider === "local") {
+              setLocalSttProvider("groq");
+            }
+          }}
+          options={[
+            { value: "cloud", label: "Cloud" },
+            { value: "local", label: "Offline" },
+          ]}
+          className="w-fit"
+        />
 
         {/* Cloud mode: model picker */}
         {localSttProvider !== "local" && (
           <div className="flex flex-col gap-2 mt-1">
             <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
               <span className={LABEL_CLS_M}>Model</span>
-              <select
+              <KSelect
                 value={localSttModel}
-                onChange={(e) => {
-                  const model = e.target.value;
+                onChange={(model) => {
                   setLocalSttModel(model);
                   // Sync provider to match the selected model's API.
                   if (model === "whisper-1") {
@@ -104,18 +89,13 @@ export function RecordingAudioContent({
                     setLocalSttProvider("groq");
                   }
                 }}
-                className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-              >
-                {CLOUD_STT_MODELS.filter((m) => {
+                options={CLOUD_STT_MODELS.filter((m) => {
                   if (m.provider === "groq") return groqOk;
                   if (m.provider === "openai") return openaiOk;
                   return true;
-                }).map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                }).map((m) => ({ value: m.value, label: m.label }))}
+                className={isMobile ? "w-full" : "w-auto"}
+              />
             </div>
           </div>
         )}
@@ -159,17 +139,18 @@ export function RecordingAudioContent({
 
           <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
             <span className={LABEL_CLS_M}>Provider</span>
-            <select
+            <KSelect
               value={localLlmProvider}
-              onChange={(e) => setLocalLlmProvider(e.target.value)}
-              className={`bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer ${isMobile ? "w-full" : ""}`}
-            >
-              <option value="deepseek" disabled={!deepseekOk}>DeepSeek{!deepseekOk ? " (no key)" : ""}</option>
-              <option value="openai" disabled={!openaiOk}>OpenAI{!openaiOk ? " (no key)" : ""}</option>
-              <option value="groq" disabled={!groqOk}>Groq (Llama){!groqOk ? " (no key)" : ""}</option>
-              <option value="openrouter" disabled={!openrouterOk}>OpenRouter{!openrouterOk ? " (no key)" : ""}</option>
-              <option value="local">Local (Offline)</option>
-            </select>
+              onChange={setLocalLlmProvider}
+              options={[
+                { value: "deepseek", label: `DeepSeek${!deepseekOk ? " (no key)" : ""}`, disabled: !deepseekOk },
+                { value: "openai", label: `OpenAI${!openaiOk ? " (no key)" : ""}`, disabled: !openaiOk },
+                { value: "groq", label: `Groq (Llama)${!groqOk ? " (no key)" : ""}`, disabled: !groqOk },
+                { value: "openrouter", label: `OpenRouter${!openrouterOk ? " (no key)" : ""}`, disabled: !openrouterOk },
+                { value: "local", label: "Local (Offline)" },
+              ]}
+              className={isMobile ? "w-full" : "w-auto"}
+            />
           </div>
 
           {/* Local LLM model manager -- shown when local provider is selected */}
@@ -183,14 +164,15 @@ export function RecordingAudioContent({
       {isDesktop && (
         <div className="flex items-center justify-between gap-3">
           <span className={LABEL_CLS_M}>Microphone</span>
-          <select
+          <KSelect
             value={localAudioDevice ?? ""}
-            onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
-            className="bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-2.5 py-1.5 text-xs text-klarvo-text max-w-[180px] truncate focus:outline-none focus:border-klarvo-primary/40 transition-colors cursor-pointer"
-          >
-            <option value="">System Default</option>
-            {audioDevices.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+            onChange={(v) => handleAudioDeviceChange(v || null)}
+            options={[
+              { value: "", label: "System Default" },
+              ...audioDevices.map((n) => ({ value: n, label: n })),
+            ]}
+            className="max-w-[180px]"
+          />
         </div>
       )}
     </div>

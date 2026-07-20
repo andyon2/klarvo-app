@@ -642,12 +642,61 @@ Source: Andi-Entscheidung + Story 11-1 Benchmark (Machbarkeits-Spike, DONE 2026-
 - **11-2 F5-Entscheidung (Andi-override möglich):** Bg-Blur-Regler auf Android **versteckt** (wie Breiten-Regler), weil `RenderEffect` API 31 braucht (minSdk 24) → sonst inerter Regler. Config-Feld bleibt für Desktop. Falls Blur auf Android gewünscht: eigene Story (RenderEffect ≥ API31 + No-op-Fallback < 31).
 
 ### 11-3 (Follow-up) — Android Preview-Box Geräte-Feedback-Pass — Source: Andi device-verify 2026-07-02
+> **⚠️ HOCHGESTUFT 2026-07-07 (Andi): nicht mehr nur Politur — Bedienbarkeits-Blocker.** Andi meldet: die
+> mitwachsende Preview-Box (Punkt 3) füllt in der Praxis den ganzen Bildschirm; weil sie als Overlay ganz
+> oben liegt UND die Aufnahme-Controls im *Bubble*-Fenster darunter verdeckt/deren Touches schluckt, wird
+> das Gerät während der Aufnahme unbenutzbar (Bubble = Senden/Abbrechen nicht mehr erreichbar). Geerdet im
+> Code 2026-07-07: Preview-Fenster ist `WRAP_CONTENT` ohne Max (`KlarvoOverlayService.kt:2282`) → der in
+> 11-2 gebaute ScrollView ist inert, weil das Fenster selbst mitwächst; Bubble + Preview haben denselben
+> Fenstertyp/Flags/PID → Z-Order = Add-Reihenfolge → später hinzugefügte Preview liegt über der Bubble.
+> Punkt 3 (rollendes Fenster mit fester Höhe) + neuer Punkt 6 (Bubble-Z-Band) lösen zusammen die Wurzel.
+> **11-3 ist damit die nächste Android-Story, VOR Epic 8** (Andi 2026-07-07). Verify = Andi-Real-Device.
+
 11-2 DONE + real-device-verified; folgende Politur-Punkte aus Andis Geräte-Runde (nicht 11-2 wieder aufmachen):
 1. **Box-Header „Aufnahme" → „Live-Preview".** (Copy; `ListeningPanelView`-Header.)
 2. **„Ich höre zu…" unten entfernen** — unnötig im Preview-Kontext.
 3. **Feste Box-Größe statt Mitwachsen** — das Desktop-Verhalten „Box wächst mit Text" ergibt auf Android keinen Sinn; Box bleibt fest über dem Keyboard. **ENTSCHIEDEN (Andi 2026-07-02): rollendes Fenster** — Box zeigt nur die letzten Zeilen, Älteres rollt oben raus (sanft ausgefadet), kein Scrollen. (Ersetzt den gebauten ScrollView-Auto-Scroll → auf rollendes Last-N-Fenster mit Top-Fade umbauen.)
 4. **Griff-Linie (GripView) oben mitte entfernen** — suggeriert Resize, den es nicht gibt; entfernt → macht Platz, Header-Elemente rücken näher an den Rand.
 5. **Font-Skala verschieben (Andi: klein ist viel zu klein)** — **ENTSCHIEDEN (Andi 2026-07-02): `FONT_PX_SP` = klein/mittel/groß → 13 / 15 / 18 sp, Android-only (Desktop-`FONT_PX_MAP` unberührt).** (Ersetzt den akzeptierten „Font sp vs px"-Residual oben.)
+6. **Bubble muss IMMER über der Preview liegen — Z-Order-Fix (NEU 2026-07-07, Andi).** Bug: Bubble (`bubbleParams`, `KlarvoOverlayService.kt:980`) und Preview-Panel (`KlarvoOverlayService.kt:2280`) nutzen denselben `overlayType` + identische Flags → gleiches Z-Band → Reihenfolge entscheidet → Preview (später addiert) liegt über der Bubble und verdeckt die Aufnahme-Controls (Senden/Abbrechen sitzen im Bubble-Fenster, Kommentar `:2302-2304`). **ENTSCHIEDEN (Andi 2026-07-07): Bubble strukturell in ein HÖHERES Z-Band** heben (höherer Fenster-Typ), sodass sie unabhängig von der Add-Reihenfolge immer oben liegt — nicht bloß Re-Add nach der Preview. Typ-Wechsel → real-device-smoke Pflicht (Overlay-Permission/HyperOS-Quirks beachten, vgl. `reference_hyperos_overlay_quirks`). Hängt eng an Punkt 3: sobald die Box feste Höhe hat, überlappt sie ohnehin weniger, aber die Bubble-Erreichbarkeit muss strukturell garantiert sein.
+
+> **UPDATE 2026-07-07 — Punkte 1–5 gebaut (Story 11-3, AC-1..AC-5), Punkt 6 abgespalten → Story 11-4.**
+> 11-3 lieferte die feste Höhe + rollendes Fenster (Punkt 3) und Copy/Font/Grip (1,2,4,5); damit ist
+> der **katastrophale Bug (Box füllt Bildschirm → Handy unbedienbar) weg**. Story-Conductor-Lauf
+> `fix/11-3-android-preview-box`, code-review-cleared, 163 JVM-Tests grün. Punkt 6 (Z-Order) → **11-4**.
+
+### 11-4 — Bubble strukturell über der Preview (Z-Order) — Split aus 11-3 Punkt 6 (2026-07-07)
+Source: 11-3 GATE-2-Entscheidung (Andi 2026-07-07). Der Dev-Investigation in 11-3 ergab: **kein leichter,
+erlaubnisfreier Weg** existiert — das einzige Mittel, das `TYPE_APPLICATION_OVERLAY` strukturell überragt,
+ist `TYPE_ACCESSIBILITY_OVERLAY`, nur vom Bedienungshilfe-Dienst erzeugbar → ~350 Zeilen Bubble-Logik in
+`KlarvoAccessibilityService` umhängen + **Regressionsgefahr: Bubble verschwände für Nutzer ohne aktivierten
+a11y-Dienst** (heute best-effort/optional).
+- **INTENT GEKLÄRT (Andi 2026-07-08 Device-Test): echtes Z-LAYERING gewollt, NICHT Positionierung.**
+  Der 11-3-Build zeigt aktuell einen ungewollten „Trick": zieht Andi die Bubble in die Box, wird sie
+  *geometrisch* über die Preview versetzt (Bubble bleibt über der Panel-Oberkante). Andi will das NICHT —
+  er will, dass die Bubble **layer-technisch über der Preview** liegen kann (auch während der Aufnahme)
+  und die Box damit **effektiv teilverdeckt**. D.h. der frühere „Positionierungs-Fix zuerst"-Plan ist
+  VERWORFEN: 11-4 = **echte Z-Schichtung** (Bubble über Panel, darf überlappen), plus die ungewollte
+  vertikale Repositionierungs-Klammer ENTFERNEN.
+- **Mechanik (zu untersuchen):** gleiche Fenster-Typen → Z = Add-Reihenfolge. Leichtester Weg evtl.
+  Bubble nach `showListeningPanel` erneut oben einhängen (Re-Add) statt des a11y-Umbaus — der Dev hatte
+  Re-Add als „fragil" verworfen, aber für „Bubble über Panel" ist genau Add-Order das Mittel; a11y
+  (`TYPE_ACCESSIBILITY_OVERLAY`, ~350 LOC Reparenting + Regressionsrisiko Bubble ohne a11y-Dienst weg)
+  nur, falls Re-Add die Drag-/Touch-Wege nicht sauber trägt. Verweise: `reference_hyperos_overlay_quirks`.
+
+### 11-3 akzeptierte Low-Residuals (Andi „passt" 2026-07-08, nicht 11-3 wieder aufmachen)
+- **Blinkende Caret-Linie scrollt mit dem Inhalt oben raus** (sitzt im scrollenden Transkript,
+  `ListeningPanelView.kt` caret in `transcriptFrame`). Bei langem Text meist unsichtbar. Andi hat
+  „passt" gesagt; falls später gewünscht: Caret als Sibling der ScrollView pinnen ODER entfernen
+  (mein AC-3-Pivot erlaubte Vereinfachen). Kandidat, mit 11-4 (Bubble-Overlay) oder 11-6 zu bündeln.
+- **Scroll-Stick-Schwelle `SCROLL_STICK_THRESHOLD_DP = 24`** ist ~1 Zeile — device-tunable, falls
+  Auto-Follow bei kleinen Hoch-Wischern zu aggressiv zurückreißt.
+
+### 11-6 (Backlog) — Zeilenabstand als Appearance-Setting — Source: Andi 2026-07-08 Device-Test
+Preview-Box: **Zeilenabstand (line-height) als einstellbares Setting** in die Appearance-Kategorie
+aufnehmen (analog Font-Größe/-Familie/Farbe). Aktuell fix `setLineSpacing(0f, 1.7f)`
+(`ListeningPanelView.kt`). Desktop-Gegenstück (CSS `--k-leading` / `leading-relaxed`) mitdenken für
+Cross-Platform-SSOT. Neuer Config-Key (camelCase, Backend-Locale-Files), Android- + Desktop-Wiring.
 
 ---
 
@@ -680,3 +729,28 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 - **[Verifikations-Symmetrie] Outage-Testzustand nicht UI-herstellbar:** Weil die Validierung ungültige Keys blockt, lässt sich „Provider-Ausfall" nicht per Key-Editieren in der App testen. Für künftige Fallback-Tests: invaliden Key direkt in die `config.json` schreiben (on-device via `run-as`, mit Backup) ODER Netzwerk zum Provider blocken. In 12-1 so gemacht (verifiziert).
 - **[12-1 offen] STT→lokaler-Whisper-Fallback am Gerät nicht exerziert:** Braucht invaliden Groq-Key + vorhandenes lokales Modell; Android-JNI evtl. inaktiv (Memory `reference_android_stt_is_groq_cloud`). Kein 12-1-Blocker, aber vor „done" prüfen, ob der lokale Pfad auf Android real greift oder nur Terminal-Fehler zeigt.
 - **[12-1 Follow-up, UX] Windows-Pille zu schmal für volle Status-Meldung:** Andi device-verified (2026-07-03) — die längere STT-Terminal-Meldung „✗ Transkription fehlgeschlagen — Audio gesichert" wird in der ~200px-Pille zu „✗ Transkription fehl…" abgeschnitten (GATE-1-Entscheidung war Ellipsis-Kürzung; reicht für die kurzen Cleanup-Meldungen, nicht für die lange STT-Meldung). Andi „passt aber" → nicht done-blockierend. Optionen: (a) Pille für den Warn-/Fehler-Zustand temporär verbreitern/umbrechen; (b) kürzere Meldung („✗ STT-Fehler — Audio gesichert"); (c) Status ins Preview-Panel statt Pille. Android (Toast, LENGTH_LONG) zeigt die volle Meldung — nur die Windows-Pille kürzt.
+
+---
+
+## Epic 8 „Studio Dark" — RE-SCOPE (Andi 2026-07-06: Design abgenommen, „erstmal so" bauen)
+
+**Quelle:** Session 2026-07-06. Andi hat die Studio-Dark-Ziel-Optik (Mockup `docs/design/overhaul/source/Klarvo Design System.html`) abgenommen und will die Basis-Erneuerung jetzt umgesetzt haben, den Feinschliff später.
+
+**Entscheidung — der alte Branch wird NICHT gemergt.** `conductor/epic-8` (auf origin gesichert) ist 238 Commits hinter `v1-ship`; ein Merge produziert tote Konflikte auf inzwischen ersetztem Code. Stattdessen dient der gebaute Re-Skin als **Referenz-Vorlage**, und die noch lebenden Flächen werden **pro Fläche neu gegen den heutigen `v1-ship` portiert** (Story-Zyklus je Fläche). Fundament (Tokens/Fonts, 8-1) liegt bereits auf `v1-ship`.
+
+**Scope-Aufteilung:**
+- **✅ 8-2 Einstellungen / 8-5 Verlauf / 8-6 Onboarding — werden gebaut** (re-port). Referenz-Qualität laut `epic-8-fidelity-audit.md` (15.06.): 100 % Token-Treue, History „starker Match". 8-5: History lebt heute in `VoiceNotesPanel.tsx` (nicht mehr `App.tsx`) → neu verorten. 8-6: Testzustand nur nach Config-Wipe sichtbar → Erreichbarkeit als Vorlauf mitbauen (Verifikations-Symmetrie).
+- **❌ 8-3 FloatingBar / 8-4 Live-Preview — SUPERSEDED** durch native Overlays (Epic 10, `native_pill.rs`/`native_preview.rs`). Kein React-Port. Der nötige native Token-Nachzug in tiny-skia/GDI ist bereits separat gelistet (siehe „Epic 8-Abhängigkeit — native Overlays … in Rust/GDI nachziehen", oben) — das ist die richtige Heimat, nicht dieser Re-Skin.
+- **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
+
+**Fahrweise:** je Fläche ein `bmad-story-conductor`-Lauf, nacheinander, mit Andis Real-Device-Smoke dazwischen (visuelle Epics NICHT unbeaufsichtigt durchfahren — Postmortem 2026-06-15). Vor Andis Blick: objektiver Chromium-Harness-Abgleich gegen das Mockup.
+
+---
+
+## [Defekt, vorbestehend aus 8-1] `.focus-klarvo` ist ein Dauer-Ring statt Fokus-Ring (entdeckt bei 8-2 GATE-4, 2026-07-06)
+
+**Quelle:** GATE-4-Smoke Story 8-2 (`gate4-evidence/8-2/verdict.md`). Beim Chromium-Render der gebauten Settings fiel auf: jedes Input/Select trägt einen permanenten Teal-Ring.
+
+**Ursache:** `src/styles.css:253` definiert `.focus-klarvo { box-shadow: 0 0 0 3px rgba(41,199,172,.28); }` als **bare Klasse ohne `:focus-visible`**. Da die Komponenten `focus-klarvo` statisch in der className tragen, ist der Ring **immer an**. Der Mockup (`.input:focus`/`.select:focus`) zeigt den Ring nur bei Fokus. Stammt aus **8-1** (Kommentar „Task 5.3"), NICHT aus 8-2 — 8-2 hat die Referenz byte-identisch nachgezogen.
+
+**Fix (klein, aber eigener Scope):** `.focus-klarvo` → `.focus-klarvo:focus-visible` (oder die Nutzung auf einen `:focus`-Modifier umstellen). ACHTUNG: `focus-klarvo` wird surface-übergreifend genutzt (Bar, Preview, Onboarding, Settings) — der Fix berührt die geteilte Token-Schicht und braucht einen eigenen Smoke über alle Flächen. Darum **eigene Story / Teil von 8-7**, nicht in 8-2 geschmuggelt.

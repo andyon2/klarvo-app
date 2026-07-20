@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-07-02
+# last_updated: 2026-07-08
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-07-06
+last_updated: 2026-07-09
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -113,14 +113,15 @@ development_status:
   7-7-golden-vector-parity-net-and-dead-config-lock: backlog
   epic-7-retrospective: optional
 
-  # Epic 8 — Desktop Visual Overhaul ("Studio Dark") [L3 visual; surface-class smoke DoD] — ⏸ PARKED: komplett auf conductor/epic-8, Merge→v1-ship offen
+  # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06 (re-port per Fläche; scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
   epic-8: in-progress
   8-1-token-and-type-foundation: done
-  8-2-settings-form-system-home-and-sub-pages: backlog
+  8-2-settings-form-system-home-and-sub-pages: done
   8-3-floatingbar-re-skin: backlog
   8-4-live-cleanup-preview-re-skin: backlog
   8-5-main-window-history-re-skin: backlog
   8-6-onboarding-re-skin: backlog
+  8-7-studio-dark-fidelity-pass: backlog
   epic-8-retrospective: optional
 
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]
@@ -155,6 +156,9 @@ development_status:
   epic-11: in-progress
   11-1-android-live-preview-feasibility-benchmark: done
   11-2-android-live-preview-port: done
+  11-3-android-preview-box-device-feedback-pass: done
+  11-4-bubble-structurally-above-preview-z-order: done
+  11-6-line-spacing-appearance-setting: ready-for-dev
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
   # done 2026-07-06: 12-1 + 12-2 both Andi-device-verified; integrated into v1-ship (merge f53da68); 12-3 deferred (north-star).

@@ -91,6 +91,15 @@ class KlarvoOverlayService : Service() {
         // Base bubble size in dp -- multiplied by config.bubbleSize scale factor
         private const val BASE_BUBBLE_SIZE_DP = 56
 
+        /**
+         * Story 11-3 (AC-3a, item 3, Task 5.1): fixed height of the listening-panel
+         * WindowManager window — replaces the pre-11-3 WRAP_CONTENT + 200dp-minimum combination
+         * that let the window grow unbounded with accumulated preview text (the root cause of
+         * the "fills the screen" usability blocker). Reuses that same 200dp value as the sole,
+         * fixed height (Task 4.2 first-pass proposal) — device-tunable at GATE-4.
+         */
+        private const val PANEL_FIXED_HEIGHT_DP = 200
+
         // Transparent padding around the visual squircle (as a fraction of the visual size) so the
         // soft drop shadow + outer ring render without being clipped by the overlay window bounds.
         // Floored so the window always meets the ≥48dp touch target even at the smallest size.
@@ -111,6 +120,23 @@ class KlarvoOverlayService : Service() {
          * [RecordingMode.shouldInstallPreviewFlush].
          */
         fun shouldApplyPreviewAppearance(livePreviewEnabled: Boolean): Boolean = livePreviewEnabled
+
+        /**
+         * Code-review fix P1 (11-3): sanitizes an incoming preview STT chunk before it is
+         * accumulated in [appendPreviewText]. Two problems this closes:
+         *  - The accumulated preview text is newline-joined per chunk (Task 4.2). If a single
+         *    STT chunk itself contains an embedded newline, that would introduce a spurious
+         *    extra line break. Embedded newlines are collapsed to a single space here so `"\n"`
+         *    stays the ONLY inter-chunk separator.
+         *  - A blank/whitespace-only chunk would otherwise still get joined in, wasting a
+         *    transcript line on an empty entry.
+         * Returns the cleaned chunk, or `null` if there is nothing worth appending (caller should
+         * skip the append entirely in that case).
+         */
+        fun sanitizePreviewChunk(text: String): String? {
+            val cleaned = text.replace(Regex("\\n+"), " ").trim()
+            return cleaned.ifBlank { null }
+        }
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -246,6 +272,13 @@ class KlarvoOverlayService : Service() {
     // must not be able to change which target the release commits — only the pointer captured at
     // ACTION_DOWN drives hit-tracking and the release-to-commit decision.
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
+    // Story 11-4 (AC-1): set when the bubble-above-panel reorder (see showListeningPanel /
+    // reorderBubbleAbovePanel) had to be deferred because a touch gesture was in flight on the
+    // bubble window at the moment the panel was shown (e.g. push-to-talk's longPressRunnable
+    // fires startRecording()/showListeningPanel() while the finger is still down). Consumed at
+    // the next ACTION_UP/ACTION_CANCEL, once the gesture has actually ended.
+    private var bubbleReorderPending = false
 
     // Per-gesture recording modes: tap and long-press are configured independently.
     private var tapMode = RecordingMode.TOGGLE
@@ -587,6 +620,9 @@ class KlarvoOverlayService : Service() {
 
     override fun onDestroy() {
         instance = null
+        // Story 11-4 F2: service teardown removes the bubble window below without a touch ever
+        // reaching handleTouch's ACTION_UP/CANCEL consume -- clear the flag so it can't leak.
+        bubbleReorderPending = false
         handler.removeCallbacks(keyboardCheckRunnable)
         handler.removeCallbacks(longPressRunnable)
         handler.removeCallbacks(doneFlashRunnable)
@@ -831,6 +867,16 @@ class KlarvoOverlayService : Service() {
     fun adjustBubbleForKeyboard(keyboardHeightPx: Int) {
         handler.post {
             if (!isBubbleVisible || !::bubbleView.isInitialized) return@post
+            if (panelVisible) {
+                // Live-preview panel is up: AC-1's z-order reorder already keeps the bubble
+                // on top of the panel, so keyboard-avoidance is unneeded and actively harmful
+                // here — it repeatedly yanked the bubble out of the box the user is trying to
+                // drag it into. Suppress the clamp, and clear any stash from before the panel
+                // appeared so a later keyboard-close doesn't restore a stale pre-panel Y and
+                // override the position the user just dragged into the box.
+                preKeyboardY = null
+                return@post
+            }
             val (_, screenH) = getScreenDimensions()
             // Use the full window height (incl. shadow padding) so the real bottom edge clears
             // the keyboard, not just the smaller visual squircle.
@@ -929,6 +975,11 @@ class KlarvoOverlayService : Service() {
                 KlarvoLogger.w(TAG, "Failed to remove bubbleView from WindowManager", e)
             }
         }
+        // Story 11-4 F2: the bubble window may be torn down here mid-gesture (e.g. banking-app
+        // detection), without the touch ever reaching handleTouch's ACTION_UP/CANCEL branch that
+        // normally consumes this flag. Clear it here too so a later unrelated gesture doesn't
+        // fire a spurious reorder against a since-recreated bubble.
+        bubbleReorderPending = false
     }
 
     // --- Bubble setup ---
@@ -1360,6 +1411,24 @@ class KlarvoOverlayService : Service() {
                     bubbleView.holdDragging  = false
                 }
                 activePointerId = MotionEvent.INVALID_POINTER_ID
+                // Story 11-4 (AC-1): the gesture just ended -- if a bubble-above-panel reorder was
+                // deferred while it was in flight (see showListeningPanel), do it now.
+                if (bubbleReorderPending) {
+                    bubbleReorderPending = false
+                    // F3: this fires synchronously from inside bubbleView's own ACTION_UP
+                    // dispatch -- reorderBubbleAbovePanel() would remove/re-add that same view
+                    // while it's still handling its own touch event. Post it instead so the
+                    // reorder runs after dispatch has unwound.
+                    handler.post {
+                        // F4: the panel may have been hidden (e.g. AUTOSTOP/AUTO auto-stop)
+                        // between the deferral and this post running. Reordering above an
+                        // already-gone panel is a pointless removeView+addView (flicker,
+                        // animator reset) with no z-order benefit -- skip it.
+                        if (panelVisible) {
+                            reorderBubbleAbovePanel()
+                        }
+                    }
+                }
                 return true
             }
         }
@@ -1641,10 +1710,17 @@ class KlarvoOverlayService : Service() {
      * which is still visible during TRANSCRIBING. Bail out and drop the chunk once we're no
      * longer RECORDING; this is called on the main thread ([handler.post]), same thread that
      * flips [currentState], so there is no race on the read itself.
+     *
+     * Story 11-3 (Task 4.2): chunks are newline-joined (`"\n"`), not space-joined (`" "`).
+     * 11-2's code review accepted the space-join as a Low residual for *accuracy* reasons
+     * (orientation surface, not accuracy) -- that acceptance does not extend to this story's
+     * *display* mechanics. One line per flush chunk reads better in the scrollable transcript
+     * (AC-3 pivot, 2026-07-08) than one run-on paragraph would.
      */
     private fun appendPreviewText(text: String) {
         if (currentState != RecordingState.RECORDING) return
-        previewAccumulatedText = if (previewAccumulatedText.isBlank()) text else "$previewAccumulatedText $text"
+        val cleaned = sanitizePreviewChunk(text) ?: return
+        previewAccumulatedText = if (previewAccumulatedText.isBlank()) cleaned else "$previewAccumulatedText\n$cleaned"
         panelView?.rawTranscript = previewAccumulatedText
     }
 
@@ -2277,9 +2353,20 @@ class KlarvoOverlayService : Service() {
         (cachedConfig ?: KlarvoApi.readConfig(this))?.let { config ->
             if (shouldApplyPreviewAppearance(config.livePreviewEnabled)) panel.applyAppearance(config)
         }
+        // Story 11-3 (AC-3a, item 3, Task 5.1): the panel window's height is FIXED
+        // (PANEL_FIXED_HEIGHT_DP), not WRAP_CONTENT. This is the direct fix for the original
+        // "growing panel fills the whole screen" usability blocker (Dev Notes "Why this got
+        // upgraded"): a WRAP_CONTENT window re-measures to whatever the accumulated transcript
+        // needs, which is unbounded. AC-3 pivot (2026-07-08): the transcript content itself is
+        // now a bounded ScrollView (ListeningPanelView.transcriptScrollView) that scrolls inside
+        // this fixed window instead of evicting older lines -- the fixed WINDOW height is what
+        // guarantees the window itself never grows/shrinks (a WRAP_CONTENT window would still
+        // (re-)measure on every text update even with scrollable content inside it).
+        val dp = resources.displayMetrics.density
+        val panelHeightPx = (PANEL_FIXED_HEIGHT_DP * dp).toInt()
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            panelHeightPx,
             overlayType,
             // CAUTION: do NOT add FLAG_NOT_TOUCHABLE here. HyperOS/MIUI force-dims any
             // TYPE_APPLICATION_OVERLAY window that carries FLAG_NOT_TOUCHABLE to a window alpha
@@ -2308,8 +2395,50 @@ class KlarvoOverlayService : Service() {
             panelParams  = params
             panelVisible = true
             KlarvoLogger.d(TAG, "[panel] shown (state=$initialState)")
+            // Story 11-4 (AC-1, Design Decision 2): both the bubble and the panel are
+            // TYPE_APPLICATION_OVERLAY windows owned by this same Service -- Android z-orders
+            // same-type overlay windows by add-order, with no priority field (11-3's
+            // investigation). The panel was just added, so without this it would now be the
+            // most-recently-added window and render/receive-touches ABOVE the bubble. Re-adding
+            // the bubble here makes IT the most-recently-added window again, restoring the
+            // required "bubble always on top" invariant on every actual panel show (including
+            // every RECORDING->TRANSCRIBING->RECORDING hide/re-show cycle, since each cycle goes
+            // through this addView call again -- the early-return branch above, for a panel that
+            // is already visible, doesn't change window order and needs no reorder).
+            if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                // A touch gesture is in flight on the bubble window right now (e.g. push-to-talk's
+                // longPressRunnable calls startRecording() -> showListeningPanel() while the
+                // finger is still down). windowManager.removeView() would tear down the window's
+                // input channel and cancel that gesture (OS-level ACTION_CANCEL) -- defer the
+                // reorder until the gesture actually ends (handleTouch's ACTION_UP/CANCEL).
+                bubbleReorderPending = true
+            } else {
+                reorderBubbleAbovePanel()
+            }
         } catch (e: Exception) {
             KlarvoLogger.w(TAG, "[panel] addView failed", e)
+        }
+    }
+
+    /**
+     * Re-adds the bubble window to the WindowManager so it becomes the most-recently-added
+     * TYPE_APPLICATION_OVERLAY window and therefore renders/receives-touches above the panel
+     * (Story 11-4, AC-1). No-op if the bubble isn't currently shown -- showBubble() itself always
+     * adds fresh, so a bubble shown after the panel is already correctly on top with no extra
+     * step needed.
+     */
+    private fun reorderBubbleAbovePanel() {
+        if (!isBubbleVisible || !::bubbleView.isInitialized) return
+        try {
+            windowManager.removeView(bubbleView)
+            windowManager.addView(bubbleView, bubbleParams)
+        } catch (e: Exception) {
+            KlarvoLogger.w(TAG, "[panel] failed to re-add bubble above panel", e)
+            // F1: removeView may have succeeded before addView threw, leaving the bubble window
+            // detached from the WindowManager while isBubbleVisible still claims it's shown.
+            // Reflect reality so a later showBubble() can cleanly re-add it instead of acting on
+            // a stale "visible" flag for a window that's no longer attached.
+            isBubbleVisible = false
         }
     }
 
