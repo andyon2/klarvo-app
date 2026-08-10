@@ -47,6 +47,10 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // Story 11-3 (AC-5, item 5): device feedback pass rescale 11/13/15 -> 13/15/18.
         // Android-only; desktop's FONT_PX_MAP (Story 6-3) is untouched.
         private val FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f, "large" to 18f)
+        // Story 11.6 DESIGN DECISION 2: "medium" = today's hardcoded 1.7, so nothing changes
+        // visually until the user touches the control. "small"/"large" are a first-pass
+        // symmetric ±0.15 offset, confirmed at GATE-4 on the real device.
+        private val LINE_SPACING_MULT = mapOf("small" to 1.55f, "medium" to 1.7f, "large" to 1.85f)
 
         /**
          * Parses a CSS `rgba()`/`rgb()` string into an Android ARGB color int (Story 11-2,
@@ -263,9 +267,11 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         appliedPreviewTextColor = textColor
         val typeface = typefaceForFontFamily(config.previewFontFamily)
         val sizeSp = FONT_PX_SP[config.previewFontSize] ?: 15f
+        val lineSpacingMult = LINE_SPACING_MULT[config.previewLineSpacing] ?: 1.7f
         transcriptTextView.setTextColor(textColor)
         transcriptTextView.typeface = typeface
         transcriptTextView.textSize = sizeSp
+        transcriptTextView.setLineSpacing(0f, lineSpacingMult)
     }
 
     /**
@@ -352,7 +358,7 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
             setTextColor(KlarvoTheme.Muted)
             textSize = 15f  // sp — FONT_PX_SP "medium" default until applyAppearance runs
             typeface = Typeface.MONOSPACE
-            setLineSpacing(0f, 1.7f)
+            setLineSpacing(0f, 1.7f)  // LINE_SPACING_MULT "medium" default until applyAppearance runs
             gravity = Gravity.TOP or Gravity.START
             text = ""
         }

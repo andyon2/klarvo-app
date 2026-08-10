@@ -114,7 +114,10 @@ object KlarvoApi {
         val previewBorderWidth: Int = 1,
         val previewBorderRadius: Int = 14,
         val previewFontFamily: String = "'Inter', system-ui, -apple-system, sans-serif",
-        val previewFontSize: String = "small"
+        val previewFontSize: String = "small",
+        // Story 11.6: default "medium" (NOT "small") — "medium" is the no-op tier that
+        // reproduces today's hardcoded 1.7 line-spacing.
+        val previewLineSpacing: String = "medium"
     )
 
     /**
@@ -365,6 +368,8 @@ object KlarvoApi {
             val previewBorderRadius = json.optInt("previewBorderRadius", 14)
             val previewFontFamily = json.optString("previewFontFamily", "'Inter', system-ui, -apple-system, sans-serif")
             val previewFontSize = json.optString("previewFontSize", "small")
+            // Story 11.6: default "medium" (the no-op tier), not "small".
+            val previewLineSpacing = json.optString("previewLineSpacing", "medium")
 
             // Auto-select Groq LLM when STT is Groq but no DeepSeek key is configured.
             // Mirrors the identical logic in config/mod.rs so Android and desktop behave the same.
@@ -435,7 +440,7 @@ object KlarvoApi {
                 livePreviewEnabled, previewPauseSilenceSecs,
                 previewTextColor, previewBgColor, previewBgBlur,
                 previewBorderColor, previewBorderWidth, previewBorderRadius,
-                previewFontFamily, previewFontSize
+                previewFontFamily, previewFontSize, previewLineSpacing
             )
         } catch (e: Exception) {
             null
