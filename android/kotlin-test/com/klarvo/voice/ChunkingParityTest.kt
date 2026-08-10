@@ -2,277 +2,230 @@ package com.klarvo.voice
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * Cross-platform chunking parity tests for Epic 7 / Story 7.1.
  *
- * Verifies that Android `KlarvoApi.splitIntoChunks` and `cleanupChunked` match
- * the Desktop (Rust) `chunked_cleanup` / `split_into_chunks` behavior on four
- * concrete drift points:
+ * Locks Android `KlarvoApi` against the Desktop (Rust) `chunked_cleanup` /
+ * `split_into_chunks` reference in `src-tauri/src/llm/mod.rs` on four drift points:
  *
  * - **H2** — UTF-8 byte-length indices (not UTF-16 char count)
- * - **H13** — chunks joined with `\n` (not `\n\n`)
- * - **L4** — threshold operator is `< 400` (not `<= 400`)
- * - **M8** — abort on first chunk error (not fallback-to-single)
+ * - **H13** — chunk results joined with `\n` (not `\n\n`)
+ * - **L4** — threshold is `< CHUNK_THRESHOLD` over **byte** length
+ * - **M8** — abort on first chunk error, surfacing the original `IOException`
  *
- * The Rust reference implementation lives in `src-tauri/src/llm/mod.rs`.
+ * **Every test here calls the production function that owns the behavior it claims to
+ * lock** — `splitIntoChunks`, `shouldChunk`, `joinChunkResults`, `collectChunkResults`.
+ * The first version of this suite joined/thresholded *inside the test* and therefore
+ * stayed green against the unfixed code (code review 2026-08-10); H13/L4/M8 now hang on
+ * the real seams instead. Each test below is red against the pre-fix implementation.
  */
 class ChunkingParityTest {
+
+    /** Compares content independently of where the splitter dropped separator whitespace. */
+    private fun squeeze(s: String): String = s.filterNot { it.isWhitespace() }
 
     // =========================================================================
     // H2: UTF-8 byte-length chunk indices (not UTF-16 char count)
     // =========================================================================
 
     /**
-     * German umlaut-heavy text straddling the 400-byte boundary.
-     *
-     * The Rust `split_into_chunks` uses `text.len()` (UTF-8 byte length).
-     * A string like "Müller" is 7 bytes but 6 chars. If Kotlin used
-     * `text.length` (UTF-16 char count), the split point would land
-     * differently from the Rust implementation.
-     *
-     * This test constructs a text that is EXACTLY 400 UTF-8 bytes long
-     * and verifies the split boundaries match what Rust produces.
+     * "ä" is 1 char / 2 bytes. A byte-indexed splitter cuts at byte 350 = 175 chars;
+     * the pre-fix char-indexed one cut at char 350 = byte 700.
      */
     @Test
-    fun h2_umlautText_splitsAtByteBoundaryNotCharCount() {
-        // Build a German text with umlauts that is exactly 400 UTF-8 bytes.
-        // "Müller" = 7 bytes, "Schöne" = 7 bytes, "Straße" = 7 bytes
-        // We'll pad with ASCII to reach exactly 400 bytes.
-        val umlautWords = listOf("Müller", "schöne", "Straße", "über", "kräftig")
-        var text = ""
-        var byteCount = 0
-        while (byteCount < 400) {
-            val word = umlautWords[byteCount % umlautWords.size]
-            val wordBytes = word.encodeToByteArray().size
-            if (byteCount + wordBytes + 1 > 400) {
-                // Pad with spaces to reach exactly 400
-                val needed = 400 - byteCount
-                text += " ".repeat(needed)
-                byteCount = 400
-            } else {
-                text += " $word"
-                byteCount += wordBytes + 1
-            }
-        }
-        text = text.trimStart()
-
-        // Verify: byte length is exactly 400
-        assertEquals("Text must be exactly 400 UTF-8 bytes", 400, text.encodeToByteArray().size)
-
-        // Split the text — with byte-length parity, a 400-byte text at exactly
-        // CHUNK_THRESHOLD should be treated as "short" by the threshold check
-        // (< 400 = single call, >= 400 = chunked). Since it IS 400 bytes,
-        // the threshold check `text.length < CHUNK_THRESHOLD` would be false,
-        // so it WOULD be chunked. But splitIntoChunks itself should use byte
-        // offsets, not char count.
-        val chunks = KlarvoApi.splitIntoChunks(text)
-
-        // The key assertion: reassembled text must be identical (no bytes lost
-        // across a byte-boundary split, matching Rust test_split_preserves_all_content).
-        val reassembled = chunks.joinToString(" ")
-        assertEquals("reassembled text must match original", text, reassembled)
-
-        // Each chunk must be valid UTF-8 (no split inside a multi-byte char).
-        chunks.forEach { chunk ->
-            val decoded = chunk.encodeToByteArray().decodeToString()
-            assertEquals("chunk must decode back to itself", chunk, decoded)
-        }
-    }
-
-    /**
-     * Verify that the byte-length split produces the SAME boundaries as a
-     * hypothetical UTF-16 split would NOT — i.e. the split point differs
-     * for umlaut-heavy text.
-     *
-     * We construct a text where UTF-16 char count and UTF-8 byte count differ
-     * enough that the split point at target size (350) would land at different
-     * positions.
-     */
-    @Test
-    fun h2_byteVsChar_splitDiffersForUmlautText() {
-        // "ä" = 2 bytes, 1 char. Repeat enough to create a significant gap.
-        // 350 chars of "ä" = 350 chars but 700 bytes.
-        // At target size 350 (char count), UTF-16 would split at char 350.
-        // At target size 350 (byte count), UTF-8 would split at byte 350
-        // (which is only 175 chars of "ä").
+    fun h2_splitUsesByteOffsets_notUtf16CharCount() {
         val text = "ä".repeat(500) // 500 chars, 1000 bytes
 
-        // The Rust split_into_chunks would split at byte 350 → 175 chars of "ä"
-        // The old Kotlin (char-based) would split at char 350 → 700 bytes
-        // After the fix, Kotlin uses byte-based → should match Rust at 175 chars
-
         val chunks = KlarvoApi.splitIntoChunks(text)
-        assertTrue("text of 500 ä's should split into multiple chunks", chunks.size >= 2)
 
-        // First chunk: byte offset 0..350 → 175 "ä" characters
-        val firstChunk = chunks[0]
+        assertTrue("500 ä (1000 bytes) must split", chunks.size >= 2)
         assertEquals(
-            "first chunk should be ~175 ä chars (byte 350 / 2)",
+            "first chunk must end at byte 350 = 175 ä (Rust split_into_chunks), not at char 350",
             "ä".repeat(175),
-            firstChunk
+            chunks[0]
         )
     }
 
     /**
-     * Rust test_split_fallback_is_char_boundary_safe port:
-     * The leading ASCII byte shifts every following 2-byte 'ü' to an ODD
-     * byte offset, so the fallback offset (start + CHUNK_TARGET_SIZE = 350,
-     * even) lands INSIDE a 'ü'. The byte-boundary floor must prevent this.
+     * Rust `test_split_fallback_is_char_boundary_safe` port. The leading ASCII byte shifts
+     * every 2-byte 'ü' to an odd byte offset, so the fallback split (start + 350) lands
+     * INSIDE a 'ü'. The UTF-8 boundary floor must walk back — otherwise `decodeToString`
+     * silently substitutes U+FFFD and destroys the character (it does not throw).
      */
     @Test
-    fun h2_fallbackIsCharBoundarySafe() {
-        val text = "a" + "ü".repeat(300) // 1 + 600 = 601 bytes, no ". "/"\n"
-        val chunks = KlarvoApi.splitIntoChunks(text) // must not produce malformed UTF-8
-        assertTrue("must produce at least one chunk", chunks.isNotEmpty())
+    fun h2_fallbackFloorsToCharBoundary_noReplacementChars() {
+        val text = "a" + "ü".repeat(300) // 601 bytes, no ". " / "\n" anywhere
 
-        // Reassembled text must match original (no bytes lost).
-        val reassembled = chunks.joinToString(" ")
-        assertEquals("no bytes lost across a char-boundary split", text, reassembled)
+        val chunks = KlarvoApi.splitIntoChunks(text)
+
+        assertTrue("601 bytes must split", chunks.size >= 2)
+        chunks.forEachIndexed { i, chunk ->
+            assertFalse(
+                "chunk $i was cut mid-codepoint (contains U+FFFD): '$chunk'",
+                chunk.contains('�')
+            )
+        }
+        assertEquals(
+            "no character may be lost or replaced across the split",
+            squeeze(text),
+            squeeze(chunks.joinToString(""))
+        )
+    }
+
+    /**
+     * Realistic German dictation: umlaut-dense, no sentence boundary in the search window,
+     * so every split takes the fallback path and the ASCII-whitespace skip runs between chunks.
+     */
+    @Test
+    fun h2_umlautDictation_survivesSplitIntact() {
+        val text = "Straße über Männer schön kräftig grün Träume ".repeat(16).trim() // ~830 bytes
+
+        val chunks = KlarvoApi.splitIntoChunks(text)
+
+        assertTrue("~830 bytes must split", chunks.size >= 2)
+        chunks.forEachIndexed { i, chunk ->
+            assertFalse("chunk $i contains U+FFFD: '$chunk'", chunk.contains('�'))
+            assertFalse("chunk $i is empty", chunk.isEmpty())
+            assertEquals("chunk $i is not trimmed", chunk.trim(), chunk)
+        }
+        assertEquals(
+            "no character may be lost across the split",
+            squeeze(text),
+            squeeze(chunks.joinToString(" "))
+        )
     }
 
     // =========================================================================
-    // H13: Chunks joined with \n (not \n\n)
+    // L4 + H2: the threshold decides on UTF-8 byte length, strict less-than
     // =========================================================================
 
-    /**
-     * The join separator must be a single `\n`, matching Rust's
-     * `combined_text.push('\n')` (llm/mod.rs:1407).
-     *
-     * We can't easily test the full cleanupChunked path (it requires a real
-     * LLM provider), but we can verify the join separator by checking the
-     * code path directly. Since `cleanupChunked` is the production method
-     * that does the join, we verify via the splitIntoChunks output joined
-     * with the same separator the code now uses.
-     */
+    /** Rust: `if raw_text.len() < CHUNK_THRESHOLD` → 400 is NOT below 400, so 400 chunks. */
     @Test
-    fun h13_joinSeparator_isSingleNewline() {
-        // Build a text that will split into exactly 3 chunks.
-        val sentence = "This is a test sentence with some words. "
-        val text = sentence.repeat(50) // ~2250 chars, well above threshold
-
-        val chunks = KlarvoApi.splitIntoChunks(text)
-        assertEquals("expected ~6 chunks for 2250 chars", 6, chunks.size)
-
-        // The join separator used in cleanupChunked is "\n" (H13 fix).
-        // Verify by joining with "\n" — this is the expected output format.
-        val joined = chunks.joinToString("\n")
-        // No double newlines between chunks.
-        assertFalse("joined text must not contain double newlines between chunks",
-            joined.contains("\n\n"))
+    fun l4_thresholdIsStrictLessThan() {
+        assertFalse("399 bytes is below the threshold → single call", KlarvoApi.shouldChunk("a".repeat(399)))
+        assertTrue("400 bytes is NOT below the threshold → chunked", KlarvoApi.shouldChunk("a".repeat(400)))
     }
 
-    // =========================================================================
-    // L4: Threshold operator is < 400 (not <= 400)
-    // =========================================================================
-
     /**
-     * At exactly 400 characters (UTF-8 bytes), the threshold check must use
-     * `<` (strict less-than), meaning 400 chars → chunked, NOT single call.
-     *
-     * Rust: `if raw_text.len() < CHUNK_THRESHOLD` (400 is NOT < 400 → chunked)
-     * Old Kotlin: `if (text.length <= CHUNK_THRESHOLD)` (400 IS <= 400 → single call)
-     * Fixed Kotlin: `if (text.length < CHUNK_THRESHOLD)` (400 is NOT < 400 → chunked)
+     * The quantity, not just the operator: Rust compares `raw_text.len()` (UTF-8 bytes).
+     * 200 "ä" are 200 UTF-16 chars but exactly 400 bytes — Desktop chunks it, so Android must too.
      */
     @Test
-    fun l4_exactly400Bytes_triggersChunkedPath() {
-        // Build a text that is exactly 400 UTF-8 bytes.
-        // ASCII "a" = 1 byte each.
-        val text = "a".repeat(400)
-        assertEquals("text must be exactly 400 bytes", 400, text.encodeToByteArray().size)
+    fun l4_thresholdCountsUtf8Bytes_notUtf16Chars() {
+        val text = "ä".repeat(200)
+        assertEquals("fixture must be 200 UTF-16 chars", 200, text.length)
+        assertEquals("fixture must be 400 UTF-8 bytes", 400, text.encodeToByteArray().size)
 
-        // splitIntoChunks should split this into multiple chunks
-        // (since 400 > CHUNK_TARGET_SIZE = 350).
-        val chunks = KlarvoApi.splitIntoChunks(text)
         assertTrue(
-            "400-byte text should split into multiple chunks (target=350), got ${chunks.size}",
-            chunks.size >= 2
+            "umlaut text at 400 bytes must take the chunked path like Desktop",
+            KlarvoApi.shouldChunk(text)
         )
     }
 
-    /**
-     * At 399 bytes, the text should NOT trigger chunking (below threshold).
-     * The splitIntoChunks function itself doesn't check the threshold —
-     * that's in cleanupChunked. But we verify that 399 bytes produces
-     * at most 1 chunk from splitIntoChunks (since 399 < 350 + some slack
-     * but the threshold check in cleanupChunked would catch it first).
-     *
-     * Actually, splitIntoChunks only cares about CHUNK_TARGET_SIZE, not
-     * CHUNK_THRESHOLD. 399 > 350 so splitIntoChunks WOULD split it.
-     * The threshold check is in cleanupChunked. So this test verifies
-     * the threshold check logic in cleanupChunked indirectly.
-     */
+    // =========================================================================
+    // H13: results joined with a single \n, Rust's empty-accumulator guard kept
+    // =========================================================================
+
     @Test
-    fun l4_belowThreshold_noSplitDecision() {
-        // 350 bytes — exactly at CHUNK_TARGET_SIZE, should be a single chunk
-        // from splitIntoChunks perspective.
-        val text = "a".repeat(350)
-        val chunks = KlarvoApi.splitIntoChunks(text)
-        assertEquals("350 bytes should be a single chunk", 1, chunks.size)
+    fun h13_resultsJoinedWithSingleNewline() {
+        assertEquals(
+            "Rust pushes exactly one '\\n' between chunk results",
+            "erster\nzweiter\ndritter",
+            KlarvoApi.joinChunkResults(listOf("erster", "zweiter", "dritter"))
+        )
+    }
+
+    /** Rust guards with `i > 0 && !combined_text.is_empty()` — an empty first result adds no line. */
+    @Test
+    fun h13_emptyLeadingResultProducesNoBlankLine() {
+        assertEquals(
+            "an empty first chunk must not produce a leading blank line",
+            "Zweiter Satz.",
+            KlarvoApi.joinChunkResults(listOf("", "Zweiter Satz."))
+        )
     }
 
     // =========================================================================
-    // M8: Abort on first chunk error (not fallback-to-single)
+    // M8: abort on first chunk error — with the exception type the caller gates on
     // =========================================================================
 
     /**
-     * The cleanupChunked method must propagate errors from chunk processing
-     * instead of falling back to a single cleanup call.
-     *
-     * We can't easily inject a failing LLM call in the Android test environment,
-     * so we verify the code structure: the try/catch block is gone, and
-     * `futures.map { it.get() }` is used directly (which propagates
-     * ExecutionException if any Future fails).
-     *
-     * This test verifies the structural change by checking that the method
-     * signature and behavior match the expected abort-on-first-error contract.
+     * `Future.get()` wraps the worker's exception in an ExecutionException. KlarvoOverlayService
+     * gates its cross-provider cleanup fallback (Epic 12) on `e is IOException`, so the cause
+     * must be unwrapped — otherwise a 429 on one chunk silently disables the fallback ladder.
      */
     @Test
-    fun m8_errorPropagation_structureVerified() {
-        // The key structural check: splitIntoChunks must not catch exceptions
-        // from the LLM call. Since splitIntoChunks is pure (no network),
-        // this test verifies the method works correctly on valid input.
-        val text = "Hello world. This is a test. Another sentence here. "
-        val chunks = KlarvoApi.splitIntoChunks(text)
-        assertTrue("should produce chunks", chunks.size >= 1)
+    fun m8_chunkFailureAbortsWithTheOriginalIOException() {
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val boom = IOException("Cleanup failed: HTTP 429 rate limited")
+            val futures: List<Future<String>> = listOf(
+                executor.submit(Callable { "erster Chunk" }),
+                executor.submit(Callable<String> { throw boom })
+            )
 
-        // Each chunk should be non-empty and trimmed.
-        chunks.forEach { chunk ->
-            assertFalse("chunk must not be empty", chunk.isEmpty())
-            assertEquals("chunk must be trimmed", chunk.trim(), chunk)
+            val thrown: Throwable? = try {
+                KlarvoApi.collectChunkResults(futures)
+                null
+            } catch (e: Throwable) {
+                e
+            }
+
+            assertNotNull("a failing chunk must abort collection, not be swallowed", thrown)
+            assertTrue(
+                "caller gates the provider fallback on `e is IOException`, got ${thrown!!.javaClass.name}",
+                thrown is IOException
+            )
+            assertEquals("the original failure message must survive", boom.message, thrown.message)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun m8_allChunksSucceed_resultsKeepChunkOrder() {
+        val executor = Executors.newFixedThreadPool(3)
+        try {
+            val futures: List<Future<String>> = listOf("eins", "zwei", "drei").map { value ->
+                executor.submit(Callable { value })
+            }
+
+            assertEquals(listOf("eins", "zwei", "drei"), KlarvoApi.collectChunkResults(futures))
+        } finally {
+            executor.shutdownNow()
         }
     }
 
     // =========================================================================
-    // Shared fixture: cross-platform split invariants
+    // Shared invariant: no trivial chunk reaches the LLM (history id=3041)
     // =========================================================================
 
-    /**
-     * Re-assert the shared fixture invariants (same as Rust spec_chunking_vectors_*).
-     * The ChunkingVectorsTest already covers this, but we include a minimal check
-     * here to ensure the byte-level split doesn't break the invariants.
-     */
     @Test
     fun shared_noTrivialChunkReachesLLM() {
         val testCases = listOf(
             "Hello world. This is a test of the chunking system. " +
-                "More text here to ensure we exceed the target size. " +
-                "Final sentence.",
+                "More text here to ensure we exceed the target size. Final sentence. ",
             "Müller fährt über die Straße. Kräftiger Wind weht. " +
-                "Die Straße ist schön und lang. Noch mehr Text zum Testen. " +
-                "Schluss.",
+                "Die Straße ist schön und lang. Noch mehr Text zum Testen. Schluss. ",
             "The quick brown fox jumps over the lazy dog. " +
                 "Pack my box with five dozen liquor jugs. " +
-                "How vexingly quick daft zebras jump.",
-        )
+                "How vexingly quick daft zebras jump. "
+        ).map { it.repeat(8) } // long enough that the split path actually runs
 
         for ((idx, text) in testCases.withIndex()) {
             val chunks = KlarvoApi.splitIntoChunks(text)
+            assertTrue("[$idx] fixture must actually split", chunks.size >= 2)
             for ((i, chunk) in chunks.withIndex()) {
                 assertFalse(
-                    "[$idx] chunk $i is trivial (would draw LLM refusal): '$chunk'",
+                    "[$idx] chunk $i is trivial (would draw an LLM refusal): '$chunk'",
                     KlarvoApi.isTrivialChunk(chunk)
                 )
             }
