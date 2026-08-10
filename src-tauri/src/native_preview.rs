@@ -45,7 +45,6 @@ const WM_PREVIEW_SHUTDOWN: u32 = 0x8110;
 const OUTER_INSET: f32 = 2.0; // keep border inside DIB at fractional DPI
 const INNER_PAD_TB: f32 = 8.0; // top/bottom inner padding
 const INNER_PAD_LR: f32 = 12.0; // left/right inner padding (matches SOLL `padding: 8px 12px`)
-const PREVIEW_LINE_HEIGHT: f32 = 1.625; // matches SOLL `leading-relaxed` (AppearanceContent.tsx)
 const FADE_FRACTION: f32 = 0.18; // top-fade fraction of card height on overflow
 const PILL_WIDTH_LOGICAL: f64 = 200.0; // must match PILL_W in native_pill.rs
 const GAP_LOGICAL: f64 = 8.0; // gap between preview bottom edge and pill top
@@ -86,6 +85,7 @@ pub struct PreviewConfig {
     pub font_px: u32,     // 11 | 13 | 15 (from previewFontSize small/medium/large)
     pub font_face: String, // first token of previewFontFamily CSS cascade (default "Inter")
     pub w_base: i32,      // 260 | 320 | 400 (from previewPanelForm compact/comfortable/wide)
+    pub line_height_mult: f32, // 1.475 | 1.625 | 1.775 (from previewLineSpacing small/medium/large)
     pub live_preview_enabled: bool,
 }
 
@@ -96,6 +96,14 @@ impl PreviewConfig {
             "medium" => 13u32,
             "large" => 15,
             _ => 11, // "small" or default
+        };
+        // Story 11.6 DESIGN DECISION 2: "medium" = today's hardcoded 1.625, so nothing
+        // changes visually until the user touches the control. "small"/"large" are a
+        // first-pass symmetric ±0.15 offset, confirmed at GATE-4 on a real Windows build.
+        let line_height_mult = match cfg.preview_line_spacing.as_str() {
+            "small" => 1.475f32,
+            "large" => 1.775,
+            _ => 1.625, // "medium" or default
         };
         let w_base = match cfg.preview_panel_form.as_str() {
             "compact" => 260i32,
@@ -154,6 +162,7 @@ impl PreviewConfig {
             font_px,
             font_face,
             w_base,
+            line_height_mult,
             live_preview_enabled: cfg.live_preview_enabled,
         }
     }
@@ -452,8 +461,8 @@ unsafe fn read_text_scale_factor() -> f64 {
 /// word-wrap (break at spaces; an over-long single word takes its own line and is
 /// clipped by `inner_right`, like `overflow:hidden`). We wrap manually instead of
 /// using `DrawTextW(DT_WORDBREAK)` because GDI has no line-height control — the
-/// caller positions each line at a fixed `font_px × 1.625 × scale` step to match
-/// the SOLL's `leading-relaxed`.
+/// caller positions each line at a `font_px × line_height_mult × scale` step
+/// (the configured `previewLineSpacing`, default matching the SOLL's `leading-relaxed`).
 unsafe fn wrap_text_lines(dc: HDC, text: &str, max_w: i32) -> Vec<Vec<u16>> {
     let mut lines: Vec<Vec<u16>> = Vec::new();
     for paragraph in text.split('\n') {
@@ -650,11 +659,12 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     let inner_right = (pw as f32 - OUTER_INSET * sc - INNER_PAD_LR * sc) as i32;
     let text_area_w = (inner_right - inner_left).max(1);
 
-    // Word-wrap into visual lines, then size by a FIXED line-height (matches the
-    // SOLL `leading-relaxed` = 1.625). GDI's own DrawTextW line spacing is the
-    // font's natural ~1.2, which made the native preview look denser/smaller than
-    // the Settings live-preview — so we lay lines out manually at this step.
-    let line_h = (s.config.font_px as f32 * sc * s.text_scale as f32 * PREVIEW_LINE_HEIGHT)
+    // Word-wrap into visual lines, then size by the configured line-height multiplier
+    // (`previewLineSpacing`, default 1.625 matching SOLL `leading-relaxed`). GDI's own
+    // DrawTextW line spacing is the font's natural ~1.2, which made the native preview
+    // look denser/smaller than the Settings live-preview — so we lay lines out manually
+    // at this step.
+    let line_h = (s.config.font_px as f32 * sc * s.text_scale as f32 * s.config.line_height_mult)
         .round()
         .max(1.0) as i32;
     let lines = wrap_text_lines(s.tmp_dc, &s.text_buffer, text_area_w);

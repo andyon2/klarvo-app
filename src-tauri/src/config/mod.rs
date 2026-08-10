@@ -789,6 +789,12 @@ pub struct AppConfig {
     #[serde(default = "default_preview_font_size")]
     pub preview_font_size: String,
 
+    /// Preview line spacing: "small" | "medium" | "large". Default = "medium".
+    /// camelCase JSON key = "previewLineSpacing".
+    /// MUST NOT trigger a migration write (serde default is sufficient).
+    #[serde(default = "default_preview_line_spacing")]
+    pub preview_line_spacing: String,
+
     /// Last saved X position of the floating bar window (logical pixels).
     /// `None` = no saved position; the app will use the default placement
     /// (bottom-center of the primary monitor above the taskbar).
@@ -1031,6 +1037,9 @@ fn default_preview_font_family() -> String {
 fn default_preview_font_size() -> String {
     "small".to_string()
 }
+fn default_preview_line_spacing() -> String {
+    "medium".to_string()
+}
 
 fn default_bubble_recording_mode() -> String {
     "hold".to_string()
@@ -1108,6 +1117,7 @@ impl Default for AppConfig {
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
             preview_font_size: default_preview_font_size(),
+            preview_line_spacing: default_preview_line_spacing(),
             bar_x: None,
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
@@ -2165,6 +2175,7 @@ mod tests {
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
             preview_font_size: default_preview_font_size(),
+            preview_line_spacing: default_preview_line_spacing(),
             bar_x: Some(123.5),
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
@@ -3469,6 +3480,7 @@ mod tests {
             preview_border_radius: default_preview_border_radius(),
             preview_font_family: default_preview_font_family(),
             preview_font_size: default_preview_font_size(),
+            preview_line_spacing: default_preview_line_spacing(),
             bar_x: Some(200.0),
             bar_y: Some(800.0),
 
@@ -4251,5 +4263,43 @@ mod tests {
         let mut warnings: Vec<String> = Vec::new();
         let (_, writes) = migrate_and_normalize(cfg, &std::path::PathBuf::from("/tmp"), &mut warnings);
         assert!(writes.is_empty(), "No migration write for preview_font_size");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 11.6 — AC-1:
+    //   previewLineSpacing config field with serde default "medium", camelCase key.
+    //
+    // Inversion guard: remove `#[serde(default = "default_preview_line_spacing")]`
+    // from `preview_line_spacing` → serde errors on missing key
+    // → `assert!(result.is_ok())` goes RED (proving the guard is load-bearing).
+    // -----------------------------------------------------------------------
+
+    /// AC-1 (Story 11.6): `previewLineSpacing` deserializes with serde default "medium",
+    /// camelCase JSON key is present in serialized output, no migration write fires.
+    #[test]
+    fn spec_preview_line_spacing_config_field_default() {
+        let default_cfg = AppConfig::default();
+        let mut json: serde_json::Value = serde_json::to_value(&default_cfg).unwrap();
+
+        // AC-1: camelCase key present in serialized output.
+        assert!(
+            json.as_object().unwrap().contains_key("previewLineSpacing"),
+            "expected camelCase key 'previewLineSpacing' (NOT 'preview_line_spacing')"
+        );
+
+        // Strip the key to simulate a pre-11.6 config.json.
+        json.as_object_mut().unwrap().remove("previewLineSpacing");
+        let stripped = serde_json::to_string(&json).unwrap();
+
+        // Must deserialize without error and fill in the default.
+        let result: Result<AppConfig, _> = serde_json::from_str(&stripped);
+        assert!(result.is_ok(), "Deserializing without previewLineSpacing must succeed");
+        let cfg = result.unwrap();
+        assert_eq!(cfg.preview_line_spacing, "medium", "default must be 'medium'");
+
+        // No migration write must fire.
+        let mut warnings: Vec<String> = Vec::new();
+        let (_, writes) = migrate_and_normalize(cfg, &std::path::PathBuf::from("/tmp"), &mut warnings);
+        assert!(writes.is_empty(), "No migration write for preview_line_spacing");
     }
 }
