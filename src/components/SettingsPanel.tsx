@@ -79,6 +79,7 @@ export interface SettingsPanelProps {
     previewBorderWidth?: number | null, previewBorderRadius?: number | null,
     previewFontFamily?: string | null,
     previewFontSize?: string | null,
+    previewLineSpacing?: string | null,
     bubbleSizeDp?: number | null, bubbleEdgeSnap?: boolean | null,
     recordingButtonSizeDp?: number | null,
   ) => Promise<void>;
@@ -216,6 +217,9 @@ export function SettingsPanel({
   const [localPreviewFontSize, setLocalPreviewFontSize] = useState(
     loadedSettings?.previewFontSize ?? "small"
   );
+  const [localPreviewLineSpacing, setLocalPreviewLineSpacing] = useState(
+    loadedSettings?.previewLineSpacing ?? "medium"
+  );
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
   const [localAutoPaste, setLocalAutoPaste] = useState(true);
@@ -338,6 +342,8 @@ export function SettingsPanel({
       setLocalPreviewFontFamily(loadedSettings.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif");
       // Story 6.3 — Trap #2: previewFontSize MUST be here or Save stays dirty forever.
       setLocalPreviewFontSize(loadedSettings.previewFontSize ?? "small");
+      // Story 11.6 — same trap: previewLineSpacing MUST be here or Save stays dirty forever.
+      setLocalPreviewLineSpacing(loadedSettings.previewLineSpacing ?? "medium");
     }
   }, [loadedSettings]);
 
@@ -423,6 +429,7 @@ export function SettingsPanel({
     || (loadedSettings?.previewBorderRadius ?? 14) !== localPreviewBorderRadius
     || (loadedSettings?.previewFontFamily ?? "'Inter', system-ui, -apple-system, sans-serif") !== localPreviewFontFamily
     || (loadedSettings?.previewFontSize ?? "small") !== localPreviewFontSize
+    || (loadedSettings?.previewLineSpacing ?? "medium") !== localPreviewLineSpacing
     || (loadedSettings?.bubbleSizeDp ?? 0) !== localBubbleSizeDp
     || (loadedSettings?.bubbleEdgeSnap ?? true) !== localBubbleEdgeSnap
     || (loadedSettings?.recordingButtonSizeDp ?? 72) !== localRecordingButtonSizeDp;
@@ -439,7 +446,7 @@ export function SettingsPanel({
     advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
-    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize, localPreviewLineSpacing,
     localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
   ]);
 
@@ -561,6 +568,7 @@ export function SettingsPanel({
         localPreviewBorderWidth, localPreviewBorderRadius,
         localPreviewFontFamily,
         localPreviewFontSize,
+        localPreviewLineSpacing,
         localBubbleSizeDp, localBubbleEdgeSnap,
         localRecordingButtonSizeDp,
       );
@@ -609,7 +617,7 @@ export function SettingsPanel({
     openrouterKey,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
-    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize,
+    localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize, localPreviewLineSpacing,
     localBubbleSizeDp, localBubbleEdgeSnap, localRecordingButtonSizeDp,
     onSave,
   ]);
@@ -828,6 +836,8 @@ export function SettingsPanel({
                 setLocalPreviewFontFamily={setLocalPreviewFontFamily}
                 localPreviewFontSize={localPreviewFontSize}
                 setLocalPreviewFontSize={setLocalPreviewFontSize}
+                localPreviewLineSpacing={localPreviewLineSpacing}
+                setLocalPreviewLineSpacing={setLocalPreviewLineSpacing}
                 hidePanelForm={!isDesktop}
                 hideBgBlur={!isDesktop}
               />

@@ -96,6 +96,7 @@ const MOCK_SETTINGS: AppSettings = {
   previewBorderRadius: 14,
   previewFontFamily: "'Inter', system-ui, -apple-system, sans-serif",
   previewFontSize: "small",
+  previewLineSpacing: "medium",
 };
 
 const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
@@ -310,6 +311,7 @@ export async function saveSettings(
   previewBorderRadius?: number | null,
   previewFontFamily?: string | null,
   previewFontSize?: string | null,
+  previewLineSpacing?: string | null,
   // Story 9.3 bubble size + snap controls.
   bubbleSizeDp?: number | null,
   bubbleEdgeSnap?: boolean | null,
@@ -367,6 +369,7 @@ export async function saveSettings(
     previewBorderRadius: previewBorderRadius ?? null,
     previewFontFamily: previewFontFamily ?? null,
     previewFontSize: previewFontSize ?? null,
+    previewLineSpacing: previewLineSpacing ?? null,
     bubbleSizeDp: bubbleSizeDp ?? null,
     bubbleEdgeSnap: bubbleEdgeSnap ?? null,
     recordingButtonSizeDp: recordingButtonSizeDp ?? null,
