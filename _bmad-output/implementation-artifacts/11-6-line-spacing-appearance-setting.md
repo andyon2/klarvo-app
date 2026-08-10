@@ -2,7 +2,7 @@
 story: "11.6"
 epic: "11"
 title: "Line spacing as an Appearance setting"
-status: ready-for-dev
+status: review
 track: L2-feature
 gatedBy: []
 buildsOn: ["6.3", "11-2", "11-3"]
@@ -17,7 +17,7 @@ inputDocuments:
 
 # Story 11.6: Line spacing as an Appearance setting
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -217,74 +217,81 @@ Appearance category's data model and UI, not a refactor of the existing fields.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Rust config field + backend wiring** (AC-1)
-  - [ ] 1.1 Add `preview_line_spacing: String` to `AppConfig` (`config/mod.rs`) with
+- [x] **Task 1 — Rust config field + backend wiring** (AC-1)
+  - [x] 1.1 Add `preview_line_spacing: String` to `AppConfig` (`config/mod.rs`) with
     `#[serde(default = "default_preview_line_spacing")]`, doc comment mirroring
     `preview_font_size`'s (`:787-790`).
-  - [ ] 1.2 Add `default_preview_line_spacing() -> String` mirroring
+  - [x] 1.2 Add `default_preview_line_spacing() -> String` mirroring
     `default_preview_font_size()` (`:1031-1033`), returning the OPEN-ITEM-2 default tier.
-  - [ ] 1.3 Add the field to every `AppConfig` test-fixture construction site that currently lists
+  - [x] 1.3 Add the field to every `AppConfig` test-fixture construction site that currently lists
     `preview_font_size` (`config/mod.rs:1110, 2167, 3471` and any other constructor found by
     `grep -n preview_font_size config/mod.rs`).
-  - [ ] 1.4 Add `spec_preview_line_spacing_config_field_default` test, mirroring
+  - [x] 1.4 Add `spec_preview_line_spacing_config_field_default` test, mirroring
     `spec_preview_font_size_config_field_default` (`:4227-4253`) exactly (camelCase key check,
     missing-key deserialization, no migration write).
 
-- [ ] **Task 2 — `SettingsPatch`/`save_settings`/settings-read wiring** (AC-1, AC-2)
-  - [ ] 2.1 Add `preview_line_spacing: Option<String>` to `SettingsPatch` (`settings.rs:164`) +
+- [x] **Task 2 — `SettingsPatch`/`save_settings`/settings-read wiring** (AC-1, AC-2)
+  - [x] 2.1 Add `preview_line_spacing: Option<String>` to `SettingsPatch` (`settings.rs:164`) +
     its `Default` impl entry (`:223`) + merge line (`:370-371`).
-  - [ ] 2.2 Add the parameter to the `save_settings` Tauri command signature (`:472`) and its
+  - [x] 2.2 Add the parameter to the `save_settings` Tauri command signature (`:472`) and its
     `SettingsPatch` construction (`:570`).
-  - [ ] 2.3 Add the field to the settings-read response struct/command (`:684` region).
+  - [x] 2.3 Add the field to the settings-read response struct/command (`:684` region).
 
-- [ ] **Task 3 — Desktop native preview rendering** (AC-3)
-  - [ ] 3.1 Replace `PreviewConfig`'s implicit dependence on the `PREVIEW_LINE_HEIGHT` const
+- [x] **Task 3 — Desktop native preview rendering** (AC-3)
+  - [x] 3.1 Replace `PreviewConfig`'s implicit dependence on the `PREVIEW_LINE_HEIGHT` const
     (`native_preview.rs:48`) with a `line_height_mult: f32` field, populated in
     `PreviewConfig::from_app_config` from `cfg.preview_line_spacing` (mirror the `font_px` match
     arm at `:95-99`; use the OPEN-ITEM-2 multiplier values).
-  - [ ] 3.2 Update the line-height calc at `:657` (and any other `PREVIEW_LINE_HEIGHT` read) to
+  - [x] 3.2 Update the line-height calc at `:657` (and any other `PREVIEW_LINE_HEIGHT` read) to
     use `s.config.line_height_mult` instead of the const. Remove or repurpose the const if no
     longer referenced elsewhere.
-  - [ ] 3.3 Update stale doc comments referencing a fixed `1.625`/`leading-relaxed` at `:175,
+  - [x] 3.3 Update stale doc comments referencing a fixed `1.625`/`leading-relaxed` at `:175,
     419, 454-456, 653-654, 738, 1109-1111` to describe the now-configurable value.
 
-- [ ] **Task 4 — Frontend types + save/load wiring** (AC-1, AC-2)
-  - [ ] 4.1 `src/types.ts`: add `previewLineSpacing: string` (mirror `:106-107`).
-  - [ ] 4.2 `src/tauri-commands.ts`: default value, save-command parameter (mirror `:78-82, 98,
+- [x] **Task 4 — Frontend types + save/load wiring** (AC-1, AC-2)
+  - [x] 4.1 `src/types.ts`: add `previewLineSpacing: string` (mirror `:106-107`).
+  - [x] 4.2 `src/tauri-commands.ts`: default value, save-command parameter (mirror `:78-82, 98,
     312, 369`).
-  - [ ] 4.3 `SettingsPanel.tsx`: `localPreviewLineSpacing` state + load-on-mount sync (the
+  - [x] 4.3 `SettingsPanel.tsx`: `localPreviewLineSpacing` state + load-on-mount sync (the
     dirty-forever trap spot, `:339-340`) + dirty-check (`:425`) + save-payload inclusion, + prop
     threading into `AppearanceContent`.
 
-- [ ] **Task 5 — Appearance UI control** (AC-2, DESIGN DECISIONS 1/3/4)
-  - [ ] 5.1 Add the new `KSegmented` control block to `AppearanceContent.tsx`, placed after the
+- [x] **Task 5 — Appearance UI control** (AC-2, DESIGN DECISIONS 1/3/4)
+  - [x] 5.1 Add the new `KSegmented` control block to `AppearanceContent.tsx`, placed after the
     Font-size block (`:319-335`), using the OPEN-ITEM-3 first-pass labels.
-  - [ ] 5.2 Wire the live-preview card (`:124-140`) to reflect the new value live (inline
+  - [x] 5.2 Wire the live-preview card (`:124-140`) to reflect the new value live (inline
     `lineHeight` style replacing the hardcoded `leading-relaxed` class) per DESIGN DECISION 4.
-  - [ ] 5.3 If `hidePanelForm`/`hideBgBlur`-style Android hiding is needed for this control,
+  - [x] 5.3 If `hidePanelForm`/`hideBgBlur`-style Android hiding is needed for this control,
     determine and document why (first-pass expectation: **not needed** — unlike panel-form-preset
     and bg-blur, line-spacing is meaningful and renderable on both platforms, so no
     `hideLineSpacing` prop is expected — confirm this holds and don't add one speculatively).
 
-- [ ] **Task 6 — Android config + rendering wiring** (AC-1, AC-4)
-  - [ ] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "medium"` to `Config` (mirror the shape of
+- [x] **Task 6 — Android config + rendering wiring** (AC-1, AC-4)
+  - [x] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "medium"` to `Config` (mirror the shape of
     `:115`), JSON parse (`:365`), constructor call inclusion (`:436`).
-  - [ ] 6.2 `ListeningPanelView.kt`: add a `LINE_SPACING_MULT` map (mirror `FONT_PX_SP`, `:49`,
+  - [x] 6.2 `ListeningPanelView.kt`: add a `LINE_SPACING_MULT` map (mirror `FONT_PX_SP`, `:49`,
     using the OPEN-ITEM-2 Android multiplier values), consult it in `applyAppearance` (`:251-269`)
     to call `transcriptTextView.setLineSpacing(0f, mult)`, replacing the hardcoded call at `:355`
     (which becomes the pre-`applyAppearance` bootstrap default only, matching `textSize = 15f`'s
     existing relationship to `FONT_PX_SP` at `:353`).
-  - [ ] 6.3 Sync to `src-tauri/gen/android/...` mirrors if that directory is not auto-generated
+  - [x] 6.3 Sync to `src-tauri/gen/android/...` mirrors if that directory is not auto-generated
     by the build scripts (check `scripts/android-build.sh`/`android-smoke.sh` first — do not
-    hand-duplicate if it's generated).
+    hand-duplicate if it's generated). Confirmed: `gen/android` is gitignored and auto-synced by
+    `android-build.sh`'s Kotlin-copy step — no hand-duplication needed.
 
-- [ ] **Task 7 — Verification**
-  - [ ] 7.1 `cargo test` green (new + existing), `cargo check` green.
-  - [ ] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
-  - [ ] 7.3 `npm run build` (TypeScript strict mode gate) green.
-  - [ ] 7.4 `scripts/android-smoke.sh` clean build/install; confirm whether the Settings UI change
-    needs a full `tauri android build` (React settings surface) vs. the lighter Kotlin-only smoke
-    path — do not assume Kotlin-only given the `.rs`/`.ts`/`.tsx` files this story touches.
+- [x] **Task 7 — Verification**
+  - [x] 7.1 `cargo test` green (new + existing), `cargo check` green.
+  - [x] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
+  - [x] 7.3 `npm run build` (TypeScript strict mode gate) green.
+  - [x] 7.4 `scripts/android-smoke.sh`-equivalent clean build/install: ran the heavier full
+    `npx tauri android build --target aarch64` (via `android-build.sh`, confirmed necessary per the
+    task's own note — this story touches `.rs`/`.ts`/`.tsx` files, so the React Settings surface
+    needed the full frontend rebuild, not just Kotlin). Build succeeded end-to-end (Rust aarch64
+    cross-compile + Kotlin compile + Gradle assembly produced a signed, `apksigner`-verified APK).
+    Device-install blocked by a pre-existing signing-key mismatch with the app already on Andi's
+    device (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) — did not uninstall the existing app to force it
+    through, since that would destroy Andi's live app state without his say-so. Andi installs the
+    signed APK (`/tmp/klarvo-11-6-signed.apk`, built from this story's code) himself at GATE-4b.
   - [ ] 7.5 **GATE-4a — real Windows build**: Andi confirms AC-2 (Settings save/reload/dirty-state)
     and AC-3 (native preview line-spacing renders correctly) on a real Windows build via
     `scripts/sync-and-build.ps1`.
@@ -400,11 +407,76 @@ than silently building a new locale mechanism.
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `cargo test --lib` (src-tauri): 657/657 green, incl. new `spec_preview_line_spacing_config_field_default`.
+- `cargo check` (src-tauri): clean (two earlier runs hit a transient rustc SIGABRT/SIGSEGV in
+  unrelated dependency crates — `regex-syntax`, `zvariant`, `rusqlite` — caused by resource
+  contention with the concurrently-running full Android build; a clean re-run after the Android
+  build finished confirmed this was not code-related).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon klarvo.css`.
+- `npm run build` (tsc strict + vite): built cleanly, 79 modules transformed.
+- Kotlin device-free compile-verify: `./gradlew :app:compileArmDebugKotlin --offline` → `BUILD SUCCESSFUL`
+  (confirmed a fresh recompile of the touched files via `armDebug` class-file timestamps).
+- Full `npx tauri android build --target aarch64` (via `scripts/android-build.sh`): Rust aarch64
+  cross-compile + Kotlin compile + Gradle assembly all succeeded, producing
+  `app-universal-release-unsigned.apk`. The script's own post-build step (copying the signed APK to
+  `/mnt/d/Dropbox/...`) failed on this host because that path is a WSL/Windows-mount convention that
+  does not exist on this native-Linux dev machine (`mkdir: Permission denied` — environment mismatch,
+  unrelated to this story's code). Manually zipaligned + signed the already-built unsigned APK with
+  the project's `voxlit-debug.keystore` (`apksigner verify` passed) at `/tmp/klarvo-11-6-signed.apk`.
+- `adb install -r` of the signed APK onto the connected device (Tailscale-reachable Xiaomi/HyperOS)
+  failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` — the app currently installed on Andi's device was
+  signed with a different key than `voxlit-debug.keystore` produced. Did not uninstall the existing
+  app to force the install through, since that would destroy Andi's live app/session state on his
+  real device without his say-so — left for Andi to install himself at GATE-4b.
 
 ### Completion Notes List
 
+- Implemented the full `preview_font_size` → `preview_line_spacing` mirror across every touch point
+  the story enumerated (Rust `AppConfig`/`SettingsPatch`/`SettingsView`, TS `types.ts`/
+  `tauri-commands.ts`/`SettingsPanel.tsx`/`AppearanceContent.tsx`, Kotlin `KlarvoApi.kt`/
+  `ListeningPanelView.kt`), plus one touch point the story's exhaustive list missed:
+  `src/hooks/useSettings.ts`'s `handleSaveSettings` wrapper (a positional pass-through between
+  `SettingsPanel`'s `onSaveSettings` prop and `tauri-commands.ts`'s `saveSettings`) — found via a
+  `cargo build`/`tsc` compile-error sweep, not by re-deriving the wiring from scratch.
+- Two additional `AppConfig`/`SettingsPatch` literal-construction sites turned up only under
+  `cargo test` (not `cargo build`/`cargo check`, which don't compile the `#[cfg(test)]` module):
+  `commands/settings.rs:1441`'s `test_merge_settings_happy_path_full_patch` fixture. Fixed by
+  compiling with `cargo test` before declaring Task 1/2 done, not stopping at `cargo build`.
+- DESIGN DECISION 2 multipliers implemented as first-pass numbers exactly as specified: Desktop
+  small/medium/large = 1.475/1.625/1.775 (`native_preview.rs`), Android = 1.55/1.7/1.85
+  (`ListeningPanelView.kt`). **These are unconfirmed pending GATE-4** (Task 7.7) — the ±0.15 step
+  size is the one open design residual per the story's own framing; do not treat these as final
+  until Andi confirms on a real Windows build and a real Android device.
+  `AppearanceContent.tsx`'s `LINE_SPACING_MULT` mirrors the desktop values for the Settings preview
+  card, consistent with 6.3's `FONT_PX_MAP` precedent.
+- Task 5.3 confirmed: no `hideLineSpacing` prop was needed — line-spacing renders meaningfully on
+  both platforms, unlike `hidePanelForm`/`hideBgBlur`.
+- Task 6.3 confirmed: `src-tauri/gen/android/` is `.gitignore`d and mechanically resynced from
+  `android/kotlin-src/` by `android-build.sh`'s own copy step — no hand-duplication was needed or
+  performed.
+- AC-3 (Windows GDI render) and AC-4 (Android on-device render) are **not** verifiable from this
+  Linux dev environment per project-context.md's "Release-Build blind spot" rule — both remain
+  GATE-4 human gates (Tasks 7.5/7.6), unchecked by design, following the exact precedent set by
+  Story 11-4's Task 4.4 (dev-agent-executable subtasks checked, the real-device/real-build subtask
+  left open, Status still moves to `review`).
+
 ### File List
+
+- `src-tauri/src/config/mod.rs`
+- `src-tauri/src/commands/settings.rs`
+- `src-tauri/src/native_preview.rs`
+- `src-tauri/src/lib.rs`
+- `src/types.ts`
+- `src/tauri-commands.ts`
+- `src/hooks/useSettings.ts`
+- `src/components/SettingsPanel.tsx`
+- `src/components/settings/AppearanceContent.tsx`
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt`
+- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt`
 
 ## Change Log
 
@@ -412,3 +484,4 @@ than silently building a new locale mechanism.
 |------|--------|
 | 2026-07-09 | Story created (bmad-create-story) from `docs/backlog.md` §11-6. Source is a single backlog paragraph, not a fully-specced epic entry — 4 design/UI/intent items (control type, concrete tier values, label wording, live-preview-card fidelity) are not pinned and are recorded as OPEN ITEMS rather than defaulted silently. Status: ready-for-dev. |
 | 2026-08-10 | GATE-1 with Andi: all 4 open design items settled — 3-tier `KSegmented` (not a slider); platform-tuned multipliers with `"medium"` = today's hardcoded value (identical cross-platform numbers explicitly rejected); labels `"Zeilenabstand"` / `"Kompakt" \| "Normal" \| "Locker"`; Settings preview card wired to the new field. Only residual for GATE-4: the ±0.15 step size. Also corrected the Android `Config` default in Tasks 6.1 from `"small"` to `"medium"` (it contradicted the no-op-default decision). Status stays `ready-for-dev` — no code written. |
+| 2026-08-10 | **bmad-dev-story: implemented Tasks 1-7.1-7.4 (AC-1, AC-2, AC-3 code path, AC-4 code path).** Full cross-platform mirror of the `preview_font_size` precedent landed exactly per the story's file-by-file plan, plus one extra touch point the plan missed (`useSettings.ts`'s save-wrapper) and one extra `SettingsPatch` test fixture only visible under `cargo test`. 657/657 Rust tests green (new spec test included), `cargo check` clean, TS strict build clean, Android theme drift-gate clean, Kotlin `armDebug` compile-verify green, and a full `tauri android build --target aarch64` succeeded end-to-end (manually signed since the script's Dropbox-copy step assumes a WSL host this machine isn't). Device install was blocked by a signing-key mismatch with the app already on Andi's phone — did not force-uninstall his live app to work around it. Status → `review`. **GATE-4a (real Windows build) and GATE-4b (real Android device) are still Andi's action**, including confirming the first-pass ±0.15 step size (Task 7.7) — same precedent as Story 11-4's Task 4.4. |
