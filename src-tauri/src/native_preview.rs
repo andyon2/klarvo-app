@@ -85,7 +85,7 @@ pub struct PreviewConfig {
     pub font_px: u32,     // 11 | 13 | 15 (from previewFontSize small/medium/large)
     pub font_face: String, // first token of previewFontFamily CSS cascade (default "Inter")
     pub w_base: i32,      // 260 | 320 | 400 (from previewPanelForm compact/comfortable/wide)
-    pub line_height_mult: f32, // 1.475 | 1.625 | 1.775 (from previewLineSpacing small/medium/large)
+    pub line_height_mult: f32, // 1.325 | 1.625 | 1.925 (from previewLineSpacing small/medium/large)
     pub live_preview_enabled: bool,
 }
 
@@ -97,12 +97,17 @@ impl PreviewConfig {
             "large" => 15,
             _ => 11, // "small" or default
         };
-        // Story 11.6 DESIGN DECISION 2: "medium" = today's hardcoded 1.625, so nothing
-        // changes visually until the user touches the control. "small"/"large" are a
-        // first-pass symmetric ±0.15 offset, confirmed at GATE-4 on a real Windows build.
+        // Story 11.6 DESIGN DECISION 2 (step size widened at the 2026-08-10 review gate,
+        // finding D2): "medium" = today's hardcoded 1.625, so nothing changes visually
+        // until the user touches the control. "small"/"large" are a symmetric ±0.30 em
+        // offset. This GDI line-stepping multiplies the *font size* (like CSS
+        // `lineHeight`), while Android's `setLineSpacing(0f, mult)` multiplies the font's
+        // *natural line height* (~1.2× text size) — so Desktop uses ±0.30 and Android uses
+        // ±0.25 (see `ListeningPanelView.kt`'s `LINE_SPACING_MULT`) to move the same ±0.30
+        // em on both platforms. To be confirmed at GATE-4 on a real Windows build.
         let line_height_mult = match cfg.preview_line_spacing.as_str() {
-            "small" => 1.475f32,
-            "large" => 1.775,
+            "small" => 1.325f32,
+            "large" => 1.925,
             _ => 1.625, // "medium" or default
         };
         let w_base = match cfg.preview_panel_form.as_str() {

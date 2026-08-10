@@ -47,10 +47,16 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // Story 11-3 (AC-5, item 5): device feedback pass rescale 11/13/15 -> 13/15/18.
         // Android-only; desktop's FONT_PX_MAP (Story 6-3) is untouched.
         private val FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f, "large" to 18f)
-        // Story 11.6 DESIGN DECISION 2: "medium" = today's hardcoded 1.7, so nothing changes
-        // visually until the user touches the control. "small"/"large" are a first-pass
-        // symmetric ±0.15 offset, confirmed at GATE-4 on the real device.
-        private val LINE_SPACING_MULT = mapOf("small" to 1.55f, "medium" to 1.7f, "large" to 1.85f)
+        // Story 11.6 DESIGN DECISION 2 (step size widened at the 2026-08-10 review gate,
+        // finding D2): "medium" = today's hardcoded 1.7, so nothing changes visually until
+        // the user touches the control. "small"/"large" are a symmetric ±0.25 offset here
+        // (not ±0.30, unlike Desktop): `setLineSpacing(0f, mult)` multiplies the font's
+        // *natural line height* (~1.2× text size), while Desktop's GDI line-stepping and
+        // CSS `lineHeight` multiply the *font size* directly (see native_preview.rs's
+        // `line_height_mult` comment) — ±0.25 here and ±0.30 on Desktop move the rendered
+        // spacing by the same ±0.30 em on both platforms. To be confirmed at GATE-4 on the
+        // real device.
+        private val LINE_SPACING_MULT = mapOf("small" to 1.45f, "medium" to 1.7f, "large" to 1.95f)
 
         /**
          * Parses a CSS `rgba()`/`rgb()` string into an Android ARGB color int (Story 11-2,

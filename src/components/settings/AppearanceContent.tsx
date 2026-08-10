@@ -17,9 +17,15 @@ const FONT_PX_MAP: Record<string, number> = { small: 11, medium: 13, large: 15 }
 
 // line-spacing → CSS line-height multiplier for the live preview card.
 // Mirrors native_preview.rs's `line_height_mult` match arm (Story 11.6 DESIGN
-// DECISION 2): "medium" = today's hardcoded 1.625 (`leading-relaxed`), so
-// nothing changes visually until the user touches the control.
-const LINE_SPACING_MULT: Record<string, number> = { small: 1.475, medium: 1.625, large: 1.775 };
+// DECISION 2, step size widened at the 2026-08-10 review gate, finding D2):
+// "medium" = today's hardcoded 1.625 (`leading-relaxed`), so nothing changes
+// visually until the user touches the control; "small"/"large" are a ±0.30 em
+// offset, the same Desktop numbers as native_preview.rs. This card intentionally
+// uses the DESKTOP multipliers even when rendered on Android — sanctioned
+// precedent, same as FONT_PX_MAP (11/13/15) vs Android's FONT_PX_SP (13/15/18);
+// see the story's review finding D1/F2. The real GATE-4b visual judgement is
+// made on the actual preview panel, not this card.
+const LINE_SPACING_MULT: Record<string, number> = { small: 1.325, medium: 1.625, large: 1.925 };
 
 // --- Props -------------------------------------------------------------------
 

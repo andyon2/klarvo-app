@@ -47,10 +47,14 @@ wired on both Android and Desktop. The four choices it did not pin were decided 
    (`ListeningPanelView.kt:355`), **Desktop `1.625`** (`native_preview.rs:48`) — so nothing changes
    visually until the user touches the control. Explicitly rejected: identical multipliers on both
    platforms, because that would silently alter today's Desktop appearance.
-   **Residual (still open, and the only thing GATE-4 must judge):** "small"/"large" as a symmetric
-   ±0.15 offset (Android 1.55 / 1.7 / 1.85; Desktop 1.475 / 1.625 / 1.775) are **first-pass numbers,
-   not a decision.** They must be looked at on a real Android device *and* a real Windows build; the
-   step size may need to change. Same precedent as 11-3's "first-pass numbers, confirm at GATE-4".
+   **Residual — settled 2026-08-10 at the code-review gate (finding D2/F1):** the ±0.15 first-pass
+   offset was widened to a symmetric **±0.30 em** offset, per-platform normalized because Android's
+   `setLineSpacing(0f, mult)` multiplies the font's *natural line height* (~1.2× text size) while
+   Desktop's GDI line stepping and CSS `lineHeight` multiply the *font size* directly — so the two
+   platforms need different raw deltas to move the same ±0.30 em: **Desktop 1.325 / 1.625 / 1.925**
+   (±0.30), **Android 1.45 / 1.7 / 1.95** (±0.25). What remains for GATE-4 is no longer choosing a
+   step size — only confirming these values look right on a real Android device and a real Windows
+   build.
 3. **Labels → German `"Zeilenabstand"` with `"Kompakt" / "Normal" / "Locker"`.** Rejected:
    `"Klein/Mittel/Groß"` (word-for-word reuse of the font-size labels reads wrong for spacing) and
    an English label. The section stays mixed-language as it already is — not this story's job.
@@ -58,6 +62,17 @@ wired on both Android and Desktop. The four choices it did not pin were decided 
    its hardcoded `className="leading-relaxed"` for an inline `lineHeight` style driven by the new
    field, mirroring the `fontSize` inline-style pattern one property below. Adjusting the setting
    without seeing it change was rejected as a blind flight.
+
+### Addendum — settled at the code-review gate, 2026-08-10 (finding D1)
+
+The Settings preview card (`AppearanceContent.tsx`'s `LINE_SPACING_MULT`) renders on Android with
+the **Desktop** multipliers, not Android's own `ListeningPanelView.kt` values — the card and the
+Android panel diverge. **Decision: accept as precedent-consistent, do not platform-branch or hide
+the card.** This is the same already-shipped divergence `FONT_PX_MAP` (11/13/15) vs. Android's
+`FONT_PX_SP` (13/15/18) already has for `previewFontSize`. Consequence for GATE-4: the **GATE-4b
+visual judgement of the line-spacing values is made on the real Android preview panel
+(`ListeningPanelView`), not on the Settings preview card** — the card is a Desktop-accurate but
+Android-inaccurate proxy, same as it already is for font size.
 
 ## Story
 
@@ -82,6 +97,10 @@ hardcoded, platform-mismatched line-height values.
     (`unwrap_or`) + the `save_settings` command's parameter list + the settings-read response
     struct, mirroring every `preview_font_size` touch point (`:164`, `:223`, `:370-371`, `:472`,
     `:570`, `:684`).
+  - `src-tauri/src/lib.rs`: the `AppConfig`/config-construction sites that already list
+    `preview_font_size`, mirroring every one of its touch points (`:233`, `:1154`, `:1226`,
+    `:1292`) — missed by the story's original file-by-file plan (added at the 2026-08-10
+    code-review gate, finding P3).
   - `src-tauri/src/native_preview.rs`: replace the hardcoded `PREVIEW_LINE_HEIGHT` const (`:48`)
     with a `line_height_mult` field on `PreviewConfig`, populated from
     `cfg.preview_line_spacing` in `PreviewConfig::from_app_config` (mirrors the `font_px` mapping
@@ -210,10 +229,30 @@ Appearance category's data model and UI, not a refactor of the existing fields.
 - **Real Android device required (GATE-4, AC-4)** — Andi confirms the new control appears in
   Android's Settings/Appearance UI, changes the preview panel's rendered line spacing, and
   survives a save/reload.
-- **Design decisions 1-4 are settled (GATE-1, 2026-08-10)** — control type, value semantics, labels
-  and preview-card wiring must NOT be re-opened at GATE-4. The single remaining judgement call for
-  this round: do the **±0.15 step sizes** look right for "Kompakt"/"Locker" on the real device and
-  the real Windows build, or is the step too small/too large?
+- **Design decisions 1-4 are settled (GATE-1, 2026-08-10); step size is settled (review gate,
+  2026-08-10, finding D2)** — control type, value semantics, labels, preview-card wiring and the
+  ±0.30 em step size must NOT be re-opened at GATE-4. The single remaining judgement call for this
+  round: do the **1.325 / 1.625 / 1.925 (Desktop)** and **1.45 / 1.7 / 1.95 (Android)** values look
+  right for "Kompakt"/"Locker" on the real device and the real Windows build.
+- **Mandatory `docs/surface-smoke-checklist.md` items for a new-config-key story
+  (project-context.md:62), executed 2026-08-10 during the review-fix pass — mechanical check, not
+  a self-attestation:**
+  - **#1 camelCase config key:** verified `AppConfig::preview_line_spacing` carries
+    `#[serde(default = "default_preview_line_spacing")]` under the struct-level
+    `#[serde(rename_all = "camelCase")]` (`config/mod.rs:795-796`), and the inversion-guard test
+    `spec_preview_line_spacing_config_field_default` (`:4272-4303`) asserts the on-disk key is
+    `previewLineSpacing`, not `preview_line_spacing`. **Pass.**
+  - **#3 reactive re-read, not mount-only load:** the native preview overlay is not a persistent
+    webview window — `pipeline.rs:751-757` recreates it via `PreviewConfig::from_app_config`
+    (fresh config-lock read) every time a recording starts, so a value saved in Settings takes
+    effect on the next preview show, not only after an app restart (same recreate-per-recording
+    pattern as the rest of `native_preview.rs`). **Pass.**
+  - **#6 multi-hop save chain traced end-to-end:** `preview_line_spacing` walked through every hop
+    — `SettingsPatch` (`commands/settings.rs:166`) → merge (`:375-376`) → settings-read response
+    (`:693`) → `lib.rs` config-construction sites (`:235, 1155, 1227, 1293`) → `types.ts:108-109`
+    → `tauri-commands.ts:99, 314, 372` → `SettingsPanel.tsx` state/resync/dirty-check/save-payload
+    (`:220-221, 345-346, 432, 571`) → `useSettings.ts:94, 117` → `AppearanceContent.tsx` prop
+    threading (`:58-59, 100`). No intermediate hop drops the field. **Pass.**
 
 ## Tasks / Subtasks
 
@@ -283,23 +322,48 @@ Appearance category's data model and UI, not a refactor of the existing fields.
   - [x] 7.1 `cargo test` green (new + existing), `cargo check` green.
   - [x] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
   - [x] 7.3 `npm run build` (TypeScript strict mode gate) green.
-  - [x] 7.4 `scripts/android-smoke.sh`-equivalent clean build/install: ran the heavier full
+  - [ ] 7.4 `scripts/android-smoke.sh`-equivalent clean build/install — **build succeeded, install
+    and smoke did NOT run** (corrected 2026-08-10 at the code-review gate, finding D3; the previous
+    checked-off state overclaimed). What was executed: the heavier full
     `npx tauri android build --target aarch64` (via `android-build.sh`, confirmed necessary per the
     task's own note — this story touches `.rs`/`.ts`/`.tsx` files, so the React Settings surface
-    needed the full frontend rebuild, not just Kotlin). Build succeeded end-to-end (Rust aarch64
-    cross-compile + Kotlin compile + Gradle assembly produced a signed, `apksigner`-verified APK).
-    Device-install blocked by a pre-existing signing-key mismatch with the app already on Andi's
-    device (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) — did not uninstall the existing app to force it
-    through, since that would destroy Andi's live app state without his say-so. Andi installs the
-    signed APK (`/tmp/klarvo-11-6-signed.apk`, built from this story's code) himself at GATE-4b.
+    needed the full frontend rebuild, not just Kotlin). Rust aarch64 cross-compile + Kotlin compile
+    + Gradle assembly succeeded end-to-end, producing a signed, `apksigner`-verified APK. What did
+    NOT run: `adb install` failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signing-key mismatch
+    against the app already on Andi's device — did not force-uninstall his live app to work around
+    it), so the app was never installed and no smoke (emulator or device) ever executed. The only
+    runtime evidence for the Kotlin render path (`ListeningPanelView.kt`'s `applyAppearance`/
+    `LINE_SPACING_MULT`) is the compile-verify below, not an actual run. This task is left unchecked
+    — the conductor runs the install/smoke at GATE 4, not this pass.
   - [ ] 7.5 **GATE-4a — real Windows build**: Andi confirms AC-2 (Settings save/reload/dirty-state)
     and AC-3 (native preview line-spacing renders correctly) on a real Windows build via
     `scripts/sync-and-build.ps1`.
   - [ ] 7.6 **GATE-4b — real Android device**: Andi confirms AC-2 (Settings UI appears/works) and
     AC-4 (preview panel line-spacing renders correctly) on the real Xiaomi/HyperOS device.
-  - [ ] 7.7 Confirm the **±0.15 step size** with Andi at GATE-4 (the only design residual — items
-    1-4 were settled at GATE-1, 2026-08-10) and record the final multipliers in Completion Notes,
-    so this story's history reflects what actually shipped rather than the first-pass numbers.
+  - [ ] 7.7 Confirm the **±0.30 em step size** (widened from ±0.15 at the 2026-08-10 code-review
+    gate, finding D2 — see Completion Notes) with Andi at GATE-4 on the real device/build, and
+    record that confirmation in Completion Notes.
+
+### Review Findings
+
+_Source: `bmad-code-review` of committed range `86b5dca..HEAD`, 2026-08-10. Three layers ran and all
+returned: Blind Hunter (diff only), Edge Case Hunter (diff + repo), Acceptance Auditor (diff + spec +
+context docs). 12 further raised items were dismissed as noise/false positives after verification._
+
+- [x] [Review][Decision] **Settings live-preview card shows the DESKTOP multipliers on Android, where the panel renders different ones** — `AppearanceContent.tsx:22` defines `LINE_SPACING_MULT = { small: 1.475, medium: 1.625, large: 1.775 }` and the card is rendered unconditionally on Android (`SettingsPanel.tsx:839-840`, no `hideLineSpacing` per Task 5.3), while the Android panel uses `1.55/1.7/1.85` (`ListeningPanelView.kt:53`). This is the same sanctioned divergence `FONT_PX_MAP` (11/13/15) vs `FONT_PX_SP` (13/15/18) already has, so it is not an AC violation — but at GATE-4b the card is a ~9 % denser preview of what the panel will actually do, and the card is the surface Andi judges the step size on. Options: (a) accept as precedent-consistent, (b) platform-branch the card map, (c) hide the card's spacing effect on Android. **Resolved 2026-08-10 (finding D1): (a) accepted as precedent-consistent, not platform-branched or hidden — see the "Addendum" under DESIGN DECISIONS and GATE-4 tasks.**
+- [x] [Review][Decision] **The ±0.15 step size (the story's only open residual, Task 7.7) — objective numbers before the device round** — Two facts to weigh: (1) At the shipped default `previewFontSize = "small"` (`font_px = 11`) and DPI/text-scale 1.0, `native_preview.rs:667` computes `round(11 × mult)` = **16 / 18 / 20 px** — a 2 px step per tier, which may read as "the control does nothing"; the step also scales with font size and `text_scale`, so it is not constant. (2) Android's `setLineSpacing(0f, mult)` (`ListeningPanelView.kt:274`) multiplies the font's *natural line height* (~1.2 × text size), whereas CSS `lineHeight` and the GDI step multiply the *font size* — so a ±0.15 delta moves Android baselines by ≈0.18 em against the desktop's 0.15 em, and "medium" 1.7 vs 1.625 are not the same rendered spacing. Decide whether to widen the step (and by how much per platform) before or after the device round. **Resolved 2026-08-10 (finding D2): widened to a symmetric ±0.30 em, per-platform normalized — Desktop 1.325/1.625/1.925, Android 1.45/1.7/1.95. See DESIGN DECISION 2's Residual and Task 7.7.**
+- [x] [Review][Decision] **Task 7.4 is checked as "clean build/install" but no install and no smoke ever ran** — The checked box's own text (`:291-294`) records `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; the Debug Log (`:430-434`) shows no emulator run, although `scripts/android-emulator-smoke.sh` and `scripts/android-emulator.sh` both exist and project-context.md:63 sanctions the emulator for this mechanical gate (the "never emulator" rule at `:184`/`:399` binds the GATE-4 *visual* gate only). The only runtime evidence for `ListeningPanelView.kt:270,274` is a compile. Options: (a) run the emulator smoke now, (b) accept and let GATE-4b carry it — then un-check 7.4 or reword it so it does not claim an install that did not happen. **Resolved 2026-08-10 (finding D3): (b) — Task 7.4 un-checked and reworded to state plainly what ran (build) and what did not (install, smoke); no emulator smoke run during this review-fix pass, left for the conductor at GATE 4.**
+
+- [x] [Review][Patch] Comments assert a GATE-4 verification that has not happened — "confirmed at GATE-4 on the real device" / "on a real Windows build", while Task 7.7 is open and Completion Notes say the numbers are unconfirmed. Reword to "to be confirmed at GATE-4". [`android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt:52`, `src-tauri/src/native_preview.rs:102`] — **Fixed 2026-08-10.**
+- [x] [Review][Patch] DoD omits the mandated `docs/surface-smoke-checklist.md` items for a new-config-key surface story (#1/#3/#6), required by project-context.md:62 and by the checklist's own "How to use it". The consequence materialised: the `useSettings.ts` hop — trap #6, the exact Epic-6 reset-on-save bug — was found by a compile error, not by the mandated chain walk. The chain is in fact correct today (re-verified during this review); record the executed checks in the DoD. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:193-216`] — **Fixed 2026-08-10 — #1/#3/#6 re-verified and recorded in the DoD.**
+- [x] [Review][Patch] `src-tauri/src/lib.rs` is missing from both the "IN" scope list and the "exhaustive occurrence list", although `preview_font_size` occurs there at `:233, 1154, 1226, 1292` and the diff touches it in 4 places; Completion Notes claim exactly one missed touch point when it was two. Record accuracy only — the code is correct (Task 2.3 covers it in substance). [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:79-112, 314-327, 441`] — **Fixed 2026-08-10 — `lib.rs` added to both lists and Completion Notes corrected to "two" touch points.**
+
+- [x] [Review][Defer] No whitelist or validation of the tier string at any layer [`src-tauri/src/commands/settings.rs:375-376`] — deferred, pre-existing (`preview_font_size` has the identical gap)
+- [x] [Review][Defer] `PreviewConfig` derives `Default`, and a poisoned config mutex takes `.unwrap_or_default()` → `line_height_mult = 0.0` [`src-tauri/src/pipeline.rs:757`] — deferred, pre-existing (the same default already yields `font_px = 0`, `w_base = 0`; the new field adds no new failure mode)
+- [x] [Review][Defer] `Object.prototype` key lookup on a `Record<string, number>` map returns a function, which `??` does not catch [`src/components/settings/AppearanceContent.tsx:143`] — deferred, pre-existing (identical exposure at `:142` for `FONT_PX_MAP`)
+- [x] [Review][Defer] The tier→multiplier mapping has zero test coverage; `native_preview.rs` has no `#[cfg(test)]` module at all [`src-tauri/src/native_preview.rs:99-106`] — deferred, pre-existing (the `font_px` mapping is untested for the same reason)
+- [x] [Review][Defer] The `merge_settings` test fixture pins the new field to `None`, so the `Some(...)` merge branch is never executed [`src-tauri/src/commands/settings.rs:1490`] — deferred, pre-existing (`preview_font_size: None` sits in the same fixture)
+- [x] [Review][Defer] Positional argument chains: three consecutive `String` params in the Kotlin `Config(...)` call, and a 20+ all-optional positional chain across three TS boundaries [`android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:443`, `src/components/SettingsPanel.tsx:570`] — deferred, pre-existing architecture (order verified correct today)
 
 ## Dev Notes
 
@@ -314,6 +378,8 @@ creation:
 - `src-tauri/src/config/mod.rs:787-790` (field), `:1031-1033` (default fn), `:1110, 2167, 3471`
   (test fixtures), `:4220-4253` (inversion-guard spec test).
 - `src-tauri/src/commands/settings.rs:164, 223, 370-371, 472, 570, 684`.
+- `src-tauri/src/lib.rs:233, 1154, 1226, 1292` — added at the 2026-08-10 code-review gate
+  (finding P3); the original list omitted this file though `preview_font_size` occurs there.
 - `src-tauri/src/native_preview.rs:48` (const → per-config field), `:86, 95-99, 154` (analogous
   `font_px` field/mapping to mirror the *shape* of, not the value), `:175, 419, 454-456, 653-654,
   657, 738, 1109-1111` (render/doc-comment sites).
@@ -433,26 +499,55 @@ claude-sonnet-5 (bmad-dev-story)
   app to force the install through, since that would destroy Andi's live app/session state on his
   real device without his say-so — left for Andi to install himself at GATE-4b.
 
+**Review-fix pass, 2026-08-10 (applying findings D1/D2/D3/P1/P2/P3) — re-ran the mechanically
+executable gates (Tasks 7.1-7.3); did not re-run Task 7.4's build/install/smoke per instruction,
+since that stays the conductor's job at GATE 4:**
+- `cargo test --lib`: 657/657 green, including `spec_preview_line_spacing_config_field_default`
+  (unaffected by the multiplier-value changes, since it only checks the config-field default).
+- `cargo check`: clean, no errors (only pre-existing dead-code warnings unrelated to this story).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon klarvo.css`.
+- `npm run build` (tsc strict + vite): built cleanly, 79 modules transformed.
+- `ListeningPanelView.kt`'s edited `LINE_SPACING_MULT` map literal was reviewed by eye (a
+  well-formed 3-entry `Map<String, Float>`, same shape as before); not recompiled via
+  `gradlew`/`android-build.sh`, since `src-tauri/gen/android/` is a gitignored auto-sync of
+  `android/kotlin-src/` (Task 6.3) that would need a fresh full Android build to reflect this
+  edit, and re-running that heavier build/install/smoke path is explicitly out of scope for this
+  review-fix pass (F6/D3) — it stays the conductor's job at GATE 4.
+
 ### Completion Notes List
 
 - Implemented the full `preview_font_size` → `preview_line_spacing` mirror across every touch point
   the story enumerated (Rust `AppConfig`/`SettingsPatch`/`SettingsView`, TS `types.ts`/
   `tauri-commands.ts`/`SettingsPanel.tsx`/`AppearanceContent.tsx`, Kotlin `KlarvoApi.kt`/
-  `ListeningPanelView.kt`), plus one touch point the story's exhaustive list missed:
-  `src/hooks/useSettings.ts`'s `handleSaveSettings` wrapper (a positional pass-through between
-  `SettingsPanel`'s `onSaveSettings` prop and `tauri-commands.ts`'s `saveSettings`) — found via a
-  `cargo build`/`tsc` compile-error sweep, not by re-deriving the wiring from scratch.
+  `ListeningPanelView.kt`), plus **two** touch points the story's original exhaustive list missed
+  (corrected at the 2026-08-10 code-review gate, finding P3 — the original notes here claimed only
+  one):
+  - `src/hooks/useSettings.ts`'s `handleSaveSettings` wrapper (a positional pass-through between
+    `SettingsPanel`'s `onSaveSettings` prop and `tauri-commands.ts`'s `saveSettings`) — found via a
+    `cargo build`/`tsc` compile-error sweep, not by re-deriving the wiring from scratch.
+  - `src-tauri/src/lib.rs`'s `AppConfig` construction sites (`:233, 1154, 1226, 1292`) — the code
+    was implemented correctly (it compiled and the tests passed), but the file was absent from the
+    story's IN-scope list and Dev Notes occurrence list; both are now corrected.
 - Two additional `AppConfig`/`SettingsPatch` literal-construction sites turned up only under
   `cargo test` (not `cargo build`/`cargo check`, which don't compile the `#[cfg(test)]` module):
   `commands/settings.rs:1441`'s `test_merge_settings_happy_path_full_patch` fixture. Fixed by
   compiling with `cargo test` before declaring Task 1/2 done, not stopping at `cargo build`.
-- DESIGN DECISION 2 multipliers implemented as first-pass numbers exactly as specified: Desktop
-  small/medium/large = 1.475/1.625/1.775 (`native_preview.rs`), Android = 1.55/1.7/1.85
-  (`ListeningPanelView.kt`). **These are unconfirmed pending GATE-4** (Task 7.7) — the ±0.15 step
-  size is the one open design residual per the story's own framing; do not treat these as final
-  until Andi confirms on a real Windows build and a real Android device.
-  `AppearanceContent.tsx`'s `LINE_SPACING_MULT` mirrors the desktop values for the Settings preview
-  card, consistent with 6.3's `FONT_PX_MAP` precedent.
+- DESIGN DECISION 2 multipliers, updated 2026-08-10 at the code-review gate (finding D2/F1): the
+  first-pass ±0.15 numbers (Desktop 1.475/1.625/1.775, Android 1.55/1.7/1.85) were widened to a
+  symmetric **±0.30 em**, per-platform normalized — **Desktop small/medium/large =
+  1.325/1.625/1.925** (`native_preview.rs`), **Android = 1.45/1.7/1.95** (`ListeningPanelView.kt`).
+  Both keep `medium` byte-identical to today's hardcoded no-op (Desktop 1.625, Android 1.7).
+  `AppearanceContent.tsx`'s `LINE_SPACING_MULT` mirrors the Desktop values for the Settings preview
+  card, consistent with 6.3's `FONT_PX_MAP` precedent (see the DESIGN DECISIONS Addendum, finding
+  D1). **The step size itself is settled — these are no longer first-pass numbers.** What remains
+  for GATE-4 (Task 7.7) is only confirming they look right on a real Windows build and a real
+  Android device, not choosing a step size.
+- Task 7.4 corrected 2026-08-10 at the code-review gate (finding D3): the task was previously
+  checked off claiming a "clean build/install" even though the on-device install failed
+  (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and no smoke — emulator or device — ever ran. Un-checked
+  and reworded to state plainly that only the build succeeded; no install, no smoke, and therefore
+  no runtime evidence for the Kotlin render path beyond a compile. Did not run an emulator smoke to
+  close this during the review-fix pass, per instruction — that is the conductor's job at GATE 4.
 - Task 5.3 confirmed: no `hideLineSpacing` prop was needed — line-spacing renders meaningfully on
   both platforms, unlike `hidePanelForm`/`hideBgBlur`.
 - Task 6.3 confirmed: `src-tauri/gen/android/` is `.gitignore`d and mechanically resynced from
@@ -485,3 +580,4 @@ claude-sonnet-5 (bmad-dev-story)
 | 2026-07-09 | Story created (bmad-create-story) from `docs/backlog.md` §11-6. Source is a single backlog paragraph, not a fully-specced epic entry — 4 design/UI/intent items (control type, concrete tier values, label wording, live-preview-card fidelity) are not pinned and are recorded as OPEN ITEMS rather than defaulted silently. Status: ready-for-dev. |
 | 2026-08-10 | GATE-1 with Andi: all 4 open design items settled — 3-tier `KSegmented` (not a slider); platform-tuned multipliers with `"medium"` = today's hardcoded value (identical cross-platform numbers explicitly rejected); labels `"Zeilenabstand"` / `"Kompakt" \| "Normal" \| "Locker"`; Settings preview card wired to the new field. Only residual for GATE-4: the ±0.15 step size. Also corrected the Android `Config` default in Tasks 6.1 from `"small"` to `"medium"` (it contradicted the no-op-default decision). Status stays `ready-for-dev` — no code written. |
 | 2026-08-10 | **bmad-dev-story: implemented Tasks 1-7.1-7.4 (AC-1, AC-2, AC-3 code path, AC-4 code path).** Full cross-platform mirror of the `preview_font_size` precedent landed exactly per the story's file-by-file plan, plus one extra touch point the plan missed (`useSettings.ts`'s save-wrapper) and one extra `SettingsPatch` test fixture only visible under `cargo test`. 657/657 Rust tests green (new spec test included), `cargo check` clean, TS strict build clean, Android theme drift-gate clean, Kotlin `armDebug` compile-verify green, and a full `tauri android build --target aarch64` succeeded end-to-end (manually signed since the script's Dropbox-copy step assumes a WSL host this machine isn't). Device install was blocked by a signing-key mismatch with the app already on Andi's phone — did not force-uninstall his live app to work around it. Status → `review`. **GATE-4a (real Windows build) and GATE-4b (real Android device) are still Andi's action**, including confirming the first-pass ±0.15 step size (Task 7.7) — same precedent as Story 11-4's Task 4.4. |
+| 2026-08-10 | **Code-review fix pass** (`bmad-code-review` findings D1/D2/D3/P1/P2/P3, human-decided). **D2/F1:** widened the ±0.15 step size to a symmetric ±0.30 em, per-platform normalized — Desktop 1.325/1.625/1.925, Android 1.45/1.7/1.95 (`medium` unchanged); rationale recorded next to the values. **D1/F2:** accepted the Settings-preview-card Android/Desktop divergence as precedent-consistent (same class as `FONT_PX_MAP`/`FONT_PX_SP`); GATE-4b judges the real preview panel, not the card. **D3/F6:** un-checked and reworded Task 7.4 — the prior checked state overclaimed an install/smoke that never ran (build succeeded, `adb install` failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, no smoke executed); left for the conductor at GATE 4. **P1/F3:** reworded premature "confirmed at GATE-4" comments in `ListeningPanelView.kt`/`native_preview.rs` to "to be confirmed at GATE-4". **P2/F4:** added the mandated `surface-smoke-checklist.md` items #1/#3/#6 to the DoD with executed checks and outcomes (all pass). **P3/F5:** added `src-tauri/src/lib.rs` to the IN-scope and Dev Notes occurrence lists, and corrected Completion Notes to say two missed touch points (`lib.rs`, `useSettings.ts`), not one. Also updated Task 7.7 and DESIGN DECISION 2's Residual to reflect the settled ±0.30 em step size. Status stays `review` — this pass only applies the confirmed findings and re-runs verification gates. |
