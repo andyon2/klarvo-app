@@ -161,8 +161,7 @@ development_status:
   11-4-bubble-structurally-above-preview-z-order: done
   11-6-line-spacing-appearance-setting: ready-for-dev
 
-  # Epic 12 — Cloud-Resilienz [L3 feature] — robuste Fallback-Leiter + Audio-Retry-Historie; triggered by 2026-07-02 DeepSeek outage
-  # done 2026-07-06: 12-1 + 12-2 both Andi-device-verified; integrated into v1-ship (merge f53da68); 12-3 deferred (north-star).
+  # Epic 12 — Cloud-Resilienz [L3 feature] — done 2026-07-06 (Evidenz: epic-12-retro-2026-07-06.md); 12-3 deferred
   epic-12: done
   12-1-robust-fallback-ladder-and-pillbar-status: done
   12-2-audio-retry-history: done
