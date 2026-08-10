@@ -23,59 +23,41 @@ Status: ready-for-dev
 
 > **Epic 11 — Cross-Platform Live-Preview.** 11-1..11-4 are done; this is the last open Epic-11
 > item on record. Source is a single backlog line (`docs/backlog.md` §11-6), not a fully-specced
-> epic entry — several design/UI choices below are **not pinned** and are called out explicitly
-> rather than invented (see "OPEN ITEMS").
+> epic entry — the design/UI choices it left open were put to Andi and are now **settled**
+> (see "DESIGN DECISIONS"). Nothing below needs a taste call during dev.
 
-## ⚠️ OPEN ITEMS — needs Andi's confirmation (not invented, not defaulted silently)
+## ✅ DESIGN DECISIONS — settled by Andi, 2026-08-10 (GATE-1)
 
 The backlog source is one paragraph: *"Zeilenabstand (line-height) als einstellbares Setting in
 die Appearance-Kategorie aufnehmen (analog Font-Größe/-Familie/Farbe). Aktuell fix
 `setLineSpacing(0f, 1.7f)`. Desktop-Gegenstück (CSS `--k-leading` / `leading-relaxed`) mitdenken
 für Cross-Platform-SSOT. Neuer Config-Key (camelCase, Backend-Locale-Files), Android- +
-Desktop-Wiring."* It pins: this is a new Appearance-category setting, backed by one new camelCase
-config key, wired on both Android and Desktop. It does **not** pin the following — the dev agent
-must implement a reasonable first pass (documented below) but must **flag these explicitly at
-GATE-4 rather than treat them as settled**:
+Desktop-Wiring."* It pinned only: a new Appearance-category setting, one new camelCase config key,
+wired on both Android and Desktop. The four choices it did not pin were decided as follows —
+**implement these, do not re-open them at GATE-4**:
 
-1. **Control type.** "Analog Font-Größe" could mean literally the same UI pattern (3-tier
-   `KSegmented`: Klein/Mittel/Groß, like `previewFontSize`), or it could just mean "belongs in
-   the same Appearance category" with a different control shape (e.g. a continuous `KSlider`,
-   like `previewBorderWidth`/`previewBgBlur`/`previewBorderRadius`, which are also in that same
-   section). **First-pass choice for this story: 3-tier `KSegmented`**, exactly mirroring
-   `previewFontSize`'s existing pattern (`AppearanceContent.tsx:319-335`), because "Font-Größe" is
-   the specific setting the backlog names first and its control is the closest structural analog
-   for a "how airy does the text look" tri-state. Flag at GATE-4: does discrete 3-tier feel right,
-   or does Andi want continuous control?
-2. **Concrete line-height multiplier values per tier and the default.** No numbers are given.
-   Today's *hardcoded* values are **Android `1.7`** (`ListeningPanelView.kt:355`) and **Desktop
-   `1.625`** (`native_preview.rs:48`, itself chosen to match the Settings-card CSS class
-   `leading-relaxed` = Tailwind's `1.625`). These two existing values already differ across
-   platforms (different renderers: Android `TextView.setLineSpacing`, Desktop raw GDI line
-   stepping) — the backlog's "Cross-Platform-SSOT" phrase does not by itself say whether the new
-   setting must produce *identical* multipliers on both platforms or just the *same 3 tier
-   labels/semantics* with platform-tuned numbers (matching how `previewFontSize`'s own values
-   already differ per platform: Desktop `FONT_PX_MAP` 11/13/15 vs. Android `FONT_PX_SP` 13/15/18,
-   `ListeningPanelView.kt:49` comment). **First-pass choice: keep "medium" = each platform's
-   current hardcoded value (Android 1.7, Desktop 1.625) so the default is a no-op**, and set
-   "small"/"large" as a symmetric ±0.15 offset (Android: 1.55 / 1.7 / 1.85; Desktop: 1.475 / 1.625
-   / 1.775) — arbitrary first-pass numbers, exactly the kind of thing 11-3's own "first-pass
-   numbers, confirm at real-device GATE-4" precedent existed for. **Must be visually confirmed on
-   both a real Android device and a real Windows build before this story can close** — do not
-   accept these numbers as final without that round.
-3. **Label wording.** The Appearance section mixes German (`"Schriftgröße"`, `"Klein/Mittel/Groß"`,
-   `"Darstellung"`) and English (`"Font family"`, `"Bg blur"`, `"Corner radius"`) labels inconsistently
-   already. First-pass: German section label `"Zeilenabstand"` (matches the backlog's own title
-   verbatim) with segmented options `"Kompakt" / "Normal" / "Locker"` — not previously used
-   anywhere in this codebase, purely a first-pass guess. Flag for Andi at GATE-4/review.
-4. **Live preview-card fidelity.** `previewFontSize` drives the Settings-panel's own live preview
-   card (`AppearanceContent.tsx:124-140`, inline `fontSize: FONT_PX_MAP[...]`) but that card's
-   `className="leading-relaxed"` is currently a **hardcoded Tailwind class**, not wired to any
-   config value. For the new setting to be "analog Font-Größe" in the way that matters most
-   (what the user sees update live while adjusting it), the preview card should switch from the
-   static class to an inline `lineHeight` style driven by the new field, mirroring the
-   `fontSize` inline-style pattern already used one property below it. **This is an assumption,
-   not explicitly requested in the one-line backlog item — flag if Andi expects the preview card
-   untouched.**
+1. **Control type → 3-tier `KSegmented`.** Exactly the `previewFontSize` pattern
+   (`AppearanceContent.tsx:319-335`), not a continuous `KSlider`. Rationale: three discrete steps
+   are quicker to hit than hunting for a good value on a slider, and the control sits directly under
+   "Schriftgröße", which has the same shape. Value domain `"small" | "medium" | "large"`.
+2. **Values → same tier semantics, platform-tuned numbers; "medium" is a no-op.** The two renderers
+   (Android `TextView.setLineSpacing` vs. Desktop raw GDI line stepping) keep their own multipliers,
+   like `previewFontSize` already does (Desktop `FONT_PX_MAP` 11/13/15 vs. Android `FONT_PX_SP`
+   13/15/18). "medium" = each platform's current hardcoded value — **Android `1.7`**
+   (`ListeningPanelView.kt:355`), **Desktop `1.625`** (`native_preview.rs:48`) — so nothing changes
+   visually until the user touches the control. Explicitly rejected: identical multipliers on both
+   platforms, because that would silently alter today's Desktop appearance.
+   **Residual (still open, and the only thing GATE-4 must judge):** "small"/"large" as a symmetric
+   ±0.15 offset (Android 1.55 / 1.7 / 1.85; Desktop 1.475 / 1.625 / 1.775) are **first-pass numbers,
+   not a decision.** They must be looked at on a real Android device *and* a real Windows build; the
+   step size may need to change. Same precedent as 11-3's "first-pass numbers, confirm at GATE-4".
+3. **Labels → German `"Zeilenabstand"` with `"Kompakt" / "Normal" / "Locker"`.** Rejected:
+   `"Klein/Mittel/Groß"` (word-for-word reuse of the font-size labels reads wrong for spacing) and
+   an English label. The section stays mixed-language as it already is — not this story's job.
+4. **Settings preview card → wire it up.** The card at `AppearanceContent.tsx:124-140` must switch
+   its hardcoded `className="leading-relaxed"` for an inline `lineHeight` style driven by the new
+   field, mirroring the `fontSize` inline-style pattern one property below. Adjusting the setting
+   without seeing it change was rejected as a blind flight.
 
 ## Story
 
@@ -91,7 +73,7 @@ hardcoded, platform-mismatched line-height values.
 - One new config field (`AppConfig.preview_line_spacing: String` in Rust, camelCase
   `previewLineSpacing` on the wire) with a 3-tier value domain (`"small" | "medium" | "large"`,
   mirroring `preview_font_size`'s exact domain shape) and a serde default that preserves today's
-  behavior (see OPEN ITEM 2).
+  behavior (see DESIGN DECISION 2).
 - Full cross-platform wiring for the new field, following the **exact** `preview_font_size`
   precedent end-to-end (this is the load-bearing reference for every file this story touches):
   - `src-tauri/src/config/mod.rs`: struct field + doc comment + `default_preview_line_spacing()`
@@ -117,9 +99,9 @@ hardcoded, platform-mismatched line-height values.
   - `src/components/settings/AppearanceContent.tsx`: new prop pair
     (`localPreviewLineSpacing`/`setLocalPreviewLineSpacing`) threaded from `SettingsPanel.tsx`,
     plus a new control block placed directly after the existing "Font-size picker" block
-    (`:319-335`, same `KSegmented` pattern per OPEN ITEM 1) and the live-preview-card wiring per
-    OPEN ITEM 4.
-  - `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt`: `previewLineSpacing: String = "small"`
+    (`:319-335`, same `KSegmented` pattern per DESIGN DECISION 1) and the live-preview-card wiring per
+    DESIGN DECISION 4.
+  - `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt`: `previewLineSpacing: String = "medium"` (NOT `"small"` — unlike `previewFontSize`, the default must be the no-op tier per DESIGN DECISION 2)
     field on `Config` + JSON parse (`json.optString(...)`) + inclusion in the config-construction
     call, mirroring `previewFontSize` (`:115`, `:365`, `:436`).
   - `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt`: a `LINE_SPACING_MULT` map
@@ -155,7 +137,7 @@ hardcoded, platform-mismatched line-height values.
   body-text styling, not preview-panel rendering, and are OUT of scope). The backlog's `--k-leading`
   reference appears aspirational/inaccurate against the current codebase; do not invent a design
   token that doesn't exist — wire the new config value directly into `native_preview.rs`'s render
-  path and (per OPEN ITEM 4) `AppearanceContent.tsx`'s inline style, not into a nonexistent CSS var.
+  path and (per DESIGN DECISION 4) `AppearanceContent.tsx`'s inline style, not into a nonexistent CSS var.
 
 ## Acceptance Criteria
 
@@ -165,7 +147,7 @@ When the app loads it (Rust `AppConfig` deserialization, or Android `KlarvoApi.C
 parse),
 Then deserialization succeeds without error, `preview_line_spacing` (Rust) /
 `previewLineSpacing` (Android/TS) resolves to a default that reproduces today's hardcoded
-line-height behavior (Android `1.7`, Desktop `1.625` — see OPEN ITEM 2 default choice),
+line-height behavior (Android `1.7`, Desktop `1.625` — see DESIGN DECISION 2 default choice),
 And no config migration write fires for this field alone (same guarantee `preview_font_size` has,
 `config/mod.rs:4227-4253`),
 And the serialized JSON key is `previewLineSpacing` (camelCase), never `preview_line_spacing`.
@@ -179,7 +161,7 @@ warns about, `SettingsPanel.tsx:339`),
 And before Save, the dirty-state indicator (Save button enabled/"unsaved changes") reacts to a
 change in the new control exactly as it does for `previewFontSize` today,
 And the live-preview card in the Settings panel updates its rendered line spacing immediately
-when the control changes, without requiring Save (per OPEN ITEM 4 — flag if this turns out
+when the control changes, without requiring Save (per DESIGN DECISION 4 — flag if this turns out
 infeasible or unwanted).
 
 **AC-3 (Desktop native preview renders the configured line spacing):**
@@ -228,9 +210,10 @@ Appearance category's data model and UI, not a refactor of the existing fields.
 - **Real Android device required (GATE-4, AC-4)** — Andi confirms the new control appears in
   Android's Settings/Appearance UI, changes the preview panel's rendered line spacing, and
   survives a save/reload.
-- **Explicitly resolve OPEN ITEMS 1-4 with Andi** at or before this GATE-4 round — the control
-  type, concrete tier values, label wording, and preview-card fidelity are first-pass engineering
-  choices in this story, not confirmed design decisions.
+- **Design decisions 1-4 are settled (GATE-1, 2026-08-10)** — control type, value semantics, labels
+  and preview-card wiring must NOT be re-opened at GATE-4. The single remaining judgement call for
+  this round: do the **±0.15 step sizes** look right for "Kompakt"/"Locker" on the real device and
+  the real Windows build, or is the step too small/too large?
 
 ## Tasks / Subtasks
 
@@ -273,18 +256,18 @@ Appearance category's data model and UI, not a refactor of the existing fields.
     dirty-forever trap spot, `:339-340`) + dirty-check (`:425`) + save-payload inclusion, + prop
     threading into `AppearanceContent`.
 
-- [ ] **Task 5 — Appearance UI control** (AC-2, OPEN ITEMS 1/3/4)
+- [ ] **Task 5 — Appearance UI control** (AC-2, DESIGN DECISIONS 1/3/4)
   - [ ] 5.1 Add the new `KSegmented` control block to `AppearanceContent.tsx`, placed after the
     Font-size block (`:319-335`), using the OPEN-ITEM-3 first-pass labels.
   - [ ] 5.2 Wire the live-preview card (`:124-140`) to reflect the new value live (inline
-    `lineHeight` style replacing the hardcoded `leading-relaxed` class) per OPEN ITEM 4.
+    `lineHeight` style replacing the hardcoded `leading-relaxed` class) per DESIGN DECISION 4.
   - [ ] 5.3 If `hidePanelForm`/`hideBgBlur`-style Android hiding is needed for this control,
     determine and document why (first-pass expectation: **not needed** — unlike panel-form-preset
     and bg-blur, line-spacing is meaningful and renderable on both platforms, so no
     `hideLineSpacing` prop is expected — confirm this holds and don't add one speculatively).
 
 - [ ] **Task 6 — Android config + rendering wiring** (AC-1, AC-4)
-  - [ ] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "small"` to `Config` (mirror
+  - [ ] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "medium"` to `Config` (mirror the shape of
     `:115`), JSON parse (`:365`), constructor call inclusion (`:436`).
   - [ ] 6.2 `ListeningPanelView.kt`: add a `LINE_SPACING_MULT` map (mirror `FONT_PX_SP`, `:49`,
     using the OPEN-ITEM-2 Android multiplier values), consult it in `applyAppearance` (`:251-269`)
@@ -307,9 +290,9 @@ Appearance category's data model and UI, not a refactor of the existing fields.
     `scripts/sync-and-build.ps1`.
   - [ ] 7.6 **GATE-4b — real Android device**: Andi confirms AC-2 (Settings UI appears/works) and
     AC-4 (preview panel line-spacing renders correctly) on the real Xiaomi/HyperOS device.
-  - [ ] 7.7 Resolve OPEN ITEMS 1-4 with Andi at GATE-4; update Completion Notes with the final
-    decisions (control type, tier values, labels, preview-card behavior) so this story's history
-    reflects what actually shipped, not just the first-pass guesses.
+  - [ ] 7.7 Confirm the **±0.15 step size** with Andi at GATE-4 (the only design residual — items
+    1-4 were settled at GATE-1, 2026-08-10) and record the final multipliers in Completion Notes,
+    so this story's history reflects what actually shipped rather than the first-pass numbers.
 
 ## Dev Notes
 
@@ -343,7 +326,7 @@ Desktop `FONT_PX_MAP` = `{small:11, medium:13, large:15}` (`AppearanceContent.ts
 "Story 11-3 device feedback pass rescale... Android-only; desktop's FONT_PX_MAP is untouched").
 This establishes that per-platform tuning of the *same tier labels* to different renderer-specific
 numeric values is the established, sanctioned pattern in this codebase — apply the same reasoning
-to line-spacing's OPEN ITEM 2 multiplier values rather than forcing numeric identity across
+to line-spacing's DESIGN DECISION 2 multiplier values rather than forcing numeric identity across
 platforms.
 
 ### Desktop preview rendering moved to native Win32/GDI in Epic 10 — `native_preview.rs` is the only render path
@@ -376,7 +359,7 @@ than silently building a new locale mechanism.
 ### References
 
 - `docs/backlog.md` §"11-6 (Backlog) — Zeilenabstand als Appearance-Setting" — the sole source
-  document (one paragraph; see OPEN ITEMS for what it does and does not pin).
+  document (one paragraph; see DESIGN DECISIONS for what it pinned and what Andi settled on 2026-08-10).
 - `_bmad-output/implementation-artifacts/11-3-android-preview-box-device-feedback-pass.md` —
   precedent for "first-pass numbers, confirm at real-device GATE-4" discipline (the `FONT_PX_SP`
   rescale itself was exactly this kind of first-pass-then-confirmed number).
@@ -403,9 +386,9 @@ than silently building a new locale mechanism.
 - **"OPEN ITEMS" section discipline:** 11-4 pinned a first-pass engineering choice while
   explicitly flagging it as unconfirmed, then closed the loop with a real Design Decision entry
   once GATE-4 forced the actual answer (Design Decision 4, added mid-story after a GATE-4
-  failure). This story's OPEN ITEMS 1-4 should be resolved the same way — don't leave them
-  dangling in Completion Notes; either get Andi's answer before GATE-4 or let GATE-4 force it and
-  document the resolution.
+  failure). This story went the cheaper route: its items 1-4 were put to Andi at GATE-1 (2026-08-10)
+  and answered before any code was written, so GATE-4 only has to judge the step size. Same lesson,
+  applied earlier in the cycle.
 - **GATE-4 = real device/build only, never emulator/Linux tests** — 11-2/11-3/11-4 all required
   Andi's real hardware for the final visual confirmation; this story additionally needs a real
   **Windows** build (new territory relative to 11-2..11-4, which were Android-only) because it
@@ -428,3 +411,4 @@ than silently building a new locale mechanism.
 | Date | Change |
 |------|--------|
 | 2026-07-09 | Story created (bmad-create-story) from `docs/backlog.md` §11-6. Source is a single backlog paragraph, not a fully-specced epic entry — 4 design/UI/intent items (control type, concrete tier values, label wording, live-preview-card fidelity) are not pinned and are recorded as OPEN ITEMS rather than defaulted silently. Status: ready-for-dev. |
+| 2026-08-10 | GATE-1 with Andi: all 4 open design items settled — 3-tier `KSegmented` (not a slider); platform-tuned multipliers with `"medium"` = today's hardcoded value (identical cross-platform numbers explicitly rejected); labels `"Zeilenabstand"` / `"Kompakt" \| "Normal" \| "Locker"`; Settings preview card wired to the new field. Only residual for GATE-4: the ±0.15 step size. Also corrected the Android `Config` default in Tasks 6.1 from `"small"` to `"medium"` (it contradicted the no-op-default decision). Status stays `ready-for-dev` — no code written. |
