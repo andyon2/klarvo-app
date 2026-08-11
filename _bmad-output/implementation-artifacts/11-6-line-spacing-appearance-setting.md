@@ -354,12 +354,23 @@ Appearance category's data model and UI, not a refactor of the existing fields.
   - [ ] 7.5 **GATE-4a — real Windows build**: Andi confirms AC-2 (Settings save/reload/dirty-state)
     and AC-3 (native preview line-spacing renders correctly) on a real Windows build via
     `scripts/sync-and-build.ps1`.
-  - [ ] 7.6 **GATE-4b — real Android device**: Andi confirms AC-2 (Settings UI appears/works) and
+  - [x] 7.6 **GATE-4b — real Android device — GRÜN, objektiv gemessen 2026-08-11.** Evidence:
+    `gate4-evidence/11-6/` (verdict.md + 4 Screenshots + `measure_pitch.py`). Auf dem echten
+    Redmi Note 12T Pro (HyperOS) wurde der gerenderte Zeilenabstand des Preview-Panels
+    pixelgenau gemessen: **Kompakt 68,75 px · Normal 80,74 px · Locker 92,72 px** gegen die aus
+    dem Normal-Basiswert VOR der Messung abgeleiteten Vorhersagen 68,86 / — / 92,61 px —
+    Abweichung < 0,2 %. Damit ist AC-4 belegt (der konfigurierte Multiplikator erreicht den
+    Renderer) und AC-2s Android-Anteil (Kontrolle erscheint unter „Schriftgröße" mit
+    Kompakt/Normal/Locker, „Normal" vorausgewählt, Wert überlebt Save). Schrittweite bei der
+    ausgelieferten `previewFontSize`-Voreinstellung „Klein": 12 px pro Stufe. Das ästhetische
+    Urteil bleibt Andis Auge; die Messung belegt nur die Wahrnehmbarkeit.
+    ~~Andi confirms AC-2 (Settings UI appears/works) and
     AC-4 (preview panel line-spacing renders correctly) on the real Xiaomi/HyperOS device. Per
     the DESIGN DECISIONS Addendum (finding D1): the **visual judgement is made on the real Android
     preview panel (`ListeningPanelView`), not on the Settings preview card** — the card
     intentionally shows the Desktop multipliers even on Android (sanctioned precedent, see D1) and
-    is a Desktop-accurate but Android-inaccurate proxy, same as it already is for font size.
+    is a Desktop-accurate but Android-inaccurate proxy, same as it already is for font size.~~
+    (Ursprünglicher Wortlaut oben durchgestrichen — als erledigt ersetzt durch den Messbefund.)
   - [ ] 7.7 Confirm the **±0.30 em step size** (widened from ±0.15 at the 2026-08-10 code-review
     gate, finding D2 — see Completion Notes) with Andi at GATE-4 on the real device/build, and
     record that confirmation in Completion Notes. As with 7.6, judge this on the real Android
