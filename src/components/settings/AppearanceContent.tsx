@@ -26,11 +26,13 @@ const FONT_PX_MAP: Record<string, number> = { small: 11, medium: 13, large: 15 }
 // resolves to on Desktop (`native_preview.rs:155`) — has a natural line cell of
 // ~1.330 em, and `DrawTextW` draws into a rect exactly `line_h` high without
 // `DT_NOCLIP`, so a multiplier below ~1.330 risks clipping diacritics/
-// descenders; 1.35 keeps headroom. This card intentionally uses the DESKTOP
-// multipliers even when rendered on Android — sanctioned precedent, same as
-// FONT_PX_MAP (11/13/15) vs Android's FONT_PX_SP (13/15/18); see the story's
-// review finding D1/F2. The real GATE-4b visual judgement is made on the
-// actual preview panel, not this card.
+// descenders; 1.35 keeps headroom. These numbers are no longer Desktop-only:
+// the GATE-4 device pass (2026-08-11) moved Android onto the same rendered
+// scale, so this card now tells the truth on both platforms. Android reaches
+// it with different literals — `setLineSpacing` multiplies the natural line
+// box, so ListeningPanelView.kt divides these by a measured 1.3285; its
+// FONT_PX_SP is back on 11/13/15. The real visual judgement still happens on
+// the actual preview panel, not on this card.
 const LINE_SPACING_MULT: Record<string, number> = { small: 1.35, medium: 1.625, large: 1.925 };
 
 // --- Props -------------------------------------------------------------------
