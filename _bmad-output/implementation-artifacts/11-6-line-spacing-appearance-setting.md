@@ -2,7 +2,7 @@
 story: "11.6"
 epic: "11"
 title: "Line spacing as an Appearance setting"
-status: review
+status: done
 track: L2-feature
 gatedBy: []
 buildsOn: ["6.3", "11-2", "11-3"]
@@ -17,7 +17,7 @@ inputDocuments:
 
 # Story 11.6: Line spacing as an Appearance setting
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -338,7 +338,15 @@ Appearance category's data model and UI, not a refactor of the existing fields.
   - [x] 7.1 `cargo test` green (new + existing), `cargo check` green.
   - [x] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
   - [x] 7.3 `npm run build` (TypeScript strict mode gate) green.
-  - [ ] 7.4 `scripts/android-smoke.sh`-equivalent clean build/install — **build succeeded, install
+  - [x] 7.4 `scripts/android-smoke.sh` clean build/install — **DONE 2026-08-11 at GATE 4.** The
+    signing-key mismatch below was diagnosed rather than worked around: the app on the device
+    carries this machine's `~/.android/debug.keystore` (`e6aaad…`), not `voxlit-debug.keystore`;
+    re-signing with the matching key installed cleanly over Andi's live app with no data loss.
+    `scripts/android-smoke.sh` then ran green end-to-end (3 JVM tests, Kotlin compile, Gradle
+    assembly, `adb install` to `100.112.41.70:5555`). The change reaching the build tree was
+    verified explicitly (`grep NATURAL_LINE_BOX` in `gen/android/.../ListeningPanelView.kt`) —
+    a 4-second build is otherwise indistinguishable from a no-op.
+    ~~**build succeeded, install
     and smoke did NOT run** (corrected 2026-08-10 at the code-review gate, finding D3; the previous
     checked-off state overclaimed). What was executed: the heavier full
     `npx tauri android build --target aarch64` (via `android-build.sh`, confirmed necessary per the
@@ -350,10 +358,15 @@ Appearance category's data model and UI, not a refactor of the existing fields.
     it), so the app was never installed and no smoke (emulator or device) ever executed. The only
     runtime evidence for the Kotlin render path (`ListeningPanelView.kt`'s `applyAppearance`/
     `LINE_SPACING_MULT`) is the compile-verify below, not an actual run. This task is left unchecked
-    — the conductor runs the install/smoke at GATE 4, not this pass.
-  - [ ] 7.5 **GATE-4a — real Windows build**: Andi confirms AC-2 (Settings save/reload/dirty-state)
-    and AC-3 (native preview line-spacing renders correctly) on a real Windows build via
-    `scripts/sync-and-build.ps1`.
+    — the conductor runs the install/smoke at GATE 4, not this pass.~~
+  - [x] 7.5 **GATE-4a — real Windows build — GRÜN, bestätigt von Andi 2026-08-11.** AC-2 und AC-3
+    auf einem echten Windows-Release-Build (`D:\apps\klarvo\...\klarvo.exe`, gebaut 14:27, 44,1 MB)
+    abgenommen; insbesondere kein Anschneiden von Umlaut-Punkten oder Unterlängen auf der Stufe
+    „Kompakt" (die R-D1-Restbeobachtung zu Segoe UIs ≈1,330-em-Zeilenzelle gegen den ungeclippten
+    `DrawTextW`-Rect). Desktop wurde nach dieser Abnahme **nicht mehr angefasst** — die Revision
+    vom selben Tag ist Android-only. Nebenbefund für den Backlog: `sync-and-build.ps1` war
+    repo-weit gebrochen (`package-lock.json` pinnt `@tauri-apps/plugin-log` nicht, und das Skript
+    fährt nach dem robocopy sein eigenes `npm install`, das jeden Pin wieder abräumt).
   - [x] 7.6 **GATE-4b — real Android device — GRÜN, objektiv gemessen 2026-08-11.** Evidence:
     `gate4-evidence/11-6/` (verdict.md + 4 Screenshots + `measure_pitch.py`). Auf dem echten
     Redmi Note 12T Pro (HyperOS) wurde der gerenderte Zeilenabstand des Preview-Panels
@@ -371,10 +384,21 @@ Appearance category's data model and UI, not a refactor of the existing fields.
     intentionally shows the Desktop multipliers even on Android (sanctioned precedent, see D1) and
     is a Desktop-accurate but Android-inaccurate proxy, same as it already is for font size.~~
     (Ursprünglicher Wortlaut oben durchgestrichen — als erledigt ersetzt durch den Messbefund.)
-  - [ ] 7.7 Confirm the **±0.30 em step size** (widened from ±0.15 at the 2026-08-10 code-review
-    gate, finding D2 — see Completion Notes) with Andi at GATE-4 on the real device/build, and
-    record that confirmation in Completion Notes. As with 7.6, judge this on the real Android
-    preview panel (`ListeningPanelView`) at GATE-4b, not on the Settings preview card (finding D1).
+
+    **NACHTRAG 2026-08-11 — die obigen Zahlen sind überholt (Revision nach Andis Augenschein).**
+    Die Messung belegte, dass der Multiplikator den Renderer erreicht — nicht, dass die Skala
+    richtig *liegt*. Andi sah am Gerät, dass jede Android-Stufe rund zwei Rasten lockerer saß als
+    ihre gleichnamige Desktop-Stufe; er stand bereits auf `small`/`small` und hatte nichts
+    Kleineres mehr. Ursache war die Annahme, die diese Story selbst als offen markiert hatte
+    („to be confirmed at GATE-4"): der natürliche Zeilenkasten wurde mit ~1,2 geschätzt, gemessen
+    sind **1,3285** (80,74 px ÷ 35,75 px ÷ 1,70). Siehe Change Log 2026-08-11 und Commit `117e244`.
+  - [x] 7.7 **Schrittweite bestätigt — aber das ±0,30-em-Schema ist abgelöst (2026-08-11).** Die
+    ±0,30 em waren korrekt für Desktop und sind dort unverändert. Für Android sind sie hinfällig:
+    „per-Plattform normalisiert" beruhte auf dem falschen ~1,2-Faktor, weshalb die Normalisierung
+    nicht normalisierte. Android leitet seine Multiplikatoren jetzt aus den Desktop-Werten ab
+    (`desktop / NATURAL_LINE_BOX`), statt eine eigene Schrittweite zu wählen — die Schrittweite
+    ist damit per Konstruktion identisch mit Desktops. Andi hat die Stufen am 2026-08-11 am Gerät
+    abgenommen („sieht gut aus").
 
 ### Review Findings
 
@@ -703,3 +727,4 @@ the prior fix-round pass:**
 | 2026-08-10 | **bmad-dev-story: implemented Tasks 1-7.1-7.4 (AC-1, AC-2, AC-3 code path, AC-4 code path).** Full cross-platform mirror of the `preview_font_size` precedent landed exactly per the story's file-by-file plan, plus one extra touch point the plan missed (`useSettings.ts`'s save-wrapper) and one extra `SettingsPatch` test fixture only visible under `cargo test`. 657/657 Rust tests green (new spec test included), `cargo check` clean, TS strict build clean, Android theme drift-gate clean, Kotlin `armDebug` compile-verify green, and a full `tauri android build --target aarch64` succeeded end-to-end (manually signed since the script's Dropbox-copy step assumes a WSL host this machine isn't). Device install was blocked by a signing-key mismatch with the app already on Andi's phone — did not force-uninstall his live app to work around it. Status → `review`. **GATE-4a (real Windows build) and GATE-4b (real Android device) are still Andi's action**, including confirming the first-pass ±0.15 step size (Task 7.7) — same precedent as Story 11-4's Task 4.4. |
 | 2026-08-10 | **Code-review fix pass** (`bmad-code-review` findings D1/D2/D3/P1/P2/P3, human-decided). **D2/F1:** widened the ±0.15 step size to a symmetric ±0.30 em, per-platform normalized — Desktop 1.325/1.625/1.925, Android 1.45/1.7/1.95 (`medium` unchanged); rationale recorded next to the values. **D1/F2:** accepted the Settings-preview-card Android/Desktop divergence as precedent-consistent (same class as `FONT_PX_MAP`/`FONT_PX_SP`); GATE-4b judges the real preview panel, not the card. **D3/F6:** un-checked and reworded Task 7.4 — the prior checked state overclaimed an install/smoke that never ran (build succeeded, `adb install` failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, no smoke executed); left for the conductor at GATE 4. **P1/F3:** reworded premature "confirmed at GATE-4" comments in `ListeningPanelView.kt`/`native_preview.rs` to "to be confirmed at GATE-4". **P2/F4:** added the mandated `surface-smoke-checklist.md` items #1/#3/#6 to the DoD with executed checks and outcomes (all pass). **P3/F5:** added `src-tauri/src/lib.rs` to the IN-scope and Dev Notes occurrence lists, and corrected Completion Notes to say two missed touch points (`lib.rs`, `useSettings.ts`), not one. Also updated Task 7.7 and DESIGN DECISION 2's Residual to reflect the settled ±0.30 em step size. Status stays `review` — this pass only applies the confirmed findings and re-runs verification gates. |
 | 2026-08-10 | **Re-review fix pass** (`bmad-code-review` re-review findings R-D1/R-P1-R-P6, human-decided). **R-D1 (Desktop only):** raised Desktop `"small"` 1.325 → **1.35** to keep headroom above Segoe UI's ≈1.330 em line cell against `native_preview.rs`'s unclipped `DrawTextW` rect; Android's `LINE_SPACING_MULT` is UNCHANGED. Final Desktop values 1.35/1.625/1.925 (asymmetric -0.275 em / +0.300 em step); rationale recorded next to the values in both `native_preview.rs` and `AppearanceContent.tsx`. **R-P1:** added `src/hooks/useSettings.ts:94, 117` to the IN list and Dev Notes occurrence list (P3/F5 was only half-carried). **R-P2:** corrected the `lib.rs` touch points' label from "`AppConfig`/config-construction sites" to "`SettingsView` DTO field + three `#[cfg(test)]` fixtures". **R-P3:** corrected the original "Review Findings" section's drifted line citations against the final committed state. **R-P4:** updated and committed `deferred-work.md`'s 11-6 block (was uncommitted and named the superseded ±0.15 multipliers). **R-P5:** carried the "GATE-4b judges the real panel, not the card" instruction into Tasks 7.6/7.7 directly. **R-P6:** completed the `wrap_text_lines` doc comment's formula to include `text_scale`. Status stays `review` — this pass only applies the confirmed findings and re-runs verification gates. |
+| 2026-08-11 | **GATE 4 abgeschlossen — Story done.** **GATE-4a (Windows):** Andi bestätigt AC-2 + AC-3 am echten Release-Build; kein Clipping von Umlaut-Punkten/Unterlängen auf „Kompakt" (die R-D1-Restbeobachtung ist damit erledigt). Der Build war zunächst repo-weit gebrochen — `package-lock.json` pinnt `@tauri-apps/plugin-log` nicht, und `sync-and-build.ps1` fährt nach dem robocopy sein eigenes `npm install`, das jeden Pin wieder abräumt; für diesen Gate mit expliziten `--no-save`-Pins und einem npm-freien Skript umgangen, als Backlog-Punkt notiert. **GATE-4b (Android):** zuerst grün gemessen (68,75/80,74/92,72 px, < 0,2 % gegen die vorab abgeleitete Vorhersage) — was aber nur belegt, dass der Multiplikator den Renderer erreicht, nicht dass die Skala richtig liegt. **Revision nach Andis Augenschein (Commit `117e244`, Android-only):** jede Android-Stufe saß ~2 Rasten lockerer als ihre gleichnamige Desktop-Stufe, und Andi stand bereits auf `small`/`small` ohne kleinere Option. Ursache war die von dieser Story selbst als offen markierte Annahme („to be confirmed at GATE-4"), der natürliche Zeilenkasten von `setLineSpacing(0f, mult)` sei ~1,2× — gemessen **1,3285**. Deshalb leiten sich Androids Multiplikatoren jetzt als `desktop_wert / NATURAL_LINE_BOX` ab statt handgewählt zu sein, und `FONT_PX_SP` geht auf Desktops 11/13/15 zurück (Story 11-3 hatte auf 13/15/18 hochskaliert). Nachgemessen mit vorab notierter Vorhersage: Kompakt 40,84 → **41,4 px**, Normal 49,16 → **49,4 px**, Locker 58,23 → **58,35 px** (≤ 1,4 %); die Vorhersage unterstellte 11 sp und belegt damit die Schriftänderung mit. Andi hat die Stufen am Gerät abgenommen. Desktop nach GATE-4a nicht mehr angefasst. Nebenbei „medium" aus zwei Literal-Wiederholungen (`15f`/`1.7f`) in abgeleitete Defaults überführt — sie wären bei dieser Änderung sonst auseinandergelaufen. Status → `done`. |

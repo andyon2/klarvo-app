@@ -159,7 +159,7 @@ development_status:
   11-2-android-live-preview-port: done
   11-3-android-preview-box-device-feedback-pass: done
   11-4-bubble-structurally-above-preview-z-order: done
-  11-6-line-spacing-appearance-setting: review
+  11-6-line-spacing-appearance-setting: done
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — done 2026-07-06 (Evidenz: epic-12-retro-2026-07-06.md); 12-3 deferred
   epic-12: done

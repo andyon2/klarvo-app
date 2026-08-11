@@ -6,8 +6,11 @@
 
 | Teil-Gate | Status | Grundlage |
 |---|---|---|
-| **GATE-4b — Android (AC-2 UI, AC-4 Render)** | **GRÜN** | Objektiv gemessen am echten Gerät, s. u. |
-| **GATE-4a — Windows (AC-3 GDI-Render)** | **OFFEN** | Nicht unattended herstellbar: Live-Vorschau erscheint nur während echter Aufnahme (Mikrofon) |
+| **GATE-4b — Android (AC-2 UI, AC-4 Render)** | **GRÜN** | Objektiv gemessen am echten Gerät, s. u. — danach revidiert, s. „Revision" |
+| **GATE-4a — Windows (AC-3 GDI-Render)** | **GRÜN** | Von Andi am echten Release-Build abgenommen, 2026-08-11 |
+
+> **Achtung, Reihenfolge:** die Messwerte weiter unten sind der Stand **vor** der Revision vom
+> selben Tag. Die aktuell ausgelieferte Skala steht im Abschnitt „Revision" am Ende.
 
 ## Zielgerät
 
@@ -53,15 +56,62 @@ Stufe** — klar wahrnehmbar. Das war der Zweck der Verbreiterung auf ±0,30 em.
 
 ## Was NICHT geprüft wurde — Rest für den Menschen
 
-1. **AC-3, Windows-GDI-Render.** Die native Vorschau (`native_preview.rs`) zeichnet nur während
-   einer echten Aufnahme; ein Mikrofon ist von hier nicht bespielbar. Braucht einen echten
-   Windows-Build (`scripts/sync-and-build.ps1`).
-2. **R-D1-Restbeobachtung.** „Kompakt" = 1,35 liegt knapp über Segoe UIs natürlicher Zeilenzelle
-   (≈1,330 em). `DrawTextW` zeichnet ohne `DT_NOCLIP` in ein exakt `line_h` hohes Rechteck
-   (`native_preview.rs:770`). Beim Windows-Test gezielt auf **Umlaut-Punkte und Unterlängen**
-   in der Stufe „Kompakt" achten.
-3. **Ästhetisches Urteil.** Ob 12 px pro Stufe sich richtig *anfühlen*, ist Andis Auge — die
-   Messung sagt nur, dass die Stufe wahrnehmbar ist.
+1. ~~**AC-3, Windows-GDI-Render.**~~ **Erledigt 2026-08-11:** Andi hat AC-2 + AC-3 am echten
+   Release-Build abgenommen (`klarvo.exe`, gebaut 14:27, 44,1 MB).
+2. ~~**R-D1-Restbeobachtung.**~~ **Erledigt:** kein Anschneiden von Umlaut-Punkten oder
+   Unterlängen auf „Kompakt" — die Headroom-Anhebung 1,325 → 1,35 über Segoe UIs ≈1,330-em-Zelle
+   hat gehalten.
+3. **Ästhetisches Urteil.** → hat das Gate gekippt, siehe Revision.
+
+## Revision 2026-08-11 — Android auf Desktop-Parität (Commit `117e244`)
+
+Andis Augenschein widersprach dem grünen Messbefund — zu Recht. Die Messung belegte, dass der
+Multiplikator den Renderer erreicht; sie sagte **nichts** darüber, ob die Skala richtig *liegt*.
+Am Gerät saß jede Android-Stufe rund zwei Rasten lockerer als ihre gleichnamige Desktop-Stufe,
+und Andis Konfiguration stand bereits auf `small`/`small` — es gab nichts Kleineres mehr.
+
+**Ursache.** Genau die Annahme, die diese Story selbst als offen markiert hatte
+(„to be confirmed at GATE-4"): `setLineSpacing(0f, mult)` multipliziert den *natürlichen
+Zeilenkasten*, und der Kommentar schätzte ihn auf ~1,2×. Aus der Messung oben lässt er sich
+exakt herausrechnen: 80,74 px ÷ 35,75 px (13 sp @ Dichte 440, font_scale 1,0) ÷ 1,70 = **1,3285**.
+Die „per-Plattform-Normalisierung" (±0,25 Android gegen ±0,30 Desktop) normalisierte deshalb nicht.
+Androids engste Stufe (effektiv 1,93 × Schriftgröße) entsprach fast exakt Desktops weitester (1,925).
+
+**Änderung** (Android-only; Desktop war zu diesem Zeitpunkt bereits abgenommen):
+Multiplikatoren werden als `desktop_wert / NATURAL_LINE_BOX` **abgeleitet** statt handgewählt, und
+`FONT_PX_SP` geht auf Desktops 11/13/15 zurück (Story 11-3 hatte auf 13/15/18 skaliert).
+
+**Nachmessung**, gleiches Verfahren, Vorhersage vorab im Skriptkopf notiert (`measure-revision.sh`):
+
+| Stufe | Vorhergesagt | Gemessen | Abweichung |
+|---|---|---|---|
+| Kompakt | 40,84 px | **41,4 px** | +1,4 % |
+| Normal | 49,16 px | **49,4 px** | +0,5 % |
+| Locker | 58,23 px | **58,35 px** | +0,2 % |
+
+Die Vorhersage unterstellte 11 sp und belegt damit die Schriftänderung mit: bei den alten 13 sp
+hätte „Kompakt" bei 48,3 px landen müssen, nicht bei 41,4. Andi hat die Stufen am Gerät abgenommen.
+
+**Lehre für den nächsten Gate.** Ein Messbefund kann vollständig korrekt und trotzdem am Ziel
+vorbei sein. „Der konfigurierte Wert erreicht den Renderer" ist eine *Verdrahtungs*-Aussage;
+„die Skala liegt richtig" ist eine *Design*-Aussage und braucht das menschliche Auge oder einen
+plattformübergreifenden Soll-Vergleich. Hier war ein solcher Vergleich möglich und wurde nicht
+gezogen — die Zahlen für beide Plattformen standen die ganze Zeit nebeneinander im Code.
+
+## Messfallen, die diesen Lauf gekostet haben (für die nächste Sitzung)
+
+1. **`monkey -p <pkg> -c LAUNCHER 1` startet nicht nur** — es injiziert danach einen *zufälligen*
+   Tap und verlässt damit den Bildschirm, den man messen wollte. `am start -n <pkg>/.MainActivity`.
+2. **`adb shell am broadcast --es transcript "text mit leerzeichen"`** — die Geräte-Shell zerlegt
+   den Text in Argumente, `-p` erwischt dann ein Wort daraus als Paketnamen (`pkg=groessere`).
+   Das gesamte Remote-Kommando quoten, Text in einfachen Anführungszeichen.
+3. **Der Harness-State ist kleingeschrieben** (`recording`), nicht `RECORDING` — sonst
+   `result=0` ohne jede Wirkung.
+4. **`am force-stop` bringt das Onboarding zurück** („Enable Accessibility Access"), das das
+   Panel verdeckt. Knopf per `uiautomator dump` finden und tippen, Koordinaten nie raten.
+5. **Ein 4-Sekunden-Build ist von einem No-op nicht zu unterscheiden.** Nach jedem Kotlin-Build
+   prüfen, ob die Änderung im *generierten* Baum steht (`grep` in
+   `gen/android/app/src/main/java/...`), nicht nur im getrackten.
 
 ## Nebenbefunde (NICHT Story 11-6 — Backlog-Kandidaten)
 
