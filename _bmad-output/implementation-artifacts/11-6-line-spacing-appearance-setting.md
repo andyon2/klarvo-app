@@ -2,7 +2,7 @@
 story: "11.6"
 epic: "11"
 title: "Line spacing as an Appearance setting"
-status: ready-for-dev
+status: done
 track: L2-feature
 gatedBy: []
 buildsOn: ["6.3", "11-2", "11-3"]
@@ -17,7 +17,7 @@ inputDocuments:
 
 # Story 11.6: Line spacing as an Appearance setting
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -47,10 +47,21 @@ wired on both Android and Desktop. The four choices it did not pin were decided 
    (`ListeningPanelView.kt:355`), **Desktop `1.625`** (`native_preview.rs:48`) — so nothing changes
    visually until the user touches the control. Explicitly rejected: identical multipliers on both
    platforms, because that would silently alter today's Desktop appearance.
-   **Residual (still open, and the only thing GATE-4 must judge):** "small"/"large" as a symmetric
-   ±0.15 offset (Android 1.55 / 1.7 / 1.85; Desktop 1.475 / 1.625 / 1.775) are **first-pass numbers,
-   not a decision.** They must be looked at on a real Android device *and* a real Windows build; the
-   step size may need to change. Same precedent as 11-3's "first-pass numbers, confirm at GATE-4".
+   **Residual — settled 2026-08-10 at the code-review gate (finding D2/F1):** the ±0.15 first-pass
+   offset was widened to a symmetric **±0.30 em** offset, per-platform normalized because Android's
+   `setLineSpacing(0f, mult)` multiplies the font's *natural line height* (~1.2× text size) while
+   Desktop's GDI line stepping and CSS `lineHeight` multiply the *font size* directly — so the two
+   platforms need different raw deltas to move the same ±0.30 em: Desktop 1.325 / 1.625 / 1.925
+   (±0.30), **Android 1.45 / 1.7 / 1.95** (±0.25).
+   **Further residual — settled 2026-08-10 at the re-review gate (finding R-D1, Desktop only):**
+   the Desktop `"small"` value was raised from 1.325 to **1.35** — Segoe UI (the family the default
+   `previewFontFamily` resolves to on Desktop) has a natural line cell of ~1.330 em, and
+   `native_preview.rs`'s `DrawTextW` call draws without `DT_NOCLIP` into a rect exactly `line_h`
+   high, so a multiplier below ~1.330 risked clipping diacritics/descenders. Final Desktop values:
+   **1.35 / 1.625 / 1.925** (an asymmetric -0.275 em / +0.300 em step). Android is UNCHANGED at
+   1.45 / 1.7 / 1.95 — this fix is Desktop-only, since the clipping risk is specific to GDI's
+   unclipped `DrawTextW` rect. What remains for GATE-4 is no longer choosing a step size — only
+   confirming these values look right on a real Android device and a real Windows build.
 3. **Labels → German `"Zeilenabstand"` with `"Kompakt" / "Normal" / "Locker"`.** Rejected:
    `"Klein/Mittel/Groß"` (word-for-word reuse of the font-size labels reads wrong for spacing) and
    an English label. The section stays mixed-language as it already is — not this story's job.
@@ -58,6 +69,17 @@ wired on both Android and Desktop. The four choices it did not pin were decided 
    its hardcoded `className="leading-relaxed"` for an inline `lineHeight` style driven by the new
    field, mirroring the `fontSize` inline-style pattern one property below. Adjusting the setting
    without seeing it change was rejected as a blind flight.
+
+### Addendum — settled at the code-review gate, 2026-08-10 (finding D1)
+
+The Settings preview card (`AppearanceContent.tsx`'s `LINE_SPACING_MULT`) renders on Android with
+the **Desktop** multipliers, not Android's own `ListeningPanelView.kt` values — the card and the
+Android panel diverge. **Decision: accept as precedent-consistent, do not platform-branch or hide
+the card.** This is the same already-shipped divergence `FONT_PX_MAP` (11/13/15) vs. Android's
+`FONT_PX_SP` (13/15/18) already has for `previewFontSize`. Consequence for GATE-4: the **GATE-4b
+visual judgement of the line-spacing values is made on the real Android preview panel
+(`ListeningPanelView`), not on the Settings preview card** — the card is a Desktop-accurate but
+Android-inaccurate proxy, same as it already is for font size.
 
 ## Story
 
@@ -82,6 +104,13 @@ hardcoded, platform-mismatched line-height values.
     (`unwrap_or`) + the `save_settings` command's parameter list + the settings-read response
     struct, mirroring every `preview_font_size` touch point (`:164`, `:223`, `:370-371`, `:472`,
     `:570`, `:684`).
+  - `src-tauri/src/lib.rs`: the `SettingsView` DTO field (`:235`, struct declared at `:121`) plus
+    the three `SettingsView` literal-construction sites inside `#[cfg(test)] mod tests` (`:1037`)
+    that already list `preview_font_size`, mirroring every one of its touch points (`:1155`,
+    `:1227`, `:1293`) — missed by the story's original file-by-file plan (added at the 2026-08-10
+    code-review gate, finding P3; mislabelled as "`AppConfig`/config-construction sites" and
+    corrected to its actual designation and line numbers at the 2026-08-10 re-review, finding
+    R-P2/R-P3).
   - `src-tauri/src/native_preview.rs`: replace the hardcoded `PREVIEW_LINE_HEIGHT` const (`:48`)
     with a `line_height_mult` field on `PreviewConfig`, populated from
     `cfg.preview_line_spacing` in `PreviewConfig::from_app_config` (mirrors the `font_px` mapping
@@ -96,6 +125,10 @@ hardcoded, platform-mismatched line-height values.
     be here or Save stays dirty forever"**, `:339-340`) + dirty-check comparison + inclusion in
     the save payload, mirroring every `previewFontSize` touch point (`:81`, `:216-218`, `:339-340`,
     `:425`).
+  - `src/hooks/useSettings.ts`: `previewLineSpacing` in the `handleSaveSettings` wrapper's
+    positional pass-through between `SettingsPanel`'s `onSaveSettings` prop and
+    `tauri-commands.ts`'s `saveSettings`, mirroring `previewFontSize` (`:94`, `:117`) — missed by
+    the story's original file-by-file plan (added at the 2026-08-10 code-review gate, finding P3).
   - `src/components/settings/AppearanceContent.tsx`: new prop pair
     (`localPreviewLineSpacing`/`setLocalPreviewLineSpacing`) threaded from `SettingsPanel.tsx`,
     plus a new control block placed directly after the existing "Font-size picker" block
@@ -210,89 +243,235 @@ Appearance category's data model and UI, not a refactor of the existing fields.
 - **Real Android device required (GATE-4, AC-4)** — Andi confirms the new control appears in
   Android's Settings/Appearance UI, changes the preview panel's rendered line spacing, and
   survives a save/reload.
-- **Design decisions 1-4 are settled (GATE-1, 2026-08-10)** — control type, value semantics, labels
-  and preview-card wiring must NOT be re-opened at GATE-4. The single remaining judgement call for
-  this round: do the **±0.15 step sizes** look right for "Kompakt"/"Locker" on the real device and
-  the real Windows build, or is the step too small/too large?
+- **Design decisions 1-4 are settled (GATE-1, 2026-08-10); step size is settled (review gate,
+  2026-08-10, finding D2; Desktop "small" further settled at the re-review gate, finding R-D1)** —
+  control type, value semantics, labels, preview-card wiring and the ±0.30 em step size must NOT be
+  re-opened at GATE-4. The single remaining judgement call for this round: do the **1.35 / 1.625 /
+  1.925 (Desktop)** and **1.45 / 1.7 / 1.95 (Android)** values look right for "Kompakt"/"Locker" on
+  the real device and the real Windows build.
+- **Mandatory `docs/surface-smoke-checklist.md` items for a new-config-key story
+  (project-context.md:62), executed 2026-08-10 during the review-fix pass — mechanical check, not
+  a self-attestation:**
+  - **#1 camelCase config key:** verified `AppConfig::preview_line_spacing` carries
+    `#[serde(default = "default_preview_line_spacing")]` under the struct-level
+    `#[serde(rename_all = "camelCase")]` (`config/mod.rs:795-796`), and the inversion-guard test
+    `spec_preview_line_spacing_config_field_default` (`:4272-4303`) asserts the on-disk key is
+    `previewLineSpacing`, not `preview_line_spacing`. **Pass.**
+  - **#3 reactive re-read, not mount-only load:** the native preview overlay is not a persistent
+    webview window — `pipeline.rs:751-757` recreates it via `PreviewConfig::from_app_config`
+    (fresh config-lock read) every time a recording starts, so a value saved in Settings takes
+    effect on the next preview show, not only after an app restart (same recreate-per-recording
+    pattern as the rest of `native_preview.rs`). **Pass.**
+  - **#6 multi-hop save chain traced end-to-end:** `preview_line_spacing` walked through every hop
+    — `SettingsPatch` (`commands/settings.rs:166`) → merge (`:375-376`) → settings-read response
+    (`:693`) → `lib.rs`'s `SettingsView` DTO field + three test fixtures (`:235, 1155, 1227,
+    1293`) → `types.ts:108-109` → `tauri-commands.ts:99, 314, 372` → `SettingsPanel.tsx`
+    state/resync/dirty-check/save-payload
+    (`:220-221, 345-346, 432, 571`) → `useSettings.ts:94, 117` → `AppearanceContent.tsx` prop
+    threading (`:58-59, 100`). No intermediate hop drops the field. **Pass.**
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Rust config field + backend wiring** (AC-1)
-  - [ ] 1.1 Add `preview_line_spacing: String` to `AppConfig` (`config/mod.rs`) with
+- [x] **Task 1 — Rust config field + backend wiring** (AC-1)
+  - [x] 1.1 Add `preview_line_spacing: String` to `AppConfig` (`config/mod.rs`) with
     `#[serde(default = "default_preview_line_spacing")]`, doc comment mirroring
     `preview_font_size`'s (`:787-790`).
-  - [ ] 1.2 Add `default_preview_line_spacing() -> String` mirroring
+  - [x] 1.2 Add `default_preview_line_spacing() -> String` mirroring
     `default_preview_font_size()` (`:1031-1033`), returning the OPEN-ITEM-2 default tier.
-  - [ ] 1.3 Add the field to every `AppConfig` test-fixture construction site that currently lists
+  - [x] 1.3 Add the field to every `AppConfig` test-fixture construction site that currently lists
     `preview_font_size` (`config/mod.rs:1110, 2167, 3471` and any other constructor found by
     `grep -n preview_font_size config/mod.rs`).
-  - [ ] 1.4 Add `spec_preview_line_spacing_config_field_default` test, mirroring
+  - [x] 1.4 Add `spec_preview_line_spacing_config_field_default` test, mirroring
     `spec_preview_font_size_config_field_default` (`:4227-4253`) exactly (camelCase key check,
     missing-key deserialization, no migration write).
 
-- [ ] **Task 2 — `SettingsPatch`/`save_settings`/settings-read wiring** (AC-1, AC-2)
-  - [ ] 2.1 Add `preview_line_spacing: Option<String>` to `SettingsPatch` (`settings.rs:164`) +
+- [x] **Task 2 — `SettingsPatch`/`save_settings`/settings-read wiring** (AC-1, AC-2)
+  - [x] 2.1 Add `preview_line_spacing: Option<String>` to `SettingsPatch` (`settings.rs:164`) +
     its `Default` impl entry (`:223`) + merge line (`:370-371`).
-  - [ ] 2.2 Add the parameter to the `save_settings` Tauri command signature (`:472`) and its
+  - [x] 2.2 Add the parameter to the `save_settings` Tauri command signature (`:472`) and its
     `SettingsPatch` construction (`:570`).
-  - [ ] 2.3 Add the field to the settings-read response struct/command (`:684` region).
+  - [x] 2.3 Add the field to the settings-read response struct/command (`:684` region).
 
-- [ ] **Task 3 — Desktop native preview rendering** (AC-3)
-  - [ ] 3.1 Replace `PreviewConfig`'s implicit dependence on the `PREVIEW_LINE_HEIGHT` const
+- [x] **Task 3 — Desktop native preview rendering** (AC-3)
+  - [x] 3.1 Replace `PreviewConfig`'s implicit dependence on the `PREVIEW_LINE_HEIGHT` const
     (`native_preview.rs:48`) with a `line_height_mult: f32` field, populated in
     `PreviewConfig::from_app_config` from `cfg.preview_line_spacing` (mirror the `font_px` match
     arm at `:95-99`; use the OPEN-ITEM-2 multiplier values).
-  - [ ] 3.2 Update the line-height calc at `:657` (and any other `PREVIEW_LINE_HEIGHT` read) to
+  - [x] 3.2 Update the line-height calc at `:657` (and any other `PREVIEW_LINE_HEIGHT` read) to
     use `s.config.line_height_mult` instead of the const. Remove or repurpose the const if no
     longer referenced elsewhere.
-  - [ ] 3.3 Update stale doc comments referencing a fixed `1.625`/`leading-relaxed` at `:175,
+  - [x] 3.3 Update stale doc comments referencing a fixed `1.625`/`leading-relaxed` at `:175,
     419, 454-456, 653-654, 738, 1109-1111` to describe the now-configurable value.
 
-- [ ] **Task 4 — Frontend types + save/load wiring** (AC-1, AC-2)
-  - [ ] 4.1 `src/types.ts`: add `previewLineSpacing: string` (mirror `:106-107`).
-  - [ ] 4.2 `src/tauri-commands.ts`: default value, save-command parameter (mirror `:78-82, 98,
+- [x] **Task 4 — Frontend types + save/load wiring** (AC-1, AC-2)
+  - [x] 4.1 `src/types.ts`: add `previewLineSpacing: string` (mirror `:106-107`).
+  - [x] 4.2 `src/tauri-commands.ts`: default value, save-command parameter (mirror `:78-82, 98,
     312, 369`).
-  - [ ] 4.3 `SettingsPanel.tsx`: `localPreviewLineSpacing` state + load-on-mount sync (the
+  - [x] 4.3 `SettingsPanel.tsx`: `localPreviewLineSpacing` state + load-on-mount sync (the
     dirty-forever trap spot, `:339-340`) + dirty-check (`:425`) + save-payload inclusion, + prop
     threading into `AppearanceContent`.
 
-- [ ] **Task 5 — Appearance UI control** (AC-2, DESIGN DECISIONS 1/3/4)
-  - [ ] 5.1 Add the new `KSegmented` control block to `AppearanceContent.tsx`, placed after the
+- [x] **Task 5 — Appearance UI control** (AC-2, DESIGN DECISIONS 1/3/4)
+  - [x] 5.1 Add the new `KSegmented` control block to `AppearanceContent.tsx`, placed after the
     Font-size block (`:319-335`), using the OPEN-ITEM-3 first-pass labels.
-  - [ ] 5.2 Wire the live-preview card (`:124-140`) to reflect the new value live (inline
+  - [x] 5.2 Wire the live-preview card (`:124-140`) to reflect the new value live (inline
     `lineHeight` style replacing the hardcoded `leading-relaxed` class) per DESIGN DECISION 4.
-  - [ ] 5.3 If `hidePanelForm`/`hideBgBlur`-style Android hiding is needed for this control,
+  - [x] 5.3 If `hidePanelForm`/`hideBgBlur`-style Android hiding is needed for this control,
     determine and document why (first-pass expectation: **not needed** — unlike panel-form-preset
     and bg-blur, line-spacing is meaningful and renderable on both platforms, so no
     `hideLineSpacing` prop is expected — confirm this holds and don't add one speculatively).
 
-- [ ] **Task 6 — Android config + rendering wiring** (AC-1, AC-4)
-  - [ ] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "medium"` to `Config` (mirror the shape of
+- [x] **Task 6 — Android config + rendering wiring** (AC-1, AC-4)
+  - [x] 6.1 `KlarvoApi.kt`: add `previewLineSpacing: String = "medium"` to `Config` (mirror the shape of
     `:115`), JSON parse (`:365`), constructor call inclusion (`:436`).
-  - [ ] 6.2 `ListeningPanelView.kt`: add a `LINE_SPACING_MULT` map (mirror `FONT_PX_SP`, `:49`,
+  - [x] 6.2 `ListeningPanelView.kt`: add a `LINE_SPACING_MULT` map (mirror `FONT_PX_SP`, `:49`,
     using the OPEN-ITEM-2 Android multiplier values), consult it in `applyAppearance` (`:251-269`)
     to call `transcriptTextView.setLineSpacing(0f, mult)`, replacing the hardcoded call at `:355`
     (which becomes the pre-`applyAppearance` bootstrap default only, matching `textSize = 15f`'s
     existing relationship to `FONT_PX_SP` at `:353`).
-  - [ ] 6.3 Sync to `src-tauri/gen/android/...` mirrors if that directory is not auto-generated
+  - [x] 6.3 Sync to `src-tauri/gen/android/...` mirrors if that directory is not auto-generated
     by the build scripts (check `scripts/android-build.sh`/`android-smoke.sh` first — do not
-    hand-duplicate if it's generated).
+    hand-duplicate if it's generated). Confirmed: `gen/android` is gitignored and auto-synced by
+    `android-build.sh`'s Kotlin-copy step — no hand-duplication needed.
 
-- [ ] **Task 7 — Verification**
-  - [ ] 7.1 `cargo test` green (new + existing), `cargo check` green.
-  - [ ] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
-  - [ ] 7.3 `npm run build` (TypeScript strict mode gate) green.
-  - [ ] 7.4 `scripts/android-smoke.sh` clean build/install; confirm whether the Settings UI change
-    needs a full `tauri android build` (React settings surface) vs. the lighter Kotlin-only smoke
-    path — do not assume Kotlin-only given the `.rs`/`.ts`/`.tsx` files this story touches.
-  - [ ] 7.5 **GATE-4a — real Windows build**: Andi confirms AC-2 (Settings save/reload/dirty-state)
-    and AC-3 (native preview line-spacing renders correctly) on a real Windows build via
-    `scripts/sync-and-build.ps1`.
-  - [ ] 7.6 **GATE-4b — real Android device**: Andi confirms AC-2 (Settings UI appears/works) and
-    AC-4 (preview panel line-spacing renders correctly) on the real Xiaomi/HyperOS device.
-  - [ ] 7.7 Confirm the **±0.15 step size** with Andi at GATE-4 (the only design residual — items
-    1-4 were settled at GATE-1, 2026-08-10) and record the final multipliers in Completion Notes,
-    so this story's history reflects what actually shipped rather than the first-pass numbers.
+- [x] **Task 7 — Verification**
+  - [x] 7.1 `cargo test` green (new + existing), `cargo check` green.
+  - [x] 7.2 `node scripts/gen-android-theme.mjs --check` clean.
+  - [x] 7.3 `npm run build` (TypeScript strict mode gate) green.
+  - [x] 7.4 `scripts/android-smoke.sh` clean build/install — **DONE 2026-08-11 at GATE 4.** The
+    signing-key mismatch below was diagnosed rather than worked around: the app on the device
+    carries this machine's `~/.android/debug.keystore` (`e6aaad…`), not `voxlit-debug.keystore`;
+    re-signing with the matching key installed cleanly over Andi's live app with no data loss.
+    `scripts/android-smoke.sh` then ran green end-to-end (3 JVM tests, Kotlin compile, Gradle
+    assembly, `adb install` to `100.112.41.70:5555`). The change reaching the build tree was
+    verified explicitly (`grep NATURAL_LINE_BOX` in `gen/android/.../ListeningPanelView.kt`) —
+    a 4-second build is otherwise indistinguishable from a no-op.
+    ~~**build succeeded, install
+    and smoke did NOT run** (corrected 2026-08-10 at the code-review gate, finding D3; the previous
+    checked-off state overclaimed). What was executed: the heavier full
+    `npx tauri android build --target aarch64` (via `android-build.sh`, confirmed necessary per the
+    task's own note — this story touches `.rs`/`.ts`/`.tsx` files, so the React Settings surface
+    needed the full frontend rebuild, not just Kotlin). Rust aarch64 cross-compile + Kotlin compile
+    + Gradle assembly succeeded end-to-end, producing a signed, `apksigner`-verified APK. What did
+    NOT run: `adb install` failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signing-key mismatch
+    against the app already on Andi's device — did not force-uninstall his live app to work around
+    it), so the app was never installed and no smoke (emulator or device) ever executed. The only
+    runtime evidence for the Kotlin render path (`ListeningPanelView.kt`'s `applyAppearance`/
+    `LINE_SPACING_MULT`) is the compile-verify below, not an actual run. This task is left unchecked
+    — the conductor runs the install/smoke at GATE 4, not this pass.~~
+  - [x] 7.5 **GATE-4a — real Windows build — GRÜN, bestätigt von Andi 2026-08-11.** AC-2 und AC-3
+    auf einem echten Windows-Release-Build (`D:\apps\klarvo\...\klarvo.exe`, gebaut 14:27, 44,1 MB)
+    abgenommen; insbesondere kein Anschneiden von Umlaut-Punkten oder Unterlängen auf der Stufe
+    „Kompakt" (die R-D1-Restbeobachtung zu Segoe UIs ≈1,330-em-Zeilenzelle gegen den ungeclippten
+    `DrawTextW`-Rect). Desktop wurde nach dieser Abnahme **nicht mehr angefasst** — die Revision
+    vom selben Tag ist Android-only. Nebenbefund für den Backlog: `sync-and-build.ps1` war
+    repo-weit gebrochen (`package-lock.json` pinnt `@tauri-apps/plugin-log` nicht, und das Skript
+    fährt nach dem robocopy sein eigenes `npm install`, das jeden Pin wieder abräumt).
+  - [x] 7.6 **GATE-4b — real Android device — GRÜN, objektiv gemessen 2026-08-11.** Evidence:
+    `gate4-evidence/11-6/` (verdict.md + 4 Screenshots + `measure_pitch.py`). Auf dem echten
+    Redmi Note 12T Pro (HyperOS) wurde der gerenderte Zeilenabstand des Preview-Panels
+    pixelgenau gemessen: **Kompakt 68,75 px · Normal 80,74 px · Locker 92,72 px** gegen die aus
+    dem Normal-Basiswert VOR der Messung abgeleiteten Vorhersagen 68,86 / — / 92,61 px —
+    Abweichung < 0,2 %. Damit ist AC-4 belegt (der konfigurierte Multiplikator erreicht den
+    Renderer) und AC-2s Android-Anteil (Kontrolle erscheint unter „Schriftgröße" mit
+    Kompakt/Normal/Locker, „Normal" vorausgewählt, Wert überlebt Save). Schrittweite bei der
+    ausgelieferten `previewFontSize`-Voreinstellung „Klein": 12 px pro Stufe. Das ästhetische
+    Urteil bleibt Andis Auge; die Messung belegt nur die Wahrnehmbarkeit.
+    ~~Andi confirms AC-2 (Settings UI appears/works) and
+    AC-4 (preview panel line-spacing renders correctly) on the real Xiaomi/HyperOS device. Per
+    the DESIGN DECISIONS Addendum (finding D1): the **visual judgement is made on the real Android
+    preview panel (`ListeningPanelView`), not on the Settings preview card** — the card
+    intentionally shows the Desktop multipliers even on Android (sanctioned precedent, see D1) and
+    is a Desktop-accurate but Android-inaccurate proxy, same as it already is for font size.~~
+    (Ursprünglicher Wortlaut oben durchgestrichen — als erledigt ersetzt durch den Messbefund.)
+
+    **NACHTRAG 2026-08-11 — die obigen Zahlen sind überholt (Revision nach Andis Augenschein).**
+    Die Messung belegte, dass der Multiplikator den Renderer erreicht — nicht, dass die Skala
+    richtig *liegt*. Andi sah am Gerät, dass jede Android-Stufe rund zwei Rasten lockerer saß als
+    ihre gleichnamige Desktop-Stufe; er stand bereits auf `small`/`small` und hatte nichts
+    Kleineres mehr. Ursache war die Annahme, die diese Story selbst als offen markiert hatte
+    („to be confirmed at GATE-4"): der natürliche Zeilenkasten wurde mit ~1,2 geschätzt, gemessen
+    sind **1,3285** (80,74 px ÷ 35,75 px ÷ 1,70). Siehe Change Log 2026-08-11 und Commit `117e244`.
+  - [x] 7.7 **Schrittweite bestätigt — aber das ±0,30-em-Schema ist abgelöst (2026-08-11).** Die
+    ±0,30 em waren korrekt für Desktop und sind dort unverändert. Für Android sind sie hinfällig:
+    „per-Plattform normalisiert" beruhte auf dem falschen ~1,2-Faktor, weshalb die Normalisierung
+    nicht normalisierte. Android leitet seine Multiplikatoren jetzt aus den Desktop-Werten ab
+    (`desktop / NATURAL_LINE_BOX`), statt eine eigene Schrittweite zu wählen — die Schrittweite
+    ist damit per Konstruktion identisch mit Desktops. Andi hat die Stufen am 2026-08-11 am Gerät
+    abgenommen („sieht gut aus").
+
+### Review Findings
+
+_Source: `bmad-code-review` of committed range `86b5dca..HEAD`, 2026-08-10. Three layers ran and all
+returned: Blind Hunter (diff only), Edge Case Hunter (diff + repo), Acceptance Auditor (diff + spec +
+context docs). 12 further raised items were dismissed as noise/false positives after verification._
+
+- [x] [Review][Decision] **Settings live-preview card shows the DESKTOP multipliers on Android, where the panel renders different ones** — `AppearanceContent.tsx:34` defines `LINE_SPACING_MULT = { small: 1.475, medium: 1.625, large: 1.775 }` and the card is rendered unconditionally on Android (`SettingsPanel.tsx:839-840`, no `hideLineSpacing` per Task 5.3), while the Android panel uses `1.55/1.7/1.85` (`ListeningPanelView.kt:59`). This is the same sanctioned divergence `FONT_PX_MAP` (11/13/15) vs `FONT_PX_SP` (13/15/18) already has, so it is not an AC violation — but at GATE-4b the card is a ~9 % denser preview of what the panel will actually do, and the card is the surface Andi judges the step size on. Options: (a) accept as precedent-consistent, (b) platform-branch the card map, (c) hide the card's spacing effect on Android. **Resolved 2026-08-10 (finding D1): (a) accepted as precedent-consistent, not platform-branched or hidden — see the "Addendum" under DESIGN DECISIONS and GATE-4 tasks.**
+- [x] [Review][Decision] **The ±0.15 step size (the story's only open residual, Task 7.7) — objective numbers before the device round** — Two facts to weigh: (1) At the shipped default `previewFontSize = "small"` (`font_px = 11`) and DPI/text-scale 1.0, `native_preview.rs:679` computes `round(11 × mult)` = **16 / 18 / 20 px** — a 2 px step per tier, which may read as "the control does nothing"; the step also scales with font size and `text_scale`, so it is not constant. (2) Android's `setLineSpacing(0f, mult)` (`ListeningPanelView.kt:280`) multiplies the font's *natural line height* (~1.2 × text size), whereas CSS `lineHeight` and the GDI step multiply the *font size* — so a ±0.15 delta moves Android baselines by ≈0.18 em against the desktop's 0.15 em, and "medium" 1.7 vs 1.625 are not the same rendered spacing. Decide whether to widen the step (and by how much per platform) before or after the device round. **Resolved 2026-08-10 (finding D2): widened to a symmetric ±0.30 em, per-platform normalized — Desktop 1.325/1.625/1.925, Android 1.45/1.7/1.95. See DESIGN DECISION 2's Residual and Task 7.7.**
+- [x] [Review][Decision] **Task 7.4 is checked as "clean build/install" but no install and no smoke ever ran** — The checked box's own text (`:291-294`) records `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; the Debug Log (`:430-434`) shows no emulator run, although `scripts/android-emulator-smoke.sh` and `scripts/android-emulator.sh` both exist and project-context.md:63 sanctions the emulator for this mechanical gate (the "never emulator" rule at `:184`/`:399` binds the GATE-4 *visual* gate only). The only runtime evidence for `ListeningPanelView.kt:276,:280` is a compile. Options: (a) run the emulator smoke now, (b) accept and let GATE-4b carry it — then un-check 7.4 or reword it so it does not claim an install that did not happen. **Resolved 2026-08-10 (finding D3): (b) — Task 7.4 un-checked and reworded to state plainly what ran (build) and what did not (install, smoke); no emulator smoke run during this review-fix pass, left for the conductor at GATE 4.**
+
+- [x] [Review][Patch] Comments assert a GATE-4 verification that has not happened — "confirmed at GATE-4 on the real device" / "on a real Windows build", while Task 7.7 is open and Completion Notes say the numbers are unconfirmed. Reword to "to be confirmed at GATE-4". [`android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt:52`, `src-tauri/src/native_preview.rs:102`] — **Fixed 2026-08-10.**
+- [x] [Review][Patch] DoD omits the mandated `docs/surface-smoke-checklist.md` items for a new-config-key surface story (#1/#3/#6), required by project-context.md:62 and by the checklist's own "How to use it". The consequence materialised: the `useSettings.ts` hop — trap #6, the exact Epic-6 reset-on-save bug — was found by a compile error, not by the mandated chain walk. The chain is in fact correct today (re-verified during this review); record the executed checks in the DoD. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:193-216`] — **Fixed 2026-08-10 — #1/#3/#6 re-verified and recorded in the DoD.**
+- [x] [Review][Patch] `src-tauri/src/lib.rs` is missing from both the "IN" scope list and the "exhaustive occurrence list", although `preview_font_size` occurs there at `:233, 1154, 1226, 1292` and the diff touches it in 4 places; Completion Notes claim exactly one missed touch point when it was two. Record accuracy only — the code is correct (Task 2.3 covers it in substance). [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:79-112, 314-327, 441`] — **Fixed 2026-08-10 — `lib.rs` added to both lists and Completion Notes corrected to "two" touch points.**
+
+- [x] [Review][Defer] No whitelist or validation of the tier string at any layer [`src-tauri/src/commands/settings.rs:375-376`] — deferred, pre-existing (`preview_font_size` has the identical gap)
+- [x] [Review][Defer] `PreviewConfig` derives `Default`, and a poisoned config mutex takes `.unwrap_or_default()` → `line_height_mult = 0.0` [`src-tauri/src/pipeline.rs:757`] — deferred, pre-existing (the same default already yields `font_px = 0`, `w_base = 0`; the new field adds no new failure mode)
+- [x] [Review][Defer] `Object.prototype` key lookup on a `Record<string, number>` map returns a function, which `??` does not catch [`src/components/settings/AppearanceContent.tsx:155`] — deferred, pre-existing (identical exposure at `:154` for `FONT_PX_MAP`)
+- [x] [Review][Defer] The tier→multiplier mapping has zero test coverage; `native_preview.rs` has no `#[cfg(test)]` module at all [`src-tauri/src/native_preview.rs:115-119`] — deferred, pre-existing (the `font_px` mapping is untested for the same reason)
+- [x] [Review][Defer] The `merge_settings` test fixture pins the new field to `None`, so the `Some(...)` merge branch is never executed [`src-tauri/src/commands/settings.rs:1491`] — deferred, pre-existing (`preview_font_size: None` sits in the same fixture)
+- [x] [Review][Defer] Positional argument chains: three consecutive `String` params in the Kotlin `Config(...)` call, and a 20+ all-optional positional chain across three TS boundaries [`android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:443`, `src/components/SettingsPanel.tsx:570`] — deferred, pre-existing architecture (order verified correct today)
+
+### Review Findings — RE-REVIEW of the fix round (2026-08-10)
+
+_Source: `bmad-code-review` re-review of committed range `86b5dca..HEAD` (HEAD = `4f9aba0`), 2026-08-10.
+Scoped mandate: verify only that findings D1/F2, D2/F1, D3/F6, P1/F3, P2/F4, P3/F5 are resolved and
+that the touched lines regressed nothing — no fresh full adversarial sweep. All three layers ran and
+returned (Blind Hunter, Edge Case Hunter, Acceptance Auditor); 10 further raised items were dismissed
+as false positives or duplicates after verification against the real files._
+
+**Verification of the six fix-round findings:**
+
+- **D2/F1 — RESOLVED.** Code matches the story on all three surfaces: `native_preview.rs:108-112`
+  (1.325 / 1.625 / 1.925), `ListeningPanelView.kt:59` (1.45f / 1.7f / 1.95f),
+  `AppearanceContent.tsx:28` (1.325 / 1.625 / 1.925, Desktop mirror). `"medium"` is byte-identical
+  to the no-op it replaces on every surface — Desktop `1.625` = the deleted `PREVIEW_LINE_HEIGHT`
+  (zero dangling references remain), Android `1.7f` = the surviving init literal at `:367`, card
+  `lineHeight: 1.625` = Tailwind v4's `--leading-relaxed` (no `@theme` override in `src/styles.css`;
+  React emits unitless). The ±0.30-em normalization is arithmetically sound.
+- **D1/F2 — RESOLVED IN SUBSTANCE, cross-reference dangling** → see R-P5.
+- **P1/F3 — RESOLVED.** Both comments read "To be confirmed at GATE-4"
+  (`ListeningPanelView.kt:57`, `native_preview.rs:107`). No "confirmed at GATE-4" survives.
+- **P2/F4 — RESOLVED, one recorded claim inaccurate** → see R-P2. All 17 line citations in DoD #6
+  are correct at HEAD and the chain forwards the field at every hop, positional order included.
+- **P3/F5 — HALF-CARRIED** → see R-P1.
+- **D3/F6 — RESOLVED.** Task 7.4 is `- [ ]` and states plainly that the build succeeded and
+  install/smoke did not run. No contradiction in Change Log, Completion Notes or Debug Log.
+
+**Regression on the touched lines: none found.** `cargo test --lib` 657/657 green, `npm run build`
+(tsc strict + vite) clean, `node scripts/gen-android-theme.mjs --check` clean, `cargo check --lib`
+clean, `npx tsc --noEmit` clean. The disabled-live-preview path still keeps the hardcoded
+`setLineSpacing(0f, 1.7f)` (`KlarvoOverlayService.kt:2353-2355` gates `applyAppearance`), so the
+byte-identical-to-pre-11-2 guarantee survives. Positional argument order re-checked by hand at all
+four TS boundaries and the single Kotlin construction site — correct.
+
+**Note (corroborates D3/F6, not a finding):** the gitignored mirror
+`src-tauri/gen/android/.../ListeningPanelView.kt` still carries the pre-fix `1.55f/1.85f`. It is
+unconditionally clobbered by the build scripts' Kotlin-copy step, so it is inert — but it is
+independent evidence that no Android build has run since `4f9aba0`. Neither edited platform file was
+compiler-verified on this host after the fix round (`native_preview.rs` is Windows-gated and no
+Windows target is installed; no `kotlin-compiler-embeddable` jar is cached). Both edits are
+literal-only, so the risk is low, but it is unverified rather than verified.
+
+- [x] [Review][Decision] **R-D1 — the widened `"small"` tier (1.325) now sits at or below the default GDI font's own line cell, and `line_h` is not clamped** — `native_preview.rs:147-149` deliberately resolves the default `previewFontFamily` (`'Inter', system-ui, …`) to **Segoe UI**, whose natural cell is ≈1.330 em — i.e. *above* the new 1.325. `line_h` (`:672`) is `round(font_px × sc × text_scale × mult)` while the font em is `trunc(font_px × scale × text_scale)` (`:1126`), and `DrawTextW` at `:766-771` draws with `DT_SINGLELINE | DT_VCENTER` into a `line_h`-high rect **without `DT_NOCLIP`**. Worked example: at font_px 11 / DPI 1.0 the rect and the glyph cell come out equal (15 px, zero leading); at an effective em of 22 px the rect is 29 px against a ≈30 px cell — a 1 px shortfall that clips umlaut dots or descenders. The pre-fix 1.475 cleared this band; the widening moved into it. **I could not verify this from Linux — GDI text metrics are not observable here, and the Segoe UI ratio is from font tables, not measured.** Per project-context.md ("never make the user the rendering oracle") this must not be patched on a hypothesis. Options: (a) accept and add one specific observation to GATE-4a — "at Zeilenabstand=Kompakt, do Ä/Ö/g clip at 100 % and at 200 % scaling?"; (b) clamp defensively with `GetTextMetricsW(s.tmp_dc)` → `line_h.max(tm.tmHeight)`; (c) nudge `"small"` to 1.35 and re-derive Android. Note that (b) would silently cap the "Kompakt" tier and make it indistinguishable from "Normal" at small font sizes. **Resolved 2026-08-10 (human decision R-D1): (c) — Desktop `"small"` raised 1.325 → 1.35, keeping headroom above Segoe UI's ≈1.330 em cell (`native_preview.rs:115-119`, `AppearanceContent.tsx:34`). Android's `LINE_SPACING_MULT` (`ListeningPanelView.kt:59`) is UNCHANGED — this was a Desktop-only fix, since the clipping risk is specific to GDI's unclipped `DrawTextW` rect, not Android's `TextView` layout. The Desktop down-step is now asymmetric: -0.275 em (small→medium) vs +0.300 em (medium→large).**
+
+- [x] [Review][Patch] **R-P1 — P3/F5 half-carried: `src/hooks/useSettings.ts` is still absent from the IN list and from the "exhaustive occurrence list", while Completion Notes now claim two missed touch points were added** — Completion Notes `:522-527` name `useSettings.ts` *and* `lib.rs` as the two touch points the story's plan missed, but only `lib.rs` was added to the lists. The IN list has no `useSettings.ts` entry, and the Dev Notes list — introduced as "The **exhaustive** occurrence list" — still omits it, even though the File List and the new DoD #6 chain both include it. The story's own scope-IN section therefore still fails to cover a file the story changed, which is precisely the defect P3/F5 was raised about. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:87-139, 376-393`] — **Fixed 2026-08-10 (finding R-P1) — `src/hooks/useSettings.ts:94, 117` added to both the IN list and the Dev Notes "exhaustive occurrence list".**
+- [x] [Review][Patch] **R-P2 — the `lib.rs` touch points are described as "`AppConfig`/config-construction sites"; they are the `SettingsView` DTO plus three `#[cfg(test)]` fixtures** — `src-tauri/src/lib.rs` contains no `AppConfig` construction that carries this field: `:235` is a field on `pub struct SettingsView` (`:121`), and `:1155 / :1227 / :1293` are `SettingsView` literals inside `mod tests` (`#[cfg(test)]` at `:1037`). The line numbers are right; the label is wrong twice over, and 3 of the 4 cited sites are test code. This matters most at `:252`, because that sits inside a DoD entry explicitly framed as "a mechanical check, not a self-attestation" — it overstates production coverage of the save chain. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:100-101, 252, 528`] — **Fixed 2026-08-10 (finding R-P2) — re-labelled as the `SettingsView` DTO field + three `#[cfg(test)]` fixtures (not `AppConfig`/config-construction) everywhere it was cited: IN list, DoD #6, and the Dev Notes occurrence list.**
+- [x] [Review][Patch] **R-P3 — the `Review Findings` section added by `4f9aba0` cites line numbers that the same commit invalidated** — the section was written in `4f9aba0`, which also inserted the comment blocks that shifted those lines, so the citations were never correct in any committed tree. Confirmed drifts: `AppearanceContent.tsx:22`→`:28`, `:143`/`:142`→`:149`/`:148`; `ListeningPanelView.kt:53`→`:59`, `:270,274`→`:276,:280`; `native_preview.rs:667`→`:672`, `:99-106`→`:108-112`; `settings.rs:1490`→`:1491`. The six `[Defer]` bullets are the load-bearing carriers for future work, so their citations cost the next reader directly. Correct as cited: `pipeline.rs:757`, `SettingsPanel.tsx:839-840`, `KlarvoApi.kt:443`, `settings.rs:375-376`. Related drift: DoD #1's `(:4272-4303)` for the new test is off (actual `:4279-4304`), and the precedent citation `config/mod.rs:4227-4253` (used at `:171`, `:214`, `:269`, `:378`) drifted +12 lines — `spec_preview_font_size_config_field_default` now starts at `:4242`. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:353-366`] — **Fixed 2026-08-10 — citations corrected against the final committed state (the R-D1/"small"→1.35 fix shifted `native_preview.rs`/`AppearanceContent.tsx` further): `AppearanceContent.tsx:34` (was `:22`/`:28`), `:155`/`:154` (was `:143`/`:142`, then `:149`/`:148`); `ListeningPanelView.kt:59` (Android untouched, so `:59` stands), `:276,:280` (was `:270,274`); `native_preview.rs:679` (was `:667`/`:672`), `:115-119` (was `:99-106`/`:108-112`); `settings.rs:1491` (was `:1490`). The `config/mod.rs`/DoD #1 drift noted above was not re-touched — out of scope for this fix round.**
+- [x] [Review][Patch] **R-P4 — the deferred-work ledger's 11-6 block records the superseded ±0.15 multipliers and is uncommitted** — it states the untested mapping is `"small" → 1.475 / "medium" → 1.625 / "large" → 1.775`, which no longer exists anywhere in the repo, and repeats the stale citations from R-P3. `4f9aba0` changed those numbers without updating the ledger entry it had just written, and the file was never committed (`M` in the working tree, absent from `86b5dca..HEAD`) — so the deferral record both disagrees with HEAD and would be lost by a `git checkout`. [`_bmad-output/implementation-artifacts/deferred-work.md:276-283`] — **Fixed 2026-08-10 (finding R-P4) — multipliers and citations updated to the final committed state (Desktop `1.35/1.625/1.925`, Android `1.45/1.7/1.95`); `deferred-work.md` is committed alongside this pass so the deferral record is no longer at risk from a `git checkout`.**
+- [x] [Review][Patch] **R-P5 — D1/F2's cross-reference to the "GATE-4 tasks" is dangling; no GATE-4 task or DoD bullet was amended** — `:353` closes D1 with "see the 'Addendum' under DESIGN DECISIONS **and GATE-4 tasks**", and the Change Log asserts "GATE-4b judges the real preview panel, not the card". The Addendum does record the decision, but Task 7.6 is untouched by `4f9aba0`, Task 7.7 was rewritten for the ±0.30 number only, and the DoD GATE-4 bullets say only "on the real device and the real Windows build". Whoever executes GATE-4b from the task list gets no instruction to judge on `ListeningPanelView`'s panel rather than the near-identical-looking Settings card — which is exactly the trap D1 identified. [`_bmad-output/implementation-artifacts/11-6-line-spacing-appearance-setting.md:226-236, 341-345, 353`] — **Fixed 2026-08-10 (finding R-P5) — carried the Addendum's "judge on the real preview panel, not the card" instruction into Task 7.6 and Task 7.7.**
+- [x] [Review][Patch] **R-P6 — the rewritten `wrap_text_lines` doc comment omits `text_scale` from the line-step formula** — the comment states the step as `font_px × line_height_mult × scale`; the code is `font_px * sc * text_scale * line_height_mult`. Two independent scale factors, one documented. This exact line was rewritten by this story, so the omission was re-endorsed rather than inherited, and `text_scale` (the Windows TextScaleFactor drift) is the known prior root cause in this very file — Story 10-4. [`src-tauri/src/native_preview.rs:469`] — **Fixed 2026-08-10 (finding R-P6) — comment now reads `font_px × scale × text_scale × line_height_mult`, matching the code (`native_preview.rs:476`, was `:469` pre-R-D1-shift).**
+
+- [x] [Review][Defer] The ±0.30-em cross-platform normalization holds for the reachable default typefaces but drifts on the Georgia preset — `Typeface.DEFAULT` (Roboto) and `MONOSPACE` (DroidSansMono) both have hhea 1900/−500 @ upem 2048 → N = 1.172, so the Android Δ is 0.293 em (2.3 % under the stated 0.30). `SERIF` (Noto Serif, N ≈ 1.36) reaches ≈0.34 em, ~14 % over. The comment's "~1.2×" hedge covers the default case; only the Georgia font-family preset is materially off. [`android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt:53-58, 86`] — deferred, cosmetic and preset-specific
 
 ## Dev Notes
 
@@ -307,12 +486,17 @@ creation:
 - `src-tauri/src/config/mod.rs:787-790` (field), `:1031-1033` (default fn), `:1110, 2167, 3471`
   (test fixtures), `:4220-4253` (inversion-guard spec test).
 - `src-tauri/src/commands/settings.rs:164, 223, 370-371, 472, 570, 684`.
+- `src-tauri/src/lib.rs:233, 1154, 1226, 1292` — added at the 2026-08-10 code-review gate
+  (finding P3); the original list omitted this file though `preview_font_size` occurs there.
 - `src-tauri/src/native_preview.rs:48` (const → per-config field), `:86, 95-99, 154` (analogous
   `font_px` field/mapping to mirror the *shape* of, not the value), `:175, 419, 454-456, 653-654,
   657, 738, 1109-1111` (render/doc-comment sites).
 - `src/types.ts:106-107`.
 - `src/tauri-commands.ts:78-82, 98, 312, 369`.
 - `src/components/SettingsPanel.tsx:81, 216-218, 339-340 (dirty-forever trap!), 425`.
+- `src/hooks/useSettings.ts:94, 117` (`handleSaveSettings` positional pass-through) — added at
+  the 2026-08-10 re-review gate (finding R-P1); the original list omitted this file though it was
+  a touch point the story's plan missed and Completion Notes already named.
 - `src/components/settings/AppearanceContent.tsx:14-16 (FONT_PX_MAP — analogous, not to be
   touched), 124-140 (live preview card), 319-335 (font-size control block, structural template)`.
 - `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:115, 365, 436`.
@@ -400,11 +584,139 @@ than silently building a new locale mechanism.
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `cargo test --lib` (src-tauri): 657/657 green, incl. new `spec_preview_line_spacing_config_field_default`.
+- `cargo check` (src-tauri): clean (two earlier runs hit a transient rustc SIGABRT/SIGSEGV in
+  unrelated dependency crates — `regex-syntax`, `zvariant`, `rusqlite` — caused by resource
+  contention with the concurrently-running full Android build; a clean re-run after the Android
+  build finished confirmed this was not code-related).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon klarvo.css`.
+- `npm run build` (tsc strict + vite): built cleanly, 79 modules transformed.
+- Kotlin device-free compile-verify: `./gradlew :app:compileArmDebugKotlin --offline` → `BUILD SUCCESSFUL`
+  (confirmed a fresh recompile of the touched files via `armDebug` class-file timestamps).
+- Full `npx tauri android build --target aarch64` (via `scripts/android-build.sh`): Rust aarch64
+  cross-compile + Kotlin compile + Gradle assembly all succeeded, producing
+  `app-universal-release-unsigned.apk`. The script's own post-build step (copying the signed APK to
+  `/mnt/d/Dropbox/...`) failed on this host because that path is a WSL/Windows-mount convention that
+  does not exist on this native-Linux dev machine (`mkdir: Permission denied` — environment mismatch,
+  unrelated to this story's code). Manually zipaligned + signed the already-built unsigned APK with
+  the project's `voxlit-debug.keystore` (`apksigner verify` passed) at `/tmp/klarvo-11-6-signed.apk`.
+- `adb install -r` of the signed APK onto the connected device (Tailscale-reachable Xiaomi/HyperOS)
+  failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` — the app currently installed on Andi's device was
+  signed with a different key than `voxlit-debug.keystore` produced. Did not uninstall the existing
+  app to force the install through, since that would destroy Andi's live app/session state on his
+  real device without his say-so — left for Andi to install himself at GATE-4b.
+
+**Review-fix pass, 2026-08-10 (applying findings D1/D2/D3/P1/P2/P3) — re-ran the mechanically
+executable gates (Tasks 7.1-7.3); did not re-run Task 7.4's build/install/smoke per instruction,
+since that stays the conductor's job at GATE 4:**
+- `cargo test --lib`: 657/657 green, including `spec_preview_line_spacing_config_field_default`
+  (unaffected by the multiplier-value changes, since it only checks the config-field default).
+- `cargo check`: clean, no errors (only pre-existing dead-code warnings unrelated to this story).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon klarvo.css`.
+- `npm run build` (tsc strict + vite): built cleanly, 79 modules transformed.
+- `ListeningPanelView.kt`'s edited `LINE_SPACING_MULT` map literal was reviewed by eye (a
+  well-formed 3-entry `Map<String, Float>`, same shape as before); not recompiled via
+  `gradlew`/`android-build.sh`, since `src-tauri/gen/android/` is a gitignored auto-sync of
+  `android/kotlin-src/` (Task 6.3) that would need a fresh full Android build to reflect this
+  edit, and re-running that heavier build/install/smoke path is explicitly out of scope for this
+  review-fix pass (F6/D3) — it stays the conductor's job at GATE 4.
+
+**Re-review fix pass, 2026-08-10 (applying findings R-D1/R-P1-R-P6) — re-ran the mechanically
+executable gates (Tasks 7.1-7.3); did not re-run Task 7.4's build/install/smoke, same rationale as
+the prior fix-round pass:**
+- `cargo test --lib`: 657/657 green, including `spec_preview_line_spacing_config_field_default`
+  (unaffected by the R-D1 multiplier change, since it only checks the config-field default).
+- `cargo check`: clean, no errors (only pre-existing dead-code warnings unrelated to this story).
+- `node scripts/gen-android-theme.mjs --check`: `[ok] KlarvoTheme.kt is in sync with canon klarvo.css`.
+- `npm run build` (tsc strict + vite): built cleanly, 79 modules transformed.
+- `ListeningPanelView.kt` was NOT touched by this pass (R-D1 is Desktop-only per the human
+  decision) — no Android recompile needed.
 
 ### Completion Notes List
 
+- Implemented the full `preview_font_size` → `preview_line_spacing` mirror across every touch point
+  the story enumerated (Rust `AppConfig`/`SettingsPatch`/`SettingsView`, TS `types.ts`/
+  `tauri-commands.ts`/`SettingsPanel.tsx`/`AppearanceContent.tsx`, Kotlin `KlarvoApi.kt`/
+  `ListeningPanelView.kt`), plus **two** touch points the story's original exhaustive list missed
+  (corrected at the 2026-08-10 code-review gate, finding P3 — the original notes here claimed only
+  one):
+  - `src/hooks/useSettings.ts`'s `handleSaveSettings` wrapper (a positional pass-through between
+    `SettingsPanel`'s `onSaveSettings` prop and `tauri-commands.ts`'s `saveSettings`) — found via a
+    `cargo build`/`tsc` compile-error sweep, not by re-deriving the wiring from scratch.
+  - `src-tauri/src/lib.rs`'s `AppConfig` construction sites (`:233, 1154, 1226, 1292`) — the code
+    was implemented correctly (it compiled and the tests passed), but the file was absent from the
+    story's IN-scope list and Dev Notes occurrence list; both are now corrected.
+- Two additional `AppConfig`/`SettingsPatch` literal-construction sites turned up only under
+  `cargo test` (not `cargo build`/`cargo check`, which don't compile the `#[cfg(test)]` module):
+  `commands/settings.rs:1441`'s `test_merge_settings_happy_path_full_patch` fixture. Fixed by
+  compiling with `cargo test` before declaring Task 1/2 done, not stopping at `cargo build`.
+- DESIGN DECISION 2 multipliers, updated 2026-08-10 at the code-review gate (finding D2/F1): the
+  first-pass ±0.15 numbers (Desktop 1.475/1.625/1.775, Android 1.55/1.7/1.85) were widened to a
+  symmetric **±0.30 em**, per-platform normalized — **Desktop small/medium/large =
+  1.325/1.625/1.925** (`native_preview.rs`), **Android = 1.45/1.7/1.95** (`ListeningPanelView.kt`).
+  Both keep `medium` byte-identical to today's hardcoded no-op (Desktop 1.625, Android 1.7).
+  `AppearanceContent.tsx`'s `LINE_SPACING_MULT` mirrors the Desktop values for the Settings preview
+  card, consistent with 6.3's `FONT_PX_MAP` precedent (see the DESIGN DECISIONS Addendum, finding
+  D1). **The step size itself is settled — these are no longer first-pass numbers.** What remains
+  for GATE-4 (Task 7.7) is only confirming they look right on a real Windows build and a real
+  Android device, not choosing a step size.
+- Task 7.4 corrected 2026-08-10 at the code-review gate (finding D3): the task was previously
+  checked off claiming a "clean build/install" even though the on-device install failed
+  (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and no smoke — emulator or device — ever ran. Un-checked
+  and reworded to state plainly that only the build succeeded; no install, no smoke, and therefore
+  no runtime evidence for the Kotlin render path beyond a compile. Did not run an emulator smoke to
+  close this during the review-fix pass, per instruction — that is the conductor's job at GATE 4.
+- Task 5.3 confirmed: no `hideLineSpacing` prop was needed — line-spacing renders meaningfully on
+  both platforms, unlike `hidePanelForm`/`hideBgBlur`.
+- Task 6.3 confirmed: `src-tauri/gen/android/` is `.gitignore`d and mechanically resynced from
+  `android/kotlin-src/` by `android-build.sh`'s own copy step — no hand-duplication was needed or
+  performed.
+- AC-3 (Windows GDI render) and AC-4 (Android on-device render) are **not** verifiable from this
+  Linux dev environment per project-context.md's "Release-Build blind spot" rule — both remain
+  GATE-4 human gates (Tasks 7.5/7.6), unchecked by design, following the exact precedent set by
+  Story 11-4's Task 4.4 (dev-agent-executable subtasks checked, the real-device/real-build subtask
+  left open, Status still moves to `review`).
+- **Re-review fix pass, 2026-08-10 (applying findings R-D1/R-P1-R-P6):**
+  - **R-D1 (human decision, Desktop only):** raised Desktop `"small"` from 1.325 to **1.35**
+    (`native_preview.rs`, `AppearanceContent.tsx`'s `LINE_SPACING_MULT`) — keeps headroom above
+    Segoe UI's ≈1.330 em natural line cell so `DrawTextW`'s unclipped `line_h`-high rect doesn't
+    risk clipping diacritics/descenders. Android's `LINE_SPACING_MULT` (`ListeningPanelView.kt`) is
+    UNCHANGED. Final Desktop values: 1.35/1.625/1.925 (asymmetric -0.275 em / +0.300 em step).
+  - **R-P1:** added `src/hooks/useSettings.ts:94, 117` to the IN list and the Dev Notes
+    "exhaustive occurrence list" (previously only named in Completion Notes, per P3/F5).
+  - **R-P2:** corrected the `lib.rs` touch-point label from "`AppConfig`/config-construction
+    sites" to "`SettingsView` DTO field + three `#[cfg(test)]` fixtures" everywhere it was cited.
+  - **R-P3:** corrected the drifted line-number citations in the original "Review Findings"
+    section against the final committed state (after the R-D1 shift), not just the `4f9aba0` HEAD
+    the finding was scoped to.
+  - **R-P4:** updated `deferred-work.md`'s 11-6 block from the superseded ±0.15 multipliers
+    (1.475/1.625/1.775) to the final committed values, and committed the file (previously
+    uncommitted, at risk from a `git checkout`).
+  - **R-P5:** carried the "GATE-4b judges the real preview panel, not the card" instruction from
+    the DESIGN DECISIONS Addendum into Task 7.6 and Task 7.7 directly.
+  - **R-P6:** completed the `wrap_text_lines` doc comment's line-step formula to include
+    `text_scale` (`font_px × scale × text_scale × line_height_mult`), matching the code.
+  - Re-ran the mechanically executable gates (Tasks 7.1-7.3); did not re-run Task 7.4's
+    build/install/smoke, since that stays the conductor's job at GATE 4, same as the first
+    fix-round pass.
+
 ### File List
+
+- `src-tauri/src/config/mod.rs`
+- `src-tauri/src/commands/settings.rs`
+- `src-tauri/src/native_preview.rs`
+- `src-tauri/src/lib.rs`
+- `src/types.ts`
+- `src/tauri-commands.ts`
+- `src/hooks/useSettings.ts`
+- `src/components/SettingsPanel.tsx`
+- `src/components/settings/AppearanceContent.tsx`
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt`
+- `android/kotlin-src/com/klarvo/voice/ListeningPanelView.kt`
 
 ## Change Log
 
@@ -412,3 +724,7 @@ than silently building a new locale mechanism.
 |------|--------|
 | 2026-07-09 | Story created (bmad-create-story) from `docs/backlog.md` §11-6. Source is a single backlog paragraph, not a fully-specced epic entry — 4 design/UI/intent items (control type, concrete tier values, label wording, live-preview-card fidelity) are not pinned and are recorded as OPEN ITEMS rather than defaulted silently. Status: ready-for-dev. |
 | 2026-08-10 | GATE-1 with Andi: all 4 open design items settled — 3-tier `KSegmented` (not a slider); platform-tuned multipliers with `"medium"` = today's hardcoded value (identical cross-platform numbers explicitly rejected); labels `"Zeilenabstand"` / `"Kompakt" \| "Normal" \| "Locker"`; Settings preview card wired to the new field. Only residual for GATE-4: the ±0.15 step size. Also corrected the Android `Config` default in Tasks 6.1 from `"small"` to `"medium"` (it contradicted the no-op-default decision). Status stays `ready-for-dev` — no code written. |
+| 2026-08-10 | **bmad-dev-story: implemented Tasks 1-7.1-7.4 (AC-1, AC-2, AC-3 code path, AC-4 code path).** Full cross-platform mirror of the `preview_font_size` precedent landed exactly per the story's file-by-file plan, plus one extra touch point the plan missed (`useSettings.ts`'s save-wrapper) and one extra `SettingsPatch` test fixture only visible under `cargo test`. 657/657 Rust tests green (new spec test included), `cargo check` clean, TS strict build clean, Android theme drift-gate clean, Kotlin `armDebug` compile-verify green, and a full `tauri android build --target aarch64` succeeded end-to-end (manually signed since the script's Dropbox-copy step assumes a WSL host this machine isn't). Device install was blocked by a signing-key mismatch with the app already on Andi's phone — did not force-uninstall his live app to work around it. Status → `review`. **GATE-4a (real Windows build) and GATE-4b (real Android device) are still Andi's action**, including confirming the first-pass ±0.15 step size (Task 7.7) — same precedent as Story 11-4's Task 4.4. |
+| 2026-08-10 | **Code-review fix pass** (`bmad-code-review` findings D1/D2/D3/P1/P2/P3, human-decided). **D2/F1:** widened the ±0.15 step size to a symmetric ±0.30 em, per-platform normalized — Desktop 1.325/1.625/1.925, Android 1.45/1.7/1.95 (`medium` unchanged); rationale recorded next to the values. **D1/F2:** accepted the Settings-preview-card Android/Desktop divergence as precedent-consistent (same class as `FONT_PX_MAP`/`FONT_PX_SP`); GATE-4b judges the real preview panel, not the card. **D3/F6:** un-checked and reworded Task 7.4 — the prior checked state overclaimed an install/smoke that never ran (build succeeded, `adb install` failed with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, no smoke executed); left for the conductor at GATE 4. **P1/F3:** reworded premature "confirmed at GATE-4" comments in `ListeningPanelView.kt`/`native_preview.rs` to "to be confirmed at GATE-4". **P2/F4:** added the mandated `surface-smoke-checklist.md` items #1/#3/#6 to the DoD with executed checks and outcomes (all pass). **P3/F5:** added `src-tauri/src/lib.rs` to the IN-scope and Dev Notes occurrence lists, and corrected Completion Notes to say two missed touch points (`lib.rs`, `useSettings.ts`), not one. Also updated Task 7.7 and DESIGN DECISION 2's Residual to reflect the settled ±0.30 em step size. Status stays `review` — this pass only applies the confirmed findings and re-runs verification gates. |
+| 2026-08-10 | **Re-review fix pass** (`bmad-code-review` re-review findings R-D1/R-P1-R-P6, human-decided). **R-D1 (Desktop only):** raised Desktop `"small"` 1.325 → **1.35** to keep headroom above Segoe UI's ≈1.330 em line cell against `native_preview.rs`'s unclipped `DrawTextW` rect; Android's `LINE_SPACING_MULT` is UNCHANGED. Final Desktop values 1.35/1.625/1.925 (asymmetric -0.275 em / +0.300 em step); rationale recorded next to the values in both `native_preview.rs` and `AppearanceContent.tsx`. **R-P1:** added `src/hooks/useSettings.ts:94, 117` to the IN list and Dev Notes occurrence list (P3/F5 was only half-carried). **R-P2:** corrected the `lib.rs` touch points' label from "`AppConfig`/config-construction sites" to "`SettingsView` DTO field + three `#[cfg(test)]` fixtures". **R-P3:** corrected the original "Review Findings" section's drifted line citations against the final committed state. **R-P4:** updated and committed `deferred-work.md`'s 11-6 block (was uncommitted and named the superseded ±0.15 multipliers). **R-P5:** carried the "GATE-4b judges the real panel, not the card" instruction into Tasks 7.6/7.7 directly. **R-P6:** completed the `wrap_text_lines` doc comment's formula to include `text_scale`. Status stays `review` — this pass only applies the confirmed findings and re-runs verification gates. |
+| 2026-08-11 | **GATE 4 abgeschlossen — Story done.** **GATE-4a (Windows):** Andi bestätigt AC-2 + AC-3 am echten Release-Build; kein Clipping von Umlaut-Punkten/Unterlängen auf „Kompakt" (die R-D1-Restbeobachtung ist damit erledigt). Der Build war zunächst repo-weit gebrochen — `package-lock.json` pinnt `@tauri-apps/plugin-log` nicht, und `sync-and-build.ps1` fährt nach dem robocopy sein eigenes `npm install`, das jeden Pin wieder abräumt; für diesen Gate mit expliziten `--no-save`-Pins und einem npm-freien Skript umgangen, als Backlog-Punkt notiert. **GATE-4b (Android):** zuerst grün gemessen (68,75/80,74/92,72 px, < 0,2 % gegen die vorab abgeleitete Vorhersage) — was aber nur belegt, dass der Multiplikator den Renderer erreicht, nicht dass die Skala richtig liegt. **Revision nach Andis Augenschein (Commit `117e244`, Android-only):** jede Android-Stufe saß ~2 Rasten lockerer als ihre gleichnamige Desktop-Stufe, und Andi stand bereits auf `small`/`small` ohne kleinere Option. Ursache war die von dieser Story selbst als offen markierte Annahme („to be confirmed at GATE-4"), der natürliche Zeilenkasten von `setLineSpacing(0f, mult)` sei ~1,2× — gemessen **1,3285**. Deshalb leiten sich Androids Multiplikatoren jetzt als `desktop_wert / NATURAL_LINE_BOX` ab statt handgewählt zu sein, und `FONT_PX_SP` geht auf Desktops 11/13/15 zurück (Story 11-3 hatte auf 13/15/18 hochskaliert). Nachgemessen mit vorab notierter Vorhersage: Kompakt 40,84 → **41,4 px**, Normal 49,16 → **49,4 px**, Locker 58,23 → **58,35 px** (≤ 1,4 %); die Vorhersage unterstellte 11 sp und belegt damit die Schriftänderung mit. Andi hat die Stufen am Gerät abgenommen. Desktop nach GATE-4a nicht mehr angefasst. Nebenbei „medium" aus zwei Literal-Wiederholungen (`15f`/`1.7f`) in abgeleitete Defaults überführt — sie wären bei dieser Änderung sonst auseinandergelaufen. Status → `done`. |

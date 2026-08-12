@@ -91,6 +91,7 @@ export function useSettings() {
     newPreviewBorderWidth?: number | null, newPreviewBorderRadius?: number | null,
     newPreviewFontFamily?: string | null,
     newPreviewFontSize?: string | null,
+    newPreviewLineSpacing?: string | null,
     newBubbleSizeDp?: number | null, newBubbleEdgeSnap?: boolean | null,
     newRecordingButtonSizeDp?: number | null,
   ) => {
@@ -113,6 +114,7 @@ export function useSettings() {
       newPreviewBorderWidth ?? null, newPreviewBorderRadius ?? null,
       newPreviewFontFamily ?? null,
       newPreviewFontSize ?? null,
+      newPreviewLineSpacing ?? null,
       newBubbleSizeDp ?? null, newBubbleEdgeSnap ?? null,
       newRecordingButtonSizeDp ?? null,
     );

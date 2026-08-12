@@ -162,6 +162,8 @@ pub struct SettingsPatch {
     pub preview_border_radius: Option<u8>,
     pub preview_font_family: Option<String>,
     pub preview_font_size: Option<String>,
+    // Story 11.6 preview appearance field.
+    pub preview_line_spacing: Option<String>,
     // Story 9.3 bubble size + snap controls.
     pub bubble_size_dp: Option<i32>,
     pub bubble_edge_snap: Option<bool>,
@@ -221,6 +223,7 @@ impl Default for SettingsPatch {
             preview_border_radius: None,
             preview_font_family: None,
             preview_font_size: None,
+            preview_line_spacing: None,
             bubble_size_dp: None,
             bubble_edge_snap: None,
             recording_button_size_dp: None,
@@ -369,6 +372,8 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.preview_font_family),
         preview_font_size: patch.preview_font_size
             .unwrap_or(existing.preview_font_size),
+        preview_line_spacing: patch.preview_line_spacing
+            .unwrap_or(existing.preview_line_spacing),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
         bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
@@ -470,6 +475,8 @@ pub async fn save_settings(
     preview_border_radius: Option<u8>,
     preview_font_family: Option<String>,
     preview_font_size: Option<String>,
+    // Story 11.6 preview appearance field.
+    preview_line_spacing: Option<String>,
     // Story 9.3 bubble size + snap controls.
     bubble_size_dp: Option<i32>,
     bubble_edge_snap: Option<bool>,
@@ -568,6 +575,7 @@ pub async fn save_settings(
         preview_border_radius,
         preview_font_family,
         preview_font_size,
+        preview_line_spacing,
         bubble_size_dp,
         bubble_edge_snap,
         recording_button_size_dp,
@@ -682,6 +690,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         preview_border_radius: cfg.preview_border_radius,
         preview_font_family: cfg.preview_font_family.clone(),
         preview_font_size: cfg.preview_font_size.clone(),
+        preview_line_spacing: cfg.preview_line_spacing.clone(),
     })
 }
 
@@ -1479,6 +1488,7 @@ mod tests {
             preview_border_radius: None,
             preview_font_family: None,
             preview_font_size: None,
+            preview_line_spacing: None,
             bubble_size_dp: Some(48),
             bubble_edge_snap: Some(false),
             recording_button_size_dp: Some(88),

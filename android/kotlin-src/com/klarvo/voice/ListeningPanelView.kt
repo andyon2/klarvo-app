@@ -44,9 +44,32 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
     companion object {
         private val RGBA_REGEX =
             Regex("""rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([\d.]+))?\s*\)""")
-        // Story 11-3 (AC-5, item 5): device feedback pass rescale 11/13/15 -> 13/15/18.
-        // Android-only; desktop's FONT_PX_MAP (Story 6-3) is untouched.
-        private val FONT_PX_SP = mapOf("small" to 13f, "medium" to 15f, "large" to 18f)
+        // Story 11-3 (AC-5, item 5) rescaled these 11/13/15 -> 13/15/18 on a device feedback
+        // pass; the Story 11-6 GATE-4 pass (2026-08-11) reverted it — every step read one size
+        // too large on the real device. Back on desktop's FONT_PX_MAP (Story 6-3), which also
+        // makes the shared settings card's live preview truthful on both platforms.
+        private val FONT_PX_SP = mapOf("small" to 11f, "medium" to 13f, "large" to 15f)
+
+        // `setLineSpacing(0f, mult)` multiplies the font's *natural line box*, while desktop
+        // (GDI line-stepping in native_preview.rs, and the settings card's CSS `lineHeight`)
+        // multiplies the *font size* directly. Story 11-6 assumed that box was ~1.2x and
+        // flagged the assumption "to be confirmed at GATE-4"; the device measurement
+        // falsified it — 80.74px pitch / 35.75px font (13sp @ density 440, font_scale 1.0)
+        // / 1.70 mult = 1.3285. That gap is why every Android step rendered about two notches
+        // looser than its desktop namesake. Dividing the desktop multiplier by the measured
+        // box lands both platforms on identical rendered spacing.
+        private const val NATURAL_LINE_BOX = 1.3285f
+        private val LINE_SPACING_MULT = mapOf(
+            "small" to 1.35f / NATURAL_LINE_BOX,     // 1.016 -> renders 1.35x font, desktop "Kompakt"
+            "medium" to 1.625f / NATURAL_LINE_BOX,   // 1.223 -> renders 1.625x font, desktop "Normal"
+            "large" to 1.925f / NATURAL_LINE_BOX,    // 1.449 -> renders 1.925x font, desktop "Locker"
+        )
+
+        // Derived, not restated: the pre-GATE-4 code repeated "medium" as literal 15f/1.7f in
+        // both the config fallback and the TextView init, so a scale change silently drifted
+        // them apart.
+        private val DEFAULT_FONT_SP = FONT_PX_SP.getValue("medium")
+        private val DEFAULT_LINE_SPACING = LINE_SPACING_MULT.getValue("medium")
 
         /**
          * Parses a CSS `rgba()`/`rgb()` string into an Android ARGB color int (Story 11-2,
@@ -262,10 +285,12 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // updateTranscriptColor) doesn't discard it back to the hardcoded Muted/Dim.
         appliedPreviewTextColor = textColor
         val typeface = typefaceForFontFamily(config.previewFontFamily)
-        val sizeSp = FONT_PX_SP[config.previewFontSize] ?: 15f
+        val sizeSp = FONT_PX_SP[config.previewFontSize] ?: DEFAULT_FONT_SP
+        val lineSpacingMult = LINE_SPACING_MULT[config.previewLineSpacing] ?: DEFAULT_LINE_SPACING
         transcriptTextView.setTextColor(textColor)
         transcriptTextView.typeface = typeface
         transcriptTextView.textSize = sizeSp
+        transcriptTextView.setLineSpacing(0f, lineSpacingMult)
     }
 
     /**
@@ -350,9 +375,9 @@ class ListeningPanelView(context: Context) : LinearLayout(context) {
         // WRAP_CONTENT window made a plain ScrollView useless).
         transcriptTextView = TextView(context).apply {
             setTextColor(KlarvoTheme.Muted)
-            textSize = 15f  // sp — FONT_PX_SP "medium" default until applyAppearance runs
+            textSize = DEFAULT_FONT_SP  // sp — until applyAppearance runs
             typeface = Typeface.MONOSPACE
-            setLineSpacing(0f, 1.7f)
+            setLineSpacing(0f, DEFAULT_LINE_SPACING)  // until applyAppearance runs
             gravity = Gravity.TOP or Gravity.START
             text = ""
         }

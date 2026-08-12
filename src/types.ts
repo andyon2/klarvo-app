@@ -105,6 +105,8 @@ export interface AppSettings {
   previewFontFamily: string;
   /** Preview font size: "small" | "medium" | "large". camelCase key: previewFontSize. */
   previewFontSize: string;
+  /** Preview line spacing: "small" | "medium" | "large". camelCase key: previewLineSpacing. */
+  previewLineSpacing: string;
 }
 
 // A per-application recording profile.

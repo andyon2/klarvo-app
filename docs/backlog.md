@@ -754,3 +754,58 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 **Ursache:** `src/styles.css:253` definiert `.focus-klarvo { box-shadow: 0 0 0 3px rgba(41,199,172,.28); }` als **bare Klasse ohne `:focus-visible`**. Da die Komponenten `focus-klarvo` statisch in der className tragen, ist der Ring **immer an**. Der Mockup (`.input:focus`/`.select:focus`) zeigt den Ring nur bei Fokus. Stammt aus **8-1** (Kommentar „Task 5.3"), NICHT aus 8-2 — 8-2 hat die Referenz byte-identisch nachgezogen.
 
 **Fix (klein, aber eigener Scope):** `.focus-klarvo` → `.focus-klarvo:focus-visible` (oder die Nutzung auf einen `:focus`-Modifier umstellen). ACHTUNG: `focus-klarvo` wird surface-übergreifend genutzt (Bar, Preview, Onboarding, Settings) — der Fix berührt die geteilte Token-Schicht und braucht einen eigenen Smoke über alle Flächen. Darum **eigene Story / Teil von 8-7**, nicht in 8-2 geschmuggelt.
+
+---
+
+## Story 11-6 GATE-4 — Nebenbefunde (2026-08-11, alle bewusst AUSSERHALB 11-6 gehalten)
+
+**Quelle:** GATE-4-Lauf Story 11-6 auf powerhouse (`gate4-evidence/11-6/verdict.md`, Abschnitte
+„Nebenbefunde" und „Messfallen"). Vier Umgebungs-/Infrastruktur-Defekte, die den Gate Zeit gekostet
+haben. Keiner davon ist ein Produktfehler, deshalb kein Schmuggeln in die Story.
+
+### 1. `gen/android/` frisst handplatzierte Dateien — Icons + Debug-Harness-Manifest ⚠️ höchste Priorität
+
+`src-tauri/gen/android/` ist gitignored und wird von `tauri android init` **vollständig regeneriert**.
+Zwei Dinge lebten nur dort und verschwanden lautlos:
+
+- **`app/src/debug/AndroidManifest.xml`** deklariert `DebugHarnessReceiver`. Ohne die Datei ist die
+  Klasse einkompiliert, aber in KEINEM Manifest deklariert → `am broadcast` läuft auf `Enqueued: 0`.
+  Der Harness war dadurch **strukturell tot**, nicht wegen HyperOS (siehe Punkt 2).
+- **`app/src/main/res/mipmap-*/ic_launcher*.png`** (15 Dateien) — Andis „K"-Icon wich kommentarlos
+  dem Tauri-Default. Er hat es als „irgendwas ist mit meinen Commit-Ständen durcheinander" erlebt.
+
+Beide sind am 2026-08-11 wiederhergestellt — **die Wiederherstellung ist aus demselben Grund wieder
+flüchtig.** Fix: Dateien im versionierten `android/`-Baum beheimaten und beim Build mitsynchronisieren,
+analog zu `android/kotlin-src/`. Nicht groß, aber es braucht eine Stelle im Build, die sie kopiert.
+
+### 2. Conductor-Contract begründet den toten Harness falsch
+
+`_bmad/custom/bmad-epic-conductor.toml` sagt, der Harness sei „dead on HyperOS (background
+restrictions)". Er war nie HyperOS-bedingt tot, sondern manifest-los (Punkt 1) — der Beleg ist, dass er
+nach dem Wiederherstellen des Manifests auf genau diesem HyperOS-Gerät einwandfrei lief. Der Satz
+schickt die nächste Sitzung in die falsche Richtung. Korrigieren, sobald Punkt 1 dauerhaft ist.
+
+### 3. Android-Skripte tragen WSL-/Laptop-Annahmen
+
+- `scripts/android-build.sh`: Build gelingt, danach Abbruch beim Kopieren nach
+  `/mnt/d/Dropbox/App Development/klarvo/releases/` — existiert auf powerhouse nicht. Die APK ist
+  fertig, das Skript meldet trotzdem Fehler.
+- `scripts/android-emulator.sh`: die `klarvo-emu`-AVD gibt es nur auf dem Laptop; hier hängt es
+  endlos in `adb wait-for-device`.
+
+### 4. `sync-and-build.ps1` ist repo-weit gebrochen (Windows-Build)
+
+Zwei Ursachen, die sich gegenseitig verdecken: `package-lock.json` enthält **keinen** Eintrag für
+`@tauri-apps/plugin-log` (`package.json` fordert `^2`), sodass `npm ci` eine Version zieht, die gegen
+die Rust-Crate-Version mismatcht — und `sync-and-build.ps1` fährt **nach** dem robocopy sein eigenes
+`npm install`, das jeden vorher gesetzten Pin wieder abräumt. Für den 11-6-Gate mit expliziten
+`--no-save`-Pins plus npm-freiem Skript umgangen; das ist keine Lösung. Fix: die Tauri-npm-Pakete im
+Lock pinnen und das `npm install` im Skript hinter einen Schalter legen.
+
+### 5. Messfallen (Doku, kein Code)
+
+`monkey -p ... 1` injiziert nach dem Start einen *zufälligen* Tap · `adb shell am broadcast --es`
+mit Leerzeichen im Text braucht Quoting des gesamten Remote-Kommandos · Harness-States sind
+kleingeschrieben · `am force-stop` bringt das Onboarding zurück und verdeckt das Panel · ein
+4-Sekunden-Kotlin-Build ist von einem No-op nicht unterscheidbar, ohne im *generierten* Baum zu
+prüfen. Details in `gate4-evidence/11-6/verdict.md`.

@@ -15,6 +15,26 @@ import {
 // Mirrors the FONT_PX constant in PreviewPanel.tsx (do not rename keys).
 const FONT_PX_MAP: Record<string, number> = { small: 11, medium: 13, large: 15 };
 
+// line-spacing → CSS line-height multiplier for the live preview card.
+// Mirrors native_preview.rs's `line_height_mult` match arm (Story 11.6 DESIGN
+// DECISION 2, step size widened at the 2026-08-10 review gate, finding D2):
+// "medium" = today's hardcoded 1.625 (`leading-relaxed`), so nothing changes
+// visually until the user touches the control; "large" keeps the full symmetric
+// +0.30 em offset, the same Desktop number as native_preview.rs. "small" is
+// raised to 1.35 (a -0.275 em down-step, asymmetric against the +0.30 up-step;
+// R-D1, 2026-08-10): Segoe UI — the family the default `previewFontFamily`
+// resolves to on Desktop (`native_preview.rs:155`) — has a natural line cell of
+// ~1.330 em, and `DrawTextW` draws into a rect exactly `line_h` high without
+// `DT_NOCLIP`, so a multiplier below ~1.330 risks clipping diacritics/
+// descenders; 1.35 keeps headroom. These numbers are no longer Desktop-only:
+// the GATE-4 device pass (2026-08-11) moved Android onto the same rendered
+// scale, so this card now tells the truth on both platforms. Android reaches
+// it with different literals — `setLineSpacing` multiplies the natural line
+// box, so ListeningPanelView.kt divides these by a measured 1.3285; its
+// FONT_PX_SP is back on 11/13/15. The real visual judgement still happens on
+// the actual preview panel, not on this card.
+const LINE_SPACING_MULT: Record<string, number> = { small: 1.35, medium: 1.625, large: 1.925 };
+
 // --- Props -------------------------------------------------------------------
 
 export interface AppearanceContentProps {
@@ -43,6 +63,8 @@ export interface AppearanceContentProps {
   setLocalPreviewFontFamily: (v: string) => void;
   localPreviewFontSize: string;
   setLocalPreviewFontSize: (v: string) => void;
+  localPreviewLineSpacing: string;
+  setLocalPreviewLineSpacing: (v: string) => void;
   /**
    * Story 11-2 (Task 4.3, GATE 1 decision 2026-07-01): hides the "Darstellung" width-preset
    * picker on Android, where the panel is already MATCH_PARENT-width and the preset has no
@@ -83,6 +105,7 @@ export function AppearanceContent({
   localPreviewBorderRadius, setLocalPreviewBorderRadius,
   localPreviewFontFamily, setLocalPreviewFontFamily,
   localPreviewFontSize, setLocalPreviewFontSize,
+  localPreviewLineSpacing, setLocalPreviewLineSpacing,
   hidePanelForm = false,
   hideBgBlur = false,
 }: AppearanceContentProps) {
@@ -131,9 +154,9 @@ export function AppearanceContent({
                 color: localPreviewTextColor || DEFAULT_TEXT_COLOR,
                 fontFamily: localPreviewFontFamily || DEFAULT_FONT_FAMILY,
                 fontSize: FONT_PX_MAP[localPreviewFontSize] ?? 11,
+                lineHeight: LINE_SPACING_MULT[localPreviewLineSpacing] ?? 1.625,
                 padding: "8px 12px",
               }}
-              className="leading-relaxed"
             >
               <div className="font-medium">Live-Vorschau</div>
               <div className="opacity-80">Transcribed text appears here…</div>
@@ -332,6 +355,22 @@ export function AppearanceContent({
               <p className="text-[11px] text-klarvo-muted">
                 Skaliert Breite, Höhe und Schrift der Vorschau proportional.
               </p>
+            </div>
+
+            {/* Line-spacing picker (Story 11.6) — affects card lineHeight + native preview
+                render step. "medium" is a no-op vs. today's hardcoded value. */}
+            <div className="flex flex-col gap-1.5">
+              <span className={LABEL_CLS}>Zeilenabstand</span>
+              <KSegmented
+                value={localPreviewLineSpacing}
+                onChange={setLocalPreviewLineSpacing}
+                options={[
+                  { value: "small", label: "Kompakt" },
+                  { value: "medium", label: "Normal" },
+                  { value: "large", label: "Locker" },
+                ]}
+                className="w-full"
+              />
             </div>
 
             {/* Display Form preset picker — hidden on Android (Task 4.3): the panel is already
