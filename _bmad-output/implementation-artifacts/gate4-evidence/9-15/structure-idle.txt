@@ -1,0 +1,9 @@
+# klarvo overlay windows — state=idle — 2026-06-30T16:48:15+02:00
+# density: Physical density: 420
+
+──   Window #7 Window{3753d7b u0 com.klarvo.voice}:
+        mAttrs={(44,880)(162x162) gr=TOP START CENTER sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+        Requested w=162 h=162 mLayoutSeq=142
+
+# count of klarvo overlay window headers:
+1

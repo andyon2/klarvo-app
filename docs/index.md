@@ -7,6 +7,12 @@
 > scan has been run). It currently lists only the deep-dive(s) plus existing hand-written docs. Run
 > `document-project` → "Re-scan entire project" to generate a complete project map.
 
+## Start Here
+
+- [**Architecture**](./ARCHITECTURE.md) — the front door: current system map plus an index tying
+  together the decisions and rules that live elsewhere (ADRs, the rules digest, the audit).
+  Deliberately thin — it points to those authorities rather than copying them.
+
 ## Deep-Dive Documentation
 
 Detailed exhaustive analysis of specific areas:

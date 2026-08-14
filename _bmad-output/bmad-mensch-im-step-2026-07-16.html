@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMAD — Mensch-im-Step: Technische Verifikation</title>
+<style>
+  :root{
+    --bg:#0F1112; --surface:#16181A; --elevated:#232729; --border:#2c3136;
+    --text:#E4E7EA; --muted:#9aa3ab; --dim:#6b747c;
+    --teal:#29C7AC; --teal-hi:#57DDC7; --amber:#E9A24C; --danger:#EE6F63;
+    --maxw:900px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:48px 24px 120px}
+  header.doc{border-bottom:1px solid var(--border); padding-bottom:20px; margin-bottom:8px}
+  h1{font-size:30px; font-weight:750; margin:0 0 10px; letter-spacing:-.01em}
+  h1 .k{color:var(--teal)}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+  .pill{font-size:12px; padding:3px 10px; border-radius:999px; background:var(--elevated);
+        color:var(--muted); border:1px solid var(--border)}
+  .pill b{color:var(--text); font-weight:600}
+  h2{font-size:21px; font-weight:700; margin:46px 0 14px; padding-top:10px; letter-spacing:-.01em;
+     border-top:1px solid var(--border)}
+  h2 .n{color:var(--teal); font-variant-numeric:tabular-nums; margin-right:10px}
+  h3{font-size:16px; font-weight:650; margin:26px 0 8px; color:var(--teal-hi)}
+  h4{font-size:14px; font-weight:650; margin:20px 0 6px; color:var(--text)}
+  p{margin:12px 0}
+  a{color:var(--teal); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{background:var(--elevated); border:1px solid var(--border); border-radius:5px;
+       padding:1px 6px; font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       color:#cfe9e3; word-break:break-word}
+  strong{color:#fff; font-weight:650}
+  ul,ol{margin:12px 0; padding-left:22px}
+  li{margin:7px 0}
+  /* verify/assume tags */
+  .tag{display:inline-block; font:600 11px/1.4 ui-monospace,Menlo,Consolas,monospace;
+       padding:1px 6px; border-radius:4px; vertical-align:middle; white-space:nowrap}
+  .v{background:rgba(41,199,172,.14); color:var(--teal-hi); border:1px solid rgba(41,199,172,.4)}
+  .a{background:rgba(233,162,76,.14); color:var(--amber); border:1px solid rgba(233,162,76,.4)}
+  /* fazit callout */
+  .fazit{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--teal);
+         border-radius:10px; padding:6px 22px 14px; margin:20px 0}
+  .fazit ol{counter-reset:f; list-style:none; padding-left:0}
+  .fazit ol li{position:relative; padding-left:34px; margin:14px 0}
+  .fazit ol li::before{counter-increment:f; content:counter(f); position:absolute; left:0; top:0;
+       width:22px; height:22px; border-radius:50%; background:var(--teal); color:#04211c;
+       font:700 12px/22px ui-monospace,monospace; text-align:center}
+  .verdict{display:flex; flex-wrap:wrap; gap:10px; margin:16px 0}
+  .vcard{flex:1 1 200px; background:var(--surface); border:1px solid var(--border);
+         border-radius:10px; padding:12px 14px}
+  .vcard .lbl{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim)}
+  .vcard .val{font-size:17px; font-weight:700; margin-top:4px}
+  .vcard.ok .val{color:var(--teal-hi)}
+  .vcard.warn .val{color:var(--amber)}
+  .vcard.bad .val{color:var(--danger)}
+  /* tables */
+  .tblwrap{overflow-x:auto; margin:16px 0; border:1px solid var(--border); border-radius:10px}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:520px}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{background:var(--elevated); color:var(--text); font-weight:650; font-size:12.5px;
+     text-transform:uppercase; letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:11.5px}
+  /* note box */
+  .note{background:var(--surface); border:1px solid var(--border); border-radius:10px;
+        padding:2px 18px; margin:18px 0}
+  .note.amber{border-left:3px solid var(--amber)}
+  .note.danger{border-left:3px solid var(--danger)}
+  .legend{font-size:13px; color:var(--muted); background:var(--surface);
+           border:1px solid var(--border); border-radius:8px; padding:12px 16px; margin:16px 0}
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--border);
+          color:var(--dim); font-size:12.5px; line-height:1.8}
+  hr{border:none; border-top:1px solid var(--border); margin:32px 0}
+  /* step-flow */
+  .flow{display:flex; flex-wrap:wrap; align-items:stretch; gap:0; margin:14px 0 4px}
+  .stp{flex:1 1 150px; min-width:140px; background:var(--surface); border:1px solid var(--border);
+       border-radius:9px; padding:10px 12px; position:relative}
+  .stp .s{font:700 11px/1.4 ui-monospace,Menlo,monospace; color:var(--teal); text-transform:uppercase;
+          letter-spacing:.04em}
+  .stp .t{font-weight:650; font-size:13.5px; margin:3px 0 4px}
+  .stp .d{font-size:12px; color:var(--muted); line-height:1.5}
+  .stp.gate{border-color:rgba(233,162,76,.5); border-left:3px solid var(--amber)}
+  .stp .gk{display:inline-block; font:600 10px/1.4 ui-monospace,monospace; color:var(--amber);
+           border:1px solid rgba(233,162,76,.4); border-radius:3px; padding:0 4px; margin-top:5px}
+  .arrow{display:flex; align-items:center; color:var(--dim); font-size:18px; padding:0 6px; align-self:center}
+  .looplbl{font-size:12px; color:var(--amber); margin:6px 0 0}
+  .twocol{display:grid; grid-template-columns:1fr; gap:10px; margin:12px 0}
+  @media (min-width:640px){ .flow{flex-wrap:nowrap} }
+  @media (max-width:560px){ .wrap{padding:32px 16px 90px} h1{font-size:25px}
+       .flow{flex-direction:column} .arrow{transform:rotate(90deg); padding:2px 0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1><span class="k">BMAD</span> — Mensch-im-Step: Technische Verifikation</h1>
+  <p style="color:var(--muted); margin:6px 0 0">Entscheidungsgrundlage für ein Fremd-Team
+    (kleines .NET-Dev-Team, Mono-Repo, heute nur <code>bmad quick-dev</code>). Wunsch:
+    quick-dev behalten, aber Designvorgaben (nicht-technische Autorin), Edge-Cases und Best
+    Practices systematisch ins KI-Coden bringen.</p>
+  <div class="meta">
+    <span class="pill">Datum <b>2026-07-16</b></span>
+    <span class="pill">Referenz <b>klarvo</b></span>
+    <span class="pill">BMAD <b>6.6.1-next.2</b></span>
+    <span class="pill">Vorarbeit <b>tdd-in-bmad-2026-06-27.md</b></span>
+  </div>
+</header>
+
+<div class="legend">
+  <strong>Legende:</strong>
+  <span class="tag v">V</span> VERIFIZIERT (Datei gelesen / Test gelaufen) &nbsp;·&nbsp;
+  <span class="tag a">A</span> ANGENOMMEN / VERMUTET (plausibel, nicht direkt geprüft).
+  Jede Aussage trägt genau ein Tag. Belege als <code>Datei:Zeile</code>.
+</div>
+
+<h2>Fazit (5 Sätze)</h2>
+
+<div class="verdict">
+  <div class="vcard warn"><div class="lbl">Mensch-im-Step</div><div class="val">JA — mit Auflagen</div></div>
+  <div class="vcard bad"><div class="lbl">Falle belegt</div><div class="val">JA</div></div>
+  <div class="vcard ok"><div class="lbl">Empfehlung</div><div class="val">Artefakte statt Eigenbau</div></div>
+</div>
+
+<div class="fazit">
+<ol>
+<li><strong>Mensch-im-Step geht — mit Auflagen:</strong> <code>dev-story</code> ist auf das
+  <em>Story-File</em> self-contained (parst feste Abschnitte, fährt ausschließlich auf
+  <code>Tasks / Subtasks</code>); ein handgeschriebenes Story-File ohne <code>create-story</code>
+  wird strukturell akzeptiert — <strong>aber</strong> die technische Verdichtung (Dev Notes,
+  Task-Zerlegung, Source-Refs, BDD-ACs) ist der anspruchsvolle Teil und nicht von einer
+  nicht-technischen Autorin allein leistbar.</li>
+<li><strong>Die Falle ist belegt:</strong> Jede Skill-Datei verdrahtet fix
+  <code>resolve_customization.py</code>, <code>config.yaml</code> und die Merge-Kette
+  <code>_bmad/custom/&lt;skill&gt;.toml</code>; die Basis-<code>customize.toml</code> trägt wörtlich
+  „DO NOT EDIT — overwritten on every update“ — Eigenanbauten außerhalb der vier Override-Schlüssel
+  werden beim Update überschrieben.</li>
+<li><strong>Die drei Wunsch-Elemente existieren im Vollpfad bereits als eigene Schichten</strong> —
+  Design → <code>create-ux-design</code>/PRD, Edge-Cases → Acceptance Criteria + Edge-Case-Hunter
+  im Review, Best Practices → <code>project-context.md</code> + CLAUDE.md/Memory — und fließen zu
+  definierten Zeitpunkten in den KI-Kontext.</li>
+<li><strong>Entscheidender Befund:</strong> quick-dev <em>lädt diese Schichten heute schon</em>,
+  wenn sie als Artefakte existieren — der Engpass ist nicht die Engine, sondern die vorgelagerten,
+  gepflegten Artefakte und die Pro-Story-Verdichtung von <code>create-story</code>.</li>
+<li><strong>Empfehlung:</strong> nicht „quick-dev + Eigenbau“ (Falle), sondern entweder
+  (a) die Artefakt-Schichten sauber befüllen und quick-dev behalten, oder (b) den Vollpfad fahren,
+  wobei die nicht-technische Autorin <em>Design + Akzeptanz-Intent</em> besitzt und ein technischer
+  Schritt daraus das dev-fertige Story-File macht.</li>
+</ol>
+</div>
+
+<p style="font-size:13px; color:var(--amber)">⚠ Satz 5 wurde nach einer Challenge des Auftraggebers
+(„Report ist von meiner These gefärbt“) einer unabhängigen Zweitbetrachtung unterzogen —
+siehe <strong>Teil D</strong>. Kernergebnis dort: quick-dev + sanktionierte Customization reicht
+mit ~75–80 % Zuversicht, unter drei Bedingungen.</p>
+
+<h3>Mapping-Tabelle (Kurzform, Details in Teil C)</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Wunsch-Element</th><th>Wohnort im Vollpfad</th><th>Wann im KI-Kontext</th><th>Deckt quick-dev das heute?</th></tr></thead>
+<tbody>
+<tr><td><strong>Designvorgaben</strong></td><td><code>create-ux-design</code> → <code>planning_artifacts/*ux*.md</code>, PRD</td><td>Story-Erstellung (in Dev Notes verdichtet) → Dev-Zeit</td><td>Teilweise: lädt <code>*ux*</code> selektiv / via epic-context <span class="tag v">V</span></td></tr>
+<tr><td><strong>Edge-Cases</strong></td><td>Acceptance Criteria (BDD) + Dev Notes; Edge-Case-Hunter im Review</td><td>Story-Zeit (AC/Dev Notes) <strong>und</strong> Review-Zeit (Hunter)</td><td>Ja im Review (<code>step-04</code>) <span class="tag v">V</span>; als <em>vorab geplant</em> nur über Spec</td></tr>
+<tr><td><strong>Best Practices / Konventionen</strong></td><td><code>project-context.md</code>, CLAUDE.md/Memory, <code>architecture.md</code></td><td>Aktivierung (<code>persistent_facts</code>) + Dev-Zeit + Review-Zeit</td><td>Ja: quick-dev lädt project-context + CLAUDE.md + memory <span class="tag v">V</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Überblick: die zwei Betriebsarten von BMAD</h2>
+<p>BMAD kennt zwei Wege von „Intent“ zu „gemergtem Code“. Sie teilen dieselben Bausteine
+(dieselben drei adversarialen Review-Subagents, dasselbe <code>sprint-status.yaml</code>-Format,
+dieselbe <code>customize.toml</code>-Mechanik) — sie unterscheiden sich in <strong>Granularität</strong>
+und <strong>Persistenz</strong>. Dieser Abschnitt gibt die Landkarte; die Teile A/B/C darunter zoomen
+in die Details. Alles hier ist <span class="tag v">V</span> aus den Skill-Dateien gelesen (Belege dort).</p>
+
+<h3>① quick-dev — ein Skill, eine Session, Spec ad hoc</h3>
+<p>quick-dev (<code>bmad-quick-dev</code>) fährt den ganzen Bogen von Intent bis lokalem Commit in
+<strong>einem</strong> Skill-Lauf. Das zentrale Artefakt ist eine <strong>Spec-Datei</strong>
+(<code>spec-{slug}.md</code>), die der Workflow <em>selbst aus dem Intent generiert</em> — es braucht
+keine vorgelagerten Planungs-Artefakte, lädt sie aber, wenn sie existieren.</p>
+<div class="flow">
+  <div class="stp"><div class="s">step-01</div><div class="t">Clarify &amp; Route</div><div class="d">Intent prüfen; Kontext laden (Planungs-Artefakte, <code>project-context.md</code>, CLAUDE.md, Memory); VCS-Check; Multi-Goal-Check → Route: one-shot oder plan-code-review</div></div>
+  <div class="arrow">→</div>
+  <div class="stp gate"><div class="s">step-02</div><div class="t">Plan</div><div class="d">Codebase untersuchen (Subagents); <code>spec-template</code> füllen; Token-Check</div><span class="gk">HUMAN-GATE: Approve/Edit</span></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">step-03</div><div class="t">Implement</div><div class="d"><code>baseline_commit</code> setzen; Status <code>in-progress</code>; Subagent implementiert; Self-Check aller Tasks <code>[x]</code></div></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">step-04</div><div class="t">Review</div><div class="d">3 adversariale Subagents (Blind / Edge-Case / Acceptance); klassifizieren; Loopback bei <code>intent_gap</code>/<code>bad_spec</code></div></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">step-05</div><div class="t">Present</div><div class="d">Suggested Review Order; Status <code>done</code>; lokaler Commit; Editor öffnen</div></div>
+</div>
+<p class="looplbl">↺ step-04 kann bei Spec-/Intent-Fehlern zu step-02/03 zurückspringen (max. 5 Iterationen, dann Eskalation).</p>
+<p><strong>Kern-Eigenschaften:</strong> eine Spec-Datei, ein Durchlauf, <strong>ein</strong> harter
+Human-Gate (Spec-Freigabe in step-02; danach ist der <code>&lt;frozen-after-approval&gt;</code>-Block
+gelockt). Scope-Ziel: <em>ein</em> user-seitiges Goal, 900–1600 Tokens.</p>
+
+<h3>② Vollpfad — vier Skills, Artefakte persistieren, Board als Rückgrat</h3>
+<p>Der Vollpfad zerlegt dieselbe Arbeit in <strong>vier getrennte Skills</strong>, die typischerweise in
+getrennten Sessions (idealerweise mit unterschiedlichen LLMs) laufen. Das zentrale Artefakt ist ein
+<strong>Story-File</strong>, das durch die Skills wandert; <code>sprint-status.yaml</code> ist das
+Rückgrat, das den Lifecycle-Status jeder Story trägt.</p>
+<div class="flow">
+  <div class="stp"><div class="s">Vorstufe</div><div class="t">sprint-planning</div><div class="d">Erzeugt <code>sprint-status.yaml</code> mit <code>backlog</code>-Stories aus den Epics <span class="tag a">A</span> (Skill nicht im Detail gelesen)</div></div>
+  <div class="arrow">→</div>
+  <div class="stp gate"><div class="s">Skill 1</div><div class="t">create-story</div><div class="d">Nimmt erste <code>backlog</code>-Story; lädt epics/PRD/arch/UX + Vorgänger-Story + git; schreibt umfassendes Story-File (Template); Status → <code>ready-for-dev</code></div><span class="gk">HUMAN-GATE: Story-Review</span></div>
+  <div class="arrow">→</div>
+  <div class="stp gate"><div class="s">Skill 2</div><div class="t">dev-story</div><div class="d">Liest Story-File; fährt auf <code>Tasks/Subtasks</code>; red-green-refactor; DoD-Checkliste; Status → <code>review</code></div><span class="gk">HUMAN-GATE: Smoke/Abnahme</span></div>
+  <div class="arrow">→</div>
+  <div class="stp gate"><div class="s">Skill 3</div><div class="t">code-review</div><div class="d">3 adversariale Subagents; Triage; Findings ins Story-File; bei clean → Status <code>done</code>, sprint-status-Sync</div><span class="gk">HUMAN-GATE: Patch-Entscheidungen</span></div>
+</div>
+<p><strong>Kern-Eigenschaften:</strong> getrennte Skills/Sessions, <strong>persistente</strong> Artefakte
+(Story-File wandert durch, Vorgänger-Stories werden gelesen), <code>sprint-status.yaml</code> als
+zentraler Zustand, <strong>mehrere</strong> Human-Gates. Der Plan wird nicht aus dem Intent generiert,
+sondern aus epics/PRD/UX <em>destilliert</em>.</p>
+
+<h3>③ Gegenüberstellung</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Dimension</th><th>quick-dev</th><th>Vollpfad (create-story → dev-story → code-review)</th></tr></thead>
+<tbody>
+<tr><td>Skills / Sessions</td><td>1 Skill, 1 Session</td><td>4 Skills, typ. mehrere Sessions</td></tr>
+<tr><td>Zentrales Artefakt</td><td><code>spec-{slug}.md</code> (ad hoc, <code>spec-template</code>)</td><td>Story-File (aus <code>template.md</code>) + <code>sprint-status.yaml</code></td></tr>
+<tr><td>Woher der Plan?</td><td>aus dem Intent <em>generiert</em> (step-02)</td><td>aus epics/PRD/UX <em>destilliert</em> (create-story)</td></tr>
+<tr><td>Planungs-Artefakte</td><td>optional (geladen, wenn vorhanden)</td><td>zentral (epics/PRD/arch/UX)</td></tr>
+<tr><td>Scope-Granularität</td><td>ein Goal, 900–1600 Tokens</td><td>Epic → Story-Zerlegung</td></tr>
+<tr><td>Review</td><td>eingebaut (step-04)</td><td>eigener Skill (<code>code-review</code>) — gleiche 3 Subagents</td></tr>
+<tr><td>Human-Gates</td><td>1 (Spec-Approve) + Review-Entscheidungen</td><td>Board + Gate je Skill (Story-Review, Abnahme, Patches)</td></tr>
+<tr><td>Status-Tracking</td><td>optional (Sync nur wenn <code>story_key</code> auflösbar)</td><td><code>sprint-status.yaml</code> ist der Kern</td></tr>
+<tr><td>Passt am besten für…</td><td>einzelne, klar umrissene Änderung / Bugfix</td><td>kontinuierlicher Epic-Fluss, mehrere Beteiligte, Design-Vorgaben</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note">
+<p><strong>Brücke zum Rest des Reports:</strong> Der Wunsch des Zielteams (Design + Edge-Cases + Best
+Practices systematisch) ist genau die Stärke des <em>Vollpfads</em> rechts — <strong>Teil C</strong>
+zeigt, in welcher Schicht jedes der drei Elemente sitzt und wann es in den KI-Kontext fließt.
+<strong>Teil A</strong> prüft, ob ein Mensch die <code>create-story</code>-Stufe (Skill 1) ersetzen kann.
+<strong>Teil B</strong> erklärt, warum man die geteilten Bausteine (Board-Format, <code>customize.toml</code>)
+nicht eigenmächtig umbauen sollte.</p>
+</div>
+
+<h2><span class="n">A</span>Mensch-im-Step (Kernfrage)</h2>
+
+<h3>A.1 &nbsp;Was erwartet <code>dev-story</code> genau? (Input-Kontrakt)</h3>
+<p><strong>Story-Findung</strong> — drei Wege (<code>bmad-dev-story/SKILL.md:87–186</code>) <span class="tag v">V</span>:</p>
+<ul>
+<li><strong>Expliziter Pfad</strong> (<code>{{story_path}}</code>): Datei direkt lesen, <code>story_key</code>
+  aus Dateiname, Sprint-Discovery <strong>komplett übersprungen</strong> (<code>:88–92</code>).</li>
+<li><strong>Sprint-basiert:</strong> erste Story in <code>sprint-status.yaml</code> mit Status
+  <code>ready-for-dev</code> (Muster <code>nummer-nummer-name</code>, <code>:102–106</code>).</li>
+<li><strong>Ohne Sprint-Datei:</strong> Scan von <code>implementation_artifacts</code> nach
+  <code>*-*-*.md</code> mit Status <code>ready-for-dev</code> (<code>:152–186</code>).</li>
+</ul>
+<p><strong>Geparste Pflicht-Abschnitte</strong> (<code>:194</code>) <span class="tag v">V</span>:
+<code>Story, Acceptance Criteria, Tasks/Subtasks, Dev Notes, Dev Agent Record, File List, Change Log, Status</code>.</p>
+<p><strong>Der load-bearing Treiber ist <code>Tasks / Subtasks</code></strong> <span class="tag v">V</span>:</p>
+<ul>
+<li>„FOLLOW THE STORY FILE TASKS/SUBTASKS SEQUENCE EXACTLY AS WRITTEN — NO DEVIATION“ (<code>:298</code>)</li>
+<li>„NEVER implement anything not mapped to a specific task/subtask“ (<code>:322</code>)</li>
+<li>Findet die erste unerledigte Task <code>[ ]</code> (<code>:200</code>). <strong>Gibt es keine, springt
+  der Workflow direkt zu Step 9 „Completion“</strong> (<code>:202–204</code>) — eine Story ohne offene
+  Tasks wird als „fertig“ markiert, ohne Code zu schreiben.</li>
+</ul>
+<p><strong>Weitere Kontext-Ladungen</strong> <span class="tag v">V</span>: Step 2 lädt
+  <code>{project_context}</code> „for coding standards“ (<code>:212</code>); Dev Notes werden für
+  Architektur-/Vorgänger-Guidance geparst (<code>:196–198</code>).</p>
+<p><strong>HALT-Bedingungen</strong> (<code>:205–206</code>) <span class="tag v">V</span>: Story-File nicht
+  lesbar → HALT; Task-Anforderung mehrdeutig → nachfragen/HALT. <strong>Status ist kein hartes Gate bei
+  explizitem Pfad:</strong> Step 4 gibt nur „Continuing anyway…“ aus (<code>:282–286</code>).</p>
+
+<div class="note amber">
+<p><strong>Kritischer struktureller Befund <span class="tag v">V</span>:</strong>
+<code>dev-story</code> lädt selbst <strong>keine</strong> <code>epics.md</code>/<code>prd.md</code>/
+<code>architecture.md</code> — es hat keine „Input Files“-Tabelle wie <code>create-story</code>
+(vgl. <code>create-story/SKILL.md:80–85</code> vs. <code>dev-story/SKILL.md</code>). Es verlässt sich
+darauf, dass diese Inhalte als <strong>Dev Notes im Story-File verdichtet</strong> sind.
+<strong>Folge:</strong> Fehlen die Planungs-Artefakte, <em>bricht dev-story nicht</em> — es degradiert
+die <em>Qualität des Story-Files</em>, das <code>create-story</code> erzeugt. Ein Mensch mit gutem
+Story-File macht <code>dev-story</code> von den Planungs-Artefakten unabhängig.</p>
+</div>
+
+<h3>A.2 &nbsp;Was macht <code>create-story</code> ALLES? (Seiteneffekte, die ein Mensch ersetzt)</h3>
+<p>Aus <code>bmad-create-story/SKILL.md</code> <span class="tag v">V</span>:</p>
+<ol>
+<li><strong>Story-Auswahl + Keys:</strong> liest <code>sprint-status.yaml</code>, nimmt erste
+  <code>backlog</code>-Story, leitet <code>epic_num</code>/<code>story_num</code>/<code>story_key</code>
+  ab (<code>:130–219</code>).</li>
+<li><strong>Epic-Statuslift:</strong> erste Story eines Epics → <code>epic-N</code> von
+  <code>backlog</code>→<code>in-progress</code>; Epic <code>done</code> → HALT (<code>:164–186</code>).</li>
+<li><strong>Artefakt-Analyse:</strong> lädt <code>epics/prd/architecture/ux</code> via
+  <code>discover-inputs.md</code>; Vorgänger-Story + <code>git log</code>-Intelligenz (<code>:248–283</code>).</li>
+<li><strong>Story-Erzeugung aus <code>template.md</code></strong> (<code>:341–392</code>).</li>
+<li><strong>Statuswechsel:</strong> setzt <code>Status: ready-for-dev</code> (<code>:389</code>),
+  aktualisiert <code>sprint-status.yaml</code> <code>backlog</code>→<code>ready-for-dev</code>
+  (<code>:398–407</code>).</li>
+<li><strong><code>persistent_facts</code></strong> lädt <code>file:{project-root}/**/project-context.md</code>
+  (<code>create-story/customize.toml:33–35</code>).</li>
+<li><strong>Selbst-Validierung</strong> gegen <code>checklist.md</code> (<code>:395</code>).</li>
+</ol>
+<p><strong>Pflicht-Template</strong> (<code>create-story/template.md</code>) <span class="tag v">V</span> —
+die Abschnitte, die ein Mensch reproduzieren muss: <code>Status</code>, <code>## Story</code>
+(As a / I want / so that), <code>## Acceptance Criteria</code>, <code>## Tasks / Subtasks</code> (mit
+<code>(AC: #)</code>), <code>## Dev Notes</code> (Constraints, Source-Tree, Testing, <code>### References</code>
+mit <code>[Source: …#Section]</code>), <code>## Dev Agent Record</code>.</p>
+
+<h3>A.3 &nbsp;Vorbedingungs-Artefakte von <code>create-story</code> (nicht von <code>dev-story</code>)</h3>
+<p><code>discover-inputs.md</code> <span class="tag v">V</span> lädt <code>prd/architecture/ux/epics</code>
+(sharded oder whole), Strategie <code>SELECTIVE_LOAD</code>. <strong>Fehlt ein Artefakt, ist das kein
+Fehler</strong> — <code>{pattern}_content</code> wird leer gesetzt, Nachlieferung angeboten
+(<code>discover-inputs.md:71–75</code>). Fehlende Planungs-Artefakte schwächen die Story, verhindern
+die Erzeugung aber nicht.</p>
+
+<h3>A.4 &nbsp;PRAKTISCHER TEST (Trockenlauf) — Minimal-Story von Hand</h3>
+<p>Von Hand ein Minimal-Story-File <code>9-99-demo-hand-story.md</code> (ohne <code>create-story</code>)
+geschrieben mit: <code>Status: ready-for-dev</code>, <code>## Story</code>, <code>## Acceptance Criteria</code>
+(2× BDD), <code>## Tasks / Subtasks</code> (2 unerledigte Tasks mit <code>(AC: #)</code>),
+<code>## Dev Notes</code>, <code>### References</code>, <code>## Dev Agent Record</code>.</p>
+<p>Strukturelle Prüfung gegen das, was <code>dev-story</code> Step 1 parst <span class="tag v">V</span>:</p>
+<ul>
+<li>Alle sechs geparsten Abschnittsköpfe PRESENT.</li>
+<li>Dateiname erfüllt <code>story_key</code>-Muster <code>nummer-nummer-name.md</code> → <code>9-99-…</code>.</li>
+<li>2 unerledigte <code>- [ ]</code>-Tasks → der Treiber aus <code>dev-story:200</code> findet Arbeit.</li>
+</ul>
+<div class="note danger">
+<p><strong>Ergebnis:</strong> Das File erfüllt strukturell <strong>jeden</strong> Abschnitt, auf den
+<code>dev-story</code> zugreift, plus Namensmuster plus Task-Treiber.
+<strong>Marker: NICHT VOLL VERIFIZIERT</strong> — dies ist ein <em>struktureller Trockenlauf</em>
+(Header-/Muster-Abgleich gegen die gelesene Workflow-Logik), <strong>kein</strong> Live-<code>dev-story</code>-Lauf
+(zu teuer für diese Untersuchung). Was der Trockenlauf <em>nicht</em> beweist: dass die Task-Zerlegung
+inhaltlich implementierbar/eindeutig ist — hier greift <code>dev-story:206</code> („ambiguous → ASK/HALT“).</p>
+</div>
+
+<h3>A.5 &nbsp;Robustheit der Kette bei human-authored Stories — wo es reißt</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Bruchstelle</th><th>Ursache</th><th>Was ein Mensch/Prozess herstellen muss</th></tr></thead>
+<tbody>
+<tr><td>Story wird nicht gefunden</td><td>Dateiname nicht <code>n-n-name.md</code> <strong>oder</strong> Status ≠ <code>ready-for-dev</code></td><td>Namens-/Status-Konvention treffen — oder Pfad explizit übergeben <span class="tag v">V</span></td></tr>
+<tr><td>„Nichts zu tun“</td><td>keine unerledigte <code>Tasks/Subtasks</code></td><td>mind. eine <code>- [ ]</code>-Task; Task = Aktion + Datei <span class="tag v">V</span></td></tr>
+<tr><td>HALT „ambiguous“</td><td>Task-Anforderung mehrdeutig</td><td>eindeutige, implementierbare Task-Zerlegung (technischer Akt) <span class="tag v">V</span></td></tr>
+<tr><td>Schwache Umsetzung ohne HALT</td><td>leere/dünne Dev Notes</td><td>Dev Notes mit Constraints + Source-Refs; ODER <code>project-context.md</code> vorhalten <span class="tag v">V</span></td></tr>
+<tr><td>Sprint-Board driftet</td><td><code>sprint-status.yaml</code> nicht mitgepflegt</td><td>Key-Format <code>n-n-name</code> reproduzieren, sonst Discovery/Review-Auto-Done bricht <span class="tag v">V</span></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Bewertung:</strong> Die Kette ist bei human-authored Stories <strong>robust auf der Mechanik-Ebene</strong>
+(Parsing, Discovery, Status) und <strong>fragil auf der Inhalts-Ebene</strong> (Dev Notes / Task-Zerlegung /
+eindeutige ACs). Die Mechanik trifft eine nicht-technische Person mit Vorlage; die Inhalts-Ebene ist ein
+technischer Autoren-Akt. → <strong>Mensch-im-Step = JA, mit Auflagen</strong> (Rollentrennung
+Design-Intent vs. technische Story-Verdichtung).</p>
+
+<h2><span class="n">B</span>Fallen-Beleg: „BMAD teilweise + Eigenes draufbauen“</h2>
+<p>Alle Belege strukturell, nicht meinungsbasiert.</p>
+
+<h4>B.1 &nbsp;Fixe Verdrahtung in jeder Skill-Datei <span class="tag v">V</span></h4>
+<p>Jede <code>SKILL.md</code> hat einen identischen „On Activation“-Block, der hart referenziert:
+<code>resolve_customization.py</code>, <code>_bmad/bmm/config.yaml</code>, Merge-Kette
+<code>customize.toml</code> (base) → <code>_bmad/custom/{skill}.toml</code> (team) →
+<code>.user.toml</code> (user). Beleg u.a. <code>dev-story/SKILL.md:28–38</code>,
+<code>create-story/SKILL.md:30–38</code>, <code>quick-dev/SKILL.md:42–50</code>. Wer diese
+Pfade/Formate ändert, bricht alle Skills gleichzeitig.</p>
+
+<h4>B.2 &nbsp;Basis-Dateien werden beim Update überschrieben <span class="tag v">V</span> / <span class="tag a">A</span></h4>
+<p><code>create-story/customize.toml:1</code> wörtlich: <strong>„# DO NOT EDIT -- overwritten on every
+update.“</strong> Update-sicher sind nur die <strong>vier Override-Schlüssel</strong> in
+<code>_bmad/custom/*.toml</code>: <code>activation_steps_prepend</code>, <code>activation_steps_append</code>,
+<code>persistent_facts</code> (append), <code>on_complete</code> (Scalar) — <code>customize.toml:15–41</code>
+<span class="tag v">V</span>. Alles andere (<code>SKILL.md</code>-Rümpfe, <code>template.md</code>,
+<code>checklist.md</code>, Step-Files) ist <strong>keine</strong> Merge-Fläche <span class="tag a">A</span>
+(stark begründet: Basis-<code>customize.toml</code> sagt explizit „overwritten on every update“; für die
+übrigen installierten Dateien plausibel dasselbe, aber nicht per Datei-Kommentar bestätigt).</p>
+
+<h4>B.3 &nbsp;Der sanktionierte, nicht-brüchige Seam existiert bereits <span class="tag v">V</span></h4>
+<p>klarvo nutzt ihn: <code>create-story/customize.toml:33–35</code> lädt
+<code>file:{project-root}/**/project-context.md</code> als <code>persistent_fact</code>;
+<code>bmad-quick-dev.user.toml:3–4</code> injiziert eine Commit-Policy als <code>persistent_fact</code>.
+Das ist die vorgesehene Art, eigene Standards/Guardrails „draufzubauen“ — <strong>ohne</strong>
+Basis-Dateien zu editieren.</p>
+
+<h4>B.4 &nbsp;Geteilte Cross-File-Konventionen als Kopplung <span class="tag v">V</span></h4>
+<p>Das <code>sprint-status.yaml</code>-Schlüsselformat <code>nummer-nummer-name</code> ist ein
+<strong>geteilter Vertrag</strong> zwischen <code>sprint-planning</code>, <code>create-story</code>
+(<code>:156–160</code>), <code>dev-story</code> (<code>:102–106</code>), <code>code-review</code>
+(<code>step-01:38</code>) und <code>quick-dev/sync-sprint-status.md:14</code>. Ein Eigenbau mit anderem
+Key-Format entkoppelt Board/Discovery/Review. Ebenso sind
+<code>planning_artifacts</code>/<code>implementation_artifacts</code> (<code>config.yaml:7–8</code>)
+von allen Skills referenziert.</p>
+
+<div class="note">
+<p><strong>Beleg-Fazit B:</strong> Die Falle ist <strong>belegt</strong>. „Teilweise nutzen + Eigenes
+draufbauen“ ist nur dann nicht brüchig, wenn der Anbau strikt auf <code>_bmad/custom/*.toml</code>
+(vier Schlüssel, v.a. <code>persistent_facts</code> mit <code>file:</code>-Refs) beschränkt bleibt.
+Jeder Anbau an Step-Logik, Templates oder Schlüsselformaten ist update-brüchig und quer gekoppelt.</p>
+</div>
+
+<h2><span class="n">C</span>Gerüst-Mapping: Wo leben die drei Elemente, wann fließen sie ein</h2>
+
+<h4>C.1 &nbsp;Designvorgaben <span class="tag v">V</span></h4>
+<ul>
+<li><strong>Wohnort:</strong> <code>bmad-create-ux-design</code> → <code>planning_artifacts/*ux*.md</code>
+  (<code>create-ux-design/SKILL.md:1–3</code>); ergänzend PRD.</li>
+<li><strong>Kontext-Timing:</strong> <code>create-story</code> lädt <code>ux</code> (<code>SKILL.md:84</code>)
+  und <strong>verdichtet es in die Story-Dev-Notes</strong> → <code>dev-story</code> liest Dev Notes zur
+  Dev-Zeit. In quick-dev: Pfad A zieht UX in <code>epic-&lt;N&gt;-context.md</code>
+  (<code>compile-epic-context.md:40–41</code>), Pfad B lädt <code>*ux*</code> selektiv
+  (<code>step-01:73–78</code>).</li>
+<li><strong>Für den Wunsch entscheidend:</strong> <code>create-ux-design</code> ist explizit als
+  <em>„facilitator working with a product stakeholder“</em> angelegt (<code>SKILL.md:6</code>) — der
+  natürliche Sitz für die <strong>nicht-technische Autorin</strong>: sie produziert das Design-Artefakt,
+  das danach systematisch in jede Story fließt.</li>
+</ul>
+
+<h4>C.2 &nbsp;Edge-Cases <span class="tag v">V</span></h4>
+<ul>
+<li><strong>Wohnort (geplant):</strong> Acceptance Criteria in BDD-Form (<code>template.md:13–15</code>;
+  „already BDD formatted“ <code>create-story:261</code>) und Dev Notes. <code>dev-story</code> Step 5:
+  „Handle error conditions and edge cases as specified in task/subtask“ (<code>:310</code>); DoD prüft
+  „Edge Cases Handled“ (<code>dev-story/checklist.md:38</code>).</li>
+<li><strong>Wohnort (entdeckt):</strong> Der <strong>Edge Case Hunter</strong> ist ein eigener
+  Review-Subagent — in <code>code-review</code> (<code>step-02:23</code>) <strong>und</strong> in quick-dev
+  (<code>step-04-review.md:29</code>).</li>
+<li><strong>Timing:</strong> zweimal — <em>geplante</em> ACs/Dev-Notes zur Story-Zeit <strong>und</strong>
+  <em>aktiv gejagte</em> Findings zur Review-Zeit. Die gejagte Variante hat quick-dev heute schon.</li>
+</ul>
+
+<h4>C.3 &nbsp;Best Practices / Code-Konventionen <span class="tag v">V</span></h4>
+<ul>
+<li><strong>Wohnort:</strong> <code>project-context.md</code> — in klarvo real mit <strong>31 Regeln</strong>
+  (<code>_bmad-output/project-context.md</code>, <code>rule_count: 31</code>, Abschnitte „Critical
+  Implementation Rules“, „Anti-Patterns“); erzeugt via <code>bmad-generate-project-context</code>.
+  Ergänzend CLAUDE.md/Memory und <code>architecture.md</code>.</li>
+<li><strong>Kontext-Timing (früheste + pervasivste Schicht):</strong></li>
+</ul>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Zeitpunkt</th><th>Was passiert</th><th>Beleg</th></tr></thead>
+<tbody>
+<tr><td>Aktivierung</td><td><code>create-story</code> lädt <code>project-context.md</code> als <code>persistent_fact</code></td><td><code>customize.toml:33–35</code></td></tr>
+<tr><td>Dev-Zeit</td><td><code>dev-story</code> lädt <code>{project_context}</code>; quick-dev lädt project-context + CLAUDE.md + Memory</td><td><code>dev-story:212</code> · <code>quick-dev/SKILL.md:68–69</code></td></tr>
+<tr><td>Review-Zeit</td><td>Acceptance Auditor prüft gegen Spec + Kontext-Docs</td><td><code>code-review/step-02:25–26</code> · <code>quick-dev/step-04:30</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>C.4 &nbsp;Kontrast — was deckt quick-dev heute schon ab? <span class="tag v">V</span></h4>
+<ul>
+<li><strong>Schon in quick-dev:</strong> lädt <code>project-context.md</code>, CLAUDE.md, Memory
+  (<code>SKILL.md:68–69</code>); Pfad A kompiliert <code>epic-&lt;N&gt;-context.md</code> aus
+  PRD/Architektur/UX (<code>step-01:53–67</code>), Pfad B lädt PRD/Architektur/UX selektiv
+  (<code>step-01:71–78</code>); erzeugt Spec mit BDD-ACs (<code>spec-template.md</code>); fährt
+  <strong>dreifachen adversarialen Review</strong> (Blind/Edge-Case/Acceptance) mit Loopback
+  (<code>step-04-review.md:26–47</code>).</li>
+<li><strong>Nur im Vollpfad:</strong> ein <strong>durably authored, versioniertes</strong> Design-Artefakt
+  (<code>create-ux-design</code>), eine <strong>pro-Story</strong> technisch verdichtete
+  Dev-Notes/Task-Struktur mit Source-Refs (<code>create-story</code>), und ein Sprint-Board mit
+  Lifecycle. quick-dev <strong>generiert seine Spec ad hoc aus dem Intent</strong>
+  (<code>step-02-plan.md:14–16</code>) — kein fester Sitz, an dem eine nicht-technische Autorin ein
+  Design-Dokument einreicht, das <em>garantiert</em> jede Story speist.</li>
+</ul>
+
+<div class="note">
+<p><strong>Synthese C:</strong> Die drei Wünsche mappen <strong>fast vollständig</strong> auf Artefakte,
+die quick-dev <em>bereits konsumiert</em> — <strong>sofern sie existieren</strong>. Der fehlende Baustein
+ist nicht die Engine, sondern (1) die gepflegten Upstream-Artefakte (UX/PRD/Architektur,
+<code>project-context.md</code>) und (2) die Pro-Story-Verdichtung von <code>create-story</code>. Damit ist
+die These bestätigt: „quick-dev + Eigenbau“ ist die Falle; sauber sind <strong>Artefakte befüllen +
+quick-dev behalten</strong> oder <strong>Vollpfad mit menschlicher <code>create-story</code>-Autorschaft</strong>.</p>
+</div>
+
+<h2><span class="n">D</span>Zweitbetrachtung: Reicht quick-dev mit Customization?</h2>
+<p><em>Anlass: Challenge des Auftraggebers — der Report war von der Eingangs-These („das ist die
+Bestellung des vollen Gerüsts“) gefärbt. Diese Rubrik betrachtet die Frage neu, nur auf Basis der
+verifizierten Skill-Dateien. Die Teile A–C bleiben unverändert gültig; hier ändert sich die
+<strong>Gewichtung</strong>, nicht die Faktenlage.</em></p>
+
+<h3>D.1 &nbsp;Wo der Bias lag</h3>
+<p>Die in Teil B belegte Falle betrifft das <strong>Umbauen von BMAD-Interna</strong> (Step-Logik,
+Templates, Key-Formate). Was das Zielteam eigentlich braucht — <em>eigene Dokumente in den Prozess
+einspeisen</em> — ist kein „Eigenbau“ in diesem Sinne, sondern der <strong>sanktionierte Seam</strong>:
+<code>persistent_facts</code> mit <code>file:</code>-Referenzen in
+<code>_bmad/custom/bmad-quick-dev.toml</code> plus team-eigene Markdown-Dateien, die BMAD-Updates
+nicht berühren (Existenzbeweis: <code>bmad-quick-dev.user.toml:3–4</code> in klarvo)
+<span class="tag v">V</span>. Der ursprüngliche Fazit-Satz hat „Customization“ und „Eigenbau“ zu nah
+aneinandergerückt.</p>
+
+<h3>D.2 &nbsp;Was quick-dev für die drei Wünsche schon kann</h3>
+<ol>
+<li><strong>Intent-Dateien der Autorin werden nativ ingestiert</strong> <span class="tag v">V</span>:
+  <code>step-01:25</code> („intent files, external docs, plans, descriptions → ingest it as starting
+  intent“) und <code>step-01:50</code>. Ihre heutigen ClickUp-Vorarbeiten, als Markdown exportiert,
+  sind genau dieses Format. Sie muss <strong>kein</strong> dev-fertiges Story-File schreiben.</li>
+<li><strong>Die technische Verdichtung macht die Maschine, nicht sie</strong> <span class="tag v">V</span>:
+  <code>step-02</code> untersucht die Codebase selbst und generiert die Spec; ein Mensch gibt am Gate
+  frei. <strong>Wichtiger Punkt gegen die Eingangs-These:</strong> Im Vollpfad wäre die
+  Story-Verdichtung ihr Problem (Teil A: „mit Auflagen“); in quick-dev ist sie es nicht. quick-dev ist
+  für eine nicht-technische Autorin <em>freundlicher</em> als Mensch-im-create-story-Step.</li>
+<li><strong>Designvorgaben:</strong> ein <code>design-guidelines.md</code> per
+  <code>persistent_facts</code> injiziert → bei <em>jedem</em> Lauf geladen; zusätzlich kann die
+  Spec-Frontmatter eine <code>context:</code>-Liste tragen, die der Acceptance Auditor lesen
+  <strong>muss</strong> (<code>step-04:30</code>) <span class="tag v">V</span>.</li>
+<li><strong>Edge-Cases:</strong> Edge-Case-Hunter eingebaut (<code>step-04:29</code>); geplante
+  Edge-Cases kommen über die Intent-Datei in die Spec-ACs <span class="tag v">V</span>.</li>
+<li><strong>Best Practices:</strong> <code>project-context.md</code> + CLAUDE.md + Memory bei
+  Aktivierung geladen (<code>SKILL.md:68–69</code>); <code>generate-project-context</code> existiert
+  zum initialen Erzeugen <span class="tag v">V</span>.</li>
+<li><strong>Kontinuität + Board gibt es auch:</strong> Pfad A lädt die Vorgänger-Spec desselben Epics
+  (Code Map, Design Notes; <code>step-01:67</code>) und synct <code>sprint-status.yaml</code>, wenn
+  ein <code>story_key</code> auflösbar ist (<code>sync-sprint-status.md</code>) — im Report oben
+  unterbelichtet <span class="tag v">V</span>.</li>
+</ol>
+
+<h3>D.3 &nbsp;Ehrliche Lücken von quick-dev-only</h3>
+<ul>
+<li><strong>Scope-Deckel:</strong> eine Spec = ein Goal, 900–1600 Tokens (<code>SKILL.md:24–28</code>);
+  der Multi-Goal-Check erzwingt Schnitte (<code>step-01:81–86</code>). Größere Features = mehrere
+  Läufe; Kohärenz dazwischen hängt an den Artefakten, nicht am Workflow <span class="tag v">V</span>.</li>
+<li><strong>Ein einziges hartes Human-Gate</strong> (Spec-Approve) statt Gate je Stufe — für ein
+  kleines Team mit einem technischen Entscheider eher Feature als Mangel <span class="tag v">V</span>.</li>
+<li><strong>Kein Erstellungs-Prozess für die Artefakte selbst:</strong> quick-dev <em>konsumiert</em>
+  design-guidelines/project-context, aber nichts erzwingt deren Pflege. Disziplin-, kein
+  Tooling-Problem — und der Vollpfad löst es auch nicht automatisch <span class="tag v">V</span>.</li>
+</ul>
+
+<h3>D.4 &nbsp;Einschätzung mit Bedingungen und Tripwires</h3>
+<div class="verdict">
+  <div class="vcard ok"><div class="lbl">Zuversicht quick-dev reicht</div><div class="val">~75–80 %</div></div>
+  <div class="vcard warn"><div class="lbl">Unter Bedingungen</div><div class="val">3 Artefakte + Gate</div></div>
+  <div class="vcard warn"><div class="lbl">Vollpfad</div><div class="val">Eskalationsstufe, kein Muss</div></div>
+</div>
+<p><strong>Bedingungen:</strong></p>
+<ol>
+<li><strong>Team-eigene Standards entstehen — kategorieoffen, autorin-frei:</strong> ein
+  Standards-Ordner (z.B. <code>docs/standards/</code>) per <code>persistent_facts</code>-Glob
+  injiziert (neue Kategorie = neue Datei, Glob bleibt unverändert) plus <code>project-context.md</code>
+  für Code-Konventionen (via <code>generate-project-context</code>). <strong>Die Autorin schreibt ihre
+  Story frei — kein Template, keine Pflegepflicht.</strong> Die Intent-Klärung wandert als
+  KI-Preflight zu ihr an den Schreibtisch (Mechanik + Pipeline im Folge-Report, s.u.).</li>
+<li><strong>Ein technischer Mensch hält das Spec-Gate:</strong> die Autorin liefert die Story als
+  Intent-Datei, der Entwickler approved die generierte Spec (step-02 CHECKPOINT) und beantwortet
+  Restfragen — dank Preflight wenige.</li>
+<li><strong>Größere Features werden geschnitten</strong> — oder das Team wächst in Pfad A hinein:
+  ein leichtes epics-File genügt, um epic-context-Kompilierung + Vorgänger-Kontinuität zu aktivieren.
+  Das ist der graduelle Mittelweg, kein Umstieg.</li>
+</ol>
+<p><strong>Tripwires für den Vollpfad</strong> (erst dann wechseln): mehrwöchige Feature-Züge mit 5+
+zusammenhängenden Stories werden zur Norm · mehrere Personen sollen parallel eine Story-Queue
+abarbeiten · die Spec-Gates verlangen dem Entscheider zu viel Session-Präsenz ab (er will
+vorgefertigte Stories auf Halde).</p>
+<div class="note">
+<p><strong>Revidierte Kernaussage:</strong> Nicht „der Vollpfad ist die Bestellung“, sondern
+<strong>„die Artefakte sind die Bestellung — quick-dev ist die ausreichende Engine dafür, und der
+Vollpfad ist die Eskalationsstufe, in die man hineinwachsen kann.“</strong></p>
+<p><strong>→ Weiterentwicklung:</strong> Drei-Rollen-Modell (Autorin/Entwickler/Reviewer),
+Intent-Preflight bei der Autorin und die Glob-Mechanik im Detail:
+<a href="bmad-quickdev-drei-rollen-2026-07-16.html">Folge-Report „quick-dev im Drei-Rollen-Modell“</a>.
+Kern dort: Der einzige echte Umbau ist <em>zeitlich</em>, nicht technisch — die Intent-Klärung
+wandert vom Entwickler-Schreibtisch an den der Autorin (der Vollpfad löst das auch nicht:
+<code>create-story</code> ist „ZERO USER INTERVENTION“, <code>SKILL.md:17</code>).</p>
+</div>
+
+<h3>D.5 &nbsp;Rolle der CLAUDE.md in diesem Setup</h3>
+<p>Im Setup existieren <strong>drei Schichten</strong> für Konventionen/Kontext — mit unterschiedlichem
+Träger und unterschiedlicher Reichweite:</p>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Schicht</th><th>Träger / Mechanik</th><th>Wer lädt sie wann</th><th>Reichweite</th></tr></thead>
+<tbody>
+<tr><td><strong>CLAUDE.md</strong></td><td><em>Runtime</em>-Mechanik (Claude Code lädt sie automatisch in jede Session, vor jedem Skill)</td><td>Harness bei Session-Start <span class="tag v">V</span> (in dieser Session beobachtet); quick-dev nennt sie zusätzlich explizit (<code>SKILL.md:69</code>) <span class="tag v">V</span> — <code>create-story</code>/<code>dev-story</code> erwähnen sie <strong>nicht</strong> <span class="tag v">V</span></td><td><strong>Nur Claude Code.</strong> BMAD unterstützt auch Copilot/Codex/Ollama (<code>step-01:63</code>) — dort existiert der Mechanismus nicht <span class="tag v">V</span></td></tr>
+<tr><td><strong>project-context.md</strong></td><td>BMAD-nativ, runtime-agnostisch</td><td><code>create-story</code> via <code>persistent_facts</code> (<code>customize.toml:33–35</code>) · <code>dev-story</code> Step 2 (<code>:212</code>) · quick-dev Aktivierung (<code>SKILL.md:68</code>) <span class="tag v">V</span></td><td>Alle Dev-Skills, jede Runtime — Teil des BMAD-Vertrags</td></tr>
+<tr><td><strong>Eigene Dateien via <code>persistent_facts</code></strong></td><td><code>_bmad/custom/&lt;skill&gt;.toml</code>, <code>file:</code>-Globs</td><td>Bei Skill-Aktivierung des jeweiligen Skills <span class="tag v">V</span></td><td>Pro Skill steuerbar (z.B. design-guidelines nur in quick-dev + code-review)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Daraus folgt die Arbeitsteilung:</strong></p>
+<ul>
+<li><strong>CLAUDE.md dünn halten:</strong> Verhaltens-/Prozessregeln (Commit-Politik, Sprache,
+  Repo-Orientierung, „wo liegt was“) und <em>Pointer</em> auf die SSOTs — nicht die Code-Konventionen
+  selbst.</li>
+<li><strong>Code-Konventionen/Testing-Regeln gehören nach <code>project-context.md</code></strong> —
+  das ist die Schicht, die im BMAD-Vertrag hängt und jede Runtime erreicht. <strong>Nie doppelt</strong>
+  in CLAUDE.md und project-context.md pflegen (Drift-Risiko: zwei Quellen, eine veraltet still).</li>
+<li><strong>Für das Zielteam konkret:</strong> Nutzt es Claude Code, ist CLAUDE.md die bequeme Klammer
+  über <em>alle</em> Arbeit (auch außerhalb von BMAD-Skills — Ad-hoc-Fragen, Debugging). Ist die
+  Runtime offen oder gemischt, gehört alles Tragende nach <code>project-context.md</code>, und
+  CLAUDE.md bleibt optionaler Komfort. <span class="tag a">A</span> (Empfehlung, folgt aus den
+  verifizierten Lade-Mechaniken)</li>
+</ul>
+
+<h2>Versions-Caveats</h2>
+<ul>
+<li><strong>Version:</strong> Referenz ist <strong>6.6.1-next.2</strong> (<code>config.yaml:3</code>). Die
+  Vorarbeit notiert, dass einige Dateien in <code>6.6.1-next.2</code>, <code>6.9.0</code> und
+  <code>main</code> byte-identisch sind (<code>tdd-in-bmad-2026-06-27.md:82–86</code>) — nicht garantiert
+  für alle hier zitierten Dateien. Zielteam gegen eigene Version prüfen. <span class="tag v">V</span></li>
+<li><strong>Custom-Overrides sind klarvo-spezifisch:</strong> <code>bmad-quick-dev.user.toml</code> (keine
+  Auto-Commits), <code>create-story</code>-<code>persistent_facts</code> etc. Zielteam hat andere/keine
+  Overrides. <span class="tag v">V</span></li>
+<li><strong>Stack-Abhängigkeit:</strong> klarvo = Tauri/Rust + Kotlin/Android; Ziel = .NET-Mono-Repo. Die
+  Mechanik ist sprach-agnostisch (<code>dev-story:336</code>: „infer test framework from project
+  structure“). <strong>Aber:</strong> die TEA-Kette hat eine Stack-Auto-Detect-Falle, die einen
+  Backend-Lauf an einem Frontend-Manifest anhält (<code>tdd-in-bmad-2026-06-27.md:44–49</code>). In einem
+  Mono-Repo mit gemischten Manifesten (<code>.csproj</code> neben <code>package.json</code>) ist eine
+  analoge Fehlklassifikation plausibel. <span class="tag a">A</span></li>
+<li><strong>Skill-Ablageform:</strong> gelesene Skills liegen unter <code>.claude/skills/</code>
+  (installierte Form). Anders installierte Teams können abweichen; die <code>On Activation</code>-Referenzen
+  auf <code>_bmad/…</code> bleiben der Vertrag. <span class="tag v">V</span></li>
+</ul>
+
+<h2>Offene Fragen für das Gespräch mit dem Zielteam</h2>
+<h4>Nur das Team kann beantworten</h4>
+<ol>
+<li><strong>Rollen-Realität:</strong> Kann/will die nicht-technische Autorin ein <strong>Design-Artefakt</strong>
+  (<code>create-ux-design</code>-Output) besitzen — und wer übernimmt die <strong>technische
+  Story-Verdichtung</strong>? Ohne diese Rollentrennung kippt „Mensch-im-Step“.</li>
+<li><strong>Volumen/Kadenz:</strong> Wie viele Stories pro Woche? Vollpfad lohnt bei kontinuierlichem Fluss;
+  bei sporadischen Änderungen ist „Artefakte + quick-dev“ leichter.</li>
+<li><strong>Sprint-Board erwünscht?</strong> Epic-/Story-Lifecycle (<code>sprint-status.yaml</code>) — oder
+  reicht der spec-zentrierte quick-dev-Fluss?</li>
+<li><strong>Update-Politik:</strong> Wie oft aktualisieren sie BMAD? Je häufiger, desto härter die
+  Update-Falle bei Eigenanbauten.</li>
+<li><strong>Design-Format heute (ClickUp):</strong> In welcher Form liegen die Vorarbeiten vor, und lassen
+  sie sich in ein <code>create-ux-design</code>/PRD-Artefakt oder <code>project-context.md</code>-Regeln
+  überführen?</li>
+</ol>
+<h4>Das Repo / diese Verifikation klärt bereits</h4>
+<ul>
+<li><code>dev-story</code> akzeptiert ein handgeschriebenes Story-File strukturell (A.4) — die Mechanik ist
+  kein Blocker, die inhaltliche Verdichtung ist der Aufwand.</li>
+<li>Die Falle ist strukturell belegt (Teil B) — der einzig update-sichere Anbau-Seam ist
+  <code>_bmad/custom/*.toml</code> <code>persistent_facts</code> mit <code>file:</code>-Referenzen.</li>
+<li>quick-dev lädt <code>project-context.md</code>/CLAUDE.md/Memory/Planungs-Artefakte bereits (C.4) —
+  Best Practices und (Review-)Edge-Cases sind heute schon abgedeckt, wenn die Artefakte existieren; der
+  ehrliche Zugewinn des Vollpfads ist der <strong>feste Sitz für Design-Vorgaben</strong> und die
+  <strong>Pro-Story-Verdichtung</strong>.</li>
+</ul>
+
+<footer>
+<strong>Gelesene Belegdateien (Auszug):</strong><br>
+<code>bmad-dev-story/{SKILL.md,checklist.md}</code> ·
+<code>bmad-create-story/{SKILL.md,template.md,discover-inputs.md,checklist.md,customize.toml}</code> ·
+<code>bmad-quick-dev/{SKILL.md,step-01,step-02,step-04,compile-epic-context.md,sync-sprint-status.md}</code> ·
+<code>bmad-code-review/steps/{step-01,step-02}</code> ·
+<code>bmad-create-ux-design/SKILL.md</code> ·
+<code>bmad-generate-project-context/project-context-template.md</code> ·
+<code>_bmad/bmm/config.yaml</code> · <code>_bmad/custom/bmad-quick-dev.user.toml</code> ·
+<code>_bmad-output/project-context.md</code> · <code>_bmad-output/tdd-in-bmad-2026-06-27.md</code>
+</footer>
+
+</div>
+</body>
+</html>

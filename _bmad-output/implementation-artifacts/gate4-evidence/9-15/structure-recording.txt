@@ -1,0 +1,12 @@
+# klarvo overlay windows — state=recording — 2026-06-30T16:48:10+02:00
+# density: Physical density: 420
+
+──   Window #7 Window{708135b u0 com.klarvo.voice}:
+        mAttrs={(0,0)(fillxwrap) gr=BOTTOM CENTER_VERTICAL sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+        Requested w=1080 h=525 mLayoutSeq=139
+──   Window #8 Window{3753d7b u0 com.klarvo.voice}:
+        mAttrs={(0,880)(509x341) gr=TOP START CENTER sim={adjust=pan} ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+        Requested w=509 h=341 mLayoutSeq=139
+
+# count of klarvo overlay window headers:
+2

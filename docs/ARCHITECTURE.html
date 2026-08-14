@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klarvo Architecture — v1-ship</title>
+<style>
+  :root{
+    --bg:#0F1112; --surface:#16181A; --elevated:#232729; --border:#2c3136;
+    --text:#E4E7EA; --muted:#9aa3ab; --dim:#6b747c;
+    --teal:#29C7AC; --teal-hi:#57DDC7; --amber:#E9A24C; --danger:#EE6F63;
+    --maxw:880px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:48px 24px 120px}
+  header.doc{border-bottom:1px solid var(--border); padding-bottom:20px; margin-bottom:8px}
+  h1{font-size:30px; font-weight:750; margin:0 0 10px; letter-spacing:-.01em}
+  h1 .k{color:var(--teal)}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+  .pill{font-size:12px; padding:3px 10px; border-radius:999px; background:var(--elevated);
+        color:var(--muted); border:1px solid var(--border)}
+  .pill b{color:var(--text); font-weight:600}
+  h2{font-size:21px; font-weight:700; margin:46px 0 14px; padding-top:10px; letter-spacing:-.01em}
+  h2 .n{color:var(--teal); font-variant-numeric:tabular-nums; margin-right:10px}
+  h3{font-size:16px; font-weight:650; margin:26px 0 8px; color:var(--teal-hi)}
+  p{margin:12px 0}
+  a{color:var(--teal); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{background:var(--elevated); border:1px solid var(--border); border-radius:5px;
+       padding:1px 6px; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       color:#cfe9e3}
+  strong{color:#fff; font-weight:650}
+  ul{margin:12px 0; padding-left:22px}
+  li{margin:7px 0}
+  hr{border:none; border-top:1px solid var(--border); margin:36px 0}
+  .lead{color:var(--muted); font-size:15.5px}
+  .callout{border-left:3px solid var(--amber); background:rgba(233,162,76,.07);
+           padding:12px 16px; border-radius:0 8px 8px 0; margin:18px 0; color:var(--text)}
+  .callout.teal{border-color:var(--teal); background:rgba(41,199,172,.07)}
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:14px;
+        background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{background:var(--elevated); color:var(--muted); font-weight:600; font-size:12.5px;
+     text-transform:uppercase; letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:12px}
+  .st{font-weight:700; font-size:12.5px; white-space:nowrap}
+  .done{color:var(--teal)} .prog{color:var(--amber)} .park{color:var(--dim)} .open{color:var(--danger)}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; margin:14px 0; font-size:13px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .dot{width:10px; height:10px; border-radius:50%; display:inline-block}
+  .toc{background:var(--surface); border:1px solid var(--border); border-radius:12px;
+       padding:16px 20px; margin:24px 0}
+  .toc ol{margin:6px 0 0; padding-left:20px; columns:2; column-gap:28px}
+  .toc li{margin:4px 0}
+  .toc a{color:var(--text)}
+  footer{margin-top:60px; padding-top:18px; border-top:1px solid var(--border);
+         color:var(--dim); font-size:13px}
+  @media(max-width:620px){ .toc ol{columns:1} h1{font-size:25px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1><span class="k">Klarvo</span> Architecture <span style="color:var(--muted);font-weight:500">— v1-ship</span></h1>
+  <div class="meta">
+    <span class="pill">Status: <b>Living</b></span>
+    <span class="pill">Last updated: <b>2026-06-17</b></span>
+    <span class="pill">App: <b>0.5.0</b></span>
+    <span class="pill">Branch: <b>v1-ship</b></span>
+  </div>
+</header>
+
+<h3>What this document is (and is not)</h3>
+<p class="lead">This is the <strong>front door</strong> to Klarvo's architecture: a current system map plus an
+index that ties together the decisions and rules that already live elsewhere. It exists because the
+architecture truth was scattered (ADRs + a rules digest + an audit) with <strong>no single navigable map</strong> —
+<code>docs/index.md</code> itself notes "no full project scan has been run".</p>
+<ul>
+  <li>This is <strong>not</strong> the rules digest agents read first — that is <code>_bmad-output/project-context.md</code>.</li>
+  <li>This is <strong>not</strong> where decisions are made — those are <code>docs/adr/</code>.</li>
+  <li>It <strong>points to</strong> those authorities rather than copying them. When they change, this doc gets a one-line update and a pointer, never a second copy.</li>
+</ul>
+<div class="callout">
+  ⚠️ A previous architecture doc lived in the <strong>team repo</strong> (<code>teams/klarvo/knowledge/architecture.md</code>)
+  and went stale (~2 months untouched) because it sat away from the code. This doc lives <strong>next to the code</strong>
+  on purpose, and is deliberately thin: index + map, not prose canon.
+</div>
+
+<div class="toc">
+  <strong style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Contents</strong>
+  <ol>
+    <li><a href="#s1">What Klarvo is</a></li>
+    <li><a href="#s2">Current state</a></li>
+    <li><a href="#s3">The two-platform model</a></li>
+    <li><a href="#s4">System map</a></li>
+    <li><a href="#s5">Binding rules</a></li>
+    <li><a href="#s6">Build &amp; run</a></li>
+    <li><a href="#s7">Design system (visual SSOT)</a></li>
+    <li><a href="#s8">Known debt register</a></li>
+    <li><a href="#s9">Where truth lives</a></li>
+    <li><a href="#s10">Keeping this true</a></li>
+  </ol>
+</div>
+
+<h2 id="s1"><span class="n">1</span>What Klarvo is</h2>
+<p>A source-available, BYOK voice-dictation app for <strong>Windows desktop</strong> and <strong>Android</strong>:
+global hotkey / floating bubble → record mic → STT → LLM cleanup → paste into the focused field, with
+offline-capable paths and no remote telemetry. PolyForm Noncommercial license.</p>
+<p>Pipeline shape (both platforms): <strong>record → transcribe (STT) → clean up (LLM) → sanitize → paste →
+persist (history) → optional sync.</strong></p>
+
+<h2 id="s2"><span class="n">2</span>Current state <span style="color:var(--muted);font-weight:500;font-size:15px">(2026-06-17)</span></h2>
+<p><code>v1-ship</code> is the <strong>shipping product</strong> — a brownfield Tauri+Kotlin v1. (A v2 BMAD-greenfield
+blueprint with a plugin/uniffi architecture exists in-repo but is <strong>archive/reference only</strong> — do not
+apply its patterns, versions, or APIs to v1.)</p>
+<div class="legend">
+  <span><span class="dot" style="background:var(--teal)"></span>done</span>
+  <span><span class="dot" style="background:var(--amber)"></span>in-progress</span>
+  <span><span class="dot" style="background:var(--dim)"></span>parked</span>
+</div>
+<table>
+  <thead><tr><th>Epic</th><th>Theme</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Config/state persistence hardening (ADR-0015)</td><td class="st done">done</td></tr>
+    <tr><td>2</td><td>Android security guardians (ADR-0016)</td><td class="st done">done</td></tr>
+    <tr><td>3</td><td>Test integrity — close the false-safety islands</td><td class="st done">done</td></tr>
+    <tr><td>4</td><td>God-file depth refactor (behavior-preserving)</td><td class="st done">done</td></tr>
+    <tr><td>5 + 6</td><td>Live-cleanup-preview (feature)</td><td class="st done">done</td></tr>
+    <tr><td>7</td><td>Cross-platform parity</td><td class="st park">parked — but <span class="done">7-3 done</span> (§3)</td></tr>
+    <tr><td>8</td><td>Desktop visual overhaul ("Studio Dark")</td><td class="st prog">in-progress · live</td></tr>
+    <tr><td>9</td><td>Android visual overhaul + bubble interaction</td><td class="st prog">in-progress</td></tr>
+  </tbody>
+</table>
+<p>The remediation epics (1–4) and the biggest structural drift driver (7-3, §3) are <strong>done</strong>. The
+active work is the visual overhaul (8 desktop, 9 android).</p>
+
+<h2 id="s3"><span class="n">3</span>The two-platform model — the central structural fact</h2>
+<p>Klarvo renders the same product two ways, maintained <strong>independently</strong>:</p>
+<ul>
+  <li><strong>Desktop:</strong> Tauri 2 — a <strong>Rust core</strong> (<code>src-tauri/</code>) plus a <strong>React/Tailwind webview</strong>
+  (<code>src/</code>). The frontend calls the Rust core through Tauri IPC commands.</li>
+  <li><strong>Android:</strong> <strong>native Kotlin</strong> (<code>android/kotlin-src/com/klarvo/voice/</code>), not a webview. It
+  <strong>bypasses Tauri IPC for ~85% of behavior</strong> — Kotlin talks to Groq over HTTP and to the Rust core over a
+  <strong>raw JNI bridge</strong> directly.</li>
+</ul>
+<div class="callout">
+  <strong>Consequence — and the #1 historical source of cross-platform drift:</strong> shared behavior either has to be
+  <em>mirrored</em> in both the Rust and Kotlin paths, or <em>single-sourced</em> in Rust and consumed over JNI.
+  Getting this wrong is what produced the divergences the remediation epics fixed.
+</div>
+<p><strong>The dominant shared logic is now single-sourced (no longer duplicated):</strong></p>
+<ul>
+  <li><strong>STT path</strong> — request + output guards (hallucination filter, prompt-echo, fragment-strip) + pre-STT
+  silence filter — lives <strong>only in the Rust core</strong>, Android consumes it over JNI
+  (<code>stt/jni_bridge.rs</code>, <code>stt/groq_jni.rs</code>; Kotlin <code>GroqSttBridge.kt</code>). The old Kotlin twins
+  (<code>HallucinationFilter.kt</code>, <code>SilencePreFilter.kt</code>, <code>KlarvoApi.transcribe</code>) were
+  <strong>deleted</strong>. <strong>Hard rule (ADR-0017): a parallel Kotlin re-implementation of any STT/guard behavior is forbidden.</strong></li>
+  <li><strong>License validation</strong> — shared in Rust over JNI (<code>license/jni.rs</code>).</li>
+  <li><strong>Design tokens</strong> — generated, not hand-copied (see §7).</li>
+</ul>
+<p><strong>Deliberately still platform-local</strong> (accepted asymmetry, ADR-0016 Amendment 2; tracked in the parked
+Epic 7, <em>not</em> bugs): text chunking (7-1), the live auto-stop VAD gate (7-2 — a realtime frame stream over JNI is
+intentionally out of scope), and LLM-provider routing (7-5).</p>
+<div class="callout teal">
+  Rule of thumb when editing shared behavior: <strong>config keys, silence/VAD thresholds, paste logic, anything
+  user-observable</strong> — if it isn't single-sourced in Rust, it must be changed in BOTH paths.
+</div>
+
+<h2 id="s4"><span class="n">4</span>System map</h2>
+
+<h3>4.1 &nbsp;Rust core — <code>src-tauri/src/</code> (~31k LOC)</h3>
+<table>
+  <thead><tr><th>Module</th><th>LOC</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>config/mod.rs</code></td><td>4242</td><td><code>AppConfig</code> (SSOT → <code>config.json</code>), load/migrate/normalize, single sanctioned write path (<code>save_config_locked</code>, ADR-0015 / 4-3). Largest file; see debt §8.</td></tr>
+    <tr><td><code>pipeline.rs</code></td><td>4081</td><td>The dictation orchestrator: record → STT → cleanup → paste, state transitions, retries, offline fallbacks, per-stage Tauri events.</td></tr>
+    <tr><td><code>audio/mod.rs</code></td><td>2435</td><td>cpal capture (desktop), WASAPI fallback, device resilience, WAV encode.</td></tr>
+    <tr><td><code>commands/settings.rs</code></td><td>2158</td><td>Tauri command handlers for settings load/save.</td></tr>
+    <tr><td><code>llm/mod.rs</code> (+<code>local.rs</code>)</td><td>2063</td><td>Cleanup providers (DeepSeek/Groq/OpenAI/OpenRouter/offline Qwen), 3 styles, PI/sanitization.</td></tr>
+    <tr><td><code>lib.rs</code></td><td>1611</td><td>Tauri bootstrap, <code>AppState</code>, command registry.</td></tr>
+    <tr><td><code>license/</code> (<code>mod</code>,<code>ls_client</code>,<code>jni</code>)</td><td>1270+</td><td>Offline HMAC + Lemon Squeezy; shared to Android via JNI.</td></tr>
+    <tr><td><code>history/mod.rs</code></td><td>983</td><td>SQLite (<code>history.db</code>) + Turso HTTP sync.</td></tr>
+    <tr><td><code>stt/</code> (+<code>hallucination</code>,<code>jni_bridge</code>,<code>groq_jni</code>,…)</td><td>954+</td><td>STT providers + the shared-core JNI path + guards.</td></tr>
+    <tr><td><code>voice_command/</code></td><td>864</td><td>"Klarvo stop"-style command mode (desktop).</td></tr>
+    <tr><td><code>vad/mod.rs</code></td><td>715</td><td>Voice-activity detection (Silero / RMS).</td></tr>
+    <tr><td><code>sync/mod.rs</code></td><td>626</td><td>Turso push/pull.</td></tr>
+    <tr><td><code>paste/mod.rs</code></td><td>593</td><td>Win32 <code>SendInput</code> (desktop).</td></tr>
+    <tr><td><code>dictionary/</code>, <code>hotkey/</code>, <code>commands/*</code>, <code>fs.rs</code></td><td>—</td><td>Custom dictionary, global hotkey slots, IPC endpoints, fs helpers.</td></tr>
+  </tbody>
+</table>
+
+<h3>4.2 &nbsp;Frontend — <code>src/</code> (~13k LOC · React 19 + TS strict + Tailwind 4)</h3>
+<p><code>App.tsx</code> (main container) · <code>Onboarding.tsx</code> (1579, two-track wizard) · <code>FloatingBar.tsx</code>
+(docked status pill, waveform) · <code>PreviewPanel.tsx</code> (live cleanup preview) · <code>tauri-commands.ts</code>
+(1087, typed IPC wrappers) · <code>types.ts</code> · <code>components/</code> (Settings tree, model managers, dashboards,
+<code>ui.tsx</code> atoms, <code>settings/</code> subpages) · <code>hooks/</code> (useSettings, useRecording, useLicense,
+usePanels, …). Styling: <code>styles.css</code> holds the <code>--k-*</code> design tokens (§7).</p>
+
+<h3>4.3 &nbsp;Android — <code>android/kotlin-src/com/klarvo/voice/</code> (~7.8k LOC · minSdk 24)</h3>
+<p><code>KlarvoOverlayService.kt</code> (1971 — overlay window, touch/drag, mode switching, owns the native pipeline) ·
+<code>KlarvoApi.kt</code> (1092 — HTTP/JNI calls; STT request removed, now via <code>GroqSttBridge.kt</code>) ·
+<code>FloatingBubbleView.kt</code> + <code>ListeningPanelView.kt</code> (View+Canvas bubble, ADR-0018) ·
+<code>KlarvoAudioRecorder.kt</code> (AudioRecord→WAV) · <code>KlarvoAccessibilityService.kt</code> (paste + keyboard-state) ·
+<code>BankingAppBlocklist.kt</code>/<code>BankingGuard.kt</code> (sensitive-app guard) · <code>KlarvoTheme.kt</code>
+(<strong>generated</strong> from CSS tokens, §7) · <code>Local{Whisper,Llm}Inference.kt</code>, <code>LicenseValidator.kt</code>,
+<code>DebugHarnessReceiver.kt</code> (state harness, ADR-0018).</p>
+
+<h3>4.4 &nbsp;Persistence &amp; config</h3>
+<ul>
+  <li><strong><code>config.json</code></strong> (in AppData) is the <strong>single source of truth</strong> for all settings, API keys
+  (plaintext today — OS-keystore is noted future work), license, hotkey slots. Not SQLite, not Tauri storage.
+  Atomic + single-writer writes (ADR-0015).</li>
+  <li><strong><code>history.db</code></strong> (SQLite) is the <em>only</em> DB — recording history; UUID PKs; synced to Turso.</li>
+</ul>
+
+<h2 id="s5"><span class="n">5</span>Binding rules <span style="color:var(--muted);font-weight:500;font-size:14px">(authority: <code>project-context.md</code> + ADRs)</span></h2>
+<p>The unobvious ones, with pointers — do not treat this list as complete; read the digest:</p>
+<ul>
+  <li><strong>Platform-gate heavy deps</strong> (<code>whisper-rs</code>, <code>llama-cpp-2</code>, <code>cpal</code>, <code>arboard</code>,
+  <code>jni</code>, <code>windows</code>) behind <code>#[cfg(...)]</code>. Never break the Android/Linux build.</li>
+  <li><strong>No panics</strong> — structured <code>Result</code>/<code>AppError</code>, fail-soft; no <code>todo!</code>/<code>unimplemented!</code>.</li>
+  <li><strong>Tauri event names use colons</strong> (<code>klarvo:state-changed</code>), never dots.</li>
+  <li><strong>State-file writes are atomic + single-writer</strong> (ADR-0015). Don't add a second writer.</li>
+  <li><strong>Linux <code>cargo test</code> is near-zero signal for surface features</strong> — a real <strong>Windows release build +
+  manual press-to-paste smoke</strong> is the DoD gate; run <code>docs/surface-smoke-checklist.md</code> first.</li>
+  <li><strong>Never make the user the rendering oracle</strong> — isolate/observe a visual defect yourself before changing app
+  code; never iterate guess→build→test blind.</li>
+  <li><strong>BYOK, no telemetry</strong> — no Sentry/analytics/phone-home. <strong>Never hardcode keys.</strong></li>
+  <li><strong>Factor out only on proven duplication (≥2 consumers).</strong> No premature abstraction.</li>
+</ul>
+
+<h2 id="s6"><span class="n">6</span>Build &amp; run</h2>
+<ul>
+  <li><strong>Windows:</strong> <code>scripts/sync-and-build.ps1</code> (robocopy WSL → <code>D:\apps\klarvo</code> → Tauri build).
+  Signer hangs → run <code>rsign</code> after (<code>scripts/sign-installer.sh</code>). Dev in WSL, build/test on Windows.</li>
+  <li><strong>Android:</strong> <code>scripts/android-build.sh</code>; smoke via <code>scripts/android-smoke.sh</code> (runs the
+  token-drift <code>--check</code> gate, §7). No in-UI version screen — verify freshness by timestamp/APK.</li>
+</ul>
+
+<h2 id="s7"><span class="n">7</span>Design system (visual SSOT)</h2>
+<ul>
+  <li><strong>Canon = <code>docs/design/overhaul/source/</code></strong> (+ <code>MANIFEST.md</code> with provenance fingerprints) is
+  the single source of truth for <strong>visual tokens, color semantics, and interaction meaning</strong>, cross-platform (ADR-0019).</li>
+  <li><strong>Tokens are generated, not hand-copied.</strong> <code>--k-*</code> custom properties in <code>src/styles.css</code> are
+  the source; <strong>Android <code>KlarvoTheme.kt</code> is codegen'd</strong> from them (<code>scripts/gen-android-theme.mjs</code>,
+  story 9-10 <strong>done</strong>) with a <strong>build-gate</strong> (<code>--check</code> fails if hand-edited). <strong>Regenerate, never hand-edit Kotlin tokens.</strong></li>
+  <li><strong>Color semantics are a codified rule</strong> (ADR-0019 §3):
+    <span style="color:var(--teal)">●</span> <strong>teal</strong> = brand/ready/processing/success/focus ·
+    <span style="color:var(--amber)">●</span> <strong>amber</strong> = live/recording only ·
+    <span style="color:var(--danger)">●</span> <strong>danger/red</strong> = destructive (cancel/discard/delete/error) <strong>only</strong>,
+    never the primary send/confirm. Send/confirm is a non-red affordance.</li>
+  <li>Layout is <em>not</em> shared (desktop docked pill vs. android floating bubble + panel); <strong>meaning</strong> is shared.
+  Android bubble is View+Canvas, not Compose (ADR-0018).</li>
+</ul>
+
+<h2 id="s8"><span class="n">8</span>Known limitations <span style="color:var(--muted);font-weight:500;font-size:14px">(current state)</span></h2>
+<p>Factual gaps in what the system does today — this is part of the <em>state description</em>, not a plan. The
+<strong>"Owned by"</strong> column points to the planned work item that covers a gap; <strong style="color:var(--danger)">"— not yet owned"</strong>
+means no plan covers it yet. Those un-owned gaps are surfaced here for visibility only — the call to act on them lives
+in the backlog / a new story (<code>docs/backlog.md</code>), never in this doc.</p>
+<table>
+  <thead><tr><th>Limitation — what the system does <em>not</em> do today</th><th>Owned by</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Desktop has <strong>no token-enforcement gate</strong> — raw hex/<code>rgba()</code> can be hardcoded in <code>src/</code>
+      components (e.g. <code>FloatingBar.tsx</code>); only Android has the <code>--check</code> codegen gate.</td>
+      <td class="open"><strong>— not yet owned</strong><br><span style="color:var(--muted);font-size:13px">Epic 8 re-skins surfaces, but no enforcement-gate story exists.</span></td>
+    </tr>
+    <tr>
+      <td><strong>No full mechanical project map</strong> — <code>document-project</code> has never run a full scan.</td>
+      <td class="open"><strong>— not yet owned</strong><br><span style="color:var(--muted);font-size:13px">BMAD <code>document-project</code> re-scan would produce it.</span></td>
+    </tr>
+    <tr>
+      <td><code>config/mod.rs</code> is 4242 LOC (largest file).</td>
+      <td>Epic 4 (done) — <code>load_config</code> core isolated (4-1), single write path (4-3); remaining size accepted.</td>
+    </tr>
+    <tr>
+      <td>Chunking / live-VAD / LLM-routing are duplicated per platform.</td>
+      <td>ADR-0016 A2 — deliberate asymmetry; Epic 7 (parked): 7-1, 7-2, 7-5.</td>
+    </tr>
+    <tr>
+      <td>Dead config keys (settable, consumed nowhere) + no golden-vector parity net.</td>
+      <td>Epic 7-7 (backlog) + <code>docs/backlog.md</code>.</td>
+    </tr>
+    <tr>
+      <td>API keys are plaintext in <code>config.json</code>.</td>
+      <td>Noted future (OS-keystore) — <code>project-context.md</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="s9"><span class="n">9</span>Where truth lives (authorities)</h2>
+<ul>
+  <li><strong>Agent rules digest (read first):</strong> <code>_bmad-output/project-context.md</code></li>
+  <li><strong>Decisions + rationale:</strong> <code>docs/adr/</code> — 0015 state writes · 0016 Android parity (+A1/A2) · 0017 shared-core STT · 0018 bubble rendering · 0019 design SSOT</li>
+  <li><strong>Remediation context:</strong> <code>docs/robustness-audit-2026-05-30.md</code> <em>(pre-remediation; many findings now fixed — cross-check against sprint-status)</em></li>
+  <li><strong>Epics / stories / status:</strong> <code>_bmad-output/planning-artifacts/epics*.md</code>, <code>sprint-status.yaml</code></li>
+  <li><strong>Design canon:</strong> <code>docs/design/overhaul/source/MANIFEST.md</code></li>
+  <li><strong>Surface traps:</strong> <code>docs/surface-smoke-checklist.md</code></li>
+  <li><strong>Conductor contract:</strong> <code>_bmad/custom/bmad-epic-conductor.toml</code></li>
+</ul>
+
+<h2 id="s10"><span class="n">10</span>Keeping this true (anti-staleness)</h2>
+<p>This doc earns its place only if it stays the <strong>thin index</strong>, not a second canon:</p>
+<ul>
+  <li>When an ADR lands or an epic's status flips, add/adjust <strong>one line</strong> here + a pointer. Never copy an ADR's content in — link it.</li>
+  <li>Regenerate the mechanical code map via BMAD <code>document-project</code>; this doc stays the human-facing tie-together layer above it.</li>
+  <li>If this file starts duplicating <code>project-context.md</code> or the ADRs, delete the duplication. The failure mode to
+  avoid is the stale <code>teams/.../architecture.md</code> — distance from the code + prose accretion is what killed it.</li>
+</ul>
+
+<footer>
+  Klarvo Architecture · v1-ship · generated as a review render of <code>docs/ARCHITECTURE.md</code> (2026-06-17).
+  This HTML is a read-only view; the markdown is the source.
+</footer>
+
+</div>
+</body>
+</html>
