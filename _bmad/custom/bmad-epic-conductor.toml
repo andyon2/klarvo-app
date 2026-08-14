@@ -19,7 +19,7 @@ command       = "scripts/android-smoke.sh"   # build / install / drive-to-state 
 proxy_surface = "headless Android emulator via scripts/android-emulator.sh — install --abi arm64-v8a so the arm64-only Rust .so runs via the x86_64 image's native-bridge"
 evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
 # The real target is NOT unattended-producible — never an automated-run target:
-real_target   = "the real Xiaomi/HyperOS device: its install confirmation needs a finger and the DEBUG_SET_STATE harness is dead on HyperOS (background restrictions). It is Andi's BATCHED visual gate only."
+real_target   = "the real Xiaomi/HyperOS device: its install confirmation needs a finger, so it stays Andi's BATCHED visual gate only — never an automated-run target. CORRECTION 2026-08-12 (Story 11-6 GATE-4): the DEBUG_SET_STATE harness is NOT dead on HyperOS — that claim was wrong and misroutes debugging. It failed because DebugHarnessReceiver was declared in no manifest: the declaring app/src/debug/AndroidManifest.xml lived only in the gitignored gen/android tree that 'tauri android init' regenerates. With the manifest restored it drives the real device fine; the restoration is volatile for the same reason. See docs/backlog.md."
 
 [run_guard]
 # Mechanical run-isolation (Naht 2 + Naht 4): lock + HEAD-watch + real-target detach.
