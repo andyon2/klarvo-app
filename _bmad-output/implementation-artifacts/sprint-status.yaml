@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-08-10
+# last_updated: 2026-08-17
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-08-10
+last_updated: 2026-08-17
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -153,13 +153,14 @@ development_status:
   10-4-native-overlay-dpi-scaling-and-appearance-wiring: done
   epic-10-retrospective: done
 
-  # Epic 11 — Cross-Platform Live-Preview [L3 feature] — Desktop-Box (Epics 5/6) auf Android bringen; benchmark-first
-  epic-11: in-progress
+  # Epic 11 — Cross-Platform Live-Preview [L3 feature] — done 2026-08-17 (Evidenz: epic-11-retro-2026-08-17.md); kein 11-5 (Nummernlücke)
+  epic-11: done
   11-1-android-live-preview-feasibility-benchmark: done
   11-2-android-live-preview-port: done
   11-3-android-preview-box-device-feedback-pass: done
   11-4-bubble-structurally-above-preview-z-order: done
   11-6-line-spacing-appearance-setting: done
+  epic-11-retrospective: done
 
   # Epic 12 — Cloud-Resilienz [L3 feature] — done 2026-07-06 (Evidenz: epic-12-retro-2026-07-06.md); 12-3 deferred
   epic-12: done
