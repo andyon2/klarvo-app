@@ -2,7 +2,7 @@
 #
 # Usage (from PowerShell):
 #   powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\workspace\products\klarvo\scripts\dev.ps1
-#   -SkipNpm   skip `npm install` (faster start when deps are unchanged)
+#   -SkipNpm   skip the npm step (faster start when deps are unchanged)
 #
 # Run this ONCE and leave it running. After each edit Claude makes in WSL, run
 # scripts/sync.ps1 (fast robocopy only) in a SECOND terminal — Vite HMR reloads
@@ -42,10 +42,18 @@ if ($LASTEXITCODE -ge 8) { Fail "robocopy sync failed (exit $LASTEXITCODE)." }
 
 Set-Location $dst
 
+# `npm ci`, not `npm install` -- same reason as sync-and-build.ps1: the JS Tauri
+# plugins must match their Rust crate versions exactly, and `npm install`
+# re-resolves anything the lock does not satisfy. Here that would give the dev
+# build a different dependency tree than the release build, which is the harder
+# bug to see. `npm ci` installs the lock verbatim or fails loudly.
 if (-not $SkipNpm) {
-    Write-Host "Installing npm dependencies..." -ForegroundColor Cyan
-    npm install
-    if ($LASTEXITCODE -ne 0) { Fail "npm install failed (exit $LASTEXITCODE)." }
+    Write-Host "Installing npm dependencies (npm ci)..." -ForegroundColor Cyan
+    npm ci
+    if ($LASTEXITCODE -ne 0) {
+        Fail ("npm ci failed (exit $LASTEXITCODE). If it reports package.json and package-lock.json " +
+              "out of sync, fix it in WSL (npm install, commit package-lock.json) -- not here.")
+    }
 }
 
 Write-Host ""

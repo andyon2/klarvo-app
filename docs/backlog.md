@@ -793,14 +793,52 @@ schickt die nächste Sitzung in die falsche Richtung. Korrigieren, sobald Punkt 
 - `scripts/android-emulator.sh`: die `klarvo-emu`-AVD gibt es nur auf dem Laptop; hier hängt es
   endlos in `adb wait-for-device`.
 
-### 4. `sync-and-build.ps1` ist repo-weit gebrochen (Windows-Build)
+### 4. `sync-and-build.ps1` ist repo-weit gebrochen (Windows-Build) — ✅ BEHOBEN 2026-08-17
 
-Zwei Ursachen, die sich gegenseitig verdecken: `package-lock.json` enthält **keinen** Eintrag für
-`@tauri-apps/plugin-log` (`package.json` fordert `^2`), sodass `npm ci` eine Version zieht, die gegen
-die Rust-Crate-Version mismatcht — und `sync-and-build.ps1` fährt **nach** dem robocopy sein eigenes
-`npm install`, das jeden vorher gesetzten Pin wieder abräumt. Für den 11-6-Gate mit expliziten
-`--no-save`-Pins plus npm-freiem Skript umgangen; das ist keine Lösung. Fix: die Tauri-npm-Pakete im
-Lock pinnen und das `npm install` im Skript hinter einen Schalter legen.
+> Behoben als Retro-Aktionspunkt AI-1 (`epic-11-retro-2026-08-17.md`), vor Story 8-5.
+
+**Ursprüngliche Beschreibung (2026-08-11):** Zwei Ursachen, die sich gegenseitig verdecken:
+`package-lock.json` enthält **keinen** Eintrag für `@tauri-apps/plugin-log` (`package.json` fordert
+`^2`), sodass `npm ci` eine Version zieht, die gegen die Rust-Crate-Version mismatcht — und
+`sync-and-build.ps1` fährt **nach** dem robocopy sein eigenes `npm install`, das jeden vorher
+gesetzten Pin wieder abräumt. Für den 11-6-Gate mit expliziten `--no-save`-Pins plus npm-freiem
+Skript umgangen; das ist keine Lösung. Fix: die Tauri-npm-Pakete im Lock pinnen und das
+`npm install` im Skript hinter einen Schalter legen.
+
+**Korrektur der Diagnose beim Fix.** `npm ci` zog keine falsche Version — es brach ab
+(`EUSAGE: package.json and package-lock.json are not in sync`). Das Skript fuhr `npm install`, nicht
+`npm ci`. Der gemessene Mechanismus: `@tauri-apps/plugin-log` fehlt im Lock → `npm install` löst
+`^2` frisch auf → heute **2.9.0**, das `@tauri-apps/api ^2.11.0` fordert → hebt `api` gegen den auf
+2.10.1 gepinnten Rest des Baums an. Die Kaskade über `api` ist der eigentliche Bruch, nicht
+plugin-log allein.
+
+**Die Regel, die dahinter steht:** JS-Plugin-Version == Rust-Crate-Version, exakt. Belegt an den
+beiden Plugins, die korrekt im Lock stehen — `plugin-opener` 2.5.3 / `tauri-plugin-opener` 2.5.3,
+`plugin-updater` 2.10.0 / `tauri-plugin-updater` 2.10.0. `tauri-plugin-log` ist 2.8.0, also gehört
+JS auf 2.8.0.
+
+**Fix:**
+1. `package.json`: `@tauri-apps/plugin-log` exakt auf `2.8.0` gepinnt (kein `^`) — die Kopplung an
+   die Rust-Crate steht damit sichtbar in der Datei, nicht nur im Lock.
+2. `package-lock.json` regeneriert. Delta: genau ein neuer Eintrag (plugin-log 2.8.0) plus die
+   veraltete Wurzel-Identität (`voxlit` 0.4.8 → `klarvo` 0.5.0). Kein anderes Paket bewegt sich.
+3. `sync-and-build.ps1` fährt jetzt **`npm ci`** statt `npm install`. `npm ci` installiert den Lock
+   wörtlich, schreibt ihn nie und bricht bei Drift laut ab — es kann einen Pin strukturell nicht
+   mehr abräumen. Neuer Schalter `-SkipNpm` für unveränderte Deps (Vorbild: `dev.ps1`).
+
+Derselbe Defekt saß in `scripts/dev.ps1` (gleiches `npm install` auf demselben Spiegelbaum) und ist
+mitgefixt — sonst hätte der Dev-Build einen anderen Abhängigkeitsbaum als der Release-Build gehabt.
+
+**Verifiziert (2026-08-17):**
+- Linux: `npm ci` grün, `npm run build` (tsc strict + vite) grün.
+- **Windows: `sync-and-build.ps1` läuft wieder end-to-end durch** — auf dem Laptop gegen `v1-ship`,
+  ohne einen einzigen `--no-save`-Pin und ohne npm-freies Ersatzskript. `npm ci` in 37 s (der
+  Puppeteer-Chromium-Cache bleibt erhalten, es gibt keinen Neu-Download), Rust-Release-Build sauber,
+  `klarvo.exe` frisch (44,1 MB), rsign-Signatur „Signature verified OK", Installer nach Dropbox
+  kopiert, „Done! Fresh build verified."
+- Nach dem Windows-`npm ci` decken sich alle vier JS-Tauri-Pakete exakt mit ihren Rust-Crates, und
+  `package-lock.json` im Spiegelbaum ist byte-identisch zur Quelle — der Pin ist strukturell nicht
+  mehr abräumbar.
 
 ### 5. Messfallen (Doku, kein Code)
 

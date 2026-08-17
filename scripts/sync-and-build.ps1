@@ -1,9 +1,11 @@
 # Klarvo: Sync from WSL and build for Windows
 # Usage (from PowerShell): powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\andyon2\workspace\products\klarvo\scripts\sync-and-build.ps1
-#   -Clean   force a fresh recompile of the klarvo crate (defeats cargo incremental staleness)
+#   -Clean    force a fresh recompile of the klarvo crate (defeats cargo incremental staleness)
+#   -SkipNpm  skip the npm step entirely (faster when JS deps are unchanged)
 
 param(
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$SkipNpm
 )
 
 $src = "\\wsl$\Ubuntu\home\andyon2\workspace\products\klarvo"
@@ -40,10 +42,26 @@ robocopy $src $dst /E /PURGE /XD target node_modules .git jniLibs /XF "*.so" /NF
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { Fail "robocopy sync failed (exit $rc) -- source not mirrored to $dst." }
 
-Write-Host "Installing npm dependencies..." -ForegroundColor Cyan
+# `npm ci`, NOT `npm install`. The JS Tauri plugins must match their Rust crate
+# versions exactly (@tauri-apps/plugin-log 2.8.0 <-> tauri-plugin-log 2.8.0, and the
+# same for opener/updater). `npm install` re-resolves anything the lock does not
+# already satisfy and WRITES the result back -- which is how plugin-log ended up
+# absent from the lock and floating to 2.9.0, dragging @tauri-apps/api up to ^2.11
+# against a tree pinned at 2.10.1 and breaking this build repo-wide (found at the
+# Story 11-6 GATE-4a, 2026-08-11). `npm ci` installs the lock verbatim, never
+# writes it, and fails loudly on drift -- the same philosophy as Fail() above.
 Set-Location $dst
-npm install
-if ($LASTEXITCODE -ne 0) { Fail "npm install failed (exit $LASTEXITCODE)." }
+if ($SkipNpm) {
+    Write-Host "Skipping npm step (-SkipNpm)." -ForegroundColor Yellow
+} else {
+    Write-Host "Installing npm dependencies (npm ci)..." -ForegroundColor Cyan
+    npm ci
+    if ($LASTEXITCODE -ne 0) {
+        Fail ("npm ci failed (exit $LASTEXITCODE). If it reports package.json and package-lock.json " +
+              "out of sync, fix it at the SOURCE (run npm install in WSL, commit package-lock.json), " +
+              "not here -- this tree is a robocopy mirror and any fix made here is overwritten next run.")
+    }
+}
 
 # Load .env for API keys etc (Tauri dotenvy also picks these up from synced .env).
 # IMPORTANT: skip the Tauri signing secrets. If they reach the build env, `tauri
