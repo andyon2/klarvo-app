@@ -209,6 +209,35 @@ here).
   - [x] 9.7 `grep -n 'bg-amber-500\|border-amber-500\|text-amber-300\|text-red-400' src/App.tsx` →
     zero (Task 4 gate).
 
+### Review Findings
+
+_Code review 2026-08-18 (bmad-code-review, 3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). All 9 ACs and all 9 Tasks verified satisfied; all 7 grep gates independently re-run green; every `klarvo-*` and `font-*` utility introduced verified to resolve against `src/styles.css` `@theme` and the emitted `dist/` CSS._
+
+- [x] [Review][Decision] Empty-state flashes the first-run onboarding block while History is still loading — `onOpenHistory` (`src/App.tsx:208`) calls `getHistory(50)` asynchronously while `historyEntries` is initialised to `[]`. The new branch at `src/App.tsx:605` therefore renders the full "No dictations yet / Start recording with {hotkey}" block on every History open until the promise resolves. The old code showed a subtle one-line `<p>`, so the pre-existing missing loading-state was invisible; the ~5x taller designed empty-state makes it a visible flash for every user who has history. Fix requires a loading flag, which is a logic addition beyond NFR2 "pure re-skin" — needs a scope call: (a) add a `historyLoaded` guard now, (b) accept the flash, (c) defer to 8-7. **RESOLVED (fix round):** added a `historyLoaded` state flag, set via `.finally()` on the `getHistory(50)` promise in `onOpenHistory`; neither empty-state branch renders until the first load resolves.
+- [x] [Review][Decision] Empty-state instructs a keyboard hotkey unconditionally, including on mobile — `src/App.tsx:620` renders "Start recording with {hotkeyDisplay}" with no platform gate, while the only other `hotkeyDisplay` consumer in the file is explicitly gated (`{isDesktop && …}`, `src/App.tsx:902-904`). The History panel's header toggle is not desktop-gated, so Android reaches this copy and is told to press `Ctrl+Shift+D`, which does not exist there. Conflicts with the GATE-1 "build the reference empty-state verbatim" resolution — needs a call: keep verbatim, gate on `isDesktop`, or give mobile its own copy. **RESOLVED (fix round):** gated the hotkey line behind `isDesktop`; "No dictations yet" remains unconditional, no mobile-specific copy added.
+- [x] [Review][Decision] Pending-entry card excluded from the AC #1 density + hover-lift treatment — the normal card became `rounded-xl p-3.5 … hover:bg-klarvo-elevated/40 hover:border-klarvo-border` (`src/App.tsx:673`) while the pending card kept `rounded-xl p-3` with no hover classes (`src/App.tsx:614`). Both sit in the same list at different densities. AC #1 read literally covers "the History list"; Task 1.1 scoped the edit to the normal card and Task 4 enumerated the pending card's changes without density/hover. Human visual call. **RESOLVED (fix round):** pending card now carries `p-3.5` + `hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors`, matching the normal card.
+- [x] [Review][Patch] App-tag pill omits the canon-mandated `display: inline-flex; align-items: center` [src/App.tsx:638, src/App.tsx:712] — canon `.note .profile` (`docs/design/overhaul/source/assets/klarvo.css:426-429`) specifies `display: inline-flex; align-items: center; gap: 5px`. The implementation renders a bare inline `<span>` carrying `py-0.5` plus the newly added `border`, inside an inline parent span. Vertical padding and border on an inline box do not grow the line box, so the pill can overflow its row. AC #1 cites this canon rule by name. Fix: add `inline-flex items-center` to both pill spans. **RESOLVED (fix round):** `inline-flex items-center` added to both app-tag pill spans.
+- [x] [Review][Patch] New decorative empty-state SVG has no `aria-hidden="true"` [src/App.tsx:614] — the icon carries no `<title>` and no accessible name. The file already uses `aria-hidden="true"` for exactly this purpose on the decorative Preview-Mode badge (`src/App.tsx:926`); the two other bare `<svg>` elements (`:454`, `:471`) are a different case, sitting inside buttons that carry their own labels. Zero-visual-risk one-attribute fix. **RESOLVED (fix round):** `aria-hidden="true"` added to the empty-state clock SVG.
+- [x] [Review][Patch] Dev Agent Record understates the alias-migration count by ~2x — Completion Notes and Change Log both claim "~24 legacy alias-token occurrences". Actual pre-state count in `git show 7cb5f6f:src/App.tsx` is 46 (`klarvo-primary` 30, `klarvo-warm` 7, `klarvo-warning` 9). Task 6.1 required counting every occurrence; the story's stale "≈24 today" estimate was propagated into the record instead of corrected. The migration itself is complete (post-state grep = 0), so AC #8 is unaffected. Fix: correct the number in both places. **RESOLVED (fix round):** corrected to 46 in Change Log and Completion Notes.
+- [x] [Review][Defer] `handleHistorySearch` has no error handling [src/App.tsx:292-303] — deferred, pre-existing
+- [x] [Review][Defer] `handleHistorySearch` has no request-sequence guard; out-of-order responses can overwrite newer results [src/App.tsx:292-303] — deferred, pre-existing
+- [x] [Review][Defer] Reopening History does not reset the search fields — stale query stays in the box over an unfiltered list [src/App.tsx:208] — deferred, pre-existing
+- [x] [Review][Defer] `new Date(entry.createdAt + "Z")` renders "Invalid Date" for a malformed or already-zoned timestamp [src/App.tsx:636, src/App.tsx:708] — deferred, pre-existing
+- [x] [Review][Defer] Deleting all 50 loaded entries while the DB holds more shows the first-run empty-state [src/App.tsx:308-311] — deferred, pre-existing
+- [x] [Review][Defer] Teal/amber glow shadows remain raw rgba literals [src/App.tsx:70-73] — deferred, knowingly carved out by the story ("shadow rgba values already correct"); values are correct, but AC #6's hex-shaped gate cannot detect a future wrong rgba. 8-7 material
+- [x] [Review][Defer] `border-[rgba(233,162,76,.32)]` is an un-tokenized literal [src/App.tsx:638, src/App.tsx:712] — deferred, mandated by Task 1.3's own fallback clause; no `--color-klarvo-amber-line` exists in `@theme`. Close at the 8.6 alias-closure / 8.7 fidelity gate
+- [x] [Review][Defer] Focus/surface affordance now diverges across sibling controls [src/App.tsx:593, src/App.tsx:600 vs src/App.tsx:858] — deferred, spec-scoped; search inputs got `bg-klarvo-surface-2` + a teal ring, the result textarea kept `bg-klarvo-bg` and a bare `focus:border-klarvo-teal/30` with no ring, history cards kept `bg-klarvo-bg`. 8-7 fidelity
+- [x] [Review][Defer] Destructive-button hover fades to `/80` instead of brightening [src/App.tsx:643, src/App.tsx:719] — deferred, AC #9-mandated because `klarvo-danger-hi` does not exist in `@theme` (verified); the affordance now dims under the pointer
+- [x] [Review][Defer] `max-h-[calc(100vh-250px)]` hard clamp vs. the ~5x taller empty-state — clipping/scroll-trap risk in short windows [src/App.tsx:604] — deferred, pre-existing clamp; verify at the device gate
+- [x] [Review][Defer] Mono timestamps widen the `justify-between` meta row; long locale timestamp + long appName can push the Copy/Delete buttons [src/App.tsx:704-714] — deferred, AC #1/canon-mandated change; verify at the device gate
+- [x] [Review][Defer] App-tag pill markup duplicated verbatim in the pending and normal branches [src/App.tsx:638, src/App.tsx:712] — deferred, pre-existing duplication; this diff had to edit both in lockstep
+- [x] [Review][Defer] `hover:bg-klarvo-elevated/40` on cards can stick after a tap on touch devices [src/App.tsx:673] — deferred, minor
+- [x] [Review][Defer] `HighlightedText` highlights only the text query, not the app query, while the new empty-state treats both as "your search" [src/App.tsx:675] — deferred, pre-existing
+- [x] [Review][Defer] `src/App.tsx` is tracked with file mode 100755 — deferred, pre-existing
+- [x] [Review][Defer] Canon deltas outside this story's AC set — `.note` is a `border-bottom` row at `16px 18px` vs. the implementation's discrete `rounded-xl` cards in a `gap-2.5` stack; `.note .body` 13.5px vs. `text-xs`; `.note .ts` 11.5px vs. `text-[11px]`; `.note .profile` 11px / `3px 8px` vs. `text-[9px]` / `px-1.5 py-0.5`; profile fill canon 12% vs. AC-mandated `/10` — deferred, no AC demands them. 8-7 fidelity material
+- [x] [Review][Defer] DoD device gate still open — Windows release build (`scripts/sync-and-build.ps1`) + manual smoke not run; `docs/surface-smoke-checklist.md` satisfied only by the story's a-priori trap table. Story sits at `review`, which is the correct posture — deferred, by design
+- [x] [Review][Defer] Dev worker installed `gcc-mingw-w64-x86-64` via `apt-get` on the host to reach the Task 9.2 cross-compile gate — deferred, disclosed in the Debug Log, no repo file affected; surfaced because an unattended worker mutated the machine
+
 ## Dev Notes
 
 ### ⚠️ Elicitation Item #1 — Empty-state visual is NOT pinned by the design canon
@@ -403,6 +432,11 @@ claude-sonnet-5 (bmad-dev-story)
   status-label semantics (recording state → danger/red) — this story's Task 6.2 explicitly forbids
   changing that logic ("idle=teal, recording/busy=amber, error=danger... predates this story"), so the
   current code's amber-for-recording logic was preserved and only alias class names were migrated.
+- **Fix round (2026-08-18):** applied the 6 confirmed review findings (D1–D3, P1–P3). `npm run build`
+  (tsc + vite): green, 0 errors, re-run after the fix. `cargo check --target x86_64-pc-windows-gnu`:
+  fails at the same documented pre-existing `ort-sys` baseline as before the fix round — no new errors;
+  `git status src-tauri/` confirms zero Rust files touched. All Task 9 grep gates (hex, `orange-`,
+  aliases, `'Inter'`, raw amber/red) re-run clean: zero hits.
 
 ### Completion Notes List
 
@@ -421,6 +455,10 @@ claude-sonnet-5 (bmad-dev-story)
 - `font-geist`/`font-geist-mono` Tailwind utilities confirmed generated from the `--font-geist`/
   `--font-geist-mono` `@theme` tokens (verified in the built `dist/assets/*.css`) — the Task 5.1
   `styles.css` fallback was not needed, `styles.css` was not touched.
+- Task 6.1's alias-token count was corrected during the review fix round: the real pre-state (`git show
+  7cb5f6f:src/App.tsx`) is **46** occurrences (`klarvo-primary` 30, `klarvo-warm` 7, `klarvo-warning` 9),
+  not the story's stale "~24 today" estimate. The migration itself was already complete (post-state grep
+  = 0); only the recorded count was wrong.
 - No unit-test suite exists for `App.tsx` (pure JSX/className migration, no logic branches beyond the
   pre-existing empty/no-results/pending conditionals); verification is the DoD's build + grep gates +
   manual smoke, consistent with sibling story 8.2's precedent and this story's own DoD section. The
@@ -446,8 +484,21 @@ claude-sonnet-5 (bmad-dev-story)
   timestamps/amber pill tags/mode indicator (Task 1), designed empty-state + no-results distinction
   (Task 2), token-correct search-input focus ring (Task 3), pending-entry-state token migration
   (Task 4), removed the last `Inter` font override + Geist Mono on footer/preview badge (Task 5),
-  migrated all ~24 legacy alias-token occurrences across the whole main window (Task 6), Feedback FAB
+  migrated all 46 legacy alias-token occurrences across the whole main window (Task 6), Feedback FAB
   + Delete-button + Stats filler-word amber/danger tokens (Task 7), removed the one remaining inline
   hex literal (Task 8). `npm run build` green; `cargo check --target x86_64-pc-windows-gnu` reaches the
   documented pre-existing `ort-sys` baseline (mingw-w64 toolchain installed to get there — see Debug
   Log); all grep gates (9.3–9.7) clean. Status → review. No Rust files touched.
+- 2026-08-18 (fix round): Addressed the 6 confirmed code-review findings in `src/App.tsx` — D1: added a
+  `historyLoaded` state flag (set via `.finally()` on the `onOpenHistory` `getHistory(50)` promise) so
+  neither empty-state branch renders until the first History load resolves. D2: gated the "Start
+  recording with {hotkeyDisplay}" line behind `isDesktop`; mobile now sees only "No dictations yet",
+  no new copy added. D3: gave the pending-entry card the same `p-3.5` density and
+  `hover:bg-klarvo-elevated/40 hover:border-klarvo-border` hover treatment as the normal card. P1: added
+  `inline-flex items-center` to both app-tag pill spans (canon `.note .profile` compliance). P2: added
+  `aria-hidden="true"` to the decorative empty-state clock SVG. P3: corrected the legacy alias-token
+  pre-state count from "~24" to the verified 46 (`klarvo-primary` 30, `klarvo-warm` 7, `klarvo-warning`
+  9) in Completion Notes and Change Log. All deferred review findings remain deferred, untouched. Re-ran
+  `npm run build` (green), `cargo check --target x86_64-pc-windows-gnu` (same documented pre-existing
+  `ort-sys` baseline, no new errors, no Rust files touched), and all Task 9 grep gates (clean). Status →
+  review.

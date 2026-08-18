@@ -142,6 +142,7 @@ export default function App() {
 
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
@@ -205,7 +206,7 @@ export default function App() {
 
   // Panel callbacks for lazy loading
   const panels = usePanels({
-    onOpenHistory: () => getHistory(50).then(setHistoryEntries).catch(console.error),
+    onOpenHistory: () => getHistory(50).then(setHistoryEntries).catch(console.error).finally(() => setHistoryLoaded(true)),
     onOpenStats: () => {
       getUsageStats().then(setUsageStats).catch(console.error);
       getFillerStats().then(setFillerStats).catch(console.error);
@@ -602,7 +603,7 @@ export default function App() {
             </div>
 
             <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2.5">
-              {historyEntries.length === 0 ? (
+              {historyLoaded && historyEntries.length === 0 ? (
                 (historySearch.trim() || historyAppSearch.trim()) ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
                     <p className="text-sm font-medium text-klarvo-muted">No results</p>
@@ -611,13 +612,15 @@ export default function App() {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
                     <div className="w-10 h-10 rounded-full bg-klarvo-surface-2 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-klarvo-dim" viewBox="0 0 24 24" fill="currentColor">
+                      <svg className="w-5 h-5 text-klarvo-dim" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
                       </svg>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-klarvo-muted">No dictations yet</p>
-                      <p className="text-xs text-klarvo-dim mt-0.5">Start recording with {hotkeyDisplay}</p>
+                      {isDesktop && (
+                        <p className="text-xs text-klarvo-dim mt-0.5">Start recording with {hotkeyDisplay}</p>
+                      )}
                     </div>
                   </div>
                 )
@@ -626,7 +629,7 @@ export default function App() {
                   entry.status === "pending" ? (
                     <div
                       key={entry.id}
-                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3"
+                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors"
                     >
                       <p className="text-xs text-klarvo-amber">
                         ⏳ Audio gesichert — noch nicht transkribiert
@@ -635,7 +638,7 @@ export default function App() {
                         <span className="text-[11px] text-klarvo-dim">
                           <span className="font-geist-mono">{new Date(entry.createdAt + "Z").toLocaleString()}</span>
                           {entry.appName && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
+                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
                           )}
                         </span>
                         <div className="flex gap-1.5">
@@ -709,7 +712,7 @@ export default function App() {
                           <span className="text-klarvo-teal font-geist-mono"> · {entry.style}</span>
                         )}
                         {entry.appName && (
-                          <span className="ml-1 px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
+                          <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
                         )}
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
