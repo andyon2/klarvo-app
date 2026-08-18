@@ -1,6 +1,6 @@
 # Story 8.5: Main-Window / History re-skin
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -118,95 +118,95 @@ here).
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: History list — density, timestamps, amber tags, mode indicator** (AC: #1)
-  - [ ] 1.1 Card density: `p-3` → `p-3.5` (or `gap-2` → `gap-2.5`) on the entry card wrapper (line
+- [x] **Task 1: History list — density, timestamps, amber tags, mode indicator** (AC: #1)
+  - [x] 1.1 Card density: `p-3` → `p-3.5` (or `gap-2` → `gap-2.5`) on the entry card wrapper (line
     ~649); add `hover:bg-klarvo-elevated/40 hover:border-klarvo-border`.
-  - [ ] 1.2 Timestamp spans (2 occurrences: pending-entry line ~619, normal-entry line ~690): add
+  - [x] 1.2 Timestamp spans (2 occurrences: pending-entry line ~619, normal-entry line ~690): add
     `font-geist-mono` to the existing `text-[11px] text-klarvo-dim` className.
-  - [ ] 1.3 App tag (2 occurrences, lines ~622 and ~696): `bg-klarvo-warm/10 rounded text-[9px]
+  - [x] 1.3 App tag (2 occurrences, lines ~622 and ~696): `bg-klarvo-warm/10 rounded text-[9px]
     text-klarvo-warm` → `bg-klarvo-amber/10 text-klarvo-amber border border-klarvo-amber-line
     rounded-full` (pill shape + border, per canon `.note .profile`). Check if a `klarvo-amber-line`
     Tailwind class resolves from the existing `rgba(233,162,76,.32)` amber-line value in
     `styles.css`; if no such utility exists, use an inline/arbitrary-value border color instead of
     inventing a new token.
-  - [ ] 1.4 Style/mode indicator (line ~693): `text-klarvo-primary` → `text-klarvo-teal
+  - [x] 1.4 Style/mode indicator (line ~693): `text-klarvo-primary` → `text-klarvo-teal
     font-geist-mono`.
 
-- [ ] **Task 2: Empty-state + no-results distinction** (AC: #2)
-  - [ ] 2.1 Replace the bare `<p className="text-xs text-klarvo-dim italic text-center
+- [x] **Task 2: Empty-state + no-results distinction** (AC: #2)
+  - [x] 2.1 Replace the bare `<p className="text-xs text-klarvo-dim italic text-center
     py-4">No dictations yet.</p>` (line ~607) with a designed empty-state. **Use the reference-branch's
     already-built empty-state as the working default** (clock-icon SVG in a `klarvo-surface-2` circle
     + "No dictations yet" / "Start recording with {hotkeyDisplay}" — `hotkeyDisplay` is already in
     scope, computed at line ~283). **CONFIRMED by Andi at GATE 1, 2026-08-18 — see Dev Notes Elicitation Item #1. Build it verbatim.**
-  - [ ] 2.2 When `historySearch.trim() || historyAppSearch.trim()` is truthy and the list is empty,
+  - [x] 2.2 When `historySearch.trim() || historyAppSearch.trim()` is truthy and the list is empty,
     show a distinct "No results" / "No dictations match your search" message instead of the full
     empty-state (differentiates "no history at all" from "no search matches").
 
-- [ ] **Task 3: Search inputs — token-correct focus affordance** (AC: #3)
-  - [ ] 3.1 Both search inputs (lines ~594, ~601): `bg-klarvo-bg` → `bg-klarvo-surface-2`;
+- [x] **Task 3: Search inputs — token-correct focus affordance** (AC: #3)
+  - [x] 3.1 Both search inputs (lines ~594, ~601): `bg-klarvo-bg` → `bg-klarvo-surface-2`;
     `focus:border-klarvo-primary/40` → `focus:border-klarvo-teal/40 focus:ring-1
     focus:ring-klarvo-teal/20`. Do **not** use the `.focus-klarvo` utility class here (see Dev Notes
     "Known defect").
 
-- [ ] **Task 4: Pending-entry-state token migration** (AC: #5 — new surface, not in the reference)
-  - [ ] 4.1 Container (line ~613): `bg-amber-500/10 border-amber-500/40` → named-token equivalent per
+- [x] **Task 4: Pending-entry-state token migration** (AC: #5 — new surface, not in the reference)
+  - [x] 4.1 Container (line ~613): `bg-amber-500/10 border-amber-500/40` → named-token equivalent per
     the resolved semantic role: **`klarvo-amber`** (CONFIRMED by Andi at GATE 1, 2026-08-18 — Dev Notes Elicitation Item #2).
-  - [ ] 4.2 Status text (line ~615): `text-amber-300` → named-token equivalent (same role as 4.1).
-  - [ ] 4.3 "Erneut verarbeiten" link (line ~629): `text-klarvo-primary` → `text-klarvo-teal`
+  - [x] 4.2 Status text (line ~615): `text-amber-300` → named-token equivalent (same role as 4.1).
+  - [x] 4.3 "Erneut verarbeiten" link (line ~629): `text-klarvo-primary` → `text-klarvo-teal`
     (already-correct semantic — action/retry = teal, just alias migration).
-  - [ ] 4.4 "Verwerfen" button (line ~636): `text-orange-400 hover:text-orange-300` → `klarvo-danger`
+  - [x] 4.4 "Verwerfen" button (line ~636): `text-orange-400 hover:text-orange-300` → `klarvo-danger`
     equivalent (discard/delete = danger per DT5, same reasoning as AC #9's Delete button).
-  - [ ] 4.5 Inline error text (line ~643): `text-red-400` → `text-klarvo-danger`.
-  - [ ] 4.6 App tag on the pending entry (line ~622) — same migration as Task 1.3.
+  - [x] 4.5 Inline error text (line ~643): `text-red-400` → `text-klarvo-danger`.
+  - [x] 4.6 App tag on the pending entry (line ~622) — same migration as Task 1.3.
 
-- [ ] **Task 5: Font migration — remove the last `Inter` override** (AC: #7)
-  - [ ] 5.1 `<main>` (line ~407–416): remove `fontFamily: "'Inter', system-ui, -apple-system,
+- [x] **Task 5: Font migration — remove the last `Inter` override** (AC: #7)
+  - [x] 5.1 `<main>` (line ~407–416): remove `fontFamily: "'Inter', system-ui, -apple-system,
     sans-serif"` from the `style` object; add `font-geist` to `<main>`'s `className`. Verify Tailwind
     v4 actually generates `font-geist` from `--font-geist` (8.1 already defines the token); if it does
     not resolve, fall back to a `.app-root { font-family: var(--font-geist); }` rule in `styles.css`
     (do not touch `styles.css` unless this fallback is actually needed).
-  - [ ] 5.2 Footer hotkey span (line ~888): `font-mono` → `font-geist-mono`.
-  - [ ] 5.3 "Preview Mode" badge (line ~912): `font-mono` → `font-geist-mono`.
+  - [x] 5.2 Footer hotkey span (line ~888): `font-mono` → `font-geist-mono`.
+  - [x] 5.3 "Preview Mode" badge (line ~912): `font-mono` → `font-geist-mono`.
 
-- [ ] **Task 6: Migrate legacy alias tokens across `App.tsx`** (AC: #8)
-  - [ ] 6.1 Before starting: `grep -n 'klarvo-primary\|klarvo-warm\b\|klarvo-warning\b' src/App.tsx`
+- [x] **Task 6: Migrate legacy alias tokens across `App.tsx`** (AC: #8)
+  - [x] 6.1 Before starting: `grep -n 'klarvo-primary\|klarvo-warm\b\|klarvo-warning\b' src/App.tsx`
     — count every occurrence (≈24 today across RecordButton, StylePicker, logo badge, 4 header
     toggle buttons, search inputs, history action links, style indicator, RecordButton status label,
     result textarea focus, raw-text copy links). Migrate every one to its canonical name:
     `klarvo-primary` → `klarvo-teal`; `klarvo-warm` → `klarvo-amber`; `klarvo-warning` → `klarvo-amber`.
-  - [ ] 6.2 Do **not** change the underlying visual *logic* of `RecordButton`/status-label state
+  - [x] 6.2 Do **not** change the underlying visual *logic* of `RecordButton`/status-label state
     coloring (idle=teal, recording/busy=amber, error=danger) — only the class names change from alias
     to canonical. This is a pure re-skin (NFR2); the recording/busy/idle color assignment already
     matches DT5 and predates this story.
-  - [ ] 6.3 Confirm no `klarvo-primary`/`klarvo-warm`/`klarvo-warning` occurrence is missed by
+  - [x] 6.3 Confirm no `klarvo-primary`/`klarvo-warm`/`klarvo-warning` occurrence is missed by
     re-running the Task 6.1 grep after migration — must be zero.
 
-- [ ] **Task 7: Feedback FAB + Delete button — amber/danger token migration** (AC: #9)
-  - [ ] 7.1 FAB button (line ~949): `bg-orange-500/20 border border-orange-500/30 text-orange-400
+- [x] **Task 7: Feedback FAB + Delete button — amber/danger token migration** (AC: #9)
+  - [x] 7.1 FAB button (line ~949): `bg-orange-500/20 border border-orange-500/30 text-orange-400
     hover:bg-orange-500/30` → `bg-klarvo-amber/20 border border-klarvo-amber/30 text-klarvo-amber
     hover:bg-klarvo-amber/30`.
-  - [ ] 7.2 History "Delete" button (line ~708): `text-orange-400 hover:text-orange-300` →
+  - [x] 7.2 History "Delete" button (line ~708): `text-orange-400 hover:text-orange-300` →
     `text-klarvo-danger hover:text-klarvo-danger/80` (per AC #9 — `klarvo-danger-hi` does not exist).
-  - [ ] 7.3 Stats panel's filler-word-analysis section (lines ~752–767) also carries `klarvo-warm` +
+  - [x] 7.3 Stats panel's filler-word-analysis section (lines ~752–767) also carries `klarvo-warm` +
     raw `orange-400`/`orange-300` — migrate the same way (`klarvo-warm`→`klarvo-amber`,
     `orange-400/60`→`klarvo-amber/60`, `orange-400/70`→`klarvo-amber/70`, `hover:text-orange-300` on
     the filler-stats toggle → `hover:text-klarvo-amber-hi`). This is inside the Stats panel, not
     History, but is in-scope per AC #6/#8's "all in-scope surfaces in `App.tsx`" (same reasoning the
     reference-branch story applied).
 
-- [ ] **Task 8: Remove the remaining inline hex** (AC: #6)
-  - [ ] 8.1 Line ~676: `bg-[#0c0c0e]` → `bg-klarvo-bg-deep`.
+- [x] **Task 8: Remove the remaining inline hex** (AC: #6)
+  - [x] 8.1 Line ~676: `bg-[#0c0c0e]` → `bg-klarvo-bg-deep`.
 
-- [ ] **Task 9: Build verification + grep gates** (DoD)
-  - [ ] 9.1 `npm run build` (tsc + vite) — 0 errors.
-  - [ ] 9.2 `cargo check --target x86_64-pc-windows-gnu` — no *new* errors vs. the documented
+- [x] **Task 9: Build verification + grep gates** (DoD)
+  - [x] 9.1 `npm run build` (tsc + vite) — 0 errors.
+  - [x] 9.2 `cargo check --target x86_64-pc-windows-gnu` — no *new* errors vs. the documented
     pre-existing `ort-sys` baseline.
-  - [ ] 9.3 `grep -n '#[0-9a-fA-F]\{3,6\}' src/App.tsx` → zero.
-  - [ ] 9.4 `grep -n 'orange-' src/App.tsx` → zero.
-  - [ ] 9.5 `grep -n 'klarvo-primary\|klarvo-warm\|klarvo-warning\|klarvo-danger-hi' src/App.tsx` →
+  - [x] 9.3 `grep -n '#[0-9a-fA-F]\{3,6\}' src/App.tsx` → zero.
+  - [x] 9.4 `grep -n 'orange-' src/App.tsx` → zero.
+  - [x] 9.5 `grep -n 'klarvo-primary\|klarvo-warm\|klarvo-warning\|klarvo-danger-hi' src/App.tsx` →
     zero.
-  - [ ] 9.6 `grep -n "'Inter'" src/App.tsx` → zero.
-  - [ ] 9.7 `grep -n 'bg-amber-500\|border-amber-500\|text-amber-300\|text-red-400' src/App.tsx` →
+  - [x] 9.6 `grep -n "'Inter'" src/App.tsx` → zero.
+  - [x] 9.7 `grep -n 'bg-amber-500\|border-amber-500\|text-amber-300\|text-red-400' src/App.tsx` →
     zero (Task 4 gate).
 
 ## Dev Notes
@@ -381,11 +381,55 @@ onto two new elements.
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `npm run build` (tsc + vite): green, 0 errors.
+- `cargo check --target x86_64-pc-windows-gnu`: environment initially lacked the `x86_64-w64-mingw32-gcc`
+  toolchain entirely (failed earlier, at `ring`'s build script, than the documented baseline).
+  Installed `gcc-mingw-w64-x86-64` via `apt-get` (safe, reversible, standard cross-compile package) to
+  reach the actual gate; after install the check fails at the documented pre-existing baseline —
+  `ort-sys` panics with "downloaded binaries not available for target x86_64-pc-windows-gnu" — matching
+  8.1/8.2's dev records verbatim. No new errors. `git status src-tauri/` confirms zero Rust files touched.
+- All 7 Task 9 grep gates (9.3–9.7 plus the Task 6.1/6.3 alias gate) run clean: zero hits.
+- Empty-state and pending-entry markup cross-checked against the reference commit
+  `f1125d2` (`git show f1125d2:src/App.tsx`) for structure, but two details were deliberately NOT
+  copied from that commit because the current story's own AC/Task text is more specific/correct:
+  (1) the reference's app-tag pill has no border — this story's AC #1/Task 1.3 explicitly adds one
+  (canon `.note .profile` requires `border: 1px solid var(--k-amber-line)`); no `--color-klarvo-amber-line`
+  theme token exists, so an arbitrary-value border (`border-[rgba(233,162,76,.32)]`) was used instead of
+  inventing one, per Task 1.3's own fallback instruction. (2) the reference redesigned RecordButton/
+  status-label semantics (recording state → danger/red) — this story's Task 6.2 explicitly forbids
+  changing that logic ("idle=teal, recording/busy=amber, error=danger... predates this story"), so the
+  current code's amber-for-recording logic was preserved and only alias class names were migrated.
 
 ### Completion Notes List
 
+- Pure frontend token/class migration in `src/App.tsx` — no Rust, no config, no new dependencies, no
+  hook logic changes (matches "Files NOT to touch" list exactly).
+- Task 2 empty-state and no-results messaging: reused the reference-branch's clock-icon SVG (identical
+  path to the existing History header-toggle icon) verbatim per Andi's GATE-1 resolution of Elicitation
+  Item #1 — no new icon invented.
+- Task 4 pending-entry tokens: `amber-500`/`amber-300` → `klarvo-amber` 1:1, `red-400` → `klarvo-danger`,
+  per Andi's GATE-1 resolution of Elicitation Item #2 (no redesign of the pending-state color role).
+- Timestamps: added `font-geist-mono` via a nested `<span>` wrapping only the date text (not the
+  outer `text-[11px] text-klarvo-dim` container), so the mono font does not leak onto the sibling
+  app-tag pill or `· {style}` separator text that share that container — this diverges slightly from
+  Task 1.2's literal "add to the existing className" phrasing but matches both the AC's intent
+  (timestamp renders in Geist Mono) and the already-shipped reference implementation's approach.
+- `font-geist`/`font-geist-mono` Tailwind utilities confirmed generated from the `--font-geist`/
+  `--font-geist-mono` `@theme` tokens (verified in the built `dist/assets/*.css`) — the Task 5.1
+  `styles.css` fallback was not needed, `styles.css` was not touched.
+- No unit-test suite exists for `App.tsx` (pure JSX/className migration, no logic branches beyond the
+  pre-existing empty/no-results/pending conditionals); verification is the DoD's build + grep gates +
+  manual smoke, consistent with sibling story 8.2's precedent and this story's own DoD section. The
+  real Windows release build + manual press-to-paste-equivalent smoke (History panel, empty-state,
+  search focus ring, pending-entry render) is Andi's device gate, not run here.
+
 ### File List
+
+- `src/App.tsx` (MODIFIED)
 
 ## Change Log
 
@@ -398,3 +442,12 @@ onto two new elements.
   defaulted silently: the empty-state visual (Elicitation Item #1) and the pending-entry-state color
   role (Elicitation Item #2) — both default in the task list to the lowest-risk/lowest-invention
   option; BOTH were confirmed by Andi at GATE 1 on 2026-08-18 (Option A / amber 1:1) and are now settled.
+- 2026-08-18 (dev-story): Implemented all 9 tasks against `src/App.tsx` — History list density/
+  timestamps/amber pill tags/mode indicator (Task 1), designed empty-state + no-results distinction
+  (Task 2), token-correct search-input focus ring (Task 3), pending-entry-state token migration
+  (Task 4), removed the last `Inter` font override + Geist Mono on footer/preview badge (Task 5),
+  migrated all ~24 legacy alias-token occurrences across the whole main window (Task 6), Feedback FAB
+  + Delete-button + Stats filler-word amber/danger tokens (Task 7), removed the one remaining inline
+  hex literal (Task 8). `npm run build` green; `cargo check --target x86_64-pc-windows-gnu` reaches the
+  documented pre-existing `ort-sys` baseline (mingw-w64 toolchain installed to get there — see Debug
+  Log); all grep gates (9.3–9.7) clean. Status → review. No Rust files touched.
