@@ -1,6 +1,6 @@
 # Story 8.5: Main-Window / History re-skin
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -664,3 +664,18 @@ claude-sonnet-5 (bmad-dev-story)
   deferred items were explicitly not touched, per Andi's scope. Re-ran `npm run build` (green), `cargo
   check --target x86_64-pc-windows-gnu` (same documented pre-existing `ort-sys` baseline, no new errors,
   no Rust files touched), and all 5 Task 9 grep gates (clean). Status → review.
+
+- **2026-08-18 — Close-out (conductor, GATE 3 + GATE 4).** Review cleared after two full review
+  passes and three fix rounds: 6 confirmed findings in round 1, 7 in round 2, 3 in the closing round.
+  Round 2 introduced one behavioural regression on the error path (a failed load rendered nothing at
+  all); the closing round replaced the boolean load flag with a three-valued state carrying its own
+  loading and error branches plus a retry. GATE 4 ran as an unattended Chromium measurement of the
+  real React surface in preview mode — 16 of 16 structural claims pass, including both GATE-1 design
+  decisions verified at render rather than in source. Evidence and method:
+  `_bmad-output/implementation-artifacts/gate4-evidence/8-5/` (`verdict.md` + 5 screenshots + 4
+  measurement JSONs). Two states unreachable from the shipped mock data (empty history, the Story-12-2
+  pending entry) were produced by a throwaway edit that was reverted; no probe code is committed.
+  **Open, carried knowingly:** the pixel/aesthetic verdict on the real Windows release build is Andi's
+  gate and is NOT covered by the Chromium render; the `isDesktop` branch was exercised only in its
+  desktop half; eight LOW documentation residuals (counts, some line anchors, a missing change-log
+  entry for `ba5c2fc`) and the 19 entries in `deferred-work.md` stand. Status → done.
