@@ -206,7 +206,15 @@ export default function App() {
 
   // Panel callbacks for lazy loading
   const panels = usePanels({
-    onOpenHistory: () => getHistory(50).then(setHistoryEntries).catch(console.error).finally(() => setHistoryLoaded(true)),
+    onOpenHistory: () => {
+      setHistoryLoaded(false);
+      getHistory(50)
+        .then((entries) => {
+          setHistoryEntries(entries);
+          setHistoryLoaded(true);
+        })
+        .catch(console.error);
+    },
     onOpenStats: () => {
       getUsageStats().then(setUsageStats).catch(console.error);
       getFillerStats().then(setFillerStats).catch(console.error);
@@ -301,6 +309,7 @@ export default function App() {
       const entries = await getHistory(50);
       setHistoryEntries(entries);
     }
+    setHistoryLoaded(true);
   }, []);
 
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
@@ -629,7 +638,7 @@ export default function App() {
                   entry.status === "pending" ? (
                     <div
                       key={entry.id}
-                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors"
+                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60 transition-colors"
                     >
                       <p className="text-xs text-klarvo-amber">
                         ⏳ Audio gesichert — noch nicht transkribiert

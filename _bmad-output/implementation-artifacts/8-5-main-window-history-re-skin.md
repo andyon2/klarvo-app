@@ -138,6 +138,11 @@ here).
     already-built empty-state as the working default** (clock-icon SVG in a `klarvo-surface-2` circle
     + "No dictations yet" / "Start recording with {hotkeyDisplay}" — `hotkeyDisplay` is already in
     scope, computed at line ~283). **CONFIRMED by Andi at GATE 1, 2026-08-18 — see Dev Notes Elicitation Item #1. Build it verbatim.**
+
+    **Amendment, Andi, 2026-08-18 (review gate):** narrowed at the review gate — the "Start recording
+    with {hotkeyDisplay}" line is gated behind `isDesktop` (Android reaches the History panel but has
+    no such hotkey; the fallback `ctrl+shift+d` is wrong there). "No dictations yet" and the rest of
+    the empty-state remain verbatim per the original GATE-1 decision.
   - [x] 2.2 When `historySearch.trim() || historyAppSearch.trim()` is truthy and the list is empty,
     show a distinct "No results" / "No dictations match your search" message instead of the full
     empty-state (differentiates "no history at all" from "no search matches").
@@ -170,7 +175,7 @@ here).
 
 - [x] **Task 6: Migrate legacy alias tokens across `App.tsx`** (AC: #8)
   - [x] 6.1 Before starting: `grep -n 'klarvo-primary\|klarvo-warm\b\|klarvo-warning\b' src/App.tsx`
-    — count every occurrence (≈24 today across RecordButton, StylePicker, logo badge, 4 header
+    — count every occurrence (46 today across RecordButton, StylePicker, logo badge, 4 header
     toggle buttons, search inputs, history action links, style indicator, RecordButton status label,
     result textarea focus, raw-text copy links). Migrate every one to its canonical name:
     `klarvo-primary` → `klarvo-teal`; `klarvo-warm` → `klarvo-amber`; `klarvo-warning` → `klarvo-amber`.
@@ -215,7 +220,7 @@ _Code review 2026-08-18 (bmad-code-review, 3 layers: Blind Hunter / Edge Case Hu
 
 - [x] [Review][Decision] Empty-state flashes the first-run onboarding block while History is still loading — `onOpenHistory` (`src/App.tsx:208`) calls `getHistory(50)` asynchronously while `historyEntries` is initialised to `[]`. The new branch at `src/App.tsx:605` therefore renders the full "No dictations yet / Start recording with {hotkey}" block on every History open until the promise resolves. The old code showed a subtle one-line `<p>`, so the pre-existing missing loading-state was invisible; the ~5x taller designed empty-state makes it a visible flash for every user who has history. Fix requires a loading flag, which is a logic addition beyond NFR2 "pure re-skin" — needs a scope call: (a) add a `historyLoaded` guard now, (b) accept the flash, (c) defer to 8-7. **RESOLVED (fix round):** added a `historyLoaded` state flag, set via `.finally()` on the `getHistory(50)` promise in `onOpenHistory`; neither empty-state branch renders until the first load resolves.
 - [x] [Review][Decision] Empty-state instructs a keyboard hotkey unconditionally, including on mobile — `src/App.tsx:620` renders "Start recording with {hotkeyDisplay}" with no platform gate, while the only other `hotkeyDisplay` consumer in the file is explicitly gated (`{isDesktop && …}`, `src/App.tsx:902-904`). The History panel's header toggle is not desktop-gated, so Android reaches this copy and is told to press `Ctrl+Shift+D`, which does not exist there. Conflicts with the GATE-1 "build the reference empty-state verbatim" resolution — needs a call: keep verbatim, gate on `isDesktop`, or give mobile its own copy. **RESOLVED (fix round):** gated the hotkey line behind `isDesktop`; "No dictations yet" remains unconditional, no mobile-specific copy added.
-- [x] [Review][Decision] Pending-entry card excluded from the AC #1 density + hover-lift treatment — the normal card became `rounded-xl p-3.5 … hover:bg-klarvo-elevated/40 hover:border-klarvo-border` (`src/App.tsx:673`) while the pending card kept `rounded-xl p-3` with no hover classes (`src/App.tsx:614`). Both sit in the same list at different densities. AC #1 read literally covers "the History list"; Task 1.1 scoped the edit to the normal card and Task 4 enumerated the pending card's changes without density/hover. Human visual call. **RESOLVED (fix round):** pending card now carries `p-3.5` + `hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors`, matching the normal card.
+- [x] [Review][Decision] Pending-entry card excluded from the AC #1 density + hover-lift treatment — the normal card became `rounded-xl p-3.5 … hover:bg-klarvo-elevated/40 hover:border-klarvo-border` (at commit `116e427`, `src/App.tsx:665`) while the pending card kept `rounded-xl p-3` with no hover classes (at commit `116e427`, `src/App.tsx:629`). Both sit in the same list at different densities. AC #1 read literally covers "the History list"; Task 1.1 scoped the edit to the normal card and Task 4 enumerated the pending card's changes without density/hover. Human visual call. **RESOLVED (fix round):** pending card now carries `p-3.5` + `hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors`, matching the normal card.
 - [x] [Review][Patch] App-tag pill omits the canon-mandated `display: inline-flex; align-items: center` [src/App.tsx:638, src/App.tsx:712] — canon `.note .profile` (`docs/design/overhaul/source/assets/klarvo.css:426-429`) specifies `display: inline-flex; align-items: center; gap: 5px`. The implementation renders a bare inline `<span>` carrying `py-0.5` plus the newly added `border`, inside an inline parent span. Vertical padding and border on an inline box do not grow the line box, so the pill can overflow its row. AC #1 cites this canon rule by name. Fix: add `inline-flex items-center` to both pill spans. **RESOLVED (fix round):** `inline-flex items-center` added to both app-tag pill spans.
 - [x] [Review][Patch] New decorative empty-state SVG has no `aria-hidden="true"` [src/App.tsx:614] — the icon carries no `<title>` and no accessible name. The file already uses `aria-hidden="true"` for exactly this purpose on the decorative Preview-Mode badge (`src/App.tsx:926`); the two other bare `<svg>` elements (`:454`, `:471`) are a different case, sitting inside buttons that carry their own labels. Zero-visual-risk one-attribute fix. **RESOLVED (fix round):** `aria-hidden="true"` added to the empty-state clock SVG.
 - [x] [Review][Patch] Dev Agent Record understates the alias-migration count by ~2x — Completion Notes and Change Log both claim "~24 legacy alias-token occurrences". Actual pre-state count in `git show 7cb5f6f:src/App.tsx` is 46 (`klarvo-primary` 30, `klarvo-warm` 7, `klarvo-warning` 9). Task 6.1 required counting every occurrence; the story's stale "≈24 today" estimate was propagated into the record instead of corrected. The migration itself is complete (post-state grep = 0), so AC #8 is unaffected. Fix: correct the number in both places. **RESOLVED (fix round):** corrected to 46 in Change Log and Completion Notes.
@@ -237,6 +242,25 @@ _Code review 2026-08-18 (bmad-code-review, 3 layers: Blind Hunter / Edge Case Hu
 - [x] [Review][Defer] Canon deltas outside this story's AC set — `.note` is a `border-bottom` row at `16px 18px` vs. the implementation's discrete `rounded-xl` cards in a `gap-2.5` stack; `.note .body` 13.5px vs. `text-xs`; `.note .ts` 11.5px vs. `text-[11px]`; `.note .profile` 11px / `3px 8px` vs. `text-[9px]` / `px-1.5 py-0.5`; profile fill canon 12% vs. AC-mandated `/10` — deferred, no AC demands them. 8-7 fidelity material
 - [x] [Review][Defer] DoD device gate still open — Windows release build (`scripts/sync-and-build.ps1`) + manual smoke not run; `docs/surface-smoke-checklist.md` satisfied only by the story's a-priori trap table. Story sits at `review`, which is the correct posture — deferred, by design
 - [x] [Review][Defer] Dev worker installed `gcc-mingw-w64-x86-64` via `apt-get` on the host to reach the Task 9.2 cross-compile gate — deferred, disclosed in the Debug Log, no repo file affected; surfaced because an unattended worker mutated the machine
+
+### Review Findings — Re-Review of the fix round (`8c471af`), 2026-08-18
+
+_Scope-limited re-review (bmad-code-review, 3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). Mandate: verify only that the six confirmed findings D1/D2/D3/P1/P2/P3 are resolved and that the lines they touched regressed nothing — no fresh full adversarial sweep. The 18 items already recorded in `deferred-work.md` were explicitly NOT re-opened._
+
+**Per-fix verdict:** D1 RESOLVED as stated (initial load only — see residual below) · D2 RESOLVED · D3 RESOLVED literally, but the hover half introduces a new visual regression · P1 RESOLVED · P2 RESOLVED · P3 RESOLVED as scoped (Completion Notes + Change Log both read 46; independently recounted: `klarvo-primary` 30 + `klarvo-warm` 7 + `klarvo-warning` 9 = 46).
+
+**Regression check:** `git diff 116e427 HEAD -- src/App.tsx` contains exactly the six intended hunks and nothing else — no line dropped, reordered or silently altered. All five Task 9 grep gates re-run green (hex 0, `orange-` 0, aliases 0, `'Inter'` 0, raw amber/red 0). `npm run build` (tsc + vite) green, exit 0.
+
+- [x] [Review][Decision] D3's copied hover treatment erases the pending entry's amber state signal — the pending card now carries `bg-klarvo-amber/10 border border-klarvo-amber/40 … hover:bg-klarvo-elevated/40 hover:border-klarvo-border` (`src/App.tsx:632`). Both hover utilities target the same properties as the amber base and carry a pseudo-class, so their specificity is higher: emitted CSS `.hover\:bg-klarvo-elevated\/40:hover{background-color:#23272966}` beats `.bg-klarvo-amber\/10{background-color:#e9a24c1a}`, and `.hover\:border-klarvo-border:hover` beats `.border-klarvo-amber\/40`. On hover the amber fill AND the amber border are fully replaced, making the pending card pixel-identical to a hovered normal card (`src/App.tsx:668`) — the state signal disappears exactly while the user points at the card to click "Erneut verarbeiten" / "Verwerfen". This also contradicts the still-standing GATE-1 resolution of Elicitation Item #2 ("Map the raw `amber-500` classes to `klarvo-amber` and change nothing else about this state. … Do not redesign the state."). Human visual call — options: (a) amber-preserving hover (`hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60`), (b) density only, drop the hover from the pending card, (c) accept the neutral hover. **RESOLVED (2nd fix round, Andi's call = option a):** pending card hover changed to `hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60`, preserving the amber signal on hover; density (`p-3.5`) unchanged.
+- [x] [Review][Patch] `historyLoaded` is a one-shot latch that is never reset and is not maintained by the search path — the empty-state flash D1 fixed returns whenever the list is empty at reopen [src/App.tsx:145, src/App.tsx:209, src/App.tsx:606]. `setHistoryLoaded(true)` is the flag's only write (grep: 2 occurrences total, declaration + read), and `usePanels.toggle` fires `onOpenHistory` on *every* open (`src/hooks/usePanels.ts`, `isOpening` branch) — `close`/`closeAll` touch nothing. Scenario A: empty DB → open History → close → record a dictation → reopen; `historyLoaded` is still `true` and `historyEntries` is still `[]`, so the full-height empty-state renders for the whole refetch, then pops to the list. Scenario B: same for the "No results" branch after a zero-result search + close + reopen (the search box is not reset either). Scenario C: `handleHistorySearch` (`src/App.tsx:293-303`) sets `historyEntries` without ever setting `historyLoaded`, so a search issued before the first load resolves renders a completely blank panel where "No results" used to show. Fix direction: `setHistoryLoaded(false)` at the head of `onOpenHistory` and set it wherever `historyEntries` is written — i.e. manage the flag as the list's load state, not as a once-per-session latch. **RESOLVED (2nd fix round):** `onOpenHistory` now resets `setHistoryLoaded(false)` before fetching; `handleHistorySearch` sets `setHistoryLoaded(true)` after writing `historyEntries` on both its search-hit and reset-to-full-list branches.
+- [x] [Review][Patch] `.finally()` marks a *failed* history load as "loaded", so an IPC/DB error renders as "No dictations yet" [src/App.tsx:209]. `getHistory(50).then(setHistoryEntries).catch(console.error).finally(() => setHistoryLoaded(true))` — on rejection the error goes only to the console, `historyEntries` stays `[]`, and the guard then authorises the empty-state. A user with a full history is told their history is empty. Not a regression (the pre-fix code showed the same empty-state on this path), but the fix round introduced the very state variable that could distinguish `loading | loaded | error` and put the setter on both paths. Fix direction: set the flag inside `.then`, give `.catch` its own branch. **RESOLVED (2nd fix round):** `setHistoryLoaded(true)` moved into the `.then` callback (alongside `setHistoryEntries`); `.catch` is now its own branch that only logs — it no longer marks a failed load as loaded.
+- [x] [Review][Patch] Completion Notes still assert a claim the fix round falsified [_bmad-output/implementation-artifacts/8-5-main-window-history-re-skin.md:462] — "pure JSX/className migration, **no logic branches beyond the pre-existing empty/no-results/pending conditionals**". D1 added `historyLoaded && historyEntries.length === 0` (`src/App.tsx:606`) and D2 added `{isDesktop && …}` (`src/App.tsx:621`) — two new logic branches. The narrower claim "no hook logic changes" (line 443) survives: `src/hooks/usePanels.ts` is untouched, only its inline callback in `App.tsx` changed. Fix direction: amend the sentence to name the two branches the fix round added. **RESOLVED (2nd fix round):** Completion Notes corrected to name both new branches (`historyLoaded && historyEntries.length === 0` and `{isDesktop && …}`) instead of claiming none exist.
+- [x] [Review][Patch] The binding GATE-1 decision record was not amended after D2, so the story now mandates and forbids the same behaviour [_bmad-output/implementation-artifacts/8-5-main-window-history-re-skin.md:140, :270]. Task 2.1 still reads "**CONFIRMED by Andi at GATE 1 … Build it verbatim.**" and Elicitation Item #1 still reads "Build this, do not invent a variation. This is now a settled design decision" — while `src/App.tsx:621-623` now gates the hotkey line behind `isDesktop`. The deviation *is* disclosed (Review Findings :217, Change Log :494-496), but a future reader hitting the decision record first gets the opposite instruction. Fix direction: append a dated amendment to the Elicitation Item #1 block and to Task 2.1 recording the `isDesktop` carve-out, rather than editing the original decision text. **RESOLVED (2nd fix round):** a dated amendment ("Andi, 2026-08-18, review gate") appended to both Task 2.1 and the Elicitation Item #1 resolution block, recording the `isDesktop` carve-out; the original decision text is untouched.
+- [x] [Review][Patch] The stale alias count survives at its point of origin [_bmad-output/implementation-artifacts/8-5-main-window-history-re-skin.md:173] — Task 6.1 still instructs "count every occurrence (≈24 today across RecordButton, StylePicker, …)". P3 scoped its fix to Completion Notes + Change Log and both correctly read 46; this third site still tells a future reader to expect ~24. Fix direction: correct the parenthetical to 46 (or strike the estimate). **RESOLVED (2nd fix round):** Task 6.1's parenthetical corrected from "≈24 today" to "46 today".
+- [x] [Review][Patch] Card line references in the Review Findings block and in `deferred-work.md` are wrong even against the commit they were written for [_bmad-output/implementation-artifacts/8-5-main-window-history-re-skin.md:218, _bmad-output/implementation-artifacts/deferred-work.md]. D3 cites `src/App.tsx:673` for the normal card and `src/App.tsx:614` for the pending card; at `116e427` line 673 is `const next = new Set(prev);` and line 614 is the empty-state SVG — the actual cards are at `:665` and `:629` (now `:668` / `:632` at HEAD). `deferred-work.md` repeats `:673` for the sticky-hover item. `deferred-work.md` is the artifact 8-7 will navigate by, so the refs should point at real lines. Fix direction: re-anchor the card refs; state which commit the line numbers are valid for. **RESOLVED (2nd fix round):** both references re-anchored to commit `116e427` (`src/App.tsx:665` normal card, `:629` pending card) in the story's D3 finding and in `deferred-work.md`'s sticky-hover entry, each now naming the commit the line numbers are valid for.
+
+**Dismissed as noise / handled elsewhere (12):** "No results" predicate reads an unfiltered array (false — `handleHistorySearch` re-queries the backend, `src/App.tsx:293-303`) · `isDesktop &&` could leak a rendered falsy value (false — `src/platform.ts:7` `export const isDesktop = !isMobile`, strictly boolean) · `p-3.5` unverifiable as "matching density" (false — normal card is `p-3.5` at `src/App.tsx:668`) · pending card's hover implies a false click affordance (subsumed into the Decision finding above) · empty state lacks `role="status"`/`aria-live` (new requirement, not a regression) · hard-coded German string in the pending card (pre-existing, out of scope) · `new Date(createdAt + "Z")` Invalid Date (already deferred) · concurrent `getHistory` request ordering (already deferred) · no loading affordance during the initial fetch (the accepted consequence of D1 option (a)) · canon `.note .profile` `gap: 5px` omitted (no effect — the pill has a single text child) · `inline-flex` grows the meta row / can push Copy+Delete (already deferred as "Mono timestamps widen the `justify-between` meta row" — P1 *widens* that entry's blast radius; canon `.note .meta` also carries `flex-wrap: wrap`, which the implementation lacks, already deferred as a canon delta) · sticky hover after tap on touch devices now also affects the pending card (already deferred for the normal card — same entry, wider scope) · "the three `[Decision]` findings were resolved without a human call" (Andi ratified all six resolutions when commissioning this re-review).
+
 
 ## Dev Notes
 
@@ -270,6 +294,11 @@ a human decision, not silently decided:
 > verbatim: clock icon in a `klarvo-surface-2` circle, "No dictations yet", "Start recording with
 > {hotkey}", plus the distinct "No results" variant for an empty search. Build this, do not invent
 > a variation. This is now a settled design decision, not a default.
+>
+> **✏️ Amendment — Andi, 2026-08-18 (review gate):** narrowed at the review gate. The "Start recording
+> with {hotkey}" line is desktop-only (`isDesktop` gate) — Android reaches the History panel through
+> its own header toggle, and the fallback `ctrl+shift+d` hotkey does not exist there. The clock icon,
+> "No dictations yet", and the "No results" search-empty variant stay verbatim as originally resolved.
 
 ### ⚠️ Elicitation Item #2 — "Pending" entry-state color role is NOT pinned by DT5
 
@@ -437,6 +466,17 @@ claude-sonnet-5 (bmad-dev-story)
   fails at the same documented pre-existing `ort-sys` baseline as before the fix round — no new errors;
   `git status src-tauri/` confirms zero Rust files touched. All Task 9 grep gates (hex, `orange-`,
   aliases, `'Inter'`, raw amber/red) re-run clean: zero hits.
+- **2nd fix round (2026-08-18):** applied the 7 confirmed re-review findings from the D3/`historyLoaded`
+  re-review. `npm run build` (tsc + vite): green, 0 errors. `cargo check --target x86_64-pc-windows-gnu`:
+  the environment was missing `x86_64-w64-mingw32-g++` entirely (failed earlier than the documented
+  baseline, at `whisper-rs-sys`'s CMake step) — installed `g++-mingw-w64-x86-64` via `apt-get` (same
+  class of reversible, standard cross-compile package as the first fix round's `gcc-mingw-w64-x86-64`)
+  to reach the actual gate; after install the check fails at the same documented pre-existing `ort-sys`
+  baseline ("downloaded binaries not available for target x86_64-pc-windows-gnu") — no new errors.
+  `git status src-tauri/` confirms zero Rust files touched. All 5 Task 9 grep gates (hex, `orange-`,
+  aliases, `'Inter'`, raw amber/red) re-run clean: zero hits. `git diff 116e427 HEAD -- src/App.tsx`
+  now contains the six 1st-round hunks plus three new hunks (pending-card hover, `onOpenHistory`
+  reset/catch split, `handleHistorySearch` flag write) — nothing else touched.
 
 ### Completion Notes List
 
@@ -459,11 +499,22 @@ claude-sonnet-5 (bmad-dev-story)
   7cb5f6f:src/App.tsx`) is **46** occurrences (`klarvo-primary` 30, `klarvo-warm` 7, `klarvo-warning` 9),
   not the story's stale "~24 today" estimate. The migration itself was already complete (post-state grep
   = 0); only the recorded count was wrong.
-- No unit-test suite exists for `App.tsx` (pure JSX/className migration, no logic branches beyond the
-  pre-existing empty/no-results/pending conditionals); verification is the DoD's build + grep gates +
-  manual smoke, consistent with sibling story 8.2's precedent and this story's own DoD section. The
-  real Windows release build + manual press-to-paste-equivalent smoke (History panel, empty-state,
-  search focus ring, pending-entry render) is Andi's device gate, not run here.
+- No unit-test suite exists for `App.tsx` (pure JSX/className migration; the fix round added two new
+  logic branches beyond the pre-existing empty/no-results/pending conditionals — `historyLoaded &&
+  historyEntries.length === 0` gating both empty-state variants, and `{isDesktop && …}` gating the
+  hotkey line — see D1/D2 above); verification is the DoD's build + grep gates + manual smoke,
+  consistent with sibling story 8.2's precedent and this story's own DoD section. The real Windows
+  release build + manual press-to-paste-equivalent smoke (History panel, empty-state, search focus
+  ring, pending-entry render) is Andi's device gate, not run here.
+- **2nd fix round:** `historyLoaded` is now managed as a load-state flag, not a one-shot latch —
+  `onOpenHistory` resets it to `false` before fetching and sets it to `true` only in the `.then`
+  success branch (the `.catch` branch is separate and no longer marks a failed load as loaded);
+  `handleHistorySearch` also sets it to `true` after writing `historyEntries` on both its branches, so
+  a search issued before the first load resolves now correctly falls through to "No results" instead
+  of a blank panel. The pending-entry card's hover was changed from the copied neutral
+  `hover:bg-klarvo-elevated/40 hover:border-klarvo-border` to an amber-preserving
+  `hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60`, per Andi's review-gate call — the amber
+  state signal no longer disappears on hover. Density (`p-3.5`) is unchanged.
 
 ### File List
 
@@ -502,3 +553,21 @@ claude-sonnet-5 (bmad-dev-story)
   `npm run build` (green), `cargo check --target x86_64-pc-windows-gnu` (same documented pre-existing
   `ort-sys` baseline, no new errors, no Rust files touched), and all Task 9 grep gates (clean). Status →
   review.
+- 2026-08-18 (2nd fix round): Addressed the 7 confirmed re-review findings in `src/App.tsx` and the
+  story's own record. Pending-card hover: replaced the neutral `hover:bg-klarvo-elevated/40
+  hover:border-klarvo-border` (copied verbatim from the normal card by D3) with an amber-preserving
+  `hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60`, per Andi's review-gate call — the amber
+  state signal no longer disappears on hover; density unchanged. `historyLoaded`: reworked from a
+  one-shot latch into a proper load-state flag — `onOpenHistory` now resets it to `false` before
+  fetching and sets it to `true` only in the `.then` success branch (the `.catch` branch is separate
+  and no longer marks a failed load as "loaded"); `handleHistorySearch` now also sets it to `true`
+  after writing `historyEntries` on both its branches. Story-record fixes: corrected the Completion
+  Notes sentence that denied any new logic branches (now names the two the fix round added), appended
+  dated amendments to the GATE-1 decision record (Task 2.1 and Elicitation Item #1) recording the
+  `isDesktop` carve-out without overwriting the original text, corrected Task 6.1's stale "≈24"
+  parenthetical to 46, and re-anchored the pending/normal card line references in this file and in
+  `deferred-work.md` to commit `116e427` (`:629` / `:665`). All 18 previously deferred findings remain
+  deferred, untouched. Re-ran `npm run build` (green), `cargo check --target x86_64-pc-windows-gnu`
+  (environment was missing `x86_64-w64-mingw32-g++`; installed `g++-mingw-w64-x86-64` to reach the
+  actual gate, then hit the same documented pre-existing `ort-sys` baseline, no new errors, no Rust
+  files touched), and all Task 9 grep gates (clean). Status → review.
