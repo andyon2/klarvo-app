@@ -142,7 +142,7 @@ export default function App() {
 
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoadState, setHistoryLoadState] = useState<"loading" | "error" | "loaded">("loading");
   const [historySearch, setHistorySearch] = useState("");
   const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
@@ -204,17 +204,22 @@ export default function App() {
   const isIdle = recording.recordingState === "idle" || recording.recordingState === "done" || recording.recordingState === "error";
   const quickTip = useQuickTip({ isIdle, onboardingCompleted });
 
+  const loadHistory = useCallback(() => {
+    setHistoryLoadState("loading");
+    getHistory(50)
+      .then((entries) => {
+        setHistoryEntries(entries);
+        setHistoryLoadState("loaded");
+      })
+      .catch((err) => {
+        console.error(err);
+        setHistoryLoadState("error");
+      });
+  }, []);
+
   // Panel callbacks for lazy loading
   const panels = usePanels({
-    onOpenHistory: () => {
-      setHistoryLoaded(false);
-      getHistory(50)
-        .then((entries) => {
-          setHistoryEntries(entries);
-          setHistoryLoaded(true);
-        })
-        .catch(console.error);
-    },
+    onOpenHistory: loadHistory,
     onOpenStats: () => {
       getUsageStats().then(setUsageStats).catch(console.error);
       getFillerStats().then(setFillerStats).catch(console.error);
@@ -309,7 +314,7 @@ export default function App() {
       const entries = await getHistory(50);
       setHistoryEntries(entries);
     }
-    setHistoryLoaded(true);
+    setHistoryLoadState("loaded");
   }, []);
 
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
@@ -612,7 +617,21 @@ export default function App() {
             </div>
 
             <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2.5">
-              {historyLoaded && historyEntries.length === 0 ? (
+              {historyLoadState === "loading" ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <p className="text-sm font-medium text-klarvo-muted">Loading…</p>
+                </div>
+              ) : historyLoadState === "error" ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                  <p className="text-sm font-medium text-klarvo-muted">Could not load history</p>
+                  <button
+                    onClick={loadHistory}
+                    className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : historyEntries.length === 0 ? (
                 (historySearch.trim() || historyAppSearch.trim()) ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
                     <p className="text-sm font-medium text-klarvo-muted">No results</p>
