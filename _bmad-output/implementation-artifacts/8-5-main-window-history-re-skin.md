@@ -325,6 +325,15 @@ recording" now that both exist side-by-side in the same list.
 > this: `klarvo.css` line 33 defines amber as "live / activity / recording / **warning**", and a
 > paused entry awaiting a manual retry is a warning. Accepted consequence: amber then carries both
 > the app tags and the pending state in the same list. Do not redesign the state.
+>
+> **✏️ Amendment — Andi, 2026-08-18 (review gate):** the "change nothing else" clause was narrowed
+> twice at the review gate. (1) Finding D3: the pending card kept the old `p-3` density and no hover
+> while the normal card moved to `p-3.5` plus a hover lift, so one list measured at two heights —
+> Andi chose to align it. (2) The literal fix then copied the normal card's neutral hover, whose
+> `:hover` rules outrank the amber fill on specificity, so hovering erased the amber status signal
+> exactly when the user aimed at "Erneut verarbeiten". Andi chose an amber-preserving hover
+> (`hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60`) instead. The colour ROLE is unchanged —
+> amber still means this state; only density and hover behaviour moved.
 
 ### Known defect: do not use `.focus-klarvo` for the new search-input focus ring
 
