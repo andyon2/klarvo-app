@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-08-18
+last_updated: 2026-08-19
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -113,7 +113,7 @@ development_status:
   7-7-golden-vector-parity-net-and-dead-config-lock: backlog
   epic-7-retrospective: optional
 
-  # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06 (re-port per Fläche; scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
+  # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06, 8-6 vertagt 2026-08-19 (scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
   epic-8: in-progress
   8-1-token-and-type-foundation: done
   8-2-settings-form-system-home-and-sub-pages: done
