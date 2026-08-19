@@ -350,3 +350,52 @@ v1 ist **Tauri 2** → `tauri-plugin-single-instance` **2.x** passt direkt (kein
 ### Offene Fragen
 1. Zweitstart soll das Fenster ggf. aus dem Tray holen (falls „im Hintergrund weiterlaufen"
    geplant), nicht nur den Prozess killen.
+
+---
+
+## Verlaufs-Sync über Geräte hinweg (Desktop ↔ Android, mit Reitern)
+
+- **Status:** `idea`
+- **Erfasst:** 2026-08-19
+- **Herkunft:** Andi, im Anschluss an den 8-5-Windows-Smoke. Wörtlich: „ich habe auf meinem Handy
+  und auf meinem Laptop jetzt zwei unterschiedliche Verläufe."
+- **Ausdrücklich NICHT gebaut.** Andi wollte nur klären, wo es hingehört. Ergebnis der Klärung:
+  **eine eigene Epic, keine Story.**
+
+### Was es ist
+Beide Geräte zeigen beide Verläufe. Andis Bild: zwei Reiter zum Durchwechseln — „Laptop" und
+„Android". Dahinter ein Speicher, den beide Geräte erreichen.
+
+### Warum es eine Epic ist, keine Story
+1. **Es braucht zum ersten Mal einen echten plattformübergreifenden Datenvertrag.** Der Shared-Core
+   deckt heute nur STT und Lizenz (ADR-0017); Verlauf, Cleanup und Chunking sind Rust↔Kotlin-Zwillinge.
+   Ein synchronisierter Verlauf lässt sich nicht zwillingen — er braucht ein gemeinsames Schema.
+2. **Speicher, Identität, Konfliktauflösung und Verschlüsselung** sind je für sich eine Story.
+3. Die Reiter sind die Spitze. Darunter liegt die eigentliche Arbeit.
+
+### ⚠️ Die Vorentscheidung, die alles andere bestimmt
+Klarvo ist BYOK und lokal — **keine Remote-Telemetrie, kein Sentry, bewusst so entschieden**
+([[no-remote-telemetry]], [[market-positioning]]). Diktate auf einen Klarvo-Server zu legen, kehrt
+genau das um. **Diese Produktfrage gehört vor die erste Story**, nicht in sie hinein.
+
+| Weg | Kosten | Passt zur Positionierung? |
+|---|---|---|
+| Klarvo betreibt einen Sync-Dienst | Server, Betrieb, Haftung für fremde Diktate | **Nein** — kehrt BYOK um |
+| Nutzer bringt seinen Speicher mit (S3, WebDAV) | Ein Adapter, Ende-zu-Ende verschlüsselt | Ja — dasselbe Muster wie beim API-Key |
+| Ordner-Sync über etwas Vorhandenes (Dropbox …) | Am wenigsten: keine Infrastruktur | Ja — Andi nutzt Dropbox bereits |
+| Direkt zwischen den Geräten im Netz | Kein Speicher nötig | Ja, aber beide Geräte müssen gleichzeitig an sein |
+
+Der dritte Weg ist der aussichtsreichste Startpunkt: eine verschlüsselte Verlaufsdatei in einem
+Ordner, den das Gerät ohnehin synchronisiert. Null neue Infrastruktur, trifft die Zielgruppe
+(Power-User/Devs) genau. Das ist eine Einschätzung, keine Entscheidung.
+
+### Wenn es drankommt
+`bmad-correct-course`, um die Epic zu verankern — **erst nachdem die Speicherfrage entschieden ist.**
+Ohne diese Entscheidung ist jede Story-Zerlegung Spekulation.
+
+### Offene Fragen
+1. Was wird synchronisiert — nur Text, oder auch die WAV-Dateien? Das ändert die Größenordnung um
+   Zehnerpotenzen.
+2. Ist „Gerät" eine dauerhafte Kennung im Datensatz, oder werden die Verläufe zu einem verschmolzen?
+   Andis Reiter-Bild sagt: getrennt sichtbar bleiben.
+3. Wie verhält sich das zur Lizenz? `UnlimitedHistory` ist heute schon ein lizenzgeschütztes Merkmal.

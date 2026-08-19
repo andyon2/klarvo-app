@@ -67,20 +67,20 @@ function RecordButton({ recordingState, onClick }: { recordingState: string; onC
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
         "disabled:cursor-not-allowed disabled:opacity-60",
         isRecording
-          ? "bg-klarvo-warning/20 text-klarvo-warning shadow-[0_0_40px_rgba(233,162,76,0.3)]"
+          ? "bg-klarvo-amber/20 text-klarvo-amber shadow-[0_0_40px_rgba(233,162,76,0.3)]"
           : isBusy
-          ? "bg-klarvo-warning/15 text-klarvo-warning shadow-[0_0_30px_rgba(233,162,76,0.2)]"
-          : "bg-klarvo-primary/15 text-klarvo-primary shadow-[0_0_40px_rgba(41,199,172,0.2)] hover:shadow-[0_0_50px_rgba(41,199,172,0.3)] hover:bg-klarvo-primary/20",
+          ? "bg-klarvo-amber/15 text-klarvo-amber shadow-[0_0_30px_rgba(233,162,76,0.2)]"
+          : "bg-klarvo-teal/15 text-klarvo-teal shadow-[0_0_40px_rgba(41,199,172,0.2)] hover:shadow-[0_0_50px_rgba(41,199,172,0.3)] hover:bg-klarvo-teal/20",
       ].join(" ")}
     >
       <span
         className={[
           "absolute inset-0 rounded-full border-2 transition-colors duration-200",
-          isRecording ? "border-klarvo-warning/40" : isBusy ? "border-klarvo-warning/30" : "border-klarvo-primary/25",
+          isRecording ? "border-klarvo-amber/40" : isBusy ? "border-klarvo-amber/30" : "border-klarvo-teal/25",
         ].join(" ")}
       />
       {isRecording && (
-        <span className="absolute inset-0 rounded-full border-2 border-klarvo-warning opacity-40 animate-ping" />
+        <span className="absolute inset-0 rounded-full border-2 border-klarvo-amber opacity-40 animate-ping" />
       )}
       {isBusy ? (
         <SpinnerIcon className="w-9 h-9" />
@@ -108,7 +108,7 @@ function StylePicker({ value, onChange, disabled }: { value: CleanupStyle; onCha
               : "px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-100 whitespace-nowrap",
             "disabled:cursor-not-allowed disabled:opacity-50",
             value === opt.value
-              ? "bg-klarvo-primary/15 text-klarvo-primary"
+              ? "bg-klarvo-teal/15 text-klarvo-teal"
               : "text-klarvo-dim hover:text-klarvo-muted",
           ].join(" ")}
         >
@@ -142,6 +142,7 @@ export default function App() {
 
   // History state (loaded lazily when history panel opens)
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoadState, setHistoryLoadState] = useState<"loading" | "error" | "loaded">("loading");
   const [historySearch, setHistorySearch] = useState("");
   const [historyAppSearch, setHistoryAppSearch] = useState("");
   const [expandedHistoryRaw, setExpandedHistoryRaw] = useState<Set<number>>(new Set());
@@ -203,9 +204,22 @@ export default function App() {
   const isIdle = recording.recordingState === "idle" || recording.recordingState === "done" || recording.recordingState === "error";
   const quickTip = useQuickTip({ isIdle, onboardingCompleted });
 
+  const loadHistory = useCallback(() => {
+    setHistoryLoadState("loading");
+    getHistory(50)
+      .then((entries) => {
+        setHistoryEntries(entries);
+        setHistoryLoadState("loaded");
+      })
+      .catch((err) => {
+        console.error(err);
+        setHistoryLoadState("error");
+      });
+  }, []);
+
   // Panel callbacks for lazy loading
   const panels = usePanels({
-    onOpenHistory: () => getHistory(50).then(setHistoryEntries).catch(console.error),
+    onOpenHistory: loadHistory,
     onOpenStats: () => {
       getUsageStats().then(setUsageStats).catch(console.error);
       getFillerStats().then(setFillerStats).catch(console.error);
@@ -300,6 +314,7 @@ export default function App() {
       const entries = await getHistory(50);
       setHistoryEntries(entries);
     }
+    setHistoryLoadState("loaded");
   }, []);
 
   const handleDeleteHistoryEntry = useCallback(async (id: number) => {
@@ -405,9 +420,8 @@ export default function App() {
 
   return (
     <main
-      className="h-screen bg-klarvo-bg text-klarvo-text flex flex-col select-none overflow-y-auto"
+      className="h-screen bg-klarvo-bg text-klarvo-text flex flex-col select-none overflow-y-auto font-geist"
       style={{
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         ...(isMobile ? {
           paddingTop: "env(safe-area-inset-top, 24px)",
           paddingBottom: "env(safe-area-inset-bottom, 24px)",
@@ -419,8 +433,8 @@ export default function App() {
            (only visible on the home/recording view, hidden when a panel is open). */}
       <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2 flex-shrink-0">
         {/* Logo */}
-        <div className="w-7 h-7 rounded-lg bg-klarvo-primary/10 border border-klarvo-primary/20 flex items-center justify-center">
-          <MicIcon className="w-3.5 h-3.5 text-klarvo-primary" />
+        <div className="w-7 h-7 rounded-lg bg-klarvo-teal/10 border border-klarvo-teal/20 flex items-center justify-center">
+          <MicIcon className="w-3.5 h-3.5 text-klarvo-teal" />
         </div>
         <span className="text-sm font-semibold text-klarvo-muted tracking-wide">Klarvo</span>
         <span className="text-[9px] font-medium text-klarvo-dim/70 uppercase tracking-widest ml-1">Early Access</span>
@@ -433,7 +447,7 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showSettings
-              ? "text-klarvo-primary bg-klarvo-primary/10"
+              ? "text-klarvo-teal bg-klarvo-teal/10"
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
@@ -448,7 +462,7 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showHistory
-              ? "text-klarvo-primary bg-klarvo-primary/10"
+              ? "text-klarvo-teal bg-klarvo-teal/10"
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
@@ -465,7 +479,7 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showStats
-              ? "text-klarvo-primary bg-klarvo-primary/10"
+              ? "text-klarvo-teal bg-klarvo-teal/10"
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
@@ -482,7 +496,7 @@ export default function App() {
           className={[
             `${headerBtnPad} rounded-lg transition-all duration-150`,
             panels.showNotes
-              ? "text-klarvo-primary bg-klarvo-primary/10"
+              ? "text-klarvo-teal bg-klarvo-teal/10"
               : "text-klarvo-dim hover:text-klarvo-muted hover:bg-klarvo-surface/50",
           ].join(" ")}
         >
@@ -591,62 +605,95 @@ export default function App() {
                 placeholder="Search text..."
                 value={historySearch}
                 onChange={(e) => handleHistorySearch(e.target.value, historyAppSearch)}
-                className="flex-1 bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors"
+                className="flex-1 bg-klarvo-surface-2 border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-teal/40 focus:ring-1 focus:ring-klarvo-teal/20 transition-colors"
               />
               <input
                 type="text"
                 placeholder="App..."
                 value={historyAppSearch}
                 onChange={(e) => handleHistorySearch(historySearch, e.target.value)}
-                className="w-24 bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors"
+                className="w-24 bg-klarvo-surface-2 border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-teal/40 focus:ring-1 focus:ring-klarvo-teal/20 transition-colors"
               />
             </div>
 
-            <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2">
-              {historyEntries.length === 0 ? (
-                <p className="text-xs text-klarvo-dim italic text-center py-4">No dictations yet.</p>
+            <div className="overflow-y-auto max-h-[calc(100vh-250px)] p-4 flex flex-col gap-2.5">
+              {historyLoadState === "loading" ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <p className="text-sm font-medium text-klarvo-muted">Loading…</p>
+                </div>
+              ) : historyLoadState === "error" ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                  <p className="text-sm font-medium text-klarvo-muted">Could not load history</p>
+                  <button
+                    onClick={loadHistory}
+                    className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : historyEntries.length === 0 ? (
+                (historySearch.trim() || historyAppSearch.trim()) ? (
+                  <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                    <p className="text-sm font-medium text-klarvo-muted">No results</p>
+                    <p className="text-xs text-klarvo-dim">No dictations match your search</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                    <div className="w-10 h-10 rounded-full bg-klarvo-surface-2 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-klarvo-dim" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-klarvo-muted">No dictations yet</p>
+                      {isDesktop && (
+                        <p className="text-xs text-klarvo-dim mt-0.5">Start recording with {hotkeyDisplay}</p>
+                      )}
+                    </div>
+                  </div>
+                )
               ) : (
                 historyEntries.map((entry) => (
                   entry.status === "pending" ? (
                     <div
                       key={entry.id}
-                      className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3"
+                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60 transition-colors"
                     >
-                      <p className="text-xs text-amber-300">
+                      <p className="text-xs text-klarvo-amber">
                         ⏳ Audio gesichert — noch nicht transkribiert
                       </p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-[11px] text-klarvo-dim">
-                          {new Date(entry.createdAt + "Z").toLocaleString()}
+                          <span className="font-geist-mono">{new Date(entry.createdAt + "Z").toLocaleString()}</span>
                           {entry.appName && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-klarvo-warm/10 rounded text-[9px] text-klarvo-warm">{entry.appName}</span>
+                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
                           )}
                         </span>
                         <div className="flex gap-1.5">
                           <button
                             onClick={() => handleReprocessPendingEntry(entry.id)}
                             disabled={reprocessingId !== null}
-                            className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
                           </button>
                           <button
                             onClick={() => handleDiscardPendingEntry(entry.id)}
                             disabled={reprocessingId !== null}
-                            className="text-[11px] text-orange-400 hover:text-orange-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             Verwerfen
                           </button>
                         </div>
                       </div>
                       {pendingErrors[entry.id] && (
-                        <p className="mt-1.5 text-[11px] text-red-400">{pendingErrors[entry.id]}</p>
+                        <p className="mt-1.5 text-[11px] text-klarvo-danger">{pendingErrors[entry.id]}</p>
                       )}
                     </div>
                   ) : (
                   <div
                     key={entry.id}
-                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3 group hover:border-klarvo-border/60 transition-colors"
+                    className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3.5 group hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors"
                   >
                     <HighlightedText text={entry.text} query={historySearch} className="text-xs text-klarvo-muted whitespace-pre-wrap" />
                     {entry.rawText && entry.rawText !== entry.text && (
@@ -665,7 +712,7 @@ export default function App() {
                           {expandedHistoryRaw.has(entry.id) && (
                             <button
                               onClick={() => navigator.clipboard.writeText(entry.rawText!)}
-                              className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
+                              className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
                             >
                               Copy Original
                             </button>
@@ -673,7 +720,7 @@ export default function App() {
                         </div>
                         {expandedHistoryRaw.has(entry.id) && (
                           <div className="mt-1 relative group/raw">
-                            <p className="text-[11px] text-klarvo-dim whitespace-pre-wrap bg-[#0c0c0e] rounded-lg px-2.5 py-1.5 border border-klarvo-border/40">
+                            <p className="text-[11px] text-klarvo-dim whitespace-pre-wrap bg-klarvo-bg-deep rounded-lg px-2.5 py-1.5 border border-klarvo-border/40">
                               {entry.rawText}
                             </p>
                             <button
@@ -688,24 +735,24 @@ export default function App() {
                     )}
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-[11px] text-klarvo-dim">
-                        {new Date(entry.createdAt + "Z").toLocaleString()}
+                        <span className="font-geist-mono">{new Date(entry.createdAt + "Z").toLocaleString()}</span>
                         {entry.style !== "polished" && (
-                          <span className="text-klarvo-primary"> · {entry.style}</span>
+                          <span className="text-klarvo-teal font-geist-mono"> · {entry.style}</span>
                         )}
                         {entry.appName && (
-                          <span className="ml-1 px-1.5 py-0.5 bg-klarvo-warm/10 rounded text-[9px] text-klarvo-warm">{entry.appName}</span>
+                          <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
                         )}
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => navigator.clipboard.writeText(entry.text).catch(console.error)}
-                          className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
+                          className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
                         >
                           Copy
                         </button>
                         <button
                           onClick={() => handleDeleteHistoryEntry(entry.id)}
-                          className="text-[11px] text-orange-400 hover:text-orange-300 transition-colors"
+                          className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 transition-colors"
                         >
                           Delete
                         </button>
@@ -746,25 +793,25 @@ export default function App() {
                   <CostDashboard stats={usageStats} />
                 </div>
 
-                {/* Filler word analysis — orange accent to restore Teal→Orange→Teal color rhythm */}
+                {/* Filler word analysis — amber accent to restore Teal→Amber→Teal color rhythm */}
                 {!isPaid ? (
                   <div className="px-4 pb-4 pt-3">
-                    <div className="bg-klarvo-bg border border-klarvo-warm/30 rounded-xl p-4 flex items-center gap-2">
-                      <LockIcon className="w-3.5 h-3.5 text-orange-400/60 flex-shrink-0" />
-                      <p className="text-xs text-orange-400/70">Filler word analysis requires a Klarvo license.</p>
+                    <div className="bg-klarvo-bg border border-klarvo-amber/30 rounded-xl p-4 flex items-center gap-2">
+                      <LockIcon className="w-3.5 h-3.5 text-klarvo-amber/60 flex-shrink-0" />
+                      <p className="text-xs text-klarvo-amber/70">Filler word analysis requires a Klarvo license.</p>
                     </div>
                   </div>
                 ) : fillerStats.length > 0 ? (
                   <div className="px-4 pb-4 pt-3">
                     <button
                       onClick={() => setShowFillerStats((v) => !v)}
-                      className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-warm uppercase tracking-widest hover:text-orange-300 transition-colors w-full text-left"
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-amber uppercase tracking-widest hover:text-klarvo-amber-hi transition-colors w-full text-left"
                     >
                       <span className={`transition-transform duration-150 ${showFillerStats ? "rotate-90" : ""}`}>▸</span>
                       Top Filler Words
                     </button>
                     {showFillerStats && (
-                      <div className="mt-3 bg-klarvo-bg border border-klarvo-warm/30 rounded-xl p-4">
+                      <div className="mt-3 bg-klarvo-bg border border-klarvo-amber/30 rounded-xl p-4">
                         <FillerStatsChart entries={fillerStats} />
                       </div>
                     )}
@@ -821,9 +868,9 @@ export default function App() {
           <p className={[
             "text-xs font-medium",
             recording.recordingState === "error" ? "text-klarvo-danger"
-              : recording.recordingState === "recording" ? "text-klarvo-warning"
-              : recording.recordingState === "done" ? "text-klarvo-primary"
-              : isBusy ? "text-klarvo-warning"
+              : recording.recordingState === "recording" ? "text-klarvo-amber"
+              : recording.recordingState === "done" ? "text-klarvo-teal"
+              : isBusy ? "text-klarvo-amber"
               : "text-klarvo-dim",
           ].join(" ")}>
             {recording.errorMessage && recording.recordingState === "error"
@@ -839,7 +886,7 @@ export default function App() {
               readOnly
               value={recording.resultText}
               rows={3}
-              className="w-full bg-klarvo-bg border border-klarvo-border/60 rounded-xl px-3.5 py-2.5 text-sm text-klarvo-text resize-none focus:outline-none focus:border-klarvo-primary/30 transition-colors"
+              className="w-full bg-klarvo-bg border border-klarvo-border/60 rounded-xl px-3.5 py-2.5 text-sm text-klarvo-text resize-none focus:outline-none focus:border-klarvo-teal/30 transition-colors"
             />
             {recording.rawText && recording.rawText !== recording.resultText && (
               <div>
@@ -853,7 +900,7 @@ export default function App() {
                   {recording.showRawText && (
                     <button
                       onClick={() => navigator.clipboard.writeText(recording.rawText!)}
-                      className="text-[11px] text-klarvo-primary hover:text-klarvo-primary/80 transition-colors"
+                      className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
                     >
                       Copy Original
                     </button>
@@ -885,7 +932,7 @@ export default function App() {
       {/* ── Footer (desktop only) ── */}
       {isDesktop && (
         <div className="flex items-center justify-center px-4 py-3 flex-shrink-0">
-          <span className="text-[11px] font-mono text-klarvo-dim">{hotkeyDisplay}</span>
+          <span className="text-[11px] font-geist-mono text-klarvo-dim">{hotkeyDisplay}</span>
         </div>
       )}
 
@@ -909,7 +956,7 @@ export default function App() {
           className="fixed bottom-3 right-3 z-50 pointer-events-none"
           aria-hidden="true"
         >
-          <span className="px-2 py-1 rounded-md text-[10px] font-mono font-semibold tracking-wide bg-klarvo-bg/80 border border-klarvo-border/50 text-klarvo-dim backdrop-blur-sm">
+          <span className="px-2 py-1 rounded-md text-[10px] font-geist-mono font-semibold tracking-wide bg-klarvo-bg/80 border border-klarvo-border/50 text-klarvo-dim backdrop-blur-sm">
             Preview Mode
           </span>
         </div>
@@ -946,7 +993,7 @@ export default function App() {
           title="Send Feedback"
           aria-label="Send feedback"
           onClick={() => { panels.toggle("feedback"); setShowFeedbackTooltip(false); }}
-          className={`${isMobile ? "w-20 h-20" : "w-16 h-16"} rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-400 shadow-lg shadow-black/30 hover:bg-orange-500/30 hover:scale-105 transition-all duration-150 flex items-center justify-center`}
+          className={`${isMobile ? "w-20 h-20" : "w-16 h-16"} rounded-full bg-klarvo-amber/20 border border-klarvo-amber/30 text-klarvo-amber shadow-lg shadow-black/30 hover:bg-klarvo-amber/30 hover:scale-105 transition-all duration-150 flex items-center justify-center`}
         >
           <FeedbackIcon className={isMobile ? "w-9 h-9" : "w-7 h-7"} />
         </button>

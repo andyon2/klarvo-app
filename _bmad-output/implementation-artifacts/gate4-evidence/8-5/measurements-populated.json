@@ -1,0 +1,33 @@
+{
+  "timestamp": {
+    "font-family": "\"Geist Mono\", ui-monospace, \"Cascadia Code\", monospace",
+    "font-size": "11px"
+  },
+  "appTag": {
+    "text": "VS Code",
+    "display": "inline-flex",
+    "alignItems": "center",
+    "color": "rgb(233, 162, 76)",
+    "backgroundColor": "oklab(0.765545 0.0479957 0.122535 / 0.1)",
+    "borderColor": "rgba(233, 162, 76, 0.32)",
+    "borderRadius": "3.35544e+07px"
+  },
+  "card": {
+    "padding": "14px 16px 8px",
+    "borderRadius": "0px",
+    "backgroundColor": "rgba(0, 0, 0, 0)"
+  },
+  "searchInput": {
+    "background-color": "rgb(27, 30, 32)",
+    "border-color": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "border-radius": "8px"
+  },
+  "searchInputFocused": {
+    "border-color": "oklab(0.745939 -0.129786 0.00546873 / 0.4)",
+    "box-shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.745939 -0.129786 0.00546873 / 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+  },
+  "noResultsText": "KlarvoEarly AccessHistoryNo resultsNo dictations match your searchCtrl + Shift + DPreview ModeThemes▼Spotted something? Tap here to send feedback anytime!Don't show again×Kommentieren",
+  "mainFont": {
+    "font-family": "Geist, ui-sans-serif, system-ui, sans-serif"
+  }
+}

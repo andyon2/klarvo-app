@@ -739,7 +739,7 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 **Entscheidung — der alte Branch wird NICHT gemergt.** `conductor/epic-8` (auf origin gesichert) ist 238 Commits hinter `v1-ship`; ein Merge produziert tote Konflikte auf inzwischen ersetztem Code. Stattdessen dient der gebaute Re-Skin als **Referenz-Vorlage**, und die noch lebenden Flächen werden **pro Fläche neu gegen den heutigen `v1-ship` portiert** (Story-Zyklus je Fläche). Fundament (Tokens/Fonts, 8-1) liegt bereits auf `v1-ship`.
 
 **Scope-Aufteilung:**
-- **✅ 8-2 Einstellungen / 8-5 Verlauf / 8-6 Onboarding — werden gebaut** (re-port). Referenz-Qualität laut `epic-8-fidelity-audit.md` (15.06.): 100 % Token-Treue, History „starker Match". 8-5: History lebt heute in `VoiceNotesPanel.tsx` (nicht mehr `App.tsx`) → neu verorten. 8-6: Testzustand nur nach Config-Wipe sichtbar → Erreichbarkeit als Vorlauf mitbauen (Verifikations-Symmetrie).
+- **✅ 8-2 Einstellungen / 8-5 Verlauf / 8-6 Onboarding — werden gebaut** (re-port). Referenz-Qualität laut `epic-8-fidelity-audit.md` (15.06.): 100 % Token-Treue, History „starker Match". 8-5: History lebt in `App.tsx`. **KORREKTUR 2026-08-18 (Story 8-5, am Baum geprüft): die frühere Angabe „lebt heute in `VoiceNotesPanel.tsx` (nicht mehr `App.tsx`)" war falsch** — Zustand, Suche, Liste und Leerzustand stehen sämtlich in `App.tsx`; `VoiceNotesPanel.tsx` ist ein anderes, im Header auskommentiertes Feature („Voice Notes"). 8-6: Testzustand nur nach Config-Wipe sichtbar → Erreichbarkeit als Vorlauf mitbauen (Verifikations-Symmetrie).
 - **❌ 8-3 FloatingBar / 8-4 Live-Preview — SUPERSEDED** durch native Overlays (Epic 10, `native_pill.rs`/`native_preview.rs`). Kein React-Port. Der nötige native Token-Nachzug in tiny-skia/GDI ist bereits separat gelistet (siehe „Epic 8-Abhängigkeit — native Overlays … in Rust/GDI nachziehen", oben) — das ist die richtige Heimat, nicht dieser Re-Skin.
 - **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
 
@@ -847,3 +847,24 @@ mit Leerzeichen im Text braucht Quoting des gesamten Remote-Kommandos · Harness
 kleingeschrieben · `am force-stop` bringt das Onboarding zurück und verdeckt das Panel · ein
 4-Sekunden-Kotlin-Build ist von einem No-op nicht unterscheidbar, ohne im *generierten* Baum zu
 prüfen. Details in `gate4-evidence/11-6/verdict.md`.
+
+---
+
+## Android-Zwilling — Copy ohne Rückmeldung (2026-08-19, aus dem 8-5-Smoke)
+
+Source: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-19.md` · Auslöser: Andis
+Windows-Smoke von Story 8-5 am 2026-08-19.
+
+`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` schreibt über den `ClipboardManager` in
+die Zwischenablage, ohne dem Nutzer eine Bestätigung zu zeigen — **dieselbe Lücke, die Story 8.8 auf
+dem Desktop schließt.**
+
+**Warum getrennt:** Die bestehende Epic-Grenze lautet Epic 8 = Desktop, Epic 9 = Android. Andis Befund
+kam vom Desktop-Verlauf. Der Kotlin-Zwilling gehört damit in **Epic 9**, nicht in 8.8 — die Grenze für
+nichts zu überschreiten hätte die Epic-Struktur verwischt.
+
+**Wenn es drankommt:** Zuerst prüfen, ob Copy auf Android überhaupt ein sichtbares Steuerelement hat
+oder nur im Overlay-Cluster steckt. Die Desktop-Lösung („Copied" am Knopf) lässt sich nicht blind
+übertragen; ein Toast oder eine kurze Cluster-Rückmeldung kann die passendere Form sein. Das ist eine
+Design-Entscheidung für Andi, keine Umsetzungsfrage. Verwandt: ADR-0016 (Android-Pfad-Parität) — die
+Rückmeldung ist geteiltes VERHALTEN, auch wenn die Form je Plattform verschieden ausfällt.

@@ -1,0 +1,73 @@
+{
+  "cardCount": 4,
+  "cards": [
+    {
+      "i": 0,
+      "base": {
+        "padding": "14px",
+        "backgroundColor": "rgb(15, 17, 18)",
+        "borderColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+        "borderRadius": "12px",
+        "text": "Das ist ein Demo-Diktat aus dem Preview-Modus"
+      },
+      "hovered": {
+        "padding": "14px",
+        "backgroundColor": "oklab(0.269512 -0.00448928 -0.0051924 / 0.4)",
+        "borderColor": "rgb(40, 44, 47)",
+        "borderRadius": "12px",
+        "text": "Das ist ein Demo-Diktat aus dem Preview-Modus"
+      }
+    },
+    {
+      "i": 1,
+      "base": {
+        "padding": "14px",
+        "backgroundColor": "rgb(15, 17, 18)",
+        "borderColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+        "borderRadius": "12px",
+        "text": "Meeting-Notizen: Nächste Woche Release-Planni"
+      },
+      "hovered": {
+        "padding": "14px",
+        "backgroundColor": "oklab(0.269512 -0.00448928 -0.0051924 / 0.4)",
+        "borderColor": "rgb(40, 44, 47)",
+        "borderRadius": "12px",
+        "text": "Meeting-Notizen: Nächste Woche Release-Planni"
+      }
+    },
+    {
+      "i": 2,
+      "base": {
+        "padding": "14px",
+        "backgroundColor": "rgb(15, 17, 18)",
+        "borderColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+        "borderRadius": "12px",
+        "text": "Reminder: Tauri v2 supports both desktop and "
+      },
+      "hovered": {
+        "padding": "14px",
+        "backgroundColor": "oklab(0.269512 -0.00448928 -0.0051924 / 0.4)",
+        "borderColor": "rgb(40, 44, 47)",
+        "borderRadius": "12px",
+        "text": "Reminder: Tauri v2 supports both desktop and "
+      }
+    },
+    {
+      "i": 3,
+      "base": {
+        "padding": "12px 16px",
+        "backgroundColor": "rgb(22, 24, 26)",
+        "borderColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+        "borderRadius": "12px",
+        "text": "Spotted something? Tap here to send feedback "
+      },
+      "hovered": {
+        "padding": "12px 16px",
+        "backgroundColor": "rgb(22, 24, 26)",
+        "borderColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+        "borderRadius": "12px",
+        "text": "Spotted something? Tap here to send feedback "
+      }
+    }
+  ]
+}

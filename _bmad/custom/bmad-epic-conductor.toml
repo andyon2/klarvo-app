@@ -21,6 +21,19 @@ evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
 # The real target is NOT unattended-producible — never an automated-run target:
 real_target   = "the real Xiaomi/HyperOS device: its install confirmation needs a finger, so it stays Andi's BATCHED visual gate only — never an automated-run target. CORRECTION 2026-08-12 (Story 11-6 GATE-4): the DEBUG_SET_STATE harness is NOT dead on HyperOS — that claim was wrong and misroutes debugging. It failed because DebugHarnessReceiver was declared in no manifest: the declaring app/src/debug/AndroidManifest.xml lived only in the gitignored gen/android tree that 'tauri android init' regenerates. With the manifest restored it drives the real device fine; the restoration is volatile for the same reason. See docs/backlog.md."
 
+[desktop_build]
+# Der Windows-Release-Build — die REALE Desktop-Zielfläche, agenten-anstoßbar seit 2026-08-19.
+# Vorher hat jeder Agent die Kette von Hand improvisiert und Schritt 1 (pushen) vergessen,
+# worauf der Laptop still den alten Stand baute.
+command  = "scripts/windows-build.sh"   # [<ref>] [--clean] [--skip-npm]; default = aktueller Branch
+topology = "powerhouse hat kein Windows. sync-and-build.ps1 baut auf dem LAPTOP und robocopiert aus DESSEN WSL-Checkout nach D:\\apps\\klarvo. Der Code muss also erst ueber origin dorthin. windows-build.sh macht pushen + auschecken + bauen zu EINEM Schritt und beweist die Frische (exe muss juenger sein als der gebaute Commit)."
+transport = "ssh laptop landet direkt in dessen WSL-Ubuntu (kein wsl-Wrapper). powershell.exe steht in einer nicht-interaktiven SSH-Sitzung NICHT im PATH — nur der absolute Pfad /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe funktioniert."
+duration = "Minuten bis eine knappe halbe Stunde. IMMER im Hintergrund starten, nie im Vordergrund."
+exit_codes = "0 = frisch gebaut | 1 = Vorbedingung verletzt (dreckiger Baum, SHA-Drift, ungepushte Commits auf dem Laptop) | 2 = Compiler-Fehler | 3 = exe aelter als der Commit (cargo hat ein altes Objekt wiederverwendet -> mit --clean wiederholen)"
+# Was der Build NICHT entscheidet — dieselbe Grenze wie beim Emulator:
+decides    = "dass der Code auf Windows uebersetzt, bindet und startet. Das ist eine echte Aussage, die weder cargo check noch der Chromium-Proxy liefern."
+not_decides = "Pixel und Aesthetik. Schriftrasterung und die Windows-Textskalierungs-Drift bleiben Andis Blick auf dem echten Bildschirm. Ein gruener Build ist KEIN Design-Gate."
+
 [run_guard]
 # Mechanical run-isolation (Naht 2 + Naht 4): lock + HEAD-watch + real-target detach.
 command              = "scripts/conductor-guard.sh"  # subcommands: acquire / release / expect <sha> / check-head / break
