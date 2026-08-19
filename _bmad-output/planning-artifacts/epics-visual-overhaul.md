@@ -101,6 +101,11 @@ IDs are native to this track. Categories: **DT** = design-token/system (the shar
 - **UX-DR5** — **Onboarding** re-skin: trustworthy, elegant first impression (step indicators,
   illustration/empty); frame BYOK as a feature, not a hurdle. (Surface E.)
 
+- **UX-DR6** — **Action feedback (desktop)**: every user-triggered action on a surface answers the
+  click. Copy confirms ("Copied") and self-clears; a destructive action (Delete) is recoverable for a
+  short window ("Deleted · Undo") rather than gated behind a prompt. Discovered 2026-08-19 at the 8-5
+  smoke; covered by Story 8.8.
+
 ### Functional / Interaction Requirements (Android bubble — Epic 9; feature work)
 
 - **FR1** — Bubble **idle**: one form across all states (**no** circle↔square morph) — a **teal-gradient
@@ -211,6 +216,11 @@ The user sees a coherent, high-fidelity, instrument-grade dark UI across **every
 identical functions and flows, but now "from one cast": the scattered inline-hex look is gone, the
 FloatingBar feels premium, and Settings has a real form system. Standalone: builds only on existing
 v1 desktop surfaces; enables nothing downstream but retires the visual-inconsistency debt.
+
+**Amendment 2026-08-19 (scope).** Epic 8 is a re-skin — "identical functions and flows" holds for
+every story EXCEPT 8.8. Story 8.8 adds interaction behaviour (action feedback + an undo window),
+admitted deliberately after Andi's 8-5 smoke found that the re-skinned surfaces answer no clicks.
+The re-skin covenant continues to bind 8.1-8.7.
 
 **Covers:** DT1, DT3/DT4 (desktop), DT5, UX-DR1–UX-DR5, AR4, AR6, NFR1, NFR2, NFR3, NFR5 (desktop),
 NFR6, NFR7 (desktop).
@@ -500,6 +510,57 @@ closure).
 
 **DoD:** Windows release build + smoke (walk the onboarding flow); the DT1 closing grep-gate is green;
 `tsc`/`vite` + `cargo check` win-target green.
+
+
+### Story 8.8: Action feedback — Copy and Delete (interaction affordance)
+
+As a user acting on a history entry,
+I want the app to answer my click,
+So that I know the copy succeeded and a mis-click on Delete does not cost me a dictation.
+
+**Acceptance Criteria:**
+
+**Given** any Copy affordance on a desktop surface
+**When** the user clicks it
+**Then** the control confirms the action ("Copied") for a short, self-clearing moment, and returns to
+its resting label afterwards.
+
+**Given** the clipboard write fails
+**When** the user clicks Copy
+**Then** the control does NOT claim success, and the failure is visible to the user — not only in the
+console.
+
+**Given** a history entry
+**When** the user clicks Delete
+**Then** the row disappears immediately and an undo affordance ("Deleted · Undo") is offered for a few
+seconds; the backend delete runs only after that window expires.
+
+**Given** the undo affordance
+**When** the user clicks Undo inside the window
+**Then** the entry returns to the list unchanged and no backend delete is issued.
+
+**Given** the covered surfaces
+**When** the story is done
+**Then** every desktop `clipboard.writeText` call site carries the feedback (7 sites at the time of
+writing, in `App.tsx` / `VoiceNotesPanel.tsx` / `PreviewComments.tsx`) — no site is left silent.
+
+**And** zero inline hex for covered roles (DT1); the feedback state uses named tokens. If the design
+canon carries no token for a confirmed-action state, that is a GATE-1 question for Andi, not an
+implementer's choice.
+
+**Settled design decisions (Andi, 2026-08-19 — decided, NOT open):** Copy shows "Copied"; Delete gets
+an undo window, deliberately NOT a confirmation prompt. Open and Andi's alone: how long "Copied"
+lingers and how long the undo window holds — a matter of feel, not measurement.
+
+**Scope guard:** desktop only. The Android clipboard twin is deferred to Epic 9 (see
+`docs/backlog.md`). This story adds NO SQLite schema change and NO Rust change — the undo window is an
+optimistic frontend delete, so a crash inside the window leaves the entry intact.
+
+**DoD:** Windows release build + smoke (copy from a history card and confirm the label changes; delete
+an entry and undo it; delete an entry and let the window lapse, then confirm it is gone after a
+restart); `tsc`/`vite` green.
+
+Source: `sprint-change-proposal-2026-08-19.md`.
 
 ---
 

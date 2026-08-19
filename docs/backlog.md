@@ -847,3 +847,24 @@ mit Leerzeichen im Text braucht Quoting des gesamten Remote-Kommandos · Harness
 kleingeschrieben · `am force-stop` bringt das Onboarding zurück und verdeckt das Panel · ein
 4-Sekunden-Kotlin-Build ist von einem No-op nicht unterscheidbar, ohne im *generierten* Baum zu
 prüfen. Details in `gate4-evidence/11-6/verdict.md`.
+
+---
+
+## Android-Zwilling — Copy ohne Rückmeldung (2026-08-19, aus dem 8-5-Smoke)
+
+Source: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-19.md` · Auslöser: Andis
+Windows-Smoke von Story 8-5 am 2026-08-19.
+
+`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` schreibt über den `ClipboardManager` in
+die Zwischenablage, ohne dem Nutzer eine Bestätigung zu zeigen — **dieselbe Lücke, die Story 8.8 auf
+dem Desktop schließt.**
+
+**Warum getrennt:** Die bestehende Epic-Grenze lautet Epic 8 = Desktop, Epic 9 = Android. Andis Befund
+kam vom Desktop-Verlauf. Der Kotlin-Zwilling gehört damit in **Epic 9**, nicht in 8.8 — die Grenze für
+nichts zu überschreiten hätte die Epic-Struktur verwischt.
+
+**Wenn es drankommt:** Zuerst prüfen, ob Copy auf Android überhaupt ein sichtbares Steuerelement hat
+oder nur im Overlay-Cluster steckt. Die Desktop-Lösung („Copied" am Knopf) lässt sich nicht blind
+übertragen; ein Toast oder eine kurze Cluster-Rückmeldung kann die passendere Form sein. Das ist eine
+Design-Entscheidung für Andi, keine Umsetzungsfrage. Verwandt: ADR-0016 (Android-Pfad-Parität) — die
+Rückmeldung ist geteiltes VERHALTEN, auch wenn die Form je Plattform verschieden ausfällt.
