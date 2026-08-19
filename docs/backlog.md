@@ -852,6 +852,26 @@ prüfen. Details in `gate4-evidence/11-6/verdict.md`.
 
 ---
 
+## Voice-Notes-Fläche — Copy ohne Rückmeldung, weil die Fläche abgeschaltet ist (2026-08-19, aus Story 8.8)
+
+Source: Phase-A-Entscheidung zu Story 8.8 (2026-08-19, Andi) · am Baum geprüft in derselben Sitzung.
+
+`src/components/VoiceNotesPanel.tsx:109` kopiert ohne Rückmeldung — dieselbe Lücke, die Story 8.8 auf
+den fünf erreichbaren Desktop-Stellen schließt. Die Fläche ist aber **nicht erreichbar**: der Knopf,
+der sie öffnet, steht auskommentiert in `src/App.tsx:491` („Notes toggle -- hidden for Early Access
+(feature incomplete)"), also wird `panels.showNotes` über die Oberfläche nie wahr. Die Komponente wird
+weiterhin importiert und in `src/App.tsx:834` gerendert, aber nur hinter diesem toten Schalter.
+
+**Warum ausgelassen:** Andi kann die Fläche nicht öffnen, also kann er die Arbeit dort nicht abnehmen.
+Sie zu bauen hieße, ungeprüften Code im Baum zu hinterlassen — das verletzt die Verifikations-Symmetrie.
+Der abgenommene Story-Text nennt „7 Stellen"; die richtige Zahl ist fünf stumme, eine bereits
+bestätigende (`PreviewComments.tsx`, hat schon `setCopied` plus Fallback) und diese eine unerreichbare.
+
+**Wenn es drankommt:** Zusammen mit der Wiederbelebung der Voice-Notes-Fläche erledigen, nicht davor.
+Dann ist der Testzustand herstellbar und die Arbeit abnehmbar.
+
+---
+
 ## Android-Zwilling — Copy ohne Rückmeldung (2026-08-19, aus dem 8-5-Smoke)
 
 Source: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-19.md` · Auslöser: Andis
