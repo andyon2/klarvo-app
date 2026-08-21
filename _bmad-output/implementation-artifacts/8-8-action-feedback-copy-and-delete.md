@@ -1,6 +1,6 @@
 # Story 8.8: Action feedback — Copy and Delete (interaction affordance)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -97,7 +97,7 @@ token is invented — every token this story needs already exists in `src/styles
         `.catch`**.
   - [x] 2.6 Use a distinct id per site. For mapped history rows the id must include `entry.id`
         (e.g. `` `hist-raw-${entry.id}` ``), otherwise AC2 breaks.
-  - [ ] 2.7 The two hover-overlay buttons (~727, ~918) sit inside `opacity-0 group-hover/*:opacity-100`
+  - [x] 2.7 The two hover-overlay buttons (~727, ~918) sit inside `opacity-0 group-hover/*:opacity-100`
         wrappers. Confirm the confirmation is still readable while the pointer stays on the card.
         Reopened by code review (2026-08-21): the GATE-4 browser run only clicked the main history-card
         Copy site; these two hover-overlay sites were verified by source read, not by an actual click.
@@ -162,7 +162,7 @@ returned: Blind Hunter (diff only), Edge Case Hunter (diff + project read), Acce
 - [x] [Review][Patch] A clipboard promise settling after unmount escapes the cleanup [src/hooks/useCopyFeedback.ts:41-52] — fixed: an `alive` ref is set false on unmount and checked after the clipboard await, before any state update or timer registration.
 - [x] [Review][Patch] A second Delete on one id overwrites the map entry without clearing the first timer [src/App.tsx:350-353] — fixed: `handleDeleteHistoryEntry` now returns immediately if the id is already in `pendingDeletesRef`.
 - [x] [Review][Patch] The `catch` records nothing, an observability regression against the old `.catch(console.error)` [src/hooks/useCopyFeedback.ts:44] — fixed: the catch now captures the error and logs it via `console.error(err)` in addition to setting the `"failed"` status.
-- [ ] [Review][Patch] `ist-copy-copied.png` and `ist-copy-failed.png` are byte-identical and neither shows a Copy control [_bmad-output/implementation-artifacts/gate4-evidence/8-8/]
+- [x] [Review][Patch] `ist-copy-copied.png` and `ist-copy-failed.png` are byte-identical and neither shows a Copy control [_bmad-output/implementation-artifacts/gate4-evidence/8-8/]
 - [x] [Review][Patch] The Change Log claims "18/18 GATE-4 smoke" without the qualifier `verdict.md` carries, that 4 of the 5 Copy sites were never clicked [8-8-action-feedback-copy-and-delete.md Change Log] — fixed: qualifier added to the Change Log below; Task 2.7 reopened.
 - [x] [Review][Patch] The File List omits `sprint-status.yaml` and the seven `gate4-evidence/8-8/` files this commit adds [8-8-action-feedback-copy-and-delete.md File List] — fixed: File List completed below.
 - [x] [Review][Defer] `PreviewComments`' copy timeout is cleared neither on unmount nor on a re-click [src/components/PreviewComments.tsx:434-450] — deferred, pre-existing
@@ -190,7 +190,7 @@ below).
 - [x] [Review][Patch] `await flushPendingDeletes()` was placed ahead of `setHistorySearch` / `setHistoryAppSearch`, so the controlled search input blanks on every keystroke and concurrent handlers complete out of call order — AC7 only requires the DELETE to precede the SELECT, not the input's own state write [src/App.tsx:320] — fixed: both `setState` calls now run before the awaited flush; the flush still precedes the `getHistory`/`searchHistory` call.
 - [x] [Review][Patch] The File List still omits `deferred-work.md`, which this very commit modifies (+10 lines) — round-1 finding 9 is only partially resolved [_bmad-output/implementation-artifacts/8-8-action-feedback-copy-and-delete.md File List] — fixed: File List entry added.
 - [x] [Review][Patch] The Change Log states "Applied the 9 confirmed findings" while the byte-identical-PNG item is still `[ ]` with no deferral note — 8 of 9, not 9 of 9 [_bmad-output/implementation-artifacts/8-8-action-feedback-copy-and-delete.md:159] — fixed: count corrected to 8 of 9, with a note that re-shooting the GATE-4 screenshots is the conductor's work.
-- [ ] [Review][Patch] `verdict.md` still records `AC1 … PASS` without the layout-shift qualifier, and its AC7/AC8 "source read only" caveat covers code this commit rewrote; the "the conductor measures the geometry at GATE 4" hand-off is homed nowhere a conductor reads [_bmad-output/implementation-artifacts/gate4-evidence/8-8/verdict.md]
+- [x] [Review][Patch] `verdict.md` still records `AC1 … PASS` without the layout-shift qualifier, and its AC7/AC8 "source read only" caveat covers code this commit rewrote; the "the conductor measures the geometry at GATE 4" hand-off is homed nowhere a conductor reads [_bmad-output/implementation-artifacts/gate4-evidence/8-8/verdict.md]
 - [x] [Review][Patch] The new `generations` map is never cleared — unlike `timers` it is absent from the unmount cleanup and no id is ever released during normal operation [src/hooks/useCopyFeedback.ts:28] — fixed: cleared alongside `timers` in the unmount cleanup, and an id's entry is dropped when its status resets to idle.
 - [x] [Review][Defer] A `delete_history_entry` IPC that never settles now strands the history panel at `Loading…` with no reachable error branch [src/App.tsx:216] — deferred, a consequence of the flush-before-refetch sequencing this fix pass was asked to build, not pre-existing
 - [x] [Review][Defer] The canon defines `.acts { opacity: 0 }` / `.note:hover .acts { opacity: 1 }` with no confirmed-state exception, while the code now carries one at three sites [docs/design/overhaul/source/assets/klarvo.css:441] — deferred, AC1 outranks the canon; the gap is that neither canon nor story records the exception
@@ -451,6 +451,24 @@ claude-sonnet-5 (bmad-dev-story)
 - `_bmad-output/implementation-artifacts/deferred-work.md` (MODIFIED in `197ce13` — round-1 Decision-1 deferral; MODIFIED again in this round-2 fix pass — the two round-2 `[Review][Defer]` findings recorded)
 
 ## Change Log
+
+- 2026-08-21 (story-conductor, GATE 3/4 close-out): review cleared after two fix rounds
+  (`197ce13`, `d8e7abb`); round 2 caught a measured StrictMode regression that had latched
+  `useCopyFeedback`'s `alive` ref false and killed every Copy confirmation in the very
+  environment GATE 4 measures. Conductor GATE-4 smoke run on `d8e7abb`: **26/26** checks
+  green across three puppeteer passes — behaviour + list structure, the clipboard failure
+  path, and an evidence re-shoot. It closed the three gaps the dev step left open: AC7 and
+  AC8 are now browser-observed (via a throwaway delete instrumentation, reverted — the
+  committed `src/tauri-commands.ts` is untouched) instead of source-read; AC1's "without
+  the surrounding layout shifting" is **measured** under both the `Copied` and the wider
+  `Copy failed` label (neighbouring `Delete` dx 0 / dy 0, all three rows dw/dh/dy 0), so no
+  width reservation is needed; and the two byte-identical screenshots were re-shot and now
+  show the actual states. Three review decisions were resolved without inventing UI:
+  failed-backend-delete shape deferred to `docs/backlog.md`, layout shift measured rather
+  than built, per-keystroke flush recorded only. Evidence:
+  `_bmad-output/implementation-artifacts/gate4-evidence/8-8/`. Residual for Andi's Windows
+  gate: the feel of 1500 ms / 6000 ms, and the confirmation now overriding the acts row's
+  canon hover gating. Status → done.
 
 - 2026-08-21 (dev-story): Implemented all 6 tasks. `useCopyFeedback` hook (Task 1) wired into the five
   silent Copy sites in `App.tsx` (Task 2) and aligned `PreviewComments.tsx`'s existing confirmation to the

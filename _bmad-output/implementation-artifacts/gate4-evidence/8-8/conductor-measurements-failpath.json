@@ -1,0 +1,69 @@
+[
+  {
+    "id": "AC3-premise",
+    "claim": "the clipboard write actually rejected in this run",
+    "measured": {
+      "emptyGrant": true,
+      "writeTextForcedToReject": true,
+      "observedAtRuntime": true
+    },
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC3-label",
+    "claim": "a rejected clipboard write shows 'Copy failed', never 'Copied'",
+    "measured": "Copy failed",
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC3-token",
+    "claim": "the failed state carries text-klarvo-danger",
+    "measured": true,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC3-visible",
+    "claim": "the failed confirmation is forced visible off-hover",
+    "measured": "text-[11px] transition-colors text-klarvo-danger",
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-layout-widest",
+    "claim": "the neighbouring Delete control does not move under the widest label ('Copy failed')",
+    "measured": {
+      "delBefore": 479.0625,
+      "delAfter": 479.0625,
+      "dx": 0,
+      "dy": 0
+    },
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-rows-stable",
+    "claim": "no history row changes size or position while the label is swapped",
+    "measured": [
+      {
+        "dw": 0,
+        "dh": 0,
+        "dy": 0
+      },
+      {
+        "dw": 0,
+        "dh": 0,
+        "dy": 0
+      },
+      {
+        "dw": 0,
+        "dh": 0,
+        "dy": 0
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC3-revert",
+    "claim": "the control returns to its resting label after 1500 ms",
+    "measured": "Copy",
+    "verdict": "PASS"
+  }
+]
