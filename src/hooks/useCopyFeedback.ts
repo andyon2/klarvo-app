@@ -29,11 +29,14 @@ export function useCopyFeedback() {
   const alive = useRef(true);
 
   useEffect(() => {
+    alive.current = true;
     const timersAtMount = timers.current;
+    const generationsAtMount = generations.current;
     return () => {
       alive.current = false;
       timersAtMount.forEach((timer) => window.clearTimeout(timer));
       timersAtMount.clear();
+      generationsAtMount.clear();
     };
   }, []);
 
@@ -63,6 +66,7 @@ export function useCopyFeedback() {
     const timer = window.setTimeout(() => {
       setStatuses((prev) => ({ ...prev, [id]: "idle" }));
       timers.current.delete(id);
+      generations.current.delete(id);
     }, COPY_FEEDBACK_MS);
     timers.current.set(id, timer);
   }, []);

@@ -173,6 +173,28 @@ returned: Blind Hunter (diff only), Edge Case Hunter (diff + project read), Acce
 - [x] [Review][Defer] `entry.rawText!` / `recording.rawText!` can put the string "undefined" on the clipboard and report "Copied" [src/App.tsx:805, src/App.tsx:818, src/App.tsx:997, src/App.tsx:1013] — deferred, pre-existing
 - [x] [Review][Defer] AC5's "exactly once" is proven by a DOM Delete-button count, not by a call count [_bmad-output/implementation-artifacts/gate4-evidence/8-8/measurements.json] — deferred, pre-existing
 
+### Review Findings — round 2 (fix-pass verification)
+
+Source: `bmad-code-review` of commit range `48061be..HEAD` (2026-08-21), the single fix commit `197ce13`.
+Scope was narrowed by the caller to verifying the round-1 findings and to regressions on the touched
+lines — no fresh full sweep. Three layers ran and all three returned: Blind Hunter (diff only), Edge Case
+Hunter (diff + project read + a live Chromium A/B run), Acceptance Auditor (diff + story + canon +
+`project-context.md` + a live preview run with a clipboard spy). 0 decision-needed · 6 patch · 2 defer ·
+2 dismissed.
+
+**Round-1 findings — verification verdict:** 1 RESOLVED · 2 RESOLVED · 3 RESOLVED · 4 **NOT RESOLVED**
+(see the first patch below) · 5 RESOLVED · 6 RESOLVED · 8 RESOLVED · 9 **PARTIAL** (see the third patch
+below).
+
+- [x] [Review][Patch] `alive.current` is never re-armed in the effect body, so React StrictMode's dev double-invoke latches it `false` and the entire Copy feedback feature is dead in every development build — round-1 finding 4 is NOT resolved and this is a hard regression against `48061be` [src/hooks/useCopyFeedback.ts:31] — fixed: `alive.current = true;` is now the first statement in the effect body, re-arming the ref after StrictMode's dev-mode cleanup→setup cycle.
+- [x] [Review][Patch] `await flushPendingDeletes()` was placed ahead of `setHistorySearch` / `setHistoryAppSearch`, so the controlled search input blanks on every keystroke and concurrent handlers complete out of call order — AC7 only requires the DELETE to precede the SELECT, not the input's own state write [src/App.tsx:320] — fixed: both `setState` calls now run before the awaited flush; the flush still precedes the `getHistory`/`searchHistory` call.
+- [x] [Review][Patch] The File List still omits `deferred-work.md`, which this very commit modifies (+10 lines) — round-1 finding 9 is only partially resolved [_bmad-output/implementation-artifacts/8-8-action-feedback-copy-and-delete.md File List] — fixed: File List entry added.
+- [x] [Review][Patch] The Change Log states "Applied the 9 confirmed findings" while the byte-identical-PNG item is still `[ ]` with no deferral note — 8 of 9, not 9 of 9 [_bmad-output/implementation-artifacts/8-8-action-feedback-copy-and-delete.md:159] — fixed: count corrected to 8 of 9, with a note that re-shooting the GATE-4 screenshots is the conductor's work.
+- [ ] [Review][Patch] `verdict.md` still records `AC1 … PASS` without the layout-shift qualifier, and its AC7/AC8 "source read only" caveat covers code this commit rewrote; the "the conductor measures the geometry at GATE 4" hand-off is homed nowhere a conductor reads [_bmad-output/implementation-artifacts/gate4-evidence/8-8/verdict.md]
+- [x] [Review][Patch] The new `generations` map is never cleared — unlike `timers` it is absent from the unmount cleanup and no id is ever released during normal operation [src/hooks/useCopyFeedback.ts:28] — fixed: cleared alongside `timers` in the unmount cleanup, and an id's entry is dropped when its status resets to idle.
+- [x] [Review][Defer] A `delete_history_entry` IPC that never settles now strands the history panel at `Loading…` with no reachable error branch [src/App.tsx:216] — deferred, a consequence of the flush-before-refetch sequencing this fix pass was asked to build, not pre-existing
+- [x] [Review][Defer] The canon defines `.acts { opacity: 0 }` / `.note:hover .acts { opacity: 1 }` with no confirmed-state exception, while the code now carries one at three sites [docs/design/overhaul/source/assets/klarvo.css:441] — deferred, AC1 outranks the canon; the gap is that neither canon nor story records the exception
+
 ## Dev Notes
 
 ### The design canon governs this story — read it, do not re-decide it
@@ -373,6 +395,17 @@ claude-sonnet-5 (bmad-dev-story)
   was deleted after the original run (see above); rebuilding it was out of scope for this fix pass, which
   is why Task 2.7 stays reopened per the review's own qualifier rather than being re-closed here.
 
+**Round-2 fix pass (2026-08-21) — re-run gates:**
+
+- `npm run build` (tsc + vite): green, 0 errors.
+- Grep gate (Task 6.2): `grep -nE "#[0-9a-fA-F]{3,8}" src/App.tsx src/components/PreviewComments.tsx` — 0
+  hits, unchanged.
+- Grep gate (Task 6.3): `grep -n "clipboard.writeText" src/App.tsx src/components/*.tsx` — 0 hits in
+  `App.tsx`, unchanged; only `PreviewComments.tsx:435` and the out-of-scope `VoiceNotesPanel.tsx:109`.
+- GATE-4 browser smoke was **not** re-run — none of the five findings applied this pass touch the ACs
+  that smoke exercises behaviourally; `verdict.md` stays as-is (its own re-annotation is the still-open
+  round-2 finding, deliberately not touched here).
+
 ### Completion Notes List
 
 - Found the implementation already substantially in place in the working tree at story start (hook,
@@ -415,6 +448,7 @@ claude-sonnet-5 (bmad-dev-story)
 - `_bmad-output/implementation-artifacts/gate4-evidence/8-8/measurements.json` (NEW)
 - `_bmad-output/implementation-artifacts/gate4-evidence/8-8/verdict.md` (NEW)
 - `docs/backlog.md` (MODIFIED — code-review fix pass: Decision 1 deferral recorded)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (MODIFIED in `197ce13` — round-1 Decision-1 deferral; MODIFIED again in this round-2 fix pass — the two round-2 `[Review][Defer]` findings recorded)
 
 ## Change Log
 
@@ -428,7 +462,10 @@ claude-sonnet-5 (bmad-dev-story)
   main history-card Copy site was individually clicked in the browser; the other 4 of the 5 silent Copy
   sites (`~714`, `~727`, `~902`, `~918`) were verified by source read and the shared `npm run build`
   type-check, not by a click — see `verdict.md`.
-- 2026-08-21 (code-review fixes): Applied the 9 confirmed findings from the `90d035e..HEAD` code review.
+- 2026-08-21 (code-review fixes): Applied 8 of the 9 confirmed findings from the `90d035e..HEAD` code
+  review. The ninth — the byte-identical `ist-copy-copied.png` / `ist-copy-failed.png` GATE-4 screenshots
+  — is still open; re-shooting that evidence is the conductor's GATE-4 work, not something this pass
+  omitted silently.
   The main Copy confirmation now stays visible after the pointer leaves the card (`mainStatus`-based
   opacity exception, matching the two raw-text overlays). `commitPendingDelete` returns its promise,
   `flushPendingDeletes` collects them via `Promise.all`, and `loadHistory`/`handleHistorySearch` await
@@ -442,3 +479,20 @@ claude-sonnet-5 (bmad-dev-story)
   conductor's GATE-4 geometry measurement, and the search-box flush-on-keystroke consequence recorded in
   Completion Notes. Re-verified: `npm run build` (tsc + vite) green, both grep gates unchanged (0 hex
   hits; `clipboard.writeText` only in `PreviewComments.tsx`/`VoiceNotesPanel.tsx`, out of scope).
+- 2026-08-21 (code-review fixes, round 2): Applied the 5 confirmed findings from the `48061be..HEAD`
+  round-2 review of fix commit `197ce13`. `useCopyFeedback`'s mount effect now re-arms `alive.current =
+  true` as its first statement, so React StrictMode's dev-mode cleanup→setup cycle no longer leaves the
+  ref permanently `false` and killing every Copy confirmation (round-1 finding 4 was NOT actually
+  resolved by `197ce13`; this closes it). The unmount cleanup now also clears the `generations` map
+  (previously only `timers` was cleared), and a completed copy's generation entry is dropped when its
+  status resets to idle. `handleHistorySearch` now sets `historySearch`/`historyAppSearch` before the
+  awaited `flushPendingDeletes()` call, so a keystroke in the search box no longer gets reverted by React
+  restoring the controlled input's old value while the flush promise is pending; the flush still runs
+  before the refetch SELECT (AC7 unaffected). File List corrected to include
+  `_bmad-output/implementation-artifacts/deferred-work.md` (modified by `197ce13`). Change Log count
+  corrected from "9 confirmed findings" to "8 of 9" — the byte-identical GATE-4 screenshot finding is
+  still open and is the conductor's GATE-4 work, not a silent omission. Left untouched, per the review's
+  own scope narrowing and the caller's instruction: the `verdict.md` re-annotation finding, the
+  failed-backend-delete shape, AC1's layout-shift measurement, the search-box-commits-per-keystroke
+  behaviour, the hanging-IPC defer, and the canon-opacity-exception defer. Re-verified: `npm run build`
+  (tsc + vite) green, both grep gates unchanged.

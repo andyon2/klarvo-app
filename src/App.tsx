@@ -315,11 +315,11 @@ export default function App() {
 
   // --- History handlers ---
   const handleHistorySearch = useCallback(async (textQ: string, appQ: string) => {
+    setHistorySearch(textQ);
+    setHistoryAppSearch(appQ);
     // Story 8-8 (AC7): same flush-before-refetch guard as loadHistory, awaited so the DELETE
     // is sequenced before the refetch SELECT.
     await flushPendingDeletes();
-    setHistorySearch(textQ);
-    setHistoryAppSearch(appQ);
     if (textQ.trim() || appQ.trim()) {
       const results = await searchHistory(textQ.trim() || undefined, appQ.trim() || undefined);
       setHistoryEntries(results);
