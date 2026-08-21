@@ -444,7 +444,30 @@ table.tok tr:last-child td { border-bottom: none; }
 .note .act { font-size: 11px; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
 .note .act.copy      { color: var(--k-teal); }
 .note .act.copy.done { color: var(--k-success); }   /* "Copied" — 1,5 s, dann zurueck auf "Copy" */
-.note .act.del       { color: var(--k-danger); }
+.note .act.del       { color: var(--k-danger);
+                       transition: opacity var(--k-t-micro) var(--k-ease); }
+
+/* ---- NACHTRAG 2026-08-21 (Andis Windows-Blick auf die gebaute Story 8.8) ----
+   Andi hat die drei offenen Punkte am echten Bildschirm entschieden. Zwei davon
+   aendern diesen Abschnitt; der dritte bestaetigt ihn. Dieser Nachtrag ueber-
+   steuert die Regeln oben, er loescht sie nicht (ADR-Amendment-Konvention).
+
+   1. BESTAETIGT: Die Rueckmeldung bleibt sichtbar, auch wenn der Zeiger die
+      Karte verlaesst. Das ist eine bewusste Ausnahme von der Hover-Regel
+      `.note:hover .acts` — 1,5 s sind sonst nicht lesbar. Andi: "passt".
+   2. NEU: Solange die Karte antwortet, tritt `Delete` zur Seite. Ein
+      zerstoerender Knopf darf nicht neben einer Erfolgsmeldung stehen, in die
+      der Zeiger gerade zielt. Ausblenden per Deckkraft, NICHT per `display` —
+      die Zeile behaelt ihre Breite, es springt nichts.
+   3. GEAENDERT: `Undo` traegt jetzt dasselbe Rot wie `Delete`. Die ursprueng-
+      liche Begruendung ("Rot bleibt dem zerstoerenden Steuerelement vorbehal-
+      ten") ist damit ueberstimmt: Andi liest den Streifen als Teil derselben
+      Loesch-Handlung, also traegt er auch deren Farbe.
+
+   `.acts.responding` = die Karte zeigt gerade eine Antwort, also "Copied" oder
+   "Copy failed". Im Ruhezustand gilt weiter allein die Hover-Regel.           */
+.note .acts.responding          { opacity: 1; }
+.note .acts.responding .act.del { opacity: 0; pointer-events: none; }
 
 /* Die geloeschte Zeile faellt AN IHREM PLATZ zu einem Streifen zusammen. Der
    Eintrag behaelt seinen Listenplatz, also kehrt er per Undo genau dorthin
@@ -457,7 +480,7 @@ table.tok tr:last-child td { border-bottom: none; }
   background: var(--k-surface-2);
 }
 .note.deleted .state { font-family: var(--k-mono); font-size: 11.5px; color: var(--k-dim); }
-.note.deleted .undo  { margin-left: auto; font-size: 11px; color: var(--k-teal); cursor: pointer; }
+.note.deleted .undo  { margin-left: auto; font-size: 11px; color: var(--k-danger); cursor: pointer; }
 
 /* ======================= android phone =================================== */
 .phone {

@@ -771,7 +771,7 @@ export default function App() {
                         <span className="font-geist-mono text-[11px] text-klarvo-dim">Deleted</span>
                         <button
                           onClick={() => handleUndoDelete(entry.id)}
-                          className="ml-auto text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                          className="ml-auto text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 transition-colors"
                         >
                           Undo
                         </button>
@@ -855,7 +855,16 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => handleDeleteHistoryEntry(entry)}
-                          className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 transition-colors"
+                          aria-hidden={mainStatus !== "idle"}
+                          tabIndex={mainStatus !== "idle" ? -1 : undefined}
+                          className={[
+                            "text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 transition",
+                            // Andi 2026-08-21 (canon NACHTRAG 2): while the card is answering a Copy
+                            // click, Delete steps aside — a destructive control must not sit next to a
+                            // success message the pointer is aiming at. Opacity, not display: the row
+                            // keeps its width, so the geometry measured for AC1 still holds.
+                            mainStatus !== "idle" ? "opacity-0 pointer-events-none" : "",
+                          ].join(" ")}
                         >
                           Delete
                         </button>

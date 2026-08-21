@@ -914,7 +914,7 @@ eigene Story oder ein Follow-up gegen `commitPendingDelete` schreiben.
 
 ---
 
-## Story 8-8 — Canon und Code widersprechen sich bei der Bestätigungs-Sichtbarkeit (2026-08-21)
+## ✅ ERLEDIGT 2026-08-21 — Story 8-8: Canon und Code widersprachen sich bei der Bestätigungs-Sichtbarkeit
 
 Source: `bmad-code-review` von Story 8.8, Runde 2 (2026-08-21), Finding „The canon has no
 confirmed-state exception to the hover-only acts row" · Conductor-Lauf `RUN-2026-08-21.md`.
@@ -930,10 +930,16 @@ festhalten, was Andi tatsächlich gesehen hat. Auf dem echten Windows-Bildschirm
 Zustand noch nicht gesehen. Ein vorgezogener Nachtrag würde eine Design-Aussage festschreiben, die
 er beim ersten Blick vielleicht ablehnt.
 
-**Wenn es drankommt:** Nach Andis Windows-Blick genau eine der beiden Richtungen gehen —
-akzeptiert er die dauerhaft sichtbare Bestätigung, bekommt der Canon eine MANIFEST-Zeile im Stil
-von ADR-0019; lehnt er sie ab, ändert sich stattdessen der Code. Solange keins von beidem
-passiert, kann ein späterer Agent den Canon lesen und die Ausnahme „zurückreparieren".
+**ERLEDIGT.** Andi hat am 2026-08-21 auf dem echten Windows-Bildschirm entschieden: die dauerhaft
+sichtbare Bestätigung ist richtig so. Der Canon trägt die Ausnahme jetzt ausdrücklich als
+`.note .acts.responding` (CSS-NACHTRAG 2026-08-21 + MANIFEST-Zeile, Fingerabdruck
+`028171af056a13030fe80adc54eae738`). Canon und Code sagen wieder dasselbe; ein späterer Agent kann
+die Ausnahme nicht mehr versehentlich „zurückreparieren".
+
+Im selben Zug hat Andi zwei Änderungen angeordnet, beide gebaut und gemessen (15/15 in echtem
+Chromium): **Delete tritt zur Seite**, solange die Karte auf einen Copy-Klick antwortet; und
+**`Undo` trägt dasselbe Rot wie `Delete`** — das überstimmt die Phase-A-Begründung, Rot dem
+zerstörenden Steuerelement vorzubehalten.
 
 ---
 
