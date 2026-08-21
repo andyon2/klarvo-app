@@ -213,10 +213,10 @@ export default function App() {
 
   const loadHistory = useCallback(() => {
     // Story 8-8 (AC7): commit pending deletes first so a wholesale refetch never resurrects
-    // a row that is mid-undo-window.
-    flushPendingDeletes();
+    // a row that is mid-undo-window. The refetch SELECT is sequenced after the flush settles.
     setHistoryLoadState("loading");
-    getHistory(50)
+    flushPendingDeletes()
+      .then(() => getHistory(50))
       .then((entries) => {
         setHistoryEntries(entries);
         setHistoryLoadState("loaded");
@@ -315,8 +315,9 @@ export default function App() {
 
   // --- History handlers ---
   const handleHistorySearch = useCallback(async (textQ: string, appQ: string) => {
-    // Story 8-8 (AC7): same flush-before-refetch guard as loadHistory.
-    flushPendingDeletes();
+    // Story 8-8 (AC7): same flush-before-refetch guard as loadHistory, awaited so the DELETE
+    // is sequenced before the refetch SELECT.
+    await flushPendingDeletes();
     setHistorySearch(textQ);
     setHistoryAppSearch(appQ);
     if (textQ.trim() || appQ.trim()) {
@@ -331,9 +332,9 @@ export default function App() {
 
   // Story 8-8: commits one pending delete to the backend. Guarded by the ref so it runs
   // exactly once per id even if the undo timer and a flush (panel close / refetch) race.
-  const commitPendingDelete = useCallback((id: number) => {
+  const commitPendingDelete = useCallback((id: number): Promise<void> => {
     const pending = pendingDeletesRef.current.get(id);
-    if (!pending) return;
+    if (!pending) return Promise.resolve();
     pendingDeletesRef.current.delete(id);
     window.clearTimeout(pending.timer);
     setPendingDeleteIds((prev) => {
@@ -342,13 +343,14 @@ export default function App() {
       return next;
     });
     setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
-    deleteHistoryEntry(id).catch(console.error);
+    return deleteHistoryEntry(id).catch(console.error);
   }, []);
 
   // Story 8-8 (AC4/AC5): does not await the backend. The entry stays in historyEntries (its
   // list position is preserved) and the row renders as an undo strip until the timer commits it.
   const handleDeleteHistoryEntry = useCallback((entry: HistoryEntry) => {
     const id = entry.id;
+    if (pendingDeletesRef.current.has(id)) return;
     const timer = window.setTimeout(() => commitPendingDelete(id), UNDO_WINDOW_MS);
     pendingDeletesRef.current.set(id, { entry, timer });
     setPendingDeleteIds((prev) => new Set(prev).add(id));
@@ -371,8 +373,9 @@ export default function App() {
   // Story 8-8 (AC8, Task 5 refetch safety): commits every pending delete immediately. Used both
   // when the history panel closes/unmounts and right before any wholesale historyEntries refetch,
   // so a pending-deleted row is never silently resurrected by fresh backend data (AC7).
-  const flushPendingDeletes = useCallback(() => {
-    Array.from(pendingDeletesRef.current.keys()).forEach((id) => commitPendingDelete(id));
+  const flushPendingDeletes = useCallback((): Promise<void> => {
+    const ids = Array.from(pendingDeletesRef.current.keys());
+    return Promise.all(ids.map((id) => commitPendingDelete(id))).then(() => undefined);
   }, [commitPendingDelete]);
 
   // Story 8-8 (AC8): flush when the history panel closes, however it closes (the X button,
@@ -382,7 +385,9 @@ export default function App() {
   }, [panels.showHistory, flushPendingDeletes]);
 
   useEffect(() => {
-    return () => flushPendingDeletes();
+    return () => {
+      flushPendingDeletes();
+    };
   }, [flushPendingDeletes]);
 
   // Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on the
@@ -838,7 +843,10 @@ export default function App() {
                           <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
                         )}
                       </span>
-                      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className={[
+                        "flex gap-1.5 transition-opacity",
+                        mainStatus !== "idle" ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                      ].join(" ")}>
                         <button
                           onClick={() => copyFeedback.copy(mainCopyId, entry.text)}
                           className={`text-[11px] transition-colors ${copyColorClassName(mainStatus, "text-klarvo-teal hover:text-klarvo-teal/80")}`}

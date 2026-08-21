@@ -25,26 +25,41 @@ export function copyColorClassName(status: CopyStatus, restingClassName: string)
 export function useCopyFeedback() {
   const [statuses, setStatuses] = useState<Record<string, CopyStatus>>({});
   const timers = useRef<Map<string, number>>(new Map());
+  const generations = useRef<Map<string, number>>(new Map());
+  const alive = useRef(true);
 
   useEffect(() => {
     const timersAtMount = timers.current;
     return () => {
+      alive.current = false;
       timersAtMount.forEach((timer) => window.clearTimeout(timer));
       timersAtMount.clear();
     };
   }, []);
 
   const copy = useCallback(async (id: string, text: string) => {
-    const existing = timers.current.get(id);
-    if (existing !== undefined) window.clearTimeout(existing);
+    const existingTimer = timers.current.get(id);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    timers.current.delete(id);
 
+    // A generation counter guards against a second click on the same id landing while the
+    // first click's clipboard write is still pending (Task 1.3): the stale settlement below
+    // recognizes it was superseded and skips registering an orphaned timer.
+    const generation = (generations.current.get(id) ?? 0) + 1;
+    generations.current.set(id, generation);
+
+    let status: CopyStatus;
     try {
       await navigator.clipboard.writeText(text);
-      setStatuses((prev) => ({ ...prev, [id]: "copied" }));
-    } catch {
-      setStatuses((prev) => ({ ...prev, [id]: "failed" }));
+      status = "copied";
+    } catch (err) {
+      console.error(err);
+      status = "failed";
     }
 
+    if (!alive.current || generations.current.get(id) !== generation) return;
+
+    setStatuses((prev) => ({ ...prev, [id]: status }));
     const timer = window.setTimeout(() => {
       setStatuses((prev) => ({ ...prev, [id]: "idle" }));
       timers.current.delete(id);

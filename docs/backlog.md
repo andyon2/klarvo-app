@@ -890,3 +890,24 @@ oder nur im Overlay-Cluster steckt. Die Desktop-Lösung („Copied" am Knopf) l�
 übertragen; ein Toast oder eine kurze Cluster-Rückmeldung kann die passendere Form sein. Das ist eine
 Design-Entscheidung für Andi, keine Umsetzungsfrage. Verwandt: ADR-0016 (Android-Pfad-Parität) — die
 Rückmeldung ist geteiltes VERHALTEN, auch wenn die Form je Plattform verschieden ausfällt.
+
+---
+
+## Story 8-8 — ein fehlgeschlagenes Backend-Delete bleibt unsichtbar (2026-08-21, aus dem Code-Review)
+
+Source: `bmad-code-review` von Story 8.8 (`90d035e..HEAD`, 2026-08-21), Review-Finding
+„[Review][Decision] A failed backend delete removes the row from the UI and is then swallowed".
+
+`commitPendingDelete` (`src/App.tsx`) entfernt die Zeile aus `historyEntries` und feuert danach
+`deleteHistoryEntry(id).catch(console.error)`. Schlägt der Backend-Aufruf fehl, bleibt der Eintrag in
+`history.db` bestehen, verschwindet aber trotzdem sichtbar aus der Liste — und taucht beim nächsten
+Panel-Öffnen wieder auf. Der Review nennt zwei mögliche Formen: (a) den Eintrag zurück in
+`historyEntries` legen und den Grund über den bestehenden `pendingErrors`-Mechanismus zeigen, oder (b)
+die Zeile als Streifen stehen lassen, bis das Backend bestätigt.
+
+**Warum aufgeschoben:** Beide Formen erfinden ein sichtbares Fehlerverhalten, das die Story nie
+spezifiziert hat. Welche Form richtig ist, ist Andis Entscheidung, keine Umsetzungsfrage — die Story
+selbst ändert dafür keinen Code.
+
+**Wenn es drankommt:** Andi entscheidet zwischen (a) und (b) (oder einer dritten Form), dann eine
+eigene Story oder ein Follow-up gegen `commitPendingDelete` schreiben.
