@@ -911,3 +911,55 @@ selbst ändert dafür keinen Code.
 
 **Wenn es drankommt:** Andi entscheidet zwischen (a) und (b) (oder einer dritten Form), dann eine
 eigene Story oder ein Follow-up gegen `commitPendingDelete` schreiben.
+
+---
+
+## Story 8-8 — Canon und Code widersprechen sich bei der Bestätigungs-Sichtbarkeit (2026-08-21)
+
+Source: `bmad-code-review` von Story 8.8, Runde 2 (2026-08-21), Finding „The canon has no
+confirmed-state exception to the hover-only acts row" · Conductor-Lauf `RUN-2026-08-21.md`.
+
+Der Canon sagt `.note .acts { opacity: 0 }` und `.note:hover .acts { opacity: 1 }`
+(`docs/design/overhaul/source/assets/klarvo.css`). Eine Ausnahme für den bestätigten Zustand steht
+dort nicht. Der Code trägt sie inzwischen an drei Stellen (`src/App.tsx`, jeweils
+`status !== "idle"`), weil AC1 verlangt, dass `Copied` seine vollen 1500 ms lesbar bleibt — auch
+wenn der Zeiger die Karte verlässt. AC1 ist von Andi abgenommen und schlägt damit den Canon.
+
+**Warum der Canon NICHT nachgezogen wurde:** Der Canon ist die bindende Wahrheit und darf nur
+festhalten, was Andi tatsächlich gesehen hat. Auf dem echten Windows-Bildschirm hat er diesen
+Zustand noch nicht gesehen. Ein vorgezogener Nachtrag würde eine Design-Aussage festschreiben, die
+er beim ersten Blick vielleicht ablehnt.
+
+**Wenn es drankommt:** Nach Andis Windows-Blick genau eine der beiden Richtungen gehen —
+akzeptiert er die dauerhaft sichtbare Bestätigung, bekommt der Canon eine MANIFEST-Zeile im Stil
+von ADR-0019; lehnt er sie ab, ändert sich stattdessen der Code. Solange keins von beidem
+passiert, kann ein späterer Agent den Canon lesen und die Ausnahme „zurückreparieren".
+
+---
+
+## Story 8-8 — neun LOW-Findings liegen in `deferred-work.md` (2026-08-21)
+
+Source: `bmad-code-review` von Story 8.8, Runden 1 und 2 (2026-08-21).
+
+`docs/backlog.md` ist die SSOT für Aufgeschobenes, aber die Review-Findings einer Story landen
+BMAD-nativ in `_bmad-output/implementation-artifacts/deferred-work.md`. Damit die SSOT nicht blind
+ist, hier der Zeiger auf die zwei Abschnitte „Deferred from: code review of
+8-8-action-feedback-copy-and-delete" — neun LOW-Findings:
+
+1. `PreviewComments`' Copy-Timer wird weder beim Unmount noch beim Neu-Klick gelöscht (Alt-Bestand).
+2. Der neue Hook hat keinen `document.execCommand`-Fallback, `PreviewComments` schon.
+3. `flushPendingDeletes` wird vor seiner Deklaration referenziert; zwei `useCallback` haben leere
+   Abhängigkeitslisten. Heute kein lebender Defekt, `tsc` ist grün.
+4. „Verwerfen" ist genauso zerstörerisch wie „Delete", antwortet aber weiter auf keinen Klick.
+5. Keine `aria-live`-Ansage und kein Fokus-Handling — ein Tastatur-Nutzer erreicht `Undo` im
+   6000-ms-Fenster nicht ohne neues Tabben.
+6. `rawText!` kann die Zeichenkette „undefined" in die Zwischenablage legen und trotzdem „Copied"
+   melden.
+7. AC5s „genau ein Aufruf" wurde über eine DOM-Zählung belegt, nicht über einen Aufruf-Zähler.
+   Gate-Qualität, kein Code-Defekt.
+8. Ein hängender `delete_history_entry`-IPC lässt die History auf „Loading…" stehen — Folge der
+   Flush-vor-Refetch-Reihenfolge, die Runde 1 verlangt hat.
+9. (Zweiter Runde-2-Punkt: die Canon-Abweichung — siehe eigener Eintrag oben.)
+
+**Wenn es drankommt:** Punkte 4 und 5 sind eigene kleine Storys wert; der Rest ist Aufräumarbeit,
+die in die nächste Story an derselben Fläche mitgenommen werden kann.
