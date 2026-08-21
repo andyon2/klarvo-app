@@ -41,6 +41,7 @@ import { useSettings } from "./hooks/useSettings";
 import { usePanels } from "./hooks/usePanels";
 import { useLicense } from "./hooks/useLicense";
 import { useUiScale } from "./hooks/useUiScale";
+import { useCopyFeedback, copyLabel, copyColorClassName, UNDO_WINDOW_MS } from "./hooks/useCopyFeedback";
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -129,6 +130,7 @@ export default function App() {
   const settings = useSettings();
   const recording = useRecording(settings.cleanupStyle, settings.language);
   const license = useLicense();
+  const copyFeedback = useCopyFeedback();
 
   // Feature gate: active paid license (licensed, active trial, or valid grace period).
   const isPaid =
@@ -151,6 +153,11 @@ export default function App() {
   // the last failed re-process attempt, keyed by entry id.
   const [reprocessingId, setReprocessingId] = useState<number | null>(null);
   const [pendingErrors, setPendingErrors] = useState<Record<number, string>>({});
+  // Story 8-8: optimistic delete with an in-place undo strip. The canonical store is the ref
+  // (so the commit-once guard is synchronous); pendingDeleteIds only mirrors its keys to drive
+  // re-renders. The entry itself is never removed from historyEntries until the delete commits.
+  const pendingDeletesRef = useRef<Map<number, { entry: HistoryEntry; timer: number }>>(new Map());
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
 
   // Stats state
   const [usageStats, setUsageStats] = useState<UsageSummary | null>(null);
@@ -205,6 +212,9 @@ export default function App() {
   const quickTip = useQuickTip({ isIdle, onboardingCompleted });
 
   const loadHistory = useCallback(() => {
+    // Story 8-8 (AC7): commit pending deletes first so a wholesale refetch never resurrects
+    // a row that is mid-undo-window.
+    flushPendingDeletes();
     setHistoryLoadState("loading");
     getHistory(50)
       .then((entries) => {
@@ -305,6 +315,8 @@ export default function App() {
 
   // --- History handlers ---
   const handleHistorySearch = useCallback(async (textQ: string, appQ: string) => {
+    // Story 8-8 (AC7): same flush-before-refetch guard as loadHistory.
+    flushPendingDeletes();
     setHistorySearch(textQ);
     setHistoryAppSearch(appQ);
     if (textQ.trim() || appQ.trim()) {
@@ -317,10 +329,61 @@ export default function App() {
     setHistoryLoadState("loaded");
   }, []);
 
-  const handleDeleteHistoryEntry = useCallback(async (id: number) => {
-    await deleteHistoryEntry(id);
+  // Story 8-8: commits one pending delete to the backend. Guarded by the ref so it runs
+  // exactly once per id even if the undo timer and a flush (panel close / refetch) race.
+  const commitPendingDelete = useCallback((id: number) => {
+    const pending = pendingDeletesRef.current.get(id);
+    if (!pending) return;
+    pendingDeletesRef.current.delete(id);
+    window.clearTimeout(pending.timer);
+    setPendingDeleteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     setHistoryEntries((prev) => prev.filter((e) => e.id !== id));
+    deleteHistoryEntry(id).catch(console.error);
   }, []);
+
+  // Story 8-8 (AC4/AC5): does not await the backend. The entry stays in historyEntries (its
+  // list position is preserved) and the row renders as an undo strip until the timer commits it.
+  const handleDeleteHistoryEntry = useCallback((entry: HistoryEntry) => {
+    const id = entry.id;
+    const timer = window.setTimeout(() => commitPendingDelete(id), UNDO_WINDOW_MS);
+    pendingDeletesRef.current.set(id, { entry, timer });
+    setPendingDeleteIds((prev) => new Set(prev).add(id));
+  }, [commitPendingDelete]);
+
+  // Story 8-8 (AC6): clears the pending timer and drops the id. historyEntries is untouched
+  // (the entry never left) and the backend is never called for this id.
+  const handleUndoDelete = useCallback((id: number) => {
+    const pending = pendingDeletesRef.current.get(id);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingDeletesRef.current.delete(id);
+    setPendingDeleteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Story 8-8 (AC8, Task 5 refetch safety): commits every pending delete immediately. Used both
+  // when the history panel closes/unmounts and right before any wholesale historyEntries refetch,
+  // so a pending-deleted row is never silently resurrected by fresh backend data (AC7).
+  const flushPendingDeletes = useCallback(() => {
+    Array.from(pendingDeletesRef.current.keys()).forEach((id) => commitPendingDelete(id));
+  }, [commitPendingDelete]);
+
+  // Story 8-8 (AC8): flush when the history panel closes, however it closes (the X button,
+  // toggling another panel, Android back via closeAll), and on true unmount.
+  useEffect(() => {
+    if (!panels.showHistory) flushPendingDeletes();
+  }, [panels.showHistory, flushPendingDeletes]);
+
+  useEffect(() => {
+    return () => flushPendingDeletes();
+  }, [flushPendingDeletes]);
 
   // Story 12-2 (AC5) — "Erneut verarbeiten": re-runs STT+cleanup on the
   // stored WAV. On success the entry is replaced in place with the promoted
@@ -653,44 +716,72 @@ export default function App() {
                   </div>
                 )
               ) : (
-                historyEntries.map((entry) => (
-                  entry.status === "pending" ? (
-                    <div
-                      key={entry.id}
-                      className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60 transition-colors"
-                    >
-                      <p className="text-xs text-klarvo-amber">
-                        ⏳ Audio gesichert — noch nicht transkribiert
-                      </p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-[11px] text-klarvo-dim">
-                          <span className="font-geist-mono">{new Date(entry.createdAt + "Z").toLocaleString()}</span>
-                          {entry.appName && (
-                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
-                          )}
-                        </span>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleReprocessPendingEntry(entry.id)}
-                            disabled={reprocessingId !== null}
-                            className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
-                          </button>
-                          <button
-                            onClick={() => handleDiscardPendingEntry(entry.id)}
-                            disabled={reprocessingId !== null}
-                            className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            Verwerfen
-                          </button>
+                historyEntries.map((entry) => {
+                  if (entry.status === "pending") {
+                    return (
+                      <div
+                        key={entry.id}
+                        className="bg-klarvo-amber/10 border border-klarvo-amber/40 rounded-xl p-3.5 hover:bg-klarvo-amber/20 hover:border-klarvo-amber/60 transition-colors"
+                      >
+                        <p className="text-xs text-klarvo-amber">
+                          ⏳ Audio gesichert — noch nicht transkribiert
+                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-[11px] text-klarvo-dim">
+                            <span className="font-geist-mono">{new Date(entry.createdAt + "Z").toLocaleString()}</span>
+                            {entry.appName && (
+                              <span className="ml-1 inline-flex items-center px-1.5 py-0.5 bg-klarvo-amber/10 text-klarvo-amber border border-[rgba(233,162,76,.32)] rounded-full text-[9px]">{entry.appName}</span>
+                            )}
+                          </span>
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleReprocessPendingEntry(entry.id)}
+                              disabled={reprocessingId !== null}
+                              className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              {reprocessingId === entry.id ? "Verarbeite…" : "Erneut verarbeiten"}
+                            </button>
+                            <button
+                              onClick={() => handleDiscardPendingEntry(entry.id)}
+                              disabled={reprocessingId !== null}
+                              className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Verwerfen
+                            </button>
+                          </div>
                         </div>
+                        {pendingErrors[entry.id] && (
+                          <p className="mt-1.5 text-[11px] text-klarvo-danger">{pendingErrors[entry.id]}</p>
+                        )}
                       </div>
-                      {pendingErrors[entry.id] && (
-                        <p className="mt-1.5 text-[11px] text-klarvo-danger">{pendingErrors[entry.id]}</p>
-                      )}
-                    </div>
-                  ) : (
+                    );
+                  }
+
+                  if (pendingDeleteIds.has(entry.id)) {
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2.5 bg-klarvo-surface-2 rounded-xl px-4 py-3"
+                      >
+                        <span className="font-geist-mono text-[11px] text-klarvo-dim">Deleted</span>
+                        <button
+                          onClick={() => handleUndoDelete(entry.id)}
+                          className="ml-auto text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                        >
+                          Undo
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  const rawToggleCopyId = `hist-raw-toggle-${entry.id}`;
+                  const rawOverlayCopyId = `hist-raw-overlay-${entry.id}`;
+                  const mainCopyId = `hist-main-${entry.id}`;
+                  const rawToggleStatus = copyFeedback.statusOf(rawToggleCopyId);
+                  const rawOverlayStatus = copyFeedback.statusOf(rawOverlayCopyId);
+                  const mainStatus = copyFeedback.statusOf(mainCopyId);
+
+                  return (
                   <div
                     key={entry.id}
                     className="bg-klarvo-bg border border-klarvo-border/60 rounded-xl p-3.5 group hover:bg-klarvo-elevated/40 hover:border-klarvo-border transition-colors"
@@ -711,10 +802,10 @@ export default function App() {
                           </button>
                           {expandedHistoryRaw.has(entry.id) && (
                             <button
-                              onClick={() => navigator.clipboard.writeText(entry.rawText!)}
-                              className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                              onClick={() => copyFeedback.copy(rawToggleCopyId, entry.rawText!)}
+                              className={`text-[11px] transition-colors ${copyColorClassName(rawToggleStatus, "text-klarvo-teal hover:text-klarvo-teal/80")}`}
                             >
-                              Copy Original
+                              {copyLabel(rawToggleStatus, "Copy Original")}
                             </button>
                           )}
                         </div>
@@ -724,10 +815,14 @@ export default function App() {
                               {entry.rawText}
                             </p>
                             <button
-                              onClick={() => navigator.clipboard.writeText(entry.rawText!)}
-                              className="absolute top-1 right-1 text-[11px] text-klarvo-dim hover:text-klarvo-muted opacity-0 group-hover/raw:opacity-100 transition-opacity"
+                              onClick={() => copyFeedback.copy(rawOverlayCopyId, entry.rawText!)}
+                              className={[
+                                "absolute top-1 right-1 text-[11px] transition-opacity",
+                                rawOverlayStatus !== "idle" ? "opacity-100" : "opacity-0 group-hover/raw:opacity-100",
+                                copyColorClassName(rawOverlayStatus, "text-klarvo-dim hover:text-klarvo-muted"),
+                              ].join(" ")}
                             >
-                              Copy
+                              {copyLabel(rawOverlayStatus, "Copy")}
                             </button>
                           </div>
                         )}
@@ -745,13 +840,13 @@ export default function App() {
                       </span>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => navigator.clipboard.writeText(entry.text).catch(console.error)}
-                          className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                          onClick={() => copyFeedback.copy(mainCopyId, entry.text)}
+                          className={`text-[11px] transition-colors ${copyColorClassName(mainStatus, "text-klarvo-teal hover:text-klarvo-teal/80")}`}
                         >
-                          Copy
+                          {copyLabel(mainStatus, "Copy")}
                         </button>
                         <button
-                          onClick={() => handleDeleteHistoryEntry(entry.id)}
+                          onClick={() => handleDeleteHistoryEntry(entry)}
                           className="text-[11px] text-klarvo-danger hover:text-klarvo-danger/80 transition-colors"
                         >
                           Delete
@@ -759,8 +854,8 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  )
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -899,10 +994,10 @@ export default function App() {
                   </button>
                   {recording.showRawText && (
                     <button
-                      onClick={() => navigator.clipboard.writeText(recording.rawText!)}
-                      className="text-[11px] text-klarvo-teal hover:text-klarvo-teal/80 transition-colors"
+                      onClick={() => copyFeedback.copy("current-raw-toggle", recording.rawText!)}
+                      className={`text-[11px] transition-colors ${copyColorClassName(copyFeedback.statusOf("current-raw-toggle"), "text-klarvo-teal hover:text-klarvo-teal/80")}`}
                     >
-                      Copy Original
+                      {copyLabel(copyFeedback.statusOf("current-raw-toggle"), "Copy Original")}
                     </button>
                   )}
                 </div>
@@ -915,10 +1010,14 @@ export default function App() {
                       className="w-full bg-klarvo-bg-deep border border-klarvo-border/40 rounded-lg px-3 py-2 text-xs text-klarvo-muted resize-none focus:outline-none"
                     />
                     <button
-                      onClick={() => navigator.clipboard.writeText(recording.rawText!)}
-                      className="absolute top-1.5 right-1.5 text-[11px] text-klarvo-dim hover:text-klarvo-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => copyFeedback.copy("current-raw-overlay", recording.rawText!)}
+                      className={[
+                        "absolute top-1.5 right-1.5 text-[11px] transition-opacity",
+                        copyFeedback.statusOf("current-raw-overlay") !== "idle" ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                        copyColorClassName(copyFeedback.statusOf("current-raw-overlay"), "text-klarvo-dim hover:text-klarvo-muted"),
+                      ].join(" ")}
                     >
-                      Copy
+                      {copyLabel(copyFeedback.statusOf("current-raw-overlay"), "Copy")}
                     </button>
                   </div>
                 )}

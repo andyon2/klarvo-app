@@ -1,6 +1,6 @@
 # Story 8.8: Action feedback — Copy and Delete (interaction affordance)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -75,75 +75,75 @@ token is invented — every token this story needs already exists in `src/styles
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — A reusable copy-with-feedback hook** (AC: 1, 2, 3, 9)
-  - [ ] 1.1 Add one small local hook (e.g. `useCopyFeedback`) in `src/App.tsx` or a sibling module. It
+- [x] **Task 1 — A reusable copy-with-feedback hook** (AC: 1, 2, 3, 9)
+  - [x] 1.1 Add one small local hook (e.g. `useCopyFeedback`) in `src/App.tsx` or a sibling module. It
         keys state by a caller-supplied string id so two controls never share a state (AC2).
-  - [ ] 1.2 It exposes: a `copy(id, text)` action and a `statusOf(id)` returning
+  - [x] 1.2 It exposes: a `copy(id, text)` action and a `statusOf(id)` returning
         `"idle" | "copied" | "failed"`. `copy` awaits `navigator.clipboard.writeText`, sets `"copied"`
         on resolve and `"failed"` on reject, and schedules the reset after `1500`.
-  - [ ] 1.3 Clear every outstanding timer on unmount. Re-clicking the same control restarts its timer
+  - [x] 1.3 Clear every outstanding timer on unmount. Re-clicking the same control restarts its timer
         rather than stacking a second one.
-  - [ ] 1.4 Put the `1500` and the `6000` in two named module constants
+  - [x] 1.4 Put the `1500` and the `6000` in two named module constants
         (`COPY_FEEDBACK_MS`, `UNDO_WINDOW_MS`) with a comment naming them as Andi's 2026-08-19 decision.
         Do not scatter magic numbers.
 
-- [ ] **Task 2 — Wire the five silent Copy sites** (AC: 1, 2, 3, 9)
-  - [ ] 2.1 `src/App.tsx` ~714 `Copy Original` (history card, raw text) — currently **no `.catch`**.
-  - [ ] 2.2 `src/App.tsx` ~727 `Copy` (history card, raw-text hover overlay) — currently **no `.catch`**.
-  - [ ] 2.3 `src/App.tsx` ~748 `Copy` (history card, main action) — currently `.catch(console.error)`;
+- [x] **Task 2 — Wire the five silent Copy sites** (AC: 1, 2, 3, 9)
+  - [x] 2.1 `src/App.tsx` ~714 `Copy Original` (history card, raw text) — currently **no `.catch`**.
+  - [x] 2.2 `src/App.tsx` ~727 `Copy` (history card, raw-text hover overlay) — currently **no `.catch`**.
+  - [x] 2.3 `src/App.tsx` ~748 `Copy` (history card, main action) — currently `.catch(console.error)`;
         replace the console-only path with the visible `Copy failed` state.
-  - [ ] 2.4 `src/App.tsx` ~902 `Copy Original` (current recording) — currently **no `.catch`**.
-  - [ ] 2.5 `src/App.tsx` ~918 `Copy` (current recording, raw textarea overlay) — currently **no
+  - [x] 2.4 `src/App.tsx` ~902 `Copy Original` (current recording) — currently **no `.catch`**.
+  - [x] 2.5 `src/App.tsx` ~918 `Copy` (current recording, raw textarea overlay) — currently **no
         `.catch`**.
-  - [ ] 2.6 Use a distinct id per site. For mapped history rows the id must include `entry.id`
+  - [x] 2.6 Use a distinct id per site. For mapped history rows the id must include `entry.id`
         (e.g. `` `hist-raw-${entry.id}` ``), otherwise AC2 breaks.
-  - [ ] 2.7 The two hover-overlay buttons (~727, ~918) sit inside `opacity-0 group-hover/*:opacity-100`
+  - [x] 2.7 The two hover-overlay buttons (~727, ~918) sit inside `opacity-0 group-hover/*:opacity-100`
         wrappers. Confirm the confirmation is still readable while the pointer stays on the card.
 
-- [ ] **Task 3 — Align the one site that already confirms** (AC: 9)
-  - [ ] 3.1 `src/components/PreviewComments.tsx:434` already does `setCopied(true)` +
+- [x] **Task 3 — Align the one site that already confirms** (AC: 9)
+  - [x] 3.1 `src/components/PreviewComments.tsx:434` already does `setCopied(true)` +
         `setTimeout(..., 2000)` and already has a textarea fallback. **Do not rewrite it into the hook.**
         Change only the `2000` to the shared `COPY_FEEDBACK_MS` so both surfaces confirm for the same
         time. Leave its fallback path intact.
 
-- [ ] **Task 4 — Optimistic delete with an in-place undo strip** (AC: 4, 5, 6, 7, 8, 10)
-  - [ ] 4.1 Hold pending deletes in component state keyed by entry id, e.g.
+- [x] **Task 4 — Optimistic delete with an in-place undo strip** (AC: 4, 5, 6, 7, 8, 10)
+  - [x] 4.1 Hold pending deletes in component state keyed by entry id, e.g.
         `pendingDeletes: Map<number, {entry: HistoryEntry, timer: number}>`. The **entry object stays in
         `historyEntries`** so its list position is preserved (AC4/AC6) — do not filter it out.
-  - [ ] 4.2 In the list render, when an entry's id is in `pendingDeletes`, render the undo strip
+  - [x] 4.2 In the list render, when an entry's id is in `pendingDeletes`, render the undo strip
         **instead of** the card body, in the same list slot.
-  - [ ] 4.3 Strip markup mirrors the canon `.note.deleted`: a flex row on `bg-klarvo-surface-2`, with
+  - [x] 4.3 Strip markup mirrors the canon `.note.deleted`: a flex row on `bg-klarvo-surface-2`, with
         `Deleted` left in `font-geist-mono text-[11px] text-klarvo-dim` and an `Undo` button right in
         `text-[11px] text-klarvo-teal`. The strip is **not** red — see Dev Notes.
-  - [ ] 4.4 `handleDeleteHistoryEntry` no longer awaits the backend. It records the pending delete and
+  - [x] 4.4 `handleDeleteHistoryEntry` no longer awaits the backend. It records the pending delete and
         starts a `UNDO_WINDOW_MS` timer whose callback calls `deleteHistoryEntry(id)`, then removes the
         entry from both `pendingDeletes` and `historyEntries`.
-  - [ ] 4.5 `handleUndoDelete(id)` clears the timer and drops the id from `pendingDeletes`. It must not
+  - [x] 4.5 `handleUndoDelete(id)` clears the timer and drops the id from `pendingDeletes`. It must not
         touch `historyEntries` (the entry never left) and must not call the backend.
-  - [ ] 4.6 Guard the backend call so it runs **exactly once** per id even if the timer callback and a
+  - [x] 4.6 Guard the backend call so it runs **exactly once** per id even if the timer callback and a
         flush (Task 4.7) race.
-  - [ ] 4.7 Flush on unmount and on panel close: commit every pending delete and clear every timer
+  - [x] 4.7 Flush on unmount and on panel close: commit every pending delete and clear every timer
         (AC8). Wire it to the same lifecycle that `onClose`/`panels.close("history")` already uses.
 
-- [ ] **Task 5 — Refetch safety** (AC: 7)
-  - [ ] 5.1 `onOpenHistory` and `handleHistorySearch` both replace `historyEntries` wholesale from the
+- [x] **Task 5 — Refetch safety** (AC: 7)
+  - [x] 5.1 `onOpenHistory` and `handleHistorySearch` both replace `historyEntries` wholesale from the
         backend. A pending-deleted entry is still in the DB, so it comes back as a normal card and its
         strip vanishes while the timer keeps running — a silent, confusing delete.
-  - [ ] 5.2 Fix it deterministically: on any refetch, either (a) re-apply `pendingDeletes` to the fresh
+  - [x] 5.2 Fix it deterministically: on any refetch, either (a) re-apply `pendingDeletes` to the fresh
         list so those rows render as strips again, or (b) flush the pending deletes before refetching.
         Pick one, implement it in **one** place, and say which in the Completion Notes.
-  - [ ] 5.3 Note that the desktop history list currently has no live push updates; the only refetch
+  - [x] 5.3 Note that the desktop history list currently has no live push updates; the only refetch
         paths are the two named above plus `onRefresh` style callbacks. Grep for `setHistoryEntries(`
         and cover every assignment that comes from the backend.
 
-- [ ] **Task 6 — Verification gates**
-  - [ ] 6.1 `npm run build` (tsc + vite) green, zero errors.
-  - [ ] 6.2 Grep gate: no new inline hex in the touched files —
+- [x] **Task 6 — Verification gates**
+  - [x] 6.1 `npm run build` (tsc + vite) green, zero errors.
+  - [x] 6.2 Grep gate: no new inline hex in the touched files —
         `grep -nE "#[0-9a-fA-F]{3,8}" src/App.tsx src/components/PreviewComments.tsx` shows no NEW hits
         beyond the pre-existing ones (record the before/after counts).
-  - [ ] 6.3 Grep gate: `grep -n "clipboard.writeText" src/App.tsx src/components/*.tsx` — every hit
+  - [x] 6.3 Grep gate: `grep -n "clipboard.writeText" src/App.tsx src/components/*.tsx` — every hit
         except the `VoiceNotesPanel.tsx` one routes through the feedback path.
-  - [ ] 6.4 GATE-4 structural smoke — see Dev Notes › Verification.
+  - [x] 6.4 GATE-4 structural smoke — see Dev Notes › Verification.
 
 ## Dev Notes
 
@@ -297,8 +297,72 @@ structure; it does not prove the aesthetics. Never present proxy-green as a visu
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `npm run build` (tsc + vite): green, 0 errors.
+- No `cargo check` — this story touches zero Rust, per its own Dev Notes.
+- Grep gate (Task 6.2): `grep -nE "#[0-9a-fA-F]{3,8}" src/App.tsx src/components/PreviewComments.tsx`
+  — 0 hits before, 0 hits after. No inline hex introduced.
+- Grep gate (Task 6.3): `grep -n "clipboard.writeText" src/App.tsx src/components/*.tsx` — 0 hits in
+  `App.tsx` (all 5 sites route through `copyFeedback.copy`); `PreviewComments.tsx:435` keeps its own
+  existing `navigator.clipboard.writeText` + fallback (Task 3, not rewritten into the hook, by design);
+  `VoiceNotesPanel.tsx:109` is the one deliberately out-of-scope site (unreachable — its opener is
+  commented out at `App.tsx:491`).
+- Grep gate (Task 5.3): `grep -n "setHistoryEntries(" src/App.tsx` — all backend-driven wholesale
+  assignments (`loadHistory`, `handleHistorySearch`) are preceded by `flushPendingDeletes()`; the two
+  other call sites (`handleReprocessPendingEntry`, `handleDiscardPendingEntry`) target one known id each
+  and are not refetches, so they need no flush.
+- GATE-4 structural smoke (Task 6.4): `npm run preview` (port 1422) + repo-pinned puppeteer 24.38.0,
+  headless Chromium, against the mock backend. 18/18 assertions passed — AC1/AC2/AC3/AC4/AC5/AC6/AC9/AC10
+  all exercised behaviourally (click → DOM state → timer wait → DOM state). Clipboard success/failure was
+  driven by toggling the real CDP `clipboardSanitizedWrite` permission on/off (a genuine permission
+  denial, not a mock/stub) — discovered along the way that puppeteer 24.38.0's high-level
+  `overridePermissions("clipboard-write")` does NOT reliably gate `navigator.clipboard.writeText` in
+  headless Chromium; the raw CDP permission name `clipboardSanitizedWrite` via `Browser.grantPermissions`
+  does. AC7 (refetch safety) and AC8 (panel-close flush) were verified by source read, not by the browser
+  script, because the mock `deleteHistoryEntry` never removes an entry from the static `MOCK_HISTORY`
+  array — a real refetch in preview mode always re-serves all 3 mock rows regardless of the app's actual
+  flush logic, so a browser-observed "did it come back?" signal would be meaningless for those two ACs.
+  Full evidence: `_bmad-output/implementation-artifacts/gate4-evidence/8-8/` (`verdict.md` + 5 screenshots
+  + `measurements.json`). The driving script lived outside the repo tree and was deleted after the run —
+  nothing under `_bmad-output/implementation-artifacts/gate4-evidence/8-8/` is test-harness source, only
+  evidence.
 
 ### Completion Notes List
 
+- Found the implementation already substantially in place in the working tree at story start (hook,
+  5 wired Copy sites, `PreviewComments.tsx` alignment, optimistic delete + undo strip, refetch-safety
+  flush) but with every task checkbox still unchecked and no Dev Agent Record — treated as unverified
+  in-progress work, not as done. Verified every task against its AC via code read, the grep gates, and a
+  live GATE-4 browser run before checking anything off.
+- Task 4.1 stores pending deletes in a `useRef<Map<number, {entry, timer}>>` as the canonical store (so
+  the "exactly once" commit guard in Task 4.6 is synchronous, not dependent on React's batched state
+  updates), with a small `pendingDeleteIds: Set<number>` mirroring its keys purely to drive re-renders.
+  The entry itself is never removed from `historyEntries` until the delete actually commits, matching
+  AC4/AC6's "same list position" requirement.
+- Task 5.2: implemented option (b) — flush pending deletes before refetching — in the two places that do
+  a wholesale `historyEntries` replace (`loadHistory`, `handleHistorySearch`), rather than re-applying
+  `pendingDeletes` to the fresh list. Confirmed via the Task 5.3 grep that no third backend-driven
+  `setHistoryEntries(` call site exists.
+- AC9's "five silent sites": confirmed via `grep -n "clipboard.writeText\|copyFeedback.copy" src/App.tsx`
+  that zero direct `clipboard.writeText` calls remain in `App.tsx` and all five now go through
+  `copyFeedback.copy(id, text)` with a distinct id per site (mapped history rows key by `entry.id`).
+- No unit-test suite exists for `App.tsx` (8-5 precedent, restated in this story's own Dev Notes) — the
+  build, the three grep gates, and the GATE-4 browser smoke are the verification for this story.
+
 ### File List
+
+- `src/hooks/useCopyFeedback.ts` (NEW)
+- `src/App.tsx` (MODIFIED)
+- `src/components/PreviewComments.tsx` (MODIFIED)
+
+## Change Log
+
+- 2026-08-21 (dev-story): Implemented all 6 tasks. `useCopyFeedback` hook (Task 1) wired into the five
+  silent Copy sites in `App.tsx` (Task 2) and aligned `PreviewComments.tsx`'s existing confirmation to the
+  shared `COPY_FEEDBACK_MS` (Task 3). Optimistic delete with an in-place undo strip, guarded single-commit
+  backend call, and panel-close/unmount flush (Task 4). Refetch safety via flush-before-refetch in
+  `loadHistory` and `handleHistorySearch` (Task 5). All verification gates green: `npm run build`, the
+  three grep gates, and an 18/18 GATE-4 puppeteer smoke against the mock backend (Task 6). Status → review.
