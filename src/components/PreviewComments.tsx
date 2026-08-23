@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { COPY_FEEDBACK_MS } from "../hooks/useCopyFeedback";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -433,7 +434,7 @@ export function PreviewComments() {
     try {
       await navigator.clipboard.writeText(md);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
     } catch {
       // Fallback: create a temporary textarea
       const ta = document.createElement("textarea");
@@ -443,7 +444,7 @@ export function PreviewComments() {
       document.execCommand("copy");
       document.body.removeChild(ta);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
     }
   }
 

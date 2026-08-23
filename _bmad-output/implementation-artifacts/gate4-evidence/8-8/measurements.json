@@ -1,0 +1,109 @@
+[
+  {
+    "id": "setup",
+    "claim": "onboarding dismissed",
+    "pass": true,
+    "detail": "clicked Setup überspringen"
+  },
+  {
+    "id": "AC9",
+    "claim": "at least 3 plain 'Copy' buttons found (one per history card)",
+    "pass": true,
+    "detail": "found 3"
+  },
+  {
+    "id": "AC1",
+    "claim": "clicked control shows 'Copied'",
+    "pass": true,
+    "detail": "[\"Copied\",\"Copy\",\"Copy\"]"
+  },
+  {
+    "id": "AC2",
+    "claim": "sibling Copy controls stay 'Copy' (per-control, not global)",
+    "pass": true,
+    "detail": "[\"Copied\",\"Copy\",\"Copy\"]"
+  },
+  {
+    "id": "AC10",
+    "claim": "confirmed state uses text-klarvo-success token",
+    "pass": true,
+    "detail": "text-[11px] transition-colors text-klarvo-success"
+  },
+  {
+    "id": "AC1",
+    "claim": "reverts to resting label 'Copy' after 1500ms",
+    "pass": true,
+    "detail": "[\"Copy\",\"Copy\",\"Copy\"]"
+  },
+  {
+    "id": "AC3",
+    "claim": "clipboard write rejection shows 'Copy failed' (never 'Copied')",
+    "pass": true,
+    "detail": "Copy failed"
+  },
+  {
+    "id": "AC3",
+    "claim": "failure uses text-klarvo-danger token",
+    "pass": true,
+    "detail": "text-[11px] transition-colors text-klarvo-danger"
+  },
+  {
+    "id": "AC3",
+    "claim": "reverts to resting label after failure too",
+    "pass": true,
+    "detail": "Copy"
+  },
+  {
+    "id": "setup",
+    "claim": "Delete buttons present before delete flow",
+    "pass": true,
+    "detail": "found 3"
+  },
+  {
+    "id": "AC4",
+    "claim": "undo strip ('Deleted' + 'Undo') appears in place after Delete click",
+    "pass": true,
+    "detail": "{\"hasUndo\":true,\"hasDeletedLabel\":true}"
+  },
+  {
+    "id": "AC4",
+    "claim": "card count unchanged (row collapsed to strip, not removed) right after Delete click",
+    "pass": true,
+    "detail": "2 vs before 3"
+  },
+  {
+    "id": "AC6",
+    "claim": "Undo restores the card (Delete button count back to original)",
+    "pass": true,
+    "detail": "{\"deleteCount\":3,\"undoStillThere\":false}"
+  },
+  {
+    "id": "AC6",
+    "claim": "undo strip gone after Undo click",
+    "pass": true,
+    "detail": "{\"deleteCount\":3,\"undoStillThere\":false}"
+  },
+  {
+    "id": "AC5",
+    "claim": "strip present right after click (backend not yet called)",
+    "pass": true
+  },
+  {
+    "id": "AC5",
+    "claim": "row removed after 6000ms window (Delete button count decreased by 1)",
+    "pass": true,
+    "detail": "{\"deleteCount\":2,\"undoGone\":true}"
+  },
+  {
+    "id": "AC5",
+    "claim": "undo strip gone after commit",
+    "pass": true,
+    "detail": "{\"deleteCount\":2,\"undoGone\":true}"
+  },
+  {
+    "id": "AC5/Task4.6",
+    "claim": "count stable after commit (no double-delete artifact)",
+    "pass": true,
+    "detail": "2"
+  }
+]

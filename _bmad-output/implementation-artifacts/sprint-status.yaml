@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-08-19
+# last_updated: 2026-08-21
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -46,7 +46,7 @@
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
 generated: 2026-05-30
-last_updated: 2026-08-19
+last_updated: 2026-08-21
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -122,7 +122,7 @@ development_status:
   8-5-main-window-history-re-skin: done
   8-6-onboarding-re-skin: backlog
   8-7-studio-dark-fidelity-pass: backlog
-  8-8-action-feedback-copy-and-delete: backlog
+  8-8-action-feedback-copy-and-delete: done
   epic-8-retrospective: optional
 
   # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView]

@@ -852,6 +852,26 @@ prüfen. Details in `gate4-evidence/11-6/verdict.md`.
 
 ---
 
+## Voice-Notes-Fläche — Copy ohne Rückmeldung, weil die Fläche abgeschaltet ist (2026-08-19, aus Story 8.8)
+
+Source: Phase-A-Entscheidung zu Story 8.8 (2026-08-19, Andi) · am Baum geprüft in derselben Sitzung.
+
+`src/components/VoiceNotesPanel.tsx:109` kopiert ohne Rückmeldung — dieselbe Lücke, die Story 8.8 auf
+den fünf erreichbaren Desktop-Stellen schließt. Die Fläche ist aber **nicht erreichbar**: der Knopf,
+der sie öffnet, steht auskommentiert in `src/App.tsx:491` („Notes toggle -- hidden for Early Access
+(feature incomplete)"), also wird `panels.showNotes` über die Oberfläche nie wahr. Die Komponente wird
+weiterhin importiert und in `src/App.tsx:834` gerendert, aber nur hinter diesem toten Schalter.
+
+**Warum ausgelassen:** Andi kann die Fläche nicht öffnen, also kann er die Arbeit dort nicht abnehmen.
+Sie zu bauen hieße, ungeprüften Code im Baum zu hinterlassen — das verletzt die Verifikations-Symmetrie.
+Der abgenommene Story-Text nennt „7 Stellen"; die richtige Zahl ist fünf stumme, eine bereits
+bestätigende (`PreviewComments.tsx`, hat schon `setCopied` plus Fallback) und diese eine unerreichbare.
+
+**Wenn es drankommt:** Zusammen mit der Wiederbelebung der Voice-Notes-Fläche erledigen, nicht davor.
+Dann ist der Testzustand herstellbar und die Arbeit abnehmbar.
+
+---
+
 ## Android-Zwilling — Copy ohne Rückmeldung (2026-08-19, aus dem 8-5-Smoke)
 
 Source: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-19.md` · Auslöser: Andis
@@ -870,3 +890,82 @@ oder nur im Overlay-Cluster steckt. Die Desktop-Lösung („Copied" am Knopf) l�
 übertragen; ein Toast oder eine kurze Cluster-Rückmeldung kann die passendere Form sein. Das ist eine
 Design-Entscheidung für Andi, keine Umsetzungsfrage. Verwandt: ADR-0016 (Android-Pfad-Parität) — die
 Rückmeldung ist geteiltes VERHALTEN, auch wenn die Form je Plattform verschieden ausfällt.
+
+---
+
+## Story 8-8 — ein fehlgeschlagenes Backend-Delete bleibt unsichtbar (2026-08-21, aus dem Code-Review)
+
+Source: `bmad-code-review` von Story 8.8 (`90d035e..HEAD`, 2026-08-21), Review-Finding
+„[Review][Decision] A failed backend delete removes the row from the UI and is then swallowed".
+
+`commitPendingDelete` (`src/App.tsx`) entfernt die Zeile aus `historyEntries` und feuert danach
+`deleteHistoryEntry(id).catch(console.error)`. Schlägt der Backend-Aufruf fehl, bleibt der Eintrag in
+`history.db` bestehen, verschwindet aber trotzdem sichtbar aus der Liste — und taucht beim nächsten
+Panel-Öffnen wieder auf. Der Review nennt zwei mögliche Formen: (a) den Eintrag zurück in
+`historyEntries` legen und den Grund über den bestehenden `pendingErrors`-Mechanismus zeigen, oder (b)
+die Zeile als Streifen stehen lassen, bis das Backend bestätigt.
+
+**Warum aufgeschoben:** Beide Formen erfinden ein sichtbares Fehlerverhalten, das die Story nie
+spezifiziert hat. Welche Form richtig ist, ist Andis Entscheidung, keine Umsetzungsfrage — die Story
+selbst ändert dafür keinen Code.
+
+**Wenn es drankommt:** Andi entscheidet zwischen (a) und (b) (oder einer dritten Form), dann eine
+eigene Story oder ein Follow-up gegen `commitPendingDelete` schreiben.
+
+---
+
+## ✅ ERLEDIGT 2026-08-21 — Story 8-8: Canon und Code widersprachen sich bei der Bestätigungs-Sichtbarkeit
+
+Source: `bmad-code-review` von Story 8.8, Runde 2 (2026-08-21), Finding „The canon has no
+confirmed-state exception to the hover-only acts row" · Conductor-Lauf `RUN-2026-08-21.md`.
+
+Der Canon sagt `.note .acts { opacity: 0 }` und `.note:hover .acts { opacity: 1 }`
+(`docs/design/overhaul/source/assets/klarvo.css`). Eine Ausnahme für den bestätigten Zustand steht
+dort nicht. Der Code trägt sie inzwischen an drei Stellen (`src/App.tsx`, jeweils
+`status !== "idle"`), weil AC1 verlangt, dass `Copied` seine vollen 1500 ms lesbar bleibt — auch
+wenn der Zeiger die Karte verlässt. AC1 ist von Andi abgenommen und schlägt damit den Canon.
+
+**Warum der Canon NICHT nachgezogen wurde:** Der Canon ist die bindende Wahrheit und darf nur
+festhalten, was Andi tatsächlich gesehen hat. Auf dem echten Windows-Bildschirm hat er diesen
+Zustand noch nicht gesehen. Ein vorgezogener Nachtrag würde eine Design-Aussage festschreiben, die
+er beim ersten Blick vielleicht ablehnt.
+
+**ERLEDIGT.** Andi hat am 2026-08-21 auf dem echten Windows-Bildschirm entschieden: die dauerhaft
+sichtbare Bestätigung ist richtig so. Der Canon trägt die Ausnahme jetzt ausdrücklich als
+`.note .acts.responding` (CSS-NACHTRAG 2026-08-21 + MANIFEST-Zeile, Fingerabdruck
+`028171af056a13030fe80adc54eae738`). Canon und Code sagen wieder dasselbe; ein späterer Agent kann
+die Ausnahme nicht mehr versehentlich „zurückreparieren".
+
+Im selben Zug hat Andi zwei Änderungen angeordnet, beide gebaut und gemessen (15/15 in echtem
+Chromium): **Delete tritt zur Seite**, solange die Karte auf einen Copy-Klick antwortet; und
+**`Undo` trägt dasselbe Rot wie `Delete`** — das überstimmt die Phase-A-Begründung, Rot dem
+zerstörenden Steuerelement vorzubehalten.
+
+---
+
+## Story 8-8 — neun LOW-Findings liegen in `deferred-work.md` (2026-08-21)
+
+Source: `bmad-code-review` von Story 8.8, Runden 1 und 2 (2026-08-21).
+
+`docs/backlog.md` ist die SSOT für Aufgeschobenes, aber die Review-Findings einer Story landen
+BMAD-nativ in `_bmad-output/implementation-artifacts/deferred-work.md`. Damit die SSOT nicht blind
+ist, hier der Zeiger auf die zwei Abschnitte „Deferred from: code review of
+8-8-action-feedback-copy-and-delete" — neun LOW-Findings:
+
+1. `PreviewComments`' Copy-Timer wird weder beim Unmount noch beim Neu-Klick gelöscht (Alt-Bestand).
+2. Der neue Hook hat keinen `document.execCommand`-Fallback, `PreviewComments` schon.
+3. `flushPendingDeletes` wird vor seiner Deklaration referenziert; zwei `useCallback` haben leere
+   Abhängigkeitslisten. Heute kein lebender Defekt, `tsc` ist grün.
+4. „Verwerfen" ist genauso zerstörerisch wie „Delete", antwortet aber weiter auf keinen Klick.
+5. Keine `aria-live`-Ansage und kein Fokus-Handling — ein Tastatur-Nutzer erreicht `Undo` im
+   6000-ms-Fenster nicht ohne neues Tabben.
+6. `rawText!` kann die Zeichenkette „undefined" in die Zwischenablage legen und trotzdem „Copied"
+   melden.
+7. AC5s „genau ein Aufruf" wurde über eine DOM-Zählung belegt, nicht über einen Aufruf-Zähler.
+   Gate-Qualität, kein Code-Defekt.
+8. Ein hängender `delete_history_entry`-IPC lässt die History auf „Loading…" stehen — Folge der
+   Flush-vor-Refetch-Reihenfolge, die Runde 1 verlangt hat.
+9. (Zweiter Runde-2-Punkt: die Canon-Abweichung — siehe eigener Eintrag oben.)
+
+**Wenn es drankommt:** Punkte 4 und 5 sind eigene kleine Storys wert; der Rest ist Aufräumarbeit,
+die in die nächste Story an derselben Fläche mitgenommen werden kann.

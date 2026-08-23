@@ -1,0 +1,144 @@
+[
+  {
+    "id": "SETUP",
+    "claim": "history panel shows the 3 mock rows",
+    "measured": 3,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC9-raw",
+    "claim": "'Show original' reveals a 'Copy Original' control",
+    "measured": 1,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-site714",
+    "claim": "'Copy Original' confirms with 'Copied'",
+    "measured": "Copied",
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC10-site714",
+    "claim": "confirmed state carries text-klarvo-success",
+    "measured": true,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC2-site714",
+    "claim": "sibling Copy controls unchanged while site714 confirms",
+    "measured": 4,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-revert714",
+    "claim": "'Copy Original' returns to its resting label after 1500 ms",
+    "measured": 1,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-site727",
+    "claim": "raw-box overlay Copy confirms with 'Copied'",
+    "measured": {
+      "text": "Copied",
+      "cls": "absolute top-1 right-1 text-[11px] transition-opacity opacity-100 text-klarvo-success",
+      "opacity": "1"
+    },
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC2.7-site727",
+    "claim": "the confirming overlay control is forced visible (opacity 1)",
+    "measured": "1",
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC1-layout",
+    "claim": "the neighbouring Delete control does not move while Copy shows 'Copied'",
+    "measured": {
+      "before": 479.0625,
+      "after": 479.0625,
+      "dy": 0
+    },
+    "verdict": "PASS"
+  },
+  {
+    "id": "INSTR",
+    "claim": "throwaway delete instrumentation is live",
+    "measured": [],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC4-slot",
+    "claim": "the undo strip occupies the deleted row's own list slot",
+    "measured": 1,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC4-nocall",
+    "claim": "no backend delete issued at click time",
+    "measured": [],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC7",
+    "claim": "refetch commits the pending delete instead of resurrecting the row",
+    "measured": {
+      "searchDriven": true,
+      "calls": [
+        2
+      ],
+      "rows": [
+        "Das ist ein Demo-Diktat aus dem Preview-",
+        "Reminder: Tauri v2 supports both desktop"
+      ],
+      "strips": 0
+    },
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC5-once",
+    "claim": "delete_history_entry called exactly once for that id",
+    "measured": [
+      2
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC5-gone",
+    "claim": "the committed row is gone from the refetched list",
+    "measured": 2,
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC8-pre",
+    "claim": "strip pending, no backend call yet",
+    "measured": [
+      2
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC8",
+    "claim": "closing the history panel flushes the pending delete",
+    "measured": [
+      2,
+      1
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC8-nodangle",
+    "claim": "no dangling timer fires a second delete after the undo window would have elapsed",
+    "measured": [
+      2,
+      1
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "id": "AC8-final",
+    "claim": "reopened history reflects the committed deletes",
+    "measured": 1,
+    "verdict": "PASS"
+  }
+]
