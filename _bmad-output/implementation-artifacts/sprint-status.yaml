@@ -1,5 +1,5 @@
 # generated: 2026-05-30
-# last_updated: 2026-08-21
+# last_updated: 2026-08-23
 # project: klarvo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -114,7 +114,7 @@ development_status:
   epic-7-retrospective: optional
 
   # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06, 8-6 vertagt 2026-08-19 (scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
-  epic-8: in-progress
+  epic-8: done
   8-1-token-and-type-foundation: done
   8-2-settings-form-system-home-and-sub-pages: done
   8-3-floatingbar-re-skin: backlog
