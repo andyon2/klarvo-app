@@ -15,6 +15,7 @@ env_flag = "BMAD_CONDUCTOR"  # exported =1 for the whole run
 
 [smoke]
 # The UNATTENDED-producible proxy surface and how to drive it (GATE-4 + E7).
+# This top-level block = the ANDROID proxy (legacy position). Desktop lives in [smoke.desktop].
 command       = "scripts/android-smoke.sh"   # build / install / drive-to-state / capture
 proxy_surface = "headless Android emulator via scripts/android-emulator.sh — install --abi arm64-v8a so the arm64-only Rust .so runs via the x86_64 image's native-bridge"
 evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
@@ -48,7 +49,7 @@ detaches_real_target = true
 stops_emulator_on_release = true
 
 [visual_oracle]
-# Two layers — the GATE-4 posture for surface stories (Naht 5).
+# Two layers — the GATE-4 posture for surface stories (Naht 5). Top-level = ANDROID; desktop in [visual_oracle.desktop].
 structural        = true   # the emulator IS a reliable STRUCTURAL oracle
 structural_method = "adb shell dumpsys window windows — assert overlay-window structure: count of APPLICATION_OVERLAY windows + their requested sizes / gravity / visibility (e.g. recording state = panel ~1080x525 bottom + idle bubble 162x162). A wrong window count/size is a real FAILED smoke, caught without a screenshot."
 pixel             = false  # NOT a pixel / aesthetic oracle
@@ -91,3 +92,45 @@ pixel_note        = "stock Android (no HyperOS skin), software GPU, and system d
 #     decisions[]; don't collide with maxFixRounds).
 # atdd       = false
 # trace_gate = false
+
+[workers]
+# The worker grant (story-conductor R6; Epic-8-Retro AI-6 / C2, 2026-09-03). Every headless
+# worker runs under this instead of --dangerously-skip-permissions. Deny wins over allow, so
+# Bash stays usable for build/test/git while the listed commands are refused. A denial reaches the
+# worker as a tool error; it may report it or try around it -- the post-worker transcript grep (R6)
+# catches the latter. The grant raises the bar; only the file tools are walled (--restricted).
+# Epic 8: two unattended fix workers ran apt-get on powerhouse for a gate dead since 8-1.
+# Verified 2026-09-03 with a headless haiku probe under exactly this grant: `git commit` ran; `apt-get` and
+# `sh -c apt-get` were denied; a Write outside the cwd was denied; a Bash redirect outside the cwd RAN.
+# So the file-tool boundary is mechanical, the Bash boundary is rule + post-worker transcript grep (R6).
+restricted         = true          # ignores host settings files; confines Read/Edit/Write to the cwd; removes tools not in `tools`
+tools              = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite"]
+permission_prompts = "none"        # anything that would prompt is denied -- a headless worker has nobody to ask
+permission_mode  = "acceptEdits"
+allowed_tools    = ["Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite", "Bash"]
+disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg:*)", "Bash(snap:*)", "Bash(pip:*)", "Bash(pip3:*)", "Bash(rustup:*)", "Bash(cargo install:*)", "Bash(npm install -g:*)", "Bash(adb:*)", "Bash(ssh:*)", "Bash(scp:*)", "Bash(scripts/windows-build.sh:*)", "Bash(sh -c:*)", "Bash(bash -c:*)"]
+# Workers never run the Windows build or ssh: [desktop_build] is the CONDUCTOR's GATE-4 step, not a
+# worker step. Deny rules match the outer command text only: a subprocess inside a script (adb inside
+# android-smoke.sh) is outside the rule surface -- that is what BMAD_CONDUCTOR=1 exists for -- and
+# `sh -c` / `bash -c` wrappers are denied because they would carry any command past the list.
+# Host mutation is forbidden (story-conductor R6): a gate that needs a tool the host lacks is `blocked`, never an install.
+# Dead gates (AI-3): a gate red across two consecutive stories is retired, not chased.
+# RETIRED 2026-09-03: `cargo check --target x86_64-pc-windows-gnu` -- dies at ort-sys since 8-1.
+# The Windows statement comes from [desktop_build] (windows-build.sh). No story DoD names it.
+
+[smoke.desktop]
+# Desktop proxy surface (AI-6 / F2) -- the machine gate every Epic-8 story ran, unrecorded until now.
+platform      = "desktop"
+command       = "none -- no script exists. The story-conductor writes a throwaway puppeteer script per story and keeps it in the evidence dir (8-5 / 8-8 precedent)."
+real_target   = "Andi's Windows machine, reached only through [desktop_build]. Workers cannot reach it, so there is nothing to detach and BMAD_CONDUCTOR=1 is unread on this path."
+harness       = "puppeteer (pinned in package.json) against `npm run preview` (port 1422) in real Chromium; throwaway edits for unreachable states, reverted afterwards (8-5 / 8-8 precedent)"
+proxy_surface = "the real React surface in preview mode -- DOM presence, computed styles vs canon tokens, geometry deltas, timers, state machines"
+evidence_dir  = "_bmad-output/implementation-artifacts/gate4-evidence"
+decides       = "wiring, logic, structure, geometry in Chromium. That the code builds and starts on Windows comes from [desktop_build]."
+not_decides   = "Windows rendering: font rasterization, the OS text-scale drift, how 1500 ms / 6000 ms read on screen. That stays Andi's eye on the real Windows build. Proxy-green is never a visual pass."
+
+[visual_oracle.desktop]
+structural        = true
+structural_method = "puppeteer: assert element presence/absence per state, computed style vs canon token values, bounding-box deltas (dx/dy/dw/dh) under state changes"
+pixel             = false
+pixel_note        = "Chromium on Linux != WebView2 on Windows with the user's text scale. Memory: reference-windows-text-scale-factor-webview-gdi."

@@ -21,8 +21,9 @@
   evidence of Epic 8 (`RUN-2026-08-21.md`, the 8-5 and 8-8 story records, the commit range
   `90d035e..cf93fd4`). Verdict per lesson: **honoured / violated / absent**. "Violated" means the skill
   text says the right thing and the run broke it. "Absent" means the skill text does not carry the rule.
-- **This is a review. Nothing has been changed.** The proposed edits below are the change set for
-  Andi's approval. Build follows approval.
+- **Status: BUILT 2026-09-03** after Andi's approval of the full set ("freigeben, alles in einem Zug, F3 ja").
+  The body below is the review as delivered; the Change Log at the end records what the build changed
+  against it and the final fingerprints.
 
 ## Verdict at a glance
 
@@ -277,12 +278,12 @@ schema) changes shape; C3 adds fields to the return *text*, not to the verdict o
 
 ## Decisions Andi has to take
 
-1. **Approve the change set** — as a whole, or per item (C1–C6, F1–F3).
+1. **Approve the change set** — as a whole, or per item (C1–C6, F1–F3). → **Andi: whole set.**
 2. **C2.1 changes every future worker's permissions in every project** (skip-permissions → explicit
    grant). The 8-8 run proved it works for a desktop story. An Android story has not run under it yet.
    Approve as the default, or approve for klarvo only via the contract and leave the skill's default?
-   Recommendation: skill default, because the host mutation happened under the old default.
-3. **F3** — version the global skills or not.
+   Recommendation: skill default, because the host mutation happened under the old default. → **Andi: skill default** (8-5's apt-get ran under the story-conductor, his usual mode).
+3. **F3** — version the global skills or not. → **Andi: yes.** `~/.claude/skills` is a git repo since 2026-09-03 (baseline `79ad587`, change set `7a5eb86`).
 
 ## Next
 
@@ -295,3 +296,36 @@ a review) in the ledger.
 ## Change Log
 
 - 2026-09-03 — review written. No skill or contract edited.
+- 2026-09-03 — **built.** All of C1–C6, F1, F2 applied to the three skills and the contract; F3 done
+  (`git init` in `~/.claude/skills`, baseline `79ad587`, change set `7a5eb86`; 48 insertions, 34
+  deletions across the three skills). Three adversarial review rounds by a separate Opus/Sonnet
+  reviewer: 18 findings → 6 → 4 → 0 regressions. **Deviations from the spec above, forced by the
+  reviews:**
+  - **C2.1 was overclaimed.** `--allowedTools` only pre-approves; it does not close the tool set, and
+    the user's `settings.json` (`defaultMode: auto`) widened the worker further. The reviewer proved it
+    empirically (worker wrote outside the repo, `sh -c apt-get` passed the deny list). The grant now
+    is `--restricted --tools … --permission-mode acceptEdits --permission-prompts none --allowedTools …
+    --disallowedTools …`. A headless haiku probe under exactly that grant: `git commit` ran; `apt-get`
+    and `sh -c 'apt-get'` denied; `Write` outside the cwd denied; **a Bash redirect outside the cwd
+    ran.** So R6 says: file tools are walled mechanically; Bash is rule + post-worker transcript grep.
+    The deny list was extended (`ssh`, `scp`, `windows-build.sh`, `sh -c`, `bash -c`); `MultiEdit` is
+    not a tool and was dropped; the list is newly authored (the 8-8 run recorded none).
+  - **C5 had a second hole:** the autonomous GATE-4 smoke-fix path also ended on a fix. Closed.
+  - **C4's test was too blunt:** `git status --porcelain` empty would halt on the four stray review
+    files in `docs/` and `_bmad-output/`. Now: no change to a tracked file, no untracked file outside
+    the docs/output folders. The verdict got `blockedReason` so the epic-conductor can tell a
+    dirty-tree `blocked` (halt) from every other `blocked` (park).
+  - **C3.2 is a note-and-fix seam, not a gate**, and the scope rewrite is committed before review so it
+    lands inside `baseRef..HEAD`. The return contract asks for a datum (which claim a number proves),
+    not a rule, to stay inside R1.
+  - **F2:** `[smoke.desktop]` got `command = none` + `real_target`; both skills carry the `command =
+    none` branch (the story-conductor authors a throwaway harness per story). A `[epic_close]` key
+    written for AI-5 was dropped again — no skill reads it; C1 carries the posture.
+  - Contract keys `host_mutation` dropped (unread); `[workers]` now mirrors the six dispatch flags
+    one-to-one.
+  **Accepted residuals** (not fixed, recorded): `[smoke]` holds a sub-table next to string keys (valid
+  TOML, prose-only consumers); the built-in default deny list lacks the project script entry the
+  contract has (project-agnostic by design); the waypoint's routing text was pre-existing incomplete
+  on story statuses and is now aligned with the sprint-status legend.
+  **Final fingerprints (md5):** epic-conductor `7a10f242`, story-conductor `5dbb64b4`, waypoint
+  `852cbcff`. AI-5 is done through C1; AI-3's contract half through C2.3 (DoD/template half → AI-2).
