@@ -514,3 +514,8 @@ claude-sonnet-5 (bmad-dev-story)
   failed-backend-delete shape, AC1's layout-shift measurement, the search-box-commits-per-keystroke
   behaviour, the hanging-IPC defer, and the canon-opacity-exception defer. Re-verified: `npm run build`
   (tsc + vite) green, both grep gates unchanged.
+- **2026-09-03 — Epic 8 retrospective** (`epic-8-retro-2026-09-03.md`). Andi revised the `Undo` colour to
+  Klarvo amber (`--k-amber`), overriding the 2026-08-21 acceptance decision (Undo red, `4a1a282`). **Not
+  built:** code and canon still carry red; the canon follows only after Andi has seen amber on the real
+  screen. Failed-backend-delete shape decided: option (a) — the entry returns with a visible reason. Both
+  homed in `docs/backlog.md` as one follow-up at the History surface. No code touched by this entry.

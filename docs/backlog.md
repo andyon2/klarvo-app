@@ -912,6 +912,10 @@ selbst ändert dafür keinen Code.
 **Wenn es drankommt:** Andi entscheidet zwischen (a) und (b) (oder einer dritten Form), dann eine
 eigene Story oder ein Follow-up gegen `commitPendingDelete` schreiben.
 
+**Entscheidung 2026-09-03 (Epic-8-Retro, `epic-8-retro-2026-09-03.md`): Option (a).** Der Eintrag kommt sofort
+zurück in die Liste, mit kurzem sichtbarem Grund. Begründung: ein wartender Streifen kann bei hängendem IPC ewig
+stehen (LOW-Finding 8). Bauen als Teil des Follow-ups „Undo wird amber" (eigener Eintrag unten).
+
 ---
 
 ## ✅ ERLEDIGT 2026-08-21 — Story 8-8: Canon und Code widersprachen sich bei der Bestätigungs-Sichtbarkeit
@@ -969,3 +973,25 @@ ist, hier der Zeiger auf die zwei Abschnitte „Deferred from: code review of
 
 **Wenn es drankommt:** Punkte 4 und 5 sind eigene kleine Storys wert; der Rest ist Aufräumarbeit,
 die in die nächste Story an derselben Fläche mitgenommen werden kann.
+
+---
+
+## Story 8-8 — `Undo` wird amber statt rot (Andi, Epic-8-Retro 2026-09-03)
+
+Source: Epic-8-Retro `_bmad-output/implementation-artifacts/epic-8-retro-2026-09-03.md`, Entscheidung 1.
+Überstimmt die Windows-Abnahme vom 2026-08-21 (`4a1a282`, „Undo trägt dasselbe Rot wie Delete").
+
+Andi hat am 2026-09-03 entschieden: `Undo` im „Deleted / Undo"-Streifen trägt die Klarvo-Amber-Farbe
+(`--k-amber`), nicht mehr das Rot von `Delete`. Damit gilt ADR-0019 §5 („Rot bleibt dem zerstörenden
+Steuerelement vorbehalten") wieder ohne Ausnahme; der Retro-Aktionspunkt AI-1 hält die Episode als
+ADR-Amendment fest.
+
+**Stand heute (nicht gebaut):** `src/App.tsx` und der Canon (`docs/design/overhaul/source/assets/klarvo.css`,
+NACHTRAG 2026-08-21, Fingerabdruck `028171af`) tragen noch Rot. **Der Canon wird erst nachgezogen, wenn Andi
+Amber am echten Windows-Bildschirm gesehen hat** — Canon-Regel: nur, was Andi wirklich gesehen hat.
+
+**Wenn es drankommt:** eine kleine Desktop-Follow-up-Story an der History-Fläche, zusammen mit dem
+Delete-Fehlerfall Option (a) (Eintrag „ein fehlgeschlagenes Backend-Delete bleibt unsichtbar"). Epic 8 steht
+auf `done` — vorher `epic-8` auf `in-progress` setzen (`bmad-create-story` verweigert sonst) oder als
+quick-dev mit Andis Windows-Gate fahren. GATE: Chromium-Messung (Farbe = `--k-amber`, Geometrie unverändert)
++ Andis Blick per `scripts/windows-build.sh`; danach Canon-NACHTRAG + MANIFEST-Zeile + ADR-0019-Hinweis.
