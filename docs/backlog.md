@@ -1028,8 +1028,54 @@ wäre „source-available Alternative", genau wie in der Team-`CLAUDE.md` selbst
 3. `README.md` durchziehen: Name + „Freie Alternative" → „source-available Alternative".
 4. Prüfen, ob die Website (`~/workspace/products/klarvo-website`) denselben Drift trägt.
 
-**Offen und größer als dieser Eintrag:** die BSL-Zusatz-Erlaubnis sagt heute „for your own personal,
-non-commercial use". Verkaufte Lizenzschlüssel gehen an Nutzer, die im Beruf diktieren — also kommerziell.
-Entweder weitet eine neue Zusatz-Erlaubnis das, oder ein getrennter Endnutzer-Vertrag regelt die fertige App.
-Braucht juristischen Rat, nicht eine Doku-Runde. Angesprochen 2026-09-04; Andi hat die Lizenz-**Wahl**
-entschieden (BSL 1.1 bleibt), diese Frage nicht.
+**Hängt an der Lizenzfrage** — siehe den nächsten Eintrag. Solange offen ist, ob Klarvo öffentlich
+bleibt, ist auch offen, ob `README.md` und `LICENSE` überhaupt noch jemand liest. Erst die größere
+Frage, dann diese.
+
+
+---
+
+## Lizenzwahl OFFEN — entschieden 2026-03-27, nie ausgeführt (Befund 2026-09-04, aus AI-1)
+
+**Quelle:** AI-1 (Epic-8-Retro 2026-09-03, offene Frage 4). Die Retro fragte „PolyForm oder BSL?" und
+nahm an, eine der beiden Aussagen sei ein Schreibfehler. Sie ist es nicht.
+
+**Befund.** Es gibt eine Entscheidung, und es gibt einen davon abweichenden ausgelieferten Zustand.
+
+| Datum | Was passierte | Beleg |
+|---|---|---|
+| 2026-03-20 | `LICENSE` mit **BSL 1.1** geschrieben | App-Repo `305153c` |
+| 2026-03-21 | Umbenennung Dikta → Voxlit. **Letzte Berührung der `LICENSE`.** | App-Repo `6dbea20` |
+| 2026-03-27 | **Wechsel zu PolyForm Noncommercial 1.0.0 entschieden und begründet** | Team-Repo `9dcbe51`, `knowledge/architecture.md` |
+| seitdem | `LICENSE` unverändert BSL 1.1 | — |
+
+Die Entscheidung wurde dokumentiert, aber nie ausgeführt. Das Repo liefert seit fünfeinhalb Monaten eine
+Lizenz aus, gegen die sich Andi entschieden hatte.
+
+**Andis Begründung von 2026-03-27 (gegen BSL, für PolyForm):** BSL erzwingt ein Wechseldatum — vier Jahre
+nach dem ersten bezahlten Release wird der Code MIT. Für ein Indie-Produkt mit 29 € Einmalkauf ist das ein
+Risiko: nach dem Wechseldatum darf jeder forken und weiterverkaufen. PolyForm schützt ohne Ablaufdatum.
+
+**Was 2026-09-04 dazukam:**
+- **Gegen PolyForm Noncommercial:** es **erlaubt** nicht-kommerzielle Weitergabe. Ein Fork darf kostenlos
+  kursieren. Die heutige BSL-Zusatz-Erlaubnis verbietet Weitergabe ausdrücklich. Das Fork-Risiko kehrt bei
+  PolyForm also in anderer Form zurück — sofort statt in vier Jahren, dafür nur nicht-kommerziell.
+- **Zum Wechseldatum:** es läuft **pro Version**, vier Jahre nach dem ersten bezahlten Release. Eine vier
+  Jahre alte Diktier-App ist als Wiederverkaufsware wenig wert, während die aktuelle Version geschützt
+  bleibt. Das entkräftet Andis Risiko nicht, es verkleinert es.
+- **Beide Texte haben dasselbe Loch:** sie erlauben dem Käufer keine kommerzielle Nutzung. Verkaufte
+  Lizenzschlüssel gehen aber an Leute, die **im Beruf** diktieren. Entweder weitet eine neue
+  BSL-Zusatz-Erlaubnis das (nur BSL hat dieses Feld), oder ein getrennter Endnutzer-Vertrag regelt die
+  fertige App. **Braucht juristischen Rat, keine Doku-Runde.**
+
+**Warum das hier liegen bleibt.** Andi ist am 2026-09-04 unschlüssig, ob er Klarvo überhaupt weiter
+öffentlich bereitstellen will. Die Lizenzwahl hängt daran: ohne Verteilung entscheidet man ins Blaue.
+**Zuerst die größere Frage.**
+
+**Zustand bis dahin.** Die Doku beschreibt den ausgelieferten Zustand (BSL 1.1) und behauptet keine Wahl.
+`knowledge/architecture.md` im Team-Repo trägt ein Banner „entschieden, nie ausgeführt"; die Begründung von
+2026-03-27 bleibt dort stehen, weil sie in die Wiederaufnahme gehört.
+
+**Nicht angefasst** (argumentieren mit PolyForm; Umschreiben ist eine Botschafts-Entscheidung, keine
+Korrektur): Team-Repo `briefings/show-hn-draft.md`, `briefings/b2b-pitch-stefan/pitch-skelett.md`,
+`briefings/launch-ux-audit.md`, `research/competitor-privacy-overlay-analysis-2026-04-01.md`.
