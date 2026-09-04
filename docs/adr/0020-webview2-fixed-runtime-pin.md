@@ -1,7 +1,11 @@
 # ADR-0020: WebView2 auf eine gepinnte Fixed-Version-Runtime festnageln (Overlay-Occlusion-Regression)
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0021](0021-native-desktop-overlays.md)
 **Date:** 2026-06-26
+**Superseded:** 2026-06-26 durch ADR-0021 (gebaut als Epic 10, auf `v1-ship` seit 2026-06-30). ADR-0021 zieht Pille und Live-Preview aus WebView2 heraus in native
+Win32-Layered-Windows. Damit entfällt die Occlusion-Regression an der Wurzel; der Runtime-Pin ist
+für die Overlays nicht mehr die Lösung. Der Text unten bleibt als Messprotokoll stehen (er hält
+fest, wie die Ursache gefunden wurde) — die Entscheidung selbst gilt nicht mehr.
 
 ## Context
 
