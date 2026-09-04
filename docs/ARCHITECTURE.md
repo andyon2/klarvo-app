@@ -25,7 +25,8 @@ navigable map** — `docs/index.md` itself notes "no full project scan has been 
 
 A source-available, BYOK voice-dictation app for **Windows desktop** and **Android**:
 global hotkey / floating bubble → record mic → STT → LLM cleanup → paste into the focused
-field, with offline-capable paths and no remote telemetry. PolyForm Noncommercial license.
+field, with offline-capable paths and no remote telemetry. Business Source License 1.1
+(source-available, not open source; SSOT is `LICENSE` at the repo root).
 
 Pipeline shape (both platforms): **record → transcribe (STT) → clean up (LLM) → sanitize →
 paste → persist (history) → optional sync.**

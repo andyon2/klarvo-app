@@ -982,9 +982,10 @@ Source: Epic-8-Retro `_bmad-output/implementation-artifacts/epic-8-retro-2026-09
 Überstimmt die Windows-Abnahme vom 2026-08-21 (`4a1a282`, „Undo trägt dasselbe Rot wie Delete").
 
 Andi hat am 2026-09-03 entschieden: `Undo` im „Deleted / Undo"-Streifen trägt die Klarvo-Amber-Farbe
-(`--k-amber`), nicht mehr das Rot von `Delete`. Damit gilt ADR-0019 §5 („Rot bleibt dem zerstörenden
-Steuerelement vorbehalten") wieder ohne Ausnahme; der Retro-Aktionspunkt AI-1 hält die Episode als
-ADR-Amendment fest.
+(`--k-amber`), nicht mehr das Rot von `Delete`. Damit gilt ADR-0019 §3 („Rot bleibt dem zerstörenden
+Steuerelement vorbehalten") wieder ohne Ausnahme; der Retro-Aktionspunkt AI-1 hat die Episode als
+[ADR-0019-Amendment 2026-09-04](adr/0019-cross-platform-design-ssot.md) festgehalten (Retro und
+Routing-Hook nannten „§5" — die Farb-Semantik steht in §3).
 
 **Stand heute (nicht gebaut):** `src/App.tsx` und der Canon (`docs/design/overhaul/source/assets/klarvo.css`,
 NACHTRAG 2026-08-21, Fingerabdruck `028171af`) tragen noch Rot. **Der Canon wird erst nachgezogen, wenn Andi
@@ -995,3 +996,40 @@ Delete-Fehlerfall Option (a) (Eintrag „ein fehlgeschlagenes Backend-Delete ble
 auf `done` — vorher `epic-8` auf `in-progress` setzen (`bmad-create-story` verweigert sonst) oder als
 quick-dev mit Andis Windows-Gate fahren. GATE: Chromium-Messung (Farbe = `--k-amber`, Geometrie unverändert)
 + Andis Blick per `scripts/windows-build.sh`; danach Canon-NACHTRAG + MANIFEST-Zeile + ADR-0019-Hinweis.
+
+---
+
+## `README.md` und `LICENSE` nennen noch „Voxlit" — Namens-Drift seit März 2026 (gefunden 2026-09-04, aus AI-1)
+
+**Quelle:** AI-1 (Epic-8-Retro 2026-09-03, Quellen-Bereinigung). Gefunden beim Prüfen der Lizenzzeile.
+**Nicht gebaut, weil es eine Namens-Entscheidung ist, keine Korrektur.** Andi entscheidet.
+
+**Befund.** Das Produkt hieß `Dikta`, wurde am 2026-03-21 in `6dbea20` zu **Voxlit** umbenannt, und heißt
+heute **Klarvo**. Die dritte Umbenennung erreichte zwei nutzer-sichtbare Dateien nie:
+
+| Datei | Stand | Belegt |
+|---|---|---|
+| `LICENSE` | `Licensed Work: Voxlit` | Repo-Root, der rechtlich bindende Text. |
+| `README.md` | 12× „Voxlit", Überschrift `# Voxlit` | Repo-Root, erste Seite auf GitHub. |
+| überall sonst | Klarvo | Tauri-Identifier `com.klarvo.voice`, `klarvo.css`, „Klarvo Design System", BMAD `project_name`, Team-`CLAUDE.md`. |
+
+Die `LICENSE` benennt damit ein Werk, das unter diesem Namen nicht mehr ausgeliefert wird. Das ist der
+schwerere der beiden Punkte — ein Lizenztext, der das lizenzierte Werk falsch benennt, lädt zu Streit ein.
+
+**Zweiter Befund im selben Bereich:** `README.md` Zeile 3 sagt „**Freie** Alternative zu Wispr Flow".
+Regel 9 der Team-`CLAUDE.md` verbietet „frei lizenziert" und Verwandtes in nutzer-sichtbarem Text; korrekt
+wäre „source-available Alternative", genau wie in der Team-`CLAUDE.md` selbst. Das README stammt aus
+`305153c` (2026-03-20), also aus der Zeit **vor** Regel 9.
+
+**Wenn es drankommt:** eine kleine Doku-Runde, kein Code.
+1. Andi entscheidet: heißt das Produkt Klarvo? (Alles außer `README.md`/`LICENSE` sagt ja.)
+2. `LICENSE` `Licensed Work:` auf den entschiedenen Namen setzen. Das ist ein Lizenz-Text — eigener Commit,
+   keine Sammel-Änderung.
+3. `README.md` durchziehen: Name + „Freie Alternative" → „source-available Alternative".
+4. Prüfen, ob die Website (`~/workspace/products/klarvo-website`) denselben Drift trägt.
+
+**Offen und größer als dieser Eintrag:** die BSL-Zusatz-Erlaubnis sagt heute „for your own personal,
+non-commercial use". Verkaufte Lizenzschlüssel gehen an Nutzer, die im Beruf diktieren — also kommerziell.
+Entweder weitet eine neue Zusatz-Erlaubnis das, oder ein getrennter Endnutzer-Vertrag regelt die fertige App.
+Braucht juristischen Rat, nicht eine Doku-Runde. Angesprochen 2026-09-04; Andi hat die Lizenz-**Wahl**
+entschieden (BSL 1.1 bleibt), diese Frage nicht.
