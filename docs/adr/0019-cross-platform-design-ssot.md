@@ -208,3 +208,74 @@ keine Canon-Änderung. Abgesegneter Stand: `mockup-9-5-transcribing-done.html` (
 **Superseded (nur Android non-HOLD):** die TAP-Surface (`.ztap`-Große-Kreise mit Labels, `mockup-mobile-recording-states.html` Frames `tapRight`/`tapLeft`) — der Kompakt-Cluster ist wieder Canon für non-HOLD. **Unverändert:** HOLD-Surface, Farb-Semantik, Waveform (RMS, 9-12), dock-Verhalten, kein `FLAG_NOT_TOUCHABLE`.
 
 **Scope/Story:** **9-16** (non-HOLD-Cluster-Revert). Bindende Quelle = der historische `.ab-cluster` (git `e92f4f3`, pre-9-15) + dieses Amendment.
+
+---
+
+## Amendment 2026-09-04 — Rot bleibt zerstörerisch: `Undo` wird amber · der bestätigte Zustand ist eine benannte Ausnahme
+
+**Status:** Accepted · **Trigger:** Epic-8-Retro 2026-09-03, Befund 1 („Canon and ADR-0019 disagree on red").
+**Ändert:** die Regel nicht. Dieses Amendment hält eine Abweichung fest, benennt ihre Rücknahme und schreibt eine Ausnahme auf, die bisher nur im Canon stand.
+**Berührte Decision-Abschnitte:** **§3** (Farb-Semantik) und **§5** (Provenance von Canon-Erweiterungen).
+
+> **Nummern-Korrektur.** Die Retro und der Routing-Hook sagen, die amber-Entscheidung stelle „§5" wieder her.
+> Das ist eine Verwechslung. Die Farb-Semantik-Regel steht in **§3**. §5 regelt die Provenance.
+> Wer den Retro-Satz liest, meint §3. Beide Abschnitte sind hier berührt, aber wiederhergestellt wird §3.
+
+### 1. Die Ausnahme: `.note .acts.responding` (bleibt gültig)
+
+Story 8-8 baute die Aktions-Rückmeldung der Desktop-History. Die Aktionszeile `.note .acts` erscheint
+normalerweise nur beim Hover (`.note:hover .acts`). Andi entschied am 2026-08-21 am echten Windows-Bildschirm
+zwei Dinge, die von dieser Regel abweichen:
+
+- **Der bestätigte Zustand überlebt das Verlassen der Karte.** Ohne diese Ausnahme sind die 1,5 s „Copied"
+  nicht lesbar — der Zeiger wandert weiter, die Zeile verschwindet, die Bestätigung geht mit ihr. Der Canon
+  schreibt das als `.note .acts.responding`.
+- **`Delete` tritt zur Seite, solange die Karte antwortet** (`.acts.responding .act.del` → `opacity: 0` +
+  `pointer-events: none`). Ein zerstörender Knopf darf nicht neben einer Erfolgsmeldung stehen, in die der
+  Zeiger zielt. Das Ausblenden läuft über Deckkraft, **nicht** über `display` — die Zeile behält ihre Breite,
+  die für 8-8 AC1 gemessene Geometrie bleibt gültig.
+
+**Beide Punkte gelten weiter.** Sie berühren die Farb-Semantik nicht; sie regeln Sichtbarkeit und
+Zeiger-Ziel. Dieses Amendment schreibt sie in das ADR, damit eine spätere Story sie nicht als Drift
+„repariert". Provenance: MANIFEST-Zeile 2026-08-21, Fingerprint `028171af056a13030fe80adc54eae738`.
+
+### 2. Die Episode: `Undo` wurde rot (2026-08-21) — und war damit gegen §3
+
+Bei derselben Abnahme entschied Andi als dritten Punkt: `.note.deleted .undo` trägt `--k-danger` statt
+`--k-teal`. Er las den „Deleted · Undo"-Streifen als Teil derselben Lösch-Handlung. Gebaut in `4a1a282`.
+
+Das **widerspricht §3**. `Undo` ist kein zerstörendes Steuerelement, sondern das Gegenteil: die Rückhol-Affordanz.
+Der Canon sagt es in eigenen Worten (Design-System-HTML, „Prinzipien"): *„Rot = zerstörerisch — Stop, Löschen,
+Fehler — sonst nie."* Die MANIFEST-Zeile vom 2026-08-19 hatte den Streifen aus genau diesem Grund bewusst
+**nicht** rot gefärbt; die 08-21-Zeile überstimmte diese Begründung, ohne §3 zu berühren.
+
+Die Retro fand daraus eine konkrete Falle: **eine spätere Story liest §3, sieht Rot am `Undo` und
+„repariert" die Farbe** — ohne zu wissen, dass ein Mensch sie so abgenommen hat. Die Quellen widersprachen
+sich still.
+
+### 3. Die Entscheidung (Andi, 2026-09-03): `Undo` wird amber
+
+`.note.deleted .undo` trägt **`--k-amber` (`#E9A24C`)**, nicht `--k-danger`. Das überstimmt die Abnahme vom
+2026-08-21 und **stellt §3 wieder her**: Rot bleibt dem zerstörenden Steuerelement vorbehalten.
+
+Amber passt auch positiv, nicht nur als Ausweichfarbe: der Streifen ist ein befristeter, laufender Zustand
+(6 s Frist, in der die App noch nicht wirklich löscht). Amber trägt in diesem Design genau die Bedeutung
+„läuft gerade" (§3: *amber = live / aktiv*).
+
+**Zustand heute — die Quellen weichen bewusst ab:**
+
+| Quelle | Farbe des `Undo` | Warum |
+|---|---|---|
+| ADR-0019 (dieses Amendment) | amber | Entscheidung vom 2026-09-03. |
+| Canon (`klarvo.css`, MANIFEST `028171af…`) | rot | Der Canon folgt erst, **nachdem** Andi amber am echten Windows-Bildschirm gesehen hat. |
+| Code (`src/App.tsx`) | rot | Nicht gebaut. Eigener Follow-up. |
+
+Diese Abweichung ist **beabsichtigt und befristet**, nicht Drift. Der Canon hält nur fest, was Andi gesehen hat
+(§5 gilt unverändert: eine Canon-Erweiterung braucht Provenance, und Provenance braucht einen Blick auf den
+echten Bildschirm). Der Follow-up steht in `docs/backlog.md` („Undo wird amber").
+
+**Für die Story, die das baut:** ändere Code **und** Canon in einem Zug, lass Andi amber am Windows-Bildschirm
+abnehmen, und trage dann eine neue MANIFEST-Zeile mit neuem Fingerprint nach. Erst danach stimmen alle drei
+Spalten oben überein.
+
+**Unverändert:** §1, §2, §4, §5. Die Farb-Semantik aus §3 selbst wird nicht geändert — sie wird angewandt.
