@@ -1079,3 +1079,84 @@ Risiko: nach dem Wechseldatum darf jeder forken und weiterverkaufen. PolyForm sc
 **Nicht angefasst** (argumentieren mit PolyForm; Umschreiben ist eine Botschafts-Entscheidung, keine
 Korrektur): Team-Repo `briefings/show-hn-draft.md`, `briefings/b2b-pitch-stefan/pitch-skelett.md`,
 `briefings/launch-ux-audit.md`, `research/competitor-privacy-overlay-analysis-2026-04-01.md`.
+
+## Epic-8-Retro AI-4 — Heimatlose eingeordnet (2026-09-09)
+
+Source: `epic-8-retro-2026-09-03.md` (Aktionspunkt AI-4) + `docs/architecture-review-followups.md`
+(Bridge-Datei vom 2026-06-17, mit diesem Eintrag gelöscht; Volltext samt Skript-Entwurf in git bei
+`6fabaf1`). Jeder Punkt hat jetzt genau eine Heimat: hier, oder er ist geschlossen.
+
+### ✅ GESCHLOSSEN — `cargo check --target x86_64-pc-windows-gnu` (totes Gate)
+
+Stirbt seit Story 8-1 an `ort-sys` (keine Cross-Compile-Binaries). Zwei Epic-8-Worker haben dafür
+mingw auf powerhouse installiert. **Zurückgezogen 2026-09-03.** Heimaten: Conductor-Contract
+`_bmad/custom/bmad-epic-conductor.toml` `[workers]` (Retired-Notiz) + `project-context.md`
+Testing-Regel „Never mutate the host to reach a gate". Die Windows-Aussage liefert nur
+`scripts/windows-build.sh`. Die drei Restnennungen in `epics-visual-overhaul.md:351`,
+`epics-native-overlays.md:144/231`, `epics-bar-redesign.md:214` sind DoDs **fertiger** Storys —
+Historie, nicht angefasst. Kein Follow-up.
+
+### ✅ GESCHLOSSEN — 8-1 Carry-forwards (Code-Review 2026-06-14, non-blocking)
+
+- **Geist Mono nur 400/500 gebündelt** (kein Mono-SemiBold/Bold). Bisher braucht keine Fläche
+  Mono ≥ 600. Wird erst relevant, wenn eine Story (8-6/8-7) eine fette Mono-Stelle im Canon
+  findet — dann `.woff2` aus `github.com/vercel/geist-font` nach `public/fonts/` + `@font-face`
+  in `src/styles.css`, nie CDN (NFR6). Bis dahin akzeptiert.
+- **`prefers-reduced-motion` setzt einige Motion-Tokens auf 1 ms statt 0 ms.** Harmlos (ein
+  Frame). Akzeptiert.
+
+### 8-5 Verlauf-Re-Skin — Review-Findings + Record-Residuen (Zeiger, Story bleibt `done`)
+
+`deferred-work.md` §„Deferred from: code review of 8-5-main-window-history-re-skin (2026-08-18)"
+(17 Findings) + §„final verification pass" (1 Finding). Wie beim 8-8-Eintrag oben: die SSOT zeigt,
+BMAD-nativ liegt der Text dort. Hervorzuheben, weil der 2. Fix-Round sie aufgewertet hat:
+
+- **`handleHistorySearch` ohne `try`/`catch`, beide Aufrufer lassen das Promise fallen**
+  (`src/App.tsx`, Story-File Zeile 303, MEDIUM). Seit dem Load-State-Umbau hängt
+  `historyLoadState` an diesem Pfad — eine abgelehnte IPC lässt den Verlauf auf „Loading…" stehen.
+  Gehört in die **nächste Story an der History-Fläche**, zusammen mit 8-8 Punkt 8 (hängendes
+  `delete_history_entry`), gleiche Ursache-Klasse.
+
+**Sieben offene `[ ]` im Story-File (Zeilen 304–311) sind Record-Bookkeeping** — falsche
+Hunk-Zählung, stale Zeilenanker, fehlender Change-Log-Eintrag für `ba5c2fc`, nicht gespiegelte
+AC-Carve-outs. Kein Code-Defekt. **Akzeptierte Record-Residuen, 8-5 nicht wieder aufmachen**
+(Präzedenz: 11-3). Die Lehre steht als Regel in `project-context.md` („Grep before declaring
+done" / „A number states what it covers").
+
+### Desktop Token-Enforcement-Gate — Desktop-Hälfte von ADR-0019 §2 (Story-Kandidat, Epic 8)
+
+**Problem.** Android kann nicht von den Design-Tokens driften: `KlarvoTheme.kt` ist aus den
+`--k-*`-Properties generiert, `scripts/gen-android-theme.mjs --check` bricht den Build bei
+Handedit (Story 9-10). **Desktop hat kein Gegenstück.** Nichts hindert eine Komponente in `src/`,
+rohes `#hex`/`rgba()` zu schreiben statt `var(--k-*)`. Epic 8 hat die Flächen einmalig auf
+Tokens gezogen; ohne Gate kommt die Drift beim nächsten Touch zurück.
+
+**Ansatz (Entwurf liegt in git, `6fabaf1`, `docs/architecture-review-followups.md` §1):**
+`scripts/check-desktop-tokens.mjs` — Zeilen-Grep über `src/**/*.{ts,tsx,css}` auf `#hex`,
+`rgb[a]()`, `hsl[a]()`; Allowlist `src/styles.css` (Token-Layer) + `src/App.css`; per-Zeile-Opt-out
+`klarvo-allow-color`; Exit 1 mit `file:line`. Spiegelt den Android-Gate-Stil (ESM, lautes
+Exit-1). Kein ESLint/stylelint im Projekt — bewusst kein neues Werkzeug.
+
+**Messung 2026-06-17 (vor Epic 8):** 353 Rohfarb-Zeilen, davon 261 in
+`src/components/ThemeSwitcher.tsx` (Paletten-Picker, definiert legitim Farbsets) und ~92 echte
+Komponenten-Drift auf genau den Epic-8-Flächen. **Neu messen, bevor die Story geschrieben wird** —
+8-1/8-2/8-5/8-8 haben seither viel davon getilgt; die Zahl ist Historie.
+
+**Die eine echte Entscheidung (nicht mechanisch):** ThemeSwitcher als Paletten-Quelle allowlisten
+oder in Tokens falten. Danach die Reihenfolge: (1) erst non-blocking `npm run check:tokens`, in
+`build` schalten, sobald `src/` sauber ist; oder (2) als **letzte** Story von Epic 8 nach 8-6/8-7.
+Da 8-6/8-7 geparkt sind, ist (1) der gangbare Weg.
+
+**DoD-Skizze:** `check:tokens` exit 0 auf sauberem `src/`, exit 1 mit `file:line` bei
+gepflanztem Hex; Allowlist + Opt-out wirken; einzeiliges **ADR-0019-Amendment**: „generiert/erzwungen,
+nicht handgetippt" gilt auch für Desktop, `src/styles.css` ist die einzige Rohfarb-Heimat.
+
+**Falle:** `epic-8` steht auf `done` → vor `bmad-create-story` auf `in-progress` zurück.
+Kontext: ADR-0019 · Story 9-10 · `ARCHITECTURE.md` §7/§8.
+
+### `document-project` Voll-Scan (einmalige BMAD-Aufgabe, keine Story)
+
+`docs/index.md` sagt: nur Deep-Dive-Modus, kein Voll-Scan. `ARCHITECTURE.md` ist die
+menschliche Eingangstür; die mechanische Code-Karte darunter fehlt. **Wenn es drankommt:**
+`bmad-document-project` → „Re-scan entire project". Keine Code-Änderung. Frühestens sinnvoll nach
+Epic 7 (Rust↔Kotlin-Twins ändern sich dort), sonst ist die Karte beim nächsten Merge alt.

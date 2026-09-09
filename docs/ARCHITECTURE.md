@@ -199,8 +199,8 @@ visibility only — the call to act on them lives in the backlog / a new story (
 
 | Limitation (what the system does *not* do today) | Owned by |
 |---|---|
-| Desktop has **no token-enforcement gate** — raw hex/`rgba()` can be hardcoded in `src/` components (e.g. `FloatingBar.tsx`); only Android has the `--check` codegen gate. | **— not yet owned** (Epic 8 re-skins surfaces, but no enforcement-gate story exists). |
-| **No full mechanical project map** — `document-project` has never run a full scan. | **— not yet owned** (BMAD `document-project` re-scan would produce it). |
+| Desktop has **no token-enforcement gate** — raw hex/`rgba()` can be hardcoded in `src/` components (e.g. `FloatingBar.tsx`); only Android has the `--check` codegen gate. | `docs/backlog.md` § "Epic-8-Retro AI-4" — story candidate "Desktop Token-Enforcement-Gate" (Epic 8, not yet written). |
+| **No full mechanical project map** — `document-project` has never run a full scan. | `docs/backlog.md` § "Epic-8-Retro AI-4" — one-off BMAD task (`document-project` full scan), earliest after Epic 7. |
 | `config/mod.rs` is 4242 LOC (largest file). | Epic 4 (done) — `load_config` core isolated (4-1), single write path (4-3); remaining size accepted. |
 | Chunking / live-VAD / LLM-routing are duplicated per platform. | ADR-0016 A2 — deliberate asymmetry; Epic 7 (parked): 7-1, 7-2, 7-5. |
 | Dead config keys (settable, consumed nowhere) + no golden-vector parity net. | Epic 7-7 (backlog) + `docs/backlog.md`. |
