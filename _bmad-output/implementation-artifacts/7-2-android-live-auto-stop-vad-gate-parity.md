@@ -1,6 +1,6 @@
 # Story 7.2: Android live auto-stop VAD-gate parity
 
-Status: review
+Status: in-progress
 
 <!-- Test-Architect REQUIRED before dev-story: run *risk + *design on this story (can truncate user speech — see epic Test-Architect note). See Dev Notes → "Pre-dev: Test-Architect gate". -->
 
@@ -284,6 +284,64 @@ about **test binding and comment accuracy**, not about the shipped numeric behav
 - [x] [Review][Patch] Task 6 checkbox overstates what was done — line 244 claims `SilenceThresholdTest.kt` was extended; `git diff 1d3e31b..HEAD` shows the file untouched and the File List correctly omits it. AC1 permitted "or add a sibling test", so the AC itself survives via `HighpassFilterTest.kt` — only the checked subtask is wrong. Fix: correct the checkbox text (project-context: "Grep before declaring done").
 - [x] [Review][Defer] Silero is invoked on sub-gate frames, diverging from Rust's stateful model trajectory [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:463] — deferred, pre-existing
 - [x] [Review][Defer] `framesForSeconds` is a generically-named converter that now silently refuses to return < 7 [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:149-150] — deferred, pre-existing (naming), correct for both current call sites per GATE-1
+
+### Review Findings — round 2 (scoped re-review of fix round 1)
+
+Code review 2026-09-09, scoped to the committed range `819a01c..HEAD` (fix commit `973cc71`).
+Blind Hunter + Edge Case Hunter + Acceptance Auditor. Mandate: verify the 10 round-1
+`[Review][Patch]` findings are resolved and that the touched lines regressed nothing — NOT a fresh
+full adversarial sweep. The 2 round-1 `[Review][Defer]` items were out of scope and untouched.
+
+**Per-finding verdict on round 1 (7 of 10 fully resolved):**
+
+| # | Round-1 finding | Verdict |
+|---|---|---|
+| 1 | No test binds the production VAD-gate wiring | **partially resolved** (see R2-P2) |
+| 2 | AC4 divisor not pinned by any test | resolved |
+| 3 | AC3 85 Hz cutoff not pinned by any test | resolved |
+| 4 | `groq_jni.rs` "corrected" line reference itself wrong | resolved in `groq_jni.rs`, same defect re-committed in Kotlin (see R2-P4) |
+| 5 | AC5 JSON-parse path untested + tautological default test | resolved |
+| 6 | `VadGateRmsFixtureTest` never opens its fixture; `expected_rms_kotlin` dead | resolved |
+| 7 | AC7 energy-floor vectors exercise none of this story's fixes | **not resolved** (see R2-P1) |
+| 8 | Stale/contradictory KDoc left by AC1/AC2/AC4 | **partially resolved** (see R2-P3) |
+| 9 | 2 KB `FloatArray` allocated ~31x/s on the audio thread | resolved |
+| 10 | Task 6 checkbox overstates what was done | resolved |
+
+**No AC1–AC7 numeric regression on the touched lines.** Re-verified: `HighpassFilter` coefficients
+untouched and analytically correct (RBJ biquad, gain exactly `1/sqrt(2)` at 85 Hz, exactly unity at
+Nyquist); `framesForSeconds` still `ceil(secs * 31.25).coerceAtLeast(7)` with `MIN_SILENT_FRAMES =
+ceil(200/32) = 7`; divisor value unchanged at `32767f` (visibility only); config wiring intact. The
+scratch-buffer swap is numerically identical — `processVadFrame`'s sole caller is `feedVad:453`
+passing `vadRingBuffer`, whose size is exactly `VAD_FRAME_SIZE` == `filteredFrameScratch.size`, and
+all 512 slots are overwritten per call.
+
+**`testImplementation("org.json:json:20231013")` — both claims CONFIRMED.** (a) Test-only: it is on
+the `testImplementation` configuration in the generated `app/build.gradle.kts:72`, which AGP never
+places on any variant's packaging classpath — it cannot reach the shipped APK. (b) Survives
+`tauri android init` regeneration: the patch block (`scripts/android-build.sh:206-213`) is
+grep-guarded, idempotent, and runs unconditionally on every `android-build.sh` invocation;
+`android-build.sh` never runs `tauri android init` itself (it hard-fails at `:65` on a missing
+tree), so a manual regeneration is necessarily followed by a re-patch. The `sed` anchor
+`testImplementation("junit:junit:4.13.2")` is Tauri-template-provided (not patch-added) and is
+present. Residual coupling noted under R2-D2.
+
+**Patch findings:**
+
+- [ ] [Review][Patch] Round-1 finding 7 is NOT resolved — the AC7 energy-floor golden vectors are still provably insensitive to both fixes they were reworked to exercise [android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:175-185] — the rework does route raw i16 samples through the production seam as asked, but the chosen signal defeats it. (a) The signal is a Nyquist square wave and the Butterworth HPF has *exactly* unity gain at Nyquist (`H(-1) = 2(1+cos w)/2(1+cos w) = 1`); simulated against the real coefficients, deleting the highpass entirely changes the measured RMS by `0.000e+00`. (b) `:182` derives the input amplitude as `ceil(targetRms * KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR)` and `vadGateFilteredFrame` then divides by that same constant — it cancels; simulated, reverting the divisor to `32768f` leaves all six gate-open/closed outcomes unchanged. So VAD-GATE-001..006 still assert only `isEnergyAboveGate`'s bare `>=` plus i16 quantization — round 1's exact critique, now with more machinery in front of it. Deriving the test *input* from the SUT's own constant also contradicts this file's own KDoc guarantee at `:14-20` ("not from calling ... and recording whatever they return"). Side note: the fixture description's "within quantization noise (~1e-5)" is itself off — VAD-GATE-001 lands 2.8e-5 from its target. Fix: use a bass tone (20-60 Hz) for at least one gate-closed vector so the filter is load-bearing, and derive the amplitude from a literal `32767` in the fixture rather than from the production constant. The stop-latency vectors (VAD-LATENCY-001..003) remain sound.
+- [ ] [Review][Patch] Round-1 finding 1 is only half resolved — Silero's input is still unpinned [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:496] — the seam was extracted and the RMS half is now genuinely locked, but `processVadFrame` stays private, stateful and untested (grep: no test references it outside comments). Reverting `vad?.isSpeech(filteredFrame)` to `isSpeech(frame)` compiles (the `short[]` overload exists on `VadSilero`) and leaves every test green; so does dropping the seam call at `:488` for an inline raw-RMS computation. The new KDoc at `:202-206` asserts the opposite ("without it, reverting the filter, the divisor, or the Silero input left every test green"), which now over-claims — the Silero-input revert is still undetected. Fix: extend the seam to the whole gate decision (e.g. `vadGateDecision(frame, length, filter, out, threshold): Pair<Float, Boolean>`) and have `processVadFrame` call that, or correct the KDoc claim at `:204-206` to name the remaining gap.
+- [ ] [Review][Patch] Round-1 finding 8 is only partly resolved — `SILENCE_THRESHOLD` still appears in the very KDoc block the finding named [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:464] — only the trailing "Previously:" paragraph (`:473-476`) was rewritten; the present-tense state-machine description above it still reads "Energy gate below SILENCE_THRESHOLD -> onsetFrames = 0". `SILENCE_THRESHOLD` has no declaration anywhere in the source; the gate uses the instance field `energyGateThreshold`. Same class in the class-header KDoc at `:34` and `:36` ("The RMS energy gate is kept as a pre-filter: frames below SILENCE_THRESHOLD are treated as silence"). The two items finding 8 named individually (the `framesForSeconds` block merge at `:132-149` and the `isEnergyAboveGate` `@param` at `:94-95`) are correctly fixed. Fix: replace `SILENCE_THRESHOLD` with `energyGateThreshold` at `:464`, `:34` and `:36`.
+- [ ] [Review][Patch] Round-1 finding 4's defect was fixed in Rust and simultaneously re-committed in Kotlin, in the same commit [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:487] — `groq_jni.rs:338` correctly drops the line-number range for symbol names, but the comment rewritten in this same diff still cites "the display-path RMS ([calculateRms] at :312...)". `calculateRms`'s call site is `:412` and its declaration is `:672`; line 312 is an unrelated `AudioRecord.getMinBufferSize` block — and this diff itself inserted ~30 lines above it. Fix: drop the numeric anchor, cite the symbol only (as `:283` already does correctly).
+- [ ] [Review][Patch] `samplesFor` silently converts a malformed fixture vector into a silence vector [android/kotlin-test/com/klarvo/voice/VadGateRmsFixtureTest.kt:95,102] — `optDouble("amplitude", 0.0)` combined with `if (amplitude == 0f) silenceShorts(durationMs)` means a `synthetic` vector that loses its `amplitude` key (typo, schema change) becomes an all-zero signal instead of an error. For RMS-003 (`expected_rms_kotlin: 0.0`) that passes green — exactly the "silently inert while reporting green" failure mode this round exists to eliminate. The `sine` branch is inconsistently strict (`getDouble("freq_hz")` throws, `optDouble("amplitude")` does not). Fix: use `getDouble("amplitude")` and give silence its own explicit encoding type.
+- [ ] [Review][Patch] `assertTrue(exercised > 0)` is a materially weaker guard than the three named tests it replaced [android/kotlin-test/com/klarvo/voice/VadGateRmsFixtureTest.kt:124] — deleting `rms003`/`rms004`/`rms005` removed per-ID coverage; if a fixture edit nulls `expected_rms_kotlin` on two of the four exercised vectors, the suite still passes on the remaining one. Fix: assert the exact expected set of exercised IDs (or the exact count, currently 4).
+- [ ] [Review][Patch] `vadGateFilteredFrame` is fully `public` on a shipped class, while its two sibling constants were deliberately widened only to `internal` in the same commit [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:208] — `HIGHPASS_CUTOFF_HZ` and `VAD_RMS_NORMALIZATION_DIVISOR` each got `internal` plus a justifying comment; the new function got no modifier at all, for the same test-only reason. Fix: make it `internal` and mark all three `@VisibleForTesting`.
+
+**Deferred (residual — new, independent, not caused by an unresolved round-1 finding):**
+
+- [x] [Review][Defer] `vadGateFilteredFrame` has no guard relating `length`, `frame.size` and `out.size` [android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt:208-219] — the scratch buffer decoupled output length from frame length (previously the per-frame allocation enforced `filteredFrame.size == frame.size` by construction). Not reachable today (sole caller passes `vadRingBuffer`, size exactly `VAD_FRAME_SIZE`), but the seam is now public API and its KDoc invites test callers to "pass a fresh array". Deferred — latent, no current defect. Guard: `require(length in 0..minOf(frame.size, out.size))`.
+- [x] [Review][Defer] The script that runs the Kotlin unit tests does not own the gradle patch they now depend on [scripts/android-smoke.sh:187] — `android-smoke.sh` runs `:app:testUniversalDebugUnitTest` but applies no gradle patches; the `org.json` `testImplementation` is added only by `android-build.sh:206-213`. Deferred — cannot produce a false green (no `testOptions.unitTests.returnDefaultValues` in the generated file, so a missing artifact yields a loud "not mocked" `RuntimeException`), and `android-smoke.sh` hard-fails at `:55`/`:60` on a wiped `gen/android/`. Related pre-existing gap: `scripts/android-emulator-smoke.sh:99` runs only `assembleUniversalDebug` and no unit tests at all.
+- [x] [Review][Defer] `parseMinRecordingMs` accepts negative and absurd values unguarded [android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:305-306] — Rust's `min_recording_ms: u32` cannot be negative; Kotlin's `optLong` will happily return `-1`. Deferred — pre-existing class, `silenceThreshold` has the identical gap.
+- [x] [Review][Defer] `cutoff_isAt85Hz_minus3dbCorner` pins the corner frequency but not the filter order [android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt:79-96] — a 1st-order RC highpass at 85 Hz also reads `1/sqrt(2)` at 85 Hz, so no test distinguishes the 2nd-order Butterworth biquad from a one-pole. This matters because the AC7 vectors' unity-gain-at-Nyquist argument depends on the biquad topology. Deferred — round-1 finding 3 asked for a corner assertion through the production constant and got exactly that (verified: simulated peaks at 85 Hz for cutoffs 60/70/85/95/300 Hz are 0.895/0.828/**0.707**/0.625/0.080, so only 85 Hz passes the +/-0.02 band). Strengthen later with a rolloff-slope probe.
+- [x] [Review][Defer] New test-local duplicates of production constants, in the round that exists to remove them [android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:151-152] — `val frameSize = 512` and `HighpassFilter(..., 16000f)` duplicate `KlarvoAudioRecorder.VAD_FRAME_SIZE` and `SAMPLE_RATE` (same in `HighpassFilterTest.kt:141`). Deferred — same class as round-1 findings 2/3, no current divergence.
 
 ## Dev Notes
 
