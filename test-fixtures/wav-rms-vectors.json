@@ -52,6 +52,6 @@
     "expected_rms": 0.5,
     "tolerance": 1e-4,
     "expected_rms_kotlin": null,
-    "divergence_reason": "Kotlin SilencePreFilter.computeWavRms only handles audioFormat=1 (16-bit PCM); float32 WAVs have audioFormat=3. The audioFormat guard (added in Story 3.3) causes Kotlin to return null. Rust's compute_wav_rms correctly returns Some(0.5) via its SampleFormat::Float path. This asymmetry is intentional and documented."
+    "divergence_reason": "Kotlin has no WAV-container-decoding RMS consumer at all post-Story-7.3 (SilencePreFilter.computeWavRms, which handled only audioFormat=1/16-bit PCM, was deleted when the pre-STT check moved behind the shared Rust JNI call nativeSilenceCheck). The only remaining Kotlin RMS consumer, KlarvoAudioRecorder.calculateRmsFloat (the live VAD-gate path), takes raw Short/i16 frames directly and never decodes a WAV container or a float32 sample format, so this vector has no Kotlin-side equivalent to compute. Rust's compute_wav_rms correctly returns Some(0.5) via its SampleFormat::Float path. This asymmetry is intentional and documented."
   }
 ]

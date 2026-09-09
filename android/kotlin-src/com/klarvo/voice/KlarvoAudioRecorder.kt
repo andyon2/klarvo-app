@@ -91,7 +91,8 @@ class KlarvoAudioRecorder(
          * Returns true when [normalizedRms] is at or above [threshold], meaning the frame has
          * enough energy to be passed to the VAD model.
          *
-         * @param normalizedRms  Per-frame RMS normalized to [0, 1] (raw RMS / 32768).
+         * @param normalizedRms  Per-frame RMS normalized to [0, 1] (highpass-filtered signal,
+         *                       divided by [VAD_RMS_NORMALIZATION_DIVISOR] = 32767, AC1/AC3/AC4).
          * @param threshold      Energy gate threshold; caller supplies the configured value.
          */
         fun isEnergyAboveGate(normalizedRms: Float, threshold: Float): Boolean =
@@ -133,9 +134,10 @@ class KlarvoAudioRecorder(
          * verify a larger silence-seconds value yields a larger frame threshold WITHOUT an
          * Android Context. Used for both [requiredSilentFrames] (one-shot AUTOSTOP/AUTO path)
          * and [previewRequiredSilentFrames] (repeatable preview-pause edge) -- same formula,
-         * different independent inputs, so the preview slider is never inert.
-         */
-        /**
+         * different independent inputs, so the preview slider is never inert (subject to the
+         * [MIN_SILENT_FRAMES] floor below, which collapses very small values together by design,
+         * AC2/H17).
+         *
          * L1/H17 (AC6/AC2, Story 7-2): frame count uses the EXACT 31.25 fps with [ceil]
          * (matching Rust's rounding direction, `src-tauri/src/vad/mod.rs:239-242`) -- the old
          * truncated integer 31 under-counted frames, requiring fewer silence frames than Rust
@@ -172,7 +174,9 @@ class KlarvoAudioRecorder(
 
         // Highpass cutoff for the VAD-gate pre-filter (M3, AC3). Matches Rust's
         // `VadConfig::highpass_cutoff_hz` default (`src-tauri/src/vad/mod.rs:88`).
-        private const val HIGHPASS_CUTOFF_HZ = 85f
+        // Internal (not private) so a JVM test can pin the -3dB corner against the real
+        // production value instead of a test-local duplicate (Story 7-2 review finding).
+        internal const val HIGHPASS_CUTOFF_HZ = 85f
 
         /**
          * Normalization divisor for VAD-gate RMS/highpass-filter input (M4, AC4, Story 7-2).
@@ -180,9 +184,39 @@ class KlarvoAudioRecorder(
          * 32768f (2^15) previously used at the energy-gate call site. A ~0.003% scale
          * correction, smaller than the M3 filtering gap (AC3) but needed for exact parity.
          * Display-path normalization ([smoothedAmplitude]) is untouched and keeps /32768f --
-         * this constant is VAD-gate-only.
+         * this constant is VAD-gate-only. Internal (not private) so a JVM test can assert
+         * against the real production constant instead of a test-local copy (Story 7-2 review
+         * finding).
          */
-        private const val VAD_RMS_NORMALIZATION_DIVISOR = 32767f
+        internal const val VAD_RMS_NORMALIZATION_DIVISOR = 32767f
+
+        /**
+         * H1/M3/M4 (AC1/AC3/AC4): normalizes [length] samples of [frame] to [-1,1] (dividing by
+         * [VAD_RMS_NORMALIZATION_DIVISOR], matching Rust's i16::MAX) THEN highpass-filters each
+         * sample through [filter] -- mirrors Rust's normalize-before-filter order
+         * (`audio/mod.rs:766` normalizes by `i16::MAX` before `SileroVad::feed`, which filters
+         * internally). Writes into [out] and returns it (the caller passes a reused scratch
+         * buffer in production to avoid a per-frame allocation on the audio thread; tests may
+         * pass a fresh array).
+         *
+         * Extracted to the companion object so a JVM test can drive the EXACT chain
+         * [processVadFrame] feeds into both [calculateRmsFloat] (AC1's energy gate) and Silero's
+         * `vad.isSpeech` (AC3) -- this is the seam Story 7-2's review found missing: without it,
+         * reverting the filter, the divisor, or the Silero input left every test green because
+         * tests re-implemented this sequence instead of calling it.
+         */
+        fun vadGateFilteredFrame(
+            frame: ShortArray,
+            length: Int,
+            filter: HighpassFilter,
+            out: FloatArray
+        ): FloatArray {
+            for (i in 0 until length) {
+                val normalized = frame[i] / VAD_RMS_NORMALIZATION_DIVISOR
+                out[i] = filter.process(normalized)
+            }
+            return out
+        }
     }
 
     init {
@@ -249,6 +283,11 @@ class KlarvoAudioRecorder(
     // instance lifecycle (`vad/mod.rs:292-296`). The display-path RMS ([calculateRms], fed by
     // the raw unfiltered signal) is intentionally NOT routed through this filter.
     private val highpassFilter = HighpassFilter(HIGHPASS_CUTOFF_HZ, SAMPLE_RATE.toFloat())
+
+    // Reused scratch buffer for the normalized+filtered VAD-gate frame ([vadGateFilteredFrame]
+    // output), always exactly VAD_FRAME_SIZE. Avoids allocating a new 2 KB FloatArray on every
+    // ~32 ms frame (~31x/s, ~64 KB/s of garbage) on the audio recording thread.
+    private val filteredFrameScratch = FloatArray(VAD_FRAME_SIZE)
 
     // Ring buffer for feeding exactly VAD_FRAME_SIZE samples to Silero.
     // AudioRecord delivers variable-size chunks; we accumulate them here.
@@ -431,9 +470,10 @@ class KlarvoAudioRecorder(
      *     - VAD true                                 → silentFrames = 0 (hangover reset)
      *     - silentFrames >= requiredSilentFrames     → fire onSilenceDetected
      *
-     * Previously: a single RMS threshold (SILENCE_THRESHOLD = 0.03) determined
-     * speech vs. silence for entire AudioRecord chunks (~8192/2 = 4096 samples).
-     * Now: VAD model runs on 512-sample frames with onset and hangover hysteresis.
+     * Previously: a single RMS threshold determined speech vs. silence for entire
+     * AudioRecord chunks (~8192/2 = 4096 samples), on the raw unfiltered signal.
+     * Now: VAD model runs on 512-sample frames (normalized + highpass-filtered, AC1/AC3/AC4)
+     * with onset and hangover hysteresis.
      */
     private fun processVadFrame(frame: ShortArray) {
         // Story 11-2 (AC-2): the old top-of-function `if (silenceCallbackFired) return` guard
@@ -441,18 +481,11 @@ class KlarvoAudioRecorder(
         // repeatable preview edge) forever after the one-shot callback fired once. The one-shot
         // guard is now scoped locally to the onSilenceDetected branch below, where it belongs.
 
-        // H1/M3/M4 (AC1/AC3/AC4): normalize to [-1,1] (dividing by VAD_RMS_NORMALIZATION_DIVISOR
-        // = Short.MAX_VALUE = 32767, matching Rust's i16::MAX) THEN highpass-filter -- mirrors
-        // Rust's audio/mod.rs normalization order (samples are normalized by i16::MAX BEFORE
-        // being fed to SileroVad::feed, which filters internally at vad/mod.rs:267-272). Both
-        // the energy-gate RMS (AC1) and the Silero call (AC3) now see the SAME filtered signal
-        // Rust compares against; the display-path RMS ([calculateRms] at :312, fed by [buf]
-        // above) stays on the raw, unfiltered signal (AC3 decision).
-        val filteredFrame = FloatArray(frame.size)
-        for (i in frame.indices) {
-            val normalized = frame[i] / VAD_RMS_NORMALIZATION_DIVISOR
-            filteredFrame[i] = highpassFilter.process(normalized)
-        }
+        // H1/M3/M4 (AC1/AC3/AC4): normalize + highpass-filter through the shared companion seam
+        // (vadGateFilteredFrame) -- both the energy-gate RMS (AC1) and the Silero call (AC3) see
+        // the SAME filtered signal Rust compares against; the display-path RMS ([calculateRms]
+        // at :312, fed by [buf] above) stays on the raw, unfiltered signal (AC3 decision).
+        val filteredFrame = vadGateFilteredFrame(frame, frame.size, highpassFilter, filteredFrameScratch)
 
         // Energy gate: avoid calling the ONNX model for clearly silent frames.
         // Uses the instance energyGateThreshold (from config.json "advanced.silenceThreshold")

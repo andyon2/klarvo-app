@@ -17,6 +17,16 @@ import java.io.File
  * frame count: `ceil(secs * 31.25).coerceAtLeast(7)`), not from calling
  * [KlarvoAudioRecorder.isEnergyAboveGate]/[KlarvoAudioRecorder.framesForSeconds] and recording
  * whatever they return (feedback_test_must_not_judge_sut_with_itself).
+ *
+ * The energy-floor vectors feed RAW i16 sample frames through the actual RMS computation this
+ * story changed -- [KlarvoAudioRecorder.vadGateFilteredFrame] (normalize + highpass-filter) then
+ * [KlarvoAudioRecorder.calculateRmsFloat] -- rather than asserting a pre-computed `normalized_rms`
+ * straight into `isEnergyAboveGate`'s bare `>=` (Story 7-2 review finding: the latter never
+ * exercised the filtered signal or the 32767 divisor this story actually changed). Each vector's
+ * raw signal is a Nyquist-frequency square wave (see [nyquistSquareWaveShorts]), which a
+ * Butterworth highpass passes at EXACTLY unity gain -- so the filtered RMS lands within
+ * quantization noise (~1e-5) of the fixture's `target_normalized_rms`, far smaller than the 0.001
+ * gap between neighboring vectors, without needing the filter's effect on the outcome itself.
  */
 class VadGateGoldenVectorsTest {
 
@@ -118,6 +128,43 @@ class VadGateGoldenVectorsTest {
         return (parseJson(found.readText()) as JsonVal.Arr).list
     }
 
+    /**
+     * A raw i16 square wave alternating +[amplitudeShort]/-[amplitudeShort] every sample --
+     * exactly the Nyquist frequency (8 kHz at a 16 kHz sample rate). A 2nd-order Butterworth
+     * highpass has EXACT unity gain at Nyquist (the frequency-response numerator/denominator
+     * both reduce to the same value there, independent of the cutoff), so this signal's RMS is
+     * unchanged by [KlarvoAudioRecorder.vadGateFilteredFrame]'s highpass step -- letting us target
+     * a precise post-filter RMS without fighting the filter's frequency response.
+     */
+    private fun nyquistSquareWaveShorts(amplitudeShort: Short, frameCount: Int): ShortArray {
+        val n = frameCount * 512
+        return ShortArray(n) { i -> if (i % 2 == 0) amplitudeShort else (-amplitudeShort).toShort() }
+    }
+
+    /**
+     * Feeds [samples] through the real production seam ([KlarvoAudioRecorder.vadGateFilteredFrame]
+     * then [KlarvoAudioRecorder.calculateRmsFloat]) in 512-sample frames, skipping the first
+     * [settleFrames] so the highpass filter's delay line has settled before RMS is measured.
+     */
+    private fun productionFilteredRms(samples: ShortArray, settleFrames: Int = 4): Float {
+        val filter = HighpassFilter(KlarvoAudioRecorder.HIGHPASS_CUTOFF_HZ, 16000f)
+        val frameSize = 512
+        val scratch = FloatArray(frameSize)
+        val tail = ArrayList<Float>()
+        var frameIndex = 0
+        var pos = 0
+        while (pos + frameSize <= samples.size) {
+            val frame = samples.copyOfRange(pos, pos + frameSize)
+            val filtered = KlarvoAudioRecorder.vadGateFilteredFrame(frame, frameSize, filter, scratch)
+            if (frameIndex >= settleFrames) {
+                for (value in filtered) tail.add(value)
+            }
+            pos += frameSize
+            frameIndex++
+        }
+        return KlarvoAudioRecorder.calculateRmsFloat(tail.toFloatArray(), tail.size)
+    }
+
     @Test
     fun energyFloorVectors_matchIsEnergyAboveGate_atDefaultAndTunedThreshold() {
         val vectors = loadFixture().filter { (it as JsonVal.Obj).optString("category") == "energy-floor" }
@@ -125,11 +172,21 @@ class VadGateGoldenVectorsTest {
         for (v in vectors) {
             val id = v.optString("id")
             val threshold = v.optDouble("silence_threshold").toFloat()
-            val rms = v.optDouble("normalized_rms").toFloat()
+            val targetRms = v.optDouble("target_normalized_rms").toFloat()
             val expectedOpen = v.optBool("expected_gate_open")
-            val actualOpen = KlarvoAudioRecorder.isEnergyAboveGate(rms, threshold)
+
+            // ceil (not round): guarantees the quantized short amplitude's normalized value is
+            // >= targetRms, so the "at threshold" vectors (target == threshold exactly) resolve
+            // to gate-open under the shared >= semantics instead of occasionally quantizing
+            // 1 unit below the threshold (e.g. round(0.02 * 32767) = 655 -> 0.0199896... < 0.02).
+            val amplitudeShort = kotlin.math.ceil(targetRms * KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR).toInt().toShort()
+            val samples = nyquistSquareWaveShorts(amplitudeShort, frameCount = 16)
+            val actualRms = productionFilteredRms(samples)
+            val actualOpen = KlarvoAudioRecorder.isEnergyAboveGate(actualRms, threshold)
+
             assertEquals(
-                "$id: isEnergyAboveGate(rms=$rms, threshold=$threshold) must be $expectedOpen",
+                "$id: production-seam RMS ($actualRms, target was $targetRms) vs threshold=$threshold " +
+                    "-- isEnergyAboveGate must be $expectedOpen",
                 expectedOpen,
                 actualOpen
             )

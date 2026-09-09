@@ -1,5 +1,6 @@
 package com.klarvo.voice
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -31,8 +32,38 @@ class MinRecordingMsConfigTest {
     @Test
     fun defaultConfig_minRecordingMs_is500_matchesRustDefault() {
         // Independent expected value: 500L, from Rust AdvancedSettings::min_recording_ms
-        // default (src-tauri/src/config/mod.rs:217-219).
-        assertEquals(500L, baseConfig(minRecordingMs = 500L).minRecordingMs)
+        // default (src-tauri/src/config/mod.rs:217-219). Constructed WITHOUT an explicit
+        // minRecordingMs argument (unlike the old version of this test, which passed 500L in
+        // and asserted 500L back out -- a tautology that would still pass if the declared
+        // default became 0L) so the assertion exercises Config's actual default value.
+        val config = KlarvoApi.Config(
+            groqApiKey = "gsk-test",
+            deepseekApiKey = "",
+            language = "en",
+            cleanupStyle = "verbatim",
+            tursoUrl = "",
+            tursoToken = "",
+            deviceId = "test-device"
+        )
+        assertEquals(500L, config.minRecordingMs)
+    }
+
+    /**
+     * AC5's real JSON-parse path (Story 7-2 review finding): [KlarvoApi.parseMinRecordingMs]
+     * previously had no test driving actual `config.json` text through `org.json.JSONObject` --
+     * a wrong/misspelled JSON key would have made the setting silently inert with the feature
+     * reporting green. Feeds a real config string through the production parser.
+     */
+    @Test
+    fun jsonParse_minRecordingMs_nonDefault_parsesFromConfigJsonString_ac5() {
+        val json = JSONObject("""{"advanced":{"minRecordingMs":750}}""")
+        assertEquals(750L, KlarvoApi.parseMinRecordingMs(json))
+    }
+
+    @Test
+    fun jsonParse_minRecordingMs_default_whenAdvancedKeyAbsent_ac5() {
+        val json = JSONObject("{}")
+        assertEquals(500L, KlarvoApi.parseMinRecordingMs(json))
     }
 
     @Test

@@ -3,54 +3,54 @@
     "id": "VAD-GATE-001",
     "category": "energy-floor",
     "config": "default",
-    "description": "energy-floor gate at default silenceThreshold=0.005 -- just below threshold",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- just below threshold. Signal: a Nyquist-frequency square wave (raw i16 samples alternating +amplitude/-amplitude every sample) scaled so its normalized amplitude equals target_normalized_rms. A Butterworth highpass has EXACT unity gain at Nyquist (proven: the filtered RMS matches the raw normalized amplitude to float precision), so feeding this through the real production seam (KlarvoAudioRecorder.vadGateFilteredFrame + calculateRmsFloat) yields a filtered RMS within quantization noise (~1e-5) of target_normalized_rms -- far smaller than the 0.001 gap to the neighboring vectors, so gate-open/closed outcomes are unaffected by the approximation.",
     "silence_threshold": 0.005,
-    "normalized_rms": 0.004,
+    "target_normalized_rms": 0.004,
     "expected_gate_open": false
   },
   {
     "id": "VAD-GATE-002",
     "category": "energy-floor",
     "config": "default",
-    "description": "energy-floor gate at default silenceThreshold=0.005 -- at threshold (>= semantics)",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- at threshold (>= semantics). Same Nyquist-square-wave signal construction as VAD-GATE-001.",
     "silence_threshold": 0.005,
-    "normalized_rms": 0.005,
+    "target_normalized_rms": 0.005,
     "expected_gate_open": true
   },
   {
     "id": "VAD-GATE-003",
     "category": "energy-floor",
     "config": "default",
-    "description": "energy-floor gate at default silenceThreshold=0.005 -- above threshold",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- above threshold. Same Nyquist-square-wave signal construction as VAD-GATE-001.",
     "silence_threshold": 0.005,
-    "normalized_rms": 0.006,
+    "target_normalized_rms": 0.006,
     "expected_gate_open": true
   },
   {
     "id": "VAD-GATE-004",
     "category": "energy-floor",
     "config": "tuned",
-    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- just below threshold",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- just below threshold. Same Nyquist-square-wave signal construction as VAD-GATE-001.",
     "silence_threshold": 0.02,
-    "normalized_rms": 0.019,
+    "target_normalized_rms": 0.019,
     "expected_gate_open": false
   },
   {
     "id": "VAD-GATE-005",
     "category": "energy-floor",
     "config": "tuned",
-    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- at threshold (>= semantics)",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- at threshold (>= semantics). Same Nyquist-square-wave signal construction as VAD-GATE-001.",
     "silence_threshold": 0.02,
-    "normalized_rms": 0.02,
+    "target_normalized_rms": 0.02,
     "expected_gate_open": true
   },
   {
     "id": "VAD-GATE-006",
     "category": "energy-floor",
     "config": "tuned",
-    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- above threshold",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- above threshold. Same Nyquist-square-wave signal construction as VAD-GATE-001.",
     "silence_threshold": 0.02,
-    "normalized_rms": 0.021,
+    "target_normalized_rms": 0.021,
     "expected_gate_open": true
   },
   {

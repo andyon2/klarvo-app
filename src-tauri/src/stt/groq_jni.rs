@@ -335,9 +335,9 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeStripPromptFrag
 /// Replaces `SilencePreFilter.check()` in Kotlin.
 ///
 /// `min_recording_ms` and `silence_threshold` are read from `config.json` by the Kotlin
-/// caller (`KlarvoOverlayService.kt:1852-1854`: `cachedConfig?.minRecordingMs` /
-/// `silenceThreshold`, both config-driven since Story 7.2, AC5) and passed in here as
-/// arguments -- `500L`/`0.005f` are only the Kotlin caller's null-safe fallback defaults,
+/// caller (`KlarvoOverlayService.resolveMinRecordingMsForSilenceFilter(cachedConfig)` /
+/// the `silenceThreshold` field, both config-driven since Story 7.2, AC5) and passed in here
+/// as arguments -- `500L`/`0.005f` are only the Kotlin caller's null-safe fallback defaults,
 /// matching the desktop pipeline defaults. This function itself stays pure / config-free.
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck(

@@ -203,6 +203,15 @@ if ! grep -q 'android-vad' "$APP_GRADLE" 2>/dev/null; then
     echo "[patch] Added android-vad:silero dependency"
 fi
 
+# Real org.json implementation on the unit-test classpath -- android.jar's org.json classes
+# are stubs that throw "not mocked" under JVM unit tests. Adding the real artifact as
+# testImplementation resolves ahead of the stub, letting tests exercise the actual
+# KlarvoApi.kt JSON-parsing code paths (Story 7-2 review finding) without Robolectric.
+if ! grep -q 'testImplementation("org.json:json' "$APP_GRADLE" 2>/dev/null; then
+    sed -i '/testImplementation("junit:junit/a\    testImplementation("org.json:json:20231013")' "$APP_GRADLE"
+    echo "[patch] Added org.json:json testImplementation dependency"
+fi
+
 # ---------------------------------------------------------------------------
 # 7. ProGuard keep-rules for our Kotlin classes
 # ---------------------------------------------------------------------------

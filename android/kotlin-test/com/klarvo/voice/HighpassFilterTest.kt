@@ -27,7 +27,14 @@ import kotlin.math.sin
 class HighpassFilterTest {
 
     private val sampleRateHz = 16000f
-    private val cutoffHz = 85f
+
+    /**
+     * Production cutoff constant ([KlarvoAudioRecorder.HIGHPASS_CUTOFF_HZ]) -- NOT a test-local
+     * `85f` duplicate. Filter instances below are built with this so a drifted production value
+     * (e.g. 300 Hz, which the pre-fix tests couldn't distinguish from 85 Hz) is caught by
+     * [cutoff_isAt85Hz_minus3dbCorner] below (Story 7-2 review finding).
+     */
+    private val cutoffHz = KlarvoAudioRecorder.HIGHPASS_CUTOFF_HZ
 
     // ---------------------------------------------------------------------------
     // Direct port of Rust's BiquadHighpass reference tests (vad/mod.rs:622-658).
@@ -63,6 +70,36 @@ class HighpassFilterTest {
         )
     }
 
+    /**
+     * Story 7-2 review finding: the two tests above (DC blocked, 1 kHz passed) are satisfied by
+     * ANY cutoff roughly in [40, 300] Hz -- they don't pin the exact 85 Hz value AC3 requires.
+     * This test drives a filter built from the PRODUCTION [cutoffHz] constant with a probe tone
+     * at the literal AC3-specified 85 Hz (an independent value, not derived from [cutoffHz]) and
+     * asserts the Butterworth -3dB corner gain (1/sqrt(2) ~= 0.7071, +/-0.02). If
+     * [KlarvoAudioRecorder.HIGHPASS_CUTOFF_HZ] drifted (e.g. to 300 Hz), the 85 Hz probe would sit
+     * deep in that filter's stopband and measure a much lower gain, failing this assertion.
+     */
+    @Test
+    fun cutoff_isAt85Hz_minus3dbCorner() {
+        val hp = HighpassFilter(cutoffHz, sampleRateHz)
+        val probeFreqHz = 85f
+        val n = 8000
+        val settleSamples = 4000
+        var peak = 0f
+        for (i in 0 until n) {
+            val x = sin(2.0 * PI * probeFreqHz * i / sampleRateHz).toFloat()
+            val y = hp.process(x)
+            if (i > settleSamples) peak = maxOf(peak, kotlin.math.abs(y))
+        }
+        val expectedGain = 0.7071067811865476f
+        assertTrue(
+            "At production HIGHPASS_CUTOFF_HZ=$cutoffHz Hz, an 85 Hz probe tone must show the " +
+                "Butterworth -3dB corner gain ~$expectedGain (+/-0.02), got peak=$peak. A drifted " +
+                "cutoff (e.g. 300 Hz) would fail this -- 85 Hz would sit in that filter's stopband.",
+            kotlin.math.abs(peak - expectedGain) < 0.02f
+        )
+    }
+
     // ---------------------------------------------------------------------------
     // AC3 behavioral test: bass-tone fails the energy gate after filtering even though its
     // raw RMS would pass; a speech-band tone is attenuated negligibly (does not falsely close
@@ -87,28 +124,33 @@ class HighpassFilterTest {
     }
 
     /**
-     * Feeds [samples] through a fresh [HighpassFilter] in 512-sample frames (mirroring
-     * [KlarvoAudioRecorder]'s VAD_FRAME_SIZE), normalizing each sample by 32767f first (AC4,
-     * matching Rust's i16::MAX normalization order). Returns (rawNormalizedRms, filteredRms)
-     * computed over the TAIL of the signal only (skips the first 8 frames =~ 256 ms so the
-     * filter's delay line has settled, mirroring Rust's own settle-then-measure test pattern).
+     * Feeds [samples] through the REAL production chain -- [KlarvoAudioRecorder.vadGateFilteredFrame]
+     * (normalize by [KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR] THEN highpass-filter, the
+     * exact seam [KlarvoAudioRecorder.processVadFrame] uses) -- in 512-sample frames (mirroring
+     * [KlarvoAudioRecorder]'s VAD_FRAME_SIZE). Returns (rawNormalizedRms, filteredRms) computed
+     * over the TAIL of the signal only (skips the first 8 frames =~ 256 ms so the filter's delay
+     * line has settled, mirroring Rust's own settle-then-measure test pattern). The raw side has
+     * no production equivalent post-Story-7-2 (the VAD gate is always filtered now) so it stays a
+     * plain normalize-only loop here, purely to compute the "what the old unfiltered code would
+     * have seen" comparison value for the inversion checks below.
      */
     private fun rawAndFilteredRms(samples: ShortArray): Pair<Float, Float> {
         val filter = HighpassFilter(cutoffHz, sampleRateHz)
         val frameSize = 512
         val settleFrames = 8
+        val scratch = FloatArray(frameSize)
         val rawTail = ArrayList<Float>()
         val filteredTail = ArrayList<Float>()
 
         var frameIndex = 0
         var pos = 0
         while (pos + frameSize <= samples.size) {
-            for (i in 0 until frameSize) {
-                val normalized = samples[pos + i] / 32767f
-                val filtered = filter.process(normalized)
-                if (frameIndex >= settleFrames) {
-                    rawTail.add(normalized)
-                    filteredTail.add(filtered)
+            val frame = samples.copyOfRange(pos, pos + frameSize)
+            val filteredFrame = KlarvoAudioRecorder.vadGateFilteredFrame(frame, frameSize, filter, scratch)
+            if (frameIndex >= settleFrames) {
+                for (i in 0 until frameSize) {
+                    rawTail.add(frame[i] / KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR)
+                    filteredTail.add(filteredFrame[i])
                 }
             }
             pos += frameSize

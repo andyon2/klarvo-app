@@ -296,6 +296,16 @@ object KlarvoApi {
     }
 
     /**
+     * Pure "advanced.minRecordingMs" parse (M2, AC5, Story 7-2). Extracted from [readConfig] so
+     * a JVM unit test can drive the REAL org.json parse path against a real `config.json` string
+     * (`JSONObject(rawJson)`) instead of asserting a hand-constructed [Config] against itself
+     * (Story 7-2 review finding) -- a wrong/misspelled JSON key here would otherwise make the
+     * setting silently inert with the feature reporting green.
+     */
+    internal fun parseMinRecordingMs(json: JSONObject): Long =
+        json.optJSONObject("advanced")?.optLong("minRecordingMs", 500L) ?: 500L
+
+    /**
      * Reads config.json from the app's data directory.
      * Tauri's app_data_dir() resolves to dataDir, not filesDir.
      * Returns null if the file doesn't exist or keys are missing.
@@ -355,10 +365,7 @@ object KlarvoApi {
             // "advanced.minRecordingMs" -- same nesting/opt-with-default pattern as
             // silenceThreshold above (M2, AC5, Story 7-2). Default 500 matches Rust's
             // AdvancedSettings::min_recording_ms default (config/mod.rs:217-219).
-            val minRecordingMs = json
-                .optJSONObject("advanced")
-                ?.optLong("minRecordingMs", 500L)
-                ?: 500L
+            val minRecordingMs = parseMinRecordingMs(json)
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
