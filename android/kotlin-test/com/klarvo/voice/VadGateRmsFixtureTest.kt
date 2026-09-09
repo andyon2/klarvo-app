@@ -3,7 +3,6 @@ package com.klarvo.voice
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import kotlin.math.PI
@@ -89,25 +88,43 @@ class VadGateRmsFixtureTest {
         return JSONArray(found.readText())
     }
 
-    /** Builds the raw Short/i16 samples a fixture vector's `wav_encoding` describes. */
+    /**
+     * Builds the raw Short/i16 samples a fixture vector's `wav_encoding` describes.
+     *
+     * `amplitude` is read via [JSONObject.getDouble], not `optDouble(..., 0.0)` (Story 7-2
+     * round-2 review finding): a `synthetic`/`sine` vector that loses its `amplitude` key (typo,
+     * schema drift) must fail loudly, not silently become an all-zero silence signal that still
+     * passes RMS-003's `expected_rms_kotlin: 0.0` assertion. `silence` is its own explicit
+     * encoding type (not inferred from `amplitude == 0f`) so a genuinely silent vector never
+     * needs an `amplitude` key at all.
+     */
     private fun samplesFor(encoding: JSONObject): ShortArray {
         val durationMs = encoding.getInt("duration_ms")
-        val amplitude = encoding.optDouble("amplitude", 0.0).toFloat()
         return when (encoding.getString("type")) {
+            "silence" -> silenceShorts(durationMs)
             "sine" -> sineShorts(
                 freqHz = encoding.getDouble("freq_hz").toFloat(),
-                amplitude = amplitude,
+                amplitude = encoding.getDouble("amplitude").toFloat(),
                 durationMs = durationMs
             )
-            "synthetic" -> if (amplitude == 0f) silenceShorts(durationMs) else constantShorts(amplitude, durationMs)
+            "synthetic" -> constantShorts(encoding.getDouble("amplitude").toFloat(), durationMs)
             else -> error("samplesFor: unsupported wav_encoding.type '${encoding.getString("type")}'")
         }
     }
 
+    /**
+     * The exact set of fixture IDs this test must exercise. Story 7-2 round-2 review finding:
+     * `assertTrue(exercised > 0)` is a materially weaker guard than the three named tests it
+     * replaced -- a fixture edit that nulls `expected_rms_kotlin` on two of the four exercised
+     * vectors would still pass with only one vector left. Asserting the exact set (not just a
+     * count) also pins WHICH vectors are covered, not just how many.
+     */
+    private val expectedExercisedIds = setOf("RMS-003", "RMS-004", "RMS-005", "RMS-006")
+
     @Test
     fun fixtureVectors_matchExpectedRmsKotlin() {
         val vectors = loadFixture()
-        var exercised = 0
+        val exercisedIds = mutableSetOf<String>()
         for (i in 0 until vectors.length()) {
             val vector = vectors.getJSONObject(i)
             if (vector.isNull("expected_rms_kotlin")) continue // RMS-007: float32, not applicable (see note below)
@@ -119,9 +136,15 @@ class VadGateRmsFixtureTest {
             val samples = samplesFor(encoding)
             val actual = normalizedRms(samples)
             assertEquals("$id: normalizedRms mismatch", expected, actual, tolerance)
-            exercised++
+            exercisedIds.add(id)
         }
-        assertTrue("fixtureVectors_matchExpectedRmsKotlin exercised zero vectors", exercised > 0)
+        assertEquals(
+            "fixtureVectors_matchExpectedRmsKotlin must exercise exactly the expected vector IDs " +
+                "-- a fixture edit that drops coverage (e.g. nulling expected_rms_kotlin) must fail " +
+                "here, not silently pass with fewer vectors exercised",
+            expectedExercisedIds,
+            exercisedIds
+        )
     }
 
     // RMS-006 — zero samples (0ms) -> Some(0.0), not an error/NaN. calculateRmsFloat's

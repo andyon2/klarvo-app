@@ -33,7 +33,7 @@ import kotlin.math.sqrt
  *
  * Silence detection: previously RMS-based (compare chunk RMS against SILENCE_THRESHOLD).
  * Now uses Silero VAD v5 (android-vad library) for neural voice activity detection.
- * The RMS energy gate is kept as a pre-filter: frames below SILENCE_THRESHOLD are
+ * The RMS energy gate is kept as a pre-filter: frames below [energyGateThreshold] are
  * treated as silence without even calling the VAD model, saving CPU.
  */
 class KlarvoAudioRecorder(
@@ -176,6 +176,7 @@ class KlarvoAudioRecorder(
         // `VadConfig::highpass_cutoff_hz` default (`src-tauri/src/vad/mod.rs:88`).
         // Internal (not private) so a JVM test can pin the -3dB corner against the real
         // production value instead of a test-local duplicate (Story 7-2 review finding).
+        @androidx.annotation.VisibleForTesting
         internal const val HIGHPASS_CUTOFF_HZ = 85f
 
         /**
@@ -188,6 +189,7 @@ class KlarvoAudioRecorder(
          * against the real production constant instead of a test-local copy (Story 7-2 review
          * finding).
          */
+        @androidx.annotation.VisibleForTesting
         internal const val VAD_RMS_NORMALIZATION_DIVISOR = 32767f
 
         /**
@@ -200,12 +202,13 @@ class KlarvoAudioRecorder(
          * pass a fresh array).
          *
          * Extracted to the companion object so a JVM test can drive the EXACT chain
-         * [processVadFrame] feeds into both [calculateRmsFloat] (AC1's energy gate) and Silero's
-         * `vad.isSpeech` (AC3) -- this is the seam Story 7-2's review found missing: without it,
-         * reverting the filter, the divisor, or the Silero input left every test green because
-         * tests re-implemented this sequence instead of calling it.
+         * [processVadFrame] feeds into both [calculateRmsFloat] (AC1's energy gate) and the
+         * Silero call wrapped by [vadGateDecision] (AC3) -- this is the seam Story 7-2's round-1
+         * review found missing: without it, reverting the filter or the divisor left every test
+         * green because tests re-implemented this sequence instead of calling it.
          */
-        fun vadGateFilteredFrame(
+        @androidx.annotation.VisibleForTesting
+        internal fun vadGateFilteredFrame(
             frame: ShortArray,
             length: Int,
             filter: HighpassFilter,
@@ -216,6 +219,41 @@ class KlarvoAudioRecorder(
                 out[i] = filter.process(normalized)
             }
             return out
+        }
+
+        /** Result of [vadGateDecision]: the normalized (filtered) RMS, the raw Silero verdict,
+         * and the combined energy-gate-AND-Silero decision [processVadFrame]'s state machine
+         * consumes. Three fields, not just the combined boolean, so [processVadFrame]'s
+         * diagnostics (which log the raw Silero rate separately from the gated rate) don't need a
+         * second, un-seamed `isSpeech` call -- Silero's internal sliding-window state would be
+         * corrupted by calling `isSpeech` twice per frame. */
+        data class VadGateResult(val normalizedRms: Float, val vadSpeech: Boolean, val isSpeechFrame: Boolean)
+
+        /**
+         * The FULL VAD-gate decision for one frame (H1/AC1, M3/AC3): filters+normalizes [frame]
+         * via [vadGateFilteredFrame], computes the energy gate via [calculateRmsFloat] +
+         * [isEnergyAboveGate], and calls [isSpeech] -- the caller's Silero wrapper -- with the
+         * SAME filtered frame the energy gate used. [isSpeech] is a function parameter (not a
+         * direct `VadSilero` dependency) so a JVM test can drive this exact production sequence
+         * with a fake verdict function and assert it received the FILTERED frame, without needing
+         * a real Silero/ONNX instance (round-2 review finding: round 1's seam covered only the
+         * filter+RMS half, leaving `vad?.isSpeech(filteredFrame)` vs. `isSpeech(frame)` -- and
+         * dropping this seam call entirely -- undetected by any test).
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun vadGateDecision(
+            frame: ShortArray,
+            length: Int,
+            filter: HighpassFilter,
+            out: FloatArray,
+            threshold: Float,
+            isSpeech: (FloatArray) -> Boolean
+        ): VadGateResult {
+            val filteredFrame = vadGateFilteredFrame(frame, length, filter, out)
+            val normalizedRms = calculateRmsFloat(filteredFrame, length).coerceIn(0f, 1f)
+            val energyAboveGate = isEnergyAboveGate(normalizedRms, threshold)
+            val vadSpeech = isSpeech(filteredFrame)
+            return VadGateResult(normalizedRms, vadSpeech, energyAboveGate && vadSpeech)
         }
     }
 
@@ -461,9 +499,9 @@ class KlarvoAudioRecorder(
      * State machine (mirrors Desktop Rust implementation):
      *
      *   BEFORE SPEECH CONFIRMED (speechDetected == false):
-     *     - Energy gate below SILENCE_THRESHOLD → onsetFrames = 0 (no speech)
-     *     - VAD returns true                   → onsetFrames++
-     *     - onsetFrames >= VAD_ONSET_FRAMES     → speechDetected = true, silentFrames = 0
+     *     - Energy gate below energyGateThreshold → onsetFrames = 0 (no speech)
+     *     - VAD returns true                      → onsetFrames++
+     *     - onsetFrames >= VAD_ONSET_FRAMES        → speechDetected = true, silentFrames = 0
      *
      *   AFTER SPEECH CONFIRMED (speechDetected == true):
      *     - Energy gate below threshold OR VAD false → silentFrames++
@@ -481,20 +519,23 @@ class KlarvoAudioRecorder(
         // repeatable preview edge) forever after the one-shot callback fired once. The one-shot
         // guard is now scoped locally to the onSilenceDetected branch below, where it belongs.
 
-        // H1/M3/M4 (AC1/AC3/AC4): normalize + highpass-filter through the shared companion seam
-        // (vadGateFilteredFrame) -- both the energy-gate RMS (AC1) and the Silero call (AC3) see
-        // the SAME filtered signal Rust compares against; the display-path RMS ([calculateRms]
-        // at :312, fed by [buf] above) stays on the raw, unfiltered signal (AC3 decision).
-        val filteredFrame = vadGateFilteredFrame(frame, frame.size, highpassFilter, filteredFrameScratch)
+        // H1/M3/M4 (AC1/AC3/AC4): the shared companion seam (vadGateDecision) normalizes,
+        // highpass-filters, computes the energy gate AND calls Silero on the SAME filtered
+        // signal Rust compares against -- the display-path RMS ([calculateRms], fed by [buf]
+        // above) stays on the raw, unfiltered signal (AC3 decision). Round-2 review finding:
+        // the seam now covers the whole gate decision, not just the filter+RMS half, so a JVM
+        // test can catch a reverted `isSpeech(filteredFrame)` -> `isSpeech(frame)` regression.
+        val gateResult = vadGateDecision(
+            frame,
+            frame.size,
+            highpassFilter,
+            filteredFrameScratch,
+            energyGateThreshold
+        ) { filtered -> vad?.isSpeech(filtered) == true }
 
-        // Energy gate: avoid calling the ONNX model for clearly silent frames.
-        // Uses the instance energyGateThreshold (from config.json "advanced.silenceThreshold")
-        // instead of the old hard-coded 0.02 constant, so user preferences are honored (AC1/AC3).
-        val normalizedRms = calculateRmsFloat(filteredFrame, filteredFrame.size).coerceIn(0f, 1f)
-        val energyAboveGate = isEnergyAboveGate(normalizedRms, energyGateThreshold)
-
-        val vadSpeech = vad?.isSpeech(filteredFrame) == true
-        val isSpeechFrame = energyAboveGate && vadSpeech
+        val normalizedRms = gateResult.normalizedRms
+        val vadSpeech = gateResult.vadSpeech
+        val isSpeechFrame = gateResult.isSpeechFrame
 
         // --- diagnostics: aggregate per ~1s window (Story 9-7 follow-up) ---
         dbgWindowFrames++

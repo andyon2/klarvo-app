@@ -207,6 +207,8 @@ fi
 # are stubs that throw "not mocked" under JVM unit tests. Adding the real artifact as
 # testImplementation resolves ahead of the stub, letting tests exercise the actual
 # KlarvoApi.kt JSON-parsing code paths (Story 7-2 review finding) without Robolectric.
+# Same patch duplicated in android-smoke.sh (GATE-4 finding) since that script can also be
+# the first to run JVM unit tests against a freshly generated gen/android/ tree.
 if ! grep -q 'testImplementation("org.json:json' "$APP_GRADLE" 2>/dev/null; then
     sed -i '/testImplementation("junit:junit/a\    testImplementation("org.json:json:20231013")' "$APP_GRADLE"
     echo "[patch] Added org.json:json testImplementation dependency"

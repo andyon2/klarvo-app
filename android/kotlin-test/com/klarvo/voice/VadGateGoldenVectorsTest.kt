@@ -21,12 +21,20 @@ import java.io.File
  * The energy-floor vectors feed RAW i16 sample frames through the actual RMS computation this
  * story changed -- [KlarvoAudioRecorder.vadGateFilteredFrame] (normalize + highpass-filter) then
  * [KlarvoAudioRecorder.calculateRmsFloat] -- rather than asserting a pre-computed `normalized_rms`
- * straight into `isEnergyAboveGate`'s bare `>=` (Story 7-2 review finding: the latter never
- * exercised the filtered signal or the 32767 divisor this story actually changed). Each vector's
- * raw signal is a Nyquist-frequency square wave (see [nyquistSquareWaveShorts]), which a
- * Butterworth highpass passes at EXACTLY unity gain -- so the filtered RMS lands within
- * quantization noise (~1e-5) of the fixture's `target_normalized_rms`, far smaller than the 0.001
- * gap between neighboring vectors, without needing the filter's effect on the outcome itself.
+ * straight into `isEnergyAboveGate`'s bare `>=` (Story 7-2 review finding round 1: the latter
+ * never exercised the filtered signal or the 32767 divisor this story actually changed).
+ *
+ * Two signal shapes are used (round-2 review finding: a Nyquist-only fixture is provably
+ * insensitive to both the highpass filter AND the divisor, since a Butterworth highpass has exact
+ * unity gain at Nyquist and the amplitude derivation used to cancel against a reverted divisor):
+ * - `nyquist_square` ([nyquistSquareWaveShorts]): unaffected by the highpass filter (unity gain at
+ *   Nyquist), so these vectors pin `isEnergyAboveGate`'s `>=` boundary precisely via
+ *   `amplitude_short` -- a LITERAL precomputed offline from 32767 and baked into the fixture, not
+ *   derived from [KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR] at test time (a reverted
+ *   32768f divisor can no longer cancel out against this fixture's own amplitude derivation).
+ * - `bass_tone` ([bassToneShorts], VAD-GATE-001): a 20-60 Hz tone that the 85 Hz highpass
+ *   meaningfully attenuates -- its raw (unfiltered) RMS passes the gate but its production-seam
+ *   filtered RMS does not, making the filter load-bearing for this vector's outcome.
  */
 class VadGateGoldenVectorsTest {
 
@@ -142,6 +150,19 @@ class VadGateGoldenVectorsTest {
     }
 
     /**
+     * A raw i16 sine wave at [freqHz] -- unlike [nyquistSquareWaveShorts], this signal is
+     * meaningfully attenuated by the 85 Hz highpass at bass frequencies (20-60 Hz), making it
+     * load-bearing for VAD-GATE-001's gate-closed outcome (round-2 review finding).
+     */
+    private fun bassToneShorts(freqHz: Float, amplitudeShort: Float, seconds: Float): ShortArray {
+        val sampleRateHz = 16000f
+        val n = (sampleRateHz * seconds).toInt()
+        return ShortArray(n) { i ->
+            (amplitudeShort * kotlin.math.sin(2.0 * Math.PI * freqHz * i / sampleRateHz)).toInt().toShort()
+        }
+    }
+
+    /**
      * Feeds [samples] through the real production seam ([KlarvoAudioRecorder.vadGateFilteredFrame]
      * then [KlarvoAudioRecorder.calculateRmsFloat]) in 512-sample frames, skipping the first
      * [settleFrames] so the highpass filter's delay line has settled before RMS is measured.
@@ -172,21 +193,29 @@ class VadGateGoldenVectorsTest {
         for (v in vectors) {
             val id = v.optString("id")
             val threshold = v.optDouble("silence_threshold").toFloat()
-            val targetRms = v.optDouble("target_normalized_rms").toFloat()
             val expectedOpen = v.optBool("expected_gate_open")
+            // amplitude_short is a LITERAL baked into the fixture (precomputed offline from a
+            // literal 32767, e.g. ceil(target * 32767)) -- NOT derived here from
+            // KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR, so a reverted production divisor
+            // cannot cancel out against this test's own amplitude derivation (round-2 review
+            // finding).
+            val amplitudeShort = v.optDouble("amplitude_short").toInt().toShort()
+            val signal = v.optString("signal", "nyquist_square")
 
-            // ceil (not round): guarantees the quantized short amplitude's normalized value is
-            // >= targetRms, so the "at threshold" vectors (target == threshold exactly) resolve
-            // to gate-open under the shared >= semantics instead of occasionally quantizing
-            // 1 unit below the threshold (e.g. round(0.02 * 32767) = 655 -> 0.0199896... < 0.02).
-            val amplitudeShort = kotlin.math.ceil(targetRms * KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR).toInt().toShort()
-            val samples = nyquistSquareWaveShorts(amplitudeShort, frameCount = 16)
+            val samples = when (signal) {
+                "bass_tone" -> {
+                    val freqHz = v.optDouble("signal_freq_hz").toFloat()
+                    bassToneShorts(freqHz, amplitudeShort.toFloat(), seconds = 1.0f)
+                }
+                "nyquist_square" -> nyquistSquareWaveShorts(amplitudeShort, frameCount = 16)
+                else -> error("$id: unsupported signal type '$signal'")
+            }
             val actualRms = productionFilteredRms(samples)
             val actualOpen = KlarvoAudioRecorder.isEnergyAboveGate(actualRms, threshold)
 
             assertEquals(
-                "$id: production-seam RMS ($actualRms, target was $targetRms) vs threshold=$threshold " +
-                    "-- isEnergyAboveGate must be $expectedOpen",
+                "$id: production-seam RMS ($actualRms, signal=$signal amplitude_short=$amplitudeShort) " +
+                    "vs threshold=$threshold -- isEnergyAboveGate must be $expectedOpen",
                 expectedOpen,
                 actualOpen
             )

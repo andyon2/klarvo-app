@@ -178,6 +178,20 @@ if [ -d "$TEST_SRC" ] && [ "$(ls -1 "$TEST_SRC"/*.kt 2>/dev/null | wc -l)" -gt 0
     ok "$(ls -1 "$TEST_SRC"/*.kt | wc -l) Test-Dateien kopiert"
 fi
 
+# Real org.json implementation on the unit-test classpath -- android.jar's org.json classes
+# are stubs that throw "not mocked" under JVM unit tests (MinRecordingMsConfigTest,
+# VadGateRmsFixtureTest both parse real JSON). Same idempotent, grep-guarded patch as
+# android-build.sh:206-213 (Story 7-2 GATE-4 finding: android-smoke.sh runs
+# :app:testUniversalDebugUnitTest below but, unlike android-build.sh, never applied this
+# patch -- so a gen/android tree regenerated without a prior android-build.sh run fails these
+# tests here). Duplicated rather than extracted into a shared helper -- a 2-line sed patch
+# doesn't justify a new scripts/lib/ sourcing convention this repo doesn't otherwise have.
+APP_GRADLE="$APP_DIR/build.gradle.kts"
+if ! grep -q 'testImplementation("org.json:json' "$APP_GRADLE" 2>/dev/null; then
+    sed -i '/testImplementation("junit:junit/a\    testImplementation("org.json:json:20231013")' "$APP_GRADLE"
+    ok "[patch] org.json:json testImplementation-Abhängigkeit ergänzt"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Unit-Tests (Gate — Logik-Regression wird hier gefangen, nicht auf dem Gerät)
 # ---------------------------------------------------------------------------

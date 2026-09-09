@@ -222,4 +222,66 @@ class HighpassFilterTest {
             KlarvoAudioRecorder.isEnergyAboveGate(rawRms, 0.02f)
         )
     }
+
+    // ---------------------------------------------------------------------------
+    // Story 7-2 round-2 review finding: round 1's seam (vadGateFilteredFrame) covers only the
+    // filter+RMS half of the gate decision. Nothing yet calls
+    // KlarvoAudioRecorder.vadGateDecision -- the seam that ALSO owns the Silero call -- so a
+    // regression reverting `isSpeech(filteredFrame)` to `isSpeech(frame)` inside it, or dropping
+    // the seam call in processVadFrame entirely, would leave every existing test green. These
+    // tests drive vadGateDecision directly with a spy `isSpeech` lambda and assert it receives
+    // the FILTERED frame, not the raw one.
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun vadGateDecision_feedsFilteredFrameToIsSpeech_notRawFrame() {
+        val filter = HighpassFilter(cutoffHz, sampleRateHz)
+        val scratch = FloatArray(512)
+        // A DC-like constant frame (~0.1 normalized amplitude) -- the highpass drives this
+        // toward zero within a single fresh-filter frame (same "attenuates DC" property as
+        // highpass_attenuatesDc_toNearZero above), giving a large, unambiguous margin between
+        // the raw and filtered RMS without needing multi-frame settling.
+        val amplitudeShortScale: Short = 3277
+        val frame = ShortArray(512) { amplitudeShortScale }
+        var capturedFrame: FloatArray? = null
+
+        KlarvoAudioRecorder.vadGateDecision(frame, frame.size, filter, scratch, threshold = 0f) { f ->
+            capturedFrame = f.copyOf()
+            true
+        }
+
+        val rawNormalizedRms = KlarvoAudioRecorder.calculateRmsFloat(
+            FloatArray(frame.size) { frame[it] / KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR },
+            frame.size
+        )
+        val captured = capturedFrame ?: error("isSpeech was never called")
+        val capturedRms = KlarvoAudioRecorder.calculateRmsFloat(captured, captured.size)
+
+        assertTrue(
+            "vadGateDecision must pass the FILTERED frame to isSpeech, not the raw one -- " +
+                "captured RMS ($capturedRms) must be well below the raw normalized RMS " +
+                "($rawNormalizedRms). If this fails, isSpeech(filteredFrame) was reverted to " +
+                "isSpeech(frame), or the seam call was dropped.",
+            capturedRms < rawNormalizedRms * 0.5f
+        )
+    }
+
+    @Test
+    fun inversion_rawConstantFrame_wouldNotBeAttenuated() {
+        // Sanity/inversion: an UNFILTERED constant frame's RMS stays near its raw amplitude --
+        // proving the attenuation asserted above comes from the filter, not from the DC signal
+        // choice or calculateRmsFloat itself.
+        val amplitudeShortScale: Short = 3277
+        val frame = ShortArray(512) { amplitudeShortScale }
+        val rawNormalizedRms = KlarvoAudioRecorder.calculateRmsFloat(
+            FloatArray(frame.size) { frame[it] / KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR },
+            frame.size
+        )
+        assertTrue(
+            "sanity/inversion: an unfiltered constant frame's RMS must stay near its raw " +
+                "amplitude (got $rawNormalizedRms) -- otherwise the attenuation test above isn't " +
+                "actually discriminating filtered vs. raw.",
+            rawNormalizedRms > 0.09f
+        )
+    }
 }

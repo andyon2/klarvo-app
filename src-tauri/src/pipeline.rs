@@ -4172,6 +4172,12 @@ mod tests {
                 let bytes = encoding["bytes"].as_array().expect("raw_bytes must have 'bytes'");
                 bytes.iter().map(|b| b.as_u64().unwrap() as u8).collect()
             }
+            "silence" => {
+                let sample_rate = encoding["sample_rate"].as_u64().unwrap_or(16000) as u32;
+                let duration_ms = encoding["duration_ms"].as_u64().unwrap_or(0);
+                let n_samples = (sample_rate as u64 * duration_ms / 1000) as usize;
+                make_wav(&vec![0.0f32; n_samples])
+            }
             "synthetic" => {
                 let sample_rate = encoding["sample_rate"].as_u64().unwrap_or(16000) as u32;
                 let duration_ms = encoding["duration_ms"].as_u64().unwrap_or(0);
