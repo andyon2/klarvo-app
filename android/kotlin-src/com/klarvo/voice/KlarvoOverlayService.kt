@@ -137,6 +137,18 @@ class KlarvoOverlayService : Service() {
             val cleaned = text.replace(Regex("\\n+"), " ").trim()
             return cleaned.ifBlank { null }
         }
+
+        /**
+         * M2 (AC5, Story 7-2): resolves `minRecordingMs` for the pre-STT `nativeSilenceCheck`
+         * JNI call from the cached config, falling back to `500L` (matching
+         * [KlarvoApi.Config]'s own default) if config is somehow absent -- not a behavior
+         * change from the previous hardcoded literal, just no longer ignoring a configured
+         * value. Extracted (same testable-shape pattern as [sanitizePreviewChunk]) so a JVM
+         * test can verify a non-default config value actually changes the resolved value,
+         * without needing the native JNI call itself.
+         */
+        fun resolveMinRecordingMsForSilenceFilter(config: KlarvoApi.Config?): Long =
+            config?.minRecordingMs ?: 500L
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -1846,16 +1858,19 @@ class KlarvoOverlayService : Service() {
 
         // Pre-STT filter: discard mini-taps and silent recordings before the Groq API call.
         // Delegates to the shared Rust silence_skip via GroqSttBridge (ADR-0017, AC4).
-        // Config values read here use defaults matching the Rust pipeline defaults
-        // (minRecordingMs=500, silenceThreshold=0.005) so the filter runs before the full
-        // config read below. These match KlarvoApi.AppConfig defaults.
+        // M2 (AC5, Story 7-2): minRecordingMs/silenceThreshold are now read from cachedConfig
+        // (populated by AC1's config wiring) instead of hardcoded literals -- 500L/0.005f are
+        // now only the null-safe fallback default (unchanged values, not a behavior change if
+        // config is somehow absent), matching KlarvoApi.Config's own defaults.
         run {
+            val filterMinRecordingMs = resolveMinRecordingMsForSilenceFilter(cachedConfig)
+            val filterSilenceThreshold = silenceThreshold
             val wavBase64ForFilter = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
-            val silenceResult = GroqSttBridge.nativeSilenceCheck(wavBase64ForFilter, 500L, 0.005f)
+            val silenceResult = GroqSttBridge.nativeSilenceCheck(wavBase64ForFilter, filterMinRecordingMs, filterSilenceThreshold)
             when {
                 silenceResult.startsWith("TooShort:") -> {
                     val durationMs = silenceResult.removePrefix("TooShort:").toLongOrNull() ?: 0L
-                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${durationMs}ms < 500ms)")
+                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${durationMs}ms < ${filterMinRecordingMs}ms)")
                     handler.post {
                         showToast("Recording too short")
                         autoLoopActive = false
@@ -1868,7 +1883,7 @@ class KlarvoOverlayService : Service() {
                 }
                 silenceResult.startsWith("Silent:") -> {
                     val rms = silenceResult.removePrefix("Silent:").toFloatOrNull() ?: 0f
-                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=$rms < 0.005)")
+                    KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=$rms < $filterSilenceThreshold)")
                     handler.post {
                         showToast("No speech detected")
                         autoLoopActive = false

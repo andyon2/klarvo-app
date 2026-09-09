@@ -11,6 +11,7 @@ import com.konovalov.vad.silero.VadSilero
 import com.konovalov.vad.silero.config.FrameSize
 import com.konovalov.vad.silero.config.Mode
 import com.konovalov.vad.silero.config.SampleRate
+import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /**
@@ -97,6 +98,24 @@ class KlarvoAudioRecorder(
             normalizedRms >= threshold
 
         /**
+         * Pure RMS computation over an ALREADY-NORMALIZED (see [VAD_RMS_NORMALIZATION_DIVISOR]),
+         * highpass-filtered frame (H1/M3/M4, AC1/AC3/AC4, Story 7-2). Mirrors Rust's `rms()`
+         * (`src-tauri/src/vad/mod.rs:397-403`) -- same Double-accumulator-then-narrow-to-Float
+         * structure as the private (display-path, raw-signal) [calculateRms], applied instead to
+         * the filtered VAD-gate signal so the energy gate compares against the same signal Rust
+         * does. Extracted to the companion object so a JVM test can drive it directly (AC1's test
+         * note: prove the filter is actually in the RMS path, not just present in the file).
+         */
+        fun calculateRmsFloat(buffer: FloatArray, length: Int): Float {
+            if (length == 0) return 0f
+            var sum = 0.0
+            for (i in 0 until length) {
+                sum += buffer[i].toDouble() * buffer[i].toDouble()
+            }
+            return sqrt(sum / length).toFloat()
+        }
+
+        /**
          * Pure delta-slice function (Story 11-2, AC-1/Task 1.2/1.3). Given the FULL sample
          * buffer captured so far and the marker (sample-count offset of the last flush),
          * returns the new samples since [marker] -- empty if none.
@@ -116,8 +135,19 @@ class KlarvoAudioRecorder(
          * and [previewRequiredSilentFrames] (repeatable preview-pause edge) -- same formula,
          * different independent inputs, so the preview slider is never inert.
          */
+        /**
+         * L1/H17 (AC6/AC2, Story 7-2): frame count uses the EXACT 31.25 fps with [ceil]
+         * (matching Rust's rounding direction, `src-tauri/src/vad/mod.rs:239-242`) -- the old
+         * truncated integer 31 under-counted frames, requiring fewer silence frames than Rust
+         * for the same configured duration. A [MIN_SILENT_FRAMES] floor (AC2/H17) is then
+         * applied uniformly, matching Rust's `hangover_ms.max(200)` applied to BOTH the
+         * autostop/auto config (`audio/mod.rs:1072-1076`) and the preview-flush config
+         * (`audio/mod.rs:1180-1184`). DECIDED (GATE 1, Andi, 2026-09-09): apply the floor
+         * uniformly through this shared function -- preview-pause timing is floored too,
+         * exactly as Rust does; no separate autostop-only helper.
+         */
         fun framesForSeconds(secs: Float): Int =
-            (secs * VAD_FRAMES_PER_SECOND).toInt().coerceAtLeast(1)
+            ceil(secs * VAD_FRAMES_PER_SECOND).toInt().coerceAtLeast(MIN_SILENT_FRAMES)
 
         // Silero VAD requires exactly 512 samples per frame at 16 kHz (~32 ms/frame).
         private const val VAD_FRAME_SIZE = 512
@@ -127,9 +157,32 @@ class KlarvoAudioRecorder(
         // 3 frames * 32 ms/frame = ~96 ms onset latency.
         private const val VAD_ONSET_FRAMES = 3
 
-        // Hangover frames: VAD frames per second at 16 kHz / 512 samples = ~31.25 fps.
-        // Used to convert silenceSecs into a frame count.
-        private const val VAD_FRAMES_PER_SECOND = 31
+        // Frame duration in ms: 512 samples / 16000 Hz * 1000 = 32.0 exactly (matches Rust's
+        // `frame_ms`, vad/mod.rs:239-241). VAD_FRAMES_PER_SECOND is the exact 31.25 fps this
+        // implies -- previously hardcoded as the truncated integer 31 (L1/AC6).
+        private const val VAD_FRAME_MS: Float = VAD_FRAME_SIZE * 1000f / SAMPLE_RATE
+        private const val VAD_FRAMES_PER_SECOND: Float = 1000f / VAD_FRAME_MS
+
+        // H17 (AC2): Rust applies a uniform 200ms hangover floor (`hangover_ms.max(200)`),
+        // converted to a frame count via ceil(200 / frame_ms) = ceil(6.25) = 7 frames --
+        // regardless of how small the user's configured silence window is. Android's old
+        // `coerceAtLeast(1)` only floored at ~32ms (a single frame).
+        private const val HANGOVER_FLOOR_MS: Float = 200f
+        private val MIN_SILENT_FRAMES: Int = ceil(HANGOVER_FLOOR_MS / VAD_FRAME_MS).toInt()
+
+        // Highpass cutoff for the VAD-gate pre-filter (M3, AC3). Matches Rust's
+        // `VadConfig::highpass_cutoff_hz` default (`src-tauri/src/vad/mod.rs:88`).
+        private const val HIGHPASS_CUTOFF_HZ = 85f
+
+        /**
+         * Normalization divisor for VAD-gate RMS/highpass-filter input (M4, AC4, Story 7-2).
+         * Matches Rust's `i16::MAX` exactly (`src-tauri/src/audio/mod.rs:766`) -- NOT the old
+         * 32768f (2^15) previously used at the energy-gate call site. A ~0.003% scale
+         * correction, smaller than the M3 filtering gap (AC3) but needed for exact parity.
+         * Display-path normalization ([smoothedAmplitude]) is untouched and keeps /32768f --
+         * this constant is VAD-gate-only.
+         */
+        private const val VAD_RMS_NORMALIZATION_DIVISOR = 32767f
     }
 
     init {
@@ -189,6 +242,13 @@ class KlarvoAudioRecorder(
     // Silero VAD instance -- initialized in start(), released in stop()/releaseImmediately().
     // Previously there was no VAD object; silence was detected purely by RMS comparison.
     private var vad: VadSilero? = null
+
+    // M3 (AC3): 85 Hz highpass filter run on every VAD-gate frame before RMS (AC1) and Silero
+    // (vad.isSpeech). Has memory (delay line) -- persists across frames for the life of a
+    // recording session and is reset only in [start], mirroring Rust's `SileroVad`-owned filter
+    // instance lifecycle (`vad/mod.rs:292-296`). The display-path RMS ([calculateRms], fed by
+    // the raw unfiltered signal) is intentionally NOT routed through this filter.
+    private val highpassFilter = HighpassFilter(HIGHPASS_CUTOFF_HZ, SAMPLE_RATE.toFloat())
 
     // Ring buffer for feeding exactly VAD_FRAME_SIZE samples to Silero.
     // AudioRecord delivers variable-size chunks; we accumulate them here.
@@ -277,6 +337,7 @@ class KlarvoAudioRecorder(
         recorder.startRecording()
 
         // Reset VAD silence detection state.
+        highpassFilter.reset()
         vadRingPos = 0
         silentFrames = 0
         silenceCallbackFired = false
@@ -380,14 +441,26 @@ class KlarvoAudioRecorder(
         // repeatable preview edge) forever after the one-shot callback fired once. The one-shot
         // guard is now scoped locally to the onSilenceDetected branch below, where it belongs.
 
+        // H1/M3/M4 (AC1/AC3/AC4): normalize to [-1,1] (dividing by VAD_RMS_NORMALIZATION_DIVISOR
+        // = Short.MAX_VALUE = 32767, matching Rust's i16::MAX) THEN highpass-filter -- mirrors
+        // Rust's audio/mod.rs normalization order (samples are normalized by i16::MAX BEFORE
+        // being fed to SileroVad::feed, which filters internally at vad/mod.rs:267-272). Both
+        // the energy-gate RMS (AC1) and the Silero call (AC3) now see the SAME filtered signal
+        // Rust compares against; the display-path RMS ([calculateRms] at :312, fed by [buf]
+        // above) stays on the raw, unfiltered signal (AC3 decision).
+        val filteredFrame = FloatArray(frame.size)
+        for (i in frame.indices) {
+            val normalized = frame[i] / VAD_RMS_NORMALIZATION_DIVISOR
+            filteredFrame[i] = highpassFilter.process(normalized)
+        }
+
         // Energy gate: avoid calling the ONNX model for clearly silent frames.
         // Uses the instance energyGateThreshold (from config.json "advanced.silenceThreshold")
         // instead of the old hard-coded 0.02 constant, so user preferences are honored (AC1/AC3).
-        val rms = calculateRms(frame, frame.size)
-        val normalizedRms = (rms / 32768f).coerceIn(0f, 1f)
+        val normalizedRms = calculateRmsFloat(filteredFrame, filteredFrame.size).coerceIn(0f, 1f)
         val energyAboveGate = isEnergyAboveGate(normalizedRms, energyGateThreshold)
 
-        val vadSpeech = vad?.isSpeech(frame) == true
+        val vadSpeech = vad?.isSpeech(filteredFrame) == true
         val isSpeechFrame = energyAboveGate && vadSpeech
 
         // --- diagnostics: aggregate per ~1s window (Story 9-7 follow-up) ---

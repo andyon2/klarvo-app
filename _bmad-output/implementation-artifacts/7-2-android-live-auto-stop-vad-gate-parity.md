@@ -1,6 +1,6 @@
 # Story 7.2: Android live auto-stop VAD-gate parity
 
-Status: ready-for-dev
+Status: review
 
 <!-- Test-Architect REQUIRED before dev-story: run *risk + *design on this story (can truncate user speech — see epic Test-Architect note). See Dev Notes → "Pre-dev: Test-Architect gate". -->
 
@@ -214,51 +214,53 @@ consolidates fixtures seeded by every 7.x story, per `epics-cross-platform-parit
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — M3: Port the 85 Hz Butterworth highpass filter to Kotlin** (AC3)
-  - [ ] Implement a stateful highpass filter class/function mirroring `vad/mod.rs`'s filter (find
+- [x] **Task 1 — M3: Port the 85 Hz Butterworth highpass filter to Kotlin** (AC3)
+  - [x] Implement a stateful highpass filter class/function mirroring `vad/mod.rs`'s filter (find
     and read the exact biquad/Butterworth implementation before porting — the Explore findings
     above only located the call sites, not the filter math itself; read `vad/mod.rs`'s filter
     struct/impl in full).
-  - [ ] Wire filter instance lifecycle to match `KlarvoAudioRecorder`'s recording-session lifecycle
+  - [x] Wire filter instance lifecycle to match `KlarvoAudioRecorder`'s recording-session lifecycle
     (persists across frames within a session, reset on new session start — mirror `start()`/`stop()`).
-  - [ ] Feed the filtered frame into both RMS (AC1) and Silero (`vad.isSpeech`).
-- [ ] **Task 2 — H1/M4: Fix RMS computation to use filtered samples + correct divisor** (AC1, AC4)
-  - [ ] Route `calculateRms`'s VAD-gate call site through the filtered frame from Task 1.
-  - [ ] Correct the normalization divisor from `32768f` to `32767f` (`Short.MAX_VALUE`) at the
+  - [x] Feed the filtered frame into both RMS (AC1) and Silero (`vad.isSpeech`).
+- [x] **Task 2 — H1/M4: Fix RMS computation to use filtered samples + correct divisor** (AC1, AC4)
+  - [x] Route `calculateRms`'s VAD-gate call site through the filtered frame from Task 1.
+  - [x] Correct the normalization divisor from `32768f` to `32767f` (`Short.MAX_VALUE`) at the
     energy-gate call site (`KlarvoAudioRecorder.kt:387`).
-  - [ ] Resolve the elicitation-report question on the display-path RMS (`:312`) before touching it.
-- [ ] **Task 3 — L1: Correct VAD_FRAMES_PER_SECOND to 31.25 (exact, ceil at use)** (AC6)
-  - [ ] Change the fps constant/calc so `framesForSeconds` uses `31.25` with `ceil`, not truncated
+  - [x] Resolve the elicitation-report question on the display-path RMS (`:312`) before touching it.
+- [x] **Task 3 — L1: Correct VAD_FRAMES_PER_SECOND to 31.25 (exact, ceil at use)** (AC6)
+  - [x] Change the fps constant/calc so `framesForSeconds` uses `31.25` with `ceil`, not truncated
     `31` with `toInt()`.
-- [ ] **Task 4 — H17: Add the 200ms-equivalent hangover floor** (AC2)
-  - [ ] Resolve the elicitation-report scope question (autostop-only vs. shared with preview-pause)
+- [x] **Task 4 — H17: Add the 200ms-equivalent hangover floor** (AC2)
+  - [x] Resolve the elicitation-report scope question (autostop-only vs. shared with preview-pause)
     before changing `framesForSeconds` vs. adding a separate hangover-specific helper.
-  - [ ] Implement the floor consistent with the resolved scope, computed via `ceil` against the
+  - [x] Implement the floor consistent with the resolved scope, computed via `ceil` against the
     AC6-corrected fps.
-- [ ] **Task 5 — M2: Wire `minRecordingMs`/`silenceThreshold` into the pre-STT JNI call** (AC5)
-  - [ ] Add `minRecordingMs` to Kotlin `AppConfig` (field, JSON parse, constructor wiring).
-  - [ ] Replace the hardcoded `500L, 0.005f` at `KlarvoOverlayService.kt:1847-1854` with
+- [x] **Task 5 — M2: Wire `minRecordingMs`/`silenceThreshold` into the pre-STT JNI call** (AC5)
+  - [x] Add `minRecordingMs` to Kotlin `AppConfig` (field, JSON parse, constructor wiring).
+  - [x] Replace the hardcoded `500L, 0.005f` at `KlarvoOverlayService.kt:1847-1854` with
     `cachedConfig?.minRecordingMs` / `silenceThreshold`, with `500`/`0.005` as null-safe fallback.
-  - [ ] Correct the stale doc comment + line reference in `src-tauri/src/stt/groq_jni.rs:337-341`.
-- [ ] **Task 6 — Tests + golden vectors** (AC1–AC7)
-  - [ ] Extend `SilenceThresholdTest.kt`, `PreviewPauseFramesTest.kt` per each AC's test note.
-  - [ ] Add/extend highpass filter tests (new file, e.g. `HighpassFilterTest.kt`).
-  - [ ] Populate `expected_rms_kotlin` in `test-fixtures/wav-rms-vectors.json` where applicable.
-  - [ ] Add the config round-trip test for AC5.
-  - [ ] Seed the AC7 energy-floor + stop-latency golden vectors.
-  - [ ] Inversion check each fix (revert individually, confirm the corresponding test goes red) —
+  - [x] Correct the stale doc comment + line reference in `src-tauri/src/stt/groq_jni.rs:337-341`.
+- [x] **Task 6 — Tests + golden vectors** (AC1–AC7)
+  - [x] Extend `SilenceThresholdTest.kt`, `PreviewPauseFramesTest.kt` per each AC's test note.
+  - [x] Add/extend highpass filter tests (new file, e.g. `HighpassFilterTest.kt`).
+  - [x] Populate `expected_rms_kotlin` in `test-fixtures/wav-rms-vectors.json` where applicable.
+  - [x] Add the config round-trip test for AC5.
+  - [x] Seed the AC7 energy-floor + stop-latency golden vectors.
+  - [x] Inversion check each fix (revert individually, confirm the corresponding test goes red) —
     established convention from Story 7.1's review fixes; document the table in this story's
     Dev Agent Record.
-- [ ] **Task 7 — Build + verify**
-  - [ ] Compile-verify the real Kotlin sources (`kotlin-compiler-embeddable`, device-free — the
+- [x] **Task 7 — Build + verify**
+  - [x] Compile-verify the real Kotlin sources (`kotlin-compiler-embeddable`, device-free — the
     Story 7.1 review established this as the standing minimum gate; do not waive it).
-  - [ ] Run the new/extended Kotlin unit test suite — device-free, all green.
-  - [ ] `cargo test` — confirm no Rust behavior change (this story should not need Rust changes
+  - [x] Run the new/extended Kotlin unit test suite — device-free, all green.
+  - [x] `cargo test` — confirm no Rust behavior change (this story should not need Rust changes
     beyond the AC5 doc-comment correction, which is not a behavior change).
-  - [ ] **On-device/emulator smoke required** (per `project-context.md`: this touches live audio
+  - [~] **On-device/emulator smoke required** (per `project-context.md`: this touches live audio
     capture + real-time state — not a pure deterministic function like 7.1's chunking fix). Run
     `scripts/android-smoke.sh`, and a real recording session verifying auto-stop timing feels
     correct at default and tuned silence settings (human gate — do not claim this done without it).
+    STATUS: build/install smoke run by the dev agent (see Dev Agent Record); the live-speech
+    "feels correct" perceptual judgment is explicitly Andi's human gate and is NOT claimed done.
 
 ## Dev Notes
 
@@ -361,8 +363,118 @@ consolidates fixtures seeded by every 7.x story, per `epics-cross-platform-parit
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Gradle JVM unit tests: `:app:testUniversalDebugUnitTest` → 151 tests, 0 failures (see
+  Completion Notes for the per-file breakdown; result XML at
+  `src-tauri/gen/android/app/build/test-results/testUniversalDebugUnitTest/`).
+- `cargo test --lib` (src-tauri): 657 passed, 0 failed.
+- `cargo test --test pi_security output` (key-free integration suite): 6 passed, 0 failed.
+- On-device/emulator smoke: attempted via `scripts/android-emulator.sh` + `scripts/android-smoke.sh`
+  (WSL headless `klarvo-emu` AVD) — see Completion Notes for outcome/limits.
 
 ### Completion Notes List
 
+**Design decision (AC1/AC3 wiring):** the highpass filter normalizes each raw `Short` sample to
+`[-1,1]` (dividing by `VAD_RMS_NORMALIZATION_DIVISOR` = 32767f, AC4) BEFORE filtering, then feeds
+the filtered normalized frame directly into both `calculateRmsFloat` (RMS, no further division
+needed) and `vad.isSpeech(FloatArray)` (confirmed via bytecode inspection of the
+`com.github.gkonovalov.android-vad:silero` AAR that the `float[]` overload expects
+pre-normalized input, unlike the `short[]` overload which normalizes internally by 32767f — so
+feeding it raw-scale filtered floats would have silently broken the VAD model). This exactly
+mirrors Rust's own order (`audio/mod.rs:766` normalizes by `i16::MAX` BEFORE `SileroVad::feed`,
+which filters internally). AC4's "keep the divisor correction at the call site, don't restructure
+for order-of-operations parity" guidance is honored in spirit: `calculateRmsFloat` keeps the exact
+same Double-accumulator-then-narrow-to-Float structure as the original `calculateRms`, just
+applied to the (necessarily) already-normalized filtered input; the per-sample normalization loop
+is structurally required to feed the VAD model correctly, not an optional order-of-operations
+change to the RMS math itself.
+
+**AC5 wiring note:** the call site uses the already-populated `silenceThreshold` instance field
+(not a fresh `cachedConfig?.silenceThreshold` read) per the story's explicit instruction, since
+that field is already the AC1-established config-driven value the recorder itself uses.
+`minRecordingMs` resolution was extracted to a pure companion function
+(`KlarvoOverlayService.resolveMinRecordingMsForSilenceFilter`) for testability, mirroring the
+existing `sanitizePreviewChunk`/`shouldApplyPreviewAppearance` pattern.
+
+**AC7 golden vectors:** seeded a new fixture, `test-fixtures/vad-gate-golden-vectors-7-2.json`
+(energy-floor + stop-latency, default + one tuned config each), consumed by
+`VadGateGoldenVectorsTest.kt`. This is a Kotlin-only fixture (no Rust consumer added) since the
+epic's Story 7.7 is the designated consolidation point across both platforms — this story only
+seeds its own values per the epic DoD note.
+
+**Inversion-check table** (each fix's dedicated inversion test — reverting the fix must turn the
+paired test red):
+
+| Fix (AC) | Test file | Inversion test | What reverting would show |
+|---|---|---|---|
+| M3 highpass filter (AC3) | `HighpassFilterTest.kt` | `inversion_unfilteredBassTone_wouldWronglyPassTheGate` | Without the filter, a 20 Hz bass tone wrongly passes the energy gate |
+| H1 filtered-signal RMS (AC1) | `HighpassFilterTest.kt` | `bassTone_passesRawGate_butFailsFilteredGate` (paired raw-vs-filtered assertions in one test) | If the gate still used raw RMS, the bass tone would pass instead of fail |
+| M4 divisor 32767 (AC4) | `VadGateRmsFixtureTest.kt` | `inversion_oldDivisor32768_differsFromCorrectedDivisor32767` | Old 32768f divisor produces a measurably different RMS than the corrected 32767f |
+| L1 exact 31.25 fps (AC6) | `PreviewPauseFramesTest.kt` | `inversion_oldTruncatedFps_wouldHaveGiven62_ac6` | Old truncated fps (31) gives 62 frames for 2.0s, not the correct 63 |
+| H17 200ms/7-frame floor (AC2) | `PreviewPauseFramesTest.kt` | `inversion_revertingFloor_wouldGiveOnly2Frames_ac2` | Without the floor, 0.05s silence yields only 2 frames, not the 7-frame floor |
+| M2 config-driven minRecordingMs (AC5) | `MinRecordingMsConfigTest.kt` | `inversion_distinctConfigValues_resolveToDistinctResults` | A hardcoded resolver would return the same value for 500L and 750L configs |
+
+**On-device/emulator smoke — outcome and limits (Task 7 last bullet):** `scripts/android-emulator.sh`
+was run to boot the headless WSL `klarvo-emu` AVD and `scripts/android-smoke.sh` was attempted
+against it to build, install and launch the fresh APK (the mechanical "install + verify it doesn't
+crash" gate, which `project-context.md` assigns to the dev agent, not Andi). **This proves at most
+wiring/structure** (the app launches, the JNI bridge links, no `UnsatisfiedLinkError`) — it does
+**NOT** and **cannot** prove the AC's actual design claim (auto-stop timing "feels correct" at
+default and tuned silence settings), because: (a) the headless emulator has no live microphone
+input and the existing debug harness (`DEBUG_SET_STATE` broadcast) only fakes UI states, it does
+not drive real `AudioRecord` capture or the VAD frame pipeline; (b) "feels correct" is an explicit
+human perceptual judgment. The story's own Task 7 text marks this whole item a **human gate** for
+exactly this reason. **This part remains open and is Andi's gate** — see "AC left unmet" below.
+
 ### File List
+
+- `android/kotlin-src/com/klarvo/voice/HighpassFilter.kt` (NEW) — ported 85 Hz Butterworth
+  highpass biquad filter (M3, AC3)
+- `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt` (MODIFIED) — highpass filter
+  instance + lifecycle wiring, `calculateRmsFloat` companion function, VAD-gate RMS/Silero routed
+  through the filtered+normalized frame, corrected `VAD_RMS_NORMALIZATION_DIVISOR` (32767f),
+  exact `VAD_FRAMES_PER_SECOND` (31.25f) + `ceil`, `MIN_SILENT_FRAMES` (7-frame/200ms floor)
+  applied uniformly in `framesForSeconds` (H1/M3/M4/L1/H17, AC1/AC2/AC3/AC4/AC6)
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` (MODIFIED) — `Config.minRecordingMs: Long`
+  field (default 500L), JSON parse from `advanced.minRecordingMs`, constructor wiring (M2, AC5)
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (MODIFIED) — pre-STT filter call
+  site reads `resolveMinRecordingMsForSilenceFilter(cachedConfig)` / `silenceThreshold` instead
+  of hardcoded `500L, 0.005f`; new pure `resolveMinRecordingMsForSilenceFilter` companion
+  function; dynamic log messages (M2, AC5)
+- `src-tauri/src/stt/groq_jni.rs` (MODIFIED) — corrected stale doc comment (M2, AC5; no code
+  change)
+- `android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt` (NEW) — highpass filter unit
+  tests (Rust-reference-ported DC/high-freq tests + AC3 bass/speech-band gate-flip tests)
+- `android/kotlin-test/com/klarvo/voice/VadGateRmsFixtureTest.kt` (NEW) — AC4 divisor-correction
+  lock against `wav-rms-vectors.json`'s known-input/output cases
+- `android/kotlin-test/com/klarvo/voice/MinRecordingMsConfigTest.kt` (NEW) — AC5 config
+  round-trip test for `resolveMinRecordingMsForSilenceFilter`
+- `android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt` (NEW) — AC7 golden-vector
+  consumer (energy-floor + stop-latency, default + tuned)
+- `android/kotlin-test/com/klarvo/voice/PreviewPauseFramesTest.kt` (MODIFIED) — AC2/AC6 floor +
+  exact-fps tests + inversions
+- `test-fixtures/wav-rms-vectors.json` (MODIFIED) — populated `expected_rms_kotlin` for
+  RMS-003/004/005/006 (AC4)
+- `test-fixtures/vad-gate-golden-vectors-7-2.json` (NEW) — AC7 golden vectors (energy-floor +
+  stop-latency, default + tuned), seeds Story 7.7
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — status update
+
+## Change Log
+
+- 2026-09-09: Story 7.2 implementation — Android live auto-stop VAD-gate parity (H1, H17, M2, M3,
+  M4, L1). Ported Rust's 85 Hz Butterworth highpass filter to Kotlin (`HighpassFilter.kt`, AC3);
+  routed the VAD-gate RMS and Silero inference through the filtered+normalized frame (AC1);
+  corrected the RMS normalization divisor to 32767f (AC4); corrected `VAD_FRAMES_PER_SECOND` to
+  the exact 31.25 with `ceil` (AC6); added a uniform 200ms/7-frame hangover floor to
+  `framesForSeconds`, applied to both autostop and preview-pause per GATE-1 (AC2); wired
+  `minRecordingMs` into `AppConfig`/the pre-STT JNI call site, replacing hardcoded literals (AC5);
+  corrected the stale `groq_jni.rs` doc comment. Added 4 new Kotlin test files + extended
+  `PreviewPauseFramesTest.kt`, all with paired inversion checks; populated
+  `expected_rms_kotlin` in `wav-rms-vectors.json`; seeded a new AC7 golden-vector fixture for
+  Story 7.7. 151 Kotlin JVM unit tests green (0 failures), 657 Rust lib tests green, 6/6
+  `pi_security output` tests green. On-device/emulator smoke: build+install mechanical gate
+  attempted by the dev agent; the live-speech "feels correct" perceptual judgment is Andi's
+  explicit human gate and remains open — story held short of `done` pending that gate.

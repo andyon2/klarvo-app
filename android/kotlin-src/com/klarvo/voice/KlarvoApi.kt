@@ -99,6 +99,13 @@ object KlarvoApi {
         // in config.json (camelCase, parity with Rust AdvancedSettings::silence_threshold).
         // Default 0.005 matches the Rust default_silence_threshold() in config/mod.rs:209.
         val silenceThreshold: Float = 0.005f,
+        // Pre-STT filter: minimum recording duration in ms before the clip is sent to the STT
+        // API (M2, AC5, Story 7-2). Nested under "advanced.minRecordingMs" in config.json
+        // (camelCase, parity with Rust AdvancedSettings::min_recording_ms). Long (not Int) to
+        // avoid silent truncation, matching the u32 semantics on the Rust side and the existing
+        // GroqSttBridge.nativeSilenceCheck(minRecordingMs: Long, ...) JNI signature. Default 500
+        // matches Rust's AdvancedSettings::min_recording_ms default (config/mod.rs:119-122,217-219).
+        val minRecordingMs: Long = 500L,
         // Recording button diameter in dp — TAP surface + (Story 9-14 re-scope 2026-07-01) the
         // HOLD Abbrechen button. User-configurable ∈ {52, 60, 72, 84, 96}. Default 72 (device-scale
         // approved). Written by desktop Settings UI via save_settings; read here for Android rendering.
@@ -345,6 +352,13 @@ object KlarvoApi {
                 ?.optDouble("silenceThreshold", 0.005)
                 ?.toFloat()
                 ?: 0.005f
+            // "advanced.minRecordingMs" -- same nesting/opt-with-default pattern as
+            // silenceThreshold above (M2, AC5, Story 7-2). Default 500 matches Rust's
+            // AdvancedSettings::min_recording_ms default (config/mod.rs:217-219).
+            val minRecordingMs = json
+                .optJSONObject("advanced")
+                ?.optLong("minRecordingMs", 500L)
+                ?: 500L
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -436,6 +450,7 @@ object KlarvoApi {
                 gatedSttProvider, customPrompt, dictionaryTerms,
                 licenseValidatedAt, effectiveFirstInstall,
                 silenceThreshold,
+                minRecordingMs,
                 recordingButtonSizeDp,
                 livePreviewEnabled, previewPauseSilenceSecs,
                 previewTextColor, previewBgColor, previewBgBlur,

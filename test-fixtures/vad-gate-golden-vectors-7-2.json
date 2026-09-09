@@ -1,0 +1,80 @@
+[
+  {
+    "id": "VAD-GATE-001",
+    "category": "energy-floor",
+    "config": "default",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- just below threshold",
+    "silence_threshold": 0.005,
+    "normalized_rms": 0.004,
+    "expected_gate_open": false
+  },
+  {
+    "id": "VAD-GATE-002",
+    "category": "energy-floor",
+    "config": "default",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- at threshold (>= semantics)",
+    "silence_threshold": 0.005,
+    "normalized_rms": 0.005,
+    "expected_gate_open": true
+  },
+  {
+    "id": "VAD-GATE-003",
+    "category": "energy-floor",
+    "config": "default",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- above threshold",
+    "silence_threshold": 0.005,
+    "normalized_rms": 0.006,
+    "expected_gate_open": true
+  },
+  {
+    "id": "VAD-GATE-004",
+    "category": "energy-floor",
+    "config": "tuned",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- just below threshold",
+    "silence_threshold": 0.02,
+    "normalized_rms": 0.019,
+    "expected_gate_open": false
+  },
+  {
+    "id": "VAD-GATE-005",
+    "category": "energy-floor",
+    "config": "tuned",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- at threshold (>= semantics)",
+    "silence_threshold": 0.02,
+    "normalized_rms": 0.02,
+    "expected_gate_open": true
+  },
+  {
+    "id": "VAD-GATE-006",
+    "category": "energy-floor",
+    "config": "tuned",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- above threshold",
+    "silence_threshold": 0.02,
+    "normalized_rms": 0.021,
+    "expected_gate_open": true
+  },
+  {
+    "id": "VAD-LATENCY-001",
+    "category": "stop-latency",
+    "config": "default",
+    "description": "stop-latency (frames-to-stop) at default silenceSecs=2.0 -- ceil(2.0 * 31.25) = 63 (AC6); above the AC2 7-frame floor",
+    "silence_secs": 2.0,
+    "expected_frames": 63
+  },
+  {
+    "id": "VAD-LATENCY-002",
+    "category": "stop-latency",
+    "config": "tuned",
+    "description": "stop-latency at a tuned silenceSecs=0.5 -- ceil(0.5 * 31.25) = 16; still above the AC2 7-frame floor",
+    "silence_secs": 0.5,
+    "expected_frames": 16
+  },
+  {
+    "id": "VAD-LATENCY-003",
+    "category": "stop-latency",
+    "config": "tuned-floor",
+    "description": "stop-latency at a very small tuned silenceSecs=0.05 -- exercises the AC2 200ms-equivalent floor (ceil(0.05 * 31.25) = 2, floored up to 7)",
+    "silence_secs": 0.05,
+    "expected_frames": 7
+  }
+]
