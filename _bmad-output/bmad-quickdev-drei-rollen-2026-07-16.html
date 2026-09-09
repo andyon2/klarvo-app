@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quick-dev im Drei-Rollen-Modell — Erkenntnis &amp; Bauvorschlag</title>
+<style>
+  :root{
+    --bg:#0F1112; --surface:#16181A; --elevated:#232729; --border:#2c3136;
+    --text:#E4E7EA; --muted:#9aa3ab; --dim:#6b747c;
+    --teal:#29C7AC; --teal-hi:#57DDC7; --amber:#E9A24C; --danger:#EE6F63;
+    --maxw:860px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:44px 24px 100px}
+  header.doc{border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:6px}
+  h1{font-size:26px; font-weight:750; margin:0 0 8px; letter-spacing:-.01em}
+  h1 .k{color:var(--teal)}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+  .pill{font-size:12px; padding:3px 10px; border-radius:999px; background:var(--elevated);
+        color:var(--muted); border:1px solid var(--border)}
+  .pill b{color:var(--text); font-weight:600}
+  h2{font-size:19px; font-weight:700; margin:38px 0 12px; padding-top:8px; letter-spacing:-.01em;
+     border-top:1px solid var(--border)}
+  h2 .n{color:var(--teal); margin-right:8px}
+  p{margin:10px 0}
+  code{background:var(--elevated); border:1px solid var(--border); border-radius:5px;
+       padding:1px 6px; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       color:#cfe9e3; word-break:break-word}
+  strong{color:#fff; font-weight:650}
+  ul,ol{margin:10px 0; padding-left:22px}
+  li{margin:6px 0}
+  .tag{display:inline-block; font:600 10.5px/1.4 ui-monospace,Menlo,monospace;
+       padding:1px 5px; border-radius:4px; vertical-align:middle; white-space:nowrap}
+  .v{background:rgba(41,199,172,.14); color:var(--teal-hi); border:1px solid rgba(41,199,172,.4)}
+  .a{background:rgba(233,162,76,.14); color:var(--amber); border:1px solid rgba(233,162,76,.4)}
+  .verdict{display:flex; flex-wrap:wrap; gap:10px; margin:14px 0}
+  .vcard{flex:1 1 180px; background:var(--surface); border:1px solid var(--border);
+         border-radius:10px; padding:11px 14px}
+  .vcard .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim)}
+  .vcard .val{font-size:15.5px; font-weight:700; margin-top:3px}
+  .vcard.ok .val{color:var(--teal-hi)}
+  .vcard.warn .val{color:var(--amber)}
+  .note{background:var(--surface); border:1px solid var(--border); border-radius:10px;
+        padding:2px 16px; margin:14px 0}
+  .note.teal{border-left:3px solid var(--teal)}
+  .note.amber{border-left:3px solid var(--amber)}
+  .tblwrap{overflow-x:auto; margin:14px 0; border:1px solid var(--border); border-radius:10px}
+  table{border-collapse:collapse; width:100%; font-size:13px; min-width:500px}
+  th,td{text-align:left; padding:8px 11px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{background:var(--elevated); font-weight:650; font-size:12px; text-transform:uppercase; letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  /* pipeline */
+  .flow{display:flex; flex-wrap:wrap; gap:0; margin:14px 0 4px; align-items:stretch}
+  .stp{flex:1 1 160px; min-width:150px; background:var(--surface); border:1px solid var(--border);
+       border-radius:9px; padding:10px 12px}
+  .stp .s{font:700 10.5px/1.4 ui-monospace,monospace; color:var(--teal); text-transform:uppercase; letter-spacing:.04em}
+  .stp .t{font-weight:650; font-size:13px; margin:3px 0 4px}
+  .stp .d{font-size:11.5px; color:var(--muted); line-height:1.5}
+  .stp.new{border-color:rgba(41,199,172,.55); border-left:3px solid var(--teal)}
+  .stp .badge{display:inline-block; font:600 10px/1.4 ui-monospace,monospace; color:var(--teal-hi);
+       border:1px solid rgba(41,199,172,.4); border-radius:3px; padding:0 4px; margin-top:5px}
+  .arrow{display:flex; align-items:center; color:var(--dim); font-size:17px; padding:0 5px; align-self:center}
+  pre{background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:12px 14px;
+      font:12px/1.6 ui-monospace,Menlo,Consolas,monospace; color:#cfe9e3; overflow-x:auto; margin:12px 0}
+  footer{margin-top:44px; padding-top:16px; border-top:1px solid var(--border);
+         color:var(--dim); font-size:12px; line-height:1.7}
+  @media (max-width:560px){ .wrap{padding:30px 16px 80px} h1{font-size:22px}
+      .flow{flex-direction:column} .arrow{transform:rotate(90deg); padding:2px 0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1><span class="k">quick-dev</span> im Drei-Rollen-Modell — Erkenntnis &amp; Bauvorschlag</h1>
+  <p style="color:var(--muted); margin:4px 0 0">Folge-Report zur Diskussion des Haupt-Reports
+  (<code>bmad-mensch-im-step-2026-07-16</code>, Teil D). Rollen beim Zielteam:
+  <strong>Autorin</strong> (nicht-technisch, schreibt Story) · <strong>Entwickler</strong> (fährt
+  quick-dev) · <strong>Reviewer</strong>.</p>
+  <div class="meta">
+    <span class="pill">Datum <b>2026-07-16</b></span>
+    <span class="pill">Basis <b>klarvo, BMAD 6.6.1-next.2</b></span>
+    <span class="pill">Status <b>Vorschlag — nicht umgesetzt</b></span>
+  </div>
+</header>
+
+<h2><span class="n">1</span>Die Erkenntnis</h2>
+<div class="note amber">
+<p><strong>Der Knackpunkt ist ein Übergabe-Problem, kein technisches: Intent-Fragen entstehen zur
+falschen Zeit beim falschen Menschen.</strong> quick-dev stellt Klärungsfragen an den, der die
+Session fährt (<code>step-01:79</code>, <code>step-02:5</code>) — im Drei-Rollen-Modell der
+<strong>Entwickler</strong>. Antworten kann sie nur die <strong>Autorin</strong>, die dann nicht im
+Raum ist. Optionen des Entwicklers: raten (Intent-Drift) oder zurücklaufen (Latenz).
+<span class="tag v">V</span></p>
+</div>
+<p><strong>Wichtige Korrektur:</strong> Der BMAD-Vollpfad löst das <em>nicht</em>.
+<code>create-story</code> interviewt die Autorin nicht — es ist explizit „ZERO USER INTERVENTION:
+fully automated except for initial epic/story selection or missing documents“
+(<code>create-story/SKILL.md:17</code>). Mehrdeutigkeit wandert auch dort stromabwärts, bis
+<code>dev-story</code> bei „ambiguous“ HALTet (<code>:206</code>) — wieder beim Entwickler.
+<strong>Die Lücke ist eine Rollen-Lücke, kein Workflow-Feature.</strong> Ein Wechsel auf den
+Vollpfad kauft hier nichts. <span class="tag v">V</span></p>
+
+<div class="verdict">
+  <div class="vcard ok"><div class="lbl">Technische Machbarkeit quick-dev-only</div><div class="val">gegeben (Haupt-Report Teil D)</div></div>
+  <div class="vcard warn"><div class="lbl">Offener Punkt</div><div class="val">Prozess-Design: wo findet Intent-Klärung statt?</div></div>
+  <div class="vcard ok"><div class="lbl">Hebel</div><div class="val">Klärung nach vorn — zur Autorin</div></div>
+</div>
+
+<h2><span class="n">2</span>Der Bauvorschlag</h2>
+
+<div class="flow">
+  <div class="stp new"><div class="s">Autorin</div><div class="t">Story schreiben + Preflight</div>
+    <div class="d">Frei, in ihrer Sprache, <strong>kein Template</strong>. Danach KI-Gegencheck:
+    „Welche Fragen würde ein Entwickler stellen?“ — sie beantwortet sie, solange sie antworten kann.</div>
+    <span class="badge">NEU: Klärung vorverlagert</span></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">Ablage</div><div class="t">Story als Datei</div>
+    <div class="d">Vereinbarter Ort (z.B. <code>stories/</code>). quick-dev ingestiert unformatierte
+    Intent-Files nativ (<code>step-01:25,50</code>).</div></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">Entwickler</div><div class="t">quick-dev fahren</div>
+    <div class="d">Story = Intent. Standards fließen automatisch ein (s. Mechanik). Entwickler hält
+    das Spec-Gate (step-02). Restfragen: wenige, dank Preflight.</div></div>
+  <div class="arrow">→</div>
+  <div class="stp"><div class="s">Reviewer</div><div class="t">Review getrennt</div>
+    <div class="d">Eingebauter 3-fach-Review läuft ohnehin (step-04). Reviewer-Rolle: eigene Session,
+    idealerweise anderes LLM — BMAD empfiehlt das selbst (<code>dev-story:477</code>).</div></div>
+</div>
+
+<h2><span class="n">3</span>Die Mechanik: Standards automatisch, deterministisch, autorin-frei</h2>
+<p>Das Team sammelt stehendes Wissen (Design, Codestil, Best Practices, Edge-Cases, Architektur —
+<strong>Kategorien offen</strong>) als einzelne Markdown-Dateien in einem Ordner. Ein einziger
+Glob-Eintrag im sanktionierten Customization-Seam lädt ihn bei <em>jeder</em> Aktivierung:</p>
+<pre># _bmad/custom/bmad-quick-dev.toml   (update-sicher, Teil des BMAD-Vertrags)
+[workflow]
+persistent_facts = ["file:{project-root}/docs/standards/**/*.md"]</pre>
+<ul>
+<li><strong>Deterministisch:</strong> unconditional bei Aktivierung geladen — kein LLM-Ermessen
+  (<code>SKILL.md</code> Step 3: „paths or globs … load the referenced contents as facts“)
+  <span class="tag v">V</span></li>
+<li><strong>Kategorieoffen:</strong> neue Kategorie = neue Datei im Ordner; der Glob wird nie
+  angefasst. <span class="tag v">V</span></li>
+<li><strong>Autorin-frei:</strong> sie schreibt nur die Story; den Ordner pflegt das Team.</li>
+<li><strong>Kontrast Vollpfad:</strong> dessen Auto-Discovery kennt nur die <em>festen</em> Kategorien
+  <code>*prd*/*architecture*/*ux*/*epic*</code> (<code>create-story:80–85</code>) und wählt teils per
+  LLM-Ermessen (<code>discover-inputs</code> INDEX_GUIDED). Das offene Sammelmodell passt auf den
+  Glob <strong>besser</strong> als auf das Vollpfad-Raster. <span class="tag v">V</span></li>
+<li>Zusätzlich: Code-Konventionen nach <code>project-context.md</code> (wird von quick-dev, dev-story
+  und create-story gezogen — runtime-agnostische SSOT); CLAUDE.md dünn, nur Prozessregeln + Pointer
+  (Details: Haupt-Report D.5). <span class="tag v">V</span></li>
+</ul>
+
+<div class="note teal">
+<p><strong>Das Trilemma (bewusste Wahl):</strong> Determinismus · Selektivität · Null-Pflege — es
+gibt immer nur zwei. Der Glob wählt <strong>Determinismus + Null-Pflege</strong> und verzichtet auf
+Selektion (alles wird immer geladen). Das ist richtig, solange der Korpus klein ist.
+<strong>Tripwire:</strong> wächst <code>docs/standards/</code> über grob ~10–20k Tokens, kollidiert
+„alles immer laden“ mit quick-devs eigener Kontext-Disziplin (<code>SKILL.md:28</code>,
+„context-rot“) → dann team-seitiger Kurations-/Destillat-Schritt. Nie autorin-seitig.
+<span class="tag a">A</span> (Schwelle geschätzt)</p>
+</div>
+
+<h2><span class="n">4</span>Was noch zu erheben ist (vor dem Bau)</h2>
+<ol>
+<li><strong>KI-Nutzung der Autorin heute:</strong> Womit schreibt/prüft sie ihre Stories bereits?
+  Der Preflight soll in <em>ihr</em> bestehendes Werkzeug, nicht ein neues daneben.</li>
+<li><strong>Wer fährt die Session:</strong> bestätigt der Entwickler? (Bestimmt, wo Restfragen und
+  Spec-Gate landen.)</li>
+<li><strong>Korpus-Prognose:</strong> Wie groß wird die Standards-Sammlung in 6 Monaten? (Entscheidet,
+  wann der Trilemma-Tripwire greift.)</li>
+<li><strong>Preflight-Form:</strong> ein kurzer Prompt-Baustein für die Autorin genügt („Stelle mir
+  die Fragen, die ein Entwickler zu dieser Story hätte; arbeite sie mit mir ein“). Kein Template,
+  keine Pflegepflicht. <span class="tag a">A</span> (Vorschlag, nicht erprobt)</li>
+</ol>
+
+<div class="note">
+<p><strong>Kernaussage in einem Satz:</strong> Euer Modell — Autorin schreibt nur die Story, alles
+andere fließt automatisch ein — geht mit quick-dev-only; der einzige echte Umbau ist
+<em>zeitlich</em>, nicht technisch: die Intent-Klärung wandert vom Entwickler-Schreibtisch an den
+der Autorin.</p>
+</div>
+
+<footer>
+Folge-Report zu <code>bmad-mensch-im-step-2026-07-16.html</code> (dort: Teil A Mechanik-Beweis,
+Teil B Update-Falle, Teil C Schichten-Mapping, Teil D Zweitbetrachtung + CLAUDE.md-Rolle).
+Tags: <span class="tag v">V</span> = aus Skill-Dateien verifiziert · <span class="tag a">A</span> =
+Vorschlag/Schätzung. Belege: <code>bmad-quick-dev/step-01,step-02,step-04,SKILL.md</code> ·
+<code>bmad-create-story/SKILL.md</code> · <code>bmad-dev-story/SKILL.md</code>.
+</footer>
+
+</div>
+</body>
+</html>

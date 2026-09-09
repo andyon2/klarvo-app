@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture-Review Follow-ups — Klarvo handoff</title>
+<style>
+  :root{
+    --bg:#0F1112; --surface:#16181A; --elevated:#232729; --border:#2c3136;
+    --text:#E4E7EA; --muted:#9aa3ab; --dim:#6b747c;
+    --teal:#29C7AC; --teal-hi:#57DDC7; --amber:#E9A24C; --danger:#EE6F63;
+    --maxw:860px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:48px 24px 120px}
+  header.doc{border-bottom:1px solid var(--border); padding-bottom:20px; margin-bottom:8px}
+  h1{font-size:27px; font-weight:750; margin:0 0 10px; letter-spacing:-.01em}
+  h1 .k{color:var(--teal)}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+  .pill{font-size:12px; padding:3px 10px; border-radius:999px; background:var(--elevated);
+        color:var(--muted); border:1px solid var(--border)}
+  .pill b{color:var(--text); font-weight:600}
+  .pill.warn{border-color:var(--amber); color:var(--amber)}
+  h2{font-size:20px; font-weight:700; margin:40px 0 12px; letter-spacing:-.01em}
+  h2 .n{color:var(--danger); font-variant-numeric:tabular-nums; margin-right:10px}
+  h3{font-size:14px; font-weight:650; margin:24px 0 6px; color:var(--muted);
+     text-transform:uppercase; letter-spacing:.05em}
+  p{margin:11px 0}
+  a{color:var(--teal); text-decoration:none} a:hover{text-decoration:underline}
+  code{background:var(--elevated); border:1px solid var(--border); border-radius:5px; padding:1px 6px;
+       font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#cfe9e3}
+  pre{background:#0b0d0e; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+      overflow:auto; font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#cfe9e3; margin:14px 0}
+  pre code{background:none; border:none; padding:0; color:inherit; font-size:inherit}
+  .draftbox{border:1px solid var(--border); border-left:3px solid var(--teal); border-radius:0 10px 10px 0;
+            background:rgba(41,199,172,.04); padding:4px 18px 14px; margin:18px 0}
+  .draftbox > h4{font-size:14px; color:var(--teal-hi); margin:14px 0 4px; text-transform:uppercase; letter-spacing:.04em}
+  strong{color:#fff; font-weight:650}
+  ul{margin:11px 0; padding-left:22px} li{margin:7px 0}
+  hr{border:none; border-top:1px solid var(--border); margin:34px 0}
+  .lead{color:var(--muted)}
+  .callout{border-left:3px solid var(--amber); background:rgba(233,162,76,.07);
+           padding:12px 16px; border-radius:0 8px 8px 0; margin:18px 0}
+  .callout.teal{border-color:var(--teal); background:rgba(41,199,172,.07)}
+  .field{margin:12px 0}
+  .field .lbl{display:inline-block; min-width:130px; color:var(--teal-hi); font-weight:600; font-size:13px;
+              text-transform:uppercase; letter-spacing:.03em; vertical-align:top}
+  footer{margin-top:54px; padding-top:18px; border-top:1px solid var(--border); color:var(--dim); font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1><span class="k">Architecture-Review</span> Follow-ups <span style="color:var(--muted);font-weight:500">— handoff for the Klarvo agent</span></h1>
+  <div class="meta">
+    <span class="pill">Created: <b>2026-06-17</b></span>
+    <span class="pill warn">Type: <b>transient handoff</b></span>
+    <span class="pill">Next-step owner: <b>Klarvo agent (BMAD)</b></span>
+  </div>
+</header>
+
+<h3>What this is</h3>
+<p class="lead">A short list of work the 2026-06-17 architecture pass surfaced as <strong>must-be-done but not yet
+planned</strong> — the <code>— not yet owned</code> rows in <a href="./ARCHITECTURE.html">ARCHITECTURE.md §8</a>. The
+architecture doc describes <em>state</em> and must not carry a to-do list; this file carries the to-do, separately, so
+it is visible and not lost.</p>
+<div class="callout">
+  <strong>This document is disposable.</strong> Once each item has a real home in BMAD (a <code>docs/backlog.md</code> entry
+  or a created story in <code>sprint-status.yaml</code>), delete the corresponding section here. When the file is empty,
+  delete the file. One source of truth for the plan (BMAD) — this is a bridge, not a second backlog.
+</div>
+<div class="callout teal">
+  <strong>Decision the Klarvo agent owns:</strong> for each item, <em>backlog entry</em> (defer, keep visible) vs.
+  <em>create-story now</em> (schedule it). Scoping + acceptance criteria are a BMAD job + Andi's gate — the briefs below
+  are starting points, not finished stories.
+</div>
+
+<h2><span class="n">1</span>Desktop token-enforcement gate <span style="color:var(--muted);font-weight:500;font-size:15px">(remaining piece of "wall A")</span></h2>
+<div class="field"><span class="lbl">Problem</span><span>Android cannot drift off the design tokens: <code>KlarvoTheme.kt</code> is codegen'd from the <code>--k-*</code> CSS custom properties, and a build-gate (<code>scripts/gen-android-theme.mjs --check</code>, story 9-10) fails the build if it was hand-edited. <strong>Desktop has no equivalent.</strong> Nothing stops a component in <code>src/</code> from hardcoding a raw <code>#hex</code>/<code>rgba()</code> instead of a token — and several do today (e.g. <code>src/FloatingBar.tsx</code>). Epic 8 re-skins the surfaces onto tokens, but a re-skin is a one-time cleanup; <strong>without an enforced gate the same drift can return</strong>.</span></div>
+<div class="field"><span class="lbl">Why it matters</span><span>The structural counterpart to ADR-0019 §2 ("tokens are generated, not hand-copied") — established for Android, never extended to desktop <em>enforcement</em>. It is the last open piece of the design-drift wall: re-skinning without a gate fixes the symptom, not the cause.</span></div>
+<div class="field"><span class="lbl">Candidate approach</span><span>(to refine, not prescriptive) A lint/CI check flagging raw <code>#hex</code> / <code>rgb()</code> / <code>rgba()</code> in <code>src/**/*.{tsx,ts,css}</code> <strong>outside</strong> the token file <code>src/styles.css</code>, allowing only <code>var(--k-*)</code> / Tailwind token utilities. Mirrors the spirit of the Android <code>--check</code> gate. Tool choice (ESLint / stylelint / small <code>scripts/</code> script) open — match the existing build. Short allowlist for honest exceptions.</span></div>
+<div class="field"><span class="lbl">Suggested home</span><span>A story under <strong>Epic 8</strong> (enforcement half of the visual overhaul), or a small standalone story. May warrant a one-line <strong>ADR-0019 amendment</strong> recording that "generated/enforced, not hand-typed" now covers desktop too.</span></div>
+<div class="field"><span class="lbl">Context</span><span>ADR-0019 (design SSOT) · story 9-10 (Android token codegen + <code>--check</code>) · <code>ARCHITECTURE.md</code> §7 + §8.</span></div>
+
+<div class="draftbox">
+<h4>Implementation draft — starting point, NOT committed code</h4>
+<p>No ESLint/stylelint in the project, so the lowest-blast-radius gate mirrors the Android one: a small
+<code>scripts/*.mjs</code> run from the build.</p>
+
+<p><strong><code>scripts/check-desktop-tokens.mjs</code>:</strong></p>
+<pre><code>#!/usr/bin/env node
+/**
+ * check-desktop-tokens.mjs  — desktop counterpart to gen-android-theme.mjs --check.
+ * Fails if a component hardcodes a raw color instead of a design token.
+ *
+ * Allowed:   var(--k-* / --color-klarvo-*), Tailwind token utilities (bg-klarvo-*, …).
+ * Forbidden: raw #hex, rgb()/rgba(), hsl()/hsla() in components.
+ * Legit raw colors live ONLY in the token layer (src/styles.css), which is allowlisted.
+ *
+ * Usage:  node scripts/check-desktop-tokens.mjs     # exit 1 if any offenders
+ * ADR-0019 extended to desktop: tokens are enforced, not hand-typed.
+ */
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { resolve, dirname, relative, extname } from 'path';
+import { fileURLToPath } from 'url';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const SRC  = resolve(ROOT, 'src');
+
+// Files where raw color literals are legitimate (the token / global layer).
+const ALLOWLIST = new Set([
+  'src/styles.css',   // @theme — the design tokens themselves
+  'src/App.css',      // global base styles (confirm: keep or tokenize)
+]);
+const EXTS = new Set(['.ts', '.tsx', '.css']);
+const PATTERNS = [ /#[0-9a-fA-F]{3,8}\b/, /\brgba?\s*\(/, /\bhsla?\s*\(/ ];
+const OPT_OUT = /klarvo-allow-color/;   // honest per-line exception
+
+function walk(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    const full = resolve(dir, name);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (EXTS.has(extname(name))) out.push(full);
+  }
+  return out;
+}
+
+const offenders = [];
+for (const file of walk(SRC)) {
+  const rel = relative(ROOT, file).replace(/\\/g, '/');
+  if (ALLOWLIST.has(rel)) continue;
+  readFileSync(file, 'utf8').split('\n').forEach((line, i) =&gt; {
+    if (OPT_OUT.test(line)) return;
+    if (PATTERNS.some(re =&gt; re.test(line)))
+      offenders.push(`  ${rel}:${i + 1}  ${line.trim().slice(0, 100)}`);
+  });
+}
+
+if (offenders.length) {
+  console.error('\nRAW COLORS in src/ — use design tokens, not hardcoded values.');
+  console.error('Allowed: var(--k-*) / bg-klarvo-* utilities. Token home: src/styles.css.');
+  console.error('Intentional exception: add `klarvo-allow-color` on the line.\n');
+  console.error(offenders.join('\n'));
+  console.error(`\n${offenders.length} offending line(s).`);
+  process.exit(1);
+}
+console.log('[ok] No raw colors in src/ outside the token layer.');</code></pre>
+
+<p><strong>Wiring in <code>package.json</code></strong> (add a script + chain it ahead of the build, like
+<code>android-smoke.sh</code> runs the android <code>--check</code>):</p>
+<pre><code>"scripts": {
+  "dev": "vite",
+  "check:tokens": "node scripts/check-desktop-tokens.mjs",
+  "build": "node scripts/check-desktop-tokens.mjs &amp;&amp; tsc &amp;&amp; vite build",
+  "preview": "vite --port 1422 --host",
+  "tauri": "tauri"
+}</code></pre>
+
+<h4>Current reality — measured 2026-06-17 (draft run against <code>src/</code>)</h4>
+<p>353 raw-color lines total — but <strong>261 are in <code>src/components/ThemeSwitcher.tsx</code></strong> (a theme/palette
+picker that legitimately defines color sets). That file needs its own call first: allowlist it as a palette source, or
+fold it into tokens. The remaining <strong>~92 lines are the real component drift</strong> — <code>FloatingBar.tsx</code> (20),
+<code>settings/previewAppearance.ts</code> (17), <code>AppearanceContent.tsx</code> (15), <code>PreviewPanel.tsx</code> (9),
+<code>SettingsPanel.tsx</code> (9), <code>settings/types.ts</code> (9), … — i.e. exactly the Epic 8 surfaces. Once
+ThemeSwitcher is decided, the triage is small.</p>
+
+<h4>Sequencing — the one real decision</h4>
+<p>Epic 8 hasn't finished re-skinning the surfaces, so making this <strong>build-blocking now would fail on the
+not-yet-migrated files</strong> (<code>FloatingBar.tsx</code> etc. — exactly the Epic 8 surfaces). Two clean orders:
+(1) land it first as non-blocking <code>check:tokens</code> (CI/manual report), flip it into <code>build</code> once
+<code>src/</code> is clean; or (2) land the gate as the <strong>last</strong> story of Epic 8, after the surfaces are migrated.</p>
+
+<h4>Known limitations (by design)</h4>
+<p>It's a line-grep, not a CSS/AST parser (same pragmatism as the Android gate). False positives possible
+(hex in a non-color string, a URL fragment, a regex) — handle via the file <code>ALLOWLIST</code> or the per-line
+<code>klarvo-allow-color</code> opt-out. Run it once against current <code>src/</code> and triage the initial batch.
+Catching the <em>wrong</em> token (old <code>#2AC3A8</code> vs new <code>#29C7AC</code>) is out of scope — the raw-hex ban
+already forces token use.</p>
+
+<h4>Definition of done (sketch — agent/Andi own final ACs)</h4>
+<ul>
+  <li><code>npm run check:tokens</code> exits 0 on a clean <code>src/</code>, exits 1 with <code>file:line</code> on a planted raw hex.</li>
+  <li>Wired into build or CI per the sequencing decision above.</li>
+  <li><code>src/styles.css</code> (and any confirmed token files) allowlisted; the <code>klarvo-allow-color</code> opt-out works.</li>
+  <li>One-line <strong>ADR-0019 amendment</strong>: "enforced, not hand-typed" now covers desktop — components reference
+  tokens only; <code>src/styles.css</code> is the sole raw-color home; the gate enforces it.</li>
+</ul>
+</div>
+
+<h2><span class="n">2</span>Full mechanical project map <span style="color:var(--muted);font-weight:500;font-size:15px">(<code>document-project</code> re-scan)</span></h2>
+<div class="field"><span class="lbl">Problem</span><span><code>docs/index.md</code> notes "no full project scan has been run". The new <code>ARCHITECTURE.md</code> is the <em>human-facing</em> front door, but the <em>mechanical</em> code map that should sit under it does not exist.</span></div>
+<div class="field"><span class="lbl">Why it matters</span><span>Complementary: <code>ARCHITECTURE.md</code> ties things together + gives rationale; <code>document-project</code> produces the exhaustive code-as-is map. Both is what a fresh agent needs to orient without re-deriving the codebase.</span></div>
+<div class="field"><span class="lbl">Candidate approach</span><span>Run BMAD <code>document-project</code> → "Re-scan entire project". A BMAD-native action, not a code change.</span></div>
+<div class="field"><span class="lbl">Suggested home</span><span>Not really a story — a one-off BMAD task. A backlog note is enough.</span></div>
+<div class="field"><span class="lbl">Context</span><span><code>docs/index.md</code> · <code>ARCHITECTURE.md</code> §8 + §10.</span></div>
+
+<hr>
+<h3>Housekeeping</h3>
+<ul>
+  <li>Item 1 becomes a backlog entry or story → remove section 1.</li>
+  <li>Item 2 is run (or backlogged) → remove section 2.</li>
+  <li>File empty → delete <code>architecture-review-followups.md</code> (+ <code>.html</code>).</li>
+</ul>
+
+<footer>Transient handoff · created 2026-06-17 · companion to <code>docs/ARCHITECTURE.md</code>. Delete once homed in BMAD.</footer>
+
+</div>
+</body>
+</html>
