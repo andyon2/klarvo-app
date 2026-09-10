@@ -8,6 +8,7 @@ inputDocuments:
   - docs/adr/0017-shared-core-stt-path.md  # Hard Rule: shared STT/guard logic only in Rust, over JNI
   - _bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md  # original correct-course routing
   - _bmad-output/planning-artifacts/sprint-change-proposal-2026-06-12.md  # STT re-scope routing (supersedes the STT rows)
+  - _bmad-output/planning-artifacts/sprint-change-proposal-2026-09-10.md  # RE-CUT: 7.5 dissolved, 7.7 -> 7.8, 7.6 amended
   - _bmad-output/project-context.md
 trackType: brownfield
 featureEpic: 7
@@ -27,6 +28,13 @@ note: >
 # klarvo - Epic Breakdown (Cross-Platform Config-Contract Parity · Epic 7)
 
 > **⏸ PARKED 2026-06-13** (`sprint-change-proposal-2026-06-13.md`): deferred zugunsten des Studio-Dark-Visual-Overhauls (Epics 8/9). 7-3 bleibt done. Beim Wiederaufnehmen: 7-1 (unabhängig) zuerst, **7-7 als Capstone ZULETZT** (lockt 7.1–7.6). Re-Eval: nach Epic 9.
+
+> **RE-CUT 2026-09-10** (`sprint-change-proposal-2026-09-10.md`): resumed 2026-08-10 (7-1), 7-2 done
+> 2026-09-10. A relevance audit of 7.5/7.6/7.7 against `v1-ship` (`3d7de0d`) found the June cut stale.
+> **7.5 dissolved** (only M9 survives, in 7.8). **7.7 superseded by 7.8** (net close-out; fixture format +
+> both harnesses already exist from 7-1/7-2/7-3; no CI exists — gates are `scripts/android-smoke.sh`
+> + `cargo test --lib`). **7.6 amended** (still the M12 decision; fallback lock delivered by 7.8).
+> Sequencing: **7.8 next**, independent of 7.6. Epic may close with 7.6 parked if M12 is undecided.
 
 ## Overview
 
@@ -153,7 +161,13 @@ discarded (H14, both platforms); prompt-body assembly given dictionary + languag
 
 ---
 
-## Story 7.5: Android LLM-routing contract hygiene
+## Story 7.5: Android LLM-routing contract hygiene — ⛔ SUPERSEDED 2026-09-10
+
+> Dissolved by `sprint-change-proposal-2026-09-10.md`. **M9 → Story 7.8.** M13 → backlog "Desktop
+> Advanced settings + AutoSend: wire or remove" (premise false: no AutoSend toggle exists on either
+> platform). M10/M11/L5 → dropped, unreachable via any UI (Desktop trims keys, writes the style as an
+> enum, Rust core fills `deviceId`). M16 → dropped, no observed failure. Original text below for
+> traceability only.
 
 **Rows:** M9, M10, M11, M13, M16, L5.
 
@@ -191,9 +205,24 @@ So that my term-biasing is predictable regardless of device.
 
 **Golden-vectors:** Chat-style request assembly with a dictionary present → the decided canonical behavior.
 
+> **Amendment 2026-09-10.** Still valid: Desktop's Chat arm omits `{dict_section}`
+> (`llm/mod.rs:228-254`), Android appends the dictionary for every style. Two changes:
+> (1) The fallback clause ("lock current behaviour as a golden-vector") is **delivered by Story 7.8**,
+> so 7.6 is now purely: Andi decides M12 → both platforms agree → the 7.8 vector is flipped to the
+> decided behaviour. (2) Andi's wider idea — one dictionary across devices instead of one
+> `dictionaryTerms` per device — is homed in `docs/backlog.md` as a story candidate. It is
+> **independent** of M12 (a synced list still needs the style decision) and is NOT part of 7.6.
+> If M12 is still undecided when 7.8 closes, Epic 7 may close with 7.6 parked.
+
 ---
 
-## Story 7.7: Golden-Vector parity net (C1-proper) + dead-config lock
+## Story 7.7: Golden-Vector parity net (C1-proper) + dead-config lock — ⛔ SUPERSEDED 2026-09-10 by 7.8
+
+> The June plan assumed a CI and an empty fixture directory. Neither holds: no CI exists, and 7-1/7-2/7-3
+> delivered the shared fixture format and both harnesses. The dead-config-cluster lock is dropped:
+> Desktop shows those keys in the Advanced panel and ignores them, with three disagreeing default
+> sets — freezing that would cement a lying UI. → backlog decision "wire or remove".
+> `scripts/dictation-quality-audit.py` → backlog tooling. Original text below for traceability only.
 
 **Rows:** the structural net; locks every HIGH/CRITICAL Epic-7 fix + the dead-config-both-sides cluster.
 
@@ -225,6 +254,50 @@ real divergences).
 
 ---
 
+## Story 7.8: Parity-net close-out + twin hygiene *(new 2026-09-10, supersedes 7.5 + 7.7)*
+
+**Rows:** M9 · 7-3 AC9 guard · twin-constant lock · 7-2 residuals · `android-smoke.sh` traps.
+
+As the klarvo maintainer,
+I want the existing golden-vector net closed around the last unguarded twins and the accepted
+7-2 residuals cleared,
+So that a future re-divergence trips a test on the gates that actually exist, and the net is not
+carrying known-false claims.
+
+**Acceptance Criteria (outcomes — full Given/When/Then in create-story):**
+- **M9** — both DeepSeek call sites in `KlarvoApi.kt` use `https://api.deepseek.com/v1/chat/completions`
+  (parity with `llm/mod.rs:719`). A JVM test pins the URL constant.
+- **ADR-0017 boundary guard** — a mechanical check fails if a Kotlin STT request or guard path
+  re-appears (multipart transcription body, `HallucinationFilter`, `SilencePreFilter`, any
+  `audio/transcriptions` string outside the JNI bridge). Runs inside an existing gate (JVM test or an
+  `android-smoke.sh` step), not in a new pipeline.
+- **Twin-constant lock** — one shared fixture pins the Rust↔Kotlin twin constants: LLM temperature
+  0.3, `max_tokens` 2048, chunk threshold 400, chunk target 350, chunk join `\n`. Both a Rust test and
+  a Kotlin test read the same file. Scope guard: this locks **twin parity**, NOT the dead-config
+  cluster (that is a backlog decision).
+- **M12 current-state vector** — a fixture records today's divergence (Desktop Chat omits the
+  dictionary, Android includes it) as the documented state, so 7.6 flips one vector when Andi decides.
+- **7-2 residuals** — the 8 round-3 findings in the 7-2 story file are fixed: test-claim accuracy,
+  vacuous-pass `optDouble` defaults in `VadGateGoldenVectorsTest`, the false `HighpassFilterTest`
+  claim, the stale `KlarvoAudioRecorder` KDoc (strike the clause; do NOT add a VAD short-circuit).
+- **`android-smoke.sh` traps** — (a) the test/source copy prunes stale files (`rsync --delete` or
+  clear-then-copy); (b) on an `emulator-*` serial the install uses `--abi arm64-v8a -r -g` so the
+  Rust `.so` is present. Fix directions in `docs/backlog.md` "Story 7-2 residuals".
+- **Gates replace CI** — the story documents the two commands that run the whole net
+  (`scripts/android-smoke.sh` JVM gate; `cargo test --lib` in `src-tauri/`) in a
+  `test-fixtures/README.md`, one paragraph.
+- **Inversion check (mandatory, at writing time)** — for the boundary guard, the twin-constant lock
+  and at least one repaired 7-2 assertion, deliberately re-introduce the drift and show RED.
+
+**Out of scope:** the dead-config cluster (backlog decision), `dictation-quality-audit.py`
+(backlog tooling), any change to STT, VAD, JNI, config schema or UI.
+
+**DoD:** JVM gate + `cargo test --lib` green with the inversion evidence recorded; emulator smoke via
+`scripts/android-smoke.sh` proves the install fix (fresh APK, one JNI call succeeds); **Andi's GATE-4:**
+one dictation on the Xiaomi with DeepSeek cleanup returns cleaned text (proves M9 on the real path).
+
+---
+
 ## Out of scope (→ `docs/backlog.md`)
 
 Pure feature-ports / accepted asymmetries (ADR-0016 Amendment 1): C2, H4, H5, H8, H11, H12+M7, H15, H16, M5,
@@ -233,3 +306,7 @@ C1 (license) is already fixed (`22553bc`) and out of scope.
 **Deliberate deferrals of the 2026-06-12 re-scope:** extending the ADR-0017 consolidation to the VAD gate
 (realtime JNI lift) and to the chunking/LLM path — the Hard Rule is STT-only for now; 7.7 pins the rest
 against silent re-drift.
+**Re-cut 2026-09-10 (`sprint-change-proposal-2026-09-10.md`):** M10/M11/L5/M16 dropped (unreachable /
+speculative); M13 + the dead-config cluster → backlog OPEN-DECISION "Desktop Advanced settings + AutoSend:
+wire or remove"; `dictation-quality-audit.py` → backlog tooling; dictionary-across-devices → backlog
+STORY-CANDIDATE.

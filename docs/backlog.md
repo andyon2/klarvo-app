@@ -145,16 +145,44 @@ re-filed as bugs and not lost. The fixed (Sorte-1) rows live in Epic 7 (`epics-c
 | Recall #4 | Live-preview delta (`PreviewFlushConfig`, Epic 5) — no Android counterpart | — | feature port |
 | Dead-config cluster | `advanced.llmTemperature`/`llmMaxTokens`, `chunkThreshold`/`chunkTargetSize`, `sttTemperature`, `llmModel*`/`llmSystemPrompt*` overrides, `autoCapitalize`/`autoPaste` — settable, consumed nowhere | — | latent landmine |
 
-> The dead-config cluster's *current* state (both sides hardcode) is **locked by Epic 7 Story 7.7**
-> golden-vectors. The *wire-when-needed* implementations (actually honoring these keys on a platform)
-> stay backlog until a key is genuinely needed.
+> The dead-config cluster is NOT locked (7.7 superseded 2026-09-10). It is a product decision — see
+> "OPEN-DECISION — Desktop Advanced settings + AutoSend: wire or remove" below.
+
+### OPEN-DECISION — Desktop Advanced settings + AutoSend: wire or remove (2026-09-10)
+
+**Source:** Epic-7 relevance audit, `sprint-change-proposal-2026-09-10.md`. Desktop's
+`AdvancedSettingsPanel.tsx` renders `sttTemperature`, `llmTemperature`, `llmMaxTokens`,
+`chunkThreshold`/`chunkTargetSize`, model/prompt overrides, `autoPaste`, `autoCapitalize` — and no
+runtime code reads them (`grep` outside `src-tauri/src/config/` is empty). Three default sets disagree
+(`llmMaxTokens`: 1024 frontend / 2048 runtime / 4096 config). Same class: `bubbleTapAutoSend` /
+`bubbleLongPressAutoSend` (drift row M13) — Desktop declares the props and renders no toggle, Android
+reads the key and uses `false`. **Decision for Andi:** per key, wire it (both platforms, twin) or remove
+it from the UI and the config surface. Do not freeze it with a vector. Becomes one story after the
+decision.
+
+- **Dropped 2026-09-10 (7.5 dissolved):** M10 (blank-key trim), M11 (unknown `cleanupStyle`), L5
+  (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
+  Re-open only on a real report. Source: `sprint-change-proposal-2026-09-10.md`.
+
+### STORY-CANDIDATE — Dictionary shared across devices (Andi, 2026-09-10)
+
+Today each device holds its own `dictionaryTerms`; two lists are kept in sync by hand. Existing
+primitives: Turso history sync on both sides (`src-tauri/src/sync/mod.rs` push/pull; Kotlin
+`KlarvoApi.pushToTurso` / `ensureRemoteTable`), Android settings pass through the Rust core
+(`TauriActivity`). Reduction sketch (NOT approved to build): dictionary as a second Turso table, push
+on save in the Rust core, pull on settings-open (Rust) plus a small Kotlin pull before recording.
+Independent of M12. Needs its own cut (both platforms, schema) — not a 7.6 add-on.
+Source: `sprint-change-proposal-2026-09-10.md`.
+
+- **`scripts/dictation-quality-audit.py`** — commit the marker detectors from the 2026-06-12 evidence
+  run; manual cadence over adb/Tailscale. Was a 7.7 sibling; 7.7 superseded 2026-09-10.
 
 ### OPEN-DECISION — M12 (dictionary-in-Chat-style)
 
 **Source:** drift audit M12. Android adds the dictionary for ALL cleanup styles incl. Chat
 (`KApi:591-593,749`); Desktop omits `{dict_section}` in the Chat arm (`llm/mod.rs ~232-263`). **Opposite
 direction.** Canonical direction is a product call. To be resolved in **Epic 7 Story 7.6**; until then both
-sides' current behavior is golden-vector-locked, not changed.
+sides' current behavior is golden-vector-locked by **Story 7.8** (re-cut 2026-09-10), not changed.
 
 ---
 
