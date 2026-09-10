@@ -1,0 +1,33 @@
+# GATE-4 structural + wiring evidence — Story 7-2 (Android live auto-stop VAD-gate parity)
+# Proxy surface: headless emulator `emulator-5554` (AVD klarvo-emu, stock Android) on the LAPTOP
+# (powerhouse has no emulator/AVD installed). Range under test: 1d3e31b..0318286.
+# APK: android-smoke.sh (Kotlin-only path; Rust .so from 2026-07-06, JNI surface unchanged since),
+# BMAD_CONDUCTOR=1, versionName 0.5.0 installed at 01:49 (2026-09-10).
+
+## Recording driven for real (bubble tap -> startRecording -> KlarvoAudioRecorder.start)
+# config.json seeded via run-as at /data/data/com.klarvo.voice/config.json (Groq key = dummy, no STT reached)
+
+CASE default  (autostopSilenceSecs=2.0  advanced.silenceThreshold=0.005 advanced.minRecordingMs=500)
+  logcat: KlarvoAudioRecorder: VAD config: silenceSecs=2.0 requiredSilentFrames=63 energyGate=0.005 onSilenceDetected=true
+  expected NEW: ceil(2.0 * 31.25) = 63           (AC6/L1)      -> MATCH
+  OLD code would log: (2.0 * 31).toInt() = 62                     -> discriminates
+
+CASE tuned    (autostopSilenceSecs=0.05 advanced.silenceThreshold=0.02  advanced.minRecordingMs=750)
+  logcat: KlarvoAudioRecorder: VAD config: silenceSecs=0.05 requiredSilentFrames=7 energyGate=0.02 onSilenceDetected=true
+  expected NEW: max(7, ceil(0.05 * 31.25)=2) = 7  (AC2/H17 floor) -> MATCH
+  OLD code would log: (0.05 * 31).toInt().coerceAtLeast(1) = 1   -> discriminates
+  energyGate follows config.advanced.silenceThreshold (AC1/H1 config-driven) -> MATCH (0.005 -> 0.02)
+
+## Window structure in RECORDING state (dumpsys window windows, APPLICATION_OVERLAY only) — both cases identical
+  mAttrs={(624,1200)(435x178) gr=TOP START CENTER ...}   # control cluster (as 11-3 canon: 435x178)
+  mAttrs={(0,0)(fillx525) gr=BOTTOM CENTER_VERTICAL ...} # listening panel (as 11-3 canon: 1080x525 bottom)
+  mAttrs={(0,0)(fillxfill) ... layoutInDisplayCutoutMode=always ...}  # full-screen touch layer
+  -> no structural regression vs. the 11-3 reference structure.
+IDLE state: one APPLICATION_OVERLAY window (897,1200)(162x162) = idle bubble, as canon.
+
+## NOT observed on this proxy
+- AC5 minRecordingMs at the pre-STT JNI call (stop path): the third case (minRecordingMs=3000, stop after
+  ~1.2 s, expect "pre-STT filter: TooShort (...ms < 3000ms)") was started but the laptop dropped off SSH
+  mid-run; no log line was read. AC5 is covered by the JVM tests (real JSON parse path) and by review.
+- Actual auto-stop firing after speech (no microphone input on the emulator) and how the timing FEELS
+  at default/tuned settings — the human real-device gate.
