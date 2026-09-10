@@ -1174,7 +1174,8 @@ pass vacuously on a missing key; `KlarvoAudioRecorder` class KDoc still promises
 the code does not do (strike the clause, do NOT add the short-circuit — Silero is stateful).
 
 **Real-device residual (Andi, batched with the next fresh APK):** does auto-stop timing FEEL right at
-default (2.0 s) and tuned (e.g. 0.5 s / 0.05 s) silence settings? The proxy proved wiring + logic
+default (2.0 s) and the slider minimum (1.0 s — the Auto-Stop slider is bounded 1.0–5.0 s;
+the 0.05 s proxy case is reachable only by editing `config.json`, not from the UI) silence settings? The proxy proved wiring + logic
 (63 frames at 2.0 s, floor 7 at 0.05 s, energy gate from config) — not perception.
 AC5 stop-path is CLOSED on the proxy (2026-09-10, after close-out): `minRecordingMs=3000` in config +
 1.2 s recording -> `pre-STT filter: TooShort (1280ms < 3000ms)`; evidence `gate4-evidence/7-2/`.
