@@ -1,6 +1,6 @@
 # Story 7.8: Parity-net close-out + twin hygiene
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -316,67 +316,124 @@ for at least:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — M9: DeepSeek URL parity** (AC1)
-  - [ ] Change `KlarvoApi.kt:164` and `:198` to `https://api.deepseek.com/v1/chat/completions`.
-  - [ ] Consider extracting the literal to one `private const val` so the two sites cannot drift
+- [x] **Task 1 — M9: DeepSeek URL parity** (AC1)
+  - [x] Change `KlarvoApi.kt:164` and `:198` to `https://api.deepseek.com/v1/chat/completions`.
+  - [x] Consider extracting the literal to one `private const val` so the two sites cannot drift
         again (the file already comments at `:194` that the *candidate list lives in exactly one
         place* — honor that intent). Judgement call: only if it does not disturb the surrounding
-        `LlmProviderInfo` construction.
-  - [ ] Add the JVM test pinning the URL for **both** sites.
-  - [ ] Do **not** touch `commands/settings.rs:979`.
+        `LlmProviderInfo` construction. → **Extracted** as `KlarvoApi.DEEPSEEK_CHAT_URL`; both sites
+        now read `url = DEEPSEEK_CHAT_URL`, the named-argument `LlmProviderInfo` construction is
+        otherwise untouched.
+  - [x] Add the JVM test pinning the URL for **both** sites.
+  - [x] Do **not** touch `commands/settings.rs:979`.
 
-- [ ] **Task 2 — ADR-0017 boundary guard** (AC2)
-  - [ ] Decide the host: JVM test in `android/kotlin-test/` **or** a step in `scripts/android-smoke.sh`.
-        (A JVM test is the recommended default — it is device-free, runs in the same gate as
-        everything else here, and is visible to `dev-story` without a device. Either is sanctioned by
-        the epic.)
-  - [ ] Implement so it is **GREEN on the clean tree** — honor the comment/KDoc + allowlist trap above.
-  - [ ] Prove RED by adding a fake Kotlin STT/guard declaration, then revert (AC8).
+- [x] **Task 2 — ADR-0017 boundary guard** (AC2)
+  - [x] Decide the host: JVM test in `android/kotlin-test/` **or** a step in `scripts/android-smoke.sh`.
+        → **JVM test** (the recommended default): `Adr0017BoundaryGuardTest.kt`, device-free, runs in
+        the same `:app:testUniversalDebugUnitTest` gate as everything else. No new pipeline/script/CI file.
+  - [x] Implement so it is **GREEN on the clean tree** — honor the comment/KDoc + allowlist trap above.
+        → Guard strips comments **string-aware** (a naive `substringBefore("//")` would truncate at the
+        `//` in a URL literal) and keys on *declarations*, not name appearances; allowlists
+        `GroqSttBridge.kt` + `LocalWhisperInference.kt`. Green on clean tree.
+  - [x] Prove RED by adding a fake Kotlin STT/guard declaration, then revert (AC8). → all 4 rules fired.
 
-- [ ] **Task 3 — Twin-constant fixture + both harnesses** (AC3)
-  - [ ] Add the fixture to `test-fixtures/` (suggested `twin-constants-vectors.json`, matching the
+- [x] **Task 3 — Twin-constant fixture + both harnesses** (AC3)
+  - [x] Add the fixture to `test-fixtures/` (suggested `twin-constants-vectors.json`, matching the
         existing `*-vectors.json` naming). Flat JSON array of objects, one per constant, each with
-        `id`, `description` (what it pins), and the expected value.
-  - [ ] Rust test: reuse the established loader shape (`llm/mod.rs:1949-1958` /
+        `id`, `description` (what it pins), and the expected value. → 5 entries; each description
+        carries an explicit `PINS:` / `DOES NOT PIN:` pair, and both harnesses assert that.
+  - [x] Rust test: reuse the established loader shape (`llm/mod.rs:1949-1958` /
         `pipeline.rs:4151-4164`) — `CARGO_MANIFEST_DIR` → `.parent()` → `join("test-fixtures/…")`.
-  - [ ] Kotlin test: reuse the repo-root candidate resolver (`ChunkingVectorsTest.kt:108-124`).
-        **Prefer `org.json.JSONObject`/`JSONArray`** (already on the unit-test classpath via the
-        gradle patch; `getDouble`/`getInt` **throw** on a missing key) over the hand-rolled `JsonVal`
-        parser — the hand-rolled `optDouble` default is precisely the vacuous-pass defect of R3-P2.
-  - [ ] Assert against production symbols, not re-declared literals.
+  - [x] Kotlin test: reuse the repo-root candidate resolver (`ChunkingVectorsTest.kt:108-124`).
+        **Prefer `org.json.JSONObject`/`JSONArray`** … → used `org.json` with the throwing
+        `getDouble`/`getInt`/`getString`; no third copy of the hand-rolled `JsonVal` parser.
+  - [x] Assert against production symbols, not re-declared literals.
+        → Rust: `OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE`/`DEFAULT_MAX_TOKENS`,
+        `CHUNK_THRESHOLD`, `CHUNK_TARGET_SIZE`, and the real `chunked_cleanup` join loop driven
+        through the existing `MockCleanupProvider`.
+        → Kotlin: `KlarvoApi.CLEANUP_TEMPERATURE`/`CLEANUP_MAX_TOKENS` (newly *named*, values
+        unchanged — the literals were inline in the request body and unreachable from a test),
+        plus the 7-1 seams `shouldChunk` / `splitIntoChunks` / `joinChunkResults` probed
+        behaviourally so the private chunk constants stayed private (no chunking edit).
+        Each side compares production → **fixture literal**, never to another production symbol.
 
-- [ ] **Task 4 — M12 current-state vector** (AC4)
-  - [ ] Record today's divergence as a fixture entry, explicitly labelled current-state.
-  - [ ] Change **no** prompt-assembly code on either platform.
+- [x] **Task 4 — M12 current-state vector** (AC4)
+  - [x] Record today's divergence as a fixture entry, explicitly labelled current-state.
+        → `test-fixtures/m12-dictionary-scope-vectors.json`; every entry carries
+        `record_type: "current-state-record"` + `open_decision: "M12"`, and the Rust test asserts
+        that label on every entry. Per-platform values use the established
+        `expected_… / expected_…_kotlin` shape from `wav-rms-vectors.json`.
+  - [x] Change **no** prompt-assembly code on either platform. → confirmed; the only Rust edit is
+        an added `#[cfg(test)]` test, and no Kotlin prompt function was touched (which is also why
+        the Android column is a *recorded*, not machine-asserted, value — stated in the fixture).
 
-- [ ] **Task 5 — 7-2 residuals** (AC5)
-  - [ ] Fix R3-P1 … R3-P8 exactly as prescribed above (8 items).
-  - [ ] Fix **R3-P2 EXT** — same throwing-accessor remedy at `VadGateGoldenVectorsTest.kt:195`
-        (`silence_threshold`) and `:231` (`silence_secs`).
-  - [ ] Fix **R3-P8 EXT** — strike the second copy of the false "without calling the VAD model"
-        claim at `KlarvoAudioRecorder.kt:47-50`. Same remedy as R3-P8: delete the claim, **no**
-        short-circuit. Leave the `config/mod.rs:209` anchor and the `0.005` default alone (both
-        verified correct).
-  - [ ] Re-verify every line anchor against the tree before editing (project-context: *grep before
-        declaring done* — prose drifts).
+- [x] **Task 5 — 7-2 residuals** (AC5)
+  - [x] Fix R3-P1 … R3-P8 exactly as prescribed above (8 items).
+        R3-P1: three claims corrected to name the remaining gap (test block comment, assertion
+        message, 7-2 line 333) — the "or the seam call was dropped" over-claim is gone.
+        R3-P2: `JsonVal.getDouble` throwing accessor, used for `amplitude_short`/`signal_freq_hz`.
+        R3-P3: `VadGateResult` now captured — asserts `normalizedRms`, adds a `threshold = 1f`
+        gate-closed case and an `isSpeech = { false }` case (pins `&&` against both `vadSpeech`-alone
+        and `||`), plus the `> 1e-4f` lower bound.
+        R3-P4: replaced the tautology with a **genuine bypass inversion** (drives the real seam with
+        a 1 Hz near-all-pass filter and shows the discriminating assertion fails); corrected the
+        "toward zero" comment to the measured ~14.4 % of raw and noted the DC choice's insensitivity
+        to `HIGHPASS_CUTOFF_HZ`.
+        R3-P5: cite by content — verified the block really spans `android-build.sh:206-215`.
+        R3-P6: three fixture descriptions (VAD-GATE-001/002/005) + the class KDoc rewritten to state
+        what the vectors do **not** pin (`>=` boundary → `SilenceThresholdTest`; divisor →
+        `VadGateRmsFixtureTest`). Numeric fields provably untouched.
+        R3-P7: all four story-record claims corrected (a: R2-D2 marked resolved-not-deferred;
+        b: fixture File List entry; c: `android-smoke.sh` + `pipeline.rs` added to the main File
+        List; d: Task 7's "no Rust changes beyond…" bullet).
+        R3-P8: CPU-saving clause deleted (no short-circuit added) + the arrow nit at the
+        state-machine block (measured: col 52 vs its siblings' 51).
+  - [x] Fix **R3-P2 EXT** — same throwing-accessor remedy at `silence_threshold` and `silence_secs`.
+  - [x] Fix **R3-P8 EXT** — second copy of the false claim struck in the `energyGateThreshold`
+        param KDoc; **no** short-circuit added; `config/mod.rs:209` anchor and the `0.005` default
+        verified correct on today's tree and left alone, as was the Story-9-11 provenance text.
+  - [x] Re-verify every line anchor against the tree before editing. → Done; several had drifted
+        further than the story predicted (my own edits shifted `KlarvoApi.kt` by +13 lines), so
+        every site was located by content.
 
-- [ ] **Task 6 — `android-smoke.sh` traps** (AC6)
-  - [ ] (a) prune on copy for `kotlin-src` **and** `kotlin-test`.
-  - [ ] (b) `--abi arm64-v8a -r -g` on `emulator-*`; mirror `scripts/android-emulator-smoke.sh`.
+- [x] **Task 6 — `android-smoke.sh` traps** (AC6)
+  - [x] (a) prune on copy for `kotlin-src` **and** `kotlin-test` → clear-then-copy (`rm -f
+        "$DST"/*.kt`), not `rsync` (no new host dependency). Verified no generated-only `.kt`
+        exists in either destination, and that the `generated/` subdirectory is not matched.
+  - [x] (b) `--abi arm64-v8a -g` on `emulator-*`, copied from `scripts/android-emulator-smoke.sh`;
+        the `uninstall` → `install` fallback path carries the same flags. Empty-array expansion
+        verified safe under `set -euo pipefail`. Preserved: theme gate, JVM gate, org.json sed
+        patch, conductor `emulator-*` guard.
 
-- [ ] **Task 7 — `test-fixtures/README.md`** (AC7) — one paragraph, two commands, fixture list,
-      "no CI" stated.
+- [x] **Task 7 — `test-fixtures/README.md`** (AC7) — one paragraph, two commands, fixture list,
+      "no CI" stated. Also records the gradle up-to-date caveat found while running the net (a
+      fixture-only edit does not re-run the test task — `--rerun-tasks` needed, or you read a
+      stale green).
 
-- [ ] **Task 8 — Gates + inversion evidence** (AC8, DoD)
-  - [ ] `cargo test --lib` in `src-tauri/` green (7-2 measured **657 passed, 0 failed** as the
-        baseline — report the new number **and** what it does not cover).
-  - [ ] `scripts/android-smoke.sh` JVM gate green.
-  - [ ] Emulator smoke proves the install fix: fresh APK + **one JNI call succeeds** (this is the
-        specific proof that (b) worked — a green smoke that never reaches JNI proves nothing; that is
-        exactly how the trap hid).
-  - [ ] Record the inversion table; confirm `git status` clean.
-  - [ ] **[HUMAN GATE — Andi] GATE-4:** one dictation on the Xiaomi with DeepSeek cleanup returns
-        cleaned text (proves M9 on the real path).
+- [x] **Task 8 — Gates + inversion evidence** (AC8, DoD)
+  - [x] `cargo test --lib` in `src-tauri/` green → **662 passed, 0 failed, 0 ignored**
+        (baseline 657 + 5 new tests). Coverage statement below.
+  - [x] `scripts/android-smoke.sh` JVM gate green → **168 tests, 0 failures, 0 errors** across 22
+        suites in the `testUniversalDebugUnitTest` variant (baseline 155 + 13 new).
+        Run **device-free**: the script's own gate step was reproduced directly
+        (`rm`+`cp` sync of `kotlin-src`/`kotlin-test`, then `./gradlew
+        :app:testUniversalDebugUnitTest`), because the script hard-fails on "no device" long
+        before it reaches that step. Final run used `--rerun-tasks`.
+  - [~] Emulator smoke proves the install fix: fresh APK + **one JNI call succeeds**.
+        → **BLOCKED — not proven.** No device and no emulator are reachable from powerhouse:
+        `adb devices` is empty, `adb connect emulator-5554` fails DNS, `100.112.41.70:5555` is
+        refused, and this host has no `emulator/` binary, no `system-images/` and no AVD, so
+        `scripts/android-emulator.sh` (which boots a LOCAL avd) cannot run here. Per the story's
+        own Dev Notes and project-context, the gate is reported blocked rather than worked around;
+        no tooling was installed. **AC6b is therefore code-complete but runtime-unproven** — the
+        `--abi arm64-v8a -g` change is shell-syntax-checked and its empty/populated array
+        expansion verified under `set -euo pipefail`, but no JNI call has been executed.
+  - [x] Record the inversion table; confirm `git status` clean. → table below; all six inversions
+        reverted and audited item-by-item; no probe or scratch file left in the tree.
+  - [~] **[HUMAN GATE — Andi] GATE-4:** one dictation on the Xiaomi with DeepSeek cleanup returns
+        cleaned text (proves M9 on the real path). → **PENDING — Andi's gate**, cannot be
+        self-served. M9 is proven only at the unit level (both URL sites pinned); no network call
+        to DeepSeek was made.
 
 ## Dev Notes
 
@@ -518,13 +575,129 @@ This story is **independent of 7.6** and runs next. Epic 7 may close with 7.6 pa
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 5 (`claude-opus-5`), via `bmad-dev-story`.
 
 ### Debug Log References
 
+- JVM gate reproduced device-free: sync `android/kotlin-src` + `android/kotlin-test` into
+  `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice`, then
+  `./gradlew :app:testUniversalDebugUnitTest`. `scripts/android-smoke.sh` itself cannot be used for
+  this because it hard-fails at "kein Gerät gefunden" before reaching its own JVM gate.
+- **Gate weakness found while running the net (not fixed — outside AC6's two named traps):** the
+  gradle test task is UP-TO-DATE when only a *fixture* JSON changed, since the fixtures are not
+  declared task inputs. The first attempt at the R3-P2 inversion reported a false GREEN for exactly
+  this reason; it only went RED under `--rerun-tasks`. Recorded in `test-fixtures/README.md` so the
+  next person does not read a stale green.
+- Two encoding traps hit while authoring `Adr0017BoundaryGuardTest.kt`, both self-inflicted and
+  fixed: a stray NUL byte in a char literal, and `/*` sequences inside a KDoc (`voice/*.kt`,
+  `kotlin-test/**`) — Kotlin block comments **nest**, so those opened comments that never closed.
+
 ### Completion Notes List
 
+**AC1 (M9)** — Both DeepSeek sites now use `/v1/chat/completions`, extracted to a single
+`KlarvoApi.DEEPSEEK_CHAT_URL`. Three JVM tests pin it: the primary-selection path, the Epic-12
+fallback-ladder path, and a drift assert that the two agree with each other. `commands/settings.rs`
+(`/v1/models`) untouched, as required. RED proven before the fix: exactly the two site pins failed
+while the "both agree" test passed — correct, since both sites were wrong the same way.
+
+**AC2 (ADR-0017 guard)** — `Adr0017BoundaryGuardTest`, a JVM test (no new pipeline/script/CI file).
+It strips comments **string-aware** and asserts on *declarations*, so the KDoc that documents the
+7-3 deletion does not trip it; `GroqSttBridge.kt` and `LocalWhisperInference.kt` are allowlisted and
+`transcribeWithRetry` is deliberately not keyed on. A third meta-test proves the stripper itself is
+not blind (it must keep a URL string intact while removing a trailing `//` comment).
+
+**AC3 (twin lock)** — One fixture, both harnesses, five twins. Kotlin asserts through the 7-1 seams
+(`shouldChunk` boundary probe, `splitIntoChunks` fallback-split probe, `joinChunkResults`) so the
+private chunk constants stayed private and no chunking code was touched. The two request-body
+literals had no reachable symbol at all, so they were *named* (`CLEANUP_TEMPERATURE`,
+`CLEANUP_MAX_TOKENS`) — values identical, no behavior change. Rust drives the real
+`chunked_cleanup` join loop through the existing `MockCleanupProvider` rather than re-implementing
+the join. `AnthropicCleanup`'s separate pair is coincidence-checked and labelled as *not* the
+locked twin; `llm/local.rs`'s pair is target-gated to Windows and unreachable here (stated in the
+fixture).
+
+**AC4 (M12)** — Recorded, not decided. No prompt-assembly code changed on either platform. The
+desktop column is machine-asserted against the real `CleanupStyle::system_prompt`; the Android
+column is a *written* record because both Kotlin prompt builders are private and reachable only
+from inside the network-calling function — opening a seam would have violated AC4. The fixture says
+so explicitly rather than implying both sides are asserted.
+
+**AC5 (7-2 residuals)** — All 8 findings plus both named extension sites fixed. R3-P4 was closed
+with the stronger option (a genuine bypass inversion through the real seam, not a rename). The
+7-2 record's round-3 **checkboxes were deliberately left unchecked**: the Files-to-MODIFY guard says
+to change only the R3-P7 claims (`:350`, `:564`, `:244`) plus R3-P1's line 333 and to preserve
+"everything else" in that closed record. Flagging for Andi rather than deciding unilaterally.
+
+**AC6** — Both traps fixed. (a) is verified by construction (no generated-only `.kt` in either
+destination). (b) is **code-complete but runtime-unproven** — see the blocked gate in Task 8.
+
+**AC7** — One paragraph, two commands, fixture table, "no CI" stated plainly.
+
+**Coverage statement — what the green numbers do and do NOT cover.**
+`cargo test --lib` 662/0 and the JVM 168/0 are *logic* results on Linux/JVM. What they exercise:
+pure functions, seams, fixture agreement, and static source structure. What they do **NOT**
+exercise, and what therefore remains unproven by this story:
+- **No Android device and no emulator** were driven at all. No APK was built or installed; no JNI
+  call ran. AC6b's arm64-split fix is unproven at runtime — and note that this is precisely how the
+  original trap hid, since a smoke that never reaches JNI stays green.
+- **No network call** to DeepSeek, Groq or any provider. AC1 proves the URL *string* both resolvers
+  emit; it does not prove a request succeeds. That is GATE-4, Andi's.
+- **No desktop/Windows build and no UI** — this story touches no surface, so `windows-build.sh` is
+  correctly not in its DoD.
+- **AC2's guard** covers only `android/kotlin-src/com/klarvo/voice/*.kt` and only four syntactic
+  shapes; a semantic re-implementation under different names would pass it.
+- **AC3's two halves cannot prove each other** — each asserts its own platform against the shared
+  fixture literal.
+- **AC4's Android column is not machine-asserted** (reason above).
+- The JVM count is the `testUniversalDebugUnitTest` variant only; gradle also ran nine other
+  ABI/buildtype variants that duplicate the same suite.
+
+**Inversion table (AC8) — every drift re-introduced at writing time, measured, then reverted.**
+
+| # | AC | Reverted change (deliberate drift) | Result |
+|---|----|------------------------------------|--------|
+| 1 | AC1 | (pre-fix state) both DeepSeek sites without `/v1` | 🔴 `deepseekUrl_primarySelection…`, `deepseekUrl_fallbackLadder…` — 2 failed |
+| 2 | AC2 | added `object HallucinationFilter` + `object SilencePreFilter` + `fun buildMultipartBody` + `audio/transcriptions` + `multipart/form-data` in a new Kotlin file | 🔴 `noKotlinSttRequestOrGuardTwinHasRegrown` (all 4 rules fired) + `deletedTwinFilesHaveNotReappeared` |
+| 3 | AC3 | Kotlin `CLEANUP_MAX_TOKENS` 2048 → 1024 | 🔴 `cleanupMaxTokensMatchesFixture` |
+| 4 | AC3 | Rust `CHUNK_TARGET_SIZE` 350 → 300 | 🔴 `spec_twin_constants_chunking_boundaries` + `spec_twin_constants_chunk_join_separator` |
+| 5 | AC5 (R3-P2) | deleted `amplitude_short` from VAD-GATE-001 (`expected_gate_open: false` — the exact vector that used to pass vacuously) | 🔴 `IllegalStateException: fixture vector is missing required numeric key 'amplitude_short'` (only under `--rerun-tasks`; see Debug Log) |
+| 6 | AC5 (R3-P3) | Kotlin `energyAboveGate && vadSpeech` → `vadSpeech` | 🔴 `vadGateDecision_combinesEnergyGateAndVadWithAnd_notOr` |
+| 7 | AC4 | flipped M12 chat vector to `expected_dictionary_in_prompt: true` | 🔴 `spec_m12_dictionary_scope_current_state_still_holds` |
+
+All seven reverted; `git status` carries no probe or scratch file (audited item-by-item).
+
 ### File List
+
+**Modified**
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — `DEEPSEEK_CHAT_URL` const + both call sites
+  (AC1); `CLEANUP_TEMPERATURE` / `CLEANUP_MAX_TOKENS` named and used in the request body (AC3).
+- `android/kotlin-src/com/klarvo/voice/KlarvoAudioRecorder.kt` — R3-P8 class-KDoc clause deleted,
+  R3-P8 EXT param-KDoc clause deleted, state-machine arrow alignment. No behavior change.
+- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — 3 DeepSeek URL tests (AC1).
+- `android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt` — R3-P1 claim corrections, R3-P3
+  result assertions + AND-combination test, R3-P4 genuine bypass inversion.
+- `android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt` — R3-P2 + EXT throwing
+  `getDouble`, R3-P6 class-KDoc correction.
+- `test-fixtures/vad-gate-golden-vectors-7-2.json` — R3-P6 descriptions only (3 lines; numeric
+  fields provably unchanged).
+- `scripts/android-smoke.sh` — AC6a prune-on-copy (both trees), AC6b arm64 install flags on
+  `emulator-*` incl. the fallback re-install, R3-P5 comment cited by content.
+- `src-tauri/src/llm/mod.rs` — added `#[cfg(test)]` tests only (5 new): twin-constant lock (AC3) +
+  M12 current-state vector (AC4). No production Rust changed.
+- `_bmad-output/implementation-artifacts/7-2-android-live-auto-stop-vad-gate-parity.md` — R3-P1
+  line-333 claim + R3-P7 (a)(b)(c)(d).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status transitions.
+- `_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md` — this record.
+
+**New**
+- `android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt` (AC2)
+- `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` (AC3)
+- `test-fixtures/twin-constants-vectors.json` (AC3)
+- `test-fixtures/m12-dictionary-scope-vectors.json` (AC4)
+- `test-fixtures/README.md` (AC7)
+
+*Not part of this story:* `_bmad-output/implementation-artifacts/seat-costs.jsonl` was already
+untracked in the working tree at story start and was left alone.
 
 ## Change Log
 
@@ -538,3 +711,12 @@ This story is **independent of 7.6** and runs next. Epic 7 may close with 7.6 pa
   Task 5 and the Files-to-MODIFY table updated to match. All four line anchors re-verified against
   today's tree; `config/mod.rs:209` (`default_silence_threshold() -> 0.005`) confirmed still correct
   and explicitly excluded from the fix. No other AC, task or scope guard changed.
+- 2026-09-10: **Implemented (dev-story).** AC1–AC5, AC7, AC8 complete; AC6 code-complete with its
+  emulator proof **blocked** (no device/emulator/AVD reachable from powerhouse — reported, not
+  worked around) and GATE-4 pending Andi. Gates: `cargo test --lib` **662 passed / 0 failed**
+  (baseline 657 + 5), JVM `testUniversalDebugUnitTest` **168 tests / 0 failures** (baseline 155 +
+  13). Seven inversions re-introduced and shown RED at writing time, then reverted; tree clean.
+  Only runtime change is the two DeepSeek URL sites; everything else is tests, fixtures, comment
+  corrections and two `android-smoke.sh` shell fixes. Two constants in `KlarvoApi.kt` were *named*
+  (same values) because AC3 requires asserting against a production symbol and the literals were
+  inline in the request body. Status → review.

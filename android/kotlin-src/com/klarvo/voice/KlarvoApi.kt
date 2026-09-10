@@ -41,6 +41,30 @@ object KlarvoApi {
 
     private const val TAG = "KlarvoApi"
 
+    // DeepSeek cleanup endpoint (story 7-8 / M9). Must stay identical to the
+    // desktop core's `DeepSeekProvider::BASE_URL` in src-tauri/src/llm/mod.rs,
+    // including the `/v1` segment. Declared once because TWO independent sites
+    // build the DeepSeek LlmProviderInfo -- primary selection in
+    // [resolveLlmProvider] and the Epic-12 ladder in [cleanupFallbackCandidates]
+    // -- and they had already drifted apart from desktop by omitting `/v1`.
+    // Same intent as the "candidate list lives in exactly one place" note on
+    // [cleanupFallbackCandidates]. Pinned by LlmFallbackProviderTest.
+    //
+    // NOT the same endpoint as the key-validation model list
+    // (`/v1/models`, src-tauri/src/commands/settings.rs) -- unrelated, leave it be.
+    private const val DEEPSEEK_CHAT_URL = "https://api.deepseek.com/v1/chat/completions"
+
+    // Cleanup sampling parameters for the OpenAI-compatible chat/completions body.
+    //
+    // Rust↔Kotlin TWINS of `OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE` /
+    // `DEFAULT_MAX_TOKENS` (src-tauri/src/llm/mod.rs). They were inline literals in
+    // the request body below; story 7-8 (AC3) named them so the twin-constant lock
+    // in `TwinConstantsVectorsTest` can assert against the PRODUCTION symbol rather
+    // than a re-declared test literal. Values are unchanged -- this is a naming
+    // change, not a behavior change. Pinned by test-fixtures/twin-constants-vectors.json.
+    const val CLEANUP_TEMPERATURE = 0.3
+    const val CLEANUP_MAX_TOKENS = 2048
+
     // Set to true after the first successful ensureRemoteTable() call.
     // Avoids an extra HTTP roundtrip on every subsequent Turso push.
     private var remoteTableEnsured = false
@@ -161,7 +185,7 @@ object KlarvoApi {
                 providerName = "openrouter"
             ) else null
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
-                url    = "https://api.deepseek.com/chat/completions",
+                url    = DEEPSEEK_CHAT_URL,
                 model  = "deepseek-chat",
                 apiKey = config.deepseekApiKey,
                 providerName = "deepseek"
@@ -195,7 +219,7 @@ object KlarvoApi {
      */
     private fun cleanupFallbackCandidates(config: Config): List<Triple<String, String, LlmProviderInfo>> = listOf(
         Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
-            url    = "https://api.deepseek.com/chat/completions",
+            url    = DEEPSEEK_CHAT_URL,
             model  = "deepseek-chat",
             apiKey = config.deepseekApiKey,
             providerName = "deepseek"
@@ -968,8 +992,8 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val requestBody = JSONObject().apply {
             put("model", provider.model)
             put("messages", messages)
-            put("temperature", 0.3)
-            put("max_tokens", 2048)
+            put("temperature", CLEANUP_TEMPERATURE)
+            put("max_tokens", CLEANUP_MAX_TOKENS)
         }.toString().toByteArray(Charsets.UTF_8)
 
         conn.setRequestProperty("Content-Length", requestBody.size.toString())

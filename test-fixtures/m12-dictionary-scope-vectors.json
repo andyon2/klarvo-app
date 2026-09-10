@@ -1,0 +1,35 @@
+[
+  {
+    "id": "M12-DICT-SCOPE-README",
+    "record_type": "current-state-record",
+    "open_decision": "M12",
+    "description": "THIS FILE RECORDS A DIVERGENCE. IT DOES NOT DECIDE IT. M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION): should the custom dictionary be injected into the Chat cleanup style, as it already is for Polished and Verbatim? Desktop says no for Chat; Android says yes for every style. Story 7-8 deliberately changed NO prompt-assembly code on either platform -- it only wrote down what is true on the tree today, so that Story 7.6 can flip ONE vector here once the decision is made, instead of re-deriving the current state from scratch. Do not 'fix' a divergence in this file by editing the file: change the code, then update the vector. ASSERTION COVERAGE: the desktop/Rust column is machine-asserted against the real CleanupStyle::system_prompt in src-tauri/src/llm/mod.rs. The Android/Kotlin column is NOT machine-asserted -- KlarvoApi.buildSystemPrompt and appendPromptExtensions are both private and reachable only from inside the network-calling cleanup function, and AC4 forbids changing prompt-assembly code to open a seam. The Kotlin values below were verified by reading the source on 2026-09-10 and are a written record, not a test result."
+  },
+  {
+    "id": "M12-DICT-SCOPE-POLISHED",
+    "record_type": "current-state-record",
+    "style": "polished",
+    "description": "PINS (desktop only): the Polished arm of CleanupStyle::system_prompt interpolates {dict_section}, so custom dictionary terms reach the model. Android's appendPromptExtensions appends the dictionary whenever the term list is non-blank, with no style branching. AGREED on this style -- both platforms inject. DOES NOT PIN: the wording of the dictionary sentence (the two platforms phrase it differently), its position relative to the custom-instruction and sandwich sections, or whether the model actually honours it.",
+    "platforms_agree": true,
+    "expected_dictionary_in_prompt": true,
+    "expected_dictionary_in_prompt_kotlin": true
+  },
+  {
+    "id": "M12-DICT-SCOPE-VERBATIM",
+    "record_type": "current-state-record",
+    "style": "verbatim",
+    "description": "PINS (desktop only): the Verbatim arm of CleanupStyle::system_prompt interpolates {dict_section}. Android appends the dictionary for this style too. AGREED on this style -- both platforms inject. DOES NOT PIN: wording, section order, or model behaviour. Note Verbatim is the product default cleanup style.",
+    "platforms_agree": true,
+    "expected_dictionary_in_prompt": true,
+    "expected_dictionary_in_prompt_kotlin": true
+  },
+  {
+    "id": "M12-DICT-SCOPE-CHAT",
+    "record_type": "current-state-record",
+    "style": "chat",
+    "description": "THE M12 DIVERGENCE. PINS (desktop only): the Chat arm of CleanupStyle::system_prompt ends with {custom_section}{translation_section}{sandwich} and is the ONLY one of the three arms that omits {dict_section} -- so on desktop, dictionary terms are silently dropped in Chat style. Android's appendPromptExtensions takes no style parameter and is called unconditionally, so Android DOES inject the dictionary in Chat style. Net user-visible effect: the same dictation with the same dictionary produces a differently-primed prompt on the two platforms whenever the user selects Chat. PLATFORMS DISAGREE -- this is the open decision, not a bug report. Neither value here is asserted to be the correct one. DOES NOT PIN: which platform is right (that is M12, Andi's call), whether the omission was deliberate or an oversight, or any user-visible output difference (no model is called).",
+    "platforms_agree": false,
+    "expected_dictionary_in_prompt": false,
+    "expected_dictionary_in_prompt_kotlin": true
+  }
+]

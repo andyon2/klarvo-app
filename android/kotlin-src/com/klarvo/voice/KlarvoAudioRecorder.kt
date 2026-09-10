@@ -33,8 +33,11 @@ import kotlin.math.sqrt
  *
  * Silence detection: previously RMS-based (compare chunk RMS against SILENCE_THRESHOLD).
  * Now uses Silero VAD v5 (android-vad library) for neural voice activity detection.
- * The RMS energy gate is kept as a pre-filter: frames below [energyGateThreshold] are
- * treated as silence without even calling the VAD model, saving CPU.
+ * The RMS energy gate is kept, and a frame counts as speech only if it clears the gate AND
+ * the VAD agrees ([vadGateDecision] returns `energyAboveGate && vadSpeech`). Note the gate is
+ * NOT a CPU short-circuit: the VAD model is called for every frame regardless of the gate,
+ * and deliberately so -- Silero is stateful, and skipping frames would change its sliding-window
+ * trajectory (see the [VadGateResult] KDoc).
  */
 class KlarvoAudioRecorder(
     private val context: Context,
@@ -45,9 +48,10 @@ class KlarvoAudioRecorder(
      */
     private val silenceSecs: Float = 2.0f,
     /**
-     * RMS energy gate threshold (normalized 0..1). Frames below this are treated
-     * as silence without calling the VAD model. Defaults to 0.005, which matches
-     * the Rust default_silence_threshold() in src-tauri/src/config/mod.rs:209.
+     * RMS energy gate threshold (normalized 0..1). Frames whose filtered RMS is below this
+     * cannot be marked as speech, whatever the VAD says (the VAD is still called for every
+     * frame -- see the class KDoc). Defaults to 0.005, which matches the Rust
+     * default_silence_threshold() in src-tauri/src/config/mod.rs:209.
      *
      * Set from config.json "advanced.silenceThreshold" by KlarvoOverlayService so
      * the user's desktop slider setting is honored on Android (AC1/AC2/AC3, Story 9-11).
@@ -501,7 +505,7 @@ class KlarvoAudioRecorder(
      *   BEFORE SPEECH CONFIRMED (speechDetected == false):
      *     - Energy gate below energyGateThreshold → onsetFrames = 0 (no speech)
      *     - VAD returns true                      → onsetFrames++
-     *     - onsetFrames >= VAD_ONSET_FRAMES        → speechDetected = true, silentFrames = 0
+     *     - onsetFrames >= VAD_ONSET_FRAMES       → speechDetected = true, silentFrames = 0
      *
      *   AFTER SPEECH CONFIRMED (speechDetected == true):
      *     - Energy gate below threshold OR VAD false → silentFrames++

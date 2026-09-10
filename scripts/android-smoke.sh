@@ -155,8 +155,14 @@ step "Kotlin-Quellen synchronisieren"
 
 SRC="android/kotlin-src/com/klarvo/voice"
 DST="$APP_DIR/src/main/java/com/klarvo/voice"
+# Sync MIT Löschen (Story 7-8, AC6a): ein reines `cp` lässt Dateien stehen, die im
+# git-getrackten Baum längst gelöscht wurden. Genau das ist passiert — der Laptop-Baum trug
+# noch WavRmsVectorsTest.kt + 2 Geschwister aus 652f128 (2026-07-12) und ließ das JVM-Gate
+# bei einer Fixture-Änderung scheitern. Nur `*.kt` auf DIESER Ebene wird gelöscht:
+# das generierte Unterverzeichnis `generated/` bleibt unangetastet.
+rm -f "$DST"/*.kt
 cp "$SRC"/*.kt "$DST/"
-ok "$(ls -1 "$SRC"/*.kt | wc -l) Produktions-Dateien kopiert"
+ok "$(ls -1 "$SRC"/*.kt | wc -l) Produktions-Dateien kopiert (Ziel vorher geleert)"
 
 # Font-Ressourcen (Geist + Geist Mono)
 FONT_SRC="android/res-font"
@@ -174,14 +180,19 @@ TEST_SRC="android/kotlin-test/com/klarvo/voice"
 TEST_DST="$APP_DIR/src/test/java/com/klarvo/voice"
 if [ -d "$TEST_SRC" ] && [ "$(ls -1 "$TEST_SRC"/*.kt 2>/dev/null | wc -l)" -gt 0 ]; then
     mkdir -p "$TEST_DST"
+    # Ebenfalls mit Löschen (AC6a) — hier ist der Trap zuerst aufgetreten: ein gelöschter
+    # Test blieb im Zielbaum liegen und lief gegen eine Fixture, die es nicht mehr gab.
+    rm -f "$TEST_DST"/*.kt
     cp "$TEST_SRC"/*.kt "$TEST_DST/"
-    ok "$(ls -1 "$TEST_SRC"/*.kt | wc -l) Test-Dateien kopiert"
+    ok "$(ls -1 "$TEST_SRC"/*.kt | wc -l) Test-Dateien kopiert (Ziel vorher geleert)"
 fi
 
 # Real org.json implementation on the unit-test classpath -- android.jar's org.json classes
 # are stubs that throw "not mocked" under JVM unit tests (MinRecordingMsConfigTest,
-# VadGateRmsFixtureTest both parse real JSON). Same idempotent, grep-guarded patch as
-# android-build.sh:206-213 (Story 7-2 GATE-4 finding: android-smoke.sh runs
+# VadGateRmsFixtureTest both parse real JSON). Same idempotent, grep-guarded patch as the
+# `org.json` `testImplementation` block in android-build.sh -- cited by content, not by line
+# range: the range this comment originally carried was invalidated by its own commit, which is
+# the defect class Story 7-2 R2-P4/R3-P5 exist to stop (Story 7-2 GATE-4 finding: android-smoke.sh runs
 # :app:testUniversalDebugUnitTest below but, unlike android-build.sh, never applied this
 # patch -- so a gen/android tree regenerated without a prior android-build.sh run fails these
 # tests here). Duplicated rather than extracted into a shared helper -- a 2-line sed patch
@@ -259,11 +270,26 @@ ok "APK: $APK_PATH (${APK_MB} MB)"
 # ---------------------------------------------------------------------------
 step "adb install"
 
-INSTALL_OUT=$(${ADB} -s "$DEVICE_SERIAL" install -r "$APK_PATH" 2>&1) || true
+# ABI-Wahl (Story 7-8, AC6b): Auf dem x86_64-AVD sucht Android sich sonst den x86_64-Split
+# aus — und der enthält KEINE libklarvo_lib.so, weil der Rust-Kern nur für arm64 gebaut wird.
+# Ergebnis: jeder JNI-Aufruf stirbt mit UnsatisfiedLinkError. Der Emulator führt arm64 über
+# die Native-Bridge aus, deshalb muss der arm64-v8a-Split erzwungen werden. Getroffen hat das
+# am 2026-09-10 den 7-2-Stop-Path-Oracle; der Smoke blieb grün, weil die VAD-Config-Fälle nie
+# bis JNI kommen — ein grüner Smoke ohne JNI-Aufruf beweist hier also nichts.
+# Übernommen aus scripts/android-emulator-smoke.sh (dort schon korrekt), nicht neu erfunden.
+# `-g` erteilt Laufzeit-Rechte direkt mit (unbeaufsichtigte Läufe).
+case "$DEVICE_SERIAL" in
+    emulator-*) INSTALL_ABI_FLAGS=(--abi arm64-v8a -g)
+                info "Emulator-Ziel — erzwinge arm64-v8a-Split (x86_64 hätte keine libklarvo_lib.so)" ;;
+    *)          INSTALL_ABI_FLAGS=() ;;
+esac
+
+INSTALL_OUT=$(${ADB} -s "$DEVICE_SERIAL" install ${INSTALL_ABI_FLAGS[@]+"${INSTALL_ABI_FLAGS[@]}"} -r "$APK_PATH" 2>&1) || true
 if echo "$INSTALL_OUT" | grep -q "INSTALL_FAILED_UPDATE_INCOMPATIBLE"; then
     warn "Signatur-Konflikt — alte App wird deinstalliert (Daten gehen verloren)"
     ${ADB} -s "$DEVICE_SERIAL" uninstall com.klarvo.voice || true
-    ${ADB} -s "$DEVICE_SERIAL" install "$APK_PATH"
+    # Gleiche ABI-Flags wie oben — sonst landet auf dem Re-Install-Pfad doch der x86_64-Split.
+    ${ADB} -s "$DEVICE_SERIAL" install ${INSTALL_ABI_FLAGS[@]+"${INSTALL_ABI_FLAGS[@]}"} "$APK_PATH"
 elif echo "$INSTALL_OUT" | grep -q "INSTALL_FAILED_USER_RESTRICTED"; then
     echo "$INSTALL_OUT"
     fail "Handy hat Installation abgebrochen — Bestaetigungs-Dialog am Geraet pruefen und nochmal starten"

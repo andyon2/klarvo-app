@@ -28,13 +28,30 @@ import java.io.File
  * insensitive to both the highpass filter AND the divisor, since a Butterworth highpass has exact
  * unity gain at Nyquist and the amplitude derivation used to cancel against a reverted divisor):
  * - `nyquist_square` ([nyquistSquareWaveShorts]): unaffected by the highpass filter (unity gain at
- *   Nyquist), so these vectors pin `isEnergyAboveGate`'s `>=` boundary precisely via
- *   `amplitude_short` -- a LITERAL precomputed offline from 32767 and baked into the fixture, not
- *   derived from [KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR] at test time (a reverted
- *   32768f divisor can no longer cancel out against this fixture's own amplitude derivation).
+ *   Nyquist). `amplitude_short` is a LITERAL baked into the fixture, not derived from
+ *   [KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR] at test time, so the test no longer
+ *   derives its own input from the symbol under test.
  * - `bass_tone` ([bassToneShorts], VAD-GATE-001): a 20-60 Hz tone that the 85 Hz highpass
  *   meaningfully attenuates -- its raw (unfiltered) RMS passes the gate but its production-seam
  *   filtered RMS does not, making the filter load-bearing for this vector's outcome.
+ *
+ * ## What these vectors do NOT pin (story 7-8 / 7-2 round-3 finding R3-P6)
+ * An earlier version of this KDoc claimed more than the vectors deliver. Corrected:
+ * - **Not the `>=` boundary.** The amplitudes are computed with `ceil`, which places even the
+ *   "at threshold" vectors STRICTLY above their threshold (VAD-GATE-002: 0.00500504 vs 0.005;
+ *   VAD-GATE-005: 0.02002014 vs 0.02). Flipping [KlarvoAudioRecorder.isEnergyAboveGate] from
+ *   `>=` to `>` leaves all six green. The `>=` boundary is pinned by `SilenceThresholdTest`, not
+ *   here.
+ * - **Not the normalization divisor.** A reverted 32768f divisor is not caught by these vectors;
+ *   the divisor is pinned by `VadGateRmsFixtureTest`. Baking the amplitude as a literal only
+ *   removed the cancellation that would have masked such a revert — it did not add a divisor
+ *   assertion.
+ * - **Not Silero.** No VAD model runs here; only the energy-gate half of the decision is
+ *   exercised. The Silero-input half is covered by `HighpassFilterTest`'s `vadGateDecision` tests.
+ * What they DO pin: that a given raw i16 signal, pushed through the real
+ * [KlarvoAudioRecorder.vadGateFilteredFrame] + [KlarvoAudioRecorder.calculateRmsFloat] path,
+ * lands on the documented side of the configured threshold — and, for VAD-GATE-001 specifically,
+ * that the highpass is load-bearing in reaching that verdict.
  */
 class VadGateGoldenVectorsTest {
 
@@ -52,6 +69,25 @@ class VadGateGoldenVectorsTest {
             (this as? Obj)?.map?.get(key)?.let { (it as? Str)?.v } ?: default
         fun optDouble(key: String, default: Double = 0.0) =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v } ?: default
+
+        /**
+         * Throwing numeric accessor (story 7-8, AC5 / 7-2 round-3 finding R3-P2).
+         *
+         * [optDouble]'s `default = 0.0` turns a typo'd or schema-drifted key into a SILENT
+         * zero. For this fixture that is not a harmless default: amplitude 0 or frequency 0
+         * yields an all-zero signal, RMS 0, gate closed — so every `expected_gate_open: false`
+         * vector passes VACUOUSLY while reporting green. A 0.0 silence_threshold is likewise the
+         * most permissive threshold possible, and a 0.0 silence_secs floors to 7 frames.
+         *
+         * Every key whose absence could fake a pass therefore reads through this accessor.
+         * [optDouble] is kept only for genuinely optional keys.
+         */
+        fun getDouble(key: String): Double =
+            (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v }
+                ?: error(
+                    "fixture vector is missing required numeric key '$key' (or it is not a number) -- " +
+                        "a silent default here would let this vector pass vacuously"
+                )
         fun optBool(key: String, default: Boolean = false) =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v?.let { n -> n != 0.0 } } ?: default
     }
@@ -192,19 +228,19 @@ class VadGateGoldenVectorsTest {
         assertTrue("energy-floor golden vectors must not be empty", vectors.isNotEmpty())
         for (v in vectors) {
             val id = v.optString("id")
-            val threshold = v.optDouble("silence_threshold").toFloat()
+            val threshold = v.getDouble("silence_threshold").toFloat()
             val expectedOpen = v.optBool("expected_gate_open")
             // amplitude_short is a LITERAL baked into the fixture (precomputed offline from a
             // literal 32767, e.g. ceil(target * 32767)) -- NOT derived here from
             // KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR, so a reverted production divisor
             // cannot cancel out against this test's own amplitude derivation (round-2 review
             // finding).
-            val amplitudeShort = v.optDouble("amplitude_short").toInt().toShort()
+            val amplitudeShort = v.getDouble("amplitude_short").toInt().toShort()
             val signal = v.optString("signal", "nyquist_square")
 
             val samples = when (signal) {
                 "bass_tone" -> {
-                    val freqHz = v.optDouble("signal_freq_hz").toFloat()
+                    val freqHz = v.getDouble("signal_freq_hz").toFloat()
                     bassToneShorts(freqHz, amplitudeShort.toFloat(), seconds = 1.0f)
                 }
                 "nyquist_square" -> nyquistSquareWaveShorts(amplitudeShort, frameCount = 16)
@@ -228,8 +264,10 @@ class VadGateGoldenVectorsTest {
         assertTrue("stop-latency golden vectors must not be empty", vectors.isNotEmpty())
         for (v in vectors) {
             val id = v.optString("id")
-            val silenceSecs = v.optDouble("silence_secs").toFloat()
-            val expectedFrames = v.optDouble("expected_frames").toInt()
+            val silenceSecs = v.getDouble("silence_secs").toFloat()
+            // expected_frames follows the same accessor mechanically now that getDouble exists;
+            // it was not one of the named R3-P2 sites.
+            val expectedFrames = v.getDouble("expected_frames").toInt()
             val actualFrames = KlarvoAudioRecorder.framesForSeconds(silenceSecs)
             assertEquals(
                 "$id: framesForSeconds($silenceSecs) must be $expectedFrames (AC2/AC6 floor+fps)",

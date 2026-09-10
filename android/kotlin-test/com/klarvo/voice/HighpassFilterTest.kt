@@ -1,5 +1,6 @@
 package com.klarvo.voice
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -225,27 +226,39 @@ class HighpassFilterTest {
 
     // ---------------------------------------------------------------------------
     // Story 7-2 round-2 review finding: round 1's seam (vadGateFilteredFrame) covers only the
-    // filter+RMS half of the gate decision. Nothing yet calls
-    // KlarvoAudioRecorder.vadGateDecision -- the seam that ALSO owns the Silero call -- so a
-    // regression reverting `isSpeech(filteredFrame)` to `isSpeech(frame)` inside it, or dropping
-    // the seam call in processVadFrame entirely, would leave every existing test green. These
-    // tests drive vadGateDecision directly with a spy `isSpeech` lambda and assert it receives
-    // the FILTERED frame, not the raw one.
+    // filter+RMS half of the gate decision. These tests drive KlarvoAudioRecorder.vadGateDecision
+    // -- the seam that ALSO owns the Silero call -- directly, with a spy `isSpeech` lambda, and
+    // assert it receives the FILTERED frame, not the raw one.
+    //
+    // WHAT THEY CATCH: reverting `isSpeech(filteredFrame)` to `isSpeech(frame)` INSIDE the seam,
+    // a wrong `normalizedRms`, and a broken energy-gate AND-combination.
+    //
+    // KNOWN REMAINING GAP -- do not re-inflate this claim (story 7-8, closing 7-2 round-3 finding
+    // R3-P1): these tests do NOT catch a DROPPED `vadGateDecision(...)` call in `processVadFrame`.
+    // `processVadFrame` is private, stateful, and referenced by no test, so deleting the seam call
+    // there -- or rewriting its lambda to `{ _ -> vad?.isSpeech(frame) == true }`, since the
+    // `short[]` overload exists and `frame` is in scope -- still compiles and leaves every test
+    // green. Closing that gap needs processVadFrame's per-frame body made callable from a test;
+    // that is deliberately not done here. Three places previously claimed the drop WAS caught.
     // ---------------------------------------------------------------------------
 
     @Test
     fun vadGateDecision_feedsFilteredFrameToIsSpeech_notRawFrame() {
         val filter = HighpassFilter(cutoffHz, sampleRateHz)
         val scratch = FloatArray(512)
-        // A DC-like constant frame (~0.1 normalized amplitude) -- the highpass drives this
-        // toward zero within a single fresh-filter frame (same "attenuates DC" property as
-        // highpass_attenuatesDc_toNearZero above), giving a large, unambiguous margin between
-        // the raw and filtered RMS without needing multi-frame settling.
+        // A DC-like constant frame (~0.1 normalized amplitude). Within a single fresh-filter frame
+        // the 85 Hz highpass attenuates this to ~0.0144 -- about 14.4 % of the raw 0.10001, a 6.9x
+        // margin. (R3-P4: an earlier comment said "drives this toward zero", which overstated it;
+        // the margin is large but the residual is not near zero.) Caveat: the DC choice makes THIS
+        // test insensitive to HIGHPASS_CUTOFF_HZ -- it passes at 20, 85 and 300 Hz alike. The
+        // cutoff value itself is pinned by cutoff_isAt85Hz_minus3dbCorner above, not here.
         val amplitudeShortScale: Short = 3277
         val frame = ShortArray(512) { amplitudeShortScale }
         var capturedFrame: FloatArray? = null
 
-        KlarvoAudioRecorder.vadGateDecision(frame, frame.size, filter, scratch, threshold = 0f) { f ->
+        val result = KlarvoAudioRecorder.vadGateDecision(
+            frame, frame.size, filter, scratch, threshold = 0f
+        ) { f ->
             capturedFrame = f.copyOf()
             true
         }
@@ -261,27 +274,100 @@ class HighpassFilterTest {
             "vadGateDecision must pass the FILTERED frame to isSpeech, not the raw one -- " +
                 "captured RMS ($capturedRms) must be well below the raw normalized RMS " +
                 "($rawNormalizedRms). If this fails, isSpeech(filteredFrame) was reverted to " +
-                "isSpeech(frame), or the seam call was dropped.",
+                "isSpeech(frame).",
             capturedRms < rawNormalizedRms * 0.5f
+        )
+        // R3-P3 lower bound: without this, an all-zero captured buffer (e.g. `out` never written,
+        // or length 0) would satisfy the upper bound above and pass while proving nothing.
+        assertTrue(
+            "captured RMS ($capturedRms) must be a real, non-degenerate signal -- an all-zero " +
+                "buffer also satisfies the '< 0.5x raw' bound above",
+            capturedRms > 1e-4f
+        )
+        // R3-P3: the returned VadGateResult was previously discarded entirely. normalizedRms must
+        // be the FILTERED rms the gate actually measured, not the raw one.
+        assertEquals(
+            "VadGateResult.normalizedRms must be the filtered RMS the energy gate measured",
+            capturedRms.toDouble(),
+            result.normalizedRms.toDouble(),
+            1e-6
+        )
+        assertTrue("the spy verdict must be surfaced as vadSpeech", result.vadSpeech)
+        assertTrue(
+            "threshold=0f opens the energy gate and the spy says speech, so the combined " +
+                "decision must be true",
+            result.isSpeechFrame
         )
     }
 
     @Test
-    fun inversion_rawConstantFrame_wouldNotBeAttenuated() {
-        // Sanity/inversion: an UNFILTERED constant frame's RMS stays near its raw amplitude --
-        // proving the attenuation asserted above comes from the filter, not from the DC signal
-        // choice or calculateRmsFloat itself.
-        val amplitudeShortScale: Short = 3277
-        val frame = ShortArray(512) { amplitudeShortScale }
+    fun vadGateDecision_combinesEnergyGateAndVadWithAnd_notOr() {
+        // R3-P3: pins `energyAboveGate && vadSpeech`. The older test passed threshold = 0f, which
+        // made energyAboveGate trivially true -- so changing the combination to `vadSpeech` alone,
+        // or to `||`, stayed green. Both operands are exercised here.
+        val frame = ShortArray(512) { 3277 }
+
+        // Energy gate CLOSED (threshold above any achievable normalized RMS), VAD says speech.
+        // `&&` -> false; `||` or `vadSpeech`-alone -> true.
+        val gateClosed = KlarvoAudioRecorder.vadGateDecision(
+            frame, frame.size, HighpassFilter(cutoffHz, sampleRateHz), FloatArray(512), threshold = 1f
+        ) { true }
+        assertTrue("the spy must still report speech", gateClosed.vadSpeech)
+        assertFalse(
+            "a closed energy gate must veto the frame even when the VAD says speech " +
+                "(energyAboveGate && vadSpeech)",
+            gateClosed.isSpeechFrame
+        )
+
+        // Energy gate OPEN, VAD says NOT speech. `&&` -> false; `||` -> true.
+        val vadSilent = KlarvoAudioRecorder.vadGateDecision(
+            frame, frame.size, HighpassFilter(cutoffHz, sampleRateHz), FloatArray(512), threshold = 0f
+        ) { false }
+        assertFalse("the VAD verdict must be surfaced as-is", vadSilent.vadSpeech)
+        assertFalse(
+            "an open energy gate must not by itself mark the frame as speech",
+            vadSilent.isSpeechFrame
+        )
+    }
+
+    @Test
+    fun inversion_bypassedHighpass_makesTheFilteredFrameAssertionFail() {
+        // R3-P4: a GENUINE inversion, replacing a tautology. The previous version never touched
+        // HighpassFilter or vadGateDecision -- it recomputed 3277/32767 and asserted it was
+        // > 0.09f, i.e. a statement about integer division and calculateRmsFloat, both of which the
+        // test above already depends on. It could not go red if the filter were bypassed.
+        //
+        // This drives the REAL seam with a near-all-pass filter (1 Hz cutoff): over one 512-sample
+        // frame at 16 kHz the DC transient has barely decayed, so ~87 % of the raw amplitude
+        // survives. It then shows the discriminating assertion from
+        // vadGateDecision_feedsFilteredFrameToIsSpeech_notRawFrame FAILS under that bypass --
+        // proving that assertion is sensitive to the filter actually doing its job, not to the
+        // signal choice.
+        val frame = ShortArray(512) { 3277 }
+        var capturedFrame: FloatArray? = null
+        KlarvoAudioRecorder.vadGateDecision(
+            frame, frame.size, HighpassFilter(1f, sampleRateHz), FloatArray(512), threshold = 0f
+        ) { f ->
+            capturedFrame = f.copyOf()
+            true
+        }
         val rawNormalizedRms = KlarvoAudioRecorder.calculateRmsFloat(
             FloatArray(frame.size) { frame[it] / KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR },
             frame.size
         )
+        val bypassedRms = KlarvoAudioRecorder.calculateRmsFloat(
+            capturedFrame ?: error("isSpeech was never called"),
+            frame.size
+        )
+        assertFalse(
+            "with the highpass effectively bypassed (1 Hz cutoff) the captured RMS ($bypassedRms) " +
+                "must NOT satisfy the '< 0.5x raw ($rawNormalizedRms)' assertion -- if it does, " +
+                "that assertion no longer discriminates a filtered frame from a raw one",
+            bypassedRms < rawNormalizedRms * 0.5f
+        )
         assertTrue(
-            "sanity/inversion: an unfiltered constant frame's RMS must stay near its raw " +
-                "amplitude (got $rawNormalizedRms) -- otherwise the attenuation test above isn't " +
-                "actually discriminating filtered vs. raw.",
-            rawNormalizedRms > 0.09f
+            "sanity: the bypassed filter must preserve most of the raw amplitude (got $bypassedRms)",
+            bypassedRms > rawNormalizedRms * 0.5f
         )
     }
 }
