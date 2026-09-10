@@ -67,6 +67,23 @@ class VadGateGoldenVectorsTest {
         fun asArray() = (this as? Arr)?.list ?: error("Expected array, got $this")
         fun optString(key: String, default: String = "") =
             (this as? Obj)?.map?.get(key)?.let { (it as? Str)?.v } ?: default
+
+        /**
+         * Throwing string accessor (story 7-8 review round 3).
+         *
+         * The selector key `category` must not default: `optString(key, default = "")` matches
+         * neither `"energy-floor"` nor `"stop-latency"`, so a single typo'd or renamed key
+         * removed exactly that vector from BOTH test loops while the suite still reported green.
+         * That is the [getDouble] defect moved into the reader that decides which vectors are
+         * covered at all.
+         */
+        fun getString(key: String): String =
+            (this as? Obj)?.map?.get(key)?.let { (it as? Str)?.v }
+                ?: error(
+                    "fixture vector is missing required string key '$key' (or it is not a string) -- " +
+                        "a silent default here would drop this vector from coverage unnoticed"
+                )
+
         /**
          * Throwing numeric accessor (story 7-8, AC5 / 7-2 round-3 finding R3-P2).
          *
@@ -77,18 +94,16 @@ class VadGateGoldenVectorsTest {
          * most permissive threshold possible, and a 0.0 silence_secs floors to 7 frames.
          *
          * Every numeric key in this file reads through this accessor; there is no `optDouble`
-         * left to reach for. The defaulting reader that remains is [optString], at three uses
-         * (cited by content, not by line — this file's anchors drift), none of which can fake
-         * a pass:
+         * left to reach for. The selector key `category` reads through the throwing [getString]
+         * for the same reason (review round 3) — its old `""` default matched no filter, so one
+         * typo'd key dropped a single vector out of coverage silently. The defaulting reader
+         * that remains is [optString], at three call sites across two keys (cited by content,
+         * not by line — this file's anchors drift), neither of which can fake a pass:
          *  - `signal`, once in the energy-floor test — its default `nyquist_square` is a real
          *    schema default; a wrong signal type changes the measured RMS rather than zeroing
          *    it, and an unknown one hits the `else -> error(...)` arm.
-         *  - `category`, in the `loadFixture().filter { … }` line of both tests — a dropped key
-         *    would empty the filtered list, which the `assertTrue("… must not be empty",
-         *    vectors.isNotEmpty())` guard on the next line fails loudly rather than passing on
-         *    zero vectors.
-         *  - `id`, once per test loop — used only to label failure messages; it feeds no
-         *    assertion, so its default cannot change a verdict.
+         *  - `id`, once per test loop (two sites) — used only to label failure messages; it
+         *    feeds no assertion, so its default cannot change a verdict.
          */
         fun getDouble(key: String): Double =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v }
@@ -245,7 +260,7 @@ class VadGateGoldenVectorsTest {
 
     @Test
     fun energyFloorVectors_matchIsEnergyAboveGate_atDefaultAndTunedThreshold() {
-        val vectors = loadFixture().filter { (it as JsonVal.Obj).optString("category") == "energy-floor" }
+        val vectors = loadFixture().filter { it.getString("category") == "energy-floor" }
         assertTrue("energy-floor golden vectors must not be empty", vectors.isNotEmpty())
         for (v in vectors) {
             val id = v.optString("id")
@@ -281,7 +296,7 @@ class VadGateGoldenVectorsTest {
 
     @Test
     fun stopLatencyVectors_matchFramesForSeconds_atDefaultAndTunedSilenceSecs() {
-        val vectors = loadFixture().filter { (it as JsonVal.Obj).optString("category") == "stop-latency" }
+        val vectors = loadFixture().filter { it.getString("category") == "stop-latency" }
         assertTrue("stop-latency golden vectors must not be empty", vectors.isNotEmpty())
         for (v in vectors) {
             val id = v.optString("id")
