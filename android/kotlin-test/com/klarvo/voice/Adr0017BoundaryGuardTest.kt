@@ -29,9 +29,15 @@ import java.io.File
  * on **declarations**, not on the mere appearance of a name.
  *
  * ## Deliberately allowed (must NOT trip)
+ * **No rule allowlists any file.** The files below are safe not because they are exempted
+ * but because no rule keys on their vocabulary — which is strictly stronger, and is why the
+ * `audio/transcriptions` rule really does mean "anywhere in Kotlin", as AC2 asks:
  * - `GroqSttBridge.kt` — this **is** the sanctioned JNI bridge, the thing being protected.
+ *   It declares `external fun nativeTranscribe`; no rule matches that.
  * - `LocalWhisperInference.kt` — the dormant local-whisper path; 7-3 ruled it a different
- *   surface, not to be deleted. Its `transcribeAudio`/`nativeTranscribe` are not Groq STT.
+ *   surface, not to be deleted. Its `transcribeAudio`/`nativeTranscribe` are not Groq STT,
+ *   and it is **not** the JNI bridge — so exempting it from the endpoint rule would have
+ *   opened exactly the hole AC2 forbids (7-8 review round 1).
  * - `KlarvoOverlayService.transcribeWithRetry` — ADR-0017 deliberately keeps the retry/4xx
  *   loop in Kotlin. It is a retry wrapper, not an STT request implementation, so no rule
  *   below keys on it.
@@ -42,8 +48,8 @@ import java.io.File
  * Covers: the production Kotlin files directly under `android/kotlin-src/com/klarvo/voice/`
  * only, for four shapes — a `class`/`object`/`interface` named
  * `HallucinationFilter`/`SilencePreFilter`, a `fun buildMultipartBody`, a
- * `multipart/form-data` literal, and an `audio/transcriptions` literal outside the bridge —
- * plus re-appearance of the two deleted files by name.
+ * `multipart/form-data` literal, and an `audio/transcriptions` literal — the latter two in
+ * **any** of those files, no exemptions — plus re-appearance of the two deleted files by name.
  * Does NOT cover: `android/kotlin-test/` (test sources may name the deleted twins in
  * prose), the Rust side, `gen/android/` (generated, gitignored), semantic re-implementations
  * that avoid all four shapes (e.g. a hand-rolled body builder under a different name), or
@@ -51,9 +57,6 @@ import java.io.File
  * architectural purity.
  */
 class Adr0017BoundaryGuardTest {
-
-    /** Files that are permitted to carry STT/bridge vocabulary in real code. */
-    private val allowlist = setOf("GroqSttBridge.kt", "LocalWhisperInference.kt")
 
     private fun kotlinSrcDir(): File {
         val cwd = File(System.getProperty("user.dir") ?: ".")
@@ -138,27 +141,28 @@ class Adr0017BoundaryGuardTest {
             ?: error("no .kt files under ${dir.path}")
         check(files.isNotEmpty()) { "no .kt files under ${dir.path} — resolver pointed at the wrong tree" }
 
-        val rules: List<Triple<String, Regex, Boolean>> = listOf(
-            // rule name, pattern, honorsAllowlist
-            Triple(
+        // No rule carries a file allowlist (7-8 review round 1). An earlier draft exempted
+        // `GroqSttBridge.kt` + `LocalWhisperInference.kt` from the two literal rules, but
+        // `LocalWhisperInference.kt` is not the JNI bridge, so that exemption weakened AC2's
+        // "outside the JNI bridge" requirement into "anywhere except two files" — and bought
+        // nothing: neither literal appears anywhere under kotlin-src. Every rule now applies
+        // to every file, and the guard is still green.
+        val rules: List<Pair<String, Regex>> = listOf(
+            Pair(
                 "Kotlin re-implementation of a deleted STT guard (ADR-0017: Rust-only)",
-                Regex("""\b(class|object|interface)\s+(HallucinationFilter|SilencePreFilter)\b"""),
-                false
+                Regex("""\b(class|object|interface)\s+(HallucinationFilter|SilencePreFilter)\b""")
             ),
-            Triple(
+            Pair(
                 "Kotlin multipart STT request body (ADR-0017: the Rust core owns the request)",
-                Regex("""\bfun\s+buildMultipartBody\b"""),
-                false
+                Regex("""\bfun\s+buildMultipartBody\b""")
             ),
-            Triple(
+            Pair(
                 "multipart/form-data literal — an STT request body being built in Kotlin",
-                Regex("""multipart/form-data"""),
-                true
+                Regex("""multipart/form-data""")
             ),
-            Triple(
+            Pair(
                 "audio/transcriptions endpoint reached from Kotlin instead of the JNI bridge",
-                Regex("""audio/transcriptions"""),
-                true
+                Regex("""audio/transcriptions""")
             ),
         )
 
@@ -166,8 +170,7 @@ class Adr0017BoundaryGuardTest {
         for (f in files) {
             val code = stripComments(f.readText())
             code.lineSequence().forEachIndexed { idx, rawLine ->
-                for ((ruleName, pattern, honorsAllowlist) in rules) {
-                    if (honorsAllowlist && f.name in allowlist) continue
+                for ((ruleName, pattern) in rules) {
                     if (pattern.containsMatchIn(rawLine)) {
                         hits += Hit(f.name, idx + 1, rawLine.trim(), ruleName)
                     }

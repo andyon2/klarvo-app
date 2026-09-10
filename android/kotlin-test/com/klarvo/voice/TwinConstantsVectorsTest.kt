@@ -150,5 +150,14 @@ class TwinConstantsVectorsTest {
             "a" + sep + "b" + sep + "c",
             KlarvoApi.joinChunkResults(listOf("a", "b", "c"))
         )
+        // Leading-empty case: the fixture's DOES-NOT-PIN clause names the empty-result skip
+        // rule (Kotlin `if (sb.isNotEmpty())`, Rust `!combined_text.is_empty()`), so the case
+        // has to exist on both sides rather than only be described (7-8 review round 1).
+        // An empty first chunk must NOT produce a leading separator.
+        assertEquals(
+            "an empty first chunk result must not emit a leading separator",
+            "beta",
+            KlarvoApi.joinChunkResults(listOf("", "beta"))
+        )
     }
 }

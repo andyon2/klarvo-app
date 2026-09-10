@@ -188,8 +188,9 @@ if [ -d "$TEST_SRC" ] && [ "$(ls -1 "$TEST_SRC"/*.kt 2>/dev/null | wc -l)" -gt 0
 fi
 
 # Real org.json implementation on the unit-test classpath -- android.jar's org.json classes
-# are stubs that throw "not mocked" under JVM unit tests (MinRecordingMsConfigTest,
-# VadGateRmsFixtureTest both parse real JSON). Same idempotent, grep-guarded patch as the
+# are stubs that throw "not mocked" under JVM unit tests. Three suites parse real JSON
+# through org.json today: MinRecordingMsConfigTest, VadGateRmsFixtureTest and
+# TwinConstantsVectorsTest. Same idempotent, grep-guarded patch as the
 # `org.json` `testImplementation` block in android-build.sh -- cited by content, not by line
 # range: the range this comment originally carried was invalidated by its own commit, which is
 # the defect class Story 7-2 R2-P4/R3-P5 exist to stop (Story 7-2 GATE-4 finding: android-smoke.sh runs

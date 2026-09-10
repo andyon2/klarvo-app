@@ -365,9 +365,18 @@ class HighpassFilterTest {
                 "that assertion no longer discriminates a filtered frame from a raw one",
             bypassedRms < rawNormalizedRms * 0.5f
         )
+        // The stated ~87 % is pinned with a real band, not merely with the complement of the
+        // assertion above (7-8 review round 1: `assertTrue(x > y * 0.5f)` directly after
+        // `assertFalse(x < y * 0.5f)` differs only at exact equality and so cannot fail).
+        // Computed from the RBJ biquad coefficients at fc = 1 Hz, fs = 16 kHz over one
+        // 512-sample DC frame: 0.086799 / 0.100009 = 0.8679. The band is wide enough for
+        // f32 rounding and narrow enough that a real cutoff (85 Hz -> ~14 %) falls out of it.
+        val survivingFraction = bypassedRms / rawNormalizedRms
         assertTrue(
-            "sanity: the bypassed filter must preserve most of the raw amplitude (got $bypassedRms)",
-            bypassedRms > rawNormalizedRms * 0.5f
+            "the ~87 % figure this test's comment states must hold: expected 0.85..0.89 of the " +
+                "raw amplitude to survive a 1 Hz cutoff, got $survivingFraction " +
+                "(bypassedRms=$bypassedRms, rawNormalizedRms=$rawNormalizedRms)",
+            survivingFraction in 0.85f..0.89f
         )
     }
 }

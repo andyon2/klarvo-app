@@ -2158,14 +2158,55 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spec_twin_constants_chunking_boundaries() {
+    #[tokio::test]
+    async fn spec_twin_constants_chunking_boundaries() {
         let vectors = load_twin_constants();
 
         let threshold = twin(&vectors, "TWIN-CHUNK-THRESHOLD-001")["expected_int"]
             .as_u64()
             .expect("vector needs expected_int") as usize;
         assert_eq!(CHUNK_THRESHOLD, threshold, "CHUNK_THRESHOLD drifted from the Kotlin twin");
+
+        // Boundary probe through the real `chunked_cleanup`, mirroring the Kotlin
+        // `shouldChunk` probe (7-8 review round 1). The `assert_eq!` above pins the declared
+        // NUMBER only: flipping `raw_text.len() < CHUNK_THRESHOLD` to `<=` leaves it green,
+        // so the Rust half would not have pinned the BOUNDARY the fixture claims it pins.
+        // The single-call path returns the provider's output unjoined; the chunked path
+        // joins with the separator, so the presence of one separates the two paths.
+        // ASCII → 1 char == 1 byte, and the input is boundary-free so nothing else can split.
+        let provider = MockCleanupProvider;
+        let below = chunked_cleanup(
+            &provider,
+            &"a".repeat(threshold - 1),
+            CleanupStyle::Polished,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !below.text.contains('\n'),
+            "{} bytes (one below CHUNK_THRESHOLD) must take the single-call path",
+            threshold - 1
+        );
+        let at = chunked_cleanup(
+            &provider,
+            &"a".repeat(threshold),
+            CleanupStyle::Polished,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            at.text.contains('\n'),
+            "exactly {} bytes must already take the chunked path -- if this passes only at \
+             {}, the comparison operator drifted from the Kotlin `bytes >= CHUNK_THRESHOLD`",
+            threshold,
+            threshold + 1
+        );
 
         let target = twin(&vectors, "TWIN-CHUNK-TARGET-SIZE-001")["expected_int"]
             .as_u64()
@@ -2217,6 +2258,50 @@ mod tests {
             2,
             "three chunks must be joined with exactly two separators — no trailing or doubled separator"
         );
+
+        // Leading-empty case (7-8 review round 1). The fixture's DOES-NOT-PIN clause names
+        // the empty-result skip rule — Rust's `i > 0 && !combined_text.is_empty()` and
+        // Kotlin's `if (sb.isNotEmpty())` — so the case must exist on both sides rather than
+        // only be described. `EmptyFirstChunkProvider` blanks the first chunk by CONTENT (not
+        // by call order, which `join_all` does not guarantee), so an empty first result must
+        // not emit a leading separator.
+        let provider = EmptyFirstChunkProvider;
+        let input = format!("{}{}", "a".repeat(target), "b".repeat(50));
+        let result = chunked_cleanup(&provider, &input, CleanupStyle::Polished, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            result.text,
+            "B".repeat(50),
+            "an empty first chunk result must not emit a leading separator"
+        );
+        assert_eq!(
+            result.text.matches(sep).count(),
+            0,
+            "with only one non-empty result there is no seam, so no separator at all"
+        );
+    }
+
+    /// Uppercases like [`MockCleanupProvider`], but returns an EMPTY result for any chunk
+    /// made of `a`s — used to drive the leading-empty branch of the join loop.
+    struct EmptyFirstChunkProvider;
+
+    #[async_trait::async_trait]
+    impl CleanupProvider for EmptyFirstChunkProvider {
+        async fn cleanup(
+            &self,
+            raw_text: &str,
+            _style: CleanupStyle,
+            _dictionary_terms: Option<&str>,
+            _custom_prompt: Option<&str>,
+        ) -> Result<CleanupResult, LlmError> {
+            let text = if raw_text.starts_with('a') {
+                String::new()
+            } else {
+                raw_text.to_uppercase()
+            };
+            Ok(CleanupResult { text, prompt_tokens: Some(10), completion_tokens: Some(5) })
+        }
     }
 
     // --- M12 current-state vector (story 7-8, AC4) ---
@@ -2287,22 +2372,33 @@ mod tests {
         }
         assert_eq!(checked, 3, "all three cleanup styles must be recorded");
 
-        // The divergence itself, stated positively: Chat is the ONLY arm that drops the
-        // dictionary on desktop. This is what makes M12 a decision rather than a typo.
-        let chat = vectors
-            .iter()
-            .find(|v| v["style"].as_str() == Some("chat"))
-            .expect("fixture must record the chat style");
-        assert_eq!(chat["platforms_agree"].as_bool(), Some(false), "chat is the divergent style");
-        assert_eq!(
-            chat["expected_dictionary_in_prompt"].as_bool(),
-            Some(false),
-            "desktop Chat omits the dictionary"
-        );
-        assert_eq!(
-            chat["expected_dictionary_in_prompt_kotlin"].as_bool(),
-            Some(true),
-            "Android injects the dictionary for every style"
+        // The `platforms_agree` flag must be DERIVED from the two columns, never asserted
+        // against a literal (7-8 review round 1). Hard-coding "chat is false" here would
+        // contradict the fixture's own promise that Story 7.6 flips ONE vector: the flip
+        // would fail this suite until a test literal was edited too. With the check derived,
+        // 7.6 changes the prompt code and the vector, and this test follows — while a
+        // fixture whose flag stops matching its own columns still fails loudly.
+        for v in &vectors {
+            let Some(style_name) = v["style"].as_str() else { continue };
+            let desktop = v["expected_dictionary_in_prompt"].as_bool().expect("desktop column");
+            let kotlin = v["expected_dictionary_in_prompt_kotlin"]
+                .as_bool()
+                .unwrap_or_else(|| panic!("{} needs expected_dictionary_in_prompt_kotlin", style_name));
+            assert_eq!(
+                v["platforms_agree"].as_bool(),
+                Some(desktop == kotlin),
+                "{}: platforms_agree must state what the two recorded columns actually show",
+                style_name
+            );
+        }
+
+        // M12 is only an open decision while the platforms still disagree somewhere. Assert
+        // that the file records at least one such style, derived from the flags above —
+        // without naming which one, so the record stays the record and not a second opinion.
+        assert!(
+            vectors.iter().any(|v| v["platforms_agree"].as_bool() == Some(false)),
+            "this fixture exists to record a live divergence; if every style now agrees, M12 \
+             was resolved — retire the record deliberately rather than leaving it asserting nothing"
         );
     }
 }

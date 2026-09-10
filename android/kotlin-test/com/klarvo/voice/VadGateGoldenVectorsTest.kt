@@ -67,20 +67,19 @@ class VadGateGoldenVectorsTest {
         fun asArray() = (this as? Arr)?.list ?: error("Expected array, got $this")
         fun optString(key: String, default: String = "") =
             (this as? Obj)?.map?.get(key)?.let { (it as? Str)?.v } ?: default
-        fun optDouble(key: String, default: Double = 0.0) =
-            (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v } ?: default
-
         /**
          * Throwing numeric accessor (story 7-8, AC5 / 7-2 round-3 finding R3-P2).
          *
-         * [optDouble]'s `default = 0.0` turns a typo'd or schema-drifted key into a SILENT
+         * A `default = 0.0` accessor turns a typo'd or schema-drifted key into a SILENT
          * zero. For this fixture that is not a harmless default: amplitude 0 or frequency 0
          * yields an all-zero signal, RMS 0, gate closed — so every `expected_gate_open: false`
          * vector passes VACUOUSLY while reporting green. A 0.0 silence_threshold is likewise the
          * most permissive threshold possible, and a 0.0 silence_secs floors to 7 frames.
          *
-         * Every key whose absence could fake a pass therefore reads through this accessor.
-         * [optDouble] is kept only for genuinely optional keys.
+         * Every numeric key in this file reads through this accessor; there is no `optDouble`
+         * left to reach for. The one defaulting reader that remains is [optString] for
+         * `signal`, whose default (`nyquist_square`) is a real schema default and cannot fake
+         * a pass — a wrong signal type changes the measured RMS rather than zeroing it.
          */
         fun getDouble(key: String): Double =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v }
@@ -88,8 +87,21 @@ class VadGateGoldenVectorsTest {
                     "fixture vector is missing required numeric key '$key' (or it is not a number) -- " +
                         "a silent default here would let this vector pass vacuously"
                 )
-        fun optBool(key: String, default: Boolean = false) =
-            (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v?.let { n -> n != 0.0 } } ?: default
+
+        /**
+         * Throwing boolean accessor, same rationale (7-8 review round 1).
+         *
+         * An `optBool(default = false)` reader is the [getDouble] defect in the EXPECTATION
+         * column: the three `expected_gate_open: false` vectors would keep passing if the key
+         * were dropped or misspelled, because the default agrees with them. The expected value
+         * is never optional — a vector without it is a broken vector.
+         */
+        fun getBool(key: String): Boolean =
+            (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v?.let { n -> n != 0.0 } }
+                ?: error(
+                    "fixture vector is missing required boolean key '$key' -- " +
+                        "a silent default here would let this vector pass vacuously"
+                )
     }
 
     private fun parseJson(src: String): JsonVal {
@@ -229,7 +241,7 @@ class VadGateGoldenVectorsTest {
         for (v in vectors) {
             val id = v.optString("id")
             val threshold = v.getDouble("silence_threshold").toFloat()
-            val expectedOpen = v.optBool("expected_gate_open")
+            val expectedOpen = v.getBool("expected_gate_open")
             // amplitude_short is a LITERAL baked into the fixture (precomputed offline from a
             // literal 32767, e.g. ceil(target * 32767)) -- NOT derived here from
             // KlarvoAudioRecorder.VAD_RMS_NORMALIZATION_DIVISOR, so a reverted production divisor

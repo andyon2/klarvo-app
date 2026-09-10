@@ -387,7 +387,8 @@ for at least:
         b: fixture File List entry; c: `android-smoke.sh` + `pipeline.rs` added to the main File
         List; d: Task 7's "no Rust changes beyond…" bullet).
         R3-P8: CPU-saving clause deleted (no short-circuit added) + the arrow nit at the
-        state-machine block (measured: col 52 vs its siblings' 51).
+        state-machine block (measured on `7422a86`: the third arrow at col 53 vs its two
+        siblings' 52 — matching the AC5 text; all three now sit at 52).
   - [x] Fix **R3-P2 EXT** — same throwing-accessor remedy at `silence_threshold` and `silence_secs`.
   - [x] Fix **R3-P8 EXT** — second copy of the false claim struck in the `energyGateThreshold`
         param KDoc; **no** short-circuit added; `config/mod.rs:209` anchor and the `0.005` default
@@ -419,17 +420,22 @@ for at least:
         (`rm`+`cp` sync of `kotlin-src`/`kotlin-test`, then `./gradlew
         :app:testUniversalDebugUnitTest`), because the script hard-fails on "no device" long
         before it reaches that step. Final run used `--rerun-tasks`.
-  - [~] Emulator smoke proves the install fix: fresh APK + **one JNI call succeeds**.
-        → **BLOCKED — not proven.** No device and no emulator are reachable from powerhouse:
-        `adb devices` is empty, `adb connect emulator-5554` fails DNS, `100.112.41.70:5555` is
-        refused, and this host has no `emulator/` binary, no `system-images/` and no AVD, so
-        `scripts/android-emulator.sh` (which boots a LOCAL avd) cannot run here. Per the story's
-        own Dev Notes and project-context, the gate is reported blocked rather than worked around;
-        no tooling was installed. **AC6b is therefore code-complete but runtime-unproven** — the
-        `--abi arm64-v8a -g` change is shell-syntax-checked and its empty/populated array
-        expansion verified under `set -euo pipefail`, but no JNI call has been executed.
-  - [x] Record the inversion table; confirm `git status` clean. → table below; all six inversions
-        reverted and audited item-by-item; no probe or scratch file left in the tree.
+  - [x] Emulator smoke proves the install fix: fresh APK + **one JNI call succeeds**.
+        → **PROVEN on the laptop, 2026-09-10.** The earlier "blocked" note was written from
+        powerhouse, which has no AVD (no `emulator/`, no `system-images/`) — but the smoke is
+        not run from powerhouse. It runs **on the laptop**, where the AVD is local and
+        `DEVICE_SERIAL` is `emulator-5554`, so AC6b's `case … in emulator-*)` branch is the
+        matching one (review decision D2). Evidence in
+        `_bmad-output/implementation-artifacts/gate4-evidence/7-8/`: `smoke-r1-00e771d.log`
+        shows the branch firing (*"Emulator-Ziel — erzwinge arm64-v8a-Split"*) and a successful
+        install on `emulator-5554`; `structure-install-r1.txt` shows `primaryCpuAbi=arm64-v8a`,
+        the `lib/arm64` nativeloader path, **0** `UnsatisfiedLinkError`/FATAL, and live
+        `klarvo_lib::config` / `klarvo_lib::license` log lines from the Rust core — i.e. JNI
+        calls executed. **Scope of this proof:** the x86_64-split trap is closed on a local AVD
+        with an arm64 APK. It does not cover a physical device (unaffected — no `emulator-*`
+        serial), nor any network call.
+  - [x] Record the inversion table; confirm `git status` clean. → table below; all **seven**
+        inversions reverted and audited item-by-item; no probe or scratch file left in the tree.
   - [~] **[HUMAN GATE — Andi] GATE-4:** one dictation on the Xiaomi with DeepSeek cleanup returns
         cleaned text (proves M9 on the real path). → **PENDING — Andi's gate**, cannot be
         self-served. M9 is proven only at the unit level (both URL sites pinned); no network call
@@ -519,9 +525,14 @@ committed per-story, English commit subjects.
   pure-logic change — nearly all of this story is pure logic.
 - **Emulator:** boot **only** via `scripts/android-emulator.sh` (never hand-roll `emulator -avd`; the
   script arms the TTL watchdog). Stop it explicitly with `scripts/android-emulator.sh stop`.
-  **Known topology constraint:** powerhouse has **no AVD** (`tools/android-sdk/` lacks `emulator/` +
-  `system-images/`) — the emulator proxy runs on the **laptop**. If the emulator is unreachable,
-  AC6b's proof is `blocked`; report it, do **not** install tooling around it.
+  **Known topology constraint (corrected 2026-09-10, review decision D2):** powerhouse has **no
+  AVD** (`tools/android-sdk/` lacks `emulator/` + `system-images/`). The AVD lives on the
+  **laptop**, and the smoke is run **there, locally** — it is *not* a remote emulator reached
+  from powerhouse over TCP. The serial in that run is therefore `emulator-5554`, which is exactly
+  what AC6b's `emulator-*` branch matches (verified 2026-09-10; evidence in
+  `_bmad-output/implementation-artifacts/gate4-evidence/7-8/`). AC6b is bounded to a locally
+  attached AVD by design. If no emulator is reachable at all, report the gate `blocked`; do
+  **not** install tooling around it.
 - **Never mutate the host to reach a gate** (no `apt`, `rustup target add`, `cargo install`,
   `npm install -g`).
 - **`gen/android/` is generated and gitignored** — every durable edit goes in `android/kotlin-src/`,
@@ -591,6 +602,16 @@ Claude Opus 5 (`claude-opus-5`), via `bmad-dev-story`.
 - Two encoding traps hit while authoring `Adr0017BoundaryGuardTest.kt`, both self-inflicted and
   fixed: a stray NUL byte in a char literal, and `/*` sequences inside a KDoc (`voice/*.kt`,
   `kotlin-test/**`) — Kotlin block comments **nest**, so those opened comments that never closed.
+- **Fix round 1 (2026-09-10).** JVM gate reproduced the same device-free way as the first run
+  (`rm`+`cp` sync of both trees, then `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks`),
+  with `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64` and
+  `ANDROID_HOME=/home/andyon2/workspace/tools/android-sdk` — gradle fails with *"SDK location not
+  found"* without the latter, which `scripts/android-smoke.sh:45-46` exports for you.
+- **Fix round 1 — a fixed inversion has to fail differently than the bug did.** For P8 the obvious
+  inversion (85 Hz cutoff) would have tripped the *old* assertion too and proved nothing about the
+  new band. The inversion actually used drives the cutoff the other way (0.05 Hz → 99.6 % survival):
+  it passes the dropped `> 0.5f` check and fails only the band. Same reasoning behind D and F —
+  each is placed exactly where the pre-fix code was blind.
 
 ### Completion Notes List
 
@@ -624,12 +645,18 @@ so explicitly rather than implying both sides are asserted.
 
 **AC5 (7-2 residuals)** — All 8 findings plus both named extension sites fixed. R3-P4 was closed
 with the stronger option (a genuine bypass inversion through the real seam, not a rename). The
-7-2 record's round-3 **checkboxes were deliberately left unchecked**: the Files-to-MODIFY guard says
-to change only the R3-P7 claims (`:350`, `:564`, `:244`) plus R3-P1's line 333 and to preserve
-"everything else" in that closed record. Flagging for Andi rather than deciding unilaterally.
+7-2 record's round-3 **checkboxes were initially left unchecked** (the Files-to-MODIFY guard says to
+change only the R3-P7 claims plus R3-P1's line 333 and to preserve "everything else" in that closed
+record) and flagged for Andi rather than decided unilaterally. **Review decision D1 resolved this:
+all eight are now ticked**, each with a dated *"Resolved 2026-09-10 by Story 7-8 (commit `00e771d`)"*
+note appended. The original finding text is kept verbatim — the record still says what was wrong, it
+just no longer says it is still true.
 
 **AC6** — Both traps fixed. (a) is verified by construction (no generated-only `.kt` in either
-destination). (b) is **code-complete but runtime-unproven** — see the blocked gate in Task 8.
+destination). (b) is **runtime-proven on a local AVD** (`emulator-5554`, on the laptop) —
+arm64-v8a split installed, 0 `UnsatisfiedLinkError`, Rust-core log lines present; evidence and
+scope in Task 8. The `emulator-*` branch is deliberately bounded to a locally attached AVD
+(review decision D2); a physical device does not take it and does not need to.
 
 **AC7** — One paragraph, two commands, fixture table, "no CI" stated plainly.
 
@@ -637,9 +664,10 @@ destination). (b) is **code-complete but runtime-unproven** — see the blocked 
 `cargo test --lib` 662/0 and the JVM 168/0 are *logic* results on Linux/JVM. What they exercise:
 pure functions, seams, fixture agreement, and static source structure. What they do **NOT**
 exercise, and what therefore remains unproven by this story:
-- **No Android device and no emulator** were driven at all. No APK was built or installed; no JNI
-  call ran. AC6b's arm64-split fix is unproven at runtime — and note that this is precisely how the
-  original trap hid, since a smoke that never reaches JNI stays green.
+- **No physical Android device.** A local **AVD** (`emulator-5554`, laptop) was driven for AC6b
+  only: fresh APK installed as the arm64-v8a split, JNI reached (Rust-core log lines, 0
+  `UnsatisfiedLinkError`). That proves the install fix and nothing else — no dictation, no
+  gesture, no overlay and no HyperOS behaviour was exercised on it.
 - **No network call** to DeepSeek, Groq or any provider. AC1 proves the URL *string* both resolvers
   emit; it does not prove a request succeeds. That is GATE-4, Andi's.
 - **No desktop/Windows build and no UI** — this story touches no surface, so `windows-build.sh` is
@@ -695,6 +723,34 @@ All seven reverted; `git status` carries no probe or scratch file (audited item-
 - `test-fixtures/twin-constants-vectors.json` (AC3)
 - `test-fixtures/m12-dictionary-scope-vectors.json` (AC4)
 - `test-fixtures/README.md` (AC7)
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-8/smoke-r1-00e771d.log` — smoke run on the
+  laptop AVD; shows AC6b's `emulator-*` branch firing and the install succeeding (review D2).
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-8/structure-install-r1.txt` — the install
+  probe: `primaryCpuAbi=arm64-v8a`, `lib/arm64` nativeloader path, 0 `UnsatisfiedLinkError`, live
+  Rust-core log lines (review D2).
+
+**Modified in fix round 1 (code review 2026-09-10)**
+- `src-tauri/src/llm/mod.rs` — Rust 399/400 boundary probe through `chunked_cleanup` (P2, test is
+  now `#[tokio::test]`), `EmptyFirstChunkProvider` + leading-empty join case (P1), M12 assertion
+  derived from the fixture columns instead of three hard-coded literals (P5). Tests only; no
+  production Rust changed.
+- `android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt` — `honorsAllowlist` and the
+  now-dead `allowlist` removed; all four rules apply to every file; KDoc rewritten (P4).
+- `android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt` — throwing `getBool` added and
+  used for `expected_gate_open`; dead `optDouble`/`optBool` deleted; KDoc narrowed to the truth (P3).
+- `android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt` — redundant complement assertion
+  replaced by a 0.85–0.89 band pinning the stated ~87 % (P8).
+- `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` — leading-empty join case (P1).
+- `test-fixtures/twin-constants-vectors.json` — JOIN-SEPARATOR and CHUNK-THRESHOLD descriptions now
+  match what the two halves actually assert (P1, P2).
+- `test-fixtures/m12-dictionary-scope-vectors.json` — README entry states what flipping a vector
+  does and does not require (P5).
+- `test-fixtures/README.md` — "Conventions worth keeping" paragraph dropped; its one load-bearing
+  sentence folded into the fixture table (P10).
+- `scripts/android-smoke.sh` — `org.json` comment names three consumers, not two (P9). The AC6b
+  `emulator-*` branch is deliberately **unchanged** (D2).
+- `_bmad-output/implementation-artifacts/7-2-android-live-auto-stop-vad-gate-parity.md` — all eight
+  round-3 `[Review][Patch]` items ticked with dated resolution notes (D1).
 
 *Not part of this story:* `_bmad-output/implementation-artifacts/seat-costs.jsonl` was already
 untracked in the working tree at story start and was left alone.
@@ -720,6 +776,18 @@ untracked in the working tree at story start and was left alone.
   corrections and two `android-smoke.sh` shell fixes. Two constants in `KlarvoApi.kt` were *named*
   (same values) because AC3 requires asserting against a production symbol and the literals were
   inline in the request body. Status → review.
+- 2026-09-10: **Addressed code review findings — 12 items resolved** (2 decisions + 10 patches;
+  the 7 deferred items untouched, no scope added). D1: 7-2's eight round-3 items ticked with dated
+  resolution notes. D2: `android-smoke.sh` left as-is and the story's own "remote TCP proxy"
+  topology claim corrected — the smoke runs on the laptop at `emulator-5554`, which also lifts
+  **AC6b from blocked to runtime-proven** (evidence committed under `gate4-evidence/7-8/`). The
+  net gained two real assertions it had only *claimed*: a Rust 399/400 threshold-boundary probe
+  and a leading-empty join case on both sides; the ADR-0017 guard lost its allowlist hole; the
+  M12 test no longer hard-codes the values Story 7.6 may flip. Gates re-run: `cargo test --lib`
+  **662 passed / 0 failed**, JVM `testUniversalDebugUnitTest` **168 tests / 0 failures**
+  (`--rerun-tasks`) — both counts unchanged, since the round added assertions rather than test
+  functions. Seven fix-round inversions shown RED at writing time, then reverted; tree clean.
+  Status → review.
 
 ### Review Findings — code review 2026-09-10 (range `7422a86..00e771d`)
 
@@ -729,21 +797,63 @@ re-verified against today's tree before being recorded. 2 decision-needed · 10 
 
 **Decision findings (Andi's call — must be resolved before the patch findings):**
 
-- [ ] [Review][Decision] 7-2's eight round-3 `[Review][Patch]` items are still unchecked and still assert their defects are live [`_bmad-output/implementation-artifacts/7-2-android-live-auto-stop-vad-gate-parity.md:421-428`] — all eight remain `- [ ]` with present-tense text that 7-8 has made false (e.g. `:428` "The class KDoc line this commit edited **still promises** a CPU short-circuit the code does not implement"; `:421` "three places claim they do"). The dev disclosed this deliberately (Completion Notes → AC5) because the Files-to-MODIFY guard says to preserve everything else in that closed record — yet the same commit *did* apply dated "Corrected 2026-09-10" treatments to five other places in it, including a `[Review][Defer]` item at `:355`. Leaving them is precisely the "net carrying known-false claims" the story's own goal statement forbids. **Options:** (a) check them off / apply the same dated resolved-by-7-8 note to all eight, (b) declare the closed record frozen and record that decision in 7-8 instead.
-- [ ] [Review][Decision] AC6b's emulator branch cannot match the emulator topology this project documents [`scripts/android-smoke.sh:280-284`] — `case "$DEVICE_SERIAL" in emulator-*)` matches only a locally-attached AVD. That is exactly what AC6b prescribed and it matches the existing conductor guard at `:136-138`, but per this story's own Task 8 the emulator is a remote proxy on the laptop reached over TCP, so `DEVICE_SERIAL` would be `<ip>:5555` → `INSTALL_ABI_FLAGS=()` → the x86_64 split (no `libklarvo_lib.so`) installs again, i.e. the exact `UnsatisfiedLinkError` trap AC6b exists to close survives on the only emulator topology the project documents. **Options:** (a) widen detection (`adb shell getprop ro.kernel.qemu` / `ro.product.cpu.abi`), which contradicts the AC's explicit prescription, (b) keep `emulator-*` as the repo convention and scope AC6b to local AVDs, stating so.
+- [x] [Review][Decision] 7-2's eight round-3 `[Review][Patch]` items are still unchecked and still assert their defects are live [`_bmad-output/implementation-artifacts/7-2-android-live-auto-stop-vad-gate-parity.md:421-428`] — all eight remain `- [ ]` with present-tense text that 7-8 has made false (e.g. `:428` "The class KDoc line this commit edited **still promises** a CPU short-circuit the code does not implement"; `:421` "three places claim they do"). The dev disclosed this deliberately (Completion Notes → AC5) because the Files-to-MODIFY guard says to preserve everything else in that closed record — yet the same commit *did* apply dated "Corrected 2026-09-10" treatments to five other places in it, including a `[Review][Defer]` item at `:355`. Leaving them is precisely the "net carrying known-false claims" the story's own goal statement forbids. **Options:** (a) check them off / apply the same dated resolved-by-7-8 note to all eight, (b) declare the closed record frozen and record that decision in 7-8 instead.
+- [x] [Review][Decision] AC6b's emulator branch cannot match the emulator topology this project documents [`scripts/android-smoke.sh:280-284`] — `case "$DEVICE_SERIAL" in emulator-*)` matches only a locally-attached AVD. That is exactly what AC6b prescribed and it matches the existing conductor guard at `:136-138`, but per this story's own Task 8 the emulator is a remote proxy on the laptop reached over TCP, so `DEVICE_SERIAL` would be `<ip>:5555` → `INSTALL_ABI_FLAGS=()` → the x86_64 split (no `libklarvo_lib.so`) installs again, i.e. the exact `UnsatisfiedLinkError` trap AC6b exists to close survives on the only emulator topology the project documents. **Options:** (a) widen detection (`adb shell getprop ro.kernel.qemu` / `ro.product.cpu.abi`), which contradicts the AC's explicit prescription, (b) keep `emulator-*` as the repo convention and scope AC6b to local AVDs, stating so.
 
 **Patch findings:**
 
-- [ ] [Review][Patch] Twin fixture claims a leading-empty join case that exists in neither harness [`test-fixtures/twin-constants-vectors.json` TWIN-CHUNK-JOIN-SEPARATOR-001] — the `DOES NOT PIN` clause says the empty-result skip rule is "asserted by the two-element and leading-empty cases in the tests". No leading-empty case exists: Kotlin joins `["alpha","beta"]` and `["a","b","c"]` (`TwinConstantsVectorsTest.kt:139,145`), Rust drives a boundary-free input yielding three non-empty chunks (`src-tauri/src/llm/mod.rs:2216`). Fix: add `joinChunkResults(listOf("", "beta"))` plus a mock returning an empty first chunk, or strike the claim.
-- [ ] [Review][Patch] TWIN-CHUNK-THRESHOLD-001 claims a boundary lock only the Kotlin half performs [`test-fixtures/twin-constants-vectors.json` TWIN-CHUNK-THRESHOLD-001 / `src-tauri/src/llm/mod.rs:2168`] — description: "PINS: the effective decision BOUNDARY, not merely a declared number -- Rust CHUNK_THRESHOLD ... and Kotlin KlarvoApi.shouldChunk". The Rust half is only `assert_eq!(CHUNK_THRESHOLD, threshold)`; flipping `raw_text.len() < CHUNK_THRESHOLD` to `<=` leaves it green. The adjacent Rust comment "Behavioural probe, mirroring the Kotlin half exactly" mirrors only the target-size probe. Fix: add a Rust boundary probe at 399/400 bytes through `chunked_cleanup`, or restate PINS as "declared constant (Rust) / boundary (Kotlin)".
-- [ ] [Review][Patch] The new throwing-accessor KDoc over-claims, and `optDouble` is now dead [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:82-83`] — it asserts "Every key whose absence could fake a pass therefore reads through this accessor" and "[optDouble] is kept only for genuinely optional keys". Both false: `:232` still reads `expected_gate_open` via `optBool(default = false)`, so a dropped/typo'd key still passes on the three `expected_gate_open: false` vectors — the exact R3-P2 shape; and `optDouble` (`:70`) now has zero call sites. Fix: add a throwing `getBool` and use it at `:232`, delete the dead `optDouble`, or narrow the KDoc to what is true.
-- [ ] [Review][Patch] The ADR-0017 allowlist opens the hole AC2 explicitly forbids [`android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt:56`, rules at `:153`,`:158`] — the `multipart/form-data` and `audio/transcriptions` rules carry `honorsAllowlist = true` for both `GroqSttBridge.kt` **and** `LocalWhisperInference.kt`. AC2 requires flagging `audio/transcriptions` "outside the JNI bridge", and `LocalWhisperInference.kt` is not the bridge. Verified: neither string appears anywhere in `android/kotlin-src/**` today, so the allowlist buys nothing on these two rules and only creates the hole. Fix: set `honorsAllowlist = false` for both rules (or narrow the allowlist to `GroqSttBridge.kt`) — the guard stays green.
-- [ ] [Review][Patch] The M12 test hardcodes the three values Story 7.6 is told it can flip [`src-tauri/src/llm/mod.rs:2338-2348`] — `chat["platforms_agree"] == Some(false)`, `chat["expected_dictionary_in_prompt"] == Some(false)`, `chat["expected_dictionary_in_prompt_kotlin"] == Some(true)` compare the fixture to test literals, proving nothing about either platform, and they contradict the fixture's own M12-DICT-SCOPE-README claim that "Story 7.6 can flip ONE vector here once the decision is made" — flipping it fails the suite until `llm/mod.rs` is edited too. Fix: derive the claim from the data (e.g. assert exactly one entry has `platforms_agree == false`), or correct the README entry to say the Rust test must change with it.
-- [ ] [Review][Patch] Dev record miscounts its own inversion evidence [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:431` vs `:657-667`] — `:431` says "all six inversions reverted and audited item-by-item"; the table has seven rows and closes with "All seven reverted". Fix: seven in both places.
-- [ ] [Review][Patch] The recorded arrow-column measurement is wrong [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:390`] — "measured: col 52 vs its siblings' 51". Measured on `7422a86`, `KlarvoAudioRecorder.kt:502/503/504` sit at display columns **52/52/53**, matching the AC5 text, not the dev record. The code fix itself is correct (all three now at 52). Fix: correct the record to 53 vs 52.
-- [ ] [Review][Patch] The "genuine bypass inversion" carries a redundant complement assertion and an unpinned number [`android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt:359-368`] — `assertFalse(bypassedRms < rawNormalizedRms * 0.5f)` is immediately followed by `assertTrue(bypassedRms > rawNormalizedRms * 0.5f)`; the two differ only at exact equality, so the second cannot fail unless the first already did. The comment states "~87 % of the raw amplitude survives" while nothing pins tighter than 50 %. Fix: drop the redundant assertion, or pin the ~87 % figure with a real band so the stated number is covered.
-- [ ] [Review][Patch] The rewritten `org.json` comment was made stale by its own commit [`scripts/android-smoke.sh:189-190`] — it still enumerates "MinRecordingMsConfigTest, VadGateRmsFixtureTest **both** parse real JSON" while this same commit adds `TwinConstantsVectorsTest` (imports `org.json.JSONArray`/`JSONObject`) as a third consumer, making the patched dependency strictly more load-bearing. Same defect class as R3-P5/R3-P7, re-committed in the block rewritten to fix it. Fix: name the three consumers, or drop the enumeration.
-- [ ] [Review][Patch] AC7's "one paragraph" guard is exceeded [`test-fixtures/README.md`] — delivered as heading + lead paragraph + commands paragraph + 7-row table + an unasked "Conventions worth keeping" paragraph. AC7's mandatory content (two commands, fixture list, "no CI" stated) is all present; the conventions paragraph is beyond the AC's explicit "Do not write a test-strategy document". Fix: fold or drop it if the guard is honored literally.
+- [x] [Review][Patch] Twin fixture claims a leading-empty join case that exists in neither harness [`test-fixtures/twin-constants-vectors.json` TWIN-CHUNK-JOIN-SEPARATOR-001] — the `DOES NOT PIN` clause says the empty-result skip rule is "asserted by the two-element and leading-empty cases in the tests". No leading-empty case exists: Kotlin joins `["alpha","beta"]` and `["a","b","c"]` (`TwinConstantsVectorsTest.kt:139,145`), Rust drives a boundary-free input yielding three non-empty chunks (`src-tauri/src/llm/mod.rs:2216`). Fix: add `joinChunkResults(listOf("", "beta"))` plus a mock returning an empty first chunk, or strike the claim.
+- [x] [Review][Patch] TWIN-CHUNK-THRESHOLD-001 claims a boundary lock only the Kotlin half performs [`test-fixtures/twin-constants-vectors.json` TWIN-CHUNK-THRESHOLD-001 / `src-tauri/src/llm/mod.rs:2168`] — description: "PINS: the effective decision BOUNDARY, not merely a declared number -- Rust CHUNK_THRESHOLD ... and Kotlin KlarvoApi.shouldChunk". The Rust half is only `assert_eq!(CHUNK_THRESHOLD, threshold)`; flipping `raw_text.len() < CHUNK_THRESHOLD` to `<=` leaves it green. The adjacent Rust comment "Behavioural probe, mirroring the Kotlin half exactly" mirrors only the target-size probe. Fix: add a Rust boundary probe at 399/400 bytes through `chunked_cleanup`, or restate PINS as "declared constant (Rust) / boundary (Kotlin)".
+- [x] [Review][Patch] The new throwing-accessor KDoc over-claims, and `optDouble` is now dead [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:82-83`] — it asserts "Every key whose absence could fake a pass therefore reads through this accessor" and "[optDouble] is kept only for genuinely optional keys". Both false: `:232` still reads `expected_gate_open` via `optBool(default = false)`, so a dropped/typo'd key still passes on the three `expected_gate_open: false` vectors — the exact R3-P2 shape; and `optDouble` (`:70`) now has zero call sites. Fix: add a throwing `getBool` and use it at `:232`, delete the dead `optDouble`, or narrow the KDoc to what is true.
+- [x] [Review][Patch] The ADR-0017 allowlist opens the hole AC2 explicitly forbids [`android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt:56`, rules at `:153`,`:158`] — the `multipart/form-data` and `audio/transcriptions` rules carry `honorsAllowlist = true` for both `GroqSttBridge.kt` **and** `LocalWhisperInference.kt`. AC2 requires flagging `audio/transcriptions` "outside the JNI bridge", and `LocalWhisperInference.kt` is not the bridge. Verified: neither string appears anywhere in `android/kotlin-src/**` today, so the allowlist buys nothing on these two rules and only creates the hole. Fix: set `honorsAllowlist = false` for both rules (or narrow the allowlist to `GroqSttBridge.kt`) — the guard stays green.
+- [x] [Review][Patch] The M12 test hardcodes the three values Story 7.6 is told it can flip [`src-tauri/src/llm/mod.rs:2338-2348`] — `chat["platforms_agree"] == Some(false)`, `chat["expected_dictionary_in_prompt"] == Some(false)`, `chat["expected_dictionary_in_prompt_kotlin"] == Some(true)` compare the fixture to test literals, proving nothing about either platform, and they contradict the fixture's own M12-DICT-SCOPE-README claim that "Story 7.6 can flip ONE vector here once the decision is made" — flipping it fails the suite until `llm/mod.rs` is edited too. Fix: derive the claim from the data (e.g. assert exactly one entry has `platforms_agree == false`), or correct the README entry to say the Rust test must change with it.
+- [x] [Review][Patch] Dev record miscounts its own inversion evidence [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:431` vs `:657-667`] — `:431` says "all six inversions reverted and audited item-by-item"; the table has seven rows and closes with "All seven reverted". Fix: seven in both places.
+- [x] [Review][Patch] The recorded arrow-column measurement is wrong [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:390`] — "measured: col 52 vs its siblings' 51". Measured on `7422a86`, `KlarvoAudioRecorder.kt:502/503/504` sit at display columns **52/52/53**, matching the AC5 text, not the dev record. The code fix itself is correct (all three now at 52). Fix: correct the record to 53 vs 52.
+- [x] [Review][Patch] The "genuine bypass inversion" carries a redundant complement assertion and an unpinned number [`android/kotlin-test/com/klarvo/voice/HighpassFilterTest.kt:359-368`] — `assertFalse(bypassedRms < rawNormalizedRms * 0.5f)` is immediately followed by `assertTrue(bypassedRms > rawNormalizedRms * 0.5f)`; the two differ only at exact equality, so the second cannot fail unless the first already did. The comment states "~87 % of the raw amplitude survives" while nothing pins tighter than 50 %. Fix: drop the redundant assertion, or pin the ~87 % figure with a real band so the stated number is covered.
+- [x] [Review][Patch] The rewritten `org.json` comment was made stale by its own commit [`scripts/android-smoke.sh:189-190`] — it still enumerates "MinRecordingMsConfigTest, VadGateRmsFixtureTest **both** parse real JSON" while this same commit adds `TwinConstantsVectorsTest` (imports `org.json.JSONArray`/`JSONObject`) as a third consumer, making the patched dependency strictly more load-bearing. Same defect class as R3-P5/R3-P7, re-committed in the block rewritten to fix it. Fix: name the three consumers, or drop the enumeration.
+- [x] [Review][Patch] AC7's "one paragraph" guard is exceeded [`test-fixtures/README.md`] — delivered as heading + lead paragraph + commands paragraph + 7-row table + an unasked "Conventions worth keeping" paragraph. AC7's mandatory content (two commands, fixture list, "no CI" stated) is all present; the conventions paragraph is beyond the AC's explicit "Do not write a test-strategy document". Fix: fold or drop it if the guard is honored literally.
+
+**Fix round 1 — resolutions (2026-09-10).** Both decisions and all ten patch findings applied; the
+seven deferred items were not touched. What each one became:
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| D1 | 7-2's eight round-3 items still unchecked | Option (a): all eight ticked in `7-2-…md`, each with an appended dated *"Resolved 2026-09-10 by Story 7-8 (commit `00e771d`)"* note. Original finding text kept verbatim — the record still says what was wrong, it no longer says it is still true. |
+| D2 | AC6b's `emulator-*` branch vs. the documented topology | Option (b): `scripts/android-smoke.sh:280-284` **unchanged**; AC6b is bounded to a locally attached AVD. The story's own claim was the error — the smoke runs **on the laptop**, where the serial is `emulator-5554`. Task 8 and the Dev Notes topology paragraph corrected, with the evidence that also lifts AC6b from *blocked* to *proven*. |
+| P1 | Join fixture claimed a leading-empty case that existed on neither side | Case **added** on both: Kotlin `joinChunkResults(listOf("", "beta"))`, Rust `EmptyFirstChunkProvider` (blanks the first chunk by content, not by call order, which `join_all` does not guarantee). Fixture clause now names both. |
+| P2 | TWIN-CHUNK-THRESHOLD-001 claimed a boundary only Kotlin probed | Rust **399/400 boundary probe** added through the real `chunked_cleanup` (single-call path vs. joined chunked path). The test became `#[tokio::test]`. Fixture description now says both halves probe. |
+| P3 | `getDouble` KDoc over-claimed; `optDouble` dead | Throwing `getBool` added and used for `expected_gate_open`; the defaulting `optDouble` **and** `optBool` deleted. KDoc rewritten to what is now true (the only defaulting reader left is `optString("signal")`, whose default cannot fake a pass). |
+| P4 | ADR-0017 allowlist opened the hole AC2 forbids | `honorsAllowlist` removed **entirely** — all four rules now apply to every file. That left the `allowlist` set and the flag itself dead, so both were deleted rather than left as unused code asserting a false intent. Class KDoc rewritten: the bridge is safe because no rule keys on its vocabulary, which is stronger than an exemption. |
+| P5 | M12 test hard-coded the three values 7.6 may flip | Replaced with a **derived** check: `platforms_agree` must equal `desktop == kotlin` for every styled entry, plus "at least one style still disagrees". No test literal names Chat. A correct 7.6 flip (prompt code + vector) now needs **no** edit to `llm/mod.rs`; the fixture README says so explicitly. |
+| P6 | "six inversions" vs. a seven-row table | Unified to **seven**. |
+| P7 | Arrow-column measurement wrong in the Dev Record | Corrected to **53 vs 52** on `7422a86`, matching the AC5 text. The code fix (all three at 52) was already right. |
+| P8 | Redundant complement assertion; unpinned "~87 %" | Redundant `assertTrue(x > y*0.5f)` dropped, replaced by a real **0.85–0.89 band** on `bypassedRms / rawNormalizedRms`. The stated number is now covered. |
+| P9 | `org.json` comment enumerated two consumers, its own commit added a third | Now names **three**: `MinRecordingMsConfigTest`, `VadGateRmsFixtureTest`, `TwinConstantsVectorsTest`. |
+| P10 | AC7's "one paragraph" exceeded | The unrequested "Conventions worth keeping" paragraph **dropped**; its one load-bearing sentence (the M12 Android column is a written record) folded into the fixture table. All AC7-mandatory content still present. |
+
+**Fix-round inversion table — every new or changed assertion re-introduced as drift, measured, reverted.**
+
+| # | Finding | Reverted change (deliberate drift) | Result |
+|---|---------|------------------------------------|--------|
+| A | P2 | Rust `raw_text.len() < CHUNK_THRESHOLD` → `<=` | 🔴 `spec_twin_constants_chunking_boundaries` — *"exactly 400 bytes must already take the chunked path"*. **This is the exact drift the pre-fix `assert_eq!` stayed green on.** |
+| B | P1 | Rust `if i > 0 && !combined_text.is_empty()` → `if i > 0` | 🔴 `spec_twin_constants_chunk_join_separator` — *"an empty first chunk result must not emit a leading separator"* |
+| C | P5 | M12 chat vector `platforms_agree` false → true (columns left disagreeing) | 🔴 `spec_m12_…` — *"chat: platforms_agree must state what the two recorded columns actually show"* |
+| D | P4 | added `audio/transcriptions` literal **inside `LocalWhisperInference.kt`** — the file the old allowlist exempted | 🔴 `Adr0017BoundaryGuardTest.noKotlinSttRequestOrGuardTwinHasRegrown`. Pre-fix this probe was green: that was the hole. |
+| E | P1 | Kotlin `if (sb.isNotEmpty())` → `if (true)` in `joinChunkResults` | 🔴 `TwinConstantsVectorsTest.chunkJoinSeparatorMatchesFixture` (+ the pre-existing `ChunkingParityTest` pair) |
+| F | P3 | deleted `expected_gate_open` from VAD-GATE-001 (the vector that expects `false`, so the old `optBool` default agreed with it) | 🔴 `IllegalStateException: fixture vector is missing required boolean key 'expected_gate_open'` |
+| G | P8 | bypass cutoff 1 Hz → 0.05 Hz (survival 0.9957) | 🔴 the new band — *"expected 0.85..0.89 … got 0.99572057"*. **The dropped `> 0.5f` assertion would have passed this**, so the band is not a restatement. |
+
+All seven reverted; `git status` shows only the intended edits — no probe or scratch file (audited file-by-file).
+
+**Fix-round gate results.** `cargo test --lib` in `src-tauri/`: **662 passed, 0 failed, 0 ignored**
+(unchanged count — the fixes added assertions and one mock provider, not new test functions).
+JVM `:app:testUniversalDebugUnitTest` with `--rerun-tasks`: **168 tests, 0 failures, 0 errors**
+across 22 suites (also unchanged count, same reason). The four touched Kotlin suites individually:
+`Adr0017BoundaryGuardTest` 3/0, `TwinConstantsVectorsTest` 6/0, `VadGateGoldenVectorsTest` 2/0,
+`HighpassFilterTest` 9/0. **Coverage of these numbers is unchanged from the original run's coverage
+statement above** — they are Linux/JVM logic results. This fix round drove **no** device, **no**
+emulator and **no** network call; AC6b's runtime proof is the earlier laptop-AVD evidence cited in
+Task 8, not something re-run here, and GATE-4 remains Andi's.
 
 **Deferred (real, out of this story's AC scope or pre-existing class):**
 
