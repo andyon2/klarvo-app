@@ -1160,3 +1160,29 @@ Kontext: ADR-0019 · Story 9-10 · `ARCHITECTURE.md` §7/§8.
 menschliche Eingangstür; die mechanische Code-Karte darunter fehlt. **Wenn es drankommt:**
 `bmad-document-project` → „Re-scan entire project". Keine Code-Änderung. Frühestens sinnvoll nach
 Epic 7 (Rust↔Kotlin-Twins ändern sich dort), sonst ist die Karte beim nächsten Merge alt.
+
+## Story 7-2 residuals — accepted at GATE 3 (2026-09-10, Andi)
+
+Story 7-2 (Android live auto-stop VAD-gate parity) closed `done` after two fix rounds; the loop
+ended on a review. The final scoped re-review (`a1ed23c`) left **8 residual findings**, all
+test-claim accuracy, vacuous-pass guards and stale comments — no behaviour or AC regression.
+Full list with `file:line` + fix direction: story file `### Review Findings — round 3`.
+Pick them up in one small hygiene pass (or fold into 7-7's golden-vector consolidation, which
+touches the same test files). Highlights: `HighpassFilterTest` claims a removed `vadGateDecision`
+call is caught (it is not); `VadGateGoldenVectorsTest` `optDouble` defaults let VAD-GATE-001/004
+pass vacuously on a missing key; `KlarvoAudioRecorder` class KDoc still promises a VAD short-circuit
+the code does not do (strike the clause, do NOT add the short-circuit — Silero is stateful).
+
+**Real-device residual (Andi, batched with the next fresh APK):** does auto-stop timing FEEL right at
+default (2.0 s) and tuned (e.g. 0.5 s / 0.05 s) silence settings? The proxy proved wiring + logic
+(63 frames at 2.0 s, floor 7 at 0.05 s, energy gate from config) — not perception.
+
+**Tooling found on the way (not story scope):**
+- `scripts/android-smoke.sh` copies `android/kotlin-test/*.kt` into `gen/android` but never prunes
+  stale files there: the laptop tree still carried `WavRmsVectorsTest.kt` + 2 siblings deleted in
+  `652f128` (2026-07-12) and failed the JVM gate on a fixture change. Fix direction: sync the test dir
+  with delete (`rsync --delete` or clear-then-copy). Same for `kotlin-src`.
+- powerhouse has **no Android emulator/AVD** (`tools/android-sdk/` lacks `emulator/` + `system-images/`);
+  the contract's `[smoke]` proxy runs on the LAPTOP only (emulator + KVM + AVD + Rust Android targets
+  all there). Either install the emulator on powerhouse (deliberate decision, ~2 GB) or record the
+  laptop hop as the Android GATE-4 topology in `_bmad/custom/bmad-epic-conductor.toml`.

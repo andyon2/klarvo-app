@@ -1,6 +1,6 @@
 # Story 7.2: Android live auto-stop VAD-gate parity
 
-Status: in-progress
+Status: done
 
 <!-- Test-Architect REQUIRED before dev-story: run *risk + *design on this story (can truncate user speech — see epic Test-Architect note). See Dev Notes → "Pre-dev: Test-Architect gate". -->
 
@@ -819,3 +819,13 @@ exactly this reason. **This part remains open and is Andi's gate** — see "AC l
   and verified byte-identical), 6/6 `pi_security output` tests green (unchanged). Did not
   re-attempt the on-device human-perception gate (unrelated to these findings, remains Andi's open
   gate per Task 7).
+- 2026-09-10 (conductor close-out, Andi at GATE 3): story → `done` in both status fields. Review
+  loop: 2 fix rounds, ended on a scoped re-review (`a1ed23c`); the 8 round-3 findings (test-claim
+  accuracy, vacuous-pass guards, stale comments) are accepted residual → `docs/backlog.md`
+  "Story 7-2 residuals". GATE-4 (conductor, laptop emulator, APK `0318286`): `android-smoke.sh`
+  green; real recordings via bubble tap logged `requiredSilentFrames=63` at 2.0 s (was 62) and
+  `=7` at 0.05 s (was 1), `energyGate` follows `advanced.silenceThreshold`; recording-state window
+  structure identical to the 11-3 canon. Evidence: `gate4-evidence/7-2/`. Residual for Andi's real
+  device: how the auto-stop timing FEELS at default/tuned settings (perceptual, batched with the
+  next fresh APK). Not observed on the proxy: AC5 `minRecordingMs` at the pre-STT stop path
+  (covered by JVM tests + review).
