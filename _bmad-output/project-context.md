@@ -1,7 +1,7 @@
 ---
 project_name: 'klarvo'
 user_name: 'Andi'
-date: '2026-09-09'
+date: '2026-09-10'
 sections_completed:
   [
     'technology_stack',
@@ -13,7 +13,7 @@ sections_completed:
     'anti_patterns',
   ]
 status: 'complete'
-rule_count: 45
+rule_count: 50
 optimized_for_llm: true
 ---
 
@@ -72,7 +72,11 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **The desktop MACHINE gate is puppeteer against `npm run preview` (port 1422) in real Chromium.** The React surfaces run without Tauri (`isPreviewMode` in `src/tauri-commands.ts` serves mock data). Two traps: (1) preview boots into Onboarding — click "Setup überspringen" first or every selector times out; (2) states the mocks can't produce (empty history, `pending` entry) are made with a **throwaway edit to `src/tauri-commands.ts`**, measured, then restored — `git status` must be clean afterwards. No harness script lives in the repo: write one per story and keep it in `_bmad-output/implementation-artifacts/gate4-evidence/<story>/`. It decides wiring, structure, computed style vs canon token values (`getComputedStyle` → literal `--k-*` values) and geometry deltas. It does **not** decide pixels, font rasterisation or the Windows text-scale drift — that stays Andi's real-screen gate.
 - **Android changes require an on-device/emulator smoke before a story is done** via `scripts/android-smoke.sh`. Split the device gate: **you** install the fresh APK and verify the behaviour; the user's real Xiaomi/HyperOS device is the *aesthetic* judgement only. `android-smoke.sh` runs a build-time gate (`node scripts/gen-android-theme.mjs --check`) that fails if `KlarvoTheme.kt` drifted from the canon CSS (ADR-0019) — **regenerate, don't hand-edit**.
 - **Boot the unattended emulator ONLY via `scripts/android-emulator.sh` — never hand-roll `emulator -avd …`.** The script boots the AVD detached (`nohup`, so it survives the booting shell and is shared warm across steps) and arms a self-limiting **watchdog**: a hard TTL (`KLARVO_EMU_TTL_SECS`, default 7200s/120min) kills the AVD even if the run crashes or forgets — so a forgotten emulator can't peg ~8 cores indefinitely (born 2026-06-17, an orphaned `klarvo-emu` reparented to `init` did exactly that). **Stop it explicitly when done with `scripts/android-emulator.sh stop`** (conductor runs do this automatically at `conductor-guard release`). A direct `emulator -avd` call bypasses the reaper → orphan risk. Caveat for **shared/concurrent** use: the TTL is a blunt wall-clock backstop anchored to the *first* boot, **not** usage-aware — it can kill an emulator another agent is actively using at the boundary; the usage-aware option is the opt-in idle-reaper (`KLARVO_EMU_IDLE_SECS` + periodic `android-emulator.sh bump`).
-- **Kotlin compiles and unit-tests run DEVICE-FREE.** `scripts/android-smoke.sh` copies `android/kotlin-src/` + `android/kotlin-test/` into the generated project and runs `./gradlew :app:testUniversalDebugUnitTest` as a hard gate. Logic regressions get caught there, not on the device — never claim "this needs a device" for a pure-logic change.
+- **Kotlin compiles and unit-tests run DEVICE-FREE — but `scripts/android-smoke.sh` does not.** The script fails on "Kein Gerät gefunden" before it reaches its JVM gate (`./gradlew :app:testUniversalDebugUnitTest` in `src-tauri/gen/android`; 22 suites at Story 7-8). For a device-free run, sync `android/kotlin-src/` + `android/kotlin-test/` into the generated tree the way the script does and run that gradle task directly. Logic regressions get caught there, not on the device — never claim "this needs a device" for a pure-logic change.
+- **`android-smoke.sh` is the Kotlin half of the parity net, and it carries three traps.** (1) It empties the target `*.kt` folders before copying — a test deleted in git is gone in `gen/android` too; never rely on a file that only survives there. (2) It patches `org.json:json` into the test classpath (android.jar's `org.json` classes are stubs that throw "not mocked"); the same grep-guarded patch lives in `android-build.sh` — keep both in step. (3) On an `emulator-*` target it installs with `--abi arm64-v8a`: the x86_64 split carries no `libklarvo_lib.so`, and every JNI call dies with `UnsatisfiedLinkError`. A green smoke whose path never reaches JNI proves nothing about JNI — say which paths the run exercised. The banner reads ONE result XML, not the suite; count from `app/build/test-results/**/*.xml` (Retro AI-3 fixes the banner).
+- **Cross-platform parity fixtures live in `test-fixtures/*.json`.** One golden-vector file is read by a Rust test (`src-tauri/src/llm/mod.rs`, `pipeline.rs`) AND a Kotlin test (`android/kotlin-test/`); `test-fixtures/README.md` is the ledger of which fixture has which reader. When a twinned constant, threshold or chunking rule changes, change the fixture and BOTH readers. A fixture with one reader is a written record, not a lock (`m12-dictionary-scope-vectors.json` today). No CI runs them: `cargo test --lib` in `src-tauri/` is the Rust half, the smoke script's JVM gate the Kotlin half.
+- **Gradle treats a fixture-only edit as up-to-date.** `test-fixtures/*.json` are not declared task inputs, so after editing only a fixture the JVM task reports a stale green. Run it with `--rerun-tasks` until Retro AI-3 declares the inputs.
+- **`Adr0017BoundaryGuardTest` is a re-growth tripwire for the STT twins Story 7-3 deleted.** It strips comments from production Kotlin under `android/kotlin-src/com/klarvo/voice/` and fails on a `HallucinationFilter`/`SilencePreFilter` declaration, a `fun buildMultipartBody`, or a `multipart/form-data` / `audio/transcriptions` literal. Kotlin STT request and guard logic goes through `GroqSttBridge` into the Rust core (`src-tauri/src/stt/groq_jni.rs` — not the `jni_bridge.rs` ADR-0017's text names). Do not add such code in Kotlin, and do not allowlist a file in the guard.
 - **The real-device Android gate is YOURS to run, not the user's.** Pin the phone with `scripts/adb-pin.sh` (Tailscale IP + `adb tcpip 5555`), install the fresh APK yourself, then verify freshness before judging anything. Do not assume the user builds (Story 11-3/11-4 lesson).
 - **Overlay occlusion has an objective proof:** `scripts/desktop-occlusion-proof.ps1` and `scripts/preview-occlusion-proof.ps1`. Run them instead of eyeballing a screenshot.
 - **Bind tests to the real code paths/files they cover**, not to a parallel mock — divergence otherwise goes undetected (Epic-1 lesson; a real paste-path leak was caught this way).
@@ -95,6 +99,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **`v1-ship` is the canonical line.** Branch every build branch off `v1-ship` and merge back into it. `main` carries a **disjoint** v0.4.x history — it is NOT a merge target. Check `fetch` + ahead/behind at session start; the checkout has silently trailed `origin` for weeks before.
 - **Commits:** small and scoped, **never `git add .`**. Keep BMAD planning/story artifacts committed per-story.
 - **Grep before declaring done.** Every count in a story record (alias sites, copy sites, files touched, line anchors) is re-verified against **today's tree**, not against the story text or the reference branch. Prose drifts: 8-5 wrote "≈24" alias sites, the tree had 46; 8-8 wrote "7 copy sites", it was 5 + 1 + 1. A story that has to refute its own numbers before it can build has already lost a round.
+- **Story records anchor at symbols, never at line numbers.** A `file:line` reference in a Dev Agent Record or a review-resolution row ages inside the very commit that writes it (7-8: three of four review rounds were mostly record-text fixes). Cite `file::symbol` or a quoted identifier; write resolution rows from `git diff`, not from memory. A re-review whose findings are record-only text goes to an editorial close-out pass, not to a fix round (Epic-7 retro D2).
 
 ### Critical Don't-Miss Rules
 
@@ -114,4 +119,4 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - This file is a **lean rules digest**, not the authority. For decisions and rationale see `docs/adr/` (0015 state writes · 0016 Android parity · 0017 shared-core STT · 0018 bubble rendering · 0019 design SSOT · 0020 WebView2 pin [superseded] · 0021 native overlays). For the visual canon see `docs/design/overhaul/source/` (HTML + `klarvo.css`, ADR-0019). For deferred work see `docs/backlog.md`. For the audit/remediation context see `docs/robustness-audit-2026-05-30.md` and `_bmad-output/planning-artifacts/epics.md`.
 - Keep this file lean. Add a rule only when it is unobvious AND prevents a real mistake. Remove rules that become obvious or obsolete.
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
