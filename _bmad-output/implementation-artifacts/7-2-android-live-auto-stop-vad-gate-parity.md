@@ -834,3 +834,6 @@ exactly this reason. **This part remains open and is Andi's gate** — see "AC l
   `pre-STT filter: TooShort (1280ms < 3000ms)` (old code: hardcoded 500 → Pass). First attempt
   crashed with `UnsatisfiedLinkError` because `android-smoke.sh` installs without
   `--abi arm64-v8a` (tooling residual → `docs/backlog.md`). Evidence: `gate4-evidence/7-2/`.
+- 2026-09-10 (real device, Andi): APK `0318286` installed on the Xiaomi 23054RA19C over wireless
+  debugging (update in place, settings kept). Auto-stop at 2.0 s / 1.0 s and preview-pause at 0.5 s
+  confirmed by feel. The human perception gate of Task 7 is closed.
