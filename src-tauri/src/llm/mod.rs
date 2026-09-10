@@ -2275,15 +2275,10 @@ mod tests {
             "B".repeat(50),
             "an empty first chunk result must not emit a leading separator"
         );
-        assert_eq!(
-            result.text.matches(sep).count(),
-            0,
-            "with only one non-empty result there is no seam, so no separator at all"
-        );
     }
 
     /// Uppercases like [`MockCleanupProvider`], but returns an EMPTY result for any chunk
-    /// made of `a`s — used to drive the leading-empty branch of the join loop.
+    /// that begins with `a` — used to drive the leading-empty branch of the join loop.
     struct EmptyFirstChunkProvider;
 
     #[async_trait::async_trait]
@@ -2392,13 +2387,12 @@ mod tests {
             );
         }
 
-        // M12 is only an open decision while the platforms still disagree somewhere. Assert
-        // that the file records at least one such style, derived from the flags above —
-        // without naming which one, so the record stays the record and not a second opinion.
-        assert!(
-            vectors.iter().any(|v| v["platforms_agree"].as_bool() == Some(false)),
-            "this fixture exists to record a live divergence; if every style now agrees, M12 \
-             was resolved — retire the record deliberately rather than leaving it asserting nothing"
-        );
+        // NOTE (7-8 review round 2, decision D1): there is deliberately NO assertion here that
+        // some style still disagrees. Such a check fires on EITHER direction of a correct M12
+        // resolution — the fixture has exactly one disagreeing style — which would falsify the
+        // fixture's own promise that Story 7.6 flips one vector without editing this test.
+        // "M12 is still open" is carried by the fixture's `open_decision` field, not by an
+        // assertion. The per-entry consistency check above stays: a flag that stops matching
+        // its own columns still fails loudly.
     }
 }

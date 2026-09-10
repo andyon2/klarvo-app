@@ -680,6 +680,29 @@ exercise, and what therefore remains unproven by this story:
 - The JVM count is the `testUniversalDebugUnitTest` variant only; gradle also ran nine other
   ABI/buildtype variants that duplicate the same suite.
 
+**Fix round 2 (code review round 2) — 11 findings resolved.** Full per-finding detail in
+*Review Findings — code review round 2 → Fix round 2 — resolutions*. In short:
+- ✅ Resolved review finding [Decision R2-D1]: the M12 `any(platforms_agree == false)` assertion is
+  gone (option (a)); "M12 is open" is carried by the fixture's `open_decision` field, and the
+  per-entry consistency check stays.
+- ✅ Resolved review findings [Patch R2-1, R2-2, R2-10]: `VadGateGoldenVectorsTest`'s accessor KDoc
+  now names all three `optString` uses and why none can fake a pass, counts **two**
+  `expected_gate_open: false` vectors, and `getBool`'s error message names the wrong-type case.
+- ✅ Resolved review findings [Patch R2-4, R2-5]: the unfailable separator-count assertion deleted;
+  `EmptyFirstChunkProvider`'s doc now matches `starts_with('a')`.
+- ✅ Resolved review finding [Patch R2-6]: the ADR-0017 guard KDoc says "anywhere in production
+  `voice/`", matching its own coverage block.
+- ✅ Resolved review findings [Patch R2-3, R2-7, R2-8]: three record rows corrected — D2 cited by
+  content, inversion row E marked non-discriminating **with a measurement**, P10's row names all
+  three dropped README conventions.
+- ✅ Resolved review finding [Patch R2-9]: `gate4-evidence/7-8/NOTE-jvm-test-counts.md` reconciles
+  the logs' one-suite "24" with the run total 168/22 suites and states the evidence's scope.
+
+**What this round did NOT touch:** no production Kotlin or Rust, no fixture JSON, no script — the
+deferred `android-smoke.sh` counting bug and D2's `emulator-*` block are deliberately unchanged.
+The one code-behaviour experiment (R2-7's index-based drift) was reverted; `git diff` on
+`KlarvoApi.kt` is empty.
+
 **Inversion table (AC8) — every drift re-introduced at writing time, measured, then reverted.**
 
 | # | AC | Reverted change (deliberate drift) | Result |
@@ -752,6 +775,32 @@ All seven reverted; `git status` carries no probe or scratch file (audited item-
 - `_bmad-output/implementation-artifacts/7-2-android-live-auto-stop-vad-gate-parity.md` — all eight
   round-3 `[Review][Patch]` items ticked with dated resolution notes (D1).
 
+**Modified in fix round 2 (code review round 2)**
+- `src-tauri/src/llm/mod.rs` — the `any(platforms_agree == false)` M12 assertion deleted and replaced
+  by a comment stating why (R2-D1); the unfailable `matches(sep).count() == 0` assertion deleted
+  (R2-4); `EmptyFirstChunkProvider` doc corrected (R2-5). Tests only; no production Rust changed.
+- `android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt` — `getDouble` KDoc enumerates
+  all three `optString` uses (R2-1), `getBool` KDoc counts two not three (R2-2), `getBool` error
+  message names the wrong-type case (R2-10). Comment + message text only; no assertion changed.
+- `android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt` — KDoc scope claim corrected to
+  "anywhere in production `voice/`" (R2-6). Comment only; the guard rules are unchanged.
+- `_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md` — this record:
+  D2 row cited by content (R2-3), inversion row E marked non-discriminating with a measurement
+  (R2-7), P10 row names three conventions (R2-8), round-2 findings ticked, fix-round-2 resolution
+  table + gate results added.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status transitions.
+
+**New in fix round 2**
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-8/NOTE-jvm-test-counts.md` — reconciles the
+  evidence logs' "24 Tests" banner with the record's 168/22-suite total and states the logs' scope
+  (R2-9). The `android-smoke.sh` counting fix itself stays deferred.
+
+*Untouched in fix round 2, deliberately:* `scripts/android-smoke.sh` (R2-9's script fix is deferred;
+D2 keeps the `emulator-*` block as-is), `test-fixtures/m12-dictionary-scope-vectors.json` and
+`test-fixtures/README.md` (R2-D1 option (a) makes the existing fixture text true as written; R2-8
+resolves in the record rather than by re-adding a README paragraph), and all Kotlin/Rust production
+code.
+
 *Not part of this story:* `_bmad-output/implementation-artifacts/seat-costs.jsonl` was already
 untracked in the working tree at story start and was left alone.
 
@@ -776,6 +825,21 @@ untracked in the working tree at story start and was left alone.
   corrections and two `android-smoke.sh` shell fixes. Two constants in `KlarvoApi.kt` were *named*
   (same values) because AC3 requires asserting against a production symbol and the literals were
   inline in the request body. Status → review.
+- 2026-09-10: **Addressed code review round-2 findings — 11 items resolved** (1 decision + 10
+  patches; the 13 deferred items untouched, no scope added). R2-D1 removed the M12
+  divergence-liveness assertion so the fixture's zero-Rust-edit promise for Story 7.6 is true as
+  written, while the per-entry `platforms_agree` consistency check stays. The round removed two
+  assertions that could not fail on their own, corrected six over-claiming or miscounting
+  comments/record rows, and annotated the AC6b evidence so its "24 Tests" banner no longer
+  contradicts the record's 168. Row E of the fix-round-1 inversion table is now marked
+  non-discriminating — **measured**: the suggested index-based re-record fails the pre-existing
+  Story-7-1 test `ChunkingParityTest.h13` as well, so Kotlin's leading-empty join was already
+  covered before this story and the new coverage is the Rust half. **No production code, no
+  fixture and no script changed in this round.** Gates re-run: `cargo test --lib` **662 passed / 0
+  failed / 0 ignored**, JVM `:app:testUniversalDebugUnitTest --rerun-tasks` **168 tests / 0
+  failures / 0 errors across 22 suites** — both counts unchanged, since the round deleted and
+  reworded assertions rather than adding test functions. Both are Linux/JVM logic results: no
+  device, no emulator, no network call; GATE-4 remains pending with Andi. Status → review.
 - 2026-09-10: **Addressed code review findings — 12 items resolved** (2 decisions + 10 patches;
   the 7 deferred items untouched, no scope added). D1: 7-2's eight round-3 items ticked with dated
   resolution notes. D2: `android-smoke.sh` left as-is and the story's own "remote TCP proxy"
@@ -819,7 +883,7 @@ seven deferred items were not touched. What each one became:
 | # | Finding | Resolution |
 |---|---------|------------|
 | D1 | 7-2's eight round-3 items still unchecked | Option (a): all eight ticked in `7-2-…md`, each with an appended dated *"Resolved 2026-09-10 by Story 7-8 (commit `00e771d`)"* note. Original finding text kept verbatim — the record still says what was wrong, it no longer says it is still true. |
-| D2 | AC6b's `emulator-*` branch vs. the documented topology | Option (b): `scripts/android-smoke.sh:280-284` **unchanged**; AC6b is bounded to a locally attached AVD. The story's own claim was the error — the smoke runs **on the laptop**, where the serial is `emulator-5554`. Task 8 and the Dev Notes topology paragraph corrected, with the evidence that also lifts AC6b from *blocked* to *proven*. |
+| D2 | AC6b's `emulator-*` branch vs. the documented topology | Option (b): the `case "$DEVICE_SERIAL" in emulator-*)` install-ABI block in `scripts/android-smoke.sh` is **unchanged** (byte-identical; cited by content, not by line range — the round-1 citation `:280-284` was already stale and this round's own edit to that file moved it further); AC6b is bounded to a locally attached AVD. The story's own claim was the error — the smoke runs **on the laptop**, where the serial is `emulator-5554`. Task 8 and the Dev Notes topology paragraph corrected, with the evidence that also lifts AC6b from *blocked* to *proven*. |
 | P1 | Join fixture claimed a leading-empty case that existed on neither side | Case **added** on both: Kotlin `joinChunkResults(listOf("", "beta"))`, Rust `EmptyFirstChunkProvider` (blanks the first chunk by content, not by call order, which `join_all` does not guarantee). Fixture clause now names both. |
 | P2 | TWIN-CHUNK-THRESHOLD-001 claimed a boundary only Kotlin probed | Rust **399/400 boundary probe** added through the real `chunked_cleanup` (single-call path vs. joined chunked path). The test became `#[tokio::test]`. Fixture description now says both halves probe. |
 | P3 | `getDouble` KDoc over-claimed; `optDouble` dead | Throwing `getBool` added and used for `expected_gate_open`; the defaulting `optDouble` **and** `optBool` deleted. KDoc rewritten to what is now true (the only defaulting reader left is `optString("signal")`, whose default cannot fake a pass). |
@@ -829,7 +893,7 @@ seven deferred items were not touched. What each one became:
 | P7 | Arrow-column measurement wrong in the Dev Record | Corrected to **53 vs 52** on `7422a86`, matching the AC5 text. The code fix (all three at 52) was already right. |
 | P8 | Redundant complement assertion; unpinned "~87 %" | Redundant `assertTrue(x > y*0.5f)` dropped, replaced by a real **0.85–0.89 band** on `bypassedRms / rawNormalizedRms`. The stated number is now covered. |
 | P9 | `org.json` comment enumerated two consumers, its own commit added a third | Now names **three**: `MinRecordingMsConfigTest`, `VadGateRmsFixtureTest`, `TwinConstantsVectorsTest`. |
-| P10 | AC7's "one paragraph" exceeded | The unrequested "Conventions worth keeping" paragraph **dropped**; its one load-bearing sentence (the M12 Android column is a written record) folded into the fixture table. All AC7-mandatory content still present. |
+| P10 | AC7's "one paragraph" exceeded | The unrequested "Conventions worth keeping" paragraph **dropped**. It carried **three** conventions, not one: (i) every entry has an `id` + a description stating what it pins **and what it does not**; (ii) per-platform expectations live on the same entry under a `_kotlin` suffix rather than in a second file; (iii) each side asserts a production symbol or seam against the **fixture literal**, never against another production symbol. Only the M12 exception (the Android column is a written record) survived, folded into the fixture table. (iii) is AC3's governing method rule and is stated there — AC3 and the `## Existing infrastructure` Dev Note — rather than re-added to the README, since restoring a paragraph would re-open the AC7 guard P10 exists to honor. All AC7-mandatory content still present. |
 
 **Fix-round inversion table — every new or changed assertion re-introduced as drift, measured, reverted.**
 
@@ -839,7 +903,7 @@ seven deferred items were not touched. What each one became:
 | B | P1 | Rust `if i > 0 && !combined_text.is_empty()` → `if i > 0` | 🔴 `spec_twin_constants_chunk_join_separator` — *"an empty first chunk result must not emit a leading separator"* |
 | C | P5 | M12 chat vector `platforms_agree` false → true (columns left disagreeing) | 🔴 `spec_m12_…` — *"chat: platforms_agree must state what the two recorded columns actually show"* |
 | D | P4 | added `audio/transcriptions` literal **inside `LocalWhisperInference.kt`** — the file the old allowlist exempted | 🔴 `Adr0017BoundaryGuardTest.noKotlinSttRequestOrGuardTwinHasRegrown`. Pre-fix this probe was green: that was the hole. |
-| E | P1 | Kotlin `if (sb.isNotEmpty())` → `if (true)` in `joinChunkResults` | 🔴 `TwinConstantsVectorsTest.chunkJoinSeparatorMatchesFixture` (+ the pre-existing `ChunkingParityTest` pair) |
+| E | P1 | Kotlin `if (sb.isNotEmpty())` → `if (true)` in `joinChunkResults` | 🔴 `TwinConstantsVectorsTest.chunkJoinSeparatorMatchesFixture` (+ the pre-existing `ChunkingParityTest` pair) — **NON-DISCRIMINATING, corrected in fix round 2 (round-2 finding 7).** `if (true)` also prepends a separator to the *first* element, so it fails the pre-existing `["alpha","beta"]` assertion too and was RED before P1's leading-empty case existed. It proves the join is pinned; it proves nothing about the coverage P1 asked for. The suggested index-based re-record (`if (i > 0)`) does not fix that either: **measured in fix round 2** — with that drift, `TwinConstantsVectorsTest.chunkJoinSeparatorMatchesFixture` *and* `ChunkingParityTest.h13_emptyLeadingResultProducesNoBlankLine` both go RED (16 tests, 2 failed). `h13` is a Story-7-1 test that already pinned `joinChunkResults(listOf("", …))` on the Kotlin side, so **no** drift of this function can be caught only by the new case. The Kotlin half of P1 was therefore already covered before this story; the genuinely new coverage is the **Rust** half, row **B**, which is discriminating. |
 | F | P3 | deleted `expected_gate_open` from VAD-GATE-001 (the vector that expects `false`, so the old `optBool` default agreed with it) | 🔴 `IllegalStateException: fixture vector is missing required boolean key 'expected_gate_open'` |
 | G | P8 | bypass cutoff 1 Hz → 0.05 Hz (survival 0.9957) | 🔴 the new band — *"expected 0.85..0.89 … got 0.99572057"*. **The dropped `> 0.5f` assertion would have passed this**, so the band is not a restatement. |
 
@@ -883,20 +947,20 @@ partially (R2-D1 below) · P6 ✅ · P7 ✅ · P8 ✅ · P9 ✅ · P10 ✅.
 
 **Decision findings (Andi's call — must be resolved before the patch findings):**
 
-- [ ] [Review][Decision] P5 is only half resolved: the fixture's new "no Rust edit needed" promise is falsified by the assertion added in the same commit [`test-fixtures/m12-dictionary-scope-vectors.json:6` vs `src-tauri/src/llm/mod.rs:2397-2402`] — the hard-coded literals are genuinely gone and `platforms_agree` is now derived (`:2385-2396`), but the round added `assert!(vectors.iter().any(|v| v["platforms_agree"].as_bool() == Some(false)))`. The fixture has exactly three styled entries and exactly one disagreeing (`chat`: desktop `false` / kotlin `true`), so **either** direction of a correct M12 resolution makes all three agree and fires that assertion. The fixture text written in the same commit says the opposite — *"It does NOT require editing the Rust test … so it follows a correct flip on its own and fails only on an incorrect one"* — and the fix-round resolution row repeats it (`7-8-…md:827`, *"needs **no** edit to `llm/mod.rs`; the fixture README says so explicitly"*). The assertion's own failure message concedes the contradiction (*"retire the record deliberately"*). Round-1 P5's complaint — *"flipping it fails the suite until `llm/mod.rs` is edited too"* — is therefore still true; only the failing line moved, and one false claim was replaced by another. **Options:** (a) drop the `any(false)` assertion and carry "M12 is still open" in the fixture's `open_decision` field instead, so the zero-edit promise becomes true; (b) keep the divergence-liveness assertion and strike the "does NOT require editing the Rust test" clause from both the fixture and the resolution row, stating that resolving M12 means retiring that assertion.
+- [x] [Review][Decision] P5 is only half resolved: the fixture's new "no Rust edit needed" promise is falsified by the assertion added in the same commit [`test-fixtures/m12-dictionary-scope-vectors.json:6` vs `src-tauri/src/llm/mod.rs:2397-2402`] — the hard-coded literals are genuinely gone and `platforms_agree` is now derived (`:2385-2396`), but the round added `assert!(vectors.iter().any(|v| v["platforms_agree"].as_bool() == Some(false)))`. The fixture has exactly three styled entries and exactly one disagreeing (`chat`: desktop `false` / kotlin `true`), so **either** direction of a correct M12 resolution makes all three agree and fires that assertion. The fixture text written in the same commit says the opposite — *"It does NOT require editing the Rust test … so it follows a correct flip on its own and fails only on an incorrect one"* — and the fix-round resolution row repeats it (`7-8-…md:827`, *"needs **no** edit to `llm/mod.rs`; the fixture README says so explicitly"*). The assertion's own failure message concedes the contradiction (*"retire the record deliberately"*). Round-1 P5's complaint — *"flipping it fails the suite until `llm/mod.rs` is edited too"* — is therefore still true; only the failing line moved, and one false claim was replaced by another. **Options:** (a) drop the `any(false)` assertion and carry "M12 is still open" in the fixture's `open_decision` field instead, so the zero-edit promise becomes true; (b) keep the divergence-liveness assertion and strike the "does NOT require editing the Rust test" clause from both the fixture and the resolution row, stating that resolving M12 means retiring that assertion.
 
 **Patch findings:**
 
-- [ ] [Review][Patch] P3's replacement KDoc still over-claims, with the counter-examples in the same file [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:80-82`]
-- [ ] [Review][Patch] The new `getBool` KDoc miscounts the vectors it names — "three" where the fixture has two [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:94-95`]
-- [ ] [Review][Patch] The fix round committed a fresh stale line anchor in the row that records the anchor-staleness decision [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:822`]
-- [ ] [Review][Patch] The P1 fix added an assertion that cannot fail — the shape P8 was raised to remove [`src-tauri/src/llm/mod.rs:2276-2280`]
-- [ ] [Review][Patch] `EmptyFirstChunkProvider`'s doc comment does not describe its code [`src-tauri/src/llm/mod.rs:2284-2285` vs `:2302`]
-- [ ] [Review][Patch] The rewritten ADR-0017 guard KDoc contradicts its own coverage statement two paragraphs later [`android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt:33-34` vs `:47-52`]
-- [ ] [Review][Patch] Fix-round inversion row E does not discriminate the assertion it is offered as evidence for [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:842`]
-- [ ] [Review][Patch] P10's resolution row misdescribes a three-convention deletion as "one load-bearing sentence" [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:832`]
-- [ ] [Review][Patch] The committed AC6b evidence carries a test count that contradicts the record and states nothing about its own scope [`_bmad-output/implementation-artifacts/gate4-evidence/7-8/smoke-r1-00e771d.log:17`]
-- [ ] [Review][Patch] `getBool`'s error message drops the wrong-type case that its sibling `getDouble` names [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:100-103`]
+- [x] [Review][Patch] P3's replacement KDoc still over-claims, with the counter-examples in the same file [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:80-82`]
+- [x] [Review][Patch] The new `getBool` KDoc miscounts the vectors it names — "three" where the fixture has two [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:94-95`]
+- [x] [Review][Patch] The fix round committed a fresh stale line anchor in the row that records the anchor-staleness decision [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:822`]
+- [x] [Review][Patch] The P1 fix added an assertion that cannot fail — the shape P8 was raised to remove [`src-tauri/src/llm/mod.rs:2276-2280`]
+- [x] [Review][Patch] `EmptyFirstChunkProvider`'s doc comment does not describe its code [`src-tauri/src/llm/mod.rs:2284-2285` vs `:2302`]
+- [x] [Review][Patch] The rewritten ADR-0017 guard KDoc contradicts its own coverage statement two paragraphs later [`android/kotlin-test/com/klarvo/voice/Adr0017BoundaryGuardTest.kt:33-34` vs `:47-52`]
+- [x] [Review][Patch] Fix-round inversion row E does not discriminate the assertion it is offered as evidence for [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:842`]
+- [x] [Review][Patch] P10's resolution row misdescribes a three-convention deletion as "one load-bearing sentence" [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:832`]
+- [x] [Review][Patch] The committed AC6b evidence carries a test count that contradicts the record and states nothing about its own scope [`_bmad-output/implementation-artifacts/gate4-evidence/7-8/smoke-r1-00e771d.log:17`]
+- [x] [Review][Patch] `getBool`'s error message drops the wrong-type case that its sibling `getDouble` names [`android/kotlin-test/com/klarvo/voice/VadGateGoldenVectorsTest.kt:100-103`]
 
 **Patch detail:**
 
@@ -910,6 +974,41 @@ partially (R2-D1 below) · P6 ✅ · P7 ✅ · P8 ✅ · P9 ✅ · P10 ✅.
 8. **P10's resolution row misdescribes what was deleted** [`7-8-…md:832`] — it says *"its one load-bearing sentence folded into the fixture table"*. The dropped `test-fixtures/README.md` paragraph (`00e771d:test-fixtures/README.md:22-29`) carried **three** conventions: (i) every entry has an `id` + a description stating what it pins and what it does not; (ii) per-platform expectations live on the same entry under a `_kotlin` suffix; (iii) each side asserts a production symbol against the **fixture literal**, never against another production symbol. Only the M12 exception survived, into a table cell — and (iii) is AC3's governing method rule. Fix: state that three conventions were dropped, or restore (iii) somewhere durable in the fixture tree.
 9. **The AC6b evidence log's test count contradicts the record and states nothing about its scope** [`gate4-evidence/7-8/smoke-r1-00e771d.log:17`] — the committed log reports *"[ok]    24 Tests, 0 Failures — alle grün"* for the JVM gate, while the record insists on **168 tests across 22 suites** for the same gate, the same day, the same tree (and the same log says *"22 Test-Dateien kopiert"*). Cause verified: `scripts/android-smoke.sh:217-220` takes `find … -print -quit` plus `head -1`, i.e. the `tests="…"` attribute of **one** result XML, so the banner is a single suite's count, not the run total. The log is sound as AC6b install evidence, but it ships an unreconciled number in the story whose thesis is *"a number states what it covers"*. Fix: annotate the evidence file (or the Task-8 citation) with what the 24 covers. The script fix itself is deferred below.
 10. **`getBool`'s error message drops the wrong-type case** [`VadGateGoldenVectorsTest.kt:100-103`] — it reports only *"is missing required boolean key"*, though the same `as? Num` narrowing also fires when the key is present as a string or object; the sibling `getDouble` (`:86-89`) says *"(or it is not a number)"*. A wrong-typed key sends the reader after an absent key. Fix: mirror the parenthetical.
+
+**Fix round 2 — resolutions (2026-09-10).** The decision and all ten patch findings applied exactly
+as confirmed; the 13 deferred items were not touched and no scope was added.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| R2-D1 | The `any(platforms_agree == false)` assertion falsifies the fixture's "no Rust edit needed" promise | Option (a): the assertion is **deleted** from `llm/mod.rs` and replaced by a comment stating why there deliberately is none. The per-entry consistency check (`platforms_agree` must equal `desktop == kotlin`) **stays**, so a flag that stops matching its own columns still fails loudly. "M12 is still open" is now carried solely by the fixture's `open_decision` field. The clause in `m12-dictionary-scope-vectors.json` and the round-1 resolution row (`P5`) are therefore **true as written** and were kept unchanged. |
+| R2-1 | `getDouble` KDoc named one `optString` use, the file has three | All three enumerated with why each cannot fake a pass: `signal` (schema default, wrong type changes the RMS rather than zeroing it, unknown value hits `else -> error`), `category` (a dropped key empties the list → the `isNotEmpty()` guard fails loudly), `id` (labels failure messages only, feeds no assertion). |
+| R2-2 | `getBool` KDoc said "three `expected_gate_open: false` vectors" | Corrected to **two** — re-counted in the fixture: 2 `false` / 4 `true`. |
+| R2-3 | Fresh stale line anchor in the D2 resolution row | Row now cites the `case "$DEVICE_SERIAL" in emulator-*)` install-ABI block **by content**, and says the block is byte-identical rather than pointing at a range. |
+| R2-4 | An assertion that cannot fail, added by the P1 fix | `assert_eq!(result.text.matches(sep).count(), 0, …)` **deleted**. The preceding `assert_eq!(result.text, "B".repeat(50))` already pins the string exactly. `sep` is still used by the three-chunk case, so nothing went dead. |
+| R2-5 | `EmptyFirstChunkProvider` doc did not describe its code | *"any chunk made of `a`s"* → *"any chunk that begins with `a`"*, matching `raw_text.starts_with('a')`. |
+| R2-6 | ADR-0017 guard KDoc contradicted its own coverage statement | *"anywhere in Kotlin"* → *"anywhere in production `voice/`"*, pointing at the coverage block below it. The guard code is unchanged. |
+| R2-7 | Inversion row E does not discriminate | Marked **non-discriminating**, with the reason measured rather than asserted. The suggested index-based re-record was **tried**: `if (i > 0)` fails `TwinConstantsVectorsTest.chunkJoinSeparatorMatchesFixture` **and** the pre-existing `ChunkingParityTest.h13_emptyLeadingResultProducesNoBlankLine` (16 tests, 2 failed), so option (a) is not achievable — `h13` (Story 7-1) already pinned Kotlin's leading-empty join before this story. Row E now records that, and that the genuinely new coverage is the **Rust** half (row B). |
+| R2-8 | P10's row misdescribed a three-convention deletion | Row now names all **three** dropped conventions and states that (iii) — production symbol vs. **fixture literal**, never vs. another production symbol — is AC3's governing method rule and lives in AC3 + the Dev Note, not re-added to the README (restoring a paragraph would re-open the very AC7 guard P10 exists to honor). |
+| R2-9 | AC6b evidence log's "24 Tests" contradicts the record's 168 | Evidence annotated with a new note file, `gate4-evidence/7-8/NOTE-jvm-test-counts.md`: the banner is **one suite** (the script reads a single result XML's `tests="…"` via its `find … -print -quit` block), the run total is **168/0** (`smoke-r2-27de205.log:44`), and `structure-install-r1.txt` carries **no** test counts at all — it is the install probe. The note also restates the logs' scope (install evidence only). The **script fix stays deferred**; `android-smoke.sh` is unchanged. |
+| R2-10 | `getBool`'s error message dropped the wrong-type case | Mirrors `getDouble`: *"missing required boolean key '$key' **(or it is not a boolean)**"*. |
+
+**Fix-round-2 inversion.** One inversion was run, and it is the finding's own evidence: the
+index-based `joinChunkResults` drift for R2-7 (measured RED on two suites, see the row above), then
+reverted — `git diff` on `KlarvoApi.kt` is empty. The other ten items are **text, doc-comment and
+record corrections plus two assertion deletions**; a deletion has no drift to re-introduce, and
+neither deleted assertion could fail on its own (that is precisely why they were removed). No new
+assertion was added in this round, so there is nothing else to invert.
+
+**Fix-round-2 gate results.** Re-run independently after the fixes, not read from the record:
+`cargo test --lib` in `src-tauri/`: **662 passed, 0 failed, 0 ignored** — unchanged, since deleting
+an assertion inside a test function does not change the function count. JVM
+`:app:testUniversalDebugUnitTest --rerun-tasks`: **168 tests, 0 failures, 0 errors across 22
+suites** (aggregated over all result XMLs, not read off the smoke banner — see R2-9), also
+unchanged. **Coverage of these two numbers is identical to the original run's coverage statement
+above:** they are Linux/JVM *logic* results — pure functions, seams, fixture agreement and static
+source structure. This round drove **no** device, **no** emulator and **no** network call. AC6b's
+runtime proof remains the earlier laptop-AVD evidence cited in Task 8 (not re-run here), and GATE-4
+— one Xiaomi dictation through DeepSeek — remains Andi's and is still **pending**.
 
 **Deferred (real, out of this re-review's scope, pre-existing, or explicitly bounded by an AC):**
 

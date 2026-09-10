@@ -31,7 +31,8 @@ import java.io.File
  * ## Deliberately allowed (must NOT trip)
  * **No rule allowlists any file.** The files below are safe not because they are exempted
  * but because no rule keys on their vocabulary — which is strictly stronger, and is why the
- * `audio/transcriptions` rule really does mean "anywhere in Kotlin", as AC2 asks:
+ * `audio/transcriptions` rule really does mean "anywhere in production `voice/`" — the scan
+ * scope stated under "What this covers" below:
  * - `GroqSttBridge.kt` — this **is** the sanctioned JNI bridge, the thing being protected.
  *   It declares `external fun nativeTranscribe`; no rule matches that.
  * - `LocalWhisperInference.kt` — the dormant local-whisper path; 7-3 ruled it a different

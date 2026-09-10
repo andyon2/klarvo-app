@@ -77,9 +77,18 @@ class VadGateGoldenVectorsTest {
          * most permissive threshold possible, and a 0.0 silence_secs floors to 7 frames.
          *
          * Every numeric key in this file reads through this accessor; there is no `optDouble`
-         * left to reach for. The one defaulting reader that remains is [optString] for
-         * `signal`, whose default (`nyquist_square`) is a real schema default and cannot fake
-         * a pass — a wrong signal type changes the measured RMS rather than zeroing it.
+         * left to reach for. The defaulting reader that remains is [optString], at three uses
+         * (cited by content, not by line — this file's anchors drift), none of which can fake
+         * a pass:
+         *  - `signal`, once in the energy-floor test — its default `nyquist_square` is a real
+         *    schema default; a wrong signal type changes the measured RMS rather than zeroing
+         *    it, and an unknown one hits the `else -> error(...)` arm.
+         *  - `category`, in the `loadFixture().filter { … }` line of both tests — a dropped key
+         *    would empty the filtered list, which the `assertTrue("… must not be empty",
+         *    vectors.isNotEmpty())` guard on the next line fails loudly rather than passing on
+         *    zero vectors.
+         *  - `id`, once per test loop — used only to label failure messages; it feeds no
+         *    assertion, so its default cannot change a verdict.
          */
         fun getDouble(key: String): Double =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v }
@@ -92,14 +101,14 @@ class VadGateGoldenVectorsTest {
          * Throwing boolean accessor, same rationale (7-8 review round 1).
          *
          * An `optBool(default = false)` reader is the [getDouble] defect in the EXPECTATION
-         * column: the three `expected_gate_open: false` vectors would keep passing if the key
+         * column: the two `expected_gate_open: false` vectors would keep passing if the key
          * were dropped or misspelled, because the default agrees with them. The expected value
          * is never optional — a vector without it is a broken vector.
          */
         fun getBool(key: String): Boolean =
             (this as? Obj)?.map?.get(key)?.let { (it as? Num)?.v?.let { n -> n != 0.0 } }
                 ?: error(
-                    "fixture vector is missing required boolean key '$key' -- " +
+                    "fixture vector is missing required boolean key '$key' (or it is not a boolean) -- " +
                         "a silent default here would let this vector pass vacuously"
                 )
     }
