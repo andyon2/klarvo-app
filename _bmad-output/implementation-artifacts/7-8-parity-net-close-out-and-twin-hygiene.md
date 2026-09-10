@@ -1,6 +1,6 @@
 # Story 7.8: Parity-net close-out + twin hygiene
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -815,7 +815,8 @@ code.
   convention declared, both aggregate lines quoted verbatim (R3-D1); *"two lines above"* → *"three
   lines above, at `:14`"* and the invalid 22-files-⇒-not-24 inference dropped (R3-8).
 - `_bmad-output/implementation-artifacts/deferred-work.md` — the round-2 M12 deferred entry rewritten
-  to the surviving defect and re-anchored by symbol (R3-5).
+  to the surviving defect and re-anchored by symbol (R3-5), + the round's 6 deferred items under a new
+  round-3 heading (in `cf39687`).
 - `_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md` — this record:
   P3 row points at the KDoc instead of restating it (R3-1), P5 row's superseded clause struck and
   R2-D1's row corrected (R3-2), the AC8 inversion paragraph and the Change Log split into
@@ -832,7 +833,7 @@ code.
 
 *Untouched in fix round 3, deliberately:* all Rust (`src-tauri/**` — `cargo test --lib` was re-run
 only as a regression gate), all production Kotlin, every fixture JSON, `scripts/android-smoke.sh`,
-`test-fixtures/README.md`, and `sprint-status.yaml` beyond the status transition. The 6 deferred
+`test-fixtures/README.md`, and `sprint-status.yaml` (unchanged since `00e771d`). The 6 deferred
 items and the 1 residual of round 3 were not touched.
 
 *Not part of this story:* `_bmad-output/implementation-artifacts/seat-costs.jsonl` was already
@@ -1248,3 +1249,10 @@ D1 and R3-8 rewrote: three of the five patch findings are claims that edit intro
 - [x] [Review][Defer] AC3's twin table still cites a stale Kotlin anchor [`_bmad-output/implementation-artifacts/7-8-parity-net-close-out-and-twin-hygiene.md:125`] — `KlarvoApi.kt:1158-1165` for `fun joinChunkResults(…)`, today `:1182-1189`. Round 3's own residual, carried forward unchanged and still accurate as stated; spec-authored text from story creation, untouched by any fix round.
 
 **Dismissed as noise (12, not persisted):** the P5 / R3-2 rows citing `llm/mod.rs:2390-2396` by line while R3-5 switched to symbols (the anchor resolves correctly today — verified, `:2390-2396` is exactly the D1 comment block in a 2398-line file; R3-5 prescribed symbol-anchoring for the deferred entry, not repo-wide) · *"skipping the R2-D1 inversion is a non-sequitur / net coverage loss"* (re-litigates decision R2-D1, Andi's explicit call, and is already the round-3 deferred item *"Nothing pins that `open_decision: "M12"` is present"*) · the new logs showing `Gerät: emulator-5554` while the round says *"no emulator"* (the record states at `:1179-1180` that AC6b's runtime proof is the earlier laptop-AVD evidence, **not re-run here**) · `Dauer: 1s`/`2s` read as proof of a replayed gradle run (`Dauer` prints `BUILD_SECS`, the APK-build time only — already a round-2 deferred item) · no committed log for `5128432`'s own re-run (no round committed a post-fix log; the round-3 gate paragraph states its method and its exclusions) · the dismissed-noise slot count 12 vs 13 and dismissal 9's rebuttal naming P3/P5 where the verdict line marks R2-1/R2-9 (bookkeeping inside a previous round's dismissed list, preserved verbatim) · the round-3 residual marked `[x]` while unfixed (repo convention; round 3 dismissed the identical point) · `:1104`'s *"0 errors"* vs `:1176`'s *"0 errors, 0 skipped"* (same run, both name their coverage) · the 168 lacking a build-variant qualifier in the record (the note carries it: *"the `:app:testUniversalDebugUnitTest` variant total"*) · `:813`'s *"only assertion-level change"* for what is a reader swap (subsumed by the fifth residual) · six hypothetical fixture-authoring guards from the edge layer (`amplitude_short` Short range, `expected_frames` integrality, `silence_secs` floor arm, `getBool` numeric coercion, `optString("signal")` type mismatch, `id` as a label-only key) — all already round-2/round-3 deferred items or explicitly dismissed there · `category` as an empty/whitespace string treated as a separate defect (it is the same value-drift path as the first residual).
+- 2026-09-10: **Close-out → done (GATE 3, Andi).** Three fix rounds (the third authorized by Andi beyond
+  the cap of two), loop ended on review round 4 (`17197d9`): all round-3 findings resolved, no code
+  regression, gates Rust 662/0 + JVM 168/0 (22 suites). Review-4 D1 → (a) `jvm-suites-5128432.md`;
+  its 5 record/note patches applied in this close-out commit. GATE-4 proxy GREEN on the laptop AVD
+  (`gate4-evidence/7-8/verdict.md`: arm64 install + Rust-side JNI proof on `5128432`). Residuals
+  (5 + 2 deferred) → `docs/backlog.md` "Story 7-8 residuals". **Open real-device gate (Andi):** one
+  Xiaomi dictation with DeepSeek cleanup — close with a docs commit here.

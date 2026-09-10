@@ -13,18 +13,18 @@ All three committed smoke logs in this directory print, under `── JVM-Unit-T
     [ok]    24 Tests, 0 Failures — alle grün
 
 `smoke-r1-00e771d.log:17`, `smoke-r2-27de205.log:17` and `smoke-r3-85aa0ee.log:17`. The story
-record carries **168 tests / 0 failures across 22 suites** for the same gate, the same day, the
-same tree. Both numbers are correct; they count different things.
+record carries **168 tests / 0 failures across 22 suites** for the same gate, on the same day, across the three
+commits named above (`00e771d`, `27de205`, `85aa0ee`). Both numbers are correct; they count different things.
 
 **Cause.** The banner is not the run total. `scripts/android-smoke.sh` reads the counts in its
 `TEST_XML=$(find app/build/test-results -name "*.xml" -print -quit …)` block — `-print -quit`
 plus `head -1` on the `tests="…"` attribute, i.e. the count of **one arbitrary result XML =
 one test suite**. (The same log states `22 Test-Dateien kopiert` three lines above the banner,
 at `:14`. That line does *not* prove the banner is partial — 22 source files can hold 24 test
-methods — it only tells you how many suites were in the run. The load-bearing argument is the
+methods — it only tells you how many test source files were synced. The load-bearing argument is the
 aggregate below.)
 
-**The run totals.** Each smoke log carries an aggregate line at `:44`, quoted verbatim here so
+**The run totals.** Both later smoke logs carry an aggregate line at `:44`, quoted verbatim here so
 the 168 stands even without the logs:
 
     JVM (laptop, 27de205): tests 168 fail 0 err 0 skip 0
@@ -47,3 +47,10 @@ other ABI/buildtype variants that duplicate the same suite) — both are Linux/J
 is recorded as a deferred finding in the 7-8 story record (round 2, deferred list) and sits
 outside AC6's two named traps. `scripts/android-smoke.sh` is deliberately unchanged by this
 note.
+
+**Suite count anchor (review round 4, D1 → a).** The "22 suites" figure is anchored in
+`jvm-suites-5128432.md` — the per-suite table read from the result XMLs of the final smoke on
+`5128432` (`smoke-r4-5128432.log`). The aggregate lines in the r2/r3/r4 logs are written by the
+conductor's probe after the script's closing box, not by `android-smoke.sh` itself. The r2 and r3
+logs carry `[warn] APK-Timestamp nicht aktualisiert` — no production Kotlin changed after `00e771d`,
+so Gradle reused the APK; the arm64 install and the Rust-side JNI proof were re-run on each.
