@@ -118,6 +118,32 @@ disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg
 # RETIRED 2026-09-03: `cargo check --target x86_64-pc-windows-gnu` -- dies at ort-sys since 8-1.
 # The Windows statement comes from [desktop_build] (windows-build.sh). No story DoD names it.
 
+[seats]
+# Per-seat model + effort for the story-conductor's headless workers (R5). Decided 2026-09-10.
+# Precedence in the skill: invocation override > this block > the skill's built-in default
+# (create/dev/fix = sonnet, review = opus, no effort flag). The eval harness (L0) keeps
+# overriding per combo; this block is the ALLTAG default for klarvo.
+#
+# WHY opus everywhere: the re-fix rounds came from the dev/fix seats, not from review.
+# 7-2 ran 3 fix rounds on Sonnet; every round-1 finding was a test that did not bind to
+# production, and the Sonnet fix worker's rework was superficial until the Opus reviewer
+# caught it. 8-5 = 3 rounds, 8-8 = 2 rounds. The harness research (Morpheus, "Harness
+# Engineering", teams/klarvo/yt-scout/B_y-2GUs928/report.html) puts Sonnet 5 in the lowest
+# class (leaf jobs) and Opus 5 in the work-job class -- same split.
+# WHY effort is explicit: --restricted ignores the settings files, so the global
+# effortLevel never reaches a worker; without --effort every seat runs at the CLI default.
+# WHY xhigh only on dev: xhigh costs ~1.4x high. Dev is the seat that writes the tests and
+# the binding; that is where a round is saved. Review runs 3 sub-reviewers inside one
+# process, so its effort multiplies by three -- high is enough for a judgment seat.
+# WHY no fable: Fable widens scope, rewrites whole files and treats prescriptive skill
+# steps as too narrow -- wrong fit for a deterministic BMAD worker. Fable is the conductor.
+# MEASURE before re-tuning: seat-costs.jsonl (written by the story-conductor after every
+# worker) carries model, effort, cost and tokens per seat and story.
+create = { model = "opus", effort = "high" }
+dev    = { model = "opus", effort = "xhigh" }
+fix    = { model = "opus", effort = "high" }
+review = { model = "opus", effort = "high" }
+
 [smoke.desktop]
 # Desktop proxy surface (AI-6 / F2) -- the machine gate every Epic-8 story ran, unrecorded until now.
 platform      = "desktop"
