@@ -1176,6 +1176,8 @@ the code does not do (strike the clause, do NOT add the short-circuit — Silero
 **Real-device residual (Andi, batched with the next fresh APK):** does auto-stop timing FEEL right at
 default (2.0 s) and tuned (e.g. 0.5 s / 0.05 s) silence settings? The proxy proved wiring + logic
 (63 frames at 2.0 s, floor 7 at 0.05 s, energy gate from config) — not perception.
+AC5 stop-path is CLOSED on the proxy (2026-09-10, after close-out): `minRecordingMs=3000` in config +
+1.2 s recording -> `pre-STT filter: TooShort (1280ms < 3000ms)`; evidence `gate4-evidence/7-2/`.
 
 **Tooling found on the way (not story scope):**
 - `scripts/android-smoke.sh` copies `android/kotlin-test/*.kt` into `gen/android` but never prunes
@@ -1186,3 +1188,8 @@ default (2.0 s) and tuned (e.g. 0.5 s / 0.05 s) silence settings? The proxy prov
   the contract's `[smoke]` proxy runs on the LAPTOP only (emulator + KVM + AVD + Rust Android targets
   all there). Either install the emulator on powerhouse (deliberate decision, ~2 GB) or record the
   laptop hop as the Android GATE-4 topology in `_bmad/custom/bmad-epic-conductor.toml`.
+- `scripts/android-smoke.sh` installs with a plain `adb install -r`; on the x86_64 AVD Android picks the
+  x86_64 split, which has no `libklarvo_lib.so` (Rust core = arm64 only) -> every JNI call crashes with
+  `UnsatisfiedLinkError` (hit 2026-09-10 on the 7-2 stop-path oracle; the VAD-config cases never reach
+  JNI, so the smoke stayed green). `android-emulator-smoke.sh` already does it right. Fix direction:
+  when `BMAD_CONDUCTOR=1` / serial matches `emulator-*`, install with `--abi arm64-v8a -r -g`.

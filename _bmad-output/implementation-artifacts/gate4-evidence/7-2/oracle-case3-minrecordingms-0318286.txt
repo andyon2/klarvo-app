@@ -1,0 +1,20 @@
+== IDLE windows
+mAttrs={(0,0)(fillxwrap)
+mAttrs={(0,0)(fillxwrap)
+mAttrs={(0,0)(0x0)
+mAttrs={(0,0)(276x704)
+mAttrs={(0,0)(fillx126)
+== LOG
+09-10 11:35:53.159  5000  5000 D KlarvoOverlayService: loadBubbleControls: tap=autostop→AUTOSTOP, lp=hold→HOLD, tapAutoSend=false, lpAutoSend=false, silenceThreshold=0.005
+09-10 11:35:53.185  5000  5000 D KlarvoOverlayService: loadBubbleControls: tap=autostop→AUTOSTOP, lp=hold→HOLD, tapAutoSend=false, lpAutoSend=false, silenceThreshold=0.005
+09-10 11:35:53.215  5000  5000 D KlarvoOverlayService: loadBubbleControls: tap=autostop→AUTOSTOP, lp=hold→HOLD, tapAutoSend=false, lpAutoSend=false, silenceThreshold=0.005
+09-10 11:35:57.268  5000  5000 D KlarvoOverlayService: loadBubbleControls: tap=autostop→AUTOSTOP, lp=hold→HOLD, tapAutoSend=false, lpAutoSend=false, silenceThreshold=0.005
+09-10 11:35:57.269  5000  5000 D KlarvoOverlayService: [pipeline] silence window: mode=AUTOSTOP → 2.0s
+09-10 11:35:57.733  5000  5000 D KlarvoAudioRecorder: VAD config: silenceSecs=2.0 requiredSilentFrames=63 energyGate=0.005 onSilenceDetected=true
+09-10 11:35:57.801   381  5038 D android.hardware.audio@7.1-impl.ranchu: TinyalsaSource::read:143 pcm_readi was late delivering frames, inserting 16000 us of silence
+09-10 11:35:58.281   381  5038 D android.hardware.audio@7.1-impl.ranchu: TinyalsaSource::read:143 pcm_readi was late delivering frames, inserting 16000 us of silence
+09-10 11:35:58.729   381  5038 D android.hardware.audio@7.1-impl.ranchu: TinyalsaSource::read:143 pcm_readi was late delivering frames, inserting 16000 us of silence
+09-10 11:35:59.087  5000  5051 D KlarvoOverlayService: [pipeline] pre-STT filter: TooShort (1280ms < 3000ms)
+09-10 11:35:59.229  5000  5000 D KlarvoOverlayService: loadBubbleControls: tap=autostop→AUTOSTOP, lp=hold→HOLD, tapAutoSend=false, lpAutoSend=false, silenceThreshold=0.005
+09-10 11:36:00.028  1493  1704 I AiAiEcho: #postPredictionTargets: Sending updates to UISurface lockscreen with targets# 0 (types=[])
+09-10 11:35:53.156  5000  5000 I LicenseValidator: Native library libklarvo_lib loaded for license validation

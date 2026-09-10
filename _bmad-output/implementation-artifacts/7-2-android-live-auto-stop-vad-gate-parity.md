@@ -829,3 +829,8 @@ exactly this reason. **This part remains open and is Andi's gate** — see "AC l
   device: how the auto-stop timing FEELS at default/tuned settings (perceptual, batched with the
   next fresh APK). Not observed on the proxy: AC5 `minRecordingMs` at the pre-STT stop path
   (covered by JVM tests + review).
+- 2026-09-10 (post close-out, conductor): AC5 stop-path now observed on the proxy —
+  `advanced.minRecordingMs=3000` + 1.2 s recording + Send tap logged
+  `pre-STT filter: TooShort (1280ms < 3000ms)` (old code: hardcoded 500 → Pass). First attempt
+  crashed with `UnsatisfiedLinkError` because `android-smoke.sh` installs without
+  `--abi arm64-v8a` (tooling residual → `docs/backlog.md`). Evidence: `gate4-evidence/7-2/`.

@@ -1,0 +1,9 @@
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: FATAL EXCEPTION: Thread-4
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: Process: com.klarvo.voice, PID: 4780
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: java.lang.UnsatisfiedLinkError: No implementation found for java.lang.String com.klarvo.voice.GroqSttBridge.nativeSilenceCheck(java.lang.String, long, float) (tried Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck and Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck__Ljava_lang_String_2JF) - is the library loaded, e.g. System.loadLibrary?
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at com.klarvo.voice.GroqSttBridge.nativeSilenceCheck(Native Method)
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at com.klarvo.voice.KlarvoOverlayService.processAudio(KlarvoOverlayService.kt:1869)
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at com.klarvo.voice.KlarvoOverlayService.stopAndProcessRecording$lambda$27(KlarvoOverlayService.kt:1826)
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at com.klarvo.voice.KlarvoOverlayService.$r8$lambda$8uEncJOPIRLf2FE7lhnjrjkavns(Unknown Source:0)
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at com.klarvo.voice.KlarvoOverlayService$$ExternalSyntheticLambda33.run(D8$$SyntheticClass:0)
+09-10 11:34:30.924  4780  4830 E AndroidRuntime: 	at java.lang.Thread.run(Thread.java:1012)

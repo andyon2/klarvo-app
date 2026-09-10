@@ -25,9 +25,22 @@ CASE tuned    (autostopSilenceSecs=0.05 advanced.silenceThreshold=0.02  advanced
   -> no structural regression vs. the 11-3 reference structure.
 IDLE state: one APPLICATION_OVERLAY window (897,1200)(162x162) = idle bubble, as canon.
 
+CASE stop-path (autostopSilenceSecs=2.0  advanced.silenceThreshold=0.005 advanced.minRecordingMs=3000)
+  driven: bubble tap (978,1281) -> 1.2 s -> Send tap (1010,1289) -> stopAndProcessRecording -> processAudio
+  logcat: KlarvoOverlayService: [pipeline] pre-STT filter: TooShort (1280ms < 3000ms)
+  expected NEW: config value 3000 reaches nativeSilenceCheck            (AC5/M2)      -> MATCH
+  OLD code would pass 500L hardcoded: 1280 > 500 -> no TooShort, STT reached -> discriminates
+  run 2026-09-10 11:35 (after the arm64 reinstall below); log: oracle-case3-minrecordingms-0318286.txt
+
+## Proxy trap hit on the way (tooling, not product) — see docs/backlog.md "Story 7-2 residuals"
+  Attempt 1 of the stop-path case crashed: UnsatisfiedLinkError GroqSttBridge.nativeSilenceCheck
+  (oracle-case3-attempt1-x86-split-crash.txt). Cause: android-smoke.sh installs with plain
+  `adb install -r`; the x86_64 AVD then picks the x86_64 split, which carries no libklarvo_lib.so
+  (Rust core is built for arm64 only). The two VAD-config cases above never reach JNI, so they were
+  unaffected. Fix applied for the run: `adb install --abi arm64-v8a -r -g` (what
+  android-emulator-smoke.sh already does) -> primaryCpuAbi=arm64-v8a, LicenseValidator logs
+  "Native library libklarvo_lib loaded".
+
 ## NOT observed on this proxy
-- AC5 minRecordingMs at the pre-STT JNI call (stop path): the third case (minRecordingMs=3000, stop after
-  ~1.2 s, expect "pre-STT filter: TooShort (...ms < 3000ms)") was started but the laptop dropped off SSH
-  mid-run; no log line was read. AC5 is covered by the JVM tests (real JSON parse path) and by review.
 - Actual auto-stop firing after speech (no microphone input on the emulator) and how the timing FEELS
   at default/tuned settings — the human real-device gate.
