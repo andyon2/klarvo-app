@@ -1,0 +1,21 @@
+# probe 2026-09-10 on emulator-5554 (laptop), APK from 00e771d
+## dumpsys package
+    extractNativeLibs=false
+    primaryCpuAbi=arm64-v8a
+    versionName=0.5.0
+    lastUpdateTime=2026-09-10 18:55:23
+## nativeloader library_path (from logcat)
+09-10 18:58:42.417  4780  4780 D nativeloader: Configuring clns-6 for other apk /data/app/~~G1x9jMQiCKG34nTo3GHtoA==/com.klarvo.voice-wdOq3gRBI26lNxgrzz-aHw==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~G1x9jMQiCKG34nTo3GHtoA==/com.klarvo.voice-wdOq3gRBI26lNxgrzz-aHw==/lib/arm64:/data/app/~~G1x9jMQiCKG34nTo3GHtoA==/com.klarvo.voice-wdOq3gRBI26lNxgrzz-aHw==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.klarvo.voice
+## UnsatisfiedLinkError / FATAL count
+0
+## klarvo_lib (Rust) log lines in process
+09-10 18:58:43.477  4780  4805 I klarvo_lib::config: [2026-09-10][18:58:43][INFO][klarvo_lib::config] [config] Migrated legacy hotkey="ctrl+shift+d" mode=Hold to hotkey_slots[0]
+09-10 18:58:43.478  4780  4805 I klarvo_lib::config: [2026-09-10][18:58:43][INFO][klarvo_lib::config] [config] STT provider is Groq with API key present, auto-selecting Groq LLM (no DeepSeek key configured)
+09-10 18:58:43.485  4780  4805 I klarvo_lib::config: [2026-09-10][18:58:43][INFO][klarvo_lib::config] [config] Pre-migration backup written to /data/user/0/com.klarvo.voice/config.json.pre-migration-1789059523-hotkey_slots (migration: hotkey_slots)
+09-10 18:58:43.493  4780  4805 I klarvo_lib: [2026-09-10][18:58:43][INFO][klarvo_lib] [trial] First install detected, set first_install_at = 1789059523
+09-10 18:58:43.493  4780  4805 I klarvo_lib::dictionary: [2026-09-10][18:58:43][INFO][klarvo_lib::dictionary] [dictionary] dictionary.json not found, starting with empty dictionary
+09-10 18:58:43.493  4780  4805 I klarvo_lib: [2026-09-10][18:58:43][INFO][klarvo_lib] [setup] Loaded config: language=de, style=Polished, hotkey=ctrl+shift+d, mode=Hold
+09-10 18:58:43.493  4780  4805 I klarvo_lib: [2026-09-10][18:58:43][INFO][klarvo_lib] [setup] Loaded dictionary: 0 terms
+09-10 18:58:43.619  4780  4805 I klarvo_lib: [2026-09-10][18:58:43][INFO][klarvo_lib] [license] Initial status: Trial { until: 1790269123 }
+## pid
+4780

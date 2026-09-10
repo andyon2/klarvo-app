@@ -1,0 +1,47 @@
+
+── Voraussetzungen prüfen ──────────────────────────────────────────────
+[ok]    5 .so-Dateien vorhanden (Rust-Seite gecacht)
+[ok]    Gerät: emulator-5554
+[ok]    Conductor-Modus: Ziel ist Emulator — Isolation ok (Naht 2)
+
+── KlarvoTheme.kt Drift-Gate prüfen ──────────────────────────────────────────────
+[ok] KlarvoTheme.kt is in sync with canon klarvo.css
+[ok]    KlarvoTheme.kt ist in Sync mit canon klarvo.css
+
+── Kotlin-Quellen synchronisieren ──────────────────────────────────────────────
+[ok]    18 Produktions-Dateien kopiert (Ziel vorher geleert)
+[ok]    6 Font-Dateien kopiert
+[ok]    22 Test-Dateien kopiert (Ziel vorher geleert)
+
+── JVM-Unit-Tests ──────────────────────────────────────────────
+[ok]    24 Tests, 0 Failures — alle grün
+/home/andyon2/workspace/products/klarvo
+
+── Debug-APK bauen ──────────────────────────────────────────────
+/home/andyon2/workspace/products/klarvo
+[warn]  APK-Timestamp nicht aktualisiert — Gradle hat inkrementell nichts neu gebaut.
+[warn]  Kotlin-Änderungen evtl. nicht drin. Wenn nötig:
+[warn]    cd src-tauri/gen/android && ./gradlew :app:assembleUniversalDebug --rerun-tasks
+[ok]    APK: src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk (273 MB)
+
+── adb install ──────────────────────────────────────────────
+[info]  Emulator-Ziel — erzwinge arm64-v8a-Split (x86_64 hätte keine libklarvo_lib.so)
+[ok]    Installiert auf emulator-5554
+
+── Verifikation ──────────────────────────────────────────────
+[ok]    versionName auf Gerät: 0.5.0 ✓  (AI-1 Gate bestanden)
+
+╔══════════════════════════════════════════════════════════════════╗
+║  SMOKE BUILD OK  v0.5.0                                          ║
+║  Gerät:  emulator-5554                                           ║
+║  Dauer:  2s                                                 ║
+║                                                                  ║
+║  Nächste Schritte:                                               ║
+║  1. App auf dem Gerät öffnen                                     ║
+║  2. Phantom-Phrase sprechen → kein Paste, Toast erscheint        ║
+║  3. Echten Satz sprechen → Paste erfolgt normal                  ║
+╚══════════════════════════════════════════════════════════════════╝
+JVM (laptop, 85aa0ee): tests 168 fail 0 err 0 skip 0
+    primaryCpuAbi=arm64-v8a
+    lastUpdateTime=2026-09-10 19:40:33
+0

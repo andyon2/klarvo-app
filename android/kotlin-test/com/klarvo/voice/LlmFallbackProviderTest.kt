@@ -165,4 +165,81 @@ class LlmFallbackProviderTest {
         val buggyFallback = KlarvoApi.resolveFallbackLlmProvider(config, excluding = config.llmProvider)
         assertEquals("deepseek-chat", buggyFallback!!.model)
     }
+
+    // -----------------------------------------------------------------------
+    // Story 7-8 / M9 (AC1): DeepSeek endpoint parity with the desktop core.
+    //
+    // Desktop calls DeepSeek at `/v1/chat/completions`
+    // (src-tauri/src/llm/mod.rs, `DeepSeekProvider::BASE_URL`). Android owned
+    // the same literal at TWO independent sites and both omitted the `/v1`
+    // segment:
+    //   - `resolveLlmProvider`'s `else ->` arm      (primary selection)
+    //   - `cleanupFallbackCandidates`'s DeepSeek triple (Epic-12 fallback ladder)
+    //
+    // DeepSeek accepts both hosts today, so this was DRIFT, not an outage.
+    // These tests pin the URL on BOTH paths so an edit to either one trips RED,
+    // and assert the two agree so they cannot silently re-diverge.
+    //
+    // The expected value is a TEST literal deliberately re-typed here, not a
+    // reference to a production symbol: the fixture-test discipline used
+    // elsewhere in this repo ("the SUT must not judge itself") means comparing
+    // production output against an independent constant, never against another
+    // production constant — which would pass no matter what both said.
+    //
+    // What these pin: the URL string that each resolver PUTS INTO
+    // `LlmProviderInfo`. What they do NOT exercise: any network call, the
+    // desktop Rust constant itself (no cross-language assert exists for it),
+    // or which provider a given config ultimately selects (covered above).
+    // -----------------------------------------------------------------------
+
+    /** The endpoint desktop uses — src-tauri/src/llm/mod.rs `DeepSeekProvider::BASE_URL`. */
+    private val expectedDeepseekUrl = "https://api.deepseek.com/v1/chat/completions"
+
+    @Test
+    fun deepseekUrl_primarySelection_matchesDesktopV1Endpoint() {
+        // llmProvider = "deepseek" falls through the `when` to the `else ->` arm.
+        val config = baseConfig(llmProvider = "deepseek", deepseekApiKey = "ds-key")
+        val result = KlarvoApi.resolveLlmProvider(config)
+        assertNotNull(result)
+        assertEquals("deepseek", result!!.providerName)
+        assertEquals(
+            "primary DeepSeek selection must use the same /v1 endpoint as the desktop core",
+            expectedDeepseekUrl,
+            result.url
+        )
+    }
+
+    @Test
+    fun deepseekUrl_fallbackLadder_matchesDesktopV1Endpoint() {
+        // Reaches the DeepSeek triple inside the private `cleanupFallbackCandidates`,
+        // the second, independent copy of the literal.
+        val config = baseConfig(deepseekApiKey = "ds-key", openaiApiKey = "sk-openai")
+        val result = KlarvoApi.resolveFallbackLlmProvider(config, excluding = "openai")
+        assertNotNull(result)
+        assertEquals("deepseek", result!!.providerName)
+        assertEquals(
+            "the Epic-12 cross-provider fallback ladder must use the same /v1 endpoint as the desktop core",
+            expectedDeepseekUrl,
+            result.url
+        )
+    }
+
+    @Test
+    fun deepseekUrl_bothCallSitesAgree() {
+        // The anti-drift assert: even if someone changes the expected literal
+        // above, the two production sites must still not disagree with each other.
+        val primary = KlarvoApi.resolveLlmProvider(
+            baseConfig(llmProvider = "deepseek", deepseekApiKey = "ds-key")
+        )!!
+        val fallback = KlarvoApi.resolveFallbackLlmProvider(
+            baseConfig(deepseekApiKey = "ds-key", openaiApiKey = "sk-openai"),
+            excluding = "openai"
+        )!!
+        assertEquals(
+            "the two DeepSeek call sites must not drift from each other",
+            primary.url,
+            fallback.url
+        )
+        assertEquals("the two DeepSeek call sites must not drift on the model either", primary.model, fallback.model)
+    }
 }

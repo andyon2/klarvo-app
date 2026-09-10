@@ -2060,4 +2060,339 @@ mod tests {
         assert_eq!(result.text, ".");
         assert!(result.prompt_tokens.is_none(), "no provider call → no tokens");
     }
+
+    // --- Twin-constant lock (story 7-8, AC3) — Rust half ---
+    //
+    // Reads the SAME file as the Kotlin half (`TwinConstantsVectorsTest` in
+    // android/kotlin-test/), `test-fixtures/twin-constants-vectors.json` at the repo
+    // root, so five Rust↔Kotlin twins cannot silently re-diverge.
+    //
+    // Discipline: each assertion reads the PRODUCTION symbol and compares it to the
+    // FIXTURE literal — never to another production symbol, which would agree no matter
+    // what both said (the "SUT must not judge itself" rule from the chunking vectors).
+    //
+    // Covers: the Rust side only. Does NOT cover the Kotlin side (its own test reads this
+    // same fixture — neither half can prove the other), `AnthropicCleanup`'s separate
+    // constant pair (only coincidence-checked below), `llm/local.rs`'s llama-path pair
+    // (target-gated to Windows, not compiled in this test run), the dead-config cluster
+    // (deliberately not locked), or any real network request.
+
+    fn load_twin_constants() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/twin-constants-vectors.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content).expect("twin-constants-vectors.json must be a JSON array")
+    }
+
+    /// Throwing lookup — a missing id must fail loudly, never skip the assertion
+    /// (the vacuous-default defect recorded as 7-2 R3-P2).
+    fn twin<'a>(vectors: &'a [serde_json::Value], id: &str) -> &'a serde_json::Value {
+        vectors
+            .iter()
+            .find(|v| v["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("fixture has no vector with id={}", id))
+    }
+
+    #[test]
+    fn spec_twin_constants_fixture_is_complete_and_self_describing() {
+        let vectors = load_twin_constants();
+        let expected = [
+            "TWIN-LLM-TEMPERATURE-001",
+            "TWIN-LLM-MAX-TOKENS-001",
+            "TWIN-CHUNK-THRESHOLD-001",
+            "TWIN-CHUNK-TARGET-SIZE-001",
+            "TWIN-CHUNK-JOIN-SEPARATOR-001",
+        ];
+        assert_eq!(vectors.len(), expected.len(), "fixture must carry exactly the five locked twins");
+        for id in expected {
+            let d = twin(&vectors, id)["description"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{} needs a description", id));
+            assert!(d.contains("PINS:"), "{} must state what it pins", id);
+            assert!(d.contains("DOES NOT PIN:"), "{} must state what it does NOT pin", id);
+        }
+    }
+
+    #[test]
+    fn spec_twin_constants_llm_request_params() {
+        let vectors = load_twin_constants();
+
+        let temp = twin(&vectors, "TWIN-LLM-TEMPERATURE-001")["expected_double"]
+            .as_f64()
+            .expect("vector needs expected_double");
+        assert_eq!(
+            OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE,
+            temp as f32,
+            "OpenAiCompatibleCleanup temperature drifted from the Kotlin twin"
+        );
+
+        let max_tokens = twin(&vectors, "TWIN-LLM-MAX-TOKENS-001")["expected_int"]
+            .as_u64()
+            .expect("vector needs expected_int");
+        assert_eq!(
+            OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS,
+            max_tokens as u32,
+            "OpenAiCompatibleCleanup max_tokens drifted from the Kotlin twin"
+        );
+
+        // Coincidence-check, NOT a contract: `AnthropicCleanup` declares its own pair.
+        // It happens to agree today. If this ever fails, it is not automatically a bug —
+        // Anthropic is a different provider with a different request format, and the
+        // locked twin is the OpenAI-compatible pair above. Assert it so the divergence is
+        // noticed and decided, rather than discovered later.
+        assert_eq!(
+            AnthropicCleanup::DEFAULT_TEMPERATURE,
+            OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE,
+            "AnthropicCleanup temperature no longer agrees with the OpenAI-compatible pair — \
+             decide deliberately, this is not the locked twin"
+        );
+        assert_eq!(
+            AnthropicCleanup::DEFAULT_MAX_TOKENS,
+            OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS,
+            "AnthropicCleanup max_tokens no longer agrees with the OpenAI-compatible pair — \
+             decide deliberately, this is not the locked twin"
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_twin_constants_chunking_boundaries() {
+        let vectors = load_twin_constants();
+
+        let threshold = twin(&vectors, "TWIN-CHUNK-THRESHOLD-001")["expected_int"]
+            .as_u64()
+            .expect("vector needs expected_int") as usize;
+        assert_eq!(CHUNK_THRESHOLD, threshold, "CHUNK_THRESHOLD drifted from the Kotlin twin");
+
+        // Boundary probe through the real `chunked_cleanup`, mirroring the Kotlin
+        // `shouldChunk` probe (7-8 review round 1). The `assert_eq!` above pins the declared
+        // NUMBER only: flipping `raw_text.len() < CHUNK_THRESHOLD` to `<=` leaves it green,
+        // so the Rust half would not have pinned the BOUNDARY the fixture claims it pins.
+        // The single-call path returns the provider's output unjoined; the chunked path
+        // joins with the separator, so the presence of one separates the two paths.
+        // ASCII → 1 char == 1 byte, and the input is boundary-free so nothing else can split.
+        let provider = MockCleanupProvider;
+        let below = chunked_cleanup(
+            &provider,
+            &"a".repeat(threshold - 1),
+            CleanupStyle::Polished,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !below.text.contains('\n'),
+            "{} bytes (one below CHUNK_THRESHOLD) must take the single-call path",
+            threshold - 1
+        );
+        let at = chunked_cleanup(
+            &provider,
+            &"a".repeat(threshold),
+            CleanupStyle::Polished,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            at.text.contains('\n'),
+            "exactly {} bytes must already take the chunked path -- if this passes only at \
+             {}, the comparison operator drifted from the Kotlin `bytes >= CHUNK_THRESHOLD`",
+            threshold,
+            threshold + 1
+        );
+
+        let target = twin(&vectors, "TWIN-CHUNK-TARGET-SIZE-001")["expected_int"]
+            .as_u64()
+            .expect("vector needs expected_int") as usize;
+        assert_eq!(CHUNK_TARGET_SIZE, target, "CHUNK_TARGET_SIZE drifted from the Kotlin twin");
+
+        // Behavioural probe, mirroring the Kotlin half exactly: a boundary-free input
+        // (no '.', '!', '?' or newline) leaves best_split as None, so the fallback offset
+        // start + CHUNK_TARGET_SIZE is what decides the cut. ASCII → 1 char == 1 byte.
+        let boundary_free = "a".repeat(target * 3);
+        let chunks = split_into_chunks(&boundary_free);
+        assert!(chunks.len() > 1, "input well above the target must produce more than one chunk");
+        assert_eq!(
+            chunks[0].len(),
+            target,
+            "with no sentence boundary to find, the first cut must land exactly on CHUNK_TARGET_SIZE"
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_twin_constants_chunk_join_separator() {
+        let vectors = load_twin_constants();
+        let code = twin(&vectors, "TWIN-CHUNK-JOIN-SEPARATOR-001")["expected_char_code"]
+            .as_u64()
+            .expect("vector needs expected_char_code") as u32;
+        let sep = char::from_u32(code).expect("expected_char_code must be a valid char");
+
+        let target = twin(&vectors, "TWIN-CHUNK-TARGET-SIZE-001")["expected_int"]
+            .as_u64()
+            .expect("vector needs expected_int") as usize;
+
+        // Drive the REAL join loop in `chunked_cleanup` through the existing mock provider
+        // (uppercases its input), rather than re-implementing the join in the test.
+        // Boundary-free input → three equal chunks → exactly two separators.
+        let provider = MockCleanupProvider;
+        let input = "a".repeat(target * 3);
+        let result = chunked_cleanup(&provider, &input, CleanupStyle::Polished, None, None, None)
+            .await
+            .unwrap();
+
+        let expected = vec!["A".repeat(target); 3].join(&sep.to_string());
+        assert_eq!(
+            result.text, expected,
+            "chunk results must be joined with exactly one separator (char code {}) between adjacent chunks",
+            code
+        );
+        assert_eq!(
+            result.text.matches(sep).count(),
+            2,
+            "three chunks must be joined with exactly two separators — no trailing or doubled separator"
+        );
+
+        // Leading-empty case (7-8 review round 1). The fixture's DOES-NOT-PIN clause names
+        // the empty-result skip rule — Rust's `i > 0 && !combined_text.is_empty()` and
+        // Kotlin's `if (sb.isNotEmpty())` — so the case must exist on both sides rather than
+        // only be described. `EmptyFirstChunkProvider` blanks the first chunk by CONTENT (not
+        // by call order, which `join_all` does not guarantee), so an empty first result must
+        // not emit a leading separator.
+        let provider = EmptyFirstChunkProvider;
+        let input = format!("{}{}", "a".repeat(target), "b".repeat(50));
+        let result = chunked_cleanup(&provider, &input, CleanupStyle::Polished, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            result.text,
+            "B".repeat(50),
+            "an empty first chunk result must not emit a leading separator"
+        );
+    }
+
+    /// Uppercases like [`MockCleanupProvider`], but returns an EMPTY result for any chunk
+    /// that begins with `a` — used to drive the leading-empty branch of the join loop.
+    struct EmptyFirstChunkProvider;
+
+    #[async_trait::async_trait]
+    impl CleanupProvider for EmptyFirstChunkProvider {
+        async fn cleanup(
+            &self,
+            raw_text: &str,
+            _style: CleanupStyle,
+            _dictionary_terms: Option<&str>,
+            _custom_prompt: Option<&str>,
+        ) -> Result<CleanupResult, LlmError> {
+            let text = if raw_text.starts_with('a') {
+                String::new()
+            } else {
+                raw_text.to_uppercase()
+            };
+            Ok(CleanupResult { text, prompt_tokens: Some(10), completion_tokens: Some(5) })
+        }
+    }
+
+    // --- M12 current-state vector (story 7-8, AC4) ---
+    //
+    // RECORDS the dictionary-scope divergence between desktop and Android. It does NOT
+    // decide it: M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION),
+    // and story 7-8 deliberately changed no prompt-assembly code on either platform.
+    // Story 7.6 flips one vector in the fixture once the decision is made.
+    //
+    // Covers: the desktop/Rust column only, asserted against the real
+    // `CleanupStyle::system_prompt`. Does NOT cover the Android column — Kotlin's
+    // `buildSystemPrompt`/`appendPromptExtensions` are private and reachable only from
+    // inside the network-calling cleanup function, and AC4 forbids opening a seam. That
+    // column is a written record (verified by reading, 2026-09-10), not a test result.
+    // Also does not cover prompt wording, section order, or model behaviour.
+
+    fn load_m12_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/m12-dictionary-scope-vectors.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content).expect("m12-dictionary-scope-vectors.json must be a JSON array")
+    }
+
+    #[test]
+    fn spec_m12_dictionary_scope_current_state_still_holds() {
+        let vectors = load_m12_vectors();
+
+        // Every entry must be labelled a current-state record, so no future reader
+        // mistakes this file for a decided contract.
+        for v in &vectors {
+            assert_eq!(
+                v["record_type"].as_str(),
+                Some("current-state-record"),
+                "every M12 entry must be labelled a current-state record, not a locked expectation"
+            );
+        }
+
+        let dict = "Klarvo, Tauri, powerhouse";
+        let style_of = |s: &str| match s {
+            "polished" => CleanupStyle::Polished,
+            "verbatim" => CleanupStyle::Verbatim,
+            "chat" => CleanupStyle::Chat,
+            other => panic!("unknown style in fixture: {}", other),
+        };
+
+        let mut checked = 0;
+        for v in &vectors {
+            // The README entry carries no style; every other entry must.
+            let Some(style_name) = v["style"].as_str() else { continue };
+            let expected = v["expected_dictionary_in_prompt"]
+                .as_bool()
+                .unwrap_or_else(|| panic!("{} needs expected_dictionary_in_prompt", style_name));
+
+            let prompt = style_of(style_name).system_prompt(Some(dict), None);
+            assert_eq!(
+                prompt.contains(dict),
+                expected,
+                "desktop {} arm: recorded dictionary-in-prompt state no longer matches the tree. \
+                 If you changed prompt assembly on purpose, update the M12 fixture deliberately — \
+                 it is the record Story 7.6 reads.",
+                style_name
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 3, "all three cleanup styles must be recorded");
+
+        // The `platforms_agree` flag must be DERIVED from the two columns, never asserted
+        // against a literal (7-8 review round 1). Hard-coding "chat is false" here would
+        // contradict the fixture's own promise that Story 7.6 flips ONE vector: the flip
+        // would fail this suite until a test literal was edited too. With the check derived,
+        // 7.6 changes the prompt code and the vector, and this test follows — while a
+        // fixture whose flag stops matching its own columns still fails loudly.
+        for v in &vectors {
+            let Some(style_name) = v["style"].as_str() else { continue };
+            let desktop = v["expected_dictionary_in_prompt"].as_bool().expect("desktop column");
+            let kotlin = v["expected_dictionary_in_prompt_kotlin"]
+                .as_bool()
+                .unwrap_or_else(|| panic!("{} needs expected_dictionary_in_prompt_kotlin", style_name));
+            assert_eq!(
+                v["platforms_agree"].as_bool(),
+                Some(desktop == kotlin),
+                "{}: platforms_agree must state what the two recorded columns actually show",
+                style_name
+            );
+        }
+
+        // NOTE (7-8 review round 2, decision D1): there is deliberately NO assertion here that
+        // some style still disagrees. Such a check fires on EITHER direction of a correct M12
+        // resolution — the fixture has exactly one disagreeing style — which would falsify the
+        // fixture's own promise that Story 7.6 flips one vector without editing this test.
+        // "M12 is still open" is carried by the fixture's `open_decision` field, not by an
+        // assertion. The per-entry consistency check above stays: a flag that stops matching
+        // its own columns still fails loudly.
+    }
 }

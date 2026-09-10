@@ -6,7 +6,7 @@
     "signal": "bass_tone",
     "signal_freq_hz": 30.0,
     "amplitude_short": 1000,
-    "description": "energy-floor gate at default silenceThreshold=0.005 -- a 30 Hz bass tone (raw i16 sine, amplitude_short=1000, a LITERAL derived offline from 32767 -- not from the production VAD_RMS_NORMALIZATION_DIVISOR constant, so a reverted divisor cannot cancel out against this fixture's own derivation). Raw (unfiltered) normalized RMS is ~0.0216 -- comfortably ABOVE both the default (0.005) and tuned (0.02) thresholds -- but the 85 Hz Butterworth highpass attenuates 30 Hz to ~12% passthrough, so the production-seam filtered RMS is ~0.0027, BELOW threshold. This makes the highpass filter load-bearing for this vector: removing it, or reverting the Silero/RMS input to the unfiltered frame, flips expected_gate_open from false to true.",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- a 30 Hz bass tone (raw i16 sine). amplitude_short=1000 is an ARBITRARY round amplitude, NOT a derived one: unlike VAD-GATE-002..006 it is not ceil(target * 32767) and corresponds to no target RMS. What matters is only that it is a fixture LITERAL, so a reverted production VAD_RMS_NORMALIZATION_DIVISOR cannot cancel out against a test-time derivation. Raw (unfiltered) normalized RMS is ~0.021566: comfortably above the default 0.005 threshold, but only ~7.8% above the tuned 0.02 threshold -- a modest margin, not a comfortable one. The 85 Hz Butterworth highpass attenuates 30 Hz to ~12% passthrough, so the production-seam filtered RMS is ~0.0027, BELOW threshold. WHAT THIS PINS: that the highpass is load-bearing for this verdict -- removing it, or reverting the RMS input to the unfiltered frame, flips expected_gate_open from false to true. WHAT IT DOES NOT PIN: the >= boundary (see VAD-GATE-002), or the normalization divisor (pinned by VadGateRmsFixtureTest, not by these vectors).",
     "silence_threshold": 0.005,
     "expected_gate_open": false
   },
@@ -16,7 +16,7 @@
     "config": "default",
     "signal": "nyquist_square",
     "amplitude_short": 164,
-    "description": "energy-floor gate at default silenceThreshold=0.005 -- at threshold (>= semantics). Signal: a Nyquist-frequency square wave (raw i16 samples alternating +amplitude_short/-amplitude_short every sample). amplitude_short=164 is a LITERAL precomputed offline as ceil(0.005 * 32767) -- not derived from the production VAD_RMS_NORMALIZATION_DIVISOR constant at test time. A 2nd-order Butterworth highpass has EXACT unity gain at Nyquist, so the production-seam filtered RMS (~0.005005) lands within quantization noise of 0.005 -- far smaller than the 0.001 gap to the neighboring vectors, resolving to gate-open under the shared >= semantics.",
+    "description": "energy-floor gate at default silenceThreshold=0.005 -- nominally the 'at threshold' case, but see WHAT IT DOES NOT PIN below. Signal: a Nyquist-frequency square wave (raw i16 samples alternating +amplitude_short/-amplitude_short every sample). amplitude_short=164 is a LITERAL precomputed offline as ceil(0.005 * 32767) -- not derived from the production VAD_RMS_NORMALIZATION_DIVISOR at test time. A 2nd-order Butterworth highpass has EXACT unity gain at Nyquist, so the production-seam filtered RMS is ~0.00500504. WHAT THIS PINS: that a signal marginally above the threshold resolves to gate-open through the real filter+RMS path. WHAT IT DOES NOT PIN: the >= versus > semantics. ceil() places this vector STRICTLY ABOVE 0.005 (0.00500504, not equal to it), so flipping isEnergyAboveGate from >= to > leaves this vector and all five siblings green. The >= boundary is pinned by SilenceThresholdTest, not here.",
     "silence_threshold": 0.005,
     "expected_gate_open": true
   },
@@ -46,7 +46,7 @@
     "config": "tuned",
     "signal": "nyquist_square",
     "amplitude_short": 656,
-    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- at threshold (>= semantics). Same Nyquist-square-wave construction as VAD-GATE-002; amplitude_short=656 is a LITERAL precomputed offline as ceil(0.02 * 32767).",
+    "description": "energy-floor gate at a tuned silenceThreshold=0.02 -- nominally the 'at threshold' case, but see WHAT IT DOES NOT PIN below. Same Nyquist-square-wave construction as VAD-GATE-002; amplitude_short=656 is a LITERAL precomputed offline as ceil(0.02 * 32767). WHAT THIS PINS: that a signal marginally above the tuned threshold resolves to gate-open through the real filter+RMS path. WHAT IT DOES NOT PIN: the >= versus > semantics. ceil() places this vector STRICTLY ABOVE 0.02 (0.02002014, not equal to it), so flipping isEnergyAboveGate from >= to > leaves it green. The >= boundary is pinned by SilenceThresholdTest, not here.",
     "silence_threshold": 0.02,
     "expected_gate_open": true
   },

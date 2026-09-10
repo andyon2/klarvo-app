@@ -1,0 +1,37 @@
+[
+  {
+    "id": "TWIN-LLM-TEMPERATURE-001",
+    "description": "Cleanup sampling temperature. PINS: the temperature both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE (src-tauri/src/llm/mod.rs) and Kotlin KlarvoApi.CLEANUP_TEMPERATURE (the value written as the 'temperature' field in cleanupText's request body). DOES NOT PIN: AnthropicCleanup's own DEFAULT_TEMPERATURE (a separate provider with a different request format; the Rust side asserts separately that it currently agrees, which is a coincidence-check, not a contract), llm/local.rs's llama-path constant (target-gated to Windows, unreachable from a Linux test run), the sttTemperature config key (dead config, out of scope), or that either platform actually sends the field on the wire (no network call is made).",
+    "rust_symbol": "OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE",
+    "kotlin_symbol": "KlarvoApi.CLEANUP_TEMPERATURE",
+    "expected_double": 0.3
+  },
+  {
+    "id": "TWIN-LLM-MAX-TOKENS-001",
+    "description": "Cleanup response token cap. PINS: the max_tokens both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS and Kotlin KlarvoApi.CLEANUP_MAX_TOKENS. A drift here truncates long dictations on one platform only, which is silent and user-visible only as a cut-off sentence. DOES NOT PIN: AnthropicCleanup's pair, the llama path in llm/local.rs, the dead advanced.llmMaxTokens config key, or any server-side cap.",
+    "rust_symbol": "OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS",
+    "kotlin_symbol": "KlarvoApi.CLEANUP_MAX_TOKENS",
+    "expected_int": 2048
+  },
+  {
+    "id": "TWIN-CHUNK-THRESHOLD-001",
+    "description": "The size at or above which cleanup switches from one call to parallel chunked calls. PINS: the effective decision BOUNDARY on BOTH sides, not merely a declared number -- Rust CHUNK_THRESHOLD (llm/mod.rs, used as 'raw_text.len() < CHUNK_THRESHOLD' in chunked_cleanup) and Kotlin KlarvoApi.shouldChunk (the public seam extracted in story 7-1, 'bytes >= CHUNK_THRESHOLD'). Both are measured in UTF-8 BYTES, not characters. Each side runs its own 399/400-byte probe through production -- Kotlin through shouldChunk, Rust through chunked_cleanup (single-call path vs joined chunked path) -- rather than only reading the constant, so a flipped comparison operator is caught on both halves. DOES NOT PIN: how the text is split once the threshold is crossed (see TWIN-CHUNK-TARGET-SIZE-001), the parallelism, or the dead advanced.chunkThreshold config key.",
+    "rust_symbol": "CHUNK_THRESHOLD",
+    "kotlin_symbol": "KlarvoApi.shouldChunk (boundary probe)",
+    "expected_int": 400
+  },
+  {
+    "id": "TWIN-CHUNK-TARGET-SIZE-001",
+    "description": "Target chunk size in UTF-8 bytes, used as the fallback split offset when no sentence boundary is found in the search window. PINS: the fallback split point of Rust split_into_chunks and Kotlin KlarvoApi.splitIntoChunks, probed with a boundary-free input (a long run of a single ASCII letter) so best_split/bestSplit stays null and the split lands exactly on start + CHUNK_TARGET_SIZE on both sides. DOES NOT PIN: the sentence-boundary search window (start + TARGET/2 .. start + TARGET + 200), the punctuation set, the UTF-8 continuation-byte backoff, or the trivial-fragment merge -- those are covered by chunking-cleanup-vectors.json, not here.",
+    "rust_symbol": "CHUNK_TARGET_SIZE",
+    "kotlin_symbol": "KlarvoApi.splitIntoChunks (fallback-split probe)",
+    "expected_int": 350
+  },
+  {
+    "id": "TWIN-CHUNK-JOIN-SEPARATOR-001",
+    "description": "The separator used to re-join parallel chunk results into the final cleaned text. PINS: a SINGLE LF (U+000A, char code 10) between adjacent chunk results on both platforms -- Rust chunked_cleanup's combined_text.push(char 10) loop (driven here through the existing MockCleanupProvider, so the assertion binds to the real join path rather than to a re-implementation) and Kotlin KlarvoApi.joinChunkResults (the public seam from story 7-1). Expressed as a char code rather than a literal so the fixture cannot be misread as CRLF or as a double newline. DOES NOT PIN: the empty-result skip rule (Rust skips the separator while combined_text is empty; Kotlin's seam has the matching isNotEmpty guard -- each side asserts that rule with its own leading-empty case -- Kotlin joinChunkResults(listOf(\"\", \"beta\")), Rust a mock that blanks the first chunk by content -- but the fixture value itself states only the separator), trailing-newline handling, or the order in which chunks complete.",
+    "rust_symbol": "chunked_cleanup join loop (via MockCleanupProvider)",
+    "kotlin_symbol": "KlarvoApi.joinChunkResults",
+    "expected_char_code": 10
+  }
+]

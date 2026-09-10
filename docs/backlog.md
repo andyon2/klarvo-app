@@ -1189,7 +1189,30 @@ menschliche Eingangstür; die mechanische Code-Karte darunter fehlt. **Wenn es d
 `bmad-document-project` → „Re-scan entire project". Keine Code-Änderung. Frühestens sinnvoll nach
 Epic 7 (Rust↔Kotlin-Twins ändern sich dort), sonst ist die Karte beim nächsten Merge alt.
 
+## Story 7-8 residuals — accepted at GATE 3 (2026-09-10, Andi)
+
+Story 7-8 (parity-net close-out + twin hygiene) closed `done` after three fix rounds (the third
+authorized by Andi beyond the cap of two); the loop ended on review round 4 (`17197d9`). Every
+round's code fixes landed and no gate regressed (Rust 662/0, JVM 168/0 over 22 suites, emulator
+install + Rust-side JNI proof on `5128432`). What remains is **claim/record hygiene plus one latent
+test gap**, full list with `file:line` + fix direction in the story file `### Review Findings —
+code review round 4` (5 residuals, 2 deferred) and `deferred-work.md` (rounds 1-4, 28 items):
+- `VadGateGoldenVectorsTest` filters by `category` **value**: a drifted value (not key — R3-6 closed
+  that) still drops a vector silently. Fix direction: assert `loadFixture().size == energyFloor + stopLatency`.
+- `scripts/android-smoke.sh:217-220` banner counts ONE result XML ("24 Tests"); aggregate over all
+  XMLs. `android-build.sh:70` still carries the un-pruned `cp` that AC6a fixed in the smoke script.
+- ADR-0017 guard scans one directory level and matches per line; `getBool` coerces any non-null to true.
+- Stale line anchors in the story record's own deferred entries (cite by symbol).
+
+**Real-device residual (Andi, batched with the next fresh APK):** one dictation on the Xiaomi with
+DeepSeek cleanup returns cleaned text — proves M9 (`/v1/chat/completions`) on the real path. Risk
+is low: both the old and the new path answer 401 without a key (path valid) — parity, not repair.
+
 ## Story 7-2 residuals — accepted at GATE 3 (2026-09-10, Andi)
+
+**RESOLVED by Story 7-8 (2026-09-10, branch `conductor/story-7-8`, `00e771d`…`5128432`):** the 8 round-3
+findings + the 2 adjacent sites (Andi's GATE-1 directive), and both `android-smoke.sh` traps below
+(prune-on-copy, `--abi arm64-v8a -r -g` on `emulator-*`). The real-device residual stays as recorded.
 
 Story 7-2 (Android live auto-stop VAD-gate parity) closed `done` after two fix rounds; the loop
 ended on a review. The final scoped re-review (`a1ed23c`) left **8 residual findings**, all
