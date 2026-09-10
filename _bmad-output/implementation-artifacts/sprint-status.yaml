@@ -103,14 +103,14 @@ development_status:
   6-6-preview-box-appearance-customization: done
   epic-6-retrospective: done
 
-  # Epic 7 — Cross-Platform Parity — RE-CUT 2026-09-10 (sprint-change-proposal-2026-09-10.md): 7-5/7-7 superseded by 7-8; 7-6 waits on M12
-  epic-7: in-progress
+  # Epic 7 — Cross-Platform Parity — RE-CUT 2026-09-10 (sprint-change-proposal-2026-09-10.md): 7-5/7-7 superseded by 7-8; done 2026-09-10 with 7-6 parked on M12 (Evidenz: epic-7-retro-2026-09-10.md)
+  epic-7: done
   7-1-android-chunking-parity-core-output: done
   7-2-android-live-auto-stop-vad-gate-parity: done
   7-3-shared-core-stt-request-and-guard-path-via-jni: done
   7-6-m12-open-product-decision-dictionary-in-chat-style: backlog
   7-8-parity-net-close-out-and-twin-hygiene: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06, 8-6 vertagt 2026-08-19 (scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
   epic-8: done
