@@ -177,12 +177,34 @@ Source: `sprint-change-proposal-2026-09-10.md`.
 - **`scripts/dictation-quality-audit.py`** — commit the marker detectors from the 2026-06-12 evidence
   run; manual cadence over adb/Tailscale. Was a 7.7 sibling; 7.7 superseded 2026-09-10.
 
-### OPEN-DECISION — M12 (dictionary-in-Chat-style)
+### DECIDED 2026-09-10 — M12 (dictionary-in-Chat-style): Chat INCLUDES the dictionary
 
 **Source:** drift audit M12. Android adds the dictionary for ALL cleanup styles incl. Chat
-(`KApi:591-593,749`); Desktop omits `{dict_section}` in the Chat arm (`llm/mod.rs ~232-263`). **Opposite
-direction.** Canonical direction is a product call. To be resolved in **Epic 7 Story 7.6**; until then both
-sides' current behavior is golden-vector-locked by **Story 7.8** (re-cut 2026-09-10), not changed.
+(`KlarvoApi.appendPromptExtensions`, no style branch); Desktop omits `{dict_section}` in the Chat arm of
+`CleanupStyle::system_prompt` (`src-tauri/src/llm/mod.rs`). **Opposite direction.** Both sides' current
+behaviour is golden-vector-locked by Story 7.8 (`test-fixtures/m12-dictionary-scope-vectors.json`).
+
+**Decision (Andi, 2026-09-10):** the cleanup model protects dictionary terms in every style, Chat included.
+Android's behaviour is canon; **Desktop changes.** Rationale: the omission was deliberate at birth
+(`3a9f5d0`, "Chat style has no dictionary context -- keeps it short"), but the brevity reason is gone — the
+Chat arm now carries punctuation commands, language rules, `{custom_section}` and the sandwich defence, and
+the dictionary sentence is one line. The dictionary's purpose (preserve terms exactly) is style-independent;
+STT already hears the terms via the shared Rust prompt, so a cleanup pass that "corrects" a correctly heard
+name is the worse outcome.
+
+**Implementation = Story 7.6** (not started): add `{dict_section}` to the Chat arm, flip the
+`M12-DICT-SCOPE-CHAT` vector (`expected_dictionary_in_prompt: true`, `platforms_agree: true`), add a Chat
+dictionary test next to `test_system_prompt_chat_with_custom_prompt`. Quick-dev sized. Trap: `epic-7` is
+`done` — flip it to `in-progress` before `bmad-create-story` if the story route is used.
+
+### BRAINSTORM-CANDIDATE — Dictionary rework + a fourth style / style add-on (Andi, 2026-09-10)
+
+Raised at the M12 decision. Andi is not satisfied with how the dictionary works today and wants a
+critical, thorough brainstorm on how it should be implemented — plus wishes for a **fourth cleanup style**
+that does not exist yet, or alternatively an **add-on function that can be switched on for any of the three
+styles**. Nothing is specified; no reduction sketch exists. Route: `bmad-brainstorming` with Andi, then a
+product decision, then a cut. The M12 decision above stands on its own: protecting terms in Chat is the
+minimal coherent state until the rework, and the one-line change does not pre-empt the brainstorm.
 
 ---
 

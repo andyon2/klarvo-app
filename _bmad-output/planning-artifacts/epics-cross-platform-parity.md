@@ -213,6 +213,10 @@ So that my term-biasing is predictable regardless of device.
 > `dictionaryTerms` per device — is homed in `docs/backlog.md` as a story candidate. It is
 > **independent** of M12 (a synced list still needs the style decision) and is NOT part of 7.6.
 > If M12 is still undecided when 7.8 closes, Epic 7 may close with 7.6 parked.
+>
+> **Decision 2026-09-10 (Andi):** M12 resolved — **Chat includes the dictionary**; Android is canon, Desktop
+> adds `{dict_section}` to the Chat arm and the `M12-DICT-SCOPE-CHAT` vector flips to agree. Record and
+> rationale: `docs/backlog.md` "DECIDED 2026-09-10 — M12". Implementation not started; quick-dev sized.
 
 ---
 
