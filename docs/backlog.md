@@ -145,20 +145,41 @@ re-filed as bugs and not lost. The fixed (Sorte-1) rows live in Epic 7 (`epics-c
 | Recall #4 | Live-preview delta (`PreviewFlushConfig`, Epic 5) — no Android counterpart | — | feature port |
 | Dead-config cluster | `advanced.llmTemperature`/`llmMaxTokens`, `chunkThreshold`/`chunkTargetSize`, `sttTemperature`, `llmModel*`/`llmSystemPrompt*` overrides, `autoCapitalize`/`autoPaste` — settable, consumed nowhere | — | latent landmine |
 
-> The dead-config cluster is NOT locked (7.7 superseded 2026-09-10). It is a product decision — see
-> "OPEN-DECISION — Desktop Advanced settings + AutoSend: wire or remove" below.
+> The dead-config cluster is NOT locked (7.7 superseded 2026-09-10). Product decision taken — see
+> "DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend" below.
 
-### OPEN-DECISION — Desktop Advanced settings + AutoSend: wire or remove (2026-09-10)
+### DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend: remove 14 dead keys, wire 4 model IDs (Andi)
 
-**Source:** Epic-7 relevance audit, `sprint-change-proposal-2026-09-10.md`. Desktop's
-`AdvancedSettingsPanel.tsx` renders `sttTemperature`, `llmTemperature`, `llmMaxTokens`,
-`chunkThreshold`/`chunkTargetSize`, model/prompt overrides, `autoPaste`, `autoCapitalize` — and no
-runtime code reads them (`grep` outside `src-tauri/src/config/` is empty). Three default sets disagree
-(`llmMaxTokens`: 1024 frontend / 2048 runtime / 4096 config). Same class: `bubbleTapAutoSend` /
-`bubbleLongPressAutoSend` (drift row M13) — Desktop declares the props and renders no toggle, Android
-reads the key and uses `false`. **Decision for Andi:** per key, wire it (both platforms, twin) or remove
-it from the UI and the config surface. Do not freeze it with a vector. Becomes one story after the
-decision.
+**Source:** Epic-7 relevance audit, `sprint-change-proposal-2026-09-10.md` (was OPEN-DECISION 2026-09-10).
+**Audit 2026-09-11 (grep outside `src-tauri/src/config/` + Kotlin outside settings parsing):** the panel
+`src/components/AdvancedSettingsPanel.tsx` shows 24 keys; 8 act at runtime, 16 are persisted and read
+by nobody. Four of the dead ones are license-gated (`save_advanced_settings` requires
+`LicensedFeature::CustomPrompts`) and still do nothing.
+
+**Untouched (they work):** `sttPromptDe/En/Auto` (Desktop `pipeline.rs`; Android has its own
+`customPrompt` key), `silenceThreshold`, `minRecordingMs` (both platforms), `whisperModeThreshold`,
+`whisperModeGain` (Desktop only).
+
+**Decision 1 — REMOVE from UI, config struct and Kotlin twin (14 keys):**
+- `sttTemperature` — Whisper runs fixed at 0.0 on both platforms (`stt/mod.rs` default; Android passes `0.0f`).
+- `llmTemperature`, `llmMaxTokens` — fixed 0.3 / 2048 as Rust↔Kotlin twin (`OpenAiCompatibleCleanup::DEFAULT_*`,
+  `KlarvoApi.CLEANUP_*`). Three default sets disagreed (UI 0.3/1024, config 0.0/4096, runtime 0.3/2048).
+- `chunkThreshold`, `chunkTargetSize` — constants 400 / 350 in `llm/mod.rs`; UI said 300, config 600.
+- `autoPaste`, `autoCapitalize` — no reader anywhere.
+- `bubbleTapAutoSend`, `bubbleLongPressAutoSend` (drift row M13) — no behavior behind them on either platform.
+- `llmSystemPromptPolished/Verbatim/Chat`, `llmCommandModePrompt` — only the license gate reads them; the
+  pipeline uses the top-level `custom_prompt` ("Custom Instructions"). Epic-candidate B (style switches, D1)
+  builds inside these prompts; a free override would undercut the switches. Custom Instructions stays.
+- Constraint: old `config.json` files carrying the keys must still load (serde: drop unknown fields, no error).
+
+**Decision 2 — WIRE (4 keys), both platforms:** `llmModelDeepseek/Openai/Anthropic/Groq`. The cleanup
+client hard-codes model IDs (`llm/mod.rs`, `KlarvoApi.kt:183-235`); when a provider retires an ID, only an
+app update helps. BYOK power users get a real override. Rust cleanup + Kotlin twin, parity fixture.
+
+**Decision 3 — one story.** Home: Epic 7 (source of the audit) as the next story number; set `epic-7`
+back to `in-progress` before `bmad-create-story` (done-epic trap). Scope = decisions 1+2 together, one
+commit per platform allowed. Human gate: Desktop release build, Advanced panel shows only live keys, a
+changed DeepSeek model ID appears in the request log (`[fe:…]`/Klarvo.log).
 
 - **Dropped 2026-09-10 (7.5 dissolved):** M10 (blank-key trim), M11 (unknown `cleanupStyle`), L5
   (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
