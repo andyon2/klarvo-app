@@ -172,7 +172,8 @@ primitives: Turso history sync on both sides (`src-tauri/src/sync/mod.rs` push/p
 (`TauriActivity`). Reduction sketch (NOT approved to build): dictionary as a second Turso table, push
 on save in the Rust core, pull on settings-open (Rust) plus a small Kotlin pull before recording.
 Independent of M12. Needs its own cut (both platforms, schema) — not a 7.6 add-on.
-Source: `sprint-change-proposal-2026-09-10.md`.
+Source: `sprint-change-proposal-2026-09-10.md`. **2026-09-11: folded into EPIC-CANDIDATE A as T4** (see
+DECIDED entry below); Turso is the leading first backend under Andi's D2 principle, not yet chosen.
 
 - **`scripts/dictation-quality-audit.py`** — commit the marker detectors from the 2026-06-12 evidence
   run; manual cadence over adb/Tailscale. Was a 7.7 sibling; 7.7 superseded 2026-09-10.
@@ -197,14 +198,41 @@ name is the worse outcome.
 dictionary test next to `test_system_prompt_chat_with_custom_prompt`. Quick-dev sized. Trap: `epic-7` is
 `done` — flip it to `in-progress` before `bmad-create-story` if the story route is used.
 
-### BRAINSTORM-CANDIDATE — Dictionary rework + a fourth style / style add-on (Andi, 2026-09-10)
+### DECIDED 2026-09-11 — Dictionary rework + style add-on: brainstorm done, four product decisions (Andi)
 
-Raised at the M12 decision. Andi is not satisfied with how the dictionary works today and wants a
-critical, thorough brainstorm on how it should be implemented — plus wishes for a **fourth cleanup style**
-that does not exist yet, or alternatively an **add-on function that can be switched on for any of the three
-styles**. Nothing is specified; no reduction sketch exists. Route: `bmad-brainstorming` with Andi, then a
-product decision, then a cut. The M12 decision above stands on its own: protecting terms in Chat is the
-minimal coherent state until the rework, and the one-line change does not pre-empt the brainstorm.
+Source: `_bmad-output/brainstorming/brainstorming-session-2026-09-10-2140.md` (45 ideas, 7 themes,
+root cause, decisions D1–D4). Supersedes the BRAINSTORM-CANDIDATE raised at the M12 decision.
+
+**Root cause (verified in code):** no pipeline stage owns "dictionary terms win" — the Whisper `prompt`
+is a soft bias (hint sentence + comma list, 224-token cap) and the cleanup sentence is protect-only
+("preserve these exactly"), so a misheard "Cloud" for "Claude" is never repaired. There is no return
+signal whether a term arrived. The flat `Vec<String>` model exists because the module was built as a
+prompt feeder, not as a correctness guarantee.
+
+**Decisions:**
+- **D1** Add-on = **rule switches on the three existing styles** (e.g. "Struktur": spoken enumerations
+  become lists; explicit "streich das" command with a defined scope). **No fourth style**; a "Gedanken"
+  style only if the switch approach fails in writing. Implicit large-scale retraction only behind a switch
+  or in Polished — never in bare Verbatim.
+- **D2** Dictionary sync = **user-owned storage, several options offered, no Klarvo server.** Leading
+  candidate for the first backend: the existing Turso history sync (user's own DB URL + token, both
+  platforms) — see the STORY-CANDIDATE above, now T4 of this rework. File-in-synced-folder and QR
+  hand-off are later alternatives. Which backend ships first is NOT decided.
+- **D3** Learning loop = **both capture paths** (History edit → diff → case; one-tap "falsch erkannt")
+  with **AI diagnosis on demand** per case, proposing exactly one artifact (term / spoken-written pair /
+  hint sentence / style rule) or "ignore". Never automatic.
+- **D4** Order: **T1 Enforcement → T3 Profile format → T2 Learning loop → T4 Sync.** T5 Structure &
+  retraction is a **separate epic**, scheduled independently. T6 Context, T7 Business not scheduled.
+
+**EPIC-CANDIDATE A — Dictionary rework (T1→T3→T2→T4).** First cut = T1 core: optional spoken form per
+entry (`{written, spoken?, language?, source?}` in `dictionary.json`), a style-independent second pass
+after cleanup ("here is the text, here are the pairs, replace confusions" — OpenAI's own documented
+recipe for names), collision warning at entry time, Whisper hint rendered as a sentence. Both platforms
+(Rust cleanup + Kotlin twin; STT prompt is shared Rust). Parity fixture needed.
+**EPIC-CANDIDATE B — Style switches + "streich das" (T5).** Cleanup prompts only; independent of A.
+
+**Not released to build.** Next act = a cut (epic shaping), on Andi's go. Story 7-6 (M12 one-liner)
+stays the minimal coherent state and does not pre-empt A.
 
 ---
 
