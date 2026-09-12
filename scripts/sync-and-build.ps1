@@ -116,6 +116,32 @@ if ($running) {
     Write-Host "  stopped $($running.Count) instance(s)." -ForegroundColor Yellow
 }
 
+# Build hash for Settings -> About. The robocopy mirror has no .git (excluded
+# above), so build.rs alone can only report "nogit". Read the short hash from the
+# SOURCE repo's ref files instead -- plain file reads, no git.exe, so it also
+# works on the \\wsl$ UNC path -- and hand it to build.rs via the environment.
+# Best-effort: an unreadable ref never blocks the build, About then shows "nogit".
+function Get-SourceHash {
+    $head = (Get-Content "$src\.git\HEAD" -ErrorAction Stop | Select-Object -First 1).Trim()
+    if ($head -notmatch '^ref: (.+)$') { return $head.Substring(0, 7) }   # detached HEAD
+    $ref = $Matches[1]
+    $refFile = "$src\.git\" + ($ref -replace '/', '\')
+    if (Test-Path $refFile) {
+        return (Get-Content $refFile -ErrorAction Stop | Select-Object -First 1).Trim().Substring(0, 7)
+    }
+    $packed = Get-Content "$src\.git\packed-refs" -ErrorAction Stop |
+        Where-Object { $_ -match "^[0-9a-f]{40} $([regex]::Escape($ref))$" } | Select-Object -First 1
+    if ($packed) { return $packed.Substring(0, 7) }
+    throw "ref $ref not found in refs/ or packed-refs"
+}
+try {
+    $env:KLARVO_BUILD_HASH = Get-SourceHash
+    Write-Host "  build hash: $env:KLARVO_BUILD_HASH" -ForegroundColor Cyan
+} catch {
+    Remove-Item Env:\KLARVO_BUILD_HASH -ErrorAction SilentlyContinue
+    Write-Host "  build hash: unknown ($_) -- About will show 'nogit'." -ForegroundColor Yellow
+}
+
 Write-Host "Building Klarvo..." -ForegroundColor Cyan
 # Disable Tauri's build-time updater signing for this build. tauri.conf.json has
 # createUpdaterArtifacts:true + an updater pubkey, which forces Tauri to sign the
