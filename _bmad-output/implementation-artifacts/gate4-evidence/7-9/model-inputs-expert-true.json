@@ -1,0 +1,18 @@
+[
+  {
+    "placeholder": "deepseek-chat",
+    "value": ""
+  },
+  {
+    "placeholder": "gpt-4o-mini",
+    "value": ""
+  },
+  {
+    "placeholder": "claude-haiku-4-5-20251001",
+    "value": ""
+  },
+  {
+    "placeholder": "llama-3.3-70b-versatile",
+    "value": ""
+  }
+]

@@ -72,12 +72,10 @@ export interface AppSettings {
   hotkeySlot2: string;
   hotkeyModeSlot2: HotkeyMode;
   // Bubble touch controls (Android only).
-  // Tap and long-press each have their own mode, auto-send, and silence config.
+  // Tap and long-press each have their own mode and silence config.
   bubbleTapMode: string;
-  bubbleTapAutoSend: boolean;
   bubbleTapSilenceSecs: number;
   bubbleLongPressMode: string;
-  bubbleLongPressAutoSend: boolean;
   bubbleLongPressSilenceSecs: number;
   // Voice Command Mode: activate dictation by voice trigger ("Klarvo toggle").
   // Desktop-only, requires a Groq API key.
@@ -188,32 +186,21 @@ export interface AdvancedSettings {
   sttPromptDe: string;
   sttPromptEn: string;
   sttPromptAuto: string;
-  sttTemperature: number;
-  llmSystemPromptPolished: string;
-  llmSystemPromptVerbatim: string;
-  llmSystemPromptChat: string;
-  llmCommandModePrompt: string;
-  llmTemperature: number;
-  llmMaxTokens: number;
   llmModelDeepseek: string;
   llmModelOpenai: string;
   llmModelAnthropic: string;
   llmModelGroq: string;
-  chunkThreshold: number;
-  chunkTargetSize: number;
   silenceThreshold: number;
   whisperModeThreshold: number;
   minRecordingMs: number;
   whisperModeGain: number;
-  autoPaste: boolean;
   pasteDelayMs: number;
-  autoCapitalize: boolean;
   webhookHeaders: string;
   webhookTimeoutSecs: number;
   logLevel: string;
   uiScale: string;
-  /** When true, the Advanced UI surfaces raw internal tuning knobs (audio
-   *  thresholds, chunking, STT temperature). UI-visibility flag only. */
+  /** When true, the Advanced UI surfaces the raw audio thresholds.
+   *  UI-visibility flag only. */
   expertMode: boolean;
 }
 

@@ -1,21 +1,21 @@
 [
   {
     "id": "TWIN-LLM-TEMPERATURE-001",
-    "description": "Cleanup sampling temperature. PINS: the temperature both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE (src-tauri/src/llm/mod.rs) and Kotlin KlarvoApi.CLEANUP_TEMPERATURE (the value written as the 'temperature' field in cleanupText's request body). DOES NOT PIN: AnthropicCleanup's own DEFAULT_TEMPERATURE (a separate provider with a different request format; the Rust side asserts separately that it currently agrees, which is a coincidence-check, not a contract), llm/local.rs's llama-path constant (target-gated to Windows, unreachable from a Linux test run), the sttTemperature config key (dead config, out of scope), or that either platform actually sends the field on the wire (no network call is made).",
+    "description": "Cleanup sampling temperature. PINS: the temperature both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE (src-tauri/src/llm/mod.rs) and Kotlin KlarvoApi.CLEANUP_TEMPERATURE (the value written as the 'temperature' field in cleanupText's request body). DOES NOT PIN: AnthropicCleanup's own DEFAULT_TEMPERATURE (a separate provider with a different request format; the Rust side asserts separately that it currently agrees, which is a coincidence-check, not a contract), llm/local.rs's llama-path constant (target-gated to Windows, unreachable from a Linux test run), the Whisper STT temperature (fixed at 0.0 on both platforms; the dead advanced.sttTemperature config key was removed in story 7-9), or that either platform actually sends the field on the wire (no network call is made).",
     "rust_symbol": "OpenAiCompatibleCleanup::DEFAULT_TEMPERATURE",
     "kotlin_symbol": "KlarvoApi.CLEANUP_TEMPERATURE",
     "expected_double": 0.3
   },
   {
     "id": "TWIN-LLM-MAX-TOKENS-001",
-    "description": "Cleanup response token cap. PINS: the max_tokens both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS and Kotlin KlarvoApi.CLEANUP_MAX_TOKENS. A drift here truncates long dictations on one platform only, which is silent and user-visible only as a cut-off sentence. DOES NOT PIN: AnthropicCleanup's pair, the llama path in llm/local.rs, the dead advanced.llmMaxTokens config key, or any server-side cap.",
+    "description": "Cleanup response token cap. PINS: the max_tokens both platforms put into the OpenAI-compatible chat/completions request body -- Rust OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS and Kotlin KlarvoApi.CLEANUP_MAX_TOKENS. A drift here truncates long dictations on one platform only, which is silent and user-visible only as a cut-off sentence. DOES NOT PIN: AnthropicCleanup's pair, the llama path in llm/local.rs, any user-facing override (the dead advanced.llmMaxTokens config key was removed in story 7-9; this value is not configurable), or any server-side cap.",
     "rust_symbol": "OpenAiCompatibleCleanup::DEFAULT_MAX_TOKENS",
     "kotlin_symbol": "KlarvoApi.CLEANUP_MAX_TOKENS",
     "expected_int": 2048
   },
   {
     "id": "TWIN-CHUNK-THRESHOLD-001",
-    "description": "The size at or above which cleanup switches from one call to parallel chunked calls. PINS: the effective decision BOUNDARY on BOTH sides, not merely a declared number -- Rust CHUNK_THRESHOLD (llm/mod.rs, used as 'raw_text.len() < CHUNK_THRESHOLD' in chunked_cleanup) and Kotlin KlarvoApi.shouldChunk (the public seam extracted in story 7-1, 'bytes >= CHUNK_THRESHOLD'). Both are measured in UTF-8 BYTES, not characters. Each side runs its own 399/400-byte probe through production -- Kotlin through shouldChunk, Rust through chunked_cleanup (single-call path vs joined chunked path) -- rather than only reading the constant, so a flipped comparison operator is caught on both halves. DOES NOT PIN: how the text is split once the threshold is crossed (see TWIN-CHUNK-TARGET-SIZE-001), the parallelism, or the dead advanced.chunkThreshold config key.",
+    "description": "The size at or above which cleanup switches from one call to parallel chunked calls. PINS: the effective decision BOUNDARY on BOTH sides, not merely a declared number -- Rust CHUNK_THRESHOLD (llm/mod.rs, used as 'raw_text.len() < CHUNK_THRESHOLD' in chunked_cleanup) and Kotlin KlarvoApi.shouldChunk (the public seam extracted in story 7-1, 'bytes >= CHUNK_THRESHOLD'). Both are measured in UTF-8 BYTES, not characters. Each side runs its own 399/400-byte probe through production -- Kotlin through shouldChunk, Rust through chunked_cleanup (single-call path vs joined chunked path) -- rather than only reading the constant, so a flipped comparison operator is caught on both halves. DOES NOT PIN: how the text is split once the threshold is crossed (see TWIN-CHUNK-TARGET-SIZE-001), the parallelism, or any user-facing override (the dead advanced.chunkThreshold config key was removed in story 7-9; this boundary is not configurable).",
     "rust_symbol": "CHUNK_THRESHOLD",
     "kotlin_symbol": "KlarvoApi.shouldChunk (boundary probe)",
     "expected_int": 400
@@ -33,5 +33,33 @@
     "rust_symbol": "chunked_cleanup join loop (via MockCleanupProvider)",
     "kotlin_symbol": "KlarvoApi.joinChunkResults",
     "expected_char_code": 10
+  },
+  {
+    "id": "TWIN-CLEANUP-MODEL-DEEPSEEK-001",
+    "description": "Default cleanup model ID for DeepSeek, and the empty-override rule that selects it. PINS: the model both platforms send when advanced.llmModelDeepseek is unset -- Rust DeepSeekCleanup::DEFAULT_MODEL (src-tauri/src/llm/mod.rs) and Kotlin KlarvoApi.DEFAULT_MODEL_DEEPSEEK. Also pins the shared empty predicate (story 7-9, Q5): the override is TRIMMED first, so a whitespace-only value counts as empty and falls back to this default -- Rust llm::effective_cleanup_model, Kotlin KlarvoApi.effectiveCleanupModel. Each side reads its own production symbol and compares it to the fixture literal below, never to the other platform's symbol. DOES NOT PIN: that a NON-empty override reaches the request (each platform asserts override flow-through in its own unit tests -- Rust pipeline::tests::spec_model_override_flows_through_*, Kotlin LlmFallbackProviderTest), the DeepSeek endpoint (TWIN-* not needed; see LlmFallbackProviderTest's URL tests), OpenRouter's model (a separate provider whose 'deepseek/deepseek-chat' literal stays hard-coded -- no override key exists, story 7-9 Q8), or any network call.",
+    "rust_symbol": "DeepSeekCleanup::DEFAULT_MODEL",
+    "kotlin_symbol": "KlarvoApi.DEFAULT_MODEL_DEEPSEEK",
+    "expected_string": "deepseek-chat"
+  },
+  {
+    "id": "TWIN-CLEANUP-MODEL-OPENAI-001",
+    "description": "Default cleanup model ID for OpenAI. PINS: the model both platforms send when advanced.llmModelOpenai is unset -- Rust OpenAiCleanup::DEFAULT_MODEL and Kotlin KlarvoApi.DEFAULT_MODEL_OPENAI -- plus the same trim-then-empty rule as TWIN-CLEANUP-MODEL-DEEPSEEK-001. OpenAI is a candidate on BOTH the primary-selection path and the Epic-12 fallback ladder on both platforms, so a drift here is silently asymmetric. DOES NOT PIN: override flow-through (per-platform unit tests), the OpenAI endpoint, or any network call.",
+    "rust_symbol": "OpenAiCleanup::DEFAULT_MODEL",
+    "kotlin_symbol": "KlarvoApi.DEFAULT_MODEL_OPENAI",
+    "expected_string": "gpt-4o-mini"
+  },
+  {
+    "id": "TWIN-CLEANUP-MODEL-GROQ-001",
+    "description": "Default cleanup LLM model ID for Groq. PINS: the model both platforms send when advanced.llmModelGroq is unset -- Rust GroqCleanup::DEFAULT_MODEL and Kotlin KlarvoApi.DEFAULT_MODEL_GROQ -- plus the same trim-then-empty rule as TWIN-CLEANUP-MODEL-DEEPSEEK-001. This is Groq's CLEANUP model, unrelated to Groq STT ('large-v3-turbo'). DOES NOT PIN: override flow-through (per-platform unit tests), Groq's exclusion from both fallback ladders (story 12-1 AC2, asserted separately on both platforms -- Groq is primary-only), the Groq endpoint, or any network call.",
+    "rust_symbol": "GroqCleanup::DEFAULT_MODEL",
+    "kotlin_symbol": "KlarvoApi.DEFAULT_MODEL_GROQ",
+    "expected_string": "llama-3.3-70b-versatile"
+  },
+  {
+    "id": "TWIN-CLEANUP-MODEL-ANTHROPIC-001",
+    "description": "Default cleanup model ID for Anthropic -- DESKTOP-ONLY, deliberately NOT a twin. PINS: the Rust side only -- AnthropicCleanup::DEFAULT_MODEL against the fixture literal below, plus the same trim-then-empty rule as TWIN-CLEANUP-MODEL-DEEPSEEK-001 via llm::effective_cleanup_model('anthropic', ..). The kotlin_symbol field is deliberately null and the Android column is a WRITTEN RECORD, not an assertion: Android has no Anthropic cleanup provider at all (drift row H5, accepted as a pure feature-port asymmetry under ADR-0016 Amendment 1), so advanced.llmModelAnthropic is Desktop-only (story 7-9, Q6). No Kotlin test asserts this entry -- TwinConstantsVectorsTest skips it by id. Same precedent as the M12 dictionary fixture. DOES NOT PIN: anything on Android, override flow-through (Rust unit tests), the Anthropic endpoint or request format (Anthropic is not OpenAI-compatible), Anthropic's absence from the Rust fallback ladder (it is primary-only, asserted separately), or any network call.",
+    "rust_symbol": "AnthropicCleanup::DEFAULT_MODEL",
+    "kotlin_symbol": null,
+    "expected_string": "claude-haiku-4-5-20251001"
   }
 ]

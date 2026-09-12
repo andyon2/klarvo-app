@@ -45,40 +45,7 @@ pub struct AdvancedSettings {
     #[serde(default = "default_stt_prompt_auto")]
     pub stt_prompt_auto: String,
 
-    /// Whisper sampling temperature. 0.0 = deterministic (recommended for
-    /// dictation). Higher values increase randomness.
-    #[serde(default = "default_stt_temperature")]
-    pub stt_temperature: f32,
-
-    // --- LLM system prompts ---
-
-    /// Custom system prompt for the Polished cleanup style.
-    /// Empty string = use the built-in prompt.
-    #[serde(default)]
-    pub llm_system_prompt_polished: String,
-
-    /// Custom system prompt for the Verbatim cleanup style.
-    /// Empty string = use the built-in prompt.
-    #[serde(default)]
-    pub llm_system_prompt_verbatim: String,
-
-    /// Custom system prompt for the Chat cleanup style.
-    /// Empty string = use the built-in prompt.
-    #[serde(default)]
-    pub llm_system_prompt_chat: String,
-
-    /// Custom system prompt for Command Mode.
-    /// Empty string = use the built-in prompt.
-    #[serde(default)]
-    pub llm_command_mode_prompt: String,
-
-    /// LLM sampling temperature. 0.0 = deterministic.
-    #[serde(default = "default_llm_temperature")]
-    pub llm_temperature: f32,
-
-    /// Maximum output tokens for LLM calls.
-    #[serde(default = "default_llm_max_tokens")]
-    pub llm_max_tokens: u32,
+    // --- LLM model overrides ---
 
     /// Model override for DeepSeek. Empty = use built-in default.
     #[serde(default)]
@@ -95,14 +62,6 @@ pub struct AdvancedSettings {
     /// Model override for Groq LLM. Empty = use built-in default.
     #[serde(default)]
     pub llm_model_groq: String,
-
-    /// Character count above which text is split into parallel chunks.
-    #[serde(default = "default_chunk_threshold")]
-    pub chunk_threshold: u32,
-
-    /// Target character count per chunk.
-    #[serde(default = "default_chunk_target_size")]
-    pub chunk_target_size: u32,
 
     // --- Audio ---
 
@@ -127,18 +86,9 @@ pub struct AdvancedSettings {
 
     // --- Paste & behaviour ---
 
-    /// When `false`, the pipeline transcribes and cleans up text but does NOT
-    /// paste it into the target window. Useful for review-before-paste workflows.
-    #[serde(default = "default_auto_paste")]
-    pub auto_paste: bool,
-
     /// Milliseconds to wait after focusing the target window before pasting.
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u32,
-
-    /// Automatically capitalize the first letter of the cleaned text.
-    #[serde(default = "default_auto_capitalize")]
-    pub auto_capitalize: bool,
 
     // --- Webhook ---
 
@@ -168,8 +118,8 @@ pub struct AdvancedSettings {
     // --- Expert mode ---
 
     /// When true, the Advanced settings UI surfaces raw internal tuning knobs
-    /// (audio thresholds, chunking, STT temperature). Purely a UI-visibility
-    /// flag — it gates no backend behavior. Off by default.
+    /// (the audio thresholds). Purely a UI-visibility flag — it gates no
+    /// backend behavior. Off by default.
     #[serde(default = "default_expert_mode")]
     pub expert_mode: bool,
 }
@@ -184,26 +134,6 @@ fn default_stt_prompt_en() -> String {
 
 fn default_stt_prompt_auto() -> String {
     "Multilingual voice dictation. German and English with proper punctuation. ".to_string()
-}
-
-fn default_stt_temperature() -> f32 {
-    0.0
-}
-
-fn default_llm_temperature() -> f32 {
-    0.0
-}
-
-fn default_llm_max_tokens() -> u32 {
-    4096
-}
-
-fn default_chunk_threshold() -> u32 {
-    800
-}
-
-fn default_chunk_target_size() -> u32 {
-    600
 }
 
 fn default_silence_threshold() -> f32 {
@@ -222,16 +152,8 @@ fn default_whisper_mode_gain() -> f32 {
     3.0
 }
 
-fn default_auto_paste() -> bool {
-    true
-}
-
 fn default_paste_delay_ms() -> u32 {
     50
-}
-
-fn default_auto_capitalize() -> bool {
-    true
 }
 
 fn default_webhook_timeout_secs() -> u32 {
@@ -256,26 +178,15 @@ impl Default for AdvancedSettings {
             stt_prompt_de: default_stt_prompt_de(),
             stt_prompt_en: default_stt_prompt_en(),
             stt_prompt_auto: default_stt_prompt_auto(),
-            stt_temperature: default_stt_temperature(),
-            llm_system_prompt_polished: String::new(),
-            llm_system_prompt_verbatim: String::new(),
-            llm_system_prompt_chat: String::new(),
-            llm_command_mode_prompt: String::new(),
-            llm_temperature: default_llm_temperature(),
-            llm_max_tokens: default_llm_max_tokens(),
             llm_model_deepseek: String::new(),
             llm_model_openai: String::new(),
             llm_model_anthropic: String::new(),
             llm_model_groq: String::new(),
-            chunk_threshold: default_chunk_threshold(),
-            chunk_target_size: default_chunk_target_size(),
             silence_threshold: default_silence_threshold(),
             whisper_mode_threshold: default_whisper_mode_threshold(),
             min_recording_ms: default_min_recording_ms(),
             whisper_mode_gain: default_whisper_mode_gain(),
-            auto_paste: default_auto_paste(),
             paste_delay_ms: default_paste_delay_ms(),
-            auto_capitalize: default_auto_capitalize(),
             webhook_headers: String::new(),
             webhook_timeout_secs: default_webhook_timeout_secs(),
             log_level: default_log_level(),
@@ -823,7 +734,7 @@ pub struct AppConfig {
 
     // --- Android bubble per-gesture controls ---
     //
-    // The six fields below replace the single `bubble_recording_mode` field
+    // The four fields below replace the single `bubble_recording_mode` field
     // with per-gesture configuration. `bubble_recording_mode` is kept for
     // backwards compatibility with existing config files and Kotlin code that
     // has not yet been updated to read the new fields.
@@ -833,11 +744,6 @@ pub struct AppConfig {
     /// Default: `"toggle"`.
     #[serde(default = "default_bubble_tap_mode")]
     pub bubble_tap_mode: String,
-
-    /// When `true`, the pipeline automatically sends (presses Enter) after
-    /// pasting for the bubble tap gesture. Default: `false`.
-    #[serde(default)]
-    pub bubble_tap_auto_send: bool,
 
     /// Silence duration (seconds) before AutoStop / Auto mode stops recording
     /// when triggered by a bubble tap. Default: 2.0 seconds.
@@ -849,11 +755,6 @@ pub struct AppConfig {
     /// Default: `"hold"`.
     #[serde(default = "default_bubble_long_press_mode")]
     pub bubble_long_press_mode: String,
-
-    /// When `true`, the pipeline automatically sends (presses Enter) after
-    /// pasting for the bubble long-press gesture. Default: `false`.
-    #[serde(default)]
-    pub bubble_long_press_auto_send: bool,
 
     /// Silence duration (seconds) before AutoStop / Auto mode stops recording
     /// when triggered by a bubble long press. Default: 2.0 seconds.
@@ -1122,10 +1023,8 @@ impl Default for AppConfig {
             bar_y: None,
             bubble_recording_mode: default_bubble_recording_mode(),
             bubble_tap_mode: default_bubble_tap_mode(),
-            bubble_tap_auto_send: false,
             bubble_tap_silence_secs: default_bubble_silence_secs(),
             bubble_long_press_mode: default_bubble_long_press_mode(),
-            bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: default_bubble_silence_secs(),
             onboarding: OnboardingState::default(),
             voice_command_enabled: false,
@@ -2140,10 +2039,10 @@ mod tests {
             webhook_url: "https://example.com/webhook".to_string(),
             advanced: AdvancedSettings {
                 stt_prompt_de: "Custom German prompt.".to_string(),
-                stt_temperature: 0.2,
-                llm_max_tokens: 2048,
+                llm_model_deepseek: "deepseek-reasoner".to_string(),
                 silence_threshold: 0.01,
-                auto_paste: false,
+                min_recording_ms: 750,
+                paste_delay_ms: 120,
                 ..AdvancedSettings::default()
             },
             turso_url: String::new(),
@@ -2180,10 +2079,8 @@ mod tests {
             bar_y: Some(456.0),
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 3.0,
             bubble_long_press_mode: "hold".to_string(),
-            bubble_long_press_auto_send: false,
             bubble_long_press_silence_secs: 1.5,
             openrouter_api_key: "sk-or-test-key".to_string(),
             onboarding: OnboardingState::default(),
@@ -2643,30 +2540,18 @@ mod tests {
         assert!(adv.stt_prompt_de.contains("Deutsch"));
         assert!(adv.stt_prompt_en.contains("English"));
         assert!(adv.stt_prompt_auto.contains("Multilingual"));
-        assert_eq!(adv.stt_temperature, 0.0);
-        // LLM defaults
-        assert_eq!(adv.llm_temperature, 0.0);
-        assert_eq!(adv.llm_max_tokens, 4096);
-        assert!(adv.llm_system_prompt_polished.is_empty());
-        assert!(adv.llm_system_prompt_verbatim.is_empty());
-        assert!(adv.llm_system_prompt_chat.is_empty());
-        assert!(adv.llm_command_mode_prompt.is_empty());
+        // LLM model overrides default to empty (= use the provider's built-in default)
         assert!(adv.llm_model_deepseek.is_empty());
         assert!(adv.llm_model_openai.is_empty());
         assert!(adv.llm_model_anthropic.is_empty());
         assert!(adv.llm_model_groq.is_empty());
-        // Chunking
-        assert_eq!(adv.chunk_threshold, 800);
-        assert_eq!(adv.chunk_target_size, 600);
         // Audio
         assert_eq!(adv.silence_threshold, 0.005);
         assert_eq!(adv.whisper_mode_threshold, 0.001);
         assert_eq!(adv.min_recording_ms, 500);
         assert_eq!(adv.whisper_mode_gain, 3.0);
         // Paste
-        assert!(adv.auto_paste);
         assert_eq!(adv.paste_delay_ms, 50);
-        assert!(adv.auto_capitalize);
         // Webhook
         assert!(adv.webhook_headers.is_empty());
         assert_eq!(adv.webhook_timeout_secs, 10);
@@ -2682,23 +2567,15 @@ mod tests {
         assert!(json.contains("sttPromptDe"), "expected camelCase 'sttPromptDe'");
         assert!(json.contains("sttPromptEn"), "expected camelCase 'sttPromptEn'");
         assert!(json.contains("sttPromptAuto"), "expected camelCase 'sttPromptAuto'");
-        assert!(json.contains("sttTemperature"), "expected camelCase 'sttTemperature'");
-        assert!(json.contains("llmSystemPromptPolished"), "expected camelCase 'llmSystemPromptPolished'");
-        assert!(json.contains("llmSystemPromptVerbatim"), "expected camelCase 'llmSystemPromptVerbatim'");
-        assert!(json.contains("llmSystemPromptChat"), "expected camelCase 'llmSystemPromptChat'");
-        assert!(json.contains("llmCommandModePrompt"), "expected camelCase 'llmCommandModePrompt'");
-        assert!(json.contains("llmTemperature"), "expected camelCase 'llmTemperature'");
-        assert!(json.contains("llmMaxTokens"), "expected camelCase 'llmMaxTokens'");
         assert!(json.contains("llmModelDeepseek"), "expected camelCase 'llmModelDeepseek'");
-        assert!(json.contains("chunkThreshold"), "expected camelCase 'chunkThreshold'");
-        assert!(json.contains("chunkTargetSize"), "expected camelCase 'chunkTargetSize'");
+        assert!(json.contains("llmModelOpenai"), "expected camelCase 'llmModelOpenai'");
+        assert!(json.contains("llmModelAnthropic"), "expected camelCase 'llmModelAnthropic'");
+        assert!(json.contains("llmModelGroq"), "expected camelCase 'llmModelGroq'");
         assert!(json.contains("silenceThreshold"), "expected camelCase 'silenceThreshold'");
         assert!(json.contains("whisperModeThreshold"), "expected camelCase 'whisperModeThreshold'");
         assert!(json.contains("minRecordingMs"), "expected camelCase 'minRecordingMs'");
         assert!(json.contains("whisperModeGain"), "expected camelCase 'whisperModeGain'");
-        assert!(json.contains("autoPaste"), "expected camelCase 'autoPaste'");
         assert!(json.contains("pasteDelayMs"), "expected camelCase 'pasteDelayMs'");
-        assert!(json.contains("autoCapitalize"), "expected camelCase 'autoCapitalize'");
         assert!(json.contains("webhookHeaders"), "expected camelCase 'webhookHeaders'");
         assert!(json.contains("webhookTimeoutSecs"), "expected camelCase 'webhookTimeoutSecs'");
         assert!(json.contains("logLevel"), "expected camelCase 'logLevel'");
@@ -2710,20 +2587,15 @@ mod tests {
         let dir = temp_dir();
         let adv = AdvancedSettings {
             stt_prompt_de: "Benutzerdefinierter Prompt.".to_string(),
-            stt_temperature: 0.3,
-            llm_temperature: 0.5,
-            llm_max_tokens: 2048,
-            llm_system_prompt_polished: "Custom polished prompt.".to_string(),
             llm_model_deepseek: "deepseek-reasoner".to_string(),
-            chunk_threshold: 1000,
-            chunk_target_size: 800,
+            llm_model_openai: "gpt-4o".to_string(),
+            llm_model_anthropic: "claude-sonnet-4-5".to_string(),
+            llm_model_groq: "llama-3.1-8b-instant".to_string(),
             silence_threshold: 0.01,
             whisper_mode_threshold: 0.002,
             min_recording_ms: 300,
             whisper_mode_gain: 5.0,
-            auto_paste: false,
             paste_delay_ms: 100,
-            auto_capitalize: false,
             webhook_headers: r#"{"X-API-Key": "secret"}"#.to_string(),
             webhook_timeout_secs: 30,
             log_level: "debug".to_string(),
@@ -3425,26 +3297,15 @@ mod tests {
                 stt_prompt_de: "Custom DE prompt golden master.".to_string(),
                 stt_prompt_en: "Custom EN prompt golden master.".to_string(),
                 stt_prompt_auto: "Custom auto prompt golden master.".to_string(),
-                stt_temperature: 0.3,
-                llm_system_prompt_polished: "Polished system prompt.".to_string(),
-                llm_system_prompt_verbatim: "Verbatim system prompt.".to_string(),
-                llm_system_prompt_chat: "Chat system prompt.".to_string(),
-                llm_command_mode_prompt: "Command mode prompt.".to_string(),
-                llm_temperature: 0.7,
-                llm_max_tokens: 1024,
                 llm_model_deepseek: "deepseek-chat".to_string(),
                 llm_model_openai: "gpt-4o".to_string(),
                 llm_model_anthropic: "claude-3-5-sonnet".to_string(),
                 llm_model_groq: "llama3-70b-8192".to_string(),
-                chunk_threshold: 1200,
-                chunk_target_size: 900,
                 silence_threshold: 0.01,
                 whisper_mode_threshold: 0.002,
                 min_recording_ms: 750,
                 whisper_mode_gain: 5.0,
-                auto_paste: false,
                 paste_delay_ms: 100,
-                auto_capitalize: false,
                 webhook_headers: r#"{"X-Custom-Header": "golden"}"#.to_string(),
                 webhook_timeout_secs: 30,
                 log_level: "debug".to_string(),
@@ -3486,10 +3347,8 @@ mod tests {
 
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 1.5,
             bubble_long_press_mode: "auto".to_string(),
-            bubble_long_press_auto_send: true,
             bubble_long_press_silence_secs: 2.5,
 
             onboarding: OnboardingState {
@@ -4301,5 +4160,93 @@ mod tests {
         let mut warnings: Vec<String> = Vec::new();
         let (_, writes) = migrate_and_normalize(cfg, &std::path::PathBuf::from("/tmp"), &mut warnings);
         assert!(writes.is_empty(), "No migration write for preview_line_spacing");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 7.9 — old config.json with the 13 removed dead keys still loads
+    // -----------------------------------------------------------------------
+
+    /// AC4: a `config.json` written by a pre-7.9 build carries the 13 removed
+    /// keys with non-default values. Loading it must keep the LIVE values and
+    /// must NOT take the corrupt-recovery path.
+    ///
+    /// Discriminating assertions (the trap this test exists for): `load_config`
+    /// never returns an error — a serde rejection silently yields defaults AND
+    /// writes a `config.json.corrupt-*` backup (Story 1.2). So "it loaded" is
+    /// vacuous. What discriminates is that a non-default LIVE value survived,
+    /// that no backup was written, and that no warning was pushed.
+    ///
+    /// PINS: unknown/removed keys are ignored by serde (no
+    /// `deny_unknown_fields` on `AdvancedSettings` or `AppConfig`).
+    /// DOES NOT PIN: the Kotlin half of AC4 — that is
+    /// `ConfigParseSeamTest` in `android/kotlin-test/`.
+    #[test]
+    fn spec_old_config_with_removed_dead_keys_still_loads() {
+        let dir = temp_dir();
+
+        // All 13 keys removed by story 7.9, each with a NON-default value, next
+        // to live keys with non-default values in the same file.
+        let raw = r#"{
+            "language": "de",
+            "bubbleTapAutoSend": true,
+            "bubbleLongPressAutoSend": true,
+            "advanced": {
+                "sttTemperature": 0.42,
+                "llmTemperature": 0.77,
+                "llmMaxTokens": 1234,
+                "chunkThreshold": 1111,
+                "chunkTargetSize": 999,
+                "autoPaste": false,
+                "autoCapitalize": false,
+                "llmSystemPromptPolished": "old polished prompt",
+                "llmSystemPromptVerbatim": "old verbatim prompt",
+                "llmSystemPromptChat": "old chat prompt",
+                "llmCommandModePrompt": "old command prompt",
+                "minRecordingMs": 750,
+                "silenceThreshold": 0.012,
+                "whisperModeGain": 4.5,
+                "llmModelDeepseek": "deepseek-reasoner",
+                "sttPromptDe": "Alter DE-Prompt."
+            }
+        }"#;
+        std::fs::write(dir.path().join("config.json"), raw.as_bytes()).expect("write old config");
+
+        let mut warnings = Vec::new();
+        let cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        // (1) The live values survived — this is what fails if serde rejected
+        //     the file and the loader fell back to defaults.
+        assert_eq!(
+            cfg.advanced.min_recording_ms, 750,
+            "live advanced.minRecordingMs must survive an old config; got {}",
+            cfg.advanced.min_recording_ms
+        );
+        assert!(
+            (cfg.advanced.silence_threshold - 0.012).abs() < f32::EPSILON,
+            "live advanced.silenceThreshold must survive; got {}",
+            cfg.advanced.silence_threshold
+        );
+        assert!(
+            (cfg.advanced.whisper_mode_gain - 4.5).abs() < f32::EPSILON,
+            "live advanced.whisperModeGain must survive; got {}",
+            cfg.advanced.whisper_mode_gain
+        );
+        assert_eq!(
+            cfg.advanced.llm_model_deepseek, "deepseek-reasoner",
+            "live advanced.llmModelDeepseek must survive"
+        );
+        assert_eq!(cfg.advanced.stt_prompt_de, "Alter DE-Prompt.");
+        assert_eq!(cfg.language, "de", "live top-level language must survive");
+
+        // (2) No corrupt-recovery: neither a backup file nor a warning.
+        assert!(
+            corrupt_backups(dir.path()).is_empty(),
+            "an old config with removed keys must NOT be treated as corrupt; backups: {:?}",
+            corrupt_backups(dir.path())
+        );
+        assert!(
+            warnings.is_empty(),
+            "no boot warning must be pushed for an old config; got: {warnings:?}"
+        );
     }
 }

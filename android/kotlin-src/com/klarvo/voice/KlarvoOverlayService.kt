@@ -296,9 +296,7 @@ class KlarvoOverlayService : Service() {
     private var tapMode = RecordingMode.TOGGLE
     private var longPressMode = RecordingMode.HOLD
 
-    // Per-gesture auto-send and silence-detection settings.
-    private var tapAutoSend = false
-    private var longPressAutoSend = false
+    // Per-gesture silence-detection settings.
     private var tapSilenceSecs = 2.0f
     private var longPressSilenceSecs = 2.0f
     // Mode-level silence durations (AUTO/AUTOSTOP use these, parity with desktop pipeline.rs:640/704).
@@ -766,15 +764,12 @@ class KlarvoOverlayService : Service() {
         if (config != null) {
             tapMode = RecordingMode.fromString(config.bubbleTapMode)
             longPressMode = RecordingMode.fromString(config.bubbleLongPressMode)
-            // Auto-send disabled on Android — Enter key rarely works in mobile apps.
-            tapAutoSend = false
-            longPressAutoSend = false
             tapSilenceSecs = config.bubbleTapSilenceSecs
             longPressSilenceSecs = config.bubbleLongPressSilenceSecs
             autostopSilenceSecs = config.autostopSilenceSecs
             autoModeSilenceSecs = config.autoModeSilenceSecs
             silenceThreshold = config.silenceThreshold
-            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, tapAutoSend=$tapAutoSend, lpAutoSend=$longPressAutoSend, silenceThreshold=$silenceThreshold")
+            KlarvoLogger.d(TAG, "loadBubbleControls: tap=${config.bubbleTapMode}→$tapMode, lp=${config.bubbleLongPressMode}→$longPressMode, silenceThreshold=$silenceThreshold")
         } else {
             KlarvoLogger.w(TAG, "loadBubbleControls: config is NULL, using defaults tap=$tapMode, lp=$longPressMode")
         }
@@ -2282,19 +2277,6 @@ class KlarvoOverlayService : Service() {
                 adjustLayoutForState(RecordingState.DONE, prevForDone)
                 handler.removeCallbacks(doneFlashRunnable)
                 handler.postDelayed(doneFlashRunnable, 800L)
-
-                // Auto-send (press Enter) if configured for this gesture.
-                val shouldAutoSend = when (gesture) {
-                    "tap"       -> tapAutoSend
-                    "longpress" -> longPressAutoSend
-                    else        -> false
-                }
-                if (shouldAutoSend && pasted) {
-                    // Short delay so the pasted text is committed before Enter fires.
-                    handler.postDelayed({
-                        KlarvoAccessibilityService.instance?.performEnter()
-                    }, 150)
-                }
 
                 // AUTO mode: restart recording for next segment
                 val activeMode = when (gesture) {

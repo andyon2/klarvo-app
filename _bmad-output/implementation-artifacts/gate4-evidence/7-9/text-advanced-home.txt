@@ -1,0 +1,30 @@
+Klarvo
+EARLY ACCESS
+Advanced
+Speech-to-Text
+Custom prompts
+TRIAL
+Text Cleanup
+Model IDs
+TRIAL
+Audio
+Thresholds & recording settings
+System
+Logging & diagnostics
+Save
+Ctrl + Shift + D
+
+Bereinigungsstile
+
+Probiere 'Chat' für lockere Nachrichten oder 'Verbatim' für unveränderten Text.
+
+Ausprobieren
+Preview Mode
+THEMES
+▼
+
+Spotted something? Tap here to send feedback anytime!
+
+Don't show again
+×
+Kommentieren

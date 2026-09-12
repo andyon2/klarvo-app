@@ -1,0 +1,154 @@
+{
+  "story": "7-9",
+  "kind": "desktop proxy smoke (puppeteer vs npm run preview :1422, real Chromium)",
+  "proves": "wiring + structure of the React tree (which rows render, in both expert-mode states)",
+  "does_not_prove": "design/pixels; the Rust backend (preview serves MOCK data — no Tauri); Android; the Windows release build; any real cleanup request or Klarvo.log line",
+  "not_exercised": [
+    "save_advanced_settings + cleanup-provider hot-reload (backend)",
+    "real config.json load of an old file (Rust test covers it)",
+    "the Kotlin/Android path entirely",
+    "a network cleanup call carrying an overridden model ID",
+    "pixel fidelity, fonts, Windows text-scale"
+  ],
+  "total": 26,
+  "passed": 26,
+  "failed": 0,
+  "page_errors": [],
+  "console_errors": [
+    "TypeError: Cannot read properties of undefined (reading 'transformCallback')",
+    "TypeError: Cannot read properties of undefined (reading 'transformCallback')"
+  ],
+  "console_errors_note": "Expected in preview mode and PRE-EXISTING (not introduced by story 7-9): SettingsPanel.tsx's voice-command-state-changed effect calls listen() from @tauri-apps/api/event WITHOUT the isPreviewMode guard that tauri-commands.ts's own listen() wrapper applies, so it hits window.__TAURI_INTERNALS__ (absent in a plain browser). Its own .catch(console.error) handles it; React StrictMode mounts the panel twice, hence two lines. Cannot occur in the real app. Left alone here: not mapped to any task in this story.",
+  "results": [
+    {
+      "ok": true,
+      "name": "onboarding skipped",
+      "detail": "clicked 'Setup überspringen'"
+    },
+    {
+      "ok": true,
+      "name": "Shortcuts: section heading kept (Q4)",
+      "detail": "rendered as 'PASTE & BEHAVIOR' (CSS uppercase)"
+    },
+    {
+      "ok": true,
+      "name": "Shortcuts: dead row 'Auto-Paste' removed",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Shortcuts: dead row 'Auto-Capitalize' removed",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Shortcuts: live row 'Auto-Send' kept (Q4)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Shortcuts: live row 'Paste Delay (ms)' kept (Q4)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Q4: Auto-Send / Paste Delay no longer dimmed or disabled",
+      "detail": "4 matching node(s), 0 dimmed, 0 disabled"
+    },
+    {
+      "ok": true,
+      "name": "Expert mode set to false",
+      "detail": "read from aria-checked on role=switch"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/System (expert=false): expert-mode hint corrected (Q2)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Audio hidden with expert=false",
+      "detail": "home row absent as designed"
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=false): section walk is non-vacuous",
+      "detail": "entered 3: Speech-to-Text, Text Cleanup, System"
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=false): none of the 11 UI-visible dead rows render",
+      "detail": "sections walked: Speech-to-Text, Text Cleanup, Audio, System"
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=false): stale copy removed",
+      "detail": "5 phrases checked"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=false): 4 model-ID inputs kept",
+      "detail": "deepseek-chat, gpt-4o-mini, claude-haiku-4-5-20251001, llama-3.3-70b-versatile"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=false): 'Model IDs' title (Q2/Q3)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=false): accordions gone (Q3)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Expert mode set to true",
+      "detail": "read from aria-checked on role=switch"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/System (expert=true): expert-mode hint corrected (Q2)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=true): section walk is non-vacuous",
+      "detail": "entered 4: Speech-to-Text, Text Cleanup, Audio, System"
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=true): none of the 11 UI-visible dead rows render",
+      "detail": "sections walked: Speech-to-Text, Text Cleanup, Audio, System"
+    },
+    {
+      "ok": true,
+      "name": "Advanced (expert=true): stale copy removed",
+      "detail": "5 phrases checked"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=true): 4 model-ID inputs kept",
+      "detail": "deepseek-chat, gpt-4o-mini, claude-haiku-4-5-20251001, llama-3.3-70b-versatile"
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=true): 'Model IDs' title (Q2/Q3)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced/Text Cleanup (expert=true): accordions gone (Q3)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced home: live copy 'Custom prompts' present (Q2)",
+      "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "Advanced home: live copy 'Model IDs' present (Q2)",
+      "detail": ""
+    }
+  ]
+}

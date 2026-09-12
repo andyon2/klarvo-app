@@ -1,6 +1,6 @@
 # Story 7.9: Desktop Advanced settings + AutoSend — remove dead keys, wire 4 model IDs
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -190,19 +190,19 @@ stayed green against unfixed code),
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Rust config + commands: remove the 13 keys** (AC1, AC2, AC3)
-  - [ ] `config::AdvancedSettings`: delete fields #1–#7 and #10–#13, their `default_*` fns
+- [x] **Task 1 — Rust config + commands: remove the 13 keys** (AC1, AC2, AC3)
+  - [x] `config::AdvancedSettings`: delete fields #1–#7 and #10–#13, their `default_*` fns
         (`default_stt_temperature`, `default_llm_temperature`, `default_llm_max_tokens`,
         `default_chunk_threshold`, `default_chunk_target_size`, `default_auto_paste`,
         `default_auto_capitalize`) and their lines in `impl Default for AdvancedSettings`.
-  - [ ] `config::AppConfig`: delete `bubble_tap_auto_send`, `bubble_long_press_auto_send` (+ `AppConfig::default`).
-  - [ ] `commands::settings`: `SettingsPatch` fields + its `Default`; `merge_settings`; the two `save_settings`
+  - [x] `config::AppConfig`: delete `bubble_tap_auto_send`, `bubble_long_press_auto_send` (+ `AppConfig::default`).
+  - [x] `commands::settings`: `SettingsPatch` fields + its `Default`; `merge_settings`; the two `save_settings`
         command params + the `SettingsPatch { … }` literal; `get_settings` → `SettingsView`.
-  - [ ] `lib.rs::SettingsView`: delete both fields.
-  - [ ] `save_advanced_settings`: its license gate checks **only** the four removed prompts → the gate goes with
+  - [x] `lib.rs::SettingsView`: delete both fields.
+  - [x] `save_advanced_settings`: its license gate checks **only** the four removed prompts → the gate goes with
         them. `LicensedFeature::CustomPrompts` then has no production gate; it stays referenced by
         `license::tests::test_licensed_allows_all_features` — removing the enum variant is not required.
-  - [ ] Update every test that constructs/asserts a removed field — the compiler enumerates them. Known today:
+  - [x] Update every test that constructs/asserts a removed field — the compiler enumerates them. Known today:
         `config::tests::{test_advanced_settings_defaults, test_advanced_settings_camel_case,
         test_advanced_settings_roundtrip, test_appconfig_golden_master_full_field_roundtrip}` plus the
         AppConfig save/load roundtrip test that sets `stt_temperature: 0.2` / `bubble_tap_auto_send: true`;
@@ -211,34 +211,34 @@ stayed green against unfixed code),
         `lib::tests::{test_settings_view_camel_case_serialization,
         test_settings_view_hotkey_mode_hold_serializes_lowercase,
         test_settings_view_hotkey_mode_toggle_serializes_lowercase}`. Keep each test's intent for the remaining fields.
-  - [ ] Update doc comments that now lie: `AdvancedSettings::expert_mode` ("chunking, STT temperature").
+  - [x] Update doc comments that now lie: `AdvancedSettings::expert_mode` ("chunking, STT temperature").
 
-- [ ] **Task 2 — Rust old-config test** (AC4)
-  - [ ] Inline `#[cfg(test)]` in `config/mod.rs` (no new `tests/` file): write a raw JSON with all 13 keys
+- [x] **Task 2 — Rust old-config test** (AC4)
+  - [x] Inline `#[cfg(test)]` in `config/mod.rs` (no new `tests/` file): write a raw JSON with all 13 keys
         (non-default) + non-default live keys, `load_config_reporting`, assert live values, `warnings.is_empty()`,
         `corrupt_backups(dir).is_empty()`.
 
-- [ ] **Task 3 — Rust model-ID wiring** (AC5, AC7)
-  - [ ] Thread the override into `pipeline::cleanup_provider_for` and `resolve_cleanup_provider` (incl. the
+- [x] **Task 3 — Rust model-ID wiring** (AC5, AC7)
+  - [x] Thread the override into `pipeline::cleanup_provider_for` and `resolve_cleanup_provider` (incl. the
         `"anthropic"` arm); empty → `DEFAULT_MODEL` (same predicate everywhere, **Q5**). One place decides — do not
         duplicate the empty-check per arm.
-  - [ ] `save_advanced_settings`: hot-reload `AppState::cleanup_provider` after the save (mirror `save_settings`'
+  - [x] `save_advanced_settings`: hot-reload `AppState::cleanup_provider` after the save (mirror `save_settings`'
         `resolve_providers` step; ADR-0015 — still one `save_config_locked` writer).
-  - [ ] Legacy `commands::settings::update_api_keys` builds `DeepSeekCleanup::new(key)` directly (no caller in
+  - [x] Legacy `commands::settings::update_api_keys` builds `DeepSeekCleanup::new(key)` directly (no caller in
         `src/` today) — it must not bypass the override; route it through the same resolution.
-  - [ ] Drop `#[allow(dead_code)]` from the `with_model` builders now in use.
-  - [ ] Make the resolved cleanup model visible in `Klarvo.log` for GATE-4 (**Q7**).
-  - [ ] Tests (inline): override flow-through per provider (request `model` via `build_request`), empty → default,
+  - [x] Drop `#[allow(dead_code)]` from the `with_model` builders now in use.
+  - [x] Make the resolved cleanup model visible in `Klarvo.log` for GATE-4 (**Q7**).
+  - [x] Tests (inline): override flow-through per provider (request `model` via `build_request`), empty → default,
         fallback ladder carries the override (`resolve_fallback_provider`). `pipeline::tests` already has
         `test_resolve_cleanup_provider_*` / `resolve_fallback_provider` tests to extend — reuse, don't duplicate.
 
-- [ ] **Task 4 — Frontend removal** (AC1, AC2) — **walk the whole chain (trap #6)**
-  - [ ] `src/types.ts`: `AdvancedSettings` (#1–#7, #10–#13), `AppSettings` (#8, #9); fix the `expertMode` comment.
-  - [ ] `src/tauri-commands.ts`: `MOCK_ADVANCED_SETTINGS`, the mock `AppSettings`, and `saveSettings` — both the
+- [x] **Task 4 — Frontend removal** (AC1, AC2) — **walk the whole chain (trap #6)**
+  - [x] `src/types.ts`: `AdvancedSettings` (#1–#7, #10–#13), `AppSettings` (#8, #9); fix the `expertMode` comment.
+  - [x] `src/tauri-commands.ts`: `MOCK_ADVANCED_SETTINGS`, the mock `AppSettings`, and `saveSettings` — both the
         **positional params** `bubbleTapAutoSend`/`bubbleLongPressAutoSend` and their `invoke("save_settings", {…})` keys.
-  - [ ] `src/hooks/useSettings.ts::handleSaveSettings`: positional params `newBubbleTapAutoSend`,
+  - [x] `src/hooks/useSettings.ts::handleSaveSettings`: positional params `newBubbleTapAutoSend`,
         `newBubbleLongPressAutoSend` + the forwarding call.
-  - [ ] `src/components/SettingsPanel.tsx`: `onSave` prop type + the internal save helper's `onSave(…)` call;
+  - [x] `src/components/SettingsPanel.tsx`: `onSave` prop type + the internal save helper's `onSave(…)` call;
         `localBubbleTapAutoSend`/`localBubbleLongPressAutoSend` state, resync `useEffect`, `isDirty` terms, deps;
         `localAutoPaste`/`localAutoCapitalize` state, the advanced-settings mount load, `isDirty`, the advanced
         save block (`updatedAdv`), the `ShortcutsContent` props.
@@ -247,47 +247,47 @@ stayed green against unfixed code),
         > appearance, bubble size …) silently — the Epic-6 "appearance reset-on-save" class. Edit all three hops
         > plus the call in `SettingsPanel` in one change and re-read them side by side. (Rust's `save_settings`
         > maps by name, so a stray extra key there is harmless; the TS positions are not.)
-  - [ ] `src/components/settings/ShortcutsContent.tsx`: `ShortcutsContentProps` (#6–#9), destructuring, and the
+  - [x] `src/components/settings/ShortcutsContent.tsx`: `ShortcutsContentProps` (#6–#9), destructuring, and the
         "Auto-Paste" + "Auto-Capitalize" rows in "Paste & Behavior". **Keep** the "Auto-Send"
         (`insertAndSendSlot1`) row. The `!localAutoPaste` dimming/disable on "Auto-Send" and "Paste Delay" loses
         its source → **Q4**.
-  - [ ] `src/components/AdvancedSettingsPanel.tsx`: `ADVANCED_DEFAULTS`; rows for `sttTemperature`,
+  - [x] `src/components/AdvancedSettingsPanel.tsx`: `ADVANCED_DEFAULTS`; rows for `sttTemperature`,
         `llmTemperature`, `llmMaxTokens`, `chunkThreshold`, `chunkTargetSize`; the whole "Custom Cleanup
         Instructions" subsection (its only content is the four prompts); keep the four model inputs. User-facing
         strings that become false and the resulting layout → **Q2/Q3** (do not invent new copy).
 
-- [ ] **Task 5 — Kotlin** (AC1, AC4, AC5)
-  - [ ] `KlarvoApi.Config`: delete `bubbleTapAutoSend`, `bubbleLongPressAutoSend`; add the three model-override
+- [x] **Task 5 — Kotlin** (AC1, AC4, AC5)
+  - [x] `KlarvoApi.Config`: delete `bubbleTapAutoSend`, `bubbleLongPressAutoSend`; add the three model-override
         fields (default `""`). `readConfig` builds `Config(…)` **positionally** — keep the argument order consistent.
-  - [ ] `KlarvoApi.readConfig`: delete the two `optBoolean` reads; add the model-ID parse via a new
+  - [x] `KlarvoApi.readConfig`: delete the two `optBoolean` reads; add the model-ID parse via a new
         `internal fun` seam on `JSONObject` (pattern: `parseMinRecordingMs`).
-  - [ ] `KlarvoOverlayService`: delete `tapAutoSend`/`longPressAutoSend`, their assignment + debug-log fields in
+  - [x] `KlarvoOverlayService`: delete `tapAutoSend`/`longPressAutoSend`, their assignment + debug-log fields in
         `loadBubbleControls`, and the unreachable `shouldAutoSend` block after paste. If
         `KlarvoAccessibilityService.performEnter` loses its last caller, say so in the record; change no other
         paste behaviour.
-  - [ ] `KlarvoApi.resolveLlmProvider` + `cleanupFallbackCandidates`: model = override-or-default for deepseek,
+  - [x] `KlarvoApi.resolveLlmProvider` + `cleanupFallbackCandidates`: model = override-or-default for deepseek,
         openai, groq. Name the default literals as constants so the fixture test binds to a production symbol
         (7-8 precedent: `CLEANUP_TEMPERATURE`).
-  - [ ] Tests (JUnit 4, `android/kotlin-test/com/klarvo/voice/`): extend `LlmFallbackProviderTest` — override
+  - [x] Tests (JUnit 4, `android/kotlin-test/com/klarvo/voice/`): extend `LlmFallbackProviderTest` — override
         flow-through on **both** sites, empty → default; a parse-seam test fed with an old `config.json` string
         carrying the removed keys (AC4 Kotlin half). Its existing literal model assertions
         (`"gpt-4o-mini"`, `"llama-3.3-70b-versatile"`, `"deepseek-chat"`) stay valid for the default path.
 
-- [ ] **Task 6 — Parity fixture** (AC5)
-  - [ ] `test-fixtures/twin-constants-vectors.json`: add one entry per default model ID with `PINS:` /
+- [x] **Task 6 — Parity fixture** (AC5)
+  - [x] `test-fixtures/twin-constants-vectors.json`: add one entry per default model ID with `PINS:` /
         `DOES NOT PIN:` (Anthropic: Desktop-asserted, Android column a written record).
-  - [ ] Both "exactly five" assertions must follow: Rust
+  - [x] Both "exactly five" assertions must follow: Rust
         `spec_twin_constants_fixture_is_complete_and_self_describing` (`vectors.len()`), Kotlin
         `TwinConstantsVectorsTest.fixtureCarriesAllFiveTwinsAndDescribesEach` (id set) — rename/re-word honestly.
-  - [ ] **Claim accuracy (7-8's defect class):** the existing entries' `DOES NOT PIN` clauses and the
+  - [x] **Claim accuracy (7-8's defect class):** the existing entries' `DOES NOT PIN` clauses and the
         `TwinConstantsVectorsTest` KDoc name dead keys that this story deletes ("the sttTemperature config key (dead
         config, out of scope)", "the dead advanced.llmMaxTokens config key", "the dead advanced.chunkThreshold
         config key", "the dead-config cluster … deliberately NOT locked"). Correct them — values unchanged.
 
-- [ ] **Task 7 — Inversions** (AC6): the three required inversions + one per new discriminating assertion;
+- [x] **Task 7 — Inversions** (AC6): the three required inversions + one per new discriminating assertion;
       table in the Dev Agent Record; `git status` clean.
 
-- [ ] **Task 8 — Gates** (AC7): Rust, `tsc`, JVM (`--rerun-tasks`), puppeteer proxy smoke with evidence,
+- [x] **Task 8 — Gates** (AC7): Rust, `tsc`, JVM (`--rerun-tasks`), puppeteer proxy smoke with evidence,
       surface-smoke traps #1/#2/#6, then hand GATE-4 to Andi. Anchor the record by **symbol**, write resolution
       rows from `git diff` (Epic-7 retro D2).
 
@@ -464,12 +464,237 @@ today's default model IDs; the override exists precisely so a retired ID can be 
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 5 (claude-opus-5)
 
 ### Debug Log References
 
+**Gate runs (all from `conductor/story-7-9`, 2026-09-12):**
+
+- `cargo test --lib` in `src-tauri/` — **674 passed, 0 failed, 0 ignored**.
+  Covers: Rust unit + inline spec tests, Linux target. Does NOT cover: Windows-only
+  paths (`whisper-rs`, `llama-cpp-2`, `local` cleanup arm, native overlays), the Tauri
+  runtime, or `tests/pi_security.rs` (unchanged by this story; its tier tests need keys).
+- `npm run build` (`tsc && vite build`) — **green**, `✓ built in 1.53s`. Strict `tsc`
+  type-checks the whole positional save chain; it does not execute anything.
+- JVM gate `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` — **184 tests, 0 failures,
+  0 errors, 0 skipped across 23 suites**. `--rerun-tasks` was mandatory (this story edits
+  `test-fixtures/twin-constants-vectors.json`, and gradle reports a stale green on a
+  fixture-only edit).
+  - Run **device-free** (7-8 precedent): `android/kotlin-src` + `android/kotlin-test` synced
+    with-delete into `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice`, then
+    gradle directly. `scripts/android-smoke.sh` was **not** used: it fails on "Kein Gerät
+    gefunden" before reaching its JVM gate, and no device/AVD was reachable from this host.
+  - Count taken over **all result XMLs in the `testUniversalDebugUnitTest` variant dir**, not
+    the smoke banner's single suite. An earlier count of "1156" was wrong — it summed nine
+    stale variant dirs (`testArm64Debug…`, `testX86…`) left from older runs; 184 is the real
+    figure for this run.
+  - Covers: pure Kotlin/JVM logic. Does **NOT** cover JNI (no `nativeTranscribe`/
+    `nativeSilenceCheck` call is reached), any device or emulator, Android UI/rendering, or
+    the real `readConfig` file I/O and license gating.
+- **Desktop proxy smoke** (puppeteer 24.38.0 vs `npm run preview` :1422, real Chromium) —
+  **26/26 checks passed, 0 uncaught page errors**. Harness + evidence in
+  `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` (`smoke.mjs`, `smoke-report.json`,
+  8 screenshots, captured panel text). `git status` clean afterwards; no throwaway edit to
+  `src/tauri-commands.ts` was needed (the mocks reach every state this story touches).
+  - **What it proves: wiring and structure only** — which rows/inputs/titles the React tree
+    actually renders. Walked: Settings → Shortcuts → Paste & Behavior, and the Advanced panel's
+    four sections (Speech-to-Text, Text Cleanup, Audio, System) with **expert mode both off and
+    on** (Audio's home row is correctly absent with expert off, present with expert on).
+  - **What it does NOT prove / never drove:** design or pixels of any kind; the Rust backend
+    (preview serves MOCK data, no Tauri — so no `save_advanced_settings`, no cleanup-provider
+    hot-reload, no `Klarvo.log` line, no real `config.json`); Android (no Kotlin path); the
+    Windows release build; any real cleanup request carrying an overridden model ID; fonts or
+    Windows text-scale drift.
+  - 2 `console.error` lines appear in preview and are **pre-existing, not from this story**:
+    `SettingsPanel.tsx`'s `voice-command-state-changed` effect calls `listen()` from
+    `@tauri-apps/api/event` *without* the `isPreviewMode` guard that `tauri-commands.ts`'s own
+    `listen()` wrapper applies, so it touches `window.__TAURI_INTERNALS__` (absent in a plain
+    browser). Its own `.catch(console.error)` handles it; React StrictMode mounts the panel
+    twice, hence two lines. Cannot occur in the real app. Left alone — not mapped to any task here.
+- Rust warning count unchanged at **14** before and after (verified by building `HEAD` stashed
+  vs the working tree) — no new warnings.
+
+**Two harness traps found and fixed while writing the smoke** (both would have been read as
+product defects; recorded so the next story does not re-hit them):
+
+1. A `fullPage: true` screenshot resizes the emulated viewport, which **remounts the app** and
+   resets the Settings panel to its home view — measured as 31 divs → 1 → 12, with
+   `[aria-label="Back to settings"]` gone and every row query returning `[]`. All screenshots
+   are now viewport-only.
+2. The evidence dir lives **inside the repo**, and `npm run preview` is the Vite *dev* server:
+   its watcher saw each `.png`/`.txt` the harness wrote and fired an HMR full reload mid-run.
+   Artifacts are now staged in a temp dir and copied in only after the browser closes.
+   Both traps produced *zero-count* queries, so the harness now **fails** on a zero count
+   instead of passing vacuously (`VACUOUS —` guards on the Paste & Behavior rows and on the
+   section walk).
+
+**Surface-smoke-checklist traps, run mechanically (not self-attested):**
+
+| Trap | Check | Result |
+|---|---|---|
+| #1 camelCase keys under `advanced` | derived every remaining `AdvancedSettings` serde name from the Rust struct and diffed against `src/types.ts` | **17 = 17**, no key missing on either side |
+| #2 resync `useEffect` / `isDirty` | the two surviving advanced fields (`silenceThreshold`, `pasteDelayMs`) present in the mount load, `isDirty` and the `updatedAdv` save block; no removed key left behind | green |
+| #6 multi-hop positional save chain | parsed the parameter list of all five hops and compared arity against `HEAD` | every hop **−2 exactly** (51→49, 51→49, 51→49, 53→51, 53→51); no removed key anywhere in the chain, so nothing shifted position |
+
+### Inversion table (AC6)
+
+Each row: the drift re-introduced → the test that went RED → reverted, suite green again.
+`git status` is clean; no inversion is still in the tree.
+
+| # | Reverted change (symbol) | Test(s) that went RED | Discriminating? |
+|---|---|---|---|
+| 1 | **Kotlin** `KlarvoApi.cleanupFallbackCandidates`, DeepSeek triple: `model = effectiveCleanupModel(...)` → hard-coded `"deepseek-chat"` | `LlmFallbackProviderTest.modelOverride_fallbackLadder_reachesProviderInfo`, `.modelOverride_bothCallSitesAgree` (expected `deepseek-reasoner`, got `deepseek-chat`) | yes — and `blankModelOverride_fallsBackToBuiltInDefault` stayed **GREEN**, exactly AC6's non-discriminating trap |
+| 2 | **Rust** `pipeline::cleanup_provider_for`, `"openai"` arm: `.with_model(effective_cleanup_model(..))` dropped → bare `OpenAiCleanup::new(api_key)` | `pipeline::tests::spec_model_override_flows_through_primary_selection`, `::spec_model_override_flows_through_fallback_ladder` (expected `gpt-4o`, got `gpt-4o-mini`) | yes — and `test_resolve_cleanup_provider_openai` (default-only) stayed **GREEN**, same trap |
+| 3 | **Rust/AC4** `#[serde(deny_unknown_fields)]` added to `config::AdvancedSettings` | `config::tests::spec_old_config_with_removed_dead_keys_still_loads` (live `minRecordingMs` fell back to 500 instead of 750 — i.e. the test saw the corrupt-recovery path) | yes — fails on the *live-value-survived* assertion, not on "it loaded" |
+| 4 | **Rust** `llm::effective_cleanup_model`: `override_raw.trim()` → `override_raw` | `llm::tests::spec_effective_model_trims_override`, `::spec_effective_model_blank_override_uses_default`, `pipeline::tests::spec_model_override_is_trimmed`, `::spec_blank_model_override_falls_back_to_provider_default` (4 RED) | yes — pins the Q5 predicate, not just the default |
+| 5 | **Kotlin** `KlarvoApi.resolveLlmProvider`, `else ->` arm: `model = effectiveCleanupModel(...)` → hard-coded `"deepseek-chat"` (covers the *primary* site, which inversion 1 did not) | `LlmFallbackProviderTest.modelOverride_primarySelection_reachesProviderInfo`, `.modelOverride_bothCallSitesAgree`, `LlmModelOverrideConfigTest.oldConfigJson_modelOverride_reachesResolvedProvider` | yes |
+| 6 | **Kotlin** `KlarvoApi.effectiveCleanupModel`: `override.trim()` → `override` (applied together with 5; 8 RED in total across the two) | `LlmFallbackProviderTest.blankModelOverride_fallsBackToBuiltInDefault`, `.paddedModelOverride_isTrimmed`, `LlmModelOverrideConfigTest.effectiveCleanupModel_blankOverrideUsesDefault`, `.effectiveCleanupModel_trimsPaddedOverride`, `TwinConstantsVectorsTest.cleanupModelDefaultsMatchFixture` | yes — the Kotlin twin of inversion 4 |
+| 7 | **Fixture** `TWIN-CLEANUP-MODEL-OPENAI-001.expected_string`: `"gpt-4o-mini"` → `"gpt-4o-mini-DRIFTED"` | **both halves independently**: Rust `llm::tests::spec_twin_constants_cleanup_model_defaults` AND Kotlin `TwinConstantsVectorsTest.cleanupModelDefaultsMatchFixture` | yes — proves neither half can hide the other's drift |
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created
+- **AC1 — 13 dead keys removed from every layer.** Verified by grep over `src/`,
+  `src-tauri/src/` and `android/kotlin-src/` in **both** spellings
+  (`camelCase|snake_case`): **zero production hits** remain for all 13. Before the change the
+  same grep returned 13–33 hits per key. `llm::CHUNK_THRESHOLD` / `CHUNK_TARGET_SIZE` (the live
+  runtime constants, different case) are untouched.
+  - Kotlin removal was exactly #8 + #9 as the story predicted: `KlarvoApi.Config`,
+    `KlarvoApi.readConfig`, `KlarvoOverlayService.{tapAutoSend, longPressAutoSend,
+    loadBubbleControls, the unreachable shouldAutoSend block}`. No `advanced.*` dead key was
+    read on the Kotlin side.
+  - **`KlarvoAccessibilityService.performEnter` has lost its last caller** (grep: no reference
+    outside its own file). Left in place as the task directs — no other paste behaviour changed.
+  - Doc comments that would now lie were corrected: `AdvancedSettings::expert_mode`, the
+    "six fields"→"four fields" note above the bubble-gesture block in `AppConfig`,
+    `AdvancedSettings` TS doc, and the `Expert mode` inline comment in `AdvancedSettingsPanel`.
+  - `save_advanced_settings`' license gate went with the four prompt keys, as specified.
+    `LicensedFeature::CustomPrompts` now has no production gate and stays referenced only by
+    `license::tests::test_licensed_allows_all_features`; the enum variant was **not** removed.
+- **AC2 — no runtime behaviour change for the removed keys.** The five pre-existing
+  `twin-constants-vectors.json` entries keep their values (0.3 / 2048 / 400 / 350 / LF) and
+  both 7-8 halves stay green. `custom_prompt` untouched. The **"Auto-Send" row stays** and is
+  still bound to `insertAndSendSlot1`, not to `bubbleTapAutoSend` — confirmed in the proxy smoke.
+- **AC3 — live keys untouched.** `sttPrompt*`, `silenceThreshold`, `minRecordingMs`,
+  `whisperMode*`, `pasteDelayMs`, `logLevel`, `uiScale`, `expertMode`, `webhook*` all retained;
+  `nativeSilenceCheck`'s JNI signature is unchanged (not touched at all).
+- **AC4 — old `config.json` still loads, both platforms.** Rust:
+  `config::tests::spec_old_config_with_removed_dead_keys_still_loads` feeds raw JSON carrying
+  all 13 removed keys at non-default values plus non-default live keys, then asserts the live
+  values survived **and** `corrupt_backups(dir).is_empty()` **and** `warnings.is_empty()` —
+  not merely "it loaded" (the vacuous-pass trap). Inversion 3 proves it discriminates. Kotlin:
+  `LlmModelOverrideConfigTest.oldConfigJson_withRemovedDeadKeys_stillYieldsLiveValues` drives
+  the same JSON text through the real `org.json` production seams. No
+  `deny_unknown_fields` was added anywhere.
+- **AC5 — model IDs are a real override.**
+  - One place decides both halves of the rule: **`llm::effective_cleanup_model`** (trim, then
+    empty → the provider's `DEFAULT_MODEL`), with the Kotlin twin
+    **`KlarvoApi.effectiveCleanupModel`**. The per-arm empty-check the story warned against
+    does not exist.
+  - Rust: `pipeline::cleanup_provider_for` now takes `&config::AdvancedSettings` and gained an
+    `"anthropic"` arm, so **every** construction path goes through one function —
+    `resolve_cleanup_provider` (all arms, incl. `"anthropic"`, which now delegates instead of
+    constructing directly), `resolve_fallback_provider`, and therefore `resolve_providers` from
+    `lib.rs` and both call sites in `commands/settings.rs`. Adding the arm does **not** make
+    Anthropic a fallback candidate: `resolve_fallback_provider`'s candidate list is unchanged
+    (deepseek → openai → openrouter), and Groq stays excluded (12-1 AC2, its tests still green).
+  - Legacy `commands::settings::update_api_keys` was routed through the same resolution, so it
+    can no longer bypass the override.
+  - `#[allow(dead_code)] // builder API for future use` removed from **all four**
+    `with_model` builders (the story said "the builders now in use"; all four are now used).
+  - Kotlin: three overrides parsed through a new pure seam
+    `KlarvoApi.parseLlmModelOverride(json, key)` (shape of `parseMinRecordingMs`), carried on
+    `Config` (appended at the tail — `readConfig` builds it positionally), and applied at
+    **both** independent sites (`resolveLlmProvider` and `cleanupFallbackCandidates`).
+    Defaults named as `DEFAULT_MODEL_DEEPSEEK/OPENAI/GROQ` (7-8 precedent).
+  - `llmModelAnthropic` stayed Desktop-only (Q6); **no Android Anthropic provider was added**.
+  - OpenRouter's `"deepseek/deepseek-chat"` stays hard-coded on both sides (Q8) and is now
+    *pinned* as such on both (`test_resolve_cleanup_provider_openrouter`,
+    `openrouterModel_staysHardCoded`) so a future "wire everything" pass has to decide
+    deliberately.
+  - **No app restart needed:** `save_advanced_settings` now rebuilds
+    `AppState::cleanup_provider` from the persisted config (mirroring `save_settings`'
+    `resolve_providers` step). Still exactly one `save_config_locked` writer (ADR-0015).
+  - **Q7 (GATE-4 observability):** `CleanupProvider` gained `fn model(&self) -> &str`
+    (default `""` for the in-module test doubles; overridden by all five network providers), and
+    the pipeline's cleanup line now reads
+    `[pipeline] LLM cleanup took {}ms (provider: {}, model: {}, style: {:?}, input_len: {})`.
+    The fallback-success line also names the model, mirroring Android's
+    `cleanup fallback succeeded (${'$'}{fallbackProvider.model})`.
+- **AC6 — 7 inversions**, table above. Two of them also *document* the non-discriminating
+  trap by naming the default-only test that stayed green.
+- **Q1–Q8 applied as decided at GATE 1.** Q1: only the 13 named keys — `pasteDelayMs`,
+  `logLevel`, `webhookHeaders`, `webhookTimeoutSecs` untouched. Q2/Q3: STT home row
+  "Custom prompts", Text Cleanup home row + subsection title "Model IDs", expert hint
+  "Reveals raw audio thresholds.", the four model inputs now **flat** (both accordions gone),
+  Expert Mode toggle kept and gating only the Audio thresholds. Q4: "Auto-Paste" removed;
+  "Auto-Send" and "Paste Delay" kept, **no longer dimmed or disabled** (asserted in the smoke),
+  heading "Paste & Behavior" kept. Q5: trim-then-empty on both platforms, pinned by vectors.
+- **Fixture claim accuracy (Task 6's 7-8 defect class):** the three stale `DOES NOT PIN`
+  clauses that named keys this story deletes were corrected (values unchanged), and the
+  `TwinConstantsVectorsTest` KDoc no longer claims the dead-config cluster is "deliberately
+  NOT locked" — it now says those keys no longer exist. Both "exactly five" assertions became
+  "exactly nine", honestly worded, and `test-fixtures/README.md` records that the Kotlin half
+  asserts 8 of 9 (Anthropic is Desktop-only and skipped by id).
+- **One in-scope correction made during the work:** I briefly added `localPasteDelayMs` to the
+  save-callback dependency array in `SettingsPanel.tsx` — a pre-existing missing dep, not
+  mapped to any task — and reverted it. It remains absent, as on `HEAD`.
+
+**Not done / handed on:**
+
+- **Andi's GATE-4 is outstanding**: Windows release build via `scripts/windows-build.sh`,
+  Advanced panel shows only live keys, and a **changed DeepSeek model ID visible in
+  `Klarvo.log`**. The log line needed for it exists now (see Q7 above), but nothing in this
+  session ran on Windows or in the Tauri runtime.
+- **The "stale advanced snapshot" check the Dev Notes asked for is only partly closed.** The
+  code path is confirmed by reading: `SettingsPanel` loads `advancedSettings` once on mount and
+  saves `{...advancedSettings, silenceThreshold, pasteDelayMs}` — a whole-block replace of a
+  possibly stale snapshot. With model IDs now live, a model ID saved in the embedded Advanced
+  panel *can* be reverted by a later Settings save in the same session, because
+  `SettingsPanel`'s `advancedSettings` state is not refreshed after
+  `AdvancedSettingsPanel` saves its own block. **I could not drive this end-to-end**: it needs
+  a real backend (`save_advanced_settings` + `get_advanced_settings`), which the browser proxy
+  does not have. Flagging it rather than claiming it verified.
+- No device/emulator Android smoke (no device reachable; the JVM half was run device-free). Per
+  project-context the real-device gate is mine to run, so this is a genuine gap, not a hand-off
+  — but it is a pure-logic change with no Android UI surface, and the logic half is green.
 
 ### File List
+
+**Rust (desktop)**
+- `src-tauri/src/config/mod.rs` — removed 11 `AdvancedSettings` fields + 7 `default_*` fns, 2 `AppConfig` fields; corrected doc comments; new AC4 test; updated 5 existing tests
+- `src-tauri/src/commands/settings.rs` — `SettingsPatch` (+`Default`), `merge_settings`, `save_settings` params + patch literal, `get_settings`; license gate removed from `save_advanced_settings` + cleanup-provider hot-reload added; `update_api_keys` routed through the override; 4 tests updated
+- `src-tauri/src/lib.rs` — `SettingsView`: 2 fields removed (+3 test literals)
+- `src-tauri/src/llm/mod.rs` — new `effective_cleanup_model`; `CleanupProvider::model()` + 5 impls; `#[allow(dead_code)]` dropped from 4 `with_model` builders; 3 `DEFAULT_MODEL` consts widened to `pub(crate)`; new fixture test + 5 new spec tests
+- `src-tauri/src/pipeline.rs` — `cleanup_provider_for` takes `&AdvancedSettings` and gained an `"anthropic"` arm; all call sites threaded; cleanup + fallback log lines name the model; 6 existing resolution tests strengthened, 4 new override tests
+
+**Kotlin (Android)**
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — 3 `DEFAULT_MODEL_*` consts + `effectiveCleanupModel` + `parseLlmModelOverride`; `Config` −2/+3 fields; `readConfig` reads; override applied in `resolveLlmProvider` and `cleanupFallbackCandidates`
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `tapAutoSend`/`longPressAutoSend` fields, their `loadBubbleControls` assignment + debug-log fields, and the unreachable `shouldAutoSend` block removed
+- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — `baseConfig` +3 params; 6 new tests (9 → 18)
+- `android/kotlin-test/com/klarvo/voice/LlmModelOverrideConfigTest.kt` — **new**, 8 tests (parse seam, Q5 predicate, AC4 Kotlin half)
+- `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` — KDoc claims corrected; "five"→"nine"; 2 new tests (6 → 8)
+
+**Frontend (TS/React)**
+- `src/types.ts` — `AdvancedSettings` −11, `AppSettings` −2; `expertMode` doc corrected
+- `src/tauri-commands.ts` — `MOCK_ADVANCED_SETTINGS` (incl. dropping the stale `llmModelAnthropic: "claude-haiku-20240307"`), mock `AppSettings`, `saveSettings` params + `invoke` keys
+- `src/hooks/useSettings.ts` — `handleSaveSettings` params + forwarding call
+- `src/components/SettingsPanel.tsx` — `onSave` prop type, the `onSave(...)` call, 4 local states, mount load, resync `useEffect`, `isDirty` terms + deps, `updatedAdv` save block, `ShortcutsContent` props
+- `src/components/settings/ShortcutsContent.tsx` — props −8; "Auto-Paste" + "Auto-Capitalize" rows removed; Q4 un-dimming of "Auto-Send" and "Paste Delay"
+- `src/components/AdvancedSettingsPanel.tsx` — `ADVANCED_DEFAULTS` −11; STT temperature row; whole Text Cleanup body rebuilt flat under "Model IDs" (both accordions + their state/`toggleSubSection` gone); Q2 copy on 3 strings
+
+**Fixtures / docs / tracking**
+- `test-fixtures/twin-constants-vectors.json` — 4 new model-default entries (5 → 9); 3 stale `DOES NOT PIN` clauses corrected
+- `test-fixtures/README.md` — reader ledger notes the 8-of-9 Kotlin coverage
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 7-9 → `review`; `last_updated`
+- `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md` — this record
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` — **new**: `smoke.mjs`, `smoke-report.json`, 8 screenshots, 6 captured-state files
+
+### Change Log
+
+| Date | Change |
+|---|---|
+| 2026-09-12 | Removed the 13 settable-but-dead config keys across React/TS, Rust config+commands and the Kotlin twin; no runtime behaviour change for them (ADR-0016 Amendment 1). |
+| 2026-09-12 | Wired `advanced.llmModel{Deepseek,Openai,Groq,Anthropic}` as a real cleanup-model override on every Rust construction path and both Kotlin sites; one shared trim-then-default predicate per platform (`llm::effective_cleanup_model` / `KlarvoApi.effectiveCleanupModel`). Anthropic stays Desktop-only (H5); OpenRouter stays hard-coded (Q8). |
+| 2026-09-12 | `save_advanced_settings` now hot-reloads the cleanup provider, and the pipeline logs the resolved model ID — so a changed model ID takes effect without a restart and is observable in `Klarvo.log` (GATE-4, Q7). |
+| 2026-09-12 | Advanced panel re-laid out per Q2/Q3 (flat "Model IDs", both accordions gone, corrected copy) and Shortcuts → Paste & Behavior per Q4 (Auto-Paste gone; Auto-Send + Paste Delay kept, no longer dimmed). |
+| 2026-09-12 | Parity fixture gained the 4 default model IDs (5 → 9 entries) and its three stale dead-key claims were corrected; both "exactly five" assertions re-worded to nine. |

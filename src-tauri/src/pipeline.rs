@@ -188,27 +188,49 @@ fn save_pending_wav(app_data_dir: &std::path::Path, wav_bytes: &[u8]) -> Option<
     }
 }
 
-/// Constructs a *network* LLM cleanup provider by name with the given API key.
+/// Constructs a *network* LLM cleanup provider by name with the given API key
+/// and the user's model-ID override from `advanced`.
 ///
 /// Shared by [`resolve_cleanup_provider`] (primary selection) and
 /// [`resolve_fallback_provider`] (alternative selection) so the network-provider
-/// construction — including the OpenRouter endpoint/model literals — lives in
-/// ONE place instead of being duplicated across both. `"anthropic"` and
-/// `"local"` are intentionally NOT here: anthropic is never a fallback candidate
-/// and local needs a model path, so both stay special-cased in
-/// `resolve_cleanup_provider`. Unrecognised names fall back to DeepSeek (which
-/// fails at call-time with an auth error), preserving prior behavior.
-fn cleanup_provider_for(name: &str, api_key: &str) -> Arc<dyn CleanupProvider> {
+/// construction — including the OpenRouter endpoint/model literals and the
+/// model-ID override (Story 7.9) — lives in ONE place instead of being
+/// duplicated across both. `"local"` is intentionally NOT here: it needs a model
+/// path, so it stays special-cased in `resolve_cleanup_provider`. Unrecognised
+/// names fall back to DeepSeek (which fails at call-time with an auth error),
+/// preserving prior behavior.
+///
+/// The override's empty/whitespace rule and the per-provider default both live
+/// in [`llm::effective_cleanup_model`] — one predicate, not one per arm.
+/// OpenRouter keeps its hard-coded model: it has no override key (Q8).
+fn cleanup_provider_for(
+    name: &str,
+    api_key: &str,
+    advanced: &config::AdvancedSettings,
+) -> Arc<dyn CleanupProvider> {
     match name {
-        "openai" => Arc::new(llm::OpenAiCleanup::new(api_key)),
-        "groq" => Arc::new(llm::GroqCleanup::new(api_key)),
+        "openai" => Arc::new(
+            llm::OpenAiCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_openai)),
+        ),
+        "groq" => Arc::new(
+            llm::GroqCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_groq)),
+        ),
+        "anthropic" => Arc::new(
+            llm::AnthropicCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_anthropic)),
+        ),
         "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
             api_key,
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
         )),
         // "deepseek" and any unrecognised value
-        _ => Arc::new(llm::DeepSeekCleanup::new(api_key)),
+        _ => Arc::new(
+            llm::DeepSeekCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model("deepseek", &advanced.llm_model_deepseek)),
+        ),
     }
 }
 
@@ -223,10 +245,10 @@ fn cleanup_provider_for(name: &str, api_key: &str) -> Arc<dyn CleanupProvider> {
 /// for unrecognised values, so startup always succeeds.
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
     match cfg.llm_provider.as_str() {
-        "openai" => cleanup_provider_for("openai", &cfg.openai_api_key),
-        "anthropic" => Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key)),
-        "groq" => cleanup_provider_for("groq", &cfg.groq_api_key),
-        "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key),
+        "openai" => cleanup_provider_for("openai", &cfg.openai_api_key, &cfg.advanced),
+        "anthropic" => cleanup_provider_for("anthropic", &cfg.anthropic_api_key, &cfg.advanced),
+        "groq" => cleanup_provider_for("groq", &cfg.groq_api_key, &cfg.advanced),
+        "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key, &cfg.advanced),
         #[cfg(target_os = "windows")]
         "local" => {
             let model_dir = std::env::var("APPDATA")
@@ -243,7 +265,7 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             Arc::new(llm::local::LocalLlmCleanup::new(model_path))
         }
         // "deepseek" and any unrecognised value
-        _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key),
+        _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key, &cfg.advanced),
     }
 }
 
@@ -311,7 +333,7 @@ pub fn resolve_fallback_provider(
         if *name == primary_provider || key.is_empty() {
             continue;
         }
-        let provider = cleanup_provider_for(name, key);
+        let provider = cleanup_provider_for(name, key, &cfg.advanced);
         return Some((provider, name));
     }
     None
@@ -1324,10 +1346,15 @@ pub async fn process_audio(
             Ok(r) => {
                 let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                 llm_ms = Some(cleanup_ms);
+                // Story 7.9 / Q7: the model ID is part of this line so GATE-4
+                // can observe a changed `advanced.llmModel*` override in
+                // Klarvo.log. Mirrors Android's
+                // `[pipeline] cleanup: …ms (${llmProvider.model})`.
                 log::info!(
-                    "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
+                    "[pipeline] LLM cleanup took {}ms (provider: {}, model: {}, style: {:?}, input_len: {})",
                     cleanup_ms,
                     llm_provider_name,
+                    cleanup_provider.model(),
                     cleanup_style,
                     raw_text.len()
                 );
@@ -1356,9 +1383,10 @@ pub async fn process_audio(
                             let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                             llm_ms = Some(cleanup_ms);
                             log::info!(
-                                "[pipeline] Primary LLM provider failed ({}), fallback to {} succeeded ({}ms)",
+                                "[pipeline] Primary LLM provider failed ({}), fallback to {} (model: {}) succeeded ({}ms)",
                                 primary_err,
                                 fallback_name,
+                                fallback_provider.model(),
                                 cleanup_ms
                             );
                             r
@@ -3240,7 +3268,24 @@ mod tests {
         let _provider = resolve_stt_provider(&cfg, std::path::Path::new("/tmp/test"));
     }
 
-    /// `resolve_cleanup_provider` for "deepseek" does not panic.
+    /// Builds an `AdvancedSettings` carrying only the given model overrides.
+    fn adv_with_models(
+        deepseek: &str,
+        openai: &str,
+        groq: &str,
+        anthropic: &str,
+    ) -> config::AdvancedSettings {
+        config::AdvancedSettings {
+            llm_model_deepseek: deepseek.to_string(),
+            llm_model_openai: openai.to_string(),
+            llm_model_groq: groq.to_string(),
+            llm_model_anthropic: anthropic.to_string(),
+            ..config::AdvancedSettings::default()
+        }
+    }
+
+    /// `resolve_cleanup_provider` for "deepseek": with no override it sends the
+    /// built-in default model.
     #[test]
     fn test_resolve_cleanup_provider_deepseek() {
         let cfg = AppConfig {
@@ -3248,10 +3293,11 @@ mod tests {
             deepseek_api_key: "ds-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::DeepSeekCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "openai" does not panic.
+    /// `resolve_cleanup_provider` for "openai": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_openai() {
         let cfg = AppConfig {
@@ -3259,10 +3305,11 @@ mod tests {
             openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::OpenAiCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "anthropic" does not panic.
+    /// `resolve_cleanup_provider` for "anthropic": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_anthropic() {
         let cfg = AppConfig {
@@ -3270,10 +3317,11 @@ mod tests {
             anthropic_api_key: "sk-ant-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::AnthropicCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "groq" does not panic.
+    /// `resolve_cleanup_provider` for "groq": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_groq() {
         let cfg = AppConfig {
@@ -3281,10 +3329,12 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::GroqCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "openrouter" does not panic.
+    /// `resolve_cleanup_provider` for "openrouter" does not panic and keeps its
+    /// hard-coded model literal — OpenRouter has no override key (Story 7.9 Q8).
     #[test]
     fn test_resolve_cleanup_provider_openrouter() {
         let cfg = AppConfig {
@@ -3292,17 +3342,128 @@ mod tests {
             openrouter_api_key: "sk-or-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), "deepseek/deepseek-chat");
     }
 
-    /// `resolve_cleanup_provider` for an unknown value falls back to DeepSeek (no panic).
+    /// `resolve_cleanup_provider` for an unknown value falls back to DeepSeek.
     #[test]
     fn test_resolve_cleanup_provider_unknown_fallback() {
         let cfg = AppConfig {
             llm_provider: "unknown_provider".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::DeepSeekCleanup::DEFAULT_MODEL);
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 7.9 — advanced.llmModel* override flow-through
+    // -----------------------------------------------------------------------
+
+    /// AC5: a non-empty `advanced.llmModel*` reaches the constructed provider
+    /// on the PRIMARY selection path, for each of the four providers.
+    ///
+    /// This is the discriminating assertion of the story (AC6's
+    /// "non-discriminating trap"): a test that only pins the default stays
+    /// green against a re-hard-coded default, because the literal equals the
+    /// default. A non-default override does not.
+    ///
+    /// PINS: `resolve_cleanup_provider` → `cleanup_provider_for` carries the
+    /// override into the provider's request model, per provider arm.
+    /// DOES NOT PIN: the fallback ladder (see the test below), OpenRouter (no
+    /// override key, Q8), or `"local"` (Windows-only, no model ID).
+    #[test]
+    fn spec_model_override_flows_through_primary_selection() {
+        let advanced = adv_with_models(
+            "deepseek-reasoner",
+            "gpt-4o",
+            "llama-3.1-8b-instant",
+            "claude-sonnet-4-5",
+        );
+        let cases: &[(&str, &str)] = &[
+            ("deepseek", "deepseek-reasoner"),
+            ("openai", "gpt-4o"),
+            ("groq", "llama-3.1-8b-instant"),
+            ("anthropic", "claude-sonnet-4-5"),
+        ];
+
+        for (provider_name, expected_model) in cases {
+            let cfg = AppConfig {
+                llm_provider: provider_name.to_string(),
+                deepseek_api_key: "ds-key".to_string(),
+                openai_api_key: "sk-openai".to_string(),
+                groq_api_key: "gsk-key".to_string(),
+                anthropic_api_key: "sk-ant".to_string(),
+                advanced: advanced.clone(),
+                ..AppConfig::default()
+            };
+            let provider = resolve_cleanup_provider(&cfg);
+            assert_eq!(
+                provider.model(),
+                *expected_model,
+                "provider {provider_name} must send the configured model override"
+            );
+        }
+    }
+
+    /// AC5 + Q5: an override that is empty OR whitespace-only falls back to the
+    /// provider's built-in default. One predicate for all arms
+    /// (`llm::effective_cleanup_model`).
+    #[test]
+    fn spec_blank_model_override_falls_back_to_provider_default() {
+        for blank in ["", "   ", "\t", "\n  "] {
+            let cfg = AppConfig {
+                llm_provider: "deepseek".to_string(),
+                deepseek_api_key: "ds-key".to_string(),
+                advanced: adv_with_models(blank, blank, blank, blank),
+                ..AppConfig::default()
+            };
+            let provider = resolve_cleanup_provider(&cfg);
+            assert_eq!(
+                provider.model(),
+                llm::DeepSeekCleanup::DEFAULT_MODEL,
+                "a blank override ({blank:?}) must fall back to the built-in default"
+            );
+        }
+    }
+
+    /// AC5: an override with surrounding whitespace is trimmed, not passed
+    /// through verbatim — a model ID with a stray space is a 400 from the API.
+    #[test]
+    fn spec_model_override_is_trimmed() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            advanced: adv_with_models("  deepseek-reasoner \n", "", "", ""),
+            ..AppConfig::default()
+        };
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), "deepseek-reasoner");
+    }
+
+    /// AC5: the Epic-12 fallback ladder carries the override too — it shares
+    /// `cleanup_provider_for`, the second of the two sites 7-8 found drifting.
+    ///
+    /// PINS: `resolve_fallback_provider` → the selected fallback's model.
+    /// DOES NOT PIN: the Groq exclusion (its own tests below).
+    #[test]
+    fn spec_model_override_flows_through_fallback_ladder() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            advanced: adv_with_models("deepseek-reasoner", "gpt-4o", "", ""),
+            ..AppConfig::default()
+        };
+        let (provider, name) =
+            resolve_fallback_provider(&cfg, "deepseek").expect("openai must be the fallback");
+        assert_eq!(name, "openai");
+        assert_eq!(
+            provider.model(),
+            "gpt-4o",
+            "the fallback provider must carry the configured model override"
+        );
     }
 
     // -----------------------------------------------------------------------

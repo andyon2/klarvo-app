@@ -144,10 +144,8 @@ pub struct SettingsPatch {
     pub insert_and_send_slot2: Option<bool>,
     pub bubble_recording_mode: Option<String>,
     pub bubble_tap_mode: Option<String>,
-    pub bubble_tap_auto_send: Option<bool>,
     pub bubble_tap_silence_secs: Option<f32>,
     pub bubble_long_press_mode: Option<String>,
-    pub bubble_long_press_auto_send: Option<bool>,
     pub bubble_long_press_silence_secs: Option<f32>,
     pub openrouter_api_key: Option<String>,
     pub live_preview_enabled: Option<bool>,
@@ -206,10 +204,8 @@ impl Default for SettingsPatch {
             insert_and_send_slot2: None,
             bubble_recording_mode: None,
             bubble_tap_mode: None,
-            bubble_tap_auto_send: None,
             bubble_tap_silence_secs: None,
             bubble_long_press_mode: None,
-            bubble_long_press_auto_send: None,
             bubble_long_press_silence_secs: None,
             openrouter_api_key: None,
             live_preview_enabled: None,
@@ -376,12 +372,9 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.preview_line_spacing),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
-        bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
         bubble_tap_silence_secs: patch.bubble_tap_silence_secs
             .unwrap_or(existing.bubble_tap_silence_secs),
         bubble_long_press_mode: patch.bubble_long_press_mode.unwrap_or(existing.bubble_long_press_mode),
-        bubble_long_press_auto_send: patch.bubble_long_press_auto_send
-            .unwrap_or(existing.bubble_long_press_auto_send),
         bubble_long_press_silence_secs: patch.bubble_long_press_silence_secs
             .unwrap_or(existing.bubble_long_press_silence_secs),
         onboarding: existing.onboarding,
@@ -457,10 +450,8 @@ pub async fn save_settings(
     bubble_recording_mode: Option<String>,
     // Per-gesture bubble controls. None = leave existing value unchanged.
     bubble_tap_mode: Option<String>,
-    bubble_tap_auto_send: Option<bool>,
     bubble_tap_silence_secs: Option<f32>,
     bubble_long_press_mode: Option<String>,
-    bubble_long_press_auto_send: Option<bool>,
     bubble_long_press_silence_secs: Option<f32>,
     openrouter_api_key: Option<String>,
     live_preview_enabled: Option<bool>,
@@ -558,10 +549,8 @@ pub async fn save_settings(
         insert_and_send_slot2,
         bubble_recording_mode,
         bubble_tap_mode,
-        bubble_tap_auto_send,
         bubble_tap_silence_secs,
         bubble_long_press_mode,
-        bubble_long_press_auto_send,
         bubble_long_press_silence_secs,
         openrouter_api_key,
         live_preview_enabled,
@@ -672,10 +661,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         hotkey_mode_slot2: slot1_mode,
         bubble_recording_mode: cfg.bubble_recording_mode,
         bubble_tap_mode: cfg.bubble_tap_mode,
-        bubble_tap_auto_send: cfg.bubble_tap_auto_send,
         bubble_tap_silence_secs: cfg.bubble_tap_silence_secs,
         bubble_long_press_mode: cfg.bubble_long_press_mode,
-        bubble_long_press_auto_send: cfg.bubble_long_press_auto_send,
         bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
         voice_command_enabled: cfg.voice_command_enabled,
         feedback_webhook_url: cfg.feedback_webhook_url,
@@ -705,25 +692,23 @@ pub fn get_advanced_settings(
 
 /// Saves updated advanced settings. Replaces the entire advanced block.
 ///
-/// If any custom LLM system prompt field is non-empty (i.e. the user is
-/// overriding built-in prompts), a paid license is required.
+/// Story 7.9: `advanced.llmModel*` is a live runtime override, so the cleanup
+/// provider is rebuilt from the persisted config afterwards — the same
+/// hot-reload `save_settings` does. Without it a changed model ID would only
+/// take effect after an app restart.
 #[tauri::command]
 pub fn save_advanced_settings(
     state: State<'_, AppState>,
     settings: config::AdvancedSettings,
 ) -> Result<(), String> {
-    // License gate: custom LLM system prompts require a paid license.
-    let has_custom_prompt = !settings.llm_system_prompt_polished.is_empty()
-        || !settings.llm_system_prompt_verbatim.is_empty()
-        || !settings.llm_system_prompt_chat.is_empty()
-        || !settings.llm_command_mode_prompt.is_empty();
-    if has_custom_prompt {
-        require_license!(state, LicensedFeature::CustomPrompts);
-    }
+    let inner = state.inner();
+    let new_cfg = inner.save_config_locked("advanced settings", |cfg| cfg.advanced = settings)?;
 
-    state
-        .inner()
-        .save_config_locked("advanced settings", |cfg| cfg.advanced = settings)?;
+    // Hot-reload the cleanup provider so a changed model ID acts immediately.
+    // Still exactly one `save_config_locked` writer (ADR-0015).
+    *crate::write_lock!(inner.cleanup_provider)? =
+        crate::pipeline::resolve_cleanup_provider(&new_cfg);
+
     Ok(())
 }
 
@@ -773,8 +758,13 @@ pub async fn update_api_keys(
     }
 
     if let Some(key) = deepseek_api_key {
-        *crate::write_lock!(inner.cleanup_provider)? =
-            Arc::new(llm::DeepSeekCleanup::new(key));
+        // Story 7.9: route through the shared resolution so this legacy path
+        // cannot bypass the `advanced.llmModelDeepseek` override.
+        let advanced = crate::lock!(inner.config)?.advanced.clone();
+        *crate::write_lock!(inner.cleanup_provider)? = Arc::new(
+            llm::DeepSeekCleanup::new(key)
+                .with_model(llm::effective_cleanup_model("deepseek", &advanced.llm_model_deepseek)),
+        );
     }
 
     Ok(())
@@ -1157,10 +1147,6 @@ mod tests {
             "bubble_tap_mode must default to \"toggle\""
         );
         assert!(
-            !loaded.bubble_tap_auto_send,
-            "bubble_tap_auto_send must default to false"
-        );
-        assert!(
             (loaded.bubble_tap_silence_secs - 2.0).abs() < f32::EPSILON,
             "bubble_tap_silence_secs must default to 2.0, got {}",
             loaded.bubble_tap_silence_secs
@@ -1170,10 +1156,6 @@ mod tests {
             "bubble_long_press_mode must default to \"hold\""
         );
         assert!(
-            !loaded.bubble_long_press_auto_send,
-            "bubble_long_press_auto_send must default to false"
-        );
-        assert!(
             (loaded.bubble_long_press_silence_secs - 2.0).abs() < f32::EPSILON,
             "bubble_long_press_silence_secs must default to 2.0, got {}",
             loaded.bubble_long_press_silence_secs
@@ -1181,17 +1163,15 @@ mod tests {
     }
 
     /// Round-trip: serialize AppConfig with non-default bubble gesture values,
-    /// then reload from disk -- all six fields must survive intact.
+    /// then reload from disk -- all four fields must survive intact.
     #[test]
     fn test_bubble_gesture_fields_roundtrip() {
         let dir = temp_dir();
 
         let cfg = AppConfig {
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 1.5,
             bubble_long_press_mode: "auto".to_string(),
-            bubble_long_press_auto_send: true,
             bubble_long_press_silence_secs: 3.5,
             ..AppConfig::default()
         };
@@ -1200,14 +1180,12 @@ mod tests {
         let loaded = load_config(dir.path());
 
         assert_eq!(loaded.bubble_tap_mode, "autostop");
-        assert!(loaded.bubble_tap_auto_send);
         assert!(
             (loaded.bubble_tap_silence_secs - 1.5).abs() < f32::EPSILON,
             "bubble_tap_silence_secs should be 1.5, got {}",
             loaded.bubble_tap_silence_secs
         );
         assert_eq!(loaded.bubble_long_press_mode, "auto");
-        assert!(loaded.bubble_long_press_auto_send);
         assert!(
             (loaded.bubble_long_press_silence_secs - 3.5).abs() < f32::EPSILON,
             "bubble_long_press_silence_secs should be 3.5, got {}",
@@ -1407,10 +1385,8 @@ mod tests {
             auto_mode_silence_secs: 6.0,
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 3.0,
             bubble_long_press_mode: "auto".to_string(),
-            bubble_long_press_auto_send: true,
             bubble_long_press_silence_secs: 4.0,
             // Fields never touched by merge_settings:
             command_hotkey: "ctrl+shift+e".to_string(),
@@ -1471,10 +1447,8 @@ mod tests {
             insert_and_send_slot2: Some(false),
             bubble_recording_mode: Some("auto".to_string()),
             bubble_tap_mode: Some("hold".to_string()),
-            bubble_tap_auto_send: Some(false),
             bubble_tap_silence_secs: Some(1.0),
             bubble_long_press_mode: Some("toggle".to_string()),
-            bubble_long_press_auto_send: Some(false),
             bubble_long_press_silence_secs: Some(1.5),
             openrouter_api_key: Some("new-openrouter".to_string()),
             live_preview_enabled: Some(true),
@@ -1531,10 +1505,8 @@ mod tests {
         assert!(!result.hotkey_slots[1].insert_and_send);
         assert_eq!(result.bubble_recording_mode, "auto");
         assert_eq!(result.bubble_tap_mode, "hold");
-        assert!(!result.bubble_tap_auto_send);
         assert!((result.bubble_tap_silence_secs - 1.0).abs() < f32::EPSILON);
         assert_eq!(result.bubble_long_press_mode, "toggle");
-        assert!(!result.bubble_long_press_auto_send);
         assert!((result.bubble_long_press_silence_secs - 1.5).abs() < f32::EPSILON);
         assert_eq!(result.preview_panel_form, "compact");
         assert_eq!(result.bubble_size_dp, 48);

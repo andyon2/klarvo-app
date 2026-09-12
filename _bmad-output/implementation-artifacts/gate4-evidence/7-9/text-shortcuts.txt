@@ -1,0 +1,36 @@
+Klarvo
+EARLY ACCESS
+Shortcuts
+Hotkey 1
+Hotkey 2
+Shortcut
+ctrl+shift+d
+Mode
+Hold
+Toggle
+Auto Stop ⚠
+Auto ⚠
+
+Hold to record, release to process
+
+PASTE & BEHAVIOR
+Auto-Send
+Send Enter after pasting (useful for chat apps)
+Paste Delay (ms)
+Wait time before sending paste keystroke.
+Ctrl + Shift + D
+
+Bereinigungsstile
+
+Probiere 'Chat' für lockere Nachrichten oder 'Verbatim' für unveränderten Text.
+
+Ausprobieren
+Preview Mode
+THEMES
+▼
+
+Spotted something? Tap here to send feedback anytime!
+
+Don't show again
+×
+Kommentieren

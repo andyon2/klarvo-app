@@ -65,6 +65,45 @@ object KlarvoApi {
     const val CLEANUP_TEMPERATURE = 0.3
     const val CLEANUP_MAX_TOKENS = 2048
 
+    // Default cleanup model IDs per provider.
+    //
+    // Rust↔Kotlin TWINS of `DeepSeekCleanup::DEFAULT_MODEL` /
+    // `OpenAiCleanup::DEFAULT_MODEL` / `GroqCleanup::DEFAULT_MODEL`
+    // (src-tauri/src/llm/mod.rs). Story 7-9 named them (7-8 precedent:
+    // CLEANUP_TEMPERATURE) so the twin-constant lock in
+    // `TwinConstantsVectorsTest` asserts against the PRODUCTION symbol rather
+    // than a re-declared test literal.
+    //
+    // There is NO Anthropic entry: Android has no Anthropic cleanup provider
+    // (drift row H5, accepted under ADR-0016 Amendment 1), so
+    // `advanced.llmModelAnthropic` is Desktop-only. OpenRouter keeps its
+    // inline `"deepseek/deepseek-chat"` literal — it has no override key.
+    // Values unchanged; this is a naming change, not a behavior change.
+    const val DEFAULT_MODEL_DEEPSEEK = "deepseek-chat"
+    const val DEFAULT_MODEL_OPENAI = "gpt-4o-mini"
+    const val DEFAULT_MODEL_GROQ = "llama-3.3-70b-versatile"
+
+    /**
+     * Resolves the effective cleanup model from a raw `advanced.llmModel*`
+     * override.
+     *
+     * Rust↔Kotlin TWIN of `llm::effective_cleanup_model`
+     * (src-tauri/src/llm/mod.rs) — the ONE place that decides both halves of
+     * the rule on this platform:
+     *
+     * - the override is **trimmed** first, so a whitespace-only value counts
+     *   as empty and falls back to [default] (story 7-9, Q5),
+     * - otherwise the trimmed override wins.
+     *
+     * Both provider sites ([resolveLlmProvider] and [cleanupFallbackCandidates])
+     * go through here, so they cannot drift apart the way their URL literals
+     * once did (story 7-8).
+     */
+    internal fun effectiveCleanupModel(override: String, default: String): String {
+        val trimmed = override.trim()
+        return if (trimmed.isNotEmpty()) trimmed else default
+    }
+
     // Set to true after the first successful ensureRemoteTable() call.
     // Avoids an extra HTTP roundtrip on every subsequent Turso push.
     private var remoteTableEnsured = false
@@ -87,10 +126,8 @@ object KlarvoApi {
         val bubbleRecordingMode: String = "hold",
         // Per-gesture recording controls (tap and long-press independently configured).
         val bubbleTapMode: String = "toggle",
-        val bubbleTapAutoSend: Boolean = false,
         val bubbleTapSilenceSecs: Float = 2.0f,
         val bubbleLongPressMode: String = "hold",
-        val bubbleLongPressAutoSend: Boolean = false,
         val bubbleLongPressSilenceSecs: Float = 2.0f,
         // Mode-level silence durations (parity with desktop pipeline.rs:640/704 and the shared
         // settings UI, which binds the silence slider to autoModeSilenceSecs / autostopSilenceSecs).
@@ -148,7 +185,16 @@ object KlarvoApi {
         val previewFontSize: String = "small",
         // Story 11.6: default "medium" (NOT "small") — "medium" is the no-op tier that
         // reproduces today's hardcoded 1.7 line-spacing.
-        val previewLineSpacing: String = "medium"
+        val previewLineSpacing: String = "medium",
+        // Story 7-9: "advanced.llmModel*" cleanup-model overrides. Empty (the
+        // default) means "use the provider's built-in DEFAULT_MODEL_*" — see
+        // [effectiveCleanupModel]. Appended at the tail on purpose: [readConfig]
+        // builds Config(...) POSITIONALLY, so new fields go last.
+        // There is no Anthropic field: Android has no Anthropic cleanup
+        // provider (drift row H5) — llmModelAnthropic is Desktop-only.
+        val llmModelDeepseek: String = "",
+        val llmModelOpenai: String = "",
+        val llmModelGroq: String = ""
     )
 
     /**
@@ -168,13 +214,13 @@ object KlarvoApi {
         val primary: LlmProviderInfo? = when (config.llmProvider) {
             "groq" -> if (config.groqApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.groq.com/openai/v1/chat/completions",
-                model  = "llama-3.3-70b-versatile",
+                model  = effectiveCleanupModel(config.llmModelGroq, DEFAULT_MODEL_GROQ),
                 apiKey = config.groqApiKey,
                 providerName = "groq"
             ) else null
             "openai" -> if (config.openaiApiKey.isNotBlank()) LlmProviderInfo(
                 url    = "https://api.openai.com/v1/chat/completions",
-                model  = "gpt-4o-mini",
+                model  = effectiveCleanupModel(config.llmModelOpenai, DEFAULT_MODEL_OPENAI),
                 apiKey = config.openaiApiKey,
                 providerName = "openai"
             ) else null
@@ -186,7 +232,7 @@ object KlarvoApi {
             ) else null
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = DEEPSEEK_CHAT_URL,
-                model  = "deepseek-chat",
+                model  = effectiveCleanupModel(config.llmModelDeepseek, DEFAULT_MODEL_DEEPSEEK),
                 apiKey = config.deepseekApiKey,
                 providerName = "deepseek"
             ) else null
@@ -220,13 +266,13 @@ object KlarvoApi {
     private fun cleanupFallbackCandidates(config: Config): List<Triple<String, String, LlmProviderInfo>> = listOf(
         Triple("deepseek", config.deepseekApiKey, LlmProviderInfo(
             url    = DEEPSEEK_CHAT_URL,
-            model  = "deepseek-chat",
+            model  = effectiveCleanupModel(config.llmModelDeepseek, DEFAULT_MODEL_DEEPSEEK),
             apiKey = config.deepseekApiKey,
             providerName = "deepseek"
         )),
         Triple("openai", config.openaiApiKey, LlmProviderInfo(
             url    = "https://api.openai.com/v1/chat/completions",
-            model  = "gpt-4o-mini",
+            model  = effectiveCleanupModel(config.llmModelOpenai, DEFAULT_MODEL_OPENAI),
             apiKey = config.openaiApiKey,
             providerName = "openai"
         )),
@@ -330,6 +376,21 @@ object KlarvoApi {
         json.optJSONObject("advanced")?.optLong("minRecordingMs", 500L) ?: 500L
 
     /**
+     * Pure `advanced.llmModel*` parse (story 7-9, AC5). Same shape and the same
+     * reason as [parseMinRecordingMs]: a JVM unit test drives the REAL
+     * `org.json` path against a real `config.json` string instead of asserting
+     * a hand-built [Config] against itself. A misspelled key here would make
+     * the override silently inert while the feature reports green.
+     *
+     * `key` is the camelCase key under `advanced` (Rust serializes
+     * `AdvancedSettings` with `rename_all = "camelCase"`). Absent key, absent
+     * `advanced` object, and an empty value all yield `""`, which
+     * [effectiveCleanupModel] then reads as "use the built-in default".
+     */
+    internal fun parseLlmModelOverride(json: JSONObject, key: String): String =
+        json.optJSONObject("advanced")?.optString(key, "") ?: ""
+
+    /**
      * Reads config.json from the app's data directory.
      * Tauri's app_data_dir() resolves to dataDir, not filesDir.
      * Returns null if the file doesn't exist or keys are missing.
@@ -355,10 +416,8 @@ object KlarvoApi {
             val bubbleRecordingMode = json.optString("bubbleRecordingMode", "hold")
             // Per-gesture controls (tap and long-press independently configured).
             val bubbleTapMode = json.optString("bubbleTapMode", "toggle")
-            val bubbleTapAutoSend = json.optBoolean("bubbleTapAutoSend", false)
             val bubbleTapSilenceSecs = json.optDouble("bubbleTapSilenceSecs", 2.0).toFloat()
             val bubbleLongPressMode = json.optString("bubbleLongPressMode", "hold")
-            val bubbleLongPressAutoSend = json.optBoolean("bubbleLongPressAutoSend", false)
             val bubbleLongPressSilenceSecs = json.optDouble("bubbleLongPressSilenceSecs", 2.0).toFloat()
             // Mode-level silence durations (camelCase keys written by Rust). AUTO/AUTOSTOP read
             // these; the bubble per-gesture values apply only to non-auto modes. See readConfig docstring.
@@ -390,6 +449,12 @@ object KlarvoApi {
             // silenceThreshold above (M2, AC5, Story 7-2). Default 500 matches Rust's
             // AdvancedSettings::min_recording_ms default (config/mod.rs:217-219).
             val minRecordingMs = parseMinRecordingMs(json)
+            // Story 7-9: "advanced.llmModel*" cleanup-model overrides. Empty =
+            // use the provider's built-in default (see effectiveCleanupModel).
+            // No Anthropic override: Android has no Anthropic provider (H5).
+            val llmModelDeepseek = parseLlmModelOverride(json, "llmModelDeepseek")
+            val llmModelOpenai = parseLlmModelOverride(json, "llmModelOpenai")
+            val llmModelGroq = parseLlmModelOverride(json, "llmModelGroq")
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -473,8 +538,8 @@ object KlarvoApi {
             else Config(
                 groqKey, gatedDeepseek, language, cleanupStyle, tursoUrl, tursoToken, deviceId,
                 bubbleSize, bubbleOpacity, bubbleSizeDp, bubbleEdgeSnap, bubbleRecordingMode,
-                bubbleTapMode, bubbleTapAutoSend, bubbleTapSilenceSecs,
-                bubbleLongPressMode, bubbleLongPressAutoSend, bubbleLongPressSilenceSecs,
+                bubbleTapMode, bubbleTapSilenceSecs,
+                bubbleLongPressMode, bubbleLongPressSilenceSecs,
                 autostopSilenceSecs, autoModeSilenceSecs,
                 gatedLlmProvider, gatedOpenai, gatedOpenrouter,
                 licenseKey, licenseSource, lsInstanceId, lsLastValidatedAt,
@@ -486,7 +551,8 @@ object KlarvoApi {
                 livePreviewEnabled, previewPauseSilenceSecs,
                 previewTextColor, previewBgColor, previewBgBlur,
                 previewBorderColor, previewBorderWidth, previewBorderRadius,
-                previewFontFamily, previewFontSize, previewLineSpacing
+                previewFontFamily, previewFontSize, previewLineSpacing,
+                llmModelDeepseek, llmModelOpenai, llmModelGroq
             )
         } catch (e: Exception) {
             null

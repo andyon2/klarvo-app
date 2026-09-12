@@ -69,9 +69,8 @@ export interface SettingsPanelProps {
     autoModeSilenceSecs?: number | null,
     hotkeySlot2?: string | null, hotkeyModeSlot2?: HotkeyMode | null,
     insertAndSendSlot2?: boolean | null,
-    bubbleTapMode?: string | null, bubbleTapAutoSend?: boolean | null,
-    bubbleTapSilenceSecs?: number | null, bubbleLongPressMode?: string | null,
-    bubbleLongPressAutoSend?: boolean | null, bubbleLongPressSilenceSecs?: number | null,
+    bubbleTapMode?: string | null, bubbleTapSilenceSecs?: number | null,
+    bubbleLongPressMode?: string | null, bubbleLongPressSilenceSecs?: number | null,
     livePreviewEnabled?: boolean | null, previewPauseSilenceSecs?: number | null,
     previewPanelForm?: string | null,
     previewTextColor?: string | null, previewBgColor?: string | null,
@@ -174,10 +173,8 @@ export function SettingsPanel({
   const [localAutoModeSilenceSecs, setLocalAutoModeSilenceSecs] = useState(loadedSettings?.autoModeSilenceSecs ?? 2.0);
   const [bubbleTab, setBubbleTab] = useState<0 | 1>(0);
   const [localBubbleTapMode, setLocalBubbleTapMode] = useState<HotkeyMode>((loadedSettings?.bubbleTapMode ?? "toggle") as HotkeyMode);
-  const [localBubbleTapAutoSend, setLocalBubbleTapAutoSend] = useState(loadedSettings?.bubbleTapAutoSend ?? false);
   const [localBubbleTapSilenceSecs, setLocalBubbleTapSilenceSecs] = useState(loadedSettings?.bubbleTapSilenceSecs ?? 2.0);
   const [localBubbleLongPressMode, setLocalBubbleLongPressMode] = useState<HotkeyMode>((loadedSettings?.bubbleLongPressMode ?? "hold") as HotkeyMode);
-  const [localBubbleLongPressAutoSend, setLocalBubbleLongPressAutoSend] = useState(loadedSettings?.bubbleLongPressAutoSend ?? false);
   const [localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs] = useState(loadedSettings?.bubbleLongPressSilenceSecs ?? 2.0);
   // Voice Command Mode: reflects what the backend monitor is currently doing.
   // Toggling this calls toggle_voice_command_mode and syncs the backend directly.
@@ -222,9 +219,7 @@ export function SettingsPanel({
   );
   // Silence threshold: lives in AdvancedSettings, loaded separately on mount.
   const [localSilenceThreshold, setLocalSilenceThreshold] = useState(0.005);
-  const [localAutoPaste, setLocalAutoPaste] = useState(true);
   const [localPasteDelayMs, setLocalPasteDelayMs] = useState(80);
-  const [localAutoCapitalize, setLocalAutoCapitalize] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -248,9 +243,7 @@ export function SettingsPanel({
       .then((adv) => {
         setAdvancedSettings(adv);
         setLocalSilenceThreshold(adv.silenceThreshold);
-        setLocalAutoPaste(adv.autoPaste);
         setLocalPasteDelayMs(adv.pasteDelayMs);
-        setLocalAutoCapitalize(adv.autoCapitalize);
       })
       .catch(console.error);
   }, []);
@@ -322,10 +315,8 @@ export function SettingsPanel({
       setLocalHotkeySlot2(loadedSettings.hotkeySlot2 ?? "");
       setLocalHotkeyModeSlot2(loadedSettings.hotkeyModeSlot2 ?? "hold");
       setLocalBubbleTapMode((loadedSettings.bubbleTapMode ?? "toggle") as HotkeyMode);
-      setLocalBubbleTapAutoSend(loadedSettings.bubbleTapAutoSend ?? false);
       setLocalBubbleTapSilenceSecs(loadedSettings.bubbleTapSilenceSecs ?? 2.0);
       setLocalBubbleLongPressMode((loadedSettings.bubbleLongPressMode ?? "hold") as HotkeyMode);
-      setLocalBubbleLongPressAutoSend(loadedSettings.bubbleLongPressAutoSend ?? false);
       setLocalBubbleLongPressSilenceSecs(loadedSettings.bubbleLongPressSilenceSecs ?? 2.0);
       setLocalVoiceCommandEnabled(loadedSettings.voiceCommandEnabled ?? false);
       setLocalLivePreviewEnabled(loadedSettings.livePreviewEnabled ?? false);
@@ -408,16 +399,12 @@ export function SettingsPanel({
       tursoToken.trim() !== "" ||
       (!isDesktop && (
         localBubbleTapMode !== (loadedSettings.bubbleTapMode ?? "toggle") ||
-        localBubbleTapAutoSend !== (loadedSettings.bubbleTapAutoSend ?? false) ||
         localBubbleTapSilenceSecs !== (loadedSettings.bubbleTapSilenceSecs ?? 2.0) ||
         localBubbleLongPressMode !== (loadedSettings.bubbleLongPressMode ?? "hold") ||
-        localBubbleLongPressAutoSend !== (loadedSettings.bubbleLongPressAutoSend ?? false) ||
         localBubbleLongPressSilenceSecs !== (loadedSettings.bubbleLongPressSilenceSecs ?? 2.0)
       ))
     || (advancedSettings !== null && advancedSettings.silenceThreshold !== localSilenceThreshold)
-    || (advancedSettings !== null && advancedSettings.autoPaste !== localAutoPaste)
     || (advancedSettings !== null && advancedSettings.pasteDelayMs !== localPasteDelayMs)
-    || (advancedSettings !== null && advancedSettings.autoCapitalize !== localAutoCapitalize)
     || (loadedSettings?.livePreviewEnabled ?? false) !== localLivePreviewEnabled
     || (loadedSettings?.previewPauseSilenceSecs ?? 2.0) !== localPreviewPauseSilenceSecs
     || (loadedSettings?.previewPanelForm ?? "comfortable") !== localPreviewPanelForm
@@ -440,10 +427,10 @@ export function SettingsPanel({
     localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, localBubbleSize,
     localBubbleOpacity, localWhisperModel, localWhisperGpu,
     localInsertAndSendSlot1, localInsertAndSendSlot2, localAutostopSilenceSecs, localAutoModeSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
-    localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
-    localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+    localBubbleTapMode, localBubbleTapSilenceSecs,
+    localBubbleLongPressMode, localBubbleLongPressSilenceSecs,
     groqKey, deepseekKey, openaiKey, anthropicKey, tursoToken,
-    advancedSettings, localSilenceThreshold, localAutoPaste, localPasteDelayMs, localAutoCapitalize,
+    advancedSettings, localSilenceThreshold, localPasteDelayMs,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
     localPreviewTextColor, localPreviewBgColor, localPreviewBgBlur, localPreviewBorderColor,
     localPreviewBorderWidth, localPreviewBorderRadius, localPreviewFontFamily, localPreviewFontSize, localPreviewLineSpacing,
@@ -558,9 +545,8 @@ export function SettingsPanel({
         localInsertAndSendSlot1, autostopSecs, autoModeSecs,
         localHotkeySlot2, localHotkeyModeSlot2,
         localInsertAndSendSlot2,
-        localBubbleTapMode, localBubbleTapAutoSend,
-        localBubbleTapSilenceSecs, localBubbleLongPressMode,
-        localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+        localBubbleTapMode, localBubbleTapSilenceSecs,
+        localBubbleLongPressMode, localBubbleLongPressSilenceSecs,
         localLivePreviewEnabled, localPreviewPauseSilenceSecs,
         localPreviewPanelForm,
         localPreviewTextColor, localPreviewBgColor,
@@ -575,16 +561,12 @@ export function SettingsPanel({
       // Save AdvancedSettings fields when any have changed.
       if (advancedSettings !== null && (
         advancedSettings.silenceThreshold !== localSilenceThreshold ||
-        advancedSettings.autoPaste !== localAutoPaste ||
-        advancedSettings.pasteDelayMs !== localPasteDelayMs ||
-        advancedSettings.autoCapitalize !== localAutoCapitalize
+        advancedSettings.pasteDelayMs !== localPasteDelayMs
       )) {
         const updatedAdv: AdvancedSettings = {
           ...advancedSettings,
           silenceThreshold: localSilenceThreshold,
-          autoPaste: localAutoPaste,
           pasteDelayMs: localPasteDelayMs,
-          autoCapitalize: localAutoCapitalize,
         };
         await saveAdvancedSettings(updatedAdv);
         setAdvancedSettings(updatedAdv);
@@ -611,8 +593,8 @@ export function SettingsPanel({
     localSttProvider, localLlmProvider, localOutputLanguage, localWebhookUrl, localTursoUrl, tursoToken,
     localBubbleSize, localBubbleOpacity, localWhisperModel, localWhisperGpu,
     localInsertAndSendSlot1, localInsertAndSendSlot2, localAutostopSilenceSecs, localAutoModeSilenceSecs, localHotkeySlot2, localHotkeyModeSlot2,
-    localBubbleTapMode, localBubbleTapAutoSend, localBubbleTapSilenceSecs,
-    localBubbleLongPressMode, localBubbleLongPressAutoSend, localBubbleLongPressSilenceSecs,
+    localBubbleTapMode, localBubbleTapSilenceSecs,
+    localBubbleLongPressMode, localBubbleLongPressSilenceSecs,
     advancedSettings, localSilenceThreshold,
     openrouterKey,
     localLivePreviewEnabled, localPreviewPauseSilenceSecs, localPreviewPanelForm,
@@ -762,22 +744,16 @@ export function SettingsPanel({
                 hotkeyTab={hotkeyTab} setHotkeyTab={setHotkeyTab}
                 bubbleTab={bubbleTab} setBubbleTab={setBubbleTab}
                 localBubbleTapMode={localBubbleTapMode} setLocalBubbleTapMode={setLocalBubbleTapMode}
-                localBubbleTapAutoSend={localBubbleTapAutoSend} setLocalBubbleTapAutoSend={setLocalBubbleTapAutoSend}
                 localBubbleTapSilenceSecs={localBubbleTapSilenceSecs} setLocalBubbleTapSilenceSecs={setLocalBubbleTapSilenceSecs}
                 localBubbleLongPressMode={localBubbleLongPressMode} setLocalBubbleLongPressMode={setLocalBubbleLongPressMode}
-                localBubbleLongPressAutoSend={localBubbleLongPressAutoSend} setLocalBubbleLongPressAutoSend={setLocalBubbleLongPressAutoSend}
                 localBubbleLongPressSilenceSecs={localBubbleLongPressSilenceSecs} setLocalBubbleLongPressSilenceSecs={setLocalBubbleLongPressSilenceSecs}
                 localSilenceThreshold={localSilenceThreshold}
                 loadedSettings={loadedSettings}
                 onHotkeyChange={onHotkeyChange}
                 onHotkeyModeChange={onHotkeyModeChange}
                 isPaid={isPaid}
-                localAutoPaste={localAutoPaste}
-                setLocalAutoPaste={setLocalAutoPaste}
                 localPasteDelayMs={localPasteDelayMs}
                 setLocalPasteDelayMs={setLocalPasteDelayMs}
-                localAutoCapitalize={localAutoCapitalize}
-                setLocalAutoCapitalize={setLocalAutoCapitalize}
                 localBubbleSizeDp={localBubbleSizeDp}
                 setLocalBubbleSizeDp={setLocalBubbleSizeDp}
                 localBubbleEdgeSnap={localBubbleEdgeSnap}

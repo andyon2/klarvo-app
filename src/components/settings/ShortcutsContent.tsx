@@ -196,15 +196,11 @@ export interface ShortcutsContentProps {
   // Mobile bubble tap controls
   localBubbleTapMode: HotkeyMode;
   setLocalBubbleTapMode: (v: HotkeyMode) => void;
-  localBubbleTapAutoSend: boolean;
-  setLocalBubbleTapAutoSend: (v: boolean) => void;
   localBubbleTapSilenceSecs: number;
   setLocalBubbleTapSilenceSecs: (v: number) => void;
   // Mobile bubble long-press controls
   localBubbleLongPressMode: HotkeyMode;
   setLocalBubbleLongPressMode: (v: HotkeyMode) => void;
-  localBubbleLongPressAutoSend: boolean;
-  setLocalBubbleLongPressAutoSend: (v: boolean) => void;
   localBubbleLongPressSilenceSecs: number;
   setLocalBubbleLongPressSilenceSecs: (v: number) => void;
   // Silence threshold (advanced audio setting)
@@ -216,12 +212,8 @@ export interface ShortcutsContentProps {
   onHotkeyModeChange: (m: HotkeyMode) => void;
   isPaid: boolean;
   // Paste & Behavior (from AdvancedSettings, displayed here)
-  localAutoPaste: boolean;
-  setLocalAutoPaste: (v: boolean) => void;
   localPasteDelayMs: number;
   setLocalPasteDelayMs: (v: number) => void;
-  localAutoCapitalize: boolean;
-  setLocalAutoCapitalize: (v: boolean) => void;
   // Story 9.3: bubble size slider (0 = Auto) and edge-snap toggle (mobile only)
   localBubbleSizeDp: number;
   setLocalBubbleSizeDp: (v: number) => void;
@@ -248,7 +240,7 @@ export function ShortcutsContent({
   localBubbleLongPressMode, setLocalBubbleLongPressMode,
   localBubbleLongPressSilenceSecs, setLocalBubbleLongPressSilenceSecs,
   loadedSettings: _loadedSettings, onHotkeyChange, onHotkeyModeChange,
-  localAutoPaste, setLocalAutoPaste, localPasteDelayMs, setLocalPasteDelayMs, localAutoCapitalize, setLocalAutoCapitalize,
+  localPasteDelayMs, setLocalPasteDelayMs,
   localBubbleSizeDp, setLocalBubbleSizeDp, localBubbleEdgeSnap, setLocalBubbleEdgeSnap,
   localRecordingButtonSizeDp, setLocalRecordingButtonSizeDp,
 }: ShortcutsContentProps) {
@@ -575,24 +567,15 @@ export function ShortcutsContent({
       <div className="flex flex-col gap-3 pl-4 pb-3 pt-3 border-t border-klarvo-border/30 mt-1">
         <span className="text-xs font-semibold text-klarvo-muted uppercase tracking-wide">Paste & Behavior</span>
         <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Paste</span><span className="text-[11px] text-klarvo-muted">Automatically paste result into active window.</span></div>
-          <KToggle checked={localAutoPaste} onChange={setLocalAutoPaste} />
-        </div>
-        <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Send</span><span className="text-[11px] text-klarvo-muted">Send Enter after pasting (useful for chat apps)</span></div>
           <KToggle
             checked={localInsertAndSendSlot1}
             onChange={() => setLocalInsertAndSendSlot1((v) => !v)}
-            disabled={!localAutoPaste}
           />
         </div>
         <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Auto-Capitalize</span><span className="text-[11px] text-klarvo-muted">Capitalize first letter of every result.</span></div>
-          <KToggle checked={localAutoCapitalize} onChange={setLocalAutoCapitalize} />
-        </div>
-        <div className={`flex items-center justify-between gap-3${!localAutoPaste ? " opacity-40 pointer-events-none" : ""}`}>
           <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Paste Delay (ms)</span><span className="text-[11px] text-klarvo-muted">Wait time before sending paste keystroke.</span></div>
-          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} disabled={!localAutoPaste} className={`w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus-klarvo${!localAutoPaste ? " cursor-not-allowed" : ""}`} />
+          <input type="number" min={0} max={2000} step={10} value={localPasteDelayMs} onChange={(e) => setLocalPasteDelayMs(parseInt(e.target.value, 10) || 0)} className="w-16 bg-klarvo-bg border border-klarvo-border/50 rounded-md px-2 py-1 text-xs text-right text-klarvo-text focus-klarvo" />
         </div>
       </div>
     </>
