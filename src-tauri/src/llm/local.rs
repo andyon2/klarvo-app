@@ -86,6 +86,11 @@ unsafe impl Sync for LoadedModel {}
 pub struct LocalLlmCleanup {
     model_path: PathBuf,
     prompt_format: PromptFormat,
+    /// The GGUF file name, reported by [`CleanupProvider::model`] so the
+    /// pipeline's cleanup log line names a model on this arm too instead of
+    /// printing `model: ` empty (review round 1, P3). Stored rather than derived
+    /// on call because `model()` returns a borrowed `&str`.
+    model_name: String,
     // Arc so we can clone a handle into spawn_blocking without borrowing &self.
     state: Arc<Mutex<Option<LoadedModel>>>,
 }
@@ -95,15 +100,16 @@ impl LocalLlmCleanup {
     ///
     /// The model is NOT loaded yet — that happens on the first `cleanup()` call.
     pub fn new(model_path: PathBuf) -> Self {
-        let prompt_format = model_path
-            .file_name()
-            .and_then(|n| n.to_str())
+        let file_name = model_path.file_name().and_then(|n| n.to_str());
+        let prompt_format = file_name
             .map(PromptFormat::from_filename)
             .unwrap_or(PromptFormat::ChatMl);
+        let model_name = file_name.unwrap_or_default().to_string();
 
         Self {
             model_path,
             prompt_format,
+            model_name,
             state: Arc::new(Mutex::new(None)),
         }
     }
@@ -276,6 +282,18 @@ impl LocalLlmCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for LocalLlmCleanup {
+    /// The GGUF file name (not the full path — the path is logged separately by
+    /// `pipeline::resolve_cleanup_provider`, and the log line this feeds is a
+    /// per-dictation line).
+    ///
+    /// Without this impl the trait default `""` made the GATE-4 cleanup line
+    /// print `model: ` empty on the Windows `local` arm (review round 1, P3).
+    /// The `advanced.llmModel*` overrides do NOT reach this provider: local
+    /// inference selects its model by file, not by ID.
+    fn model(&self) -> &str {
+        &self.model_name
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,

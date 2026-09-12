@@ -311,6 +311,20 @@ pub struct CleanupResult {
 /// to the provider's own HTTP client if available, or returns an error.
 #[async_trait::async_trait]
 pub trait CleanupProvider: Send + Sync {
+    /// The model ID this provider sends with each request.
+    ///
+    /// Story 7.9: exists so the pipeline can name the resolved model in
+    /// `Klarvo.log` (GATE-4 observes a changed model ID there), mirroring
+    /// Android's `[pipeline] cleanup: …ms (${llmProvider.model})`.
+    ///
+    /// Defaults to `""` for providers that have no single model ID (the
+    /// in-module test doubles). Every real provider overrides it: the five
+    /// network providers, and — Windows-only — `local::LocalLlmCleanup`, which
+    /// reports its GGUF file name (review round 1, P3).
+    fn model(&self) -> &str {
+        ""
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -642,6 +656,10 @@ impl OpenAiCompatibleCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for OpenAiCompatibleCleanup {
+    fn model(&self) -> &str {
+        &self.model
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -730,7 +748,6 @@ impl DeepSeekCleanup {
     }
 
     /// Override the model variant.
-    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -757,6 +774,10 @@ impl DeepSeekCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for DeepSeekCleanup {
+    fn model(&self) -> &str {
+        &self.inner.model
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -793,7 +814,7 @@ pub struct OpenAiCleanup {
 
 impl OpenAiCleanup {
     const BASE_URL: &'static str = "https://api.openai.com/v1/chat/completions";
-    const DEFAULT_MODEL: &'static str = "gpt-4o-mini";
+    pub(crate) const DEFAULT_MODEL: &'static str = "gpt-4o-mini";
 
     /// Creates a new `OpenAiCleanup` client with the given API key.
     pub fn new(api_key: impl Into<String>) -> Self {
@@ -803,7 +824,6 @@ impl OpenAiCleanup {
     }
 
     /// Override the model variant.
-    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -830,6 +850,10 @@ impl OpenAiCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for OpenAiCleanup {
+    fn model(&self) -> &str {
+        &self.inner.model
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -867,7 +891,7 @@ pub struct GroqCleanup {
 
 impl GroqCleanup {
     const BASE_URL: &'static str = "https://api.groq.com/openai/v1/chat/completions";
-    const DEFAULT_MODEL: &'static str = "llama-3.3-70b-versatile";
+    pub(crate) const DEFAULT_MODEL: &'static str = "llama-3.3-70b-versatile";
 
     /// Creates a new `GroqCleanup` client with the given API key.
     pub fn new(api_key: impl Into<String>) -> Self {
@@ -877,7 +901,6 @@ impl GroqCleanup {
     }
 
     /// Override the model variant.
-    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = model.into();
         self
@@ -904,6 +927,10 @@ impl GroqCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for GroqCleanup {
+    fn model(&self) -> &str {
+        &self.inner.model
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -1001,7 +1028,7 @@ pub struct AnthropicCleanup {
 impl AnthropicCleanup {
     const BASE_URL: &'static str = "https://api.anthropic.com/v1/messages";
     const API_VERSION: &'static str = "2023-06-01";
-    const DEFAULT_MODEL: &'static str = "claude-haiku-4-5-20251001";
+    pub(crate) const DEFAULT_MODEL: &'static str = "claude-haiku-4-5-20251001";
     const DEFAULT_TEMPERATURE: f32 = 0.3;
     const DEFAULT_MAX_TOKENS: u32 = 2048;
 
@@ -1024,7 +1051,6 @@ impl AnthropicCleanup {
     }
 
     /// Override the model variant.
-    #[allow(dead_code)] // builder API for future use
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
@@ -1177,6 +1203,10 @@ impl AnthropicCleanup {
 
 #[async_trait::async_trait]
 impl CleanupProvider for AnthropicCleanup {
+    fn model(&self) -> &str {
+        &self.model
+    }
+
     async fn cleanup(
         &self,
         raw_text: &str,
@@ -1224,6 +1254,72 @@ impl CleanupProvider for AnthropicCleanup {
         let body = self.build_reformat_request(text, format);
         self.send_request(&body).await
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup model resolution (Story 7.9)
+// ---------------------------------------------------------------------------
+
+/// Resolves the effective cleanup model for `provider` from a raw config
+/// override.
+///
+/// This is the ONE place that decides both halves of the rule, so the
+/// pipeline's provider arms stay uniform and cannot drift apart:
+///
+/// - **Control characters (review round 1, D2):** every char below `U+0020`
+///   **and `U+0085` (NEL)** is dropped. The override is unvalidated free text
+///   (D2 chose no UI validation), and an interior newline would otherwise forge
+///   a line in `Klarvo.log` and travel to the provider verbatim.
+/// - **Empty predicate (Q5):** the filtered value is trimmed, so a
+///   whitespace-only value counts as empty and falls back to the default.
+///   The Kotlin twin (`KlarvoApi.effectiveCleanupModel`) uses the same rule.
+/// - **The ORDER is filter → trim → empty check (review round 3).** Both parts
+///   of it are load-bearing:
+///   - *filter before trim*, because the two runtimes' `trim()` disagree about
+///     which control characters are whitespace, and trimming first leaves that
+///     disagreement in the result. Rust's `str::trim` follows the Unicode
+///     `White_Space` property (strips `U+0085`, keeps `U+001C`..`U+001F`);
+///     Kotlin's `trim()` uses `Character.isWhitespace`/`isSpaceChar` (the exact
+///     opposite on both). With trim first, `"\u{85} deepseek"` became
+///     `"deepseek"` on Rust but `" deepseek"` on Kotlin, and `"\u{1c} deepseek"`
+///     diverged the other way: one config, two different `model` fields on the
+///     wire. Filtering first removes every such character *before* either
+///     `trim()` can see it, so neither runtime's whitespace table matters.
+///   - *trim before the empty check*, so a value that is non-empty after
+///     filtering but blank after trimming (e.g. a lone `U+0001`, or `"  "`)
+///     still falls back to the default.
+/// - **Why `U+0085` is named explicitly (review round 2, RES-2):** `0x85 >= 0x20`,
+///   so the `< U+0020` filter alone would keep it while the two `trim()`
+///   implementations disagree about it. (`U+00A0` does not diverge — both trim it.)
+/// - **Default:** the provider's built-in `DEFAULT_MODEL`.
+///
+/// `provider` uses the same names as `cfg.llm_provider`. An unrecognised name
+/// resolves like `"deepseek"`, matching `pipeline::cleanup_provider_for`.
+///
+/// OpenRouter is deliberately absent: it has no override key and keeps its
+/// hard-coded model literal on both platforms (Q8).
+///
+/// Both halves of the rule are pinned by `TWIN-CLEANUP-MODEL-SANITIZE-001` in
+/// `test-fixtures/twin-constants-vectors.json`, read by this module's
+/// `spec_twin_constants_cleanup_model_sanitize` and by the Kotlin twin's
+/// `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`.
+pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
+    let filtered: String = override_raw
+        .chars()
+        .filter(|c| *c >= '\u{20}' && *c != '\u{85}')
+        .collect();
+    let sanitized = filtered.trim();
+    if !sanitized.is_empty() {
+        return sanitized.to_string();
+    }
+    match provider {
+        "openai" => OpenAiCleanup::DEFAULT_MODEL,
+        "groq" => GroqCleanup::DEFAULT_MODEL,
+        "anthropic" => AnthropicCleanup::DEFAULT_MODEL,
+        // "deepseek" and any unrecognised value
+        _ => DeepSeekCleanup::DEFAULT_MODEL,
+    }
+    .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1431,6 +1527,102 @@ pub async fn chunked_cleanup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // Story 7.9 — effective_cleanup_model (the ONE override/default predicate)
+    // -----------------------------------------------------------------------
+
+    /// AC5: a non-empty override wins over the built-in default, per provider.
+    #[test]
+    fn spec_effective_model_override_wins_per_provider() {
+        assert_eq!(effective_cleanup_model("deepseek", "deepseek-reasoner"), "deepseek-reasoner");
+        assert_eq!(effective_cleanup_model("openai", "gpt-4o"), "gpt-4o");
+        assert_eq!(effective_cleanup_model("groq", "llama-3.1-8b-instant"), "llama-3.1-8b-instant");
+        assert_eq!(effective_cleanup_model("anthropic", "claude-sonnet-4-5"), "claude-sonnet-4-5");
+    }
+
+    /// AC5 + Q5: empty AND whitespace-only both mean "use the default".
+    /// The Kotlin twin `KlarvoApi.effectiveCleanupModel` uses the same rule.
+    #[test]
+    fn spec_effective_model_blank_override_uses_default() {
+        for blank in ["", " ", "   ", "\t", "\n", " \t\n "] {
+            assert_eq!(
+                effective_cleanup_model("deepseek", blank),
+                DeepSeekCleanup::DEFAULT_MODEL,
+                "blank override {blank:?} must resolve to the DeepSeek default"
+            );
+            assert_eq!(effective_cleanup_model("openai", blank), OpenAiCleanup::DEFAULT_MODEL);
+            assert_eq!(effective_cleanup_model("groq", blank), GroqCleanup::DEFAULT_MODEL);
+            assert_eq!(
+                effective_cleanup_model("anthropic", blank),
+                AnthropicCleanup::DEFAULT_MODEL
+            );
+        }
+    }
+
+    /// AC5: a padded override is trimmed, not sent verbatim.
+    #[test]
+    fn spec_effective_model_trims_override() {
+        assert_eq!(effective_cleanup_model("openai", "  gpt-4o  "), "gpt-4o");
+        assert_eq!(effective_cleanup_model("openai", "\n gpt-4o \t"), "gpt-4o");
+    }
+
+    /// An unrecognised provider name resolves like `"deepseek"`, matching
+    /// `pipeline::cleanup_provider_for`'s catch-all arm.
+    #[test]
+    fn spec_effective_model_unknown_provider_falls_back_to_deepseek_default() {
+        assert_eq!(
+            effective_cleanup_model("no-such-provider", ""),
+            DeepSeekCleanup::DEFAULT_MODEL
+        );
+    }
+
+    /// AC5: the resolved model reaches the actual REQUEST BODY, not just the
+    /// `model()` accessor — `provider.model()` could in principle read a field
+    /// the request builder ignores.
+    ///
+    /// PINS: `with_model` → `ChatRequest.model` for the three
+    /// OpenAI-compatible providers and `AnthropicCleanup`.
+    /// DOES NOT PIN: that the pipeline passes the config value in (that is
+    /// `pipeline::tests::spec_model_override_flows_through_*`).
+    #[test]
+    fn spec_overridden_model_reaches_the_request_body() {
+        let ds = DeepSeekCleanup::new("k").with_model("deepseek-reasoner");
+        assert_eq!(
+            ds.build_request("hallo welt", CleanupStyle::Verbatim, None, None).model,
+            "deepseek-reasoner"
+        );
+
+        let oa = OpenAiCleanup::new("k").with_model("gpt-4o");
+        assert_eq!(
+            oa.build_request("hallo welt", CleanupStyle::Verbatim, None, None).model,
+            "gpt-4o"
+        );
+
+        let gq = GroqCleanup::new("k").with_model("llama-3.1-8b-instant");
+        assert_eq!(
+            gq.build_request("hallo welt", CleanupStyle::Verbatim, None, None).model,
+            "llama-3.1-8b-instant"
+        );
+
+        let an = AnthropicCleanup::new("k").with_model("claude-sonnet-4-5");
+        assert_eq!(
+            an.build_request("hallo welt", CleanupStyle::Verbatim, None, None).model,
+            "claude-sonnet-4-5"
+        );
+    }
+
+    /// The `CleanupProvider::model()` accessor reports what the provider sends
+    /// — this is the value the pipeline logs for GATE-4 (Q7).
+    #[test]
+    fn spec_model_accessor_reports_the_sent_model() {
+        let ds = DeepSeekCleanup::new("k").with_model("deepseek-reasoner");
+        assert_eq!(CleanupProvider::model(&ds), "deepseek-reasoner");
+        assert_eq!(
+            CleanupProvider::model(&DeepSeekCleanup::new("k")),
+            DeepSeekCleanup::DEFAULT_MODEL
+        );
+    }
 
     // --- DeepSeekCleanup tests (preserved from original) ---
 
@@ -2065,7 +2257,11 @@ mod tests {
     //
     // Reads the SAME file as the Kotlin half (`TwinConstantsVectorsTest` in
     // android/kotlin-test/), `test-fixtures/twin-constants-vectors.json` at the repo
-    // root, so five Rust↔Kotlin twins cannot silently re-diverge.
+    // root, so nine Rust↔Kotlin twins plus one Desktop-only entry cannot silently
+    // re-diverge. The Desktop-only entry is TWIN-CLEANUP-MODEL-ANTHROPIC-001: Android
+    // has no Anthropic cleanup provider (drift row H5), so its Android column is a
+    // written record and the Kotlin half skips it by id — deliberately, not by
+    // oversight. This wording mirrors the Kotlin half's KDoc.
     //
     // Discipline: each assertion reads the PRODUCTION symbol and compares it to the
     // FIXTURE literal — never to another production symbol, which would agree no matter
@@ -2074,8 +2270,10 @@ mod tests {
     // Covers: the Rust side only. Does NOT cover the Kotlin side (its own test reads this
     // same fixture — neither half can prove the other), `AnthropicCleanup`'s separate
     // constant pair (only coincidence-checked below), `llm/local.rs`'s llama-path pair
-    // (target-gated to Windows, not compiled in this test run), the dead-config cluster
-    // (deliberately not locked), or any real network request.
+    // (target-gated to Windows, not compiled in this test run), or any real network
+    // request. The dead-config cluster story 7-8 deliberately left unlocked no longer
+    // exists: story 7-9 removed those keys from all three layers, so the values they
+    // claimed to control are locked here and simply no longer settable.
 
     fn load_twin_constants() -> Vec<serde_json::Value> {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -2100,20 +2298,133 @@ mod tests {
     #[test]
     fn spec_twin_constants_fixture_is_complete_and_self_describing() {
         let vectors = load_twin_constants();
+        // Nine Rust↔Kotlin twins plus ONE Desktop-only entry
+        // (TWIN-CLEANUP-MODEL-ANTHROPIC-001: Android has no Anthropic cleanup
+        // provider — drift row H5 — so its Android column is a written record,
+        // and the Kotlin half skips it by id).
         let expected = [
             "TWIN-LLM-TEMPERATURE-001",
             "TWIN-LLM-MAX-TOKENS-001",
             "TWIN-CHUNK-THRESHOLD-001",
             "TWIN-CHUNK-TARGET-SIZE-001",
             "TWIN-CHUNK-JOIN-SEPARATOR-001",
+            "TWIN-CLEANUP-MODEL-DEEPSEEK-001",
+            "TWIN-CLEANUP-MODEL-OPENAI-001",
+            "TWIN-CLEANUP-MODEL-GROQ-001",
+            "TWIN-CLEANUP-MODEL-ANTHROPIC-001",
+            "TWIN-CLEANUP-MODEL-SANITIZE-001",
         ];
-        assert_eq!(vectors.len(), expected.len(), "fixture must carry exactly the five locked twins");
+        assert_eq!(
+            vectors.len(),
+            expected.len(),
+            "fixture must carry exactly the ten locked entries"
+        );
         for id in expected {
             let d = twin(&vectors, id)["description"]
                 .as_str()
                 .unwrap_or_else(|| panic!("{} needs a description", id));
             assert!(d.contains("PINS:"), "{} must state what it pins", id);
             assert!(d.contains("DOES NOT PIN:"), "{} must state what it does NOT pin", id);
+        }
+    }
+
+    /// Story 7.9: each provider's production `DEFAULT_MODEL` against the
+    /// fixture literal — production symbol vs INDEPENDENT literal, never
+    /// against another production symbol ("the SUT must not judge itself").
+    ///
+    /// PINS: the four Rust defaults, and that
+    /// `effective_cleanup_model(provider, "")` resolves to each of them (the
+    /// empty-override rule the Kotlin twin mirrors).
+    /// DOES NOT PIN: the Kotlin symbols (that is `TwinConstantsVectorsTest`),
+    /// override flow-through (`pipeline::tests::spec_model_override_*`), or
+    /// OpenRouter's hard-coded literal (no override key exists, Q8).
+    #[test]
+    fn spec_twin_constants_cleanup_model_defaults() {
+        let vectors = load_twin_constants();
+        let cases: &[(&str, &str, &str)] = &[
+            ("TWIN-CLEANUP-MODEL-DEEPSEEK-001", "deepseek", DeepSeekCleanup::DEFAULT_MODEL),
+            ("TWIN-CLEANUP-MODEL-OPENAI-001", "openai", OpenAiCleanup::DEFAULT_MODEL),
+            ("TWIN-CLEANUP-MODEL-GROQ-001", "groq", GroqCleanup::DEFAULT_MODEL),
+            ("TWIN-CLEANUP-MODEL-ANTHROPIC-001", "anthropic", AnthropicCleanup::DEFAULT_MODEL),
+        ];
+
+        for (id, provider, production_default) in cases {
+            let fixture_literal = twin(&vectors, id)["expected_string"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{id} needs expected_string"));
+            assert_eq!(
+                *production_default, fixture_literal,
+                "{id}: the production default model drifted from the fixture literal"
+            );
+            // The empty-override rule must select exactly that default.
+            assert_eq!(
+                effective_cleanup_model(provider, ""),
+                fixture_literal,
+                "{id}: an empty override must resolve to the fixture's default model"
+            );
+        }
+
+        // The Anthropic entry states its own Desktop-only status, so a later
+        // reader cannot mistake a missing Kotlin assert for an oversight.
+        let anthropic = twin(&vectors, "TWIN-CLEANUP-MODEL-ANTHROPIC-001");
+        assert!(
+            anthropic["kotlin_symbol"].is_null(),
+            "the Anthropic entry must declare a null kotlin_symbol (Desktop-only, drift row H5)"
+        );
+        assert!(
+            anthropic["description"].as_str().unwrap().contains("DESKTOP-ONLY"),
+            "the Anthropic entry must say in words that it is Desktop-only"
+        );
+    }
+
+    /// Review round 1, D2: the sanitisation applied to a raw model-ID override,
+    /// driven through production (`effective_cleanup_model`) against the
+    /// fixture's raw→expected table — the same table the Kotlin twin
+    /// (`TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`) feeds
+    /// through `KlarvoApi.effectiveCleanupModel`.
+    ///
+    /// PINS: drop every char < U+0020 **and U+0085 (NEL)**, then trim, then
+    /// "empty means default" — **in that order** (review round 3). Two cases
+    /// force it: the lone-`U+0001` case forces the empty check to come last (it
+    /// survives `trim()` and would be returned verbatim by a
+    /// strip-after-the-empty-check implementation), and the edge-adjacent cases
+    /// (`"\u{85} deepseek"`, `"deepseek \u{85}"`, `"\u{1c} deepseek"`) force the
+    /// filter to come *before* the trim: trimming first leaves the neighbouring
+    /// space behind on whichever runtime does not treat that control character
+    /// as whitespace, and Rust and Kotlin disagree in opposite directions
+    /// (`U+0085` vs `U+001C`..`U+001F`).
+    /// DOES NOT PIN: which default the empty case selects (that is
+    /// `spec_twin_constants_cleanup_model_defaults`), the Kotlin side (its own
+    /// test reads this same fixture), the warning text a bad ID produces
+    /// (`pipeline::tests::spec_model_not_found_warning_names_the_model`), or any
+    /// network call.
+    #[test]
+    fn spec_twin_constants_cleanup_model_sanitize() {
+        let vectors = load_twin_constants();
+        let entry = twin(&vectors, "TWIN-CLEANUP-MODEL-SANITIZE-001");
+        let cases = entry["cases"]
+            .as_array()
+            .expect("TWIN-CLEANUP-MODEL-SANITIZE-001 needs a cases array");
+        assert!(!cases.is_empty(), "the sanitize table must not be empty");
+
+        for case in cases {
+            let raw = case["raw"].as_str().expect("each case needs a raw string");
+            let expected = case["expected"].as_str().expect("each case needs an expected string");
+            let got = effective_cleanup_model("deepseek", raw);
+            if expected.is_empty() {
+                // An empty expectation means "falls back to the provider default".
+                assert_eq!(
+                    got,
+                    DeepSeekCleanup::DEFAULT_MODEL,
+                    "raw {raw:?} must sanitise to empty and select the provider default"
+                );
+            } else {
+                assert_eq!(got, expected, "raw {raw:?} sanitised to the wrong model ID");
+            }
+            assert!(
+                !got.chars().any(|c| c < '\u{20}' || c == '\u{85}'),
+                "raw {raw:?} left a control character in the effective model ID"
+            );
         }
     }
 

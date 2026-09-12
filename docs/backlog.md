@@ -185,6 +185,58 @@ changed DeepSeek model ID appears in the request log (`[fe:…]`/Klarvo.log).
   (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
   Re-open only on a real report. Source: `sprint-change-proposal-2026-09-10.md`.
 
+### STORY-CANDIDATE — Model picker from the provider's model list (Andi, 2026-09-12, from 7-9 review D1/D2)
+
+A BYOK key opens the door; it does not choose the model. Today Klarvo hard-codes one cleanup model per provider;
+7-9 turns that into four free-text fields. The user still has to know the ID. Sketch (NOT approved to build):
+on panel open, `GET /v1/models` with the user's key (same provider Klarvo already sends text to; no Klarvo server,
+no new party — privacy-neutral), filter to chat-capable models per provider (OpenAI/Groq lists are mixed:
+whisper, TTS, embeddings, guard models), show a dropdown with the built-in default marked; offline or no key →
+the free-text field stays. Plus: a "check" on save (valid / unknown) and a background check at app start that
+sets a warning badge. NOT: a check on every hotkey press (adds a round trip before speaking, gains nothing — the
+raw-text net catches the failure anyway). NOT: auto-switch to a successor model (quality/cost change nobody
+chose). Both platforms. Groq STT model (`large-v3-turbo`) is a separate job, not covered.
+
+### STORY-CANDIDATE — Failed-entries inbox: icon + counter next to Settings/History/Statistics (Andi, 2026-09-12)
+
+Today two nets exist, both silent outside the History panel: (1) terminal STT failure → audio kept, History
+`pending` entry with "Re-process" / "Discard" (12-2, device-verified); (2) cleanup failure → raw text is pasted
+into the active window + amber pill warning, History entry looks like a normal `done` entry — no marker, no
+re-clean button. Andi's idea: an icon that appears only when failed entries exist (orange, with the count of
+new ones), click → the list of failed entries (both kinds), "Re-process" after fixing the settings; for kind (2)
+the stored `raw_text` suffices, no audio needed. Reduction: reuses 12-2's pending mechanism, re-process command
+and the `raw_text` column. New: a second pending kind "not cleaned", a re-process path without audio, the
+icon + counter (design question for the canon — Phase A with Andi). Both platforms.
+
+### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
+
+Four fix rounds ran (D1/D2 + P1-P10 · REG-1..3 + RES-1/2 · RES-2 re-fix + R3-1..R3-7). All confirmed code
+findings are closed; the round-4 re-review left these, accepted as residual (Andi authorized the loop end):
+- **Banner on the silent save path** (`src/components/SettingsPanel.tsx` `saveCurrentSettings`): the 2 s
+  "Saved" timer is never cancelled, so a Danger banner set by a silent save (API-key removal) within 2 s of a
+  success can be cleared by that timer; and a later *successful* silent save does not clear a stale skip banner.
+  Fix direction: keep the timeout id in a `useRef`, `clearTimeout` before every `setSaveMsg`, reset on silent
+  success. Also: the silent-save `catch` logs nothing.
+- **Docstring claims in the sanitize twins**: the `U+0001` rationale in both PINS clauses + fixture description
+  is wrong under filter-first (the whitespace-only row is the forcing vector); the Kotlin test's "opposite
+  directions" sentence pairs the runtimes the wrong way round (Rust half is right).
+- **Fixture completeness counts entries, not cases** — deleting the three ordering rows of
+  `TWIN-CLEANUP-MODEL-SANITIZE-001` leaves both halves green. Fix direction: pin the case count.
+- **Whitespace >= U+0020 unpinned** (`U+00A0`, `U+202F`, `U+2007`): measured identical on rustc + JDK 17 today,
+  no vector covers it.
+- **`is_model_not_found_error`** (from round 3): the `not_found_error` needle fires on any Anthropic 404 with an
+  unparsable body; the `model:` needle is 404-only.
+- **`llm_provider == "local"` on non-Windows silently routes cleanup to DeepSeek** (`pipeline.rs`
+  `cleanup_provider_for`), no log line, unlike the STT twin. Pre-existing; surfaced by REG-1.
+
+### Story 7-9 GATE-1 leftovers — further persisted-but-unread keys (2026-09-12)
+
+Found while pinning the 7-9 removal set (the record's "14" was a counting slip; 13 named keys are the set).
+Not removed in 7-9 (Andi, GATE 1): `pasteDelayMs` (Shortcuts "Paste Delay" row; `paste/mod.rs` hard-codes 50 ms),
+`logLevel` (Advanced → System select; no reader), `webhookHeaders` / `webhookTimeoutSecs` (no UI, no reader).
+Candidates for a later cleanup or wiring; decide per key, not as a batch. Android auto-send (M13 keys removed in
+7-9) stays a possible future story: the accessibility service still carries `performEnter` (ACTION_IME_ENTER).
+
 ### STORY-CANDIDATE — Dictionary shared across devices (Andi, 2026-09-10)
 
 Today each device holds its own `dictionaryTerms`; two lists are kept in sync by hand. Existing

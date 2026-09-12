@@ -11,26 +11,17 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
   sttPromptDe: "",
   sttPromptEn: "",
   sttPromptAuto: "",
-  sttTemperature: 0,
-  llmSystemPromptPolished: "",
-  llmSystemPromptVerbatim: "",
-  llmSystemPromptChat: "",
-  llmCommandModePrompt: "",
-  llmTemperature: 0.3,
-  llmMaxTokens: 1024,
-  llmModelDeepseek: "deepseek-chat",
-  llmModelOpenai: "gpt-4o-mini",
-  llmModelAnthropic: "claude-haiku-4-5-20251001",
-  llmModelGroq: "llama-3.3-70b-versatile",
-  chunkThreshold: 400,
-  chunkTargetSize: 300,
+  // Empty = "use the provider's built-in default" (see
+  // llm::effective_cleanup_model); the inputs' placeholders show those defaults.
+  llmModelDeepseek: "",
+  llmModelOpenai: "",
+  llmModelAnthropic: "",
+  llmModelGroq: "",
   silenceThreshold: 0.005,
   whisperModeThreshold: 0.001,
   minRecordingMs: 500,
   whisperModeGain: 3.0,
-  autoPaste: true,
   pasteDelayMs: 80,
-  autoCapitalize: false,
   webhookHeaders: "",
   webhookTimeoutSecs: 10,
   logLevel: "info",
@@ -56,25 +47,15 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("home");
-  // Expert mode (settings.expertMode) gates raw internal tuning knobs (audio thresholds,
-  // chunking, STT temperature). It is a persisted AdvancedSettings field, so toggling it
-  // behaves like any other setting: it marks the panel dirty (→ Save button) and survives
-  // navigation + app restart. Off by default; footguns stay hidden until deliberately enabled.
+  // Expert mode (settings.expertMode) gates the raw audio thresholds. It is a
+  // persisted AdvancedSettings field, so toggling it behaves like any other
+  // setting: it marks the panel dirty (→ Save button) and survives navigation +
+  // app restart. Off by default; footguns stay hidden until deliberately enabled.
   const expertMode = settings.expertMode;
-  // Subsections within the LLM section: free subsections open by default, paid ones closed.
-  const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({
-    llmParams: true,   // "Model & Parameters" -- free, default open
-    llmCustom: false,  // "Custom Cleanup Instructions" -- paid, default closed
-  });
 
   const hintCls = "text-[11px] text-klarvo-muted leading-relaxed";
   const numberInputCls = `${INPUT_CLS} w-28`;
   const modelInputCls = "bg-klarvo-bg border border-klarvo-border/60 rounded-lg px-3 py-2 text-xs text-klarvo-text placeholder:text-klarvo-dim focus:outline-none focus:border-klarvo-primary/40 transition-colors w-44";
-
-  // Independent toggle -- no accordion behavior, multiple subsections can be open at once.
-  const toggleSubSection = useCallback((key: string) => {
-    setOpenSubSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
 
   useEffect(() => {
     getAdvancedSettings()
@@ -191,7 +172,7 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
         </span>
         <span className="flex-1 flex flex-col min-w-0">
           <span className="text-sm font-medium text-klarvo-text leading-tight">Speech-to-Text</span>
-          <span className="text-xs text-klarvo-muted mt-0.5 leading-tight">Custom prompts &amp; temperature</span>
+          <span className="text-xs text-klarvo-muted mt-0.5 leading-tight">Custom prompts</span>
         </span>
         <span className="flex items-center gap-2 shrink-0">
           {isPaid && isTrial && <TrialBadge />}
@@ -218,10 +199,15 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
         </span>
         <span className="flex-1 flex flex-col min-w-0">
           <span className="text-sm font-medium text-klarvo-text leading-tight">Text Cleanup</span>
-          <span className="text-xs text-klarvo-muted mt-0.5 leading-tight">Models, parameters &amp; instructions</span>
+          <span className="text-xs text-klarvo-muted mt-0.5 leading-tight">Model IDs</span>
         </span>
+        {/* Review decision D1: the model IDs are FREE for everyone — with a BYOK
+            key, choosing the model is maintenance (a provider retires an ID),
+            not a premium feature. So no TrialBadge here, no `disabled` on the
+            inputs in renderLlmContent, and no license gate in the backend's
+            save_advanced_settings. The STT section above stays gated: its custom
+            prompts ARE a paid feature. */}
         <span className="flex items-center gap-2 shrink-0">
-          {isPaid && isTrial && <TrialBadge />}
           <ChevronRight />
         </span>
       </button>
@@ -321,121 +307,34 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           <MobileTextarea label="STT Prompt (Auto-detect)" hint="Used when language is set to Auto (DE + EN)." value={settings.sttPromptAuto} onChange={isPaid ? (v) => set("sttPromptAuto", v) : () => {}} placeholder={isPaid ? "Context prompt for auto-detect mode" : "Requires Klarvo License"} rows={2} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
           <span className={hintCls}>Used when language is set to Auto (DE + EN).</span>
         </div>
-        {expertMode && (
-          <div className={`flex items-center justify-between gap-3${!isPaid ? " pointer-events-none" : ""}`}>
-            <div className="flex flex-col gap-0.5">
-              <span className={LABEL_CLS}>STT Temperature</span>
-              <span className={hintCls}>0.0 = deterministic, 1.0 = more creative. Default: 0.0</span>
-            </div>
-            <input type="number" min={0} max={1} step={0.1} value={settings.sttTemperature} onChange={(e) => { if (isPaid) set("sttTemperature", parseFloat(e.target.value) || 0); }} disabled={!isPaid} className={numberInputCls} />
-          </div>
-        )}
       </div>
     </div>
   );
 
+  // Q3: the four model-ID inputs sit FLAT under a "Model IDs" title — the old
+  // collapsible "Model & Parameters" accordion is gone (its temperature/token/
+  // chunking rows were dead config), and so is the "Custom Cleanup
+  // Instructions" accordion (its only content was the four dead prompt keys).
   const renderLlmContent = () => (
-    <div className="flex flex-col gap-1 p-4">
-      {/* Subsection: Model & Parameters -- free, default open */}
-      <button
-        onClick={() => toggleSubSection("llmParams")}
-        className="flex items-center gap-1.5 w-full py-1.5 text-left"
-      >
-        <svg
-          className={`w-3 h-3 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSubSections.llmParams ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-        <span className="text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">Model &amp; Parameters</span>
-      </button>
-      {openSubSections.llmParams && (
-        <div className="flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-klarvo-border/50 ml-1.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>LLM Temperature</span><span className={hintCls}>0.0 – 2.0. Lower = more focused.</span></div>
-            <input type="number" min={0} max={2} step={0.1} value={settings.llmTemperature} onChange={(e) => set("llmTemperature", parseFloat(e.target.value) || 0)} className={numberInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Max Tokens</span><span className={hintCls}>Maximum output tokens per LLM request.</span></div>
-            <input type="number" min={64} max={8192} step={1} value={settings.llmMaxTokens} onChange={(e) => set("llmMaxTokens", parseInt(e.target.value, 10) || 1024)} className={numberInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
-            <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
-            <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
-            <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
-            <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
-          </div>
-          {expertMode && (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Threshold</span><span className={hintCls}>Word count above which text is split into parallel chunks.</span></div>
-                <input type="number" min={50} step={1} value={settings.chunkThreshold} onChange={(e) => set("chunkThreshold", parseInt(e.target.value, 10) || 400)} className={numberInputCls} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Chunk Target Size</span><span className={hintCls}>Target word count per chunk.</span></div>
-                <input type="number" min={50} step={1} value={settings.chunkTargetSize} onChange={(e) => set("chunkTargetSize", parseInt(e.target.value, 10) || 300)} className={numberInputCls} />
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Subsection: Custom Cleanup Instructions -- paid, default collapsed */}
-      <button
-        onClick={() => toggleSubSection("llmCustom")}
-        className="flex items-center gap-1.5 w-full py-1.5 text-left mt-1"
-      >
-        <svg
-          className={`w-3 h-3 text-klarvo-dim flex-shrink-0 transition-transform duration-150 ${openSubSections.llmCustom ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">
-          Custom Cleanup Instructions
-          {!isPaid && <LockIcon className="w-3 h-3 text-klarvo-dim" />}
-          {isPaid && isTrial && <TrialBadge />}
-        </span>
-      </button>
-      {openSubSections.llmCustom && (
-        <div className={`flex flex-col gap-3 pl-3 pb-2 pt-0.5 border-l border-klarvo-border/50 ml-1.5${!isPaid ? " opacity-50" : ""}`}>
-          <p className={hintCls}>
-            Base system prompt for each cleanup style. Your "Cleanup Instructions" from Settings are appended on top -- they stack, not conflict.
-          </p>
-          <div className={`flex flex-col gap-3${!isPaid ? " pointer-events-none" : ""}`}>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Polished</span>
-              <MobileTextarea label="System Prompt: Polished" hint="Overrides the built-in system prompt for Polished mode." value={settings.llmSystemPromptPolished} onChange={isPaid ? (v) => set("llmSystemPromptPolished", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-              <span className={hintCls}>Overrides the built-in system prompt for Polished mode.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Verbatim</span>
-              <MobileTextarea label="System Prompt: Verbatim" hint="Overrides the built-in system prompt for Verbatim mode." value={settings.llmSystemPromptVerbatim} onChange={isPaid ? (v) => set("llmSystemPromptVerbatim", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-              <span className={hintCls}>Overrides the built-in system prompt for Verbatim mode.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>System Prompt: Chat</span>
-              <MobileTextarea label="System Prompt: Chat" hint="Overrides the built-in system prompt for Chat mode." value={settings.llmSystemPromptChat} onChange={isPaid ? (v) => set("llmSystemPromptChat", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-              <span className={hintCls}>Overrides the built-in system prompt for Chat mode.</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className={LABEL_CLS}>Command Mode Prompt</span>
-              <MobileTextarea label="Command Mode Prompt" hint="System prompt for Command Mode (Ctrl+Shift+E)." value={settings.llmCommandModePrompt} onChange={isPaid ? (v) => set("llmCommandModePrompt", v) : () => {}} placeholder={isPaid ? "Leave empty for built-in default" : "Requires Klarvo License"} rows={3} className={`${INPUT_CLS} resize-none${!isPaid ? " cursor-not-allowed" : ""}`} disabled={!isPaid} />
-              <span className={hintCls}>System prompt for Command Mode (Ctrl+Shift+E).</span>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="flex flex-col gap-3 p-4">
+      <span className="text-[11px] font-semibold text-klarvo-primary/85 uppercase tracking-widest">Model IDs</span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: DeepSeek</span><span className={hintCls}>Model ID sent to the DeepSeek API.</span></div>
+        <input type="text" placeholder="deepseek-chat" value={settings.llmModelDeepseek} onChange={(e) => set("llmModelDeepseek", e.target.value)} className={modelInputCls} />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: OpenAI</span><span className={hintCls}>Model ID sent to the OpenAI API.</span></div>
+        <input type="text" placeholder="gpt-4o-mini" value={settings.llmModelOpenai} onChange={(e) => set("llmModelOpenai", e.target.value)} className={modelInputCls} />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Anthropic</span><span className={hintCls}>Model ID sent to the Anthropic API.</span></div>
+        <input type="text" placeholder="claude-haiku-4-5-20251001" value={settings.llmModelAnthropic} onChange={(e) => set("llmModelAnthropic", e.target.value)} className={modelInputCls} />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5"><span className={LABEL_CLS}>Model: Groq</span><span className={hintCls}>Model ID sent to the Groq LLM API.</span></div>
+        <input type="text" placeholder="llama-3.3-70b-versatile" value={settings.llmModelGroq} onChange={(e) => set("llmModelGroq", e.target.value)} className={modelInputCls} />
+      </div>
+      <span className={hintCls}>Leave a field empty to use Klarvo's built-in default (shown as placeholder).</span>
     </div>
   );
 
@@ -502,11 +401,13 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
             <option value="error">error</option>
           </select>
         </div>
-        {/* Expert mode -- reveals raw internal tuning knobs (audio thresholds, chunking, STT temperature) */}
+        {/* Expert mode -- reveals the raw audio thresholds (its only remaining
+            expert items: story 7-9 removed the chunking and STT-temperature
+            rows, which were dead config) */}
         <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-klarvo-border/40">
           <div className="flex flex-col gap-0.5">
             <span className={LABEL_CLS}>Expert mode</span>
-            <span className={hintCls}>Reveals raw audio thresholds, chunking and STT temperature. Wrong values can stop recording or transcription — only enable if you know what they do.</span>
+            <span className={hintCls}>Reveals raw audio thresholds. Wrong values can stop recording or transcription — only enable if you know what they do.</span>
           </div>
           <button
             role="switch"

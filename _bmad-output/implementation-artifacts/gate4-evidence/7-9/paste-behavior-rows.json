@@ -1,0 +1,22 @@
+[
+  {
+    "label": "Auto-Send",
+    "className": "flex items-center justify-between gap-3",
+    "disabledDescendants": 0
+  },
+  {
+    "label": "Auto-Send",
+    "className": "flex items-center justify-between gap-3",
+    "disabledDescendants": 0
+  },
+  {
+    "label": "Paste Delay (ms)",
+    "className": "flex items-center justify-between gap-3",
+    "disabledDescendants": 0
+  },
+  {
+    "label": "Paste Delay (ms)",
+    "className": "flex items-center justify-between gap-3",
+    "disabledDescendants": 0
+  }
+]

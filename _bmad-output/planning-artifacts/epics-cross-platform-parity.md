@@ -302,6 +302,44 @@ one dictation on the Xiaomi with DeepSeek cleanup returns cleaned text (proves M
 
 ---
 
+## Story 7.9: Desktop Advanced settings + AutoSend — remove dead keys, wire 4 model IDs *(new 2026-09-11)*
+
+**Source:** `docs/backlog.md` "DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend" (Andi); audit in
+`sprint-change-proposal-2026-09-10.md`. **Rows:** M13 · dead-config cluster.
+
+As a BYOK power user,
+I want the Advanced settings panel to show only keys that act at runtime, and the four cleanup model IDs
+to be a real override on both platforms,
+So that no setting silently does nothing, and a retired provider model ID does not need an app update.
+
+**Acceptance Criteria (outcomes — full Given/When/Then in create-story):**
+- **Remove the dead keys** (13 named below; the backlog record counts 14 — create-story pins the exact set from code) from the UI (`src/components/AdvancedSettingsPanel.tsx`), the Rust config struct
+  and the Kotlin twin: `sttTemperature`, `llmTemperature`, `llmMaxTokens`, `chunkThreshold`,
+  `chunkTargetSize`, `autoPaste`, `autoCapitalize`, `bubbleTapAutoSend`, `bubbleLongPressAutoSend`,
+  `llmSystemPromptPolished`, `llmSystemPromptVerbatim`, `llmSystemPromptChat`, `llmCommandModePrompt`.
+  Runtime behaviour stays: Whisper temperature fixed 0.0, cleanup 0.3 / 2048, chunking 400 / 350 (the
+  Rust↔Kotlin twin constants locked in 7.8). "Custom Instructions" (`custom_prompt`) stays.
+- **Untouched (they work):** `sttPromptDe/En/Auto`, `silenceThreshold`, `minRecordingMs`,
+  `whisperModeThreshold`, `whisperModeGain`.
+- **Old configs still load** — a `config.json` carrying the removed keys loads without error on both
+  platforms (serde drops unknown fields; Kotlin parsing ignores them). A test pins this.
+- **Wire 4 keys, both platforms:** `llmModelDeepseek`, `llmModelOpenai`, `llmModelAnthropic`,
+  `llmModelGroq` replace the hard-coded model IDs in the Rust cleanup client (`llm/mod.rs`) and the
+  Kotlin twin (`KlarvoApi.kt`); an empty value falls back to today's hard-coded default. The parity
+  fixture from 7.8 pins the defaults for both sides.
+- **Inversion check (mandatory, at writing time)** — re-introduce a hard-coded ID on one side and show
+  the parity test RED.
+
+**Out of scope:** the M12 dictionary decision (7.6), the style switches (epic candidate B), any change to
+STT, VAD, JNI or the top-level `custom_prompt`.
+
+**DoD:** `cargo test --lib` (`src-tauri/`) + JVM gate (`scripts/android-smoke.sh`) green with the inversion
+evidence recorded; Desktop proxy smoke (Chromium preview) shows the Advanced panel with only the live
+keys; **Andi's GATE-4:** Windows release build, Advanced panel shows only live keys, a changed DeepSeek
+model ID appears in the request log (`[fe:…]` / Klarvo.log).
+
+---
+
 ## Out of scope (→ `docs/backlog.md`)
 
 Pure feature-ports / accepted asymmetries (ADR-0016 Amendment 1): C2, H4, H5, H8, H11, H12+M7, H15, H16, M5,

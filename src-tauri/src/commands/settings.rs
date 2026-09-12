@@ -144,10 +144,8 @@ pub struct SettingsPatch {
     pub insert_and_send_slot2: Option<bool>,
     pub bubble_recording_mode: Option<String>,
     pub bubble_tap_mode: Option<String>,
-    pub bubble_tap_auto_send: Option<bool>,
     pub bubble_tap_silence_secs: Option<f32>,
     pub bubble_long_press_mode: Option<String>,
-    pub bubble_long_press_auto_send: Option<bool>,
     pub bubble_long_press_silence_secs: Option<f32>,
     pub openrouter_api_key: Option<String>,
     pub live_preview_enabled: Option<bool>,
@@ -206,10 +204,8 @@ impl Default for SettingsPatch {
             insert_and_send_slot2: None,
             bubble_recording_mode: None,
             bubble_tap_mode: None,
-            bubble_tap_auto_send: None,
             bubble_tap_silence_secs: None,
             bubble_long_press_mode: None,
-            bubble_long_press_auto_send: None,
             bubble_long_press_silence_secs: None,
             openrouter_api_key: None,
             live_preview_enabled: None,
@@ -376,12 +372,9 @@ pub fn merge_settings(existing: AppConfig, patch: SettingsPatch) -> AppConfig {
             .unwrap_or(existing.preview_line_spacing),
         bubble_recording_mode: patch.bubble_recording_mode.unwrap_or(existing.bubble_recording_mode),
         bubble_tap_mode: patch.bubble_tap_mode.unwrap_or(existing.bubble_tap_mode),
-        bubble_tap_auto_send: patch.bubble_tap_auto_send.unwrap_or(existing.bubble_tap_auto_send),
         bubble_tap_silence_secs: patch.bubble_tap_silence_secs
             .unwrap_or(existing.bubble_tap_silence_secs),
         bubble_long_press_mode: patch.bubble_long_press_mode.unwrap_or(existing.bubble_long_press_mode),
-        bubble_long_press_auto_send: patch.bubble_long_press_auto_send
-            .unwrap_or(existing.bubble_long_press_auto_send),
         bubble_long_press_silence_secs: patch.bubble_long_press_silence_secs
             .unwrap_or(existing.bubble_long_press_silence_secs),
         onboarding: existing.onboarding,
@@ -457,10 +450,8 @@ pub async fn save_settings(
     bubble_recording_mode: Option<String>,
     // Per-gesture bubble controls. None = leave existing value unchanged.
     bubble_tap_mode: Option<String>,
-    bubble_tap_auto_send: Option<bool>,
     bubble_tap_silence_secs: Option<f32>,
     bubble_long_press_mode: Option<String>,
-    bubble_long_press_auto_send: Option<bool>,
     bubble_long_press_silence_secs: Option<f32>,
     openrouter_api_key: Option<String>,
     live_preview_enabled: Option<bool>,
@@ -558,10 +549,8 @@ pub async fn save_settings(
         insert_and_send_slot2,
         bubble_recording_mode,
         bubble_tap_mode,
-        bubble_tap_auto_send,
         bubble_tap_silence_secs,
         bubble_long_press_mode,
-        bubble_long_press_auto_send,
         bubble_long_press_silence_secs,
         openrouter_api_key,
         live_preview_enabled,
@@ -672,10 +661,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsView, String> 
         hotkey_mode_slot2: slot1_mode,
         bubble_recording_mode: cfg.bubble_recording_mode,
         bubble_tap_mode: cfg.bubble_tap_mode,
-        bubble_tap_auto_send: cfg.bubble_tap_auto_send,
         bubble_tap_silence_secs: cfg.bubble_tap_silence_secs,
         bubble_long_press_mode: cfg.bubble_long_press_mode,
-        bubble_long_press_auto_send: cfg.bubble_long_press_auto_send,
         bubble_long_press_silence_secs: cfg.bubble_long_press_silence_secs,
         voice_command_enabled: cfg.voice_command_enabled,
         feedback_webhook_url: cfg.feedback_webhook_url,
@@ -703,27 +690,86 @@ pub fn get_advanced_settings(
     Ok(cfg.advanced.clone())
 }
 
+/// `true` when a saved advanced block requires the cleanup provider to be
+/// rebuilt.
+///
+/// Two guards, both from review round 1 (P7): rebuilding is not free — on the
+/// Windows `local` arm `LocalLlmCleanup::new` resets `state: None`, so an
+/// unconditional rebuild threw away an already-loaded multi-GB GGUF model on
+/// **every** advanced-settings save (silence threshold, log level, …), paying a
+/// full model reload on the next dictation.
+///
+/// 1. Nothing to reload unless one of the four `llm_model_*` overrides actually
+///    changed — they are the only part of `AdvancedSettings` the provider reads.
+/// 2. Skip `"local"` **on Windows**: local inference selects its model by GGUF
+///    file, not by model ID, so a changed override cannot affect it. Review
+///    round 2 (REG-1) narrowed this from the bare config value: the guard has to
+///    match what was actually constructed, and
+///    `pipeline::resolve_cleanup_provider`'s `"local"` arm is
+///    `#[cfg(target_os = "windows")]`. On any other build that arm does not
+///    exist, the `_` arm puts **DeepSeek** in the slot, and skipping would leave
+///    a changed `llmModelDeepseek` needing a restart. The state is reachable on
+///    every platform: `SettingsPanel::handleSttProviderChange` forces
+///    `llmProvider = "local"` when the user picks offline STT.
+fn cleanup_provider_reload_needed(
+    previous: &config::AdvancedSettings,
+    next: &config::AdvancedSettings,
+    llm_provider: &str,
+) -> bool {
+    if cfg!(target_os = "windows") && llm_provider == "local" {
+        return false;
+    }
+    previous.llm_model_deepseek != next.llm_model_deepseek
+        || previous.llm_model_openai != next.llm_model_openai
+        || previous.llm_model_groq != next.llm_model_groq
+        || previous.llm_model_anthropic != next.llm_model_anthropic
+}
+
+/// Rebuilds `slot`'s cleanup provider from `new_cfg` when
+/// [`cleanup_provider_reload_needed`] says so. Returns whether it swapped.
+///
+/// Extracted from [`save_advanced_settings`] so the one new runtime-state write
+/// that AC5's "a changed model ID takes effect without an app restart" rests on
+/// has a test that drives the real swap — review round 1 (P6) found every new
+/// Rust test calling `resolve_cleanup_provider` directly, i.e. proving the
+/// resolution while never proving the write. Takes the bare `RwLock` rather than
+/// `&AppState` precisely so a unit test can supply one (`AppState` needs an
+/// audio recorder and a SQLite handle).
+fn hot_reload_cleanup_provider(
+    slot: &std::sync::RwLock<Arc<dyn llm::CleanupProvider>>,
+    previous: &config::AdvancedSettings,
+    new_cfg: &AppConfig,
+) -> Result<bool, String> {
+    if !cleanup_provider_reload_needed(previous, &new_cfg.advanced, &new_cfg.llm_provider) {
+        return Ok(false);
+    }
+    *crate::write_lock!(slot)? = crate::pipeline::resolve_cleanup_provider(new_cfg);
+    Ok(true)
+}
+
 /// Saves updated advanced settings. Replaces the entire advanced block.
 ///
-/// If any custom LLM system prompt field is non-empty (i.e. the user is
-/// overriding built-in prompts), a paid license is required.
+/// Story 7.9: `advanced.llmModel*` is a live runtime override, so the cleanup
+/// provider is rebuilt from the persisted config afterwards — the same
+/// hot-reload `save_settings` does. Without it a changed model ID would only
+/// take effect after an app restart. The rebuild is conditional; see
+/// [`cleanup_provider_reload_needed`].
 #[tauri::command]
 pub fn save_advanced_settings(
     state: State<'_, AppState>,
     settings: config::AdvancedSettings,
 ) -> Result<(), String> {
-    // License gate: custom LLM system prompts require a paid license.
-    let has_custom_prompt = !settings.llm_system_prompt_polished.is_empty()
-        || !settings.llm_system_prompt_verbatim.is_empty()
-        || !settings.llm_system_prompt_chat.is_empty()
-        || !settings.llm_command_mode_prompt.is_empty();
-    if has_custom_prompt {
-        require_license!(state, LicensedFeature::CustomPrompts);
-    }
+    let inner = state.inner();
+    // Capture the block being replaced inside the same locked read-modify-write
+    // cycle, so the "did a model ID change?" comparison cannot race a
+    // concurrent saver. Still exactly one `save_config_locked` writer (ADR-0015).
+    let mut previous = config::AdvancedSettings::default();
+    let new_cfg = inner.save_config_locked("advanced settings", |cfg| {
+        previous = std::mem::replace(&mut cfg.advanced, settings);
+    })?;
 
-    state
-        .inner()
-        .save_config_locked("advanced settings", |cfg| cfg.advanced = settings)?;
+    hot_reload_cleanup_provider(&inner.cleanup_provider, &previous, &new_cfg)?;
+
     Ok(())
 }
 
@@ -773,8 +819,21 @@ pub async fn update_api_keys(
     }
 
     if let Some(key) = deepseek_api_key {
+        // Story 7.9 / review round 1 (P4): actually go THROUGH the shared
+        // construction site instead of re-implementing it here. The earlier
+        // version built `DeepSeekCleanup::new(..).with_model(..)` inline while
+        // its comment claimed shared resolution — a second construction path
+        // `cleanup_provider_for` did not own, which is exactly how the override
+        // drifts out of one arm.
+        //
+        // Deliberately still "deepseek", not `resolve_cleanup_provider(&cfg)`:
+        // that this legacy command replaces the provider with DeepSeek
+        // regardless of `cfg.llm_provider` is a separate, pre-existing defect
+        // recorded as deferred in this story's review. Changing it here would
+        // silently close a deferred finding.
+        let advanced = crate::lock!(inner.config)?.advanced.clone();
         *crate::write_lock!(inner.cleanup_provider)? =
-            Arc::new(llm::DeepSeekCleanup::new(key));
+            crate::pipeline::cleanup_provider_for("deepseek", &key, &advanced);
     }
 
     Ok(())
@@ -1059,6 +1118,7 @@ pub async fn clear_api_key(
 
 #[cfg(test)]
 mod tests {
+    use super::{cleanup_provider_reload_needed, hot_reload_cleanup_provider};
     use crate::config::{load_config, save_config, AppConfig, HotkeyMode, HotkeySlot};
     use crate::llm::CleanupStyle;
     use std::sync::Arc;
@@ -1157,10 +1217,6 @@ mod tests {
             "bubble_tap_mode must default to \"toggle\""
         );
         assert!(
-            !loaded.bubble_tap_auto_send,
-            "bubble_tap_auto_send must default to false"
-        );
-        assert!(
             (loaded.bubble_tap_silence_secs - 2.0).abs() < f32::EPSILON,
             "bubble_tap_silence_secs must default to 2.0, got {}",
             loaded.bubble_tap_silence_secs
@@ -1170,10 +1226,6 @@ mod tests {
             "bubble_long_press_mode must default to \"hold\""
         );
         assert!(
-            !loaded.bubble_long_press_auto_send,
-            "bubble_long_press_auto_send must default to false"
-        );
-        assert!(
             (loaded.bubble_long_press_silence_secs - 2.0).abs() < f32::EPSILON,
             "bubble_long_press_silence_secs must default to 2.0, got {}",
             loaded.bubble_long_press_silence_secs
@@ -1181,17 +1233,15 @@ mod tests {
     }
 
     /// Round-trip: serialize AppConfig with non-default bubble gesture values,
-    /// then reload from disk -- all six fields must survive intact.
+    /// then reload from disk -- all four fields must survive intact.
     #[test]
     fn test_bubble_gesture_fields_roundtrip() {
         let dir = temp_dir();
 
         let cfg = AppConfig {
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 1.5,
             bubble_long_press_mode: "auto".to_string(),
-            bubble_long_press_auto_send: true,
             bubble_long_press_silence_secs: 3.5,
             ..AppConfig::default()
         };
@@ -1200,14 +1250,12 @@ mod tests {
         let loaded = load_config(dir.path());
 
         assert_eq!(loaded.bubble_tap_mode, "autostop");
-        assert!(loaded.bubble_tap_auto_send);
         assert!(
             (loaded.bubble_tap_silence_secs - 1.5).abs() < f32::EPSILON,
             "bubble_tap_silence_secs should be 1.5, got {}",
             loaded.bubble_tap_silence_secs
         );
         assert_eq!(loaded.bubble_long_press_mode, "auto");
-        assert!(loaded.bubble_long_press_auto_send);
         assert!(
             (loaded.bubble_long_press_silence_secs - 3.5).abs() < f32::EPSILON,
             "bubble_long_press_silence_secs should be 3.5, got {}",
@@ -1407,10 +1455,8 @@ mod tests {
             auto_mode_silence_secs: 6.0,
             bubble_recording_mode: "toggle".to_string(),
             bubble_tap_mode: "autostop".to_string(),
-            bubble_tap_auto_send: true,
             bubble_tap_silence_secs: 3.0,
             bubble_long_press_mode: "auto".to_string(),
-            bubble_long_press_auto_send: true,
             bubble_long_press_silence_secs: 4.0,
             // Fields never touched by merge_settings:
             command_hotkey: "ctrl+shift+e".to_string(),
@@ -1471,10 +1517,8 @@ mod tests {
             insert_and_send_slot2: Some(false),
             bubble_recording_mode: Some("auto".to_string()),
             bubble_tap_mode: Some("hold".to_string()),
-            bubble_tap_auto_send: Some(false),
             bubble_tap_silence_secs: Some(1.0),
             bubble_long_press_mode: Some("toggle".to_string()),
-            bubble_long_press_auto_send: Some(false),
             bubble_long_press_silence_secs: Some(1.5),
             openrouter_api_key: Some("new-openrouter".to_string()),
             live_preview_enabled: Some(true),
@@ -1531,10 +1575,8 @@ mod tests {
         assert!(!result.hotkey_slots[1].insert_and_send);
         assert_eq!(result.bubble_recording_mode, "auto");
         assert_eq!(result.bubble_tap_mode, "hold");
-        assert!(!result.bubble_tap_auto_send);
         assert!((result.bubble_tap_silence_secs - 1.0).abs() < f32::EPSILON);
         assert_eq!(result.bubble_long_press_mode, "toggle");
-        assert!(!result.bubble_long_press_auto_send);
         assert!((result.bubble_long_press_silence_secs - 1.5).abs() < f32::EPSILON);
         assert_eq!(result.preview_panel_form, "compact");
         assert_eq!(result.bubble_size_dp, 48);
@@ -2174,5 +2216,137 @@ mod tests {
             "None patch must preserve existing preview_text_color"
         );
         assert_eq!(result2.preview_border_radius, 14, "None patch must preserve existing preview_border_radius");
+    }
+
+    // -----------------------------------------------------------------------
+    // Advanced-settings cleanup-provider hot reload (review round 1, P6 + P7)
+    // -----------------------------------------------------------------------
+
+    /// Review round 1 (P6): the one new runtime-state write AC5's "a changed
+    /// model ID takes effect without an app restart" rests on, driven through
+    /// the production helper and observed on the **stored** provider's
+    /// `model()` — not by calling `resolve_cleanup_provider` and asserting its
+    /// return value, which proves resolution while proving nothing about the
+    /// swap.
+    ///
+    /// PINS: `hot_reload_cleanup_provider` replaces the Arc in the slot, and the
+    /// replacement carries the newly saved override.
+    /// DOES NOT PIN: `save_advanced_settings` itself (it needs a Tauri `State`
+    /// and a full `AppState` with an audio recorder and a SQLite handle; this
+    /// test covers the helper that command now delegates to), the disk write
+    /// (`save_config_locked`, covered by the config tests), or any network call.
+    #[test]
+    fn spec_hot_reload_swaps_the_stored_cleanup_provider() {
+        use crate::llm::CleanupProvider;
+
+        let before = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            ..AppConfig::default()
+        };
+        let slot: std::sync::RwLock<Arc<dyn CleanupProvider>> =
+            std::sync::RwLock::new(crate::pipeline::resolve_cleanup_provider(&before));
+        assert_eq!(
+            slot.read().unwrap().model(),
+            crate::llm::DeepSeekCleanup::DEFAULT_MODEL,
+            "precondition: the slot starts on the built-in default"
+        );
+
+        let mut after = before.clone();
+        after.advanced.llm_model_deepseek = "deepseek-reasoner".to_string();
+
+        let swapped =
+            hot_reload_cleanup_provider(&slot, &before.advanced, &after).expect("swap must succeed");
+        assert!(swapped, "a changed model ID must trigger the rebuild");
+        assert_eq!(
+            slot.read().unwrap().model(),
+            "deepseek-reasoner",
+            "the STORED provider must carry the newly saved override"
+        );
+
+        // Saving the same block again is a no-op: nothing to reload.
+        let swapped_again = hot_reload_cleanup_provider(&slot, &after.advanced, &after)
+            .expect("no-op must succeed");
+        assert!(!swapped_again, "an unchanged model ID must not rebuild");
+        assert_eq!(slot.read().unwrap().model(), "deepseek-reasoner");
+    }
+
+    /// Review round 1 (P7): the rebuild must not fire for advanced saves that
+    /// cannot affect the cleanup provider. On the Windows `local` arm a rebuild
+    /// discards an already-loaded GGUF model (`LocalLlmCleanup::new` resets
+    /// `state: None`), so an unconditional rebuild cost a full model reload on
+    /// every advanced save.
+    ///
+    /// PINS: both guards — a non-model advanced change never reloads, and
+    /// `llm_provider == "local"` never reloads even when a model ID changed.
+    /// DOES NOT PIN: that `LocalLlmCleanup` really drops its state (that type is
+    /// `cfg(target_os = "windows")` and is not compiled into this Linux test
+    /// run) — this test pins the DECISION not to rebuild, which is the part that
+    /// can regress here.
+    #[test]
+    fn spec_hot_reload_skips_when_nothing_relevant_changed() {
+        let base = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            ..AppConfig::default()
+        };
+
+        // A non-model advanced field changed → no reload.
+        let mut only_threshold = base.clone();
+        only_threshold.advanced.silence_threshold = 0.012;
+        assert!(
+            !cleanup_provider_reload_needed(
+                &base.advanced,
+                &only_threshold.advanced,
+                &only_threshold.llm_provider
+            ),
+            "a silence-threshold save must not rebuild the cleanup provider"
+        );
+
+        // Each of the four overrides on its own DOES trigger a reload, so the
+        // guard above cannot pass by simply always returning false.
+        for (label, mutate) in [
+            ("deepseek", 0usize),
+            ("openai", 1),
+            ("groq", 2),
+            ("anthropic", 3),
+        ] {
+            let mut changed = base.clone();
+            match mutate {
+                0 => changed.advanced.llm_model_deepseek = "x".to_string(),
+                1 => changed.advanced.llm_model_openai = "x".to_string(),
+                2 => changed.advanced.llm_model_groq = "x".to_string(),
+                _ => changed.advanced.llm_model_anthropic = "x".to_string(),
+            }
+            assert!(
+                cleanup_provider_reload_needed(
+                    &base.advanced,
+                    &changed.advanced,
+                    &changed.llm_provider
+                ),
+                "a changed llm_model_{label} must rebuild the cleanup provider"
+            );
+
+            // …but not on the local arm — where that arm exists. Review round 2
+            // (REG-1): `resolve_cleanup_provider`'s `"local"` arm is
+            // `#[cfg(target_os = "windows")]`, so on any other build the slot
+            // holds DeepSeek and a changed `llmModelDeepseek` must still reload.
+            // The UI reaches `llm_provider == "local"` on every platform
+            // (`handleSttProviderChange` forces it for offline STT).
+            if cfg!(target_os = "windows") {
+                assert!(
+                    !cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
+                    "llm_provider=local must not rebuild on Windows (changed \
+                     llm_model_{label}); it would discard a loaded GGUF model"
+                );
+            } else {
+                assert!(
+                    cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
+                    "llm_provider=local has no local arm off Windows, so the slot holds \
+                     DeepSeek; the predicate ORs all four overrides regardless of provider, \
+                     so any llm_model_* change (here llm_model_{label}) must still rebuild"
+                );
+            }
+        }
     }
 }

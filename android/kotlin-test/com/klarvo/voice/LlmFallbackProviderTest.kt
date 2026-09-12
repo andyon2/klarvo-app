@@ -32,7 +32,10 @@ class LlmFallbackProviderTest {
         deepseekApiKey: String = "",
         groqApiKey: String = "",
         openaiApiKey: String = "",
-        openrouterApiKey: String = ""
+        openrouterApiKey: String = "",
+        llmModelDeepseek: String = "",
+        llmModelOpenai: String = "",
+        llmModelGroq: String = ""
     ) = KlarvoApi.Config(
         groqApiKey = groqApiKey,
         deepseekApiKey = deepseekApiKey,
@@ -43,7 +46,10 @@ class LlmFallbackProviderTest {
         deviceId = "test-device",
         llmProvider = llmProvider,
         openaiApiKey = openaiApiKey,
-        openrouterApiKey = openrouterApiKey
+        openrouterApiKey = openrouterApiKey,
+        llmModelDeepseek = llmModelDeepseek,
+        llmModelOpenai = llmModelOpenai,
+        llmModelGroq = llmModelGroq
     )
 
     // -----------------------------------------------------------------------
@@ -241,5 +247,192 @@ class LlmFallbackProviderTest {
             fallback.url
         )
         assertEquals("the two DeepSeek call sites must not drift on the model either", primary.model, fallback.model)
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 7-9 (AC5): advanced.llmModel* override flow-through.
+    //
+    // The override must reach `LlmProviderInfo.model` at BOTH independent
+    // sites — `resolveLlmProvider` (primary selection) and the private
+    // `cleanupFallbackCandidates` behind `resolveFallbackLlmProvider` (the
+    // Epic-12 ladder). Those are the same two sites 7-8 found drifting on the
+    // DeepSeek URL.
+    //
+    // These assert a NON-DEFAULT override on purpose. A test that pins only
+    // the default stays GREEN against a re-hard-coded literal, because the
+    // literal equals the default — that is the non-discriminating trap named
+    // in this story's AC6. The default path is pinned separately below and by
+    // `TwinConstantsVectorsTest` (production symbol vs fixture literal).
+    //
+    // What these do NOT exercise: any network call, the desktop Rust side (no
+    // cross-language assert exists), `advanced.llmModelAnthropic` (Android has
+    // no Anthropic provider — drift row H5), OpenRouter's model (no override
+    // key exists, story 7-9 Q8), or the JSON parse (that is
+    // `LlmModelOverrideConfigTest`).
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun modelOverride_primarySelection_reachesProviderInfo() {
+        assertEquals(
+            "a configured DeepSeek model must be sent, not the built-in default",
+            "deepseek-reasoner",
+            KlarvoApi.resolveLlmProvider(
+                baseConfig(
+                    llmProvider = "deepseek",
+                    deepseekApiKey = "ds-key",
+                    llmModelDeepseek = "deepseek-reasoner"
+                )
+            )!!.model
+        )
+        assertEquals(
+            "a configured OpenAI model must be sent, not the built-in default",
+            "gpt-4o",
+            KlarvoApi.resolveLlmProvider(
+                baseConfig(
+                    llmProvider = "openai",
+                    openaiApiKey = "sk-openai",
+                    llmModelOpenai = "gpt-4o"
+                )
+            )!!.model
+        )
+        assertEquals(
+            "a configured Groq model must be sent, not the built-in default",
+            "llama-3.1-8b-instant",
+            KlarvoApi.resolveLlmProvider(
+                baseConfig(
+                    llmProvider = "groq",
+                    groqApiKey = "gsk-key",
+                    llmModelGroq = "llama-3.1-8b-instant"
+                )
+            )!!.model
+        )
+    }
+
+    @Test
+    fun modelOverride_fallbackLadder_reachesProviderInfo() {
+        // Reaches the DeepSeek triple inside the private cleanupFallbackCandidates.
+        assertEquals(
+            "the Epic-12 fallback ladder must carry the DeepSeek model override",
+            "deepseek-reasoner",
+            KlarvoApi.resolveFallbackLlmProvider(
+                baseConfig(
+                    deepseekApiKey = "ds-key",
+                    openaiApiKey = "sk-openai",
+                    llmModelDeepseek = "deepseek-reasoner"
+                ),
+                excluding = "openai"
+            )!!.model
+        )
+        // ... and the OpenAI triple.
+        assertEquals(
+            "the Epic-12 fallback ladder must carry the OpenAI model override",
+            "gpt-4o",
+            KlarvoApi.resolveFallbackLlmProvider(
+                baseConfig(
+                    deepseekApiKey = "ds-key",
+                    openaiApiKey = "sk-openai",
+                    llmModelOpenai = "gpt-4o"
+                ),
+                excluding = "deepseek"
+            )!!.model
+        )
+    }
+
+    @Test
+    fun modelOverride_bothCallSitesAgree() {
+        // Anti-drift: the same override must produce the same model at both sites.
+        val primary = KlarvoApi.resolveLlmProvider(
+            baseConfig(
+                llmProvider = "deepseek",
+                deepseekApiKey = "ds-key",
+                llmModelDeepseek = "deepseek-reasoner"
+            )
+        )!!
+        val fallback = KlarvoApi.resolveFallbackLlmProvider(
+            baseConfig(
+                deepseekApiKey = "ds-key",
+                openaiApiKey = "sk-openai",
+                llmModelDeepseek = "deepseek-reasoner"
+            ),
+            excluding = "openai"
+        )!!
+        assertEquals(
+            "the two DeepSeek call sites must not drift on the model override",
+            primary.model,
+            fallback.model
+        )
+    }
+
+    /**
+     * AC5 + Q5: empty AND whitespace-only both mean "use the built-in
+     * default". Same predicate as the Rust twin
+     * `llm::effective_cleanup_model`.
+     */
+    @Test
+    fun blankModelOverride_fallsBackToBuiltInDefault() {
+        for (blank in listOf("", " ", "   ", "\t", "\n", " \t\n ")) {
+            assertEquals(
+                "a blank DeepSeek override (${blank.length} blank chars) must use the default",
+                KlarvoApi.DEFAULT_MODEL_DEEPSEEK,
+                KlarvoApi.resolveLlmProvider(
+                    baseConfig(
+                        llmProvider = "deepseek",
+                        deepseekApiKey = "ds-key",
+                        llmModelDeepseek = blank
+                    )
+                )!!.model
+            )
+            assertEquals(
+                "a blank OpenAI override must use the default",
+                KlarvoApi.DEFAULT_MODEL_OPENAI,
+                KlarvoApi.resolveLlmProvider(
+                    baseConfig(
+                        llmProvider = "openai",
+                        openaiApiKey = "sk-openai",
+                        llmModelOpenai = blank
+                    )
+                )!!.model
+            )
+            assertEquals(
+                "a blank Groq override must use the default",
+                KlarvoApi.DEFAULT_MODEL_GROQ,
+                KlarvoApi.resolveLlmProvider(
+                    baseConfig(
+                        llmProvider = "groq",
+                        groqApiKey = "gsk-key",
+                        llmModelGroq = blank
+                    )
+                )!!.model
+            )
+        }
+    }
+
+    /** AC5: a padded override is trimmed, not passed through verbatim. */
+    @Test
+    fun paddedModelOverride_isTrimmed() {
+        assertEquals(
+            "deepseek-reasoner",
+            KlarvoApi.resolveLlmProvider(
+                baseConfig(
+                    llmProvider = "deepseek",
+                    deepseekApiKey = "ds-key",
+                    llmModelDeepseek = "  deepseek-reasoner \n"
+                )
+            )!!.model
+        )
+    }
+
+    /**
+     * OpenRouter keeps its hard-coded model literal — it has no override key
+     * (story 7-9, Q8). Pinned so a later "wire everything" pass has to decide
+     * deliberately rather than by accident.
+     */
+    @Test
+    fun openrouterModel_staysHardCoded() {
+        val result = KlarvoApi.resolveLlmProvider(
+            baseConfig(llmProvider = "openrouter", openrouterApiKey = "sk-or-key")
+        )!!
+        assertEquals("openrouter", result.providerName)
+        assertEquals("deepseek/deepseek-chat", result.model)
     }
 }

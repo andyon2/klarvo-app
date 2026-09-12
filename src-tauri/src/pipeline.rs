@@ -188,27 +188,58 @@ fn save_pending_wav(app_data_dir: &std::path::Path, wav_bytes: &[u8]) -> Option<
     }
 }
 
-/// Constructs a *network* LLM cleanup provider by name with the given API key.
+/// Constructs a *network* LLM cleanup provider by name with the given API key
+/// and the user's model-ID override from `advanced`.
 ///
 /// Shared by [`resolve_cleanup_provider`] (primary selection) and
 /// [`resolve_fallback_provider`] (alternative selection) so the network-provider
-/// construction — including the OpenRouter endpoint/model literals — lives in
-/// ONE place instead of being duplicated across both. `"anthropic"` and
-/// `"local"` are intentionally NOT here: anthropic is never a fallback candidate
-/// and local needs a model path, so both stay special-cased in
-/// `resolve_cleanup_provider`. Unrecognised names fall back to DeepSeek (which
-/// fails at call-time with an auth error), preserving prior behavior.
-fn cleanup_provider_for(name: &str, api_key: &str) -> Arc<dyn CleanupProvider> {
+/// construction — including the OpenRouter endpoint/model literals and the
+/// model-ID override (Story 7.9) — lives in ONE place instead of being
+/// duplicated across both. `"local"` is intentionally NOT here: it needs a model
+/// path, so it stays special-cased in `resolve_cleanup_provider`. Unrecognised
+/// names fall back to DeepSeek (which fails at call-time with an auth error),
+/// preserving prior behavior.
+///
+/// The override's empty/whitespace rule and the per-provider default both live
+/// in [`llm::effective_cleanup_model`] — one predicate, not one per arm.
+/// OpenRouter keeps its hard-coded model: it has no override key (Q8).
+///
+/// **Anthropic is constructible here but is never a fallback candidate.** Story
+/// 7-9 added the `"anthropic"` arm so the model-ID override has exactly one
+/// construction site; that did NOT add Anthropic to the Epic-12 ladder. The
+/// ladder's candidate list in [`resolve_fallback_provider`] is
+/// deepseek → openai → openrouter and does not mention Anthropic (nor Groq,
+/// story 12-1 AC2). The invariant is asserted by
+/// `tests::test_resolve_fallback_provider_anthropic_never_a_candidate` — a
+/// docstring alone was what review round 1 (P9) found insufficient.
+pub(crate) fn cleanup_provider_for(
+    name: &str,
+    api_key: &str,
+    advanced: &config::AdvancedSettings,
+) -> Arc<dyn CleanupProvider> {
     match name {
-        "openai" => Arc::new(llm::OpenAiCleanup::new(api_key)),
-        "groq" => Arc::new(llm::GroqCleanup::new(api_key)),
+        "openai" => Arc::new(
+            llm::OpenAiCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_openai)),
+        ),
+        "groq" => Arc::new(
+            llm::GroqCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_groq)),
+        ),
+        "anthropic" => Arc::new(
+            llm::AnthropicCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model(name, &advanced.llm_model_anthropic)),
+        ),
         "openrouter" => Arc::new(llm::OpenAiCompatibleCleanup::new(
             api_key,
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
         )),
         // "deepseek" and any unrecognised value
-        _ => Arc::new(llm::DeepSeekCleanup::new(api_key)),
+        _ => Arc::new(
+            llm::DeepSeekCleanup::new(api_key)
+                .with_model(llm::effective_cleanup_model("deepseek", &advanced.llm_model_deepseek)),
+        ),
     }
 }
 
@@ -223,10 +254,10 @@ fn cleanup_provider_for(name: &str, api_key: &str) -> Arc<dyn CleanupProvider> {
 /// for unrecognised values, so startup always succeeds.
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
     match cfg.llm_provider.as_str() {
-        "openai" => cleanup_provider_for("openai", &cfg.openai_api_key),
-        "anthropic" => Arc::new(llm::AnthropicCleanup::new(&cfg.anthropic_api_key)),
-        "groq" => cleanup_provider_for("groq", &cfg.groq_api_key),
-        "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key),
+        "openai" => cleanup_provider_for("openai", &cfg.openai_api_key, &cfg.advanced),
+        "anthropic" => cleanup_provider_for("anthropic", &cfg.anthropic_api_key, &cfg.advanced),
+        "groq" => cleanup_provider_for("groq", &cfg.groq_api_key, &cfg.advanced),
+        "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key, &cfg.advanced),
         #[cfg(target_os = "windows")]
         "local" => {
             let model_dir = std::env::var("APPDATA")
@@ -243,7 +274,7 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             Arc::new(llm::local::LocalLlmCleanup::new(model_path))
         }
         // "deepseek" and any unrecognised value
-        _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key),
+        _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key, &cfg.advanced),
     }
 }
 
@@ -295,7 +326,9 @@ pub fn is_retryable_stt_error(err: &stt::SttError) -> bool {
 /// must never have its quota eaten by cleanup-fallback retries (design
 /// decision 1, AC2). "local" is never used as a fallback here either,
 /// because network errors are the trigger for fallback and local inference
-/// does not require a network call.
+/// does not require a network call. **Anthropic is not a candidate either** —
+/// it is primary-only, and story 7-9 adding an `"anthropic"` arm to
+/// [`cleanup_provider_for`] did not change that (review round 1, P9).
 pub fn resolve_fallback_provider(
     cfg: &AppConfig,
     primary_provider: &str,
@@ -311,7 +344,7 @@ pub fn resolve_fallback_provider(
         if *name == primary_provider || key.is_empty() {
             continue;
         }
-        let provider = cleanup_provider_for(name, key);
+        let provider = cleanup_provider_for(name, key, &cfg.advanced);
         return Some((provider, name));
     }
     None
@@ -1122,6 +1155,66 @@ pub enum ProcessOutcome {
     },
 }
 
+/// `true` when the provider answered "I do not know that model".
+///
+/// Story 7-9 made `advanced.llmModel*` a live, unvalidated free-text override,
+/// so a typo'd or retired ID is now a reachable failure mode. Providers report
+/// it as a **non-retryable** 400 or 404 whose body names the model
+/// (`model_not_found`, `"model: ... does not exist"`, …), so it lands in the
+/// degrade path and never triggers the Epic-12 ladder. Decision D2 keeps that
+/// behaviour — raw text pasted, no silent fallback to the default model — and
+/// only makes the warning say which ID to fix.
+///
+/// Matched on status **and** message so a generic 400 (malformed request,
+/// content filter, context-length) keeps its ordinary wording. The needles are
+/// lowercased substrings, deliberately loose: every provider phrases this
+/// differently and a missed match degrades to the generic message, not to a
+/// wrong one.
+///
+/// **Anthropic's shape is separate** (review round 2, RES-1). It answers 404
+/// with `error.type = "not_found_error"` and `error.message = "model: <id>"`,
+/// and [`llm::AnthropicCleanup`]'s error extraction keeps only `error.message`
+/// — so the type is gone and no needle above can match a bare `model: <id>`.
+/// Without it the one Desktop-only ID this story wires
+/// (`advanced.llmModelAnthropic`) was the single provider whose typo degraded to
+/// the generic message. Kept narrow — a `model:` **prefix** on a 404, not a
+/// substring anywhere — so an unrelated 404 keeps its ordinary wording;
+/// `not_found_error` covers the case where the body was not JSON-parseable and
+/// the raw text (which still carries the type) became the message.
+fn is_model_not_found_error(err: &llm::LlmError) -> bool {
+    match err {
+        llm::LlmError::ApiError { status, message } if *status == 400 || *status == 404 => {
+            let m = message.to_lowercase();
+            (*status == 404
+                && (m.trim_start().starts_with("model:") || m.contains("not_found_error")))
+                || m.contains("model_not_found")
+                || m.contains("model not found")
+                || m.contains("invalid_model")
+                || m.contains("unknown model")
+                || (m.contains("model") && (m.contains("does not exist") || m.contains("not exist")))
+                || (m.contains("model") && m.contains("decommissioned"))
+        }
+        _ => false,
+    }
+}
+
+/// Builds the user-facing warning for a degraded cleanup, naming the model ID
+/// when the provider rejected it (decision D2).
+///
+/// A model-not-found answer is the one degrade cause the user can fix in one
+/// place, so the warning points there instead of echoing the provider's raw
+/// 400. Every other error keeps [`degrade_warn_msg`] verbatim.
+///
+/// `model` is the resolved ID the failing provider actually sent
+/// (`CleanupProvider::model()`), not the raw config value — so the message shows
+/// what went on the wire after `llm::effective_cleanup_model` sanitised it.
+fn degrade_warn_msg_for_model(err: &llm::LlmError, model: &str) -> String {
+    if is_model_not_found_error(err) && !model.is_empty() {
+        return format!("Model '{model}' not found — check Advanced → Model IDs");
+    }
+    degrade_warn_msg(err)
+}
+
 /// Builds the user-facing warning shown when LLM cleanup fails and the raw
 /// transcript is pasted instead.
 fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
@@ -1324,10 +1417,15 @@ pub async fn process_audio(
             Ok(r) => {
                 let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                 llm_ms = Some(cleanup_ms);
+                // Story 7.9 / Q7: the model ID is part of this line so GATE-4
+                // can observe a changed `advanced.llmModel*` override in
+                // Klarvo.log. Mirrors Android's
+                // `[pipeline] cleanup: …ms (${llmProvider.model})`.
                 log::info!(
-                    "[pipeline] LLM cleanup took {}ms (provider: {}, style: {:?}, input_len: {})",
+                    "[pipeline] LLM cleanup took {}ms (provider: {}, model: {}, style: {:?}, input_len: {})",
                     cleanup_ms,
                     llm_provider_name,
+                    cleanup_provider.model(),
                     cleanup_style,
                     raw_text.len()
                 );
@@ -1356,9 +1454,10 @@ pub async fn process_audio(
                             let cleanup_ms = cleanup_start.elapsed().as_millis() as u64;
                             llm_ms = Some(cleanup_ms);
                             log::info!(
-                                "[pipeline] Primary LLM provider failed ({}), fallback to {} succeeded ({}ms)",
+                                "[pipeline] Primary LLM provider failed ({}), fallback to {} (model: {}) succeeded ({}ms)",
                                 primary_err,
                                 fallback_name,
+                                fallback_provider.model(),
                                 cleanup_ms
                             );
                             r
@@ -1368,7 +1467,12 @@ pub async fn process_audio(
                                 "[pipeline] Primary ({primary_err}) and fallback ({fallback_err}) both failed, using raw text"
                             );
                             llm_error = true;
-                            emit(PipelineEvent::warn(degrade_warn_msg(fallback_err)));
+                            // D2: the fallback provider is the one that just
+                            // failed, so its model is the one to name.
+                            emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                                fallback_err,
+                                fallback_provider.model(),
+                            )));
                             llm::CleanupResult {
                                 text: raw_text.clone(),
                                 prompt_tokens: None,
@@ -1381,7 +1485,10 @@ pub async fn process_audio(
                         "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
                     );
                     llm_error = true;
-                    emit(PipelineEvent::warn(degrade_warn_msg(primary_err)));
+                    emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                        primary_err,
+                        cleanup_provider.model(),
+                    )));
                     llm::CleanupResult {
                         text: raw_text.clone(),
                         prompt_tokens: None,
@@ -1391,9 +1498,15 @@ pub async fn process_audio(
             }
             Err(ref e) => {
                 // Non-retryable error (400, 401, 403, …): degrade immediately.
+                // This is where a bad `advanced.llmModel*` override lands — a
+                // model-not-found 400/404 is not retryable, so D2's warning is
+                // emitted here rather than after a ladder attempt.
                 log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
                 llm_error = true;
-                emit(PipelineEvent::warn(degrade_warn_msg(e)));
+                emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                    e,
+                    cleanup_provider.model(),
+                )));
                 llm::CleanupResult {
                     text: raw_text.clone(),
                     prompt_tokens: None,
@@ -3240,7 +3353,24 @@ mod tests {
         let _provider = resolve_stt_provider(&cfg, std::path::Path::new("/tmp/test"));
     }
 
-    /// `resolve_cleanup_provider` for "deepseek" does not panic.
+    /// Builds an `AdvancedSettings` carrying only the given model overrides.
+    fn adv_with_models(
+        deepseek: &str,
+        openai: &str,
+        groq: &str,
+        anthropic: &str,
+    ) -> config::AdvancedSettings {
+        config::AdvancedSettings {
+            llm_model_deepseek: deepseek.to_string(),
+            llm_model_openai: openai.to_string(),
+            llm_model_groq: groq.to_string(),
+            llm_model_anthropic: anthropic.to_string(),
+            ..config::AdvancedSettings::default()
+        }
+    }
+
+    /// `resolve_cleanup_provider` for "deepseek": with no override it sends the
+    /// built-in default model.
     #[test]
     fn test_resolve_cleanup_provider_deepseek() {
         let cfg = AppConfig {
@@ -3248,10 +3378,11 @@ mod tests {
             deepseek_api_key: "ds-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::DeepSeekCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "openai" does not panic.
+    /// `resolve_cleanup_provider` for "openai": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_openai() {
         let cfg = AppConfig {
@@ -3259,10 +3390,11 @@ mod tests {
             openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::OpenAiCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "anthropic" does not panic.
+    /// `resolve_cleanup_provider` for "anthropic": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_anthropic() {
         let cfg = AppConfig {
@@ -3270,10 +3402,11 @@ mod tests {
             anthropic_api_key: "sk-ant-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::AnthropicCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "groq" does not panic.
+    /// `resolve_cleanup_provider` for "groq": default model with no override.
     #[test]
     fn test_resolve_cleanup_provider_groq() {
         let cfg = AppConfig {
@@ -3281,10 +3414,12 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::GroqCleanup::DEFAULT_MODEL);
     }
 
-    /// `resolve_cleanup_provider` for "openrouter" does not panic.
+    /// `resolve_cleanup_provider` for "openrouter" does not panic and keeps its
+    /// hard-coded model literal — OpenRouter has no override key (Story 7.9 Q8).
     #[test]
     fn test_resolve_cleanup_provider_openrouter() {
         let cfg = AppConfig {
@@ -3292,17 +3427,128 @@ mod tests {
             openrouter_api_key: "sk-or-test".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), "deepseek/deepseek-chat");
     }
 
-    /// `resolve_cleanup_provider` for an unknown value falls back to DeepSeek (no panic).
+    /// `resolve_cleanup_provider` for an unknown value falls back to DeepSeek.
     #[test]
     fn test_resolve_cleanup_provider_unknown_fallback() {
         let cfg = AppConfig {
             llm_provider: "unknown_provider".to_string(),
             ..AppConfig::default()
         };
-        let _provider = resolve_cleanup_provider(&cfg);
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), llm::DeepSeekCleanup::DEFAULT_MODEL);
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 7.9 — advanced.llmModel* override flow-through
+    // -----------------------------------------------------------------------
+
+    /// AC5: a non-empty `advanced.llmModel*` reaches the constructed provider
+    /// on the PRIMARY selection path, for each of the four providers.
+    ///
+    /// This is the discriminating assertion of the story (AC6's
+    /// "non-discriminating trap"): a test that only pins the default stays
+    /// green against a re-hard-coded default, because the literal equals the
+    /// default. A non-default override does not.
+    ///
+    /// PINS: `resolve_cleanup_provider` → `cleanup_provider_for` carries the
+    /// override into the provider's request model, per provider arm.
+    /// DOES NOT PIN: the fallback ladder (see the test below), OpenRouter (no
+    /// override key, Q8), or `"local"` (Windows-only, no model ID).
+    #[test]
+    fn spec_model_override_flows_through_primary_selection() {
+        let advanced = adv_with_models(
+            "deepseek-reasoner",
+            "gpt-4o",
+            "llama-3.1-8b-instant",
+            "claude-sonnet-4-5",
+        );
+        let cases: &[(&str, &str)] = &[
+            ("deepseek", "deepseek-reasoner"),
+            ("openai", "gpt-4o"),
+            ("groq", "llama-3.1-8b-instant"),
+            ("anthropic", "claude-sonnet-4-5"),
+        ];
+
+        for (provider_name, expected_model) in cases {
+            let cfg = AppConfig {
+                llm_provider: provider_name.to_string(),
+                deepseek_api_key: "ds-key".to_string(),
+                openai_api_key: "sk-openai".to_string(),
+                groq_api_key: "gsk-key".to_string(),
+                anthropic_api_key: "sk-ant".to_string(),
+                advanced: advanced.clone(),
+                ..AppConfig::default()
+            };
+            let provider = resolve_cleanup_provider(&cfg);
+            assert_eq!(
+                provider.model(),
+                *expected_model,
+                "provider {provider_name} must send the configured model override"
+            );
+        }
+    }
+
+    /// AC5 + Q5: an override that is empty OR whitespace-only falls back to the
+    /// provider's built-in default. One predicate for all arms
+    /// (`llm::effective_cleanup_model`).
+    #[test]
+    fn spec_blank_model_override_falls_back_to_provider_default() {
+        for blank in ["", "   ", "\t", "\n  "] {
+            let cfg = AppConfig {
+                llm_provider: "deepseek".to_string(),
+                deepseek_api_key: "ds-key".to_string(),
+                advanced: adv_with_models(blank, blank, blank, blank),
+                ..AppConfig::default()
+            };
+            let provider = resolve_cleanup_provider(&cfg);
+            assert_eq!(
+                provider.model(),
+                llm::DeepSeekCleanup::DEFAULT_MODEL,
+                "a blank override ({blank:?}) must fall back to the built-in default"
+            );
+        }
+    }
+
+    /// AC5: an override with surrounding whitespace is trimmed, not passed
+    /// through verbatim — a model ID with a stray space is a 400 from the API.
+    #[test]
+    fn spec_model_override_is_trimmed() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            advanced: adv_with_models("  deepseek-reasoner \n", "", "", ""),
+            ..AppConfig::default()
+        };
+        let provider = resolve_cleanup_provider(&cfg);
+        assert_eq!(provider.model(), "deepseek-reasoner");
+    }
+
+    /// AC5: the Epic-12 fallback ladder carries the override too — it shares
+    /// `cleanup_provider_for`, the second of the two sites 7-8 found drifting.
+    ///
+    /// PINS: `resolve_fallback_provider` → the selected fallback's model.
+    /// DOES NOT PIN: the Groq exclusion (its own tests below).
+    #[test]
+    fn spec_model_override_flows_through_fallback_ladder() {
+        let cfg = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            advanced: adv_with_models("deepseek-reasoner", "gpt-4o", "", ""),
+            ..AppConfig::default()
+        };
+        let (provider, name) =
+            resolve_fallback_provider(&cfg, "deepseek").expect("openai must be the fallback");
+        assert_eq!(name, "openai");
+        assert_eq!(
+            provider.model(),
+            "gpt-4o",
+            "the fallback provider must carry the configured model override"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -3380,6 +3626,175 @@ mod tests {
                 assert_ne!(name, "groq", "primary={primary}: groq must never be the selected fallback");
             }
         }
+    }
+
+    /// Review round 1 (P9): story 7-9 gave `cleanup_provider_for` an
+    /// `"anthropic"` arm so the model-ID override has one construction site.
+    /// That must NOT have leaked Anthropic into the Epic-12 ladder.
+    ///
+    /// PINS: `resolve_fallback_provider` never returns `"anthropic"` — with the
+    /// Anthropic key set, under every primary-provider value, including
+    /// `"anthropic"` itself (where the primary-skip rule is not what excludes
+    /// it: Anthropic is simply not a candidate).
+    /// DOES NOT PIN: that the arm still constructs an Anthropic provider for the
+    /// PRIMARY path (`test_resolve_cleanup_provider_anthropic`), the Groq
+    /// exclusion (its own test above), or any network call.
+    #[test]
+    fn test_resolve_fallback_provider_anthropic_never_a_candidate() {
+        let cfg = AppConfig {
+            deepseek_api_key: "ds-key".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            openrouter_api_key: "sk-or".to_string(),
+            anthropic_api_key: "sk-ant".to_string(),
+            ..AppConfig::default()
+        };
+        for primary in ["deepseek", "groq", "openai", "openrouter", "anthropic", "local", ""] {
+            if let Some((_, name)) = resolve_fallback_provider(&cfg, primary) {
+                assert_ne!(
+                    name, "anthropic",
+                    "primary={primary}: anthropic must never be the selected fallback"
+                );
+            }
+        }
+
+        // Discriminating half: with ONLY the Anthropic key set there is no
+        // candidate at all — an Anthropic entry in the list would make this
+        // `Some`. Without this, the loop above would also pass if the ladder
+        // simply never got that far.
+        let anthropic_only = AppConfig {
+            anthropic_api_key: "sk-ant".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            resolve_fallback_provider(&anthropic_only, "deepseek").is_none(),
+            "an Anthropic key alone must not yield a fallback provider"
+        );
+    }
+
+    /// Decision D2: when the provider answers model-not-found, the degrade
+    /// warning names the rejected ID and points at the setting that owns it,
+    /// instead of echoing the raw provider 400.
+    ///
+    /// PINS: the exact user-facing string, that the classifier needs BOTH a
+    /// 400/404 status and a model-shaped message, and that a model-not-found
+    /// error stays NON-retryable (so it reaches the degrade path at all rather
+    /// than the Epic-12 ladder — the behaviour D2 deliberately kept).
+    /// DOES NOT PIN: which provider produced it, the pasted text (raw, asserted
+    /// by the degrade tests above), or any real HTTP response.
+    #[test]
+    fn spec_model_not_found_warning_names_the_model() {
+        let not_found = llm::LlmError::ApiError {
+            status: 400,
+            message: "{\"error\":{\"message\":\"The model `deepseek-reasner` does not exist\",\"code\":\"model_not_found\"}}".to_string(),
+        };
+        assert!(is_model_not_found_error(&not_found));
+        assert!(
+            !is_retryable_llm_error(&not_found),
+            "D2 rests on this staying non-retryable: a retryable classification would \
+             send a typo'd model ID through the fallback ladder instead of degrading"
+        );
+        assert_eq!(
+            degrade_warn_msg_for_model(&not_found, "deepseek-reasner"),
+            "Model 'deepseek-reasner' not found — check Advanced → Model IDs"
+        );
+
+        // 404 phrasing from a different provider shape.
+        let decommissioned = llm::LlmError::ApiError {
+            status: 404,
+            message: "model `llama-3.1-70b-versatile` has been decommissioned".to_string(),
+        };
+        assert!(is_model_not_found_error(&decommissioned));
+        assert_eq!(
+            degrade_warn_msg_for_model(&decommissioned, "llama-3.1-70b-versatile"),
+            "Model 'llama-3.1-70b-versatile' not found — check Advanced → Model IDs"
+        );
+
+        // A generic 400 keeps the ordinary wording — the classifier must not
+        // blame the model for every bad request.
+        let generic_400 = llm::LlmError::ApiError {
+            status: 400,
+            message: "context_length_exceeded".to_string(),
+        };
+        assert!(!is_model_not_found_error(&generic_400));
+        assert_eq!(
+            degrade_warn_msg_for_model(&generic_400, "deepseek-chat"),
+            degrade_warn_msg(&generic_400),
+            "a non-model 400 must produce the unchanged degrade message"
+        );
+
+        // A 429 whose body happens to mention the model is a rate limit, not a
+        // bad ID: the status gate has to come first.
+        let rate_limited = llm::LlmError::ApiError {
+            status: 429,
+            message: "model deepseek-chat rate_limit_exceeded".to_string(),
+        };
+        assert!(!is_model_not_found_error(&rate_limited));
+
+        // No resolved model (the trait default, e.g. a test double) → no
+        // half-written message like "Model '' not found".
+        assert_eq!(
+            degrade_warn_msg_for_model(&not_found, ""),
+            degrade_warn_msg(&not_found),
+            "an empty model must fall back to the generic message"
+        );
+    }
+
+    /// Review round 2 (RES-1): Anthropic's model-not-found shape must reach the
+    /// D2 warning too. Anthropic answers 404 with `error.type =
+    /// "not_found_error"` and `error.message = "model: <id>"`, and
+    /// `llm::AnthropicCleanup::send_request` keeps only `error.message` — so the
+    /// type is gone and none of the other needles ("model_not_found",
+    /// "does not exist", "decommissioned", …) can match. Without this shape the
+    /// one Desktop-only model ID story 7-9 wires (`advanced.llmModelAnthropic`,
+    /// Q6/H5) was the single provider whose typo'd ID degraded to the generic
+    /// message.
+    ///
+    /// PINS: a 404 whose message starts with `model:` classifies, and so does a
+    /// 404 whose body was not JSON-parseable and therefore still carries
+    /// `not_found_error` verbatim; plus that neither widens to an unrelated 404.
+    /// DOES NOT PIN: Anthropic's real wire format — no HTTP call happens here;
+    /// the extraction seam this mirrors is `llm::AnthropicCleanup::send_request`.
+    #[test]
+    fn spec_anthropic_model_not_found_shape_names_the_model() {
+        // Exactly what survives Anthropic's error extraction: `error.message`.
+        let anthropic = llm::LlmError::ApiError {
+            status: 404,
+            message: "model: claude-haiku-4-5-20251099".to_string(),
+        };
+        assert!(
+            is_model_not_found_error(&anthropic),
+            "Anthropic's `model: <id>` 404 must classify as model-not-found"
+        );
+        assert_eq!(
+            degrade_warn_msg_for_model(&anthropic, "claude-haiku-4-5-20251099"),
+            "Model 'claude-haiku-4-5-20251099' not found — check Advanced → Model IDs"
+        );
+
+        // Body that failed to parse as JSON: the raw text becomes the message
+        // and still carries the error type.
+        let raw_body = llm::LlmError::ApiError {
+            status: 404,
+            message: "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\
+                      \"message\":\"model: claude-haiku-4-5-20251099\"}}"
+                .to_string(),
+        };
+        assert!(is_model_not_found_error(&raw_body));
+
+        // Discriminating: an unrelated 404 keeps the ordinary wording, and the
+        // status gate still comes first.
+        let unrelated_404 = llm::LlmError::ApiError {
+            status: 404,
+            message: "endpoint not available in your region".to_string(),
+        };
+        assert!(
+            !is_model_not_found_error(&unrelated_404),
+            "a 404 that is not about the model must keep the ordinary wording"
+        );
+        assert!(!is_model_not_found_error(&llm::LlmError::ApiError {
+            status: 500,
+            message: "model: claude-haiku-4-5-20251099".to_string(),
+        }));
     }
 
     /// When primary is "deepseek" and no other key is set, returns None.
