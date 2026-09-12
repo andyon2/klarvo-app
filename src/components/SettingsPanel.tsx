@@ -530,6 +530,9 @@ export function SettingsPanel({
 
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
+    // Set when the advanced block could not be re-read and its save was
+    // therefore skipped (REG-3); reported in the save banner below.
+    let advancedSaveSkipped = false;
     try {
       // Split sliders: each key gets its own value (no longer coupled).
       const autostopSecs = localAutostopSilenceSecs;
@@ -571,21 +574,34 @@ export function SettingsPanel({
         // the cleanup provider, the revert took effect immediately. Re-read the
         // persisted block right before the merge so only the two fields this
         // panel owns are overwritten.
-        let persistedAdv: AdvancedSettings = advancedSettings;
+        //
+        // Review round 2 (REG-3): a REJECTED re-read must not fall back to the
+        // mount snapshot. Writing the whole block from a stale snapshot is
+        // precisely the P1 revert this re-read exists to prevent, and the
+        // hot-reload makes that revert instant — so the failure path re-enacted
+        // the bug. Skip the advanced save instead and say so: the two fields
+        // this panel owns stay unsaved (the user can retry) rather than
+        // silently discarding a model ID saved in the embedded Advanced panel.
+        let persistedAdv: AdvancedSettings | null = null;
         try {
           persistedAdv = await getAdvancedSettings();
-        } catch {
-          // Backend unreachable: fall back to the mount snapshot rather than
-          // skipping the save — the two fields below are what the user just
-          // changed here, and this is no worse than the previous behaviour.
+        } catch (e) {
+          console.error(
+            "[settings] could not re-read the advanced block; skipping the advanced save",
+            e,
+          );
         }
-        const updatedAdv: AdvancedSettings = {
-          ...persistedAdv,
-          silenceThreshold: localSilenceThreshold,
-          pasteDelayMs: localPasteDelayMs,
-        };
-        await saveAdvancedSettings(updatedAdv);
-        setAdvancedSettings(updatedAdv);
+        if (persistedAdv === null) {
+          advancedSaveSkipped = true;
+        } else {
+          const updatedAdv: AdvancedSettings = {
+            ...persistedAdv,
+            silenceThreshold: localSilenceThreshold,
+            pasteDelayMs: localPasteDelayMs,
+          };
+          await saveAdvancedSettings(updatedAdv);
+          setAdvancedSettings(updatedAdv);
+        }
       }
       setGroqKey("");
       setDeepseekKey("");
@@ -595,7 +611,13 @@ export function SettingsPanel({
       // Clear validation errors after a successful save.
       setApiKeyErrors({});
       if (!opts?.silent) {
-        setSaveMsg("Saved");
+        // REG-3: a skipped advanced save is reported, not swallowed — the
+        // banner styles anything other than "Saved" as an error.
+        setSaveMsg(
+          advancedSaveSkipped
+            ? "Saved — advanced settings skipped (could not read current values)"
+            : "Saved",
+        );
         setTimeout(() => setSaveMsg(null), 2000);
       }
     } catch (err) {

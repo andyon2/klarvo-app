@@ -701,14 +701,22 @@ pub fn get_advanced_settings(
 ///
 /// 1. Nothing to reload unless one of the four `llm_model_*` overrides actually
 ///    changed — they are the only part of `AdvancedSettings` the provider reads.
-/// 2. Skip `"local"` entirely: local inference selects its model by GGUF file,
-///    not by model ID, so a changed override cannot affect it.
+/// 2. Skip `"local"` **on Windows**: local inference selects its model by GGUF
+///    file, not by model ID, so a changed override cannot affect it. Review
+///    round 2 (REG-1) narrowed this from the bare config value: the guard has to
+///    match what was actually constructed, and
+///    `pipeline::resolve_cleanup_provider`'s `"local"` arm is
+///    `#[cfg(target_os = "windows")]`. On any other build that arm does not
+///    exist, the `_` arm puts **DeepSeek** in the slot, and skipping would leave
+///    a changed `llmModelDeepseek` needing a restart. The state is reachable on
+///    every platform: `SettingsPanel::handleSttProviderChange` forces
+///    `llmProvider = "local"` when the user picks offline STT.
 fn cleanup_provider_reload_needed(
     previous: &config::AdvancedSettings,
     next: &config::AdvancedSettings,
     llm_provider: &str,
 ) -> bool {
-    if llm_provider == "local" {
+    if cfg!(target_os = "windows") && llm_provider == "local" {
         return false;
     }
     previous.llm_model_deepseek != next.llm_model_deepseek
@@ -2319,12 +2327,25 @@ mod tests {
                 "a changed llm_model_{label} must rebuild the cleanup provider"
             );
 
-            // …but never on the local arm.
-            assert!(
-                !cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
-                "llm_provider=local must never rebuild (changed llm_model_{label}); \
-                 it would discard a loaded GGUF model"
-            );
+            // …but not on the local arm — where that arm exists. Review round 2
+            // (REG-1): `resolve_cleanup_provider`'s `"local"` arm is
+            // `#[cfg(target_os = "windows")]`, so on any other build the slot
+            // holds DeepSeek and a changed `llmModelDeepseek` must still reload.
+            // The UI reaches `llm_provider == "local"` on every platform
+            // (`handleSttProviderChange` forces it for offline STT).
+            if cfg!(target_os = "windows") {
+                assert!(
+                    !cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
+                    "llm_provider=local must not rebuild on Windows (changed \
+                     llm_model_{label}); it would discard a loaded GGUF model"
+                );
+            } else {
+                assert!(
+                    cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
+                    "llm_provider=local has no local arm off Windows, so the slot \
+                     holds DeepSeek and a changed llm_model_{label} must still rebuild"
+                );
+            }
         }
     }
 }

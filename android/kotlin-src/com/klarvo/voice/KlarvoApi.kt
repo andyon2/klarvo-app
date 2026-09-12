@@ -93,14 +93,25 @@ object KlarvoApi {
      *
      * - the override is **trimmed** first, so a whitespace-only value counts
      *   as empty and falls back to [default] (story 7-9, Q5),
-     * - then every character below U+0020 (C0 control character) is **dropped**
-     *   (review round 1, decision D2): the override is unvalidated free text, so
-     *   an interior newline would otherwise forge a line in the log and travel
-     *   to the provider verbatim,
+     * - then every character below U+0020 (C0 control character) **and U+0085
+     *   (NEL)** is **dropped** (review round 1, decision D2): the override is
+     *   unvalidated free text, so an interior newline would otherwise forge a
+     *   line in the log and travel to the provider verbatim,
      * - otherwise the sanitised override wins.
      *
      * Note the ORDER: a value that is non-empty after trimming but empty after
      * stripping (e.g. a lone U+0001) still falls back to [default].
+     *
+     * U+0085 is named explicitly (review round 2, RES-2) because it is the one
+     * character the two `trim()` implementations disagree about: Rust's
+     * `str::trim` follows the Unicode White_Space property and strips it, while
+     * Kotlin's [String.trim] uses `Character.isWhitespace`/`isSpaceChar` — both
+     * `false` for U+0085 — so it does not. Since `0x85 >= 0x20`, both filters
+     * used to keep it and the twins produced different model IDs for the same
+     * config. Dropping it in the filter rather than in `trim` makes the two
+     * agree without depending on either runtime's whitespace table. (U+00A0 does
+     * not diverge; U+001C..U+001F diverge the other way but are already dropped
+     * by both filters.)
      *
      * Both provider sites ([resolveLlmProvider] and [cleanupFallbackCandidates])
      * go through here, so they cannot drift apart the way their URL literals
@@ -112,7 +123,7 @@ object KlarvoApi {
      * Rust twin's `spec_twin_constants_cleanup_model_sanitize`.
      */
     internal fun effectiveCleanupModel(override: String, default: String): String {
-        val sanitized = override.trim().filter { it.code >= 0x20 }
+        val sanitized = override.trim().filter { it.code >= 0x20 && it.code != 0x85 }
         return if (sanitized.isNotEmpty()) sanitized else default
     }
 

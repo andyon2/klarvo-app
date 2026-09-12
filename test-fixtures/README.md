@@ -18,5 +18,5 @@ Fixtures currently in the net:
 | `chunking-cleanup-vectors.json` | `llm/mod.rs` (`spec_chunking_vectors_*`) | `ChunkingVectorsTest` |
 | `wav-rms-vectors.json` | `pipeline.rs` | `VadGateRmsFixtureTest` |
 | `vad-gate-golden-vectors-7-2.json` | — (Kotlin-only) | `VadGateGoldenVectorsTest` |
-| `twin-constants-vectors.json` | `llm/mod.rs` (`spec_twin_constants_*`) | `TwinConstantsVectorsTest` (asserts 8 of 9 entries — `TWIN-CLEANUP-MODEL-ANTHROPIC-001` is Desktop-only, drift row H5, and is skipped by id) |
+| `twin-constants-vectors.json` | `llm/mod.rs` (`spec_twin_constants_*`) | `TwinConstantsVectorsTest` (asserts 9 of 10 entries — `TWIN-CLEANUP-MODEL-ANTHROPIC-001` is Desktop-only, drift row H5, and is skipped by id) |
 | `m12-dictionary-scope-vectors.json` | `llm/mod.rs` (`spec_m12_*`) | — (Android column is a written record: the Kotlin prompt builders are private) |

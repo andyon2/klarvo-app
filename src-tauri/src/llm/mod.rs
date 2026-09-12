@@ -1270,11 +1270,21 @@ impl CleanupProvider for AnthropicCleanup {
 ///   whitespace-only value counts as empty and falls back to the default.
 ///   The Kotlin twin (`KlarvoApi.effectiveCleanupModel`) uses the same rule.
 /// - **Control characters (review round 1, D2):** after trimming, every char
-///   below `U+0020` is dropped. The override is unvalidated free text (D2 chose
-///   no UI validation), and an interior newline would otherwise forge a line in
-///   `Klarvo.log` and travel to the provider verbatim. Note the ORDER: a value
-///   that is non-empty after trimming but empty after stripping (e.g. a lone
-///   `U+0001`) still falls back to the default.
+///   below `U+0020` **and `U+0085` (NEL)** is dropped. The override is
+///   unvalidated free text (D2 chose no UI validation), and an interior newline
+///   would otherwise forge a line in `Klarvo.log` and travel to the provider
+///   verbatim. Note the ORDER: a value that is non-empty after trimming but
+///   empty after stripping (e.g. a lone `U+0001`) still falls back to the
+///   default.
+/// - **Why `U+0085` is named explicitly (review round 2, RES-2):** it is the one
+///   character the two `trim()` implementations disagree about. Rust's
+///   `str::trim` follows the Unicode `White_Space` property and strips it;
+///   Kotlin's `trim()` uses `Character.isWhitespace`/`isSpaceChar`, both `false`
+///   for `U+0085`, so it does not. `0x85 >= 0x20` meant both filters kept it,
+///   and the twins produced different model IDs for the same config. Dropping it
+///   in the filter — not in `trim` — makes the two agree without depending on
+///   either runtime's whitespace table. (`U+00A0` does not diverge; `U+001C`..
+///   `U+001F` diverge the other way but both filters already drop them.)
 /// - **Default:** the provider's built-in `DEFAULT_MODEL`.
 ///
 /// `provider` uses the same names as `cfg.llm_provider`. An unrecognised name
@@ -1291,7 +1301,7 @@ pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
     let sanitized: String = override_raw
         .trim()
         .chars()
-        .filter(|c| *c >= '\u{20}')
+        .filter(|c| *c >= '\u{20}' && *c != '\u{85}')
         .collect();
     if !sanitized.is_empty() {
         return sanitized;

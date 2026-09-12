@@ -1170,11 +1170,24 @@ pub enum ProcessOutcome {
 /// lowercased substrings, deliberately loose: every provider phrases this
 /// differently and a missed match degrades to the generic message, not to a
 /// wrong one.
+///
+/// **Anthropic's shape is separate** (review round 2, RES-1). It answers 404
+/// with `error.type = "not_found_error"` and `error.message = "model: <id>"`,
+/// and [`llm::AnthropicCleanup`]'s error extraction keeps only `error.message`
+/// — so the type is gone and no needle above can match a bare `model: <id>`.
+/// Without it the one Desktop-only ID this story wires
+/// (`advanced.llmModelAnthropic`) was the single provider whose typo degraded to
+/// the generic message. Kept narrow — a `model:` **prefix** on a 404, not a
+/// substring anywhere — so an unrelated 404 keeps its ordinary wording;
+/// `not_found_error` covers the case where the body was not JSON-parseable and
+/// the raw text (which still carries the type) became the message.
 fn is_model_not_found_error(err: &llm::LlmError) -> bool {
     match err {
         llm::LlmError::ApiError { status, message } if *status == 400 || *status == 404 => {
             let m = message.to_lowercase();
-            m.contains("model_not_found")
+            (*status == 404
+                && (m.trim_start().starts_with("model:") || m.contains("not_found_error")))
+                || m.contains("model_not_found")
                 || m.contains("model not found")
                 || m.contains("invalid_model")
                 || m.contains("unknown model")
@@ -3725,6 +3738,63 @@ mod tests {
             degrade_warn_msg(&not_found),
             "an empty model must fall back to the generic message"
         );
+    }
+
+    /// Review round 2 (RES-1): Anthropic's model-not-found shape must reach the
+    /// D2 warning too. Anthropic answers 404 with `error.type =
+    /// "not_found_error"` and `error.message = "model: <id>"`, and
+    /// `llm::AnthropicCleanup::send_request` keeps only `error.message` — so the
+    /// type is gone and none of the other needles ("model_not_found",
+    /// "does not exist", "decommissioned", …) can match. Without this shape the
+    /// one Desktop-only model ID story 7-9 wires (`advanced.llmModelAnthropic`,
+    /// Q6/H5) was the single provider whose typo'd ID degraded to the generic
+    /// message.
+    ///
+    /// PINS: a 404 whose message starts with `model:` classifies, and so does a
+    /// 404 whose body was not JSON-parseable and therefore still carries
+    /// `not_found_error` verbatim; plus that neither widens to an unrelated 404.
+    /// DOES NOT PIN: Anthropic's real wire format — no HTTP call happens here;
+    /// the extraction seam this mirrors is `llm::AnthropicCleanup::send_request`.
+    #[test]
+    fn spec_anthropic_model_not_found_shape_names_the_model() {
+        // Exactly what survives Anthropic's error extraction: `error.message`.
+        let anthropic = llm::LlmError::ApiError {
+            status: 404,
+            message: "model: claude-haiku-4-5-20251099".to_string(),
+        };
+        assert!(
+            is_model_not_found_error(&anthropic),
+            "Anthropic's `model: <id>` 404 must classify as model-not-found"
+        );
+        assert_eq!(
+            degrade_warn_msg_for_model(&anthropic, "claude-haiku-4-5-20251099"),
+            "Model 'claude-haiku-4-5-20251099' not found — check Advanced → Model IDs"
+        );
+
+        // Body that failed to parse as JSON: the raw text becomes the message
+        // and still carries the error type.
+        let raw_body = llm::LlmError::ApiError {
+            status: 404,
+            message: "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\
+                      \"message\":\"model: claude-haiku-4-5-20251099\"}}"
+                .to_string(),
+        };
+        assert!(is_model_not_found_error(&raw_body));
+
+        // Discriminating: an unrelated 404 keeps the ordinary wording, and the
+        // status gate still comes first.
+        let unrelated_404 = llm::LlmError::ApiError {
+            status: 404,
+            message: "endpoint not available in your region".to_string(),
+        };
+        assert!(
+            !is_model_not_found_error(&unrelated_404),
+            "a 404 that is not about the model must keep the ordinary wording"
+        );
+        assert!(!is_model_not_found_error(&llm::LlmError::ApiError {
+            status: 500,
+            message: "model: claude-haiku-4-5-20251099".to_string(),
+        }));
     }
 
     /// When primary is "deepseek" and no other key is set, returns None.
