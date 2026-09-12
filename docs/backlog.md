@@ -208,6 +208,27 @@ the stored `raw_text` suffices, no audio needed. Reduction: reuses 12-2's pendin
 and the `raw_text` column. New: a second pending kind "not cleaned", a re-process path without audio, the
 icon + counter (design question for the canon — Phase A with Andi). Both platforms.
 
+### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
+
+Four fix rounds ran (D1/D2 + P1-P10 · REG-1..3 + RES-1/2 · RES-2 re-fix + R3-1..R3-7). All confirmed code
+findings are closed; the round-4 re-review left these, accepted as residual (Andi authorized the loop end):
+- **Banner on the silent save path** (`src/components/SettingsPanel.tsx` `saveCurrentSettings`): the 2 s
+  "Saved" timer is never cancelled, so a Danger banner set by a silent save (API-key removal) within 2 s of a
+  success can be cleared by that timer; and a later *successful* silent save does not clear a stale skip banner.
+  Fix direction: keep the timeout id in a `useRef`, `clearTimeout` before every `setSaveMsg`, reset on silent
+  success. Also: the silent-save `catch` logs nothing.
+- **Docstring claims in the sanitize twins**: the `U+0001` rationale in both PINS clauses + fixture description
+  is wrong under filter-first (the whitespace-only row is the forcing vector); the Kotlin test's "opposite
+  directions" sentence pairs the runtimes the wrong way round (Rust half is right).
+- **Fixture completeness counts entries, not cases** — deleting the three ordering rows of
+  `TWIN-CLEANUP-MODEL-SANITIZE-001` leaves both halves green. Fix direction: pin the case count.
+- **Whitespace >= U+0020 unpinned** (`U+00A0`, `U+202F`, `U+2007`): measured identical on rustc + JDK 17 today,
+  no vector covers it.
+- **`is_model_not_found_error`** (from round 3): the `not_found_error` needle fires on any Anthropic 404 with an
+  unparsable body; the `model:` needle is 404-only.
+- **`llm_provider == "local"` on non-Windows silently routes cleanup to DeepSeek** (`pipeline.rs`
+  `cleanup_provider_for`), no log line, unlike the STT twin. Pre-existing; surfaced by REG-1.
+
 ### Story 7-9 GATE-1 leftovers — further persisted-but-unread keys (2026-09-12)
 
 Found while pinning the 7-9 removal set (the record's "14" was a counting slip; 13 named keys are the set).
