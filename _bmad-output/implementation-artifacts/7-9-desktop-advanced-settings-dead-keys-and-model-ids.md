@@ -838,7 +838,7 @@ would change no verdict.
   the same JSON text through the real `org.json` production seams. No
   `deny_unknown_fields` was added anywhere.
 - **AC5 — model IDs are a real override.**
-  - One place decides both halves of the rule: **`llm::effective_cleanup_model`** (trim, then
+  - One place decides both halves of the rule: **`llm::effective_cleanup_model`** (since round 3: drop chars < U+0020 and U+0085, then trim, then
     empty → the provider's `DEFAULT_MODEL`), with the Kotlin twin
     **`KlarvoApi.effectiveCleanupModel`**. The per-arm empty-check the story warned against
     does not exist.
@@ -949,8 +949,8 @@ conductor's close-out pass as directed.
   that merely mentions a model keep the ordinary wording; an empty model falls back to the
   generic message rather than printing `Model '' not found`.
   `llm::effective_cleanup_model` and the Kotlin twin `KlarvoApi.effectiveCleanupModel` now
-  **trim, then drop every char < U+0020, then** apply empty → default — the order matters and
-  the fixture forces it. Pinned by a new vector on both sides,
+  **drop every char < U+0020 and U+0085, then trim, then** apply empty → default (order fixed in
+  round 3, `9015a0a`; conductor close-out corrected this note) — the order matters and the fixture forces it. Pinned by a new vector on both sides,
   **`TWIN-CLEANUP-MODEL-SANITIZE-001`** (a raw → expected table, each half feeding it through
   its own seam); both "exactly nine" assertions became **ten**, honestly worded.
 - ✅ **P1** `src/components/SettingsPanel.tsx`, the `handleSave` advanced block: the
@@ -1055,7 +1055,7 @@ round are untouched, and P11/P12 from round 1 stay unticked for the editorial cl
 - ✅ **RES-2** both twins now drop `U+0085` explicitly:
   `llm::effective_cleanup_model` filters `*c >= '\u{20}' && *c != '\u{85}'`,
   `KlarvoApi.effectiveCleanupModel` filters `it.code >= 0x20 && it.code != 0x85`. Fixed in the
-  **filter**, not in `trim`, so the result no longer depends on either runtime's whitespace
+  **filter**, not in `trim` (round-2 wording; superseded by round 3, which moved the filter BEFORE `trim` — see round-3 RES-2), so the result was meant not to depend on either runtime's whitespace
   table: Rust's `str::trim` follows Unicode `White_Space` and strips NEL, Kotlin's `trim()`
   uses `Character.isWhitespace`/`isSpaceChar` — both `false` for NEL — and did not, while
   `0x85 >= 0x20` let both filters keep it. Two fixture cases added to
@@ -1064,8 +1064,7 @@ round are untouched, and P11/P12 from round 1 stay unticked for the editorial cl
   `"<U+0085>" -> default`,
   which is the one input where a trim-only Kotlin half returns the raw character. The entry's
   `PINS` clause now names U+0085 and records the measurement (including that `U+00A0` does
-  **not** diverge, and that `U+001C`..`U+001F` diverge the other way but are unobservable
-  because both filters already drop them). Both twins' doc comments say the same.
+  **not** diverge; the round-2 claim that `U+001C`..`U+001F` are "unobservable" was wrong and was removed in round 3, R3-1). Both twins' doc comments say the same.
 - ✅ **REG-3** `src/components/SettingsPanel.tsx::saveCurrentSettings`, the advanced block: a
   rejected `getAdvancedSettings()` no longer falls back to the mount snapshot. `persistedAdv`
   starts `null`, the `catch` logs and leaves it `null`, and the whole-block write is skipped
@@ -1168,7 +1167,7 @@ have to reconstruct them):
 **Kotlin (Android)**
 - `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — 3 `DEFAULT_MODEL_*` consts + `effectiveCleanupModel` + `parseLlmModelOverride`; `Config` −2/+3 fields; `readConfig` reads; override applied in `resolveLlmProvider` and `cleanupFallbackCandidates`
 - `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `tapAutoSend`/`longPressAutoSend` fields, their `loadBubbleControls` assignment + debug-log fields, and the unreachable `shouldAutoSend` block removed
-- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — `baseConfig` +3 params; 6 new tests (9 → 18)
+- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — `baseConfig` +3 params; 6 new tests (12 → 18; conductor close-out: baseline corrected, P11)
 - `android/kotlin-test/com/klarvo/voice/LlmModelOverrideConfigTest.kt` — **new**, 8 tests (parse seam, Q5 predicate, AC4 Kotlin half)
 - `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` — KDoc claims corrected; "five"→"nine"; 2 new tests (6 → 8)
 
@@ -1185,7 +1184,7 @@ have to reconstruct them):
 - `test-fixtures/README.md` — reader ledger notes the 8-of-9 Kotlin coverage
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — 7-9 → `review`; `last_updated`
 - `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md` — this record
-- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` — **new**: `smoke.mjs`, `smoke-report.json`, 8 screenshots, 6 captured-state files
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` — **new**: `smoke.mjs`, `smoke-report.json`, 8 screenshots, 9 captured-state files (conductor close-out: count corrected, P12)
 
 **FIX ROUND 1 — files touched (2026-09-12), by finding**
 
@@ -1378,7 +1377,7 @@ Regression gates re-run: `cargo test --lib` 680/680, `tsc --noEmit` clean.
 - [x] [Review][Patch] Anthropic's model-not-found shape never reaches D2's warning — the provider answers 404 with `error.type="not_found_error"` and `message="model: <id>"`, but only `error.message` survives error extraction and none of the six needles match it, so the one Desktop-only model ID this story wires degrades to the generic message [src-tauri/src/pipeline.rs::is_model_not_found_error, src-tauri/src/llm/mod.rs::AnthropicCleanup (error extraction)]
 - [x] [Review][Patch] `test-fixtures/README.md`'s ledger row is stale — it still reads "asserts 8 of 9 entries"; the fixture now holds ten and the Kotlin half asserts nine. `bb9510b` updated the Rust header and the Kotlin KDoc but not the ledger, which project-context names as the record of which fixture has which reader [test-fixtures/README.md]
 - [x] [Review][Patch] The sanitize twin diverges on U+0085 (NEL) and the new fixture cannot see it — measured: Rust `str::trim` uses Unicode `White_Space` and trims U+0085, Kotlin's `trim()` does not (`Character.isWhitespace`/`isSpaceChar` both false), and 0x85 ≥ 0x20 so both filters keep it. Every case in the table is ≤ U+001F, so the lock that advertises "the shared predicate" has no discriminating vector. (NBSP does **not** diverge — both trim it.) [test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001, src-tauri/src/llm/mod.rs::effective_cleanup_model, android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::effectiveCleanupModel]
-- [x] [Review][Patch] P1's own failure path re-enacts P1 — when the fresh `getAdvancedSettings()` rejects, the `catch` falls back to the mount snapshot and still writes the whole block, reverting a just-saved model ID, now with the hot-reload making it instant. The comment states the trade-off; skipping the advanced save is the one-line alternative [src/components/SettingsPanel.tsx::handleSave]
+- [x] [Review][Patch] P1's own failure path re-enacts P1 — when the fresh `getAdvancedSettings()` rejects, the `catch` falls back to the mount snapshot and still writes the whole block, reverting a just-saved model ID, now with the hot-reload making it instant. The comment states the trade-off; skipping the advanced save is the one-line alternative [src/components/SettingsPanel.tsx::saveCurrentSettings (conductor close-out: anchor corrected, R3-6; `handleSave` is the 3-line wrapper)]
 
 - [x] [Review][Defer] The reverse half of P1 is unclosed in both directions: `silenceThreshold`/`pasteDelayMs` are still written from the stale mount snapshot here, and the embedded panel's own whole-block save reverts them [src/components/SettingsPanel.tsx::handleSave, src/components/AdvancedSettingsPanel.tsx::handleSave] — deferred, pre-existing shape amplified by the guard
 - [x] [Review][Defer] P7's guard narrows an accidental repair: the previously unconditional rebuild also fixed a slot left wrong by `update_api_keys` (which replaces the provider with DeepSeek regardless of `llm_provider` — already deferred); that repair now only happens when a model ID changes [src-tauri/src/commands/settings.rs::update_api_keys] — deferred, interaction with an already-deferred defect
