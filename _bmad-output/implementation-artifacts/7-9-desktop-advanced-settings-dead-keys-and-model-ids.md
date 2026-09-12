@@ -1,6 +1,6 @@
 # Story 7.9: Desktop Advanced settings + AutoSend — remove dead keys, wire 4 model IDs
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1207,3 +1207,48 @@ Regression gates re-run: `cargo test --lib` 680/680, `tsc --noEmit` clean.
 - [x] [Review][Defer] `update_api_keys` discards a loaded GGUF on the Windows `local` arm — the same cost P7 guarded on the sibling path, on a legacy command that already had it [src-tauri/src/commands/settings.rs::update_api_keys] — deferred, pre-existing
 
 **Dismissed as noise (6, with the check that killed them):** "a new comment asserts an STT license gate the code no longer has" (`git show f164056:…/settings.rs`: the removed backend gate covered *only* the four `llm_system_prompt_*`/`llm_command_mode_prompt` keys AC1 deletes — the STT prompts never had a backend gate, and the comment's "stays gated" describes the UI gating that is still present) · "`test_resolve_fallback_provider_anthropic_never_a_candidate` passes vacuously" (it runs against an all-keys config where the ladder does return `Some`, plus an `is_none()` discriminating half) · "`assertFalse` is unimported in `TwinConstantsVectorsTest`" (imported at line 6) · "the strip is `< 0x20` only, so U+007F survives" (identical on both twins, and the fixture explicitly disclaims a character allowlist — D2 chose no validation) · "dead `<span>` wrapper / `gap-2` after the badge removal" (cosmetic, no behaviour) · "non-string `llmModel*` sends the loader down corrupt recovery" (already a round-1 deferred row).
+
+### Review Findings — round 3 (re-review of fix round 2; final round, fix cap reached)
+
+Re-review (bmad-code-review, 2026-09-12) over `f164056..HEAD`, judging commit `34a8a59` against the
+five round-2 findings. Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter
+(diff + tree), Acceptance Auditor (diff + spec + context). Scope was verification of those five and
+of the lines `34a8a59` touched — **not** a fresh adversarial sweep. Anchors are `file::symbol`.
+
+**Round-2 verdicts — four of five resolved:**
+- **REG-1 — resolved.** `commands::settings::cleanup_provider_reload_needed` now reads
+  `if cfg!(target_os = "windows") && llm_provider == "local"`. The gate's premise was verified, not
+  assumed: `pipeline::resolve_cleanup_provider`'s `"local"` arm really carries
+  `#[cfg(target_os = "windows")]`, and the `_` arm builds DeepSeek *with* the override, so off Windows
+  a changed `llmModelDeepseek` now hot-reloads. The test pins both branches.
+- **REG-2 — resolved.** `test-fixtures/README.md` reads "asserts 9 of 10 entries"; the fixture parses
+  to **10** entries and `TwinConstantsVectorsTest` asserts **9** (the Anthropic entry is read only for
+  its own `DESKTOP-ONLY` self-description). Rust pins all ten.
+- **REG-3 — resolved in code.** `SettingsPanel::saveCurrentSettings` keeps `persistedAdv: … | null`
+  and writes the advanced block only in the `else` branch; `...advancedSettings` (the mount snapshot)
+  occurs nowhere in the file. The banner claim checks out — the render site styles
+  `saveMsg !== "Saved"` as danger. The Dev Notes' *end-to-end* observation is still outstanding, as
+  the story already records.
+- **RES-1 — resolved.** `pipeline::is_model_not_found_error` now matches a 404 whose message starts
+  with `model:` (or carries `not_found_error`). The premise was verified in production:
+  `llm::AnthropicCleanup`'s error extraction keeps only `error.message`, so `error.type` really is
+  gone. Test carries two negative controls.
+- **RES-2 — NOT resolved.** See the first patch item below. The mechanical change landed on both
+  twins, but the divergence RES-2 was raised to close is still open, and the new vectors cannot see it.
+
+- [ ] [Review][Patch] **RES-2 is not closed: the twins still diverge, because the filter runs *after* `trim()`** — measured, not reasoned (real `rustc` + real `kotlin-stdlib` 2.1.20 `trim()`): `" ␅ deepseek"` → Rust `"deepseek"`, Kotlin `" deepseek"`; `"deepseek ␅"` → Rust `"deepseek"`, Kotlin `"deepseek "`; `"␜ deepseek"` (U+001C) → Rust `" deepseek"`, Kotlin `"deepseek"`. Kotlin's `trim()` stops at the NEL/C1 char, the filter then removes only that char and leaves the adjacent space behind; Rust's `trim()` ate the whole run. Two different `model` fields on the wire from one config — the exact defect RES-2 names. Both new fixture cases (`"dee␅pseek"`, `"␅"`) are NEL-in-isolation and blind to it, so the lock stays green. Fix direction: filter first, then trim, then the empty check — on both twins — plus one edge-adjacent vector [src-tauri/src/llm/mod.rs::effective_cleanup_model, android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::effectiveCleanupModel, test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001]
+- [ ] [Review][Patch] The fixture's own description states two claims that are measurably false — "the two `trim()` implementations disagree about it **and nothing else**" and "(U+001C..U+001F diverge in `trim()` the other way, but both filters drop them, so they are **unobservable**.)" Both halves of the parenthetical are wrong: U+001C..U+001F are observable exactly as U+0085 is, via the neighbouring whitespace each runtime does or does not consume. Same claim-accuracy class Task 6 was written to kill [test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001 description]
+- [ ] [Review][Patch] The two tests that actually *read* the sanitize table still document the pre-RES-2 predicate — `PINS: trim, then drop every char < U+0020, then "empty means default"`, with no mention of U+0085. The production docs, the fixture description and `test-fixtures/README.md` were all updated; their readers were not — the same staleness class as REG-2 [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
+- [ ] [Review][Patch] Both sanitize tests' structural guard is narrower than the predicate it sits beside — `!got.chars().any(|c| c < '\u{20}')` / `got.any { it.code < 0x20 }` do not reject U+0085, so a revert of the `!= 0x85` clause is caught only by the two explicit rows, not by the advertised invariant [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
+- [ ] [Review][Patch] REG-3's report is swallowed on the silent save path — `advancedSaveSkipped` is computed and then discarded inside `if (!opts?.silent)`. The one silent caller is the API-key removal (`clearApiKey(...).then(() => saveCurrentSettings({ silent: true }))`), where a rejected re-read now drops the `silenceThreshold`/`pasteDelayMs` edits with no user-visible signal and the comment "reported in the save banner below" does not hold [src/components/SettingsPanel.tsx::saveCurrentSettings]
+- [ ] [Review][Patch] The danger-styled skip notice self-dismisses like a success toast — the same `setTimeout(() => setSaveMsg(null), 2000)` clears both, so a state the user must act on (retry the advanced save) disappears after two seconds [src/components/SettingsPanel.tsx::saveCurrentSettings]
+- [ ] [Review][Patch] Record-only: the round-2 REG-3 row and its deferred sibling anchor at `SettingsPanel.tsx::handleSave`; `handleSave` is a three-line wrapper and the changed code is in `saveCurrentSettings`. The resolution row and the File List use the correct symbol, so the record contradicts itself [this file, "Review Findings — round 2" REG-3 row + the first round-2 deferred row]
+- [ ] [Review][Patch] REG-1's new else-branch assertion message states a rationale true for one of its four labels — "the slot holds DeepSeek and a changed `llm_model_{label}` must still rebuild" runs for deepseek/openai/groq/anthropic, but only `llm_model_deepseek` affects that slot; the other three pass because the predicate ORs all four regardless of provider [src-tauri/src/commands/settings.rs::tests (the `cleanup_provider_reload_needed` loop)]
+
+- [x] [Review][Defer] `is_model_not_found_error`'s `m.contains("not_found_error")` fires on any 404 — Anthropic uses `not_found_error` as its generic 404 type (unknown file id, unknown batch id, bad path), so a non-model 404 whose body was not parseable into `AnthropicErrorResponse` yields `Model '<id>' not found — check Advanced → Model IDs`, pointing the user at a setting that is fine. Narrow: a parseable body puts the real message in `error.message`, which carries no such needle [src-tauri/src/pipeline.rs::is_model_not_found_error] — deferred, narrow and documented as the raw-body fallback
+- [x] [Review][Defer] The `model:` prefix needle is 404-only, so an Anthropic 400 `invalid_request_error` phrased the same way still degrades to the generic message [src-tauri/src/pipeline.rs::is_model_not_found_error] — deferred, narrow
+- [x] [Review][Defer] `llm_provider == "local"` on any non-Windows build silently routes cleanup to DeepSeek — `resolve_cleanup_provider` has no `#[cfg(not(windows))]` `"local"` arm and no warning, unlike the STT sibling which logs "local STT provider is only supported on Windows and Android". A user who picked offline STT (which forces `llmProvider = "local"`) has the transcript sent over the network with no log line saying so. REG-1's fix rests on exactly this fact [src-tauri/src/pipeline.rs::resolve_cleanup_provider, src-tauri/src/pipeline.rs::resolve_stt_provider] — deferred, pre-existing, out of this story's scope
+
+**Dismissed as noise (5, with the check that killed them):** "the RES-1 docstring's 'kept narrow — not a substring anywhere' is contradicted by `contains("not_found_error")`" (the next sentence of the same docstring scopes that needle to the non-parseable-body case) · "`persistedAdv === null` misses a resolved `undefined`" (the Tauri command returns the struct or rejects; `undefined` is not reachable) · "the banner-styling premise is unverified" (verified: `saveMsg !== "Saved"` → `bg-klarvo-danger/10 … text-klarvo-danger`) · "a paid license gate was deleted" (AC1 #10–13 remove the four `llmSystemPrompt*` keys the gate covered; in scope, already dismissed in round 1) · "AC6's literal 're-introduce, show RED, revert' was not followed for the round-2 rows" (observed as the pre-fix RED under red-green ordering and named as such in the record — the RED was real).
+
+**Coverage of this re-review (what it did NOT do):** no fresh adversarial sweep of the story — only the five round-2 items and the lines `34a8a59` touched. Gates re-run this session: `cargo test --lib` **681 passed / 0 failed / 0 ignored**, `npx tsc --noEmit` clean. Neither gate covers REG-1's Windows branch (`cfg!` is false on this host, so only the else half compiles), RES-2's Kotlin half (the JVM gate was **not** run this session), REG-3's skip branch (type-checked, never executed), any Tauri runtime, any network, or `test-fixtures/README.md` (REG-2 has no executable assertion on either side). The RES-2 divergence above was established by running both runtimes, not by either gate.
