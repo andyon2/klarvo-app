@@ -85,10 +85,13 @@ const TIMER_MS: u32 = 33; // ~30 fps
 const DONE_NORMAL_MS: u128 = 1500;
 const DONE_CLIPBOARD_MS: u128 = 4000;
 const ERROR_IDLE_MS: u128 = 2500;
-// Transient warning safety timeout (12-1 FR4). Mirrors FloatingBar.tsx's 4000ms
-// warning safety timer: the follow-up Done/Error event normally overrides the
-// warning first; this only fires if that follow-up is ever dropped.
-const WARNING_IDLE_MS: u128 = 4000;
+// Warning hold (12-1 FR4, tightened by 7-9 GATE-4 finding 3a). A Warning stays
+// on screen for this long and then dismisses to Idle. During the hold a plain
+// Done is ignored: on the degrade-to-raw path the pipeline emits the warning
+// and the shell pastes + emits Done within milliseconds, so without the hold
+// the amber text was visible for a single frame (observed on device
+// 2026-09-12). DoneClipboard, Error and any new activity still override.
+const WARNING_HOLD_MS: u128 = 4000;
 
 // ---------------------------------------------------------------------------
 // State
@@ -170,8 +173,8 @@ struct PillWindowState {
     spinner_deg: f32,
     done_at: Option<Instant>,
     error_at: Option<Instant>,
-    // Transient warning display (12-1 FR4). Set when a Warning state arrives;
-    // handle_timer auto-dismisses to Idle after WARNING_IDLE_MS if no follow-up.
+    // Warning display (12-1 FR4). Set when a Warning state arrives;
+    // handle_timer dismisses to Idle after WARNING_HOLD_MS. See warning_hold_active.
     warning_at: Option<Instant>,
     // Dynamic status text rendered for Error/Warning (the pipeline's taxonomy
     // message, e.g. "⚠ DeepSeek langsam → OpenAI"). None → static label fallback.
@@ -1058,10 +1061,11 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         return;
     }
 
-    // Warning safety timeout (12-1 FR4) — only fires if the follow-up
-    // Done/Error event never arrived to override the transient warning.
+    // Warning hold expired (12-1 FR4 / 7-9 3a): the pill dismisses itself.
+    // On the degrade path this is the ONLY way back to Idle, because the Done
+    // that followed the warning was deliberately ignored (warning_hold_active).
     if let Some(started) = s.warning_at {
-        if started.elapsed().as_millis() >= WARNING_IDLE_MS {
+        if started.elapsed().as_millis() >= WARNING_HOLD_MS {
             s.display = NativePillState::Idle;
             s.warning_at = None;
             s.status_msg = None;
@@ -1069,6 +1073,23 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
             render_frame(hwnd, s);
         }
     }
+}
+
+/// True while a Warning is on screen and younger than `WARNING_HOLD_MS`.
+///
+/// 7-9 GATE-4 finding 3a: `process_audio` emits the degrade warning and the
+/// shell pastes + emits Done milliseconds later. `WM_PILL_SET_STATE` used to
+/// replace the display unconditionally (the old comment assumed "the follow-up
+/// Done normally overrides first" — true for the fallback ladder, where the
+/// warning shows *during* the retry, false for degrade-to-raw, where no gap
+/// exists). While this returns true, a plain Done and the `None` status
+/// message posted ahead of it are ignored; the timer then dismisses to Idle.
+/// Everything else still overrides — DoneClipboard (the text did NOT land),
+/// Error, and any new activity (Recording/Transcribing/Cleaning/Idle).
+fn warning_hold_active(s: &PillWindowState) -> bool {
+    matches!(s.display, NativePillState::Warning)
+        && s.warning_at
+            .is_some_and(|t| t.elapsed().as_millis() < WARNING_HOLD_MS)
 }
 
 unsafe fn start_timer(hwnd: HWND, s: &mut PillWindowState) {
@@ -1125,6 +1146,11 @@ unsafe extern "system" fn pill_wnd_proc(
             let clipboard_only = lparam.0 != 0;
             let new_state = NativePillState::from_code(code, clipboard_only);
 
+            // 7-9 3a: a plain Done must not cut the degrade warning short.
+            if matches!(new_state, NativePillState::Done) && warning_hold_active(s) {
+                return LRESULT(0);
+            }
+
             s.display = new_state;
             s.spinner_deg = 0.0;
             s.done_at = None;
@@ -1143,8 +1169,8 @@ unsafe extern "system" fn pill_wnd_proc(
                     start_timer(hwnd, s);
                 }
                 NativePillState::Warning => {
-                    // Transient (12-1 FR4): safety-dismiss after WARNING_IDLE_MS;
-                    // normally the follow-up Done/Error SET_STATE overrides first.
+                    // Held for WARNING_HOLD_MS, then the timer dismisses to Idle;
+                    // a plain Done inside the hold is ignored (warning_hold_active).
                     s.warning_at = Some(Instant::now());
                     start_timer(hwnd, s);
                 }
@@ -1199,6 +1225,13 @@ unsafe extern "system" fn pill_wnd_proc(
             // No render here — the matching WM_PILL_SET_STATE arrives next (FIFO)
             // and renders with this message present.
             let msg = Box::from_raw(wparam.0 as *mut Option<String>);
+            // 7-9 3a: the shell posts `None` ahead of every Done. While the
+            // warning hold is active that Done is dropped (see SET_STATE), so
+            // its message clear must be dropped too or the warning would fall
+            // back to the static "Warning" label for the rest of the hold.
+            if msg.is_none() && warning_hold_active(&*state_ptr) {
+                return LRESULT(0);
+            }
             (*state_ptr).status_msg = *msg;
             LRESULT(0)
         }

@@ -1171,6 +1171,12 @@ pub enum ProcessOutcome {
 /// differently and a missed match degrades to the generic message, not to a
 /// wrong one.
 ///
+/// **Verify needles against the wire, not the docs** (7-9 GATE-4, 3b): the
+/// OpenAI-compatible client keeps only `error.message`, so a provider's `code`
+/// (`model_not_found`) is invisible here. DeepSeek's live message carries no
+/// classic needle at all — its own two are listed below, verbatim from
+/// `Klarvo.log`.
+///
 /// **Anthropic's shape is separate** (review round 2, RES-1). It answers 404
 /// with `error.type = "not_found_error"` and `error.message = "model: <id>"`,
 /// and [`llm::AnthropicCleanup`]'s error extraction keeps only `error.message`
@@ -1189,6 +1195,11 @@ fn is_model_not_found_error(err: &llm::LlmError) -> bool {
                 && (m.trim_start().starts_with("model:") || m.contains("not_found_error")))
                 || m.contains("model_not_found")
                 || m.contains("model not found")
+                // DeepSeek, live 2026-09-12: "The supported API model names are
+                // …, but you passed X." (7-9 GATE-4 finding 3b). The body's
+                // `code` never reaches this predicate — only `error.message`.
+                || m.contains("supported api model names")
+                || (m.contains("model") && m.contains("but you passed"))
                 || m.contains("invalid_model")
                 || m.contains("unknown model")
                 || (m.contains("model") && (m.contains("does not exist") || m.contains("not exist")))
@@ -3697,6 +3708,24 @@ mod tests {
         assert_eq!(
             degrade_warn_msg_for_model(&not_found, "deepseek-reasner"),
             "Model 'deepseek-reasner' not found — check Advanced → Model IDs"
+        );
+
+        // DeepSeek's LIVE wording, verbatim from Klarvo.log 2026-09-12 (Andi's
+        // GATE-4, finding 3b). `llm::OpenAiCompatCleanup` keeps only
+        // `error.message` — the `code` field never reaches this predicate —
+        // so the whole-body fixture above only covers the unparseable-body
+        // fallback. This is the shape the predicate actually sees in production.
+        let deepseek_live = llm::LlmError::ApiError {
+            status: 400,
+            message: "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed odisaf.".to_string(),
+        };
+        assert!(
+            is_model_not_found_error(&deepseek_live),
+            "DeepSeek's live 400 wording must classify as model-not-found (observed on device: it did not)"
+        );
+        assert_eq!(
+            degrade_warn_msg_for_model(&deepseek_live, "odisaf"),
+            "Model 'odisaf' not found — check Advanced → Model IDs"
         );
 
         // 404 phrasing from a different provider shape.
