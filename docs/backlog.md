@@ -208,6 +208,22 @@ the stored `raw_text` suffices, no audio needed. Reduction: reuses 12-2's pendin
 and the `raw_text` column. New: a second pending kind "not cleaned", a re-process path without audio, the
 icon + counter (design question for the canon — Phase A with Andi). Both platforms.
 
+### IDEA (unbewertet von Andi) — Cleanup-Fehler: kein Auto-Paste, stattdessen Button(s) in der Pill (Andi, 2026-09-12, aus 7-9 GATE-4)
+
+Andis Idee: Scheitert das Cleanup, wird der Rohtext weder eingefügt noch in die Zwischenablage gelegt. Die Pill
+zeigt einen Button „Rohtext übernehmen" (→ Zwischenablage), optional einen zweiten „Einfügen". Auslöser: Andi
+hielt den still eingefügten Rohtext für ein gelungenes Cleanup (die Warnung war unlesbar, Finding 3a).
+
+Bewertung (Claude, 2026-09-12): NICHT jetzt bauen. (1) Der Auslöser ist mit 3a behoben — die Warnung steht
+jetzt 4 s; erst prüfen, ob die Verwechslung damit weg ist. (2) Der native Pill ist ein ~200 px Win32-Overlay
+ohne Buttons; Hit-Testing, Hover, Fokus-Vermeidung und der Android-Bubble-Zwilling (FR5 beider Plattformen)
+sind echte Konstruktion für einen seltenen Pfad (Tippfehler in der Model-ID, Provider-Ausfall). (3) Es bricht
+den Kern „Press-to-Paste": der Fehlerpfad würde Maus-Interaktion erzwingen, obwohl der Rohtext meist zu ~90 %
+brauchbar ist; Epic 12 hat „Rohtext einfügen + Signal, nie stiller Verlust" bewusst so entschieden. (4) Das
+Bedürfnis „Rohtext später gezielt holen" deckt die Failed-Entries-Inbox oben (raw_text liegt in der History).
+Kleinste Reduktion, falls Andi Kontrolle trotzdem will: EINE Einstellung „Bei Cleanup-Fehler: Rohtext einfügen
+(Default) / nur in die Zwischenablage" — nutzt den vorhandenen DoneClipboard-Zustand, null neue UI in der Pill.
+
 ### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
 
 Four fix rounds ran (D1/D2 + P1-P10 · REG-1..3 + RES-1/2 · RES-2 re-fix + R3-1..R3-7). All confirmed code

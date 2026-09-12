@@ -50,3 +50,13 @@ The backend behaves as D2 specified: non-retryable 400 → degrade → **raw tex
 **Not yet observed:** the hot-reload half of point 3 (clear the field → cleanup works again without restart). To run on the next build.
 
 **Verdict:** story re-opened (`in-progress`) per the routing rule. Fix via a fresh dev worker after the display decision for 3a is taken (human gate: how long / in which form the degrade warning stays visible).
+
+## Fix round for 3a + 3b — 2026-09-12, `06603d2` (Windows build 21:37 UTC, `windows-build.sh` exit 0)
+
+- **3a:** `native_pill.rs` — `warning_hold_active()`: a plain Done, and the `None` status message posted ahead of it, are ignored while the Warning is younger than `WARNING_HOLD_MS` (4 s); the hold timer dismisses to Idle. DoneClipboard, Error and new activity still override. Decision (Andi, "nimm deine Empfehlung"): hold the warning, drop the Done — the paste already happened, Done carries no information the warning lacks.
+- **3b:** `pipeline::is_model_not_found_error` — two needles from the live wording (`supported api model names`, `model`+`but you passed`); spec test extended with the verbatim log message (RED before the needle, GREEN after). `cargo test --lib`: 681/0.
+- **Not machine-observable:** the 4-second hold on screen (Win32 timer path) and the D2 text on a real DeepSeek 400. → Andi repeats point 3 on the `06603d2` build, incl. the hot-reload half.
+
+**Andi's re-check of point 3 (build `06603d2`, About shows the hash now):**
+1. Set the DeepSeek model ID to a wrong value, dictate once → raw text pasted, pill stays **amber for ~4 s** with `Model '<id>' not found — check Advanced → Model IDs`.
+2. Clear the field, save, dictate again **without restarting** → cleaned text, no warning.
