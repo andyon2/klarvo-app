@@ -706,6 +706,17 @@ Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter (diff 
 Acceptance Auditor (diff + spec + context). Every finding below was re-verified against
 today's tree before being recorded; anchors are `file::symbol` with a line for convenience.
 
+**Decisions taken at review round 1 (Andi, 2026-09-12; conductor-recorded):**
+- **D1 → free for all.** The four model-ID inputs are not license-gated: remove the `TrialBadge` from the "Text
+  Cleanup" home row, no `disabled`/lock on the inputs, no backend license check in `save_advanced_settings`.
+  Rationale: with a BYOK key the model choice is maintenance (provider retires an ID), not a premium feature.
+- **D2 → the warning names the model.** Behaviour stays (raw text pasted + warning). When the provider answers
+  model-not-found (HTTP 400/404 with a model error), the pipeline warning reads
+  `Model '<id>' not found — check Advanced → Model IDs`. `effective_cleanup_model` additionally strips control
+  characters (trim + drop chars < 0x20). No silent fallback to the default model, no UI validation.
+- **Follow-ups recorded as backlog STORY-CANDIDATES (not this story):** model picker from the provider's
+  `/v1/models` list + check on save / app start; failed-entries inbox with icon + counter (see docs/backlog.md).
+
 - [ ] [Review][Decision] **Is the model-ID override a licensed feature?** — `AdvancedSettingsPanel` still renders `{isPaid && isTrial && <TrialBadge />}` on the "Text Cleanup" home row (`src/components/AdvancedSettingsPanel.tsx:205`), but the section's only remaining content — the four model-ID inputs in `renderLlmContent` (`:313-330`) — carries no `disabled={!isPaid}` and no `LockIcon`, unlike the STT section right above it (`:284-302`). The backend gate went with the four prompt keys (`commands::settings::save_advanced_settings`). Badge, input `disabled` and backend must agree in one direction. Not decided by Q1–Q8.
 - [ ] [Review][Decision] **A typo'd model ID fails every cleanup with no fallback and no feedback** — `llm::effective_cleanup_model` only trims (`src-tauri/src/llm/mod.rs:1277-1289`), the UI input is unvalidated free text (`src/components/AdvancedSettingsPanel.tsx:313-330`), and the Epic-12 ladder only triggers on `is_retryable_llm_error` (`src-tauri/src/pipeline.rs:1363`) — a 400 `model_not_found` is not retryable, so cleanup fails on every dictation. Making the key live introduces this failure mode. Options: validate/cap at the UI, strip control characters in `effective_cleanup_model`, or fall back to the default on a model-not-found error.
 

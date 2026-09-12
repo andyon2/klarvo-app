@@ -185,6 +185,29 @@ changed DeepSeek model ID appears in the request log (`[fe:…]`/Klarvo.log).
   (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
   Re-open only on a real report. Source: `sprint-change-proposal-2026-09-10.md`.
 
+### STORY-CANDIDATE — Model picker from the provider's model list (Andi, 2026-09-12, from 7-9 review D1/D2)
+
+A BYOK key opens the door; it does not choose the model. Today Klarvo hard-codes one cleanup model per provider;
+7-9 turns that into four free-text fields. The user still has to know the ID. Sketch (NOT approved to build):
+on panel open, `GET /v1/models` with the user's key (same provider Klarvo already sends text to; no Klarvo server,
+no new party — privacy-neutral), filter to chat-capable models per provider (OpenAI/Groq lists are mixed:
+whisper, TTS, embeddings, guard models), show a dropdown with the built-in default marked; offline or no key →
+the free-text field stays. Plus: a "check" on save (valid / unknown) and a background check at app start that
+sets a warning badge. NOT: a check on every hotkey press (adds a round trip before speaking, gains nothing — the
+raw-text net catches the failure anyway). NOT: auto-switch to a successor model (quality/cost change nobody
+chose). Both platforms. Groq STT model (`large-v3-turbo`) is a separate job, not covered.
+
+### STORY-CANDIDATE — Failed-entries inbox: icon + counter next to Settings/History/Statistics (Andi, 2026-09-12)
+
+Today two nets exist, both silent outside the History panel: (1) terminal STT failure → audio kept, History
+`pending` entry with "Re-process" / "Discard" (12-2, device-verified); (2) cleanup failure → raw text is pasted
+into the active window + amber pill warning, History entry looks like a normal `done` entry — no marker, no
+re-clean button. Andi's idea: an icon that appears only when failed entries exist (orange, with the count of
+new ones), click → the list of failed entries (both kinds), "Re-process" after fixing the settings; for kind (2)
+the stored `raw_text` suffices, no audio needed. Reduction: reuses 12-2's pending mechanism, re-process command
+and the `raw_text` column. New: a second pending kind "not cleaned", a re-process path without audio, the
+icon + counter (design question for the canon — Phase A with Andi). Both platforms.
+
 ### Story 7-9 GATE-1 leftovers — further persisted-but-unread keys (2026-09-12)
 
 Found while pinning the 7-9 removal set (the record's "14" was a counting slip; 13 named keys are the set).
