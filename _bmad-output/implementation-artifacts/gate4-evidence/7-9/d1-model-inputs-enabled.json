@@ -1,0 +1,22 @@
+[
+  {
+    "placeholder": "deepseek-chat",
+    "disabled": false,
+    "readOnly": false
+  },
+  {
+    "placeholder": "gpt-4o-mini",
+    "disabled": false,
+    "readOnly": false
+  },
+  {
+    "placeholder": "claude-haiku-4-5-20251001",
+    "disabled": false,
+    "readOnly": false
+  },
+  {
+    "placeholder": "llama-3.3-70b-versatile",
+    "disabled": false,
+    "readOnly": false
+  }
+]

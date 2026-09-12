@@ -6,7 +6,6 @@ Custom prompts
 TRIAL
 Text Cleanup
 Model IDs
-TRIAL
 Audio
 Thresholds & recording settings
 System

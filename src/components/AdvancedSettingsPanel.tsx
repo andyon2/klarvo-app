@@ -201,8 +201,13 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
           <span className="text-sm font-medium text-klarvo-text leading-tight">Text Cleanup</span>
           <span className="text-xs text-klarvo-muted mt-0.5 leading-tight">Model IDs</span>
         </span>
+        {/* Review decision D1: the model IDs are FREE for everyone — with a BYOK
+            key, choosing the model is maintenance (a provider retires an ID),
+            not a premium feature. So no TrialBadge here, no `disabled` on the
+            inputs in renderLlmContent, and no license gate in the backend's
+            save_advanced_settings. The STT section above stays gated: its custom
+            prompts ARE a paid feature. */}
         <span className="flex items-center gap-2 shrink-0">
-          {isPaid && isTrial && <TrialBadge />}
           <ChevronRight />
         </span>
       </button>

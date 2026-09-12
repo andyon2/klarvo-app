@@ -61,5 +61,20 @@
     "rust_symbol": "AnthropicCleanup::DEFAULT_MODEL",
     "kotlin_symbol": null,
     "expected_string": "claude-haiku-4-5-20251001"
+  },
+  {
+    "id": "TWIN-CLEANUP-MODEL-SANITIZE-001",
+    "description": "The sanitisation both platforms apply to a raw advanced.llmModel* override before it becomes the model field of a cleanup request. PINS: the shared predicate -- trim the ends, then DROP every character below U+0020 (C0 control characters), and only then apply 'empty means the provider default'. The 'cases' table below is a list of raw -> expected pairs which each half feeds through its OWN production seam (Rust llm::effective_cleanup_model, Kotlin KlarvoApi.effectiveCleanupModel); an EMPTY expected value means 'the provider's built-in default is selected'. Note the ordering the table forces: a value that is non-empty after trimming but empty after stripping (the lone U+0001 case) must still fall back to the default, so a strip-before-empty-check implementation is required. Added by story 7-9 review round 1, decision D2: the override is unvalidated free text, so a stray newline in a model ID must not forge a line in Klarvo.log or travel to the provider. DOES NOT PIN: WHICH default an empty result selects (that is TWIN-CLEANUP-MODEL-DEEPSEEK/OPENAI/GROQ/ANTHROPIC-001), the Desktop-only model-not-found warning text (pipeline::degrade_warn_msg_for_model -- Android has no equivalent), any length cap or character allowlist (deliberately none: a provider may introduce any ID shape, and D2 chose no UI validation), or any network call.",
+    "rust_symbol": "llm::effective_cleanup_model",
+    "kotlin_symbol": "KlarvoApi.effectiveCleanupModel",
+    "cases": [
+      { "raw": "  deepseek-reasoner  ", "expected": "deepseek-reasoner" },
+      { "raw": "deep\nseek", "expected": "deepseek" },
+      { "raw": "gpt-4o\t-mini", "expected": "gpt-4o-mini" },
+      { "raw": "   ", "expected": "" },
+      { "raw": "\n\t", "expected": "" },
+      { "raw": "", "expected": "" },
+      { "raw": "\u0001", "expected": "" }
+    ]
   }
 ]

@@ -10,8 +10,8 @@
     "a network cleanup call carrying an overridden model ID",
     "pixel fidelity, fonts, Windows text-scale"
   ],
-  "total": 26,
-  "passed": 26,
+  "total": 28,
+  "passed": 28,
   "failed": 0,
   "page_errors": [],
   "console_errors": [
@@ -139,6 +139,16 @@
       "ok": true,
       "name": "Advanced/Text Cleanup (expert=true): accordions gone (Q3)",
       "detail": ""
+    },
+    {
+      "ok": true,
+      "name": "D1: Text Cleanup home row has no TrialBadge",
+      "detail": "absent on Text Cleanup while the STT section's Trial badge is present (positive control)"
+    },
+    {
+      "ok": true,
+      "name": "D1: all 4 model-ID inputs are editable",
+      "detail": "none disabled, none readOnly"
     },
     {
       "ok": true,

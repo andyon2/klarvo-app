@@ -15,9 +15,10 @@ import java.io.File
  * src-tauri/src/llm/mod.rs): `test-fixtures/twin-constants-vectors.json` at the repo
  * root. Rust to Kotlin twins that were unlocked and could silently re-diverge.
  *
- * Story 7-9 added the four default cleanup model IDs. One of the nine entries,
+ * Story 7-9 added the four default cleanup model IDs, and its review round 1
+ * (decision D2) added the model-ID sanitisation table. One of the ten entries,
  * `TWIN-CLEANUP-MODEL-ANTHROPIC-001`, is DESKTOP-ONLY: Android has no Anthropic
- * cleanup provider (drift row H5), so this half asserts the other eight and
+ * cleanup provider (drift row H5), so this half asserts the other nine and
  * skips that one by id — deliberately, not by oversight.
  *
  * ## Discipline
@@ -77,7 +78,7 @@ class TwinConstantsVectorsTest {
         loadFixture()[id] ?: error("fixture has no vector with id=$id")
 
     @Test
-    fun fixtureCarriesAllNineEntriesAndDescribesEach() {
+    fun fixtureCarriesAllTenEntriesAndDescribesEach() {
         val byId = loadFixture()
         val expected = listOf(
             "TWIN-LLM-TEMPERATURE-001",
@@ -89,8 +90,9 @@ class TwinConstantsVectorsTest {
             "TWIN-CLEANUP-MODEL-OPENAI-001",
             "TWIN-CLEANUP-MODEL-GROQ-001",
             "TWIN-CLEANUP-MODEL-ANTHROPIC-001",
+            "TWIN-CLEANUP-MODEL-SANITIZE-001",
         )
-        assertEquals("the twin fixture must carry exactly the nine locked entries", expected.toSet(), byId.keys)
+        assertEquals("the twin fixture must carry exactly the ten locked entries", expected.toSet(), byId.keys)
         for (id in expected) {
             val d = byId.getValue(id).getString("description")
             assertTrue("$id needs a description stating what it pins", d.contains("PINS:"))
@@ -135,6 +137,56 @@ class TwinConstantsVectorsTest {
                 "$label: a whitespace-only override must resolve to the fixture's default model",
                 fixtureLiteral,
                 KlarvoApi.effectiveCleanupModel("   ", productionDefault)
+            )
+        }
+    }
+
+    /**
+     * Review round 1, decision D2: the sanitisation applied to a raw model-ID
+     * override, driven through the production seam
+     * `KlarvoApi.effectiveCleanupModel` against the fixture's raw -> expected
+     * table — the SAME table the Rust twin
+     * (`llm::tests::spec_twin_constants_cleanup_model_sanitize`) feeds through
+     * `llm::effective_cleanup_model`.
+     *
+     * PINS: trim, then drop every char below U+0020, then "empty means the
+     * default" — in that order. The lone-U+0001 case is what forces the order:
+     * it survives `trim()` and a strip-after-the-empty-check implementation
+     * would return it verbatim as the model ID.
+     * DOES NOT PIN: which default the empty case selects (that is
+     * [cleanupModelDefaultsMatchFixture]), the Desktop-only model-not-found
+     * warning text (Android has no equivalent), or any network call.
+     */
+    @Test
+    fun cleanupModelSanitizeMatchesFixture() {
+        val entry = vector("TWIN-CLEANUP-MODEL-SANITIZE-001")
+        val cases = entry.getJSONArray("cases")
+        assertTrue("the sanitize table must not be empty", cases.length() > 0)
+
+        // A sentinel that cannot be produced by sanitising any of the inputs, so
+        // "fell back to the default" is unambiguous.
+        val sentinelDefault = "SENTINEL-DEFAULT"
+        for (i in 0 until cases.length()) {
+            val case = cases.getJSONObject(i)
+            val raw = case.getString("raw")
+            val expected = case.getString("expected")
+            val got = KlarvoApi.effectiveCleanupModel(raw, sentinelDefault)
+            if (expected.isEmpty()) {
+                assertEquals(
+                    "raw ${raw.toCharArray().toList()} must sanitise to empty and select the default",
+                    sentinelDefault,
+                    got
+                )
+            } else {
+                assertEquals(
+                    "raw ${raw.toCharArray().toList()} sanitised to the wrong model ID",
+                    expected,
+                    got
+                )
+            }
+            assertFalse(
+                "raw ${raw.toCharArray().toList()} left a control character in the model ID",
+                got.any { it.code < 0x20 }
             )
         }
     }

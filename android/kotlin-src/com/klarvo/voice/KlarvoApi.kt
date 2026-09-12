@@ -93,15 +93,27 @@ object KlarvoApi {
      *
      * - the override is **trimmed** first, so a whitespace-only value counts
      *   as empty and falls back to [default] (story 7-9, Q5),
-     * - otherwise the trimmed override wins.
+     * - then every character below U+0020 (C0 control character) is **dropped**
+     *   (review round 1, decision D2): the override is unvalidated free text, so
+     *   an interior newline would otherwise forge a line in the log and travel
+     *   to the provider verbatim,
+     * - otherwise the sanitised override wins.
+     *
+     * Note the ORDER: a value that is non-empty after trimming but empty after
+     * stripping (e.g. a lone U+0001) still falls back to [default].
      *
      * Both provider sites ([resolveLlmProvider] and [cleanupFallbackCandidates])
      * go through here, so they cannot drift apart the way their URL literals
      * once did (story 7-8).
+     *
+     * Both halves of the rule are pinned by `TWIN-CLEANUP-MODEL-SANITIZE-001` in
+     * `test-fixtures/twin-constants-vectors.json`, read by
+     * `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture` and by the
+     * Rust twin's `spec_twin_constants_cleanup_model_sanitize`.
      */
     internal fun effectiveCleanupModel(override: String, default: String): String {
-        val trimmed = override.trim()
-        return if (trimmed.isNotEmpty()) trimmed else default
+        val sanitized = override.trim().filter { it.code >= 0x20 }
+        return if (sanitized.isNotEmpty()) sanitized else default
     }
 
     // Set to true after the first successful ensureRemoteTable() call.
@@ -386,9 +398,20 @@ object KlarvoApi {
      * `AdvancedSettings` with `rename_all = "camelCase"`). Absent key, absent
      * `advanced` object, and an empty value all yield `""`, which
      * [effectiveCleanupModel] then reads as "use the built-in default".
+     *
+     * A **non-string** value (number, boolean, object, array, JSON null) also
+     * yields `""` rather than being coerced. Review round 1 (P8): `optString`
+     * stringifies whatever it finds, so `"llmModelDeepseek": 42` became the model
+     * ID `"42"` and would have been sent to the provider — while the Rust twin
+     * rejects a non-string outright (serde sends `load_config` down its
+     * corrupt-recovery path, yielding the default). Reading through `opt` with a
+     * `String` cast makes the sane end of that asymmetry explicit: an obviously
+     * wrong type falls back to the default instead of inventing a model ID.
      */
-    internal fun parseLlmModelOverride(json: JSONObject, key: String): String =
-        json.optJSONObject("advanced")?.optString(key, "") ?: ""
+    internal fun parseLlmModelOverride(json: JSONObject, key: String): String {
+        val advanced = json.optJSONObject("advanced") ?: return ""
+        return advanced.opt(key) as? String ?: ""
+    }
 
     /**
      * Reads config.json from the app's data directory.

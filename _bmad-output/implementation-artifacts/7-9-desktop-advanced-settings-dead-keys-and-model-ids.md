@@ -536,6 +536,73 @@ product defects; recorded so the next story does not re-hit them):
 | #2 resync `useEffect` / `isDirty` | the two surviving advanced fields (`silenceThreshold`, `pasteDelayMs`) present in the mount load, `isDirty` and the `updatedAdv` save block; no removed key left behind | green |
 | #6 multi-hop positional save chain | parsed the parameter list of all five hops and compared arity against `HEAD` | every hop **−2 exactly** (51→49, 51→49, 51→49, 53→51, 53→51); no removed key anywhere in the chain, so nothing shifted position |
 
+**Gate runs — FIX ROUND 1 (review findings D1/D2 + P1–P10), 2026-09-12, `conductor/story-7-9`:**
+
+- `cargo test --lib` in `src-tauri/` — **680 passed, 0 failed, 0 ignored** (was 674 at
+  first dev pass, 675 after the round's first test; +6 this round: the sanitize
+  fixture spec, the non-string config spec, the Anthropic-ladder spec, the
+  model-not-found warning spec, and two hot-reload specs).
+  Covers: Rust unit + inline spec tests on the Linux target. Does **NOT** cover
+  the Windows-only arms — in particular **`LocalLlmCleanup::model()` (P3) is not
+  compiled in this run** (`llm::local` is `#[cfg(target_os = "windows")]`), so
+  that fix is verified by inspection only; also not the Tauri runtime,
+  `save_advanced_settings` as a *command* (only the helper it delegates to), the
+  real `Klarvo.log`, or `tests/pi_security.rs`.
+- Rust warning count **unchanged**: `13` (lib) / `1` (`pi_security`) / `18`
+  (lib test, 3 duplicates) — measured with `cargo check --lib --tests` on the
+  working tree and again on stashed `HEAD`. No new warnings.
+- `npm run build` (`tsc && vite build`) — **green**, `✓ built in 1.44s`. Strict
+  `tsc` type-checks the P1 change; it executes nothing.
+- JVM gate `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` —
+  **186 tests, 0 failures, 0 errors, 0 skipped across 23 suites** (was 184; +2:
+  `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`,
+  `LlmModelOverrideConfigTest.jsonParse_modelOverride_nonStringValueIsNotCoerced`
+  — both confirmed present in the result XML, not silently skipped).
+  `--rerun-tasks` again mandatory: this round edits
+  `test-fixtures/twin-constants-vectors.json`.
+  - Run **device-free** (7-8 precedent, same as the first pass):
+    `android/kotlin-src` + `android/kotlin-test` synced **with delete** into
+    `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice` (18 prod +
+    23 test files), then gradle directly. `scripts/android-smoke.sh` was **not**
+    used — it fails on "Kein Gerät gefunden" before its JVM gate and no
+    device/AVD was reachable from this host.
+  - Count taken over **all 23 result XMLs** in the `testUniversalDebugUnitTest`
+    variant dir, not the smoke banner's single suite. The nine stale variant dirs
+    (`testArm64Debug…`, `testX86…`) are pre-existing and were excluded.
+  - Covers: pure Kotlin/JVM logic. Does **NOT** cover JNI (no
+    `nativeTranscribe`/`nativeSilenceCheck` is reached), any device or emulator,
+    Android UI/rendering, or `readConfig`'s real file I/O and license gating —
+    the P8 fix is asserted on the pure `parseLlmModelOverride` seam, not through
+    `readConfig`.
+- **Desktop proxy smoke re-run** (puppeteer 24.38.0 vs `npm run preview` :1422,
+  real Chromium; required because two UI files changed) — **28/28 checks passed,
+  0 uncaught page errors** (was 26/26; +2 D1 checks). Harness and evidence
+  updated in `_bmad-output/implementation-artifacts/gate4-evidence/7-9/`; the
+  preview server was stopped afterwards and `git status` carries only intended
+  changes.
+  - **New, and what they prove:** `D1: Text Cleanup home row has no TrialBadge`
+    and `D1: all 4 model-ID inputs are editable` (none `disabled`, none
+    `readOnly`). The badge check carries a **positive control**: it only passes
+    when the STT section's Trial badge *is* rendered, so "absent" is a real
+    absence and not an unreachable license state. Preview serves
+    `trial:9999999999`, so `isPaid && isTrial` is true and both branches are
+    reachable — the check reports `VACUOUS` instead of passing if that ever stops
+    being true.
+  - **What it still does NOT prove:** design or pixels; the Rust backend (preview
+    serves MOCK data with no Tauri, so **P1 could not be driven end-to-end** —
+    see Completion Notes); the D2 warning text (no provider call happens in
+    preview); Android; the Windows release build.
+  - The same 2 pre-existing `console.error` lines appear
+    (`transformCallback` — `SettingsPanel`'s unguarded `listen()` in preview,
+    documented in the first pass, not from this story).
+- **Surface-smoke-checklist traps, re-run mechanically for THIS round's diff:**
+
+| Trap | Check | Result |
+|---|---|---|
+| #1 camelCase keys under `advanced` | derived every `AdvancedSettings` serde name from the Rust struct, diffed against `src/types.ts` | **17 = 17**, no key on either side only (this round adds/removes no key) |
+| #2 resync `useEffect` / `isDirty` | both surviving advanced fields still in the mount load, the `isDirty` terms and the save block; the spread source is now the **freshly fetched** block and the stale `...advancedSettings` spread is gone | green |
+| #6 multi-hop positional save chain | parsed the parameter lists of the TS hops and compared arity against `HEAD` | unchanged (`saveSettings` 51 = 51, `handleSaveSettings` 24 = 24) — this round touches no hop signature, so nothing shifted |
+
 ### Inversion table (AC6)
 
 Each row: the drift re-introduced → the test that went RED → reverted, suite green again.
@@ -550,6 +617,31 @@ Each row: the drift re-introduced → the test that went RED → reverted, suite
 | 5 | **Kotlin** `KlarvoApi.resolveLlmProvider`, `else ->` arm: `model = effectiveCleanupModel(...)` → hard-coded `"deepseek-chat"` (covers the *primary* site, which inversion 1 did not) | `LlmFallbackProviderTest.modelOverride_primarySelection_reachesProviderInfo`, `.modelOverride_bothCallSitesAgree`, `LlmModelOverrideConfigTest.oldConfigJson_modelOverride_reachesResolvedProvider` | yes |
 | 6 | **Kotlin** `KlarvoApi.effectiveCleanupModel`: `override.trim()` → `override` (applied together with 5; 8 RED in total across the two) | `LlmFallbackProviderTest.blankModelOverride_fallsBackToBuiltInDefault`, `.paddedModelOverride_isTrimmed`, `LlmModelOverrideConfigTest.effectiveCleanupModel_blankOverrideUsesDefault`, `.effectiveCleanupModel_trimsPaddedOverride`, `TwinConstantsVectorsTest.cleanupModelDefaultsMatchFixture` | yes — the Kotlin twin of inversion 4 |
 | 7 | **Fixture** `TWIN-CLEANUP-MODEL-OPENAI-001.expected_string`: `"gpt-4o-mini"` → `"gpt-4o-mini-DRIFTED"` | **both halves independently**: Rust `llm::tests::spec_twin_constants_cleanup_model_defaults` AND Kotlin `TwinConstantsVectorsTest.cleanupModelDefaultsMatchFixture` | yes — proves neither half can hide the other's drift |
+
+**Inversion table — FIX ROUND 1.** Same discipline: drift re-introduced → test RED →
+reverted, suite green again. Each row was observed, not predicted. `git status` is clean
+of inversions; every one was reverted with a targeted reverse edit (see the note under
+Completion Notes about the one `git checkout` slip).
+
+| # | Reverted change (symbol) | Test(s) that went RED | Discriminating? |
+|---|---|---|---|
+| R1-1 | **Rust/D2** `llm::effective_cleanup_model`: dropped the `filter(\|c\| *c >= '\u{20}')`, leaving trim-only | `llm::tests::spec_twin_constants_cleanup_model_sanitize` | yes — fails on the interior-control-char cases; the default-only assertions in `spec_twin_constants_cleanup_model_defaults` stayed **GREEN** (the non-discriminating trap again) |
+| R1-2 | **Rust/D2** `pipeline::degrade_warn_msg_for_model`: guard short-circuited to `false`, so every degrade used the generic message | `pipeline::tests::spec_model_not_found_warning_names_the_model` | yes — fails on the exact D2 string, not on "a warning was emitted" |
+| R1-3 | **Rust/P9** added `("anthropic", &cfg.anthropic_api_key)` to `resolve_fallback_provider`'s candidate list | `pipeline::tests::test_resolve_fallback_provider_anthropic_never_a_candidate` | yes — this is the invariant that previously had only a (deleted) docstring |
+| R1-4 | **Rust/P7** `hot_reload_cleanup_provider`: guard removed, rebuild unconditional (the reviewed defect restored) | `commands::settings::tests::spec_hot_reload_swaps_the_stored_cleanup_provider` (its "saving the same block again must not rebuild" half) | yes — **but note:** `spec_hot_reload_skips_when_nothing_relevant_changed` stayed GREEN here, because it asserts the *predicate* and this inversion only bypassed its *caller*. Recorded rather than glossed: the predicate test alone does not cover the wiring; R1-5 covers the predicate, R1-4 covers the wiring |
+| R1-5 | **Rust/P7** `cleanup_provider_reload_needed`: `llm_provider == "local"` early-return removed | `commands::settings::tests::spec_hot_reload_skips_when_nothing_relevant_changed` | yes — fails on the local-arm assertions only, which is the GGUF-discard half of P7 |
+| R1-6 | **Rust/P6** `hot_reload_cleanup_provider`: still resolved the provider and returned `Ok(true)`, but never wrote the slot | `commands::settings::tests::spec_hot_reload_swaps_the_stored_cleanup_provider` | yes — and this is the precise shape P6 reported: a test that only called `resolve_cleanup_provider` would have stayed GREEN against exactly this |
+| R1-7 | **Kotlin/D2** `KlarvoApi.effectiveCleanupModel`: `.filter { it.code >= 0x20 }` dropped | `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture` (186 tests, 1 failed) | yes — the Kotlin twin of R1-1, failing on the same fixture table |
+| R1-8 | **Kotlin/P8** `KlarvoApi.parseLlmModelOverride` back to `optString(key, "")` | `LlmModelOverrideConfigTest.jsonParse_modelOverride_nonStringValueIsNotCoerced` (186 tests, 1 failed) | yes — fails on the coercion, which is the whole finding |
+| R1-9 | **UI/D1** `{isPaid && isTrial && <TrialBadge />}` restored on the "Text Cleanup" home row | proxy smoke `D1: Text Cleanup home row has no TrialBadge` (28 → 27/28) | yes — captured evidence shows `"cleanupText": "Text Cleanup\nModel IDs\nTRIAL"`, `cleanupHasTrial: true` |
+
+**Not inverted, stated as such:** **P3** (`LocalLlmCleanup::model()`) — `llm::local` is
+`#[cfg(target_os = "windows")]` and is not compiled by the Linux gate, so there is no test
+to turn red and no inversion to run. Verified by inspection only. **P1** — the revert it
+fixes needs a real backend (`get_advanced_settings` + `save_advanced_settings`); the
+browser proxy has neither, so it was verified by reading plus the mechanical trap-#2 check
+that the spread source is now the freshly fetched block. **P4, P5** — a call-site reroute
+and a doc cross-reference; neither carries a behavioural assertion to invert.
 
 ### Completion Notes List
 
@@ -658,6 +750,120 @@ Each row: the drift re-introduced → the test that went RED → reverted, suite
   project-context the real-device gate is mine to run, so this is a genuine gap, not a hand-off
   — but it is a pure-logic change with no Android UI surface, and the logic half is green.
 
+**Still open after FIX ROUND 1** (the three items above, updated):
+
+- **Andi's GATE-4 is still outstanding** — unchanged, and it now has two more things to look at:
+  the D2 warning text on a deliberately typo'd model ID, and that the Advanced panel's
+  "Text Cleanup" row shows no Trial badge in the real build. Nothing in this session ran on
+  Windows or in the Tauri runtime.
+- **The "stale advanced snapshot" path is FIXED (P1) but still not driven end-to-end.** The
+  whole-block save now re-reads the persisted block before merging, and trap #2 mechanically
+  confirms the spread source changed. What remains unproven is the round trip through a real
+  `get_advanced_settings`/`save_advanced_settings` — the browser proxy serves mocks and has no
+  backend. The concrete GATE-4 observation that would close it: in the real app set a DeepSeek
+  model ID in Advanced, then change the silence threshold in Settings and save, then reopen
+  Advanced — the model ID must still be there.
+- **`LocalLlmCleanup::model()` (P3) is not covered by any gate that ran** — the module is
+  `#[cfg(target_os = "windows")]`. It will be compiled for the first time by
+  `scripts/windows-build.sh`. It is a field read, but "compiles" is a Windows-build statement,
+  not a Linux one.
+- No device/emulator Android smoke this round either, for the same reason and with the same
+  caveat as above.
+
+**FIX ROUND 1 — resolutions (2026-09-12).** Rows written from `git diff`, anchored by
+symbol (Epic-7 retro D2). 12 of the 14 findings; P11/P12 are record-only and left to the
+conductor's close-out pass as directed.
+
+- ✅ **D1 [Decision — free for all]:** the `TrialBadge` is gone from the "Text Cleanup" home
+  row in `AdvancedSettingsPanel`; the four model-ID inputs carry no `disabled` and no
+  `LockIcon`; no license gate was added to `commands::settings::save_advanced_settings`. All
+  three now agree in one direction. The STT section's badge and `disabled={!isPaid}` stay —
+  its custom prompts *are* paid. Asserted in the proxy smoke with a positive control (see
+  Debug Log) and inverted as R1-9.
+- ✅ **D2 [Decision — the warning names the model]:** behaviour unchanged (raw text pasted,
+  no silent fallback to the default, no UI validation). New `pipeline::is_model_not_found_error`
+  (400/404 **and** a model-shaped message) + `pipeline::degrade_warn_msg_for_model`, wired at
+  **all three** degrade sites; the message reads exactly
+  `Model '<id>' not found — check Advanced → Model IDs`, naming the *resolved* ID
+  (`CleanupProvider::model()`), i.e. what actually went on the wire. A generic 400 and a 429
+  that merely mentions a model keep the ordinary wording; an empty model falls back to the
+  generic message rather than printing `Model '' not found`.
+  `llm::effective_cleanup_model` and the Kotlin twin `KlarvoApi.effectiveCleanupModel` now
+  **trim, then drop every char < U+0020, then** apply empty → default — the order matters and
+  the fixture forces it. Pinned by a new vector on both sides,
+  **`TWIN-CLEANUP-MODEL-SANITIZE-001`** (a raw → expected table, each half feeding it through
+  its own seam); both "exactly nine" assertions became **ten**, honestly worded.
+- ✅ **P1** `src/components/SettingsPanel.tsx`, the `handleSave` advanced block: the
+  whole-block save now re-reads the persisted block via `getAdvancedSettings()` immediately
+  before the merge, so only `silenceThreshold` and `pasteDelayMs` are overwritten and a model
+  ID saved in the embedded panel survives. Chose the fresh fetch over an `onSaved` callback: it
+  also covers a block changed by anything other than the embedded panel. A rejected fetch falls
+  back to the mount snapshot rather than skipping the user's save — no worse than before.
+  **Not driven end-to-end** (no backend in the proxy); see "Not done / handed on".
+- ✅ **P2** `llm/mod.rs` twin-lock header: now "nine Rust↔Kotlin twins plus one Desktop-only
+  entry", names `TWIN-CLEANUP-MODEL-ANTHROPIC-001` as that entry, and the
+  "dead-config cluster (deliberately not locked)" clause is replaced by the Kotlin half's
+  wording — those keys no longer exist. The two halves now say the same thing.
+- ✅ **P3** `llm::local::LocalLlmCleanup` implements `model()`, returning the GGUF file name
+  (stored as `model_name` in `new()` because `model()` borrows). The trait doc no longer claims
+  only network providers override it. `prompt_format` resolution is byte-for-byte
+  behaviour-preserving (same `file_name().and_then(to_str)` → `map`/`unwrap_or(ChatMl)` chain).
+  **Windows-gated: not compiled by any gate that ran** — inspection only.
+- ✅ **P4** `commands::settings::update_api_keys` now calls
+  `pipeline::cleanup_provider_for("deepseek", &key, &advanced)` (made `pub(crate)`) instead of
+  re-implementing `DeepSeekCleanup::new(..).with_model(..)`. Deliberately still `"deepseek"`
+  and **not** `resolve_cleanup_provider(&cfg)`: "replaces the provider with DeepSeek regardless
+  of `cfg.llm_provider`" is a separate, **deferred** finding, and routing through the full
+  resolution would have silently closed it. Stated in the code comment too.
+- ✅ **P5** the AC4 test's cross-reference now names
+  `LlmModelOverrideConfigTest::oldConfigJson_withRemovedDeadKeys_stillYieldsLiveValues`;
+  `ConfigParseSeamTest` never existed.
+- ✅ **P6** the swap moved into `commands::settings::hot_reload_cleanup_provider`, which takes
+  the bare `RwLock` (not `&AppState`, which needs an audio recorder and a SQLite handle) so
+  `spec_hot_reload_swaps_the_stored_cleanup_provider` can assert
+  **`slot.read().model()`** — the stored provider, not a returned one. R1-6 proves that
+  distinction is load-bearing.
+- ✅ **P7** the rebuild is now conditional on `cleanup_provider_reload_needed`. **Both** options
+  the finding offered are implemented, because each closes a different half: rebuild only when
+  one of the four `llm_model_*` values changed (so a silence-threshold save costs nothing), and
+  never when `llm_provider == "local"` (so a model-ID edit cannot discard a loaded GGUF, which
+  local inference does not use anyway). The previous block was replaced with
+  `std::mem::replace` inside the same `save_config_locked` closure, so the comparison cannot
+  race a concurrent saver — still exactly one writer (ADR-0015).
+- ✅ **P8** `KlarvoApi.parseLlmModelOverride` reads through `opt(key) as? String ?: ""`, so a
+  number, float, boolean, JSON null, object or array yields `""` → the built-in default instead
+  of a coerced model ID like `"42"`. Tested on **both** sides:
+  `LlmModelOverrideConfigTest.jsonParse_modelOverride_nonStringValueIsNotCoerced` (6 wrong
+  types) and Rust `config::tests::spec_non_string_model_override_takes_corrupt_recovery_path`,
+  which pins the **asymmetry in words**: both platforms end on the default *model*, but Rust
+  rejects the whole file (serde → corrupt recovery + backup), which is the pre-existing,
+  **deferred** behaviour of every `AdvancedSettings` String field and is explicitly not
+  endorsed by that test.
+- ✅ **P9** the "Anthropic is never a fallback candidate" sentence is restored — on **both**
+  `cleanup_provider_for` and `resolve_fallback_provider` — and is now asserted by
+  `test_resolve_fallback_provider_anthropic_never_a_candidate`, including the discriminating
+  half (an Anthropic key *alone* yields `None`; the loop over primaries alone would also pass
+  against a ladder that never reached Anthropic).
+- ✅ **P10** `LlmFallbackProviderTest.kt:~375` now interpolates `${blank.length}`; it was the
+  only `${'$'}{…}` occurrence in `android/kotlin-src/` and `android/kotlin-test/` (grepped).
+- ⬜ **P11/P12** (record-only: the `LlmFallbackProviderTest` "9 → 18" baseline, and
+  "6 captured-state files" where the dir holds 7 — now 9 after this round's two D1 artifacts)
+  left **unticked** on purpose: per the conductor's instruction they go to the editorial
+  close-out pass, which is also the Epic-7 retro D2 rule for record-only findings.
+
+**Deferred set untouched:** all 10 `[Review][Defer]` rows are unchanged. Two were *adjacent*
+to this round's work and were deliberately not closed — `update_api_keys`' DeepSeek-regardless
+behaviour (P4) and Rust's rejection of a wrong JSON type in an `AdvancedSettings` String field
+(P8) — both are now named in code comments/test docs so the next reader sees they are decisions,
+not oversights.
+
+**One process slip, recorded:** while reverting inversion R1-1 I ran
+`git checkout src-tauri/src/llm/mod.rs`, which discarded **all** of that file's fix-round edits,
+not just the inversion. Detected immediately via `git diff --stat` + a grep for the new
+symbols, and all four edits were re-applied; `cargo test --lib` returned to 680 before the next
+step. Every later inversion was reverted with a targeted reverse edit instead. Nothing was
+lost, but the technique was wrong and is written down so it is not repeated.
+
 ### File List
 
 **Rust (desktop)**
@@ -689,6 +895,32 @@ Each row: the drift re-introduced → the test that went RED → reverted, suite
 - `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md` — this record
 - `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` — **new**: `smoke.mjs`, `smoke-report.json`, 8 screenshots, 6 captured-state files
 
+**FIX ROUND 1 — files touched (2026-09-12), by finding**
+
+*Rust (desktop)*
+- `src-tauri/src/llm/mod.rs` — D2: `effective_cleanup_model` strips chars < U+0020 after trimming (+ doc); P2: twin-lock header re-worded to "nine twins + one Desktop-only entry", stale dead-config clause dropped; P3: `CleanupProvider::model()` doc names the local override; fixture id list + count → ten; **new test** `spec_twin_constants_cleanup_model_sanitize`
+- `src-tauri/src/llm/local.rs` — P3: `LocalLlmCleanup` gains a `model_name` field and a `model()` impl (GGUF file name); `new()` refactored to compute the file name once, `prompt_format` behaviour preserved
+- `src-tauri/src/pipeline.rs` — D2: **new** `is_model_not_found_error` + `degrade_warn_msg_for_model`, wired at all three degrade sites; P4: `cleanup_provider_for` widened to `pub(crate)`; P9: invariant sentence restored on `cleanup_provider_for` **and** `resolve_fallback_provider`; **2 new tests** (`spec_model_not_found_warning_names_the_model`, `test_resolve_fallback_provider_anthropic_never_a_candidate`)
+- `src-tauri/src/commands/settings.rs` — P6: **new** `hot_reload_cleanup_provider`; P7: **new** `cleanup_provider_reload_needed`, `save_advanced_settings` captures the previous block via `std::mem::replace` and rebuilds conditionally; P4: `update_api_keys` routed through `cleanup_provider_for`; **2 new tests** (`spec_hot_reload_swaps_the_stored_cleanup_provider`, `spec_hot_reload_skips_when_nothing_relevant_changed`) + test-module import
+- `src-tauri/src/config/mod.rs` — P5: AC4 test cross-reference corrected to the real Kotlin test; P8: **new test** `spec_non_string_model_override_takes_corrupt_recovery_path`
+
+*Kotlin (Android)*
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — D2: `effectiveCleanupModel` strips chars < 0x20 after trimming (+ KDoc); P8: `parseLlmModelOverride` uses `opt(key) as? String` instead of the coercing `optString` (+ KDoc naming the asymmetry)
+- `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` — D2: **new test** `cleanupModelSanitizeMatchesFixture`; `fixtureCarriesAllNineEntries…` renamed to `…AllTenEntries…`; class KDoc updated (ten entries, nine asserted here)
+- `android/kotlin-test/com/klarvo/voice/LlmModelOverrideConfigTest.kt` — P8: **new test** `jsonParse_modelOverride_nonStringValueIsNotCoerced` (6 wrong JSON types)
+- `android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt` — P10: `${'$'}{blank.length}` → `${blank.length}`
+
+*Frontend (TS/React)*
+- `src/components/AdvancedSettingsPanel.tsx` — D1: `TrialBadge` removed from the "Text Cleanup" home row (+ a comment recording the decision and why the STT section keeps its gate)
+- `src/components/SettingsPanel.tsx` — P1: the advanced save block re-reads the persisted block via `getAdvancedSettings()` and spreads **that** instead of the mount-time snapshot
+
+*Fixtures / evidence / tracking*
+- `test-fixtures/twin-constants-vectors.json` — D2: **new** entry `TWIN-CLEANUP-MODEL-SANITIZE-001` with a 7-case raw → expected table (9 → 10 entries)
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/smoke.mjs` — D1: two new checks (Trial-badge absence with an STT positive control; all four model inputs editable), writing `d1-trial-badge.json` and `d1-model-inputs-enabled.json`
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/` — re-run artifacts: `smoke-report.json`, `text-advanced-home.txt`, `01-shortcuts-paste-behavior.png` updated; **2 new** captured-state files (so the dir now holds 9, not the 6 the first pass recorded — cf. P12)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 7-9 review → in-progress → review; `last_updated`
+- `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md` — this record; 12 of 14 finding checkboxes ticked
+
 ### Change Log
 
 | Date | Change |
@@ -698,6 +930,11 @@ Each row: the drift re-introduced → the test that went RED → reverted, suite
 | 2026-09-12 | `save_advanced_settings` now hot-reloads the cleanup provider, and the pipeline logs the resolved model ID — so a changed model ID takes effect without a restart and is observable in `Klarvo.log` (GATE-4, Q7). |
 | 2026-09-12 | Advanced panel re-laid out per Q2/Q3 (flat "Model IDs", both accordions gone, corrected copy) and Shortcuts → Paste & Behavior per Q4 (Auto-Paste gone; Auto-Send + Paste Delay kept, no longer dimmed). |
 | 2026-09-12 | Parity fixture gained the 4 default model IDs (5 → 9 entries) and its three stale dead-key claims were corrected; both "exactly five" assertions re-worded to nine. |
+| 2026-09-12 | Addressed code review findings — fix round 1: 12 items resolved (D1, D2, P1–P10); the 10 deferred rows untouched, P11/P12 (record-only) left for the close-out pass. |
+| 2026-09-12 | D1: the four model-ID inputs are free for all — TrialBadge removed from the "Text Cleanup" row, no input lock, no backend license gate. |
+| 2026-09-12 | D2: a provider model-not-found answer now produces `Model '<id>' not found — check Advanced → Model IDs`, and both `effective_cleanup_model` twins strip control characters after trimming — pinned by the new `TWIN-CLEANUP-MODEL-SANITIZE-001` vector on both platforms (fixture 9 → 10 entries). Behaviour otherwise unchanged: raw text pasted, no silent fallback, no UI validation. |
+| 2026-09-12 | The advanced-settings cleanup-provider hot reload is now conditional (only on a changed `llm_model_*`, never on the `local` arm, so a loaded GGUF is not discarded) and is covered by a test that asserts the *stored* provider; `update_api_keys` goes through the shared `cleanup_provider_for`; the "Anthropic is never a fallback candidate" invariant is documented and asserted again. |
+| 2026-09-12 | A Settings save no longer reverts a model ID saved in the embedded Advanced panel: the whole-block save re-reads the persisted advanced block before merging. |
 
 ### Review Findings
 
@@ -717,19 +954,19 @@ today's tree before being recorded; anchors are `file::symbol` with a line for c
 - **Follow-ups recorded as backlog STORY-CANDIDATES (not this story):** model picker from the provider's
   `/v1/models` list + check on save / app start; failed-entries inbox with icon + counter (see docs/backlog.md).
 
-- [ ] [Review][Decision] **Is the model-ID override a licensed feature?** — `AdvancedSettingsPanel` still renders `{isPaid && isTrial && <TrialBadge />}` on the "Text Cleanup" home row (`src/components/AdvancedSettingsPanel.tsx:205`), but the section's only remaining content — the four model-ID inputs in `renderLlmContent` (`:313-330`) — carries no `disabled={!isPaid}` and no `LockIcon`, unlike the STT section right above it (`:284-302`). The backend gate went with the four prompt keys (`commands::settings::save_advanced_settings`). Badge, input `disabled` and backend must agree in one direction. Not decided by Q1–Q8.
-- [ ] [Review][Decision] **A typo'd model ID fails every cleanup with no fallback and no feedback** — `llm::effective_cleanup_model` only trims (`src-tauri/src/llm/mod.rs:1277-1289`), the UI input is unvalidated free text (`src/components/AdvancedSettingsPanel.tsx:313-330`), and the Epic-12 ladder only triggers on `is_retryable_llm_error` (`src-tauri/src/pipeline.rs:1363`) — a 400 `model_not_found` is not retryable, so cleanup fails on every dictation. Making the key live introduces this failure mode. Options: validate/cap at the UI, strip control characters in `effective_cleanup_model`, or fall back to the default on a model-not-found error.
+- [x] [Review][Decision] **Is the model-ID override a licensed feature?** — `AdvancedSettingsPanel` still renders `{isPaid && isTrial && <TrialBadge />}` on the "Text Cleanup" home row (`src/components/AdvancedSettingsPanel.tsx:205`), but the section's only remaining content — the four model-ID inputs in `renderLlmContent` (`:313-330`) — carries no `disabled={!isPaid}` and no `LockIcon`, unlike the STT section right above it (`:284-302`). The backend gate went with the four prompt keys (`commands::settings::save_advanced_settings`). Badge, input `disabled` and backend must agree in one direction. Not decided by Q1–Q8.
+- [x] [Review][Decision] **A typo'd model ID fails every cleanup with no fallback and no feedback** — `llm::effective_cleanup_model` only trims (`src-tauri/src/llm/mod.rs:1277-1289`), the UI input is unvalidated free text (`src/components/AdvancedSettingsPanel.tsx:313-330`), and the Epic-12 ladder only triggers on `is_retryable_llm_error` (`src-tauri/src/pipeline.rs:1363`) — a 400 `model_not_found` is not retryable, so cleanup fails on every dictation. Making the key live introduces this failure mode. Options: validate/cap at the UI, strip control characters in `effective_cleanup_model`, or fall back to the default on a model-not-found error.
 
-- [ ] [Review][Patch] Advanced whole-block save reverts a saved model-ID override — and the new hot-reload makes the revert take effect instantly (AC5 + the Dev Notes' mandatory end-to-end check) [src/components/SettingsPanel.tsx:240-249, :562-573, :830]
-- [ ] [Review][Patch] Rust twin-lock header still carries the two stale claims Task 6 was written to kill ("five Rust↔Kotlin twins", "the dead-config cluster (deliberately not locked)"); the Kotlin half was corrected, so the two halves now disagree [src-tauri/src/llm/mod.rs:2227, :2236-2237]
-- [ ] [Review][Patch] `LocalLlmCleanup` has no `model()` impl, so the new GATE-4 log line prints `model: ` empty on the Windows `local` arm [src-tauri/src/llm/mod.rs:322-324 (trait default), src-tauri/src/llm/local.rs (no impl), src-tauri/src/pipeline.rs:265, :1354-1357]
-- [ ] [Review][Patch] `update_api_keys` still constructs `DeepSeekCleanup` directly despite its own comment claiming it routes through the shared resolution — a second construction site `cleanup_provider_for` does not own (Task 3) [src-tauri/src/commands/settings.rs:760-768]
-- [ ] [Review][Patch] The AC4 test's cross-reference names `ConfigParseSeamTest`, which does not exist; the real Kotlin half is `LlmModelOverrideConfigTest::oldConfigJson_withRemovedDeadKeys_stillYieldsLiveValues` [src-tauri/src/config/mod.rs:4182]
-- [ ] [Review][Patch] The one new runtime-state line — the `save_advanced_settings` cleanup-provider swap that AC5's "without an app restart" rests on — has no test; every new Rust test calls `resolve_cleanup_provider` directly [src-tauri/src/commands/settings.rs:700-712]
-- [ ] [Review][Patch] The new hot-reload discards a loaded local GGUF model on every advanced-settings save (Windows `local` arm): `LocalLlmCleanup::new` resets `state: None` [src-tauri/src/commands/settings.rs:709-711, src-tauri/src/llm/local.rs:97-109]
-- [ ] [Review][Patch] Kotlin `parseLlmModelOverride` coerces a JSON number/boolean into a model ID (`optString`), while the Rust twin rejects a non-string into the corrupt-recovery path — a new seam, untested on both sides [android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:390-391]
-- [ ] [Review][Patch] `cleanup_provider_for` gained an `"anthropic"` arm, but the "anthropic is never a fallback candidate" invariant lost its docstring sentence and has no test; only the hard-coded candidate list still enforces it [src-tauri/src/pipeline.rs:207-223, :316-330]
-- [ ] [Review][Patch] Broken interpolation renders the literal `${blank.length}` in a loop's failure message; the sibling file gets it right [android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt:375]
+- [x] [Review][Patch] Advanced whole-block save reverts a saved model-ID override — and the new hot-reload makes the revert take effect instantly (AC5 + the Dev Notes' mandatory end-to-end check) [src/components/SettingsPanel.tsx:240-249, :562-573, :830]
+- [x] [Review][Patch] Rust twin-lock header still carries the two stale claims Task 6 was written to kill ("five Rust↔Kotlin twins", "the dead-config cluster (deliberately not locked)"); the Kotlin half was corrected, so the two halves now disagree [src-tauri/src/llm/mod.rs:2227, :2236-2237]
+- [x] [Review][Patch] `LocalLlmCleanup` has no `model()` impl, so the new GATE-4 log line prints `model: ` empty on the Windows `local` arm [src-tauri/src/llm/mod.rs:322-324 (trait default), src-tauri/src/llm/local.rs (no impl), src-tauri/src/pipeline.rs:265, :1354-1357]
+- [x] [Review][Patch] `update_api_keys` still constructs `DeepSeekCleanup` directly despite its own comment claiming it routes through the shared resolution — a second construction site `cleanup_provider_for` does not own (Task 3) [src-tauri/src/commands/settings.rs:760-768]
+- [x] [Review][Patch] The AC4 test's cross-reference names `ConfigParseSeamTest`, which does not exist; the real Kotlin half is `LlmModelOverrideConfigTest::oldConfigJson_withRemovedDeadKeys_stillYieldsLiveValues` [src-tauri/src/config/mod.rs:4182]
+- [x] [Review][Patch] The one new runtime-state line — the `save_advanced_settings` cleanup-provider swap that AC5's "without an app restart" rests on — has no test; every new Rust test calls `resolve_cleanup_provider` directly [src-tauri/src/commands/settings.rs:700-712]
+- [x] [Review][Patch] The new hot-reload discards a loaded local GGUF model on every advanced-settings save (Windows `local` arm): `LocalLlmCleanup::new` resets `state: None` [src-tauri/src/commands/settings.rs:709-711, src-tauri/src/llm/local.rs:97-109]
+- [x] [Review][Patch] Kotlin `parseLlmModelOverride` coerces a JSON number/boolean into a model ID (`optString`), while the Rust twin rejects a non-string into the corrupt-recovery path — a new seam, untested on both sides [android/kotlin-src/com/klarvo/voice/KlarvoApi.kt:390-391]
+- [x] [Review][Patch] `cleanup_provider_for` gained an `"anthropic"` arm, but the "anthropic is never a fallback candidate" invariant lost its docstring sentence and has no test; only the hard-coded candidate list still enforces it [src-tauri/src/pipeline.rs:207-223, :316-330]
+- [x] [Review][Patch] Broken interpolation renders the literal `${blank.length}` in a loop's failure message; the sibling file gets it right [android/kotlin-test/com/klarvo/voice/LlmFallbackProviderTest.kt:375]
 - [ ] [Review][Patch] Record-only: File List says `LlmFallbackProviderTest` went "9 → 18"; `HEAD~2` has 12 `@Test`, today 18 — the "+6 new" is right, the baseline is not [this file, File List / Kotlin]
 - [ ] [Review][Patch] Record-only: Debug Log and File List say "6 captured-state files"; the evidence dir holds 7 [_bmad-output/implementation-artifacts/gate4-evidence/7-9/]
 

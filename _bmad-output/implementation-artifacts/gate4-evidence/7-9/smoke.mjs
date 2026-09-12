@@ -414,8 +414,77 @@ try {
     }
   }
 
-  // Live copy present somewhere in the Advanced panel.
+  // -------------------------------------------------------------------------
+  // Review round 1, decision D1: the model IDs are FREE for everyone, so the
+  // "Text Cleanup" home row must carry NO TrialBadge — while the STT section's
+  // paid custom prompts keep theirs.
+  //
+  // The STT badge is the POSITIVE CONTROL: without it, "no badge on Text
+  // Cleanup" would also be true in a build where the harness simply cannot see
+  // badges at all (or where preview is not in trial state). The preview mock
+  // returns "trial:9999999999" (tauri-commands.ts), so isPaid && isTrial is
+  // true here and both branches are reachable. If the control ever disappears,
+  // this reports VACUOUS rather than passing.
+  // -------------------------------------------------------------------------
   await backToAdvancedHome();
+  const badges = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("button")];
+    const rowFor = (label) =>
+      rows
+        .filter((b) => (b.innerText || "").includes(label))
+        .sort((a, b) => (a.innerText || "").length - (b.innerText || "").length)[0];
+    const cleanup = rowFor("Text Cleanup");
+    const stt = rowFor("Speech-to-Text");
+    return {
+      cleanupFound: !!cleanup,
+      cleanupText: cleanup ? cleanup.innerText.trim() : null,
+      cleanupHasTrial: cleanup ? /\bTrial\b/i.test(cleanup.innerText) : null,
+      sttFound: !!stt,
+    };
+  });
+  writeFileSync(stage("d1-trial-badge.json"), JSON.stringify(badges, null, 2));
+
+  if (!badges.cleanupFound || !badges.sttFound) {
+    fail("D1: Text Cleanup home row has no TrialBadge", "VACUOUS — home rows not found");
+  } else if (badges.cleanupHasTrial) {
+    fail("D1: Text Cleanup home row has no TrialBadge", `row text: ${badges.cleanupText}`);
+  } else {
+    // Positive control: the STT detail page must still show its Trial badge, so
+    // "absent" above is a real absence and not an unreachable license state.
+    await clickByText(page, "Speech-to-Text");
+    const sttText = await textOf(page);
+    await backToAdvancedHome();
+    if (!/\bTrial\b/i.test(sttText)) {
+      fail(
+        "D1: Text Cleanup home row has no TrialBadge",
+        "VACUOUS — the STT positive control shows no Trial badge either, so preview is not in trial state",
+      );
+    } else {
+      pass(
+        "D1: Text Cleanup home row has no TrialBadge",
+        "absent on Text Cleanup while the STT section's Trial badge is present (positive control)",
+      );
+    }
+  }
+
+  // D1: and the four model-ID inputs carry no `disabled` / lock.
+  await clickByText(page, "Text Cleanup");
+  const modelEnabled = await page.evaluate(() =>
+    [...document.querySelectorAll("input[type=text]")]
+      .filter((i) => /deepseek-chat|gpt-4o-mini|claude-|llama-/.test(i.placeholder || ""))
+      .map((i) => ({ placeholder: i.placeholder, disabled: i.disabled, readOnly: i.readOnly })),
+  );
+  writeFileSync(stage("d1-model-inputs-enabled.json"), JSON.stringify(modelEnabled, null, 2));
+  if (modelEnabled.length !== 4) {
+    fail("D1: all 4 model-ID inputs are editable", `VACUOUS — found ${modelEnabled.length} inputs, expected 4`);
+  } else if (modelEnabled.some((i) => i.disabled || i.readOnly)) {
+    fail("D1: all 4 model-ID inputs are editable", JSON.stringify(modelEnabled));
+  } else {
+    pass("D1: all 4 model-ID inputs are editable", "none disabled, none readOnly");
+  }
+  await backToAdvancedHome();
+
+  // Live copy present somewhere in the Advanced panel.
   const advHome = await textOf(page);
   writeFileSync(stage("text-advanced-home.txt"), advHome);
   for (const c of LIVE_COPY) {

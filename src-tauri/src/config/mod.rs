@@ -4179,7 +4179,8 @@ mod tests {
     /// PINS: unknown/removed keys are ignored by serde (no
     /// `deny_unknown_fields` on `AdvancedSettings` or `AppConfig`).
     /// DOES NOT PIN: the Kotlin half of AC4 — that is
-    /// `ConfigParseSeamTest` in `android/kotlin-test/`.
+    /// `LlmModelOverrideConfigTest::oldConfigJson_withRemovedDeadKeys_stillYieldsLiveValues`
+    /// in `android/kotlin-test/com/klarvo/voice/`.
     #[test]
     fn spec_old_config_with_removed_dead_keys_still_loads() {
         let dir = temp_dir();
@@ -4247,6 +4248,63 @@ mod tests {
         assert!(
             warnings.is_empty(),
             "no boot warning must be pushed for an old config; got: {warnings:?}"
+        );
+    }
+
+    /// Review round 1 (P8), Rust half: a NON-STRING `advanced.llmModel*` value.
+    ///
+    /// The Kotlin twin's parse seam yields `""` for it and therefore selects the
+    /// built-in default. Rust does not have that seam: serde rejects the type,
+    /// `load_config` takes the corrupt-recovery path (Story 1.2) and the whole
+    /// file falls back to defaults with a backup written. Both platforms
+    /// therefore end up on the default MODEL, but Rust loses the rest of the
+    /// config — a deliberate, recorded asymmetry.
+    ///
+    /// PINS: that asymmetry in words and in behaviour, so the next reader does
+    /// not "fix" one side into silently accepting a coerced ID (the very defect
+    /// P8 removed from the Kotlin side).
+    /// DOES NOT PIN: the Kotlin behaviour (its own test:
+    /// `LlmModelOverrideConfigTest.jsonParse_modelOverride_nonStringValueIsNotCoerced`),
+    /// nor is the corrupt-recovery outcome itself endorsed — that Rust
+    /// `AdvancedSettings` String fields reject a wrong JSON type at all is
+    /// pre-existing across the struct and recorded as deferred in this story's
+    /// review.
+    #[test]
+    fn spec_non_string_model_override_takes_corrupt_recovery_path() {
+        let dir = temp_dir();
+        let raw = r#"{
+            "language": "de",
+            "advanced": {
+                "minRecordingMs": 750,
+                "llmModelDeepseek": 42
+            }
+        }"#;
+        std::fs::write(dir.path().join("config.json"), raw.as_bytes()).expect("write config");
+
+        let mut warnings = Vec::new();
+        let cfg = load_config_reporting(dir.path(), &mut warnings);
+
+        // The number was NOT coerced into a model ID.
+        assert_eq!(
+            cfg.advanced.llm_model_deepseek, "",
+            "a JSON number must never become the model ID"
+        );
+        assert_eq!(
+            crate::llm::effective_cleanup_model("deepseek", &cfg.advanced.llm_model_deepseek),
+            crate::llm::DeepSeekCleanup::DEFAULT_MODEL,
+            "the resolved model must be the built-in default, as on the Kotlin side"
+        );
+
+        // The recorded asymmetry: unlike Kotlin's per-key seam, Rust rejects the
+        // whole file — the live sibling key is lost and a backup is written.
+        assert_eq!(
+            cfg.advanced.min_recording_ms,
+            default_min_recording_ms(),
+            "documented asymmetry: serde rejects the file, so live siblings fall back to defaults"
+        );
+        assert!(
+            !corrupt_backups(dir.path()).is_empty(),
+            "the corrupt-recovery path must have written a backup"
         );
     }
 }

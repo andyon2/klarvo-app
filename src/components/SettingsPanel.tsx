@@ -563,8 +563,24 @@ export function SettingsPanel({
         advancedSettings.silenceThreshold !== localSilenceThreshold ||
         advancedSettings.pasteDelayMs !== localPasteDelayMs
       )) {
+        // Review round 1 (P1): `saveAdvancedSettings` replaces the WHOLE advanced
+        // block, and `advancedSettings` is only loaded once on mount. The
+        // embedded AdvancedSettingsPanel saves its own whole block too, so
+        // spreading the mount-time snapshot here reverted a model ID the user had
+        // just saved there — and since `save_advanced_settings` now hot-reloads
+        // the cleanup provider, the revert took effect immediately. Re-read the
+        // persisted block right before the merge so only the two fields this
+        // panel owns are overwritten.
+        let persistedAdv: AdvancedSettings = advancedSettings;
+        try {
+          persistedAdv = await getAdvancedSettings();
+        } catch {
+          // Backend unreachable: fall back to the mount snapshot rather than
+          // skipping the save — the two fields below are what the user just
+          // changed here, and this is no worse than the previous behaviour.
+        }
         const updatedAdv: AdvancedSettings = {
-          ...advancedSettings,
+          ...persistedAdv,
           silenceThreshold: localSilenceThreshold,
           pasteDelayMs: localPasteDelayMs,
         };

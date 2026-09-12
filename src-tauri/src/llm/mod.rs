@@ -318,7 +318,9 @@ pub trait CleanupProvider: Send + Sync {
     /// Android's `[pipeline] cleanup: …ms (${llmProvider.model})`.
     ///
     /// Defaults to `""` for providers that have no single model ID (the
-    /// in-module test doubles). Every network provider overrides it.
+    /// in-module test doubles). Every real provider overrides it: the five
+    /// network providers, and — Windows-only — `local::LocalLlmCleanup`, which
+    /// reports its GGUF file name (review round 1, P3).
     fn model(&self) -> &str {
         ""
     }
@@ -1267,6 +1269,12 @@ impl CleanupProvider for AnthropicCleanup {
 /// - **Empty predicate (Q5):** the override is trimmed first, so a
 ///   whitespace-only value counts as empty and falls back to the default.
 ///   The Kotlin twin (`KlarvoApi.effectiveCleanupModel`) uses the same rule.
+/// - **Control characters (review round 1, D2):** after trimming, every char
+///   below `U+0020` is dropped. The override is unvalidated free text (D2 chose
+///   no UI validation), and an interior newline would otherwise forge a line in
+///   `Klarvo.log` and travel to the provider verbatim. Note the ORDER: a value
+///   that is non-empty after trimming but empty after stripping (e.g. a lone
+///   `U+0001`) still falls back to the default.
 /// - **Default:** the provider's built-in `DEFAULT_MODEL`.
 ///
 /// `provider` uses the same names as `cfg.llm_provider`. An unrecognised name
@@ -1274,10 +1282,19 @@ impl CleanupProvider for AnthropicCleanup {
 ///
 /// OpenRouter is deliberately absent: it has no override key and keeps its
 /// hard-coded model literal on both platforms (Q8).
+///
+/// Both halves of the rule are pinned by `TWIN-CLEANUP-MODEL-SANITIZE-001` in
+/// `test-fixtures/twin-constants-vectors.json`, read by this module's
+/// `spec_twin_constants_cleanup_model_sanitize` and by the Kotlin twin's
+/// `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`.
 pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
-    let trimmed = override_raw.trim();
-    if !trimmed.is_empty() {
-        return trimmed.to_string();
+    let sanitized: String = override_raw
+        .trim()
+        .chars()
+        .filter(|c| *c >= '\u{20}')
+        .collect();
+    if !sanitized.is_empty() {
+        return sanitized;
     }
     match provider {
         "openai" => OpenAiCleanup::DEFAULT_MODEL,
@@ -2224,7 +2241,11 @@ mod tests {
     //
     // Reads the SAME file as the Kotlin half (`TwinConstantsVectorsTest` in
     // android/kotlin-test/), `test-fixtures/twin-constants-vectors.json` at the repo
-    // root, so five Rust↔Kotlin twins cannot silently re-diverge.
+    // root, so nine Rust↔Kotlin twins plus one Desktop-only entry cannot silently
+    // re-diverge. The Desktop-only entry is TWIN-CLEANUP-MODEL-ANTHROPIC-001: Android
+    // has no Anthropic cleanup provider (drift row H5), so its Android column is a
+    // written record and the Kotlin half skips it by id — deliberately, not by
+    // oversight. This wording mirrors the Kotlin half's KDoc.
     //
     // Discipline: each assertion reads the PRODUCTION symbol and compares it to the
     // FIXTURE literal — never to another production symbol, which would agree no matter
@@ -2233,8 +2254,10 @@ mod tests {
     // Covers: the Rust side only. Does NOT cover the Kotlin side (its own test reads this
     // same fixture — neither half can prove the other), `AnthropicCleanup`'s separate
     // constant pair (only coincidence-checked below), `llm/local.rs`'s llama-path pair
-    // (target-gated to Windows, not compiled in this test run), the dead-config cluster
-    // (deliberately not locked), or any real network request.
+    // (target-gated to Windows, not compiled in this test run), or any real network
+    // request. The dead-config cluster story 7-8 deliberately left unlocked no longer
+    // exists: story 7-9 removed those keys from all three layers, so the values they
+    // claimed to control are locked here and simply no longer settable.
 
     fn load_twin_constants() -> Vec<serde_json::Value> {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -2259,7 +2282,7 @@ mod tests {
     #[test]
     fn spec_twin_constants_fixture_is_complete_and_self_describing() {
         let vectors = load_twin_constants();
-        // Eight Rust↔Kotlin twins plus ONE Desktop-only entry
+        // Nine Rust↔Kotlin twins plus ONE Desktop-only entry
         // (TWIN-CLEANUP-MODEL-ANTHROPIC-001: Android has no Anthropic cleanup
         // provider — drift row H5 — so its Android column is a written record,
         // and the Kotlin half skips it by id).
@@ -2273,11 +2296,12 @@ mod tests {
             "TWIN-CLEANUP-MODEL-OPENAI-001",
             "TWIN-CLEANUP-MODEL-GROQ-001",
             "TWIN-CLEANUP-MODEL-ANTHROPIC-001",
+            "TWIN-CLEANUP-MODEL-SANITIZE-001",
         ];
         assert_eq!(
             vectors.len(),
             expected.len(),
-            "fixture must carry exactly the nine locked entries"
+            "fixture must carry exactly the ten locked entries"
         );
         for id in expected {
             let d = twin(&vectors, id)["description"]
@@ -2335,6 +2359,51 @@ mod tests {
             anthropic["description"].as_str().unwrap().contains("DESKTOP-ONLY"),
             "the Anthropic entry must say in words that it is Desktop-only"
         );
+    }
+
+    /// Review round 1, D2: the sanitisation applied to a raw model-ID override,
+    /// driven through production (`effective_cleanup_model`) against the
+    /// fixture's raw→expected table — the same table the Kotlin twin
+    /// (`TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`) feeds
+    /// through `KlarvoApi.effectiveCleanupModel`.
+    ///
+    /// PINS: trim, then drop every char < U+0020, then "empty means default" —
+    /// **in that order**. The lone-`U+0001` case is what forces the order: it
+    /// survives `trim()` and would be returned verbatim by a
+    /// strip-after-the-empty-check implementation.
+    /// DOES NOT PIN: which default the empty case selects (that is
+    /// `spec_twin_constants_cleanup_model_defaults`), the Kotlin side (its own
+    /// test reads this same fixture), the warning text a bad ID produces
+    /// (`pipeline::tests::spec_model_not_found_warning_names_the_model`), or any
+    /// network call.
+    #[test]
+    fn spec_twin_constants_cleanup_model_sanitize() {
+        let vectors = load_twin_constants();
+        let entry = twin(&vectors, "TWIN-CLEANUP-MODEL-SANITIZE-001");
+        let cases = entry["cases"]
+            .as_array()
+            .expect("TWIN-CLEANUP-MODEL-SANITIZE-001 needs a cases array");
+        assert!(!cases.is_empty(), "the sanitize table must not be empty");
+
+        for case in cases {
+            let raw = case["raw"].as_str().expect("each case needs a raw string");
+            let expected = case["expected"].as_str().expect("each case needs an expected string");
+            let got = effective_cleanup_model("deepseek", raw);
+            if expected.is_empty() {
+                // An empty expectation means "falls back to the provider default".
+                assert_eq!(
+                    got,
+                    DeepSeekCleanup::DEFAULT_MODEL,
+                    "raw {raw:?} must sanitise to empty and select the provider default"
+                );
+            } else {
+                assert_eq!(got, expected, "raw {raw:?} sanitised to the wrong model ID");
+            }
+            assert!(
+                !got.chars().any(|c| c < '\u{20}'),
+                "raw {raw:?} left a control character in the effective model ID"
+            );
+        }
     }
 
     #[test]

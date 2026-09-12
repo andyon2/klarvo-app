@@ -372,7 +372,7 @@ class LlmFallbackProviderTest {
     fun blankModelOverride_fallsBackToBuiltInDefault() {
         for (blank in listOf("", " ", "   ", "\t", "\n", " \t\n ")) {
             assertEquals(
-                "a blank DeepSeek override (${'$'}{blank.length} blank chars) must use the default",
+                "a blank DeepSeek override (${blank.length} blank chars) must use the default",
                 KlarvoApi.DEFAULT_MODEL_DEEPSEEK,
                 KlarvoApi.resolveLlmProvider(
                     baseConfig(

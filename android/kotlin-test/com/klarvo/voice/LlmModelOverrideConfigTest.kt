@@ -53,6 +53,42 @@ class LlmModelOverrideConfigTest {
         assertEquals("", KlarvoApi.parseLlmModelOverride(json, "llmModelDeepseek"))
     }
 
+    /**
+     * Review round 1 (P8): a non-string value must NOT be coerced into a model
+     * ID. `optString` stringifies whatever it finds, so `"llmModelDeepseek": 42`
+     * became the model ID `"42"` and would have gone to the provider.
+     *
+     * PINS: number, boolean, JSON null, object and array all yield `""`, which
+     * [KlarvoApi.effectiveCleanupModel] then reads as "use the default" — so a
+     * type-confused config falls back instead of inventing an ID. This is the
+     * Kotlin end of a deliberate asymmetry; the Rust twin
+     * (`config::tests::spec_non_string_model_override_takes_corrupt_recovery_path`)
+     * rejects the whole file instead, which is pre-existing serde behaviour
+     * across every `AdvancedSettings` String field (recorded as deferred).
+     * DOES NOT PIN: `readConfig`'s file I/O or its license gating (this drives
+     * the pure `org.json` seam), or what the provider would do with a bad ID.
+     */
+    @Test
+    fun jsonParse_modelOverride_nonStringValueIsNotCoerced() {
+        val cases = listOf(
+            """{"advanced":{"llmModelDeepseek":42}}""" to "a JSON number",
+            """{"advanced":{"llmModelDeepseek":3.5}}""" to "a JSON float",
+            """{"advanced":{"llmModelDeepseek":true}}""" to "a JSON boolean",
+            """{"advanced":{"llmModelDeepseek":null}}""" to "a JSON null",
+            """{"advanced":{"llmModelDeepseek":{"id":"x"}}}""" to "a JSON object",
+            """{"advanced":{"llmModelDeepseek":["x"]}}""" to "a JSON array",
+        )
+        for ((raw, label) in cases) {
+            val parsed = KlarvoApi.parseLlmModelOverride(JSONObject(raw), "llmModelDeepseek")
+            assertEquals("$label must not be coerced into a model ID", "", parsed)
+            assertEquals(
+                "$label must end at the built-in default, not at a stringified value",
+                KlarvoApi.DEFAULT_MODEL_DEEPSEEK,
+                KlarvoApi.effectiveCleanupModel(parsed, KlarvoApi.DEFAULT_MODEL_DEEPSEEK)
+            )
+        }
+    }
+
     // -----------------------------------------------------------------------
     // The empty/whitespace predicate (Q5) — twin of Rust
     // `llm::effective_cleanup_model`
