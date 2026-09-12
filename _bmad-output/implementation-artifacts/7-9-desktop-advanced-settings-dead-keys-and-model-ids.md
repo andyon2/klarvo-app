@@ -1,6 +1,6 @@
 # Story 7.9: Desktop Advanced settings + AutoSend — remove dead keys, wire 4 model IDs
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1307,6 +1307,7 @@ have to reconstruct them):
 | 2026-09-12 | RES-2, properly closed: both `effective_cleanup_model` twins now **filter before trimming**. The previous trim-first order left the *neighbouring* whitespace behind on whichever runtime does not treat the control character as whitespace — Rust and Kotlin disagree in opposite directions (`U+0085` vs `U+001C`..`U+001F`), so one config produced two different `model` fields on the wire. Locked by three edge-adjacent fixture cases that fail each platform on a different row. |
 | 2026-09-12 | Claim accuracy: the sanitize fixture's description no longer claims `U+0085` is the only divergence or that `U+001C`..`U+001F` are unobservable, and both fixture readers' `PINS:` clauses state the predicate their code runs. Both structural guards now reject `U+0085` too. |
 | 2026-09-12 | R3-4/R3-5: a skipped advanced save is reported on the silent save path too (API-key removal), and its danger banner no longer self-dismisses after 2 s like a success toast. |
+| 2026-09-12 | **Close-out (conductor, GATE 3 auto-finalize pre-authorized by Andi).** 4 review rounds, all confirmed code findings closed; round-4 leftovers accepted as residual → `docs/backlog.md` "Story 7-9 residuals". GATE-4: proxy smoke 28/28 on the HEAD build, Windows release build fresh (`145de64`), evidence + Andi's real-target residual in `gate4-evidence/7-9/verdict.md`. Status → done in story + sprint-status. |
 
 ### Review Findings
 
