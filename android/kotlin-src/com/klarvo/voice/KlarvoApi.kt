@@ -91,27 +91,33 @@ object KlarvoApi {
      * (src-tauri/src/llm/mod.rs) — the ONE place that decides both halves of
      * the rule on this platform:
      *
-     * - the override is **trimmed** first, so a whitespace-only value counts
-     *   as empty and falls back to [default] (story 7-9, Q5),
-     * - then every character below U+0020 (C0 control character) **and U+0085
-     *   (NEL)** is **dropped** (review round 1, decision D2): the override is
+     * - every character below U+0020 (C0 control character) **and U+0085 (NEL)**
+     *   is **dropped** first (review round 1, decision D2): the override is
      *   unvalidated free text, so an interior newline would otherwise forge a
      *   line in the log and travel to the provider verbatim,
+     * - the filtered value is then **trimmed**, so a whitespace-only value
+     *   counts as empty and falls back to [default] (story 7-9, Q5),
      * - otherwise the sanitised override wins.
      *
-     * Note the ORDER: a value that is non-empty after trimming but empty after
-     * stripping (e.g. a lone U+0001) still falls back to [default].
+     * The ORDER is filter -> trim -> empty check (review round 3), and both
+     * parts of it are load-bearing:
+     * - **filter before trim**, because the two runtimes' `trim()` disagree
+     *   about which control characters are whitespace, and trimming first
+     *   leaves that disagreement in the result. Rust's `str::trim` follows the
+     *   Unicode White_Space property (strips U+0085, keeps U+001C..U+001F);
+     *   Kotlin's [String.trim] uses `Character.isWhitespace`/`isSpaceChar` (the
+     *   exact opposite on both). With trim first, `"\u0085 deepseek"` became
+     *   `"deepseek"` on Rust but `" deepseek"` here, and `"\u001c deepseek"`
+     *   diverged the other way: one config, two different `model` fields on the
+     *   wire. Filtering first removes every such character *before* either
+     *   `trim()` can see it, so neither runtime's whitespace table matters.
+     * - **trim before the empty check**, so a value that is non-empty after
+     *   filtering but blank after trimming (e.g. a lone U+0001, or `"  "`)
+     *   still falls back to [default].
      *
-     * U+0085 is named explicitly (review round 2, RES-2) because it is the one
-     * character the two `trim()` implementations disagree about: Rust's
-     * `str::trim` follows the Unicode White_Space property and strips it, while
-     * Kotlin's [String.trim] uses `Character.isWhitespace`/`isSpaceChar` — both
-     * `false` for U+0085 — so it does not. Since `0x85 >= 0x20`, both filters
-     * used to keep it and the twins produced different model IDs for the same
-     * config. Dropping it in the filter rather than in `trim` makes the two
-     * agree without depending on either runtime's whitespace table. (U+00A0 does
-     * not diverge; U+001C..U+001F diverge the other way but are already dropped
-     * by both filters.)
+     * U+0085 is named explicitly (review round 2, RES-2) because `0x85 >= 0x20`,
+     * so the `< 0x20` filter alone would keep it while the two `trim()`
+     * implementations disagree about it. (U+00A0 does not diverge — both trim it.)
      *
      * Both provider sites ([resolveLlmProvider] and [cleanupFallbackCandidates])
      * go through here, so they cannot drift apart the way their URL literals
@@ -123,7 +129,7 @@ object KlarvoApi {
      * Rust twin's `spec_twin_constants_cleanup_model_sanitize`.
      */
     internal fun effectiveCleanupModel(override: String, default: String): String {
-        val sanitized = override.trim().filter { it.code >= 0x20 && it.code != 0x85 }
+        val sanitized = override.filter { it.code >= 0x20 && it.code != 0x85 }.trim()
         return if (sanitized.isNotEmpty()) sanitized else default
     }
 

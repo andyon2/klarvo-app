@@ -531,7 +531,9 @@ export function SettingsPanel({
     setSaving(true);
     if (!opts?.silent) setSaveMsg(null);
     // Set when the advanced block could not be re-read and its save was
-    // therefore skipped (REG-3); reported in the save banner below.
+    // therefore skipped (REG-3). Reported twice, both times regardless of
+    // `opts.silent`: logged where it happens (the `catch` below) and shown in
+    // the save banner at the end.
     let advancedSaveSkipped = false;
     try {
       // Split sliders: each key gets its own value (no longer coupled).
@@ -610,14 +612,22 @@ export function SettingsPanel({
       setTursoToken("");
       // Clear validation errors after a successful save.
       setApiKeyErrors({});
-      if (!opts?.silent) {
-        // REG-3: a skipped advanced save is reported, not swallowed — the
-        // banner styles anything other than "Saved" as an error.
-        setSaveMsg(
-          advancedSaveSkipped
-            ? "Saved — advanced settings skipped (could not read current values)"
-            : "Saved",
-        );
+      // REG-3: a skipped advanced save is reported, not swallowed — the banner
+      // styles anything other than "Saved" as an error.
+      //
+      // Review round 3: the report sits OUTSIDE the silent gate, and carries no
+      // auto-dismiss timer. Two separate reasons:
+      // - the one silent caller is the API-key removal
+      //   (`clearApiKey(...).then(() => saveCurrentSettings({ silent: true }))`),
+      //   where a rejected re-read drops the user's silenceThreshold/pasteDelayMs
+      //   edits; silencing the ordinary "Saved" toast must not also silence that,
+      // - unlike "Saved", a skip is a state the user has to act on (retry the
+      //   save), so it stays on screen until the next save replaces it instead of
+      //   self-dismissing like a success toast after 2 s.
+      if (advancedSaveSkipped) {
+        setSaveMsg("Saved — advanced settings skipped (could not read current values)");
+      } else if (!opts?.silent) {
+        setSaveMsg("Saved");
         setTimeout(() => setSaveMsg(null), 2000);
       }
     } catch (err) {

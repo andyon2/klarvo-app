@@ -149,10 +149,16 @@ class TwinConstantsVectorsTest {
      * (`llm::tests::spec_twin_constants_cleanup_model_sanitize`) feeds through
      * `llm::effective_cleanup_model`.
      *
-     * PINS: trim, then drop every char below U+0020, then "empty means the
-     * default" — in that order. The lone-U+0001 case is what forces the order:
-     * it survives `trim()` and a strip-after-the-empty-check implementation
-     * would return it verbatim as the model ID.
+     * PINS: drop every char below U+0020 **and U+0085 (NEL)**, then trim, then
+     * "empty means the default" — in that order (review round 3). Two cases
+     * force it: the lone-U+0001 case forces the empty check to come last (it
+     * survives `trim()` and a strip-after-the-empty-check implementation would
+     * return it verbatim as the model ID), and the edge-adjacent cases
+     * (NEL-then-space, space-then-NEL, U+001C-then-space) force the filter to
+     * come *before* the trim: trimming first leaves the neighbouring space
+     * behind on whichever runtime does not treat that control character as
+     * whitespace, and Kotlin and Rust disagree in opposite directions (U+0085
+     * vs U+001C..U+001F).
      * DOES NOT PIN: which default the empty case selects (that is
      * [cleanupModelDefaultsMatchFixture]), the Desktop-only model-not-found
      * warning text (Android has no equivalent), or any network call.
@@ -186,7 +192,7 @@ class TwinConstantsVectorsTest {
             }
             assertFalse(
                 "raw ${raw.toCharArray().toList()} left a control character in the model ID",
-                got.any { it.code < 0x20 }
+                got.any { it.code < 0x20 || it.code == 0x85 }
             )
         }
     }

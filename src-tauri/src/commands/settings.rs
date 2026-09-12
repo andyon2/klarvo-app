@@ -2342,8 +2342,9 @@ mod tests {
             } else {
                 assert!(
                     cleanup_provider_reload_needed(&base.advanced, &changed.advanced, "local"),
-                    "llm_provider=local has no local arm off Windows, so the slot \
-                     holds DeepSeek and a changed llm_model_{label} must still rebuild"
+                    "llm_provider=local has no local arm off Windows, so the slot holds \
+                     DeepSeek; the predicate ORs all four overrides regardless of provider, \
+                     so any llm_model_* change (here llm_model_{label}) must still rebuild"
                 );
             }
         }

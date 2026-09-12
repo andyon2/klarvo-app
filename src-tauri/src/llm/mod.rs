@@ -1266,25 +1266,31 @@ impl CleanupProvider for AnthropicCleanup {
 /// This is the ONE place that decides both halves of the rule, so the
 /// pipeline's provider arms stay uniform and cannot drift apart:
 ///
-/// - **Empty predicate (Q5):** the override is trimmed first, so a
+/// - **Control characters (review round 1, D2):** every char below `U+0020`
+///   **and `U+0085` (NEL)** is dropped. The override is unvalidated free text
+///   (D2 chose no UI validation), and an interior newline would otherwise forge
+///   a line in `Klarvo.log` and travel to the provider verbatim.
+/// - **Empty predicate (Q5):** the filtered value is trimmed, so a
 ///   whitespace-only value counts as empty and falls back to the default.
 ///   The Kotlin twin (`KlarvoApi.effectiveCleanupModel`) uses the same rule.
-/// - **Control characters (review round 1, D2):** after trimming, every char
-///   below `U+0020` **and `U+0085` (NEL)** is dropped. The override is
-///   unvalidated free text (D2 chose no UI validation), and an interior newline
-///   would otherwise forge a line in `Klarvo.log` and travel to the provider
-///   verbatim. Note the ORDER: a value that is non-empty after trimming but
-///   empty after stripping (e.g. a lone `U+0001`) still falls back to the
-///   default.
-/// - **Why `U+0085` is named explicitly (review round 2, RES-2):** it is the one
-///   character the two `trim()` implementations disagree about. Rust's
-///   `str::trim` follows the Unicode `White_Space` property and strips it;
-///   Kotlin's `trim()` uses `Character.isWhitespace`/`isSpaceChar`, both `false`
-///   for `U+0085`, so it does not. `0x85 >= 0x20` meant both filters kept it,
-///   and the twins produced different model IDs for the same config. Dropping it
-///   in the filter — not in `trim` — makes the two agree without depending on
-///   either runtime's whitespace table. (`U+00A0` does not diverge; `U+001C`..
-///   `U+001F` diverge the other way but both filters already drop them.)
+/// - **The ORDER is filter → trim → empty check (review round 3).** Both parts
+///   of it are load-bearing:
+///   - *filter before trim*, because the two runtimes' `trim()` disagree about
+///     which control characters are whitespace, and trimming first leaves that
+///     disagreement in the result. Rust's `str::trim` follows the Unicode
+///     `White_Space` property (strips `U+0085`, keeps `U+001C`..`U+001F`);
+///     Kotlin's `trim()` uses `Character.isWhitespace`/`isSpaceChar` (the exact
+///     opposite on both). With trim first, `"\u{85} deepseek"` became
+///     `"deepseek"` on Rust but `" deepseek"` on Kotlin, and `"\u{1c} deepseek"`
+///     diverged the other way: one config, two different `model` fields on the
+///     wire. Filtering first removes every such character *before* either
+///     `trim()` can see it, so neither runtime's whitespace table matters.
+///   - *trim before the empty check*, so a value that is non-empty after
+///     filtering but blank after trimming (e.g. a lone `U+0001`, or `"  "`)
+///     still falls back to the default.
+/// - **Why `U+0085` is named explicitly (review round 2, RES-2):** `0x85 >= 0x20`,
+///   so the `< U+0020` filter alone would keep it while the two `trim()`
+///   implementations disagree about it. (`U+00A0` does not diverge — both trim it.)
 /// - **Default:** the provider's built-in `DEFAULT_MODEL`.
 ///
 /// `provider` uses the same names as `cfg.llm_provider`. An unrecognised name
@@ -1298,13 +1304,13 @@ impl CleanupProvider for AnthropicCleanup {
 /// `spec_twin_constants_cleanup_model_sanitize` and by the Kotlin twin's
 /// `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`.
 pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
-    let sanitized: String = override_raw
-        .trim()
+    let filtered: String = override_raw
         .chars()
         .filter(|c| *c >= '\u{20}' && *c != '\u{85}')
         .collect();
+    let sanitized = filtered.trim();
     if !sanitized.is_empty() {
-        return sanitized;
+        return sanitized.to_string();
     }
     match provider {
         "openai" => OpenAiCleanup::DEFAULT_MODEL,
@@ -2377,10 +2383,16 @@ mod tests {
     /// (`TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture`) feeds
     /// through `KlarvoApi.effectiveCleanupModel`.
     ///
-    /// PINS: trim, then drop every char < U+0020, then "empty means default" —
-    /// **in that order**. The lone-`U+0001` case is what forces the order: it
+    /// PINS: drop every char < U+0020 **and U+0085 (NEL)**, then trim, then
+    /// "empty means default" — **in that order** (review round 3). Two cases
+    /// force it: the lone-`U+0001` case forces the empty check to come last (it
     /// survives `trim()` and would be returned verbatim by a
-    /// strip-after-the-empty-check implementation.
+    /// strip-after-the-empty-check implementation), and the edge-adjacent cases
+    /// (`"\u{85} deepseek"`, `"deepseek \u{85}"`, `"\u{1c} deepseek"`) force the
+    /// filter to come *before* the trim: trimming first leaves the neighbouring
+    /// space behind on whichever runtime does not treat that control character
+    /// as whitespace, and Rust and Kotlin disagree in opposite directions
+    /// (`U+0085` vs `U+001C`..`U+001F`).
     /// DOES NOT PIN: which default the empty case selects (that is
     /// `spec_twin_constants_cleanup_model_defaults`), the Kotlin side (its own
     /// test reads this same fixture), the warning text a bad ID produces
@@ -2410,7 +2422,7 @@ mod tests {
                 assert_eq!(got, expected, "raw {raw:?} sanitised to the wrong model ID");
             }
             assert!(
-                !got.chars().any(|c| c < '\u{20}'),
+                !got.chars().any(|c| c < '\u{20}' || c == '\u{85}'),
                 "raw {raw:?} left a control character in the effective model ID"
             );
         }

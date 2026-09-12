@@ -1,6 +1,6 @@
 # Story 7.9: Desktop Advanced settings + AutoSend — remove dead keys, wire 4 model IDs
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -666,6 +666,62 @@ byte-identically (verified against `~/.cargo/registry/.../tauri-2.10.3/mobile/an
 the tauri version in `src-tauri/Cargo.lock`: identical apart from the `{{package}}` substitution)
 and the gate then passed. Delete `*.kt` at that one level, never the directory.
 
+**Gate runs — FIX ROUND 3 (review round-3 findings RES-2 + R3-1..R3-5, R3-7), 2026-09-12,
+`conductor/story-7-9`:**
+
+- `cargo test --lib` in `src-tauri/` — **681 passed, 0 failed, 0 ignored** (unchanged count:
+  this round adds no `#[test]`; RES-2 adds three *cases* to the existing fixture table and
+  R3-2/R3-3/R3-7 change doc text and assertion predicates inside existing tests).
+  Covers: Rust unit + inline spec tests on the **Linux** target. Does **NOT** cover the
+  Windows-only arms (`llm::local`, the `local` cleanup arm, native overlays) — in particular
+  REG-1's Windows branch is still not compiled here, so R3-7's *edited* message is the one that
+  runs on this host and the `cfg!(target_os = "windows")` branch's message was not executed;
+  also not the Tauri runtime, `save_advanced_settings` as a *command*, the real `Klarvo.log`,
+  any network call, or `tests/pi_security.rs`.
+- Rust warning count **unchanged**: `13` (lib) / `18` (lib test, 3 duplicates) / `1`
+  (`pi_security`) — same `cargo check --lib --tests` measurement as rounds 1 and 2. No new
+  warnings.
+- `npm run build` (`tsc && vite build`) — **green**, `✓ built in 1.52s`. Strict `tsc`
+  type-checks the R3-4/R3-5 restructure; it executes nothing.
+- JVM gate `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` — **186 tests, 0 failures,
+  0 errors, 0 skipped across 23 suites** (unchanged count; `cleanupModelSanitizeMatchesFixture`
+  confirmed **present** in the result XML, not silently skipped). `--rerun-tasks` again
+  mandatory — this round edits `test-fixtures/twin-constants-vectors.json`.
+  - Run **device-free** (7-8 precedent). **Deviation from rounds 1–2, stated because it changes
+    what the run proves:** the usual `rm`/`cp` sync into
+    `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice` required an approval this
+    non-interactive session cannot give, so it was **not** run. Instead the generated tree was
+    first *diffed* against the tracked sources — it differed in exactly the two files this round
+    changes and in nothing else — and those two files were then edited to be **byte-identical**
+    to `android/kotlin-src`/`android/kotlin-test` (verified afterwards with `diff -rq` over both
+    directories: no differences). So the gate ran against this round's real Kotlin sources.
+    `scripts/android-smoke.sh` was **not** used — it fails on "Kein Gerät gefunden" before its
+    JVM gate and no device/AVD was reachable from this host.
+  - Count taken over **all 23 result XMLs** in the `testUniversalDebugUnitTest` variant dir, not
+    the smoke banner's single suite; the nine stale variant dirs were excluded.
+  - Covers: pure Kotlin/JVM logic. Does **NOT** cover JNI, any device or emulator, Android
+    UI/rendering, or `readConfig`'s real file I/O and license gating.
+- **Desktop proxy smoke re-run** (puppeteer 24.38.0 vs `npm run preview` :1422, real Chromium;
+  required because `src/components/SettingsPanel.tsx` changed) — **28/28 checks passed, 0
+  uncaught page errors**, unchanged from rounds 1–2. The preview server was stopped afterwards.
+  - **This is a regression check only, and it is weaker than it looks for this round.** R3-4 and
+    R3-5 both live on the *skip* path, which only runs when `getAdvancedSettings()` **rejects**;
+    the proxy serves mocks and has no backend, so **neither the relocated report nor the removed
+    auto-dismiss was ever driven**. No new check was added because the harness cannot reach that
+    code. What the run proves is that the panel still renders exactly as before (Paste & Behavior
+    rows, all four Advanced sections, expert mode on and off, D1's badge and input checks).
+  - Same 2 pre-existing `console.error` lines (`transformCallback`, `SettingsPanel`'s unguarded
+    `listen()` in preview) — documented in the first pass, not from this story.
+  - Artifact churn: only `01-shortcuts-paste-behavior.png` differs (render nondeterminism); the
+    JSON evidence is byte-identical.
+- **Surface-smoke-checklist traps, re-run mechanically for THIS round's diff:**
+
+| Trap | Check | Result |
+|---|---|---|
+| #1 camelCase keys under `advanced` | derived every `AdvancedSettings` serde name from the Rust struct (container `rename_all = "camelCase"`, so the names are derived, not read from per-field attributes) and diffed against `src/types.ts` | **17 = 17**, neither side has a key the other lacks (this round adds/removes no key) |
+| #2 resync `useEffect` / `isDirty` | both surviving advanced fields still in the mount load, the `isDirty` terms, the save gate and the merge; `...advancedSettings` still appears **nowhere**; `persistedAdv` 4 sites, `advancedSaveSkipped` 3 sites | green |
+| #6 multi-hop positional save chain | parsed each hop's parameter list on the working tree and on `HEAD` with the **same** counter | `saveSettings` 52 = 52 · `handleSaveSettings` 50 = 50 · `SettingsPanel.onSave` 50 = 50 — this round touches no hop signature, so nothing shifted |
+
 ### Inversion table (AC6)
 
 Each row: the drift re-introduced → the test that went RED → reverted, suite green again.
@@ -726,6 +782,26 @@ has none, so there is no harness that can reach it. Verified by reading plus the
 trap-#2 check that `...advancedSettings` no longer appears anywhere in the file and the failure
 path writes nothing. **REG-2** — a one-line ledger correction in `test-fixtures/README.md`;
 no behavioural assertion exists to invert.
+
+**Inversion table — FIX ROUND 3.** Every row was **observed**, not predicted. Two were observed
+as the **pre-fix RED state** (the fixture cases were added before the twins were fixed, so the
+drift that had to fail was the shipped trim-first code itself); one was a real re-introduction
+after the fix and was reverted with a **targeted reverse edit**, not `git checkout`. `git status`
+is clean of inversions.
+
+| # | Drift (symbol) | Test(s) that went RED | Discriminating? |
+|---|---|---|---|
+| R3-1 | **Rust/RES-2** `llm::effective_cleanup_model` trimming **before** filtering (pre-fix state) | `llm::tests::spec_twin_constants_cleanup_model_sanitize` — `raw "\u{1c} deepseek"`, `left: " deepseek"`, `right: "deepseek"` | yes — fails only on the new edge-adjacent `U+001C` case; both round-2 NEL-in-isolation cases stayed **GREEN**, which is exactly the blind spot round 3 named |
+| R3-2 | **Kotlin/RES-2** `KlarvoApi.effectiveCleanupModel` back to `override.trim().filter { … }` **after** the fix (re-introduced deliberately, then reverse-edited) | `TwinConstantsVectorsTest.cleanupModelSanitizeMatchesFixture` (9 tests, 1 failed) — `ComparisonFailure: raw [\x85,  , d, e, e, p, s, e, e, k] … expected:<[]deepseek> but was:<[ ]deepseek>` | yes — fails on the leading-NEL edge case, the mirror image of R3-1: each runtime is caught by the case the *other* one passes |
+| R3-3 | **Rust/R3-3** `effective_cleanup_model`'s filter back to `>= '\u{20}'` only (dropping the `!= '\u{85}'` clause) | `llm::tests::spec_twin_constants_cleanup_model_sanitize` — `raw "dee\u{85}pseek"`, `left: "dee\u{85}pseek"` | **partly — and this is the honest limit of R3-3.** The failure comes from the explicit `assert_eq`, which runs *first*; the widened structural guard never got to speak. It cannot, by construction: every `expected` in the table is NEL-free, so a surviving `U+0085` always trips the equality assertion before the invariant. Widening the guard makes it *agree* with the predicate it sits beside (that was the finding) and future-proofs a case whose expected value contains one; it does not add a reachable failure today. |
+
+**Not inverted, stated as such:** **R3-4 / R3-5** — both live on the branch that runs only when
+`getAdvancedSettings()` **rejects**, which needs a backend; the browser proxy serves mocks and has
+none, so there is no harness that can reach them. Verified by reading plus the mechanical trap-#2
+check. **R3-1 (fixture description)** and **R3-2 (the two `PINS:` clauses)** are claim-accuracy
+text with no behavioural assertion to invert — though the *code* order they now describe is the
+one R3-1/R3-2 above prove. **R3-7** — an assertion *message*, not an assertion; inverting it
+would change no verdict.
 
 ### Completion Notes List
 
@@ -1020,6 +1096,66 @@ round are untouched, and P11/P12 from round 1 stay unticked for the editorial cl
   device-free. Per project-context the real-device gate is mine, so this stays a genuine gap,
   with the same caveat: a pure-logic change with no Android UI surface.
 
+**FIX ROUND 3 — resolutions (2026-09-12).** Rows written from `git diff`, anchored by symbol
+(Epic-7 retro D2). 7 of the 8 findings; **R3-6 is record-only and was left untouched** for the
+conductor's close-out pass, as directed. The three round-3 `[Defer]` rows and every earlier
+deferred row were likewise not touched.
+
+- ✅ **RES-2 (now actually closed):** both twins changed from *trim → filter* to
+  **filter → trim → empty check**. `llm::effective_cleanup_model` collects the filtered chars
+  first and trims the result; `KlarvoApi.effectiveCleanupModel` is
+  `override.filter { … }.trim()`. This removes the dependency on either runtime's whitespace
+  table: the previous order let Kotlin's `trim()` stop at a NEL and Rust's `trim()` stop at a
+  `U+001C`, each leaving the *adjacent space* behind on one platform only. Three edge-adjacent
+  cases now lock it (leading NEL+space, trailing space+NEL, leading `U+001C`+space), and they
+  discriminate in **both** directions — R3-1 in the inversion table fails the Rust half, R3-2
+  fails the Kotlin half, on different rows of the same table.
+- ✅ **R3-1:** the fixture description's two false claims are gone. "the two `trim()`
+  implementations disagree about it and nothing else" and "(U+001C..U+001F … so they are
+  **unobservable**)" are replaced by the measured statement: the two `trim()`s disagree in
+  *opposite* directions (`U+0085` vs `U+001C`..`U+001F`), and both classes are observable via the
+  neighbouring whitespace each runtime does or does not consume. The `PINS:` clause now states
+  the filter→trim→empty order, and the description says explicitly that the NEL-in-isolation
+  cases are **blind** to the ordering — which is why the edge-adjacent ones were added.
+- ✅ **R3-2:** both fixture readers' `PINS:` clauses now state the predicate their code actually
+  runs — filter (incl. `U+0085`) → trim → empty — and name which cases force which half of the
+  order.
+- ✅ **R3-3:** both structural guards widened to reject `U+0085` as well
+  (`c < '\u{20}' || c == '\u{85}'` / `it.code < 0x20 || it.code == 0x85`), so the advertised
+  invariant matches the predicate beside it. Measured limit recorded in the inversion table: the
+  explicit rows still fire first, so the guard adds agreement and future-proofing, not a new
+  reachable failure.
+- ✅ **R3-4:** the skip report moved out of `if (!opts?.silent)`. The API-key-removal path
+  (`clearApiKey(...).then(() => saveCurrentSettings({ silent: true }))`) now surfaces a rejected
+  re-read instead of dropping the `silenceThreshold`/`pasteDelayMs` edits silently. The log half
+  was already unconditional (the `catch` at the failure site); the declaration comment now says
+  so instead of promising only "the save banner below".
+- ✅ **R3-5:** `setTimeout(() => setSaveMsg(null), 2000)` now applies **only** to the plain
+  "Saved" toast. The danger-styled skip notice has no timer and stays until the next save
+  replaces it — it is a state the user must act on, not a success toast.
+- ✅ **R3-7:** the `else`-branch assertion message no longer states a per-label rationale that
+  holds for one label only. It now reads: the slot holds DeepSeek off Windows, **and the
+  predicate ORs all four overrides regardless of provider**, so any `llm_model_*` change (here
+  `llm_model_{label}`) must still rebuild. Behaviour unchanged — this is the message, not the
+  assertion.
+
+**Still open after FIX ROUND 3** (unchanged by this round, repeated so the close-out does not
+have to reconstruct them):
+
+- **Andi's GATE-4 is still outstanding** — Windows release build via `scripts/windows-build.sh`;
+  Advanced panel shows only live keys; a changed DeepSeek model ID visible in `Klarvo.log`; plus
+  the two items round 1 added (the D2 warning text on a typo'd ID, no Trial badge on the "Text
+  Cleanup" row). Nothing in this session ran on Windows or in the Tauri runtime.
+- **The "stale advanced snapshot" round trip is still not driven end-to-end** — fixed in code
+  (P1 + REG-3 + R3-4/R3-5), but the browser proxy has no backend. The concrete GATE-4
+  observation that closes it is unchanged: set a DeepSeek model ID in Advanced, change the
+  silence threshold in Settings and save, reopen Advanced — the model ID must still be there.
+- **`LocalLlmCleanup::model()` (P3) and REG-1's Windows branch are still not compiled by any
+  gate that ran** — both are `#[cfg(target_os = "windows")]` / `cfg!(windows)`; the Linux gate
+  compiles the other half only.
+- **No device/emulator Android smoke this round either** — the JVM half was run device-free (see
+  the Debug Log for how the generated tree was brought in sync without the usual copy step).
+
 ### File List
 
 **Rust (desktop)**
@@ -1109,6 +1245,46 @@ round are untouched, and P11/P12 from round 1 stay unticked for the editorial cl
 - `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md`
   — this record; the 5 round-2 finding checkboxes ticked
 
+**FIX ROUND 3 — files touched (2026-09-12), by finding**
+
+*Rust (desktop)*
+- `src-tauri/src/llm/mod.rs` — RES-2: `effective_cleanup_model` now **filters first, then
+  trims** (`filter(..).collect::<String>().trim()`), so neither runtime's whitespace table can
+  leave a neighbouring space behind (+ doc rewritten to state the filter → trim → empty-check
+  order and why each step sits where it does); R3-2: the `PINS:` clause of
+  `spec_twin_constants_cleanup_model_sanitize` states the new predicate incl. `U+0085` and names
+  the edge-adjacent cases that force the order; R3-3: its structural guard widened to
+  `c < '\u{20}' || c == '\u{85}'`
+- `src-tauri/src/commands/settings.rs` — R3-7: the `else`-branch assertion message in the
+  `cleanup_provider_reload_needed` loop no longer claims the slot rationale holds per label; it
+  now says the predicate ORs all four overrides regardless of provider
+
+*Kotlin (Android)*
+- `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt` — RES-2: `effectiveCleanupModel` is
+  `override.filter { … }.trim()` (the twin of the Rust change), + KDoc rewritten the same way
+- `android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt` — R3-2: `PINS:` clause of
+  `cleanupModelSanitizeMatchesFixture` updated to the new predicate; R3-3: guard widened to
+  `it.code < 0x20 || it.code == 0x85`
+
+*Frontend (TS/React)*
+- `src/components/SettingsPanel.tsx` — R3-4: the `advancedSaveSkipped` report moved **outside**
+  `if (!opts?.silent)`, so the API-key-removal path (the one silent caller) can no longer swallow
+  it; R3-5: the 2000 ms auto-dismiss now applies **only** to the plain "Saved" toast — the skip
+  banner stays until the next save replaces it; the flag's declaration comment corrected to say
+  it is reported twice, both times regardless of `silent`
+
+*Fixtures / evidence / tracking*
+- `test-fixtures/twin-constants-vectors.json` — RES-2: **3 edge-adjacent cases** added to
+  `TWIN-CLEANUP-MODEL-SANITIZE-001` (9 → 12 cases; entry count unchanged at 10): leading
+  `U+0085`+space, trailing space+`U+0085`, leading `U+001C`+space; R3-1: the description's two
+  measurably false claims removed ("disagree about it **and nothing else**"; "U+001C..U+001F …
+  **unobservable**") and replaced with the measured, symmetric statement plus the corrected
+  filter→trim order
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-9/01-shortcuts-paste-behavior.png` —
+  re-run artifact (render nondeterminism; the JSON evidence is byte-identical, harness unchanged)
+- `_bmad-output/implementation-artifacts/7-9-desktop-advanced-settings-dead-keys-and-model-ids.md`
+  — this record; the 7 round-3 finding checkboxes ticked (R3-6 left for the close-out pass)
+
 ### Change Log
 
 | Date | Change |
@@ -1128,6 +1304,10 @@ round are untouched, and P11/P12 from round 1 stay unticked for the editorial cl
 | 2026-09-12 | RES-1: Anthropic's model-not-found answer (404, `error.message` = `model: <id>`) now reaches the D2 warning instead of degrading to the generic message — it was the one Desktop-only model ID this story wires. |
 | 2026-09-12 | RES-2: both `effective_cleanup_model` twins now drop `U+0085` (NEL) explicitly, closing the one character Rust's and Kotlin's `trim()` disagree about; pinned by two new cases in `TWIN-CLEANUP-MODEL-SANITIZE-001`, one of them discriminating. |
 | 2026-09-12 | REG-3: when the advanced block cannot be re-read, the Settings save now **skips** the advanced write and reports it, instead of falling back to the stale mount snapshot (which re-enacted the very revert P1 fixed). |
+| 2026-09-12 | Addressed code review findings — fix round 3 (final, human-authorized beyond the fix cap): 7 items resolved (RES-2, R3-1..R3-5, R3-7); R3-6 (record-only) and all deferred rows untouched. |
+| 2026-09-12 | RES-2, properly closed: both `effective_cleanup_model` twins now **filter before trimming**. The previous trim-first order left the *neighbouring* whitespace behind on whichever runtime does not treat the control character as whitespace — Rust and Kotlin disagree in opposite directions (`U+0085` vs `U+001C`..`U+001F`), so one config produced two different `model` fields on the wire. Locked by three edge-adjacent fixture cases that fail each platform on a different row. |
+| 2026-09-12 | Claim accuracy: the sanitize fixture's description no longer claims `U+0085` is the only divergence or that `U+001C`..`U+001F` are unobservable, and both fixture readers' `PINS:` clauses state the predicate their code runs. Both structural guards now reject `U+0085` too. |
+| 2026-09-12 | R3-4/R3-5: a skipped advanced save is reported on the silent save path too (API-key removal), and its danger banner no longer self-dismisses after 2 s like a success toast. |
 
 ### Review Findings
 
@@ -1236,14 +1416,14 @@ of the lines `34a8a59` touched — **not** a fresh adversarial sweep. Anchors ar
 - **RES-2 — NOT resolved.** See the first patch item below. The mechanical change landed on both
   twins, but the divergence RES-2 was raised to close is still open, and the new vectors cannot see it.
 
-- [ ] [Review][Patch] **RES-2 is not closed: the twins still diverge, because the filter runs *after* `trim()`** — measured, not reasoned (real `rustc` + real `kotlin-stdlib` 2.1.20 `trim()`): `" ␅ deepseek"` → Rust `"deepseek"`, Kotlin `" deepseek"`; `"deepseek ␅"` → Rust `"deepseek"`, Kotlin `"deepseek "`; `"␜ deepseek"` (U+001C) → Rust `" deepseek"`, Kotlin `"deepseek"`. Kotlin's `trim()` stops at the NEL/C1 char, the filter then removes only that char and leaves the adjacent space behind; Rust's `trim()` ate the whole run. Two different `model` fields on the wire from one config — the exact defect RES-2 names. Both new fixture cases (`"dee␅pseek"`, `"␅"`) are NEL-in-isolation and blind to it, so the lock stays green. Fix direction: filter first, then trim, then the empty check — on both twins — plus one edge-adjacent vector [src-tauri/src/llm/mod.rs::effective_cleanup_model, android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::effectiveCleanupModel, test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001]
-- [ ] [Review][Patch] The fixture's own description states two claims that are measurably false — "the two `trim()` implementations disagree about it **and nothing else**" and "(U+001C..U+001F diverge in `trim()` the other way, but both filters drop them, so they are **unobservable**.)" Both halves of the parenthetical are wrong: U+001C..U+001F are observable exactly as U+0085 is, via the neighbouring whitespace each runtime does or does not consume. Same claim-accuracy class Task 6 was written to kill [test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001 description]
-- [ ] [Review][Patch] The two tests that actually *read* the sanitize table still document the pre-RES-2 predicate — `PINS: trim, then drop every char < U+0020, then "empty means default"`, with no mention of U+0085. The production docs, the fixture description and `test-fixtures/README.md` were all updated; their readers were not — the same staleness class as REG-2 [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
-- [ ] [Review][Patch] Both sanitize tests' structural guard is narrower than the predicate it sits beside — `!got.chars().any(|c| c < '\u{20}')` / `got.any { it.code < 0x20 }` do not reject U+0085, so a revert of the `!= 0x85` clause is caught only by the two explicit rows, not by the advertised invariant [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
-- [ ] [Review][Patch] REG-3's report is swallowed on the silent save path — `advancedSaveSkipped` is computed and then discarded inside `if (!opts?.silent)`. The one silent caller is the API-key removal (`clearApiKey(...).then(() => saveCurrentSettings({ silent: true }))`), where a rejected re-read now drops the `silenceThreshold`/`pasteDelayMs` edits with no user-visible signal and the comment "reported in the save banner below" does not hold [src/components/SettingsPanel.tsx::saveCurrentSettings]
-- [ ] [Review][Patch] The danger-styled skip notice self-dismisses like a success toast — the same `setTimeout(() => setSaveMsg(null), 2000)` clears both, so a state the user must act on (retry the advanced save) disappears after two seconds [src/components/SettingsPanel.tsx::saveCurrentSettings]
+- [x] [Review][Patch] **RES-2 is not closed: the twins still diverge, because the filter runs *after* `trim()`** — measured, not reasoned (real `rustc` + real `kotlin-stdlib` 2.1.20 `trim()`): `" ␅ deepseek"` → Rust `"deepseek"`, Kotlin `" deepseek"`; `"deepseek ␅"` → Rust `"deepseek"`, Kotlin `"deepseek "`; `"␜ deepseek"` (U+001C) → Rust `" deepseek"`, Kotlin `"deepseek"`. Kotlin's `trim()` stops at the NEL/C1 char, the filter then removes only that char and leaves the adjacent space behind; Rust's `trim()` ate the whole run. Two different `model` fields on the wire from one config — the exact defect RES-2 names. Both new fixture cases (`"dee␅pseek"`, `"␅"`) are NEL-in-isolation and blind to it, so the lock stays green. Fix direction: filter first, then trim, then the empty check — on both twins — plus one edge-adjacent vector [src-tauri/src/llm/mod.rs::effective_cleanup_model, android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::effectiveCleanupModel, test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001]
+- [x] [Review][Patch] The fixture's own description states two claims that are measurably false — "the two `trim()` implementations disagree about it **and nothing else**" and "(U+001C..U+001F diverge in `trim()` the other way, but both filters drop them, so they are **unobservable**.)" Both halves of the parenthetical are wrong: U+001C..U+001F are observable exactly as U+0085 is, via the neighbouring whitespace each runtime does or does not consume. Same claim-accuracy class Task 6 was written to kill [test-fixtures/twin-constants-vectors.json::TWIN-CLEANUP-MODEL-SANITIZE-001 description]
+- [x] [Review][Patch] The two tests that actually *read* the sanitize table still document the pre-RES-2 predicate — `PINS: trim, then drop every char < U+0020, then "empty means default"`, with no mention of U+0085. The production docs, the fixture description and `test-fixtures/README.md` were all updated; their readers were not — the same staleness class as REG-2 [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
+- [x] [Review][Patch] Both sanitize tests' structural guard is narrower than the predicate it sits beside — `!got.chars().any(|c| c < '\u{20}')` / `got.any { it.code < 0x20 }` do not reject U+0085, so a revert of the `!= 0x85` clause is caught only by the two explicit rows, not by the advertised invariant [src-tauri/src/llm/mod.rs::spec_twin_constants_cleanup_model_sanitize, android/kotlin-test/com/klarvo/voice/TwinConstantsVectorsTest.kt::cleanupModelSanitizeMatchesFixture]
+- [x] [Review][Patch] REG-3's report is swallowed on the silent save path — `advancedSaveSkipped` is computed and then discarded inside `if (!opts?.silent)`. The one silent caller is the API-key removal (`clearApiKey(...).then(() => saveCurrentSettings({ silent: true }))`), where a rejected re-read now drops the `silenceThreshold`/`pasteDelayMs` edits with no user-visible signal and the comment "reported in the save banner below" does not hold [src/components/SettingsPanel.tsx::saveCurrentSettings]
+- [x] [Review][Patch] The danger-styled skip notice self-dismisses like a success toast — the same `setTimeout(() => setSaveMsg(null), 2000)` clears both, so a state the user must act on (retry the advanced save) disappears after two seconds [src/components/SettingsPanel.tsx::saveCurrentSettings]
 - [ ] [Review][Patch] Record-only: the round-2 REG-3 row and its deferred sibling anchor at `SettingsPanel.tsx::handleSave`; `handleSave` is a three-line wrapper and the changed code is in `saveCurrentSettings`. The resolution row and the File List use the correct symbol, so the record contradicts itself [this file, "Review Findings — round 2" REG-3 row + the first round-2 deferred row]
-- [ ] [Review][Patch] REG-1's new else-branch assertion message states a rationale true for one of its four labels — "the slot holds DeepSeek and a changed `llm_model_{label}` must still rebuild" runs for deepseek/openai/groq/anthropic, but only `llm_model_deepseek` affects that slot; the other three pass because the predicate ORs all four regardless of provider [src-tauri/src/commands/settings.rs::tests (the `cleanup_provider_reload_needed` loop)]
+- [x] [Review][Patch] REG-1's new else-branch assertion message states a rationale true for one of its four labels — "the slot holds DeepSeek and a changed `llm_model_{label}` must still rebuild" runs for deepseek/openai/groq/anthropic, but only `llm_model_deepseek` affects that slot; the other three pass because the predicate ORs all four regardless of provider [src-tauri/src/commands/settings.rs::tests (the `cleanup_provider_reload_needed` loop)]
 
 - [x] [Review][Defer] `is_model_not_found_error`'s `m.contains("not_found_error")` fires on any 404 — Anthropic uses `not_found_error` as its generic 404 type (unknown file id, unknown batch id, bad path), so a non-model 404 whose body was not parseable into `AnthropicErrorResponse` yields `Model '<id>' not found — check Advanced → Model IDs`, pointing the user at a setting that is fine. Narrow: a parseable body puts the real message in `error.message`, which carries no such needle [src-tauri/src/pipeline.rs::is_model_not_found_error] — deferred, narrow and documented as the raw-body fallback
 - [x] [Review][Defer] The `model:` prefix needle is 404-only, so an Anthropic 400 `invalid_request_error` phrased the same way still degrades to the generic message [src-tauri/src/pipeline.rs::is_model_not_found_error] — deferred, narrow
