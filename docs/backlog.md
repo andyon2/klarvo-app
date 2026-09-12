@@ -185,6 +185,14 @@ changed DeepSeek model ID appears in the request log (`[fe:…]`/Klarvo.log).
   (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
   Re-open only on a real report. Source: `sprint-change-proposal-2026-09-10.md`.
 
+### Story 7-9 GATE-1 leftovers — further persisted-but-unread keys (2026-09-12)
+
+Found while pinning the 7-9 removal set (the record's "14" was a counting slip; 13 named keys are the set).
+Not removed in 7-9 (Andi, GATE 1): `pasteDelayMs` (Shortcuts "Paste Delay" row; `paste/mod.rs` hard-codes 50 ms),
+`logLevel` (Advanced → System select; no reader), `webhookHeaders` / `webhookTimeoutSecs` (no UI, no reader).
+Candidates for a later cleanup or wiring; decide per key, not as a batch. Android auto-send (M13 keys removed in
+7-9) stays a possible future story: the accessibility service still carries `performEnter` (ACTION_IME_ENTER).
+
 ### STORY-CANDIDATE — Dictionary shared across devices (Andi, 2026-09-10)
 
 Today each device holds its own `dictionaryTerms`; two lists are kept in sync by hand. Existing

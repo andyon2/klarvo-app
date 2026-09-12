@@ -358,7 +358,27 @@ and `cleanup fallback succeeded (${fallbackProvider.model})` (info).
   not a settings spec and does not pin `autoPaste` as a real setting. No canon screen pins the Advanced panel's
   field list.
 
-### Open questions (not decided by this file — Andi's call)
+### Open questions — DECIDED at GATE 1 (Andi, 2026-09-12; conductor-recorded)
+
+The questions below stay verbatim for traceability. **Binding answers (apply these; do not re-open):**
+
+- **Q1 → only the 13 named keys.** The "14" was a counting slip. `pasteDelayMs`, `logLevel`, `webhookHeaders`,
+  `webhookTimeoutSecs` stay untouched; they are recorded as candidates in `docs/backlog.md`.
+- **Q2 → copy:** STT home row "Custom prompts" · Text Cleanup home row "Model IDs" · subsection title "Model IDs" ·
+  expert-mode hint "Reveals raw audio thresholds". No other wording changes.
+- **Q3 → layout:** the "Model & Parameters" accordion goes; the four model-ID inputs sit flat under the "Model IDs"
+  title. The Expert Mode toggle stays and gates only the Audio thresholds.
+- **Q4 → Paste & Behavior (Desktop):** the dead "Auto-Paste" toggle goes. "Auto-Send" stays an on/off toggle
+  (default off, `insertAndSendSlot1`) and "Paste Delay" stays; neither is dimmed or disabled any more. Section
+  heading "Paste & Behavior" stays. **Android:** the two `bubble*AutoSend` keys are removed as decided (M13);
+  Android stays without auto-send; revival is a future story candidate, not this one.
+- **Q5 → whitespace-only is empty:** trim, then empty → default. Same predicate on both platforms, pinned by a vector.
+- **Q6 → confirmed:** `llmModelAnthropic` is Desktop-only (H5, ADR-0016 Amendment 1). The epic's "both platforms"
+  means the three providers Android has.
+- **Q7 → confirmed in scope:** the Rust cleanup path logs the model ID it sends, so GATE-4 can observe it.
+- **Q8 → confirmed:** OpenRouter stays hard-coded.
+
+Original questions as raised by create-story:
 
 - **Q1 — 13 named vs "14" counted.** The tree has more persisted-but-unread `AdvancedSettings` keys the decision
   did not name: `pasteDelayMs` (Shortcuts "Paste Delay" row; `paste/mod.rs` hard-codes a 50 ms sleep),
