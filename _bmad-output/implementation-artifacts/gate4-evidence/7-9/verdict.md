@@ -60,3 +60,8 @@ The backend behaves as D2 specified: non-retryable 400 → degrade → **raw tex
 **Andi's re-check of point 3 (build `06603d2`, About shows the hash now):**
 1. Set the DeepSeek model ID to a wrong value, dictate once → raw text pasted, pill stays **amber for ~4 s** with `Model '<id>' not found — check Advanced → Model IDs`.
 2. Clear the field, save, dictate again **without restarting** → cleaned text, no warning.
+
+## Andi's re-check of point 3 — 2026-09-13, build `06603d2`
+
+✅ passt: the warning stays visible long enough to read, then dismisses. Story 7-9 → **done**, epic-7 → **done** (7-6 stays parked on M12).
+Open, separately: the overall behaviour on a cleanup failure (paste raw vs. hold) — Andi's idea in `docs/backlog.md` "IDEA", discussion 2026-09-13.
