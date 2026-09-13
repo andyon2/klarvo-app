@@ -208,21 +208,37 @@ the stored `raw_text` suffices, no audio needed. Reduction: reuses 12-2's pendin
 and the `raw_text` column. New: a second pending kind "not cleaned", a re-process path without audio, the
 icon + counter (design question for the canon — Phase A with Andi). Both platforms.
 
-### IDEA (unbewertet von Andi) — Cleanup-Fehler: kein Auto-Paste, stattdessen Button(s) in der Pill (Andi, 2026-09-12, aus 7-9 GATE-4)
+### DECIDED 2026-09-13 — Cleanup-Fehler: Rohtext NUR in die Zwischenablage, kein Einfügen, kein Auto-Send (Andi) → STORY-CANDIDATE
 
-Andis Idee: Scheitert das Cleanup, wird der Rohtext weder eingefügt noch in die Zwischenablage gelegt. Die Pill
-zeigt einen Button „Rohtext übernehmen" (→ Zwischenablage), optional einen zweiten „Einfügen". Auslöser: Andi
-hielt den still eingefügten Rohtext für ein gelungenes Cleanup (die Warnung war unlesbar, Finding 3a).
+**Ausgangspunkt (Andi, 2026-09-12, aus 7-9 GATE-4):** Andi hielt den still eingefügten Rohtext für ein gelungenes
+Cleanup (Warnung war unlesbar, Finding 3a — behoben `06603d2`). Seine Idee: nichts einfügen, Buttons in der Pill
+(„Übernehmen" → Zwischenablage, „Einfügen"). Bewertung Claude: Buttons = neue Maus-UI im nativen Win32-Overlay +
+Android-Zwilling für einen seltenen Pfad; bricht Press-to-Paste. Übersehen in der ersten Bewertung: **Auto-Send**
+schickt bei Cleanup-Fehler den Rohtext samt Füllwörtern sofort ab — echter Schaden, nicht nur Verwirrung.
 
-Bewertung (Claude, 2026-09-12): NICHT jetzt bauen. (1) Der Auslöser ist mit 3a behoben — die Warnung steht
-jetzt 4 s; erst prüfen, ob die Verwechslung damit weg ist. (2) Der native Pill ist ein ~200 px Win32-Overlay
-ohne Buttons; Hit-Testing, Hover, Fokus-Vermeidung und der Android-Bubble-Zwilling (FR5 beider Plattformen)
-sind echte Konstruktion für einen seltenen Pfad (Tippfehler in der Model-ID, Provider-Ausfall). (3) Es bricht
-den Kern „Press-to-Paste": der Fehlerpfad würde Maus-Interaktion erzwingen, obwohl der Rohtext meist zu ~90 %
-brauchbar ist; Epic 12 hat „Rohtext einfügen + Signal, nie stiller Verlust" bewusst so entschieden. (4) Das
-Bedürfnis „Rohtext später gezielt holen" deckt die Failed-Entries-Inbox oben (raw_text liegt in der History).
-Kleinste Reduktion, falls Andi Kontrolle trotzdem will: EINE Einstellung „Bei Cleanup-Fehler: Rohtext einfügen
-(Default) / nur in die Zwischenablage" — nutzt den vorhandenen DoneClipboard-Zustand, null neue UI in der Pill.
+**Entscheidung (Andi, 2026-09-13), Option C = Reduktion der Button-Idee, neuer DEFAULT ohne Einstellung:**
+- Scheitert das Cleanup (Degrade-Pfad, `llm_error == true`), geht der Rohtext **nur in die Zwischenablage**.
+  Kein Ctrl+V/Accessibility-Paste, **kein Auto-Send** (Enter).
+- Die Pill/Bubble sagt: „Cleanup fehlgeschlagen — Rohtext in der Zwischenablage, Strg+V zum Einfügen" und nennt bei
+  Model-not-found weiter die Model-ID (D2 aus 7-9 bleibt).
+- Strg+V ist der „Einfügen"-Button, die Zwischenablage das „Übernehmen". Null neue UI. Überschreiben der
+  Zwischenablage ist akzeptiert (Andi).
+- Epic-12-Prinzip bleibt: nie stiller Verlust — History-Eintrag wie heute (raw_text), Failed-Entries-Inbox (Kandidat
+  oben) holt ihn später.
+
+**Reduktion auf vorhandene Primitive (Story-Rahmen, beide Plattformen):**
+- Desktop: `pipeline.rs` — `ProcessOutcome::Produced { llm_error }` ist da; der Paste-Schritt bekommt einen
+  Clipboard-only-Zweig für `llm_error` (heute nur bei fehlendem Fokus, `PasteResult::ClipboardOnly`), `send_enter`
+  ist an `Pasted` gebunden und entfällt damit automatisch.
+- Android: `KlarvoOverlayService` Step 4 (`copyToClipboard` + `pasteIntoFocusedField`) — Paste + Auto-Send bei
+  llm-Fehler überspringen; Toast-Text analog.
+- **Design-Constraint für die Story (aus 3a):** nach der Warnung darf KEIN separates Done/DoneClipboard die Warnung
+  überschreiben (DoneClipboard überschreibt die Warnung heute bewusst). Entweder EIN Ereignis, das Warntext + „in der
+  Zwischenablage" trägt, oder DoneClipboard trägt den Warntext. Sonst verliert der Nutzer die Model-ID wieder.
+- Tests: Degrade-Test `test_process_audio_nonretryable_degrades_to_raw` + Paste-Ebene (llm_error → ClipboardOnly,
+  kein Enter); Kotlin-Zwilling. GATE-4: Andi, falsche Model-ID + Auto-Send an → nichts landet, Strg+V liefert Rohtext.
+
+Cut nur auf Andis Go (Epic 7 ist done → vor `bmad-create-story` auf in-progress, oder eigene Heimat wählen).
 
 ### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
 
