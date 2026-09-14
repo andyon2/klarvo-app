@@ -77,6 +77,26 @@ pub trait PasteHandler: Send + Sync {
     /// tracking needed).
     fn paste(&self, text: &str) -> Result<PasteResult, PasteError>;
 
+    /// Copy `text` to the clipboard **without** simulating Ctrl+V.
+    ///
+    /// Story 7-10 (AC1): when LLM cleanup failed and the pipeline degraded to
+    /// the raw transcript, the text must never be inserted into the active
+    /// window and never auto-sent. Returning [`PasteResult::ClipboardOnly`]
+    /// makes the existing Insert+Send gate (`paste_result == Pasted`) skip the
+    /// Return key without a second switch.
+    ///
+    /// The default implementation covers every backend: the clipboard write is
+    /// the one primitive all desktop handlers already share ([`set_clipboard`]),
+    /// so no handler needs its own copy of it.
+    fn copy_only(&self, text: &str) -> Result<PasteResult, PasteError> {
+        if text.is_empty() {
+            return Err(PasteError::EmptyText);
+        }
+        set_clipboard(text)?;
+        log::info!("[paste] clipboard-only ({} chars), Ctrl+V deliberately not sent", text.len());
+        Ok(PasteResult::ClipboardOnly)
+    }
+
     /// Simulate a Return/Enter key press in the focused window.
     ///
     /// Used by the Insert+Send feature to submit chat messages after pasting.
@@ -85,6 +105,33 @@ pub trait PasteHandler: Send + Sync {
     fn send_enter(&self) -> Result<(), PasteError> {
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard primitive (shared by every handler)
+// ---------------------------------------------------------------------------
+
+/// Writes `text` to the system clipboard using `arboard`.
+///
+/// The single clipboard writer for all desktop backends — Linux, Windows and
+/// the fallback handler all route through here, so there is exactly one error
+/// mapping and one place to change.
+#[cfg(not(target_os = "android"))]
+fn set_clipboard(text: &str) -> Result<(), PasteError> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| PasteError::Clipboard(e.to_string()))?;
+    clipboard
+        .set_text(text)
+        .map_err(|e| PasteError::Clipboard(e.to_string()))
+}
+
+/// Android has no `arboard` (the crate is desktop-gated in `Cargo.toml`); the
+/// clipboard there belongs to the Kotlin layer's `ClipboardManager`, which the
+/// overlay service drives directly. Kept as a no-op so [`PasteHandler`]'s
+/// default `copy_only` compiles for the Android target.
+#[cfg(target_os = "android")]
+fn set_clipboard(_text: &str) -> Result<(), PasteError> {
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -121,15 +168,6 @@ mod linux {
             log::info!("[paste] Linux: Ctrl+V sent ({} chars)", text.len());
             Ok(PasteResult::Pasted)
         }
-    }
-
-    /// Writes `text` to the system clipboard using `arboard`.
-    fn set_clipboard(text: &str) -> Result<(), PasteError> {
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|e| PasteError::Clipboard(e.to_string()))?;
-        clipboard
-            .set_text(text)
-            .map_err(|e| PasteError::Clipboard(e.to_string()))
     }
 
     /// Simulates Ctrl+V via `xdotool`.
@@ -214,11 +252,7 @@ mod windows {
 
             // Step 1: Write to clipboard ALWAYS -- even if paste fails,
             // the user can retrieve the text manually.
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|e| PasteError::Clipboard(e.to_string()))?;
-            clipboard
-                .set_text(text)
-                .map_err(|e| PasteError::Clipboard(e.to_string()))?;
+            set_clipboard(text)?;
 
             // Step 2: No target window? Clipboard-only.
             let hwnd_raw = match self.prev_hwnd {
@@ -478,11 +512,7 @@ impl PasteHandler for FallbackPasteHandler {
             return Err(PasteError::EmptyText);
         }
 
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|e| PasteError::Clipboard(e.to_string()))?;
-        clipboard
-            .set_text(text)
-            .map_err(|e| PasteError::Clipboard(e.to_string()))?;
+        set_clipboard(text)?;
 
         log::warn!(
             "[paste] Key simulation not implemented for this platform. \

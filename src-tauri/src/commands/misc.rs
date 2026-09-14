@@ -259,7 +259,9 @@ pub async fn ensure_bar_window(
 ///
 /// Returns `true` if the native preview overlay is alive, `false` if not.
 /// Story 10-2: NativePreview replaces the WebView2 "preview" window.
-/// The preview is recreated per-recording-start in pipeline.rs, so this
+/// The preview is created at setup (`lib::run`) and recreated at every
+/// recording start (pipeline.rs) — since Story 7-10 AC8 unconditionally, because
+/// the same card carries every pipeline message, not just the live preview. This
 /// command is informational only (no recreation side-effect needed here).
 ///
 /// Desktop-only: native preview is Windows-only.

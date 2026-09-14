@@ -340,6 +340,46 @@ model ID appears in the request log (`[fe:…]` / Klarvo.log).
 
 ---
 
+## Story 7.10: Cleanup failure → raw text clipboard-only, no paste, no auto-send *(new 2026-09-14)*
+
+**Source:** `docs/backlog.md` "DECIDED 2026-09-13 — Cleanup-Fehler: Rohtext NUR in die Zwischenablage" (Andi,
+from the 7.9 GATE-4 finding 3a). **Rows:** degrade path (Epic 12 principle "never silent loss").
+
+As a dictating user whose cleanup call failed (wrong model ID, provider down, key missing),
+I want the raw transcript to land only in the clipboard — not pasted into the active window and never
+auto-sent —
+So that filler-laden raw text is never inserted or submitted behind my back, while Ctrl+V still gives me
+the text in one keystroke.
+
+**Acceptance Criteria (outcomes — full Given/When/Then in create-story):**
+- **Desktop clipboard-only branch on `llm_error`:** in `src-tauri/src/pipeline.rs`, when
+  `ProcessOutcome::Produced { llm_error: true }` reaches the paste step, the text is copied to the clipboard
+  only (`PasteResult::ClipboardOnly`, today reached only on missing focus). No Ctrl+V. Because `send_enter`
+  is bound to `PasteResult::Pasted`, auto-send (Insert+Send) is skipped without a second switch.
+- **Android twin:** `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` Step 4 — on an LLM
+  failure the service calls `copyToClipboard` only; `pasteIntoFocusedField` and the auto-send path are
+  skipped. Toast/bubble wording mirrors the desktop pill.
+- **The warning survives the done event (design constraint from 7-9 finding 3a):** after the degrade
+  warning, no separate Done/DoneClipboard event may overwrite it. Either ONE event carries warning text +
+  "in the clipboard", or DoneClipboard carries the warning text. Wording: "Cleanup failed — raw text in the
+  clipboard, Ctrl+V to paste"; a model-not-found failure keeps naming the model ID (7-9 D2 stays).
+- **No new setting, no new UI:** this is the new default. Overwriting the clipboard is accepted (Andi).
+- **History unchanged:** the entry is written as today with `raw_text` (Epic 12: never silent loss; the
+  failed-entries inbox is a separate backlog candidate).
+- **Tests:** desktop — the degrade test `test_process_audio_nonretryable_degrades_to_raw` plus a
+  paste-level test (`llm_error` → `ClipboardOnly`, no Enter); Kotlin twin test for Step 4.
+  **Inversion check (mandatory, at writing time):** re-enable the paste on `llm_error` and show the test RED.
+
+**Out of scope:** the failed-entries inbox (backlog candidate), pill buttons (assessed + parked in 7-9),
+any change to STT, VAD, JNI, the fallback ladder or the config schema.
+
+**DoD:** `cargo test --lib` (`src-tauri/`) + JVM gate (`scripts/android-smoke.sh`) green with the inversion
+evidence recorded; **Andi's GATE-4:** Windows release build, wrong DeepSeek model ID + Insert+Send on →
+nothing lands in the active window, no Enter is sent, the pill shows the warning with the model ID, Ctrl+V
+pastes the raw text.
+
+---
+
 ## Out of scope (→ `docs/backlog.md`)
 
 Pure feature-ports / accepted asymmetries (ADR-0016 Amendment 1): C2, H4, H5, H8, H11, H12+M7, H15, H16, M5,

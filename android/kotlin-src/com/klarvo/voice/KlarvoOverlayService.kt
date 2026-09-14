@@ -149,6 +149,78 @@ class KlarvoOverlayService : Service() {
          */
         fun resolveMinRecordingMsForSilenceFilter(config: KlarvoApi.Config?): Long =
             config?.minRecordingMs ?: 500L
+
+        /**
+         * The message shown when cleanup failed and the raw transcript was left
+         * in the clipboard (Story 7-10, Q2/Q5).
+         *
+         * Mirrors the desktop pill's generic degrade wording
+         * (`pipeline::degrade_warn_msg`) MINUS its trailing "(Ctrl+V)" key hint:
+         * GATE 2 (Andi, 2026-09-14) dropped the hint on Android because there is
+         * no Ctrl+V on a phone. The cause-first half is identical on both
+         * platforms, and the model-not-found form
+         * (`Model '<id>' not found — in clipboard`) carries no key hint on either
+         * platform, so it stays identical to the pill.
+         *
+         * Kept as a named constant so the parity with
+         * `pipeline::degrade_warn_msg` is greppable from both sides.
+         *
+         * Recorded divergence (7-10 re-review, Andi 2026-09-14): the desktop's
+         * second literal `pipeline::terminal_degrade_msg` ("Cleanup failed —
+         * clipboard write failed", shown when the clipboard write itself fails
+         * on the degrade path) has NO Kotlin twin. `copyToClipboard` has no
+         * try/catch yet (deferred-work.md), so Android cannot observe that
+         * failure; the twin follows once it can. Registered in docs/backlog.md.
+         */
+        const val CLEANUP_FAILED_CLIPBOARD_MSG =
+            "Cleanup failed — raw text in clipboard"
+
+        /**
+         * What Step 4 of [processAudio] does with the finished text.
+         *
+         * @param paste            call `pasteIntoFocusedField()`.
+         * @param showCopiedToast  show the short "Copied: …" toast.
+         */
+        data class DeliveryDecision(val paste: Boolean, val showCopiedToast: Boolean)
+
+        /**
+         * Decides the Step-4 delivery (Story 7-10, AC2) — the Kotlin twin of the
+         * desktop `pipeline::deliver_text` branch.
+         *
+         * When cleanup failed, the raw transcript goes to the clipboard ONLY: it
+         * is never inserted into the focused field, so filler-laden text cannot
+         * appear (or, on a desktop-style auto-send, be submitted) behind the
+         * user's back. Q5: the "Copied: …" toast is suppressed on that path so
+         * the single combined degrade toast is the newest one — on HyperOS the
+         * newest toast wins.
+         *
+         * `llmCleanupFailed` is an EXPLICIT flag, not `degradeStatusMsg != null`:
+         * that message is also set when the fallback provider *succeeded*
+         * ("⚠ Cleanup-Anbieter gewechselt"), which is not a failure.
+         *
+         * Q4 (desktop parity): only true cleanup failures reach here. "No LLM key
+         * configured" keeps today's paste, and a silent local-MNN failure is out
+         * of scope (backlog).
+         *
+         * Extracted as a pure function because Step 4 itself needs a live
+         * Service, a ClipboardManager and an AccessibilityService — the repo's
+         * established seam pattern ([BankingGuard.shouldBlockPaste],
+         * [sanitizePreviewChunk]). **The full integration path — real clipboard
+         * write, real accessibility paste — is covered by the on-device smoke,
+         * not by this function's unit test.**
+         */
+        fun decideDelivery(
+            llmCleanupFailed: Boolean,
+            accessibilityConnected: Boolean
+        ): DeliveryDecision = when {
+            llmCleanupFailed -> DeliveryDecision(paste = false, showCopiedToast = false)
+            else -> DeliveryDecision(
+                paste = accessibilityConnected,
+                // Pre-7-10 behaviour: a successful paste is silent; only the
+                // clipboard-fallback case is surfaced.
+                showCopiedToast = !accessibilityConnected
+            )
+        }
     }
 
     // Cached config -- populated by loadBubbleControls(), reused in processAudio().
@@ -308,7 +380,9 @@ class KlarvoOverlayService : Service() {
 
     /**
      * Tracks which gesture started the current recording session.
-     * Used to select the correct silenceSecs / autoSend values when stopping.
+     * Used to select the correct per-gesture mode / silenceSecs when stopping.
+     * (The auto-send flags this KDoc used to name were removed in story 7-9,
+     * row M13 — Android has no auto-send path.)
      * "tap" or "longpress"; null when not recording.
      */
     private var activeGesture: String? = null
@@ -1920,6 +1994,13 @@ class KlarvoOverlayService : Service() {
         // the paste reads the clipboard (Android shows only one toast at a time). Deferring the
         // message and showing it AFTER the paste makes it the newest toast, so it wins.
         var degradeStatusMsg: String? = null
+        // Story 7-10 (AC2): an EXPLICIT cleanup-failure flag. `degradeStatusMsg`
+        // cannot serve as the predicate — it is also set when the fallback
+        // provider SUCCEEDED ("⚠ Cleanup-Anbieter gewechselt"), and `finalText`
+        // looks identical whether cleanup worked or degraded. Set only on the
+        // true failure branches in Step 2; consumed by Step 4 via
+        // [decideDelivery].
+        var llmCleanupFailed = false
 
         try {
             // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
@@ -2161,12 +2242,16 @@ class KlarvoOverlayService : Service() {
                                 result
                             } catch (fallbackEx: Exception) {
                                 KlarvoLogger.w(TAG, "Cleanup fallback also failed -- using raw transcript", fallbackEx)
-                                degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
+                                // Story 7-10: primary AND fallback failed -> a true
+                                // cleanup failure. Raw text goes to the clipboard only.
+                                llmCleanupFailed = true
+                                degradeStatusMsg = CLEANUP_FAILED_CLIPBOARD_MSG
                                 KlarvoApi.sanitizeLlmOutput(transcript)
                             }
                         } else {
                             KlarvoLogger.w(TAG, "No cleanup fallback provider available -- using raw transcript")
-                            degradeStatusMsg = "⚠ Cleanup nicht verfügbar → Rohtext eingefügt"
+                            llmCleanupFailed = true
+                            degradeStatusMsg = CLEANUP_FAILED_CLIPBOARD_MSG
                             KlarvoApi.sanitizeLlmOutput(transcript)
                         }
                     }
@@ -2219,6 +2304,7 @@ class KlarvoOverlayService : Service() {
             val capturedTranscript  = transcript
             val capturedFinalText   = finalText
             val capturedDegradeMsg  = degradeStatusMsg
+            val capturedLlmFailed   = llmCleanupFailed
             handler.post {
                 // DIV-04 fix: abort paste if a banking/security app is focused at paste time.
                 // The pipeline may have started before the app-switch; this guard ensures
@@ -2235,20 +2321,36 @@ class KlarvoOverlayService : Service() {
 
                 copyToClipboard(finalText)
 
-                val pasted = KlarvoAccessibilityService.instance != null
-                KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
+                // Story 7-10 (AC2): on a cleanup failure the text stops at the
+                // clipboard — no accessibility paste. The decision is a pure
+                // function so it can be unit-tested off-device (S3).
+                //
+                // NOTE: `accessibilityConnected` is NOT a paste *result*.
+                // `pasteIntoFocusedField()` returns Unit and silently no-ops when
+                // there is no focused editable node — a pre-existing defect
+                // (7-10 Dev Notes), deliberately not deepened here.
+                val accessibilityConnected = KlarvoAccessibilityService.instance != null
+                val decision = decideDelivery(capturedLlmFailed, accessibilityConnected)
+                if (decision.paste) {
+                    KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
+                }
 
                 val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
                 // Successful paste is silent (the text simply appears) so it can't
                 // override a same-cycle status/fallback toast (story 12-1). The
                 // clipboard-fallback case IS surfaced: it's real info that the paste
                 // did not land and the text is on the clipboard instead.
-                if (!pasted) showToast("Copied: $preview")
+                if (decision.showCopiedToast) showToast("Copied: $preview")
 
                 // Story 12-1 GATE-4 follow-up: show the deferred status/fallback toast now,
                 // AFTER the paste, so it postdates (and thus wins over) HyperOS's own
                 // "pasted from your clipboard" system toast. LENGTH_LONG so it dwells long
                 // enough to actually be read.
+                //
+                // Story 7-10 (Q5): on the clipboard-only path this is the ONE
+                // toast — "Copied: …" is suppressed above, so this LENGTH_LONG
+                // degrade message is the newest and wins over HyperOS's own
+                // "pasted from your clipboard" system toast.
                 if (capturedDegradeMsg != null) {
                     Toast.makeText(this@KlarvoOverlayService, capturedDegradeMsg, Toast.LENGTH_LONG).show()
                 }

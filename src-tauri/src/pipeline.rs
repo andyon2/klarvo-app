@@ -16,8 +16,10 @@ use crate::config::{self, AppConfig, HotkeyMode};
 use crate::history;
 use crate::hotkey::PipelineEvent;
 use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
+use crate::overlay_message::DegradeCause;
 use crate::paste::{
-    capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteResult,
+    capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteHandler,
+    PasteResult,
 };
 use crate::stt::{self, is_hallucination, strip_stockphrase_ghosts, SttProvider};
 use crate::sync;
@@ -773,33 +775,35 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
 
         // Native preview: recreate alongside the pill (same standby-resilience pattern,
-        // Story 10-2). Only instantiate when live_preview_enabled; if disabled we hold
-        // None and all set_state/append_chunk calls are no-ops.
-        let (preview_enabled, px, py) = state
+        // Story 10-2).
+        //
+        // Story 7-10 AC8: created for EVERY recording, not only when
+        // `live_preview_enabled`. The same card is now the surface for every
+        // pipeline message, and a cleanup failure must be readable whether or
+        // not the user ever turned live preview on. The setting still gates the
+        // live text — `WM_PREVIEW_SET_STATE` only arms on Recording when it is
+        // on, so with it off the window stays hidden until a message arrives.
+        let (px, py) = state
             .config
             .lock()
             .ok()
-            .map(|c| (c.live_preview_enabled, c.bar_x, c.bar_y))
-            .unwrap_or((false, None, None));
-        if preview_enabled {
-            let pcfg = state
-                .config
-                .lock()
-                .ok()
-                .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
-                .unwrap_or_default();
-            match crate::native_preview::NativePreview::create(px, py, pcfg) {
-                Ok(preview) => {
-                    if let Ok(mut g) = state.native_preview.lock() {
-                        *g = Some(preview);
-                    }
+            .map(|c| (c.bar_x, c.bar_y))
+            .unwrap_or((None, None));
+        let pcfg = state
+            .config
+            .lock()
+            .ok()
+            .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
+            .unwrap_or_default();
+        match crate::native_preview::NativePreview::create(px, py, pcfg) {
+            Ok(preview) => {
+                if let Ok(mut g) = state.native_preview.lock() {
+                    *g = Some(preview); // old preview (if any) dropped here
                 }
-                Err(e) => log::error!(
-                    "[native_preview] recreate at recording start failed: {e}"
-                ),
             }
-        } else if let Ok(mut g) = state.native_preview.lock() {
-            *g = None; // drop any previous preview window
+            Err(e) => log::error!(
+                "[native_preview] recreate at recording start failed: {e}"
+            ),
         }
     }
 
@@ -1152,6 +1156,26 @@ pub enum ProcessOutcome {
         prompt_tokens: Option<u32>,
         completion_tokens: Option<u32>,
         llm_error: bool,
+        /// Why cleanup degraded, in the structured shape both surfaces need
+        /// (Story 7-10, Q1/Q2 and AC8): [`DegradeCause::status_line`] for the
+        /// main window, [`DegradeCause::card`] for the native overlay card.
+        ///
+        /// **Invariant: `degrade_cause.is_some() == llm_error`** — each of the
+        /// three degrade sites sets both, nothing else sets either.
+        ///
+        /// `spec_degrade_msg_present_exactly_when_llm_error` pins **two** of the
+        /// three: non-retryable, and retryable-with-no-fallback. The third
+        /// (retryable, fallback tried and also failed) is not reachable from a
+        /// test — `resolve_fallback_provider` builds a real HTTP provider from
+        /// the config's API keys, so there is no seam to make a fallback fail on
+        /// purpose. It is held by code review and by reading the three sites
+        /// side by side, not by a machine.
+        ///
+        /// Carried out of the core instead of being emitted as a `Warning`
+        /// event: the shell puts it on the single terminal `DoneClipboard`
+        /// event, so the follow-up terminal event cannot erase the cause
+        /// (7-9 GATE-4 finding 3a).
+        degrade_cause: Option<DegradeCause>,
     },
 }
 
@@ -1209,35 +1233,46 @@ fn is_model_not_found_error(err: &llm::LlmError) -> bool {
     }
 }
 
-/// Builds the user-facing warning for a degraded cleanup, naming the model ID
-/// when the provider rejected it (decision D2).
+/// Classifies a degraded cleanup, naming the model ID when the provider
+/// rejected it (decision D2).
 ///
 /// A model-not-found answer is the one degrade cause the user can fix in one
-/// place, so the warning points there instead of echoing the provider's raw
-/// 400. Every other error keeps [`degrade_warn_msg`] verbatim.
+/// place, so the message points there instead of echoing the provider's raw
+/// 400. Every other error becomes a [`generic_degrade_cause`].
 ///
 /// `model` is the resolved ID the failing provider actually sent
 /// (`CleanupProvider::model()`), not the raw config value — so the message shows
 /// what went on the wire after `llm::effective_cleanup_model` sanitised it.
-fn degrade_warn_msg_for_model(err: &llm::LlmError, model: &str) -> String {
+///
+/// Story 7-10 (Q2): the model ID stays at the **front** so it survives the
+/// pill's tail truncation, and D2's "check Advanced → Model IDs" pointer is
+/// replaced by the clipboard hint — on this path the text was not inserted, and
+/// telling the user where it *is* outranks telling them where to fix it.
+///
+/// **AC8 (GATE-4 round 1)** moved the message off the pill and onto the preview
+/// card, where nothing is truncated and the pointer fits again. The classifying
+/// decision made here did not change — only its *carrier* did: this function
+/// returns the [`DegradeCause`] itself, and both user-facing wordings are
+/// derived from it downstream (`DegradeCause::status_line` for the main window,
+/// `DegradeCause::card` for the overlay). The one-line projection that used to
+/// live here is now `tests::degrade_warn_msg_for_model`, kept only because a
+/// dozen specs pin the exact user-facing string.
+fn degrade_cause_for_model(err: &llm::LlmError, model: &str) -> DegradeCause {
     if is_model_not_found_error(err) && !model.is_empty() {
-        return format!("Model '{model}' not found — check Advanced → Model IDs");
+        return DegradeCause::ModelNotFound { model: model.to_string() };
     }
-    degrade_warn_msg(err)
+    generic_degrade_cause(err)
 }
 
-/// Builds the user-facing warning shown when LLM cleanup fails and the raw
-/// transcript is pasted instead.
-fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
-    let short_reason = friendly_error("", &err.to_string());
-    format!(
-        "Cleanup failed — raw text inserted.{}",
-        if short_reason.is_empty() {
-            String::new()
-        } else {
-            format!(" {short_reason}")
-        }
-    )
+/// The non-model degrade cause: `friendly_error`'s short reason, carried raw so
+/// the card can drop its `": "` prefix and the status line can keep it.
+///
+/// Q2's shape is unchanged and now lives in [`DegradeCause::status_line`]: the
+/// fixed cause-and-location part first, the provider's short reason as a tail.
+/// Since AC8 the pill no longer renders that string at all — the main window
+/// does, unchanged.
+fn generic_degrade_cause(err: &dyn std::fmt::Display) -> DegradeCause {
+    DegradeCause::Generic { reason: friendly_error("", &err.to_string()) }
 }
 
 /// Transcribe → strip → hallucination guards → LLM cleanup/command/offline →
@@ -1383,6 +1418,10 @@ pub async fn process_audio(
 
     let mut llm_ms: Option<u64> = None;
     let mut llm_error = false;
+    // Story 7-10 (Q1): the degrade cause travels out with the outcome instead of
+    // being emitted as its own `Warning` event. The shell puts it on the single
+    // terminal `DoneClipboard` event, so nothing can overwrite it afterwards.
+    let mut degrade_cause: Option<DegradeCause> = None;
     let cleanup_result = if matches!(llm_path, LlmPath::OfflineRaw) {
         // Offline dictation: return raw transcript without any LLM call.
         log::info!("[pipeline] Offline mode: skipping LLM cleanup");
@@ -1480,10 +1519,10 @@ pub async fn process_audio(
                             llm_error = true;
                             // D2: the fallback provider is the one that just
                             // failed, so its model is the one to name.
-                            emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                            degrade_cause = Some(degrade_cause_for_model(
                                 fallback_err,
                                 fallback_provider.model(),
-                            )));
+                            ));
                             llm::CleanupResult {
                                 text: raw_text.clone(),
                                 prompt_tokens: None,
@@ -1496,10 +1535,10 @@ pub async fn process_audio(
                         "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
                     );
                     llm_error = true;
-                    emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                    degrade_cause = Some(degrade_cause_for_model(
                         primary_err,
                         cleanup_provider.model(),
-                    )));
+                    ));
                     llm::CleanupResult {
                         text: raw_text.clone(),
                         prompt_tokens: None,
@@ -1514,10 +1553,10 @@ pub async fn process_audio(
                 // emitted here rather than after a ladder attempt.
                 log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
                 llm_error = true;
-                emit(PipelineEvent::warn(degrade_warn_msg_for_model(
+                degrade_cause = Some(degrade_cause_for_model(
                     e,
                     cleanup_provider.model(),
-                )));
+                ));
                 llm::CleanupResult {
                     text: raw_text.clone(),
                     prompt_tokens: None,
@@ -1544,6 +1583,7 @@ pub async fn process_audio(
         prompt_tokens: cleanup_result.prompt_tokens,
         completion_tokens: cleanup_result.completion_tokens,
         llm_error,
+        degrade_cause,
     }
 }
 
@@ -1840,8 +1880,17 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // when the core reached the command point (Produced / CommandFailed),
     // matching the original guard-before-reset ordering. Progress/terminal
     // events were already emitted by process_audio. ---
-    let Some((cleaned_text, raw_text, is_command, stt_ms, llm_ms, prompt_tokens, completion_tokens)) =
-        deliver_outcome(outcome, &state, is_command_mode, &language)
+    let Some((
+        cleaned_text,
+        raw_text,
+        is_command,
+        stt_ms,
+        llm_ms,
+        prompt_tokens,
+        completion_tokens,
+        llm_error,
+        degrade_cause,
+    )) = deliver_outcome(outcome, &state, is_command_mode, &language)
     else {
         return;
     };
@@ -1893,44 +1942,29 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let current_hwnd_before_paste = crate::paste::capture_foreground_window();
     let prev_hwnd = state.prev_foreground_hwnd.lock().ok().and_then(|g| *g);
     let paste_handler = create_paste_handler(prev_hwnd);
-    let paste_result = match paste_handler.paste(&cleaned_text) {
-        Ok(result) => result,
-        Err(e) => {
-            log::warn!("[pipeline] paste failed: {e}. Text is still available.");
-            if let Ok(mut m) = state.feedback_metrics.lock() {
-                m.paste_error_count = m.paste_error_count.saturating_add(1);
-            }
-            // A hard error (e.g. clipboard unavailable) is treated as
-            // clipboard-only -- the user gets an indication but the pipeline
-            // continues so the done event is still emitted.
-            PasteResult::ClipboardOnly
-        }
-    };
 
-    // --- Insert+Send + Return-to-Current ---
-    //
-    // insert_and_send is now a per-slot flag stored in AppState by the hotkey
-    // handler when recording starts. Reading it here (after the paste) is safe
-    // because the hotkey handler cannot fire again while we are still in the
-    // pipeline (the recorder is marked as recording until stop_recording_with_gain
-    // returns above, and a second hotkey press would be a no-op or a race).
-    //
-    // Only sent when Ctrl+V actually landed in the right window.
-    // Sending Enter into the wrong window (e.g. after a failed focus-restore)
-    // would be worse than not sending it at all.
-    //
-    // The 150ms sleep gives the target app time to process the Paste before
-    // Enter arrives. Terminals (ConPTY) need more time than simple editors.
-    // This is opt-in and defaults to false per slot.
+    // insert_and_send is a per-slot flag stored in AppState by the hotkey
+    // handler when recording starts. Reading it here is safe because the hotkey
+    // handler cannot fire again while we are still in the pipeline (the recorder
+    // is marked as recording until stop_recording_with_gain returns above, and a
+    // second hotkey press would be a no-op or a race).
     let insert_and_send = state
         .active_insert_and_send
         .load(Ordering::SeqCst);
-    if insert_and_send && paste_result == PasteResult::Pasted {
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        if let Err(e) = paste_handler.send_enter() {
-            log::warn!("[pipeline] send_enter failed: {e}");
-        }
 
+    // --- Paste (or clipboard-only on a degraded cleanup) + Insert+Send ---
+    // Story 7-10 S1: the decision lives in `deliver_text` so it can be tested
+    // with a fake handler; the shell applies only the AppState/HWND effects.
+    let delivery = deliver_text(paste_handler.as_ref(), &cleaned_text, llm_error, insert_and_send);
+    let paste_result = delivery.paste_result;
+    if delivery.paste_failed {
+        if let Ok(mut m) = state.feedback_metrics.lock() {
+            m.paste_error_count = m.paste_error_count.saturating_add(1);
+        }
+    }
+
+    // --- Return-to-Current (only after an actual Insert+Send) ---
+    if delivery.enter_sent {
         // Return-to-Current: if the user switched to a different window while
         // Klarvo was processing (STT + LLM cleanup takes seconds), bring them
         // back to where they were just before paste, not the recording-start
@@ -1954,6 +1988,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     }
 
     // --- Save to history ---
+    // Best-effort, as it always was — but the outcome is no longer thrown away:
+    // on the clipboard-write-failure route it is the only surface the raw text
+    // can still be on, and the card names it only if this says so (AC8
+    // re-review, item 2).
+    let mut history_saved = false;
     {
         let style_str = if is_command {
             "command".to_string()
@@ -1982,7 +2021,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
         if let Ok(db) = state.history_db.lock() {
             let device_id = cfg_for_history.as_ref().map(|(d, _, _)| d.as_str());
-            if let Err(e) = history::add_entry(
+            match history::add_entry(
                 &db,
                 &cleaned_text,
                 Some(&raw_text),
@@ -1993,7 +2032,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 Some(&entry_uuid),
                 device_id,
             ) {
-                log::warn!("[pipeline] Failed to save to history: {e}");
+                Ok(_) => history_saved = true,
+                Err(e) => log::warn!("[pipeline] Failed to save to history: {e}"),
             }
         }
 
@@ -2100,9 +2140,19 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         }
     }
 
+    // The cause was written before delivery was attempted; if the clipboard
+    // write itself failed it must stop promising the clipboard (review round 1)
+    // and may name History only if that write landed (AC8 re-review, item 2) —
+    // which is why this sits after the history block, not next to `deliver_text`.
+    let degrade_cause = terminal_degrade_cause(degrade_cause, delivery.paste_failed, history_saved);
+
     // Emit the appropriate done event based on whether the paste succeeded.
+    // Story 7-10 (Q1/AC3): on the degrade path this is the ONLY event carrying
+    // the cause — `degrade_cause` rides along so the main window can still name
+    // it and the native card can lay it out (AC8). A focus-failure clipboard-only
+    // run passes `None` and looks exactly as it did before.
     let done_event = if paste_result == PasteResult::ClipboardOnly {
-        PipelineEvent::done_with_clipboard_only(cleaned_text, raw_text)
+        PipelineEvent::done_with_clipboard_only(cleaned_text, raw_text, degrade_cause)
     } else {
         PipelineEvent::done(cleaned_text, raw_text)
     };
@@ -2127,13 +2177,29 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 ///   carries an `audio_path` — i.e. a terminal STT failure preserved the WAV.
 ///   Best-effort: a DB error here is logged, never escalated, so it can't turn
 ///   an already-degraded pipeline run into a panic/second error surface.
+///
+/// Story 7-10: `llm_error` and `degrade_cause` are now **returned** as well, not
+/// just consumed for the counter. This function used to be the flag's grave —
+/// everything downstream (paste, Insert+Send, the terminal event) was blind to
+/// the degrade. The paste step needs the flag (AC1) and the terminal event needs
+/// the cause (AC3/AC8).
 #[allow(clippy::type_complexity)] // Tuple mirrors ProcessOutcome::Produced fields; a named struct is a follow-up refactor
 fn deliver_outcome(
     outcome: ProcessOutcome,
     state: &AppState,
     is_command_mode: bool,
     language: &str,
-) -> Option<(String, String, bool, u64, Option<u64>, Option<u32>, Option<u32>)> {
+) -> Option<(
+    String,
+    String,
+    bool,
+    u64,
+    Option<u64>,
+    Option<u32>,
+    Option<u32>,
+    bool,
+    Option<DegradeCause>,
+)> {
     match outcome {
         ProcessOutcome::Stopped { stt_error, audio_path } => {
             if stt_error {
@@ -2174,6 +2240,7 @@ fn deliver_outcome(
             prompt_tokens,
             completion_tokens,
             llm_error,
+            degrade_cause,
         } => {
             if llm_error {
                 if let Ok(mut m) = state.feedback_metrics.lock() {
@@ -2191,8 +2258,128 @@ fn deliver_outcome(
                 llm_ms,
                 prompt_tokens,
                 completion_tokens,
+                llm_error,
+                degrade_cause,
             ))
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Delivery step (Story 7-10, S1 seam)
+// ---------------------------------------------------------------------------
+
+/// What the delivery step did, so the shell can apply the effects that need
+/// `AppState` / window handles.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Delivery {
+    /// Which terminal event the shell emits, and the Insert+Send gate's input.
+    pub paste_result: PasteResult,
+    /// `true` when Insert+Send was **triggered** — the gate opened and
+    /// `send_enter()` was called — which is what makes the shell run
+    /// Return-to-Current.
+    ///
+    /// Deliberately not "Return arrived": a `send_enter()` that returns `Err` is
+    /// logged and still counts here. Focus has already been moved to the paste
+    /// target either way, so Return-to-Current is exactly as necessary after a
+    /// failed Return as after a successful one.
+    pub enter_sent: bool,
+    /// `true` when the handler returned a hard `PasteError` (the shell bumps
+    /// `paste_error_count`). The run still ends with a terminal event.
+    pub paste_failed: bool,
+}
+
+/// Puts `text` in front of the user and decides whether Insert+Send fires.
+///
+/// Extracted from `stop_and_process_pipeline` so it can be unit-tested with a
+/// fake [`PasteHandler`] (Story 7-10, S1): the shell around it needs a live
+/// `AppHandle`, locks, SQLite and the network, so the paste decision had **no**
+/// test coverage at all before this story.
+///
+/// **AC1 — the degrade branch.** On `llm_error` the text is written to the
+/// clipboard via [`PasteHandler::copy_only`] and Ctrl+V is never simulated.
+/// Insert+Send is skipped *without a second switch*: `copy_only` returns
+/// [`PasteResult::ClipboardOnly`], and the gate below is unchanged
+/// (`insert_and_send && paste_result == PasteResult::Pasted`). That single gate
+/// is what AC1 rests on — do not add an `llm_error` condition to it.
+///
+/// A hard `PasteError` is coerced to `ClipboardOnly` on both branches, matching
+/// the pre-7-10 behaviour: the user gets an indication and the pipeline
+/// continues so the terminal event is still emitted.
+pub(crate) fn deliver_text(
+    handler: &dyn PasteHandler,
+    text: &str,
+    llm_error: bool,
+    insert_and_send: bool,
+) -> Delivery {
+    let attempt = if llm_error {
+        // Story 7-10 AC1: cleanup degraded to the raw transcript. Filler-laden
+        // text must never be inserted behind the user's back, and never sent.
+        log::info!("[pipeline] cleanup degraded to raw text — clipboard-only, paste withheld");
+        handler.copy_only(text)
+    } else {
+        handler.paste(text)
+    };
+
+    let (paste_result, paste_failed) = match attempt {
+        Ok(result) => (result, false),
+        Err(e) => {
+            log::warn!("[pipeline] paste failed: {e}. Text is still available.");
+            (PasteResult::ClipboardOnly, true)
+        }
+    };
+
+    // Only sent when Ctrl+V actually landed in the right window.
+    // Sending Enter into the wrong window (e.g. after a failed focus-restore)
+    // would be worse than not sending it at all.
+    //
+    // The 150ms sleep gives the target app time to process the Paste before
+    // Enter arrives. Terminals (ConPTY) need more time than simple editors.
+    // This is opt-in and defaults to false per slot.
+    let enter_sent = if insert_and_send && paste_result == PasteResult::Pasted {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if let Err(e) = handler.send_enter() {
+            log::warn!("[pipeline] send_enter failed: {e}");
+        }
+        true
+    } else {
+        false
+    };
+
+    Delivery { paste_result, enter_sent, paste_failed }
+}
+
+/// The cause the terminal `DoneClipboard` event carries.
+///
+/// `process_audio` writes `degrade_cause` before anything is delivered, so its
+/// "raw text in clipboard (Ctrl+V)" promises the clipboard on the strength of
+/// the *intent*. [`deliver_text`] then coerces a hard `PasteError` — on the
+/// degrade branch that is [`PasteHandler::copy_only`]'s clipboard write itself
+/// failing — to `ClipboardOnly` anyway, and the message went out unchanged: the
+/// pill told the user to press Ctrl+V for text that reached neither the window
+/// nor the clipboard (review round 1).
+///
+/// Replaced, not dropped: dropping it falls back to the static "In Clipboard"
+/// label, which is the same false claim minus the cause. The model ID from 7-9's
+/// D2 is lost on this path — it stays in `Klarvo.log`, and this is the
+/// double-failure case (cleanup down *and* clipboard unavailable), not the one
+/// D2 was written for.
+///
+/// `history_saved` is why this is called **after** the history block rather than
+/// next to `deliver_text`: D2's card names History as the last place the raw
+/// transcript is, and that write is best-effort (AC8 re-review, item 2). The
+/// outcome is known before the terminal event goes out, so the cause carries it
+/// instead of the card asserting it.
+pub(crate) fn terminal_degrade_cause(
+    degrade_cause: Option<DegradeCause>,
+    paste_failed: bool,
+    history_saved: bool,
+) -> Option<DegradeCause> {
+    match degrade_cause {
+        Some(_) if paste_failed => {
+            Some(DegradeCause::ClipboardWriteFailed { in_history: history_saved })
+        }
+        other => other,
     }
 }
 
@@ -2798,6 +2985,24 @@ mod tests {
     use crate::config::AppConfig;
     use crate::test_helpers;
 
+    /// The one-line projection of [`degrade_cause_for_model`] — what the main
+    /// window status line renders (D1).
+    ///
+    /// Production code stopped calling it at AC8: the degrade sites build a
+    /// [`DegradeCause`] and the two wordings are derived from that single value
+    /// (`status_line` for the main window, `card` for the overlay). It survives
+    /// here because the wording specs below pin the exact user-facing string,
+    /// and `cause.status_line()` at a dozen call sites would bury what they are
+    /// actually asserting.
+    fn degrade_warn_msg_for_model(err: &llm::LlmError, model: &str) -> String {
+        degrade_cause_for_model(err, model).status_line()
+    }
+
+    /// Test-side twin of [`degrade_warn_msg_for_model`] for the non-model form.
+    fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
+        generic_degrade_cause(err).status_line()
+    }
+
     /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
     /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
     ///
@@ -3119,6 +3324,21 @@ mod tests {
         (outcome, events)
     }
 
+    /// Like [`run`], but keeps the **whole** `PipelineEvent`.
+    ///
+    /// `run` discards everything but `ev.state`, which is why no test could see
+    /// a message or the `clipboard_only` flag before Story 7-10. Kept as a
+    /// sibling rather than changing `run`'s return type, so the ~20 existing
+    /// state-sequence assertions stay untouched.
+    async fn run_full(input: ProcessInput) -> (ProcessOutcome, Vec<PipelineEvent>) {
+        let mut events: Vec<PipelineEvent> = Vec::new();
+        let outcome = {
+            let mut emit = |ev: PipelineEvent| events.push(ev);
+            process_audio(input, &mut emit).await
+        };
+        (outcome, events)
+    }
+
     #[tokio::test]
     async fn test_process_audio_normal_cleanup() {
         let input = make_input(
@@ -3278,14 +3498,14 @@ mod tests {
                 rewrite: Err(()),
             },
         );
-        let (outcome, events) = run(input).await;
+        let (outcome, events) = run_full(input).await;
+        // Story 7-10 (Q1): NO separate Warning event on the degrade path. The
+        // cause travels on the outcome and lands on the single terminal
+        // DoneClipboard event the shell emits, so the follow-up terminal event
+        // cannot erase it (7-9 GATE-4 finding 3a).
         assert_eq!(
-            events,
-            vec![
-                PipelineState::Transcribing,
-                PipelineState::Cleaning,
-                PipelineState::Warning
-            ]
+            events.iter().map(|e| e.state.clone()).collect::<Vec<_>>(),
+            vec![PipelineState::Transcribing, PipelineState::Cleaning]
         );
         match outcome {
             ProcessOutcome::Produced {
@@ -3293,11 +3513,30 @@ mod tests {
                 raw_text,
                 llm_error,
                 prompt_tokens,
+                degrade_cause,
                 ..
             } => {
                 assert!(llm_error);
                 assert_eq!(cleaned_text, sanitize_llm_output(&raw_text));
                 assert_eq!(prompt_tokens, None);
+                let cause = degrade_cause.expect("a degrade must carry its cause out of the core");
+                let msg = cause.status_line();
+                assert!(
+                    msg.contains("in clipboard"),
+                    "the degrade cause must tell the user where the text is: {msg:?}"
+                );
+                assert!(
+                    !msg.contains("inserted"),
+                    "nothing was inserted on this path — the old wording is a lie: {msg:?}"
+                );
+                // AC8: the same cause lays out as a card for the native preview.
+                let card = cause.card();
+                assert_eq!(card.header, "CLEANUP FAILED");
+                assert_eq!(
+                    card.next.as_deref(),
+                    Some("Raw text is in the clipboard · Ctrl+V to paste"),
+                    "the card's second line is what the truncated pill could never show"
+                );
             }
             other => panic!("expected Produced, got {other:?}"),
         }
@@ -3314,17 +3553,20 @@ mod tests {
                 rewrite: Err(()),
             },
         );
-        let (outcome, events) = run(input).await;
+        let (outcome, events) = run_full(input).await;
+        // Story 7-10 (Q1): no separate Warning event — see the non-retryable twin.
         assert_eq!(
-            events,
-            vec![
-                PipelineState::Transcribing,
-                PipelineState::Cleaning,
-                PipelineState::Warning
-            ]
+            events.iter().map(|e| e.state.clone()).collect::<Vec<_>>(),
+            vec![PipelineState::Transcribing, PipelineState::Cleaning]
         );
         match outcome {
-            ProcessOutcome::Produced { llm_error, .. } => assert!(llm_error),
+            ProcessOutcome::Produced { llm_error, degrade_cause, .. } => {
+                assert!(llm_error);
+                assert!(
+                    degrade_cause.is_some_and(|c| c.status_line().contains("in clipboard")),
+                    "the retryable-no-fallback degrade must carry the clipboard cause too"
+                );
+            }
             other => panic!("expected Produced, got {other:?}"),
         }
     }
@@ -3684,8 +3926,13 @@ mod tests {
     }
 
     /// Decision D2: when the provider answers model-not-found, the degrade
-    /// warning names the rejected ID and points at the setting that owns it,
-    /// instead of echoing the raw provider 400.
+    /// warning names the rejected ID instead of echoing the raw provider 400.
+    ///
+    /// Story 7-10 (Q2) replaced D2's "check Advanced → Model IDs" pointer with
+    /// the clipboard hint: on this path nothing was inserted, so telling the
+    /// user where the text *is* outranks telling them where to fix the ID. The
+    /// model ID keeps its position at the front so it survives the pill's tail
+    /// truncation.
     ///
     /// PINS: the exact user-facing string, that the classifier needs BOTH a
     /// 400/404 status and a model-shaped message, and that a model-not-found
@@ -3707,7 +3954,7 @@ mod tests {
         );
         assert_eq!(
             degrade_warn_msg_for_model(&not_found, "deepseek-reasner"),
-            "Model 'deepseek-reasner' not found — check Advanced → Model IDs"
+            "Model 'deepseek-reasner' not found — in clipboard"
         );
 
         // DeepSeek's LIVE wording, verbatim from Klarvo.log 2026-09-12 (Andi's
@@ -3725,7 +3972,7 @@ mod tests {
         );
         assert_eq!(
             degrade_warn_msg_for_model(&deepseek_live, "odisaf"),
-            "Model 'odisaf' not found — check Advanced → Model IDs"
+            "Model 'odisaf' not found — in clipboard"
         );
 
         // 404 phrasing from a different provider shape.
@@ -3736,7 +3983,7 @@ mod tests {
         assert!(is_model_not_found_error(&decommissioned));
         assert_eq!(
             degrade_warn_msg_for_model(&decommissioned, "llama-3.1-70b-versatile"),
-            "Model 'llama-3.1-70b-versatile' not found — check Advanced → Model IDs"
+            "Model 'llama-3.1-70b-versatile' not found — in clipboard"
         );
 
         // A generic 400 keeps the ordinary wording — the classifier must not
@@ -3797,7 +4044,7 @@ mod tests {
         );
         assert_eq!(
             degrade_warn_msg_for_model(&anthropic, "claude-haiku-4-5-20251099"),
-            "Model 'claude-haiku-4-5-20251099' not found — check Advanced → Model IDs"
+            "Model 'claude-haiku-4-5-20251099' not found — in clipboard"
         );
 
         // Body that failed to parse as JSON: the raw text becomes the message
@@ -5056,6 +5303,286 @@ mod tests {
         assert!(
             second_guard.is_some(),
             "after first task completes, the next pause boundary must be allowed to spawn"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 7-10 — the delivery step (AC1, AC6)
+    // -----------------------------------------------------------------------
+
+    use crate::paste::PasteError;
+
+    /// Records every call the pipeline makes on the paste backend.
+    ///
+    /// Overrides `copy_only` instead of inheriting the trait default: the
+    /// default writes the real system clipboard via `arboard`, which a headless
+    /// test host has no business touching. **Coverage statement:** these tests
+    /// decide the *routing* — which backend method the pipeline calls and
+    /// whether Return is simulated. They do NOT exercise the real clipboard
+    /// write, `SendInput`, `xdotool`, or any window/focus behaviour; those stay
+    /// with the Windows GATE-4 smoke.
+    #[derive(Default)]
+    struct SpyPasteHandler {
+        pasted: std::sync::Mutex<Vec<String>>,
+        copied: std::sync::Mutex<Vec<String>>,
+        enters: std::sync::atomic::AtomicUsize,
+    }
+
+    impl SpyPasteHandler {
+        fn enter_count(&self) -> usize {
+            self.enters.load(Ordering::SeqCst)
+        }
+    }
+
+    impl PasteHandler for SpyPasteHandler {
+        fn paste(&self, text: &str) -> Result<PasteResult, PasteError> {
+            self.pasted.lock().unwrap().push(text.to_string());
+            // A VALID paste target: this handler really would have sent Ctrl+V.
+            //
+            // This is the discriminating half of AC6. `ClipboardOnly` is also
+            // reached by four innocent routes (no target HWND, window gone,
+            // focus verification failed, coerced PasteError), so a spy that
+            // returned `ClipboardOnly` here could not tell "withheld on
+            // purpose" from "there was nowhere to paste".
+            Ok(PasteResult::Pasted)
+        }
+
+        fn copy_only(&self, text: &str) -> Result<PasteResult, PasteError> {
+            self.copied.lock().unwrap().push(text.to_string());
+            Ok(PasteResult::ClipboardOnly)
+        }
+
+        fn send_enter(&self) -> Result<(), PasteError> {
+            self.enters.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// AC1 + AC6: a degraded cleanup lands in the clipboard only — no Ctrl+V
+    /// into the active window, and no Enter even with Insert+Send switched on.
+    ///
+    /// PINS: that `llm_error` reaches the paste step at all (it used to die in
+    /// `deliver_outcome`), that the clipboard-only route is taken against a
+    /// *valid* paste target, and that Insert+Send is skipped through the
+    /// existing `paste_result == Pasted` gate rather than a second switch.
+    #[test]
+    fn spec_degraded_cleanup_is_clipboard_only_and_never_sends() {
+        let spy = SpyPasteHandler::default();
+
+        let delivery = deliver_text(&spy, "uh so like the thing", true, true);
+
+        assert_eq!(delivery.paste_result, PasteResult::ClipboardOnly);
+        assert!(!delivery.enter_sent);
+        assert!(!delivery.paste_failed);
+        assert_eq!(
+            *spy.copied.lock().unwrap(),
+            vec!["uh so like the thing".to_string()],
+            "the raw text must reach the clipboard — never silent loss (Epic-12)"
+        );
+        assert!(
+            spy.pasted.lock().unwrap().is_empty(),
+            "Ctrl+V must NOT be simulated on the degrade path"
+        );
+        assert_eq!(
+            spy.enter_count(),
+            0,
+            "Insert+Send must not fire on the degrade path — this is the damage \
+             the story exists to prevent (filler-laden raw text submitted)"
+        );
+    }
+
+    /// AC1: the inverse. With `llm_error: false` nothing changes — the same
+    /// valid target is pasted into and Insert+Send still sends.
+    #[test]
+    fn spec_successful_cleanup_still_pastes_and_sends() {
+        let spy = SpyPasteHandler::default();
+
+        let delivery = deliver_text(&spy, "The thing.", false, true);
+
+        assert_eq!(delivery.paste_result, PasteResult::Pasted);
+        assert!(delivery.enter_sent);
+        assert_eq!(
+            *spy.pasted.lock().unwrap(),
+            vec!["The thing.".to_string()]
+        );
+        assert!(
+            spy.copied.lock().unwrap().is_empty(),
+            "a successful cleanup must take the ordinary paste route"
+        );
+        assert_eq!(spy.enter_count(), 1, "Insert+Send must still work");
+    }
+
+    /// Insert+Send off: a successful cleanup pastes but sends nothing.
+    /// Guards against the branch being wired to `llm_error` instead of the gate.
+    #[test]
+    fn spec_successful_cleanup_without_insert_and_send_does_not_send() {
+        let spy = SpyPasteHandler::default();
+
+        let delivery = deliver_text(&spy, "The thing.", false, false);
+
+        assert_eq!(delivery.paste_result, PasteResult::Pasted);
+        assert!(!delivery.enter_sent);
+        assert_eq!(spy.enter_count(), 0);
+    }
+
+    /// A hard `PasteError` is still coerced to `ClipboardOnly` (pre-7-10
+    /// behaviour) so the run always reaches a terminal event, and it is
+    /// reported so the shell can bump `paste_error_count`.
+    #[test]
+    fn spec_hard_paste_error_is_reported_and_coerced_to_clipboard_only() {
+        struct FailingHandler;
+        impl PasteHandler for FailingHandler {
+            fn paste(&self, _text: &str) -> Result<PasteResult, PasteError> {
+                Err(PasteError::Clipboard("clipboard unavailable".to_string()))
+            }
+        }
+
+        let delivery = deliver_text(&FailingHandler, "text", false, true);
+
+        assert_eq!(delivery.paste_result, PasteResult::ClipboardOnly);
+        assert!(delivery.paste_failed, "the shell must be able to count this");
+        assert!(!delivery.enter_sent);
+    }
+
+    /// Review round 1: the degrade path's own clipboard write can fail. The
+    /// message was written before delivery was attempted, so it still told the
+    /// user to press Ctrl+V for text that is nowhere.
+    #[test]
+    fn spec_failed_clipboard_write_stops_promising_the_clipboard() {
+        let cause = terminal_degrade_cause(
+            Some(generic_degrade_cause(&"connection refused")),
+            true,
+            true,
+        );
+
+        let cause = cause.expect("the cause must survive — dropping it leaves the static label");
+        let msg = cause.status_line();
+        assert!(
+            !msg.contains("in clipboard") && !msg.contains("Ctrl+V"),
+            "nothing reached the clipboard, so nothing may point at it: {msg:?}"
+        );
+        assert!(
+            msg.starts_with("Cleanup failed"),
+            "Q2: the cause still leads: {msg:?}"
+        );
+        // AC8: the card must not point at the clipboard either — it is the
+        // surface the user actually reads now.
+        let card = cause.card();
+        assert_eq!(card.next, None, "the card may not promise a clipboard that was never written");
+    }
+
+    /// Inverse half: an ordinary degrade — clipboard write fine — is passed
+    /// through untouched, model ID and all (7-9 D2).
+    #[test]
+    fn spec_successful_clipboard_write_keeps_the_original_cause() {
+        let original = degrade_cause_for_model(
+            &llm::LlmError::ApiError { status: 400, message: "model not found".to_string() },
+            "deepseek-typo",
+        );
+
+        assert_eq!(
+            terminal_degrade_cause(Some(original.clone()), false, true),
+            Some(original.clone()),
+        );
+        // The History outcome is only consulted on the clipboard-failure route;
+        // an ordinary degrade is passed through whatever it says.
+        assert_eq!(
+            terminal_degrade_cause(Some(original.clone()), false, false),
+            Some(original.clone()),
+        );
+        // AC8: the model ID survives into the card's chip, where it is no longer
+        // competing with the rest of the sentence for the pill's 200 px.
+        assert_eq!(original.card().cause.chip.as_deref(), Some("deepseek-typo"));
+    }
+
+    /// A non-degraded run carries no cause, and a failed paste must not invent
+    /// one. (`paste_failed` here means the clipboard write itself failed —
+    /// a focus failure returns `Ok(ClipboardOnly)` and never sets it; that
+    /// residual false "In Clipboard" on a normal run is a backlog item, not
+    /// this story's — see docs/backlog.md, 7-10 residuals.)
+    #[test]
+    fn spec_non_degraded_run_never_gains_a_cause() {
+        assert_eq!(terminal_degrade_cause(None, true, true), None);
+        assert_eq!(terminal_degrade_cause(None, false, true), None);
+        assert_eq!(terminal_degrade_cause(None, true, false), None);
+        assert_eq!(terminal_degrade_cause(None, false, false), None);
+    }
+
+    /// AC8 re-review, item 2: the card's "raw text is in History" is now a
+    /// consequence of the History write, not an assertion about it. The shell
+    /// runs that write before it emits the terminal event, so the outcome is
+    /// available in time — this pins that it is the thing the cause carries.
+    #[test]
+    fn spec_history_outcome_decides_whether_the_card_names_history() {
+        let degraded = Some(generic_degrade_cause(&"connection refused"));
+
+        let saved = terminal_degrade_cause(degraded.clone(), true, true)
+            .expect("the clipboard failure still replaces the cause");
+        assert_eq!(saved, DegradeCause::ClipboardWriteFailed { in_history: true });
+        assert!(saved.card().cause.text().contains("History"));
+
+        let lost = terminal_degrade_cause(degraded, true, false)
+            .expect("the clipboard failure still replaces the cause");
+        assert_eq!(lost, DegradeCause::ClipboardWriteFailed { in_history: false });
+        assert!(
+            !lost.card().cause.text().contains("History"),
+            "the History write failed too — no surface may be named: {:?}",
+            lost.card().cause.text()
+        );
+    }
+
+    /// The invariant `ProcessOutcome::Produced.degrade_cause`'s docstring claims:
+    /// the cause is present exactly when `llm_error` is set. Two redundant
+    /// fields only stay honest if something checks them against each other.
+    ///
+    /// **Which degrade sites this covers: 2 of 3.** `make_input` builds
+    /// `config_for_fallback: AppConfig::default()`, i.e. no API keys, so
+    /// `resolve_fallback_provider` always returns `None` and `Retryable` lands
+    /// in the *no-fallback-available* branch. The *fallback-also-failed* site is
+    /// **not exercised here and cannot be** — the fallback is a real HTTP
+    /// provider constructed inside `process_audio` from config keys, with no
+    /// injection seam; reaching it would mean a live network call. Plus the
+    /// success path, asserting the fields stay unset.
+    #[tokio::test]
+    async fn spec_degrade_msg_present_exactly_when_llm_error() {
+        let cases = [
+            (CleanupBehavior::Ok("Cleaned text.".to_string()), false),
+            (CleanupBehavior::NonRetryable, true),
+            (CleanupBehavior::Retryable, true),
+        ];
+
+        for (behavior, expect_degraded) in cases {
+            let input = make_input(
+                FakeStt(Ok(REAL_SPEECH.to_string())),
+                FakeCleanup { cleanup: behavior, rewrite: Err(()) },
+            );
+            match run(input).await.0 {
+                ProcessOutcome::Produced { llm_error, degrade_cause, .. } => {
+                    assert_eq!(llm_error, expect_degraded);
+                    assert_eq!(
+                        degrade_cause.is_some(),
+                        llm_error,
+                        "degrade_cause must be Some exactly when llm_error is set"
+                    );
+                }
+                other => panic!("expected Produced, got {other:?}"),
+            }
+        }
+    }
+
+    /// Q2: the generic degrade wording leads with the cause and the location,
+    /// and the provider's short reason is only a tail the pill may truncate.
+    #[test]
+    fn spec_generic_degrade_wording_leads_with_cause_and_clipboard() {
+        let msg = degrade_warn_msg(&"connection refused");
+
+        assert!(
+            msg.starts_with("Cleanup failed — raw text in clipboard (Ctrl+V)"),
+            "the fixed part must come first so it survives truncation: {msg:?}"
+        );
+        assert!(
+            !msg.contains("inserted"),
+            "nothing is inserted on this path any more: {msg:?}"
         );
     }
 

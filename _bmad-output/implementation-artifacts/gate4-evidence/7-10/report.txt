@@ -1,0 +1,35 @@
+Story 7-10 — D1 status-line proxy smoke
+run: 2026-09-14T12:30:30.963Z
+base: http://localhost:1422
+teal token: #29C7AC -> rgb(41, 199, 172)
+
+PASS  onboarding skipped
+        clicked 'Setup überspringen'
+PASS  status line found
+        idle text="Ready"
+PASS  D1: status line shows the degrade cause verbatim
+        text="Model 'deepseek-typo' not found — in clipboard" expected="Model 'deepseek-typo' not found — in clipboard"
+PASS  D1: the model ID survives into the main window (7-9 D2)
+        text="Model 'deepseek-typo' not found — in clipboard"
+PASS  D1: rendered in the canon amber token
+        computed=rgb(233, 162, 76) expected=rgb(233, 162, 76) (--color-klarvo-amber)
+PASS  D1: the 'Done' label is replaced, not appended
+        text="Model 'deepseek-typo' not found — in clipboard"
+PASS  round 2: a clean run after a degraded run shows the plain done label
+        text="Done" expected="Done"
+PASS  round 2: the previous run's degrade cause is gone, not stale
+        text="Done"
+PASS  round 2: a clean run after a degraded run is teal, not amber
+        computed=rgb(41, 199, 172) expected=rgb(41, 199, 172) (--color-klarvo-teal = #29C7AC)
+PASS  regression: a clean run still shows the plain done label
+        text="Done"
+PASS  regression: a clean run stays teal
+        computed=rgb(41, 199, 172) expected=rgb(41, 199, 172) (--color-klarvo-teal = #29C7AC)
+PASS  regression: a clean run is NOT amber
+        computed=rgb(41, 199, 172)
+PASS  no uncaught page errors
+        none
+
+console.error (handled, not crashes): 0
+
+RESULT: 13/13 checks passed
