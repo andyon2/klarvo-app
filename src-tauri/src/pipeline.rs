@@ -16,6 +16,7 @@ use crate::config::{self, AppConfig, HotkeyMode};
 use crate::history;
 use crate::hotkey::PipelineEvent;
 use crate::llm::{self, chunked_cleanup, CleanupProvider, CleanupStyle};
+use crate::overlay_message::DegradeCause;
 use crate::paste::{
     capture_foreground_window, capture_foreground_window_title, create_paste_handler, PasteHandler,
     PasteResult,
@@ -774,33 +775,35 @@ pub async fn start_recording_only(handle: AppHandle) {
         }
 
         // Native preview: recreate alongside the pill (same standby-resilience pattern,
-        // Story 10-2). Only instantiate when live_preview_enabled; if disabled we hold
-        // None and all set_state/append_chunk calls are no-ops.
-        let (preview_enabled, px, py) = state
+        // Story 10-2).
+        //
+        // Story 7-10 AC8: created for EVERY recording, not only when
+        // `live_preview_enabled`. The same card is now the surface for every
+        // pipeline message, and a cleanup failure must be readable whether or
+        // not the user ever turned live preview on. The setting still gates the
+        // live text — `WM_PREVIEW_SET_STATE` only arms on Recording when it is
+        // on, so with it off the window stays hidden until a message arrives.
+        let (px, py) = state
             .config
             .lock()
             .ok()
-            .map(|c| (c.live_preview_enabled, c.bar_x, c.bar_y))
-            .unwrap_or((false, None, None));
-        if preview_enabled {
-            let pcfg = state
-                .config
-                .lock()
-                .ok()
-                .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
-                .unwrap_or_default();
-            match crate::native_preview::NativePreview::create(px, py, pcfg) {
-                Ok(preview) => {
-                    if let Ok(mut g) = state.native_preview.lock() {
-                        *g = Some(preview);
-                    }
+            .map(|c| (c.bar_x, c.bar_y))
+            .unwrap_or((None, None));
+        let pcfg = state
+            .config
+            .lock()
+            .ok()
+            .map(|c| crate::native_preview::PreviewConfig::from_app_config(&c))
+            .unwrap_or_default();
+        match crate::native_preview::NativePreview::create(px, py, pcfg) {
+            Ok(preview) => {
+                if let Ok(mut g) = state.native_preview.lock() {
+                    *g = Some(preview); // old preview (if any) dropped here
                 }
-                Err(e) => log::error!(
-                    "[native_preview] recreate at recording start failed: {e}"
-                ),
             }
-        } else if let Ok(mut g) = state.native_preview.lock() {
-            *g = None; // drop any previous preview window
+            Err(e) => log::error!(
+                "[native_preview] recreate at recording start failed: {e}"
+            ),
         }
     }
 
@@ -1153,10 +1156,11 @@ pub enum ProcessOutcome {
         prompt_tokens: Option<u32>,
         completion_tokens: Option<u32>,
         llm_error: bool,
-        /// The user-facing cause of a degraded cleanup, e.g. `Model 'x' not
-        /// found — in clipboard` (Story 7-10, Q1/Q2).
+        /// Why cleanup degraded, in the structured shape both surfaces need
+        /// (Story 7-10, Q1/Q2 and AC8): [`DegradeCause::status_line`] for the
+        /// main window, [`DegradeCause::card`] for the native overlay card.
         ///
-        /// **Invariant: `degrade_msg.is_some() == llm_error`** — each of the
+        /// **Invariant: `degrade_cause.is_some() == llm_error`** — each of the
         /// three degrade sites sets both, nothing else sets either.
         ///
         /// `spec_degrade_msg_present_exactly_when_llm_error` pins **two** of the
@@ -1171,7 +1175,7 @@ pub enum ProcessOutcome {
         /// event: the shell puts it on the single terminal `DoneClipboard`
         /// event, so the follow-up terminal event cannot erase the cause
         /// (7-9 GATE-4 finding 3a).
-        degrade_msg: Option<String>,
+        degrade_cause: Option<DegradeCause>,
     },
 }
 
@@ -1244,29 +1248,29 @@ fn is_model_not_found_error(err: &llm::LlmError) -> bool {
 /// pill's tail truncation, and D2's "check Advanced → Model IDs" pointer is
 /// replaced by the clipboard hint — on this path the text was not inserted, and
 /// telling the user where it *is* outranks telling them where to fix it.
-fn degrade_warn_msg_for_model(err: &llm::LlmError, model: &str) -> String {
+///
+/// **AC8 (GATE-4 round 1)** moved the message off the pill and onto the preview
+/// card, where nothing is truncated and the pointer fits again. The classifying
+/// decision made here did not change — only its *carrier* did: the degrade sites
+/// build a [`DegradeCause`] and both wordings are derived from it. This function
+/// is now the one-line projection of that cause, kept because a dozen specs pin
+/// the exact user-facing string.
+fn degrade_cause_for_model(err: &llm::LlmError, model: &str) -> DegradeCause {
     if is_model_not_found_error(err) && !model.is_empty() {
-        return format!("Model '{model}' not found — in clipboard");
+        return DegradeCause::ModelNotFound { model: model.to_string() };
     }
-    degrade_warn_msg(err)
+    generic_degrade_cause(err)
 }
 
-/// Builds the user-facing warning shown when LLM cleanup fails and the raw
-/// transcript is left in the clipboard instead of being pasted (Story 7-10).
+/// The non-model degrade cause: `friendly_error`'s short reason, carried raw so
+/// the card can drop its `": "` prefix and the status line can keep it.
 ///
-/// Q2 pins the shape: the fixed cause-and-location part comes first so it
-/// survives truncation; `friendly_error`'s short reason is appended only as a
-/// tail the pill may cut.
-fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
-    let short_reason = friendly_error("", &err.to_string());
-    format!(
-        "Cleanup failed — raw text in clipboard (Ctrl+V){}",
-        if short_reason.is_empty() {
-            String::new()
-        } else {
-            format!(" {short_reason}")
-        }
-    )
+/// Q2's shape is unchanged and now lives in [`DegradeCause::status_line`]: the
+/// fixed cause-and-location part first, the provider's short reason as a tail.
+/// Since AC8 the pill no longer renders that string at all — the main window
+/// does, unchanged.
+fn generic_degrade_cause(err: &dyn std::fmt::Display) -> DegradeCause {
+    DegradeCause::Generic { reason: friendly_error("", &err.to_string()) }
 }
 
 /// Transcribe → strip → hallucination guards → LLM cleanup/command/offline →
@@ -1415,7 +1419,7 @@ pub async fn process_audio(
     // Story 7-10 (Q1): the degrade cause travels out with the outcome instead of
     // being emitted as its own `Warning` event. The shell puts it on the single
     // terminal `DoneClipboard` event, so nothing can overwrite it afterwards.
-    let mut degrade_msg: Option<String> = None;
+    let mut degrade_cause: Option<DegradeCause> = None;
     let cleanup_result = if matches!(llm_path, LlmPath::OfflineRaw) {
         // Offline dictation: return raw transcript without any LLM call.
         log::info!("[pipeline] Offline mode: skipping LLM cleanup");
@@ -1513,7 +1517,7 @@ pub async fn process_audio(
                             llm_error = true;
                             // D2: the fallback provider is the one that just
                             // failed, so its model is the one to name.
-                            degrade_msg = Some(degrade_warn_msg_for_model(
+                            degrade_cause = Some(degrade_cause_for_model(
                                 fallback_err,
                                 fallback_provider.model(),
                             ));
@@ -1529,7 +1533,7 @@ pub async fn process_audio(
                         "[pipeline] LLM cleanup failed ({primary_err}), no fallback provider available, using raw text"
                     );
                     llm_error = true;
-                    degrade_msg = Some(degrade_warn_msg_for_model(
+                    degrade_cause = Some(degrade_cause_for_model(
                         primary_err,
                         cleanup_provider.model(),
                     ));
@@ -1547,7 +1551,7 @@ pub async fn process_audio(
                 // emitted here rather than after a ladder attempt.
                 log::warn!("[pipeline] LLM cleanup failed (non-retryable), falling back to raw text: {e}");
                 llm_error = true;
-                degrade_msg = Some(degrade_warn_msg_for_model(
+                degrade_cause = Some(degrade_cause_for_model(
                     e,
                     cleanup_provider.model(),
                 ));
@@ -1577,7 +1581,7 @@ pub async fn process_audio(
         prompt_tokens: cleanup_result.prompt_tokens,
         completion_tokens: cleanup_result.completion_tokens,
         llm_error,
-        degrade_msg,
+        degrade_cause,
     }
 }
 
@@ -1883,7 +1887,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         prompt_tokens,
         completion_tokens,
         llm_error,
-        degrade_msg,
+        degrade_cause,
     )) = deliver_outcome(outcome, &state, is_command_mode, &language)
     else {
         return;
@@ -1953,7 +1957,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     let paste_result = delivery.paste_result;
     // The cause was written before delivery was attempted; if the clipboard
     // write itself failed it must stop promising the clipboard (review round 1).
-    let degrade_msg = terminal_degrade_msg(degrade_msg, delivery.paste_failed);
+    let degrade_cause = terminal_degrade_cause(degrade_cause, delivery.paste_failed);
     if delivery.paste_failed {
         if let Ok(mut m) = state.feedback_metrics.lock() {
             m.paste_error_count = m.paste_error_count.saturating_add(1);
@@ -2133,11 +2137,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
     // Emit the appropriate done event based on whether the paste succeeded.
     // Story 7-10 (Q1/AC3): on the degrade path this is the ONLY event carrying
-    // the cause — `degrade_msg` rides along so the pill and the main window can
-    // still name it. A focus-failure clipboard-only run passes `None` and looks
-    // exactly as it did before.
+    // the cause — `degrade_cause` rides along so the main window can still name
+    // it and the native card can lay it out (AC8). A focus-failure clipboard-only
+    // run passes `None` and looks exactly as it did before.
     let done_event = if paste_result == PasteResult::ClipboardOnly {
-        PipelineEvent::done_with_clipboard_only(cleaned_text, raw_text, degrade_msg)
+        PipelineEvent::done_with_clipboard_only(cleaned_text, raw_text, degrade_cause)
     } else {
         PipelineEvent::done(cleaned_text, raw_text)
     };
@@ -2163,11 +2167,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 ///   Best-effort: a DB error here is logged, never escalated, so it can't turn
 ///   an already-degraded pipeline run into a panic/second error surface.
 ///
-/// Story 7-10: `llm_error` and `degrade_msg` are now **returned** as well, not
+/// Story 7-10: `llm_error` and `degrade_cause` are now **returned** as well, not
 /// just consumed for the counter. This function used to be the flag's grave —
 /// everything downstream (paste, Insert+Send, the terminal event) was blind to
 /// the degrade. The paste step needs the flag (AC1) and the terminal event needs
-/// the message (AC3).
+/// the cause (AC3/AC8).
 #[allow(clippy::type_complexity)] // Tuple mirrors ProcessOutcome::Produced fields; a named struct is a follow-up refactor
 fn deliver_outcome(
     outcome: ProcessOutcome,
@@ -2183,7 +2187,7 @@ fn deliver_outcome(
     Option<u32>,
     Option<u32>,
     bool,
-    Option<String>,
+    Option<DegradeCause>,
 )> {
     match outcome {
         ProcessOutcome::Stopped { stt_error, audio_path } => {
@@ -2225,7 +2229,7 @@ fn deliver_outcome(
             prompt_tokens,
             completion_tokens,
             llm_error,
-            degrade_msg,
+            degrade_cause,
         } => {
             if llm_error {
                 if let Ok(mut m) = state.feedback_metrics.lock() {
@@ -2244,7 +2248,7 @@ fn deliver_outcome(
                 prompt_tokens,
                 completion_tokens,
                 llm_error,
-                degrade_msg,
+                degrade_cause,
             ))
         }
     }
@@ -2334,9 +2338,9 @@ pub(crate) fn deliver_text(
     Delivery { paste_result, enter_sent, paste_failed }
 }
 
-/// The cause line the terminal `DoneClipboard` event carries.
+/// The cause the terminal `DoneClipboard` event carries.
 ///
-/// `process_audio` writes `degrade_msg` before anything is delivered, so its
+/// `process_audio` writes `degrade_cause` before anything is delivered, so its
 /// "raw text in clipboard (Ctrl+V)" promises the clipboard on the strength of
 /// the *intent*. [`deliver_text`] then coerces a hard `PasteError` — on the
 /// degrade branch that is [`PasteHandler::copy_only`]'s clipboard write itself
@@ -2349,12 +2353,12 @@ pub(crate) fn deliver_text(
 /// D2 is lost on this path — it stays in `Klarvo.log`, and this is the
 /// double-failure case (cleanup down *and* clipboard unavailable), not the one
 /// D2 was written for.
-pub(crate) fn terminal_degrade_msg(
-    degrade_msg: Option<String>,
+pub(crate) fn terminal_degrade_cause(
+    degrade_cause: Option<DegradeCause>,
     paste_failed: bool,
-) -> Option<String> {
-    match degrade_msg {
-        Some(_) if paste_failed => Some("Cleanup failed — clipboard write failed".to_string()),
+) -> Option<DegradeCause> {
+    match degrade_cause {
+        Some(_) if paste_failed => Some(DegradeCause::ClipboardWriteFailed),
         other => other,
     }
 }
@@ -2961,6 +2965,24 @@ mod tests {
     use crate::config::AppConfig;
     use crate::test_helpers;
 
+    /// The one-line projection of [`degrade_cause_for_model`] — what the main
+    /// window status line renders (D1).
+    ///
+    /// Production code stopped calling it at AC8: the degrade sites build a
+    /// [`DegradeCause`] and the two wordings are derived from that single value
+    /// (`status_line` for the main window, `card` for the overlay). It survives
+    /// here because the wording specs below pin the exact user-facing string,
+    /// and `cause.status_line()` at a dozen call sites would bury what they are
+    /// actually asserting.
+    fn degrade_warn_msg_for_model(err: &llm::LlmError, model: &str) -> String {
+        degrade_cause_for_model(err, model).status_line()
+    }
+
+    /// Test-side twin of [`degrade_warn_msg_for_model`] for the non-model form.
+    fn degrade_warn_msg(err: &dyn std::fmt::Display) -> String {
+        generic_degrade_cause(err).status_line()
+    }
+
     /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
     /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
     ///
@@ -3471,13 +3493,14 @@ mod tests {
                 raw_text,
                 llm_error,
                 prompt_tokens,
-                degrade_msg,
+                degrade_cause,
                 ..
             } => {
                 assert!(llm_error);
                 assert_eq!(cleaned_text, sanitize_llm_output(&raw_text));
                 assert_eq!(prompt_tokens, None);
-                let msg = degrade_msg.expect("a degrade must carry its cause out of the core");
+                let cause = degrade_cause.expect("a degrade must carry its cause out of the core");
+                let msg = cause.status_line();
                 assert!(
                     msg.contains("in clipboard"),
                     "the degrade cause must tell the user where the text is: {msg:?}"
@@ -3485,6 +3508,14 @@ mod tests {
                 assert!(
                     !msg.contains("inserted"),
                     "nothing was inserted on this path — the old wording is a lie: {msg:?}"
+                );
+                // AC8: the same cause lays out as a card for the native preview.
+                let card = cause.card();
+                assert_eq!(card.header, "CLEANUP FAILED");
+                assert_eq!(
+                    card.next.as_deref(),
+                    Some("Raw text is in the clipboard · Ctrl+V to paste"),
+                    "the card's second line is what the truncated pill could never show"
                 );
             }
             other => panic!("expected Produced, got {other:?}"),
@@ -3509,10 +3540,10 @@ mod tests {
             vec![PipelineState::Transcribing, PipelineState::Cleaning]
         );
         match outcome {
-            ProcessOutcome::Produced { llm_error, degrade_msg, .. } => {
+            ProcessOutcome::Produced { llm_error, degrade_cause, .. } => {
                 assert!(llm_error);
                 assert!(
-                    degrade_msg.is_some_and(|m| m.contains("in clipboard")),
+                    degrade_cause.is_some_and(|c| c.status_line().contains("in clipboard")),
                     "the retryable-no-fallback degrade must carry the clipboard cause too"
                 );
             }
@@ -5398,35 +5429,43 @@ mod tests {
     /// user to press Ctrl+V for text that is nowhere.
     #[test]
     fn spec_failed_clipboard_write_stops_promising_the_clipboard() {
-        let msg = terminal_degrade_msg(
-            Some(degrade_warn_msg(&"connection refused")),
+        let cause = terminal_degrade_cause(
+            Some(generic_degrade_cause(&"connection refused")),
             true,
         );
 
-        let msg = msg.expect("the cause must survive — dropping it leaves the static label");
+        let cause = cause.expect("the cause must survive — dropping it leaves the static label");
+        let msg = cause.status_line();
         assert!(
             !msg.contains("in clipboard") && !msg.contains("Ctrl+V"),
             "nothing reached the clipboard, so nothing may point at it: {msg:?}"
         );
         assert!(
             msg.starts_with("Cleanup failed"),
-            "Q2: the cause still leads, so it survives the pill's truncation: {msg:?}"
+            "Q2: the cause still leads: {msg:?}"
         );
+        // AC8: the card must not point at the clipboard either — it is the
+        // surface the user actually reads now.
+        let card = cause.card();
+        assert_eq!(card.next, None, "the card may not promise a clipboard that was never written");
     }
 
     /// Inverse half: an ordinary degrade — clipboard write fine — is passed
     /// through untouched, model ID and all (7-9 D2).
     #[test]
     fn spec_successful_clipboard_write_keeps_the_original_cause() {
-        let original = degrade_warn_msg_for_model(
+        let original = degrade_cause_for_model(
             &llm::LlmError::ApiError { status: 400, message: "model not found".to_string() },
             "deepseek-typo",
         );
 
         assert_eq!(
-            terminal_degrade_msg(Some(original.clone()), false),
-            Some(original),
+            terminal_degrade_cause(Some(original.clone()), false),
+            Some(original.clone()),
         );
+        // AC8: the model ID survives into the card's chip, where it is no longer
+        // competing with the rest of the sentence for the pill's 200 px.
+        assert_eq!(original.card().cause.chip.as_deref(), Some("deepseek-typo"));
     }
 
     /// A non-degraded run carries no cause, and a failed paste must not invent
@@ -5436,12 +5475,12 @@ mod tests {
     /// this story's — see docs/backlog.md, 7-10 residuals.)
     #[test]
     fn spec_non_degraded_run_never_gains_a_cause() {
-        assert_eq!(terminal_degrade_msg(None, true), None);
-        assert_eq!(terminal_degrade_msg(None, false), None);
+        assert_eq!(terminal_degrade_cause(None, true), None);
+        assert_eq!(terminal_degrade_cause(None, false), None);
     }
 
-    /// The invariant `ProcessOutcome::Produced.degrade_msg`'s docstring claims:
-    /// the message is present exactly when `llm_error` is set. Two redundant
+    /// The invariant `ProcessOutcome::Produced.degrade_cause`'s docstring claims:
+    /// the cause is present exactly when `llm_error` is set. Two redundant
     /// fields only stay honest if something checks them against each other.
     ///
     /// **Which degrade sites this covers: 2 of 3.** `make_input` builds
@@ -5466,12 +5505,12 @@ mod tests {
                 FakeCleanup { cleanup: behavior, rewrite: Err(()) },
             );
             match run(input).await.0 {
-                ProcessOutcome::Produced { llm_error, degrade_msg, .. } => {
+                ProcessOutcome::Produced { llm_error, degrade_cause, .. } => {
                     assert_eq!(llm_error, expect_degraded);
                     assert_eq!(
-                        degrade_msg.is_some(),
+                        degrade_cause.is_some(),
                         llm_error,
-                        "degrade_msg must be Some exactly when llm_error is set"
+                        "degrade_cause must be Some exactly when llm_error is set"
                     );
                 }
                 other => panic!("expected Produced, got {other:?}"),

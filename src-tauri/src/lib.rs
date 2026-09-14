@@ -47,6 +47,7 @@ mod history;
 mod hotkey;
 mod license;
 pub mod llm;
+mod overlay_message;
 mod paste;
 mod pipeline;
 mod stt;
@@ -538,20 +539,33 @@ pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
     // Drive native pill and preview in-process (no JS round-trip — AC-3/ADR-0021 §4).
     #[cfg(target_os = "windows")]
     {
-        let clipboard_only = event.clipboard_only.unwrap_or(false);
-        // 12-1 FR4 native re-port: forward the pipeline's dynamic status text
-        // (warning for Warning, error for Error) so the native pill can render
-        // it — posted BEFORE set_state so it is present when the pill renders.
-        let status_msg = event.warning.clone().or_else(|| event.error.clone());
-        if let Ok(guard) = handle.state::<AppState>().native_pill.lock() {
-            if let Some(pill) = guard.as_ref() {
-                pill.set_status_msg(status_msg);
-                pill.set_state(&pipeline_state, clipboard_only);
-            }
-        }
+        // Story 7-10 AC8 — two surfaces, two jobs.
+        //
+        // The pill is a status light: it gets the state and, for a terminal
+        // event, which of the three endings it was. It never gets text.
+        //
+        // The card is the message surface: it gets `event.message` and nothing
+        // else, and it is posted BEFORE `set_state` (PostMessage is FIFO per
+        // window) so the state the message belongs to cannot hide the card it
+        // just opened.
+        //
+        // `message.is_some()` is also what tells the two clipboard-only routes
+        // apart — a cleanup degrade carries a cause, a vanished paste target
+        // does not.
+        let terminal = match (event.clipboard_only.unwrap_or(false), event.message.is_some()) {
+            (true, true) => native_pill::TerminalKind::Degraded,
+            (true, false) => native_pill::TerminalKind::ClipboardOnly,
+            (false, _) => native_pill::TerminalKind::Pasted,
+        };
         if let Ok(guard) = handle.state::<AppState>().native_preview.lock() {
             if let Some(preview) = guard.as_ref() {
+                preview.set_message(event.message.clone());
                 preview.set_state(&pipeline_state);
+            }
+        }
+        if let Ok(guard) = handle.state::<AppState>().native_pill.lock() {
+            if let Some(pill) = guard.as_ref() {
+                pill.set_state(&pipeline_state, terminal);
             }
         }
     }
@@ -800,8 +814,33 @@ pub fn run() {
             }
         }
 
-        // NOTE: WebView2 create_preview_window removed (Story 10-2).
-        // NativePreview is now created per-recording in pipeline.rs.
+        // --- Native preview / message card (Story 10-2, Story 7-10 AC8) ---
+        //
+        // NOTE: WebView2 create_preview_window removed (Story 10-2). The native
+        // window is recreated per-recording in pipeline.rs (standby resilience),
+        // but it is also created here: since AC8 the same card carries every
+        // pipeline message, and the boot-time config warnings `lib::run` emits
+        // a few lines below arrive before any recording ever starts. Without a
+        // window at boot those warnings would have no surface at all.
+        #[cfg(target_os = "windows")]
+        {
+            let pcfg = app
+                .state::<AppState>()
+                .config
+                .lock()
+                .ok()
+                .map(|c| native_preview::PreviewConfig::from_app_config(&c))
+                .unwrap_or_default();
+            match native_preview::NativePreview::create(_saved_bar_x, _saved_bar_y, pcfg) {
+                Ok(preview) => {
+                    if let Ok(mut guard) = app.state::<AppState>().native_preview.lock() {
+                        *guard = Some(preview);
+                    }
+                    log::info!("[setup] Native preview overlay created");
+                }
+                Err(e) => log::warn!("[setup] Could not create native preview overlay: {e}"),
+            }
+        }
 
         // --- klarvo://bar-moved → native preview reposition (Story 10-2) ---
         #[cfg(target_os = "windows")]

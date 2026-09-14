@@ -19,12 +19,30 @@
 //!    BGRA DIB (matches the CSS `mask-image: linear-gradient(to bottom, ...)` in
 //!    `PreviewPanel.tsx`).
 //! 5. `UpdateLayeredWindow(ULW_ALPHA)` presents the final BGRA DIB to DWM.
+//!
+//! ## Message mode (Story 7-10, AC8)
+//!
+//! The same card is also Klarvo's **message surface**. Andi's GATE-4 round 1 on
+//! build `d73082d` showed why: the 200×36 pill cut `Model 'deepseek-typo' not
+//! found — in clipboard` mid-sentence, so the user never learned where the text
+//! had gone. A status light cannot carry a three-part sentence.
+//!
+//! When [`NativePreview::set_message`] delivers an
+//! [`OverlayMessage`](crate::overlay_message::OverlayMessage) the card switches
+//! into message mode: header · cause (model ID on an amber chip) · where the
+//! text is · what to check, over an amber or danger border. This happens
+//! **independently of `live_preview_enabled`** — the window exists for the
+//! message even when the user never turned live preview on — and if a live
+//! preview *is* running, the message replaces its text in the same card.
+//! The card holds 4 s, fades over 1 s, and a new recording or a click dismisses
+//! it at once.
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case, clippy::upper_case_acronyms)]
 
 use std::mem::size_of;
 use std::sync::mpsc;
+use std::time::Instant;
 
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Shader, Stroke, Transform};
 use windows::core::{BOOL, PCWSTR};
@@ -33,12 +51,15 @@ use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::overlay_message::{MessageTone, OverlayMessage};
+
 // ---------------------------------------------------------------------------
 // Custom messages (WM_APP range: 0x8100-0x81FF — non-overlapping with pill)
 // ---------------------------------------------------------------------------
 const WM_PREVIEW_SET_STATE: u32 = 0x8101; // WPARAM=state_code (u8)
 const WM_PREVIEW_APPEND_CHUNK: u32 = 0x8102; // WPARAM=ptr to Box<String>
 const WM_PREVIEW_SET_PILL_POS: u32 = 0x8103; // WPARAM=x_bits (f64::to_bits), LPARAM=y_bits
+const WM_PREVIEW_SET_MESSAGE: u32 = 0x8104; // WPARAM=ptr to Box<Option<OverlayMessage>>
 const WM_PREVIEW_SHUTDOWN: u32 = 0x8110;
 
 // Layout constants (logical px)
@@ -52,6 +73,57 @@ const GAP_LOGICAL: f64 = 8.0; // gap between preview bottom edge and pill top
 // Geometry presets (logical px)
 const BASE_FONT_PX: f64 = 11.0;
 const BASE_MAX_HEIGHT: f64 = 600.0;
+
+// ---------------------------------------------------------------------------
+// Message mode (Story 7-10 AC8) — timing, layout, canon colours
+// ---------------------------------------------------------------------------
+
+const TIMER_MESSAGE: usize = 1;
+const TIMER_MS: u32 = 33; // ~30 fps, matching the pill's animation timer
+/// Fully opaque for this long (canon mock: same 4 s beat as the pill).
+const MSG_HOLD_MS: u128 = 4000;
+/// …then fades out over this long. Total lifetime = HOLD + FADE.
+const MSG_FADE_MS: u128 = 1000;
+
+// Card metrics, logical px, read off the approved render
+// (`docs/design/overhaul/mockup-7-10-message-card.html`, `.card`).
+const MSG_PAD_LR: f32 = 14.0;
+const MSG_HEAD_PAD_TB: f32 = 9.0;
+const MSG_BODY_PAD_TOP: f32 = 12.0;
+const MSG_BODY_PAD_BOTTOM: f32 = 13.0;
+const MSG_LINE_GAP: f32 = 6.0;
+const MSG_DOT_SIZE: f32 = 7.0;
+const MSG_DOT_GAP: f32 = 8.0;
+const MSG_HEADER_PX: f32 = 10.0;
+const MSG_CAUSE_PX: f32 = 13.0;
+const MSG_NEXT_PX: f32 = 12.0;
+const MSG_HINT_PX: f32 = 11.0;
+/// `line-height: 1.45` on the cause line in the render; applied to every line so
+/// the card's rhythm does not depend on `previewLineSpacing` (which is a
+/// live-preview setting, not a message setting).
+const MSG_LINE_MULT: f32 = 1.45;
+const MSG_RADIUS: f32 = 16.0; // canon --k-r-lg
+const MSG_BORDER_W: f32 = 1.0;
+const MSG_CHIP_PAD_X: f32 = 5.0;
+const MSG_CHIP_RADIUS: f32 = 4.0;
+/// Mono face for the header and the model-ID chip. Cascadia Code ships with the
+/// app's font set (see `native_pill`'s embedded faces); Consolas is the Windows
+/// fallback GDI resolves when it is absent.
+const MSG_MONO_FACE: &str = "Consolas";
+const MSG_SANS_FACE: &str = "Segoe UI";
+
+// Canon tokens, verbatim from `docs/design/overhaul/source/assets/klarvo.css`.
+const C_AMBER: (u8, u8, u8) = (233, 162, 76); // --k-amber
+const C_AMBER_HI: (u8, u8, u8) = (244, 186, 114); // --k-amber-hi
+const C_DANGER: (u8, u8, u8) = (238, 111, 99); // --k-danger
+const C_TEXT: (u8, u8, u8) = (236, 238, 239); // --k-text
+const C_MUTED: (u8, u8, u8) = (164, 169, 172); // --k-muted
+const C_DIM: (u8, u8, u8) = (111, 116, 121); // --k-dim
+const C_HAIRLINE: (u8, u8, u8) = (40, 44, 47); // --k-border
+/// `--k-amber-line` / `--k-danger` at 0.32 — the card's border alpha.
+const MSG_LINE_ALPHA: f32 = 0.32;
+/// `--k-amber-bg` at 0.12 — the model-ID chip's fill.
+const MSG_CHIP_ALPHA: f32 = 0.12;
 
 // ---------------------------------------------------------------------------
 // State codes
@@ -208,6 +280,12 @@ struct PreviewWindowState {
     text_buffer: String,
     armed: bool,       // true when Recording received and live_preview_enabled
     was_visible: bool, // tracks hidden→visible edge for topmost re-assert
+    // Message mode (Story 7-10 AC8). `message` takes precedence over the live
+    // preview text and is independent of `config.live_preview_enabled`;
+    // `message_at` starts the 4 s hold + 1 s fade the timer drives.
+    message: Option<OverlayMessage>,
+    message_at: Option<Instant>,
+    msg_timer_active: bool,
     // GDI resources
     main_dc: HDC,
     main_bmp: HBITMAP,
@@ -216,6 +294,14 @@ struct PreviewWindowState {
     tmp_bmp: HBITMAP,
     tmp_bits: *mut core::ffi::c_void,
     font: HFONT,
+    // Message-card fonts. Fixed sizes from the canon render — deliberately NOT
+    // the user's live-preview appearance settings: a failure message must read
+    // the same on every machine.
+    font_msg_header: HFONT,
+    font_msg_cause: HFONT,
+    font_msg_chip: HFONT,
+    font_msg_next: HFONT,
+    font_msg_hint: HFONT,
 }
 
 // SAFETY: PreviewWindowState is only ever touched from the preview thread (WndProc).
@@ -284,6 +370,33 @@ impl NativePreview {
             .is_err()
             {
                 // PostMessage failed (window gone) — free the box to avoid a leak.
+                drop(Box::from_raw(ptr));
+            }
+        }
+    }
+
+    /// Show (or clear) the message card — Story 7-10, AC8.
+    ///
+    /// `Some(msg)` puts the card into message mode and restarts its 4 s hold;
+    /// `None` dismisses it. Callers post this **before** the matching
+    /// `set_state` (PostMessage is FIFO per window), so the state that arrives
+    /// with a message never hides the card it just opened, and a `Recording`
+    /// state arrives after its own `None` and finds the card already cleared.
+    ///
+    /// Independent of `live_preview_enabled`: the window is created for every
+    /// session, the live text is what that setting gates.
+    pub fn set_message(&self, msg: Option<OverlayMessage>) {
+        let ptr = Box::into_raw(Box::new(msg));
+        unsafe {
+            if PostMessageW(
+                Some(HWND(self.hwnd as *mut _)),
+                WM_PREVIEW_SET_MESSAGE,
+                WPARAM(ptr as usize),
+                LPARAM(0),
+            )
+            .is_err()
+            {
+                // Window gone — free the box to avoid a leak.
                 drop(Box::from_raw(ptr));
             }
         }
@@ -641,6 +754,400 @@ fn round_rect_path(x: f32, y: f32, w: f32, h: f32, radius: f32) -> Option<tiny_s
 }
 
 // ---------------------------------------------------------------------------
+// Message-card helpers (Story 7-10 AC8)
+// ---------------------------------------------------------------------------
+
+/// Width of `text` in physical px with the font currently selected into `dc`.
+unsafe fn text_width(dc: HDC, text: &str) -> i32 {
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    if wide.is_empty() {
+        return 0;
+    }
+    let mut sz = SIZE::default();
+    if GetTextExtentPoint32W(dc, &wide, &mut sz).as_bool() {
+        sz.cx
+    } else {
+        0
+    }
+}
+
+/// Draw one already-wrapped line into its own `h`-tall box, vertically centred
+/// (the CSS line-height behaviour the live preview also uses).
+unsafe fn draw_msg_line(dc: HDC, line: &[u16], left: i32, top: i32, right: i32, h: i32) {
+    if line.is_empty() {
+        return;
+    }
+    let mut rect = RECT { left, top, right, bottom: top + h };
+    let mut buf = line.to_vec();
+    DrawTextW(dc, &mut buf, &mut rect, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+}
+
+/// Fill a rounded rect into the pixmap with straight (non-premultiplied) RGB.
+fn fill_round_rect(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    rgb: (u8, u8, u8),
+    alpha: f32,
+) {
+    let Some(path) = round_rect_path(x, y, w, h, radius) else {
+        return;
+    };
+    let mut paint = Paint::default();
+    paint.anti_alias = true;
+    paint.shader = Shader::SolidColor(
+        Color::from_rgba(
+            rgb.0 as f32 / 255.0,
+            rgb.1 as f32 / 255.0,
+            rgb.2 as f32 / 255.0,
+            alpha,
+        )
+        .unwrap_or(Color::BLACK),
+    );
+    pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+}
+
+/// The message card's line-step for a given logical font size, in physical px.
+fn msg_line_h(px: f32, sc: f32, text_scale: f64) -> i32 {
+    (px * sc * text_scale as f32 * MSG_LINE_MULT).round().max(1.0) as i32
+}
+
+/// Toggle the window's click-through bit.
+///
+/// The preview is created `WS_EX_TRANSPARENT` so it never eats a click meant for
+/// the app underneath. AC8 asks for "a click on the card dismisses it at once",
+/// which requires the opposite for the ~5 s a card is up — so the bit is cleared
+/// while a message is shown and restored the moment it is dismissed.
+unsafe fn set_click_through(hwnd: HWND, on: bool) {
+    let cur = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    let bit = WS_EX_TRANSPARENT.0 as isize;
+    let next = if on { cur | bit } else { cur & !bit };
+    if next != cur {
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
+    }
+}
+
+/// Clear the message, stop its timer and hand clicks back to the app below.
+unsafe fn dismiss_message(hwnd: HWND, s: &mut PreviewWindowState) {
+    s.message = None;
+    s.message_at = None;
+    if s.msg_timer_active {
+        let _ = KillTimer(Some(hwnd), TIMER_MESSAGE);
+        s.msg_timer_active = false;
+    }
+    set_click_through(hwnd, true);
+}
+
+/// Render the message card. Returns the layered-window alpha (0-255); `0` means
+/// the fade has finished and the caller should dismiss.
+///
+/// Lays out header · cause · next · hint bottom-aligned above the pill, exactly
+/// like the live-preview card, so the message appears where the preview text
+/// would have been (AC8: "If live preview is active, the message replaces the
+/// preview text in the same card").
+unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
+    let Some(msg) = s.message.clone() else { return 0 };
+    let pw = s.phys_w;
+    let ph = s.phys_h;
+    let sc = s.scale as f32;
+    let byte_count = (pw * ph) as usize * 4;
+
+    // --- Fade schedule ---
+    let elapsed = s.message_at.map(|t| t.elapsed().as_millis()).unwrap_or(0);
+    let alpha: u8 = if elapsed < MSG_HOLD_MS {
+        255
+    } else if elapsed < MSG_HOLD_MS + MSG_FADE_MS {
+        let k = (elapsed - MSG_HOLD_MS) as f32 / MSG_FADE_MS as f32;
+        (255.0 * (1.0 - k)).round().clamp(0.0, 255.0) as u8
+    } else {
+        return 0;
+    };
+
+    // The tone colours the border and the status dot. The header *text* stays
+    // `--k-dim` on both tones — that is what the approved render shows
+    // (`.card .head .t { color: var(--k-dim) }`); the colour signal is the dot
+    // and the line, not the word.
+    let tone_rgb = match msg.tone {
+        MessageTone::Warning => C_AMBER,
+        MessageTone::Error => C_DANGER,
+    };
+
+    // --- 1. Measure. The tmp DIB doubles as the measuring context, as in the
+    // live-preview path: zero it, set the text colour once, then select a font
+    // per run. ---
+    core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+    SetTextColor(s.tmp_dc, COLORREF(0x00FFFFFF));
+    SetBkMode(s.tmp_dc, TRANSPARENT);
+
+    let inset = OUTER_INSET * sc;
+    let inner_left = (inset + MSG_PAD_LR * sc) as i32;
+    let inner_right = (pw as f32 - inset - MSG_PAD_LR * sc) as i32;
+    let text_area_w = (inner_right - inner_left).max(1);
+
+    let header_h = msg_line_h(MSG_HEADER_PX, sc, s.text_scale);
+    let cause_h = msg_line_h(MSG_CAUSE_PX, sc, s.text_scale);
+    let next_h = msg_line_h(MSG_NEXT_PX, sc, s.text_scale);
+    let hint_h = msg_line_h(MSG_HINT_PX, sc, s.text_scale);
+
+    // Cause: keep the chip layout only while the whole line fits on one line.
+    // A wrapped chip would need per-run wrapping the card does not warrant, so
+    // the fallback is the plain reassembled sentence (`CauseLine::text`).
+    SelectObject(s.tmp_dc, s.font_msg_cause.into());
+    let cause_text = msg.cause.text();
+    let mut chip_layout: Option<(String, String, String)> = None;
+    if let Some(chip) = msg.cause.chip.as_deref() {
+        let before_w = text_width(s.tmp_dc, &msg.cause.before);
+        let after_w = text_width(s.tmp_dc, &msg.cause.after);
+        SelectObject(s.tmp_dc, s.font_msg_chip.into());
+        let chip_w = text_width(s.tmp_dc, chip) + (2.0 * MSG_CHIP_PAD_X * sc) as i32;
+        SelectObject(s.tmp_dc, s.font_msg_cause.into());
+        if before_w + chip_w + after_w <= text_area_w {
+            chip_layout = Some((
+                msg.cause.before.clone(),
+                chip.to_string(),
+                msg.cause.after.clone(),
+            ));
+        }
+    }
+    // Always wrapped, so the plain fallback is ready even if the chip layout is
+    // chosen; the chip form is a single line by construction (it was only chosen
+    // because the whole line fits).
+    let cause_lines: Vec<Vec<u16>> = wrap_text_lines(s.tmp_dc, &cause_text, text_area_w);
+    let cause_line_count = if chip_layout.is_some() { 1 } else { cause_lines.len() as i32 };
+
+    SelectObject(s.tmp_dc, s.font_msg_next.into());
+    let next_lines: Vec<Vec<u16>> = msg
+        .next
+        .as_deref()
+        .map(|t| wrap_text_lines(s.tmp_dc, t, text_area_w))
+        .unwrap_or_default();
+
+    SelectObject(s.tmp_dc, s.font_msg_hint.into());
+    let hint_lines: Vec<Vec<u16>> = msg
+        .hint
+        .as_deref()
+        .map(|t| wrap_text_lines(s.tmp_dc, t, text_area_w))
+        .unwrap_or_default();
+
+    // --- 2. Card geometry: content height, bottom-aligned (hugs the pill) ---
+    let head_block = (2.0 * MSG_HEAD_PAD_TB * sc) as i32 + header_h.max((MSG_DOT_SIZE * sc) as i32);
+    let divider_h = MSG_BORDER_W * sc;
+    let mut body_h = (MSG_BODY_PAD_TOP * sc + MSG_BODY_PAD_BOTTOM * sc) as i32;
+    body_h += cause_line_count * cause_h;
+    if !next_lines.is_empty() {
+        body_h += (MSG_LINE_GAP * sc) as i32 + next_lines.len() as i32 * next_h;
+    }
+    if !hint_lines.is_empty() {
+        body_h += (MSG_LINE_GAP * sc) as i32 + hint_lines.len() as i32 * hint_h;
+    }
+
+    let card_x = inset;
+    let card_w = pw as f32 - 2.0 * inset;
+    let max_card_h = ph as f32 - 2.0 * inset;
+    let card_h = (head_block as f32 + divider_h + body_h as f32).min(max_card_h);
+    let card_y = (ph as f32 - inset) - card_h;
+
+    // --- 3. Shapes: card, border, header divider, status dot, model chip ---
+    let Some(mut pixmap) = Pixmap::new(pw as u32, ph as u32) else {
+        log::warn!("[native_preview] Pixmap::new({pw},{ph}) failed — skipping message frame");
+        return alpha;
+    };
+    fill_round_rect(
+        &mut pixmap,
+        card_x,
+        card_y,
+        card_w,
+        card_h,
+        MSG_RADIUS * sc,
+        (s.config.bg_r, s.config.bg_g, s.config.bg_b),
+        s.config.bg_a as f32 / 255.0,
+    );
+    {
+        // The border is the card's tone. Width is fixed at 1 px rather than the
+        // user's `previewBorderWidth`: AC8 pins an amber (or danger) line, and a
+        // configured 0 would erase it.
+        let mut paint = Paint::default();
+        paint.anti_alias = true;
+        paint.shader = Shader::SolidColor(
+            Color::from_rgba(
+                tone_rgb.0 as f32 / 255.0,
+                tone_rgb.1 as f32 / 255.0,
+                tone_rgb.2 as f32 / 255.0,
+                MSG_LINE_ALPHA,
+            )
+            .unwrap_or(Color::WHITE),
+        );
+        let mut stroke = Stroke::default();
+        stroke.width = MSG_BORDER_W * sc;
+        if let Some(path) = round_rect_path(card_x, card_y, card_w, card_h, MSG_RADIUS * sc) {
+            pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        }
+    }
+    let head_bottom = card_y + head_block as f32;
+    fill_round_rect(
+        &mut pixmap,
+        card_x,
+        head_bottom,
+        card_w,
+        divider_h,
+        0.0,
+        C_HAIRLINE,
+        1.0,
+    );
+    // Status dot, vertically centred in the header block.
+    let dot = MSG_DOT_SIZE * sc;
+    fill_round_rect(
+        &mut pixmap,
+        inner_left as f32,
+        card_y + (head_block as f32 - dot) / 2.0,
+        dot,
+        dot,
+        dot / 2.0,
+        tone_rgb,
+        1.0,
+    );
+
+    // Body line tops, computed once so shapes and text agree.
+    let body_top = head_bottom + divider_h + MSG_BODY_PAD_TOP * sc;
+    let cause_top = body_top as i32;
+    let next_top = cause_top + cause_line_count * cause_h + (MSG_LINE_GAP * sc) as i32;
+    let hint_top = if next_lines.is_empty() {
+        next_top
+    } else {
+        next_top + next_lines.len() as i32 * next_h + (MSG_LINE_GAP * sc) as i32
+    };
+
+    // The chip sits behind the model ID; measure again with the same fonts so
+    // the rect and the glyphs cannot drift apart.
+    let mut chip_geom: Option<(i32, i32, i32)> = None; // (chip_text_x, rect_x, rect_w)
+    if let Some((before, chip, _after)) = chip_layout.as_ref() {
+        SelectObject(s.tmp_dc, s.font_msg_cause.into());
+        let before_w = text_width(s.tmp_dc, before);
+        SelectObject(s.tmp_dc, s.font_msg_chip.into());
+        let chip_text_w = text_width(s.tmp_dc, chip);
+        let pad = (MSG_CHIP_PAD_X * sc) as i32;
+        let rect_x = inner_left + before_w;
+        let rect_w = chip_text_w + 2 * pad;
+        fill_round_rect(
+            &mut pixmap,
+            rect_x as f32,
+            cause_top as f32 + (cause_h as f32 - MSG_CAUSE_PX * sc * 1.25) / 2.0,
+            rect_w as f32,
+            MSG_CAUSE_PX * sc * 1.25,
+            MSG_CHIP_RADIUS * sc,
+            C_AMBER,
+            MSG_CHIP_ALPHA,
+        );
+        chip_geom = Some((rect_x + pad, rect_x, rect_w));
+    }
+
+    copy_rgba_to_bgra(&pixmap, s.main_bits as *mut u8, byte_count);
+
+    // --- 4. Text runs. One colour per run, so the tmp DIB is cleared between
+    // them (same pattern as native_pill's label compositing). ---
+    let paint_run = |font: HFONT, lines: &[Vec<u16>], top: i32, h: i32, rgb: (u8, u8, u8)| {
+        SelectObject(s.tmp_dc, font.into());
+        for (i, line) in lines.iter().enumerate() {
+            draw_msg_line(s.tmp_dc, line, inner_left, top + i as i32 * h, inner_right, h);
+        }
+        composite_text_mask(
+            s.tmp_bits as *const u8,
+            s.main_bits as *mut u8,
+            pw,
+            ph,
+            rgb.0,
+            rgb.1,
+            rgb.2,
+            255,
+        );
+        core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+    };
+
+    // Header — mono, uppercase, dim, offset past the status dot.
+    {
+        SelectObject(s.tmp_dc, s.font_msg_header.into());
+        let header_left = inner_left + ((MSG_DOT_SIZE + MSG_DOT_GAP) * sc) as i32;
+        let wide: Vec<u16> = msg.header.encode_utf16().collect();
+        draw_msg_line(
+            s.tmp_dc,
+            &wide,
+            header_left,
+            card_y as i32 + ((head_block - header_h) / 2).max(0),
+            inner_right,
+            header_h,
+        );
+        composite_text_mask(
+            s.tmp_bits as *const u8,
+            s.main_bits as *mut u8,
+            pw,
+            ph,
+            C_DIM.0,
+            C_DIM.1,
+            C_DIM.2,
+            255,
+        );
+        core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+    }
+
+    // Cause — either three runs around the chip, or plain wrapped lines.
+    match (chip_layout.as_ref(), chip_geom) {
+        (Some((before, chip, after)), Some((chip_text_x, rect_x, rect_w))) => {
+            SelectObject(s.tmp_dc, s.font_msg_cause.into());
+            let before_wide: Vec<u16> = before.encode_utf16().collect();
+            draw_msg_line(s.tmp_dc, &before_wide, inner_left, cause_top, rect_x, cause_h);
+            let after_wide: Vec<u16> = after.encode_utf16().collect();
+            draw_msg_line(
+                s.tmp_dc,
+                &after_wide,
+                rect_x + rect_w,
+                cause_top,
+                inner_right,
+                cause_h,
+            );
+            composite_text_mask(
+                s.tmp_bits as *const u8,
+                s.main_bits as *mut u8,
+                pw,
+                ph,
+                C_TEXT.0,
+                C_TEXT.1,
+                C_TEXT.2,
+                255,
+            );
+            core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+
+            SelectObject(s.tmp_dc, s.font_msg_chip.into());
+            let chip_wide: Vec<u16> = chip.encode_utf16().collect();
+            draw_msg_line(s.tmp_dc, &chip_wide, chip_text_x, cause_top, inner_right, cause_h);
+            composite_text_mask(
+                s.tmp_bits as *const u8,
+                s.main_bits as *mut u8,
+                pw,
+                ph,
+                C_AMBER_HI.0,
+                C_AMBER_HI.1,
+                C_AMBER_HI.2,
+                255,
+            );
+            core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+        }
+        _ => paint_run(s.font_msg_cause, cause_lines.as_slice(), cause_top, cause_h, C_TEXT),
+    }
+
+    if !next_lines.is_empty() {
+        paint_run(s.font_msg_next, next_lines.as_slice(), next_top, next_h, C_MUTED);
+    }
+    if !hint_lines.is_empty() {
+        paint_run(s.font_msg_hint, hint_lines.as_slice(), hint_top, hint_h, C_DIM);
+    }
+
+    alpha
+}
+
+// ---------------------------------------------------------------------------
 // Main render function
 // ---------------------------------------------------------------------------
 
@@ -648,6 +1155,20 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     let pw = s.phys_w;
     let ph = s.phys_h;
     let sc = s.scale as f32;
+
+    // Story 7-10 AC8: a message outranks the live preview text and does not ask
+    // whether live preview is enabled at all.
+    if s.message.is_some() {
+        let alpha = render_message_card(s);
+        if alpha == 0 {
+            dismiss_message(hwnd, s);
+            ShowWindow(hwnd, SW_HIDE);
+            s.was_visible = false;
+            return;
+        }
+        present(hwnd, s, alpha);
+        return;
+    }
 
     // Hide when not armed or no text yet
     if !s.armed || s.text_buffer.is_empty() {
@@ -799,15 +1320,24 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     }
 
     // --- 5. UpdateLayeredWindow ---
+    present(hwnd, s, 255);
+}
+
+/// Present the composed BGRA DIB and show the window.
+///
+/// `alpha` is the layered window's `SourceConstantAlpha` — 255 for the live
+/// preview, and the fade ramp for a message card (Story 7-10 AC8). Factored out
+/// of `render_frame` so both paths share one present + topmost-re-assert.
+unsafe fn present(hwnd: HWND, s: &mut PreviewWindowState, alpha: u8) {
     let blend = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
         BlendFlags: 0,
-        SourceConstantAlpha: 255,
+        SourceConstantAlpha: alpha,
         AlphaFormat: AC_SRC_ALPHA as u8,
     };
     let pt_src = POINT { x: 0, y: 0 };
     let pt_dst = POINT { x: s.win_x, y: s.win_y };
-    let sz = SIZE { cx: pw, cy: ph };
+    let sz = SIZE { cx: s.phys_w, cy: s.phys_h };
 
     let ulw = UpdateLayeredWindow(
         hwnd,
@@ -872,18 +1402,91 @@ unsafe extern "system" fn preview_wnd_proc(
             let s = &mut *state_ptr;
             let code = wparam.0 as u8;
             if code == STATE_RECORDING {
+                // A new recording dismisses any message card at once (AC8).
+                // Its own `set_message(None)` arrives just before this, so this
+                // is the belt to that braces — a recording started any other way
+                // must clear the card too.
+                dismiss_message(hwnd, s);
                 // Arm only if live preview is enabled in the config snapshot
                 if s.config.live_preview_enabled {
                     s.armed = true;
                     s.text_buffer.clear();
                 } else {
-                    // live preview disabled: never show
+                    // live preview disabled: never show the live text
                     s.armed = false;
                 }
             } else {
-                // Done / Idle / Error / Warning — disarm and hide
+                // Done / Idle / Error / Warning — the live preview is over.
                 s.armed = false;
                 s.text_buffer.clear();
+                // Story 7-10 AC8: do NOT hide when this state brought a message
+                // with it. `set_message` is posted first (FIFO), so the card is
+                // already up and this state must leave it alone.
+                if s.message.is_some() {
+                    render_frame(hwnd, s);
+                } else {
+                    ShowWindow(hwnd, SW_HIDE);
+                    s.was_visible = false;
+                }
+            }
+            LRESULT(0)
+        }
+
+        WM_PREVIEW_SET_MESSAGE => {
+            if state_ptr.is_null() {
+                return LRESULT(0);
+            }
+            let s = &mut *state_ptr;
+            // Caller allocated Box<Option<OverlayMessage>> via into_raw.
+            let msg = *Box::from_raw(wparam.0 as *mut Option<OverlayMessage>);
+            match msg {
+                Some(m) => {
+                    s.message = Some(m);
+                    s.message_at = Some(Instant::now());
+                    // Clicks dismiss the card, so it has to stop being
+                    // click-through for as long as it is up.
+                    set_click_through(hwnd, false);
+                    if !s.msg_timer_active {
+                        SetTimer(Some(hwnd), TIMER_MESSAGE, TIMER_MS, None);
+                        s.msg_timer_active = true;
+                    }
+                    render_frame(hwnd, s);
+                }
+                None => {
+                    let had = s.message.is_some();
+                    dismiss_message(hwnd, s);
+                    if had {
+                        // Falls back to the live preview, or hides.
+                        render_frame(hwnd, s);
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+
+        WM_TIMER => {
+            if wparam.0 == TIMER_MESSAGE && !state_ptr.is_null() {
+                let s = &mut *state_ptr;
+                if s.message.is_some() {
+                    // render_frame runs the fade and dismisses at alpha 0.
+                    render_frame(hwnd, s);
+                } else {
+                    dismiss_message(hwnd, s);
+                }
+            }
+            LRESULT(0)
+        }
+
+        WM_LBUTTONDOWN => {
+            if state_ptr.is_null() {
+                return LRESULT(0);
+            }
+            let s = &mut *state_ptr;
+            // AC8: a click on the card dismisses it at once. The window is
+            // click-through again the moment this returns, so the next click
+            // reaches the app underneath as before.
+            if s.message.is_some() {
+                dismiss_message(hwnd, s);
                 ShowWindow(hwnd, SW_HIDE);
                 s.was_visible = false;
             }
@@ -929,8 +1532,8 @@ unsafe extern "system" fn preview_wnd_proc(
             s.win_x = wx;
             s.win_y = wy;
             // Only re-render (and thus reposition via UpdateLayeredWindow.pptDst)
-            // if the preview is currently visible.
-            if s.armed && !s.text_buffer.is_empty() {
+            // if the preview is currently visible — a message card counts.
+            if s.message.is_some() || (s.armed && !s.text_buffer.is_empty()) {
                 // Resize DIBs if physical size changed (font-scale can change on DPI change)
                 if pw != s.phys_w || ph != s.phys_h {
                     rebuild_dibs(hwnd, s, pw, ph);
@@ -968,6 +1571,11 @@ unsafe extern "system" fn preview_wnd_proc(
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let s = Box::from_raw(state_ptr);
                 DeleteObject(s.font.into());
+                DeleteObject(s.font_msg_header.into());
+                DeleteObject(s.font_msg_cause.into());
+                DeleteObject(s.font_msg_chip.into());
+                DeleteObject(s.font_msg_next.into());
+                DeleteObject(s.font_msg_hint.into());
                 DeleteDC(s.main_dc);
                 DeleteObject(s.main_bmp.into());
                 DeleteDC(s.tmp_dc);
@@ -1133,6 +1741,20 @@ fn preview_thread(
         let font_h = (config.font_px as f64 * scale * text_scale) as i32;
         let font = create_font(PCWSTR(font_face_null.as_ptr()), font_h);
 
+        // --- Message-card fonts (Story 7-10 AC8) ---
+        // Fixed sizes from the canon render, independent of the user's
+        // live-preview appearance settings: a failure message must read the
+        // same on every machine. They still honour DPI + the accessibility
+        // text scale, like every other text in this window.
+        let mono_face = to_wide(MSG_MONO_FACE);
+        let sans_face = to_wide(MSG_SANS_FACE);
+        let msg_font_h = |px: f32| (px as f64 * scale * text_scale) as i32;
+        let font_msg_header = create_font(PCWSTR(mono_face.as_ptr()), msg_font_h(MSG_HEADER_PX));
+        let font_msg_cause = create_font(PCWSTR(sans_face.as_ptr()), msg_font_h(MSG_CAUSE_PX));
+        let font_msg_chip = create_font(PCWSTR(mono_face.as_ptr()), msg_font_h(MSG_CAUSE_PX - 1.0));
+        let font_msg_next = create_font(PCWSTR(sans_face.as_ptr()), msg_font_h(MSG_NEXT_PX));
+        let font_msg_hint = create_font(PCWSTR(sans_face.as_ptr()), msg_font_h(MSG_HINT_PX));
+
         // --- Register window class ---
         let hinstance = match GetModuleHandleW(PCWSTR::null()) {
             Ok(h) => h,
@@ -1180,6 +1802,9 @@ fn preview_thread(
             text_buffer: String::new(),
             armed: false,
             was_visible: false,
+            message: None,
+            message_at: None,
+            msg_timer_active: false,
             main_dc,
             main_bmp,
             main_bits,
@@ -1187,6 +1812,11 @@ fn preview_thread(
             tmp_bmp,
             tmp_bits,
             font,
+            font_msg_header,
+            font_msg_cause,
+            font_msg_chip,
+            font_msg_next,
+            font_msg_hint,
         });
         let state_ptr = Box::into_raw(state);
 

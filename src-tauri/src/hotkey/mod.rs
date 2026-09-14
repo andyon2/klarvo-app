@@ -16,6 +16,8 @@
 
 use serde::Serialize;
 
+use crate::overlay_message::{DegradeCause, OverlayMessage};
+
 // ---------------------------------------------------------------------------
 // Event payload
 // ---------------------------------------------------------------------------
@@ -69,6 +71,13 @@ pub struct PipelineEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "clipboardOnly")]
     pub clipboard_only: Option<bool>,
+    /// This event's message in the shape the native overlay card lays out
+    /// (Story 7-10, AC8). **Never serialized** — the frontend keeps reading the
+    /// flat `warning` / `error` strings, so no payload field and no event name
+    /// changed (surface-smoke trap #5). This is an in-process carrier for
+    /// `lib::emit_pipeline_state` → `native_preview`.
+    #[serde(skip_serializing)]
+    pub message: Option<OverlayMessage>,
 }
 
 impl PipelineEvent {
@@ -80,6 +89,7 @@ impl PipelineEvent {
             error: None,
             warning: None,
             clipboard_only: None,
+            message: None,
         }
     }
 
@@ -91,6 +101,7 @@ impl PipelineEvent {
             error: None,
             warning: None,
             clipboard_only: None,
+            message: None,
         }
     }
 
@@ -102,6 +113,7 @@ impl PipelineEvent {
             error: None,
             warning: None,
             clipboard_only: None,
+            message: None,
         }
     }
 
@@ -113,6 +125,7 @@ impl PipelineEvent {
             error: None,
             warning: None,
             clipboard_only: None,
+            message: None,
         }
     }
 
@@ -125,6 +138,7 @@ impl PipelineEvent {
             error: None,
             warning: None,
             clipboard_only: None,
+            message: None,
         }
     }
 
@@ -138,30 +152,40 @@ impl PipelineEvent {
     /// Story 7-10 (Q1) makes this the *only* terminal event on the degrade path:
     /// the pipeline no longer emits a separate `Warning` ahead of it, so the
     /// cause text cannot be cut short by the follow-up terminal event (7-9
-    /// GATE-4 finding 3a). Every consumer must surface `warning` when present.
+    /// GATE-4 finding 3a). Every consumer must surface the cause when present.
+    ///
+    /// AC8 splits the two consumers off **one** [`DegradeCause`] instead of
+    /// handing each a string: `warning` keeps the unchanged one-line wording for
+    /// the main window (D1), `message` carries the laid-out card for the native
+    /// preview. The flag that tells the two clipboard-only routes apart is
+    /// `message.is_some()` — the focus-failure route passes `None` and looks
+    /// exactly as it did before.
     pub fn done_with_clipboard_only(
         text: String,
         raw_text: String,
-        warning: Option<String>,
+        cause: Option<DegradeCause>,
     ) -> Self {
         PipelineEvent {
             state: PipelineState::Done,
             text: Some(text),
             raw_text: Some(raw_text),
             error: None,
-            warning,
+            warning: cause.as_ref().map(|c| c.status_line()),
             clipboard_only: Some(true),
+            message: cause.as_ref().map(|c| c.card()),
         }
     }
 
     pub fn error(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
         PipelineEvent {
             state: PipelineState::Error,
             text: None,
             raw_text: None,
-            error: Some(msg.into()),
+            error: Some(msg.clone()),
             warning: None,
             clipboard_only: None,
+            message: Some(OverlayMessage::error(msg)),
         }
     }
 
@@ -172,14 +196,20 @@ impl PipelineEvent {
     ///
     /// Note: this event is emitted *before* the done event so the frontend
     /// can briefly show the warning before transitioning to done state.
+    ///
+    /// Two producers remain since Story 7-10 (Q1): the STT fallback ladder
+    /// (mid-run) and the boot-time config warnings in `lib::run`. Both now also
+    /// carry an amber card (AC8) — the pill's `Warning` label is static.
     pub fn warn(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
         PipelineEvent {
             state: PipelineState::Warning,
             text: None,
             raw_text: None,
             error: None,
-            warning: Some(msg.into()),
+            warning: Some(msg.clone()),
             clipboard_only: None,
+            message: Some(OverlayMessage::warning(msg)),
         }
     }
 }
@@ -236,14 +266,19 @@ mod tests {
     }
 
     /// Story 7-10 (Q1/AC3): the degrade route carries its cause text on the
-    /// single terminal event, so the pill and the main window can still name
-    /// the model ID after the run has ended.
+    /// single terminal event, so the main window can still name the model ID
+    /// after the run has ended.
+    ///
+    /// AC8 adds the second half: the same cause also produces the card the
+    /// native preview renders, and the card is **not** serialized — the
+    /// frontend payload is unchanged (surface-smoke trap #5: no new field, no
+    /// new event name).
     #[test]
     fn test_pipeline_event_done_clipboard_only_carries_warning() {
         let event = PipelineEvent::done_with_clipboard_only(
             "raw text".to_string(),
             "raw text".to_string(),
-            Some("Model 'deepseek-typo' not found — in clipboard".to_string()),
+            Some(DegradeCause::ModelNotFound { model: "deepseek-typo".to_string() }),
         );
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"state\":\"done\""));
@@ -252,6 +287,70 @@ mod tests {
             json.contains("Model 'deepseek-typo' not found"),
             "the degrade cause must ride on the terminal event: {json}"
         );
+        assert!(
+            !json.contains("CLEANUP FAILED"),
+            "the card is in-process only — it must never reach the frontend payload: {json}"
+        );
+
+        let card = event.message.expect("AC8: the degrade event carries a card");
+        assert_eq!(card.header, "CLEANUP FAILED");
+        assert_eq!(card.cause.chip.as_deref(), Some("deepseek-typo"));
+        assert!(card.next.is_some(), "the card tells the user where the text went");
+    }
+
+    /// AC8's gate: a clipboard-only run **without** a degrade cause (the
+    /// focus-failure route) carries no card, so the pill keeps its static
+    /// "In Clipboard" label and no card is shown. This is the discriminator the
+    /// overlay boundary reads — `message.is_some()` — so it is pinned here.
+    #[test]
+    fn spec_focus_failure_clipboard_only_carries_no_card() {
+        let event = PipelineEvent::done_with_clipboard_only(
+            "Hello".to_string(),
+            "Hello".to_string(),
+            None,
+        );
+        assert_eq!(event.clipboard_only, Some(true));
+        assert_eq!(event.warning, None);
+        assert!(
+            event.message.is_none(),
+            "no cleanup failure, no card — otherwise the pill would say 'Cleanup failed' \
+             for a vanished paste target"
+        );
+    }
+
+    /// AC8: every other pipeline message rides the same card.
+    #[test]
+    fn spec_warning_and_error_events_carry_a_card() {
+        let warn = PipelineEvent::warn("⚠ Groq am Limit → lokale Transkription");
+        let card = warn.message.expect("a Warning must carry its card");
+        assert_eq!(card.header, "WARNING");
+        assert_eq!(card.cause.text(), "⚠ Groq am Limit → lokale Transkription");
+        assert_eq!(warn.warning.as_deref(), Some("⚠ Groq am Limit → lokale Transkription"));
+
+        let err = PipelineEvent::error("STT failed: timeout");
+        let card = err.message.expect("an Error must carry its card");
+        assert_eq!(card.header, "ERROR");
+        assert_eq!(card.tone, crate::overlay_message::MessageTone::Error);
+        assert_eq!(err.error.as_deref(), Some("STT failed: timeout"));
+    }
+
+    /// Progress states are not messages — no card, so the overlay clears any
+    /// card still on screen when the next run starts.
+    #[test]
+    fn spec_progress_events_carry_no_card() {
+        for event in [
+            PipelineEvent::idle(),
+            PipelineEvent::recording(),
+            PipelineEvent::transcribing(),
+            PipelineEvent::cleaning(),
+            PipelineEvent::done("a".to_string(), "a".to_string()),
+        ] {
+            assert!(
+                event.message.is_none(),
+                "a progress/success state must not open a message card: {:?}",
+                event.state
+            );
+        }
     }
 
     /// PipelineEvent::error includes error field, no text.

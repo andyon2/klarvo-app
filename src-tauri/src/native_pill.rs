@@ -32,6 +32,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::overlay_message;
+
 // ---------------------------------------------------------------------------
 // Dimensions & layout constants (logical pixels, scale-independent)
 // ---------------------------------------------------------------------------
@@ -71,10 +73,12 @@ const CHECK_SIZE: f32 = 11.0;
 // ---------------------------------------------------------------------------
 // Custom messages (WM_APP range: 0x8000-0xBFFF)
 // ---------------------------------------------------------------------------
-const WM_PILL_SET_STATE: u32 = 0x8001; // WPARAM=state_code, LPARAM=clipboard_only
+const WM_PILL_SET_STATE: u32 = 0x8001; // WPARAM=state_code, LPARAM=TerminalKind code
 const WM_PILL_SET_RMS: u32 = 0x8002;   // WPARAM=f32::to_bits()
 const WM_PILL_SET_MODE: u32 = 0x8003;  // WPARAM=ptr to Box<String> (caller Box::into_raw)
-const WM_PILL_SET_MSG: u32 = 0x8004;   // WPARAM=ptr to Box<Option<String>> (dynamic status text for Error/Warning)
+// 0x8004 (WM_PILL_SET_MSG) retired by Story 7-10 AC8: the pill no longer renders
+// dynamic status text, so there is nothing to deliver. The message goes to the
+// native preview card (`native_preview::NativePreview::set_message`).
 const WM_PILL_SHUTDOWN: u32 = 0x8010;  // Request orderly teardown; handler calls DestroyWindow
 
 // Timer for spinner animation and done/error timeout
@@ -92,12 +96,30 @@ const ERROR_IDLE_MS: u128 = 2500;
 // path). Since Story 7-10 (Q1) cleanup degrade no longer emits a Warning at
 // all -- its cause rides on the terminal DoneClipboard. Remaining Warning
 // producers: the STT fallback ladder (mid-run) and boot-time config warnings
-// (lib::run). DoneClipboard, Error and any new activity still override.
+// (lib::run). DoneClipboard, DoneDegraded, Error and any new activity still
+// override.
+//
+// Since AC8 this holds an amber *light*, not a text: the warning's wording is on
+// the preview card, which runs its own 4 s + 1 s fade independently of the pill.
 const WARNING_HOLD_MS: u128 = 4000;
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
+
+/// How a terminal `Done` state ended, packed into `WM_PILL_SET_STATE`'s LPARAM.
+///
+/// Story 7-10 AC8: the pill is a status light, so the only thing that still has
+/// to travel with the state is *which light* — one small code, never a string.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TerminalKind {
+    /// Pasted into the focused window.
+    Pasted = 0,
+    /// Clipboard-only because the paste target was gone.
+    ClipboardOnly = 1,
+    /// Clipboard-only because cleanup failed (AC1). The cause is on the card.
+    Degraded = 2,
+}
 
 /// Local copy of pipeline state for the pill renderer.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -108,11 +130,16 @@ pub enum NativePillState {
     Cleaning,
     Done,
     DoneClipboard,
+    /// Clipboard-only after a cleanup degrade (Story 7-10 AC1). Same amber and
+    /// the same `DONE_CLIPBOARD_MS` hold as [`NativePillState::DoneClipboard`],
+    /// different static label — the two routes must stay distinguishable
+    /// (canon mock, "Offene Entscheidungen" row 1).
+    DoneDegraded,
     Error,
-    /// Transient non-fatal warning (12-1 FR4): a fallback/degrade message shown
-    /// briefly in the pill, then overridden by the follow-up Done/Error event.
-    /// Amber, dynamic message text (`status_msg`). Ported from FloatingBar.tsx
-    /// isWarning at the WebView2→native migration (Epic 10 × Epic 12 integration).
+    /// Transient non-fatal warning (12-1 FR4): the STT fallback ladder or a
+    /// boot-time config warning. Amber, **static** label since AC8 — the
+    /// wording is on the preview card. Ported from FloatingBar.tsx isWarning at
+    /// the WebView2→native migration (Epic 10 × Epic 12 integration).
     Warning,
 }
 
@@ -123,7 +150,19 @@ impl NativePillState {
     fn needs_animation(self) -> bool {
         matches!(
             self,
-            NativePillState::Transcribing | NativePillState::Cleaning | NativePillState::Done | NativePillState::DoneClipboard | NativePillState::Error
+            NativePillState::Transcribing
+                | NativePillState::Cleaning
+                | NativePillState::Done
+                | NativePillState::DoneClipboard
+                | NativePillState::DoneDegraded
+                | NativePillState::Error
+        )
+    }
+    /// True for the two clipboard-only routes, which share icon and hold time.
+    fn is_clipboard_done(self) -> bool {
+        matches!(
+            self,
+            NativePillState::DoneClipboard | NativePillState::DoneDegraded
         )
     }
     fn accent(self) -> (f32, f32, f32) {
@@ -134,25 +173,25 @@ impl NativePillState {
                 (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0)
             }
             NativePillState::Done => (74.0 / 255.0, 222.0 / 255.0, 128.0 / 255.0),
-            NativePillState::DoneClipboard => (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0),
+            NativePillState::DoneClipboard | NativePillState::DoneDegraded => {
+                (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0)
+            }
             NativePillState::Error => (255.0 / 255.0, 115.0 / 255.0, 105.0 / 255.0),
             // Amber #FFA344 — matches FloatingBar.tsx isWarning color (and DoneClipboard).
             NativePillState::Warning => (255.0 / 255.0, 163.0 / 255.0, 68.0 / 255.0),
             NativePillState::Idle => (0.0, 0.0, 0.0),
         }
     }
-    fn from_code(code: u8, clipboard_only: bool) -> Self {
+    fn from_code(code: u8, terminal: TerminalKind) -> Self {
         match code {
             1 => NativePillState::Recording,
             2 => NativePillState::Transcribing,
             3 => NativePillState::Cleaning,
-            4 => {
-                if clipboard_only {
-                    NativePillState::DoneClipboard
-                } else {
-                    NativePillState::Done
-                }
-            }
+            4 => match terminal {
+                TerminalKind::Pasted => NativePillState::Done,
+                TerminalKind::ClipboardOnly => NativePillState::DoneClipboard,
+                TerminalKind::Degraded => NativePillState::DoneDegraded,
+            },
             5 => NativePillState::Error,
             6 => NativePillState::Warning,
             _ => NativePillState::Idle,
@@ -178,22 +217,11 @@ struct PillWindowState {
     // Warning display (12-1 FR4). Set when a Warning state arrives;
     // handle_timer dismisses to Idle after WARNING_HOLD_MS. See warning_hold_active.
     warning_at: Option<Instant>,
-    // Dynamic status text rendered for Error/Warning/DoneClipboard (the
-    // pipeline's taxonomy message, e.g. "⚠ Groq am Limit → lokale Transkription"
-    // or the 7-10 degrade cause carried on DoneClipboard).
-    // None → static label fallback. Owned by the CURRENT display state: it is
-    // (re)set from `pending_msg` on every accepted state entry, never inherited.
-    status_msg: Option<String>,
-    // Staging slot for WM_PILL_SET_MSG (Story 7-10, review round 1).
-    //
-    // `emit_pipeline_state` posts the message and the state as a FIFO pair, msg
-    // first. Applying the message immediately let it outlive its own state: the
-    // 7-9 3a rule drops a `None` while the warning hold is active, so a Warning
-    // younger than WARNING_HOLD_MS followed by a message-less DoneClipboard
-    // (focus-verify failure) rendered the STT ladder's text in the clipboard-only
-    // arm. Staging moves the decision to WM_PILL_SET_STATE, which knows whether
-    // the state the message belongs to is accepted or dropped.
-    pending_msg: Option<Option<String>>,
+    // Story 7-10 AC8 removed `status_msg` and its staging slot `pending_msg`.
+    // The pill renders no dynamic text at all any more, so there is nothing to
+    // own, nothing to stage against the 7-9 3a Done-drop, and nothing that can
+    // be inherited by the wrong state. The message lives on the preview card
+    // (`native_preview.rs`), which has room to lay it out and its own hold.
     drag: Option<Drag>,
     last_bar_moved_emit: Option<Instant>,
     // GDI resources
@@ -259,14 +287,16 @@ impl NativePill {
 
     /// Update pill state from a `PipelineState`.
     ///
-    /// `Warning` now maps to a transient amber display (12-1 FR4 native re-port).
-    /// The dynamic message text is delivered separately via `set_status_msg`,
-    /// which callers post *before* `set_state` so it is present when the pill
-    /// renders (PostMessage is FIFO per window).
+    /// `Warning` maps to a transient amber display (12-1 FR4 native re-port).
+    ///
+    /// Story 7-10 AC8: this is now the **only** thing the pill is told. `state`
+    /// plus `terminal` pick one of a fixed set of static labels; no text is ever
+    /// delivered here, so the FIFO msg/state pairing the previous design needed
+    /// is gone with it.
     pub fn set_state(
         &self,
         state: &crate::hotkey::PipelineState,
-        clipboard_only: bool,
+        terminal: TerminalKind,
     ) {
         use crate::hotkey::PipelineState;
         let code: u8 = match state {
@@ -278,13 +308,12 @@ impl NativePill {
             PipelineState::Error => 5,
             PipelineState::Warning => 6,
         };
-        let lparam = if clipboard_only { 1isize } else { 0isize };
         unsafe {
             let _ = PostMessageW(
                 Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_STATE,
                 WPARAM(code as usize),
-                LPARAM(lparam),
+                LPARAM(terminal as isize),
             );
         }
     }
@@ -310,28 +339,6 @@ impl NativePill {
             if PostMessageW(
                 Some(HWND(self.hwnd as *mut _)),
                 WM_PILL_SET_MODE,
-                WPARAM(boxed as usize),
-                LPARAM(0),
-            )
-            .is_err()
-            {
-                drop(Box::from_raw(boxed));
-            }
-        }
-    }
-
-    /// Set the dynamic status message rendered for the next
-    /// Error/Warning/DoneClipboard state (12-1 FR4, Story 7-10). Post this
-    /// *before* the matching `set_state`: the message is staged and the state
-    /// that follows claims it. `None` means "that state has no message" — it
-    /// renders its static label and inherits nothing from the state before it.
-    pub fn set_status_msg(&self, msg: Option<String>) {
-        let boxed = Box::into_raw(Box::new(msg));
-        unsafe {
-            // If PostMessage fails the box leaks (window may be gone) — acceptable.
-            if PostMessageW(
-                Some(HWND(self.hwnd as *mut _)),
-                WM_PILL_SET_MSG,
                 WPARAM(boxed as usize),
                 LPARAM(0),
             )
@@ -545,36 +552,46 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
-/// Truncate `text` to fit `max_w` physical px in the font currently selected in
-/// `dc`, appending an ellipsis ("…") when cut. Returns the UTF-16 slice WITHOUT
-/// a trailing NUL (ready to hand straight to `TextOutW`). Used for the dynamic
-/// Error/Warning status message (12-1 FR4), which can exceed the ~200px pill.
+// `fit_text` removed by Story 7-10 AC8. It existed to squeeze the pipeline's
+// message into the pill's ~131 px label box; Andi's GATE-4 round 1 on build
+// `d73082d` showed what that costs — `Model 'deepseek-typo' not found — in
+// clipboard` was cut after "not found" and the user never learned where the
+// text was. Every label below is now a fixed literal from
+// `crate::overlay_message`, short enough that there is nothing to cut. Bringing
+// truncation back here means the message is back on the status light.
+
+/// Draw one of the pill's fixed labels and composite it in `rgb`.
 ///
-/// Iterative shrink measured with `GetTextExtentPoint32W` (already used elsewhere):
-/// message length is tiny (< ~40 chars in the pill), so the O(n) measure loop is
-/// cheap and avoids the extra `GetTextExtentExPointW` binding.
-unsafe fn fit_text(dc: HDC, text: &str, max_w: i32) -> Vec<u16> {
-    let full = to_wide(text);
-    let chars: Vec<u16> = full[..full.len().saturating_sub(1)].to_vec(); // drop NUL
-    let mut sz = SIZE { cx: 0, cy: 0 };
-    if max_w <= 0 {
-        return chars;
-    }
-    if GetTextExtentPoint32W(dc, &chars, &mut sz).as_bool() && sz.cx <= max_w {
-        return chars;
-    }
-    const ELLIPSIS: u16 = 0x2026; // …
-    // Shrink from the end until "<prefix>…" fits.
-    let mut n = chars.len();
-    while n > 0 {
-        n -= 1;
-        let mut cand: Vec<u16> = chars[..n].to_vec();
-        cand.push(ELLIPSIS);
-        if GetTextExtentPoint32W(dc, &cand, &mut sz).as_bool() && sz.cx <= max_w {
-            return cand;
-        }
-    }
-    vec![ELLIPSIS]
+/// `font_px` is the label font's logical size; it only sets the vertical
+/// centring, exactly as the per-arm code did before AC8 folded the five arms
+/// into this helper. The tmp DIB is left zeroed for the next caller, matching
+/// the surrounding convention.
+unsafe fn draw_static_label(
+    s: &PillWindowState,
+    pw: i32,
+    ph: i32,
+    byte_count: usize,
+    label: &str,
+    font: HFONT,
+    font_px: f32,
+    rgb: (u8, u8, u8),
+) {
+    let sc = s.scale as f32;
+    SelectObject(s.tmp_dc, font.into());
+    let text = to_wide(label);
+    let tx = LABEL_X_AFTER_SPIN * sc;
+    let ty = ((PILL_H - font_px) / 2.0) * sc;
+    TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len() - 1]);
+    composite_text_mask(
+        s.tmp_bits as *const u8,
+        s.main_bits as *mut u8,
+        pw,
+        ph,
+        rgb.0,
+        rgb.1,
+        rgb.2,
+    );
+    core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
 }
 
 /// Main render: build the frame and call UpdateLayeredWindow.
@@ -691,8 +708,9 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             render_spinner(&mut pixmap, sc, s.spinner_deg, accent_color);
         }
 
-        NativePillState::Done | NativePillState::DoneClipboard => {
-            // Check mark (green) or clipboard box (amber)
+        NativePillState::Done | NativePillState::DoneClipboard | NativePillState::DoneDegraded => {
+            // Check mark (green) or clipboard box (amber). Both clipboard-only
+            // routes share the icon; only the label tells them apart (AC8).
             let check_x = (SPIN_X + (SPIN_SIZE - CHECK_SIZE) / 2.0) * sc;
             let check_y = (SPIN_Y + (SPIN_SIZE - CHECK_SIZE) / 2.0) * sc;
             if matches!(s.display, NativePillState::Done) {
@@ -703,7 +721,7 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             }
         }
 
-        // Error/Warning draw no shape — only the K logo + dynamic message text
+        // Error/Warning draw no shape — only the K logo + their static label
         // (composited in the GDI section below).
         NativePillState::Error | NativePillState::Warning | NativePillState::Idle => {}
     }
@@ -767,77 +785,52 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
 
+            // Story 7-10 AC8 — the pill is a status light. Every arm below draws
+            // a fixed literal from `crate::overlay_message` in the state's accent
+            // colour; none of them reads pipeline text, and none of them
+            // truncates. The message those literals used to compete with is on
+            // the preview card.
             NativePillState::Done => {
-                SelectObject(s.tmp_dc, s.font_label.into());
-                let text = to_wide("Done");
-                let tx = LABEL_X_AFTER_SPIN * sc;
-                let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
-                composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 74, 222, 128);
-                core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+                draw_static_label(
+                    s, pw, ph, byte_count,
+                    overlay_message::PILL_LABEL_DONE,
+                    s.font_label, 11.0, (74, 222, 128),
+                );
             }
 
             NativePillState::DoneClipboard => {
-                // Story 7-10 (Q1): this arm used to render a STATIC label and
-                // ignore `status_msg`, so the degrade cause — including the
-                // model ID from 7-9's D2 — was lost the moment the run ended.
-                // A message now replaces the label; without one (the ordinary
-                // focus-failure route) the static label is unchanged.
-                //
-                // Q3: tail-truncated via `fit_text`, never widened — the canon
-                // pins the pill at 200×36 ("Fläche bleibt 200×36 — kein
-                // Aufblasen", ADR-0019). The message uses the smaller
-                // `font_label`, matching the Error/Warning arms, so more of the
-                // cause survives the cut.
-                match s.status_msg.as_deref() {
-                    Some(msg) => {
-                        SelectObject(s.tmp_dc, s.font_label.into());
-                        let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
-                        let text = fit_text(s.tmp_dc, msg, avail);
-                        let tx = LABEL_X_AFTER_SPIN * sc;
-                        let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                        TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
-                    }
-                    None => {
-                        SelectObject(s.tmp_dc, s.font_label_lg.into());
-                        let text = to_wide("In Clipboard");
-                        let tx = LABEL_X_AFTER_SPIN * sc;
-                        let ty = ((PILL_H - 12.0) / 2.0) * sc;
-                        TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
-                    }
-                }
-                composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 163, 68);
-                core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+                draw_static_label(
+                    s, pw, ph, byte_count,
+                    overlay_message::PILL_LABEL_CLIPBOARD,
+                    s.font_label_lg, 12.0, (255, 163, 68),
+                );
+            }
+
+            NativePillState::DoneDegraded => {
+                // Cleanup failed: same amber light, different word, so the user
+                // can tell a degrade from a vanished paste target at a glance.
+                // Same font as its sibling label so the two read as one family.
+                draw_static_label(
+                    s, pw, ph, byte_count,
+                    overlay_message::PILL_LABEL_DEGRADED,
+                    s.font_label_lg, 12.0, (255, 163, 68),
+                );
             }
 
             NativePillState::Error => {
-                // 12-1 FR4: render the pipeline's terminal message (e.g.
-                // "✗ Transkription fehlgeschlagen — Audio gesichert"), truncated
-                // to the pill's label width. Falls back to "Error" if none.
-                SelectObject(s.tmp_dc, s.font_label.into());
-                let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
-                let msg = s.status_msg.as_deref().unwrap_or("Error");
-                let text = fit_text(s.tmp_dc, msg, avail);
-                let tx = LABEL_X_AFTER_SPIN * sc;
-                let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
-                composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 115, 105);
-                core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+                draw_static_label(
+                    s, pw, ph, byte_count,
+                    overlay_message::PILL_LABEL_ERROR,
+                    s.font_label, 11.0, (255, 115, 105),
+                );
             }
 
             NativePillState::Warning => {
-                // 12-1 FR4: transient amber message from the STT fallback ladder
-                // (e.g. "⚠ Groq am Limit → lokale Transkription") or a boot-time
-                // config warning; same treatment as Error but amber.
-                SelectObject(s.tmp_dc, s.font_label.into());
-                let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
-                let msg = s.status_msg.as_deref().unwrap_or("Warning");
-                let text = fit_text(s.tmp_dc, msg, avail);
-                let tx = LABEL_X_AFTER_SPIN * sc;
-                let ty = ((PILL_H - 11.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
-                composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 163, 68);
-                core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
+                draw_static_label(
+                    s, pw, ph, byte_count,
+                    overlay_message::PILL_LABEL_WARNING,
+                    s.font_label, 11.0, (255, 163, 68),
+                );
             }
 
             NativePillState::Idle => {}
@@ -1073,10 +1066,11 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         return;
     }
 
-    // Done timeout
+    // Done timeout. Both clipboard-only routes hold DONE_CLIPBOARD_MS (AC8:
+    // "both hold DONE_CLIPBOARD_MS (4 s) as today").
     if let Some(started) = s.done_at {
         let elapsed = started.elapsed().as_millis();
-        let limit = if matches!(s.display, NativePillState::DoneClipboard) {
+        let limit = if s.display.is_clipboard_done() {
             DONE_CLIPBOARD_MS
         } else {
             DONE_NORMAL_MS
@@ -1084,10 +1078,6 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         if elapsed >= limit {
             s.display = NativePillState::Idle;
             s.done_at = None;
-            // Story 7-10: DoneClipboard can now carry a degrade message. Clear
-            // it on dismissal like the Error/Warning branches do, so a later
-            // message-less clipboard-only run cannot inherit a stale cause.
-            s.status_msg = None;
             stop_timer(hwnd, s);
             render_frame(hwnd, s);
         }
@@ -1099,7 +1089,6 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         if started.elapsed().as_millis() >= ERROR_IDLE_MS {
             s.display = NativePillState::Idle;
             s.error_at = None;
-            s.status_msg = None;
             stop_timer(hwnd, s);
             render_frame(hwnd, s);
         }
@@ -1116,7 +1105,6 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         if started.elapsed().as_millis() >= WARNING_HOLD_MS {
             s.display = NativePillState::Idle;
             s.warning_at = None;
-            s.status_msg = None;
             stop_timer(hwnd, s);
             render_frame(hwnd, s);
         }
@@ -1136,10 +1124,13 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
 /// replace the display unconditionally, on the assumption that a follow-up Done
 /// is always far enough away to be harmless. That held for a slow ladder retry
 /// and failed when the rest of the run finished within the 4 s. While this
-/// returns true a plain Done is dropped, together with the status message staged
-/// for it; the timer then dismisses to Idle. Everything else still overrides —
-/// DoneClipboard (the text did NOT land), Error, and any new activity
-/// (Recording/Transcribing/Cleaning/Idle), each with its own staged message.
+/// returns true a plain Done is dropped and the timer then dismisses to Idle.
+/// Everything else still overrides — both clipboard-only routes (the text did
+/// NOT land), Error, and any new activity (Recording/Transcribing/Cleaning/Idle).
+///
+/// **Since AC8 this holds a light, not a sentence.** The warning's wording is on
+/// the preview card, which runs its own 4 s + 1 s fade; the hold now only keeps
+/// the amber light from flicking to green while the card is still up.
 fn warning_hold_active(s: &PillWindowState) -> bool {
     matches!(s.display, NativePillState::Warning)
         && s.warning_at
@@ -1197,24 +1188,17 @@ unsafe extern "system" fn pill_wnd_proc(
             }
             let s = &mut *state_ptr;
             let code = wparam.0 as u8;
-            let clipboard_only = lparam.0 != 0;
-            let new_state = NativePillState::from_code(code, clipboard_only);
+            let terminal = match lparam.0 {
+                1 => TerminalKind::ClipboardOnly,
+                2 => TerminalKind::Degraded,
+                _ => TerminalKind::Pasted,
+            };
+            let new_state = NativePillState::from_code(code, terminal);
 
-            // 7-9 3a: a plain Done must not cut the degrade warning short.
+            // 7-9 3a: a plain Done must not cut a held warning short.
             if matches!(new_state, NativePillState::Done) && warning_hold_active(s) {
-                // The message staged for this Done goes with it, so the held
-                // Warning keeps rendering its own text (7-9 3a).
-                s.pending_msg = None;
                 return LRESULT(0);
             }
-
-            // Story 7-10 (review round 1): the message is owned by the state
-            // that carries it. Taking the staged slot here — and clearing it
-            // when nothing was staged — means no state can ever inherit the
-            // previous one's text (a Warning younger than WARNING_HOLD_MS
-            // followed by a message-less DoneClipboard used to show the STT
-            // ladder's warning under the clipboard-only arm).
-            s.status_msg = s.pending_msg.take().flatten();
 
             s.display = new_state;
             s.spinner_deg = 0.0;
@@ -1225,7 +1209,9 @@ unsafe extern "system" fn pill_wnd_proc(
             s.waveform_pos = 0; // reset ring-buffer head on state change
 
             match new_state {
-                NativePillState::Done | NativePillState::DoneClipboard => {
+                NativePillState::Done
+                | NativePillState::DoneClipboard
+                | NativePillState::DoneDegraded => {
                     s.done_at = Some(Instant::now());
                     start_timer(hwnd, s);
                 }
@@ -1281,21 +1267,6 @@ unsafe extern "system" fn pill_wnd_proc(
             if matches!((*state_ptr).display, NativePillState::Recording) {
                 render_frame(hwnd, &mut *state_ptr);
             }
-            LRESULT(0)
-        }
-
-        WM_PILL_SET_MSG => {
-            if state_ptr.is_null() { return LRESULT(0); }
-            // Caller allocated Box<Option<String>> via into_raw; we own it now.
-            // No render here — the matching WM_PILL_SET_STATE arrives next (FIFO)
-            // and renders with this message present.
-            let msg = Box::from_raw(wparam.0 as *mut Option<String>);
-            // Story 7-10 (review round 1): staged, not applied. The message
-            // belongs to the state that arrives next; SET_STATE applies it on an
-            // accepted state and discards it with a dropped one (7-9 3a). Doing
-            // it here could not tell those apart — a `None` dropped to protect a
-            // held Warning then bled that Warning's text into the next state.
-            (*state_ptr).pending_msg = Some(*msg);
             LRESULT(0)
         }
 
@@ -1563,8 +1534,6 @@ fn pill_thread(
             done_at: None,
             error_at: None,
             warning_at: None,
-            status_msg: None,
-            pending_msg: None,
             drag: None,
             last_bar_moved_emit: None,
             main_dc,

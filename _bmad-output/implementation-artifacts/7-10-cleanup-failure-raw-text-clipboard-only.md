@@ -1,6 +1,6 @@
 # Story 7.10: Cleanup failure → raw text clipboard-only, no paste, no auto-send
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -275,11 +275,34 @@ are distinguishable — the exact seam is the dev's call; the visible outcome ab
   - [x] Both inversions (AC6) + the non-discriminating trap check; table in the Dev Agent Record;
         `git status` clean.
 
-- [ ] **Task 6 — Message card, pill as status light** (AC8) — GATE-4 re-open. Desktop only. `native_pill.rs`:
+- [x] **Task 6 — Message card, pill as status light** (AC8) — GATE-4 re-open. Desktop only. `native_pill.rs`:
       static labels per state, remove dynamic status text; `native_preview.rs`: message mode (any pipeline message,
       independent of `live_preview_enabled`), header/cause/next/hint layout, amber or danger border, 4 s + 1 s fade,
       dismiss on new recording or click; pipeline/event: structured message fields; tests for the message model
       + inversion; Windows-gated code compiles via the conductor's Windows build (GATE-4), not on Linux.
+  - [x] New `src-tauri/src/overlay_message.rs` — **not** platform-gated, so the message model is reachable by
+        `cargo test --lib` on Linux: `MessageTone`, `CauseLine` (chip split), `OverlayMessage`, `DegradeCause`
+        (`ModelNotFound` / `Generic` / `ClipboardWriteFailed`) with `status_line()` + `card()`, and the five static
+        `PILL_LABEL_*` constants.
+  - [x] Pipeline carries the **cause**, not a sentence: `ProcessOutcome::Produced.degrade_msg: Option<String>` →
+        `degrade_cause: Option<DegradeCause>`; `degrade_cause_for_model` / `generic_degrade_cause` replace the
+        string builders at the three degrade sites; `terminal_degrade_msg` → `terminal_degrade_cause`.
+        `status_line()` reproduces the pre-AC8 wording **byte-identically**, so D1 and every wording spec are
+        untouched.
+  - [x] `hotkey::PipelineEvent` gains `#[serde(skip_serializing)] message: Option<OverlayMessage>` — in-process
+        only, so **no payload field and no event name changed** (trap #5). `done_with_clipboard_only` takes the
+        `DegradeCause` and derives both forms; `warn` / `error` carry their own card.
+  - [x] `native_pill.rs`: `fit_text` **removed**; `status_msg` / `pending_msg` / `WM_PILL_SET_MSG` /
+        `set_status_msg` removed with it; new `TerminalKind` (Pasted / ClipboardOnly / Degraded) rides LPARAM;
+        new `NativePillState::DoneDegraded`; all five terminal/message arms fold into `draw_static_label`.
+  - [x] `native_preview.rs`: `WM_PREVIEW_SET_MESSAGE`, `render_message_card` (header + dot · cause with amber chip ·
+        next · hint, canon tokens, tone-coloured border), `present()` factored out for the fade,
+        `MSG_HOLD_MS` 4 s + `MSG_FADE_MS` 1 s on a 33 ms timer, `WM_LBUTTONDOWN` dismiss with `WS_EX_TRANSPARENT`
+        toggled only while a card is up, Recording clears the card.
+  - [x] Card exists without live preview: `pipeline::start_recording_only` creates the preview window
+        unconditionally, and `lib::run` creates one at setup so the boot-time config warnings have a surface.
+  - [x] Tests + inversions: 10 new specs (7 in `overlay_message`, 3 in `hotkey`); both inversions shown RED and
+        reverted; `git status` clean.
 - [x] **Task 5 — Gates** (AC7): `cargo test --lib`, the JVM gate, trap #5, coverage statements, then hand GATE-4
       to Andi with the exact steps from the epic DoD. Anchor the record **by symbol**, write resolution rows from
       `git diff` (Epic-7 retro D2).
@@ -788,6 +811,40 @@ confirmed finding: the round-1 flag below, promoted by Andi. Scope is that findi
 
 **⚠ FLAGGED, NOT ACTED ON (in round 1 — APPLIED in round 2, `df836a0`, CASE C of the D1 smoke exercises exactly this sequence) — D1 makes a deferred defect user-visible.** Deferral row 1 (`warningMessage` is never cleared on a hotkey-driven run, `useRecording.ts`'s `onStateChanged` vs `handleRecordToggle`) was deferred as pre-existing *on the premise that nothing rendered the value*. D1 removes that premise. Concretely: a degraded run sets `warningMessage`; if the user does not click the record button (the only clearing path), the **next successful** hotkey run emits `done` with no warning, `warningMessage` is still set, and the status line shows the **previous** run's amber degrade text instead of "Done". The one-line fix would be an `else` on the capture in `useRecording.ts` — **not applied**, because deferred findings were explicitly out of this round's scope. It should be re-decided now that it is visible. The D1 smoke emits one run per browser boot, so it neither triggers nor rules this out.
 
+**GATE-4 ROUND 1 → TASK 6 / AC8 (2026-09-14, same host: Linux, no device, no Windows build).** Scope is
+AC8 only; Tasks 1–5 were left alone except where AC8 replaces them (the pill's message rendering, Q2/Q3's
+"accept tail truncation", and the carrier the cause travels in).
+
+| Gate | Command | Result |
+|---|---|---|
+| Rust unit suite | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 701 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` (691 → **701**, +10 new specs) |
+| Rust build | `cargo build --manifest-path src-tauri/Cargo.toml --lib` | `Finished \`dev\` profile`; **13 warnings, all pre-existing** (`llm/mod.rs` private-in-public ×8, `license/ls_client.rs` ×2, `commands/feedback.rs`, `pipeline::resolve_stt_provider`) — the new module adds none |
+| Parse check, Windows-gated files | `rustc --edition 2021 --crate-type lib --emit=metadata src/{native_pill,native_preview,overlay_message}.rs` | exit **0** for all three. **This proves parsing only** — the inner `#![cfg(target_os = "windows")]` strips both overlay files to an empty crate after the parser has run, so nothing about types, borrows or Win32 API shapes is checked. `overlay_message.rs` is the exception: it has no cfg gate, so it really did type-check standalone. |
+| Frontend build | `npm run build` (`tsc && vite build`) | `✓ built in 1.50s`, tsc clean |
+| D1 proxy smoke (regression) | `bash _bmad-output/implementation-artifacts/gate4-evidence/7-10/run-d1-smoke.sh` | **13/13 checks passed** — unchanged from round 2. AC8 explicitly keeps the main-window wording, and the smoke confirms `status_line()` still emits `Model 'deepseek-typo' not found — in clipboard` in `rgb(233, 162, 76)`. Artifact copied to `report-task6.txt`; `report.txt` is this run (identical apart from the timestamp). |
+| Kotlin JVM gate | — | **NOT RE-RUN.** Task 6 is desktop-only: `git diff --stat -- android/ test-fixtures/ src/` returns **0 lines**. This is a scope statement, not a green. |
+| Lint | `cargo clippy` | **blocked** — not installed for the toolchain; not installed around (project-context: never mutate the host for a gate). Unchanged from round 1. |
+| Scope check | `git status` after both inversions | clean — no inversion residue |
+
+**Inversions (AC6 discipline, applied to AC8's own gate).** `git status` clean afterwards.
+
+| # | Reverted change (symbol) | Test(s) that went RED | Verbatim failure | Discriminating? |
+|---|---|---|---|---|
+| 1 | **The card's message-mode gate off** (AC8's named inversion): `hotkey::PipelineEvent::done_with_clipboard_only` — `message: cause.as_ref().map(\|c\| c.card())` → `message: None` | `hotkey::tests::test_pipeline_event_done_clipboard_only_carries_warning` | `700 passed; 1 failed`; `panicked at src/hotkey/mod.rs:295:34: AC8: the degrade event carries a card` | **Yes.** Exactly one test failed, and the surviving `warning`/`clipboardOnly` assertions in the *same* test stayed green — so the failure isolates the card, not the event. `spec_focus_failure_clipboard_only_carries_no_card` pins the other side, so a blanket `Some(...)` would fail there instead. |
+| 2 | **The chip split off**: `overlay_message::DegradeCause::card` — the `ModelNotFound` cause built as one plain sentence instead of `before`/`chip`/`after` | `overlay_message::tests::spec_model_not_found_card_has_chip_clipboard_line_and_hint`, `hotkey::tests::test_pipeline_event_done_clipboard_only_carries_warning`, `pipeline::tests::spec_successful_clipboard_write_keeps_the_original_cause` | `698 passed; 3 failed`; three × `left: None / right: Some("deepseek-typo")` | **Yes.** The reverted form still *reads* correctly (`Model 'deepseek-typo' not found`) and `CauseLine::text()` still reassembles a sentence — only the structural claim fails. That is the 200×36 defect in miniature: a message that looks right and cannot be laid out. |
+
+**What AC8 changed, written from `git diff`, anchored at `file::symbol`:**
+
+| Concern | What changed |
+|---|---|
+| The carrier | `pipeline::ProcessOutcome::Produced.degrade_msg` (String) → `degrade_cause` (`overlay_message::DegradeCause`). The three degrade sites call `pipeline::degrade_cause_for_model`; `pipeline::terminal_degrade_cause` replaces `terminal_degrade_msg`. **No re-derivation:** the card is built from the failure the pipeline already classified, never by parsing the flat string apart (Dev Notes' explicit trap). `degrade_warn_msg` / `degrade_warn_msg_for_model` had no production caller left and moved into `pipeline::tests` as one-line projections, so the dozen wording specs still read as before. |
+| The wire | `hotkey::PipelineEvent.message`, `#[serde(skip_serializing)]`. The frontend payload is **byte-identical** to before AC8 — no new field, no new event name, no new `.emit()` (`git diff -U0 \| grep -E 'klarvo://\|\.emit\('` on added lines → one comment line, no code). Trap #5 re-executed on that basis. |
+| The pill | `native_pill::fit_text` **deleted**, and with it `PillWindowState::{status_msg, pending_msg}`, `WM_PILL_SET_MSG` and `NativePill::set_status_msg` — the whole staging apparatus review round 1 (F1) built existed only to keep dynamic text honest, and there is no dynamic text left. New `native_pill::TerminalKind` travels in LPARAM; new `NativePillState::DoneDegraded` gives the degrade route its own static label while sharing `DONE_CLIPBOARD_MS` and the clipboard icon with `DoneClipboard`. The five label arms fold into `native_pill::draw_static_label`. |
+| The card | `native_preview::render_message_card` — header (mono, `--k-dim`, with a tone-coloured dot) · cause (model ID on an `--k-amber-bg` chip in mono `--k-amber-hi`, falling back to plain wrapped text when the line does not fit) · next (`--k-muted`) · hint (`--k-dim`), over the card's own background with a 1 px `--k-amber-line` / `--k-danger` border. `native_preview::present` was factored out of `render_frame` so the fade can drive `SourceConstantAlpha`. |
+| Lifetime | `MSG_HOLD_MS` 4000 + `MSG_FADE_MS` 1000 on a 33 ms `TIMER_MESSAGE`; `native_preview::dismiss_message` on fade-end, on `WM_LBUTTONDOWN`, and on a Recording state. `WS_EX_TRANSPARENT` is cleared only while a card is up (`native_preview::set_click_through`) — otherwise the card could not receive the click AC8 asks for. |
+| Availability | The card must show "regardless of `live_preview_enabled`", so `pipeline::start_recording_only` now creates the preview window unconditionally (the setting still gates *arming*, i.e. the live text), and `lib::run` creates one at setup — the boot-time config warnings AC8 puts on the card are emitted before any recording exists. |
+| Border width | Fixed at 1 px instead of the user's `previewBorderWidth`: AC8 pins an amber line, and a configured `0` would erase it. The card's background and radius still follow the user's appearance settings — it is the same card. |
+
 ### Completion Notes List
 
 **Shape chosen (Q1 = ONE event).** The three degrade sites in `process_audio` no longer
@@ -914,15 +971,58 @@ this story's own files modified; no inversion residue).
   is touched. **AC5 verified by diff:** no `add_entry` / `saveToHistory` / `pushToTurso` / webhook
   line changed.
 
+**Coverage statement — AC8 / Task 6. What 701 does NOT cover.** *(project-context: "a number states what it covers".)*
+
+- **701 Rust green proves the message MODEL — structure, wording and the event's carrier. It proves nothing
+  about the card.** The 10 new specs decide: which lines a `DegradeCause` produces, that the model ID is a
+  separate chip, that a clipboard-write failure carries no `Ctrl+V` line, that `status_line()` is unchanged, that
+  `warn`/`error` carry their own card, that progress states carry none, and that the pill labels are short fixed
+  literals. Claim proved: **logic and structure**. Not design, not layout, not a pixel.
+- **`native_pill.rs` and `native_preview.rs` were NOT COMPILED on this host.** Both are
+  `#[cfg(target_os = "windows")]` with no test module. `cargo test --lib` does not read them. The only thing run
+  against them was a **parse** check (`rustc --emit=metadata`, exit 0) — after the parser, the inner `#![cfg]`
+  strips both files to an empty crate, so **types, borrows, GDI/Win32 signatures, the tiny-skia calls, the timer,
+  the `WS_EX_TRANSPARENT` toggle and the whole layout are unverified**. Whether this even compiles on Windows is
+  the conductor's build, not a claim made here. `cargo check --target x86_64-pc-windows-gnu` is a **retired**
+  gate (project-context) and was not attempted; no tool was installed.
+- **The card has never been rendered.** Not exercised: the header/cause/next/hint layout, the chip rect vs its
+  glyphs, wrapping at any width, the 4 s hold, the 1 s fade, click-to-dismiss, the card with live preview running,
+  the card at any DPI or text-scale, and the boot-time warning path. Every one of those is Andi's GATE-4.
+- **The pill's new label has never been drawn.** `PILL_LABEL_DEGRADED` = "Cleanup failed" is asserted to be ≤14
+  characters by `spec_pill_labels_are_static_literals`; that is a **constant** check, not a fit check. That it
+  fits the ~131 px label box at `font_label_lg` is arithmetic, not a measurement — the same class of claim that
+  failed at GATE-4 round 1. Andi's build decides it.
+- **The D1 13/13 is a React-tree regression number, and only for the status line.** It re-proves that AC8 did not
+  change the main window's wording or colour. Not exercised: the Rust backend (the payloads are hand-written), the
+  pill, the card, Android, pixels. Claim proved: **wiring and structure** in a proxy render (browser preview) —
+  by construction it cannot prove design.
+- **Android was not touched and not re-run.** `git diff --stat -- android/ test-fixtures/ src/` → 0 lines. The
+  Kotlin JVM gate's 24 suites / 194 tests are round 1's execution; this round makes no claim about them beyond
+  "no Kotlin file changed".
+- **The STT-ladder warning's text stays German** (`"⚠ Groq am Limit → lokale Transkription"`, 12-1). AC8's "all
+  English" governs the cleanup-failure card's own lines, which are English; re-wording a pre-existing 12-1 literal
+  would be scope this task does not have. Named here rather than left to be found on the card.
+- **The card's `next`/`hint` lines are wrapped, never truncated** — but nothing measures that the wrapped card
+  fits the available height above the pill. `card_h` is clamped to the window's max height; a message long enough
+  to exceed it is clipped at the top with no fade. Not reachable with today's four message shapes (the longest is
+  four short lines); stated because it is unmeasured, not because it is impossible.
+
 **OPEN — AC7 is not fully met. Andi's GATE-4 is outstanding** (Windows release build via
 `scripts/windows-build.sh`, which was not run in this session). Exact steps, from the epic DoD:
 
 1. Set a **wrong DeepSeek model ID** (Settings → Advanced → Model IDs) and switch **Insert+Send ON**.
 2. Dictate into a chat-style target window.
-3. Expect: **nothing lands in the active window**; **no Enter is sent**; the pill shows the warning
-   **with the model ID** (`Model '<id>' not found — in clipboard`, amber, ~4 s via `DONE_CLIPBOARD_MS`);
-   **Ctrl+V pastes the raw text**.
-4. Regression in the same build: with a **correct** model ID, paste and Insert+Send behave as before.
+3. Expect (**AC8 wording — this replaces round 1's step 3**): **nothing lands in the active window**; **no Enter
+   is sent**; the **pill** shows the static amber label **`Cleanup failed`** (no truncated sentence) for ~4 s; the
+   **card above the pill** shows `CLEANUP FAILED` · `Model '<id>' not found` (ID on an amber chip) ·
+   `Raw text is in the clipboard · Ctrl+V to paste` · `Check Advanced → Model IDs`, amber-bordered, holding ~4 s
+   and fading over ~1 s; **Ctrl+V pastes the raw text**.
+4. Regression in the same build: with a **correct** model ID, paste and Insert+Send behave as before, and **no**
+   card appears.
+5. **New at AC8, worth one extra look:** (a) with **live preview OFF** the card must still appear — that path
+   never existed before; (b) a **click on the card** dismisses it at once and the next click goes through to the
+   app underneath (the overlay drops `WS_EX_TRANSPARENT` only while a card is up); (c) a **boot-time config
+   warning** (e.g. rename `config.json` to something unparseable once) should land on the card at startup.
 
 **Backlog notes this story deliberately did not act on** (GATE-1 deferrals, already recorded in
 `docs/backlog.md` by commit `606e9ac`): the pill's label language (canon says
@@ -971,12 +1071,50 @@ Paths relative to repo root.
 - `_bmad-output/implementation-artifacts/gate4-evidence/7-10/status-clean-after-degrade.json` and
   `ist-status-clean-after-degrade.png` — CASE C artifacts from the final green run.
 
+**Added — Task 6 / AC8**
+- `src-tauri/src/overlay_message.rs` — the message model. `MessageTone`, `CauseLine` (+`plain`, `text`),
+  `OverlayMessage` (+`warning`, `error`), the five `PILL_LABEL_*` constants, `DegradeCause`
+  (+`status_line`, `card`), `generic_cause_text`; 7 specs. **Not** platform-gated — this is the only part of AC8
+  a Linux host can execute.
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/report-task6.txt` — the Task-6 D1 regression run
+  (13/13, identical to round 2 apart from the timestamp); `report.txt` is that same run.
+
+**Modified — Task 6 / AC8**
+- `src-tauri/src/pipeline.rs` — `ProcessOutcome::Produced.degrade_msg` → `degrade_cause: Option<DegradeCause>`;
+  new `degrade_cause_for_model` + `generic_degrade_cause` at the three degrade sites; `terminal_degrade_msg` →
+  `terminal_degrade_cause`; `deliver_outcome`'s 9th tuple field re-typed; the terminal event takes the cause;
+  `start_recording_only` creates the preview window unconditionally. `degrade_warn_msg` /
+  `degrade_warn_msg_for_model` moved into `mod tests` as one-line projections (no production caller left).
+  4 existing specs adapted, 3 of them gaining a card assertion.
+- `src-tauri/src/hotkey/mod.rs` — `PipelineEvent.message` (`#[serde(skip_serializing)]`);
+  `done_with_clipboard_only` takes `Option<DegradeCause>`; `warn` / `error` build their own card; 3 new specs,
+  1 existing extended.
+- `src-tauri/src/native_pill.rs` — `fit_text`, `status_msg`, `pending_msg`, `WM_PILL_SET_MSG` and
+  `set_status_msg` **removed**; new `TerminalKind` + `NativePillState::DoneDegraded`; `from_code` and `set_state`
+  re-signed; the five label arms folded into the new `draw_static_label`; `handle_timer` /
+  `warning_hold_active` docs rewritten around "a light, not a sentence". **Not compiled on this host.**
+- `src-tauri/src/native_preview.rs` — message mode: `WM_PREVIEW_SET_MESSAGE`, `NativePreview::set_message`,
+  `render_message_card`, `present` (factored out of `render_frame` for the fade), `dismiss_message`,
+  `set_click_through`, `text_width`, `draw_msg_line`, `fill_round_rect`, `msg_line_h`, the `WM_TIMER` /
+  `WM_LBUTTONDOWN` arms, 5 message fonts, and the canon colour constants. **Not compiled on this host.**
+- `src-tauri/src/lib.rs` — `mod overlay_message`; `emit_pipeline_state` derives `TerminalKind` and posts
+  `set_message` before `set_state`, and no longer posts any text to the pill; `run`'s setup creates the native
+  preview so boot-time config warnings have a surface.
+- `src-tauri/src/commands/misc.rs` — `ensure_preview_window`'s docstring: the window now also exists at setup and
+  is created unconditionally at recording start.
+- `_bmad-output/implementation-artifacts/7-10-…md` — Task 6 checked off with subtasks, this round's gates,
+  inversions, change table, coverage statement, the AC8-corrected GATE-4 steps, File List and Change Log.
+
+**Not modified in this round (verified by `git diff --stat`):** every path under `android/`, `test-fixtures/` and
+`src/` — 0 lines. `docs/design/overhaul/**` unchanged (canon + MANIFEST + render already landed in `9118f1f`).
+
 **Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`. **Round 2 additionally:** no file under `src-tauri/` and no file under `android/` (`git diff --stat` → zero such paths), and `src/App.tsx` unchanged — the fix is in the hook, not the renderer.
 
 ## Change Log
 
 | Date | Change |
 |---|---|
+| 2026-09-14 | **Task 6 / AC8 implemented — pill becomes a status light, the preview card becomes the message surface.** GATE-4 round 1 failed on presentation: the 200×36 pill cut the degrade sentence and the clipboard hint never showed. New `src-tauri/src/overlay_message.rs` (not platform-gated) carries the message as a *model* — `DegradeCause` → `status_line()` for the main window, `card()` for the overlay — so nothing is re-derived by parsing a string apart. `PipelineEvent` gains an in-process-only `message` field (`#[serde(skip_serializing)]`), so the frontend payload and every event name are unchanged. `native_pill.rs` loses `fit_text` and the whole `status_msg` staging apparatus and renders five fixed labels, with `DoneDegraded` ("Cleanup failed") splitting the degrade route off the focus-loss "In Clipboard". `native_preview.rs` gains message mode: header + dot · cause with the model ID on an amber chip · clipboard line · hint, tone-coloured border, 4 s hold + 1 s fade, click-to-dismiss, shown regardless of `live_preview_enabled` — so the window is now created at setup *and* at every recording start. Gates: `cargo test --lib` 691 → **701**, `npm run build` clean, D1 proxy smoke **13/13** (regression: AC8 deliberately keeps the main-window wording). Both inversions shown RED and reverted; `git status` clean. **The two overlay files were not compiled on this host** — only parsed; the Windows build is the conductor's step and **Andi's GATE-4 remains outstanding**, now with AC8's expectation in the steps. |
 | 2026-09-14 | **Review cleared (conductor close-out).** 2 fix rounds, loop closed on the re-review; 3 residual decisions → backlog (Andi), 6 editorial items fixed in `d73082d`. Windows release build green (`d73082d`, exe fresh). GATE-4 self-verification + Andi's residual steps: `gate4-evidence/7-10/verdict.md`. Status stays `review` (both fields) until Andi's Windows smoke. | conductor |
 | 2026-09-14 | **Review round 2 fix round — exactly one confirmed finding applied.** `src/hooks/useRecording.ts`'s `onStateChanged` listener now clears `warningMessage` when a state event carries no warning (`else` at the capture line), so a hotkey-driven run cannot show the previous run's amber degrade text instead of "Done". `handleRecordToggle` untouched. The D1 proxy smoke gained CASE C — a degraded run followed by a clean run in the **same** browser boot — and its header's "not exercised" list was corrected. Gates: D1 smoke 10 → **13/13**; `npm run build` clean; `cargo test --lib` **691** and the Kotlin gate **24 suites / 194 tests** carried over as regression statements about untouched code (gradle reported the test task `UP-TO-DATE` — replayed, not re-executed). The pre-fix tree was the RED, naming the previous run's model ID verbatim. **Named, not hidden:** the STT fallback-ladder warning is now cleared by the next event of its own run, so the main window no longer carries it into `done` — intended per Q1, but a behaviour change; the pill remains that warning's surface. Deferred/dismissed findings untouched. **Andi's GATE-4 still outstanding.** |
 | 2026-09-14 | **Review round 1 fix round — 7 patch findings + decision D1 applied; 3 canon patches already landed in `a371091`; 12 deferrals untouched.** Pill: `status_msg` is now staged and claimed by its own state, so no state inherits the previous one's text (F1); stale Warning→Done comments rewritten around the STT ladder (F3). Pipeline: the `degrade_msg` invariant states 2-of-3 test coverage honestly instead of "all three" (F2); `enter_sent` documented as "Insert+Send triggered" (F5); new pure `terminal_degrade_msg` stops the message promising a clipboard the write never reached (F6). Kotlin: the duplicate `successfulFallbackProvider_*` test removed, its claim bound to the real one (F4). Record: Task 1's `test_deliver_outcome_*` claim corrected against `git diff` (F7). **D1 (Andi):** the main window shows the cleanup failure in the existing status line, amber, same wording as the pill — one colour arm + one text branch in `App.tsx`, no new surface. Gates: `cargo test --lib` 688 → **691**, JVM **24 suites / 194 tests** (195 → 194, duplicate removed), `npm run build` clean, D1 proxy smoke **10/10**. Three inversions shown RED and reverted; `git status` clean. **F1/F3 are in Windows-gated `native_pill.rs` — not compiled, not tested on this host. Andi's GATE-4 still outstanding.** ⚠ Flagged: D1 makes the deferred stale-`warningMessage` defect user-visible — needs re-deciding, not fixed here. |
