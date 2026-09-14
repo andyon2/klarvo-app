@@ -5430,7 +5430,10 @@ mod tests {
     }
 
     /// A non-degraded run carries no cause, and a failed paste must not invent
-    /// one — that terminal event is the plain focus-failure `DoneClipboard`.
+    /// one. (`paste_failed` here means the clipboard write itself failed —
+    /// a focus failure returns `Ok(ClipboardOnly)` and never sets it; that
+    /// residual false "In Clipboard" on a normal run is a backlog item, not
+    /// this story's — see docs/backlog.md, 7-10 residuals.)
     #[test]
     fn spec_non_degraded_run_never_gains_a_cause() {
         assert_eq!(terminal_degrade_msg(None, true), None);

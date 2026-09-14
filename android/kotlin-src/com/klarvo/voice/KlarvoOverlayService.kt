@@ -164,6 +164,13 @@ class KlarvoOverlayService : Service() {
          *
          * Kept as a named constant so the parity with
          * `pipeline::degrade_warn_msg` is greppable from both sides.
+         *
+         * Recorded divergence (7-10 re-review, Andi 2026-09-14): the desktop's
+         * second literal `pipeline::terminal_degrade_msg` ("Cleanup failed —
+         * clipboard write failed", shown when the clipboard write itself fails
+         * on the degrade path) has NO Kotlin twin. `copyToClipboard` has no
+         * try/catch yet (deferred-work.md), so Android cannot observe that
+         * failure; the twin follows once it can. Registered in docs/backlog.md.
          */
         const val CLEANUP_FAILED_CLIPBOARD_MSG =
             "Cleanup failed — raw text in clipboard"

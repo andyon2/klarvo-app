@@ -249,6 +249,26 @@ GATE-1-Entscheidungen (Andi) stehen in der Story + Canon-MANIFEST-Zeile 2026-09-
   Rohtext wird kommentarlos eingefügt. Eigener Bug, nicht Teil von 7-10 (Q4 = nur echte Cloud-Cleanup-Fehler,
   Desktop-Parität). Source: `KlarvoOverlayService.kt` lokaler `catch`, 7-10 Q4.
 
+### Story 7-10 residuals — re-review after 2 fix rounds (loop closed on a review, 2026-09-14, Andi)
+
+Both fix rounds landed (`8aa7167`, `df836a0`); the re-review confirmed them. Three decision items were closed as
+residual by Andi, not fixed:
+- **Clipboard-write failure on a NORMAL run still shows "In Clipboard".** `PasteHandler::paste` returns `Err` only
+  for `EmptyText` or a failed `set_clipboard`; `deliver_text` coerces that to `ClipboardOnly`, so the pill shows the
+  static "In Clipboard" and the main window teal "Done" for text that is in neither place. 7-10 fixed this only on the
+  degrade branch (`terminal_degrade_msg`). Pre-existing, not introduced by 7-10. Fix direction: hang the replacement
+  on `paste_failed`, which needs a new user-facing literal (Q2-class wording → Andi). Source: 7-10 re-review D1.
+- **Twin divergence, registered:** desktop's `pipeline::terminal_degrade_msg` literal ("Cleanup failed — clipboard
+  write failed") has no Kotlin twin. Android's `copyToClipboard` has no try/catch (deferred-work.md), so it cannot
+  observe the failure. Deliberate (ADR-0016 accepted asymmetry); KDoc on `CLEANUP_FAILED_CLIPBOARD_MSG` says so.
+  Twin follows when the try/catch lands. Source: 7-10 re-review D2.
+- **Two ambers for the same string:** native pill `#FFA344` (its own constants) vs canon `--k-amber` `#E9A24C`
+  (main-window status line, D1). The canon records `#FFA344 → #E9A24C` as a replacement, so the pill is the
+  outlier. Windows-gated, no machine coverage → own small story (belongs with "Epic 8-Abhängigkeit — native
+  Overlays beim Studio-Dark-Reskin in Rust/GDI nachziehen"). Source: 7-10 re-review D3.
+Five review deferrals live in `deferred-work.md` (EmptyText vs write failure, status-line hold in Auto-Loop,
+status-line truncation, `set_status_msg`/`set_state` pairing by convention, no test binds a failing `copy_only`).
+
 ### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
 
 Four fix rounds ran (D1/D2 + P1-P10 · REG-1..3 + RES-1/2 · RES-2 re-fix + R3-1..R3-7). All confirmed code

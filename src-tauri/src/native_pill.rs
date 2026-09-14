@@ -87,10 +87,12 @@ const DONE_CLIPBOARD_MS: u128 = 4000;
 const ERROR_IDLE_MS: u128 = 2500;
 // Warning hold (12-1 FR4, tightened by 7-9 GATE-4 finding 3a). A Warning stays
 // on screen for this long and then dismisses to Idle. During the hold a plain
-// Done is ignored: on the degrade-to-raw path the pipeline emits the warning
-// and the shell pastes + emits Done within milliseconds, so without the hold
-// the amber text was visible for a single frame (observed on device
-// 2026-09-12). DoneClipboard, Error and any new activity still override.
+// Done is ignored so a mid-run warning is not wiped by the run's own Done a
+// few ms later (observed on device 2026-09-12, then on the degrade-to-raw
+// path). Since Story 7-10 (Q1) cleanup degrade no longer emits a Warning at
+// all -- its cause rides on the terminal DoneClipboard. Remaining Warning
+// producers: the STT fallback ladder (mid-run) and boot-time config warnings
+// (lib::run). DoneClipboard, Error and any new activity still override.
 const WARNING_HOLD_MS: u128 = 4000;
 
 // ---------------------------------------------------------------------------
@@ -177,7 +179,8 @@ struct PillWindowState {
     // handle_timer dismisses to Idle after WARNING_HOLD_MS. See warning_hold_active.
     warning_at: Option<Instant>,
     // Dynamic status text rendered for Error/Warning/DoneClipboard (the
-    // pipeline's taxonomy message, e.g. "⚠ DeepSeek langsam → OpenAI").
+    // pipeline's taxonomy message, e.g. "⚠ Groq am Limit → lokale Transkription"
+    // or the 7-10 degrade cause carried on DoneClipboard).
     // None → static label fallback. Owned by the CURRENT display state: it is
     // (re)set from `pending_msg` on every accepted state entry, never inherited.
     status_msg: Option<String>,
@@ -823,8 +826,9 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             }
 
             NativePillState::Warning => {
-                // 12-1 FR4: transient amber fallback/degrade message (e.g.
-                // "⚠ DeepSeek langsam → OpenAI"), same treatment as Error but amber.
+                // 12-1 FR4: transient amber message from the STT fallback ladder
+                // (e.g. "⚠ Groq am Limit → lokale Transkription") or a boot-time
+                // config warning; same treatment as Error but amber.
                 SelectObject(s.tmp_dc, s.font_label.into());
                 let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
                 let msg = s.status_msg.as_deref().unwrap_or("Warning");
@@ -1103,9 +1107,9 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
     }
 
     // Warning hold expired (12-1 FR4 / 7-9 3a): the pill dismisses itself.
-    // Since Story 7-10 (Q1) the only producer of a Warning state is the STT
-    // fallback ladder ("⚠ Groq am Limit → lokale Transkription"), emitted
-    // mid-run. If the run's Done lands inside the 4 s hold it is dropped
+    // Since Story 7-10 (Q1) the Warning producers are the STT fallback ladder
+    // ("⚠ Groq am Limit → lokale Transkription", mid-run) and boot-time config
+    // warnings (lib::run). If a run's Done lands inside the 4 s hold it is dropped
     // (warning_hold_active), and this timer is then the only way back to Idle;
     // if the hold expires first, the Done arrives normally and shows.
     if let Some(started) = s.warning_at {
@@ -1121,9 +1125,10 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
 
 /// True while a Warning is on screen and younger than `WARNING_HOLD_MS`.
 ///
-/// **Who still produces a Warning:** since Story 7-10 (Q1) only the STT fallback
+/// **Who still produces a Warning:** since Story 7-10 (Q1) the STT fallback
 /// ladder — `process_audio` emits "⚠ Groq am Limit → lokale Transkription" and
-/// then keeps working. Cleanup degrade-to-raw no longer emits a Warning at all;
+/// then keeps working — and the boot-time config warnings `lib::run` emits
+/// through the same funnel. Cleanup degrade-to-raw no longer emits a Warning at all;
 /// it carries its cause on the single terminal `DoneClipboard` event, which is
 /// why that path never engages this hold.
 ///
