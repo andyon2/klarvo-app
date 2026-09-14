@@ -33,10 +33,14 @@
  *     Rust suite's claim (`spec_*` in pipeline.rs), not this harness's;
  *   - the native pill (`native_pill.rs`, Windows-only) — Andi's GATE-4;
  *   - Android;
- *   - pixels, fonts, truncation, the Windows text-scale drift;
- *   - the deferred stale-`warningMessage` defect (useRecording.ts never clears
- *     it on a hotkey-driven run) — this harness emits one run per browser boot,
- *     so it neither triggers nor rules it out.
+ *   - pixels, fonts, truncation, the Windows text-scale drift.
+ *
+ * REVIEW ROUND 2 added CASE C: a degraded run followed by a clean run inside the
+ * SAME browser boot, which is the sequence a hotkey user produces and the only
+ * one that can catch a stale `warningMessage` (`handleRecordToggle` — the button
+ * path — is never touched). Round 1 stated this sequence as NOT exercised; it now
+ * is. Still synthetic payloads: what a real pipeline emits between two runs is
+ * the Rust suite's claim, not this harness's.
  *
  * Harness traps inherited from 7-9's smoke.mjs, both handled below:
  *   #1 preview boots into Onboarding -> click "Setup überspringen" first.
@@ -217,6 +221,39 @@ try {
     !/\bDone\b/.test(degraded.text),
     "D1: the 'Done' label is replaced, not appended",
     `text=${JSON.stringify(degraded.text)}`,
+  );
+
+  // ------------------------------------------------------------------ CASE C
+  // Review round 2: the SAME boot continues with a clean run. `warningMessage`
+  // must be reset by the listener, otherwise the next successful run wears the
+  // previous run's amber degrade text instead of "Done". No click on the record
+  // button here on purpose — `handleRecordToggle` holds the only other clearing
+  // path, and a hotkey-driven run never goes through it.
+  await emitState(page, { state: "transcribing" });
+  await emitState(page, { state: "cleaning" });
+  await emitState(page, {
+    state: "done",
+    text: "Send me the report by Friday.",
+    rawText: "so like the report by friday",
+  });
+  const afterDegrade = await readStatusLine(page);
+  writeFileSync(stage("status-clean-after-degrade.json"), JSON.stringify(afterDegrade, null, 2));
+  await page.screenshot({ path: stage("ist-status-clean-after-degrade.png") });
+
+  check(
+    afterDegrade.text === "Done",
+    "round 2: a clean run after a degraded run shows the plain done label",
+    `text=${JSON.stringify(afterDegrade.text)} expected="Done"`,
+  );
+  check(
+    !afterDegrade.text.includes("deepseek-typo"),
+    "round 2: the previous run's degrade cause is gone, not stale",
+    `text=${JSON.stringify(afterDegrade.text)}`,
+  );
+  check(
+    afterDegrade.color === teal.rgb,
+    "round 2: a clean run after a degraded run is teal, not amber",
+    `computed=${afterDegrade.color} expected=${teal.rgb} (${TEAL_TOKEN} = ${teal.raw})`,
   );
 
   // ------------------------------------------------------------------ CASE B

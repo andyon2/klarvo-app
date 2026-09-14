@@ -271,7 +271,7 @@ Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter (diff 
 - [x] [Review][Patch] The degrade message still claims "raw text in clipboard" when the clipboard write itself failed [`src-tauri/src/pipeline.rs::deliver_text`, the coerced `Err` arm]
 - [x] [Review][Patch] Record inaccuracy: Task 1 claims the two `test_deliver_outcome_*` tests were updated; the diff touches neither [story Task 1 / `src-tauri/src/pipeline.rs::tests::test_deliver_outcome_*`]
 
-- [x] [Review][Defer] `warningMessage` is never cleared on a hotkey-driven run [`src/hooks/useRecording.ts`, the `onStateChanged` listener vs `handleRecordToggle`] — deferred, pre-existing
+- [x] [Review][Defer] `warningMessage` is never cleared on a hotkey-driven run [`src/hooks/useRecording.ts`, the `onStateChanged` listener vs `handleRecordToggle`] — deferred, pre-existing → **promoted by Andi and fixed in review round 2** (see Review Follow-ups below); the round-1 deferral rested on "nothing renders the value", a premise D1 removed in the same round
 - [x] [Review][Defer] `copyToClipboard` has no `try/catch`; a `SecurityException` kills the run before the single degrade toast [`android/.../KlarvoOverlayService.kt::copyToClipboard`] — deferred, pre-existing
 - [x] [Review][Defer] The banking guard aborts before the clipboard write and before the degrade toast, so a cleanup failure surfaces no cause at all [`android/.../KlarvoOverlayService.kt::processAudio` Step 4, `BankingGuard.shouldBlockPaste`] — deferred, pre-existing (Story 2-4 DIV-04)
 - [x] [Review][Defer] `accessibilityConnected` is a snapshot, not a paste result; a silent `pasteIntoFocusedField()` no-op yields no toast either [`android/.../KlarvoOverlayService.kt::processAudio` Step 4] — deferred, pre-existing (named in the diff's own NOTE)
@@ -287,6 +287,20 @@ Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter (diff 
 **Dismissed as noise (10).** The new `DoneClipboard` render arm is dead code (false — `lib::emit_pipeline_state` posts `set_status_msg(event.warning.or(event.error))` before `set_state`) · `fit_text` NUL-terminator asymmetry (false — `fit_text` drops the NUL itself; the new branch matches the Error/Warning arms) · command-mode degrade drops the cause (false — `deliver_outcome`'s command branch only calls `consume_command_mode` and returns the full tuple; no early return) · the frontend capture now fires on the error surface (false — `PipelineEvent::error` sets `warning: None`) · empty-string `warning` (unreachable — both degrade builders always return a non-empty fixed prefix) · the model message drops D2's "check Advanced → Model IDs" pointer · the generic and model forms disagree about the `(Ctrl+V)` hint · `Model 'x' … in clipboard` reads ambiguously (all three: Andi's explicit Q2 decision) · removing the mid-run `Warning` event loses live feedback (Andi's explicit Q1 decision) · `insert_and_send` read moved before the paste (behaviour-preserving under the same no-reentrancy premise, disclosed in the record) · Windows focus is not restored on the degrade branch (intended — no paste, no focus restore).
 
 **Machine gates re-run by the review, not taken from the record:** `cargo test --manifest-path src-tauri/Cargo.toml --lib` → `test result: ok. 688 passed; 0 failed` (matches). 24 Kotlin suite files and 9 `@Test` in `CleanupFailureDeliveryTest.kt` counted in today's tree (matches); gradle itself was **not** run by the review. `md5(Klarvo Design System.html + assets/klarvo.css)` = `43d926f743fd91caf2ad51afd63cfcb8` (matches the MANIFEST header — the table cell is the defect). **Andi's GATE-4 remains outstanding**; nothing in this review substitutes for it.
+
+### Review Follow-ups (AI) — round 2 (2026-09-14)
+
+One confirmed finding, promoted from round 1's deferral list by Andi. Nothing else from the deferred or
+dismissed lists is in this round's scope.
+
+- [x] [AI-Review][Med] **`warningMessage` is never cleared on a hotkey-driven run** [`src/hooks/useRecording.ts`,
+      the `onStateChanged` listener — the `p.warning` capture line]. Since D1 (`8aa7167`) the main window renders
+      `warningMessage`, but the only two `setWarningMessage(null)` sites live in `handleRecordToggle`, which a
+      hotkey run never reaches. Consequence: the next **successful** run shows the previous run's amber degrade
+      text instead of "Done".
+  - [x] Add the `else` branch at the capture line so a state event arriving **without** a warning resets it.
+  - [x] Test + inversion: extend the D1 proxy smoke with the sequence (degraded run → clean run, **same browser
+        boot**, no record-button click) asserting "Done" in teal; shown RED before the fix.
 
 ## Dev Notes
 
@@ -664,6 +678,32 @@ consumer B `src/hooks/useRecording.ts` is a push sink (`onStateChanged`) and now
 | 7 | Task 1 claims the two `test_deliver_outcome_*` tests were updated | Corrected in Task 1 itself. `git diff 6cedbb5..HEAD -- src-tauri/src/pipeline.rs \| grep -c test_deliver_outcome` → **0**. Both tests drive `ProcessOutcome::Stopped` and assert `result.is_none()`, so the `Produced` arm's tuple width is invisible to them — they did not need updating. Editorial close-out per Epic-7 retro D2. |
 | D1 | Main window never shows the carried message (decision) | Andi's directive, verbatim: the existing status line, amber, `done`-with-warning, same wording as the pill, no new surface. `src/App.tsx` status `<p>`: the colour ternary's `done` arm becomes `warningMessage ? amber : teal`, and the text ternary gains one `warningMessage && state === "done"` branch ahead of `STATUS_LABELS`. **No new element, no new attribute, no new component** — AC4 holds. Q1's "every consumer shows the carried message" is now met for both consumers. |
 
+**REVIEW ROUND 2 — FIX ROUND (2026-09-14, same host: Linux, no device, no Windows build).** Exactly one
+confirmed finding: the round-1 flag below, promoted by Andi. Scope is that finding only.
+
+| Gate | Command | Result |
+|---|---|---|
+| D1 proxy smoke (extended) | `bash _bmad-output/implementation-artifacts/gate4-evidence/7-10/run-d1-smoke.sh` | **13/13 checks passed** (10 → 13, +3 for the round-2 sequence) |
+| Frontend build | `npm run build` (`tsc && vite build`) | `✓ built in 1.53s`, tsc clean |
+| Rust unit suite (regression — backend untouched) | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 691 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` — unchanged from round 1, as expected |
+| Kotlin JVM gate (regression — Kotlin untouched) | `./gradlew :app:testUniversalDebugUnitTest` (device-free sync per 7-8/7-9) | `BUILD SUCCESSFUL`, but **`:app:testUniversalDebugUnitTest` reported `UP-TO-DATE` — the suite was NOT re-executed this round.** The 24 suites / 194 tests / 0 failures counted from `app/build/test-results/**/*.xml` are round 1's execution, replayed. Honest reading: this round changed no `.kt` file (`git diff --stat` → zero `android/` paths), so gradle correctly found nothing to redo; it is a no-regression-possible statement, not a fresh green. |
+| Scope check | `git status` after the RED run and the fix | clean — `src/tauri-commands.ts` untouched (the runner's `trap` reverted its throwaway edit and said so), no inversion residue |
+
+**Inversion (AC6 discipline) — the RED was the pre-fix state itself, not a synthetic revert.**
+`git status` clean afterwards.
+
+| # | Finding | State shown RED | Test that went RED | Verbatim failure | Discriminating? |
+|---|---|---|---|---|---|
+| 1 | round-2 (stale `warningMessage`) | the tree **before** the `else` was added — i.e. the shipped round-1 code | D1 smoke, the 3 new `round 2:` checks | `10/13 checks passed`; `round 2: a clean run after a degraded run shows the plain done label` → `text="Model 'deepseek-typo' not found — in clipboard" expected="Done"`; `round 2: the previous run's degrade cause is gone, not stale`; `round 2: a clean run after a degraded run is teal, not amber` → `computed=rgb(233, 162, 76) expected=rgb(41, 199, 172)` | **Yes.** The failure names the **previous run's** literal, including its model ID — no generic "some label is wrong" could produce that string, and no fresh-boot run can reach it (CASE B, which reloads first, stayed green throughout). Text and colour fail independently, so neither masks the other. |
+
+**Resolution row — written from `git diff`, anchored at `file::symbol`:**
+
+| # | Finding | What changed |
+|---|---|---|
+| 1 | `warningMessage` is never cleared on a hotkey-driven run | `src/hooks/useRecording.ts`, the `onStateChanged` listener: the `p.warning` capture gains its `else setWarningMessage(null)`. `handleRecordToggle`'s two existing `setWarningMessage(null)` sites are **untouched** — they serve the button path, which the listener never sees. The contract is now "`warningMessage` is the warning carried by the **latest** state event", which is what D1's renderer (`App.tsx`, `warningMessage && state === "done"`) reads. **Consequence worth naming:** the STT fallback-ladder warning (`process_audio`'s `emit(PipelineEvent::warn("⚠ Groq am Limit → lokale Transkription"))`) arrives as its own transient `warning` event *mid-run* and is now cleared by the very next event of the **same** run, so the main window no longer carries it into the `done` state. That is the intended reading of the existing "Warning is transient" comment and matches Q1's design — the cleanup degrade cause rides the *terminal* event precisely so it cannot be lost — but it is a behaviour change relative to round 1, not a pure bug fix, and it is stated here rather than left to be discovered. The pill (`native_pill::warning_hold_active`, 4 s) remains the ladder warning's surface and is untouched. |
+
+**⚠ RESOLVED — the round-1 flag below is this round's finding.** Kept verbatim for the trail:
+
 **⚠ FLAGGED, NOT ACTED ON — D1 makes a deferred defect user-visible.** Deferral row 1 (`warningMessage` is never cleared on a hotkey-driven run, `useRecording.ts`'s `onStateChanged` vs `handleRecordToggle`) was deferred as pre-existing *on the premise that nothing rendered the value*. D1 removes that premise. Concretely: a degraded run sets `warningMessage`; if the user does not click the record button (the only clearing path), the **next successful** hotkey run emits `done` with no warning, `warningMessage` is still set, and the status line shows the **previous** run's amber degrade text instead of "Done". The one-line fix would be an `else` on the capture in `useRecording.ts` — **not applied**, because deferred findings were explicitly out of this round's scope. It should be re-decided now that it is visible. The D1 smoke emits one run per browser boot, so it neither triggers nor rules this out.
 
 ### Completion Notes List
@@ -750,9 +790,20 @@ this story's own files modified; no inversion residue).
 - **The D1 smoke proves the React tree, not the product.** It drives a *synthetic* payload through
   the real components in real Chromium. Not exercised: the Rust backend (no Tauri — no
   `emit_pipeline_state`, no real `klarvo://state-changed`, no pipeline run), the native pill,
-  Android, pixels/fonts/truncation, and the deferred stale-`warningMessage` sequence (one run per
-  browser boot). That the backend really puts `degrade_msg` on the terminal event is the Rust
-  suite's claim, not the smoke's.
+  Android, pixels/fonts/truncation. That the backend really puts `degrade_msg` on the terminal event
+  is the Rust suite's claim, not the smoke's.
+  *(Round 2 corrects one item of this list: the stale-`warningMessage` sequence WAS "not exercised —
+  one run per browser boot". It now is — CASE C runs a degraded run and a clean run in the same boot.
+  Still not exercised by it: two runs driven by the **real** hotkey pipeline, and the record-button
+  path, which has its own clearing sites and was not re-measured.)*
+- **Round 2's 13/13 is a React-tree number, and only for the status line.** Not exercised: that the
+  real pipeline emits a warning-less terminal event on a clean run after a degraded one (the payloads
+  are hand-written), the pill's own staleness behaviour on the same sequence (`native_pill.rs` is
+  Windows-gated and still uncompiled here), Android's toast on consecutive runs, and every other
+  consumer of `warningMessage` — `App.tsx`'s status line is the only reader.
+- **Round 2's 691 Rust / 194 Kotlin are regression statements about untouched code, and the Kotlin one
+  was replayed, not re-run.** The round changed exactly one product file, `src/hooks/useRecording.ts`;
+  gradle reported the test task `UP-TO-DATE`. Neither number was earned again this round.
 - **`terminal_degrade_msg` is tested as a pure function only.** Its 3 specs decide the *message*;
   no test drives a real `arboard` clipboard failure through `stop_and_process_pipeline`, which
   remains untested (unchanged by this round).
@@ -823,12 +874,28 @@ Paths relative to repo root.
 - `_bmad-output/implementation-artifacts/gate4-evidence/7-10/run-d1-smoke.sh` — applies/reverts the throwaway `tauri-commands.ts` edit, boots preview, runs the smoke.
 - `_bmad-output/implementation-artifacts/gate4-evidence/7-10/` — run artifacts from the **final green run** (`report.txt` 10/10, `status-degraded.json`, `status-ok.json`, `ist-status-degraded.png`, `ist-status-ok.png`). The runner also writes `preview-server.log`, which is **not committed** — `.gitignore:15` (`*.log`).
 
-**Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`.
+**Modified — review round 2 (fix round)**
+- `src/hooks/useRecording.ts` — the `onStateChanged` listener's `p.warning` capture gains
+  `else setWarningMessage(null)`, so a state event without a warning resets it and a hotkey-driven run
+  cannot inherit the previous run's degrade text. `handleRecordToggle` untouched.
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/d1-status-line-smoke.mjs` — CASE C added
+  (degraded run → clean run in the same browser boot, 3 checks); the header's "not exercised" list
+  corrected accordingly. 10 → **13** checks.
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/report.txt` — run artifact, final green run.
+- `_bmad-output/implementation-artifacts/7-10-…md` — round-2 follow-up task, gates, inversion,
+  resolution row, coverage corrections, this File List block, Change Log.
+
+**Added — review round 2**
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/status-clean-after-degrade.json` and
+  `ist-status-clean-after-degrade.png` — CASE C artifacts from the final green run.
+
+**Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`. **Round 2 additionally:** no file under `src-tauri/` and no file under `android/` (`git diff --stat` → zero such paths), and `src/App.tsx` unchanged — the fix is in the hook, not the renderer.
 
 ## Change Log
 
 | Date | Change |
 |---|---|
+| 2026-09-14 | **Review round 2 fix round — exactly one confirmed finding applied.** `src/hooks/useRecording.ts`'s `onStateChanged` listener now clears `warningMessage` when a state event carries no warning (`else` at the capture line), so a hotkey-driven run cannot show the previous run's amber degrade text instead of "Done". `handleRecordToggle` untouched. The D1 proxy smoke gained CASE C — a degraded run followed by a clean run in the **same** browser boot — and its header's "not exercised" list was corrected. Gates: D1 smoke 10 → **13/13**; `npm run build` clean; `cargo test --lib` **691** and the Kotlin gate **24 suites / 194 tests** carried over as regression statements about untouched code (gradle reported the test task `UP-TO-DATE` — replayed, not re-executed). The pre-fix tree was the RED, naming the previous run's model ID verbatim. **Named, not hidden:** the STT fallback-ladder warning is now cleared by the next event of its own run, so the main window no longer carries it into `done` — intended per Q1, but a behaviour change; the pill remains that warning's surface. Deferred/dismissed findings untouched. **Andi's GATE-4 still outstanding.** |
 | 2026-09-14 | **Review round 1 fix round — 7 patch findings + decision D1 applied; 3 canon patches already landed in `a371091`; 12 deferrals untouched.** Pill: `status_msg` is now staged and claimed by its own state, so no state inherits the previous one's text (F1); stale Warning→Done comments rewritten around the STT ladder (F3). Pipeline: the `degrade_msg` invariant states 2-of-3 test coverage honestly instead of "all three" (F2); `enter_sent` documented as "Insert+Send triggered" (F5); new pure `terminal_degrade_msg` stops the message promising a clipboard the write never reached (F6). Kotlin: the duplicate `successfulFallbackProvider_*` test removed, its claim bound to the real one (F4). Record: Task 1's `test_deliver_outcome_*` claim corrected against `git diff` (F7). **D1 (Andi):** the main window shows the cleanup failure in the existing status line, amber, same wording as the pill — one colour arm + one text branch in `App.tsx`, no new surface. Gates: `cargo test --lib` 688 → **691**, JVM **24 suites / 194 tests** (195 → 194, duplicate removed), `npm run build` clean, D1 proxy smoke **10/10**. Three inversions shown RED and reverted; `git status` clean. **F1/F3 are in Windows-gated `native_pill.rs` — not compiled, not tested on this host. Andi's GATE-4 still outstanding.** ⚠ Flagged: D1 makes the deferred stale-`warningMessage` defect user-visible — needs re-deciding, not fixed here. |
 | 2026-09-14 | **GATE-2 directive applied (Andi):** the Android toast drops the `(Ctrl+V)` hint — `KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG` is now `Cleanup failed — raw text in clipboard`. Desktop pill wording and `degrade_warn_msg_for_model` (model-not-found) **unchanged**. One constant + its wording test, as scoped: test retargeted, one negative assertion added. JVM gate RED (2 failures) → GREEN 24 suites / 195 tests / 0 failures; `cargo test --lib` 688/688 unchanged. **Andi's GATE-4 still outstanding.** |
 | 2026-09-14 | Story 7-10 implemented. Desktop: `llm_error` threaded to the paste step; clipboard-only branch via new `PasteHandler::copy_only`; degrade cause carried on a single terminal `DoneClipboard` event (Q1) and rendered by the pill; wording reworked per Q2. Android twin: explicit `llmCleanupFailed`, pure `decideDelivery` seam, Step-4 branch, one combined English toast (Q4/Q5). Gates: `cargo test --lib` 688/688, JVM 194/194 (24 suites), `npm run build` clean, trap #5 executed. Both AC6 inversions shown RED and reverted. `cargo clippy` blocked (not installed on host). **Andi's GATE-4 outstanding.** |

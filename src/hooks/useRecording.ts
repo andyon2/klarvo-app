@@ -29,7 +29,15 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
       // "done" + clipboardOnly event when cleanup failed and the raw text was
       // left in the clipboard. Capture it before the state branch, otherwise
       // the degrade cause — including the model ID — is dropped here.
+      //
+      // The `else` is not cosmetic (review round 2): a hotkey-driven run never
+      // passes through `handleRecordToggle`, which holds the only other
+      // `setWarningMessage(null)` sites. Without it the message outlives its own
+      // run and the NEXT successful run wears the previous run's amber degrade
+      // text instead of "Done". So `warningMessage` means "the warning carried
+      // by the latest state event", nothing longer-lived.
       if (p.warning) setWarningMessage(p.warning);
+      else setWarningMessage(null);
       // Warning is transient: don't update recordingState (the pipeline
       // continues and will send "done" next).
       if (p.state === "warning") return;
