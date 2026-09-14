@@ -976,17 +976,26 @@ export default function App() {
         />
 
         {/* Status label */}
+        {/* Story 7-10 D1 (Andi, review round 1): a run that ended "done" but
+            carried a warning — cleanup failed, raw text left in the clipboard —
+            says so here, in amber, instead of "Fertig". Same wording as the
+            pill, so the degrade cause (including 7-9 D2's model ID) is not lost
+            on the main window. Deliberately the EXISTING status line: AC4
+            forbids a new surface. */}
         <div className="text-center">
           <p className={[
             "text-xs font-medium",
             recording.recordingState === "error" ? "text-klarvo-danger"
               : recording.recordingState === "recording" ? "text-klarvo-amber"
-              : recording.recordingState === "done" ? "text-klarvo-teal"
+              : recording.recordingState === "done"
+                ? (recording.warningMessage ? "text-klarvo-amber" : "text-klarvo-teal")
               : isBusy ? "text-klarvo-amber"
               : "text-klarvo-dim",
           ].join(" ")}>
             {recording.errorMessage && recording.recordingState === "error"
               ? recording.errorMessage
+              : recording.warningMessage && recording.recordingState === "done"
+              ? recording.warningMessage
               : STATUS_LABELS[recording.recordingState]}
           </p>
         </div>

@@ -176,9 +176,21 @@ struct PillWindowState {
     // Warning display (12-1 FR4). Set when a Warning state arrives;
     // handle_timer dismisses to Idle after WARNING_HOLD_MS. See warning_hold_active.
     warning_at: Option<Instant>,
-    // Dynamic status text rendered for Error/Warning (the pipeline's taxonomy
-    // message, e.g. "⚠ DeepSeek langsam → OpenAI"). None → static label fallback.
+    // Dynamic status text rendered for Error/Warning/DoneClipboard (the
+    // pipeline's taxonomy message, e.g. "⚠ DeepSeek langsam → OpenAI").
+    // None → static label fallback. Owned by the CURRENT display state: it is
+    // (re)set from `pending_msg` on every accepted state entry, never inherited.
     status_msg: Option<String>,
+    // Staging slot for WM_PILL_SET_MSG (Story 7-10, review round 1).
+    //
+    // `emit_pipeline_state` posts the message and the state as a FIFO pair, msg
+    // first. Applying the message immediately let it outlive its own state: the
+    // 7-9 3a rule drops a `None` while the warning hold is active, so a Warning
+    // younger than WARNING_HOLD_MS followed by a message-less DoneClipboard
+    // (focus-verify failure) rendered the STT ladder's text in the clipboard-only
+    // arm. Staging moves the decision to WM_PILL_SET_STATE, which knows whether
+    // the state the message belongs to is accepted or dropped.
+    pending_msg: Option<Option<String>>,
     drag: Option<Drag>,
     last_bar_moved_emit: Option<Instant>,
     // GDI resources
@@ -305,9 +317,11 @@ impl NativePill {
         }
     }
 
-    /// Set the dynamic status message rendered for the next Error/Warning state
-    /// (12-1 FR4). Post this *before* the matching `set_state` so the pill has
-    /// the text when it renders. `None` clears any previous message.
+    /// Set the dynamic status message rendered for the next
+    /// Error/Warning/DoneClipboard state (12-1 FR4, Story 7-10). Post this
+    /// *before* the matching `set_state`: the message is staged and the state
+    /// that follows claims it. `None` means "that state has no message" — it
+    /// renders its static label and inherits nothing from the state before it.
     pub fn set_status_msg(&self, msg: Option<String>) {
         let boxed = Box::into_raw(Box::new(msg));
         unsafe {
@@ -1089,8 +1103,11 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
     }
 
     // Warning hold expired (12-1 FR4 / 7-9 3a): the pill dismisses itself.
-    // On the degrade path this is the ONLY way back to Idle, because the Done
-    // that followed the warning was deliberately ignored (warning_hold_active).
+    // Since Story 7-10 (Q1) the only producer of a Warning state is the STT
+    // fallback ladder ("⚠ Groq am Limit → lokale Transkription"), emitted
+    // mid-run. If the run's Done lands inside the 4 s hold it is dropped
+    // (warning_hold_active), and this timer is then the only way back to Idle;
+    // if the hold expires first, the Done arrives normally and shows.
     if let Some(started) = s.warning_at {
         if started.elapsed().as_millis() >= WARNING_HOLD_MS {
             s.display = NativePillState::Idle;
@@ -1104,15 +1121,20 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
 
 /// True while a Warning is on screen and younger than `WARNING_HOLD_MS`.
 ///
-/// 7-9 GATE-4 finding 3a: `process_audio` emits the degrade warning and the
-/// shell pastes + emits Done milliseconds later. `WM_PILL_SET_STATE` used to
-/// replace the display unconditionally (the old comment assumed "the follow-up
-/// Done normally overrides first" — true for the fallback ladder, where the
-/// warning shows *during* the retry, false for degrade-to-raw, where no gap
-/// exists). While this returns true, a plain Done and the `None` status
-/// message posted ahead of it are ignored; the timer then dismisses to Idle.
-/// Everything else still overrides — DoneClipboard (the text did NOT land),
-/// Error, and any new activity (Recording/Transcribing/Cleaning/Idle).
+/// **Who still produces a Warning:** since Story 7-10 (Q1) only the STT fallback
+/// ladder — `process_audio` emits "⚠ Groq am Limit → lokale Transkription" and
+/// then keeps working. Cleanup degrade-to-raw no longer emits a Warning at all;
+/// it carries its cause on the single terminal `DoneClipboard` event, which is
+/// why that path never engages this hold.
+///
+/// **Why the hold exists (7-9 GATE-4 finding 3a):** `WM_PILL_SET_STATE` used to
+/// replace the display unconditionally, on the assumption that a follow-up Done
+/// is always far enough away to be harmless. That held for a slow ladder retry
+/// and failed when the rest of the run finished within the 4 s. While this
+/// returns true a plain Done is dropped, together with the status message staged
+/// for it; the timer then dismisses to Idle. Everything else still overrides —
+/// DoneClipboard (the text did NOT land), Error, and any new activity
+/// (Recording/Transcribing/Cleaning/Idle), each with its own staged message.
 fn warning_hold_active(s: &PillWindowState) -> bool {
     matches!(s.display, NativePillState::Warning)
         && s.warning_at
@@ -1175,8 +1197,19 @@ unsafe extern "system" fn pill_wnd_proc(
 
             // 7-9 3a: a plain Done must not cut the degrade warning short.
             if matches!(new_state, NativePillState::Done) && warning_hold_active(s) {
+                // The message staged for this Done goes with it, so the held
+                // Warning keeps rendering its own text (7-9 3a).
+                s.pending_msg = None;
                 return LRESULT(0);
             }
+
+            // Story 7-10 (review round 1): the message is owned by the state
+            // that carries it. Taking the staged slot here — and clearing it
+            // when nothing was staged — means no state can ever inherit the
+            // previous one's text (a Warning younger than WARNING_HOLD_MS
+            // followed by a message-less DoneClipboard used to show the STT
+            // ladder's warning under the clipboard-only arm).
+            s.status_msg = s.pending_msg.take().flatten();
 
             s.display = new_state;
             s.spinner_deg = 0.0;
@@ -1252,14 +1285,12 @@ unsafe extern "system" fn pill_wnd_proc(
             // No render here — the matching WM_PILL_SET_STATE arrives next (FIFO)
             // and renders with this message present.
             let msg = Box::from_raw(wparam.0 as *mut Option<String>);
-            // 7-9 3a: the shell posts `None` ahead of every Done. While the
-            // warning hold is active that Done is dropped (see SET_STATE), so
-            // its message clear must be dropped too or the warning would fall
-            // back to the static "Warning" label for the rest of the hold.
-            if msg.is_none() && warning_hold_active(&*state_ptr) {
-                return LRESULT(0);
-            }
-            (*state_ptr).status_msg = *msg;
+            // Story 7-10 (review round 1): staged, not applied. The message
+            // belongs to the state that arrives next; SET_STATE applies it on an
+            // accepted state and discards it with a dropped one (7-9 3a). Doing
+            // it here could not tell those apart — a `None` dropped to protect a
+            // held Warning then bled that Warning's text into the next state.
+            (*state_ptr).pending_msg = Some(*msg);
             LRESULT(0)
         }
 
@@ -1528,6 +1559,7 @@ fn pill_thread(
             error_at: None,
             warning_at: None,
             status_msg: None,
+            pending_msg: None,
             drag: None,
             last_bar_moved_emit: None,
             main_dc,

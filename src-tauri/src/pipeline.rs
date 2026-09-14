@@ -1156,9 +1156,16 @@ pub enum ProcessOutcome {
         /// The user-facing cause of a degraded cleanup, e.g. `Model 'x' not
         /// found — in clipboard` (Story 7-10, Q1/Q2).
         ///
-        /// **Invariant: `degrade_msg.is_some() == llm_error`** — every degrade
-        /// site sets both, nothing else sets either
-        /// (`spec_degrade_msg_present_exactly_when_llm_error` pins it).
+        /// **Invariant: `degrade_msg.is_some() == llm_error`** — each of the
+        /// three degrade sites sets both, nothing else sets either.
+        ///
+        /// `spec_degrade_msg_present_exactly_when_llm_error` pins **two** of the
+        /// three: non-retryable, and retryable-with-no-fallback. The third
+        /// (retryable, fallback tried and also failed) is not reachable from a
+        /// test — `resolve_fallback_provider` builds a real HTTP provider from
+        /// the config's API keys, so there is no seam to make a fallback fail on
+        /// purpose. It is held by code review and by reading the three sites
+        /// side by side, not by a machine.
         ///
         /// Carried out of the core instead of being emitted as a `Warning`
         /// event: the shell puts it on the single terminal `DoneClipboard`
@@ -1944,6 +1951,9 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // with a fake handler; the shell applies only the AppState/HWND effects.
     let delivery = deliver_text(paste_handler.as_ref(), &cleaned_text, llm_error, insert_and_send);
     let paste_result = delivery.paste_result;
+    // The cause was written before delivery was attempted; if the clipboard
+    // write itself failed it must stop promising the clipboard (review round 1).
+    let degrade_msg = terminal_degrade_msg(degrade_msg, delivery.paste_failed);
     if delivery.paste_failed {
         if let Ok(mut m) = state.feedback_metrics.lock() {
             m.paste_error_count = m.paste_error_count.saturating_add(1);
@@ -2250,7 +2260,14 @@ fn deliver_outcome(
 pub(crate) struct Delivery {
     /// Which terminal event the shell emits, and the Insert+Send gate's input.
     pub paste_result: PasteResult,
-    /// `true` when Return was sent — the shell then runs Return-to-Current.
+    /// `true` when Insert+Send was **triggered** — the gate opened and
+    /// `send_enter()` was called — which is what makes the shell run
+    /// Return-to-Current.
+    ///
+    /// Deliberately not "Return arrived": a `send_enter()` that returns `Err` is
+    /// logged and still counts here. Focus has already been moved to the paste
+    /// target either way, so Return-to-Current is exactly as necessary after a
+    /// failed Return as after a successful one.
     pub enter_sent: bool,
     /// `true` when the handler returned a hard `PasteError` (the shell bumps
     /// `paste_error_count`). The run still ends with a terminal event.
@@ -2315,6 +2332,31 @@ pub(crate) fn deliver_text(
     };
 
     Delivery { paste_result, enter_sent, paste_failed }
+}
+
+/// The cause line the terminal `DoneClipboard` event carries.
+///
+/// `process_audio` writes `degrade_msg` before anything is delivered, so its
+/// "raw text in clipboard (Ctrl+V)" promises the clipboard on the strength of
+/// the *intent*. [`deliver_text`] then coerces a hard `PasteError` — on the
+/// degrade branch that is [`PasteHandler::copy_only`]'s clipboard write itself
+/// failing — to `ClipboardOnly` anyway, and the message went out unchanged: the
+/// pill told the user to press Ctrl+V for text that reached neither the window
+/// nor the clipboard (review round 1).
+///
+/// Replaced, not dropped: dropping it falls back to the static "In Clipboard"
+/// label, which is the same false claim minus the cause. The model ID from 7-9's
+/// D2 is lost on this path — it stays in `Klarvo.log`, and this is the
+/// double-failure case (cleanup down *and* clipboard unavailable), not the one
+/// D2 was written for.
+pub(crate) fn terminal_degrade_msg(
+    degrade_msg: Option<String>,
+    paste_failed: bool,
+) -> Option<String> {
+    match degrade_msg {
+        Some(_) if paste_failed => Some("Cleanup failed — clipboard write failed".to_string()),
+        other => other,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5351,9 +5393,62 @@ mod tests {
         assert!(!delivery.enter_sent);
     }
 
+    /// Review round 1: the degrade path's own clipboard write can fail. The
+    /// message was written before delivery was attempted, so it still told the
+    /// user to press Ctrl+V for text that is nowhere.
+    #[test]
+    fn spec_failed_clipboard_write_stops_promising_the_clipboard() {
+        let msg = terminal_degrade_msg(
+            Some(degrade_warn_msg(&"connection refused")),
+            true,
+        );
+
+        let msg = msg.expect("the cause must survive — dropping it leaves the static label");
+        assert!(
+            !msg.contains("in clipboard") && !msg.contains("Ctrl+V"),
+            "nothing reached the clipboard, so nothing may point at it: {msg:?}"
+        );
+        assert!(
+            msg.starts_with("Cleanup failed"),
+            "Q2: the cause still leads, so it survives the pill's truncation: {msg:?}"
+        );
+    }
+
+    /// Inverse half: an ordinary degrade — clipboard write fine — is passed
+    /// through untouched, model ID and all (7-9 D2).
+    #[test]
+    fn spec_successful_clipboard_write_keeps_the_original_cause() {
+        let original = degrade_warn_msg_for_model(
+            &llm::LlmError::ApiError { status: 400, message: "model not found".to_string() },
+            "deepseek-typo",
+        );
+
+        assert_eq!(
+            terminal_degrade_msg(Some(original.clone()), false),
+            Some(original),
+        );
+    }
+
+    /// A non-degraded run carries no cause, and a failed paste must not invent
+    /// one — that terminal event is the plain focus-failure `DoneClipboard`.
+    #[test]
+    fn spec_non_degraded_run_never_gains_a_cause() {
+        assert_eq!(terminal_degrade_msg(None, true), None);
+        assert_eq!(terminal_degrade_msg(None, false), None);
+    }
+
     /// The invariant `ProcessOutcome::Produced.degrade_msg`'s docstring claims:
     /// the message is present exactly when `llm_error` is set. Two redundant
     /// fields only stay honest if something checks them against each other.
+    ///
+    /// **Which degrade sites this covers: 2 of 3.** `make_input` builds
+    /// `config_for_fallback: AppConfig::default()`, i.e. no API keys, so
+    /// `resolve_fallback_provider` always returns `None` and `Retryable` lands
+    /// in the *no-fallback-available* branch. The *fallback-also-failed* site is
+    /// **not exercised here and cannot be** — the fallback is a real HTTP
+    /// provider constructed inside `process_audio` from config keys, with no
+    /// injection seam; reaching it would mean a live network call. Plus the
+    /// success path, asserting the fields stay unset.
     #[tokio::test]
     async fn spec_degrade_msg_present_exactly_when_llm_error() {
         let cases = [

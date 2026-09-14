@@ -22,13 +22,15 @@ import org.junit.Test
  * `pasteIntoFocusedField()` accessibility call, the toast rendering and its
  * ordering against HyperOS's own "pasted from your clipboard" system toast, the
  * banking guard's position ahead of the whole block, and that Step 2 actually
- * sets `llmCleanupFailed` on the right branches. All of those are on-device
- * smoke territory; this test decides the branch logic only.
+ * sets `llmCleanupFailed` on the right branches — including the one the story
+ * calls out, "the fallback provider succeeded". All of those are on-device smoke
+ * territory; this test decides the branch logic only.
  *
  * Coverage:
  * - AC2: cleanup failed → no paste, "Copied: …" toast suppressed (Q5)
- * - AC2 inverse: cleanup OK → paste exactly as before (both a11y states)
- * - AC2: a successful fallback is NOT a cleanup failure
+ * - AC2 inverse: cleanup OK → paste exactly as before (both a11y states); this
+ *   is also the successful-fallback case, at the flag's consequence only
+ * - Q2/Q5: the toast literal mirrors the pill, minus the key hint (GATE 2)
  */
 class CleanupFailureDeliveryTest {
 
@@ -90,6 +92,16 @@ class CleanupFailureDeliveryTest {
      * Regression half: with cleanup working, Step 4 behaves exactly as it did
      * before Story 7-10 — paste when the service is connected, otherwise fall
      * back to the "Copied: …" toast.
+     *
+     * **This is also the successful-FALLBACK case**, and the honest scope of
+     * that claim: a switched-but-working provider (`"⚠ Cleanup-Anbieter
+     * gewechselt"`) reaches Step 4 with `llmCleanupFailed = false`, i.e. exactly
+     * this call, and must still paste. What is asserted is the *consequence* of
+     * that flag being false. Whether Step 2 really leaves it false on the
+     * fallback-succeeded branch is **not** asserted here and cannot be — that is
+     * a `processAudio` branch, see the "does NOT cover" list above. A separate
+     * test passing `false` by hand would have read like a second check while
+     * being this one verbatim (review round 1).
      */
     @Test
     fun cleanupOk_pastesWhenAccessibilityConnected() {
@@ -113,26 +125,6 @@ class CleanupFailureDeliveryTest {
         assertTrue(
             "without an a11y service the user must learn the text is on the clipboard",
             decision.showCopiedToast
-        )
-    }
-
-    /**
-     * A successful FALLBACK provider is not a cleanup failure — the trap the
-     * story's Dev Notes call out. `degradeStatusMsg` is set on that path too
-     * ("⚠ Cleanup-Anbieter gewechselt"), which is exactly why the explicit
-     * `llmCleanupFailed` boolean exists. Cleanup produced real text, so it
-     * still pastes.
-     */
-    @Test
-    fun successfulFallbackProvider_isNotACleanupFailure_andStillPastes() {
-        val decision = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = false,
-            accessibilityConnected = true
-        )
-
-        assertTrue(
-            "a switched-but-working provider produced cleaned text — it must paste",
-            decision.paste
         )
     }
 

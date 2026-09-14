@@ -176,6 +176,12 @@ clean afterwards.
         `llm_error_count` increment and every other invariant in its docstring intact. Update the `let Some((…))
         else` destructuring in `stop_and_process_pipeline` and the two existing
         `test_deliver_outcome_*` tests.
+        **Record correction (review round 1, finding 7):** the destructuring was updated (and the tuple went 7 → 9,
+        not 8 — see the Completion Notes' deviation entry), but **neither `test_deliver_outcome_*` test was touched,
+        and neither needed to be**: `test_deliver_outcome_creates_pending_entry_when_audio_preserved` and
+        `test_deliver_outcome_no_pending_entry_without_audio_path` both drive `ProcessOutcome::Stopped` and assert
+        `result.is_none()`, so the `Produced` arm's tuple width is invisible to them. The task text predicted a
+        change that the implementation did not need; it is corrected here rather than left as a false claim.
   - [x] In `stop_and_process_pipeline`, on `llm_error == true`: write the clipboard and end the run as
         `PasteResult::ClipboardOnly` **without** calling `paste_handler.paste(...)`'s Ctrl+V path. **Reuse the
         existing primitives — do not write a second clipboard implementation** (the arboard call lives inside
@@ -252,18 +258,18 @@ Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter (diff 
 (diff + story + epic + project-context). Anchors are `file::symbol` per the project-context rule.
 **1 decision-needed · 10 patch · 12 deferred · 10 dismissed as noise.**
 
-- [ ] [Review][Decision] **Q1's "the main window must show the carried message" is unmet, and meeting it collides with AC4** — `src/hooks/useRecording.ts` captures `p.warning` before the state branch and `useRecording` returns `warningMessage`, but nothing renders it: `src/App.tsx` never reads `recording.warningMessage` (the only `warning` hit in `App.tsx` is an unrelated comment). Pre-existing — the value had no reader before this story either, so the diff regresses nothing — but Q1 names the main window as a consumer that "must show the carried message so nothing is lost", while AC4 forbids a new UI surface. Options: (a) accept the pill as the only degrade surface and amend Q1's wording; (b) render the message in the existing status line (`App.tsx`, the `recording.errorMessage` slot) — arguably not a *new* surface; (c) defer to a follow-up story. Andi's call.
+- [x] [Review][Decision] **Q1's "the main window must show the carried message" is unmet, and meeting it collides with AC4** — `src/hooks/useRecording.ts` captures `p.warning` before the state branch and `useRecording` returns `warningMessage`, but nothing renders it: `src/App.tsx` never reads `recording.warningMessage` (the only `warning` hit in `App.tsx` is an unrelated comment). Pre-existing — the value had no reader before this story either, so the diff regresses nothing — but Q1 names the main window as a consumer that "must show the carried message so nothing is lost", while AC4 forbids a new UI surface. Options: (a) accept the pill as the only degrade surface and amend Q1's wording; (b) render the message in the existing status line (`App.tsx`, the `recording.errorMessage` slot) — arguably not a *new* surface; (c) defer to a follow-up story. Andi's call.
 
-- [ ] [Review][Patch] A stale `status_msg` now bleeds into the message-less `DoneClipboard` pill [`src-tauri/src/native_pill.rs::render_frame` DoneClipboard arm + `pill_wnd_proc` `WM_PILL_SET_MSG`/`WM_PILL_SET_STATE`]
-- [ ] [Review][Patch] MANIFEST provenance row carries the literal `%s` instead of the fingerprint [`docs/design/overhaul/source/MANIFEST.md`, row `2026-09-14`]
-- [ ] [Review][Patch] `<id>` is unescaped in the canon HTML, so the rendered canon drops the placeholder [`docs/design/overhaul/source/Klarvo Design System.html`, pill "Constraint-treu" list, new `cleanup-degrade` `<li>`]
-- [ ] [Review][Patch] Canon + MANIFEST still state the pre-GATE-2 Android wording ("Android-Toast spiegelt den Wortlaut") [`docs/design/overhaul/source/MANIFEST.md` row `2026-09-14` + the canon `<li>`]
-- [ ] [Review][Patch] The `degrade_msg` invariant docstring and the record overclaim coverage — 2 of 3 degrade sites [`src-tauri/src/pipeline.rs::ProcessOutcome::Produced.degrade_msg` KDoc + `tests::spec_degrade_msg_present_exactly_when_llm_error`]
-- [ ] [Review][Patch] Stale comments describe the Warning→Done sequence Q1 removed [`src-tauri/src/native_pill.rs::handle_timer` warning branch + `warning_hold_active` docstring]
-- [ ] [Review][Patch] Duplicate Kotlin test wearing a misleading name [`android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt::successfulFallbackProvider_isNotACleanupFailure_andStillPastes`]
-- [ ] [Review][Patch] `Delivery::enter_sent`'s docstring says "Return was sent" but it is `true` after a failed `send_enter` [`src-tauri/src/pipeline.rs::Delivery` + `deliver_text`]
-- [ ] [Review][Patch] The degrade message still claims "raw text in clipboard" when the clipboard write itself failed [`src-tauri/src/pipeline.rs::deliver_text`, the coerced `Err` arm]
-- [ ] [Review][Patch] Record inaccuracy: Task 1 claims the two `test_deliver_outcome_*` tests were updated; the diff touches neither [story Task 1 / `src-tauri/src/pipeline.rs::tests::test_deliver_outcome_*`]
+- [x] [Review][Patch] A stale `status_msg` now bleeds into the message-less `DoneClipboard` pill [`src-tauri/src/native_pill.rs::render_frame` DoneClipboard arm + `pill_wnd_proc` `WM_PILL_SET_MSG`/`WM_PILL_SET_STATE`]
+- [x] [Review][Patch] MANIFEST provenance row carries the literal `%s` instead of the fingerprint [`docs/design/overhaul/source/MANIFEST.md`, row `2026-09-14`]
+- [x] [Review][Patch] `<id>` is unescaped in the canon HTML, so the rendered canon drops the placeholder [`docs/design/overhaul/source/Klarvo Design System.html`, pill "Constraint-treu" list, new `cleanup-degrade` `<li>`]
+- [x] [Review][Patch] Canon + MANIFEST still state the pre-GATE-2 Android wording ("Android-Toast spiegelt den Wortlaut") [`docs/design/overhaul/source/MANIFEST.md` row `2026-09-14` + the canon `<li>`]
+- [x] [Review][Patch] The `degrade_msg` invariant docstring and the record overclaim coverage — 2 of 3 degrade sites [`src-tauri/src/pipeline.rs::ProcessOutcome::Produced.degrade_msg` KDoc + `tests::spec_degrade_msg_present_exactly_when_llm_error`]
+- [x] [Review][Patch] Stale comments describe the Warning→Done sequence Q1 removed [`src-tauri/src/native_pill.rs::handle_timer` warning branch + `warning_hold_active` docstring]
+- [x] [Review][Patch] Duplicate Kotlin test wearing a misleading name [`android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt::successfulFallbackProvider_isNotACleanupFailure_andStillPastes`]
+- [x] [Review][Patch] `Delivery::enter_sent`'s docstring says "Return was sent" but it is `true` after a failed `send_enter` [`src-tauri/src/pipeline.rs::Delivery` + `deliver_text`]
+- [x] [Review][Patch] The degrade message still claims "raw text in clipboard" when the clipboard write itself failed [`src-tauri/src/pipeline.rs::deliver_text`, the coerced `Err` arm]
+- [x] [Review][Patch] Record inaccuracy: Task 1 claims the two `test_deliver_outcome_*` tests were updated; the diff touches neither [story Task 1 / `src-tauri/src/pipeline.rs::tests::test_deliver_outcome_*`]
 
 - [x] [Review][Defer] `warningMessage` is never cleared on a hotkey-driven run [`src/hooks/useRecording.ts`, the `onStateChanged` listener vs `handleRecordToggle`] — deferred, pre-existing
 - [x] [Review][Defer] `copyToClipboard` has no `try/catch`; a `SecurityException` kills the run before the single degrade toast [`android/.../KlarvoOverlayService.kt::copyToClipboard`] — deferred, pre-existing
@@ -623,6 +629,43 @@ funnel `lib::emit_pipeline_state` → `set_status_msg(event.warning.or(event.err
 consumer B `src/hooks/useRecording.ts` is a push sink (`onStateChanged`) and now reads `p.warning`
 **before** the `p.state === "warning"` early return.
 
+**REVIEW ROUND 1 — FIX ROUND (2026-09-14, same host: Linux, no device, no Windows build):**
+
+| Gate | Command | Result |
+|---|---|---|
+| Rust unit suite | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 691 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` (688 → **691**, +3 for `terminal_degrade_msg`) |
+| Kotlin JVM gate | `./gradlew :app:testUniversalDebugUnitTest` (device-free sync per 7-8/7-9) | `BUILD SUCCESSFUL`; counted from `app/build/test-results/testUniversalDebugUnitTest/*.xml`: **24 suites, 194 tests, 0 failures, 0 errors, 0 skipped** (195 → **194**, −1: the duplicate test finding 4 named was removed, not replaced) |
+| Frontend build | `npm run build` (`tsc && vite build`) | `✓ built in 1.52s`, tsc clean |
+| D1 proxy smoke | `bash _bmad-output/implementation-artifacts/gate4-evidence/7-10/run-d1-smoke.sh` | **10/10 checks passed** |
+| Scope check | `git status` after both throwaway inversions and the smoke's throwaway edit | clean — `src/tauri-commands.ts` untouched, no inversion residue |
+
+**Why the D1 test is a puppeteer harness and not a unit test.** This repo has **no JS test runner** (`package.json` has no vitest/jest), and adding one is forbidden (project-context: no `npm install` from a story; the Windows build runs `npm ci`). The documented desktop MACHINE gate for a React surface is puppeteer against `npm run preview` in real Chromium, with states the mocks cannot produce made by a **throwaway edit to `src/tauri-commands.ts`**, measured, then restored. `run-d1-smoke.sh` performs that edit, refuses to run if the file is already dirty, and reverts it in a `trap`; the run printed `throwaway edit reverted; src/tauri-commands.ts clean.`
+
+**Fix-round inversions — every changed behaviour shown RED first.** `git status` clean afterwards.
+
+| # | Finding | Reverted change (symbol) | Went RED | Verbatim failure | Discriminating? |
+|---|---|---|---|---|---|
+| 1 | 6 | `pipeline::terminal_degrade_msg` — the `paste_failed` arm made a pass-through | `pipeline::tests::spec_failed_clipboard_write_stops_promising_the_clipboard` | `690 passed; 1 failed`, `panicked at src/pipeline.rs:5407` | **Yes.** The assertion is "no `in clipboard` / `Ctrl+V` while `paste_failed`", which only the coercion bug can produce; the two sibling specs pin the untouched paths so a blanket `None` would fail them instead. |
+| 2 | D1 (text) | `App.tsx` — the `warningMessage && state === "done"` text branch deleted | D1 smoke, 3 checks | `7/10 checks passed`; `D1: status line shows the degrade cause verbatim`, `…the model ID survives…`, `…the 'Done' label is replaced` | **Yes.** Asserted against the verbatim pill wording incl. the model ID, so a generic "some text is shown" could not pass it. |
+| 3 | D1 (colour) | `App.tsx` — the done-state colour pinned back to `text-klarvo-teal` | D1 smoke, 1 check | `9/10 checks passed`; `D1: rendered in the canon amber token` | **Yes.** Computed `rgb()` compared to the literal `--color-klarvo-amber` value, not to a class name — a rebound Tailwind class cannot pass it. The text and colour halves fail **independently**, so neither masks the other. |
+
+**Findings 1 and 3 have NO test and cannot have one.** Both are in `native_pill.rs`, which is `#[cfg(target_os = "windows")]` and has no test module — it is **not compiled at all** by `cargo test --lib` on this host, so the 691 green says nothing about it, not even that it compiles. `cargo check --target x86_64-pc-windows-gnu` is a **retired** gate (project-context) and was not attempted. This is S5 unchanged: the staging fix rides on Andi's GATE-4.
+
+**Resolution rows — written from `git diff`, anchored at `file::symbol`:**
+
+| # | Finding | What changed |
+|---|---|---|
+| 1 | Stale `status_msg` bleeds into a message-less `DoneClipboard` | `native_pill::PillWindowState` gains `pending_msg: Option<Option<String>>`. `WM_PILL_SET_MSG` no longer applies the message — it **stages** it. `WM_PILL_SET_STATE` takes the staged slot on every accepted state entry (`s.status_msg = s.pending_msg.take().flatten()`) and discards it along with a Done it drops. **The review's first suggestion — "clear `status_msg` on state entry" — is not implementable as written:** `emit_pipeline_state` posts msg **before** state (FIFO, verified as its only caller), so an unconditional clear in `SET_STATE` would erase the message that state just arrived with. Staging is that suggestion made correct: the message is owned by its own state and no state can inherit the previous one's. |
+| 2 | `degrade_msg` invariant overclaims coverage | Stated honestly on **both** sides. `ProcessOutcome::Produced.degrade_msg`'s KDoc no longer says "every degrade site sets both" as a tested claim: it names 2 of 3 as pinned and the third as held by review. `spec_degrade_msg_present_exactly_when_llm_error`'s docstring names *which* two and *why* the third is unreachable (`make_input` uses `AppConfig::default()` → no keys → `resolve_fallback_provider` returns `None` → `Retryable` always lands in the no-fallback branch). **The test was not extended**: the fallback provider is a real HTTP client built inside `process_audio` from config keys with no injection seam, so reaching the fallback-also-failed site means a live network call. Adding that seam is a refactor this fix round has no mandate for. |
+| 3 | Stale comments describe the Warning→Done sequence Q1 removed | `native_pill::handle_timer`'s warning branch and `warning_hold_active`'s docstring rewritten to name the **STT fallback ladder** (`process_audio`'s `emit(PipelineEvent::warn("⚠ Groq am Limit → lokale Transkription"))` — grepped, the only surviving `PipelineEvent::warn` in the tree) as the sole remaining Warning producer, and to say explicitly that cleanup degrade-to-raw never engages the hold. `NativePill::set_status_msg`'s doc updated to the staging contract. |
+| 4 | Duplicate Kotlin test wearing a misleading name | `successfulFallbackProvider_isNotACleanupFailure_andStillPastes` **removed** — it was call- and assert-identical to `cleanupOk_pastesWhenAccessibilityConnected` and handed `llmCleanupFailed = false` in by hand, so it could not detect the danger its name claimed. The claim is **bound to the surviving test's KDoc** with its honest scope: the successful-fallback case reaches Step 4 with the flag false, and what is asserted is the *consequence* of that; whether Step 2 leaves it false on that branch is a `processAudio` branch and stays in the "does NOT cover" list. Not merged into a third test — binding it to the real one is the point. |
+| 5 | `Delivery::enter_sent` doc says "Return was sent" | Documented as **"Insert+Send was triggered"**, with the reason the `Err` case still counts: focus has moved to the paste target either way, so Return-to-Current is as necessary after a failed Return as after a successful one. Behaviour deliberately unchanged — binding it to `Ok` would silently drop Return-to-Current on exactly the runs that need it most. |
+| 6 | The degrade message claims "raw text in clipboard" when the clipboard write failed | New pure `pipeline::terminal_degrade_msg(degrade_msg, paste_failed)`, called in the shell between `deliver_text` and the terminal event. On `paste_failed` the cause is **replaced**, not dropped, with `Cleanup failed — clipboard write failed`. Dropping it was the other option the review offered and is worse: the `None` path falls back to the static `"In Clipboard"` label, i.e. the same false claim minus the cause. The model ID is lost on this path (it stays in `Klarvo.log`) — this is the double-failure case, not the one 7-9 D2 was written for. |
+| 7 | Task 1 claims the two `test_deliver_outcome_*` tests were updated | Corrected in Task 1 itself. `git diff 6cedbb5..HEAD -- src-tauri/src/pipeline.rs \| grep -c test_deliver_outcome` → **0**. Both tests drive `ProcessOutcome::Stopped` and assert `result.is_none()`, so the `Produced` arm's tuple width is invisible to them — they did not need updating. Editorial close-out per Epic-7 retro D2. |
+| D1 | Main window never shows the carried message (decision) | Andi's directive, verbatim: the existing status line, amber, `done`-with-warning, same wording as the pill, no new surface. `src/App.tsx` status `<p>`: the colour ternary's `done` arm becomes `warningMessage ? amber : teal`, and the text ternary gains one `warningMessage && state === "done"` branch ahead of `STATUS_LABELS`. **No new element, no new attribute, no new component** — AC4 holds. Q1's "every consumer shows the carried message" is now met for both consumers. |
+
+**⚠ FLAGGED, NOT ACTED ON — D1 makes a deferred defect user-visible.** Deferral row 1 (`warningMessage` is never cleared on a hotkey-driven run, `useRecording.ts`'s `onStateChanged` vs `handleRecordToggle`) was deferred as pre-existing *on the premise that nothing rendered the value*. D1 removes that premise. Concretely: a degraded run sets `warningMessage`; if the user does not click the record button (the only clearing path), the **next successful** hotkey run emits `done` with no warning, `warningMessage` is still set, and the status line shows the **previous** run's amber degrade text instead of "Done". The one-line fix would be an `else` on the capture in `useRecording.ts` — **not applied**, because deferred findings were explicitly out of this round's scope. It should be re-decided now that it is visible. The D1 smoke emits one run per browser boot, so it neither triggers nor rules this out.
+
 ### Completion Notes List
 
 **Shape chosen (Q1 = ONE event).** The three degrade sites in `process_audio` no longer
@@ -638,8 +681,11 @@ It went 7 → **9**: Q1 was decided after the task text was written and requires
 just the flag, to reach the terminal event. `llm_error` (AC1's named anchor, read by the paste
 branch) and `degrade_msg` (AC3's text) are both returned. They are redundant by construction, so the
 redundancy is pinned as a checked invariant rather than left to drift —
-`spec_degrade_msg_present_exactly_when_llm_error` asserts `degrade_msg.is_some() == llm_error` across
-all three degrade paths plus the success path.
+`spec_degrade_msg_present_exactly_when_llm_error` asserts `degrade_msg.is_some() == llm_error`.
+**Corrected in review round 1 (finding 2):** that test covers **2 of the 3** degrade paths
+(non-retryable, and retryable-with-no-fallback) plus the success path — **not** all three. The
+fallback-also-failed site is unreachable from a test and is held by code review; both the KDoc and the
+test's docstring now say so.
 
 **No second clipboard implementation.** `set_clipboard` was hoisted out of the Linux inline module to
 `paste::set_clipboard` (cfg-gated: `arboard` on desktop, no-op on Android — `arboard` is
@@ -694,7 +740,22 @@ this story's own files modified; no inversion residue).
 
 **Coverage statement — what these numbers do NOT cover.** *(project-context: "a number states what it covers".)*
 
-- **688 Rust / 195 Kotlin green prove wiring, logic and structure — not design, not pixels.**
+- **691 Rust / 194 Kotlin green prove wiring, logic and structure — not design, not pixels.**
+  *(Round-1 figures were 688 / 195; the fix round added 3 Rust specs and removed 1 duplicate Kotlin test.)*
+- **The two `native_pill.rs` fixes (findings 1 and 3) are covered by NOTHING.** The file is
+  `#[cfg(target_os = "windows")]` with no test module, so `cargo test --lib` on Linux does not
+  compile it, let alone run it. Not exercised: that the staging change compiles, the
+  Warning→DoneClipboard sequence it fixes, and every other pill behaviour. Both rest on Andi's
+  GATE-4 (S5).
+- **The D1 smoke proves the React tree, not the product.** It drives a *synthetic* payload through
+  the real components in real Chromium. Not exercised: the Rust backend (no Tauri — no
+  `emit_pipeline_state`, no real `klarvo://state-changed`, no pipeline run), the native pill,
+  Android, pixels/fonts/truncation, and the deferred stale-`warningMessage` sequence (one run per
+  browser boot). That the backend really puts `degrade_msg` on the terminal event is the Rust
+  suite's claim, not the smoke's.
+- **`terminal_degrade_msg` is tested as a pure function only.** Its 3 specs decide the *message*;
+  no test drives a real `arboard` clipboard failure through `stop_and_process_pipeline`, which
+  remains untested (unchanged by this round).
 - **The GATE-2 wording change was never seen rendered.** `degradeMessage_*` compares two strings in a
   JVM. Not exercised: the toast actually drawn on a phone, its truncation at `LENGTH_LONG`, and its
   ordering against HyperOS's own "pasted from your clipboard" system toast. That the shorter string
@@ -749,7 +810,18 @@ Paths relative to repo root.
 - `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `CLEANUP_FAILED_CLIPBOARD_MSG`, `DeliveryDecision`, pure `decideDelivery` (companion object); explicit `llmCleanupFailed` in `processAudio` Step 2 + `capturedLlmFailed`; Step 4 branch; degrade toast literal (Q2/Q5); stale `activeGesture` auto-send KDoc corrected. **GATE 2:** `CLEANUP_FAILED_CLIPBOARD_MSG` dropped its `(Ctrl+V)` suffix; its KDoc now states the deliberate desktop divergence and that the model-not-found form is unchanged.
 
 **Added**
-- `android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt` — 9 JVM tests for the Step-4 decision and the twin wording (**GATE 2:** `degradeMessage_mirrorsDesktopPillWording` retargeted to the hint-free literal, `degradeMessage_hasNoKeyHintOnAndroid` added).
+- `android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt` — JVM tests for the Step-4 decision and the twin wording (**GATE 2:** `degradeMessage_mirrorsDesktopPillWording` retargeted to the hint-free literal, `degradeMessage_hasNoKeyHintOnAndroid` added). **Review round 1:** 9 → **8** tests — `successfulFallbackProvider_isNotACleanupFailure_andStillPastes` removed as a duplicate (finding 4), its claim bound to `cleanupOk_pastesWhenAccessibilityConnected`'s KDoc.
+
+**Modified — review round 1 (fix round)**
+- `src-tauri/src/native_pill.rs` — `PillWindowState.pending_msg` added; `WM_PILL_SET_MSG` stages instead of applying; `WM_PILL_SET_STATE` claims the staged message on state entry and discards it with a dropped Done (finding 1). `handle_timer`'s warning branch + `warning_hold_active` + `NativePill::set_status_msg` docs rewritten (finding 3). **Not compiled on this host** — Windows-gated, no test module.
+- `src-tauri/src/pipeline.rs` — `ProcessOutcome::Produced.degrade_msg` KDoc + `spec_degrade_msg_present_exactly_when_llm_error` docstring state 2-of-3 coverage honestly (finding 2); `Delivery::enter_sent` doc corrected to "Insert+Send triggered" (finding 5); new pure `terminal_degrade_msg` + its call in `stop_and_process_pipeline`, plus 3 new specs (finding 6).
+- `src/App.tsx` — the existing status line renders `recording.warningMessage` in amber on a `done`-with-warning run (directive D1). No new element or attribute.
+- `_bmad-output/implementation-artifacts/7-10-…md` — Task 1 record correction (finding 7), findings checked off, this round's gates/inversions/resolution rows.
+
+**Added — review round 1**
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/d1-status-line-smoke.mjs` — puppeteer proxy smoke for D1 (10 checks).
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/run-d1-smoke.sh` — applies/reverts the throwaway `tauri-commands.ts` edit, boots preview, runs the smoke.
+- `_bmad-output/implementation-artifacts/gate4-evidence/7-10/` — run artifacts from the **final green run** (`report.txt` 10/10, `status-degraded.json`, `status-ok.json`, `ist-status-degraded.png`, `ist-status-ok.png`). The runner also writes `preview-server.log`, which is **not committed** — `.gitignore:15` (`*.log`).
 
 **Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`.
 
@@ -757,5 +829,6 @@ Paths relative to repo root.
 
 | Date | Change |
 |---|---|
+| 2026-09-14 | **Review round 1 fix round — 7 patch findings + decision D1 applied; 3 canon patches already landed in `a371091`; 12 deferrals untouched.** Pill: `status_msg` is now staged and claimed by its own state, so no state inherits the previous one's text (F1); stale Warning→Done comments rewritten around the STT ladder (F3). Pipeline: the `degrade_msg` invariant states 2-of-3 test coverage honestly instead of "all three" (F2); `enter_sent` documented as "Insert+Send triggered" (F5); new pure `terminal_degrade_msg` stops the message promising a clipboard the write never reached (F6). Kotlin: the duplicate `successfulFallbackProvider_*` test removed, its claim bound to the real one (F4). Record: Task 1's `test_deliver_outcome_*` claim corrected against `git diff` (F7). **D1 (Andi):** the main window shows the cleanup failure in the existing status line, amber, same wording as the pill — one colour arm + one text branch in `App.tsx`, no new surface. Gates: `cargo test --lib` 688 → **691**, JVM **24 suites / 194 tests** (195 → 194, duplicate removed), `npm run build` clean, D1 proxy smoke **10/10**. Three inversions shown RED and reverted; `git status` clean. **F1/F3 are in Windows-gated `native_pill.rs` — not compiled, not tested on this host. Andi's GATE-4 still outstanding.** ⚠ Flagged: D1 makes the deferred stale-`warningMessage` defect user-visible — needs re-deciding, not fixed here. |
 | 2026-09-14 | **GATE-2 directive applied (Andi):** the Android toast drops the `(Ctrl+V)` hint — `KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG` is now `Cleanup failed — raw text in clipboard`. Desktop pill wording and `degrade_warn_msg_for_model` (model-not-found) **unchanged**. One constant + its wording test, as scoped: test retargeted, one negative assertion added. JVM gate RED (2 failures) → GREEN 24 suites / 195 tests / 0 failures; `cargo test --lib` 688/688 unchanged. **Andi's GATE-4 still outstanding.** |
 | 2026-09-14 | Story 7-10 implemented. Desktop: `llm_error` threaded to the paste step; clipboard-only branch via new `PasteHandler::copy_only`; degrade cause carried on a single terminal `DoneClipboard` event (Q1) and rendered by the pill; wording reworked per Q2. Android twin: explicit `llmCleanupFailed`, pure `decideDelivery` seam, Step-4 branch, one combined English toast (Q4/Q5). Gates: `cargo test --lib` 688/688, JVM 194/194 (24 suites), `npm run build` clean, trap #5 executed. Both AC6 inversions shown RED and reverted. `cargo clippy` blocked (not installed on host). **Andi's GATE-4 outstanding.** |
