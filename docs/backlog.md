@@ -240,6 +240,15 @@ schickt bei Cleanup-Fehler den Rohtext samt Füllwörtern sofort ab — echter S
 
 Cut nur auf Andis Go (Epic 7 ist done → vor `bmad-create-story` auf in-progress, oder eigene Heimat wählen).
 
+**→ GESCHNITTEN 2026-09-14 als Story 7-10** (`7-10-cleanup-failure-raw-text-clipboard-only`, Branch `conductor/story-7-10`).
+GATE-1-Entscheidungen (Andi) stehen in der Story + Canon-MANIFEST-Zeile 2026-09-14. Zwei Deferrals aus GATE 1:
+- **Pill-Label-Sprache:** Canon sagt „In Zwischenablage" (deutsch), `native_pill.rs` rendert „In Clipboard" und alle
+  anderen Pill-Labels englisch. Vorbestehende Divergenz; 7-10 bleibt englisch. Entscheidung offen: Canon auf
+  englisch ziehen oder Pill lokalisieren (Source: 7-10 Q3).
+- **Android lokales MNN-Cleanup scheitert still:** setzt heute weder `degradeStatusMsg` noch einen Fehler-Toast;
+  Rohtext wird kommentarlos eingefügt. Eigener Bug, nicht Teil von 7-10 (Q4 = nur echte Cloud-Cleanup-Fehler,
+  Desktop-Parität). Source: `KlarvoOverlayService.kt` lokaler `catch`, 7-10 Q4.
+
 ### Story 7-9 residuals — review round 4 (fix loop closed on a review, 2026-09-12)
 
 Four fix rounds ran (D1/D2 + P1-P10 · REG-1..3 + RES-1/2 · RES-2 re-fix + R3-1..R3-7). All confirmed code
