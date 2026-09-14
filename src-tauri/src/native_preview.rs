@@ -34,7 +34,7 @@
 //! **independently of `live_preview_enabled`** — the window exists for the
 //! message even when the user never turned live preview on — and if a live
 //! preview *is* running, the message replaces its text in the same card.
-//! The card holds 4 s, fades over 1 s, and a new recording or a click dismisses
+//! The card holds 8 s, fades over 1 s, and a new recording or a click dismisses
 //! it at once — nothing else does, not even the state event that follows the
 //! message microseconds later (AC8 review, P1).
 //!
@@ -87,8 +87,10 @@ const BASE_MAX_HEIGHT: f64 = 600.0;
 
 const TIMER_MESSAGE: usize = 1;
 const TIMER_MS: u32 = 33; // ~30 fps, matching the pill's animation timer
-/// Fully opaque for this long (canon mock: same 4 s beat as the pill).
-const MSG_HOLD_MS: u128 = 4000;
+/// Fully opaque for this long. Started at 4 s (the pill's beat); Andi's GATE-4
+/// round 2 (2026-09-14) found it too short to read and asked for +3–4 s → 8 s.
+/// The pill keeps its own 4 s hold; the card outlives it on purpose.
+const MSG_HOLD_MS: u128 = 8000;
 /// …then fades out over this long. Total lifetime = HOLD + FADE.
 const MSG_FADE_MS: u128 = 1000;
 
@@ -345,7 +347,7 @@ struct PreviewWindowState {
     was_visible: bool, // tracks hidden→visible edge for topmost re-assert
     // Message mode (Story 7-10 AC8). `message` takes precedence over the live
     // preview text and is independent of `config.live_preview_enabled`;
-    // `message_at` starts the 4 s hold + 1 s fade the timer drives.
+    // `message_at` starts the 8 s hold + 1 s fade the timer drives.
     message: Option<OverlayMessage>,
     message_at: Option<Instant>,
     msg_timer_active: bool,
@@ -440,7 +442,7 @@ impl NativePreview {
 
     /// Show (or clear) the message card — Story 7-10, AC8.
     ///
-    /// `Some(msg)` puts the card into message mode and restarts its 4 s hold;
+    /// `Some(msg)` puts the card into message mode and restarts its 8 s hold;
     /// `None` dismisses it. Callers post this **before** the matching
     /// `set_state` (PostMessage is FIFO per window), so the state that arrives
     /// with a message never hides the card it just opened, and a `Recording`
@@ -1528,7 +1530,7 @@ unsafe extern "system" fn preview_wnd_proc(
                 // A new recording dismisses any message card at once (AC8) —
                 // and this arm is now the ONLY thing that does it on that route.
                 // P1's hold guard makes the `set_message(None)` posted just
-                // before this a no-op while the card is inside its 4 s hold, so
+                // before this a no-op while the card is inside its 8 s hold, so
                 // the premise the old comment rested on ("belt to that braces")
                 // is gone. `dismiss_message` only clears state; without the hide
                 // below, a card opened seconds earlier stays painted for the

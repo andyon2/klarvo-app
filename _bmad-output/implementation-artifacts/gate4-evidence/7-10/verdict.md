@@ -74,3 +74,19 @@ static labels as drawn. Residual known: flip band ~127–144 px above the pill (
 8. Restart Klarvo with a config warning if you have one (optional) → one card at boot, not several.
 
 Verdict: **review-cleared, GATE-4 round 2 open (Andi)**. Status stays `review` in both fields.
+
+## GATE-4 — round 2 result + round 3 (2026-09-14)
+
+**Round 2: GREEN** — Andi on build `37b2204`: "getestet, GATE-4 grün." One tuning request: the card fades too
+early → "verlängern um ca 3–4 Sekunden".
+
+**Change (conductor, direct — a constant Andi decided, not a fix round):** `native_preview::MSG_HOLD_MS`
+4000 → 8000. Fade stays 1 s. The pill keeps `DONE_CLIPBOARD_MS` / `WARNING_HOLD_MS` = 4 s (GATE-2: "Pill
+hält 4 s wie heute"); the card now outlives the pill's amber by 4 s. Canon HTML, MANIFEST (new fingerprint
+`975cc536…`), mockup timeline and AC8 updated in the same commit.
+
+**Andi's re-check (build hash below):**
+1. Settings → About shows the new build hash.
+2. Wrong DeepSeek model ID, dictate. Expected: the card stays fully visible for about 8 s, then fades over 1 s.
+3. Watch the pill: it returns to Idle after 4 s while the card is still up. Say if the pill should stay amber
+   as long as the card.

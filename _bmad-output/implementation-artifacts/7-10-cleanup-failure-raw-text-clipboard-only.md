@@ -181,7 +181,7 @@ message **regardless of `live_preview_enabled`**: header line (mono, uppercase) 
 cause line (`Model 'deepseek-typo' not found` — the model ID in mono on an amber chip, or the generic reason such as
 `DeepSeek did not respond (timeout)`); next line `Raw text is in the clipboard · Ctrl+V to paste`; hint line
 `Check Advanced → Model IDs` only for model-not-found. Amber border (`--k-amber-line`). All English.
-**And** the card holds 4 s, then fades out over 1 s; a new recording or a click on the card dismisses it at once.
+**And** the card holds 8 s, then fades out over 1 s; a new recording or a click on the card dismisses it at once. *(Was 4 s; Andi's GATE-4 round 2 on 2026-09-14 passed but found 4 s too short to read → +4 s. The pill keeps its 4 s hold.)*
 If live preview is active, the message replaces the preview text in the same card.
 **And** every other pipeline message uses the same card: STT-ladder warning (`Warning` header, amber), boot-time
 config warnings (`Warning`), errors (`Error` header, danger border `--k-danger`); the pill shows only static labels

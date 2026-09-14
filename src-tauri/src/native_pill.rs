@@ -100,7 +100,7 @@ const ERROR_IDLE_MS: u128 = 2500;
 // override.
 //
 // Since AC8 this holds an amber *light*, not a text: the warning's wording is on
-// the preview card, which runs its own 4 s + 1 s fade independently of the pill.
+// the preview card, which runs its own 8 s + 1 s fade independently of the pill.
 const WARNING_HOLD_MS: u128 = 4000;
 
 // ---------------------------------------------------------------------------
@@ -1151,7 +1151,7 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
 /// NOT land), Error, and any new activity (Recording/Transcribing/Cleaning/Idle).
 ///
 /// **Since AC8 this holds a light, not a sentence.** The warning's wording is on
-/// the preview card, which runs its own 4 s + 1 s fade; the hold now only keeps
+/// the preview card, which runs its own 8 s + 1 s fade; the hold now only keeps
 /// the amber light from flicking to green while the card is still up.
 fn warning_hold_active(s: &PillWindowState) -> bool {
     matches!(s.display, NativePillState::Warning)
