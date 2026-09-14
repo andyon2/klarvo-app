@@ -92,3 +92,5 @@ hält 4 s wie heute"); the card now outlives the pill's amber by 4 s. Canon HTML
    as long as the card.
 
 Windows build on `4f67600`: exit 0 (`windows-build-round3.exit`), exe written 2026-09-14 19:14.
+
+**Round 3: GREEN** — Andi's "go" on build `4f67600` (2026-09-14). Story closed.
