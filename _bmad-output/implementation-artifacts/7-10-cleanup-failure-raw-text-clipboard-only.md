@@ -1,6 +1,6 @@
 # Story 7.10: Cleanup failure → raw text clipboard-only, no paste, no auto-send
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -164,6 +164,33 @@ clean afterwards.
   on** → **nothing lands in the active window**, **no Enter is sent**, the pill shows the warning **with the model
   ID**, and **Ctrl+V pastes the raw text**.
 
+### AC8 — Message card: the pill is a status light, the preview card carries the message *(GATE-4 re-open, Andi 2026-09-14)*
+
+**Source of truth:** canon `docs/design/overhaul/source/Klarvo Design System.html` (pill "Constraint-treu" list, 7.10 line)
++ MANIFEST row 2026-09-14 (second) + approved render `docs/design/overhaul/mockup-7-10-message-card.html`.
+**Why:** Andi's Windows smoke on `d73082d`: the 200×36 pill cut `Model 'deepseek-typo' not found — in clipboard`
+mid-sentence; the clipboard hint never showed. The message was on the wrong surface. Supersedes Q2/Q3's
+"accept tail truncation" and AC3's wording on the pill.
+
+**Given** cleanup failed and the raw text went clipboard-only (AC1),
+**When** the terminal event reaches the desktop shell,
+**Then** the native pill shows the static amber label `Cleanup failed` (no dynamic text, no truncation); the plain
+focus-loss `DoneClipboard` keeps `In Clipboard`; both hold `DONE_CLIPBOARD_MS` (4 s) as today.
+**And** the native preview card (`native_preview.rs`, the existing window, 8 px above the pill, centered) shows the
+message **regardless of `live_preview_enabled`**: header line (mono, uppercase) `CLEANUP FAILED` with an amber dot;
+cause line (`Model 'deepseek-typo' not found` — the model ID in mono on an amber chip, or the generic reason such as
+`DeepSeek did not respond (timeout)`); next line `Raw text is in the clipboard · Ctrl+V to paste`; hint line
+`Check Advanced → Model IDs` only for model-not-found. Amber border (`--k-amber-line`). All English.
+**And** the card holds 4 s, then fades out over 1 s; a new recording or a click on the card dismisses it at once.
+If live preview is active, the message replaces the preview text in the same card.
+**And** every other pipeline message uses the same card: STT-ladder warning (`Warning` header, amber), boot-time
+config warnings (`Warning`), errors (`Error` header, danger border `--k-danger`); the pill shows only static labels
+for `Warning` / `Error` states — the pill's `fit_text` message rendering for status text is removed, not kept.
+**And** the main-window status line (D1) keeps showing the cause text; Android is unchanged (one combined toast).
+**And** the pipeline carries the message in a shape the card can lay out (cause / clipboard-only / model-not-found
+are distinguishable — the exact seam is the dev's call; the visible outcome above is the contract).
+**Inversion:** the card's message-mode gate off → the Rust-side layout/unit tests for the message model go RED.
+
 ### Out of scope (verbatim from the epic)
 
 > **Out of scope:** the failed-entries inbox (backlog candidate), pill buttons (assessed + parked in 7-9),
@@ -248,6 +275,11 @@ clean afterwards.
   - [x] Both inversions (AC6) + the non-discriminating trap check; table in the Dev Agent Record;
         `git status` clean.
 
+- [ ] **Task 6 — Message card, pill as status light** (AC8) — GATE-4 re-open. Desktop only. `native_pill.rs`:
+      static labels per state, remove dynamic status text; `native_preview.rs`: message mode (any pipeline message,
+      independent of `live_preview_enabled`), header/cause/next/hint layout, amber or danger border, 4 s + 1 s fade,
+      dismiss on new recording or click; pipeline/event: structured message fields; tests for the message model
+      + inversion; Windows-gated code compiles via the conductor's Windows build (GATE-4), not on Linux.
 - [x] **Task 5 — Gates** (AC7): `cargo test --lib`, the JVM gate, trap #5, coverage statements, then hand GATE-4
       to Andi with the exact steps from the epic DoD. Anchor the record **by symbol**, write resolution rows from
       `git diff` (Epic-7 retro D2).
@@ -633,6 +665,15 @@ library version — it reuses `arboard` (already the clipboard writer on both de
 - [Source: test-fixtures/README.md] — the parity-net ledger and the two commands that run it.
 - [Source: _bmad-output/project-context.md] — twins vs shared core, gates, symbol anchors, "a number states what
   it covers", never the user as rendering oracle, no host mutation.
+
+## GATE-4 — round 1 (Andi, Windows, build `d73082d`, 2026-09-14): FAILED on presentation
+
+Observed: the pill shows the amber warning, but the 200×36 label cuts the text mid-sentence; the clipboard part is
+never visible. Functional core (nothing pasted, no Enter) not yet confirmed by Andi — re-check in round 2.
+Cause named before any change: the message (tier 3: cause + consequence + action) was placed on the status light
+(tier 2: ~25 chars). Decision (Andi, brainstorm + mock 2026-09-14): Option A — pill = status light, the existing
+preview card = message surface, for every pipeline message. Recorded as AC8 + Task 6; canon + MANIFEST updated;
+render `docs/design/overhaul/mockup-7-10-message-card.html`. Story re-opened (`in-progress`, both fields).
 
 ## Dev Agent Record
 

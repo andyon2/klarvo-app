@@ -1,0 +1,172 @@
+<title>Klarvo Nachrichtenkarte</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* Single committed theme: this mock renders Klarvo's own Studio-Dark world over a desktop.
+     Tokens are copied verbatim from docs/design/overhaul/source/assets/klarvo.css. */
+  :root {
+    --k-bg-deep: #0A0B0C; --k-bg: #0F1112; --k-surface: #16181A; --k-surface-2: #1B1E20;
+    --k-border: #282C2F; --k-border-2: #353A3E; --k-hairline: rgba(255,255,255,0.055);
+    --k-text: #ECEEEF; --k-muted: #A4A9AC; --k-dim: #6F7479; --k-faint: #4B4F53;
+    --k-teal: #29C7AC; --k-teal-line: rgba(41,199,172,0.32);
+    --k-amber: #E9A24C; --k-amber-hi: #F4BA72; --k-amber-bg: rgba(233,162,76,0.12); --k-amber-line: rgba(233,162,76,0.32);
+    --k-danger: #EE6F63; --k-success: #4FC58A;
+    --k-r-full: 9999px; --k-r-lg: 16px; --k-r-md: 12px;
+    --k-e-pill: 0 8px 28px rgba(0,0,0,.55); --k-e3: 0 12px 32px rgba(0,0,0,.55); --k-glass: inset 0 1px 0 var(--k-hairline);
+    --k-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --k-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+    color-scheme: dark;
+  }
+  body { margin: 0; background: var(--k-bg); color: var(--k-text); font-family: var(--k-font); font-size: 14px; line-height: 1.5; padding-block: 32px 48px; padding-inline: 20px; }
+  main { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+  .lede { color: var(--k-muted); max-width: 64ch; margin: 6px 0 0; }
+  .eyebrow { font-family: var(--k-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--k-dim); }
+  .scenes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .scene { display: flex; flex-direction: column; gap: 10px; }
+  .scene h2 { font-size: 13px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; }
+  .scene h2 .tag { font-family: var(--k-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--k-border-2); color: var(--k-dim); }
+  .scene h2 .tag.ist { color: var(--k-danger); border-color: rgba(238,111,99,.4); }
+  .scene h2 .tag.soll { color: var(--k-teal); border-color: var(--k-teal-line); }
+  .scene p { margin: 0; color: var(--k-muted); font-size: 12.5px; }
+
+  /* A slice of desktop: an editor window behind, pill anchored bottom-center like on Windows. */
+  .desk { position: relative; height: 290px; border-radius: 10px; overflow: hidden; background: var(--k-bg-deep); border: 1px solid var(--k-border); }
+  .win { position: absolute; inset: 22px 22px 0 22px; background: #1E2124; border-radius: 8px 8px 0 0; border: 1px solid #2B3034; }
+  .win .bar { height: 26px; background: #262A2E; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #3C4247; display: block; }
+  .win .txt { padding: 14px 16px; font-family: var(--k-mono); font-size: 12px; color: #6B7075; line-height: 1.7; }
+  .win .txt .caret { display: inline-block; width: 1px; height: 13px; background: var(--k-text); vertical-align: -2px; margin-left: 1px; }
+
+  /* The pill: 200x36, glass, Canon .pill. Width is fixed on purpose. */
+  .pill { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 200px; height: 36px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: var(--k-r-full);
+    background: rgba(16,18,20,.72); backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    border: 1px solid rgba(255,255,255,.08); box-shadow: var(--k-e-pill), var(--k-glass); font-size: 12px; white-space: nowrap; overflow: hidden; }
+  .pill .k { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; font-weight: 600; font-size: 12px; background: var(--k-amber-bg); color: var(--k-amber); border: 1px solid var(--k-amber-line); }
+  .pill .lbl { color: var(--k-amber); font-weight: 500; min-width: 0; }
+  .pill .lbl.cut { overflow: hidden; text-overflow: clip; display: block; }
+  .pill .edge { position: absolute; right: 0; top: 0; bottom: 0; width: 28px; background: linear-gradient(to right, transparent, rgba(16,18,20,.9)); }
+
+  /* The message card: the existing native preview card, 8 px above the pill, amber-lined. */
+  .card { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); width: 300px; max-width: calc(100% - 32px); box-sizing: border-box;
+    border-radius: var(--k-r-lg); background: rgba(14,16,18,.82); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--k-amber-line); box-shadow: var(--k-e3), 0 0 0 1px rgba(233,162,76,.06), var(--k-glass); }
+  .card .head { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--k-border); }
+  .card .head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--k-amber); box-shadow: 0 0 0 3px var(--k-amber-bg); }
+  .card .head .t { font-family: var(--k-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--k-dim); }
+  .card .body { padding: 12px 14px 13px; display: flex; flex-direction: column; gap: 6px; }
+  .card .cause { font-size: 13px; color: var(--k-text); font-weight: 500; line-height: 1.45; }
+  .card .cause code { font-family: var(--k-mono); font-size: 12px; color: var(--k-amber-hi); background: var(--k-amber-bg); padding: 1px 5px; border-radius: 4px; }
+  .card .next { font-size: 12px; color: var(--k-muted); }
+  .card .next kbd { font-family: var(--k-mono); font-size: 11px; color: var(--k-text); background: var(--k-surface-2); border: 1px solid var(--k-border-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+  .card .hint { font-size: 11px; color: var(--k-dim); }
+
+  /* timeline */
+  .timeline { display: grid; grid-template-columns: 72px 1fr; gap: 6px 14px; align-items: center; font-size: 12.5px; }
+  .timeline .t { font-family: var(--k-mono); color: var(--k-dim); font-variant-numeric: tabular-nums; }
+  .bars { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .bar-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: center; font-size: 12px; color: var(--k-muted); }
+  .track { position: relative; height: 10px; border-radius: 5px; background: var(--k-surface-2); }
+  .track i { position: absolute; top: 0; bottom: 0; border-radius: 5px; display: block; }
+  .track .amber { background: var(--k-amber); opacity: .85; }
+  .track .fade { background: linear-gradient(to right, var(--k-amber), transparent); opacity: .6; }
+  .ticks { display: grid; grid-template-columns: 120px 1fr; gap: 12px; }
+  .ticks div { display: flex; justify-content: space-between; font-family: var(--k-mono); font-size: 10.5px; color: var(--k-dim); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--k-border); vertical-align: top; }
+  th { font-family: var(--k-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--k-dim); font-weight: 500; }
+  td.q { color: var(--k-text); font-weight: 500; white-space: nowrap; }
+  .rec { color: var(--k-teal); font-family: var(--k-mono); font-size: 11px; }
+  @media (prefers-reduced-motion: no-preference) { .card { animation: enter 240ms cubic-bezier(.34,1.56,.64,1) both; } @keyframes enter { from { opacity: 0; transform: translateX(-50%) scale(.9); } } }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Story 7-10 · Option A · Mock, kein Build</div>
+    <h1>Pill bleibt Statuslicht, die Karte trägt die Nachricht</h1>
+    <p class="lede">Dein Test: die Pill schneidet den Warntext mitten drin ab, der Teil mit der Zwischenablage fehlt. Option A legt die Nachricht auf die vorhandene Preview-Karte (8 px über der Pill) und lässt die Pill nur noch den Zustand zeigen.</p>
+  </header>
+
+  <section class="scenes">
+    <div class="scene">
+      <h2><span class="tag ist">IST</span> Heute, Build d73082d</h2>
+      <div class="desk">
+        <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="txt">…und dann treffen wir uns am<span class="caret"></span></div></div>
+        <div class="pill"><span class="k">K</span><span class="lbl cut">Model 'deepseek-typo' not found — in clipboard</span><span class="edge"></span></div>
+      </div>
+      <p>200 px, eine Zeile. Die Model-ID passt, „in clipboard" fällt weg. Der Nutzer erfährt nicht, wo sein Text ist.</p>
+    </div>
+
+    <div class="scene">
+      <h2><span class="tag soll">SOLL A</span> Falsche Model-ID</h2>
+      <div class="desk">
+        <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="txt">…und dann treffen wir uns am<span class="caret"></span></div></div>
+        <div class="card">
+          <div class="head"><span class="dot"></span><span class="t">Cleanup fehlgeschlagen</span></div>
+          <div class="body">
+            <div class="cause">Model <code>deepseek-typo</code> not found</div>
+            <div class="next">Raw text is in the clipboard · <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste</div>
+            <div class="hint">Check Advanced → Model IDs</div>
+          </div>
+        </div>
+        <div class="pill"><span class="k">K</span><span class="lbl">Cleanup failed</span></div>
+      </div>
+      <p>Pill: Zustand in Amber. Karte: Ursache, Ort des Textes, Handlung, Hinweis. Nichts wird gekürzt, die Model-ID hat Platz.</p>
+    </div>
+
+    <div class="scene">
+      <h2><span class="tag soll">SOLL A</span> Provider nicht erreichbar</h2>
+      <div class="desk">
+        <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="txt">…und dann treffen wir uns am<span class="caret"></span></div></div>
+        <div class="card">
+          <div class="head"><span class="dot"></span><span class="t">Cleanup fehlgeschlagen</span></div>
+          <div class="body">
+            <div class="cause">DeepSeek did not respond (timeout)</div>
+            <div class="next">Raw text is in the clipboard · <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste</div>
+          </div>
+        </div>
+        <div class="pill"><span class="k">K</span><span class="lbl">Cleanup failed</span></div>
+      </div>
+      <p>Der generische Fall. Zweite Zeile ist auf allen Karten gleich: wo der Text ist und was zu tun ist.</p>
+    </div>
+
+    <div class="scene">
+      <h2><span class="tag soll">VARIANTE</span> Pill-Label „In Clipboard"</h2>
+      <div class="desk">
+        <div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="txt">…und dann treffen wir uns am<span class="caret"></span></div></div>
+        <div class="card">
+          <div class="head"><span class="dot"></span><span class="t">Cleanup fehlgeschlagen</span></div>
+          <div class="body">
+            <div class="cause">Model <code>deepseek-typo</code> not found</div>
+            <div class="next">Raw text is in the clipboard · <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste</div>
+            <div class="hint">Check Advanced → Model IDs</div>
+          </div>
+        </div>
+        <div class="pill"><span class="k">K</span><span class="lbl">In Clipboard</span></div>
+      </div>
+      <p>Gleiche Karte, Pill nennt den Ort statt der Ursache. „In Clipboard" ist heute schon das Label für den Fokus-Verlust-Fall, beide Fälle sähen gleich aus.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Zeitverlauf nach dem Diktat</div>
+    <div class="bars">
+      <div class="bar-row"><span>Pill „Cleanup failed"</span><div class="track"><i class="amber" style="left:0;width:57%"></i></div></div>
+      <div class="bar-row"><span>Karte mit Nachricht</span><div class="track"><i class="amber" style="left:0;width:57%"></i><i class="fade" style="left:57%;width:14%"></i></div></div>
+      <div class="ticks"><span></span><div><span>0 s</span><span>2 s</span><span>4 s</span><span>6 s</span><span>7 s</span></div></div>
+    </div>
+    <p class="lede" style="font-size:12.5px">Pill hält 4 s wie heute. Karte hält 4 s und blendet 1 s aus. Ein neues Diktat oder ein Klick auf die Karte schließt sie sofort. Läuft die Live-Preview, ersetzt die Nachricht den Vorschautext in derselben Karte.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Offene Entscheidungen</div>
+    <table>
+      <tr><th>Frage</th><th>Optionen</th><th>Empfehlung</th></tr>
+      <tr><td class="q">Pill-Label</td><td>„Cleanup failed" (Ursache) · „In Clipboard" (Ort)</td><td><span class="rec">Cleanup failed</span> — der Fokus-Verlust-Fall bleibt „In Clipboard", die zwei Fälle bleiben unterscheidbar</td></tr>
+      <tr><td class="q">Karten-Dauer</td><td>4 s + Fade · bis zum nächsten Diktat · bis Klick</td><td><span class="rec">4 s + Fade</span> — gleicher Takt wie die Pill, kein Aufräumen nötig</td></tr>
+      <tr><td class="q">Karten-Sprache</td><td>Kopfzeile deutsch, Text englisch (wie im Mock) · alles englisch · alles deutsch</td><td><span class="rec">alles englisch</span> — Pill-Labels und Settings sind englisch; der Mock zeigt die Mischung nur zum Vergleich</td></tr>
+      <tr><td class="q">Weitere Warnungen</td><td>nur Cleanup-Fehler · auch STT-Ladder, Boot-Warnungen, Fehler</td><td><span class="rec">alle</span> — eine Nachrichtenfläche, die Pill-Textkürzung entfällt komplett</td></tr>
+    </table>
+  </section>
+</main>
