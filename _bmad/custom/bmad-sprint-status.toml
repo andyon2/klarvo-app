@@ -5,5 +5,5 @@
 [workflow]
 
 persistent_facts = [
-  "ROUTING (2026-09-14): NAECHSTE AKTION nur auf Andis Go = Story 'Cleanup-Fehler -> Rohtext nur Zwischenablage' cutten oder einen anderen Kandidaten aus docs/backlog.md (STORY-CANDIDATE / EPIC-KANDIDAT). Lizenzwahl und Cut-Freigaben NIE auto-entscheiden. | PARKED, nicht empfehlen: 7-6 (M12), 8-3/8-4 superseded, 8-6, 8-7, 9-6, 9-8, 12-3; Epics 1-8, 10, 11, 12 done. | FALLE: bmad-create-story verweigert Stories in done-Epics -- Epic vorher auf in-progress.",
+  "ROUTING (2026-09-14, nach 7-10 done): NAECHSTE AKTION nur auf Andis Go = einen Kandidaten aus docs/backlog.md cutten (DECIDED Advanced-Settings/AutoSend, STORY-CANDIDATE Model-Picker / Failed-Inbox / Woerterbuch, 7-10-Residuals). Lizenzwahl und Cut-Freigaben NIE auto-entscheiden. | PARKED, nicht empfehlen: 7-6 (M12), 8-3/8-4 superseded, 8-6, 8-7, 9-6, 9-8, 12-3; Epics 1-8, 10, 11, 12 done. | FALLE: bmad-create-story verweigert Stories in done-Epics -- Epic vorher auf in-progress.",
 ]

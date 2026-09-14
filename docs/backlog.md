@@ -240,7 +240,7 @@ schickt bei Cleanup-Fehler den Rohtext samt Füllwörtern sofort ab — echter S
 
 Cut nur auf Andis Go (Epic 7 ist done → vor `bmad-create-story` auf in-progress, oder eigene Heimat wählen).
 
-**→ GESCHNITTEN 2026-09-14 als Story 7-10** (`7-10-cleanup-failure-raw-text-clipboard-only`, Branch `conductor/story-7-10`).
+**→ GESCHNITTEN 2026-09-14 als Story 7-10** (`7-10-cleanup-failure-raw-text-clipboard-only`, Branch `conductor/story-7-10`). **→ DONE 2026-09-14** (Andis GATE-4 grün auf `4f67600`, gemergt auf `v1-ship`). Residuals: Abschnitt „Story 7-10 residuals" unten.
 GATE-1-Entscheidungen (Andi) stehen in der Story + Canon-MANIFEST-Zeile 2026-09-14. Zwei Deferrals aus GATE 1:
 - **Pill-Label-Sprache:** Canon sagt „In Zwischenablage" (deutsch), `native_pill.rs` rendert „In Clipboard" und alle
   anderen Pill-Labels englisch. Vorbestehende Divergenz; 7-10 bleibt englisch. Entscheidung offen: Canon auf
