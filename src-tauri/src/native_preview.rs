@@ -159,15 +159,18 @@ const MSG_LINE_ALPHA: f32 = 0.32;
 const MSG_CHIP_ALPHA: f32 = 0.12;
 
 /// Height of a **four-line** message card (header · cause · next · hint) plus the
-/// window's outer inset, in logical px — the tallest shape any of today's cards
-/// takes, and the threshold that decides whether the window flips below the pill
-/// (AC8 re-review, Andi's directive DN1).
+/// window's outer inset, in logical px — a **lower bound** for today's cards, and
+/// the threshold that decides whether the window flips below the pill (AC8
+/// re-review, Andi's directive DN1).
 ///
-/// Summed from the very constants `render_message_card` lays out with, so it
-/// cannot drift from the card it measures. `msg_line_h`'s rounding and the
-/// accessibility text scale are deliberately left out: this is a placement
+/// Summed from the constants `render_message_card` lays out with, so it tracks
+/// those constants — not the drawn card: `msg_line_h`'s rounding, the
+/// accessibility text scale and **line wrapping** (a long cause or the clipboard
+/// line wraps in the compact form, ≈144 px) are left out. This is a placement
 /// threshold, not a layout, and it must stay a constant the geometry pass can
-/// compare against before any font exists. ≈ 126.7 logical px today.
+/// compare against before any font exists. ≈ 126.7 logical px today. A pill
+/// with slightly more room above it than this constant keeps a wrapped card
+/// above and clamps it — residual, see the story's final re-review.
 const MIN_CARD_H_LOGICAL: f64 = 2.0 * OUTER_INSET as f64
     + 2.0 * MSG_HEAD_PAD_TB as f64
     + (MSG_HEADER_PX * MSG_LINE_MULT) as f64

@@ -140,7 +140,7 @@ impl OverlayMessage {
 /// this comment got its provenance wrong (AC8 re-review, item 3). What the tree
 /// actually shows:
 ///
-/// - `pipeline::process_audio`'s command-mode gate emits
+/// - `pipeline::start_command_mode`'s licence gate emits
 ///   `PipelineEvent::error("feature_requires_license:CommandMode")` — the one
 ///   token that becomes an [`OverlayMessage`]. That is the whole table.
 /// - `lib.rs`'s `require_license!` also formats `feature_requires_license:{:?}`,

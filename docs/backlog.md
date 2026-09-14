@@ -266,6 +266,11 @@ residual by Andi, not fixed:
   (main-window status line, D1). The canon records `#FFA344 → #E9A24C` as a replacement, so the pill is the
   outlier. Windows-gated, no machine coverage → own small story (belongs with "Epic 8-Abhängigkeit — native
   Overlays beim Studio-Dark-Reskin in Rust/GDI nachziehen"). Source: 7-10 re-review D3.
+- **Message-card flip threshold underestimates wrapped cards (AC8 final re-review, 2026-09-14):**
+  `native_preview::MIN_CARD_H_LOGICAL` (≈126.7 px) is a four-line lower bound; in the compact preview form the
+  clipboard line wraps and a `ModelNotFound` card is ≈144 px. For a pill with ~127–144 px of room above, the card
+  stays above and is clamped instead of flipping below. Fix direction (a): size the constant to the widest wrapped
+  case in the narrowest form. Windows-gated, no machine coverage. Source: 7-10 final re-review decision item.
 Five review deferrals live in `deferred-work.md` (EmptyText vs write failure, status-line hold in Auto-Loop,
 status-line truncation, `set_status_msg`/`set_state` pairing by convention, no test binds a failing `copy_only`).
 
