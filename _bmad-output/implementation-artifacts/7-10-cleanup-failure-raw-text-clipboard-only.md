@@ -246,6 +246,42 @@ clean afterwards.
       to Andi with the exact steps from the epic DoD. Anchor the record **by symbol**, write resolution rows from
       `git diff` (Epic-7 retro D2).
 
+### Review Findings (bmad-code-review, 2026-09-14, range `6cedbb5..HEAD`)
+
+Three layers ran, none failed: Blind Hunter (diff only), Edge Case Hunter (diff + tree), Acceptance Auditor
+(diff + story + epic + project-context). Anchors are `file::symbol` per the project-context rule.
+**1 decision-needed · 10 patch · 12 deferred · 10 dismissed as noise.**
+
+- [ ] [Review][Decision] **Q1's "the main window must show the carried message" is unmet, and meeting it collides with AC4** — `src/hooks/useRecording.ts` captures `p.warning` before the state branch and `useRecording` returns `warningMessage`, but nothing renders it: `src/App.tsx` never reads `recording.warningMessage` (the only `warning` hit in `App.tsx` is an unrelated comment). Pre-existing — the value had no reader before this story either, so the diff regresses nothing — but Q1 names the main window as a consumer that "must show the carried message so nothing is lost", while AC4 forbids a new UI surface. Options: (a) accept the pill as the only degrade surface and amend Q1's wording; (b) render the message in the existing status line (`App.tsx`, the `recording.errorMessage` slot) — arguably not a *new* surface; (c) defer to a follow-up story. Andi's call.
+
+- [ ] [Review][Patch] A stale `status_msg` now bleeds into the message-less `DoneClipboard` pill [`src-tauri/src/native_pill.rs::render_frame` DoneClipboard arm + `pill_wnd_proc` `WM_PILL_SET_MSG`/`WM_PILL_SET_STATE`]
+- [ ] [Review][Patch] MANIFEST provenance row carries the literal `%s` instead of the fingerprint [`docs/design/overhaul/source/MANIFEST.md`, row `2026-09-14`]
+- [ ] [Review][Patch] `<id>` is unescaped in the canon HTML, so the rendered canon drops the placeholder [`docs/design/overhaul/source/Klarvo Design System.html`, pill "Constraint-treu" list, new `cleanup-degrade` `<li>`]
+- [ ] [Review][Patch] Canon + MANIFEST still state the pre-GATE-2 Android wording ("Android-Toast spiegelt den Wortlaut") [`docs/design/overhaul/source/MANIFEST.md` row `2026-09-14` + the canon `<li>`]
+- [ ] [Review][Patch] The `degrade_msg` invariant docstring and the record overclaim coverage — 2 of 3 degrade sites [`src-tauri/src/pipeline.rs::ProcessOutcome::Produced.degrade_msg` KDoc + `tests::spec_degrade_msg_present_exactly_when_llm_error`]
+- [ ] [Review][Patch] Stale comments describe the Warning→Done sequence Q1 removed [`src-tauri/src/native_pill.rs::handle_timer` warning branch + `warning_hold_active` docstring]
+- [ ] [Review][Patch] Duplicate Kotlin test wearing a misleading name [`android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt::successfulFallbackProvider_isNotACleanupFailure_andStillPastes`]
+- [ ] [Review][Patch] `Delivery::enter_sent`'s docstring says "Return was sent" but it is `true` after a failed `send_enter` [`src-tauri/src/pipeline.rs::Delivery` + `deliver_text`]
+- [ ] [Review][Patch] The degrade message still claims "raw text in clipboard" when the clipboard write itself failed [`src-tauri/src/pipeline.rs::deliver_text`, the coerced `Err` arm]
+- [ ] [Review][Patch] Record inaccuracy: Task 1 claims the two `test_deliver_outcome_*` tests were updated; the diff touches neither [story Task 1 / `src-tauri/src/pipeline.rs::tests::test_deliver_outcome_*`]
+
+- [x] [Review][Defer] `warningMessage` is never cleared on a hotkey-driven run [`src/hooks/useRecording.ts`, the `onStateChanged` listener vs `handleRecordToggle`] — deferred, pre-existing
+- [x] [Review][Defer] `copyToClipboard` has no `try/catch`; a `SecurityException` kills the run before the single degrade toast [`android/.../KlarvoOverlayService.kt::copyToClipboard`] — deferred, pre-existing
+- [x] [Review][Defer] The banking guard aborts before the clipboard write and before the degrade toast, so a cleanup failure surfaces no cause at all [`android/.../KlarvoOverlayService.kt::processAudio` Step 4, `BankingGuard.shouldBlockPaste`] — deferred, pre-existing (Story 2-4 DIV-04)
+- [x] [Review][Defer] `accessibilityConnected` is a snapshot, not a paste result; a silent `pasteIntoFocusedField()` no-op yields no toast either [`android/.../KlarvoOverlayService.kt::processAudio` Step 4] — deferred, pre-existing (named in the diff's own NOTE)
+- [x] [Review][Defer] A cleanup failure overwrites an earlier STT-degrade message in the single `degradeStatusMsg` slot [`android/.../KlarvoOverlayService.kt::processAudio`] — deferred, pre-existing
+- [x] [Review][Defer] Android never produces the model-not-found form; the constant's KDoc parity claim reads stronger than the code [`android/.../KlarvoOverlayService.kt::CLEANUP_FAILED_CLIPBOARD_MSG`] — deferred, already stated precisely in the Completion Notes
+- [x] [Review][Defer] Android local-MNN cleanup failure stays silent and still pastes raw text [`android/.../KlarvoOverlayService.kt::processAudio` Step 2, local `catch`] — deferred, Q4 decision, already in `docs/backlog.md` (`606e9ac`)
+- [x] [Review][Defer] `deliver_outcome`'s 9-field positional tuple; `deliver_text`'s two adjacent booleans transpose silently [`src-tauri/src/pipeline.rs::deliver_outcome`, `deliver_text`] — deferred, the named-struct refactor is punted by the pre-existing `#[allow(clippy::type_complexity)]`
+- [x] [Review][Defer] The generic degrade wording is likely tail-truncated inside the 200×36 pill, cutting the clipboard hint [`src-tauri/src/native_pill.rs::fit_text`] — deferred, Q3 accepted tail truncation; Andi's GATE-4 judgement
+- [x] [Review][Defer] The Android degrade toast slot now mixes languages (English constant vs German `"⚠ Cleanup-Anbieter gewechselt"`) and drops the `⚠` glyph [`android/.../KlarvoOverlayService.kt::processAudio` Step 2] — deferred, Q2/Q3 decided English for this path; the sibling is pre-existing
+- [x] [Review][Defer] Android `set_clipboard` returns `Ok(())` without writing, so `copy_only` would report `ClipboardOnly` having written nothing [`src-tauri/src/paste/mod.rs::set_clipboard` android arm] — deferred, latent; matches the pre-existing `AndroidPasteHandler::paste` stub and the Rust delivery path is not reached on Android
+- [x] [Review][Defer] `paste_error_count` is bumped for an `EmptyText` rejection on a run where no paste was attempted [`src-tauri/src/pipeline.rs::deliver_text` / the shell's `paste_failed` arm] — deferred, pre-existing metric semantics
+
+**Dismissed as noise (10).** The new `DoneClipboard` render arm is dead code (false — `lib::emit_pipeline_state` posts `set_status_msg(event.warning.or(event.error))` before `set_state`) · `fit_text` NUL-terminator asymmetry (false — `fit_text` drops the NUL itself; the new branch matches the Error/Warning arms) · command-mode degrade drops the cause (false — `deliver_outcome`'s command branch only calls `consume_command_mode` and returns the full tuple; no early return) · the frontend capture now fires on the error surface (false — `PipelineEvent::error` sets `warning: None`) · empty-string `warning` (unreachable — both degrade builders always return a non-empty fixed prefix) · the model message drops D2's "check Advanced → Model IDs" pointer · the generic and model forms disagree about the `(Ctrl+V)` hint · `Model 'x' … in clipboard` reads ambiguously (all three: Andi's explicit Q2 decision) · removing the mid-run `Warning` event loses live feedback (Andi's explicit Q1 decision) · `insert_and_send` read moved before the paste (behaviour-preserving under the same no-reentrancy premise, disclosed in the record) · Windows focus is not restored on the degrade branch (intended — no paste, no focus restore).
+
+**Machine gates re-run by the review, not taken from the record:** `cargo test --manifest-path src-tauri/Cargo.toml --lib` → `test result: ok. 688 passed; 0 failed` (matches). 24 Kotlin suite files and 9 `@Test` in `CleanupFailureDeliveryTest.kt` counted in today's tree (matches); gradle itself was **not** run by the review. `md5(Klarvo Design System.html + assets/klarvo.css)` = `43d926f743fd91caf2ad51afd63cfcb8` (matches the MANIFEST header — the table cell is the defect). **Andi's GATE-4 remains outstanding**; nothing in this review substitutes for it.
+
 ## Dev Notes
 
 ### Verified current state (today's tree, `conductor/story-7-10` at `6cedbb5`)
