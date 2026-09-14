@@ -128,16 +128,28 @@ impl PipelineEvent {
         }
     }
 
-    /// Paste not attempted -- focus verification failed, text is clipboard-only.
+    /// Paste not attempted -- the text is clipboard-only.
     ///
-    /// The frontend should show a "Text in clipboard" indicator.
-    pub fn done_with_clipboard_only(text: String, raw_text: String) -> Self {
+    /// Two causes reach this event:
+    /// - focus verification failed (the paste target vanished), `warning` is `None`;
+    /// - LLM cleanup failed and the pipeline deliberately withheld the paste
+    ///   (Story 7-10 AC1), `warning` carries the degrade message.
+    ///
+    /// Story 7-10 (Q1) makes this the *only* terminal event on the degrade path:
+    /// the pipeline no longer emits a separate `Warning` ahead of it, so the
+    /// cause text cannot be cut short by the follow-up terminal event (7-9
+    /// GATE-4 finding 3a). Every consumer must surface `warning` when present.
+    pub fn done_with_clipboard_only(
+        text: String,
+        raw_text: String,
+        warning: Option<String>,
+    ) -> Self {
         PipelineEvent {
             state: PipelineState::Done,
             text: Some(text),
             raw_text: Some(raw_text),
             error: None,
-            warning: None,
+            warning,
             clipboard_only: Some(true),
         }
     }
@@ -212,12 +224,34 @@ mod tests {
         let event = PipelineEvent::done_with_clipboard_only(
             "Hello world".to_string(),
             "uh hello world".to_string(),
+            None,
         );
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"state\":\"done\""));
         assert!(json.contains("\"text\":\"Hello world\""));
         assert!(json.contains("\"clipboardOnly\":true"));
         assert!(!json.contains("\"error\""));
+        // No degrade cause -> no warning field (focus-failure route).
+        assert!(!json.contains("\"warning\""));
+    }
+
+    /// Story 7-10 (Q1/AC3): the degrade route carries its cause text on the
+    /// single terminal event, so the pill and the main window can still name
+    /// the model ID after the run has ended.
+    #[test]
+    fn test_pipeline_event_done_clipboard_only_carries_warning() {
+        let event = PipelineEvent::done_with_clipboard_only(
+            "raw text".to_string(),
+            "raw text".to_string(),
+            Some("Model 'deepseek-typo' not found — in clipboard".to_string()),
+        );
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"state\":\"done\""));
+        assert!(json.contains("\"clipboardOnly\":true"));
+        assert!(
+            json.contains("Model 'deepseek-typo' not found"),
+            "the degrade cause must ride on the terminal event: {json}"
+        );
     }
 
     /// PipelineEvent::error includes error field, no text.

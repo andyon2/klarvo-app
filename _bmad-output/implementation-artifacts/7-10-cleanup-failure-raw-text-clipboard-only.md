@@ -1,6 +1,6 @@
 # Story 7.10: Cleanup failure → raw text clipboard-only, no paste, no auto-send
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -171,31 +171,31 @@ clean afterwards.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Desktop: thread `llm_error` to the paste step and branch** (AC1, AC6)
-  - [ ] `pipeline::deliver_outcome`: carry `llm_error` out in the returned tuple (7 → 8 fields); keep the
+- [x] **Task 1 — Desktop: thread `llm_error` to the paste step and branch** (AC1, AC6)
+  - [x] `pipeline::deliver_outcome`: carry `llm_error` out in the returned tuple (7 → 8 fields); keep the
         `llm_error_count` increment and every other invariant in its docstring intact. Update the `let Some((…))
         else` destructuring in `stop_and_process_pipeline` and the two existing
         `test_deliver_outcome_*` tests.
-  - [ ] In `stop_and_process_pipeline`, on `llm_error == true`: write the clipboard and end the run as
+  - [x] In `stop_and_process_pipeline`, on `llm_error == true`: write the clipboard and end the run as
         `PasteResult::ClipboardOnly` **without** calling `paste_handler.paste(...)`'s Ctrl+V path. **Reuse the
         existing primitives — do not write a second clipboard implementation** (the arboard call lives inside
         `paste::windows::WindowsPasteHandler::paste` step 1, and in `paste::linux::set_clipboard`); extend the
         `PasteHandler` trait rather than duplicating (e.g. a `copy_only(text)` method with a default
         implementation), so Windows, Linux, Fallback and Android handlers stay consistent.
-  - [ ] Leave the Insert+Send gate **textually unchanged** (`if insert_and_send && paste_result ==
+  - [x] Leave the Insert+Send gate **textually unchanged** (`if insert_and_send && paste_result ==
         PasteResult::Pasted`) — AC1 rests on it staying the single switch.
-  - [ ] **Seam for the paste-level test (S1):** extract the paste + Insert+Send + terminal-event tail of
+  - [x] **Seam for the paste-level test (S1):** extract the paste + Insert+Send + terminal-event tail of
         `stop_and_process_pipeline` into a function that takes the handler (`&dyn PasteHandler`) and the flags,
         mirroring how `process_audio` takes `emit: &mut dyn FnMut(PipelineEvent)`. Keep it behaviour-preserving;
         this is a seam, not a refactor of the pipeline's logic.
 
-- [ ] **Task 2 — Desktop: the warning must survive the terminal event** (AC3) — **depends on Q1**
-  - [ ] Change the degrade wording in `pipeline::degrade_warn_msg` from "Cleanup failed — raw text inserted." to
+- [x] **Task 2 — Desktop: the warning must survive the terminal event** (AC3) — **depends on Q1**
+  - [x] Change the degrade wording in `pipeline::degrade_warn_msg` from "Cleanup failed — raw text inserted." to
         the AC3 wording. Keep `friendly_error` appending as today unless Q2 says otherwise.
-  - [ ] `pipeline::degrade_warn_msg_for_model` / `is_model_not_found_error`: keep D2's model-ID message
+  - [x] `pipeline::degrade_warn_msg_for_model` / `is_model_not_found_error`: keep D2's model-ID message
         (**Q2** decides how it combines with the clipboard hint). Do **not** loosen the needles added by 7-9
         finding 3b (DeepSeek's live 400 wording).
-  - [ ] Implement the Q1 shape:
+  - [x] Implement the Q1 shape:
         - *Option (a) one event* — `PipelineEvent` already carries **both** `warning` and `clipboard_only`
           (`hotkey/mod.rs`), so a single `Done` event with `warning: Some(...)` + `clipboard_only: Some(true)` is
           structurally possible today without a schema change. Then `lib::emit_pipeline_state` forwards
@@ -203,46 +203,46 @@ clean afterwards.
           **static** label `"In Clipboard"` and ignores `status_msg`; that renderer arm must read `status_msg`.
         - *Option (b) DoneClipboard carries the warning* — same renderer change, plus `warning_hold_active`'s
           override rule must stop letting `DoneClipboard` erase a held Warning.
-  - [ ] Whichever shape: re-check `native_pill.rs::handle_timer` still has exactly one path back to `Idle` for the
+  - [x] Whichever shape: re-check `native_pill.rs::handle_timer` still has exactly one path back to `Idle` for the
         new sequence (during a hold, `Done` is dropped and `done_at` is never set — the warning timer is the only
         dismissal), and that `DONE_CLIPBOARD_MS` (4000) / `WARNING_HOLD_MS` (4000) do not fight each other.
-  - [ ] **Frontend consumer (trap #5):** `src/hooks/useRecording.ts` reads `p.warning` **only** in the
+  - [x] **Frontend consumer (trap #5):** `src/hooks/useRecording.ts` reads `p.warning` **only** in the
         `p.state === "warning"` branch and returns early; a `Done`-shaped event carrying `warning` would drop the
         message in the main window. Verify the consumer for the chosen shape — the React `FloatingBar` no longer
         exists (Epic 10, native overlays), so the pill is the primary surface, but `useRecording` is still live.
 
-- [ ] **Task 3 — Android twin: an explicit failure flag + the Step-4 branch** (AC2, AC6)
-  - [ ] In `KlarvoOverlayService::processAudio` Step 2, introduce an explicit `var llmFailed: Boolean` (or fold it
+- [x] **Task 3 — Android twin: an explicit failure flag + the Step-4 branch** (AC2, AC6)
+  - [x] In `KlarvoOverlayService::processAudio` Step 2, introduce an explicit `var llmFailed: Boolean` (or fold it
         into a small result holder) set **only** on the true failure branches — cloud primary failed with no
         fallback, fallback also failed, and the local-MNN `catch` (**Q4** decides the local-MNN and no-key cases).
         It must stay **false** when the fallback provider **succeeded** (`"⚠ Cleanup-Anbieter gewechselt"`).
         `degradeStatusMsg != null` is not a substitute.
-  - [ ] Capture it alongside `capturedDegradeMsg` for the `handler.post { … }` block.
-  - [ ] Step 4: keep `BankingGuard.shouldBlockPaste` first; then `copyToClipboard(finalText)`; then call
+  - [x] Capture it alongside `capturedDegradeMsg` for the `handler.post { … }` block.
+  - [x] Step 4: keep `BankingGuard.shouldBlockPaste` first; then `copyToClipboard(finalText)`; then call
         `pasteIntoFocusedField()` **only** when the decision says paste. Keep `setState(RecordingState.DONE)`,
         `adjustLayoutForState`, `doneFlashRunnable` and the AUTO-loop restart unchanged.
-  - [ ] Decide what happens to the existing `if (!pasted) showToast("Copied: $preview")` line on the new path
+  - [x] Decide what happens to the existing `if (!pasted) showToast("Copied: $preview")` line on the new path
         (**Q5**) — today `pasted` is `KlarvoAccessibilityService.instance != null`, which is not a paste result.
-  - [ ] Update the degrade toast literal (**Q2/Q3**) and the stale `activeGesture` KDoc that still mentions
+  - [x] Update the degrade toast literal (**Q2/Q3**) and the stale `activeGesture` KDoc that still mentions
         "autoSend".
-  - [ ] **Seam (S3):** extract the decision as a **pure function** into the `KlarvoOverlayService` companion object
+  - [x] **Seam (S3):** extract the decision as a **pure function** into the `KlarvoOverlayService` companion object
         (or next to `BankingGuard`), following the established repo pattern — `shouldApplyPreviewAppearance`,
         `sanitizePreviewChunk`, `resolveMinRecordingMsForSilenceFilter`, `RecordingMode.selectSilenceSecs`,
         `shouldInstallPreviewFlush`, `BankingGuard.shouldBlockPaste` — and have Step 4 call the real one. No
         mocking library exists on the test classpath; this is the only way to a JVM test.
 
-- [ ] **Task 4 — Tests + inversions** (AC6)
-  - [ ] Rust: extend `test_process_audio_nonretryable_degrades_to_raw` as Q1 requires. Note the test helper
+- [x] **Task 4 — Tests + inversions** (AC6)
+  - [x] Rust: extend `test_process_audio_nonretryable_degrades_to_raw` as Q1 requires. Note the test helper
         `pipeline::tests::run` records **only `ev.state`** and discards the message — a message/`clipboardOnly`
         assertion needs the full `PipelineEvent` (extend `run` or add a sibling helper; `degrade_warn_msg_for_model`
         is also directly unit-testable, as `spec_model_not_found_warning_names_the_model` shows).
-  - [ ] Rust: the paste-level test against the Task-1 seam with a fake `PasteHandler` recording
+  - [x] Rust: the paste-level test against the Task-1 seam with a fake `PasteHandler` recording
         paste/copy/`send_enter` calls (no such fake exists today).
-  - [ ] Kotlin: a JUnit4 test for the Task-3 pure function, in `android/kotlin-test/com/klarvo/voice/`.
-  - [ ] Both inversions (AC6) + the non-discriminating trap check; table in the Dev Agent Record;
+  - [x] Kotlin: a JUnit4 test for the Task-3 pure function, in `android/kotlin-test/com/klarvo/voice/`.
+  - [x] Both inversions (AC6) + the non-discriminating trap check; table in the Dev Agent Record;
         `git status` clean.
 
-- [ ] **Task 5 — Gates** (AC7): `cargo test --lib`, the JVM gate, trap #5, coverage statements, then hand GATE-4
+- [x] **Task 5 — Gates** (AC7): `cargo test --lib`, the JVM gate, trap #5, coverage statements, then hand GATE-4
       to Andi with the exact steps from the epic DoD. Anchor the record **by symbol**, write resolution rows from
       `git diff` (Epic-7 retro D2).
 
@@ -539,8 +539,153 @@ library version — it reuses `arboard` (already the clipboard writer on both de
 
 ### Agent Model Used
 
+Claude Opus 5 (`claude-opus-5`), `bmad-dev-story`, 2026-09-14.
+
 ### Debug Log References
+
+Gates run on powerhouse (Linux). No device, no Windows build in this session.
+
+| Gate | Command | Result |
+|---|---|---|
+| Rust unit suite | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 688 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` |
+| Kotlin JVM gate | `./gradlew :app:testUniversalDebugUnitTest` (device-free sync per 7-8/7-9) | `BUILD SUCCESSFUL`; counted from `app/build/test-results/testUniversalDebugUnitTest/*.xml`: **24 suites, 194 tests, 0 failures, 0 errors, 0 skipped** |
+| Frontend build | `npm run build` (`tsc && vite build`) | `✓ built in 1.52s`, tsc clean |
+| Lint | `cargo clippy` | **blocked** — `'cargo-clippy' is not installed for the toolchain`. Not installed around (project-context: never mutate the host for a gate). Not an AC7 item. |
+| Trap #5 | mechanical, `docs/surface-smoke-checklist.md` | pass — see below |
+
+**Counts are re-verified against today's tree, not against the story text.** Two story-text
+numbers were stale and are corrected here: the story cites `src-tauri/src/paste/windows.rs` and
+`paste/linux.rs` — those files do not exist; `windows` and `linux` are **inline `mod` blocks inside
+`src-tauri/src/paste/mod.rs`**. The symbol anchors themselves were correct.
+
+Rust baseline was 681 at 7-9 → **688** (+7 new tests). Kotlin was 23 suites → **24** (+1 file, +8 tests;
+186 → 194).
+
+**Trap #5 (push, not poll; wire the event end-to-end; colon form) — executed, not attested:**
+this story introduces **no new event name and no new `.emit()` call** (`git diff | grep -E 'klarvo://|klarvo\.|\.emit\('` on added lines → empty). The message rides the existing
+`hotkey::EVENT_STATE_CHANGED = "klarvo://state-changed"` (colon form, pinned by
+`test_event_name_constant`). Chain verified hop by hop: producer
+`pipeline::stop_and_process_pipeline` → `PipelineEvent::done_with_clipboard_only(…, degrade_msg)`;
+funnel `lib::emit_pipeline_state` → `set_status_msg(event.warning.or(event.error))` posted **before**
+`set_state` (FIFO); consumer A `native_pill.rs` `DoneClipboard` arm now reads `s.status_msg`;
+consumer B `src/hooks/useRecording.ts` is a push sink (`onStateChanged`) and now reads `p.warning`
+**before** the `p.state === "warning"` early return.
 
 ### Completion Notes List
 
+**Shape chosen (Q1 = ONE event).** The three degrade sites in `process_audio` no longer
+`emit(PipelineEvent::warn(...))`. They set `degrade_msg` on `ProcessOutcome::Produced`, which
+`deliver_outcome` now returns, and the shell puts it on the single terminal
+`PipelineEvent::done_with_clipboard_only`. The degrade path's event sequence is therefore
+`Transcribing → Cleaning → DoneClipboard(msg)` — no `Warning` state, so `warning_hold_active` is
+never engaged on this path and needed **no change** (it still serves the STT retry-ladder warning at
+`process_audio`'s local-Whisper fallback, which is untouched).
+
+**Deviation from Task 1's letter, forced by Q1.** Task 1 says `deliver_outcome` goes 7 → 8 fields.
+It went 7 → **9**: Q1 was decided after the task text was written and requires the *message*, not
+just the flag, to reach the terminal event. `llm_error` (AC1's named anchor, read by the paste
+branch) and `degrade_msg` (AC3's text) are both returned. They are redundant by construction, so the
+redundancy is pinned as a checked invariant rather than left to drift —
+`spec_degrade_msg_present_exactly_when_llm_error` asserts `degrade_msg.is_some() == llm_error` across
+all three degrade paths plus the success path.
+
+**No second clipboard implementation.** `set_clipboard` was hoisted out of the Linux inline module to
+`paste::set_clipboard` (cfg-gated: `arboard` on desktop, no-op on Android — `arboard` is
+desktop-only in `Cargo.toml`). Windows' inline `arboard` block and the fallback handler now call it
+too, so there is **one** clipboard writer and one error mapping. `PasteHandler::copy_only` is a trait
+method with a default implementation built on it, so Windows/Linux/Fallback/Android stay consistent.
+
+**The Insert+Send gate is textually unchanged** (`insert_and_send && paste_result == PasteResult::Pasted`).
+`copy_only` returns `ClipboardOnly`, so Enter is skipped without a second switch — AC1 rests on that.
+
+**Seam (S1).** `pipeline::deliver_text(&dyn PasteHandler, text, llm_error, insert_and_send) -> Delivery`
+holds the paste/clipboard-only choice and the Insert+Send gate; the shell keeps only the effects that
+need `AppState`/HWNDs (`paste_error_count`, Return-to-Current). Behaviour-preserving, with one
+ordering note: `active_insert_and_send` is now read just **before** the paste instead of just after.
+Safe for the same reason the original comment gives — the hotkey handler cannot fire again mid-pipeline.
+
+**Android (Task 3).** Explicit `var llmCleanupFailed` set only on the two true-failure branches
+(fallback also failed; no fallback available). Per **Q4** it is NOT set on: successful fallback
+(`"⚠ Cleanup-Anbieter gewechselt"`), no-LLM-key (keeps today's paste), or the silent local-MNN catch
+(out of scope → backlog). Step 4 calls the pure `KlarvoOverlayService.decideDelivery(...)` (S3 seam,
+companion object, repo pattern). `BankingGuard.shouldBlockPaste` **verified still the first statement**
+in the `handler.post` block. `performEnter` **verified still present and still callerless** — AC2's
+auto-send half is satisfied by construction (7-9 M13), nothing re-wired, nothing deleted.
+
+**⚠ Flagged for Andi — "(Ctrl+V)" in the Android toast.** GATE 1 (Q5) says the toast mirrors the
+desktop pill "literally", and Q2 fixes the generic wording as
+`Cleanup failed — raw text in clipboard (Ctrl+V)`. Implemented literally, as decided. But **Ctrl+V is
+meaningless on a phone.** This is a decision to revisit, not a bug I invented an answer for. The
+literal lives in one named constant, `KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG`, so changing
+it is a one-line edit plus its twin-wording test.
+
+**Inversion evidence (AC6) — both platforms, at writing time.** `git status` clean afterwards (only
+this story's own files modified; no inversion residue).
+
+| # | Platform | Reverted change (symbol) | Test that went RED | Verbatim failure | Discriminating? |
+|---|---|---|---|---|---|
+| 1 | Rust | `pipeline::deliver_text` — `if llm_error` → `if false && llm_error` (re-enables the Ctrl+V paste on the degrade path) | `pipeline::tests::spec_degraded_cleanup_is_clipboard_only_and_never_sends` | `assertion left == right failed; left: Pasted, right: ClipboardOnly` | **Yes.** The spy's `paste()` returns `Pasted` — a *valid* target. The failure names `Pasted`, which none of the four innocent `ClipboardOnly` routes (no HWND, dead window, focus-verify fail, coerced `PasteError`) can produce. This is exactly the non-discriminating trap AC6 warns about, and it is avoided. |
+| 2 | Kotlin | `KlarvoOverlayService.decideDelivery` — `llmCleanupFailed -> DeliveryDecision(paste = false, …)` → `paste = true` | `CleanupFailureDeliveryTest > cleanupFailure_withAccessibilityConnected_doesNotPaste` | `java.lang.AssertionError at CleanupFailureDeliveryTest.kt:54`; `194 tests completed, 1 failed`; `BUILD FAILED` | **Yes.** Asserted with `accessibilityConnected = true` — a target that really could have been pasted into. Asserting against a disconnected service would pass against code that never had the option. |
+
+**Coverage statement — what these numbers do NOT cover.** *(project-context: "a number states what it covers".)*
+
+- **688 Rust / 194 Kotlin green prove wiring, logic and structure — not design, not pixels.**
+- **Never executed on Windows.** `native_pill.rs` is `#[cfg(target_os = "windows")]` and still has
+  **no test module**; `warning_hold_active`, `from_code`, `handle_timer` and the `DoneClipboard`
+  render arm I changed were **not run once** in this session. AC3's display outcome is **S5 — not
+  Linux-verifiable**, exactly the hole 7-9's GATE-4 fell into. Do not read "688 green" as evidence
+  the pill shows anything.
+- **Never executed on a device or emulator.** The Kotlin gate is JVM-only. Not exercised: the real
+  `copyToClipboard` write, the real `pasteIntoFocusedField()`, toast rendering, toast ordering
+  against HyperOS's own system toast, the banking guard's runtime behaviour, and **whether Step 2
+  actually sets `llmCleanupFailed` on the right branches** (the test covers the decision function,
+  not its caller). No JNI path was reached.
+- **The Rust spy overrides `copy_only`,** so the real `arboard` clipboard write, `SendInput`,
+  `xdotool` and all window/focus behaviour are untested. The tests decide *routing*, not delivery.
+- **`deliver_text` is tested; `stop_and_process_pipeline` is still not.** History, Turso, webhook and
+  metrics ordering around the new call remain uncovered (unchanged by this story).
+- **The twin-wording test is a written record, not a lock.** No shared fixture — a desktop-only
+  wording edit cannot fail the Kotlin test. `test-fixtures/` untouched (S6 held), so the gradle
+  `--rerun-tasks` fixture trap did not apply.
+- **AC4 verified by diff, not by eye:** no file under `src-tauri/src/config.rs` or `src/components/`
+  is touched. **AC5 verified by diff:** no `add_entry` / `saveToHistory` / `pushToTurso` / webhook
+  line changed.
+
+**OPEN — AC7 is not fully met. Andi's GATE-4 is outstanding** (Windows release build via
+`scripts/windows-build.sh`, which was not run in this session). Exact steps, from the epic DoD:
+
+1. Set a **wrong DeepSeek model ID** (Settings → Advanced → Model IDs) and switch **Insert+Send ON**.
+2. Dictate into a chat-style target window.
+3. Expect: **nothing lands in the active window**; **no Enter is sent**; the pill shows the warning
+   **with the model ID** (`Model '<id>' not found — in clipboard`, amber, ~4 s via `DONE_CLIPBOARD_MS`);
+   **Ctrl+V pastes the raw text**.
+4. Regression in the same build: with a **correct** model ID, paste and Insert+Send behave as before.
+
+**Backlog notes this story deliberately did not act on** (GATE-1 deferrals, already recorded in
+`docs/backlog.md` by commit `606e9ac`): the pill's label language (canon says
+„In Zwischenablage", code says `In Clipboard` — pre-existing divergence, Q3) and the silent local-MNN
+cleanup failure on Android (Q4).
+
 ### File List
+
+Paths relative to repo root.
+
+**Modified**
+- `src-tauri/src/pipeline.rs` — `ProcessOutcome::Produced.degrade_msg`; three degrade sites set it instead of emitting `Warning`; `degrade_warn_msg` / `degrade_warn_msg_for_model` rewording (Q2); `deliver_outcome` returns 9 fields; new `deliver_text` + `Delivery` seam; shell rewired; terminal event carries `degrade_msg`; tests (`run_full`, `SpyPasteHandler`, 6 new specs, 4 existing updated).
+- `src-tauri/src/paste/mod.rs` — module-level cfg-gated `set_clipboard` (hoisted out of `mod linux`, reused by `mod windows` and the fallback handler); new `PasteHandler::copy_only` default method.
+- `src-tauri/src/hotkey/mod.rs` — `PipelineEvent::done_with_clipboard_only` takes `warning: Option<String>`; 1 test updated, 1 added.
+- `src-tauri/src/native_pill.rs` — `DoneClipboard` render arm renders `status_msg` (via `fit_text`, `font_label`) when present, static `"In Clipboard"` otherwise; `handle_timer`'s done-timeout clears `status_msg` on dismissal.
+- `src/hooks/useRecording.ts` — `p.warning` captured before the `p.state === "warning"` early return.
+- `src/types.ts` — `StateChangedPayload.warning` / `.clipboardOnly` comments updated.
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `CLEANUP_FAILED_CLIPBOARD_MSG`, `DeliveryDecision`, pure `decideDelivery` (companion object); explicit `llmCleanupFailed` in `processAudio` Step 2 + `capturedLlmFailed`; Step 4 branch; degrade toast literal (Q2/Q5); stale `activeGesture` auto-send KDoc corrected.
+
+**Added**
+- `android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt` — 8 JVM tests for the Step-4 decision and the twin wording.
+
+**Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`.
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-09-14 | Story 7-10 implemented. Desktop: `llm_error` threaded to the paste step; clipboard-only branch via new `PasteHandler::copy_only`; degrade cause carried on a single terminal `DoneClipboard` event (Q1) and rendered by the pill; wording reworked per Q2. Android twin: explicit `llmCleanupFailed`, pure `decideDelivery` seam, Step-4 branch, one combined English toast (Q4/Q5). Gates: `cargo test --lib` 688/688, JVM 194/194 (24 suites), `npm run build` clean, trap #5 executed. Both AC6 inversions shown RED and reverted. `cargo clippy` blocked (not installed on host). **Andi's GATE-4 outstanding.** |

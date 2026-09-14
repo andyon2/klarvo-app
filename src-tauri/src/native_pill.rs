@@ -761,11 +761,34 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PillWindowState) {
             }
 
             NativePillState::DoneClipboard => {
-                SelectObject(s.tmp_dc, s.font_label_lg.into());
-                let text = to_wide("In Clipboard");
-                let tx = LABEL_X_AFTER_SPIN * sc;
-                let ty = ((PILL_H - 12.0) / 2.0) * sc;
-                TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
+                // Story 7-10 (Q1): this arm used to render a STATIC label and
+                // ignore `status_msg`, so the degrade cause — including the
+                // model ID from 7-9's D2 — was lost the moment the run ended.
+                // A message now replaces the label; without one (the ordinary
+                // focus-failure route) the static label is unchanged.
+                //
+                // Q3: tail-truncated via `fit_text`, never widened — the canon
+                // pins the pill at 200×36 ("Fläche bleibt 200×36 — kein
+                // Aufblasen", ADR-0019). The message uses the smaller
+                // `font_label`, matching the Error/Warning arms, so more of the
+                // cause survives the cut.
+                match s.status_msg.as_deref() {
+                    Some(msg) => {
+                        SelectObject(s.tmp_dc, s.font_label.into());
+                        let avail = (((PILL_W - PAD) - LABEL_X_AFTER_SPIN) * sc) as i32;
+                        let text = fit_text(s.tmp_dc, msg, avail);
+                        let tx = LABEL_X_AFTER_SPIN * sc;
+                        let ty = ((PILL_H - 11.0) / 2.0) * sc;
+                        TextOutW(s.tmp_dc, tx as i32, ty as i32, &text);
+                    }
+                    None => {
+                        SelectObject(s.tmp_dc, s.font_label_lg.into());
+                        let text = to_wide("In Clipboard");
+                        let tx = LABEL_X_AFTER_SPIN * sc;
+                        let ty = ((PILL_H - 12.0) / 2.0) * sc;
+                        TextOutW(s.tmp_dc, tx as i32, ty as i32, &text[..text.len()-1]);
+                    }
+                }
                 composite_text_mask(s.tmp_bits as *const u8, s.main_bits as *mut u8, pw, ph, 255, 163, 68);
                 core::ptr::write_bytes(s.tmp_bits as *mut u8, 0u8, byte_count);
             }
@@ -1043,6 +1066,10 @@ unsafe fn handle_timer(hwnd: HWND, s: &mut PillWindowState) {
         if elapsed >= limit {
             s.display = NativePillState::Idle;
             s.done_at = None;
+            // Story 7-10: DoneClipboard can now carry a degrade message. Clear
+            // it on dismissal like the Error/Warning branches do, so a later
+            // message-less clipboard-only run cannot inherit a stale cause.
+            s.status_msg = None;
             stop_timer(hwnd, s);
             render_frame(hwnd, s);
         }

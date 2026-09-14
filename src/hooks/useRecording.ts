@@ -24,12 +24,15 @@ export function useRecording(currentStyle: CleanupStyle, language: string) {
   // Subscribe to backend pipeline events (hotkey-triggered recording on desktop).
   useEffect(() => {
     const unlisten = onStateChanged((p) => {
-      // Warning is transient: store the message but don't update recordingState
-      // (the pipeline continues and will send "done" next).
-      if (p.state === "warning") {
-        if (p.warning) setWarningMessage(p.warning);
-        return;
-      }
+      // A warning can arrive two ways (story 7-10): as its own transient
+      // "warning" event (the STT fallback ladder), or riding on the terminal
+      // "done" + clipboardOnly event when cleanup failed and the raw text was
+      // left in the clipboard. Capture it before the state branch, otherwise
+      // the degrade cause — including the model ID — is dropped here.
+      if (p.warning) setWarningMessage(p.warning);
+      // Warning is transient: don't update recordingState (the pipeline
+      // continues and will send "done" next).
+      if (p.state === "warning") return;
       setRecordingState(p.state as RecordingState);
       if (p.text !== undefined) { setResultText(p.text); setOriginalResultText(p.text); }
       if (p.rawText !== undefined) setRawText(p.rawText);

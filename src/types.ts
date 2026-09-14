@@ -14,8 +14,8 @@ export interface StateChangedPayload {
   text?: string;           // present when state === "done": cleaned result text
   rawText?: string;        // present when state === "done": raw transcript before cleanup
   error?: string;          // present when state === "error": human-readable message
-  warning?: string;        // present when state === "warning": non-fatal issue, pipeline continued
-  clipboardOnly?: boolean; // present when state === "done": true when focus-restore failed and only clipboard was written
+  warning?: string;        // non-fatal issue: on state === "warning", or on state === "done" + clipboardOnly when cleanup failed (story 7-10)
+  clipboardOnly?: boolean; // present when state === "done": focus-restore failed, or cleanup failed and the paste was withheld (story 7-10)
 }
 
 // Recording state machine states.
