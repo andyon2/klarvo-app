@@ -34,3 +34,43 @@ Run: 2026-09-14 · branch `conductor/story-7-10` · HEAD `d73082d` · baseRef `6
 7. History: the failed run is listed with its raw text (unchanged behaviour).
 
 Verdict: **review-cleared, GATE-4 open (Andi)**. Status stays `review` in both fields until Andi's smoke is green.
+
+---
+
+# GATE-4 verdict — round 2 (after Option A: pill = status light, preview card = message surface)
+
+Run: 2026-09-14 · HEAD `37b2204` · Windows build on `37b2204` (exit 0, see `windows-build-r4.exit`)
+
+## What changed since round 1
+Round 1 FAILED on presentation: the 200×36 pill truncated the warning mid-sentence. Decision (Andi, mock
+`docs/design/overhaul/mockup-7-10-message-card.html`): the pill shows only static labels; the existing native
+preview card carries every pipeline message (cause · "Raw text is in the clipboard · Ctrl+V to paste" · hint),
+4 s + 1 s fade, dismissed by a new recording or a click, flips below the pill when it does not fit above.
+
+## Self-verification (mechanical)
+| Layer | Result | Proves |
+|---|---|---|
+| `cargo test --lib` | 707 passed, 0 failed | message model (`overlay_message.rs`): cause/next/hint, chip split, TEXT LOST tone, token mapping, boot-warning merge, `in_history` |
+| Inversions | 4 (AC8 dev) + 4 (fix r1) + 2 (fix r2), all RED then reverted | tests bind to production |
+| D1 proxy smoke | 13/13 | main-window status line unchanged |
+| Windows release build | exit 0 on `d03a4da`, `d778d5c`, `0eedb40`, `37b2204` | `native_pill.rs` + `native_preview.rs` compile, link, install |
+| Code review | full review of `8b81864` (3 decisions, 11 patches → fixed), scoped re-reviews of `d778d5c` and `0eedb40`; loop closed on a review | |
+
+## NOT exercised by any machine (Windows-gated, no test module)
+Card layout, wrap, fade, click-dismiss, below-pill flip, Geist on the card, Light-theme background, the pill's
+static labels as drawn. Residual known: flip band ~127–144 px above the pill (backlog).
+
+## Residual for Andi (Windows, build `37b2204`)
+1. Settings → About shows `Build 37b2204`.
+2. Wrong DeepSeek model ID (e.g. `deepseek-typo`), Insert+Send ON, focus a text field, dictate.
+   Expected: nothing in the field, no Enter. Pill amber `Cleanup failed`. Above the pill a card: header CLEANUP
+   FAILED, `Model 'deepseek-typo' not found` (ID on an amber chip), `Raw text is in the clipboard · Ctrl+V to paste`,
+   `Check Advanced → Model IDs`. Card visible ~4 s, then fades.
+3. Ctrl+V in the field → raw transcript appears.
+4. Live preview OFF (Settings) and repeat step 2 → the card still appears.
+5. Click the card while it shows → it disappears at once; a click on the spot afterwards reaches the window below.
+6. Drag the pill to the top edge of the screen and repeat step 2 → the card appears BELOW the pill.
+7. Correct model ID, dictate → cleaned text pasted, Enter sent, pill `Done`, no card, main window `Done` teal.
+8. Restart Klarvo with a config warning if you have one (optional) → one card at boot, not several.
+
+Verdict: **review-cleared, GATE-4 round 2 open (Andi)**. Status stays `review` in both fields.
