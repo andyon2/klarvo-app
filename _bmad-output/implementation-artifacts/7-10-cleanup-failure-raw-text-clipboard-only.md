@@ -383,6 +383,8 @@ only `app_name`, `main_activity_title`, `accessibility_service_description`):
 - **Q5 → one combined toast.** On the clipboard-only path Step 4 shows exactly one `LENGTH_LONG` toast after
   `copyToClipboard`: the same wording as the pill (generic or model-not-found form). The `"Copied: …"` toast is
   suppressed on this path. English, mirroring the desktop pill literally.
+  **GATE-2 addendum (Andi, 2026-09-14):** the Android toast drops the key hint — `Cleanup failed — raw text in
+  clipboard` (no "(Ctrl+V)"; there is no Ctrl+V on a phone). The model-not-found form stays identical to the pill.
 
 ---
 
