@@ -86,7 +86,9 @@ hält 4 s wie heute"); the card now outlives the pill's amber by 4 s. Canon HTML
 `975cc536…`), mockup timeline and AC8 updated in the same commit.
 
 **Andi's re-check (build hash below):**
-1. Settings → About shows the new build hash.
+1. Settings → About shows Build 4f67600.
 2. Wrong DeepSeek model ID, dictate. Expected: the card stays fully visible for about 8 s, then fades over 1 s.
 3. Watch the pill: it returns to Idle after 4 s while the card is still up. Say if the pill should stay amber
    as long as the card.
+
+Windows build on `4f67600`: exit 0 (`windows-build-round3.exit`), exe written 2026-09-14 19:14.
