@@ -360,10 +360,34 @@ only `app_name`, `main_activity_title`, `accessibility_service_description`):
   only via `scripts/android-emulator.sh`, and stop it afterwards. `android-smoke.sh` empties the target `*.kt`
   folders before copying, and its banner reads ONE result XML — count from `app/build/test-results/**/*.xml`.
 
-### Open questions — NOT decided by this story file
+### Open questions — DECIDED at GATE 1 (Andi, 2026-09-14; conductor session)
 
-**Do not invent answers.** Each is a design / wording / product-intent choice that the epic, the backlog decision
-and the canon do not pin.
+**Binding answers** (anchored in the canon: `docs/design/overhaul/source/Klarvo Design System.html`, pill
+"Constraint-treu" list + MANIFEST provenance row 2026-09-14). The original question text is kept below for context.
+
+- **Q1 → ONE event.** On the degrade-to-raw path the pipeline emits **no separate `Warning`**; it emits exactly one
+  terminal event: `DoneClipboard` carrying the warning text (`PipelineEvent::done_with_clipboard_only` + the
+  `warning`/message field). The native pill renders `DoneClipboard` with that text in amber for the existing
+  `DONE_CLIPBOARD_MS` (4 s) — when a message is present it replaces the static "In Clipboard" label. No change to
+  `warning_hold_active` (it stays for the retry-ladder warning, which is unchanged). Every consumer of the done
+  event (native pill, `useRecording.ts` / main window) must show the carried message so nothing is lost.
+- **Q2 → cause first, hint last; D2 pointer is replaced by the clipboard hint on this path.** Generic:
+  `Cleanup failed — raw text in clipboard (Ctrl+V)`. Model-not-found: `Model '<id>' not found — in clipboard`.
+  The model ID stays at the front so it survives truncation. `friendly_error` short reason may follow the generic
+  text only if it fits; the fixed part comes first.
+- **Q3 → English, accept tail truncation, never widen.** All pill labels are English today; the canon's German
+  "In Zwischenablage" vs the code's "In Clipboard" is a pre-existing divergence → **backlog note, not this story**.
+- **Q4 → true cleanup failures only (desktop parity).** Android's clipboard-only branch fires on the explicit
+  cleanup-failed boolean (cloud primary failed AND fallback failed/absent). *No LLM key configured* keeps today's
+  paste. *Local MNN cleanup failed (silent)* is **out of scope → backlog note** (separate silent-failure bug).
+- **Q5 → one combined toast.** On the clipboard-only path Step 4 shows exactly one `LENGTH_LONG` toast after
+  `copyToClipboard`: the same wording as the pill (generic or model-not-found form). The `"Copied: …"` toast is
+  suppressed on this path. English, mirroring the desktop pill literally.
+
+---
+
+**Original open questions (context only — answered above):**
+
 
 - **Q1 — Which AC3 shape?** The decision record offers exactly two and picks neither: **(a)** ONE event carries the
   warning text + the "in the clipboard" meaning, or **(b)** `DoneClipboard` carries the warning text. Both are
