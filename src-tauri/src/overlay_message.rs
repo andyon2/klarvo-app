@@ -99,16 +99,63 @@ impl OverlayMessage {
         }
     }
 
+    /// Several warnings on one card.
+    ///
+    /// `lib::run` surfaces the boot-time config warnings through the same
+    /// funnel, one event each. Before AC8 they were four-second pill labels that
+    /// nobody could read anyway; on the card each event replaced the previous
+    /// one instantly, so only the last survived (AC8 review, P8). One card with
+    /// one line per warning is the fix — `native_preview::wrap_text_lines`
+    /// breaks on `\n`, so the lines lay out without any renderer change.
+    ///
+    /// Returns `None` for an empty list: there is no message to show.
+    pub fn warnings(texts: Vec<String>) -> Option<Self> {
+        if texts.is_empty() {
+            return None;
+        }
+        Some(Self::warning(texts.join("\n")))
+    }
+
     /// A terminal failure — danger border, no output produced.
+    ///
+    /// The text is run through [`user_facing_error_text`] first (AC8 review,
+    /// D3): before AC8 a machine token was a truncated fragment on the pill, and
+    /// the card now gives it four readable lines, so the ones we know get user
+    /// wording. `PipelineEvent::error` keeps the raw token in its own `error`
+    /// field — only the card is translated.
     pub fn error(text: impl Into<String>) -> Self {
         OverlayMessage {
             tone: MessageTone::Error,
             header: "ERROR".to_string(),
-            cause: CauseLine::plain(text),
+            cause: CauseLine::plain(user_facing_error_text(&text.into())),
             next: None,
             hint: None,
         }
     }
+}
+
+/// Machine tokens the pipeline emits as an error, and what the card says
+/// instead. Deliberately tiny and exhaustive-by-grep rather than clever: these
+/// are the `feature_requires_license:*` tokens that exist in the tree
+/// (`lib.rs`'s `require_license!`, `pipeline.rs`'s command-mode gate,
+/// `commands/whisper.rs`). Anything else is prose already.
+const ERROR_TOKEN_TEXT: &[(&str, &str)] = &[
+    ("feature_requires_license:CommandMode", "Command mode needs a license"),
+    ("feature_requires_license:OfflineMode", "Offline transcription needs a license"),
+];
+
+/// Translate a known machine token into user wording; leave everything else
+/// **verbatim** (AC8 review, D3).
+///
+/// Verbatim is the deliberate fallback: a token we have not mapped is still the
+/// exact string in `Klarvo.log`, which is what a support answer needs. Guessing
+/// at an unknown token's meaning would be worse than showing it.
+fn user_facing_error_text(raw: &str) -> String {
+    ERROR_TOKEN_TEXT
+        .iter()
+        .find(|(token, _)| *token == raw)
+        .map(|(_, text)| (*text).to_string())
+        .unwrap_or_else(|| raw.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +210,9 @@ pub enum DegradeCause {
     /// it therefore starts with `": "` and may be empty in principle.
     Generic { reason: String },
     /// Cleanup failed *and* the clipboard write failed (review round 1, F6).
-    /// Nothing landed anywhere, so no surface may promise the clipboard.
+    /// Nothing landed anywhere, so no surface may promise the clipboard. The
+    /// raw transcript is still written to History (AC5, Epic-12 "never silent
+    /// loss") — which is what the card points at since D2.
     ClipboardWriteFailed,
 }
 
@@ -189,36 +238,45 @@ impl DegradeCause {
 
     /// The card form (canon mock, "SOLL A").
     ///
-    /// All three variants keep the amber tone: the cleanup family is one colour
-    /// on the canon board. `ClipboardWriteFailed` is the double failure and is
-    /// the only one that drops the `next` line — telling the user to press
-    /// Ctrl+V for text that never reached the clipboard is exactly the false
-    /// promise review round 1 (F6) removed.
+    /// The two *degrade* variants keep the amber tone — the text landed, the
+    /// cleanup did not. `ClipboardWriteFailed` is the double failure, and AC8
+    /// review directive D2 (Andi, 2026-09-14) gives it the danger line, its own
+    /// `TEXT LOST` header and the one surface the text is still on: History. It
+    /// drops the `next` line for the same reason review round 1 (F6) removed the
+    /// flat string's clipboard promise — Ctrl+V would paste whatever was in the
+    /// clipboard *before* this run.
+    ///
+    /// The **pill** stays on the cleanup family for all three (`Cleanup
+    /// failed`): the label is chosen by the run's ending in
+    /// `lib::emit_pipeline_state`, not by the card's tone.
     pub fn card(&self) -> OverlayMessage {
-        let header = "CLEANUP FAILED".to_string();
         match self {
             DegradeCause::ModelNotFound { model } => OverlayMessage {
                 tone: MessageTone::Warning,
-                header,
+                header: "CLEANUP FAILED".to_string(),
+                // The quotes stay with the surrounding runs, not in the chip:
+                // the chip renders the bare ID in mono, and `text()` still
+                // reassembles the AC8 / 7-9-D2 wording `Model '<id>' not found`
+                // for the wrapped fallback (AC8 review, P11).
                 cause: CauseLine {
-                    before: "Model ".to_string(),
+                    before: "Model '".to_string(),
                     chip: Some(model.clone()),
-                    after: " not found".to_string(),
+                    after: "' not found".to_string(),
                 },
                 next: Some(CLIPBOARD_NEXT.to_string()),
                 hint: Some("Check Advanced → Model IDs".to_string()),
             },
             DegradeCause::Generic { reason } => OverlayMessage {
                 tone: MessageTone::Warning,
-                header,
+                header: "CLEANUP FAILED".to_string(),
                 cause: CauseLine::plain(generic_cause_text(reason)),
                 next: Some(CLIPBOARD_NEXT.to_string()),
                 hint: None,
             },
             DegradeCause::ClipboardWriteFailed => OverlayMessage {
-                tone: MessageTone::Warning,
-                header,
-                cause: CauseLine::plain("The clipboard write failed — the text did not land"),
+                tone: MessageTone::Error,
+                header: "TEXT LOST".to_string(),
+                cause: CauseLine::plain("Clipboard write failed — raw text is in History"),
                 next: None,
                 hint: None,
             },
@@ -266,7 +324,10 @@ mod tests {
         assert_eq!(card.tone, MessageTone::Warning);
         assert_eq!(card.header, "CLEANUP FAILED");
         assert_eq!(card.cause.chip.as_deref(), Some("deepseek-typo"));
-        assert_eq!(card.cause.text(), "Model deepseek-typo not found");
+        // The quotes are part of AC8's wording and of 7-9 D2's. They live in
+        // `before`/`after`, so the chip still carries the bare ID the renderer
+        // measures, and the reassembled line keeps its delimiters.
+        assert_eq!(card.cause.text(), "Model 'deepseek-typo' not found");
         assert_eq!(
             card.next.as_deref(),
             Some("Raw text is in the clipboard · Ctrl+V to paste")
@@ -293,9 +354,20 @@ mod tests {
     /// Review round 1, F6, carried onto the card: when the clipboard write
     /// failed the text reached neither the window nor the clipboard, so the card
     /// must not tell the user to press Ctrl+V.
+    ///
+    /// AC8 review directive D2 (Andi, 2026-09-14) settles the tone question the
+    /// review raised: this is the one total-loss case, so it wears the danger
+    /// line and its own header, and it points at the surface where the text
+    /// still is — History.
     #[test]
     fn spec_clipboard_write_failure_card_never_promises_the_clipboard() {
         let card = DegradeCause::ClipboardWriteFailed.card();
+        assert_eq!(card.tone, MessageTone::Error, "D2: danger line, not amber");
+        assert_eq!(card.header, "TEXT LOST");
+        assert_eq!(
+            card.cause.text(),
+            "Clipboard write failed — raw text is in History"
+        );
         assert_eq!(card.next, None);
         assert_eq!(card.hint, None);
         assert!(
@@ -303,6 +375,75 @@ mod tests {
             "no key hint for text that never landed: {:?}",
             card.cause.text()
         );
+    }
+
+    /// D2 keeps the **pill** on the cleanup family: the status light still says
+    /// `Cleanup failed` for this route, because the pill label is chosen by the
+    /// run's ending (`lib::emit_pipeline_state`'s `TerminalKind::Degraded`), not
+    /// by the card's tone. This pins that the labels did not gain a variant.
+    #[test]
+    fn spec_clipboard_write_failure_keeps_the_degraded_pill_label() {
+        assert_eq!(PILL_LABEL_DEGRADED, "Cleanup failed");
+        assert_eq!(
+            DegradeCause::ClipboardWriteFailed.card().tone,
+            MessageTone::Error,
+            "the card diverges from the pill on purpose (D2)"
+        );
+    }
+
+    /// AC8 review directive D3: a machine token gets a prominent, untruncated
+    /// card now, so the known ones are translated into user wording. Anything
+    /// not in the table stays verbatim — a half-understood token is worse than
+    /// the raw one.
+    #[test]
+    fn spec_known_error_tokens_are_translated_unknown_ones_are_verbatim() {
+        assert_eq!(
+            OverlayMessage::error("feature_requires_license:CommandMode").cause.text(),
+            "Command mode needs a license"
+        );
+        assert_eq!(
+            OverlayMessage::error("feature_requires_license:OfflineMode").cause.text(),
+            "Offline transcription needs a license"
+        );
+        // Not in the table → shown exactly as the pipeline produced it.
+        assert_eq!(
+            OverlayMessage::error("STT failed: timeout").cause.text(),
+            "STT failed: timeout"
+        );
+        assert_eq!(
+            OverlayMessage::error("feature_requires_license:Sync").cause.text(),
+            "feature_requires_license:Sync"
+        );
+        // The tone and header are untouched by the translation.
+        let m = OverlayMessage::error("feature_requires_license:CommandMode");
+        assert_eq!(m.tone, MessageTone::Error);
+        assert_eq!(m.header, "ERROR");
+    }
+
+    /// AC8 review finding P8: several boot-time config warnings each replaced
+    /// the previous card instantly, so only the last was ever readable. They
+    /// become one card with one line per warning.
+    #[test]
+    fn spec_boot_warnings_merge_into_one_card() {
+        assert_eq!(OverlayMessage::warnings(Vec::new()), None);
+
+        let one = OverlayMessage::warnings(vec!["config.json was corrupt".to_string()])
+            .expect("one warning is still a card");
+        assert_eq!(one.cause.text(), "config.json was corrupt");
+
+        let many = OverlayMessage::warnings(vec![
+            "config.json was corrupt".to_string(),
+            "dictionary.json was corrupt".to_string(),
+        ])
+        .expect("two warnings are one card");
+        assert_eq!(many.tone, MessageTone::Warning);
+        assert_eq!(many.header, "WARNING");
+        assert_eq!(
+            many.cause.text(),
+            "config.json was corrupt\ndictionary.json was corrupt",
+            "one card, one line each — `wrap_text_lines` breaks on '\\n'"
+        );
+        assert_eq!(many.cause.chip, None);
     }
 
     /// AC8 moved the message off the pill; it did **not** change the one-line

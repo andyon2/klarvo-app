@@ -549,6 +549,12 @@ pub fn emit_pipeline_state(handle: &AppHandle, event: hotkey::PipelineEvent) {
         // window) so the state the message belongs to cannot hide the card it
         // just opened.
         //
+        // A message-LESS event is posted too, but it does not take a live card
+        // down: `WM_PREVIEW_SET_MESSAGE`'s `None` arm ignores it while the card
+        // is inside its 4 s hold (AC8 review, P1). Without that, the STT-ladder
+        // warning and the boot-time config warnings lost their only surface to
+        // the very next state of the same run, microseconds later.
+        //
         // `message.is_some()` is also what tells the two clipboard-only routes
         // apart — a cleanup degrade carries a cause, a vanished paste target
         // does not.
@@ -922,9 +928,14 @@ pub fn run() {
         // deferred follow-up. No trailing `done`/`idle` emit: `warn` is message-only
         // and the frontend treats it as transient (recordingState stays idle), which
         // is correct at boot.
+        //
+        // Story 7-10 AC8 review (P8): ONE event for all of them. One event per
+        // warning meant one card per warning, and each card replaced the
+        // previous one the moment it was posted — with two corrupt files only
+        // the second was ever readable.
         #[cfg(desktop)]
-        for warning in config_warnings {
-            emit_pipeline_state(app.handle(), hotkey::PipelineEvent::warn(warning));
+        if let Some(event) = hotkey::PipelineEvent::warn_all(config_warnings) {
+            emit_pipeline_state(app.handle(), event);
         }
 
         Ok(())

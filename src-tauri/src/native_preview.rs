@@ -35,7 +35,13 @@
 //! message even when the user never turned live preview on — and if a live
 //! preview *is* running, the message replaces its text in the same card.
 //! The card holds 4 s, fades over 1 s, and a new recording or a click dismisses
-//! it at once.
+//! it at once — nothing else does, not even the state event that follows the
+//! message microseconds later (AC8 review, P1).
+//!
+//! The card sits 8 px above the pill and grows upward. When the pill is dragged
+//! so high that the card no longer fits above it, the whole window flips 8 px
+//! **below** the pill and the card hugs it from there — live preview included
+//! (AC8 review, D1; see [`compute_preview_geometry`]).
 
 #![cfg(target_os = "windows")]
 #![allow(non_snake_case, clippy::upper_case_acronyms)]
@@ -68,7 +74,8 @@ const INNER_PAD_TB: f32 = 8.0; // top/bottom inner padding
 const INNER_PAD_LR: f32 = 12.0; // left/right inner padding (matches SOLL `padding: 8px 12px`)
 const FADE_FRACTION: f32 = 0.18; // top-fade fraction of card height on overflow
 const PILL_WIDTH_LOGICAL: f64 = 200.0; // must match PILL_W in native_pill.rs
-const GAP_LOGICAL: f64 = 8.0; // gap between preview bottom edge and pill top
+const PILL_HEIGHT_LOGICAL: f64 = 36.0; // must match PILL_H in native_pill.rs
+const GAP_LOGICAL: f64 = 8.0; // gap between the preview and the pill (either side)
 
 // Geometry presets (logical px)
 const BASE_FONT_PX: f64 = 11.0;
@@ -106,11 +113,27 @@ const MSG_RADIUS: f32 = 16.0; // canon --k-r-lg
 const MSG_BORDER_W: f32 = 1.0;
 const MSG_CHIP_PAD_X: f32 = 5.0;
 const MSG_CHIP_RADIUS: f32 = 4.0;
-/// Mono face for the header and the model-ID chip. Cascadia Code ships with the
-/// app's font set (see `native_pill`'s embedded faces); Consolas is the Windows
-/// fallback GDI resolves when it is absent.
+/// Chip height as a fraction of the cause line's box — the render's
+/// `1.25 / MSG_LINE_MULT`. Taken off `cause_h` rather than off the font size so
+/// the rect tracks the accessibility text scale the glyphs inside it already
+/// honour (AC8 review, P7).
+const MSG_CHIP_H_FRACTION: f32 = 1.25 / MSG_LINE_MULT;
+/// Mono face for the header and the model-ID chip.
+///
+/// **Nothing mono is bundled** — the app embeds exactly three faces, all Geist
+/// sans (`native_pill`'s `load_embedded_font` calls). Consolas is a stock
+/// Windows face and therefore the one mono we can name and actually get; the
+/// canon's `ui-monospace` cascade resolves to it on Windows too.
 const MSG_MONO_FACE: &str = "Consolas";
-const MSG_SANS_FACE: &str = "Segoe UI";
+/// Sans face for cause / next / hint.
+///
+/// Geist is the app's typeface and the one the pill beside the card draws with
+/// (canon, ADR-0019). It is not installed on the machine — it is registered
+/// **process-wide** from memory by `AddFontMemResourceEx`, so this window must
+/// register it itself before creating its fonts: the preview window is created
+/// at `lib::run` setup, which can run before the pill thread has started.
+/// `preview_thread` does exactly that (see `load_embedded_geist`).
+const MSG_SANS_FACE: &str = "Geist";
 
 // Canon tokens, verbatim from `docs/design/overhaul/source/assets/klarvo.css`.
 const C_AMBER: (u8, u8, u8) = (233, 162, 76); // --k-amber
@@ -120,6 +143,16 @@ const C_TEXT: (u8, u8, u8) = (236, 238, 239); // --k-text
 const C_MUTED: (u8, u8, u8) = (164, 169, 172); // --k-muted
 const C_DIM: (u8, u8, u8) = (111, 116, 121); // --k-dim
 const C_HAIRLINE: (u8, u8, u8) = (40, 44, 47); // --k-border
+/// The message card's own background — the approved render's
+/// `rgba(14,16,18,.82)`, **not** the user's `previewBackground` (AC8 review, P2).
+///
+/// Every text run on this card is a fixed canon dark-theme colour, so the
+/// shipped "Light" preview theme (`previewAppearance.ts::PREVIEW_THEMES`) would
+/// render the failure message near-white on near-white. The border is pinned for
+/// the same reason; so are the radius and the border width. A message is not the
+/// user's preview text — it must read identically on every machine.
+const MSG_BG: (u8, u8, u8) = (14, 16, 18);
+const MSG_BG_ALPHA: f32 = 0.82;
 /// `--k-amber-line` / `--k-danger` at 0.32 — the card's border alpha.
 const MSG_LINE_ALPHA: f32 = 0.32;
 /// `--k-amber-bg` at 0.12 — the model-ID chip's fill.
@@ -276,6 +309,11 @@ struct PreviewWindowState {
     work_left: i32,
     work_right: i32,
     work_top: i32,
+    work_bottom: i32,
+    // True when the window sits BELOW the pill because the card did not fit
+    // above it (AC8 review, D1). The card then hugs the pill from below
+    // (top-aligned) instead of from above (bottom-aligned).
+    below_pill: bool,
     // Render state
     text_buffer: String,
     armed: bool,       // true when Recording received and live_preview_enabled
@@ -624,7 +662,25 @@ fn class_name_wide() -> Vec<u16> {
 // ---------------------------------------------------------------------------
 
 /// Compute preview window position and physical size from pill position + config.
-/// Returns `(win_x_phys, win_y_phys, phys_w, phys_h)`.
+/// Returns `(win_x_phys, win_y_phys, phys_w, phys_h, below_pill)`.
+///
+/// ## Above or below the pill (AC8 review, directive D1)
+///
+/// The card normally sits `GAP_LOGICAL` above the pill and grows upward. With
+/// the pill dragged to the top of the work area there is nothing left above it:
+/// the height collapsed to 1 px and **every** pipeline message was silently lost
+/// — before AC8 the message lived on the pill, which always exists, so the
+/// defect arrived with the card.
+///
+/// Andi's call (2026-09-14): when there is less room above than the card needs,
+/// the card appears 8 px **below** the pill instead — and the live preview does
+/// the same in that position, because it is the same window and the same card.
+/// `below_pill` tells the renderer to hug the pill from below (top-aligned)
+/// instead of from above (bottom-aligned).
+///
+/// One arithmetic guard: if flipping would yield *less* usable height than
+/// staying above, we stay above. Moving the card into an even smaller box would
+/// defeat the directive it implements.
 unsafe fn compute_preview_geometry(
     pill_x_logical: f64,
     pill_y_logical: f64,
@@ -633,13 +689,21 @@ unsafe fn compute_preview_geometry(
     work_left: i32,
     work_right: i32,
     work_top: i32,
-) -> (i32, i32, i32, i32) {
+    work_bottom: i32,
+) -> (i32, i32, i32, i32, bool) {
     let k = config.font_px as f64 / BASE_FONT_PX;
     let w_logical = (config.w_base as f64 * k).round() as i32;
-    let h_max_logical_unclamped = (BASE_MAX_HEIGHT * k).round() as i64;
-    // Vertical clamp: must fit between work-area top + 12 and pill - gap - 12
-    let max_avail = (pill_y_logical - GAP_LOGICAL - work_top as f64 / scale - 12.0).max(0.0);
-    let h_max_logical = (h_max_logical_unclamped as f64).min(max_avail) as i32;
+    let h_wanted = (BASE_MAX_HEIGHT * k).round();
+    // Vertical room: between work-area top + 12 and pill - gap - 12 above,
+    // between pill bottom + gap and work-area bottom - 12 below.
+    let avail_above = (pill_y_logical - GAP_LOGICAL - work_top as f64 / scale - 12.0).max(0.0);
+    let avail_below = (work_bottom as f64 / scale
+        - (pill_y_logical + PILL_HEIGHT_LOGICAL)
+        - GAP_LOGICAL
+        - 12.0)
+        .max(0.0);
+    let below_pill = avail_above < h_wanted && avail_below > avail_above;
+    let h_max_logical = h_wanted.min(if below_pill { avail_below } else { avail_above }) as i32;
 
     let pill_center_x = pill_x_logical + PILL_WIDTH_LOGICAL / 2.0;
     let preview_left_raw = pill_center_x - w_logical as f64 / 2.0;
@@ -648,13 +712,17 @@ unsafe fn compute_preview_geometry(
     let preview_left = preview_left_raw
         .max(work_left_logical + 12.0)
         .min(work_right_logical - w_logical as f64 - 12.0);
-    let preview_top = pill_y_logical - GAP_LOGICAL - h_max_logical as f64;
+    let preview_top = if below_pill {
+        pill_y_logical + PILL_HEIGHT_LOGICAL + GAP_LOGICAL
+    } else {
+        pill_y_logical - GAP_LOGICAL - h_max_logical as f64
+    };
 
     let phys_w = (w_logical as f64 * scale) as i32;
     let phys_h = (h_max_logical as f64 * scale) as i32;
     let win_x = (preview_left * scale) as i32;
     let win_y = (preview_top * scale) as i32;
-    (win_x, win_y, phys_w.max(1), phys_h.max(1))
+    (win_x, win_y, phys_w.max(1), phys_h.max(1), below_pill)
 }
 
 // ---------------------------------------------------------------------------
@@ -844,10 +912,11 @@ unsafe fn dismiss_message(hwnd: HWND, s: &mut PreviewWindowState) {
 /// Render the message card. Returns the layered-window alpha (0-255); `0` means
 /// the fade has finished and the caller should dismiss.
 ///
-/// Lays out header · cause · next · hint bottom-aligned above the pill, exactly
-/// like the live-preview card, so the message appears where the preview text
-/// would have been (AC8: "If live preview is active, the message replaces the
-/// preview text in the same card").
+/// Lays out header · cause · next · hint hugging the pill, exactly like the
+/// live-preview card, so the message appears where the preview text would have
+/// been (AC8: "If live preview is active, the message replaces the preview text
+/// in the same card") — above it normally, below it when nothing fit above
+/// (`below_pill`, D1).
 unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
     let Some(msg) = s.message.clone() else { return 0 };
     let pw = s.phys_w;
@@ -902,7 +971,10 @@ unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
         let before_w = text_width(s.tmp_dc, &msg.cause.before);
         let after_w = text_width(s.tmp_dc, &msg.cause.after);
         SelectObject(s.tmp_dc, s.font_msg_chip.into());
-        let chip_w = text_width(s.tmp_dc, chip) + (2.0 * MSG_CHIP_PAD_X * sc) as i32;
+        // Same padding the chip rect is drawn with below, text scale included —
+        // otherwise the fit test and the rect disagree (AC8 review, P7).
+        let chip_w =
+            text_width(s.tmp_dc, chip) + 2 * (MSG_CHIP_PAD_X * sc * s.text_scale as f32) as i32;
         SelectObject(s.tmp_dc, s.font_msg_cause.into());
         if before_w + chip_w + after_w <= text_area_w {
             chip_layout = Some((
@@ -948,12 +1020,18 @@ unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
     let card_w = pw as f32 - 2.0 * inset;
     let max_card_h = ph as f32 - 2.0 * inset;
     let card_h = (head_block as f32 + divider_h + body_h as f32).min(max_card_h);
-    let card_y = (ph as f32 - inset) - card_h;
+    // Hug the pill: bottom-aligned above it, top-aligned below it (D1).
+    let card_y = if s.below_pill { inset } else { (ph as f32 - inset) - card_h };
 
     // --- 3. Shapes: card, border, header divider, status dot, model chip ---
     let Some(mut pixmap) = Pixmap::new(pw as u32, ph as u32) else {
-        log::warn!("[native_preview] Pixmap::new({pw},{ph}) failed — skipping message frame");
-        return alpha;
+        // AC8 review, P10: returning the fade alpha here made the caller
+        // `present()` the DIB it still held — the previous frame, or whatever
+        // the live preview last drew — as if it were the message. `0` is the
+        // caller's dismiss signal, which is the honest outcome: we could not
+        // draw the card, so no card is shown.
+        log::warn!("[native_preview] Pixmap::new({pw},{ph}) failed — dismissing the message card");
+        return 0;
     };
     fill_round_rect(
         &mut pixmap,
@@ -962,13 +1040,14 @@ unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
         card_w,
         card_h,
         MSG_RADIUS * sc,
-        (s.config.bg_r, s.config.bg_g, s.config.bg_b),
-        s.config.bg_a as f32 / 255.0,
+        MSG_BG,
+        MSG_BG_ALPHA,
     );
     {
         // The border is the card's tone. Width is fixed at 1 px rather than the
         // user's `previewBorderWidth`: AC8 pins an amber (or danger) line, and a
-        // configured 0 would erase it.
+        // configured 0 would erase it. Background, radius and border width are
+        // all pinned to the approved render for the same reason — see MSG_BG.
         let mut paint = Paint::default();
         paint.anti_alias = true;
         paint.shader = Shader::SolidColor(
@@ -1028,15 +1107,22 @@ unsafe fn render_message_card(s: &mut PreviewWindowState) -> u8 {
         let before_w = text_width(s.tmp_dc, before);
         SelectObject(s.tmp_dc, s.font_msg_chip.into());
         let chip_text_w = text_width(s.tmp_dc, chip);
-        let pad = (MSG_CHIP_PAD_X * sc) as i32;
+        // AC8 review, P7: the chip's box is derived from `cause_h` — the line
+        // step that already carries DPI **and** the accessibility text scale —
+        // not from `MSG_CAUSE_PX * sc`, which ignored the text scale while the
+        // glyphs inside honoured it. At 225% the rect stayed put and the ID grew
+        // out of it. `MSG_CHIP_H_FRACTION` reproduces the render's chip:line
+        // ratio (1.25 / 1.45 of the line box).
+        let pad = (MSG_CHIP_PAD_X * sc * s.text_scale as f32) as i32;
         let rect_x = inner_left + before_w;
         let rect_w = chip_text_w + 2 * pad;
+        let chip_h = (cause_h as f32 * MSG_CHIP_H_FRACTION).max(1.0);
         fill_round_rect(
             &mut pixmap,
             rect_x as f32,
-            cause_top as f32 + (cause_h as f32 - MSG_CAUSE_PX * sc * 1.25) / 2.0,
+            cause_top as f32 + (cause_h as f32 - chip_h) / 2.0,
             rect_w as f32,
-            MSG_CAUSE_PX * sc * 1.25,
+            chip_h,
             MSG_CHIP_RADIUS * sc,
             C_AMBER,
             MSG_CHIP_ALPHA,
@@ -1213,7 +1299,10 @@ unsafe fn render_frame(hwnd: HWND, s: &mut PreviewWindowState) {
     let max_card_h = ph as f32 - 2.0 * inset;
     let content_h = text_h as f32 + 2.0 * INNER_PAD_TB * sc;
     let card_h = content_h.min(max_card_h);
-    let card_y = (ph as f32 - inset) - card_h; // bottom-aligned: card bottom at (ph - inset)
+    // Hug the pill: bottom-aligned above it (grow-up), top-aligned when the
+    // window sits below it because nothing fit above (D1) — the newest line
+    // stays at the card's growing edge either way.
+    let card_y = if s.below_pill { inset } else { (ph as f32 - inset) - card_h };
     let overflows = content_h > max_card_h;
     let radius = s.config.border_radius as f32 * sc;
 
@@ -1443,16 +1532,48 @@ unsafe extern "system" fn preview_wnd_proc(
                 Some(m) => {
                     s.message = Some(m);
                     s.message_at = Some(Instant::now());
-                    // Clicks dismiss the card, so it has to stop being
-                    // click-through for as long as it is up.
-                    set_click_through(hwnd, false);
                     if !s.msg_timer_active {
-                        SetTimer(Some(hwnd), TIMER_MESSAGE, TIMER_MS, None);
-                        s.msg_timer_active = true;
+                        // AC8 review, P9: the timer is the only thing that fades
+                        // and finally dismisses the card. If it cannot be armed
+                        // the card stays up forever — and a card that is not
+                        // click-through and never goes away swallows every click
+                        // meant for the app underneath. So on failure we keep
+                        // the click-through bit and let the card be a passive
+                        // (if stuck) overlay rather than a trap.
+                        if SetTimer(Some(hwnd), TIMER_MESSAGE, TIMER_MS, None) == 0 {
+                            log::warn!(
+                                "[native_preview] SetTimer(TIMER_MESSAGE) failed (last error {:?}) \
+                                 — the card will not fade and stays click-through",
+                                GetLastError()
+                            );
+                        } else {
+                            s.msg_timer_active = true;
+                        }
+                    }
+                    if s.msg_timer_active {
+                        // Clicks dismiss the card, so it has to stop being
+                        // click-through for as long as it is up.
+                        set_click_through(hwnd, false);
                     }
                     render_frame(hwnd, s);
                 }
                 None => {
+                    // AC8 review, P1: a message-less event must NOT take a live
+                    // card down. `lib::emit_pipeline_state` posts `set_message`
+                    // for EVERY event, and the state that follows a warning
+                    // (Transcribing after the STT-ladder warning, Idle after a
+                    // boot-time config warning) arrives microseconds later — so
+                    // this arm used to erase the card before it could be read.
+                    // Only three things dismiss a card: a new recording
+                    // (`WM_PREVIEW_SET_STATE`), a click on it (`WM_LBUTTONDOWN`)
+                    // and its own timer.
+                    let within_hold = s
+                        .message_at
+                        .map(|t| t.elapsed().as_millis() < MSG_HOLD_MS)
+                        .unwrap_or(false);
+                    if s.message.is_some() && within_hold {
+                        return LRESULT(0);
+                    }
                     let had = s.message.is_some();
                     dismiss_message(hwnd, s);
                     if had {
@@ -1519,8 +1640,8 @@ unsafe extern "system" fn preview_wnd_proc(
             let new_pill_y = f64::from_bits(lparam.0 as u64);
             s.pill_x_logical = new_pill_x;
             s.pill_y_logical = new_pill_y;
-            // Recompute position
-            let (wx, wy, pw, ph) = compute_preview_geometry(
+            // Recompute position (and which side of the pill we are on — D1)
+            let (wx, wy, pw, ph, below) = compute_preview_geometry(
                 new_pill_x,
                 new_pill_y,
                 &s.config,
@@ -1528,9 +1649,11 @@ unsafe extern "system" fn preview_wnd_proc(
                 s.work_left,
                 s.work_right,
                 s.work_top,
+                s.work_bottom,
             );
             s.win_x = wx;
             s.win_y = wy;
+            s.below_pill = below;
             // Only re-render (and thus reposition via UpdateLayeredWindow.pptDst)
             // if the preview is currently visible — a message card counts.
             if s.message.is_some() || (s.armed && !s.text_buffer.is_empty()) {
@@ -1688,6 +1811,7 @@ fn preview_thread(
         let work_left = work_area.left;
         let work_right = work_area.right;
         let work_top = work_area.top;
+        let work_bottom = work_area.bottom;
 
         // --- Default pill position (center-bottom of work area if not saved) ---
         let pill_x_logical = pill_x.unwrap_or_else(|| {
@@ -1699,7 +1823,7 @@ fn preview_thread(
         });
 
         // --- Compute initial geometry ---
-        let (win_x, win_y, phys_w, phys_h) = compute_preview_geometry(
+        let (win_x, win_y, phys_w, phys_h, below_pill) = compute_preview_geometry(
             pill_x_logical,
             pill_y_logical,
             &config,
@@ -1707,6 +1831,7 @@ fn preview_thread(
             work_left,
             work_right,
             work_top,
+            work_bottom,
         );
 
         // --- Create GDI resources ---
@@ -1746,6 +1871,12 @@ fn preview_thread(
         // live-preview appearance settings: a failure message must read the
         // same on every machine. They still honour DPI + the accessibility
         // text scale, like every other text in this window.
+        //
+        // Geist is bundled, not installed, so it has to be in this process's GDI
+        // font table BEFORE the fonts below are selected. Since AC8 this window
+        // can be created at `lib::run` setup, i.e. before the pill thread that
+        // used to be the sole registrar — hence the call here (AC8 review, P3).
+        crate::native_pill::load_embedded_geist();
         let mono_face = to_wide(MSG_MONO_FACE);
         let sans_face = to_wide(MSG_SANS_FACE);
         let msg_font_h = |px: f32| (px as f64 * scale * text_scale) as i32;
@@ -1799,6 +1930,8 @@ fn preview_thread(
             work_left,
             work_right,
             work_top,
+            work_bottom,
+            below_pill,
             text_buffer: String::new(),
             armed: false,
             was_visible: false,

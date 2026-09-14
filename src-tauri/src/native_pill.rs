@@ -463,6 +463,28 @@ unsafe fn create_dib(
     Ok((dc, bmp))
 }
 
+/// Register the bundled Geist faces with this process's GDI font table so the
+/// native overlays match the WebView2 SOLL 1:1 — the `.woff2` the web UI uses
+/// can't be loaded by GDI, so equivalent `.ttf` files (derived from the same
+/// source) are embedded and registered from memory.
+///
+/// GDI family mapping: Regular(400) + Bold(700) register under `"Geist"`;
+/// SemiBold registers as its own family `"Geist SemiBold"`.
+///
+/// `AddFontMemResourceEx` is **process-wide**, and so is this: both overlay
+/// threads call it and the `Once` makes whichever starts first the one that
+/// registers. That matters for boot order — since AC8 the preview window is
+/// created at `lib::run` setup and can come up before the pill thread exists,
+/// and its message card draws in Geist too (`native_preview::MSG_SANS_FACE`).
+pub(crate) fn load_embedded_geist() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        load_embedded_font(include_bytes!("../fonts/Geist-Regular.ttf"));
+        load_embedded_font(include_bytes!("../fonts/Geist-Bold.ttf"));
+        load_embedded_font(include_bytes!("../fonts/Geist-SemiBold.ttf"));
+    });
+}
+
 /// Register an in-memory font file (.ttf) with this process's GDI font table.
 /// The font lives for the process lifetime (not removed — app-wide UI font).
 unsafe fn load_embedded_font(bytes: &'static [u8]) {
@@ -1475,15 +1497,11 @@ fn pill_thread(
             }
         };
 
-        // Load the bundled Geist font (the app's UI typeface) into this process's
-        // GDI font table so the native pill matches the WebView2 SOLL 1:1 — the
-        // .woff2 the web UI uses can't be loaded by GDI, so equivalent .ttf files
-        // (derived from the same source) are embedded and registered from memory.
-        // GDI family mapping: Regular(400) + Bold(700) register under "Geist";
-        // SemiBold registers as its own family "Geist SemiBold".
-        load_embedded_font(include_bytes!("../fonts/Geist-Regular.ttf"));
-        load_embedded_font(include_bytes!("../fonts/Geist-Bold.ttf"));
-        load_embedded_font(include_bytes!("../fonts/Geist-SemiBold.ttf"));
+        // Load the bundled Geist faces (the app's UI typeface) into this
+        // process's GDI font table. Shared with `native_preview`, which needs
+        // the same family for its message card and may start first — see
+        // `load_embedded_geist`.
+        load_embedded_geist();
 
         // Fonts (scale font height with DPI)
         let geist: Vec<u16> = "Geist\0".encode_utf16().collect();

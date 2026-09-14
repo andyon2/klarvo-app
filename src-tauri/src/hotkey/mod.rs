@@ -212,6 +212,28 @@ impl PipelineEvent {
             message: Some(OverlayMessage::warning(msg)),
         }
     }
+
+    /// Several warnings as ONE event (Story 7-10, AC8 review P8).
+    ///
+    /// `lib::run` surfaces the boot-time config warnings one per entry. Each was
+    /// its own `warn` event, and since AC8 each one opened a card that replaced
+    /// the previous card instantly — with two corrupt files only the second was
+    /// ever readable. One event, one card, one line per warning.
+    ///
+    /// Returns `None` for an empty list, so the boot path has nothing to emit
+    /// when nothing went wrong.
+    pub fn warn_all(texts: Vec<String>) -> Option<Self> {
+        let message = OverlayMessage::warnings(texts)?;
+        Some(PipelineEvent {
+            state: PipelineState::Warning,
+            text: None,
+            raw_text: None,
+            error: None,
+            warning: Some(message.cause.text()),
+            clipboard_only: None,
+            message: Some(message),
+        })
+    }
 }
 
 /// Event name emitted on the Tauri event bus.
@@ -332,6 +354,32 @@ mod tests {
         assert_eq!(card.header, "ERROR");
         assert_eq!(card.tone, crate::overlay_message::MessageTone::Error);
         assert_eq!(err.error.as_deref(), Some("STT failed: timeout"));
+    }
+
+    /// AC8 review, P8: `lib::run` used to emit one event per boot-time config
+    /// warning, and each card replaced the previous one instantly — only the
+    /// last was ever readable. They now travel as ONE event carrying ONE card.
+    ///
+    /// PINS the producer the real boot path calls; it does NOT pin that the card
+    /// renders two lines (`native_preview.rs` is Windows-gated and uncompiled
+    /// here — `wrap_text_lines` breaking on `\n` is read, not run).
+    #[test]
+    fn spec_boot_config_warnings_travel_as_one_event() {
+        assert!(PipelineEvent::warn_all(Vec::new()).is_none(), "no warnings, no event");
+
+        let event = PipelineEvent::warn_all(vec![
+            "config.json was corrupt".to_string(),
+            "dictionary.json was corrupt".to_string(),
+        ])
+        .expect("two warnings are one event");
+        assert_eq!(event.state, PipelineState::Warning);
+        let card = event.message.expect("the merged warning carries its card");
+        assert_eq!(card.header, "WARNING");
+        assert_eq!(
+            card.cause.text(),
+            "config.json was corrupt\ndictionary.json was corrupt"
+        );
+        assert_eq!(event.warning.as_deref(), Some(card.cause.text().as_str()));
     }
 
     /// Progress states are not messages — no card, so the overlay clears any

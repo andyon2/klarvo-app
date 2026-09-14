@@ -1233,12 +1233,12 @@ fn is_model_not_found_error(err: &llm::LlmError) -> bool {
     }
 }
 
-/// Builds the user-facing warning for a degraded cleanup, naming the model ID
-/// when the provider rejected it (decision D2).
+/// Classifies a degraded cleanup, naming the model ID when the provider
+/// rejected it (decision D2).
 ///
 /// A model-not-found answer is the one degrade cause the user can fix in one
-/// place, so the warning points there instead of echoing the provider's raw
-/// 400. Every other error keeps [`degrade_warn_msg`] verbatim.
+/// place, so the message points there instead of echoing the provider's raw
+/// 400. Every other error becomes a [`generic_degrade_cause`].
 ///
 /// `model` is the resolved ID the failing provider actually sent
 /// (`CleanupProvider::model()`), not the raw config value — so the message shows
@@ -1251,10 +1251,12 @@ fn is_model_not_found_error(err: &llm::LlmError) -> bool {
 ///
 /// **AC8 (GATE-4 round 1)** moved the message off the pill and onto the preview
 /// card, where nothing is truncated and the pointer fits again. The classifying
-/// decision made here did not change — only its *carrier* did: the degrade sites
-/// build a [`DegradeCause`] and both wordings are derived from it. This function
-/// is now the one-line projection of that cause, kept because a dozen specs pin
-/// the exact user-facing string.
+/// decision made here did not change — only its *carrier* did: this function
+/// returns the [`DegradeCause`] itself, and both user-facing wordings are
+/// derived from it downstream (`DegradeCause::status_line` for the main window,
+/// `DegradeCause::card` for the overlay). The one-line projection that used to
+/// live here is now `tests::degrade_warn_msg_for_model`, kept only because a
+/// dozen specs pin the exact user-facing string.
 fn degrade_cause_for_model(err: &llm::LlmError, model: &str) -> DegradeCause {
     if is_model_not_found_error(err) && !model.is_empty() {
         return DegradeCause::ModelNotFound { model: model.to_string() };

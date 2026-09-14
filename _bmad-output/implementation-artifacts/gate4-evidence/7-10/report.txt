@@ -1,5 +1,5 @@
 Story 7-10 — D1 status-line proxy smoke
-run: 2026-09-14T11:54:56.759Z
+run: 2026-09-14T12:30:30.963Z
 base: http://localhost:1422
 teal token: #29C7AC -> rgb(41, 199, 172)
 
