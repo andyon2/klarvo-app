@@ -1957,9 +1957,6 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     // with a fake handler; the shell applies only the AppState/HWND effects.
     let delivery = deliver_text(paste_handler.as_ref(), &cleaned_text, llm_error, insert_and_send);
     let paste_result = delivery.paste_result;
-    // The cause was written before delivery was attempted; if the clipboard
-    // write itself failed it must stop promising the clipboard (review round 1).
-    let degrade_cause = terminal_degrade_cause(degrade_cause, delivery.paste_failed);
     if delivery.paste_failed {
         if let Ok(mut m) = state.feedback_metrics.lock() {
             m.paste_error_count = m.paste_error_count.saturating_add(1);
@@ -1991,6 +1988,11 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
     }
 
     // --- Save to history ---
+    // Best-effort, as it always was — but the outcome is no longer thrown away:
+    // on the clipboard-write-failure route it is the only surface the raw text
+    // can still be on, and the card names it only if this says so (AC8
+    // re-review, item 2).
+    let mut history_saved = false;
     {
         let style_str = if is_command {
             "command".to_string()
@@ -2019,7 +2021,7 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
 
         if let Ok(db) = state.history_db.lock() {
             let device_id = cfg_for_history.as_ref().map(|(d, _, _)| d.as_str());
-            if let Err(e) = history::add_entry(
+            match history::add_entry(
                 &db,
                 &cleaned_text,
                 Some(&raw_text),
@@ -2030,7 +2032,8 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
                 Some(&entry_uuid),
                 device_id,
             ) {
-                log::warn!("[pipeline] Failed to save to history: {e}");
+                Ok(_) => history_saved = true,
+                Err(e) => log::warn!("[pipeline] Failed to save to history: {e}"),
             }
         }
 
@@ -2136,6 +2139,12 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
             m.last_cleaned_text = Some(cleaned_text.clone());
         }
     }
+
+    // The cause was written before delivery was attempted; if the clipboard
+    // write itself failed it must stop promising the clipboard (review round 1)
+    // and may name History only if that write landed (AC8 re-review, item 2) —
+    // which is why this sits after the history block, not next to `deliver_text`.
+    let degrade_cause = terminal_degrade_cause(degrade_cause, delivery.paste_failed, history_saved);
 
     // Emit the appropriate done event based on whether the paste succeeded.
     // Story 7-10 (Q1/AC3): on the degrade path this is the ONLY event carrying
@@ -2355,12 +2364,21 @@ pub(crate) fn deliver_text(
 /// D2 is lost on this path — it stays in `Klarvo.log`, and this is the
 /// double-failure case (cleanup down *and* clipboard unavailable), not the one
 /// D2 was written for.
+///
+/// `history_saved` is why this is called **after** the history block rather than
+/// next to `deliver_text`: D2's card names History as the last place the raw
+/// transcript is, and that write is best-effort (AC8 re-review, item 2). The
+/// outcome is known before the terminal event goes out, so the cause carries it
+/// instead of the card asserting it.
 pub(crate) fn terminal_degrade_cause(
     degrade_cause: Option<DegradeCause>,
     paste_failed: bool,
+    history_saved: bool,
 ) -> Option<DegradeCause> {
     match degrade_cause {
-        Some(_) if paste_failed => Some(DegradeCause::ClipboardWriteFailed),
+        Some(_) if paste_failed => {
+            Some(DegradeCause::ClipboardWriteFailed { in_history: history_saved })
+        }
         other => other,
     }
 }
@@ -5434,6 +5452,7 @@ mod tests {
         let cause = terminal_degrade_cause(
             Some(generic_degrade_cause(&"connection refused")),
             true,
+            true,
         );
 
         let cause = cause.expect("the cause must survive — dropping it leaves the static label");
@@ -5462,7 +5481,13 @@ mod tests {
         );
 
         assert_eq!(
-            terminal_degrade_cause(Some(original.clone()), false),
+            terminal_degrade_cause(Some(original.clone()), false, true),
+            Some(original.clone()),
+        );
+        // The History outcome is only consulted on the clipboard-failure route;
+        // an ordinary degrade is passed through whatever it says.
+        assert_eq!(
+            terminal_degrade_cause(Some(original.clone()), false, false),
             Some(original.clone()),
         );
         // AC8: the model ID survives into the card's chip, where it is no longer
@@ -5477,8 +5502,33 @@ mod tests {
     /// this story's — see docs/backlog.md, 7-10 residuals.)
     #[test]
     fn spec_non_degraded_run_never_gains_a_cause() {
-        assert_eq!(terminal_degrade_cause(None, true), None);
-        assert_eq!(terminal_degrade_cause(None, false), None);
+        assert_eq!(terminal_degrade_cause(None, true, true), None);
+        assert_eq!(terminal_degrade_cause(None, false, true), None);
+        assert_eq!(terminal_degrade_cause(None, true, false), None);
+        assert_eq!(terminal_degrade_cause(None, false, false), None);
+    }
+
+    /// AC8 re-review, item 2: the card's "raw text is in History" is now a
+    /// consequence of the History write, not an assertion about it. The shell
+    /// runs that write before it emits the terminal event, so the outcome is
+    /// available in time — this pins that it is the thing the cause carries.
+    #[test]
+    fn spec_history_outcome_decides_whether_the_card_names_history() {
+        let degraded = Some(generic_degrade_cause(&"connection refused"));
+
+        let saved = terminal_degrade_cause(degraded.clone(), true, true)
+            .expect("the clipboard failure still replaces the cause");
+        assert_eq!(saved, DegradeCause::ClipboardWriteFailed { in_history: true });
+        assert!(saved.card().cause.text().contains("History"));
+
+        let lost = terminal_degrade_cause(degraded, true, false)
+            .expect("the clipboard failure still replaces the cause");
+        assert_eq!(lost, DegradeCause::ClipboardWriteFailed { in_history: false });
+        assert!(
+            !lost.card().cause.text().contains("History"),
+            "the History write failed too — no surface may be named: {:?}",
+            lost.card().cause.text()
+        );
     }
 
     /// The invariant `ProcessOutcome::Produced.degrade_cause`'s docstring claims:

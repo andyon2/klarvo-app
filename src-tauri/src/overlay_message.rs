@@ -134,15 +134,28 @@ impl OverlayMessage {
     }
 }
 
-/// Machine tokens the pipeline emits as an error, and what the card says
-/// instead. Deliberately tiny and exhaustive-by-grep rather than clever: these
-/// are the `feature_requires_license:*` tokens that exist in the tree
-/// (`lib.rs`'s `require_license!`, `pipeline.rs`'s command-mode gate,
-/// `commands/whisper.rs`). Anything else is prose already.
-const ERROR_TOKEN_TEXT: &[(&str, &str)] = &[
-    ("feature_requires_license:CommandMode", "Command mode needs a license"),
-    ("feature_requires_license:OfflineMode", "Offline transcription needs a license"),
-];
+/// Machine tokens that can reach **this card**, and what it says instead.
+///
+/// The table is tiny because the reachable set is tiny, and the first version of
+/// this comment got its provenance wrong (AC8 re-review, item 3). What the tree
+/// actually shows:
+///
+/// - `pipeline::process_audio`'s command-mode gate emits
+///   `PipelineEvent::error("feature_requires_license:CommandMode")` — the one
+///   token that becomes an [`OverlayMessage`]. That is the whole table.
+/// - `lib.rs`'s `require_license!` also formats `feature_requires_license:{:?}`,
+///   but only inside Tauri commands and only for `WhisperMode` · `AppProfiles` ·
+///   `Snippets` · `Sync` · `UnlimitedHistory` · `FillerAnalysis` · `VoiceNotes` ·
+///   `AlternativeProviders`. Those are `Err(String)` returns to the frontend;
+///   none of them is ever emitted as a pipeline event, so none reaches a card.
+/// - `commands/whisper.rs` returns `feature_requires_license:OfflineMode` the
+///   same way — a command error, never an overlay message. It had a row here and
+///   the row was dead; it is gone.
+///
+/// Anything not listed is prose already, or a command error that never gets
+/// this far.
+const ERROR_TOKEN_TEXT: &[(&str, &str)] =
+    &[("feature_requires_license:CommandMode", "Command mode needs a license")];
 
 /// Translate a known machine token into user wording; leave everything else
 /// **verbatim** (AC8 review, D3).
@@ -210,10 +223,17 @@ pub enum DegradeCause {
     /// it therefore starts with `": "` and may be empty in principle.
     Generic { reason: String },
     /// Cleanup failed *and* the clipboard write failed (review round 1, F6).
-    /// Nothing landed anywhere, so no surface may promise the clipboard. The
-    /// raw transcript is still written to History (AC5, Epic-12 "never silent
-    /// loss") — which is what the card points at since D2.
-    ClipboardWriteFailed,
+    /// Nothing landed in a window or on the clipboard, so no surface may promise
+    /// either.
+    ///
+    /// `in_history` is the outcome of the run's History write, not an
+    /// expectation of it: AC5 / Epic-12 "never silent loss" makes that write the
+    /// last place the raw transcript can be, but
+    /// `pipeline::stop_and_process_pipeline` performs it best-effort — it skips
+    /// silently on a poisoned mutex and logs an `add_entry` error away. D2 has
+    /// the card point at History; it may only do so when the write actually
+    /// happened (AC8 re-review, item 2).
+    ClipboardWriteFailed { in_history: bool },
 }
 
 impl DegradeCause {
@@ -230,7 +250,9 @@ impl DegradeCause {
                 "Cleanup failed — raw text in clipboard (Ctrl+V){}",
                 if reason.is_empty() { String::new() } else { format!(" {reason}") }
             ),
-            DegradeCause::ClipboardWriteFailed => {
+            // Names no surface, so the History outcome does not change it —
+            // byte-identical on both, which keeps D1's status line unchanged.
+            DegradeCause::ClipboardWriteFailed { .. } => {
                 "Cleanup failed — clipboard write failed".to_string()
             }
         }
@@ -241,10 +263,10 @@ impl DegradeCause {
     /// The two *degrade* variants keep the amber tone — the text landed, the
     /// cleanup did not. `ClipboardWriteFailed` is the double failure, and AC8
     /// review directive D2 (Andi, 2026-09-14) gives it the danger line, its own
-    /// `TEXT LOST` header and the one surface the text is still on: History. It
-    /// drops the `next` line for the same reason review round 1 (F6) removed the
-    /// flat string's clipboard promise — Ctrl+V would paste whatever was in the
-    /// clipboard *before* this run.
+    /// `TEXT LOST` header and — *when the write succeeded* — the one surface the
+    /// text is still on: History. It drops the `next` line for the same reason
+    /// review round 1 (F6) removed the flat string's clipboard promise — Ctrl+V
+    /// would paste whatever was in the clipboard *before* this run.
     ///
     /// The **pill** stays on the cleanup family for all three (`Cleanup
     /// failed`): the label is chosen by the run's ending in
@@ -273,10 +295,14 @@ impl DegradeCause {
                 next: Some(CLIPBOARD_NEXT.to_string()),
                 hint: None,
             },
-            DegradeCause::ClipboardWriteFailed => OverlayMessage {
+            DegradeCause::ClipboardWriteFailed { in_history } => OverlayMessage {
                 tone: MessageTone::Error,
                 header: "TEXT LOST".to_string(),
-                cause: CauseLine::plain("Clipboard write failed — raw text is in History"),
+                cause: CauseLine::plain(if *in_history {
+                    "Clipboard write failed — raw text is in History"
+                } else {
+                    "Clipboard write failed — the raw text could not be saved"
+                }),
                 next: None,
                 hint: None,
             },
@@ -361,7 +387,7 @@ mod tests {
     /// still is — History.
     #[test]
     fn spec_clipboard_write_failure_card_never_promises_the_clipboard() {
-        let card = DegradeCause::ClipboardWriteFailed.card();
+        let card = DegradeCause::ClipboardWriteFailed { in_history: true }.card();
         assert_eq!(card.tone, MessageTone::Error, "D2: danger line, not amber");
         assert_eq!(card.header, "TEXT LOST");
         assert_eq!(
@@ -377,6 +403,48 @@ mod tests {
         );
     }
 
+    /// AC8 re-review, item 2: D2's card pointed at History unconditionally, but
+    /// the History write is best-effort — `pipeline::stop_and_process_pipeline`
+    /// skips it silently on a poisoned mutex and swallows an `add_entry` error
+    /// into a `log::warn!`. The card is the surface that just told the user the
+    /// text is somewhere; on the one route where the text is genuinely nowhere
+    /// it may not name a surface at all.
+    ///
+    /// Same false-promise shape review round 1 (F6) removed from the clipboard
+    /// half of this very variant — the fix is the same: consult the outcome
+    /// instead of asserting it.
+    #[test]
+    fn spec_clipboard_write_failure_only_names_history_when_the_write_succeeded() {
+        let lost = DegradeCause::ClipboardWriteFailed { in_history: false }.card();
+        assert_eq!(lost.tone, MessageTone::Error);
+        assert_eq!(lost.header, "TEXT LOST");
+        assert_eq!(
+            lost.cause.text(),
+            "Clipboard write failed — the raw text could not be saved"
+        );
+        assert!(
+            !lost.cause.text().contains("History"),
+            "History is not a surface the text is on here: {:?}",
+            lost.cause.text()
+        );
+        assert_eq!(lost.next, None);
+        assert_eq!(lost.hint, None);
+
+        // The saved half still names it — the promise is kept where it is true.
+        assert!(DegradeCause::ClipboardWriteFailed { in_history: true }
+            .card()
+            .cause
+            .text()
+            .contains("History"));
+
+        // The one-line form claims no surface either way, so it stays
+        // byte-identical on both (D1's status line, unchanged since AC8).
+        assert_eq!(
+            DegradeCause::ClipboardWriteFailed { in_history: true }.status_line(),
+            DegradeCause::ClipboardWriteFailed { in_history: false }.status_line(),
+        );
+    }
+
     /// D2 keeps the **pill** on the cleanup family: the status light still says
     /// `Cleanup failed` for this route, because the pill label is chosen by the
     /// run's ending (`lib::emit_pipeline_state`'s `TerminalKind::Degraded`), not
@@ -385,7 +453,7 @@ mod tests {
     fn spec_clipboard_write_failure_keeps_the_degraded_pill_label() {
         assert_eq!(PILL_LABEL_DEGRADED, "Cleanup failed");
         assert_eq!(
-            DegradeCause::ClipboardWriteFailed.card().tone,
+            DegradeCause::ClipboardWriteFailed { in_history: true }.card().tone,
             MessageTone::Error,
             "the card diverges from the pill on purpose (D2)"
         );
@@ -395,15 +463,18 @@ mod tests {
     /// card now, so the known ones are translated into user wording. Anything
     /// not in the table stays verbatim — a half-understood token is worse than
     /// the raw one.
+    ///
+    /// The table holds exactly one row (AC8 re-review, item 3): `CommandMode` is
+    /// the only `feature_requires_license:*` token any producer turns into a
+    /// pipeline event. `Sync` below is a real token in the tree — a
+    /// `require_license!` one — and it is here precisely because it never
+    /// reaches a card: an unmapped token must survive verbatim, whether or not
+    /// it exists elsewhere.
     #[test]
     fn spec_known_error_tokens_are_translated_unknown_ones_are_verbatim() {
         assert_eq!(
             OverlayMessage::error("feature_requires_license:CommandMode").cause.text(),
             "Command mode needs a license"
-        );
-        assert_eq!(
-            OverlayMessage::error("feature_requires_license:OfflineMode").cause.text(),
-            "Offline transcription needs a license"
         );
         // Not in the table → shown exactly as the pipeline produced it.
         assert_eq!(
@@ -413,6 +484,13 @@ mod tests {
         assert_eq!(
             OverlayMessage::error("feature_requires_license:Sync").cause.text(),
             "feature_requires_license:Sync"
+        );
+        // A command-only token: `commands/whisper.rs` returns this to the
+        // frontend and nothing emits it as an event, so the card has no wording
+        // to give it and must not invent one.
+        assert_eq!(
+            OverlayMessage::error("feature_requires_license:OfflineMode").cause.text(),
+            "feature_requires_license:OfflineMode"
         );
         // The tone and header are untouched by the translation.
         let m = OverlayMessage::error("feature_requires_license:CommandMode");
@@ -465,7 +543,7 @@ mod tests {
             "Cleanup failed — raw text in clipboard (Ctrl+V) : boom"
         );
         assert_eq!(
-            DegradeCause::ClipboardWriteFailed.status_line(),
+            DegradeCause::ClipboardWriteFailed { in_history: true }.status_line(),
             "Cleanup failed — clipboard write failed"
         );
     }

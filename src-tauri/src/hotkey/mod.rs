@@ -382,8 +382,13 @@ mod tests {
         assert_eq!(event.warning.as_deref(), Some(card.cause.text().as_str()));
     }
 
-    /// Progress states are not messages — no card, so the overlay clears any
-    /// card still on screen when the next run starts.
+    /// Progress states are not messages — they carry no card.
+    ///
+    /// What the overlay does with that is the opposite of what this docstring
+    /// claimed before the AC8 re-review: a message-less event does **not** take
+    /// a live card down (`native_preview`'s `WM_PREVIEW_SET_MESSAGE` `None` arm
+    /// ignores it inside the 4 s hold, P1). A card is dismissed by the recording
+    /// state, by its own timer, or by a click on it.
     #[test]
     fn spec_progress_events_carry_no_card() {
         for event in [

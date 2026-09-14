@@ -158,6 +158,28 @@ const MSG_LINE_ALPHA: f32 = 0.32;
 /// `--k-amber-bg` at 0.12 — the model-ID chip's fill.
 const MSG_CHIP_ALPHA: f32 = 0.12;
 
+/// Height of a **four-line** message card (header · cause · next · hint) plus the
+/// window's outer inset, in logical px — the tallest shape any of today's cards
+/// takes, and the threshold that decides whether the window flips below the pill
+/// (AC8 re-review, Andi's directive DN1).
+///
+/// Summed from the very constants `render_message_card` lays out with, so it
+/// cannot drift from the card it measures. `msg_line_h`'s rounding and the
+/// accessibility text scale are deliberately left out: this is a placement
+/// threshold, not a layout, and it must stay a constant the geometry pass can
+/// compare against before any font exists. ≈ 126.7 logical px today.
+const MIN_CARD_H_LOGICAL: f64 = 2.0 * OUTER_INSET as f64
+    + 2.0 * MSG_HEAD_PAD_TB as f64
+    + (MSG_HEADER_PX * MSG_LINE_MULT) as f64
+    + MSG_BORDER_W as f64
+    + MSG_BODY_PAD_TOP as f64
+    + MSG_BODY_PAD_BOTTOM as f64
+    + (MSG_CAUSE_PX * MSG_LINE_MULT) as f64
+    + MSG_LINE_GAP as f64
+    + (MSG_NEXT_PX * MSG_LINE_MULT) as f64
+    + MSG_LINE_GAP as f64
+    + (MSG_HINT_PX * MSG_LINE_MULT) as f64;
+
 // ---------------------------------------------------------------------------
 // State codes
 // ---------------------------------------------------------------------------
@@ -678,6 +700,15 @@ fn class_name_wide() -> Vec<u16> {
 /// `below_pill` tells the renderer to hug the pill from below (top-aligned)
 /// instead of from above (bottom-aligned).
 ///
+/// **What "the card needs" is** ([`MIN_CARD_H_LOGICAL`], directive DN1): one card
+/// height — the four-line card, ≈127 logical px — *not* `h_wanted`, the window's
+/// 600 px upper bound. The first implementation compared against `h_wanted` and
+/// thereby flipped the window for roughly the upper half of the screen, moving
+/// the **live preview** (which has always grown upward) below the pill at pill
+/// positions with three times the room the card asks for. The window may still be
+/// clamped to whatever height is actually available; only the *side* is decided
+/// here, and it is the top-edge case the directive names.
+///
 /// One arithmetic guard: if flipping would yield *less* usable height than
 /// staying above, we stay above. Moving the card into an even smaller box would
 /// defeat the directive it implements.
@@ -702,7 +733,7 @@ unsafe fn compute_preview_geometry(
         - GAP_LOGICAL
         - 12.0)
         .max(0.0);
-    let below_pill = avail_above < h_wanted && avail_below > avail_above;
+    let below_pill = avail_above < MIN_CARD_H_LOGICAL && avail_below > avail_above;
     let h_max_logical = h_wanted.min(if below_pill { avail_below } else { avail_above }) as i32;
 
     let pill_center_x = pill_x_logical + PILL_WIDTH_LOGICAL / 2.0;
@@ -1491,10 +1522,16 @@ unsafe extern "system" fn preview_wnd_proc(
             let s = &mut *state_ptr;
             let code = wparam.0 as u8;
             if code == STATE_RECORDING {
-                // A new recording dismisses any message card at once (AC8).
-                // Its own `set_message(None)` arrives just before this, so this
-                // is the belt to that braces — a recording started any other way
-                // must clear the card too.
+                // A new recording dismisses any message card at once (AC8) —
+                // and this arm is now the ONLY thing that does it on that route.
+                // P1's hold guard makes the `set_message(None)` posted just
+                // before this a no-op while the card is inside its 4 s hold, so
+                // the premise the old comment rested on ("belt to that braces")
+                // is gone. `dismiss_message` only clears state; without the hide
+                // below, a card opened seconds earlier stays painted for the
+                // whole record → STT → cleanup cycle whenever live preview is
+                // off — AC8's headline case (AC8 re-review, item 1).
+                let had_card = s.message.is_some();
                 dismiss_message(hwnd, s);
                 // Arm only if live preview is enabled in the config snapshot
                 if s.config.live_preview_enabled {
@@ -1503,6 +1540,15 @@ unsafe extern "system" fn preview_wnd_proc(
                 } else {
                     // live preview disabled: never show the live text
                     s.armed = false;
+                }
+                if had_card {
+                    // Mirrors the terminal branch below: the card is gone and
+                    // there is no live text yet, so the window comes off the
+                    // screen. `render_frame` would reach the same `SW_HIDE` via
+                    // its `!armed || text_buffer.is_empty()` guard — this states
+                    // it without a full measure-and-draw pass.
+                    ShowWindow(hwnd, SW_HIDE);
+                    s.was_visible = false;
                 }
             } else {
                 // Done / Idle / Error / Warning — the live preview is over.
