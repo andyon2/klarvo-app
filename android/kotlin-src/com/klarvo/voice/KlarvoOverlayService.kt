@@ -154,17 +154,19 @@ class KlarvoOverlayService : Service() {
          * The message shown when cleanup failed and the raw transcript was left
          * in the clipboard (Story 7-10, Q2/Q5).
          *
-         * Mirrors the desktop pill's generic degrade wording verbatim, which is
-         * what GATE 1 decided ("English, mirroring the desktop pill literally").
+         * Mirrors the desktop pill's generic degrade wording
+         * (`pipeline::degrade_warn_msg`) MINUS its trailing "(Ctrl+V)" key hint:
+         * GATE 2 (Andi, 2026-09-14) dropped the hint on Android because there is
+         * no Ctrl+V on a phone. The cause-first half is identical on both
+         * platforms, and the model-not-found form
+         * (`Model '<id>' not found — in clipboard`) carries no key hint on either
+         * platform, so it stays identical to the pill.
+         *
          * Kept as a named constant so the parity with
          * `pipeline::degrade_warn_msg` is greppable from both sides.
-         *
-         * NOTE: the "(Ctrl+V)" hint is literally true on desktop and meaningless
-         * on a phone. Flagged to Andi in the 7-10 completion notes; changing it
-         * would be inventing an answer GATE 1 did not give.
          */
         const val CLEANUP_FAILED_CLIPBOARD_MSG =
-            "Cleanup failed — raw text in clipboard (Ctrl+V)"
+            "Cleanup failed — raw text in clipboard"
 
         /**
          * What Step 4 of [processAudio] does with the finished text.

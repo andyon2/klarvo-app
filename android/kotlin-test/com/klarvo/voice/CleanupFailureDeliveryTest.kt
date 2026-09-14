@@ -141,17 +141,28 @@ class CleanupFailureDeliveryTest {
     // -----------------------------------------------------------------------
 
     /**
-     * Twin-wording lock: the toast literal must match the desktop pill's generic
-     * degrade text (`pipeline::degrade_warn_msg`). This is a written record, not
-     * a cross-platform lock — no fixture is shared, so a desktop-only edit
-     * cannot fail this test. Change both sides together.
+     * Twin-wording lock: the toast literal mirrors the desktop pill's generic
+     * degrade text (`pipeline::degrade_warn_msg`) MINUS its "(Ctrl+V)" key hint —
+     * GATE 2 (Andi, 2026-09-14): there is no Ctrl+V on a phone. The
+     * model-not-found form (`Model '<id>' not found — in clipboard`) carries no
+     * key hint on either platform and stays identical to the pill.
+     *
+     * This is a written record, not a cross-platform lock — no fixture is
+     * shared, so a desktop-only edit cannot fail this test. Change both sides
+     * together.
      */
     @Test
     fun degradeMessage_mirrorsDesktopPillWording() {
         assertEquals(
-            "Cleanup failed — raw text in clipboard (Ctrl+V)",
+            "Cleanup failed — raw text in clipboard",
             KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG
         )
+    }
+
+    /** GATE 2: the phone toast must not advertise a keyboard shortcut. */
+    @Test
+    fun degradeMessage_hasNoKeyHintOnAndroid() {
+        assertFalse(KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG.contains("Ctrl+V"))
     }
 
     /** The old wording claimed an insertion that no longer happens. */

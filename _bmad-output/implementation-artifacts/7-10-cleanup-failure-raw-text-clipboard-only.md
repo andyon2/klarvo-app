@@ -555,6 +555,20 @@ Gates run on powerhouse (Linux). No device, no Windows build in this session.
 | Lint | `cargo clippy` | **blocked** — `'cargo-clippy' is not installed for the toolchain`. Not installed around (project-context: never mutate the host for a gate). Not an AC7 item. |
 | Trap #5 | mechanical, `docs/surface-smoke-checklist.md` | pass — see below |
 
+**GATE-2 re-run (2026-09-14, Android toast wording — same host, Linux, no device):**
+
+| Gate | Command | Result |
+|---|---|---|
+| Kotlin JVM gate — **RED first** (wording test retargeted, constant still old) | `./gradlew :app:testUniversalDebugUnitTest` | `195 tests completed, 2 failed`; `BUILD FAILED` — `degradeMessage_mirrorsDesktopPillWording` `org.junit.ComparisonFailure at CleanupFailureDeliveryTest.kt:156`, `degradeMessage_hasNoKeyHintOnAndroid` `java.lang.AssertionError at CleanupFailureDeliveryTest.kt:165` |
+| Kotlin JVM gate — **GREEN after** the constant change | same | `BUILD SUCCESSFUL`; counted from `app/build/test-results/testUniversalDebugUnitTest/*.xml`: **24 suites, 195 tests, 0 failures, 0 errors, 0 skipped** |
+| Rust unit suite (regression — desktop untouched) | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 688 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` — unchanged from the first round, as expected |
+| Scope check | `git diff --stat` + `grep -rn "Ctrl+V" android/` | 2 files, both `android/`; no `Ctrl+V` remains in any user-facing literal (3 remaining hits are 2 KDoc lines + the negative assertion) |
+
+Kotlin went 194 → **195** tests (+1 negative assertion), suites unchanged at **24**. `test-fixtures/`
+untouched again, so the gradle `--rerun-tasks` fixture trap still did not apply. **This re-run was
+ordinary red→green, not an AC6 inversion** — the AC6 inversion table below is from the first round and
+was not re-executed; the delivery logic it covers was not touched.
+
 **Counts are re-verified against today's tree, not against the story text.** Two story-text
 numbers were stale and are corrected here: the story cites `src-tauri/src/paste/windows.rs` and
 `paste/linux.rs` — those files do not exist; `windows` and `linux` are **inline `mod` blocks inside
@@ -614,12 +628,25 @@ companion object, repo pattern). `BankingGuard.shouldBlockPaste` **verified stil
 in the `handler.post` block. `performEnter` **verified still present and still callerless** — AC2's
 auto-send half is satisfied by construction (7-9 M13), nothing re-wired, nothing deleted.
 
-**⚠ Flagged for Andi — "(Ctrl+V)" in the Android toast.** GATE 1 (Q5) says the toast mirrors the
-desktop pill "literally", and Q2 fixes the generic wording as
-`Cleanup failed — raw text in clipboard (Ctrl+V)`. Implemented literally, as decided. But **Ctrl+V is
-meaningless on a phone.** This is a decision to revisit, not a bug I invented an answer for. The
-literal lives in one named constant, `KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG`, so changing
-it is a one-line edit plus its twin-wording test.
+**✅ RESOLVED at GATE 2 — "(Ctrl+V)" dropped from the Android toast.** The flag raised above was
+answered by Andi (2026-09-14): the phone toast reads `Cleanup failed — raw text in clipboard`, with
+no key hint. Implemented as predicted — **one constant plus its wording test**:
+`KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG` lost the `(Ctrl+V)` suffix, and
+`CleanupFailureDeliveryTest.degradeMessage_mirrorsDesktopPillWording` was retargeted, plus a new
+`degradeMessage_hasNoKeyHintOnAndroid` negative assertion that pins the hint out.
+
+**What GATE 2 did NOT change.** The desktop side is **untouched** — `git diff` for this round lists
+exactly two files, both under `android/`. `pipeline::degrade_warn_msg` still emits
+`Cleanup failed — raw text in clipboard (Ctrl+V){friendly_error}` on the pill, where Ctrl+V is
+literally true. **Model-not-found stays identical to the pill:**
+`pipeline::degrade_warn_msg_for_model` still returns `Model '<id>' not found — in clipboard`, which
+carries no key hint on either platform and was not edited. Precision note: Android never *produces*
+the model-not-found form — both Step-2 failure sites set the generic constant — so "identical" here
+means the pill's form is unchanged, not that the phone renders it.
+
+The two platforms' generic wording now diverges by exactly the four-character hint. The twin-wording
+test documents that divergence deliberately; it remains a **written record, not a lock** (no shared
+fixture — a desktop-only edit still cannot fail the Kotlin test).
 
 **Inversion evidence (AC6) — both platforms, at writing time.** `git status` clean afterwards (only
 this story's own files modified; no inversion residue).
@@ -631,7 +658,11 @@ this story's own files modified; no inversion residue).
 
 **Coverage statement — what these numbers do NOT cover.** *(project-context: "a number states what it covers".)*
 
-- **688 Rust / 194 Kotlin green prove wiring, logic and structure — not design, not pixels.**
+- **688 Rust / 195 Kotlin green prove wiring, logic and structure — not design, not pixels.**
+- **The GATE-2 wording change was never seen rendered.** `degradeMessage_*` compares two strings in a
+  JVM. Not exercised: the toast actually drawn on a phone, its truncation at `LENGTH_LONG`, and its
+  ordering against HyperOS's own "pasted from your clipboard" system toast. That the shorter string
+  *reads* better on a real toast is Andi's device judgement, not a test result.
 - **Never executed on Windows.** `native_pill.rs` is `#[cfg(target_os = "windows")]` and still has
   **no test module**; `warning_hold_active`, `from_code`, `handle_timer` and the `DoneClipboard`
   render arm I changed were **not run once** in this session. AC3's display outcome is **S5 — not
@@ -679,10 +710,10 @@ Paths relative to repo root.
 - `src-tauri/src/native_pill.rs` — `DoneClipboard` render arm renders `status_msg` (via `fit_text`, `font_label`) when present, static `"In Clipboard"` otherwise; `handle_timer`'s done-timeout clears `status_msg` on dismissal.
 - `src/hooks/useRecording.ts` — `p.warning` captured before the `p.state === "warning"` early return.
 - `src/types.ts` — `StateChangedPayload.warning` / `.clipboardOnly` comments updated.
-- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `CLEANUP_FAILED_CLIPBOARD_MSG`, `DeliveryDecision`, pure `decideDelivery` (companion object); explicit `llmCleanupFailed` in `processAudio` Step 2 + `capturedLlmFailed`; Step 4 branch; degrade toast literal (Q2/Q5); stale `activeGesture` auto-send KDoc corrected.
+- `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` — `CLEANUP_FAILED_CLIPBOARD_MSG`, `DeliveryDecision`, pure `decideDelivery` (companion object); explicit `llmCleanupFailed` in `processAudio` Step 2 + `capturedLlmFailed`; Step 4 branch; degrade toast literal (Q2/Q5); stale `activeGesture` auto-send KDoc corrected. **GATE 2:** `CLEANUP_FAILED_CLIPBOARD_MSG` dropped its `(Ctrl+V)` suffix; its KDoc now states the deliberate desktop divergence and that the model-not-found form is unchanged.
 
 **Added**
-- `android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt` — 8 JVM tests for the Step-4 decision and the twin wording.
+- `android/kotlin-test/com/klarvo/voice/CleanupFailureDeliveryTest.kt` — 9 JVM tests for the Step-4 decision and the twin wording (**GATE 2:** `degradeMessage_mirrorsDesktopPillWording` retargeted to the hint-free literal, `degradeMessage_hasNoKeyHintOnAndroid` added).
 
 **Not modified (verified):** `src-tauri/src/config.rs`, `src/components/**`, `src-tauri/src/history/mod.rs`, `test-fixtures/**`, `KlarvoAccessibilityService.performEnter`.
 
@@ -690,4 +721,5 @@ Paths relative to repo root.
 
 | Date | Change |
 |---|---|
+| 2026-09-14 | **GATE-2 directive applied (Andi):** the Android toast drops the `(Ctrl+V)` hint — `KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG` is now `Cleanup failed — raw text in clipboard`. Desktop pill wording and `degrade_warn_msg_for_model` (model-not-found) **unchanged**. One constant + its wording test, as scoped: test retargeted, one negative assertion added. JVM gate RED (2 failures) → GREEN 24 suites / 195 tests / 0 failures; `cargo test --lib` 688/688 unchanged. **Andi's GATE-4 still outstanding.** |
 | 2026-09-14 | Story 7-10 implemented. Desktop: `llm_error` threaded to the paste step; clipboard-only branch via new `PasteHandler::copy_only`; degrade cause carried on a single terminal `DoneClipboard` event (Q1) and rendered by the pill; wording reworked per Q2. Android twin: explicit `llmCleanupFailed`, pure `decideDelivery` seam, Step-4 branch, one combined English toast (Q4/Q5). Gates: `cargo test --lib` 688/688, JVM 194/194 (24 suites), `npm run build` clean, trap #5 executed. Both AC6 inversions shown RED and reverted. `cargo clippy` blocked (not installed on host). **Andi's GATE-4 outstanding.** |
