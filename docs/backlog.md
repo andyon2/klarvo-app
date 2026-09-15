@@ -181,6 +181,12 @@ back to `in-progress` before `bmad-create-story` (done-epic trap). Scope = decis
 commit per platform allowed. Human gate: Desktop release build, Advanced panel shows only live keys, a
 changed DeepSeek model ID appears in the request log (`[fe:…]`/Klarvo.log).
 
+**→ GESCHNITTEN 2026-09-11 als Story 7-9** (`7-9-desktop-advanced-settings-dead-keys-and-model-ids`, Branch
+`conductor/story-7-9`). **→ DONE 2026-09-12** (4 Review-Runden; nach Andis GATE-4 wieder geoeffnet, Re-Check
+gruen auf `06603d2`, Close-out `595a5f9`). Residuals: Abschnitte „Story 7-9 residuals" und „Story 7-9 GATE-1
+leftovers" unten. **Dieser Eintrag ist KEIN offener Kandidat mehr** — er stand bis 2026-09-15 ohne
+Done-Marker und hat die Routing-Empfehlung einmal fehlgeleitet.
+
 - **Dropped 2026-09-10 (7.5 dissolved):** M10 (blank-key trim), M11 (unknown `cleanupStyle`), L5
   (`deviceId` default) — unreachable via any UI; M16 (pre-paste settle) — no observed failure.
   Re-open only on a real report. Source: `sprint-change-proposal-2026-09-10.md`.

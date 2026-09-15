@@ -5,5 +5,5 @@
 [workflow]
 
 persistent_facts = [
-  "ROUTING (2026-09-14, nach 7-10 done): NAECHSTE AKTION nur auf Andis Go = einen Kandidaten aus docs/backlog.md cutten (DECIDED Advanced-Settings/AutoSend, STORY-CANDIDATE Model-Picker / Failed-Inbox / Woerterbuch, 7-10-Residuals). Lizenzwahl und Cut-Freigaben NIE auto-entscheiden. | PARKED, nicht empfehlen: 7-6 (M12), 8-3/8-4 superseded, 8-6, 8-7, 9-6, 9-8, 12-3; Epics 1-8, 10, 11, 12 done. | FALLE: bmad-create-story verweigert Stories in done-Epics -- Epic vorher auf in-progress.",
+  "ROUTING (2026-09-15): NAECHSTE AKTION nur auf Andis Go = einen Kandidaten aus docs/backlog.md cutten (STORY-CANDIDATE Model-Picker / Failed-Inbox / Woerterbuch, 7-10-Residuals). Der Eintrag DECIDED Advanced-Settings/AutoSend ist KEIN Kandidat: gebaut als Story 7-9, done 2026-09-12 -- Marker stand bis 2026-09-15 nicht im Backlog und hat einmal fehlgeleitet. Lizenzwahl und Cut-Freigaben NIE auto-entscheiden. | PARKED, nicht empfehlen: 7-6 (M12), 8-3/8-4 superseded, 8-6, 8-7, 9-6, 9-8, 12-3; Epics 1-8, 10, 11, 12 done. | FALLE: bmad-create-story verweigert Stories in done-Epics -- Epic vorher auf in-progress.",
 ]
