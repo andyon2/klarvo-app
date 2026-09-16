@@ -2611,10 +2611,11 @@ mod tests {
 
     // --- M12 current-state vector (story 7-8, AC4) ---
     //
-    // RECORDS the dictionary-scope divergence between desktop and Android. It does NOT
-    // decide it: M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION),
-    // and story 7-8 deliberately changed no prompt-assembly code on either platform.
-    // Story 7.6 flips one vector in the fixture once the decision is made.
+    // RECORDS the dictionary-scope state of desktop and Android. Story 7-8 deliberately
+    // changed no prompt-assembly code on either platform. M12 is decided (Andi, 2026-09-10 —
+    // Chat includes the dictionary; docs/backlog.md "DECIDED 2026-09-10 — M12"), and story
+    // 7.6 performed the flip: the desktop Chat arm now carries the dictionary and the
+    // fixture's chat vector was flipped to match.
     //
     // Covers: the desktop/Rust column only, asserted against the real
     // `CleanupStyle::system_prompt`. Does NOT cover the Android column — Kotlin's
@@ -2701,8 +2702,7 @@ mod tests {
         // some style still disagrees. Such a check fires on EITHER direction of a correct M12
         // resolution — the fixture has exactly one disagreeing style — which would falsify the
         // fixture's own promise that Story 7.6 flips one vector without editing this test.
-        // "M12 is still open" is carried by the fixture's `open_decision` field, not by an
-        // assertion. The per-entry consistency check above stays: a flag that stops matching
+        // The per-entry consistency check above stays: a flag that stops matching
         // its own columns still fails loudly.
     }
 }

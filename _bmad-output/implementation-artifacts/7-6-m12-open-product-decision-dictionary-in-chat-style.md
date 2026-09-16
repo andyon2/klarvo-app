@@ -108,9 +108,9 @@ asserting that the Chat prompt built with dictionary terms contains the dictiona
 
 _Code review 2026-09-16, range `d9f83ef..HEAD` (Blind Hunter + Edge Case Hunter + Acceptance Auditor)._
 
-- [ ] [Review][Decision] Rust test comments still say M12 is open — The section comment above `tests::load_m12_vectors` ("M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION) … Story 7.6 flips one vector … once the decision is made") and the NOTE inside `tests::spec_m12_dictionary_scope_current_state_still_holds` (`"M12 is still open" is carried by the fixture's open_decision field`) now contradict the GATE-1 prose decision, and the NOTE points at a field this story removed. The header comment is outside the test fn; the NOTE is inside the test that Task 3 says "do not edit" (the ban was aimed at assertions, but a comment edit still touches that fn). Decide: comment-only edit to both / edit only the header / leave both as they are and defer.
-- [ ] [Review][Patch] Epic-7 comment in the sprint ledger contradicts its status — comment reads "done 2026-09-10 with 7-6 parked on M12" while `epic-7: in-progress` (set by `456db25`) and 7-6 is `review`; add the reopen for the 7-6 cut [_bmad-output/implementation-artifacts/sprint-status.yaml:106]
-- [ ] [Review][Patch] File List / scope-check row omit `seat-costs.jsonl` — `853d308` also appends the dev-seat telemetry line; the record does not match `git diff --stat` [_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md "File List"]
+- [x] [Review][Decision] Rust test comments still say M12 is open — The section comment above `tests::load_m12_vectors` ("M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION) … Story 7.6 flips one vector … once the decision is made") and the NOTE inside `tests::spec_m12_dictionary_scope_current_state_still_holds` (`"M12 is still open" is carried by the fixture's open_decision field`) now contradict the GATE-1 prose decision, and the NOTE points at a field this story removed. The header comment is outside the test fn; the NOTE is inside the test that Task 3 says "do not edit" (the ban was aimed at assertions, but a comment edit still touches that fn). Decide: comment-only edit to both / edit only the header / leave both as they are and defer.
+- [x] [Review][Patch] Epic-7 comment in the sprint ledger contradicts its status — comment reads "done 2026-09-10 with 7-6 parked on M12" while `epic-7: in-progress` (set by `456db25`) and 7-6 is `review`; add the reopen for the 7-6 cut [_bmad-output/implementation-artifacts/sprint-status.yaml:106]
+- [x] [Review][Patch] File List / scope-check row omit `seat-costs.jsonl` — `853d308` also appends the dev-seat telemetry line; the record does not match `git diff --stat` [_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md "File List"]
 - [x] [Review][Defer] `M12-DICT-SCOPE-POLISHED` description says "the two platforms phrase it differently" — false, the Rust and Kotlin sentences are character-identical; outside GATE-1 prose scope [test-fixtures/m12-dictionary-scope-vectors.json:11] — deferred, pre-existing
 - [x] [Review][Defer] Whitespace-only dictionary terms produce an empty dictionary line — Rust `dict_section` guards with `!terms.is_empty()`, Kotlin `appendPromptExtensions` with `isNullOrBlank()`; since 7-6 this reaches the Chat arm too (`cleanup_text` passes caller terms through with only an `is_empty` check) [src-tauri/src/llm/mod.rs `CleanupStyle::system_prompt_with_translation` `dict_section`] — deferred, pre-existing
 - [x] [Review][Defer] Local llama cleanup has no `n_prompt >= DEFAULT_CONTEXT_SIZE` guard — a large dictionary can now push the formerly short Chat prompt past the 4096 context [src-tauri/src/llm/local.rs, decode path around `n_prompt` / `max_total`] — deferred, pre-existing
@@ -322,7 +322,7 @@ Gates run on powerhouse (Linux). No device, no Windows build, no model call in t
 | Rust lib build (Linux) | `cargo build --manifest-path src-tauri/Cargo.toml --lib` | ``Finished `dev` profile``; `klarvo (lib) generated 13 warnings` (pre-existing; the diff adds no code that can warn). Test profile: `generated 18 warnings` before and after the change. |
 | Lint | `cargo clippy --version` | **blocked** — `'cargo-clippy' is not installed for the toolchain 'stable-x86_64-unknown-linux-gnu'`. Not installed around (project-context: never mutate the host for a gate). No other lint is configured (`package.json` scripts: `dev`, `build`, `preview`, `tauri`). |
 | Kotlin JVM gate | — | **not run** (optional per Testing requirements). No `.kt` file changed and no Kotlin test reads the M12 fixture, so it would exercise no M12 assertion. |
-| Scope check | `git status --short` after both RED runs and the throwaway dump | only `src-tauri/src/llm/mod.rs`, `test-fixtures/m12-dictionary-scope-vectors.json`, `sprint-status.yaml` (+ this story file) |
+| Scope check | `git status --short` after both RED runs and the throwaway dump | only `src-tauri/src/llm/mod.rs`, `test-fixtures/m12-dictionary-scope-vectors.json`, `sprint-status.yaml`, `_bmad-output/implementation-artifacts/seat-costs.jsonl` (+ this story file) |
 
 Count 707 = 707 before (baseline `1 passed + 706 filtered`): `test_cleanup_style_chat_ignores_dictionary`
 removed, `test_system_prompt_chat_with_dictionary` added.
@@ -378,7 +378,7 @@ same as Verbatim.
 - **Outstanding — GATE-4 (GATE-1 decision, Andi 2026-09-16).** The conductor triggers the Windows release
   build (`scripts/windows-build.sh`, not a worker step); Andi runs one real Chat-style dictation with a
   dictionary term on Windows. Not done in this session.
-- **Observed, not changed (no task maps it; Task 3 forbids editing the M12 test).** Two comments in
+- **Observed, not changed at implementation time (both comments resolved in review round 1, see below).** Two comments in
   `llm::tests` still describe M12 as open after this story: the section header above `load_m12_vectors`
   ("It does NOT decide it: M12 is an open product decision … Story 7.6 flips one vector … once the decision is
   made") and the trailing NOTE inside `spec_m12_dictionary_scope_current_state_still_holds` (``"M12 is still open" is carried by the fixture's `open_decision` field``), which now points at a field this story removed
@@ -386,19 +386,37 @@ same as Verbatim.
   `M12-DICT-SCOPE-POLISHED` description says "the two platforms phrase it differently", while the Kotlin and
   Rust sentences are character-identical (outside the GATE-1 prose scope, which named only the CHAT and README
   entries).
+- ✅ Resolved review finding [Decision]: Rust test comments still said M12 is open. Comment-only edits in
+  `llm::tests`: the section header above `load_m12_vectors` now states M12 is decided (Andi, 2026-09-10 — Chat
+  includes the dictionary) and that story 7.6 performed the flip; inside
+  `spec_m12_dictionary_scope_current_state_still_holds` only the NOTE sentence pointing at the removed
+  `open_decision` field was deleted — the D1 rationale for having no "some style still disagrees" assertion is
+  kept. `git diff -U0 src-tauri/src/llm/mod.rs` shows zero changed non-comment lines (no assertion, no test logic).
+- ✅ Resolved review finding [Patch]: the Epic-7 comment in `sprint-status.yaml` now records the reopening
+  ("reopened 2026-09-16 for the 7-6 cut (M12 decided 2026-09-10)").
+- ✅ Resolved review finding [Patch]: `_bmad-output/implementation-artifacts/seat-costs.jsonl` (one line appended by
+  `853d308`, per `git show --stat 853d308`) added to the File List and to the scope-check row.
+- **Review round 1 re-run gates (Linux, powerhouse):** `cargo test … --lib spec_m12` → `1 passed; 706 filtered out`;
+  `… --lib chat` → `3 passed; 704 filtered out`; `… --lib` → `707 passed; 0 failed`; `cargo build … --lib` →
+  ``Finished `dev` profile``, 13 warnings (unchanged). Coverage unchanged from above: desktop prompt string and the
+  M12 reader only; not the Kotlin column, not model behaviour, not the Windows build. The edits in this round are
+  comments and records, so the runs prove only that they broke nothing; no RED proof was repeated.
 
 ### File List
 
 - `src-tauri/src/llm/mod.rs` — `CleanupStyle::system_prompt_with_translation` Chat arm gains `{dict_section}`;
   `tests::test_cleanup_style_chat_ignores_dictionary` removed; `tests::test_system_prompt_chat_with_dictionary`
-  added.
+  added. Review round 1: comment-only edits to the M12 section header above `tests::load_m12_vectors` and to the
+  NOTE inside `tests::spec_m12_dictionary_scope_current_state_still_holds` (no assertion or logic changed).
 - `test-fixtures/m12-dictionary-scope-vectors.json` — `M12-DICT-SCOPE-CHAT` flipped (`expected_dictionary_in_prompt`,
   `platforms_agree` → `true`) and its description rewritten; `M12-DICT-SCOPE-README` description rewritten and
   `open_decision` removed.
 - `_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md` — task
   checkboxes, Status, Dev Agent Record, File List, Change Log.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `7-6` `ready-for-dev` → `in-progress` → `review`;
-  `last_updated` 2026-09-16.
+  `last_updated` 2026-09-16. Review round 1: `review` → `in-progress` → `review`; Epic-7 comment records the reopening
+  for the 7-6 cut.
+- `_bmad-output/implementation-artifacts/seat-costs.jsonl` — one dev-seat telemetry line appended (`853d308`).
 
 **Not modified (verified with `git diff --stat`):** anything under `android/`, `src/`, `docs/`;
 `test-fixtures/README.md` (M12 row still accurate: Rust reader only); `tests::spec_m12_dictionary_scope_current_state_still_holds`
@@ -409,3 +427,4 @@ and `tests::load_m12_vectors`.
 | Date | Change |
 |---|---|
 | 2026-09-16 | Story 7-6 implemented. Desktop Chat cleanup prompt now includes the dictionary sentence, like Polished/Verbatim and like Android (M12, decided 2026-09-10). Contradicting test replaced by a Chat dictionary test. `M12-DICT-SCOPE-CHAT` flipped; fixture prose brought to the decided state per GATE-1 (`open_decision` removed, `record_type` kept). Gates: `cargo test --lib` 707/707; both RED directions shown and reverted; AC4 byte-identity measured over 36 prompts (32 same, 4 differ only by the dictionary line). `cargo clippy` blocked (not installed). **Windows build (conductor) and Andi's GATE-4 outstanding.** |
+| 2026-09-16 | Addressed code review findings - 3 items resolved (Date: 2026-09-16). M12 test comments in `llm::tests` brought to the decided state (comment-only; `spec_m12_…` logic untouched per 7-8 D1); Epic-7 sprint-ledger comment records the reopening; `seat-costs.jsonl` added to File List and scope check. Re-run: `cargo test --lib` 707/707 (desktop prompt string + M12 reader only). Windows build and GATE-4 still outstanding. |
