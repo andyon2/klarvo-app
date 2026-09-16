@@ -251,7 +251,7 @@ impl CleanupStyle {
                 - \"Gedankenstrich\" or \"dash\" → —\n\
                 - \"Anführungszeichen auf\" or \"open quote\" → \"\n\
                 - \"Anführungszeichen zu\" or \"close quote\" → \"\
-                {custom_section}{translation_section}{sandwich}"
+                {dict_section}{custom_section}{translation_section}{sandwich}"
             ),
         }
     }
@@ -1748,18 +1748,6 @@ mod tests {
         assert_eq!(chat, r#""chat""#);
     }
 
-    #[test]
-    fn test_cleanup_style_chat_ignores_dictionary() {
-        let style = CleanupStyle::Chat;
-        let prompt_with = style.system_prompt(Some("Kubernetes"), None);
-        let prompt_without = style.system_prompt(None, None);
-        // Chat style intentionally omits dictionary context to keep prompts short
-        assert_eq!(
-            prompt_with, prompt_without,
-            "Chat style should ignore dictionary terms"
-        );
-    }
-
     /// Custom prompt is appended to the system prompt when non-empty.
     #[test]
     fn test_system_prompt_with_custom_prompt() {
@@ -1791,6 +1779,17 @@ mod tests {
         assert!(
             prompt.contains("Additional user instructions: No emojis please."),
             "Chat style should include custom prompt"
+        );
+    }
+
+    /// Dictionary terms reach the Chat prompt too, as on Android (M12, decided 2026-09-10).
+    #[test]
+    fn test_system_prompt_chat_with_dictionary() {
+        let style = CleanupStyle::Chat;
+        let prompt = style.system_prompt(Some("Kubernetes"), None);
+        assert!(
+            prompt.contains("The user's custom dictionary terms (preserve these exactly): Kubernetes"),
+            "Chat style should include dictionary terms"
         );
     }
 

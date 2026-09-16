@@ -1,6 +1,6 @@
 # Story 7.6: M12 — dictionary in Chat style (Desktop Chat arm includes the dictionary)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -71,37 +71,37 @@ asserting that the Chat prompt built with dictionary terms contains the dictiona
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Rust: add `{dict_section}` to the Chat arm** (AC1, AC4)
-  - [ ] In `src-tauri/src/llm/mod.rs`, `CleanupStyle::system_prompt_with_translation`, Chat arm: change the
+- [x] **Task 1 — Rust: add `{dict_section}` to the Chat arm** (AC1, AC4)
+  - [x] In `src-tauri/src/llm/mod.rs`, `CleanupStyle::system_prompt_with_translation`, Chat arm: change the
         trailing interpolation from `{custom_section}{translation_section}{sandwich}` to
         `{dict_section}{custom_section}{translation_section}{sandwich}` — the same order the Polished and
         Verbatim arms use, and the order the sandwich comment names ("dictionary, custom prompt, translation").
-  - [ ] Change nothing else in the prompt text. Do not reword `dict_section`.
-- [ ] **Task 2 — Replace the contradicting test** (AC3)
-  - [ ] Remove `test_cleanup_style_chat_ignores_dictionary` (its comment "Chat style intentionally omits
+  - [x] Change nothing else in the prompt text. Do not reword `dict_section`.
+- [x] **Task 2 — Replace the contradicting test** (AC3)
+  - [x] Remove `test_cleanup_style_chat_ignores_dictionary` (its comment "Chat style intentionally omits
         dictionary context to keep prompts short" is the rationale Andi's decision retired).
-  - [ ] Add a Chat dictionary test next to `test_system_prompt_chat_with_custom_prompt`: Chat +
+  - [x] Add a Chat dictionary test next to `test_system_prompt_chat_with_custom_prompt`: Chat +
         `Some("Kubernetes")` → prompt contains `"The user's custom dictionary terms (preserve these exactly): Kubernetes"`.
-- [ ] **Task 3 — Flip the M12 vector** (AC2)
-  - [ ] In `test-fixtures/m12-dictionary-scope-vectors.json`, entry `M12-DICT-SCOPE-CHAT`: set
+- [x] **Task 3 — Flip the M12 vector** (AC2)
+  - [x] In `test-fixtures/m12-dictionary-scope-vectors.json`, entry `M12-DICT-SCOPE-CHAT`: set
         `expected_dictionary_in_prompt` → `true`, `platforms_agree` → `true`.
-  - [ ] Do **not** edit `spec_m12_dictionary_scope_current_state_still_holds`.
-  - [ ] Also bring the fixture prose to the decided state (GATE-1 decision, Andi, 2026-09-16 — see Dev Notes):
+  - [x] Do **not** edit `spec_m12_dictionary_scope_current_state_still_holds`.
+  - [x] Also bring the fixture prose to the decided state (GATE-1 decision, Andi, 2026-09-16 — see Dev Notes):
         rewrite the `M12-DICT-SCOPE-CHAT` description so it no longer claims the platforms disagree or that
         the decision is open; rewrite the `M12-DICT-SCOPE-README` description the same way and drop its
         `open_decision: "M12"` field. Keep `record_type: "current-state-record"` on every entry — the label
         stays, so `spec_m12_dictionary_scope_current_state_still_holds` needs no edit (7.8 decision D1).
-- [ ] **Task 4 — Gates + RED proof** (AC2, AC4)
-  - [ ] Baseline before any edit: `cargo test --manifest-path src-tauri/Cargo.toml --lib spec_m12` green.
-  - [ ] RED 1 — vector flipped, code NOT changed: `spec_m12_dictionary_scope_current_state_still_holds` fails on
+- [x] **Task 4 — Gates + RED proof** (AC2, AC4)
+  - [x] Baseline before any edit: `cargo test --manifest-path src-tauri/Cargo.toml --lib spec_m12` green.
+  - [x] RED 1 — vector flipped, code NOT changed: `spec_m12_dictionary_scope_current_state_still_holds` fails on
         the Chat arm ("desktop chat arm: recorded dictionary-in-prompt state no longer matches the tree").
-  - [ ] RED 2 — code changed, vector NOT flipped: the same spec fails on the Chat arm, and
+  - [x] RED 2 — code changed, vector NOT flipped: the same spec fails on the Chat arm, and
         `test_cleanup_style_chat_ignores_dictionary` (if not yet replaced) fails.
-  - [ ] Record both as a table `| # | Reverted change (symbol) | Went RED | Verbatim failure |` (7-8/7-10 format);
+  - [x] Record both as a table `| # | Reverted change (symbol) | Went RED | Verbatim failure |` (7-8/7-10 format);
         `git status` shows only the intended edits afterwards.
-  - [ ] Final: `cargo test --manifest-path src-tauri/Cargo.toml --lib` green; record the pass count with its
+  - [x] Final: `cargo test --manifest-path src-tauri/Cargo.toml --lib` green; record the pass count with its
         coverage statement (see Testing requirements).
-- [ ] **Task 5 — Record** — fill the Dev Agent Record (File List, Completion Notes) from `git diff`, anchored at
+- [x] **Task 5 — Record** — fill the Dev Agent Record (File List, Completion Notes) from `git diff`, anchored at
       symbols, not line numbers.
 
 ## Dev Notes
@@ -293,12 +293,105 @@ No other file is expected to change. If `git diff --stat` shows another source f
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 5 (`claude-opus-5`), `bmad-dev-story`, 2026-09-16.
 
 ### Debug Log References
+
+Gates run on powerhouse (Linux). No device, no Windows build, no model call in this session.
+
+| Gate | Command | Result |
+|---|---|---|
+| Baseline (before any edit) | `cargo test --manifest-path src-tauri/Cargo.toml --lib spec_m12` | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 706 filtered out` |
+| Targeted — M12 reader | `cargo test --manifest-path src-tauri/Cargo.toml --lib spec_m12` | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 706 filtered out` |
+| Targeted — Chat | `cargo test --manifest-path src-tauri/Cargo.toml --lib chat` | `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 704 filtered out` (`test_system_prompt_chat_with_dictionary`, `test_system_prompt_chat_with_custom_prompt`, `test_build_request_chat_style`) |
+| Rust unit suite | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | `test result: ok. 707 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` |
+| Rust lib build (Linux) | `cargo build --manifest-path src-tauri/Cargo.toml --lib` | ``Finished `dev` profile``; `klarvo (lib) generated 13 warnings` (pre-existing; the diff adds no code that can warn). Test profile: `generated 18 warnings` before and after the change. |
+| Lint | `cargo clippy --version` | **blocked** — `'cargo-clippy' is not installed for the toolchain 'stable-x86_64-unknown-linux-gnu'`. Not installed around (project-context: never mutate the host for a gate). No other lint is configured (`package.json` scripts: `dev`, `build`, `preview`, `tauri`). |
+| Kotlin JVM gate | — | **not run** (optional per Testing requirements). No `.kt` file changed and no Kotlin test reads the M12 fixture, so it would exercise no M12 assertion. |
+| Scope check | `git status --short` after both RED runs and the throwaway dump | only `src-tauri/src/llm/mod.rs`, `test-fixtures/m12-dictionary-scope-vectors.json`, `sprint-status.yaml` (+ this story file) |
+
+Count 707 = 707 before (baseline `1 passed + 706 filtered`): `test_cleanup_style_chat_ignores_dictionary`
+removed, `test_system_prompt_chat_with_dictionary` added.
+
+**RED proof (Task 4) — both directions, each shown RED, then reverted.**
+
+| # | Reverted change (symbol) | Went RED | Verbatim failure |
+|---|---|---|---|
+| 1 | `CleanupStyle::system_prompt_with_translation` Chat arm left at `{custom_section}{translation_section}{sandwich}` while `M12-DICT-SCOPE-CHAT` was flipped to `true`/`true` | `llm::tests::spec_m12_dictionary_scope_current_state_still_holds` | ``assertion `left == right` failed: desktop chat arm: recorded dictionary-in-prompt state no longer matches the tree. If you changed prompt assembly on purpose, update the M12 fixture deliberately — it is the record Story 7.6 reads.`` `left: false` `right: true`; `0 passed; 1 failed` |
+| 2 | `M12-DICT-SCOPE-CHAT` left at `expected_dictionary_in_prompt: false` / `platforms_agree: false` while the Chat arm carried `{dict_section}` (old test still present) | `llm::tests::spec_m12_dictionary_scope_current_state_still_holds` **and** `llm::tests::test_cleanup_style_chat_ignores_dictionary` | spec: `desktop chat arm: recorded dictionary-in-prompt state no longer matches the tree. …` `left: true` `right: false`; old test: ``assertion `left == right` failed: Chat style should ignore dictionary terms`` (left carries `…The user's custom dictionary terms (preserve these exactly): Kubernetes…`, right does not); `0 passed; 2 failed` |
+| 3 | Chat arm reverted to `{custom_section}{translation_section}{sandwich}` with the new test in place (red-green check of Task 2's test) | `llm::tests::test_system_prompt_chat_with_dictionary` | `Chat style should include dictionary terms`; `0 passed; 1 failed` |
+
+**AC4 byte-identity — measured, not inferred.** A throwaway test (`tmp_7_6_dump_prompts`, inserted into
+`llm::tests`, removed again; `grep -c tmp_7_6 src-tauri/src/llm/mod.rs` → `0`) wrote
+`system_prompt_with_translation` for 3 styles × dictionary {`Some("Klarvo, Tauri, powerhouse")`, `None`,
+`Some("")`} × custom {`None`, `Some("No emojis please.")`} × language {`None`, `Some("en")`} = 36 prompts, once
+on the unchanged tree and once after Task 1. `cmp`: **32 SAME, 4 DIFF**. The 4 DIFFs are exactly
+`chat` + non-empty dictionary (all custom × language combinations); each differs only by the inserted
+`\n\nThe user's custom dictionary terms (preserve these exactly): Klarvo, Tauri, powerhouse` line. All 24
+Polished/Verbatim prompts and all 8 Chat prompts with `None`/`Some("")` are byte-identical. Section order
+in the Chat prompt with every section set: dictionary → custom → translation → sandwich (sandwich last), the
+same as Verbatim.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created
+- **AC1 — met.** `CleanupStyle::system_prompt_with_translation`, Chat arm: the trailing interpolation is now
+  `{dict_section}{custom_section}{translation_section}{sandwich}`. No other character of the prompt changed;
+  `dict_section` untouched. `system_prompt` inherits it (thin wrapper). The "And" clause (None / `Some("")`
+  → today's Chat prompt) is proven by the byte-identity dump above, not by a permanent test.
+- **AC2 — met.** `M12-DICT-SCOPE-CHAT`: `expected_dictionary_in_prompt: true`, `platforms_agree: true`,
+  `expected_dictionary_in_prompt_kotlin: true` unchanged. `spec_m12_dictionary_scope_current_state_still_holds`
+  passes with no edit to the test. GATE-1 prose decision applied: the `M12-DICT-SCOPE-CHAT` and
+  `M12-DICT-SCOPE-README` descriptions now state M12 as DECIDED and the platforms as agreeing;
+  `open_decision: "M12"` removed; `record_type: "current-state-record"` kept on all four entries. The README
+  entry's ASSERTION COVERAGE paragraph is kept; its Kotlin-verification sentence now also names the
+  2026-09-16 re-read of `KlarvoApi.appendPromptExtensions` (sentence character-identical to Rust's
+  `dict_section`; Kotlin not changed).
+- **AC3 — met.** `test_cleanup_style_chat_ignores_dictionary` removed. `test_system_prompt_chat_with_dictionary`
+  added directly after `test_system_prompt_chat_with_custom_prompt`: Chat + `Some("Kubernetes")` → prompt
+  contains `The user's custom dictionary terms (preserve these exactly): Kubernetes`. Shown RED against the
+  old Chat arm (row 3).
+- **AC4 — met on the machine side.** Polished/Verbatim byte-identical, Chat-without-dictionary
+  byte-identical (dump); no Kotlin file changed (`git diff --stat` → zero `android/` paths);
+  `cargo test --lib` 707/707.
+- **Coverage statement.** The 707 green and the RED rows prove the **desktop prompt string** (logic): the Chat
+  arm now carries the dictionary sentence, and the M12 reader follows the flip. They do **not** prove: the
+  Kotlin column (a written record — no Kotlin test reads the fixture, JVM gate not run); model behaviour (no
+  model was called); the pipeline/command callers at runtime (`pipeline.rs`, `commands/recording.rs`,
+  `llm/local.rs` inherit the change by construction — verified by reading the story's caller list, not
+  exercised); anything on the Windows release build (not built in this session). `llm/local.rs` is
+  Windows-only and not compiled on this host.
+- **Outstanding — GATE-4 (GATE-1 decision, Andi 2026-09-16).** The conductor triggers the Windows release
+  build (`scripts/windows-build.sh`, not a worker step); Andi runs one real Chat-style dictation with a
+  dictionary term on Windows. Not done in this session.
+- **Observed, not changed (no task maps it; Task 3 forbids editing the M12 test).** Two comments in
+  `llm::tests` still describe M12 as open after this story: the section header above `load_m12_vectors`
+  ("It does NOT decide it: M12 is an open product decision … Story 7.6 flips one vector … once the decision is
+  made") and the trailing NOTE inside `spec_m12_dictionary_scope_current_state_still_holds` (``"M12 is still open" is carried by the fixture's `open_decision` field``), which now points at a field this story removed
+  per the GATE-1 decision. Comment-only; no assertion reads `open_decision`. Also unchanged: the
+  `M12-DICT-SCOPE-POLISHED` description says "the two platforms phrase it differently", while the Kotlin and
+  Rust sentences are character-identical (outside the GATE-1 prose scope, which named only the CHAT and README
+  entries).
 
 ### File List
+
+- `src-tauri/src/llm/mod.rs` — `CleanupStyle::system_prompt_with_translation` Chat arm gains `{dict_section}`;
+  `tests::test_cleanup_style_chat_ignores_dictionary` removed; `tests::test_system_prompt_chat_with_dictionary`
+  added.
+- `test-fixtures/m12-dictionary-scope-vectors.json` — `M12-DICT-SCOPE-CHAT` flipped (`expected_dictionary_in_prompt`,
+  `platforms_agree` → `true`) and its description rewritten; `M12-DICT-SCOPE-README` description rewritten and
+  `open_decision` removed.
+- `_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md` — task
+  checkboxes, Status, Dev Agent Record, File List, Change Log.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `7-6` `ready-for-dev` → `in-progress` → `review`;
+  `last_updated` 2026-09-16.
+
+**Not modified (verified with `git diff --stat`):** anything under `android/`, `src/`, `docs/`;
+`test-fixtures/README.md` (M12 row still accurate: Rust reader only); `tests::spec_m12_dictionary_scope_current_state_still_holds`
+and `tests::load_m12_vectors`.
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-09-16 | Story 7-6 implemented. Desktop Chat cleanup prompt now includes the dictionary sentence, like Polished/Verbatim and like Android (M12, decided 2026-09-10). Contradicting test replaced by a Chat dictionary test. `M12-DICT-SCOPE-CHAT` flipped; fixture prose brought to the decided state per GATE-1 (`open_decision` removed, `record_type` kept). Gates: `cargo test --lib` 707/707; both RED directions shown and reverted; AC4 byte-identity measured over 36 prompts (32 same, 4 differ only by the dictionary line). `cargo clippy` blocked (not installed). **Windows build (conductor) and Andi's GATE-4 outstanding.** |
