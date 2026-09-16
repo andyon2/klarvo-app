@@ -108,7 +108,7 @@ tools              = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", 
 permission_prompts = "none"        # anything that would prompt is denied -- a headless worker has nobody to ask
 permission_mode  = "acceptEdits"
 allowed_tools    = ["Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite", "Bash"]
-disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg:*)", "Bash(snap:*)", "Bash(pip:*)", "Bash(pip3:*)", "Bash(rustup:*)", "Bash(cargo install:*)", "Bash(npm install -g:*)", "Bash(adb:*)", "Bash(ssh:*)", "Bash(scp:*)", "Bash(scripts/windows-build.sh:*)", "Bash(sh -c:*)", "Bash(bash -c:*)"]
+disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg:*)", "Bash(snap:*)", "Bash(pip:*)", "Bash(pip3:*)", "Bash(rustup:*)", "Bash(cargo install:*)", "Bash(npm install -g:*)", "Bash(adb:*)", "Bash(ssh:*)", "Bash(scp:*)", "Bash(scripts/windows-build.sh:*)", "Bash(bash scripts/windows-build.sh:*)", "Bash(sh scripts/windows-build.sh:*)", "Bash(sh -c:*)", "Bash(bash -c:*)"]
 # Workers never run the Windows build or ssh: [desktop_build] is the CONDUCTOR's GATE-4 step, not a
 # worker step. Deny rules match the outer command text only: a subprocess inside a script (adb inside
 # android-smoke.sh) is outside the rule surface -- that is what BMAD_CONDUCTOR=1 exists for -- and
