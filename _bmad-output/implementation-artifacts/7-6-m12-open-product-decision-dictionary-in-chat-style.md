@@ -104,6 +104,20 @@ asserting that the Chat prompt built with dictionary terms contains the dictiona
 - [x] **Task 5 — Record** — fill the Dev Agent Record (File List, Completion Notes) from `git diff`, anchored at
       symbols, not line numbers.
 
+### Review Findings
+
+_Code review 2026-09-16, range `d9f83ef..HEAD` (Blind Hunter + Edge Case Hunter + Acceptance Auditor)._
+
+- [ ] [Review][Decision] Rust test comments still say M12 is open — The section comment above `tests::load_m12_vectors` ("M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION) … Story 7.6 flips one vector … once the decision is made") and the NOTE inside `tests::spec_m12_dictionary_scope_current_state_still_holds` (`"M12 is still open" is carried by the fixture's open_decision field`) now contradict the GATE-1 prose decision, and the NOTE points at a field this story removed. The header comment is outside the test fn; the NOTE is inside the test that Task 3 says "do not edit" (the ban was aimed at assertions, but a comment edit still touches that fn). Decide: comment-only edit to both / edit only the header / leave both as they are and defer.
+- [ ] [Review][Patch] Epic-7 comment in the sprint ledger contradicts its status — comment reads "done 2026-09-10 with 7-6 parked on M12" while `epic-7: in-progress` (set by `456db25`) and 7-6 is `review`; add the reopen for the 7-6 cut [_bmad-output/implementation-artifacts/sprint-status.yaml:106]
+- [ ] [Review][Patch] File List / scope-check row omit `seat-costs.jsonl` — `853d308` also appends the dev-seat telemetry line; the record does not match `git diff --stat` [_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md "File List"]
+- [x] [Review][Defer] `M12-DICT-SCOPE-POLISHED` description says "the two platforms phrase it differently" — false, the Rust and Kotlin sentences are character-identical; outside GATE-1 prose scope [test-fixtures/m12-dictionary-scope-vectors.json:11] — deferred, pre-existing
+- [x] [Review][Defer] Whitespace-only dictionary terms produce an empty dictionary line — Rust `dict_section` guards with `!terms.is_empty()`, Kotlin `appendPromptExtensions` with `isNullOrBlank()`; since 7-6 this reaches the Chat arm too (`cleanup_text` passes caller terms through with only an `is_empty` check) [src-tauri/src/llm/mod.rs `CleanupStyle::system_prompt_with_translation` `dict_section`] — deferred, pre-existing
+- [x] [Review][Defer] Local llama cleanup has no `n_prompt >= DEFAULT_CONTEXT_SIZE` guard — a large dictionary can now push the formerly short Chat prompt past the 4096 context [src-tauri/src/llm/local.rs, decode path around `n_prompt` / `max_total`] — deferred, pre-existing
+- [x] [Review][Defer] `spec_m12_…` `checked == 3` does not detect duplicate/missing styles — two `chat` entries and no `verbatim` would still pass [src-tauri/src/llm/mod.rs `tests::spec_m12_dictionary_scope_current_state_still_holds`] — deferred, pre-existing
+- [x] [Review][Defer] AC1 "And" clause (Chat without dictionary unchanged) has no permanent regression test — proven only by the throwaway 36-prompt dump [src-tauri/src/llm/mod.rs `tests`] — deferred, pre-existing
+- [x] [Review][Defer] Fixture file still has no trailing newline [test-fixtures/m12-dictionary-scope-vectors.json] — deferred, pre-existing
+
 ## Dev Notes
 
 ### Current state of the code this story touches (read before changing)
