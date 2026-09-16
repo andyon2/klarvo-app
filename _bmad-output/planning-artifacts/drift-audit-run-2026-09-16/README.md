@@ -9,3 +9,4 @@ Evidence trail for `docs/cross-platform-drift-audit-2026-09-16.md`. Tree `e9543f
 - `verifier-V1.md` — config/license (Opus 5) · `verifier-V2.md` — STT/audio/guards (Fable 5.1) · `verifier-V3.md` — LLM/cleanup (Opus 5) · `verifier-V4.md` — delivery/history/sync (Fable 5.1)
 
 Row ids `A#`/`B#`/`V-*` in the merged document point into these files. Claim B14 was verified by the session, not by a verifier (see the merged doc, D-H10).
+- `entscheidungsblatt-parity-linie.md` — decision sheet for Andi (German): G1-G3 product questions + blocks A-G, one proposal per row; input to ADR-0016 Amendment 4
