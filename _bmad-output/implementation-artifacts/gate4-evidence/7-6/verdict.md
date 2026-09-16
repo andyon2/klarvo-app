@@ -22,39 +22,50 @@ arm now interpolates the dictionary section, and the fixture vector follows with
 **What it does not prove:** the Windows release build, the Kotlin column (read, not asserted), any real
 model call, any device, or that a real dictation improves.
 
-## Part 2 — Windows release build: BLOCKED (not a code failure)
+## Part 2 — Windows release build: GREEN (conductor-run, 2026-09-16)
 
-    scripts/windows-build.sh    →  exit 1
+    scripts/windows-build.sh    →  exit 0
 
-    == 1/5  Lokalen Baum prüfen
-        conductor/story-7-6 = dc6e08b62db011bf94a06d58a831eac134ed7e3f
-    == 2/5  Nach origin pushen
-        * [new branch]      conductor/story-7-6 -> conductor/story-7-6
-    == 3/5  Auf laptop auschecken
-        ssh: connect to host 100.119.146.126 port 22: Connection timed out
-    ABBRUCH: Checkout auf laptop fehlgeschlagen
+    == 5/5  Frische prüfen
+        Commit gebaut : 2026-09-16 11:41:30
+        exe geschrieben: 2026-09-16 14:04:31
+    == FERTIG. klarvo.exe enthält fdf0db4 (conductor/story-7-6).
 
-**Cause, verified:** the laptop is powered off, not misconfigured. `tailscale status` reports both of
-its nodes offline, last seen ~5 h ago:
+    klarvo.exe : D:\apps\klarvo\src-tauri\target\release\klarvo.exe   (44 MB)
+    bundles    : Klarvo_0.5.0_x64_en-US.msi · Klarvo_0.5.0_x64-setup.exe (rsign-signiert, verifiziert)
+    installer  : D:\Dropbox\App Development\klarvo\releases\v0.5.0\
 
-    100.123.144.12   laptop-q0pka3ta-1   windows   offline, last seen 5h ago
-    100.119.146.126  laptop-q0pka3ta     linux     active; relay "fra"; offline, last seen 5h ago
+**Freshness proven:** the exe is younger than the commit it was built from, which is the script's own
+exit-3 guard (cargo reusing a stale object). The build carries `fdf0db4`, the branch HEAD.
 
-`ping 100.119.146.126` → 100 % packet loss.
+**What this proves:** the code compiles, links and bundles on Windows — a statement neither `cargo check`
+nor a Linux test run delivers. **What it does not prove:** pixels, font rasterization, or that a dictation
+behaves better. A green build is never a design or behaviour gate.
 
-Exit code 1 is the script's "precondition violated" arm. Step 2 succeeded, so the branch **is** on
-`origin` and the laptop will check it out as soon as it is reachable. Nothing was mutated on any host
-to get around this (R6).
+### First attempt, for the record (2026-09-16, earlier)
 
-## Part 3 — Andi's real check: NOT YET RUN
+The first run exited 1 in step 3/5: the laptop was powered off (`tailscale status` reported both nodes
+offline ~5 h; ping 100 % loss). Not a code failure, and nothing was mutated on any host to get around it
+(R6). The push in step 2 had already succeeded, so the re-run only had to check out and build.
 
-Blocked behind Part 2: there is no fresh Windows build to test against.
+### Branch note (honest record)
 
-When the laptop is on, the conductor re-runs `scripts/windows-build.sh`, and Andi then does:
+Two commits on this branch are **not** story 7-6 work: `3a306e8` (contract pointer to the skill-delivery
+fix) and `fdf0db4` (closing the `bash`-wrapper deny gap recorded on 2026-09-14). Both are docs/config, no
+product code. They were committed here because the conductor was standing on this branch; they belong on
+`v1-ship` and land there with the merge. Named rather than hidden.
+
+## Part 3 — Andi's real check: READY, NOT YET RUN
+
+The build above is what he tests against. Steps:
 
 1. Open Settings and add a dictionary term, e.g. `Kubernetes`.
 2. Set the cleanup style to **Chat**.
 3. Dictate a sentence containing that term.
 4. Confirm the term arrives written exactly as entered.
 
-**Status of the story:** stays `review` in both status fields. GATE 4 is open.
+Freshness cross-check available in-app: **Settings → About** shows the build hash and timestamp; it must
+read `fdf0db4`.
+
+**Status of the story:** stays `review` in both status fields until Andi's verdict. GATE 4 is open on
+part 3 only.
