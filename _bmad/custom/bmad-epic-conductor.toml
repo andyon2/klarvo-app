@@ -113,6 +113,13 @@ disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg
 # worker step. Deny rules match the outer command text only: a subprocess inside a script (adb inside
 # android-smoke.sh) is outside the rule surface -- that is what BMAD_CONDUCTOR=1 exists for -- and
 # `sh -c` / `bash -c` wrappers are denied because they would carry any command past the list.
+# SKILL-LIEFERUNG: `--restricted` entfernt JEDES user- und projekt-Skill aus dem Worker --
+# `Invoke the skill bmad-dev-story` scheitert dann mit `Unknown skill` und der Worker
+# improvisiert (belegt 2026-09-16, Story 7-6: fuenf von fuenf Workern lasen SKILL.md von Hand).
+# `--setting-sources` hilft NICHT. Der Fix steht im globalen bmad-story-conductor-Skill,
+# Abschnitt "Skill delivery under --restricted": ein ephemerer --plugin-dir-Shim mit
+# `skills` -> `.claude/skills` symlinked; die Skills heissen dann `projskills:<name>`.
+# Hier nichts duplizieren -- das Skill ist die SSOT dafuer.
 # Host mutation is forbidden (story-conductor R6): a gate that needs a tool the host lacks is `blocked`, never an install.
 # Dead gates (AI-3): a gate red across two consecutive stories is retired, not chased.
 # RETIRED 2026-09-03: `cargo check --target x86_64-pc-windows-gnu` -- dies at ort-sys since 8-1.
