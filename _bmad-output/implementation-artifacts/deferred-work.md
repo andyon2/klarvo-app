@@ -501,3 +501,7 @@ Source: review of `spec-webview2-overlay-backgrounding.md` (edge-case-hunter). O
 - **`spec_m12_dictionary_scope_current_state_still_holds` counts entries, not distinct styles** (`src-tauri/src/llm/mod.rs`). `checked == 3` passes with a duplicated style and a missing one. Fix shape: assert the set of styles. LOW. Source: Edge Case Hunter.
 - **No permanent test that Chat without a dictionary is unchanged** (`src-tauri/src/llm/mod.rs` tests). AC1 "And" was proven by a throwaway dump only. LOW. Source: Acceptance Auditor.
 - **M12 fixture lacks a trailing newline** (`test-fixtures/m12-dictionary-scope-vectors.json`). Cosmetic. LOW. Source: Blind Hunter.
+
+## Deferred from: code review round 2 of 7-6-m12-open-product-decision-dictionary-in-chat-style.md (2026-09-16)
+
+- **Stale D1 rationale in the M12 test NOTE** (`src-tauri/src/llm/mod.rs`, `tests::spec_m12_dictionary_scope_current_state_still_holds`). The kept text says "the fixture has exactly one disagreeing style" and speaks of "Story 7.6 flips one vector without editing this test". After 7.6, no style disagrees, and 7.6's review round 1 made a comment-only edit inside the fn. Round 1 was bound to keep the rationale verbatim (7-8 D1). Fix shape: rephrase in the past tense ("had exactly one…"), no assertion change. LOW. Source: Blind Hunter + Edge Case Hunter + Acceptance Auditor.

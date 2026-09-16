@@ -1,6 +1,6 @@
 # Story 7.6: M12 — dictionary in Chat style (Desktop Chat arm includes the dictionary)
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -117,6 +117,12 @@ _Code review 2026-09-16, range `d9f83ef..HEAD` (Blind Hunter + Edge Case Hunter 
 - [x] [Review][Defer] `spec_m12_…` `checked == 3` does not detect duplicate/missing styles — two `chat` entries and no `verbatim` would still pass [src-tauri/src/llm/mod.rs `tests::spec_m12_dictionary_scope_current_state_still_holds`] — deferred, pre-existing
 - [x] [Review][Defer] AC1 "And" clause (Chat without dictionary unchanged) has no permanent regression test — proven only by the throwaway 36-prompt dump [src-tauri/src/llm/mod.rs `tests`] — deferred, pre-existing
 - [x] [Review][Defer] Fixture file still has no trailing newline [test-fixtures/m12-dictionary-scope-vectors.json] — deferred, pre-existing
+
+_Code review round 2 (re-review of fix round `f3a6b33`), 2026-09-16. All four round-1 findings verified resolved. Blind Hunter + Edge Case Hunter + Acceptance Auditor. Both patches are record-only (project-context Epic-7 retro D2: editorial close-out pass, not a fix round)._
+
+- [ ] [Review][Patch] "Not modified" line now contradicts the round-1 edits — it still lists `tests::spec_m12_dictionary_scope_current_state_still_holds` and `tests::load_m12_vectors` as unmodified, while the File List entry and the ✅ bullet of the same round record comment-only edits to the NOTE inside that fn and to the section header above `load_m12_vectors`; qualify the claim to "(logic/assertions)" or drop the two names [_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md "Not modified (verified with `git diff --stat`)"]
+- [ ] [Review][Patch] Scope-check row rewrites a recorded observation — the row is the output of "`git status --short` after both RED runs and the throwaway dump", but `seat-costs.jsonl` was not dirty then (the create-seat line was committed in `826ef20`; the dev-seat line carries ts `08:51:46`, the same as the `853d308` commit, i.e. it was written after the dev seat); keep the original observed output and record `seat-costs.jsonl` as a separate correction note (evidence: `git show --stat 853d308`) [_bmad-output/implementation-artifacts/7-6-m12-open-product-decision-dictionary-in-chat-style.md "Scope check" row]
+- [x] [Review][Defer] Kept D1 rationale in the `spec_m12_…` NOTE is stale after the flip — "the fixture has exactly one disagreeing style" and "Story 7.6 flips one vector without editing this test" describe the state before 7.6; round 1 was bound to keep the rationale verbatim (7-8 D1) [src-tauri/src/llm/mod.rs `tests::spec_m12_dictionary_scope_current_state_still_holds`] — deferred, pre-existing
 
 ## Dev Notes
 
@@ -322,7 +328,16 @@ Gates run on powerhouse (Linux). No device, no Windows build, no model call in t
 | Rust lib build (Linux) | `cargo build --manifest-path src-tauri/Cargo.toml --lib` | ``Finished `dev` profile``; `klarvo (lib) generated 13 warnings` (pre-existing; the diff adds no code that can warn). Test profile: `generated 18 warnings` before and after the change. |
 | Lint | `cargo clippy --version` | **blocked** — `'cargo-clippy' is not installed for the toolchain 'stable-x86_64-unknown-linux-gnu'`. Not installed around (project-context: never mutate the host for a gate). No other lint is configured (`package.json` scripts: `dev`, `build`, `preview`, `tauri`). |
 | Kotlin JVM gate | — | **not run** (optional per Testing requirements). No `.kt` file changed and no Kotlin test reads the M12 fixture, so it would exercise no M12 assertion. |
-| Scope check | `git status --short` after both RED runs and the throwaway dump | only `src-tauri/src/llm/mod.rs`, `test-fixtures/m12-dictionary-scope-vectors.json`, `sprint-status.yaml`, `_bmad-output/implementation-artifacts/seat-costs.jsonl` (+ this story file) |
+| Scope check | `git status --short` after both RED runs and the throwaway dump | only `src-tauri/src/llm/mod.rs`, `test-fixtures/m12-dictionary-scope-vectors.json`, `sprint-status.yaml` (+ this story file) |
+
+> **Correction (conductor, review round 2, 2026-09-16).** Fix round 1 appended
+> `seat-costs.jsonl` to the observation row above. That was wrong: the row records what
+> `git status --short` showed at the time of the RED runs, and the file was not dirty then
+> (the create-seat line was already committed in `826ef20`; the dev-seat line carries the
+> commit time of `853d308` and was written by the conductor after the dev worker returned).
+> The original row is restored. `seat-costs.jsonl` belongs in the File List instead, on the
+> evidence of `git show --stat 853d308` — not on this observation. An observation record is
+> never edited to match a later state.
 
 Count 707 = 707 before (baseline `1 passed + 706 filtered`): `test_cleanup_style_chat_ignores_dictionary`
 removed, `test_system_prompt_chat_with_dictionary` added.
@@ -419,8 +434,10 @@ same as Verbatim.
 - `_bmad-output/implementation-artifacts/seat-costs.jsonl` — one dev-seat telemetry line appended (`853d308`).
 
 **Not modified (verified with `git diff --stat`):** anything under `android/`, `src/`, `docs/`;
-`test-fixtures/README.md` (M12 row still accurate: Rust reader only); `tests::spec_m12_dictionary_scope_current_state_still_holds`
-and `tests::load_m12_vectors`.
+`test-fixtures/README.md` (M12 row still accurate: Rust reader only). The logic and assertions of
+`tests::spec_m12_dictionary_scope_current_state_still_holds` and `tests::load_m12_vectors` are
+untouched as well — review round 1 changed **comment text only** inside them (`f3a6b33`, verified:
+every changed line in `llm/mod.rs` in that commit starts with `//`).
 
 ## Change Log
 
