@@ -185,7 +185,15 @@ Amendment 3. **Nothing here is released to build** — "schließen" = candidate 
 **Cut shape (proposal, not decided):** the S rows (outputLanguage, local-prompt by-catch, three twin-hygiene
 items, hide whisper fields on mobile) fit ONE collecting story "Parity-Sweep 2026-09"; H15 and H16 are
 their own stories; 9-8, 8-6, 8-7 keep their story numbers. Prerequisite Andi named: a second drift-audit
-run (method of 2026-06-10) before the sweep is cut — not yet commissioned.
+run (method of 2026-06-10) before the sweep is cut — **RUN 2026-09-16 (same day): `docs/cross-platform-drift-audit-2026-09-16.md`.** Result: CRITICAL 2 · HIGH 20 ·
+MEDIUM 24 · LOW 32; June rows FIXED 20 / PERSISTS 17 / CHANGED 9 / REVERSED 1 (C1 license: Android enforces,
+Desktop's hotkey pipeline does not). Headline new rows NOT covered by the Amendment-3 verdicts above and therefore
+open for Andi's line: license reversal + free-tier mismatch (D-C1, D-C2, D-H1, D-H2), no banking guard on Desktop
+(D-H3), guard placement after ADR-0017 consolidation (D-H5–D-H8, D-M9), offline privacy (D-H9, D-H10), Android
+local cleanup cannot execute and reports success (D-H18), silent loss / silent no-op (D-H19, D-H20). The
+Amendment-3 candidates H4/H15/H16 are confirmed unchanged; the Whisper-Mode "hide the fields" verdict is
+confirmed as the right shape. **Next act = Andi draws the line per row (→ ADR-0016 Amendment 4), then the sweep
+is cut.** Raw run evidence: `_bmad-output/planning-artifacts/drift-audit-run-2026-09-16/`.
 
 ### DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend: remove 14 dead keys, wire 4 model IDs (Andi)
 

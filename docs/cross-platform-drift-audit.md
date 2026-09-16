@@ -1,6 +1,8 @@
 # Cross-Platform Drift Audit — Desktop (Rust) ↔ Android (Kotlin)
 
 **Date:** 2026-06-10
+> **Superseded as a measurement by `docs/cross-platform-drift-audit-2026-09-16.md` (run #2 on `e9543fe`).** This file stays as the June baseline; every row's today-status is in run #2 §6.
+
 **Method:** A/B drift-discovery run (Claude Fable 5 vs Claude Opus 4.8) on the same frozen `v1-ship` tree, identical prompt. Both lists then verified claim-by-claim against the real code by an independent pass (4 parallel readers, one per subsystem), plus a recall sweep for divergences neither model reported.
 **Scope (per ADR-0016):** Config-Key-Contract + shared runtime behavior — NOT feature parity. A divergence = same config + same input → different behavior across platforms, with no error.
 
