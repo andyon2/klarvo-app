@@ -251,7 +251,7 @@ impl CleanupStyle {
                 - \"Gedankenstrich\" or \"dash\" → —\n\
                 - \"Anführungszeichen auf\" or \"open quote\" → \"\n\
                 - \"Anführungszeichen zu\" or \"close quote\" → \"\
-                {custom_section}{translation_section}{sandwich}"
+                {dict_section}{custom_section}{translation_section}{sandwich}"
             ),
         }
     }
@@ -1748,18 +1748,6 @@ mod tests {
         assert_eq!(chat, r#""chat""#);
     }
 
-    #[test]
-    fn test_cleanup_style_chat_ignores_dictionary() {
-        let style = CleanupStyle::Chat;
-        let prompt_with = style.system_prompt(Some("Kubernetes"), None);
-        let prompt_without = style.system_prompt(None, None);
-        // Chat style intentionally omits dictionary context to keep prompts short
-        assert_eq!(
-            prompt_with, prompt_without,
-            "Chat style should ignore dictionary terms"
-        );
-    }
-
     /// Custom prompt is appended to the system prompt when non-empty.
     #[test]
     fn test_system_prompt_with_custom_prompt() {
@@ -1791,6 +1779,17 @@ mod tests {
         assert!(
             prompt.contains("Additional user instructions: No emojis please."),
             "Chat style should include custom prompt"
+        );
+    }
+
+    /// Dictionary terms reach the Chat prompt too, as on Android (M12, decided 2026-09-10).
+    #[test]
+    fn test_system_prompt_chat_with_dictionary() {
+        let style = CleanupStyle::Chat;
+        let prompt = style.system_prompt(Some("Kubernetes"), None);
+        assert!(
+            prompt.contains("The user's custom dictionary terms (preserve these exactly): Kubernetes"),
+            "Chat style should include dictionary terms"
         );
     }
 
@@ -2612,10 +2611,11 @@ mod tests {
 
     // --- M12 current-state vector (story 7-8, AC4) ---
     //
-    // RECORDS the dictionary-scope divergence between desktop and Android. It does NOT
-    // decide it: M12 is an open product decision for Andi (docs/backlog.md OPEN-DECISION),
-    // and story 7-8 deliberately changed no prompt-assembly code on either platform.
-    // Story 7.6 flips one vector in the fixture once the decision is made.
+    // RECORDS the dictionary-scope state of desktop and Android. Story 7-8 deliberately
+    // changed no prompt-assembly code on either platform. M12 is decided (Andi, 2026-09-10 —
+    // Chat includes the dictionary; docs/backlog.md "DECIDED 2026-09-10 — M12"), and story
+    // 7.6 performed the flip: the desktop Chat arm now carries the dictionary and the
+    // fixture's chat vector was flipped to match.
     //
     // Covers: the desktop/Rust column only, asserted against the real
     // `CleanupStyle::system_prompt`. Does NOT cover the Android column — Kotlin's
@@ -2702,8 +2702,7 @@ mod tests {
         // some style still disagrees. Such a check fires on EITHER direction of a correct M12
         // resolution — the fixture has exactly one disagreeing style — which would falsify the
         // fixture's own promise that Story 7.6 flips one vector without editing this test.
-        // "M12 is still open" is carried by the fixture's `open_decision` field, not by an
-        // assertion. The per-entry consistency check above stays: a flag that stops matching
+        // The per-entry consistency check above stays: a flag that stops matching
         // its own columns still fails loudly.
     }
 }
