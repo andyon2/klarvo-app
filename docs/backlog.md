@@ -255,6 +255,35 @@ GATE-1-Entscheidungen (Andi) stehen in der Story + Canon-MANIFEST-Zeile 2026-09-
   Rohtext wird kommentarlos eingefügt. Eigener Bug, nicht Teil von 7-10 (Q4 = nur echte Cloud-Cleanup-Fehler,
   Desktop-Parität). Source: `KlarvoOverlayService.kt` lokaler `catch`, 7-10 Q4.
 
+### Story 7-6 residuals — 7 LOW items (loop closed on a review, 2026-09-16)
+
+Story 7-6 (M12: Chat includes the dictionary) closed `done` on 2026-09-16 after Andi's GATE-4 went green on
+the real Windows build (`fdf0db4`). One fix round; the re-review confirmed all four findings and found no
+code defect. Seven LOW items were accepted as residual, full text in
+`_bmad-output/implementation-artifacts/deferred-work.md`:
+
+- **Whitespace-only dictionary terms — Rust/Kotlin guard drift.** Rust checks `!is_empty()`, Kotlin checks
+  `isNullOrBlank()`, so `Some("  ")` produces an empty "preserve these exactly:" line. **Since 7-6 this also
+  hits Chat style.** The most actionable of the seven. Fix shape: a `trim()` guard like `custom_section`.
+- **Local llama cleanup has no prompt-vs-context guard** (`llm/local.rs`). `n_prompt` is never checked
+  against the 4096 context; a large dictionary now also lengthens the Chat prompt. Windows-only path.
+- **Stale rationale in the M12 test NOTE.** It still says "exactly one disagreeing style" and that 7.6 flips
+  the vector "without editing this test". After 7.6 no style disagrees, and round 1 made a comment-only edit
+  inside that fn. Round 1 was bound by 7-8 D1 to keep the rationale verbatim. Fix shape: past tense, no
+  assertion change.
+- **`M12-DICT-SCOPE-POLISHED` description is factually wrong** — it claims the platforms "phrase it
+  differently"; both sentences are character-identical. Pre-existing from 7-8, outside 7-6's GATE-1 prose
+  scope (CHAT + README only).
+- **The M12 spec counts entries, not distinct styles** — `checked == 3` passes with one style duplicated and
+  another missing. Fix shape: assert the set of styles.
+- **No permanent test that Chat without a dictionary is unchanged.** AC1's "And" was proven by a throwaway
+  36-prompt dump only (32 byte-identical, 4 differ by the dictionary line).
+- **M12 fixture lacks a trailing newline.** Cosmetic.
+
+Also recorded, not a defect: two commits on `conductor/story-7-6` are conductor mechanics, not story work —
+`3a306e8` (pointer to the skill-delivery fix) and `fdf0db4` (closing the `bash`-wrapper deny gap from
+2026-09-14). Docs/config only; they land on `v1-ship` with the merge.
+
 ### Story 7-10 residuals — re-review after 2 fix rounds (loop closed on a review, 2026-09-14, Andi)
 
 Both fix rounds landed (`8aa7167`, `df836a0`); the re-review confirmed them. Three decision items were closed as

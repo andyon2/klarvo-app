@@ -1,6 +1,6 @@
 # Story 7.6: M12 — dictionary in Chat style (Desktop Chat arm includes the dictionary)
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -445,3 +445,4 @@ every changed line in `llm/mod.rs` in that commit starts with `//`).
 |---|---|
 | 2026-09-16 | Story 7-6 implemented. Desktop Chat cleanup prompt now includes the dictionary sentence, like Polished/Verbatim and like Android (M12, decided 2026-09-10). Contradicting test replaced by a Chat dictionary test. `M12-DICT-SCOPE-CHAT` flipped; fixture prose brought to the decided state per GATE-1 (`open_decision` removed, `record_type` kept). Gates: `cargo test --lib` 707/707; both RED directions shown and reverted; AC4 byte-identity measured over 36 prompts (32 same, 4 differ only by the dictionary line). `cargo clippy` blocked (not installed). **Windows build (conductor) and Andi's GATE-4 outstanding.** |
 | 2026-09-16 | Addressed code review findings - 3 items resolved (Date: 2026-09-16). M12 test comments in `llm::tests` brought to the decided state (comment-only; `spec_m12_…` logic untouched per 7-8 D1); Epic-7 sprint-ledger comment records the reopening; `seat-costs.jsonl` added to File List and scope check. Re-run: `cargo test --lib` 707/707 (desktop prompt string + M12 reader only). Windows build and GATE-4 still outstanding. |
+| 2026-09-16 | **Close-out (conductor, GATE 3 + GATE 4).** 1 fix round; the loop ended on a review (round 2 confirmed all four findings resolved, no code defect). Round 2's two new findings were record-only and corrected by the conductor in this pass — including restoring a `git status` observation that fix round 1 had retro-edited. GATE 4, both parts: Windows release build `scripts/windows-build.sh` exit 0 on `fdf0db4`, freshness proven (exe 14:04:31 > commit 11:41:30); **Andi's real check GREEN 2026-09-16** — dictionary term arrives unchanged in Chat style on the real Windows build. Evidence: `gate4-evidence/7-6/verdict.md`. 7 residuals in `deferred-work.md` + `docs/backlog.md`. Status → done in story file and sprint-status. |

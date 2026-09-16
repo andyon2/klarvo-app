@@ -108,7 +108,7 @@ development_status:
   7-1-android-chunking-parity-core-output: done
   7-2-android-live-auto-stop-vad-gate-parity: done
   7-3-shared-core-stt-request-and-guard-path-via-jni: done
-  7-6-m12-open-product-decision-dictionary-in-chat-style: review
+  7-6-m12-open-product-decision-dictionary-in-chat-style: done
   7-8-parity-net-close-out-and-twin-hygiene: done
   7-9-desktop-advanced-settings-dead-keys-and-model-ids: done
   7-10-cleanup-failure-raw-text-clipboard-only: done

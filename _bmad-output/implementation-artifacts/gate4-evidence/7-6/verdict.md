@@ -55,17 +55,17 @@ fix) and `fdf0db4` (closing the `bash`-wrapper deny gap recorded on 2026-09-14).
 product code. They were committed here because the conductor was standing on this branch; they belong on
 `v1-ship` and land there with the merge. Named rather than hidden.
 
-## Part 3 — Andi's real check: READY, NOT YET RUN
+## Part 3 — Andi's real check: GREEN (2026-09-16)
 
-The build above is what he tests against. Steps:
+Run by Andi on the real Windows build (`fdf0db4`):
 
-1. Open Settings and add a dictionary term, e.g. `Kubernetes`.
-2. Set the cleanup style to **Chat**.
-3. Dictate a sentence containing that term.
-4. Confirm the term arrives written exactly as entered.
+1. Dictionary term entered in Settings.
+2. Cleanup style set to **Chat**.
+3. Sentence dictated containing that term.
+4. **Result: the term arrives unchanged — in Chat style too.** Andi's words: "gruen, Begriff kommt
+   unveraendert an, auch in Chat".
 
-Freshness cross-check available in-app: **Settings → About** shows the build hash and timestamp; it must
-read `fdf0db4`.
+This is the statement no machine gate could make. The Linux tests proved the Chat prompt *carries* the
+dictionary sentence; this proves the behaviour a user actually sees. M12 is closed on both platforms.
 
-**Status of the story:** stays `review` in both status fields until Andi's verdict. GATE 4 is open on
-part 3 only.
+**GATE 4: GREEN, both parts. Story → `done` in both status fields.**
